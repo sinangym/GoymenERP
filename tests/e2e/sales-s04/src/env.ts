@@ -21,9 +21,6 @@
  *   realCompanyAccountId — its company account in `companyId`
  *   deliveryAddressId    — the REAL delivery address written through the real contact-information command
  *   deliveryContactId    — the REAL contact person written the same way
- *   deliveryAddressText  — the address text the real Sales contact-information reference answered
- *   deliveryContactName  — the contact's display name the same read answered
- *   currencyCode         — the code of the approved currency the real Sales currencies reference lists on the business date
  */
 
 export interface S04Seed {
@@ -37,9 +34,6 @@ export interface S04Seed {
   readonly realCompanyAccountId: string
   readonly deliveryAddressId: string
   readonly deliveryContactId: string
-  readonly deliveryAddressText: string
-  readonly deliveryContactName: string
-  readonly currencyCode: string
 }
 
 export interface S04Environment {
@@ -87,9 +81,6 @@ export function readEnvironment(): S04Environment {
     realCompanyAccountId: text(raw, 'realCompanyAccountId', true),
     deliveryAddressId: text(raw, 'deliveryAddressId', true),
     deliveryContactId: text(raw, 'deliveryContactId', true),
-    deliveryAddressText: text(raw, 'deliveryAddressText'),
-    deliveryContactName: text(raw, 'deliveryContactName'),
-    currencyCode: text(raw, 'currencyCode'),
   }
   if (new Set([seed.preparerActor, seed.approverActor, seed.readerActor]).size !== 3) {
     throw new Error('BROWSER_E2E_S04_SEED binds the same actor to two roles')

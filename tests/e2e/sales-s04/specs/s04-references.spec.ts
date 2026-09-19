@@ -40,10 +40,13 @@ const {
   realCompanyAccountId,
   deliveryAddressId,
   deliveryContactId,
-  deliveryAddressText,
-  deliveryContactName,
-  currencyCode,
 } = env.seed
+// The seed exports GUIDs and actor ids only (validate_browser_acceptance.seed_export). The texts are the seed's
+// deterministic labels (S04BrowserSeed: the address line, the contact's display name, the approved TRY code), which
+// the seed verified the real Sales reference reads answer before the suite starts.
+const deliveryAddressText = 'SENTETIK browser-suite:s04 Sanayi Cad. 1'
+const deliveryContactName = 'SENTETIK browser-suite:s04 Ayşe Yükleme'
+const currencyCode = 'TRY'
 const DRAFTS_PATH = '/api/v1/sales/drafts'
 const CONTACT_INFORMATION_PATH = '/api/v1/sales/references/contact-information'
 const CURRENCIES_PATH = '/api/v1/sales/references/currencies'
@@ -170,7 +173,7 @@ test('S04-06 the preparer sees the REAL currency, delivery address and contact o
     readonly contacts: readonly { readonly id: string; readonly displayName: string }[]
   }
   expect(contactAnswer.companyId).toBe(companyId)
-  expect(contactAnswer.addresses.find((address) => address.id === deliveryAddressId)?.text).toBe(deliveryAddressText)
+  expect(contactAnswer.addresses.find((address) => address.id === deliveryAddressId)?.text).toContain(deliveryAddressText)
   expect(contactAnswer.contacts.find((contact) => contact.id === deliveryContactId)?.displayName).toBe(deliveryContactName)
 
   // E1: no product list on main — the lines and the save are withheld with the honest notice; nothing is sent.

@@ -251,9 +251,6 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
             ["deliveryAddressId"] = DeliveryAddressId.ToString("D"),
             ["deliveryContactId"] = DeliveryContactId.ToString("D"),
             ["deliveryDraftId"] = DeliveryDraftId.ToString("D"),
-            ["deliveryAddressText"] = addressText,
-            ["deliveryContactName"] = contactName,
-            ["currencyCode"] = TurkishLiraCode,
         };
     }
 
