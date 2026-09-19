@@ -336,8 +336,10 @@ SUITE_FIXTURE_OUTPUTS: dict[str, frozenset[str]] = {
     "s04": frozenset({"preparerActor", "approverActor", "readerActor", "companyId", "draftId"}),
     # SİPARİŞ's Suites/L04 seed: the three actors, both companies, the customer (by id and name), the approved draft
     # line, the instruction created and issued through the real API, and its open and gated-blocked lines.
+    # The customer's NAME is not exported: seed_export accepts only a GUID or an actor id, and the spec
+    # asserts the deterministic SENTETIK label as a constant instead.
     "l04": frozenset({"preparerActor", "loaderActor", "readerActor", "companyId", "otherCompanyId", "customerPartyId",
-                      "companyAccountId", "customerName", "draftId", "approvedLineId", "instructionId", "blockedLineId",
+                      "companyAccountId", "draftId", "approvedLineId", "instructionId", "blockedLineId",
                       "openLineId"}),
 }
 _OUTPUT_KEY = re.compile(r"^[a-z][A-Za-z0-9]{0,39}$")
