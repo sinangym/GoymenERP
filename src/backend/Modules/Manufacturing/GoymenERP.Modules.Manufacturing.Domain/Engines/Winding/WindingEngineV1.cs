@@ -52,6 +52,7 @@ public sealed record WindingFitV1(string FormulaVersion, bool MetresSufficient, 
 /// built in (OPEN-007); a stored plan keeps the values it was approved with (DEC-PRDCT-008).
 /// WND-010 (coil break-down into target-mass coils plus a remainder "above tolerance") is not part
 /// of this version: its tolerance rule is not stated precisely enough to encode without choosing it.
+/// WND-008's "or kg tolerance" branch is not in it either: only the metre tolerance is encoded.
 /// </summary>
 public static class WindingEngineV1
 {

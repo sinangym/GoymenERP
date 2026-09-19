@@ -61,6 +61,60 @@ public sealed class EngineBehaviourTests
         Assert.Equal((0m, 0m), (exact.Value!.RemainingWidthMm, exact.Value.RemainingKg));
     }
 
+    [Fact]
+    public void A_full_width_plan_on_a_non_terminating_ratio_leaves_exactly_zero_never_a_negative_residue()
+    {
+        // 1000 / 3 does not terminate: kg per mm multiplied back would leave a 1e-25 residue. The plan
+        // multiplies before dividing, so a full-width plan is exactly the parent and nothing remains.
+        var full = SlittingEngineV1.Plan(new SlittingPlanInputV1(1000m, 3m, [new SlitLineInputV1(1m, 3)])).Value!;
+        Assert.Equal(1000m, full.PlanKg);
+        Assert.Equal(0m, full.RemainingKg);
+        Assert.Equal(0m, full.RemainingWidthMm);
+        // SLT-001 is still reported as the quotient; it is never a multiplicand.
+        Assert.Equal(1000m / 3m, full.KgPerMillimetreWidth);
+    }
+
+    /// <summary>
+    /// The invariants the plan claims, over a fixed pseudo-random set of Ö2 plans (seeded, so every run
+    /// sees the same cases). EXACT: remaining ≥ 0 whenever used ≤ net; plan + remaining == parent; a
+    /// full-width plan leaves exactly 0. WITHIN DECIMAL PRECISION ONLY: Σ line kg == plan kg (each line is
+    /// its own single division; the plan is one division of the total, not the sum of rounded lines).
+    /// </summary>
+    [Fact]
+    public void Plan_invariants_hold_exactly_and_the_line_sum_within_decimal_precision()
+    {
+        var random = new Random(20260919);
+        var checkedPlans = 0;
+        for (var attempt = 0; attempt < 4000; attempt++)
+        {
+            var parentKg = random.Next(1, 60_000_000) / 1000m;
+            var netWidth = random.Next(1_000, 3_000_000) / 1000m;
+            var lineCount = random.Next(1, 7);
+            var lines = Enumerable.Range(0, lineCount)
+                .Select(_ => new SlitLineInputV1(random.Next(1, (int)(netWidth * 1000m / lineCount) + 1) / 1000m, random.Next(1, 4)))
+                .ToArray();
+            var result = SlittingEngineV1.Plan(new SlittingPlanInputV1(parentKg, netWidth, lines));
+            if (result.Outcome == EngineOutcome.Refused)
+            {
+                Assert.Equal(EngineCodes.UsedWidthExceedsNetWidth, result.RefusalCode);
+                continue;
+            }
+
+            var plan = result.Value!;
+            checkedPlans++;
+            Assert.True(plan.RemainingKg >= 0m, $"negative remainder {plan.RemainingKg} for {parentKg} kg / {netWidth} mm");
+            Assert.Equal(parentKg, plan.PlanKg + plan.RemainingKg);
+            Assert.True(Math.Abs(plan.Lines.Sum(line => line.Kg) - plan.PlanKg) < 0.00000000000000000001m,
+                $"line sum drifts from the plan for {parentKg} kg / {netWidth} mm");
+
+            // The same coil planned to its full width leaves exactly nothing.
+            var full = SlittingEngineV1.Plan(new SlittingPlanInputV1(parentKg, netWidth, [new SlitLineInputV1(netWidth, 1)])).Value!;
+            Assert.Equal((parentKg, 0m), (full.PlanKg, full.RemainingKg));
+        }
+
+        Assert.True(checkedPlans > 1000, $"only {checkedPlans} plans fitted; the case set is too small to mean anything");
+    }
+
     [Theory]
     [InlineData("parentKg")]
     [InlineData("netUsableWidthMm")]

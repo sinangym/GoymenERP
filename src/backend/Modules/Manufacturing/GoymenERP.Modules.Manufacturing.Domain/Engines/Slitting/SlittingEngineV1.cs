@@ -76,11 +76,15 @@ public static class SlittingEngineV1
             return inputs.Incomplete<SlittingPlanV1>();
         }
 
-        // SLT-001 per millimetre of NET usable width; SLT-002/003 per line.
-        var kgPerMillimetre = parentKg / netWidth;
+        // Evaluation order (algebraically identical to master §28.4). SLT-003 is
+        // (HamKg / NetEn) × KullanılanEn; it is evaluated as HamKg × KullanılanEn / NetEn: multiply
+        // first, divide once. SLT-001's quotient is often non-terminating (28750 / 1500), and
+        // multiplying its 28-digit rounding back would leave a residue — a full-width plan would show
+        // a remaining mass of −1e-24 kg instead of 0. So SLT-001 is REPORTED, never a multiplicand.
+        // The widths (SLT-002/004/005) are exact: Ö2 millimetres times whole counts.
         var results = widths
             .Select(line => new SlitLineResultV1(line.Width, line.Count, line.Width * line.Count,
-                kgPerMillimetre * line.Width * line.Count))
+                parentKg * (line.Width * line.Count) / netWidth))
             .ToArray();
         var totalUsed = results.Sum(line => line.UsedWidthMm); // SLT-004
         if (totalUsed > netWidth)
@@ -88,10 +92,13 @@ public static class SlittingEngineV1
             return EngineResult<SlittingPlanV1>.Refused(EngineCodes.UsedWidthExceedsNetWidth, "lines");
         }
 
-        var planKg = results.Sum(line => line.Kg); // SLT-006
+        // SLT-006 is ΣSatırKg; it is evaluated once as HamKg × ToplamKullanılanEn / NetEn (the same sum,
+        // factored), not as a sum of separately rounded line values. Then SLT-007 is one exact subtraction:
+        // a full-width plan is exactly 0, and plan + remaining == parent holds exactly.
+        var planKg = parentKg * totalUsed / netWidth;
         return EngineResult<SlittingPlanV1>.Computed(new SlittingPlanV1(
             FormulaVersion,
-            kgPerMillimetre,
+            parentKg / netWidth, // SLT-001, reported only
             results,
             totalUsed,
             netWidth - totalUsed, // SLT-005
