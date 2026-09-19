@@ -22,7 +22,8 @@ namespace GoymenERP.Modules.Inventory.Infrastructure;
 /// <list type="bullet">
 /// <item><b>Authority:</b> <see cref="InventoryPermissionManifestV1.OpeningStockRecord"/>, company-wide, measured
 /// fresh (#276) before any read, and again after each owner read (the stored key, the location, each product)
-/// before its answer is used or released. An unregistered name is 503, never a grant.</item>
+/// before its answer is used — the last one before the save. Nothing is measured after the commit (ORG #321
+/// P3-1, S03). An unregistered name is 503, never a grant.</item>
 /// <item><b>Location:</b> Organization's current state: only an ACTIVE internal location of the company is
 /// opened; inactive, external and unknown (another company's too) are refused before any write.</item>
 /// <item><b>Products:</b> Product's stock eligibility for each counted product at the card version the counter
@@ -214,18 +215,16 @@ public sealed class InventoryOpeningCommandService(
             var first = await dbContext.OpeningCounts.AsNoTracking()
                 .Where(row => row.Id == count.Id).Select(row => row.CorrelationId).SingleAsync(cancellationToken);
             dbContext.ChangeTracker.Clear();
+            // The last fence that can still prevent this key's write; nothing is measured after the commit.
+            await RequireStillAsync(scope, cancellationToken);
             dbContext.Commands.Add(CommandRow(scope, keyHash, payloadHash, count.Id, command.CorrelationId,
                 new CommandResult(200, count.Id, first, null, null)));
-            if (await SaveAsync(scope, keyHash, payloadHash, cancellationToken) is { } raced)
-            {
-                return raced;
-            }
-
-            await RequireStillAsync(scope, cancellationToken);
-            return new OpeningCountResultV1(View(count), IsReplay: true, first);
+            return await SaveAsync(scope, keyHash, payloadHash, cancellationToken)
+                ?? new OpeningCountResultV1(View(count), IsReplay: true, first);
         }
 
-        await RequireStillAsync(scope, cancellationToken);
+        // Committed: the answer is the stored record's. No authority is measured after the commit (ORG #321 P3-1,
+        // S03): a grant revoked now must not turn a stored count into a 403 while its key says 201.
         return new OpeningCountResultV1(View(count), IsReplay: false, command.CorrelationId.Trim());
     }
 
