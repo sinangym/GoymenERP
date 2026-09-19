@@ -90,6 +90,12 @@ internal static class ShellCapabilityRegistryAuthorities
     internal const string C01DisposableCariListDetailV1 =
         "sha256:LM81M4d4tKOqR9OaKvZM_uT5HQIcoffoTMEzMFH4atg";
 
+    // The disposable "logistics-instructions" profile (BROWSER-CI log-staged, LOG-4b): the C-01 list-only Counterparty
+    // provider plus Logistics's own three declarations with only their availability opened (L-02 list, L-03 new,
+    // L-02-DETAIL). Computed by the ComputeRevision reproduction; pinned by a test against ComputeCandidateRevision.
+    internal const string C01DisposableLogisticsInstructionsV1 =
+        "sha256:G6ic5Cbh7NH1-kw430fr2eeOFViX0QGiv7w1qosZpbI";
+
     // The disposable "manufacturing-order-detail" profile (mfg-staged, MFG-UI D4 #323, sha256:eZi6K5tQ…) is
     // retired: Manufacturing is published on the normal host (MFG-UI-F) and the mfg suite runs there.
 
