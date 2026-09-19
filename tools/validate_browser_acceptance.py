@@ -172,7 +172,10 @@ SUITE_IDENTITY_PERMISSIONS = {
         "counterparty.parties.read",
     ),
     # SALES-A1's approval axis: the preparer creates and reads, the approver approves and reads, the reader reads.
-    "s04": ("sales.drafts.create", "sales.drafts.read", "sales.orders.approve"),
+    # SALES-A2a: the preparer reaches the Cari owner's contact information through its OWN party read
+    # (the s03 precedent), so the suite's closed list gains that name and nothing else.
+    "s04": ("sales.drafts.create", "sales.drafts.read", "sales.orders.approve",
+            "counterparty.parties.read"),
 }
 
 
@@ -325,7 +328,13 @@ SUITE_FIXTURE_OUTPUTS: dict[str, frozenset[str]] = {
     "fin01": frozenset({"companyId", "partyId", "companyAccountId", "proposerActor", "approverActor"}),
     # SİPARİŞ's Suites/S04 seed: the three actors, the company and the one Preparing draft written through
     # the gated Sales draft writer (C01E2eSalesDraftFixtureWriter).
-    "s04": frozenset({"preparerActor", "approverActor", "readerActor", "companyId", "draftId"}),
+    # SALES-A2a adds the second draft the delivery-reference path uses, the real party and its company
+    # account, and the address and contact the owner answered. Ids only: seed_export accepts a GUID or an
+    # actor id, so the texts the spec asserts (the address label, the contact name, the currency code) stay
+    # deterministic constants in the spec instead of travelling as seed outputs.
+    "s04": frozenset({"preparerActor", "approverActor", "readerActor", "companyId", "draftId",
+                      "deliveryDraftId", "realPartyId", "realCompanyAccountId", "deliveryAddressId",
+                      "deliveryContactId"}),
 }
 _OUTPUT_KEY = re.compile(r"^[a-z][A-Za-z0-9]{0,39}$")
 # Any non-nil lowercase GUID: seeded reference ids (companies, work centres) need not be RFC 4122.
