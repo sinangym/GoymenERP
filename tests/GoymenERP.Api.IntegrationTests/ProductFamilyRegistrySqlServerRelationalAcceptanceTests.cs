@@ -5,6 +5,7 @@ using System.Text.RegularExpressions;
 using GoymenERP.Api.ProductRuntime;
 using GoymenERP.Modules.Identity.Domain.Assignments;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
+using GoymenERP.Modules.Identity.Infrastructure.Services;
 using GoymenERP.Modules.Product.Application;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Product.Infrastructure.Persistence;
@@ -74,11 +75,11 @@ public sealed class ProductFamilyRegistrySqlServerRelationalAcceptanceTests
             }
 
             ProductFamilyDefinitionRulesV2.RequireWellFormed(definition);
-            Assert.Equal([ColdStrip, HotCoil], definition.Families.Select(family => family.Id).Order());
+            Assert.Equal([HotCoil, ColdStrip], definition.Families.Select(family => family.Id).Order());
             Assert.All(definition.Families, family => Assert.Equal("SYNTHETIC-TEST", family.SourceRef));
             var template = Assert.Single(definition.Templates);
             Assert.Equal((TemplateId, "1"), (template.Id, template.Version));
-            Assert.Equal(new HashSet<Guid> { HotCoil, ColdStrip }, template.FamilyIds);
+            Assert.Equal([HotCoil, ColdStrip], template.FamilyIds.Order());
             Assert.Equal(["syn-thickness-mm", "syn-width-mm", "syn-grade", "syn-coating", "syn-designation", "syn-subgrade"],
                 template.Fields.Select(field => field.Key));
             // A candidate stays a candidate; a mass is present only where the source stated one.
@@ -90,7 +91,7 @@ public sealed class ProductFamilyRegistrySqlServerRelationalAcceptanceTests
             using var client = factory.CreateClientFor("group-bootstrap-admin", CompanyA);
             var options = (await client.GetFromJsonAsync<ProductReferenceOptions>(
                 $"/api/v1/products/reference-options?groupId={GroupId:D}"))!;
-            Assert.Equal([ColdStrip, HotCoil], options.Families.Select(family => family.Id).Order());
+            Assert.Equal([HotCoil, ColdStrip], options.Families.Select(family => family.Id).Order());
             Assert.Equal((TemplateId, "1"), (Assert.Single(options.Templates).Id, options.Templates[0].Version));
             Assert.DoesNotContain("families", options.UnavailableCatalogs);
             Assert.DoesNotContain("templates", options.UnavailableCatalogs);
