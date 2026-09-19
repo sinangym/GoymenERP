@@ -90,23 +90,35 @@ interface CustomerOption {
   readonly key: string
   readonly partyId: string
   readonly companyAccountId: string
+  /** The Cari name as the read answers it. */
+  readonly name: string
+  /** The option text: the name; the document numbers in parentheses only when two customers share a name. */
   readonly label: string
 }
 
-/** The distinct (customer party, account) pairs of the approved lines, labelled by their distinct document numbers. */
+/**
+ * The distinct (customer party, account) pairs of the approved lines, shown by the customer's NAME from
+ * Cari (Business 5745076917: a technical id or a document number is not presentation). Two customers
+ * sharing a display name are told apart by their document numbers in parentheses; otherwise no
+ * document number appears in the option.
+ */
 export function customerOptions(lines: readonly ApprovedOrderLine[]): readonly CustomerOption[] {
-  const byKey = new Map<string, { partyId: string; companyAccountId: string; documents: string[] }>()
+  const byKey = new Map<string, { partyId: string; companyAccountId: string; name: string; documents: string[] }>()
   for (const line of lines) {
     const key = `${line.customerPartyId}|${line.companyAccountId}`
-    const entry = byKey.get(key) ?? { partyId: line.customerPartyId, companyAccountId: line.companyAccountId, documents: [] }
+    const entry = byKey.get(key) ?? { partyId: line.customerPartyId, companyAccountId: line.companyAccountId, name: line.customerName, documents: [] }
     if (!entry.documents.includes(line.documentNo)) entry.documents.push(line.documentNo)
     byKey.set(key, entry)
   }
-  return [...byKey.entries()].map(([key, entry]) => ({
+  const entries = [...byKey.entries()]
+  const nameCount = new Map<string, number>()
+  for (const [, entry] of entries) nameCount.set(entry.name, (nameCount.get(entry.name) ?? 0) + 1)
+  return entries.map(([key, entry]) => ({
     key,
     partyId: entry.partyId,
     companyAccountId: entry.companyAccountId,
-    label: entry.documents.join(', '),
+    name: entry.name,
+    label: (nameCount.get(entry.name) ?? 0) > 1 ? `${entry.name} (${entry.documents.join(', ')})` : entry.name,
   }))
 }
 
@@ -468,7 +480,7 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
         </fieldset>
 
         <fieldset disabled={frozen} className={styles.fieldset} id="logistics-lines" tabIndex={-1}>
-          <legend>{T.field.lines}</legend>
+          <legend data-testid="logistics-lines-heading">{customer === null ? T.field.lines : `${T.field.lines} — ${customer.name}`}</legend>
           <p className={styles.muted}>{T.picker.note}</p>
           {fieldError('logistics-lines')}
           {customer === null ? null : customerLines.length === 0 ? (

@@ -94,7 +94,9 @@ Bu test yalnız shell ↔ Lojistik şeridi eşleşmesidir; **backend registry pa
 - **Satır seçici (karar, varsayım değil):** seçici fiyatsız Lojistik okumasını kullanır —
   `GET /api/v1/logistics/loading-instructions/approved-order-lines` (`logistics.loading-instructions.create` grant'i
   altında; Sinan §4, #66 5738113623: Sevkiyatçı siparişi görür, fiyatı asla). Wire tipinde fiyat/iskonto/vade üyesi
-  yoktur; istemci decoder'ı tam on beş üyeyi alır, fazlası olan gövdeyi reddeder (deny-first). Sales grant'i gerekmez.
+  yoktur; istemci decoder'ı tam on altı üyeyi alır, fazlası olan gövdeyi reddeder (deny-first). Sales grant'i gerekmez.
+  Müşteri seçimi Cari'nin ADIYLA gösterilir (`customerName`, ticari ad yoksa yasal ad; Business 5745076917: kimlik/belge no
+  sunum değildir); aynı adı taşıyan iki müşteri parantez içinde belge numaralarıyla ayrılır.
 - **ASSUMPTION-LOG4B-2:** yükleme payı formu detayı tutan herkese gösterilir; sunucu `logistics.loads.record`'u her
   gönderimde ölçer (kodsuz 403 → "yetki yok" uyarısı). 4b'de yeni shell control ilanı yok; `logistics.loads.record`
   kontrolü sonraki dilim adayı.

@@ -15,6 +15,8 @@
  *   companyId        — the GDC company the web profile's shell is committed to
  *   otherCompanyId   — the other seeded company (GSP), where none of the actors holds a Logistics grant
  *   customerPartyId / companyAccountId — the ONE Cari customer the seed opened through the real Cari API
+ *   customerName     — that customer's Cari name as the price-free read answers it (Business 5745076917: the
+ *                      customer select shows the NAME); the positive path selects the customer by this text
  *   draftId / approvedLineId — the ONE APPROVED Sales draft (one kg line) the seed wrote through the gated
  *                      Sales fixture writer and moved through the real Sales API; the positive path picks
  *                      this line IN THE UI by its visible label, never by these ids
@@ -30,6 +32,7 @@ export interface L04Seed {
   readonly otherCompanyId: string
   readonly customerPartyId: string
   readonly companyAccountId: string
+  readonly customerName: string
   readonly draftId: string
   readonly approvedLineId: string
   readonly instructionId: string
@@ -79,6 +82,7 @@ export function readEnvironment(): L04Environment {
     otherCompanyId: text(raw, 'otherCompanyId', true),
     customerPartyId: text(raw, 'customerPartyId', true),
     companyAccountId: text(raw, 'companyAccountId', true),
+    customerName: text(raw, 'customerName'),
     draftId: text(raw, 'draftId', true),
     approvedLineId: text(raw, 'approvedLineId', true),
     instructionId: text(raw, 'instructionId', true),

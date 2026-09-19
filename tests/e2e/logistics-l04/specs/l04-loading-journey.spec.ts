@@ -17,7 +17,8 @@
  * of the approved line in the normal screens (by its visible label, never by a fixture id). The picker reads
  * the PRICE-FREE Logistics route GET /api/v1/logistics/loading-instructions/approved-order-lines under the
  * create grant: the preparer holds NO Sales grant (Sinan §4 #66 5738113623, deny-first) and every Sales
- * draft route answers it 403.
+ * draft route answers it 403. The customer select shows the Cari NAME the read carries (`customerName`,
+ * Business 5745076917); the positive path selects the customer by that visible text, never by an id.
  *
  * The cases are one serial journey, in file order:
  *   L04-01 preparer: list → new → picks the customer and the approved line in the UI, quantity text "4.5"
@@ -38,8 +39,19 @@ import { expect, test, type Page, type Response } from '@playwright/test'
 import { readEnvironment } from '../src/env.js'
 
 const env = readEnvironment()
-const { preparerActor, loaderActor, readerActor, companyId, otherCompanyId, draftId, approvedLineId, instructionId, blockedLineId, openLineId } =
-  env.seed
+const {
+  preparerActor,
+  loaderActor,
+  readerActor,
+  companyId,
+  otherCompanyId,
+  customerName,
+  draftId,
+  approvedLineId,
+  instructionId,
+  blockedLineId,
+  openLineId,
+} = env.seed
 const INSTRUCTIONS_PATH = '/api/v1/logistics/loading-instructions'
 const APPROVED_LINES_PATH = `${INSTRUCTIONS_PATH}/approved-order-lines`
 const SALES_DRAFTS_PATH = '/api/v1/sales/drafts'
@@ -147,10 +159,11 @@ test('L04-01 the preparer creates an instruction from a real selection of the ap
   await page.getByRole('link', { name: 'Yeni yükleme talimatı' }).click()
   await expect(page.getByRole('heading', { level: 1, name: 'Yeni yükleme talimatı' })).toBeVisible({ timeout: 30_000 })
 
-  // The customer and the line come from the real Sales reads (approved drafts of this company), picked by their visible labels.
+  // The customer and the line come from the price-free Logistics read of this company's approved lines, picked by their
+  // visible labels: the customer by its Cari NAME (Business 5745076917), the line by document number + product name.
   const customer = page.getByLabel('Müşteri (onaylı siparişlerden)')
-  await expect(customer.locator('option', { hasText: DOCUMENT_NO })).toHaveCount(1, { timeout: 30_000 })
-  await customer.selectOption({ label: await customer.locator('option', { hasText: DOCUMENT_NO }).textContent() as string })
+  await expect(customer.locator('option', { hasText: customerName })).toHaveCount(1, { timeout: 30_000 })
+  await customer.selectOption({ label: customerName })
   const lineRow = page.getByTestId(`logistics-pick-${DOCUMENT_NO}-1`)
   await expect(lineRow).toBeVisible()
   await expect(lineRow).toContainText(PRODUCT_NAME)
@@ -359,10 +372,12 @@ test('L04-05 the reader reads and cannot create or record; the preparer has noth
   expect(serialized.toLowerCase()).toContain(approvedLineId.toLowerCase())
   const keys = [...keysOf(approvedLines)]
   for (const key of PRICE_KEYS) expect(keys, `no price key in the price-free read: ${key}`).not.toContain(key)
+  expect(keys, 'the price-free read names the customer (Business 5745076917)').toContain('customerName')
+  expect(serialized).toContain(customerName)
   await signInAs(page, preparerActor)
   await page.goto(CREATE_ROUTE)
   await expect(page.getByRole('heading', { level: 1, name: 'Yeni yükleme talimatı' })).toBeVisible({ timeout: 30_000 })
-  await expect(page.getByLabel('Müşteri (onaylı siparişlerden)').locator('option', { hasText: DOCUMENT_NO })).toHaveCount(1, { timeout: 30_000 })
+  await expect(page.getByLabel('Müşteri (onaylı siparişlerden)').locator('option', { hasText: customerName })).toHaveCount(1, { timeout: 30_000 })
 
   // The preparer under the other company holds no Logistics grant there: the real API answers nothing of GDC's
   // instruction (the tenant fence, code-less 403/404), and the shell publishes no Logistics screen for that company.

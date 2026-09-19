@@ -102,7 +102,7 @@ export function mutation(detail: Record<string, unknown>, isReplay = false, orig
   return { detail, isReplay, originalCorrelationId }
 }
 
-/** One APPROVED order line as the price-free Logistics read answers it (LOG-4b): exactly the fifteen wire members. */
+/** One APPROVED order line as the price-free Logistics read answers it (LOG-4b): exactly the sixteen wire members. */
 export function approvedOrderLine(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     orderId: DRAFT,
@@ -111,6 +111,7 @@ export function approvedOrderLine(overrides: Record<string, unknown> = {}): Reco
     lineNo: 1,
     customerPartyId: PARTY,
     companyAccountId: ACCOUNT,
+    customerName: 'SENTETIK browser-suite:l04 Yükleme müşterisi',
     productId: PRODUCT,
     productVersion: '7',
     productCode: 'GDC-001',

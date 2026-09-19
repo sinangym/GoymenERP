@@ -74,13 +74,14 @@ describe('instruction decoders', () => {
 })
 
 describe('the price-free approved-order-lines read the picker uses (deny-first)', () => {
-  it('accepts exactly the fifteen wire members and reads the pinned example', () => {
+  it('accepts exactly the sixteen wire members and reads the pinned example', () => {
     expect([...APPROVED_ORDER_LINE_KEYS].sort()).toEqual(Object.keys(approvedOrderLine()).sort())
     const line = decodeApprovedOrderLine(approvedOrderLine())
     expect(line).not.toBeNull()
     expect(Object.keys(line!).sort()).toEqual([...APPROVED_ORDER_LINE_KEYS].sort())
     expect(decodeApprovedOrderLinePage(parse(approvedLinesRaw))?.items[0].quantity).toBe('6')
     expect(decodeApprovedOrderLine(approvedOrderLine({ requestedDeliveryDate: null }))).not.toBeNull()
+    expect(decodeApprovedOrderLinePage(parse(approvedLinesRaw))?.items[0].customerName).toBe('SENTETIK Yükleme Müşterisi A.Ş.')
   })
 
   it.each(['unitPrice', 'priceUnitId', 'discountPercent', 'paymentTerms', 'currencyId', 'price', 'discount', 'payment'])(
@@ -93,6 +94,8 @@ describe('the price-free approved-order-lines read the picker uses (deny-first)'
 
   it.each([
     ['a missing member', (b: Body) => delete b.unitCode],
+    ['a missing customer name', (b: Body) => delete b.customerName],
+    ['an empty customer name', (b: Body) => (b.customerName = '')],
     ['a numeric quantity', (b: Body) => (b.quantity = 6)],
     ['a zero quantity', (b: Body) => (b.quantity = '0')],
     ['a negative revision', (b: Body) => (b.revision = -1)],

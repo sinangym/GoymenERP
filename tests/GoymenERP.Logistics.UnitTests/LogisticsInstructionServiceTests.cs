@@ -290,10 +290,20 @@ public sealed class LogisticsInstructionServiceTests
         var world = new World();
         var page = await world.Service().GetApprovedOrderLinesAsync(new LogisticsApprovedOrderLinesQuery());
         var item = Assert.Single(page.Items);
-        Assert.Equal((Order, "SENTETIK SO-0001", OrderLine, 1, Party, Account, Product, "7", "GDC-001", "Sentetik rulo", KgUnit, "kg", "12.500", new DateOnly(2026, 9, 25), 0, "SENTETIK-next"),
-            (item.OrderId, item.DocumentNo, item.LineId, item.LineNo, item.CustomerPartyId, item.CompanyAccountId, item.ProductId, item.ProductVersion,
+        Assert.Equal((Order, "SENTETIK SO-0001", OrderLine, 1, Party, Account, "Sentetik Müşteri", Product, "7", "GDC-001", "Sentetik rulo", KgUnit, "kg", "12.500", new DateOnly(2026, 9, 25), 0, "SENTETIK-next"),
+            (item.OrderId, item.DocumentNo, item.LineId, item.LineNo, item.CustomerPartyId, item.CompanyAccountId, item.CustomerName, item.ProductId, item.ProductVersion,
                 item.ProductCode, item.ProductName, item.UnitId, item.UnitCode, item.Quantity, item.RequestedDeliveryDate, item.Revision, page.NextCursor));
         Assert.Equal(CreatePermission, world.Authority.LastPermission);
+        // Business 5745076917: the customer's NAME comes from the Cari owner (trade name, else legal name); a customer the owner no
+        // longer answers for is not loadable and is left out; the owner's denial or outage is the whole read's answer.
+        world.Accounts.Fault = "no-trade-name";
+        Assert.Equal("Sentetik Müşteri Anonim Şirketi", Assert.Single((await world.Service().GetApprovedOrderLinesAsync(new LogisticsApprovedOrderLinesQuery())).Items).CustomerName);
+        world.Accounts.Fault = "not-found";
+        Assert.Empty((await world.Service().GetApprovedOrderLinesAsync(new LogisticsApprovedOrderLinesQuery())).Items);
+        world.Accounts.Fault = "unavailable";
+        var cari = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() => world.Service().GetApprovedOrderLinesAsync(new LogisticsApprovedOrderLinesQuery()));
+        Assert.Equal((503, LogisticsProblemCodesV1.CounterpartyProviderUnavailable), (cari.Status, cari.Code));
+        world.Accounts.Fault = "";
 
         // A read-only holder (no create name) is refused before the Sales owner is asked.
         world.Bindings = world.Bindings with { CreatePermission = null };
@@ -398,7 +408,8 @@ public sealed class LogisticsInstructionServiceTests
                 "denied" => new LogisticsPartyAccountAnswerV1(LogisticsPartyAccountOutcomeV1.Denied, null),
                 "unavailable" => new LogisticsPartyAccountAnswerV1(LogisticsPartyAccountOutcomeV1.Unavailable, null),
                 _ => new LogisticsPartyAccountAnswerV1(LogisticsPartyAccountOutcomeV1.Found, new LogisticsPartyAccountV1(partyId, companyAccountId,
-                    Fault == "other-company" ? Guid.NewGuid() : Company, true, Fault != "passive-account", "3", "2")),
+                    Fault == "other-company" ? Guid.NewGuid() : Company, true, Fault != "passive-account", "3", "2",
+                    "Sentetik Müşteri Anonim Şirketi", Fault == "no-trade-name" ? null : "Sentetik Müşteri")),
             });
         }
     }

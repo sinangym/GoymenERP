@@ -42,6 +42,9 @@ public sealed class L04BrowserSeed : IBrowserSuiteFixture
     public static readonly Guid BlockedLineId = Guid.Parse("e3000000-0000-4000-8000-000000000402");
     public const string DocumentNo = "SENTETIK browser-suite:l04 SO-0001";
     public const string ProductName = "SENTETIK browser-suite:l04 rulo 1,25 × 1240";
+    // Business 5745076917: the customer select shows the Cari NAME (trade name, else legal name). The seed's party has
+    // no trade name, so the price-free read's customerName is its legal name = context.Label("Yükleme müşterisi").
+    public const string CustomerName = "SENTETIK browser-suite:l04 Yükleme müşterisi";
 
     // Synthetic owner snapshots the Sales fixture stores (no Product or Settings money answer is asked for them).
     private static readonly Guid CurrencyId = Guid.Parse("e4000000-0000-4000-8000-000000000401");
@@ -154,6 +157,11 @@ public sealed class L04BrowserSeed : IBrowserSuiteFixture
             throw new InvalidOperationException("The price-free approved-order-lines read does not answer the seeded approved line to the preparer.");
         }
 
+        if (!CarriesCustomerName(approvedLines, CustomerName))
+        {
+            throw new InvalidOperationException($"The price-free approved-order-lines read has no item whose customerName is '{CustomerName}'.");
+        }
+
         foreach (string priceKey in new[] { "unitPrice", "discountPercent", "paymentTerms", "priceUnitId", "currencyId" })
         {
             if (approvedLinesJson.Contains($"\"{priceKey}\"", StringComparison.Ordinal))
@@ -221,6 +229,7 @@ public sealed class L04BrowserSeed : IBrowserSuiteFixture
             ["companyAccountId"] = customer.AccountId.ToString("D"),
             ["draftId"] = DraftId.ToString("D"),
             ["approvedLineId"] = LineId.ToString("D"),
+            ["customerName"] = CustomerName,
             ["instructionId"] = instructionId.ToString("D"),
             ["blockedLineId"] = BlockedLineId.ToString("D"),
             ["openLineId"] = OpenLineId.ToString("D"),
@@ -253,6 +262,26 @@ public sealed class L04BrowserSeed : IBrowserSuiteFixture
         }
 
         return instructionId;
+    }
+
+    /// <summary>True when any object anywhere in the JSON tree has a customerName equal to the expected text.</summary>
+    private static bool CarriesCustomerName(JsonElement element, string expected)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                if (element.TryGetProperty("customerName", out JsonElement name) && name.ValueKind == JsonValueKind.String
+                    && string.Equals(name.GetString(), expected, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+
+                return element.EnumerateObject().Any(property => CarriesCustomerName(property.Value, expected));
+            case JsonValueKind.Array:
+                return element.EnumerateArray().Any(item => CarriesCustomerName(item, expected));
+            default:
+                return false;
+        }
     }
 
     private static async Task<string[]> CapabilitiesAsync(BrowserSuiteFixtureContext context, string actor, CancellationToken cancellationToken)

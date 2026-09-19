@@ -58,10 +58,14 @@ async function pickTheLine() {
 }
 
 describe('L-03 Yeni Yükleme Talimatı', () => {
-  it('offers the customer and the line from the approved order lines, shows no money word, and sends the canonical quantity text', async () => {
+  it('offers the customer BY NAME and the line from the approved order lines, shows no money word, and sends the canonical quantity text', async () => {
     const harness = installFetch({ ...salesReads, onCreate: (_, call) => answering(call) })
     renderLogisticsApp('/lojistik/yukleme-talimatlari/yeni')
+    const select = await screen.findByLabelText(T.field.customer)
+    expect(within(select).getByRole('option', { name: 'SENTETIK browser-suite:l04 Yükleme müşterisi' })).toBeTruthy()
+    expect(within(select).queryByRole('option', { name: /SO-2026-0001/ })).toBeNull()
     const quantity = await pickTheLine()
+    expect(screen.getByTestId('logistics-lines-heading').textContent).toContain('SENTETIK browser-suite:l04 Yükleme müşterisi')
     for (const word of FORBIDDEN_MONEY_WORDS) expect(document.body.textContent).not.toContain(word)
     expect(screen.getByText('Sentetik bant')).toBeTruthy()
     await userEvent.type(quantity, '4,500')
@@ -151,6 +155,15 @@ describe('L-03 Yeni Yükleme Talimatı', () => {
     await waitFor(() => expect(screen.queryByRole('heading', { name: T.heading })).toBeNull())
     expect(harness.calls.filter((call) => call.url.includes('/approved-order-lines'))).toHaveLength(0)
     expect(harness.calls.filter((call) => call.url.includes('/sales/'))).toHaveLength(0)
+  })
+
+  it('two customers sharing a name are told apart by their document numbers; distinct names carry none', async () => {
+    const other = approvedOrderLine({ orderId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2', documentNo: 'SO-2026-0002', lineId: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb2', customerPartyId: '11111111-1111-1111-1111-111111111112', companyAccountId: '55555555-5555-5555-5555-555555555552' })
+    installFetch({ onApprovedLines: () => json({ items: [approvedOrderLine(), other], nextCursor: null }) })
+    renderLogisticsApp('/lojistik/yukleme-talimatlari/yeni')
+    const select = await screen.findByLabelText(T.field.customer)
+    expect(within(select).getByRole('option', { name: 'SENTETIK browser-suite:l04 Yükleme müşterisi (SO-2026-0001)' })).toBeTruthy()
+    expect(within(select).getByRole('option', { name: 'SENTETIK browser-suite:l04 Yükleme müşterisi (SO-2026-0002)' })).toBeTruthy()
   })
 
   it('a body carrying a price member is refused as malformed: no customer is offered and nothing can be sent', async () => {
