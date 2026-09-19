@@ -29,20 +29,24 @@ public sealed class SalesShellCapabilityProviderTests
             new ShellCapabilityAuthorityCatalog([ShellCapabilityRegistry.ComputeCandidateRevision([provider])]));
 
         Assert.Equal("SALES", provider.Owner);
+        // The three screens (one permission each, no parent) and the SALES-A1 approve CONTROL of the
+        // detail (the detail's route; read + approve; parent = the detail) — the Finance approval pattern.
         Assert.Equal(
             [
-                ("sales.drafts.create", "/satis/siparisler/yeni", SalesPermissionManifestV1.DraftsCreate),
-                ("sales.drafts.detail", "/satis/siparisler/:draftId", SalesPermissionManifestV1.DraftsRead),
-                ("sales.drafts.list", "/satis/siparisler", SalesPermissionManifestV1.DraftsRead),
+                ("sales.drafts.create", "/satis/siparisler/yeni", SalesPermissionManifestV1.DraftsCreate, (string?)null),
+                ("sales.drafts.detail", "/satis/siparisler/:draftId", SalesPermissionManifestV1.DraftsRead, null),
+                ("sales.drafts.list", "/satis/siparisler", SalesPermissionManifestV1.DraftsRead, null),
+                ("sales.orders.approve", "/satis/siparisler/:draftId",
+                    $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersApprove}", "sales.drafts.detail"),
             ],
             registry.Registrations.Select(registration => (registration.Declaration.CapabilityId,
-                registration.Declaration.RoutePath, Assert.Single(registration.Declaration.RequiredPermissions))));
+                registration.Declaration.RoutePath, string.Join('+', registration.Declaration.RequiredPermissions),
+                registration.Declaration.ParentCapabilityId)));
         Assert.All(registry.Registrations, registration =>
         {
-            // Company permissions, published; never a global Product operation or a control.
+            // Company permissions, published; never a global Product operation.
             Assert.True(registration.Declaration.ImplementationAvailable);
             Assert.Null(registration.Declaration.GlobalProductOperation);
-            Assert.Null(registration.Declaration.ParentCapabilityId);
         });
     }
 
