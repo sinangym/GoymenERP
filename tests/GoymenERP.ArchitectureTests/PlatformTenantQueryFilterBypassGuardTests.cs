@@ -41,13 +41,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + "OpenApiDocumentGenerationMode.cs";
     private const string OpenApiStartupPath =
         "src/backend/GoymenERP.Api/Program.cs";
-    // Re-fingerprinted for FIN-UI-1a (#325) on top of BROWSER-CI a2 part 2 (#330) and SALES-API (#321): the
-    // staged Finance shell provider registered before the shell authority is chosen (C+O+P+S+F row), beside
-    // #330's one call to C01E2eFixtureWriterActivation.Configure. No OpenAPI-generation, network or
-    // hosted-service surface of the startup source changed otherwise. Re-fingerprinted for PRD-UNIT-1: one
-    // singleton registration of Settings' unit-identity catalog (immutable source data); nothing else.
+    // Re-fingerprinted for MFG-UI (#323) on top of FIN-UI-1a (#325), BROWSER-CI a2 part 2 (#330), SALES-API
+    // (#321) and PRD-UNIT-1 (#335): the staged Finance and Manufacturing shell providers registered before the
+    // shell authority is chosen (C+O+P+S+F+M row), beside #330's one call to
+    // C01E2eFixtureWriterActivation.Configure and #335's one singleton registration of Settings' unit-identity
+    // catalog. No OpenAPI-generation, network or hosted-service surface of the startup source changed otherwise.
     private const string ReviewedOpenApiStartupFingerprint =
-        "aa28a9b91c9102dc3d8cefcc715228be94b53f74bd8dfeeb87d1ce3cdcf94cb0";
+        "e737f071a4361b6369742c6c725efc4e10bcf63a933bfe942499c844e290c215";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedIdentityReconcilerPath =
@@ -133,11 +133,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // manufacturing
             ["tools/relational_inventory/manufacturing.txt"] =
-                "8b8b3bcd8cd5dc3598cfe1c84caa0fb78c724a4b1134e580a456ed92cb58f7ee",
+                "117270f5953021654cdbdc2986ad353582c9d4060a5cd3766a1a8bf699ea8cf3",
 
             // organization
             ["tools/relational_inventory/organization.txt"] =
-                "5e7213ff8c4fc1550084614a5b80f26c4bc5ef73c8fafbed7495877ed26b0249",
+                "867cbf0bea79eb96e1bfeb7499d6dffac0eae15eaec416d140117db78268928e",
 
             // platform
             ["tools/relational_inventory/platform.txt"] =
@@ -321,11 +321,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         {
                             ["FromSqlInterpolated"] = 1
                         }),
+                // OrganizationModuleExtensions re-fingerprinted for the location module read registration: one
+                // AddScoped line; its Migrate/EnsureCreated branch is unchanged.
                 ["src/backend/Modules/Organization/"
                  + "GoymenERP.Modules.Organization.Infrastructure/"
                  + "OrganizationModuleExtensions.cs"] =
                     new(
-                        "e19705b2bb98278cb7aa7e510be3f646f721c54aa69e78993657071cebaf9ce6",
+                        "653d337ab7db514447b013be1954afefe5f843091225495c8b8c5758101842cf",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,

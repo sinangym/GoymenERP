@@ -33,6 +33,12 @@ internal static class ShellCapabilityRegistryAuthorities
     internal const string CounterpartyV15OrganizationV10ProductV10PublishedSalesV10AndFinanceV10 =
         "sha256:2HoLJpqCtgVPBN4ZVw98VnHNAmD-fU93H6ptEVg1lKg";
 
+    // ... + Manufacturing 1.0 staged (#323, MFG-UI) on top of #328/#325: the normal host once Manufacturing
+    // registers its (staged) order detail and facts control beside published Sales and staged Finance.
+    // Computed by the ComputeRevision reproduction and, independently, by SİPARİŞ and ORG; pinned by test.
+    internal const string CounterpartyV15OrganizationV10ProductV10PublishedSalesV10FinanceV10AndManufacturingV10 =
+        "sha256:hpZ2KrNISJDmYk8yVxNlDG5IJpkq8z4F0MFAgyJdZJw";
+
     internal const string CounterpartyListCreateLinkAndDetailV15 =
         "sha256:3GiwcHV6aVuN1Y-wBzElxLJLCok2bblGc6pRruhqTx4";
 
@@ -44,4 +50,11 @@ internal static class ShellCapabilityRegistryAuthorities
     // three accepted constants exactly) and pinned by a test against ComputeCandidateRevision.
     internal const string C01DisposableCariListDetailV1 =
         "sha256:LM81M4d4tKOqR9OaKvZM_uT5HQIcoffoTMEzMFH4atg";
+
+    // The disposable "manufacturing-order-detail" profile (BROWSER-CI mfg-staged, MFG-UI D4): the C-01
+    // list-only Counterparty provider plus Manufacturing's own declarations with only their availability
+    // opened (order detail and facts control). Computed by the ComputeRevision reproduction; pinned by a
+    // test against ComputeCandidateRevision.
+    internal const string C01DisposableManufacturingOrderDetailV1 =
+        "sha256:eZi6K5tQlsm6-dSQ2XZNou1GFj1I9JOuygIJ_mQ9Lw0";
 }

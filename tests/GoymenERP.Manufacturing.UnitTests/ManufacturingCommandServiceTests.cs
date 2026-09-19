@@ -257,6 +257,35 @@ public sealed class ManufacturingCommandServiceTests
     }
 
     [Fact]
+    public async Task A_read_that_keeps_meeting_concurrent_commits_is_unavailable_not_a_conflict()
+    {
+        // FİNANS #313 INFO-4: the store has already re-read; what is left is retryable (503), and
+        // 409 stays the commands' answer. The result names no resource and no code of its own.
+        var fixture = new Fixture();
+        var order = await fixture.ApprovedOrderAsync();
+        fixture.Store.ReadFault = ManufacturingStoreCodes.ConcurrentChange;
+
+        var result = await fixture.Service.GetOrderAsync(order.Id, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Unavailable, false), (result.Status, result.IsReplay));
+        Assert.Null(result.Resource);
+        Assert.Null(result.Code);
+    }
+
+    [Fact]
+    public async Task Any_other_read_refusal_is_not_hidden_behind_the_retryable_answer()
+    {
+        // Only the concurrent-change refusal is retryable; any other store refusal keeps its own path.
+        var fixture = new Fixture();
+        var order = await fixture.ApprovedOrderAsync();
+        fixture.Store.ReadFault = ManufacturingStoreCodes.CompanyContextMismatch;
+
+        var exception = await Assert.ThrowsAsync<ManufacturingStoreException>(
+            () => fixture.Service.GetOrderAsync(order.Id, CancellationToken.None));
+        Assert.Equal(ManufacturingStoreCodes.CompanyContextMismatch, exception.Code);
+    }
+
+    [Fact]
     public async Task The_same_key_and_request_replays_the_stored_answer_with_the_first_correlation()
     {
         var fixture = new Fixture();
@@ -598,8 +627,13 @@ public sealed class ManufacturingCommandServiceTests
             ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
 
+        /// <summary>A read the store itself refuses (for example re-reads that keep meeting commits).</summary>
+        public string? ReadFault { get; set; }
+
         public Task<ProductionOrder?> FindOrderAsync(Guid orderId, CancellationToken cancellationToken = default) =>
-            Task.FromResult(Orders.GetValueOrDefault(orderId));
+            ReadFault is { } code
+                ? throw new ManufacturingStoreException(code, "sentetik okuma reddi")
+                : Task.FromResult(Orders.GetValueOrDefault(orderId));
 
         private void Guard()
         {
