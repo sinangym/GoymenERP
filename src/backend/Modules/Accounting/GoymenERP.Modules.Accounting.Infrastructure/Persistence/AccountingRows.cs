@@ -138,8 +138,8 @@ internal sealed class PendingValuationRow : IAccountingTenantRow
 /// One ADR-011 command attempt of the Accounting HTTP surface (ACC-V0): keyed by (company, command,
 /// idempotency-key hash), with the actor and the canonical payload hash, so the same key answers the
 /// stored result again and another actor or payload under it is a conflict. <see cref="ResultJson"/>
-/// holds either the success (the period and its version) or a recorded terminal refusal (§7).
-/// Append-only.
+/// is the answer to replay: a success (with the period it answered) or a recorded terminal refusal
+/// (§7). The Manufacturing command log's shape. Append-only.
 /// </summary>
 internal sealed class AccountingCommandRow : IAccountingTenantRow
 {
@@ -148,7 +148,6 @@ internal sealed class AccountingCommandRow : IAccountingTenantRow
     public string IdempotencyKeyHash { get; set; } = string.Empty;
     public string ActorId { get; set; } = string.Empty;
     public string PayloadHash { get; set; } = string.Empty;
-    public Guid? PeriodId { get; set; }
     public string ResultJson { get; set; } = string.Empty;
     public string CorrelationId { get; set; } = string.Empty;
     public DateTimeOffset RecordedAtUtc { get; set; }

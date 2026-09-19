@@ -193,9 +193,6 @@ partial class AccountingDbContextModelSnapshot : ModelSnapshot
                 .IsUnicode(false)
                 .HasColumnType("varchar(64)");
 
-            b.Property<Guid?>("PeriodId")
-                .HasColumnType("uniqueidentifier");
-
             b.Property<DateTimeOffset>("RecordedAtUtc")
                 .HasColumnType("datetimeoffset");
 
@@ -204,8 +201,6 @@ partial class AccountingDbContextModelSnapshot : ModelSnapshot
                 .HasColumnType("nvarchar(max)");
 
             b.HasKey("CompanyId", "CommandName", "IdempotencyKeyHash");
-
-            b.HasIndex("CompanyId", "PeriodId");
 
             b.ToTable("Commands", "accounting", t =>
             {
@@ -224,10 +219,6 @@ partial class AccountingDbContextModelSnapshot : ModelSnapshot
                 t.HasCheckConstraint(
                     "CK_Commands_ResultJson",
                     "ISJSON([ResultJson]) = 1");
-
-                t.HasCheckConstraint(
-                    "CK_Commands_Target",
-                    "[PeriodId] IS NOT NULL OR JSON_VALUE([ResultJson], '$.outcome') = 'Refused'");
             });
         });
 
@@ -673,12 +664,6 @@ partial class AccountingDbContextModelSnapshot : ModelSnapshot
                 .HasForeignKey("CompanyId")
                 .OnDelete(DeleteBehavior.Restrict)
                 .IsRequired();
-
-            b.HasOne("GoymenERP.Modules.Accounting.Infrastructure.Persistence.PeriodRow", null)
-                .WithMany()
-                .HasForeignKey("CompanyId", "PeriodId")
-                .HasPrincipalKey("CompanyId", "Id")
-                .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.DeliveryRow", b =>

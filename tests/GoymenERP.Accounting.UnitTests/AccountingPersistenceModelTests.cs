@@ -215,7 +215,7 @@ public sealed class AccountingPersistenceModelTests
     private static AccountingCommandRow Command() => new AccountingCommandRow
     {
         CompanyId = CompanyA, CommandName = "accounting.period.propose.v1", IdempotencyKeyHash = new string('a', 64),
-        ActorId = "synthetic-actor", PayloadHash = new string('b', 64), PeriodId = Guid.NewGuid(),
+        ActorId = "synthetic-actor", PayloadHash = new string('b', 64),
         ResultJson = "{\"outcome\":\"Recorded\"}", CorrelationId = "synthetic-correlation", RecordedAtUtc = At,
     };
 

@@ -83,7 +83,6 @@ public sealed class AddPeriodApproval : Migration
                 IdempotencyKeyHash = table.Column<string>(type: "varchar(64)", unicode: false, maxLength: 64, nullable: false),
                 ActorId = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: false, collation: "Latin1_General_100_BIN2"),
                 PayloadHash = table.Column<string>(type: "varchar(64)", unicode: false, maxLength: 64, nullable: false),
-                PeriodId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
                 ResultJson = table.Column<string>(type: "nvarchar(max)", nullable: false),
                 CorrelationId = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: false),
                 RecordedAtUtc = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
@@ -96,7 +95,6 @@ public sealed class AddPeriodApproval : Migration
                 table.CheckConstraint("CK_Commands_KeyHash", "LEN([IdempotencyKeyHash]) = 64");
                 table.CheckConstraint("CK_Commands_PayloadHash", "LEN([PayloadHash]) = 64");
                 table.CheckConstraint("CK_Commands_ResultJson", "ISJSON([ResultJson]) = 1");
-                table.CheckConstraint("CK_Commands_Target", AccountingDbContext.CommandTargetCheck);
                 table.ForeignKey(
                     name: "FK_Commands_Companies_CompanyId",
                     column: x => x.CompanyId,
@@ -104,20 +102,7 @@ public sealed class AddPeriodApproval : Migration
                     principalTable: "Companies",
                     principalColumn: "Id",
                     onDelete: ReferentialAction.Restrict);
-                table.ForeignKey(
-                    name: "FK_Commands_Periods_CompanyId_PeriodId",
-                    columns: x => new { x.CompanyId, x.PeriodId },
-                    principalSchema: "accounting",
-                    principalTable: "Periods",
-                    principalColumns: new[] { "CompanyId", "Id" },
-                    onDelete: ReferentialAction.Restrict);
             });
-
-        migrationBuilder.CreateIndex(
-            name: "IX_Commands_CompanyId_PeriodId",
-            schema: "accounting",
-            table: "Commands",
-            columns: new[] { "CompanyId", "PeriodId" });
     }
 
     protected override void Down(MigrationBuilder migrationBuilder)

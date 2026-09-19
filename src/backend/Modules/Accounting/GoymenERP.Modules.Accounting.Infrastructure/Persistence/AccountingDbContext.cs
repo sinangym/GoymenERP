@@ -57,10 +57,6 @@ public sealed class AccountingDbContext(DbContextOptions<AccountingDbContext> op
         + "AND [ApprovedByUserId] <> [PreparedByUserId] AND [ApprovedAtUtc] IS NOT NULL "
         + "AND [ClosedByUserId] IS NOT NULL AND [ClosedByUserId] <> '00000000-0000-0000-0000-000000000000' AND [ClosedAtUtc] IS NOT NULL)";
 
-    /// <summary>A command record names its period, except a recorded terminal refusal that has none (§7).</summary>
-    internal const string CommandTargetCheck =
-        "[PeriodId] IS NOT NULL OR JSON_VALUE([ResultJson], '$.outcome') = 'Refused'";
-
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -294,7 +290,6 @@ public sealed class AccountingDbContext(DbContextOptions<AccountingDbContext> op
             table.HasCheckConstraint("CK_Commands_KeyHash", "LEN([IdempotencyKeyHash]) = 64");
             table.HasCheckConstraint("CK_Commands_PayloadHash", "LEN([PayloadHash]) = 64");
             table.HasCheckConstraint("CK_Commands_ResultJson", "ISJSON([ResultJson]) = 1");
-            table.HasCheckConstraint("CK_Commands_Target", CommandTargetCheck);
         });
         entity.HasKey(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
         entity.Property(x => x.CommandName).HasMaxLength(64);
@@ -304,10 +299,6 @@ public sealed class AccountingDbContext(DbContextOptions<AccountingDbContext> op
         entity.Property(x => x.ResultJson).HasColumnType("nvarchar(max)").IsRequired();
         entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
         entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
-            .OnDelete(DeleteBehavior.Restrict);
-        entity.HasOne<PeriodRow>().WithMany()
-            .HasForeignKey(x => new { x.CompanyId, x.PeriodId })
-            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
             .OnDelete(DeleteBehavior.Restrict);
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
