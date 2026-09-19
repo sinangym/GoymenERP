@@ -46,6 +46,18 @@ internal sealed class EngineInputs
         return supplied;
     }
 
+    /// <summary>A kilogram that may be a stated zero (e.g. no scrap) but never negative, at most three decimals (Ö2).</summary>
+    public decimal NonNegativeMeasure(decimal? value, string parameter)
+    {
+        var present = NonNegative(value, parameter);
+        if (value is { } supplied && supplied >= 0m && decimal.Round(supplied, MeasureScale) != supplied)
+        {
+            Refuse(EngineCodes.PrecisionExceeded, parameter);
+        }
+
+        return present;
+    }
+
     /// <summary>A value that may be zero (a stated "none", e.g. no tolerance) but never negative.</summary>
     public decimal NonNegative(decimal? value, string parameter)
     {
