@@ -87,6 +87,33 @@ export function order(overrides: Record<string, unknown> = {}) {
   }
 }
 
+/** The engine's `Unavailable` answer, as the server gives it for BAL-004 / BAL-006 today. */
+export function unavailable(...missingParameters: string[]) {
+  return { outcome: 'Unavailable', value: null, missingParameters, refusalCode: null, refusedParameter: null }
+}
+
+/** A synthetic `RollMassBalanceViewV1`, in the server's JSON shape. */
+export function rollBalance(parentRollId: string, overrides: Record<string, unknown> = {}) {
+  return {
+    parentRollId,
+    difference: { actualInputKg: '0', accountedKg: '0', differenceKg: '0', isFullyAccounted: true },
+    scrapPercent: unavailable('fireKg', 'rawMaterialKg'),
+    actualUnitKg: unavailable('actualKg', 'actualCount'),
+    ...overrides,
+  }
+}
+
+/** A synthetic `MassBalanceViewV1` (GDC-BAL/1), in the server's JSON shape. */
+export function massBalance(overrides: Record<string, unknown> = {}) {
+  return {
+    orderId: ORDER,
+    version: 1,
+    formulaVersion: 'GDC-BAL/1 (master v3 §28.9)',
+    rolls: [rollBalance(ROLL_1), rollBalance(ROLL_2)],
+    ...overrides,
+  }
+}
+
 export function json(body: unknown, status = 200, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(body), {
     status,

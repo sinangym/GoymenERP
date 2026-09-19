@@ -136,6 +136,26 @@ public static class ManufacturingEndpoints
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
+        // BAL slice 2: the order's GDC-BAL/1 read — the same order, context, permission and answers as the order read,
+        // computed by the one mass-balance calculator the close uses. A read: nothing is stored.
+        group.MapGet("/orders/{orderId:guid}/mass-balance", async (
+                Guid orderId,
+                ManufacturingCommandService service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response.Headers);
+                return ToHttpResult(httpContext, await service.GetMassBalanceAsync(orderId, cancellationToken), location: null);
+            })
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.ManufacturingOrdersRead)
+            .WithName("GetManufacturingOrderMassBalanceV1")
+            .Produces<MassBalanceViewV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
         return endpoints;
     }
 

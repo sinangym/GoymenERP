@@ -7,6 +7,8 @@ using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Manufacturing.Domain.Common;
+using GoymenERP.Modules.Manufacturing.Domain.Engines;
+using GoymenERP.Modules.Manufacturing.Domain.Engines.Balance;
 using GoymenERP.Modules.Manufacturing.Domain.Orders;
 using GoymenERP.Modules.Manufacturing.Domain.Plans;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
@@ -61,6 +63,28 @@ public sealed record OrderViewV1(
     Guid OrderId, Guid CompanyId, Guid PlanId, Guid WorkCenterId, string Process, string Status, long Version,
     TargetViewV1? Target, RemainingTargetViewV1 RemainingTarget, IReadOnlyList<RollBalanceViewV1> Rolls,
     string CostStatus, Guid? ClosedByUserId, DateTimeOffset? ClosedAtUtc);
+
+/// <summary>
+/// One GDC-BAL/1 answer as the engine gave it: <c>Computed</c> with its unrounded value as lossless text, or
+/// <c>Unavailable</c> naming every missing input, or <c>Refused</c> with its code. Never a guessed number.
+/// </summary>
+public sealed record EngineAnswerViewV1(string Outcome, string? Value, IReadOnlyList<string> MissingParameters,
+    string? RefusalCode, string? RefusedParameter);
+
+/// <summary>BAL-003 for one parent roll: the actual input, what the categories account for, and the signed difference.</summary>
+public sealed record MassDifferenceViewV1(string ActualInputKg, string AccountedKg, string DifferenceKg, bool IsFullyAccounted);
+
+/// <summary>
+/// One parent roll through GDC-BAL/1 (master v3 §28.9). <see cref="Difference"/> is BAL-003 from the order's own facts.
+/// <see cref="ScrapPercent"/> (BAL-004) and <see cref="ActualUnitKg"/> (BAL-006) are the engine's answer to the inputs
+/// the order can supply without a decision — none: which classes are "fire" and on which base is Business's open
+/// question, and the order records no piece count — so they answer <c>Unavailable</c>, naming the inputs.
+/// </summary>
+public sealed record RollMassBalanceViewV1(Guid ParentRollId, MassDifferenceViewV1 Difference,
+    EngineAnswerViewV1 ScrapPercent, EngineAnswerViewV1 ActualUnitKg);
+
+/// <summary>The order's mass balance, roll by roll, through the one calculator the close uses; the order's version it was read at.</summary>
+public sealed record MassBalanceViewV1(Guid OrderId, long Version, string FormulaVersion, IReadOnlyList<RollMassBalanceViewV1> Rolls);
 
 /// <summary>How a command ended, before HTTP: the endpoint maps it and adds nothing of its own.</summary>
 public enum ManufacturingApiStatus
@@ -345,6 +369,36 @@ public sealed partial class ManufacturingCommandService(
         }
     }
 
+    /// <summary>
+    /// The order's GDC-BAL/1 read (BAL slice 2): the same company context, read permission and not-found /
+    /// retryable-503 answers as <see cref="GetOrderAsync"/>, because it is the same order read through the one
+    /// calculator the close uses. It computes; it stores nothing.
+    /// </summary>
+    public async Task<ManufacturingApiResult<MassBalanceViewV1>> GetMassBalanceAsync(Guid orderId, CancellationToken cancellationToken)
+    {
+        if (!HasContext())
+        {
+            return Denied<MassBalanceViewV1>();
+        }
+
+        if (orderId == Guid.Empty)
+        {
+            return NotFoundResult<MassBalanceViewV1>();
+        }
+
+        try
+        {
+            var order = await orders.FindOrderAsync(orderId, cancellationToken);
+            return order is null
+                ? NotFoundResult<MassBalanceViewV1>()
+                : new ManufacturingApiResult<MassBalanceViewV1>(ManufacturingApiStatus.Ok, MassBalanceView(order), false, null);
+        }
+        catch (ManufacturingStoreException exception) when (exception.Code == ManufacturingStoreCodes.ConcurrentChange)
+        {
+            return new ManufacturingApiResult<MassBalanceViewV1>(ManufacturingApiStatus.Unavailable, null, false, null);
+        }
+    }
+
     private Task<ManufacturingApiResult<OrderViewV1>> RecordAsync(Guid orderId, RecordFactRequestV1? request,
         OutputClass? outputClass, string idempotencyKey, string permission, string commandName,
         Func<RecordFactRequestV1, Kilograms, DateTimeOffset, ManufacturingCommandMetadata, Task<ManufacturingWriteOutcome>> record,
@@ -565,7 +619,15 @@ public sealed partial class ManufacturingCommandService(
         var verification = await masses.VerifyAsync(companyContext.CompanyId, value, effectiveOn, cancellationToken);
         if (verification.Mass is { } verified)
         {
-            return (verified.Mass, null);
+            // Ö2 on the TEXT, as Settings' ExactPositiveDecimalV1 counts it (FİNANS #353 INFO-1, coordinator ruling:
+            // consistency with the platform contract, not a new policy): every written decimal is a decimal, trailing
+            // zeros included, so "1.5000" claims a precision the profile does not allow and is refused. The value
+            // came from ParseKg, which converts only texts a decimal holds exactly, so its Scale is the text's.
+            // Settings still answers first (its refusals keep their precedence); zero stays a valid reading.
+            return value.Scale > verified.Scale
+                ? (default, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unprocessable, null, false,
+                    ManufacturingMassCodes.ScaleExceeded, field))
+                : (verified.Mass, null);
         }
 
         var status = verification.Code switch
@@ -659,6 +721,32 @@ public sealed partial class ManufacturingCommandService(
     }
 
     /// <summary>Lossless invariant text without trailing zeros: 5.00 and 5 are both "5".</summary>
+    /// <summary>
+    /// GDC-BAL/1 per planned parent roll. BAL-003 is the roll's own <see cref="MassBalance.Reconciliation"/> (the
+    /// close's calculation). BAL-004 and BAL-006 are asked with what the order can supply without a decision —
+    /// nothing — so the engine answers <c>Unavailable</c> and names the inputs; no definition of "fire", base mass
+    /// or piece count is chosen here (BAL-004: Business, #66 5744055923; BAL-006: the count-producing slices).
+    /// </summary>
+    internal static MassBalanceViewV1 MassBalanceView(ProductionOrder order) =>
+        new(order.Id, order.Version, MassBalanceEngineV1.FormulaVersion,
+        [
+            .. order.PlannedInputs.Select(input =>
+            {
+                var balance = order.BalanceOf(input.ParentRollId);
+                var difference = balance.Reconciliation;
+                return new RollMassBalanceViewV1(input.ParentRollId,
+                    new MassDifferenceViewV1(Text(balance.NetIssued.Value), Text(difference.AccountedKg),
+                        Text(difference.DifferenceKg), difference.IsFullyAccounted),
+                    Answer(MassBalanceEngineV1.ScrapPercent(new ScrapPercentInputV1(null, null)), result => result.FirePercent),
+                    Answer(MassBalanceEngineV1.ActualUnitMass(new ActualUnitMassInputV1(null, null)), result => result.ActualUnitKg));
+            }),
+        ]);
+
+    private static EngineAnswerViewV1 Answer<T>(EngineResult<T> result, Func<T, decimal> value)
+        where T : class =>
+        new(result.Outcome.ToString(), result.Value is { } computed ? Text(value(computed)) : null,
+            result.MissingParameters, result.RefusalCode, result.RefusedParameter);
+
     internal static string Text(decimal value) =>
         (value / 1.0000000000000000000000000000m).ToString(CultureInfo.InvariantCulture);
 
