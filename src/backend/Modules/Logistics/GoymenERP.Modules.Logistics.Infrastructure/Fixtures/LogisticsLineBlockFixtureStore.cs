@@ -15,8 +15,9 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Fixtures;
 /// the domain's <c>BlockLine</c> leaves behind (the line's flag and one version step), so the real store
 /// restores it unchanged and refuses a load on the line as <c>logistics_line_blocked</c>. A re-run is a
 /// no-op; a Draft instruction, an unknown line, an unlabelled request or another company's context is
-/// refused with nothing written. Registered only by the central fixture-writer activation
-/// (<c>C01E2eFixtureWriterActivation</c>) behind the Testing + confirmed-host gate.
+/// refused with nothing written. Logistics does not know the gate: the port is added to DI only by the
+/// host's gated fixture-writer activation, behind the Testing + confirmed-host gate, and no route or
+/// seeder reaches it.
 /// </summary>
 public interface ILogisticsLineBlockFixtureStore
 {
