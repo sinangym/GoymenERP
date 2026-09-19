@@ -4,7 +4,7 @@ using GoymenERP.Modules.Purchasing.Application.Contracts;
 namespace GoymenERP.Modules.Purchasing.Infrastructure.Shell;
 
 /// <summary>
-/// Declares the three purchase-order screens to the shell, on master v3 §27.5's table: P-03 "Satın Alma
+/// Declares the three purchase-order screens to the shell, on master v3 §27.3's table: P-03 "Satın Alma
 /// Siparişleri" is the list, P-04 "Yeni/Düzenle Satın Alma Siparişi" the new-order workspace, and the detail
 /// is the read view of one P-03 row ("P-03-DETAIL", the F-02-DETAIL precedent; the master has no separate
 /// detail id). P-01 (Talep Havuzu) is not declared: requests have no screen in PUR-4a. Approving an order is a

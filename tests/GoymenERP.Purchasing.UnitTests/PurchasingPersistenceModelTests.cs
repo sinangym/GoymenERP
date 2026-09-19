@@ -145,7 +145,7 @@ public sealed class PurchasingPersistenceModelTests
             declarations.Select(declaration => (declaration.CapabilityId, declaration.RoutePath, declaration.RequiredPermissions.Single()))
                 .OrderBy(item => item.CapabilityId, StringComparer.Ordinal).ToArray());
         Assert.Equal(3, PurchasingPermissionManifestV1.Names.Count);
-        // Master v3 §27.5: P-03 is the order list, P-04 the new/edit form; the detail is a view of one P-03 row (the F-02-DETAIL precedent).
+        // Master v3 §27.3: P-03 is the order list, P-04 the new/edit form; the detail is a view of one P-03 row (the F-02-DETAIL precedent).
         Assert.Equal(["P-04", "P-03-DETAIL", "P-03"],
             declarations.OrderBy(declaration => declaration.CapabilityId, StringComparer.Ordinal).Select(declaration => declaration.ScreenId).ToArray());
     }
