@@ -186,7 +186,7 @@ test('S04-03 two approver tabs: one approves, the stale one is refused 409 and r
   // The other tab still holds version 6: its rejection is refused by the real API, and the screen re-reads.
   const rejections = watchCommand(stale, 'rejection')
   await rejectButton(stale).click()
-  await expect(notice(stale)).toHaveText('İşlem taslağın güncel durumuyla çakıştı; taslak yeniden okundu.')
+  await expect(notice(stale)).toHaveText('İşlem taslağın güncel durumuyla çakıştı; taslak yeniden okundu. Taslak siz okuduktan sonra değişti; güncel durum gösteriliyor.')
   await expect(state(stale)).toHaveText('Onaylı')
   expect(rejections.map((answer) => answer.status())).toEqual([409])
   const refusal = (await rejections[0].json()) as { code?: unknown }
