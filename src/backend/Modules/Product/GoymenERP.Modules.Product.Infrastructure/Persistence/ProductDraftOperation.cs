@@ -26,7 +26,7 @@ internal static class ProductDraftOperation
         var envelope = JsonSerializer.Deserialize<FrozenEnvelope>(intent.CanonicalRequestJson, Json)
             ?? throw new InvalidOperationException("The frozen Product envelope is missing.");
         var operation = envelope.Operation;
-        var catalog = new ProductCodeOnlyReferenceCatalog(context, authority);
+        var catalog = new ProductRegistryReferenceCatalog(context, authority);
         var validator = new ProductDraftValidator(catalog);
         if (operation == "product.draft.create.v1")
         {
