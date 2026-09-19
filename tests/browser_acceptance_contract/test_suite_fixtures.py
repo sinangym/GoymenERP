@@ -125,7 +125,7 @@ class SeedSourceTests(unittest.TestCase):
         self.assertNotIn("ConfigureTestServices", host)
 
     def test_only_the_runner_opens_the_fixture_writer_gate(self):
-        # Decision W1: the BrowserSuiteFixture:* keys come only from the runner's in-memory configuration.
+        # Decision W1: the BrowserSuiteFixture:* keys come only from the runner's host settings.
         host = (TOOL / "BrowserSuiteHost.cs").read_text(encoding="utf-8")
         for key in ("Host", "TestedCommit", "RunId", "ComposeProject"):
             with self.subTest(key=key):
@@ -138,23 +138,40 @@ class SeedSourceTests(unittest.TestCase):
                     with self.assertRaises(browser.ContractError):
                         browser.validate_suite_compose(model, suite, profile_tests.COMMIT, profile_tests.PROJECT)
 
-    def test_the_host_masks_envelope_keys_the_container_does_not_carry(self):
+    def test_the_host_removes_envelope_variables_the_container_does_not_carry(self):
         # The runner process has the run's GOYMEN_ERP_C01_E2E_* variables for every suite; a normal-profile
         # container has none, and any one of them would make the in-process host request the C-01 envelope.
+        # Program reads that gate before it builds the app, from the process environment: an in-memory
+        # mask is too late (u02 run 35411370499), so the variables are removed from the process.
         host = (TOOL / "BrowserSuiteHost.cs").read_text(encoding="utf-8")
-        self.assertIn(".Concat(MaskedProcessEnvelope())", host)
+        self.assertIn("Environment.SetEnvironmentVariable(name, null);", host)
         self.assertIn('name.StartsWith("GOYMEN_ERP_C01_E2E_", StringComparison.Ordinal)', host)
         self.assertIn('name.StartsWith("C01E2e__", StringComparison.Ordinal)', host)
         self.assertIn("!apiEnvironment.ContainsKey(name)", host)
+        # Create is the only way to a host, and it removes the envelope first; the runner uses it.
+        self.assertIn("    private BrowserSuiteHost(\n", host)
+        create = host.split("internal static BrowserSuiteHost Create(", 1)[1].split("\n    }\n", 1)[0]
+        self.assertLess(create.index("RemoveProcessEnvelope(apiEnvironment);"), create.index("return new BrowserSuiteHost("))
+        runner = (TOOL / "BrowserSuiteFixtureTool.cs").read_text(encoding="utf-8")
+        self.assertIn("BrowserSuiteHost.Create(", runner)
+        self.assertNotIn("new BrowserSuiteHost(", runner)
         activation = (ROOT / "src/backend/GoymenERP.Api/Shell/C01E2eShellCapabilityActivation.cs").read_text(
             encoding="utf-8")
-        # Every activation trigger key is one of the masked families.
+        # Every activation trigger key is one of the removed families.
         keys = activation.split("private static readonly string[] ConfigurationKeys =", 1)[1].split("];", 1)[0]
         for constant in re.findall(r"(\w+ConfigurationKey)", keys):
             value = re.search(rf'{constant} =\s*"([^"]+)"', activation).group(1)
             with self.subTest(key=value):
                 self.assertTrue(value.startswith(("GOYMEN_ERP_C01_E2E_", "C01E2e:")), value)
 
+    def test_the_host_passes_every_value_program_reads_as_a_host_setting(self):
+        # The shell profile (C01E2e:Profile) and the fixture-writer gate are read before the app is built;
+        # only host settings (UseSetting) are visible there. No value may travel as in-memory configuration.
+        host = (TOOL / "BrowserSuiteHost.cs").read_text(encoding="utf-8")
+        self.assertNotIn("ConfigureAppConfiguration", host)
+        self.assertNotIn("AddInMemoryCollection", host)
+        self.assertIn('builder.UseSetting(key.Replace("__", ":", StringComparison.Ordinal), value);', host)
+        self.assertIn("foreach (var (key, value) in FixtureWriterBinding())", host)
 
 class SeedExportTests(unittest.TestCase):
     OUTPUTS = {"org03": frozenset({"companyId", "recorderActor"})}
