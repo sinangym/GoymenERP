@@ -111,6 +111,26 @@ Not here: closing an order, a list or search, cost, Inventory movements (T15), o
   - An unknown outcome freezes the forms until the same snapshot is re-sent.
   - A 401/403 on a re-send does not settle it, because authority is measured before the stored answer.
 
+## MFG-6 slice 1 — the Slitting and Winding engines (approved card, Business 5737790175)
+
+`Domain/Engines`: pure, deterministic, versioned calculators of master v3 §28.4 (`SlittingEngineV1`, SLT-001…010) and §28.5 (`WindingEngineV1`, WND-001…009), exactly as written there. There is no I/O, no HTTP and no persistence yet; the preview API, the plan snapshot and the plan screen are the next slices of the card.
+
+- **Never a guess:**
+  - a missing parameter is `EngineOutcome.Unavailable` and is named;
+  - a broken rule is `EngineOutcome.Refused` with an `EngineCodes` code;
+  - a refusal wins over missing parameters, because a supplied value is wrong.
+- **No built-in parameter:** density, line speed and the metre tolerance are inputs (OPEN-007, OPEN-004/005, Ö7).
+  - Their values come from the Settings / Policy Registry (DEC-SET-001), and an approved plan snapshots them (DEC-PRDCT-008).
+  - A tolerance may be a stated zero; a missing one is unavailable, never zero.
+- **Ö2:** kilogram and nominal millimetre inputs take at most three decimals and are refused beyond.
+- **No rounding.** Results are unrounded decimals, because the rounding policy (§28.1) is not decided. π and the square root are decimal too, so a result is the same on every platform.
+- **Invariants:**
+  - the used width cannot exceed the net usable width (`engine_used_width_exceeds_net_width`);
+  - SLT-010's line time is the parent coil's walking metres over the line speed, never the output bands' metres.
+- **Versions:** every result carries `FormulaVersion`. A changed formula is a new version, never an edit (DEC-PRDCT-004).
+- **Not in version 1:** WND-010 (break-down into target-mass coils plus a remainder "above tolerance"). Its tolerance rule is not stated precisely enough to encode without choosing it.
+- **Golden tests** (`tests/GoymenERP.Manufacturing.UnitTests/Engines`): the master's examples at the precision it prints (±0.0005), plus an independent 40-digit reference (±1e-18). The density 7850 kg/m³ there is the test input the examples imply, not a production parameter.
+
 ## Behaviour kept on purpose — Business decision pending
 
 - **One approved plan can open more than one order** (`FromApprovedPlan` does not mark the plan as converted). §7.3 does not say whether a plan becomes one order or several partial ones; the question is open with Business (#66 5728934213, the same principle as Purchasing's request → several orders). Pinned by a test; changes only by that decision. The physical guard is Inventory's.
@@ -118,9 +138,9 @@ Not here: closing an order, a list or search, cost, Inventory movements (T15), o
 ## What this module is not
 
 - No stock movement, lot or label: Inventory owns those.
-- No formula, trim/kerf, tolerance, template, rounding stage or roll-substitution policy.
+- No trim/kerf value, tolerance number, template, rounding stage or roll-substitution policy. The only formulas are the two MFG-6 engines above, and every parameter is supplied to them.
 - No UI yet (the normal screen is the next card); HTTP since MFG-API, persistence since MFG-5 (above).
-- No other engine (cold rolling, tube/profile, painting, cut-to-length).
+- No other engine (cold rolling, tube/profile, painting, cut-to-length; DEC-PRDCT-001 order).
 
 ## dependency_wait
 
