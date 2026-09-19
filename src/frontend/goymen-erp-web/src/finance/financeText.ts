@@ -70,6 +70,7 @@ export const COLUMN = {
   valueOn: 'Valör',
   bankAccount: 'Banka hesabı',
   amount: 'Tutar',
+  currency: 'Para birimi',
   actions: 'İşlem',
 } as const
 
@@ -90,8 +91,22 @@ export const DETAIL = {
   recordedAt: 'Kesin kayıt zamanı',
   reversedBy: 'Düzelten ters kayıt',
   reverses: 'Düzelttiği kaynak',
+  currency: 'Para birimi',
   none: '—',
 } as const
+
+// No technical id as final presentation (Business 5745076917). No source number series is decided, so the
+// server's "source number" is the record's id: it is shown as a labelled reference, never as a number.
+export const NO_SOURCE_NUMBER = 'Numara verilmedi'
+export const financeRef = (id: string) => `ref. …${id.slice(-8)}`
+const GUID_TEXT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** A real number as given; the record's own id (no series yet) as "Numara verilmedi · ref. …". */
+export function sourceNumberShown(sourceNumber: string, sourceId: string): string {
+  return sourceNumber === sourceId || GUID_TEXT.test(sourceNumber)
+    ? `${NO_SOURCE_NUMBER} · ${financeRef(sourceId)}`
+    : sourceNumber
+}
 
 export const PARTY_LABEL = 'Cari hesabı'
 export const PARTY_LABEL_PENDING = 'Banka hesabı ve işlem tarihi seçilince cari etiketi okunur.'

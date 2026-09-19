@@ -7,7 +7,8 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { FinanceSourceList } from './FinanceSourceList'
 import { AMOUNT_REDACTED, BANK_NAME_UNAVAILABLE, NEXT_PAGE, OPEN_SOURCE, PREVIOUS_PAGE } from './financeText'
 import { EXAMPLE_SOURCE, NEGATIVE_EXAMPLE } from './contractExamples'
-import { COMPANY_A, COMPANY_B, NO_REPLY, bankPage, found, recordingPort, renderFinance, sourceSummary } from './testHarness'
+import { COMPANY_A, COMPANY_B, NO_REPLY, bankPage, found, recordingPort, renderFinance, shellFor, sourceSummary } from './testHarness'
+import { FINANCE_CAPABILITY } from './capabilities'
 
 const SECOND = 'dddddddd-0000-4000-8000-000000000004'
 
@@ -60,5 +61,34 @@ describe('FinanceSourceList', () => {
     )
     const second = renderFinance(<FinanceSourceList onOpen={() => {}} />, { port: foreign.port })
     await waitFor(() => expect(second.container.querySelector('[data-state="malformed-response"]')).not.toBeNull())
+  })
+
+  // Business 5745076917: no technical id as final presentation.
+  it('shows the currency CODE only from the real candidate read, the labelled reference otherwise, and never an id as the source number', async () => {
+    const currencyId = '22222222-2222-2222-2222-222222222222'
+    const idAsNumber = sourceSummary(COMPANY_A, { id: SECOND, sourceNumber: SECOND })
+    const responder = (method: string, scope: { companyId: string }) => {
+      if (method === 'listBankAccounts') return found(bankPage(scope.companyId))
+      if (method === 'bankAccountCurrencyCandidates') {
+        return found({ companyId: scope.companyId, items: [{ currencyId, code: 'TRY', displayLabel: 'SENTETIK Lira' }] })
+      }
+      return found({ companyId: scope.companyId, items: [idAsNumber], nextCursor: null })
+    }
+
+    const proposer = recordingPort(responder)
+    const first = renderFinance(<FinanceSourceList onOpen={() => {}} />, {
+      port: proposer.port,
+      shell: shellFor(COMPANY_A, 1, [FINANCE_CAPABILITY.bankAccountsPropose]),
+    })
+    const row = (await screen.findByRole('rowheader', { name: `Numara verilmedi · ref. …${SECOND.slice(-8)}` })).closest('tr') as HTMLElement
+    await waitFor(() => within(row).getByText('TRY'))
+    expect(row.textContent).not.toContain(SECOND)
+    first.unmount()
+
+    const reader = recordingPort(responder)
+    renderFinance(<FinanceSourceList onOpen={() => {}} />, { port: reader.port })
+    const other = (await screen.findByRole('rowheader', { name: `Numara verilmedi · ref. …${SECOND.slice(-8)}` })).closest('tr') as HTMLElement
+    within(other).getByText('Para birimi kimliği …2222')
+    expect(reader.reads.map((read) => read.method)).not.toContain('bankAccountCurrencyCandidates')
   })
 })
