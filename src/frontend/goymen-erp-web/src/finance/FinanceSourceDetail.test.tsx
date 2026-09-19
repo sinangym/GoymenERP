@@ -69,7 +69,7 @@ const RECORDED = sourceDetail(COMPANY_A, {
 describe('FinanceSourceDetail — Record', () => {
   it('records only after confirmation, with its own request; a failed re-read never re-sends Record', async () => {
     const { port, commands, reads } = recordingPort(detailSequence(found(sourceDetail(COMPANY_A)), NO_REPLY))
-    renderFinance(<FinanceSourceDetail sourceId={EXAMPLE_SOURCE} />, { port })
+    renderFinance(<FinanceSourceDetail sourceId={EXAMPLE_SOURCE} offerRecordReverse />, { port })
 
     fireEvent.click(await screen.findByRole('button', { name: RECORD_ACTION }))
     expect(commands).toHaveLength(0)
@@ -94,7 +94,7 @@ describe('FinanceSourceDetail — Record', () => {
 
   it('a successful re-read shows the recorded source and no second Record action', async () => {
     const { port, commands } = recordingPort(detailSequence(found(sourceDetail(COMPANY_A)), found(RECORDED)))
-    renderFinance(<FinanceSourceDetail sourceId={EXAMPLE_SOURCE} />, { port })
+    renderFinance(<FinanceSourceDetail sourceId={EXAMPLE_SOURCE} offerRecordReverse />, { port })
     fireEvent.click(await screen.findByRole('button', { name: RECORD_ACTION }))
     fireEvent.click(screen.getByRole('button', { name: RECORD_CONFIRM }))
     await commands[0].resolve(succeeded(RECORDED))
@@ -107,7 +107,7 @@ describe('FinanceSourceDetail — Record', () => {
   it('a re-read that still shows the Draft after a successful Record does not offer Record again', async () => {
     const draft = found(sourceDetail(COMPANY_A))
     const { port, commands, reads } = recordingPort(detailSequence(draft, draft))
-    renderFinance(<FinanceSourceDetail sourceId={EXAMPLE_SOURCE} />, { port })
+    renderFinance(<FinanceSourceDetail sourceId={EXAMPLE_SOURCE} offerRecordReverse />, { port })
     fireEvent.click(await screen.findByRole('button', { name: RECORD_ACTION }))
     fireEvent.click(screen.getByRole('button', { name: RECORD_CONFIRM }))
     await commands[0].resolve(succeeded(RECORDED))
@@ -120,7 +120,7 @@ describe('FinanceSourceDetail — Record', () => {
 
   it('a VersionConflict re-reads once and keeps Record closed while the conflicting version is still shown', async () => {
     const { port, commands, reads } = recordingPort(detailSequence(found(sourceDetail(COMPANY_A))))
-    renderFinance(<FinanceSourceDetail sourceId={EXAMPLE_SOURCE} />, { port })
+    renderFinance(<FinanceSourceDetail sourceId={EXAMPLE_SOURCE} offerRecordReverse />, { port })
     fireEvent.click(await screen.findByRole('button', { name: RECORD_ACTION }))
     fireEvent.click(screen.getByRole('button', { name: RECORD_CONFIRM }))
     await commands[0].resolve(body(NEGATIVE_EXAMPLE.conflictResult))
@@ -134,7 +134,7 @@ describe('FinanceSourceDetail — Record', () => {
   it('after a VersionConflict only the freshly read version can be confirmed, as a new attempt', async () => {
     const fresh = found(sourceDetail(COMPANY_A, { source: { version: 'etag-v2' } }))
     const { port, commands } = recordingPort(detailSequence(found(sourceDetail(COMPANY_A)), fresh))
-    renderFinance(<FinanceSourceDetail sourceId={EXAMPLE_SOURCE} />, { port })
+    renderFinance(<FinanceSourceDetail sourceId={EXAMPLE_SOURCE} offerRecordReverse />, { port })
     fireEvent.click(await screen.findByRole('button', { name: RECORD_ACTION }))
     fireEvent.click(screen.getByRole('button', { name: RECORD_CONFIRM }))
     await commands[0].resolve(body(NEGATIVE_EXAMPLE.conflictResult))
@@ -152,7 +152,7 @@ describe('FinanceSourceDetail — Record', () => {
     ['the same source still in Draft', sourceDetail(COMPANY_A)],
   ])('a Succeeded body about %s does not settle Record', async (_label, resource) => {
     const { port, commands } = recordingPort(detailSequence(found(sourceDetail(COMPANY_A))))
-    renderFinance(<FinanceSourceDetail sourceId={EXAMPLE_SOURCE} />, { port })
+    renderFinance(<FinanceSourceDetail sourceId={EXAMPLE_SOURCE} offerRecordReverse />, { port })
     fireEvent.click(await screen.findByRole('button', { name: RECORD_ACTION }))
     fireEvent.click(screen.getByRole('button', { name: RECORD_CONFIRM }))
     await commands[0].resolve(succeeded(resource))
@@ -164,7 +164,7 @@ describe('FinanceSourceDetail — Record', () => {
     const recorded = found(RECORDED)
     const reversed = found(sourceDetail(COMPANY_A, { source: { stage: 'Reversed', version: '9007199254740995' }, unallocated: NEGATIVE_EXAMPLE.unavailableAllocation }))
     const { port, commands, reads } = recordingPort(detailSequence(found(sourceDetail(COMPANY_A)), recorded, reversed))
-    renderFinance(<FinanceSourceDetail sourceId={EXAMPLE_SOURCE} />, { port })
+    renderFinance(<FinanceSourceDetail sourceId={EXAMPLE_SOURCE} offerRecordReverse />, { port })
 
     fireEvent.click(await screen.findByRole('button', { name: RECORD_ACTION }))
     fireEvent.click(screen.getByRole('button', { name: RECORD_CONFIRM }))
@@ -186,7 +186,7 @@ describe('FinanceSourceDetail — Record', () => {
 describe('FinanceSourceDetail — bound to the requested source', () => {
   it('a detail body about another source is malformed, not shown', async () => {
     const { port } = recordingPort(detailSequence(found(sourceDetail(COMPANY_A, { source: { id: OTHER_SOURCE } }))))
-    const { container } = renderFinance(<FinanceSourceDetail sourceId={EXAMPLE_SOURCE} />, { port })
+    const { container } = renderFinance(<FinanceSourceDetail sourceId={EXAMPLE_SOURCE} offerRecordReverse />, { port })
     await waitFor(() => expect(container.querySelector('[data-state="malformed-response"]')).not.toBeNull())
     expect(screen.queryByRole('button', { name: RECORD_ACTION })).toBeNull()
   })
@@ -195,7 +195,7 @@ describe('FinanceSourceDetail — bound to the requested source', () => {
 describe('FinanceSourceDetail — dirty work reaches the shell gate', () => {
   it('a typed reversal makes a company switch ask instead of discarding it', async () => {
     const { port } = recordingPort(detailSequence(found(RECORDED)))
-    renderFinance(<FinanceSourceDetail sourceId={EXAMPLE_SOURCE} />, { port })
+    renderFinance(<FinanceSourceDetail sourceId={EXAMPLE_SOURCE} offerRecordReverse />, { port })
     fireEvent.click(await screen.findByRole('button', { name: REVERSE_ACTION }))
     expect(currentShell().dirtyScopes).not.toContain(FINANCE_REVERSE_DIRTY_SCOPE)
     fireEvent.change(screen.getByLabelText(REVERSE_REASON), { target: { value: 'SENTETIK' } })
@@ -210,7 +210,7 @@ describe('FinanceSourceDetail — dirty work reaches the shell gate', () => {
 describe('FinanceSourceDetail — Reverse', () => {
   it('requires a reason and date, sends only identity/version/date/reason', async () => {
     const { port, commands } = recordingPort(detailSequence(found(RECORDED)))
-    renderFinance(<FinanceSourceDetail sourceId={EXAMPLE_SOURCE} />, { port })
+    renderFinance(<FinanceSourceDetail sourceId={EXAMPLE_SOURCE} offerRecordReverse />, { port })
     expect(screen.queryByRole('button', { name: RECORD_ACTION })).toBeNull()
 
     fireEvent.click(await screen.findByRole('button', { name: REVERSE_ACTION }))
@@ -237,13 +237,13 @@ describe('FinanceSourceDetail — read states', () => {
     ['no reply', NO_REPLY, 'network-error'],
   ])('%s renders the shared %s block and no actions', async (_label, reply, state) => {
     const { port } = recordingPort(detailSequence(reply))
-    const { container } = renderFinance(<FinanceSourceDetail sourceId={EXAMPLE_SOURCE} />, { port })
+    const { container } = renderFinance(<FinanceSourceDetail sourceId={EXAMPLE_SOURCE} offerRecordReverse />, { port })
     await waitFor(() => expect(container.querySelector(`[data-state="${state}"]`)).not.toBeNull())
     expect(screen.queryByRole('button', { name: RECORD_ACTION })).toBeNull()
   })
 
   it('without a port adapter the screen fails closed', () => {
-    const { container } = renderFinance(<FinanceSourceDetail sourceId={EXAMPLE_SOURCE} />, { port: null })
+    const { container } = renderFinance(<FinanceSourceDetail sourceId={EXAMPLE_SOURCE} offerRecordReverse />, { port: null })
     expect(container.querySelector('[data-state="service-unavailable"]')).not.toBeNull()
   })
 
@@ -251,7 +251,7 @@ describe('FinanceSourceDetail — read states', () => {
     const { port } = recordingPort(
       detailSequence(found(sourceDetail(COMPANY_A, { source: { stage: 'Recorded', amount: NEGATIVE_EXAMPLE.redactedAmount }, unallocated: { knowledge: 'Known', amount: NEGATIVE_EXAMPLE.redactedAmount } }))),
     )
-    renderFinance(<FinanceSourceDetail sourceId={EXAMPLE_SOURCE} />, { port })
+    renderFinance(<FinanceSourceDetail sourceId={EXAMPLE_SOURCE} offerRecordReverse />, { port })
     expect(await screen.findAllByText(AMOUNT_REDACTED)).toHaveLength(2)
   })
 })

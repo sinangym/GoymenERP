@@ -85,6 +85,15 @@ public sealed class C01E2eActivationBoundaryTests
                 + "ProductCodeGroupFixtureStore.cs",
             ],
             BackendFilesContaining("AddProductCodeGroupFixtureStore"));
+        // s04: Sales's draft port, the same shape. SalesDbContext has no second save path: the store saves
+        // through the context's public SaveChangesAsync under its own write guards.
+        Assert.Equal(
+            [
+                "src/backend/GoymenERP.Api/Shell/C01E2eFixtureWriterActivation.cs",
+                "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Fixtures/"
+                + "SalesDraftFixtureStore.cs",
+            ],
+            BackendFilesContaining("AddSalesDraftFixtureStore"));
     }
 
     // u02 (#331): ProductDbContext refuses every public save; AddFixtureCodeGroupAsync is a second write path
@@ -126,6 +135,7 @@ public sealed class C01E2eActivationBoundaryTests
                      "infra/docker-compose.browser-normal.yml",
                      "infra/docker-compose.browser-cari-staged.yml",
                      "infra/docker-compose.browser-mfg-staged.yml",
+                     "infra/docker-compose.browser-fin-staged.yml",
                      "src/backend/GoymenERP.Api/Dockerfile",
                      "src/backend/GoymenERP.Api/appsettings.json",
                      "src/backend/GoymenERP.Api/appsettings.Development.json",

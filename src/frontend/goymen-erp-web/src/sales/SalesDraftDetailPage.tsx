@@ -51,6 +51,7 @@ import {
 } from './orderAttempt'
 import { SALES_CAPABILITY, SALES_ROUTE } from './capabilities'
 import { APPROVAL_STATE_TEXT, ORDER_DETAIL_TEXT as T, problemCodeText } from './salesText'
+import { SALES_PROBLEM_CODE } from './contract'
 import { classifyOutcome } from '../shell/uiState'
 import { useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString, hasCapability, type ShellState } from '../shell/shellState'
@@ -388,7 +389,11 @@ function commandNotice(attempt: CommandAttempt): string | null {
     case 'completed':
       return attempt.result.isReplay ? T.approval.replayed : T.approval.completed
     case 'failed': {
-      const codeText = problemCodeText(attempt.problem?.code ?? null)
+      // `version_conflict` on a state command means the draft moved after this screen read it (the
+      // approval's own sentence); the shared code text is the S-03 product-version sentence and would
+      // mislead here (browser run 35447380891, S04-03). Every other code keeps its shared text.
+      const code = attempt.problem?.code ?? null
+      const codeText = code === SALES_PROBLEM_CODE.versionConflict ? T.approval.versionConflict : problemCodeText(code)
       const base =
         attempt.failure === 'unauthenticated'
           ? T.approval.unauthenticated

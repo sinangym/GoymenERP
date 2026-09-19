@@ -77,6 +77,12 @@ public static class EngineCodes
     /// <summary>A count (bands, coils) is not a positive whole number.</summary>
     public const string CountNotPositive = "engine_count_not_positive";
 
+    /// <summary>
+    /// A ratio that is a fraction by definition (the paint's solids ratio, PNT-006) is above 1 — e.g. a
+    /// percentage (55) given where the fraction (0,55) is meant. Refused, never divided by 100.
+    /// </summary>
+    public const string RatioAboveOne = "engine_ratio_above_one";
+
     /// <summary>SLT-004 ≤ net usable width is broken: the slit lines use more width than the coil has (master v3 §28.4).</summary>
     public const string UsedWidthExceedsNetWidth = "engine_used_width_exceeds_net_width";
 
@@ -85,4 +91,19 @@ public static class EngineCodes
 
     /// <summary>The coil's inner diameter is not smaller than its maximum outer diameter.</summary>
     public const string InnerDiameterNotBelowMaximum = "engine_inner_diameter_not_below_maximum";
+
+    /// <summary>Master v3 §28.8: the target thickness must be below the input thickness (cold rolling only thins).</summary>
+    public const string TargetThicknessNotBelowInput = "engine_target_thickness_not_below_input";
+
+    /// <summary>Master v3 §28.8: the scrap cannot equal or exceed the input mass.</summary>
+    public const string ScrapNotBelowInputMass = "engine_scrap_not_below_input_mass";
+
+    /// <summary>
+    /// Master v3 §28.3 CUT-005: the planned mass exceeds the input mass. A negative remainder is no normal
+    /// record (§28.3: an automatic block; an authorized exception is Business's, not encoded).
+    /// </summary>
+    public const string PlanExceedsInputMass = "engine_plan_exceeds_input_mass";
+
+    /// <summary>Master v3 §28.3 CUT-008: the pieces and cuts exceed the raw length (negative remainder).</summary>
+    public const string CutsExceedRawLength = "engine_cuts_exceed_raw_length";
 }

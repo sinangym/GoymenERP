@@ -16,10 +16,11 @@ import {
   UNKNOWN_TITLE,
   issueText,
 } from './financeText'
-import type { ReceiptCommand } from './financePort'
+import type { BankAccountCommand, ReceiptCommand } from './financePort'
 import styles from './Finance.module.css'
 
-export function CommandAttemptPanel({ command }: { readonly command: ReceiptCommand }) {
+/** Receipt and bank-account commands share one wording: their unknown and refusal reasons are the same sets. */
+export function CommandAttemptPanel({ command }: { readonly command: ReceiptCommand | BankAccountCommand }) {
   const { state } = command
   if (state.phase === 'unknown') {
     return (

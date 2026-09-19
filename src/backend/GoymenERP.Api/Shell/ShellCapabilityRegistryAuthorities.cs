@@ -63,4 +63,11 @@ internal static class ShellCapabilityRegistryAuthorities
     // test against ComputeCandidateRevision.
     internal const string C01DisposableManufacturingOrderDetailV1 =
         "sha256:eZi6K5tQlsm6-dSQ2XZNou1GFj1I9JOuygIJ_mQ9Lw0";
+
+    // The disposable "finance-bank-accounts-and-drafts" profile (BROWSER-CI fin-staged, FIN-UI-1b #332): the
+    // C-01 list-only Counterparty provider plus Finance's own six declarations with only their availability
+    // opened (receipt list/new/detail, bank-account list/propose and the approval control). Computed by the
+    // ComputeRevision reproduction; pinned by a test against ComputeCandidateRevision.
+    internal const string C01DisposableFinanceBankAccountsAndDraftsV1 =
+        "sha256:EsjgjVRX7Rr0nEY4kbvvLHuRvUOMiDUQ8KY-Vo9aXnc";
 }

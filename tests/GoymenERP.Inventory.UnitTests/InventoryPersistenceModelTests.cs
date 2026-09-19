@@ -21,6 +21,7 @@ public sealed class InventoryPersistenceModelTests
         [
             typeof(LotRow), typeof(LabelRow), typeof(LabelPrintRow), typeof(LabelDocumentRow), typeof(MovementRow), typeof(MovementLineRow),
             typeof(BalanceRow), typeof(SourceGrainRow), typeof(OpeningCountRow), typeof(OpeningCountLineRow),
+            typeof(InventoryCommandRow),
         ];
 
     [Fact]
@@ -116,6 +117,8 @@ public sealed class InventoryPersistenceModelTests
             migration => migration.EndsWith("_AddMaterialLots", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("_AddOpeningCounts", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AddInventoryCommands", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -173,6 +176,7 @@ public sealed class InventoryPersistenceModelTests
     [InlineData("delete-lot")]
     [InlineData("edit-opening-count")]
     [InlineData("edit-opening-line")]
+    [InlineData("edit-command")]
     public void Stored_stock_is_never_deleted_and_only_its_allowed_field_changes(string fault)
     {
         using var context = Context();
@@ -208,6 +212,14 @@ public sealed class InventoryPersistenceModelTests
                     CompanyId = CompanyA, CountId = Guid.NewGuid(), LineNumber = 1, LineId = Guid.NewGuid(),
                     LabelId = Guid.NewGuid(), LotId = Guid.NewGuid(), QuantityKg = 100m,
                 }).QuantityKg = 99m;
+                break;
+            case "edit-command":
+                // ADR-011: a key's recorded answer is never rewritten; a replay repeats it.
+                Attach(context, new InventoryCommandRow
+                {
+                    CompanyId = CompanyA, CommandName = "inventory.opening-count.record", IdempotencyKeyHash = new string('A', 64),
+                    ActorId = "synthetic", PayloadHash = new string('0', 64), ResultJson = "{}", CorrelationId = "synthetic",
+                }).ResultJson = "{\"changed\":true}";
                 break;
             case "edit-source-grain":
                 Attach(context, new SourceGrainRow

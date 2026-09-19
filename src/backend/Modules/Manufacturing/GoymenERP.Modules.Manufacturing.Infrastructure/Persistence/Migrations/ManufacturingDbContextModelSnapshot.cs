@@ -534,6 +534,10 @@ partial class ManufacturingDbContextModelSnapshot : ModelSnapshot
                 .IsConcurrencyToken()
                 .HasColumnType("bigint");
 
+            b.Property<decimal?>("WindingTargetKg")
+                .HasPrecision(18, 3)
+                .HasColumnType("decimal(18,3)");
+
             b.Property<Guid>("WorkCenterId")
                 .HasColumnType("uniqueidentifier");
 
@@ -564,6 +568,46 @@ partial class ManufacturingDbContextModelSnapshot : ModelSnapshot
                 t.HasCheckConstraint(
                     "CK_Plans_Version",
                     "[Version] >= 1");
+
+                t.HasCheckConstraint(
+                    "CK_Plans_WindingTarget",
+                    "[WindingTargetKg] IS NULL OR [WindingTargetKg] > 0");
+            });
+        });
+
+        modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.PlanSlitLineRow", b =>
+        {
+            b.Property<Guid>("CompanyId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<Guid>("PlanId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<int>("Sequence")
+                .HasColumnType("int");
+
+            b.Property<int>("BandCount")
+                .HasColumnType("int");
+
+            b.Property<decimal>("BandWidthMm")
+                .HasPrecision(18, 3)
+                .HasColumnType("decimal(18,3)");
+
+            b.HasKey("CompanyId", "PlanId", "Sequence");
+
+            b.ToTable("PlanSlitLines", "manufacturing", t =>
+            {
+                t.HasCheckConstraint(
+                    "CK_PlanSlitLines_Count",
+                    "[BandCount] >= 1");
+
+                t.HasCheckConstraint(
+                    "CK_PlanSlitLines_Sequence",
+                    "[Sequence] >= 1");
+
+                t.HasCheckConstraint(
+                    "CK_PlanSlitLines_Width",
+                    "[BandWidthMm] > 0");
             });
         });
 
@@ -639,6 +683,16 @@ partial class ManufacturingDbContextModelSnapshot : ModelSnapshot
             b.HasOne("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.OrganizationWorkCenterReference", null)
                 .WithMany()
                 .HasForeignKey("CompanyId", "WorkCenterId")
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired();
+        });
+
+        modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.PlanSlitLineRow", b =>
+        {
+            b.HasOne("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.PlanRow", null)
+                .WithMany()
+                .HasForeignKey("CompanyId", "PlanId")
+                .HasPrincipalKey("CompanyId", "Id")
                 .OnDelete(DeleteBehavior.Restrict)
                 .IsRequired();
         });
