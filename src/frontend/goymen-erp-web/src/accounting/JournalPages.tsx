@@ -145,7 +145,7 @@ function Journals({ namespace, periodParam }: { readonly namespace: string | nul
                 </th>
                 <th scope="col">Satır</th>
                 <th scope="col">
-                  <span className="visually-hidden">İşlem</span>
+                  <span className={styles.visuallyHidden}>İşlem</span>
                 </th>
               </tr>
             </thead>

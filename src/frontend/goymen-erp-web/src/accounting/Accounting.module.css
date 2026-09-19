@@ -118,3 +118,13 @@
   outline: 2px solid #1d4ed8;
   outline-offset: 2px;
 }
+
+/* Read by assistive technology, not drawn: the action column header. */
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
