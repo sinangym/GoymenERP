@@ -97,4 +97,13 @@ public static class EngineCodes
 
     /// <summary>Master v3 §28.8: the scrap cannot equal or exceed the input mass.</summary>
     public const string ScrapNotBelowInputMass = "engine_scrap_not_below_input_mass";
+
+    /// <summary>
+    /// Master v3 §28.3 CUT-005: the planned mass exceeds the input mass. A negative remainder is no normal
+    /// record (§28.3: an automatic block; an authorized exception is Business's, not encoded).
+    /// </summary>
+    public const string PlanExceedsInputMass = "engine_plan_exceeds_input_mass";
+
+    /// <summary>Master v3 §28.3 CUT-008: the pieces and cuts exceed the raw length (negative remainder).</summary>
+    public const string CutsExceedRawLength = "engine_cuts_exceed_raw_length";
 }
