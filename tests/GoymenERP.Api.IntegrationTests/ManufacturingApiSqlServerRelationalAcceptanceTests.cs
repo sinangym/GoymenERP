@@ -556,10 +556,14 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
             Assert.True(response.Headers.CacheControl is { Private: true, NoStore: true });
             var page = (await response.Content.ReadFromJsonAsync<OrderListViewV1>())!;
             Assert.Null(page.NextCursor);
-            // Both orders of this company, and only those. The ordering is the server's (createdAtUtc desc,
-            // id desc); the page is compared as a set, because two orders created in the same test may share
-            // an instant and the tie-break is then the id.
-            Assert.Equal([firstOrder, secondOrder], page.Orders.Select(row => row.OrderId).OrderBy(id => id));
+            // Both orders of this company, and only those, in the server's own sequence: createdAtUtc DESC,
+            // then id DESC. The two were created by separate API calls into a `datetimeoffset` (7 digits,
+            // 100 ns) column, so their instants differ and the PRIMARY sort alone decides — newest first.
+            // That is asserted, not assumed: if the instants ever tied, the next line would say so instead
+            // of the sequence quietly depending on SQL Server's uniqueidentifier tie-break.
+            Assert.Equal(2, page.Orders.Count);
+            Assert.NotEqual(page.Orders[0].CreatedAtUtc, page.Orders[1].CreatedAtUtc);
+            Assert.Equal([secondOrder, firstOrder], page.Orders.Select(row => row.OrderId));
             var summary = page.Orders.Single(row => row.OrderId == firstOrder);
             // The stored snapshot, as text: one planned roll of 1000 kg, no target, open, version 1.
             Assert.Equal((firstOrder, "Slitting", "Open", 1L, 1, "1000"),
@@ -576,8 +580,10 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
             using var nextPage = await client.GetAsync($"{Base}/orders?pageSize=1&cursor={Uri.EscapeDataString(one.NextCursor!)}");
             var two = (await nextPage.Content.ReadFromJsonAsync<OrderListViewV1>())!;
             var twoId = Assert.Single(two.Orders).OrderId;
-            // The two pages are the whole list, each row once: the cursor continues, it does not repeat.
-            Assert.Equal([firstOrder, secondOrder], new[] { onId, twoId }.OrderBy(id => id));
+            // Walking one at a time answers exactly the sequence one whole page answers: the cursor
+            // continues where the page stopped, repeats nothing and skips nothing. This is the check that
+            // would catch an ORDER BY and a cursor predicate that did not compare the same way.
+            Assert.Equal([secondOrder, firstOrder], new[] { onId, twoId });
             Assert.Null(two.NextCursor);
 
             // A cursor that is not this company's and this ordering's is refused on the cursor, never a first page.
