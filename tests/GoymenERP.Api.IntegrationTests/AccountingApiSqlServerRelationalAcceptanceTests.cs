@@ -275,6 +275,12 @@ public sealed class AccountingApiSqlServerRelationalAcceptanceTests
         Journal posted;
         await using (var store = run.Store(CompanyA))
         {
+            // The approved profile's window is Ö2's: an accounting date before 2026-09-18, inside the open period, is refused
+            // as not in effect before any scale check, and stores nothing.
+            var early = await Assert.ThrowsAsync<AccountingAmountScaleException>(() => store.Postings.ReceiveAsync(
+                Request(Guid.NewGuid(), "m-early", debit, credit, 1250.50m, dates: BeforeProfileWindow), periodId, run.Metadata()));
+            Assert.Equal(AccountingAmountScaleCodes.ProfileNotInEffect, early.Code);
+
             // Ö2 with the REAL profile: 1250.50 TRY posts; 1250.505 is refused and stores nothing.
             var refused = await Assert.ThrowsAsync<AccountingAmountScaleException>(() => store.Postings.ReceiveAsync(
                 Request(source, "m-scale", debit, credit, 1250.505m), periodId, run.Metadata()));
@@ -285,7 +291,7 @@ public sealed class AccountingApiSqlServerRelationalAcceptanceTests
             Assert.Equal(PostingOutcomeKind.ExceptionQueued, queued.Kind);
         }
 
-        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM accounting.Deliveries WHERE MessageId = N'm-scale'"));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM accounting.Deliveries WHERE MessageId IN (N'm-scale', N'm-early')"));
 
         await using (var ofB = run.Store(CompanyB))
         {
@@ -314,8 +320,16 @@ public sealed class AccountingApiSqlServerRelationalAcceptanceTests
         Assert.Empty(queues.GetProperty("pending").EnumerateArray());
     }
 
+    // Synthetic dates inside the proposed September period AND the approved GDC/TRY profile's window (Ö2: effective
+    // from its approval, 2026-09-18); the before-window refusal is asserted with BeforeProfileWindow.
+    private static readonly PostingDates InProfileWindow = new PostingDates(new DateOnly(2026, 9, 21), new DateOnly(2026, 9, 22), null,
+        new DateTimeOffset(2026, 9, 22, 10, 0, 0, TimeSpan.Zero));
+
+    private static readonly PostingDates BeforeProfileWindow = new PostingDates(new DateOnly(2026, 9, 14), new DateOnly(2026, 9, 15), null,
+        new DateTimeOffset(2026, 9, 18, 10, 0, 0, TimeSpan.Zero));
+
     private static PostingRequest Request(Guid source, string messageId, AccountRef debit, AccountRef? credit, decimal amount,
-        Guid? company = null) =>
+        Guid? company = null, PostingDates? dates = null) =>
         new PostingRequest(
             "synthetic-accounting-consumer",
             messageId,
@@ -323,8 +337,7 @@ public sealed class AccountingApiSqlServerRelationalAcceptanceTests
             new SourceReference(company ?? CompanyA, source, "synthetic-purpose-a"),
             "synthetic-rule-1",
             Lira,
-            new PostingDates(new DateOnly(2026, 9, 14), new DateOnly(2026, 9, 15), null,
-                new DateTimeOffset(2026, 9, 18, 10, 0, 0, TimeSpan.Zero)),
+            dates ?? InProfileWindow,
             [
                 new ProposedLine("synthetic-debit-key", debit, PostingSide.Debit, amount),
                 new ProposedLine("synthetic-credit-key", credit, PostingSide.Credit, amount),
