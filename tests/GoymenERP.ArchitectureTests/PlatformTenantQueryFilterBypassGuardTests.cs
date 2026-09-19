@@ -181,7 +181,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/"
              + "Persistence/SalesDbContext.cs"] =
-                "073e79e6f4172e33d6ac8cd21369184829196cd9049795e57d0ab32441b4b816",
+                "ef88262bd01e1d118b13f50944ae831870d42615a3f559e4fe95e6fdf3d5a498",
             // Re-measured for MFG-API (#313): the ADR-011 command log (CommandRecords) is mapped here, company-
             // scoped with the CompanyId filter like every other tenant row.
             // MFG-5 (#303): company-scoped like Organization; every tenant row and AuditEvent carries the
@@ -536,10 +536,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         ReviewedMigrationMutationSources =
             new Dictionary<string, ReviewedMigrationMutationSource>(StringComparer.Ordinal)
             {
-                // SALES-A1: the Down's only raw SQL is the refusal (51045) while any draft left Preparing;
-                // forward fix, no approval fact is dropped.
+                // SALES-A1: the Down's only raw SQL is the refusal (51045) while any draft left Preparing or any
+                // state-command attempt carries a DraftId (the pre-A1 unique index could not be restored);
+                // forward fix, no approval fact or attempt is dropped.
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20260919120000_AddDraftApproval.cs"] =
-                    new("680dfb5f4280e64eadc2dfbd32cf6737573466095e5a88b29b0f1e1dbae8fded",
+                    new("d5aa478dc70559fa55e54df47a2fc6703a4677b1db4caab425fbe9b3ea10e89c",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/Persistence/Migrations/20260912175128_InitialProductDrafts.cs"] =
