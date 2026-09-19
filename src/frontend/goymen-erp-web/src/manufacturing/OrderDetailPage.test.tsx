@@ -14,11 +14,14 @@ import {
   ROLL_1,
   installFetch,
   json,
+  massBalance,
   order,
   problem,
   renderAt,
   requestsFor,
   roll,
+  rollBalance,
+  unavailable,
   type RecordedRequest,
 } from './testHarness'
 
@@ -33,16 +36,25 @@ function stub(
     reads?: Array<() => Response>
     commands?: Array<() => Response>
     capabilities?: readonly string[]
+    /** GDC-BAL/1 reads (BAL slice 2), answered on their own so they never consume an order read. */
+    balances?: Array<() => Response>
   } = {},
 ): Scenario {
   const reads = options.reads ?? [() => json(order())]
   const commands = options.commands ?? [() => json(order({ version: 2 }))]
+  const balances = options.balances ?? [() => json(massBalance())]
   let readIndex = 0
   let commandIndex = 0
+  let balanceIndex = 0
   const recorded = installFetch({
     capabilities: options.capabilities,
     respond: (url, init) => {
       if (!url.includes(`/manufacturing/orders/${ORDER}`)) return undefined
+      if (url.endsWith('/mass-balance')) {
+        const respond = balances[Math.min(balanceIndex, balances.length - 1)]
+        balanceIndex += 1
+        return respond()
+      }
       if ((init?.method ?? 'GET') === 'POST') {
         const respond = commands[Math.min(commandIndex, commands.length - 1)]
         commandIndex += 1
@@ -74,7 +86,21 @@ async function fillFact(
 }
 
 const posts = (recorded: RecordedRequest[]) => requestsFor(recorded, '/manufacturing/orders/', 'POST')
-const reads = (recorded: RecordedRequest[]) => requestsFor(recorded, `/manufacturing/orders/${ORDER}`, 'GET')
+const reads = (recorded: RecordedRequest[]) =>
+  requestsFor(recorded, `/manufacturing/orders/${ORDER}`, 'GET').filter((request) => !request.url.endsWith('/mass-balance'))
+const balanceReads = (recorded: RecordedRequest[]) => requestsFor(recorded, `/manufacturing/orders/${ORDER}/mass-balance`, 'GET')
+
+/** The roll's row in the roll-balance table (the mass-balance panel has a row per roll too). */
+async function rollRow(): Promise<HTMLElement> {
+  const table = await screen.findByRole('region', { name: 'Ana rulo dengesi (kg)' })
+  return within(table).findByRole('row', { name: new RegExp(ROLL_1) })
+}
+
+/** The roll's row in the GDC-BAL/1 panel. */
+async function balanceRow(): Promise<HTMLElement> {
+  const panel = await screen.findByRole('region', { name: 'Kütle dengesi (GDC-BAL/1)' })
+  return within(panel).findByRole('row', { name: new RegExp(ROLL_1) })
+}
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -103,7 +129,7 @@ describe('order balances', () => {
     })
     renderAt(PATH)
 
-    const row = await screen.findByRole('row', { name: new RegExp(ROLL_1) })
+    const row = await rollRow()
     expect(within(row).getByText('1000.125')).toBeTruthy()
     expect(within(row).getByText('-2.5')).toBeTruthy()
     expect(within(row).getByText('Fark var')).toBeTruthy()
@@ -115,7 +141,7 @@ describe('order balances', () => {
   it('draws no form for a reader and never sends a command (card D3)', async () => {
     const { recorded } = stub({ capabilities: READER_CAPABILITIES })
     renderAt(PATH)
-    await screen.findByRole('row', { name: new RegExp(ROLL_1) })
+    await rollRow()
     expect(screen.queryByRole('heading', { name: 'Gerçekleşme kaydı' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Kaydet' })).toBeNull()
     expect(posts(recorded)).toHaveLength(0)
@@ -133,6 +159,112 @@ describe('order balances', () => {
     renderAt(PATH)
     expect(await screen.findByText(/^Servis geçici olarak kullanılamıyor/)).toBeTruthy()
     expect(screen.queryByRole('table')).toBeNull()
+  })
+})
+
+describe('mass balance panel (GDC-BAL/1)', () => {
+  it("shows BAL-003 as the server computed it and BAL-004 / BAL-006 as the engine's Unavailable, never a number", async () => {
+    const { recorded } = stub({
+      capabilities: READER_CAPABILITIES,
+      balances: [
+        () =>
+          json(
+            massBalance({
+              rolls: [
+                rollBalance(ROLL_1, {
+                  difference: { actualInputKg: '1000.125', accountedKg: '1002.625', differenceKg: '-2.5', isFullyAccounted: false },
+                }),
+              ],
+            }),
+          ),
+      ],
+    })
+    renderAt(PATH)
+
+    const row = await balanceRow()
+    expect(within(row).getByText('1000.125')).toBeTruthy()
+    expect(within(row).getByTestId('mass-difference').textContent).toBe('-2.5')
+    expect(within(row).getByText('Fark var')).toBeTruthy()
+    const scrap = within(row).getByTestId('scrap-percent')
+    expect(scrap.textContent).toContain('Hesaplanamıyor')
+    expect(scrap.textContent).toContain('fire (kg), hammadde (kg)')
+    expect(scrap.querySelector('[data-outcome="unavailable"]')).not.toBeNull()
+    const unit = within(row).getByTestId('actual-unit-kg')
+    expect(unit.textContent).toContain('gerçek kg, gerçek adet')
+    expect(screen.getByTestId('mass-balance-formula').textContent).toBe('GDC-BAL/1 (master v3 §28.9)')
+    expect(balanceReads(recorded)).toHaveLength(1)
+    expect(balanceReads(recorded)[0].headers['X-Company-Id']).toBe(COMPANY_A)
+  })
+
+  it('shows a computed engine answer as its text and an unknown input name as it came', async () => {
+    stub({
+      capabilities: READER_CAPABILITIES,
+      balances: [
+        () =>
+          json(
+            massBalance({
+              rolls: [
+                rollBalance(ROLL_1, {
+                  scrapPercent: { outcome: 'Computed', value: '4', missingParameters: [], refusalCode: null, refusedParameter: null },
+                  actualUnitKg: unavailable('somethingNew'),
+                }),
+              ],
+            }),
+          ),
+      ],
+    })
+    renderAt(PATH)
+
+    const row = await balanceRow()
+    expect(within(row).getByTestId('scrap-percent').textContent).toBe('4')
+    expect(within(row).getByTestId('actual-unit-kg').textContent).toContain('somethingNew')
+  })
+
+  it('refuses a body whose outcome and payload disagree, and keeps the order table', async () => {
+    stub({
+      capabilities: READER_CAPABILITIES,
+      balances: [
+        () =>
+          json(
+            massBalance({
+              rolls: [rollBalance(ROLL_1, { scrapPercent: { ...unavailable('fireKg'), value: '4' } })],
+            }),
+          ),
+      ],
+    })
+    renderAt(PATH)
+
+    await rollRow()
+    const panel = await screen.findByRole('region', { name: 'Kütle dengesi (GDC-BAL/1)' })
+    await waitFor(() => expect(within(panel).queryByTestId('mass-difference')).toBeNull())
+    await waitFor(() => expect(within(panel).queryByRole('table')).toBeNull())
+  })
+
+  it('shows a retryable 503 of its own read without hiding the order', async () => {
+    stub({ capabilities: READER_CAPABILITIES, balances: [() => problem(503)] })
+    renderAt(PATH)
+
+    await rollRow()
+    const panel = await screen.findByRole('region', { name: 'Kütle dengesi (GDC-BAL/1)' })
+    await waitFor(() => expect(within(panel).queryByRole('table')).toBeNull())
+    expect(within(panel).getByRole('button')).toBeTruthy()
+  })
+
+  it('reads the balance again when the order is re-read at a new version after an accepted fact', async () => {
+    const user = userEvent.setup()
+    const { recorded } = stub({
+      reads: [() => json(order()), () => json(order({ version: 2 }))],
+      balances: [() => json(massBalance()), () => json(massBalance({ version: 2 }))],
+    })
+    renderAt(PATH)
+    await balanceRow()
+    expect(balanceReads(recorded)).toHaveLength(1)
+
+    await fillFact(user)
+    await user.click(screen.getByRole('button', { name: 'Kaydet' }))
+
+    await waitFor(() => expect(balanceReads(recorded)).toHaveLength(2))
+    expect(posts(recorded)).toHaveLength(1)
   })
 })
 
@@ -173,7 +305,7 @@ describe('fact forms', () => {
     expect((post.body as { occurredAtUtc: string }).occurredAtUtc).toMatch(/Z$/)
     expect(post.body).not.toHaveProperty('companyId')
     await waitFor(() => expect(reads(recorded)).toHaveLength(2))
-    const row = await screen.findByRole('row', { name: new RegExp(ROLL_1) })
+    const row = await rollRow()
     await waitFor(() => expect(within(row).getAllByText('250.5').length).toBeGreaterThan(0))
   })
 

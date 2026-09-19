@@ -74,6 +74,18 @@ export async function issueThroughApi(env: MfgEnvironment, arranged: ArrangedOrd
   }
 }
 
+/** The order's GDC-BAL/1 read (BAL slice 2) as the server answers it now: the panel's own source. */
+export async function readMassBalance(env: MfgEnvironment, orderId: string): Promise<Record<string, unknown>> {
+  const api = await apiAs(env, env.seed.recorderActor)
+  try {
+    const response = await api.get(`/api/v1/manufacturing/orders/${orderId}/mass-balance`)
+    expect(response.status()).toBe(200)
+    return (await response.json()) as Record<string, unknown>
+  } finally {
+    await api.dispose()
+  }
+}
+
 /** The order as the server reads it now, for post-conditions the screen does not show. */
 export async function readOrder(env: MfgEnvironment, orderId: string): Promise<Record<string, unknown>> {
   const api = await apiAs(env, env.seed.recorderActor)

@@ -11,10 +11,10 @@
 
 | Vaka | Kanıt |
 |---|---|
-| Kayıt | Formdan girdi çıkışı. POST'ta kendi anahtarı ve sürümü; ardından emir GET ile yeniden okunur; tablo sunucu değerini gösterir; API okuması aynı değer |
+| Kayıt | Formdan girdi çıkışı. POST'ta kendi anahtarı ve sürümü; ardından emir GET ile yeniden okunur; tablo sunucu değerini gösterir; API okuması aynı değer. **Kütle dengesi paneli (GDC-BAL/1):** olgudan sonra kendi GET'ini yeniden okur; BAL-003 farkı sunucunun değeri (250.5); BAL-004 / BAL-006 "Hesaplanamıyor" ve eksik girdileri adlandırır; API okuması aynı |
 | Bilinmeyen sonuç | İlk POST'un **gerçek** cevabı sunucudan alınır, tarayıcıya teslimi kesilir. Form donar. Aynı anahtarla yeniden gönderim replay olur. API: olgu **bir kez** kaydedilir (100, 200 değil) |
 | Sürüm çakışması | Sayfa açıkken başka yazıcı gerçek API ile kaydeder. Form gönderimi 409, emir yeniden okunur. Yeni gönderim yeni anahtarla, yeni sürümde. API: 10 + 50 = 60 |
-| Okuyucu | Denge görünür; form yok; hiç yazma isteği yok |
+| Okuyucu | Denge ve kütle dengesi paneli okuma yetkisiyle görünür; form yok; hiç yazma isteği yok |
 
 - **Kimlik:** her vaka aktörünü istek başına başlık yeniden yazımıyla bağlar (web imajı kendi Development kullanıcısını gömer). Sayfanın aldığı her API cevabının yeniden yazılmış bir isteğe ait olduğu doğrulanır.
 - **Mock yok:** yalnız kimlik yeniden yazımı ve bir teslim kesintisi var. Hiçbir durum ya da gövde yerelde üretilmez.

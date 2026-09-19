@@ -192,6 +192,87 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
+    public async Task The_mass_balance_read_is_bal003_of_the_stored_facts_only_for_the_context_company_and_the_read_grant()
+    {
+        await using var run = await Run.StartAsync();
+        var userA = await run.GrantAsync(TestUsers.CompanyA, CompanyA, AllWrites);
+        var userB = await run.GrantAsync(TestUsers.CompanyB, CompanyB, AllWrites);
+        var (orderId, roll) = await run.OpenOrderAsync(userA);
+        var path = $"{Base}/orders/{orderId}/mass-balance";
+
+        using (var client = run.ClientFor(userA, CompanyA))
+        {
+            var issued = await run.OkAsync(client, $"{Base}/orders/{orderId}/input-issues",
+                new RecordFactRequestV1(Guid.NewGuid(), 1, roll, "100", At));
+
+            // BAL-003 of the stored facts: 100 issued, nothing declared → 100 unaccounted; BAL-004/006 the engine's Unavailable.
+            using var first = await client.GetAsync(path);
+            Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+            Assert.True(first.Headers.CacheControl is { Private: true, NoStore: true });
+            var view = (await first.Content.ReadFromJsonAsync<MassBalanceViewV1>())!;
+            Assert.Equal((orderId, issued.Version, "GDC-BAL/1 (master v3 §28.9)"), (view.OrderId, view.Version, view.FormulaVersion));
+            var line = Assert.Single(view.Rolls);
+            Assert.Equal((roll, new MassDifferenceViewV1("100", "0", "100", false)), (line.ParentRollId, line.Difference));
+            Assert.Equal(("Unavailable", (string?)null), (line.ScrapPercent.Outcome, line.ScrapPercent.Value));
+            Assert.Equal(["fireKg", "rawMaterialKg"], line.ScrapPercent.MissingParameters);
+            Assert.Equal(("Unavailable", (string?)null), (line.ActualUnitKg.Outcome, line.ActualUnitKg.Value));
+            Assert.Equal(["actualKg", "actualCount"], line.ActualUnitKg.MissingParameters);
+
+            // Reopen after a new fact: the read follows the stored facts (60 good + 40 scrap → fully accounted).
+            var good = await run.OkAsync(client, $"{Base}/orders/{orderId}/outputs",
+                new DeclareOutputRequestV1(Guid.NewGuid(), issued.Version, roll, "GoodProduct", "60", At.AddMinutes(1)));
+            await run.OkAsync(client, $"{Base}/orders/{orderId}/outputs",
+                new DeclareOutputRequestV1(Guid.NewGuid(), good.Version, roll, "Scrap", "40", At.AddMinutes(2)));
+            var reopened = (await client.GetFromJsonAsync<MassBalanceViewV1>(path))!;
+            Assert.Equal(new MassDifferenceViewV1("100", "100", "0", true), Assert.Single(reopened.Rolls).Difference);
+
+            // A read replays nothing and writes nothing: the same answer again, no new fact, no command attempt for it.
+            var facts = await run.ScalarAsync<int>("SELECT COUNT(*) FROM manufacturing.Facts");
+            var commands = await run.ScalarAsync<int>("SELECT COUNT(*) FROM manufacturing.Commands");
+            var again = (await client.GetFromJsonAsync<MassBalanceViewV1>(path))!;
+            // Member by member: a record's Equals compares its list members (MissingParameters) by reference.
+            var before = reopened.Rolls.Single();
+            var after = again.Rolls.Single();
+            Assert.Equal((reopened.Version, before.ParentRollId, before.Difference), (again.Version, after.ParentRollId, after.Difference));
+            foreach (var (beforeAnswer, afterAnswer) in new[] { (before.ScrapPercent, after.ScrapPercent), (before.ActualUnitKg, after.ActualUnitKg) })
+            {
+                Assert.Equal((beforeAnswer.Outcome, beforeAnswer.Value, beforeAnswer.RefusalCode, beforeAnswer.RefusedParameter),
+                    (afterAnswer.Outcome, afterAnswer.Value, afterAnswer.RefusalCode, afterAnswer.RefusedParameter));
+                Assert.Equal(beforeAnswer.MissingParameters, afterAnswer.MissingParameters);
+            }
+            Assert.Equal((facts, commands), (await run.ScalarAsync<int>("SELECT COUNT(*) FROM manufacturing.Facts"),
+                await run.ScalarAsync<int>("SELECT COUNT(*) FROM manufacturing.Commands")));
+
+            Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"{Base}/orders/{Guid.NewGuid()}/mass-balance")).StatusCode);
+        }
+
+        // Another company's order is the same code-less 404 as an unknown one.
+        using (var client = run.ClientFor(userB, CompanyB))
+        {
+            Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync(path)).StatusCode);
+        }
+
+        // Company A's read-only user without a Manufacturing permission, and B's user naming A: refused before any read.
+        using (var client = run.ClientFor(TestUsers.CompanyAViewer, CompanyA))
+        {
+            Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync(path)).StatusCode);
+        }
+
+        using (var client = run.ClientFor(userB, CompanyA))
+        {
+            Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync(path)).StatusCode);
+        }
+
+        // Without a company context nothing runs.
+        using (var client = run.Factory.CreateClient())
+        {
+            client.DefaultRequestHeaders.Add("X-Development-User", userA);
+            client.DefaultRequestHeaders.Add("X-Correlation-Id", Guid.NewGuid().ToString("N"));
+            Assert.Equal(HttpStatusCode.BadRequest, (await client.GetAsync(path)).StatusCode);
+        }
+    }
+
+    [SqlServerFact]
     public async Task A_read_that_keeps_meeting_concurrent_commits_is_a_retryable_503_platform_problem()
     {
         // FİNANS #313 INFO-4 through the real host: authentication, the company context, the read grant

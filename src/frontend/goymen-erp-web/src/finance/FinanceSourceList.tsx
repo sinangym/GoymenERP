@@ -4,8 +4,11 @@
  * Columns are only what #258 `SourceSummary` actually carries. Two things a finance user
  * would expect are deliberately ABSENT because no published field backs them:
  *  - party / Cari name — the summary has ids only and there is no Finance party reader;
- *  - currency code — only `currencyId` exists; no reader resolves it to a code.
- * Showing a guessed name or a default "TL" would be a false money statement.
+ *  - currency code for a caller without the propose permission — only `currencyId` exists for them; the
+ *    one read that labels a currency (Settings' candidates) is the propose permission's, so everyone
+ *    else sees the labelled reference (./currencyCodes.tsx).
+ * Showing a guessed name or a default "TL" would be a false money statement. The source "number" is the
+ * record's id until a series is decided, and is shown as a labelled reference, not as a number.
  *
  * The bank account name is joined from the FS0 reader. If that read fails the list still
  * renders; the cell says the name is unavailable rather than hiding the row.
@@ -25,8 +28,10 @@ import {
   SOURCE_LIST_SUBJECT,
   STAGE_LABEL,
   VALUE_DATE_NONE,
+  sourceNumberShown,
 } from './financeText'
 import { amountShown, amountText, stageKey } from './sourceView'
+import { WithCurrencyCodes, currencyShown } from './currencyCodes'
 import styles from './Finance.module.css'
 
 export function FinanceSourceList({ onOpen }: { readonly onOpen: (sourceId: string) => void }) {
@@ -49,6 +54,8 @@ export function FinanceSourceList({ onOpen }: { readonly onOpen: (sourceId: stri
   }
 
   return (
+    <WithCurrencyCodes>
+      {(codes) => (
     <div className={styles.list}>
       <table>
         <thead>
@@ -59,6 +66,7 @@ export function FinanceSourceList({ onOpen }: { readonly onOpen: (sourceId: stri
             <th scope="col">{COLUMN.valueOn}</th>
             <th scope="col">{COLUMN.bankAccount}</th>
             <th scope="col">{COLUMN.amount}</th>
+            <th scope="col">{COLUMN.currency}</th>
             <th scope="col">{COLUMN.actions}</th>
           </tr>
         </thead>
@@ -67,14 +75,19 @@ export function FinanceSourceList({ onOpen }: { readonly onOpen: (sourceId: stri
             const amount = amountShown(item.amount)
             return (
               <tr key={item.id} data-stage={stageKey(item)}>
-                <th scope="row">{item.sourceNumber}</th>
+                <th scope="row">{sourceNumberShown(item.sourceNumber, item.id)}</th>
                 <td>{STAGE_LABEL[stageKey(item)]}</td>
                 <td>{item.occurredOn}</td>
                 <td>{item.valueOn ?? VALUE_DATE_NONE}</td>
                 <td>{bankName(item.treasuryAccountId)}</td>
                 <td data-amount-kind={amount.kind}>{amountText(amount)}</td>
+                <td>{currencyShown(item.currencyId, codes)}</td>
                 <td>
-                  <button type="button" onClick={() => onOpen(item.id)} aria-label={`${OPEN_SOURCE}: ${item.sourceNumber}`}>
+                  <button
+                    type="button"
+                    onClick={() => onOpen(item.id)}
+                    aria-label={`${OPEN_SOURCE}: ${sourceNumberShown(item.sourceNumber, item.id)}`}
+                  >
                     {OPEN_SOURCE}
                   </button>
                 </td>
@@ -96,5 +109,7 @@ export function FinanceSourceList({ onOpen }: { readonly onOpen: (sourceId: stri
         ) : null}
       </div>
     </div>
+      )}
+    </WithCurrencyCodes>
   )
 }

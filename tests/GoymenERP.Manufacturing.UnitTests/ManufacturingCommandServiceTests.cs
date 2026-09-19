@@ -124,6 +124,27 @@ public sealed class ManufacturingCommandServiceTests
         Assert.Equal(2, fixture.Settings.Asked);
     }
 
+    // Ö2 on the text, as Settings' ExactPositiveDecimalV1 counts it (FİNANS #353 INFO-1, coordinator ruling): every
+    // written decimal counts, trailing zeros included. With the kilogram profile's scale 3, "10.500" is three
+    // decimals and is recorded; "10.5000" claims a fourth and is refused, after Settings answered, never trimmed.
+    [Fact]
+    public async Task Trailing_zeros_in_the_text_count_as_decimals_as_the_settings_text_contract_counts_them()
+    {
+        var fixture = new Fixture();
+        var order = await fixture.ApprovedOrderAsync();
+
+        var padded = await fixture.Service.IssueInputAsync(order.Id, Fact(order.Version, "10.5000"), "key-1", Permission,
+            CancellationToken.None);
+        Assert.Equal((ManufacturingApiStatus.Unprocessable, ManufacturingMassCodes.ScaleExceeded, "kg"),
+            (padded.Status, padded.Code, padded.Field));
+        Assert.Equal(1, fixture.Settings.Asked);
+        Assert.Empty(fixture.Store.Writes);
+
+        var three = await fixture.Service.IssueInputAsync(order.Id, Fact(order.Version, "10.500"), "key-2", Permission,
+            CancellationToken.None);
+        Assert.Equal(ManufacturingApiStatus.Ok, three.Status);
+    }
+
     [Theory]
     [InlineData("revoked")]
     [InlineData("site-scoped")]
@@ -295,6 +316,53 @@ public sealed class ManufacturingCommandServiceTests
         fixture.User.Companies.Clear();
 
         Assert.Equal(ManufacturingApiStatus.Denied, (await fixture.Service.GetOrderAsync(order.Id, CancellationToken.None)).Status);
+    }
+
+    [Fact]
+    public async Task The_mass_balance_read_is_bal003_from_the_facts_and_bal004_bal006_are_the_engines_unavailable_answers()
+    {
+        var fixture = new Fixture();
+        var order = await fixture.ApprovedOrderAsync();
+        var issued = await fixture.Service.IssueInputAsync(order.Id, Fact(order.Version, "10.5"), "key-1", Permission,
+            CancellationToken.None);
+        Assert.Equal(ManufacturingApiStatus.Ok, issued.Status);
+
+        var result = await fixture.Service.GetMassBalanceAsync(order.Id, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Ok, false, (string?)null), (result.Status, result.IsReplay, result.Code));
+        var view = result.Resource!;
+        Assert.Equal((order.Id, issued.Resource!.Version, "GDC-BAL/1 (master v3 §28.9)"), (view.OrderId, view.Version, view.FormulaVersion));
+        var roll = Assert.Single(view.Rolls);
+        Assert.Equal(Roll, roll.ParentRollId);
+        // BAL-003: 10.5 issued, nothing declared or measured → 10.5 unaccounted, the same number the order read shows.
+        Assert.Equal(new MassDifferenceViewV1("10.5", "0", "10.5", false), roll.Difference);
+        Assert.Equal(issued.Resource.Rolls.Single().UnexplainedKg, roll.Difference.DifferenceKg);
+        // BAL-004 / BAL-006: the order supplies no input without a decision, so the engine names them; no number is guessed.
+        Assert.Equal(("Unavailable", (string?)null), (roll.ScrapPercent.Outcome, roll.ScrapPercent.Value));
+        Assert.Equal(["fireKg", "rawMaterialKg"], roll.ScrapPercent.MissingParameters);
+        Assert.Equal(("Unavailable", (string?)null), (roll.ActualUnitKg.Outcome, roll.ActualUnitKg.Value));
+        Assert.Equal(["actualKg", "actualCount"], roll.ActualUnitKg.MissingParameters);
+        // A read: nothing is written by it.
+        Assert.Single(fixture.Store.Writes);
+    }
+
+    [Fact]
+    public async Task The_mass_balance_read_answers_like_the_order_read_denied_not_found_and_retryable()
+    {
+        var fixture = new Fixture();
+        var order = await fixture.ApprovedOrderAsync();
+
+        Assert.Equal(ManufacturingApiStatus.NotFound, (await fixture.Service.GetMassBalanceAsync(Guid.NewGuid(), CancellationToken.None)).Status);
+        Assert.Equal(ManufacturingApiStatus.NotFound, (await fixture.Service.GetMassBalanceAsync(Guid.Empty, CancellationToken.None)).Status);
+
+        fixture.Store.ReadFault = ManufacturingStoreCodes.ConcurrentChange;
+        var busy = await fixture.Service.GetMassBalanceAsync(order.Id, CancellationToken.None);
+        Assert.Equal((ManufacturingApiStatus.Unavailable, (string?)null), (busy.Status, busy.Code));
+        Assert.Null(busy.Resource);
+        fixture.Store.ReadFault = null;
+
+        fixture.User.Companies.Clear();
+        Assert.Equal(ManufacturingApiStatus.Denied, (await fixture.Service.GetMassBalanceAsync(order.Id, CancellationToken.None)).Status);
     }
 
     [Fact]
