@@ -4,6 +4,7 @@ using GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
 using GoymenERP.Modules.Idempotency.Domain.Executions;
 using GoymenERP.Modules.Idempotency.Infrastructure.Persistence;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
+using GoymenERP.Modules.Logistics.Infrastructure.Persistence;
 using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence;
 using GoymenERP.Modules.Finance.Infrastructure.Persistence;
 using GoymenERP.Modules.Identity.Domain.Assignments;
@@ -115,6 +116,14 @@ public sealed class GoymenErpApiFactory : WebApplicationFactory<Program>
         services.RemoveAll<IDbContextOptionsConfiguration<SalesDbContext>>();
         services.AddDbContext<SalesDbContext>((serviceProvider, options) =>
             options.UseInMemoryDatabase($"{databaseName}-sales")
+                .AddInterceptors(serviceProvider.GetRequiredService<AuditSaveChangesInterceptor>()));
+
+        // Logistics is host-wired since LOG-4a; without this the in-memory host would try to migrate
+        // it against the placeholder SQL connection string at startup.
+        services.RemoveAll<DbContextOptions<LogisticsDbContext>>();
+        services.RemoveAll<IDbContextOptionsConfiguration<LogisticsDbContext>>();
+        services.AddDbContext<LogisticsDbContext>((serviceProvider, options) =>
+            options.UseInMemoryDatabase($"{databaseName}-logistics")
                 .AddInterceptors(serviceProvider.GetRequiredService<AuditSaveChangesInterceptor>()));
 
         // Manufacturing is host-wired since MFG-API (#313); without this the in-memory host

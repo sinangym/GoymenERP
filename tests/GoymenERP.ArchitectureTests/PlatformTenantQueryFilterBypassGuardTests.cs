@@ -488,7 +488,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Logistics/"
                  + "GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsStore.cs"] =
                     new(
-                        "4b6ae496d28601660248e7bc41f25f4119e148d0f42bf64d8d8f13b0bd0ff4f5",
+                        "aee284d99947f3ff94794d1e5df7e9843fbb769cfb3afd334ec892f410f204be",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -585,7 +585,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "LogisticsDesignTimeDbContextFactory.cs"] =
                     new(
                         "LogisticsDbContext",
-                        "65969060034c72a61e8c88be2bb64207820931ee84974fa51d3955a1e8576004"")
+                        "65969060034c72a61e8c88be2bb64207820931ee84974fa51d3955a1e8576004")
             };
 
     // Migration data/raw SQL operations are deployment-time DDL/DML, not runtime global-query-
