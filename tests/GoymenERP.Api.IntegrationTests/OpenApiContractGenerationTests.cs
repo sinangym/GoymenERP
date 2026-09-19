@@ -306,6 +306,9 @@ public sealed partial class OpenApiContractGenerationTests
         new("get", "/api/v1/manufacturing/orders/{orderId}/mass-balance", "GetManufacturingOrderMassBalanceV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["path:orderId:true:type:string;format:uuid"]),
+        new("get", "/api/v1/logistics/loading-instructions/approved-order-lines", "GetLogisticsApprovedOrderLinesV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["query:pageSize:false:type:integer|string;format:int32;pattern:^-?(?:0|[1-9]\\d*)$", "query:cursor:false:type:string"]),
         .. ProductOperations,
     ];
 
@@ -384,6 +387,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetAccountingJournalV1"] = "ref:JournalDetailV1",
             ["GetAccountingPostingQueuesV1"] = "ref:PostingQueuesV1",
             ["GetManufacturingOrderMassBalanceV1"] = "ref:MassBalanceViewV1",
+            ["GetLogisticsApprovedOrderLinesV1"] = "ref:LogisticsApprovedOrderLinePage",
         };
 
     private static readonly HashSet<string> RequiredCompanyOperations =
@@ -453,6 +457,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetAccountingJournalV1",
         "GetAccountingPostingQueuesV1",
         "GetManufacturingOrderMassBalanceV1",
+        "GetLogisticsApprovedOrderLinesV1",
     ];
 
     private static readonly HashSet<string> OptionalCompanyOperations =
@@ -600,6 +605,7 @@ public sealed partial class OpenApiContractGenerationTests
         "ProposeAccountingPeriodV1",
         "ApproveAccountingPeriodV1",
         "CloseAccountingPeriodV1",
+        "GetLogisticsApprovedOrderLinesV1",
     ];
 
     private static readonly HashSet<string> CodeLessProblemResponses =
@@ -801,12 +807,35 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetAccountingJournalsV1:400"] = ["accounting_request_invalid"],
             ["GetAccountingJournalV1:400"] = ["accounting_request_invalid"],
             ["GetAccountingPostingQueuesV1:400"] = ["accounting_request_invalid"],
+            ["GetLogisticsApprovedOrderLinesV1:400"] = ["invalid_cursor", "validation_failed"],
         };
 
     private static readonly IReadOnlyDictionary<string, ComponentSchemaExpectation>
         ExpectedSuccessComponentSchemas =
             new Dictionary<string, ComponentSchemaExpectation>(StringComparer.Ordinal)
             {
+                ["LogisticsApprovedOrderLinePage"] = ObjectSchema(
+                    ["items", "nextCursor"],
+                    ("items", "type:array;items:ref:LogisticsApprovedOrderLineView"),
+                    ("nextCursor", "type:null|string")),
+                ["LogisticsApprovedOrderLineView"] = ObjectSchema(
+                    ["orderId", "documentNo", "lineId", "lineNo", "customerPartyId", "companyAccountId", "customerName", "productId", "productVersion", "productCode", "productName", "unitId", "unitCode", "quantity", "requestedDeliveryDate", "revision"],
+                    ("orderId", "type:string;format:uuid"),
+                    ("documentNo", "type:string"),
+                    ("lineId", "type:string;format:uuid"),
+                    ("lineNo", "type:integer|string;format:int32"),
+                    ("customerPartyId", "type:string;format:uuid"),
+                    ("companyAccountId", "type:string;format:uuid"),
+                    ("customerName", "type:string"),
+                    ("productId", "type:string;format:uuid"),
+                    ("productVersion", "type:string"),
+                    ("productCode", "type:string"),
+                    ("productName", "type:string"),
+                    ("unitId", "type:string;format:uuid"),
+                    ("unitCode", "type:string"),
+                    ("quantity", "type:string"),
+                    ("requestedDeliveryDate", "type:null|string;format:date"),
+                    ("revision", "type:integer|string;format:int32")),
                 ["EngineAnswerViewV1"] = ObjectSchema(
                     ["outcome", "value", "missingParameters", "refusalCode", "refusedParameter"],
                     ("outcome", "type:string"),
@@ -2318,9 +2347,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(78, operations.Count);
+        Assert.Equal(79, operations.Count);
         Assert.Equal(
-            78,
+            79,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());
