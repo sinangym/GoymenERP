@@ -9,6 +9,8 @@ import { FINANCE_REVERSE_DIRTY_SCOPE, FinanceSourceDetail } from './FinanceSourc
 import {
   AMOUNT_REDACTED,
   AMOUNT_UNAVAILABLE,
+  DETAIL,
+  NO_SOURCE_NUMBER,
   RECORD_ACTION,
   RECORD_CONFIRM,
   RECORD_DONE,
@@ -22,8 +24,10 @@ import {
   REVERSE_REASON_REQUIRED,
   UNALLOCATED_LABEL,
   UNKNOWN_TITLE,
+  financeRef,
 } from './financeText'
-import { EXAMPLE_SOURCE, NEGATIVE_EXAMPLE, NORMAL_EXAMPLE } from './contractExamples'
+import { FINANCE_CAPABILITY } from './capabilities'
+import { EXAMPLE_CURRENCY, EXAMPLE_SOURCE, NEGATIVE_EXAMPLE, NORMAL_EXAMPLE } from './contractExamples'
 import {
   COMPANY_A,
   COMPANY_B,
@@ -35,6 +39,7 @@ import {
   recordingPort,
   renderFinance,
   shellEvent,
+  shellFor,
   sourceDetail,
   succeeded,
   type ReadCall,
@@ -43,6 +48,8 @@ import {
 import type { PortReply } from './port'
 
 const OTHER_SOURCE = 'eeeeeeee-0000-4000-8000-000000000005'
+const REVERSAL_SOURCE = 'eeeeeeee-0000-4000-8000-0000aaaa1111'
+const REVERSED_SOURCE = 'eeeeeeee-0000-4000-8000-0000bbbb2222'
 
 function detailReads(reads: readonly ReadCall[]): number {
   return reads.filter((read) => read.method === 'sourceDetail').length
@@ -253,5 +260,75 @@ describe('FinanceSourceDetail — read states', () => {
     )
     renderFinance(<FinanceSourceDetail sourceId={EXAMPLE_SOURCE} offerRecordReverse />, { port })
     expect(await screen.findAllByText(AMOUNT_REDACTED)).toHaveLength(2)
+  })
+})
+
+// Business 5745076917: no technical id as final presentation — the same guarantee the list pins (#356), here on
+// the detail's own facts. One reference shape everywhere: `financeRef`, the last 8 characters.
+describe('FinanceSourceDetail — references and the currency code', () => {
+  const WITH_REFS = sourceDetail(COMPANY_A, {
+    // No number series is decided (Q2), so the server's "source number" is the record's own id.
+    source: { sourceNumber: EXAMPLE_SOURCE },
+    reversalSourceId: REVERSAL_SOURCE,
+    reversesSourceId: REVERSED_SOURCE,
+  })
+
+  /** Answers the detail, the bank list and the Settings currency candidates. */
+  const responder = (method: string, scope: { companyId: string }): PortReply => {
+    if (method === 'listBankAccounts') return found(bankPage(scope.companyId))
+    if (method === 'bankAccountCurrencyCandidates') {
+      return found({
+        companyId: scope.companyId,
+        items: [{ currencyId: EXAMPLE_CURRENCY, code: 'TRY', displayLabel: 'SENTETIK Lira' }],
+      })
+    }
+    if (method !== 'sourceDetail') return NO_REPLY
+    return found(WITH_REFS)
+  }
+
+  /** The value of a fact, read through its own term — the screen's shape, not an internal handle. */
+  const factValue = (term: string): string | undefined => screen.getByText(term).nextElementSibling?.textContent ?? undefined
+
+  it('shows the currency CODE to a caller who may read the candidates, and never a full id as text', async () => {
+    const { port, reads } = recordingPort(responder)
+    const { container } = renderFinance(<FinanceSourceDetail sourceId={EXAMPLE_SOURCE} offerRecordReverse />, {
+      port,
+      shell: shellFor(COMPANY_A, 1, [FINANCE_CAPABILITY.bankAccountsPropose]),
+    })
+
+    await waitFor(() => expect(factValue(DETAIL.currency)).toBe('TRY'))
+    expect(reads.map((read) => read.method)).toContain('bankAccountCurrencyCandidates')
+    expect(factValue(DETAIL.sourceNumber)).toBe(`${NO_SOURCE_NUMBER} · ${financeRef(EXAMPLE_SOURCE)}`)
+    expect(factValue(DETAIL.reversedBy)).toBe(financeRef(REVERSAL_SOURCE))
+    expect(factValue(DETAIL.reverses)).toBe(financeRef(REVERSED_SOURCE))
+    for (const id of [EXAMPLE_SOURCE, EXAMPLE_CURRENCY, REVERSAL_SOURCE, REVERSED_SOURCE]) {
+      expect(container.textContent).not.toContain(id)
+    }
+  })
+
+  it('shows the labelled currency reference — never a guessed code — without that permission, and reads no candidates', async () => {
+    const { port, reads } = recordingPort(responder)
+    const { container } = renderFinance(<FinanceSourceDetail sourceId={EXAMPLE_SOURCE} offerRecordReverse />, { port })
+
+    await waitFor(() => expect(factValue(DETAIL.currency)).toBe(`Para birimi ${financeRef(EXAMPLE_CURRENCY)}`))
+    expect(reads.map((read) => read.method)).not.toContain('bankAccountCurrencyCandidates')
+    expect(container.textContent).not.toContain('TRY')
+    expect(container.textContent).not.toContain(EXAMPLE_CURRENCY)
+  })
+
+  it('a real source number is shown as given, and a source with no reversal relation shows neither link', async () => {
+    const { port } = recordingPort((method, scope) =>
+      method === 'sourceDetail' ? found(sourceDetail(COMPANY_A)) : responder(method, scope),
+    )
+    const { container } = renderFinance(<FinanceSourceDetail sourceId={EXAMPLE_SOURCE} offerRecordReverse />, {
+      port,
+      shell: shellFor(COMPANY_A, 1, [FINANCE_CAPABILITY.bankAccountsPropose]),
+    })
+
+    await waitFor(() => expect(factValue(DETAIL.currency)).toBe('TRY'))
+    expect(factValue(DETAIL.sourceNumber)).toBe('SENTETIK-DRAFT-1')
+    expect(factValue(DETAIL.reversedBy)).toBe(DETAIL.none)
+    expect(factValue(DETAIL.reverses)).toBe(DETAIL.none)
+    expect(container.textContent).not.toContain('ref. …')
   })
 })

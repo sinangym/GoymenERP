@@ -98,6 +98,12 @@ export const DETAIL = {
 // No technical id as final presentation (Business 5745076917). No source number series is decided, so the
 // server's "source number" is the record's id: it is shown as a labelled reference, never as a number.
 export const NO_SOURCE_NUMBER = 'Numara verilmedi'
+
+/**
+ * THE reference shape of Finance (ORG #356 INFO-2): "ref. …" and the last 8 characters of a technical id, the same
+ * length Accounting uses. Every Finance screen shows a reference this way — a currency without its code, a source
+ * without a number, a reversal link — so one reference never reads shorter than another.
+ */
 export const financeRef = (id: string) => `ref. …${id.slice(-8)}`
 const GUID_TEXT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
