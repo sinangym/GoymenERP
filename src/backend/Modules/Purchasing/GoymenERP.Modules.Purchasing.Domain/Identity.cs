@@ -42,6 +42,15 @@ public static class PurchasingRuleCodes
     public const string UnitMismatch = "purchasing_unit_mismatch";
     public const string QuantityBelowZero = "purchasing_quantity_below_zero";
 
+    /// <summary>PUR-4a: a line bound to a request line on an order that was not opened for a request.</summary>
+    public const string SourceLineWithoutRequest = "purchasing_source_line_without_request";
+
+    /// <summary>PUR-4a: the same request line bound twice in one order.</summary>
+    public const string DuplicateSourceLine = "purchasing_duplicate_source_line";
+
+    /// <summary>PUR-4a (store, at approval): the approved shares of a request line across orders would exceed its need (Sinan 5738113623 §1).</summary>
+    public const string RequestLineOverSourced = "purchasing_request_line_over_sourced";
+
     /// <summary>
     /// A line-level guard fired although the aggregate had already checked the same bound. The
     /// aggregate is the single authority for every share bound; this code marks the second,

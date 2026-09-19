@@ -146,6 +146,24 @@ public static class ErpPermissions
     /// <inheritdoc cref="LogisticsLoadingInstructionsCreate"/>
     public const string LogisticsLoadsRecord = "logistics.loads.record";
 
+    /// <summary>
+    /// PUR-4a (Business #66 5737790175: the purchase supply link of the core chain): the Purchasing owner's names
+    /// (PurchasingPermissionManifestV1), the backend owners' technical mapping (Business #254 5654539215) recorded
+    /// and confirmed by the coordinator (#66 5743488059). Read, create and approve are separate names so that
+    /// entering and approving can be different personas (Sinan #66 5738113623 §4: deny-first, read and write
+    /// apart); purchase requests use the create/read names (the owner's ASSUMPTION-PUR4-1). Registered, not
+    /// granted: no role, seed or user receives them here. Company-wide only: an order names the company's
+    /// supplier account. Not Critical (#66 5743488059): no source makes the approval a segregated duty (no
+    /// maker≠checker, threshold or second person is decided).
+    /// </summary>
+    public const string PurchasingOrdersCreate = "purchasing.orders.create";
+
+    /// <inheritdoc cref="PurchasingOrdersCreate"/>
+    public const string PurchasingOrdersRead = "purchasing.orders.read";
+
+    /// <inheritdoc cref="PurchasingOrdersCreate"/>
+    public const string PurchasingOrdersApprove = "purchasing.orders.approve";
+
     public const string IdentityProfileRead = "identity.profile.read";
     public const string IdentityAccessRequest = "identity.access.request";
     public const string IdentityAccessApprove = "identity.access.approve";
@@ -179,6 +197,9 @@ public static class ErpPermissions
             LogisticsLoadingInstructionsCreate,
             LogisticsLoadingInstructionsRead,
             LogisticsLoadsRecord,
+            PurchasingOrdersCreate,
+            PurchasingOrdersRead,
+            PurchasingOrdersApprove,
             FinanceBankAccountRead,
             FinanceBankAccountPropose,
             FinanceBankAccountApprove,
@@ -225,6 +246,9 @@ public static class ErpPermissions
             LogisticsLoadingInstructionsCreate,
             LogisticsLoadingInstructionsRead,
             LogisticsLoadsRecord,
+            PurchasingOrdersCreate,
+            PurchasingOrdersRead,
+            PurchasingOrdersApprove,
             FinanceBankAccountRead,
             FinanceBankAccountPropose,
             FinanceBankAccountApprove,

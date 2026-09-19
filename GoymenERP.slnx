@@ -66,6 +66,7 @@
   <Folder Name="/src/backend/Modules/Purchasing/">
     <Project Path="src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Application/GoymenERP.Modules.Purchasing.Application.csproj" />
     <Project Path="src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Domain/GoymenERP.Modules.Purchasing.Domain.csproj" />
+    <Project Path="src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/GoymenERP.Modules.Purchasing.Infrastructure.csproj" />
   </Folder>
   <Folder Name="/src/backend/Modules/Sales/">
     <Project Path="src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/GoymenERP.Modules.Sales.Application.csproj" />

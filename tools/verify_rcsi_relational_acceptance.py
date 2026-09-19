@@ -55,6 +55,7 @@ INVENTORY_MODULES = (
     "organization",
     "platform",
     "product",
+    "purchasing",
     "sales",
 )
 TEST_NAMESPACE = "GoymenERP.Api.IntegrationTests."
@@ -70,6 +71,7 @@ MODULE_CLASS_PREFIXES = (
     ("Manufacturing", "manufacturing"),
     ("Organization", "organization"),
     ("Product", "product"),
+    ("Purchasing", "purchasing"),
     ("Sales", "sales"),
 )
 CARI_JOURNEY_CLASS = "SqlServerRelationalAcceptanceTests"
