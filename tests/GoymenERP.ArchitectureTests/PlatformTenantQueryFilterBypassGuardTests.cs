@@ -477,11 +477,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // connection, command or raw SQL.
                 // Re-measured for MFG-API (#313): the same single SqlClient use now also recognises 547 on the
                 // named composite work-center FK (manufacturing_work_center_not_found); still recognition only,
-                // no connection, command or raw SQL.
+                // no connection, command or raw SQL. Re-fingerprinted for MFG-BAL: the order close reads the
+                // GDC-BAL/1 mass-balance result (BAL-003); SqlClient count unchanged (1).
                 ["src/backend/Modules/Manufacturing/"
                  + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.cs"] =
                     new(
-                        "fefed185afff1a1a753fd8e56c81dbcaddf6ebfcce5a2fa448f1c448739c9db0",
+                        "55bbdf12bddf4c74e0cfb2bb4a1131e2f8385d2332bc457658b8ff1d3cfd420b",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
