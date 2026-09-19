@@ -13,8 +13,9 @@ using Microsoft.Extensions.Hosting;
 namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>
-/// FIN-UI-1a (#325), central: the normal host registers Finance's staged provider beside Counterparty,
-/// Organization, Product and Sales, and accepts exactly that set's reviewed revision.
+/// FIN-UI-1a (#325), central: the normal host registers Finance's provider beside Counterparty,
+/// Organization, Product and Sales, and accepts exactly that set's reviewed revision. FIN-UI-1c: the six
+/// Finance declarations are published (availability only), and the disposable fin-staged profile is retired.
 /// </summary>
 public sealed class FinanceShellRegistrationTests
 {
@@ -29,12 +30,12 @@ public sealed class FinanceShellRegistrationTests
         ];
 
         // On failure xUnit prints the actual revision: the constant is never guessed.
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV10ProductV10PublishedSalesV10AndFinanceV10,
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV10ProductV10PublishedSalesV10AndPublishedFinanceV10,
             ShellCapabilityRegistry.ComputeCandidateRevision(providers));
     }
 
     [Fact]
-    public void The_normal_host_with_Finance_gets_its_authority_and_the_staged_screens_grant_nothing()
+    public void The_normal_host_with_Finance_gets_its_authority_and_serves_the_published_screens()
     {
         var services = new ServiceCollection();
         services.AddSingleton<IShellCapabilityProvider, CounterpartyShellCapabilityProvider>();
@@ -46,7 +47,7 @@ public sealed class FinanceShellRegistrationTests
         var authority = C01E2eShellCapabilityActivation.Configure(services, new TestingEnvironment(),
             new ConfigurationBuilder().Build());
 
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV10ProductV10PublishedSalesV10AndFinanceV10,
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV10ProductV10PublishedSalesV10AndPublishedFinanceV10,
             authority);
         using var container = services.BuildServiceProvider();
         var registry = new ShellCapabilityRegistry(container.GetServices<IShellCapabilityProvider>(),
@@ -54,9 +55,10 @@ public sealed class FinanceShellRegistrationTests
         var finance = registry.Registrations
             .Where(item => item.Owner == FinanceShellCapabilityProvider.OwnerId)
             .ToArray();
-        // Five routes and the approval control; staged until the fin01 acceptance and a separate change.
+        // Five routes and the approval control, published after the FIN-01 acceptance (#332, FIN-UI-1c). A
+        // declaration still grants nothing: each route's service measures its own Finance permission afresh.
         Assert.Equal(6, finance.Length);
-        Assert.All(finance, item => Assert.False(item.Declaration.ImplementationAvailable));
+        Assert.All(finance, item => Assert.True(item.Declaration.ImplementationAvailable));
         // Three Sales screens plus the SALES-A1 approve control.
         Assert.Equal(4, registry.Registrations.Count(item => item.Owner == SalesShellCapabilityProvider.OwnerId));
     }
@@ -97,60 +99,21 @@ public sealed class FinanceShellRegistrationTests
             Assert.Single(services, item => item.ServiceType == typeof(IShellCapabilityProvider)).ImplementationType);
     }
 
-    // FIN-UI-1b (#332): the disposable fin-staged profile opens exactly Finance's own six declarations
-    // beside the list-only C-01 set; the constant is pinned against ComputeCandidateRevision.
+    // FIN-UI-1c: the disposable fin-staged profile ("finance-bank-accounts-and-drafts", #332) is retired. Its
+    // value is no profile any more: inside the C-01 envelope it fails closed at startup, as any unknown one.
     [Fact]
-    public void The_fin_staged_profile_opens_only_Finances_own_declarations_beside_the_C01_list()
+    public void The_retired_fin_staged_profile_value_fails_closed()
     {
         var services = new ServiceCollection();
         services.AddSingleton<IShellCapabilityProvider, CounterpartyShellCapabilityProvider>();
-        services.AddSingleton<IShellCapabilityProvider, OrganizationShellCapabilityProvider>();
-        services.AddSingleton<IShellCapabilityProvider, ProductShellCapabilityProvider>();
-        services.AddSingleton<IShellCapabilityProvider, SalesShellCapabilityProvider>();
         services.AddSingleton<IShellCapabilityProvider, FinanceShellCapabilityProvider>();
         var envelope = new Dictionary<string, string?>(C01E2eShellCapabilityActivationTests.ExactEnvelope())
         {
-            [C01E2eShellCapabilityActivation.ProfileConfigurationKey] =
-                C01E2eShellCapabilityActivation.FinanceBankAccountsAndDraftsProfile,
+            [C01E2eShellCapabilityActivation.ProfileConfigurationKey] = "finance-bank-accounts-and-drafts",
         };
 
-        var authority = C01E2eShellCapabilityActivation.Configure(services, new TestingEnvironment(),
-            new ConfigurationBuilder().AddInMemoryCollection(envelope).Build());
-
-        Assert.Equal(ShellCapabilityRegistryAuthorities.C01DisposableFinanceBankAccountsAndDraftsV1, authority);
-        Assert.Equal(
-            [typeof(C01E2eShellCapabilityProvider), typeof(C01E2eFinanceBankAccountsAndDraftsShellCapabilityProvider)],
-            services.Where(item => item.ServiceType == typeof(IShellCapabilityProvider))
-                .Select(item => item.ImplementationType));
-        using var container = services.BuildServiceProvider();
-        var providers = container.GetServices<IShellCapabilityProvider>().ToArray();
-        // On failure xUnit prints the actual revision: the constant is never guessed.
-        Assert.Equal(authority, ShellCapabilityRegistry.ComputeCandidateRevision(providers));
-        var registry = new ShellCapabilityRegistry(providers, new ShellCapabilityAuthorityCatalog([authority]));
-
-        // Same ids, routes, access and parent as the owner's declarations; only availability differs.
-        var owner = new FinanceShellCapabilityProvider().GetDeclarations()
-            .ToDictionary(declaration => declaration.CapabilityId);
-        var opened = registry.Registrations
-            .Where(item => item.Owner == FinanceShellCapabilityProvider.OwnerId)
-            .ToArray();
-        Assert.Equal(6, opened.Length);
-        Assert.Equal(owner.Keys.Order(), opened.Select(item => item.Declaration.CapabilityId).Order());
-        Assert.All(opened, item =>
-        {
-            var expected = owner[item.Declaration.CapabilityId];
-            var actual = item.Declaration;
-            Assert.True(actual.ImplementationAvailable);
-            Assert.Equal(
-                (expected.RouteId, expected.RoutePath, expected.ScreenId, expected.RoutePrecedence,
-                    expected.ContextRequirement, expected.ScopeRequirement, expected.ParentCapabilityId),
-                (actual.RouteId, actual.RoutePath, actual.ScreenId, actual.RoutePrecedence,
-                    actual.ContextRequirement, actual.ScopeRequirement, actual.ParentCapabilityId));
-            Assert.Equal(expected.RequiredPermissions.Order(), actual.RequiredPermissions.Order());
-        });
-        Assert.DoesNotContain(registry.Registrations, item => item.Owner == SalesShellCapabilityProvider.OwnerId
-                                                              || item.Owner == ProductShellCapabilityProvider.OwnerId
-                                                              || item.Owner == OrganizationShellCapabilityProvider.OwnerId);
+        Assert.Throws<InvalidOperationException>(() => C01E2eShellCapabilityActivation.Configure(services,
+            new TestingEnvironment(), new ConfigurationBuilder().AddInMemoryCollection(envelope).Build()));
     }
 
     private sealed class TestingEnvironment : IHostEnvironment

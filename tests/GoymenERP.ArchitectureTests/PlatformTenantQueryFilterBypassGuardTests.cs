@@ -123,7 +123,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // finance
             ["tools/relational_inventory/finance.txt"] =
-                "8e167cef2e6ecfb28c1aeadd621414ebdb10b20198060cd09e81f5201dafb563",
+                "cfd16410fe379d3482c4f49f5aebb1e47cd2e40808f370cc057e441d5ff66044",
 
             // identity
             ["tools/relational_inventory/identity.txt"] =

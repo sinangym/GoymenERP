@@ -8,7 +8,7 @@ using GoymenERP.Modules.Product.Infrastructure.Shell;
 namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>
-/// FIN-UI-1: Finance's staged provider through the REAL <see cref="ShellCapabilityRegistry"/> — its
+/// FIN-UI-1: Finance's provider (published since FIN-UI-1c) through the REAL <see cref="ShellCapabilityRegistry"/> — its
 /// owner, route, path, screen-id and control rules — alone and beside the other module providers, so
 /// that registering it in the host cannot fail at start-up. No database; the host registration and
 /// its authority constant are the central writer's.
@@ -36,7 +36,7 @@ public sealed class FinanceShellCapabilityRegistryTests
         Assert.All(registry.Registrations, registration =>
         {
             Assert.Equal(FinanceShellCapabilityProvider.OwnerId, registration.Owner);
-            Assert.False(registration.Declaration.ImplementationAvailable);
+            Assert.True(registration.Declaration.ImplementationAvailable);
         });
     }
 
