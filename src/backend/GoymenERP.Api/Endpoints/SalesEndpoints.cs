@@ -23,7 +23,8 @@ public static class SalesEndpoints
     private const string IdempotencyHeaderName = SalesDraftApiV1.IdempotencyHeader;
     private const int MaximumIdempotencyKeyLength = 128;
     private const int MaximumCursorLength = 8192;
-    private static readonly HashSet<string> DraftListQueryNames = new(["pageSize", "cursor"], StringComparer.Ordinal);
+    private static readonly HashSet<string> DraftListQueryNames = new(["pageSize", "cursor", "approvalState"], StringComparer.Ordinal);
+    private const int MaximumApprovalStateLength = 32;
 
     private static readonly HashSet<string> AccountQueryNames =
         new(["q", "pageSize", "cursor"], StringComparer.Ordinal);
@@ -241,6 +242,7 @@ public static class SalesEndpoints
         drafts.MapGet("/", async (
             [FromQuery] int? pageSize,
             [FromQuery] string? cursor,
+            [FromQuery] string? approvalState,
             HttpContext httpContext,
             [FromServices] ISalesDraftService service,
             ICorrelationContext correlation,
@@ -248,14 +250,16 @@ public static class SalesEndpoints
         {
             SetPrivateNoStore(httpContext.Response);
             if (!HasOnlySingleQuery(httpContext.Request.Query, DraftListQueryNames, Array.Empty<string>())
-                || pageSize is < 1 or > 100 || cursor?.Length > MaximumCursorLength)
+                || pageSize is < 1 or > 100 || cursor?.Length > MaximumCursorLength
+                || approvalState is { Length: 0 or > MaximumApprovalStateLength })
             {
                 return DraftProblem(StatusCodes.Status400BadRequest, "validation_failed", correlation);
             }
 
             try
             {
-                return Results.Json(await service.GetDraftListAsync(new SalesOrderDraftListQuery(pageSize ?? 50, cursor), cancellationToken),
+                // SALES-A1: `approvalState` narrows to one exact internal approval state (the service validates the name).
+                return Results.Json(await service.GetDraftListAsync(new SalesOrderDraftListQuery(pageSize ?? 50, cursor, approvalState), cancellationToken),
                     SalesDraftJson.Options);
             }
             catch (SalesDraftServiceException exception)
@@ -270,6 +274,102 @@ public static class SalesEndpoints
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
+        // SALES-A1: the internal-approval commands (DEC-SAL-001/002; Business 5737989917). One canonical
+        // Idempotency-Key each; the strict body `{expectedVersion}` (+ `reason` on the rejection only);
+        // 200 with the draft after the transition, and 200 + replay headers for the same key again
+        // (ADR-011 §4); a stale version or a wrong state is the key's recorded 409 (§7). Submit follows
+        // the create permission, approve and reject the `sales.orders.approve` name — both measured by
+        // the service; another company's draft is 404.
+        MapDraftDetail(drafts);
+        MapStateCommand(drafts, "/{id:guid}/submission", "SubmitSalesOrderDraftV1", allowReason: false,
+            (service, id, body, metadata, cancellationToken) => service.SubmitDraftAsync(id, body, metadata, cancellationToken),
+            unprocessableCodes: ["validation_failed"]);
+        MapStateCommand(drafts, "/{id:guid}/approval", "ApproveSalesOrderDraftV1", allowReason: false,
+            (service, id, body, metadata, cancellationToken) => service.ApproveDraftAsync(id, body, metadata, cancellationToken),
+            unprocessableCodes: []);
+        MapStateCommand(drafts, "/{id:guid}/rejection", "RejectSalesOrderDraftV1", allowReason: true,
+            (service, id, body, metadata, cancellationToken) => service.RejectDraftAsync(id, body, metadata, cancellationToken),
+            unprocessableCodes: [SalesDraftProblemCodesV1.ApprovalReasonTooLong]);
+    }
+
+    private static void MapStateCommand(RouteGroupBuilder drafts, string pattern, string name, bool allowReason,
+        Func<ISalesDraftService, Guid, SalesDraftStateCommandRequest, SalesCommandMetadata, CancellationToken, Task<SalesOrderDraftResponse>> command,
+        string[] unprocessableCodes)
+    {
+        var route = drafts.MapPost(pattern, async (
+            Guid id,
+            HttpContext httpContext,
+            [FromServices] ISalesDraftService service,
+            ICorrelationContext correlation,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var idempotencyKey) || !correlation.IsResolved)
+            {
+                return DraftProblem(StatusCodes.Status400BadRequest, SalesDraftProblemCodesV1.CommandMetadataInvalid, correlation);
+            }
+
+            if (!httpContext.Request.HasJsonContentType())
+            {
+                return Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+            }
+
+            SalesDraftStateCommandRequest body;
+            try
+            {
+                using var reader = new StreamReader(httpContext.Request.Body, Encoding.UTF8);
+                body = SalesDraftJson.ReadStateCommand(await reader.ReadToEndAsync(cancellationToken), allowReason);
+            }
+            catch (JsonException)
+            {
+                return DraftProblem(StatusCodes.Status400BadRequest, "validation_failed", correlation);
+            }
+
+            try
+            {
+                var response = await command(service, id, body,
+                    new SalesCommandMetadata(idempotencyKey, correlation.CorrelationId, correlation.CausationId, DateTimeOffset.UtcNow),
+                    cancellationToken);
+                if (response.IsReplay)
+                {
+                    ApplyReplayHeaders(httpContext, response.OriginalCorrelationId);
+                }
+
+                return Results.Json(response, SalesDraftJson.Options, statusCode: SalesDraftApiV1.StateCommandStatus);
+            }
+            catch (SalesDraftServiceException exception)
+            {
+                if (exception.IsReplay)
+                {
+                    ApplyReplayHeaders(httpContext, exception.OriginalCorrelationId
+                        ?? throw new InvalidOperationException("Replayed refusal without its original correlation."));
+                }
+
+                return DraftProblem(exception, correlation);
+            }
+        })
+            .WithName(name)
+            // The replayable results: the draft after the transition (200) and the recorded terminal refusals (409, §7).
+            .WithIdempotencyContract(SalesDraftApiV1.StateCommandStatus, StatusCodes.Status409Conflict)
+            .Accepts<SalesDraftStateCommandRequest>("application/json")
+            .Produces<SalesOrderDraftResponse>(SalesDraftApiV1.StateCommandStatus)
+            .ProducesErpBadRequest("validation_failed", SalesDraftProblemCodesV1.CommandMetadataInvalid)
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(SalesDraftProblemCodesV1.VersionConflict, SalesDraftProblemCodesV1.StateConflict,
+                SalesDraftProblemCodesV1.SameKeyPayloadMismatch, SalesDraftProblemCodesV1.ConcurrentChange)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+        if (unprocessableCodes.Length > 0)
+        {
+            route.ProducesErpUnprocessableEntity(unprocessableCodes);
+        }
+    }
+
+    /// <summary>GET detail, mapped exactly once (the endpoint name is unique per host).</summary>
+    private static void MapDraftDetail(RouteGroupBuilder drafts)
+    {
         drafts.MapGet("/{id:guid}", async (
             Guid id,
             HttpContext httpContext,

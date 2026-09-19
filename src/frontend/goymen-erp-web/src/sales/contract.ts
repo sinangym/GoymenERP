@@ -38,6 +38,43 @@ export const REV_0 = 'Rev.0'
 export const ORDER_KIND = 'Order' as const
 export const DRAFT_STATE = 'Draft' as const
 
+/**
+ * SALES-A1: the INTERNAL APPROVAL axis (`InternalApprovalState`), a fourth fact beside the lifecycle
+ * `state`, the commercial `revision` and the concurrency `version` — never merged into one status.
+ * Preparing → PendingApproval → Approved | Rejected (→ PendingApproval again, same Rev.0).
+ */
+export const APPROVAL_STATE = {
+  preparing: 'Preparing',
+  pendingApproval: 'PendingApproval',
+  approved: 'Approved',
+  rejected: 'Rejected',
+} as const
+export type ApprovalState = (typeof APPROVAL_STATE)[keyof typeof APPROVAL_STATE]
+const APPROVAL_STATES: readonly string[] = Object.values(APPROVAL_STATE)
+
+/**
+ * SALES-A1: the three state commands. Each answers 200 with the draft after the transition (the
+ * command's result IS the detail view), and 200 + `Idempotency-Replayed` for the same key again.
+ */
+export const STATE_COMMAND_STATUS = 200
+export type DraftStateCommand = 'submission' | 'approval' | 'rejection'
+export const salesDraftCommandPath = (id: string, command: DraftStateCommand) => `${salesDraftDetailPath(id)}/${command}`
+
+/** `SalesDraftStateCommandRequest`: the expected version as text; `reason` only on a rejection. */
+export interface DraftStateCommandRequest {
+  readonly expectedVersion: string
+  readonly reason?: string
+}
+
+/** `SalesDraftApprovalV1`: who submitted / decided and when; null until it happened. Facts, never derived. */
+export interface ApprovalFacts {
+  readonly submittedBy: string | null
+  readonly submittedAtUtc: string | null
+  readonly decidedBy: string | null
+  readonly decidedAtUtc: string | null
+  readonly rejectionReason: string | null
+}
+
 /** Technical bounds from `SalesDraftJson.ReadCreate`. Not owner scale or precision. */
 export const LIMITS = {
   lines: 500,
@@ -129,6 +166,8 @@ export interface DraftSummary {
   readonly businessDate: string
   readonly createdAtUtc: string
   readonly lineCount: number
+  /** SALES-A1: the internal approval axis. */
+  readonly approvalState: ApprovalState
 }
 
 export interface DraftLine {
@@ -159,6 +198,8 @@ export interface DraftDetail {
   readonly paymentTerms: OwnerReference | null
   readonly sourceStrategy: OwnerReference | null
   readonly package: OwnerReference | null
+  /** SALES-A1: the approval facts; consistent with `draft.approvalState` or the detail is malformed. */
+  readonly approval: ApprovalFacts
 }
 
 export interface DraftMutation {
@@ -210,6 +251,10 @@ export const SALES_PROBLEM_CODE = {
   ownerReferenceUnavailable: 'owner_reference_unavailable',
   commandMetadataInvalid: 'command_metadata_invalid',
   invalidCursor: 'invalid_cursor',
+  // SALES-A1 (contract deltas): the transition is not allowed from the draft's approval state
+  // (409, terminal for the key), and a rejection reason over the technical bound (422).
+  stateConflict: 'sales_state_conflict',
+  approvalReasonTooLong: 'sales_approval_reason_too_long',
 } as const
 
 export type SalesProblemCode = (typeof SALES_PROBLEM_CODE)[keyof typeof SALES_PROBLEM_CODE]
@@ -282,8 +327,50 @@ function decodeSlices(value: unknown): readonly DeliverySlice[] | null | undefin
 
 const SUMMARY_KEYS = [
   'id', 'companyId', 'documentNo', 'kind', 'state', 'version', 'revision', 'partyId',
-  'companyAccountId', 'currencyId', 'businessDate', 'createdAtUtc', 'lineCount',
+  'companyAccountId', 'currencyId', 'businessDate', 'createdAtUtc', 'lineCount', 'approvalState',
 ] as const
+
+const isApprovalState = (v: unknown): v is ApprovalState => typeof v === 'string' && APPROVAL_STATES.includes(v)
+const isInstant = (v: unknown): v is string => typeof v === 'string' && INSTANT_RE.test(v) && !Number.isNaN(Date.parse(v))
+const isActor = (v: unknown): v is string => isText(v, 128)
+
+/**
+ * SALES-A1: the approval facts, read exactly and checked against the state the summary carries:
+ * Preparing holds none; PendingApproval the submission only; Approved both, no reason; Rejected both.
+ * A body that says "approved" without a decision is not shown as approved.
+ */
+function decodeApproval(value: unknown, state: ApprovalState): ApprovalFacts | null {
+  const o = exact(value, ['submittedBy', 'submittedAtUtc', 'decidedBy', 'decidedAtUtc', 'rejectionReason'])
+  if (
+    o === null ||
+    !isNullable(o.submittedBy, isActor) ||
+    !isNullable(o.submittedAtUtc, isInstant) ||
+    !isNullable(o.decidedBy, isActor) ||
+    !isNullable(o.decidedAtUtc, isInstant) ||
+    !isNullable(o.rejectionReason, (v): v is string => isText(v, LIMITS.note))
+  ) {
+    return null
+  }
+  const submitted = o.submittedBy !== null && o.submittedAtUtc !== null
+  const decided = o.decidedBy !== null && o.decidedAtUtc !== null
+  const noDecision = o.decidedBy === null && o.decidedAtUtc === null && o.rejectionReason === null
+  const consistent =
+    state === APPROVAL_STATE.preparing
+      ? !submitted && o.submittedBy === null && o.submittedAtUtc === null && noDecision
+      : state === APPROVAL_STATE.pendingApproval
+        ? submitted && noDecision
+        : state === APPROVAL_STATE.approved
+          ? submitted && decided && o.rejectionReason === null
+          : submitted && decided
+  if (!consistent) return null
+  return {
+    submittedBy: o.submittedBy,
+    submittedAtUtc: o.submittedAtUtc,
+    decidedBy: o.decidedBy,
+    decidedAtUtc: o.decidedAtUtc,
+    rejectionReason: o.rejectionReason,
+  }
+}
 
 export function decodeDraftSummary(value: unknown): DraftSummary | null {
   const o = exact(value, SUMMARY_KEYS)
@@ -307,7 +394,8 @@ export function decodeDraftSummary(value: unknown): DraftSummary | null {
     typeof o.createdAtUtc !== 'string' ||
     !INSTANT_RE.test(o.createdAtUtc) ||
     Number.isNaN(Date.parse(o.createdAtUtc)) ||
-    !isPositiveInt(o.lineCount, LIMITS.lines)
+    !isPositiveInt(o.lineCount, LIMITS.lines) ||
+    !isApprovalState(o.approvalState)
   ) {
     return null
   }
@@ -325,6 +413,7 @@ export function decodeDraftSummary(value: unknown): DraftSummary | null {
     businessDate: o.businessDate,
     createdAtUtc: o.createdAtUtc,
     lineCount: o.lineCount,
+    approvalState: o.approvalState,
   }
 }
 
@@ -378,7 +467,7 @@ function decodeLine(value: unknown): DraftLine | null {
   }
 }
 
-const DETAIL_KEYS = ['draft', 'requestedDeliveryDate', 'note', 'lines', ...OWNER_REFERENCE_FIELDS] as const
+const DETAIL_KEYS = ['draft', 'requestedDeliveryDate', 'note', 'lines', ...OWNER_REFERENCE_FIELDS, 'approval'] as const
 
 /** `expectedId`: the record the caller asked for. A detail of another record is not an answer. */
 export function decodeDraftDetail(value: unknown, expectedId: string | null): DraftDetail | null {
@@ -404,6 +493,8 @@ export function decodeDraftDetail(value: unknown, expectedId: string | null): Dr
     if (reference === undefined) return null
     references[field] = reference
   }
+  const approval = decodeApproval(o.approval, draft.approvalState)
+  if (approval === null) return null
   return {
     draft,
     requestedDeliveryDate: o.requestedDeliveryDate,
@@ -415,6 +506,7 @@ export function decodeDraftDetail(value: unknown, expectedId: string | null): Dr
     paymentTerms: references.paymentTerms ?? null,
     sourceStrategy: references.sourceStrategy ?? null,
     package: references.package ?? null,
+    approval,
   }
 }
 

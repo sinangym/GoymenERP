@@ -27,16 +27,21 @@ import {
   OWNER_REFERENCE_FIELDS,
   REV_0,
   SALES_DRAFT_PATH,
+  STATE_COMMAND_STATUS,
   decodeDraftDetail,
   decodeDraftMutation,
   decodeDraftPage,
   decodeProblem,
+  salesDraftCommandPath,
   salesDraftDetailPath,
+  type ApprovalState,
   type DeliverySlice,
   type DraftCreateRequest,
   type DraftDetail,
   type DraftMutation,
   type DraftPage,
+  type DraftStateCommand,
+  type DraftStateCommandRequest,
   type OwnerReference,
 } from './contract'
 import type { OrderCommandOutcome } from './orderAttempt'
@@ -103,9 +108,12 @@ export async function fetchDraftPage(
   cursor: string | null,
   companyId: string,
   signal?: AbortSignal,
+  approvalState: ApprovalState | null = null,
 ): Promise<ViewOutcome<DraftPage>> {
   const params = new URLSearchParams({ pageSize: String(PAGE_SIZE) })
   if (cursor !== null) params.set('cursor', cursor)
+  // SALES-A1: an exact approval state narrows the list on the server; no client-side filtering.
+  if (approvalState !== null) params.set('approvalState', approvalState)
   const raw = await request(`${SALES_DRAFT_PATH}?${params.toString()}`, { headers: headers(companyId) }, signal)
   if ('failure' in raw) return readFailure(raw.failure)
   if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
@@ -287,6 +295,62 @@ export async function createDraft(
     !describesAttempt(mutation, payload, context.companyId) ||
     (raw.location !== null &&
       !raw.location.endsWith(`/api/v1${salesDraftDetailPath(mutation.detail.draft.id)}`))
+  ) {
+    return { type: 'malformed' }
+  }
+  return { type: 'succeeded', data: mutation }
+}
+
+/* ── SALES-A1: internal approval commands ─────────────────────────────────── */
+
+export interface CommandContext {
+  readonly idempotencyKey: string
+  /** The company frozen with the attempt, not whatever the shell holds at retry time. */
+  readonly companyId: string
+  /** The draft the command was sent for; an answer about another record is not this command's. */
+  readonly draftId: string
+}
+
+/**
+ * One state command (submission / approval / rejection): 200 with the draft after the transition
+ * is the pinned success; the same key again is 200 + `Idempotency-Replayed`, told apart by the
+ * header and `isReplay` agreeing. The answer must describe THIS draft under THIS company, or the
+ * outcome is unknown and the key is kept (the transition may have been recorded).
+ */
+export async function sendDraftCommand(
+  command: DraftStateCommand,
+  payload: DraftStateCommandRequest,
+  context: CommandContext,
+  signal?: AbortSignal,
+): Promise<OrderCommandOutcome<DraftMutation>> {
+  const raw = await request(
+    salesDraftCommandPath(context.draftId, command),
+    {
+      method: 'POST',
+      headers: {
+        ...headers(context.companyId),
+        'Content-Type': 'application/json',
+        'Idempotency-Key': context.idempotencyKey,
+      },
+      body: JSON.stringify(payload),
+    },
+    signal,
+  )
+  if ('failure' in raw) {
+    if (raw.failure === 'aborted') return { type: 'aborted' }
+    if (raw.failure === 'offline') return { type: 'offline' }
+    return { type: 'network-error' }
+  }
+  if (raw.status !== STATE_COMMAND_STATUS) {
+    if (raw.status >= 200 && raw.status < 300) return { type: 'malformed' }
+    return { type: 'http', status: raw.status, problem: decodeProblem(raw.body, raw.status) }
+  }
+  const mutation = decodeDraftMutation(raw.body)
+  if (
+    mutation === null ||
+    mutation.isReplay !== raw.replayed ||
+    mutation.detail.draft.id !== context.draftId ||
+    mutation.detail.draft.companyId !== context.companyId
   ) {
     return { type: 'malformed' }
   }

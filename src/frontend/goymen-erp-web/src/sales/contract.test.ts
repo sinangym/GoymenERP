@@ -1,7 +1,9 @@
 /**
  * Decoders against the Sales Backend's own examples (#257 @ 2c1239e), copied verbatim
- * into ./examples. The first test pins each copy to its git blob id at that commit,
- * so a silently edited copy cannot keep the rest of this file green.
+ * into ./examples. The first test pins each copy to its blob id, so a silently edited
+ * copy cannot keep the rest of this file green. SALES-A1 added `approvalState` to every
+ * summary and `approval` to every detail (a contract delta of the Sales owner); the four
+ * bodies that carry them are pinned to their blob ids at that change.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -29,8 +31,8 @@ import { PROBLEM_CODE_TEXT } from './salesText'
 
 const EXAMPLES: Record<string, { raw: string; blob: string }> = {
   'create-request.json': { raw: createRequest, blob: 'a78328681578e18627a25a0cd200177d309a534b' },
-  'create-response.json': { raw: createResponse, blob: 'b1ef8592b7c14049a9b06d138bbdb2ec9b6c9aae' },
-  'detail-response.json': { raw: detailResponse, blob: '39346077d0ce787296f975318726a616371a192f' },
+  'create-response.json': { raw: createResponse, blob: 'cec8db8a8b2374c49d2291e633b3762b29f1bf5e' },
+  'detail-response.json': { raw: detailResponse, blob: '4b0ae443724e4440998664ab8c0223bb10adecf3' },
   'error-account.json': { raw: errorAccount, blob: '6b3e1ea7f2a986d8f1f401e4217a7ff42436a24e' },
   'error-company.json': { raw: errorCompany, blob: 'aa227cc06a73326e4db1d579c27f32795a8a41a1' },
   'error-forbidden.json': { raw: errorForbidden, blob: 'bd328f735086931db968d2efb2345e2637efadfd' },
@@ -38,9 +40,9 @@ const EXAMPLES: Record<string, { raw: string; blob: string }> = {
   'error-provider.json': { raw: errorProvider, blob: '1a8d74000d85b0cb99f772b9359ae29e666d6c23' },
   'error-replay.json': { raw: errorReplay, blob: 'a7728cfecd86c90528151327bebe7abe59d79d74' },
   'error-settings-access.json': { raw: errorSettingsAccess, blob: 'e2aec636bd687380cfdb520339c28c45f496ad5a' },
-  'list-response.json': { raw: listResponse, blob: '4dcb84b646a150f873aca02e6d20545136242164' },
+  'list-response.json': { raw: listResponse, blob: 'c6b9a267657a187f3b6404f41ff4431092fa35b4' },
   'product-owner-selection.json': { raw: productOwnerSelection, blob: 'a1e8a3aee04f385cccc9d3815e9cac6f78fbd620' },
-  'replay-response.json': { raw: replayResponse, blob: '4b94eb27fcc9d99dcfcb80e1a6211d0dc8dbb14f' },
+  'replay-response.json': { raw: replayResponse, blob: 'e4f876551bae30a9737d0047e68d68636636dac0' },
 }
 
 async function gitBlobId(text: string): Promise<string> {
@@ -57,7 +59,7 @@ const parse = (raw: string) => JSON.parse(raw) as Record<string, unknown>
 const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T
 
 describe('example provenance', () => {
-  it('every copied example is byte-identical to #257 @ 2c1239e', async () => {
+  it('every copied example is byte-identical to its pinned source', async () => {
     for (const [name, { raw, blob }] of Object.entries(EXAMPLES)) {
       expect(await gitBlobId(raw), name).toBe(blob)
     }
@@ -101,6 +103,21 @@ describe('decodeDraftMutation', () => {
     ['a slice in another unit', (b: any) => (b.detail.lines[0].requestedDeliverySlices[0].orderUnitId = '44444444-4444-4444-4444-444444444445')],
     ['a price without its unit', (b: any) => (b.detail.lines[0].unitPrice = '10')],
     ['a non-boolean isReplay', (b: any) => (b.isReplay = 'false')],
+    // SALES-A1: the approval axis is a fourth fact; its facts must fit it.
+    ['a missing approvalState', (b: any) => delete b.detail.draft.approvalState],
+    ['an unknown approvalState', (b: any) => (b.detail.draft.approvalState = 'Onaylı')],
+    ['a missing approval block', (b: any) => delete b.detail.approval],
+    ['an approval block with an extra member', (b: any) => (b.detail.approval.approvedBy = 'x')],
+    ['a preparing draft with a submitter', (b: any) => (b.detail.approval.submittedBy = 'someone')],
+    ['an approved draft without a decision', (b: any) => (b.detail.draft.approvalState = 'Approved')],
+    ['an approved draft with a rejection reason', (b: any) => {
+      b.detail.draft.approvalState = 'Approved'
+      b.detail.approval = { submittedBy: 'a', submittedAtUtc: '2026-09-19T09:00:00Z', decidedBy: 'b', decidedAtUtc: '2026-09-19T09:05:00Z', rejectionReason: 'x' }
+    }],
+    ['a pending draft with a decision', (b: any) => {
+      b.detail.draft.approvalState = 'PendingApproval'
+      b.detail.approval = { submittedBy: 'a', submittedAtUtc: '2026-09-19T09:00:00Z', decidedBy: 'b', decidedAtUtc: '2026-09-19T09:05:00Z', rejectionReason: null }
+    }],
   ])('refuses %s', (_, mutate) => {
     const body = clone(parse(createResponse))
     mutate(body)
@@ -169,5 +186,31 @@ describe('decodeProblem', () => {
 
   it('does not trust a body whose status disagrees with the response', () => {
     expect(decodeProblem(parse(errorAccount), 400)).toBeNull()
+  })
+})
+
+describe('SALES-A1 approval axis', () => {
+  it.each([
+    ['PendingApproval', { submittedBy: 'satis-1', submittedAtUtc: '2026-09-19T09:00:00Z', decidedBy: null, decidedAtUtc: null, rejectionReason: null }],
+    ['Approved', { submittedBy: 'satis-1', submittedAtUtc: '2026-09-19T09:00:00Z', decidedBy: 'onay-1', decidedAtUtc: '2026-09-19T09:05:00Z', rejectionReason: null }],
+    ['Rejected', { submittedBy: 'satis-1', submittedAtUtc: '2026-09-19T09:00:00Z', decidedBy: 'onay-1', decidedAtUtc: '2026-09-19T09:05:00Z', rejectionReason: 'Fiyat yok' }],
+    ['Rejected', { submittedBy: 'satis-1', submittedAtUtc: '2026-09-19T09:00:00Z', decidedBy: 'onay-1', decidedAtUtc: '2026-09-19T09:05:00Z', rejectionReason: null }],
+  ])('reads a %s draft with facts that fit', (state, approval) => {
+    const body = clone(parse(detailResponse)) as any
+    body.draft.approvalState = state
+    body.approval = approval
+    const detail = decodeDraftDetail(body, body.draft.id)
+    expect(detail?.draft.approvalState).toBe(state)
+    expect(detail?.approval).toEqual(approval)
+    // The lifecycle state and the revision are still their own facts.
+    expect(detail?.draft).toMatchObject({ state: 'Draft', revision: 'Rev.0' })
+  })
+
+  it('the list rows carry the axis too', () => {
+    const page = decodeDraftPage(parse(listResponse))
+    expect(page?.items[0].approvalState).toBe('Preparing')
+    const body = clone(parse(listResponse)) as any
+    body.items[0].approvalState = 'approved'
+    expect(decodeDraftPage(body)).toBeNull()
   })
 })

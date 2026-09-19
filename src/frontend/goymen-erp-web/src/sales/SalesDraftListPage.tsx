@@ -13,9 +13,9 @@ import { useCallback, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router'
 import { fetchDraftPage } from './api'
-import type { DraftSummary } from './contract'
+import { APPROVAL_STATE, type ApprovalState, type DraftSummary } from './contract'
 import { SALES_CAPABILITY, SALES_ROUTE, salesDetailPath } from './capabilities'
-import { ORDER_DETAIL_TEXT, ORDER_LIST_TEXT } from './salesText'
+import { APPROVAL_STATE_TEXT, ORDER_DETAIL_TEXT, ORDER_LIST_TEXT } from './salesText'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
@@ -38,13 +38,15 @@ function DraftList({ namespace }: { readonly namespace: string | null }) {
   const companyId = shell.activeContext?.scopeMode === 'single' ? shell.activeContext.companyId : null
   const canOpen = hasCapability(shell, SALES_CAPABILITY.draftsDetail)
   const canCreate = hasCapability(shell, SALES_CAPABILITY.draftsCreate)
+  // SALES-A1: the internal approval filter is the server's (`approvalState`); changing it restarts the list.
+  const [approvalFilter, setApprovalFilter] = useState<ApprovalState | null>(null)
 
   const first = useQuery({
-    queryKey: [namespace ?? 'no-context', shell.routeEntryGeneration, 'sales-drafts', 'first'],
+    queryKey: [namespace ?? 'no-context', shell.routeEntryGeneration, 'sales-drafts', 'first', approvalFilter ?? 'all'],
     enabled: namespace !== null && companyId !== null,
     queryFn: async ({ signal }) => {
       const snapshot = boundary.capture()
-      const outcome = await fetchDraftPage(null, companyId as string, signal)
+      const outcome = await fetchDraftPage(null, companyId as string, signal, approvalFilter)
       if (outcome.type === 'http') boundary.report(outcome.status, snapshot)
       return outcome
     },
@@ -63,7 +65,7 @@ function DraftList({ namespace }: { readonly namespace: string | null }) {
     loadingRef.current = true
     setContinuation('loading')
     const snapshot = boundary.capture()
-    const outcome = await fetchDraftPage(nextCursor, companyId)
+    const outcome = await fetchDraftPage(nextCursor, companyId, undefined, approvalFilter)
     loadingRef.current = false
     if (outcome.type === 'http') boundary.report(outcome.status, snapshot)
     if (outcome.type === 'ok-single') {
@@ -77,13 +79,34 @@ function DraftList({ namespace }: { readonly namespace: string | null }) {
       return
     }
     setContinuation(classifyOutcome(outcome) as RemoteViewState<unknown>)
-  }, [boundary, companyId, firstPage, nextCursor])
+  }, [approvalFilter, boundary, companyId, firstPage, nextCursor])
 
   const header = (
     <header className={styles.header}>
       <h1 id="sales-list-heading" className={styles.title}>
         {ORDER_LIST_TEXT.heading}
       </h1>
+      <label htmlFor="sales-approval-filter">
+        {ORDER_LIST_TEXT.filter}
+        <select
+          id="sales-approval-filter"
+          value={approvalFilter ?? ''}
+          onChange={(event) => {
+            const value = event.target.value
+            setMore([])
+            setCursor(undefined)
+            setContinuation('idle')
+            setApprovalFilter(value === '' ? null : (value as ApprovalState))
+          }}
+        >
+          <option value="">{ORDER_LIST_TEXT.filterAll}</option>
+          {Object.values(APPROVAL_STATE).map((state) => (
+            <option key={state} value={state}>
+              {APPROVAL_STATE_TEXT[state]}
+            </option>
+          ))}
+        </select>
+      </label>
       {canCreate ? (
         <Link className={styles.primaryLink} to={SALES_ROUTE.create}>
           {ORDER_LIST_TEXT.newDraft}
@@ -137,7 +160,9 @@ function DraftList({ namespace }: { readonly namespace: string | null }) {
                 </th>
                 <td>{formatBusinessDate(row.businessDate)}</td>
                 <td>
-                  <span className={styles.badge}>{ORDER_DETAIL_TEXT.stateDraft}</span>
+                  <span className={styles.badge} data-testid={`sales-row-approval-${row.id}`}>
+                    {ORDER_DETAIL_TEXT.stateDraft} · {APPROVAL_STATE_TEXT[row.approvalState]}
+                  </span>
                 </td>
                 <td>{row.revision}</td>
                 <td className={styles.numeric}>{row.lineCount}</td>
