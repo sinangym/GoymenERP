@@ -241,6 +241,21 @@ public sealed partial class OpenApiContractGenerationTests
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json")),
         new("get", "/api/v1/finance/bank-accounts/currency-candidates", "GetFinanceBankAccountCurrencyCandidatesV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json")),
+        new("get", "/api/v1/logistics/loading-instructions", "GetLoadingInstructionsV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["query:pageSize:false:type:integer|string;format:int32;pattern:^-?(?:0|[1-9]\\d*)$", "query:cursor:false:type:string", "query:status:false:type:string"]),
+        new("post", "/api/v1/logistics/loading-instructions", "CreateLoadingInstructionV1",
+            AuthenticatedResponses("201:application/json", "400:application/problem+json", "415:", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/CreateLoadingInstructionRequest"),
+        new("get", "/api/v1/logistics/loading-instructions/{id}", "GetLoadingInstructionV1",
+            AuthenticatedResponses("200:application/json", "404:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["path:id:true:type:string;format:uuid"]),
+        new("post", "/api/v1/logistics/loading-instructions/{id}/issue", "IssueLoadingInstructionV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/IssueLoadingInstructionRequest", ["path:id:true:type:string;format:uuid"]),
+        new("post", "/api/v1/logistics/loading-instructions/{id}/lines/{lineId}/loads", "RecordLoadingInstructionLoadV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/RecordLoadRequest", ["path:id:true:type:string;format:uuid", "path:lineId:true:type:string;format:uuid"]),
         .. ProductOperations,
     ];
 
@@ -297,6 +312,11 @@ public sealed partial class OpenApiContractGenerationTests
             ["ApproveFinanceBankAccountV1"] = "ref:BankAccountCommandResult",
             ["GetFinanceBankAccountMasterV1"] = "ref:BankAccountMasterPage",
             ["GetFinanceBankAccountCurrencyCandidatesV1"] = "ref:BankAccountCurrencyCandidates",
+            ["GetLoadingInstructionsV1"] = "ref:LoadingInstructionListResponse",
+            ["CreateLoadingInstructionV1"] = "ref:LoadingInstructionResponse",
+            ["GetLoadingInstructionV1"] = "ref:LoadingInstructionDetailView",
+            ["IssueLoadingInstructionV1"] = "ref:LoadingInstructionResponse",
+            ["RecordLoadingInstructionLoadV1"] = "ref:LoadingInstructionResponse",
         };
 
     private static readonly HashSet<string> RequiredCompanyOperations =
@@ -344,6 +364,11 @@ public sealed partial class OpenApiContractGenerationTests
         "ApproveFinanceBankAccountV1",
         "GetFinanceBankAccountMasterV1",
         "GetFinanceBankAccountCurrencyCandidatesV1",
+        "GetLoadingInstructionsV1",
+        "CreateLoadingInstructionV1",
+        "GetLoadingInstructionV1",
+        "IssueLoadingInstructionV1",
+        "RecordLoadingInstructionLoadV1",
     ];
 
     private static readonly HashSet<string> OptionalCompanyOperations =
@@ -375,6 +400,9 @@ public sealed partial class OpenApiContractGenerationTests
         "RejectSalesOrderDraftV1",
         "ProposeFinanceBankAccountV1",
         "ApproveFinanceBankAccountV1",
+        "CreateLoadingInstructionV1",
+        "IssueLoadingInstructionV1",
+        "RecordLoadingInstructionLoadV1",
     ];
 
     private static readonly IReadOnlyDictionary<string, HashSet<int>>
@@ -422,6 +450,9 @@ public sealed partial class OpenApiContractGenerationTests
                 ["ApproveFinanceBankAccountV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
                 // INV-OPEN-1 part 2: the count (200 on a replay) and the recorded terminal refusals (§7).
                 ["RecordInventoryOpeningCountV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
+                ["CreateLoadingInstructionV1"] = [StatusCodes.Status201Created, StatusCodes.Status409Conflict],
+                ["IssueLoadingInstructionV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
+                ["RecordLoadingInstructionLoadV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
             };
 
     private static readonly HashSet<string> EmptyBodyPossible400Operations =
@@ -458,6 +489,10 @@ public sealed partial class OpenApiContractGenerationTests
         "GetFinanceBankAccountMasterV1",
         "GetFinanceBankAccountCurrencyCandidatesV1",
         "RecordInventoryOpeningCountV1",
+        "GetLoadingInstructionsV1",
+        "CreateLoadingInstructionV1",
+        "IssueLoadingInstructionV1",
+        "RecordLoadingInstructionLoadV1",
     ];
 
     private static readonly HashSet<string> CodeLessProblemResponses =
@@ -482,6 +517,9 @@ public sealed partial class OpenApiContractGenerationTests
         "SubmitSalesOrderDraftV1:404",
         "ApproveSalesOrderDraftV1:404",
         "RejectSalesOrderDraftV1:404",
+        "GetLoadingInstructionV1:404",
+        "IssueLoadingInstructionV1:404",
+        "RecordLoadingInstructionLoadV1:404",
     ];
 
     private static readonly HashSet<string> MixedProblemResponses =
@@ -606,12 +644,74 @@ public sealed partial class OpenApiContractGenerationTests
             ["SubmitSalesOrderDraftV1:422"] = ["validation_failed"],
             ["RejectSalesOrderDraftV1:422"] = ["sales_approval_reason_too_long"],
             ["GetShellCapabilitiesV1:400"] = ["company_context_invalid"],
+            ["GetLoadingInstructionsV1:400"] = ["invalid_cursor", "validation_failed"],
+            ["CreateLoadingInstructionV1:400"] = ["command_metadata_invalid", "validation_failed"],
+            ["CreateLoadingInstructionV1:409"] = ["account_state", "concurrent_change", "order_line_state", "same_key_payload_mismatch"],
+            ["CreateLoadingInstructionV1:422"] = ["unsupported_unit", "validation_failed"],
+            ["IssueLoadingInstructionV1:400"] = ["command_metadata_invalid", "validation_failed"],
+            ["IssueLoadingInstructionV1:409"] = ["concurrent_change", "logistics_instruction_state", "same_key_payload_mismatch", "version_conflict"],
+            ["IssueLoadingInstructionV1:422"] = ["validation_failed"],
+            ["RecordLoadingInstructionLoadV1:400"] = ["command_metadata_invalid", "validation_failed"],
+            ["RecordLoadingInstructionLoadV1:409"] = ["concurrent_change", "logistics_duplicate_share_id", "logistics_instruction_state", "logistics_line_blocked", "logistics_load_exceeds_instructed", "same_key_payload_mismatch", "version_conflict"],
+            ["RecordLoadingInstructionLoadV1:422"] = ["unsupported_unit", "validation_failed"],
         };
 
     private static readonly IReadOnlyDictionary<string, ComponentSchemaExpectation>
         ExpectedSuccessComponentSchemas =
             new Dictionary<string, ComponentSchemaExpectation>(StringComparer.Ordinal)
             {
+                ["LoadingInstructionDetailView"] = ObjectSchema(
+                    ["instruction", "lines", "shares"],
+                    ("instruction", "ref:LoadingInstructionSummaryView"),
+                    ("lines", "type:array;items:ref:LoadingInstructionLineView"),
+                    ("shares", "type:array;items:ref:LoadingShareView")),
+                ["LoadingInstructionLineView"] = ObjectSchema(
+                    ["lineId", "lineNo", "sourceOrderId", "sourceOrderLineId", "sourceOrderRevision", "productId", "unitId", "instructed", "loaded", "shipped", "delivered", "remainingToLoad", "loadedNotShipped", "shippedNotDelivered", "isBlocked"],
+                    ("lineId", "type:string;format:uuid"),
+                    ("lineNo", "type:integer|string;format:int32"),
+                    ("sourceOrderId", "type:string;format:uuid"),
+                    ("sourceOrderLineId", "type:string;format:uuid"),
+                    ("sourceOrderRevision", "type:integer|string;format:int32"),
+                    ("productId", "type:string;format:uuid"),
+                    ("unitId", "type:string;format:uuid"),
+                    ("instructed", "type:string"),
+                    ("loaded", "type:string"),
+                    ("shipped", "type:string"),
+                    ("delivered", "type:string"),
+                    ("remainingToLoad", "type:string"),
+                    ("loadedNotShipped", "type:string"),
+                    ("shippedNotDelivered", "type:string"),
+                    ("isBlocked", "type:boolean")),
+                ["LoadingInstructionListResponse"] = ObjectSchema(
+                    ["items", "nextCursor"],
+                    ("items", "type:array;items:ref:LoadingInstructionSummaryView"),
+                    ("nextCursor", "type:null|string")),
+                ["LoadingInstructionResponse"] = ObjectSchema(
+                    ["detail", "isReplay", "originalCorrelationId"],
+                    ("detail", "ref:LoadingInstructionDetailView"),
+                    ("isReplay", "type:boolean"),
+                    ("originalCorrelationId", "type:string")),
+                ["LoadingInstructionSummaryView"] = ObjectSchema(
+                    ["id", "companyId", "status", "version", "customerPartyId", "companyAccountId", "effectiveOn", "createdAtUtc", "updatedAtUtc", "lineCount"],
+                    ("id", "type:string;format:uuid"),
+                    ("companyId", "type:string;format:uuid"),
+                    ("status", "type:string"),
+                    ("version", "type:string"),
+                    ("customerPartyId", "type:string;format:uuid"),
+                    ("companyAccountId", "type:string;format:uuid"),
+                    ("effectiveOn", "type:string;format:date"),
+                    ("createdAtUtc", "type:string;format:date-time"),
+                    ("updatedAtUtc", "type:string;format:date-time"),
+                    ("lineCount", "type:integer|string;format:int32")),
+                ["LoadingShareView"] = ObjectSchema(
+                    ["shareId", "lineId", "kind", "quantity", "measurement", "sourceShipmentId", "recordedAtUtc"],
+                    ("shareId", "type:string;format:uuid"),
+                    ("lineId", "type:string;format:uuid"),
+                    ("kind", "type:string"),
+                    ("quantity", "type:string"),
+                    ("measurement", "type:null|string"),
+                    ("sourceShipmentId", "type:null|string;format:uuid"),
+                    ("recordedAtUtc", "type:string;format:date-time")),
                 ["BankAccountCommandResult"] = ObjectSchema(
                     ["outcome", "resource", "isReplay", "originalCorrelationId", "issues"],
                     ("outcome", "ref:CommandOutcome"),
@@ -1145,6 +1245,28 @@ public sealed partial class OpenApiContractGenerationTests
         ExpectedRequestComponentSchemas =
             new Dictionary<string, ComponentSchemaExpectation>(StringComparer.Ordinal)
             {
+                ["CreateLoadingInstructionRequest"] = ObjectSchema(
+                    ["customerPartyId", "companyAccountId", "effectiveOn", "lines"],
+                    ("customerPartyId", "type:string;format:uuid"),
+                    ("companyAccountId", "type:string;format:uuid"),
+                    ("effectiveOn", "type:string;format:date"),
+                    ("lines", "type:array;items:ref:LoadingInstructionLineRequest")),
+                ["IssueLoadingInstructionRequest"] = ObjectSchema(
+                    ["expectedVersion"],
+                    ("expectedVersion", "type:string")),
+                ["LoadingInstructionLineRequest"] = ObjectSchema(
+                    ["lineId", "sourceOrderId", "sourceOrderLineId", "unitId", "quantity"],
+                    ("lineId", "type:string;format:uuid"),
+                    ("sourceOrderId", "type:string;format:uuid"),
+                    ("sourceOrderLineId", "type:string;format:uuid"),
+                    ("unitId", "type:string;format:uuid"),
+                    ("quantity", "type:string")),
+                ["RecordLoadRequest"] = ObjectSchema(
+                    ["expectedVersion", "loadId", "quantity", "measurement"],
+                    ("expectedVersion", "type:string"),
+                    ("loadId", "type:string;format:uuid"),
+                    ("quantity", "type:string"),
+                    ("measurement", "type:string")),
                 ["OpeningCountRequestV1"] = ObjectSchema(
                     ["countId", "locationId", "countedOn", "sheetReference", "lines"],
                     ("countId", "type:string;format:uuid"), ("locationId", "type:string;format:uuid"),
@@ -1843,9 +1965,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(56, operations.Count);
+        Assert.Equal(61, operations.Count);
         Assert.Equal(
-            56,
+            61,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());
