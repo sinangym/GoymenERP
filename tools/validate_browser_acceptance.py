@@ -181,8 +181,11 @@ SUITE_IDENTITY_PERMISSIONS = {
     "s04": ("sales.drafts.create", "sales.drafts.read", "sales.orders.approve"),
     # LOG-4a's three Logistics names; the Sales names stay on the two Sales seed actors (the preparer holds none:
     # the picker reads the price-free Logistics approved-lines read under the create name, Sinan §4).
+    # ... and the Cari party read the preparer needs to see the customer by name at all: the price-free
+    # approved-lines read reaches Cari through the ACTOR's own grant (the s03/s04 precedent), so without it
+    # the owner answers nothing and the picker is silently empty (ASSUMPTION-LOG4B-3).
     "l04": ("logistics.loading-instructions.create", "logistics.loading-instructions.read", "logistics.loads.record",
-            "sales.drafts.create", "sales.drafts.read", "sales.orders.approve"),
+            "sales.drafts.create", "sales.drafts.read", "sales.orders.approve", "counterparty.parties.read"),
 }
 
 
