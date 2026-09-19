@@ -19,6 +19,8 @@ using GoymenERP.Modules.Sales.Infrastructure.Persistence;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.Api.IntegrationTests;
@@ -321,6 +323,34 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'sales.order-draft.rejected.v1'"));
     }
 
+    /// <summary>
+    /// ÜRÜN #338 P3-2: the approval migration's Down is a forward fix while any draft has left Preparing —
+    /// THROW 51045 (the module rule of 51041–51044), the history unchanged, the facts untouched.
+    /// </summary>
+    [SqlServerFact]
+    public async Task The_approval_migration_refuses_to_roll_back_while_any_draft_has_left_preparing()
+    {
+        await using var run = await Run.StartAsync();
+        var owners = Owners.For(CompanyA);
+        SalesOrderDraft draft;
+        await using (var a = run.Store(CompanyA))
+        {
+            draft = (await a.Store.StoreDraftAsync(run.Envelope("k-create"), Hash("payload-1"), documentNo => Draft(owners, documentNo, T0))).Draft;
+            await a.Store.UpdateDraftStateAsync(run.Envelope("k-submit"), Hash("submit-2"), SalesDraftCommands.SubmitV1, draft.Id,
+                (d, now) => d.Submit(2, run.Actor, now), Submitted);
+        }
+
+        await using var context = run.Context(CompanyA);
+        var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
+        Assert.EndsWith("_AddDraftApproval", applied[^1], StringComparison.Ordinal);
+        var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[^2]));
+        Assert.Equal(51045, error.Number);
+        Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
+        Assert.Equal(2, await run.ScalarAsync<int>("SELECT ApprovalState FROM sales.Drafts WHERE Id = @id", ("@id", draft.Id)));
+        Assert.Equal(run.Actor, await run.ScalarAsync<string>("SELECT SubmittedBy FROM sales.Drafts WHERE Id = @id", ("@id", draft.Id)));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sys.check_constraints WHERE [name] = N'CK_Drafts_Approval'"));
+    }
+
     private static readonly SalesDraftStateAudit Submitted = new("sales.order-draft.submitted.v1", "Submit", "SENTETIK onaya gönderildi");
     private static readonly SalesDraftStateAudit Approved = new("sales.order-draft.approved.v1", "Approve", "SENTETIK onaylandı");
     private static readonly SalesDraftStateAudit Rejected = new("sales.order-draft.rejected.v1", "Reject", "SENTETIK reddedildi");
@@ -393,6 +423,16 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
 
         public SalesDraftWriteEnvelope Envelope(string key, string? correlation = null, string? actor = null) =>
             new(actor ?? Actor, "SENTETIK-sales-permission", ["SENTETIK-SALES"], correlation ?? Correlation, null, key, "Web", "127.0.0.1", "SENTETIK-agent");
+
+        /// <summary>A plain Sales context of the company (no audit interceptor): for migration history and rollback checks.</summary>
+        public SalesDbContext Context(Guid company)
+        {
+            var companyContext = new CompanyContext();
+            companyContext.Set(company);
+            return new SalesDbContext(new DbContextOptionsBuilder<SalesDbContext>()
+                .UseSqlServer(Factory.DatabaseConnectionString, sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", SalesDbContext.Schema))
+                .Options, companyContext);
+        }
 
         public StoreScope Store(Guid company, IInterceptor? extra = null)
         {

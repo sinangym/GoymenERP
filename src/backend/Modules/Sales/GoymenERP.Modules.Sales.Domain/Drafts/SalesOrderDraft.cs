@@ -379,15 +379,21 @@ public sealed class SalesOrderDraft
             throw new InvalidOperationException("Kayıtlı onay olguları kayıtlı onay durumuyla uyuşmuyor.");
         }
 
+        // A draft that never left Preparing has had no transition: its stored version must be EXACTLY the
+        // one the lines account for (a version raised outside the application does not restore silently,
+        // ÜRÜN #338 P3-1). A submitted draft has had at least one transition, a decided one at least two.
         var minimumTransitions = state switch
         {
             InternalApprovalState.Preparing => 0,
             InternalApprovalState.PendingApproval => 1,
             _ => 2,
         };
-        if (storedVersion < Version + minimumTransitions)
+        var consistentVersion = state == InternalApprovalState.Preparing
+            ? storedVersion == Version
+            : storedVersion >= Version + minimumTransitions;
+        if (!consistentVersion)
         {
-            throw new InvalidOperationException("Kayıtlı sürüm, satırların ve onay geçişlerinin hesabından küçük.");
+            throw new InvalidOperationException("Kayıtlı sürüm, satırların ve onay geçişlerinin hesabıyla uyuşmuyor.");
         }
 
         ApprovalState = state;

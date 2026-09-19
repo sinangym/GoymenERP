@@ -133,6 +133,10 @@ public sealed class SalesOrderDraftApprovalTests
     [InlineData(InternalApprovalState.Rejected, 4L, true)]
     [InlineData(InternalApprovalState.PendingApproval, 2L, false)]
     [InlineData(InternalApprovalState.Approved, 3L, false)]
+    // ÜRÜN #338 P3-1: a Preparing draft has had no transition, so its stored version is exactly the lines' (2); a
+    // version raised outside the application (3) is refused, not restored silently.
+    [InlineData(InternalApprovalState.Preparing, 3L, false)]
+    [InlineData(InternalApprovalState.Preparing, 1L, false)]
     public void The_store_restores_the_axis_only_with_consistent_facts_and_a_version_the_transitions_account_for(
         InternalApprovalState state, long storedVersion, bool accepted)
     {
