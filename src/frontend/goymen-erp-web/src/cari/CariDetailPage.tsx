@@ -458,6 +458,12 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
 }
 
 function BackToList() {
+  // GUARDED for the same reason as CariBackLink, and it is a SECOND site reaching the same route
+  // from a different file — which is why the slice enumerated every navigation into a Cari route
+  // instead of fixing the one that was noticed. C-03 is published ahead of C-01, so without this
+  // the card would offer a return to a route the shell has not mounted.
+  const shell = useShellState()
+  if (!hasCapability(shell, CAPABILITY.cariPartiesList)) return null
   return (
     // A distinct accessible name on purpose. The nav already has a link called
     // "Cari Kartlar"; two links with the same name on one page are ambiguous to
