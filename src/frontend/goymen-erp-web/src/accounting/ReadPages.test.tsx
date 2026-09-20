@@ -19,6 +19,7 @@ import {
   requestsFor,
   SOURCE,
 } from './testHarness'
+import { ACCOUNTING_CAPABILITY } from './capabilities'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -34,6 +35,31 @@ describe('M-04 journals', () => {
     expect(screen.getAllByText('1.250,5')).toHaveLength(2)
     expect(screen.getByText('synthetic-purpose-a · synthetic-rule-1')).toBeTruthy()
     expect(requestsFor(recorded, `/accounting/journals?periodId=${PERIOD_SEPTEMBER}`, 'GET')).toHaveLength(1)
+  })
+
+  // ACC-V0c: the detail is published only once a slice has accepted that route (acc01 opened no journal).
+  it('offers the journal link only where the server publishes the detail, and never a dead link', async () => {
+    const withDetail = installFetch({
+      respond: (url) => (url.includes('/accounting/journals') ? json({ items: [journalSummary()], nextCursor: null }) : undefined),
+      capabilities: [ACCOUNTING_CAPABILITY.periodsList, ACCOUNTING_CAPABILITY.journalsList, ACCOUNTING_CAPABILITY.journalsDetail],
+    })
+    const opened = renderAt(`/muhasebe/fisler?periodId=${PERIOD_SEPTEMBER}`)
+    const row = await screen.findByText('Asıl')
+    expect(within(row.closest('tr') as HTMLElement).getByRole('link', { name: /Aç/ })).toBeTruthy()
+    expect(requestsFor(withDetail, `/accounting/journals?periodId=${PERIOD_SEPTEMBER}`, 'GET')).toHaveLength(1)
+    opened.unmount()
+
+    // Without the detail capability the row still SHOWS the journal — by its labelled reference — and offers
+    // no link the shell would close onto its neutral not-found block.
+    installFetch({
+      respond: (url) => (url.includes('/accounting/journals') ? json({ items: [journalSummary()], nextCursor: null }) : undefined),
+      capabilities: [ACCOUNTING_CAPABILITY.periodsList, ACCOUNTING_CAPABILITY.journalsList],
+    })
+    renderAt(`/muhasebe/fisler?periodId=${PERIOD_SEPTEMBER}`)
+    const closedRow = (await screen.findByText('Asıl')).closest('tr') as HTMLElement
+    expect(within(closedRow).queryByRole('link', { name: /Aç/ })).toBeNull()
+    expect(within(closedRow).getByText(/^ref\. …/)).toBeTruthy()
+    expect(closedRow.textContent).not.toContain(JOURNAL)
   })
 
   it('shows one journal read-only: lines, balanced totals, the derived-record note, no command', async () => {
