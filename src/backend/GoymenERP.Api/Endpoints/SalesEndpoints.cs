@@ -673,6 +673,7 @@ public sealed class CounterpartySalesPartyAccountPortV1(ICompanyContext companyC
         }
 
         var companyId = companyContext.CompanyId;
+        var actorId = currentUser.UserId;
         CounterpartyContactInformationView? view;
         try
         {
@@ -683,8 +684,8 @@ public sealed class CounterpartySalesPartyAccountPortV1(ICompanyContext companyC
             return new(SalesPartyContactInformationOutcomeV1.Denied, null);
         }
 
-        // The owner answered for the context captured before the await; a changed context releases nothing.
-        if (!IsCurrent() || companyContext.CompanyId != companyId)
+        // The owner answered for the context captured before the await — the company AND the actor; a changed context releases nothing.
+        if (!IsCurrent() || companyContext.CompanyId != companyId || !string.Equals(currentUser.UserId, actorId, StringComparison.Ordinal))
         {
             return new(SalesPartyContactInformationOutcomeV1.Denied, null);
         }
@@ -716,6 +717,7 @@ public sealed class CounterpartySalesPartyAccountPortV1(ICompanyContext companyC
         }
 
         var companyId = companyContext.CompanyId;
+        var actorId = currentUser.UserId;
         CounterpartyDetailView? party;
         try
         {
@@ -726,8 +728,8 @@ public sealed class CounterpartySalesPartyAccountPortV1(ICompanyContext companyC
             return new(SalesPartyAccountOutcomeV1.Denied, null);
         }
 
-        // The owner answered for the context captured before the await; a changed context releases nothing.
-        if (!IsCurrent() || companyContext.CompanyId != companyId)
+        // The owner answered for the context captured before the await — the company AND the actor; a changed context releases nothing.
+        if (!IsCurrent() || companyContext.CompanyId != companyId || !string.Equals(currentUser.UserId, actorId, StringComparison.Ordinal))
         {
             return new(SalesPartyAccountOutcomeV1.Denied, null);
         }

@@ -108,6 +108,12 @@ export function SalesDraftCreatePage() {
   )
 }
 
+/** A form remembered by an earlier build may predate the SALES-A2a members: nothing chosen, never undefined. */
+function withDeliveryMembers(values: OrderDraftFormValues): OrderDraftFormValues {
+  const remembered: Partial<Pick<OrderDraftFormValues, 'deliveryAddressId' | 'contactId'>> = values
+  return { ...values, deliveryAddressId: remembered.deliveryAddressId ?? '', contactId: remembered.contactId ?? '' }
+}
+
 function CreateForm({ binding, companyId }: { readonly binding: string; readonly companyId: string }) {
   const shell = useShellState()
   const dispatch = useShellDispatch()
@@ -117,8 +123,7 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
 
   const [recalled] = useState(() => recallDraftAttempt(binding))
   const [values, setValues] = useState<OrderDraftFormValues>(() =>
-    // A form remembered by an earlier build may predate the SALES-A2a members: nothing chosen, never undefined.
-    recalled === null ? emptyOrderDraftForm(browserIds()) : { deliveryAddressId: '', contactId: '', ...recalled.values },
+    recalled === null ? emptyOrderDraftForm(browserIds()) : withDeliveryMembers(recalled.values),
   )
   const [attempt, setAttempt] = useState<DraftAttempt>(recalled?.attempt ?? { phase: 'idle' })
   const [errors, setErrors] = useState<OrderDraftErrors>({})
