@@ -58,9 +58,25 @@ public sealed class AccountingShellRegistrationTests
             .Where(item => item.Owner == AccountingShellCapabilityProvider.OwnerId)
             .ToArray();
         // M-07 and its propose screen, the approve and close controls of that list, M-04 and its detail, M-01:
-        // seven declarations, every one staged until the acc01 acceptance flips them in a separate change.
+        // seven declarations. ACC-V0c is the separate change the previous version of this test predicted:
+        // the acc01 acceptance published six of them.
         Assert.Equal(7, accounting.Length);
-        Assert.All(accounting, item => Assert.False(item.Declaration.ImplementationAvailable));
+        // Named rather than counted, and asserted as a SET: "all staged" was true only until the flip, while
+        // "these six and no others" stays true and fails loudly if a seventh is ever published without an
+        // acceptance to stand on.
+        string[] published =
+        [
+            "accounting.journals.list", "accounting.periods.approve", "accounting.periods.close",
+            "accounting.periods.list", "accounting.periods.propose", "accounting.posting-queues",
+        ];
+        Assert.Equal(published, accounting.Where(item => item.Declaration.ImplementationAvailable)
+            .Select(item => item.Declaration.CapabilityId).Order(StringComparer.Ordinal).ToArray());
+        // M-04-DETAIL stays staged on purpose: acc01 never opened a journal — its seed writes none and no
+        // flow produces one before ACC-V1 — so that route has no acceptance to stand on, and publishing it
+        // would claim a screen nobody walked.
+        var journalDetail = Assert.Single(accounting,
+            item => item.Declaration.CapabilityId == AccountingShellCapabilityProvider.JournalDetailCapabilityId);
+        Assert.False(journalDetail.Declaration.ImplementationAvailable);
         string[] expected =
         [
             "accounting.journals.detail", "accounting.journals.list", "accounting.periods.approve",
