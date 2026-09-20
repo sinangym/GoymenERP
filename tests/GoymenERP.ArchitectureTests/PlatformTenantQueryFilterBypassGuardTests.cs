@@ -449,7 +449,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Finance/"
                  + "GoymenERP.Modules.Finance.Infrastructure/ReceiptDraftService.cs"] =
                     new(
-                        "ac75ae5de403ae9f6fbac48c87224c540a64b1138b972a1ced59bbba6e465780",
+                        "aa38d29c817ac645014ed2fc1d05c32f00f76f0d4eedd94e585e4a5c72ea87d2",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
