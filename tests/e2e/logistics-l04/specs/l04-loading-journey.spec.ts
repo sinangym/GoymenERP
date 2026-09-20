@@ -119,8 +119,19 @@ function watchCommand(page: Page, pattern: RegExp): Response[] {
   return answers
 }
 
+/** An instruction id a case needs; '' means an earlier case did not record it (a failure, or a worker restart after one). */
+function requireInstructionId(id: string, where: string): string {
+  if (id === '') throw new Error(`${where}: no instruction id — L04-01 did not record createdId in this worker (an earlier failure or a worker restart); refusing instead of navigating to the list or waiting on a row that cannot exist`)
+  return id
+}
+
+/** The list row of one instruction; refuses an empty id at once. */
+function instructionRow(page: Page, id: string) {
+  return page.getByTestId(`logistics-row-${requireInstructionId(id, 'instructionRow')}`)
+}
+
 async function openDetail(page: Page, id: string): Promise<void> {
-  await page.goto(`${LIST_ROUTE}/${id}`)
+  await page.goto(`${LIST_ROUTE}/${requireInstructionId(id, 'openDetail')}`)
   await expect(page.getByRole('heading', { level: 1, name: /Yükleme talimatı/ })).toBeVisible({ timeout: 30_000 })
   await expect(page.getByTestId('logistics-instruction-status')).toBeVisible()
 }
@@ -166,7 +177,7 @@ test('L04-01 the preparer creates an instruction from a real selection of the ap
 
   await page.goto(LIST_ROUTE)
   await expect(page.getByRole('heading', { level: 1, name: 'Yükleme talimatları' })).toBeVisible({ timeout: 30_000 })
-  await expect(page.getByTestId(`logistics-row-${instructionId}`)).toBeVisible()
+  await expect(instructionRow(page, instructionId)).toBeVisible()
   await expectNoPriceText(page)
   // The shell's nav entry (the central mount) and the list screen's own link share the name: the journey clicks the
   // screen's, inside the main region (first l04 run 35478322479: strict-mode violation, two matches).
@@ -357,7 +368,7 @@ test('L04-05 the reader reads and cannot create or record; the preparer has noth
   expect(createdId).not.toBe('')
   await page.goto(LIST_ROUTE)
   await expect(page.getByRole('heading', { level: 1, name: 'Yükleme talimatları' })).toBeVisible({ timeout: 30_000 })
-  await expect(page.getByTestId(`logistics-row-${createdId}`)).toBeVisible()
+  await expect(instructionRow(page, createdId)).toBeVisible()
   await expect(page.getByRole('link', { name: 'Yeni yükleme talimatı' })).toHaveCount(0)
 
   // The create route is closed onto the neutral not-found block: no form, no read of the Sales sources.
