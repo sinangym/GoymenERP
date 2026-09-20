@@ -9,11 +9,25 @@ import {
   decodeMassBalance,
   decodeOrder,
   decodeOrderList,
+  decodePlan,
   factBody,
   isKilogramText,
   type FactSnapshot,
 } from './contract'
-import { ORDER, ROLL_1, massBalance, order, orderList, orderSummary, roll, rollBalance, unavailable } from './testHarness'
+import {
+  APPROVER,
+  ORDER,
+  PLAN,
+  ROLL_1,
+  massBalance,
+  order,
+  orderList,
+  orderSummary,
+  plan,
+  roll,
+  rollBalance,
+  unavailable,
+} from './testHarness'
 
 describe('decodeOrder', () => {
   it('keeps every kilogram as the server wrote it, the signed difference included', () => {
@@ -185,5 +199,60 @@ describe('decodeOrderList', () => {
 describe('closeBody', () => {
   it('sends the version the screen read and nothing else', () => {
     expect(closeBody({ idempotencyKey: 'k', expectedVersion: 4 })).toEqual({ expectedVersion: 4 })
+  })
+})
+
+describe('decodePlan', () => {
+  it('keeps the plan as the server wrote it: kilograms as text, the version as read', () => {
+    const decoded = decodePlan(plan({ target: { basis: 'GoodOutputMass', kg: '900' } }))
+    expect(decoded).toMatchObject({ planId: PLAN, status: 'Draft', version: 1 })
+    expect(decoded?.inputs.map((input) => input.plannedKg)).toEqual(['1000.125', '500.5'])
+    expect(decoded?.target).toEqual({ basis: 'GoodOutputMass', kg: '900' })
+    expect(decoded?.approvedByUserId).toBeNull()
+  })
+
+  it('reads an approved plan as approved, with both halves of the approval', () => {
+    const decoded = decodePlan(
+      plan({
+        status: 'Approved',
+        version: 2,
+        approvedByUserId: APPROVER,
+        approvedAtUtc: '2026-09-18T09:00:00.000Z',
+      }),
+    )
+    expect(decoded).toMatchObject({
+      status: 'Approved',
+      version: 2,
+      approvedByUserId: APPROVER,
+      approvedAtUtc: '2026-09-18T09:00:00.000Z',
+    })
+  })
+
+  it('accepts a plan with no planned input: an empty list is a shape, not a failure', () => {
+    // Fails-closed decoding must not turn "nothing planned yet" into "unreadable".
+    expect(decodePlan(plan({ inputs: [] }))?.inputs).toEqual([])
+  })
+
+  it.each([
+    ['a body that is not an object', 'nope'],
+    ['a plan id that is not a guid', plan({ planId: 'nope' })],
+    ['a company that is not a guid', plan({ companyId: 42 })],
+    ['a status the contract does not have', plan({ status: 'Cancelled' })],
+    ['a status of the ORDER contract, which is a different vocabulary', plan({ status: 'Open' })],
+    ['a version of zero', plan({ version: 0 })],
+    ['a fractional version', plan({ version: 1.5 })],
+    ['inputs that are not a list', plan({ inputs: {} })],
+    ['a planned kilogram as a number', plan({ inputs: [{ parentRollId: ROLL_1, plannedKg: 10 }] })],
+    ['a planned kilogram in the local grammar', plan({ inputs: [{ parentRollId: ROLL_1, plannedKg: '1,5' }] })],
+    ['a negative planned kilogram', plan({ inputs: [{ parentRollId: ROLL_1, plannedKg: '-1' }] })],
+    ['a planned roll that is not a guid', plan({ inputs: [{ parentRollId: 'nope', plannedKg: '1' }] })],
+    ['a half-filled target', plan({ target: { basis: 'GoodOutputMass' } })],
+    // Both halves of the approval move together on the server (CK_Plans_Approval); half of one
+    // would be displayed as an approval nobody made, or an approval with no time.
+    ['an approver with no instant', plan({ status: 'Approved', approvedByUserId: APPROVER })],
+    ['an instant with no approver', plan({ status: 'Approved', approvedAtUtc: '2026-09-18T09:00:00.000Z' })],
+    ['an instant that is not a time', plan({ status: 'Approved', approvedByUserId: APPROVER, approvedAtUtc: 'dün' })],
+  ])('fails closed on %s', (_case, body) => {
+    expect(decodePlan(body)).toBeNull()
   })
 })

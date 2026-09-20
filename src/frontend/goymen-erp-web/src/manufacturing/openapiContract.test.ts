@@ -17,13 +17,14 @@ import {
   decodeMassBalance,
   decodeOrder,
   decodeOrderList,
+  decodePlan,
   factBody,
   FACT_KINDS,
   OUTPUT_CLASSES,
   type FactSnapshot,
 } from './contract'
 import { MANUFACTURING_BASE } from './api'
-import { massBalance, order, orderList, orderSummary, roll, ROLL_1 } from './testHarness'
+import { massBalance, order, orderList, orderSummary, plan, plannedInput, roll, ROLL_1 } from './testHarness'
 
 interface Schema {
   readonly properties?: Record<string, unknown>
@@ -77,6 +78,25 @@ describe('Manufacturing port ↔ canonical OpenAPI', () => {
     expect(decodeOrder(order({ target: { basis: 'GoodOutputMass', kg: '900' } }))).not.toBeNull()
   })
 
+  it('reads exactly the properties PlanViewV1 and its parts declare, all required', () => {
+    expect(Object.keys(plan()).sort()).toEqual(names('PlanViewV1'))
+    expect(Object.keys(plannedInput(ROLL_1)).sort()).toEqual(names('PlannedInputViewV1'))
+    for (const name of ['PlanViewV1', 'PlannedInputViewV1']) {
+      expect([...(schema(name).required ?? [])].sort()).toEqual(names(name))
+    }
+    // The fixture the screen tests use decodes, so the decoder reads these very names — and the
+    // approved shape decodes too, which the Draft fixture alone would not show.
+    expect(decodePlan(plan({ target: { basis: 'GoodOutputMass', kg: '900' } }))).not.toBeNull()
+    expect(
+      decodePlan(plan({
+        status: 'Approved',
+        version: 2,
+        approvedByUserId: '99999999-9999-9999-9999-999999999999',
+        approvedAtUtc: '2026-09-18T09:00:00.000Z',
+      })),
+    ).not.toBeNull()
+  })
+
   it('sends exactly the properties the fact requests declare', () => {
     const snapshot: FactSnapshot = {
       kind: 'input-issues',
@@ -94,8 +114,10 @@ describe('Manufacturing port ↔ canonical OpenAPI', () => {
     )
   })
 
-  it('calls routes the API declares: the order read and one POST per fact kind', () => {
-    const base = `${MANUFACTURING_BASE.replace(/^.*\/api\/v1/, '/api/v1')}/orders/{orderId}`
+  it('calls routes the API declares: the order read, the plan read and one POST per fact kind', () => {
+    const root = MANUFACTURING_BASE.replace(/^.*\/api\/v1/, '/api/v1')
+    expect(document.paths[`${root}/plans/{planId}`]).toHaveProperty('get')
+    const base = `${root}/orders/{orderId}`
     expect(document.paths[base]).toHaveProperty('get')
     for (const kind of FACT_KINDS) {
       expect(document.paths[`${base}/${kind}`], kind).toHaveProperty('post')

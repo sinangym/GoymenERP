@@ -45,6 +45,34 @@ export interface RemainingTarget {
   readonly remainingKg: string | null
 }
 
+export type PlanStatus = 'Draft' | 'Approved'
+
+/** One planned parent roll of a plan: the kilogram is the plan's figure, not a measured one. */
+export interface PlannedInput {
+  readonly parentRollId: string
+  readonly plannedKg: string
+}
+
+/**
+ * Wire contract of `GET /api/v1/manufacturing/plans/{planId}` (`PlanViewV1`).
+ *
+ * The same shape the create and approve answers return — by construction on the server, not by
+ * two projections kept in step — so a reopened plan and a just-created one decode identically.
+ */
+export interface ProductionPlanView {
+  readonly planId: string
+  readonly companyId: string
+  readonly workCenterId: string
+  readonly process: string
+  readonly status: PlanStatus
+  /** The version an approval must name as `expectedVersion`. */
+  readonly version: number
+  readonly inputs: readonly PlannedInput[]
+  readonly target: { readonly basis: string; readonly kg: string } | null
+  readonly approvedByUserId: string | null
+  readonly approvedAtUtc: string | null
+}
+
 export interface ProductionOrderView {
   readonly orderId: string
   readonly companyId: string
@@ -183,6 +211,73 @@ function decodeTarget(value: unknown): ProductionOrderView['target'] | undefined
 /** A positive safe integer: the version is compared and sent back, never computed. */
 function version(value: unknown): number | null {
   return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : null
+}
+
+/** `undefined` = not a contract value; `null` = the contract's own absent value. */
+function nullableInstant(value: unknown): string | null | undefined {
+  if (value === null) return null
+  return typeof value === 'string' && !Number.isNaN(Date.parse(value)) ? value : undefined
+}
+
+function decodePlannedInput(value: unknown): PlannedInput | null {
+  if (!isObject(value)) return null
+  const parentRollId = guid(value.parentRollId)
+  const plannedKg = kg(value.plannedKg)
+  return parentRollId === null || plannedKg === null ? null : { parentRollId, plannedKg }
+}
+
+/**
+ * Fails closed, like {@link decodeOrder}: a body that is not this contract is `null` and the screen
+ * says the answer could not be read. A half-trusted plan would show one roll's planned kilogram
+ * beside another's.
+ *
+ * Approval is decoded as a PAIR and never half-believed: a plan that names an approver but no
+ * instant (or the reverse) is not a shape this contract has — the server's own check constraint
+ * says the two move together — so it is refused rather than displayed as a partial approval.
+ */
+export function decodePlan(body: unknown): ProductionPlanView | null {
+  if (!isObject(body)) return null
+  const planId = guid(body.planId)
+  const companyId = guid(body.companyId)
+  const workCenterId = guid(body.workCenterId)
+  const planVersion = version(body.version)
+  const target = decodeTarget(body.target)
+  const approvedByUserId = nullableGuid(body.approvedByUserId)
+  const approvedAtUtc = nullableInstant(body.approvedAtUtc)
+  if (
+    planId === null ||
+    companyId === null ||
+    workCenterId === null ||
+    planVersion === null ||
+    target === undefined ||
+    approvedByUserId === undefined ||
+    approvedAtUtc === undefined ||
+    typeof body.process !== 'string' ||
+    (body.status !== 'Draft' && body.status !== 'Approved') ||
+    !Array.isArray(body.inputs)
+  ) {
+    return null
+  }
+  // Both or neither: an approver without an instant is not this contract.
+  if ((approvedByUserId === null) !== (approvedAtUtc === null)) return null
+  const inputs: PlannedInput[] = []
+  for (const raw of body.inputs) {
+    const input = decodePlannedInput(raw)
+    if (input === null) return null
+    inputs.push(input)
+  }
+  return {
+    planId,
+    companyId,
+    workCenterId,
+    process: body.process,
+    status: body.status,
+    version: planVersion,
+    inputs,
+    target,
+    approvedByUserId,
+    approvedAtUtc,
+  }
 }
 
 export function decodeOrder(body: unknown): ProductionOrderView | null {
