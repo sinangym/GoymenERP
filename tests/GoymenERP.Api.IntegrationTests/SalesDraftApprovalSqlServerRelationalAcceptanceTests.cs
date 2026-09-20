@@ -835,7 +835,7 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
     /// <summary>
     /// The change set of a commercial revision's ONE save, asserted TOGETHER (a count alone would accept a save holding only
     /// some of it): the archived revision header and line (Added), the draft header (Modified — exactly the approval facts,
-    /// Revision, Version and the timestamp), the draft line (Modified — exactly the three commercial columns), the attempt
+    /// Revision, Version and the timestamp), the draft line (Modified — exactly the commercial column this request changes), the attempt
     /// and the audit event (Added); nothing else.
     /// </summary>
     private static void AssertRevisionChangeSet(IReadOnlyList<SaveRecorder.Entry> save)
@@ -854,8 +854,13 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
                 nameof(DraftRow.SubmittedAtUtc), nameof(DraftRow.SubmittedBy), nameof(DraftRow.UpdatedAtUtc), nameof(DraftRow.Version),
             ],
             header.Modified);
+        // The line's modified set is EXACTLY the commercial column whose value CHANGED: this request moves the price
+        // (12.50 → 13.00) and re-sends the same unit (kg) and the same discount (5), so EF marks only UnitPrice — the store
+        // assigns all three, EF records what differs. What this pins: the changed column is inside the one save, and nothing
+        // outside the commercial columns is. The guard's ADMITTED set (all three) is the unit persistence test's pin, not this
+        // case's — the first version of this line asserted the admitted set here and was red on real SQL for that reason.
         var line = Assert.Single(save, entry => entry.Entity == nameof(DraftLineRow));
-        Assert.Equal([nameof(DraftLineRow.DiscountPercent), nameof(DraftLineRow.PriceUnitId), nameof(DraftLineRow.UnitPrice)], line.Modified);
+        Assert.Equal([nameof(DraftLineRow.UnitPrice)], line.Modified);
     }
 
     /// <summary>
