@@ -59,9 +59,14 @@ public sealed class OrganizationShellCapabilityAcceptanceTests(GoymenErpApiFacto
             duplicate, new TestingEnvironment(), configuration));
     }
 
+    // FOUR permission bits now, not three: ORG-03 added `organization.work-centers.read`, and
+    // before this the fixture's `_ => 0` default denied it in every case — so the theory would
+    // have kept passing while covering none of the new capability's combinations. A check that
+    // silently stops covering what it claims to cover is worse than no check, because its green
+    // is read as a statement about the whole set.
     public static IEnumerable<object[]> PermissionCases()
     {
-        for (var permissions = 0; permissions < 8; permissions++)
+        for (var permissions = 0; permissions < 16; permissions++)
         for (var scope = 0; scope < 4; scope++)
             yield return [permissions, scope];
     }
@@ -84,6 +89,13 @@ public sealed class OrganizationShellCapabilityAcceptanceTests(GoymenErpApiFacto
             if ((permissions & 4) != 0)
                 expected.Add(OrganizationShellCapabilityProvider.StatusCapabilityId);
         }
+
+        // OUTSIDE the locations-read branch, and that placement is the assertion: ORG-03 stands on
+        // `organization.work-centers.read` ALONE. A work-centre reader with no location access still
+        // gets this capability — which is why the screen exists as its own sidebar entry rather than
+        // a link inside ORG-01, a screen that caller cannot open at all.
+        if ((permissions & 8) != 0)
+            expected.Add(OrganizationShellCapabilityProvider.WorkCenterListCapabilityId);
 
         Assert.Equal(expected.Order(StringComparer.Ordinal), snapshot.Capabilities);
     }
@@ -178,6 +190,7 @@ public sealed class OrganizationShellCapabilityAcceptanceTests(GoymenErpApiFacto
                 ErpPermissions.OrganizationLocationsRead => 1,
                 ErpPermissions.OrganizationSitesRead => 2,
                 ErpPermissions.OrganizationLocationsStatusUpdate => 4,
+                ErpPermissions.OrganizationWorkCentersRead => 8,
                 _ => 0,
             };
             if (companyId != TestCompanyIds.CompanyA || bit == 0 || (Permissions & bit) == 0)

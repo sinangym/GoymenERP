@@ -367,12 +367,16 @@ public sealed class ShellCapabilityAcceptanceTests(
         Assert.DoesNotContain("invoiceCapable", body, StringComparison.OrdinalIgnoreCase);
     }
 
+    // Ordinal order, because that is the order the snapshot publishes them in. ORG-03's id sorts
+    // LAST — `organization.work-centers.list` follows `organization.sites.read` — so it is appended
+    // rather than slotted in beside the other list.
     private static string[] OrganizationCapabilities() =>
     [
         OrganizationShellCapabilityProvider.DetailCapabilityId,
         OrganizationShellCapabilityProvider.StatusCapabilityId,
         OrganizationShellCapabilityProvider.ListCapabilityId,
         OrganizationShellCapabilityProvider.SitesReadCapabilityId,
+        OrganizationShellCapabilityProvider.WorkCenterListCapabilityId,
     ];
 
     private static async Task<string> ReadGenerationAsync(HttpClient client)

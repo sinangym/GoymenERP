@@ -90,7 +90,8 @@ public sealed partial class ShellCapabilityRegistryTests
         Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15AndOrganizationV11,
             ShellCapabilityRegistry.ComputeCandidateRevision(normal));
         var combined = AuthorizedRegistry([.. normal, Provider("PRODUCT", ProductDeclarations())]);
-        Assert.Equal(12, combined.Registrations.Count);
+        // Counterparty's four + Organization's five (ORG-03 joined) + Product's four.
+        Assert.Equal(13, combined.Registrations.Count);
         Assert.Equal(4, combined.Registrations.Count(item => item.Declaration.GlobalProductOperation is not null));
         Assert.Equal(2, combined.Registrations.Count(item => item.Declaration.ParentCapabilityId is not null));
         Assert.All(combined.Registrations.Where(item => item.Declaration.ParentCapabilityId is not null),
