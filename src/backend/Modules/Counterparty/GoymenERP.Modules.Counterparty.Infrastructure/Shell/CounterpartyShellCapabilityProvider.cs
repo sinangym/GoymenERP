@@ -39,7 +39,7 @@ public sealed class CounterpartyShellCapabilityProvider : IShellCapabilityProvid
             ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
             ShellCapabilityScopeRequirement.CompanyWide,
             [ErpPermissions.CounterpartyPartiesRead],
-            ImplementationAvailable: false),
+            ImplementationAvailable: true),
         new ShellCapabilityDeclaration(
             CreateCapabilityId,
             CreateRouteId,

@@ -362,3 +362,25 @@ td[data-account-state='inactive'] {
 .contractRefusal p {
   margin: 0;
 }
+
+/* K5's single authorised "Yeni …" action, inside the list. Mirrors CariDetailPage.module.css's
+   .action rule for rule — same colour, border, radius and padding — so the two Cari screens do not
+   drift into two different action affordances. No new design token is introduced here. */
+.primaryAction {
+  align-self: flex-start;
+  margin-top: 8px;
+  display: inline-block;
+  font-size: 0.9rem;
+  color: #1f5fd0;
+  text-decoration: none;
+  border: 1px solid #b9c1d1;
+  border-radius: 4px;
+  padding: 6px 12px;
+}
+.primaryAction:hover {
+  text-decoration: underline;
+}
+.primaryAction:focus-visible {
+  outline: 2px solid #1f5fd0;
+  outline-offset: 2px;
+}

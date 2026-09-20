@@ -64,15 +64,25 @@ test.describe.configure({ mode: 'serial' })
 
 let createdPartyPath = ''
 
-test('C02-01 a creator reaches C-02 from the sidebar and the record is persisted through the real API', async ({ page }) => {
+test('C02-01 a creator reaches C-02 THROUGH THE LIST and the record is persisted through the real API', async ({ page }) => {
   await signInAs(page, CREATOR_ACTOR)
   await page.goto('/')
 
-  // From the SIDEBAR, not by typing the route: "the screen is reachable" is the claim, and a direct
-  // goto would pass even if the entry were never drawn.
-  const entry = page.getByRole('navigation', { name: 'Modül navigasyonu' }).getByRole('link', { name: 'Yeni Cari' })
-  await expect(entry).toBeVisible()
-  await entry.click()
+  // The CANONICAL entry path, walked rather than asserted: sidebar -> C-01 -> the list's single
+  // authorised "Yeni". K5 (Sinan, 20 Eylül 2026) puts creation inside the relevant list, so a
+  // direct goto to /cari/yeni would pass while proving nothing about the path a user has.
+  const nav = page.getByRole('navigation', { name: 'Modül navigasyonu' })
+  const listEntry = nav.getByRole('link', { name: 'Cari Kartlar' })
+  await expect(listEntry).toBeVisible()
+
+  // And the OTHER half of K5, which only a browser can show: the sidebar must NOT also offer a
+  // create entry. Asserting the list link exists says nothing about the duplicate being gone.
+  await expect(nav.getByRole('link', { name: 'Yeni Cari' })).toHaveCount(0)
+
+  await listEntry.click()
+  await expect(page.getByRole('heading', { name: 'Cari Kartlar' })).toBeVisible()
+
+  await page.getByRole('link', { name: 'Yeni Cari' }).click()
   await expect(page).toHaveURL(new RegExp(`${CREATE_ROUTE}$`))
   await expect(page.getByRole('heading', { name: CREATE_TITLE })).toBeVisible()
 
@@ -102,9 +112,17 @@ test('C02-02 closing and reopening the card reads the SAME record back from the 
   await expect(page.getByRole('heading', { name: new RegExp(LEGAL_NAME) })).toBeVisible()
   await expect(page.getByRole('heading', { name: CARD_IDENTITY_HEADING })).toBeVisible()
 
-  // The list is NOT published in this head, so the card must offer no return to it. The guard is a
-  // claim about what a normal user sees, so it is checked here and not only in a component test.
-  await expect(page.locator('a[href="/cari"]')).toHaveCount(0)
+  // The list IS published in this head, so the card's return is live and must work — the guards
+  // added alongside suppress it only when the list is absent, and a guard that suppressed it here
+  // would be a regression rather than a safety. Walking it also closes the loop the user walks.
+  const back = page.getByRole('link', { name: /listesine dön/ })
+  await expect(back).toBeVisible()
+  await back.click()
+  await expect(page.getByRole('heading', { name: 'Cari Kartlar' })).toBeVisible()
+
+  // And the created row is IN the list: "persisted" means the record is where the user looks for
+  // it, not merely that a detail URL resolves.
+  await expect(page.getByRole('link', { name: new RegExp(LEGAL_NAME) })).toBeVisible()
 })
 
 test('C02-03 an actor authorized in ANOTHER company does not reach the record', async ({ page }) => {
