@@ -440,7 +440,13 @@ function LoadForm({
     setError(null)
     const binding = attemptBinding(shell, loadScope(instruction.id, chosen.lineId))
     if (binding === null) return
-    const live = liveSnapshot(attemptRef.current)
+    // A COMPLETED load never blocks the next one (l04 run 35481530144 at dc41a2d2: the section is keyed by record so its
+    // notice survives the re-read, which also kept the attempt `completed` and silently blocked every later load). The
+    // next submit starts a fresh attempt — new key, new load id — and its outcome replaces the previous notice; an
+    // unknown or failed attempt keeps its own rules (retry the same snapshot, or abandon first).
+    const current: AttemptState<LoadPayload, InstructionMutation> =
+      attemptRef.current.phase === 'completed' ? { phase: 'idle' } : attemptRef.current
+    const live = liveSnapshot(current)
     // One load id per snapshot: a retry of the same snapshot resends the same id; a new snapshot mints a new one.
     const payload: LoadPayload = {
       expectedVersion: instruction.version,
@@ -449,7 +455,7 @@ function LoadForm({
       measurement,
     }
     const decision = decideSubmit(
-      attemptRef.current,
+      current,
       { path: `${instruction.id}/lines/${chosen.lineId}/loads`, binding, companyId, payload },
       generateAttemptKey,
     )

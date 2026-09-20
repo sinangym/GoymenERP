@@ -93,6 +93,46 @@ describe('L-02-DETAIL', () => {
     expect(posts[0].url).toBe(`/api/v1/logistics/loading-instructions/${INSTRUCTION}/lines/${LINE}/loads`)
   })
 
+  it('a second load after a completed one is a NEW attempt under a new key and a new load id; its refusal replaces the success notice', async () => {
+    // l04 run 35481530144 at dc41a2d2: after the first load the section stayed `completed` and the next submit was silently
+    // blocked, so the screen kept "İşlem kaydedildi." while nothing was sent. Two consecutive loads on one screen: two
+    // POSTs with different keys and load ids; the second's cap refusal is what the notice shows, never the earlier success.
+    let loads = 0
+    let reads = 0
+    const harness = installFetch({
+      onDetail: () => {
+        reads += 1
+        return json(issued())
+      },
+      onLoad: (_, call) =>
+        ++loads === 1
+          ? loadAnswer(call)
+          : json({ status: 409, title: 'Conflict', code: 'logistics_load_exceeds_instructed', correlationId: 'c', errors: [] }, 409),
+    })
+    renderLogisticsApp(path)
+    const quantity = await screen.findByLabelText(T.load.quantity)
+    await userEvent.type(quantity, '2,5')
+    await userEvent.click(screen.getByTestId('logistics-load-button'))
+    await waitFor(() => expect(screen.getByTestId('logistics-load-notice').textContent).toBe(T.command.completed))
+    // Property 1: the completed notice survives the re-read the completion caused (the section is keyed by record).
+    await waitFor(() => expect(reads).toBeGreaterThanOrEqual(2))
+    expect(screen.getByTestId('logistics-load-notice').textContent).toBe(T.command.completed)
+    // Property 2: the next submit is a fresh attempt whose outcome replaces that notice.
+    await userEvent.clear(quantity)
+    await userEvent.type(quantity, '3')
+    await userEvent.click(screen.getByTestId('logistics-load-button'))
+    await waitFor(() =>
+      expect(screen.getByTestId('logistics-load-notice').textContent).toBe(`${T.command.conflict} ${PROBLEM_CODE_TEXT['logistics_load_exceeds_instructed' as keyof typeof PROBLEM_CODE_TEXT]}`),
+    )
+    expect(screen.queryByText(T.command.completed)).toBeNull()
+    const posts = harness.logisticsCalls().filter((call) => call.method === 'POST')
+    expect(posts).toHaveLength(2)
+    expect(posts[0].idempotencyKey).not.toBe(posts[1].idempotencyKey)
+    const [firstBody, secondBody] = posts.map((post) => JSON.parse(post.body ?? '{}') as { loadId: string; quantity: string })
+    expect([firstBody.quantity, secondBody.quantity]).toEqual(['2.5', '3'])
+    expect(firstBody.loadId).not.toBe(secondBody.loadId)
+  })
+
   it.each([
     ['logistics_load_exceeds_instructed', true],
     ['logistics_line_blocked', true],
