@@ -39,7 +39,7 @@ def model(profile):
     return result
 
 
-SUITE_FOR = {"c01-list-only": "smoke", "cari-staged": "c03", "normal": "org03"}
+SUITE_FOR = {"c01-list-only": "smoke", "cari-staged": "c03", "normal": "org03", "acc-staged": "acc01"}
 
 
 class ProfileRegistryTests(unittest.TestCase):
@@ -95,6 +95,15 @@ class ComposeFileDerivationTests(unittest.TestCase):
         ).replace(browser.CANONICAL_SUITE_LABEL, browser.PROFILE_SUITE_LABELS["cari-staged"])
         self.assertEqual(expected, staged)
 
+    def test_acc_staged_is_the_canonical_file_plus_its_profile_line(self):
+        # ACC-V0b: the same two transforms, with the accounting-periods-and-journals profile.
+        staged = self._body((ROOT / browser.PROFILE_COMPOSE_FILES["acc-staged"]).read_text(encoding="utf-8"))
+        anchor = '      C01E2e__EnableListCapability: "true"\n'
+        expected = self.canonical.replace(
+            anchor, anchor + f"      {browser.CARI_STAGED_PROFILE_KEY}: {browser.STAGED_PROFILE_VALUES['acc-staged']}\n"
+        ).replace(browser.CANONICAL_SUITE_LABEL, browser.PROFILE_SUITE_LABELS["acc-staged"])
+        self.assertEqual(expected, staged)
+
     def test_the_mfg_staged_profile_is_retired(self):
         # MFG-UI-F: Manufacturing is published on the normal host and mfg runs there; the disposable mfg-staged
         # profile (#323 D4) has no compose file, no label and no activation value any more.
@@ -127,7 +136,9 @@ class ComposeFileDerivationTests(unittest.TestCase):
                 self.assertIn(f'Profile = "{value}";', activation)
 
     def test_a_staged_profile_refuses_the_other_profile_value(self):
-        for profile, suite, wrong in (("cari-staged", "c03", "manufacturing-order-detail"),
+        for profile, suite, wrong in (("acc-staged", "acc01", "cari-list-detail"),
+                                      ("cari-staged", "c03", "accounting-periods-and-journals"),
+                                      ("cari-staged", "c03", "manufacturing-order-detail"),
                                       ("cari-staged", "c03", "finance-bank-accounts-and-drafts")):
             with self.subTest(profile=profile):
                 wrong_model = model(profile)

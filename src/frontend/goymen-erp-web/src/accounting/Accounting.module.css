@@ -1,0 +1,130 @@
+/*
+ * Accounting screens (M-07, M-04, M-01). Technical, functional views, not locked visual references
+ * (the catalog marks them DECISION_ONLY_REFERENCE_MISSING). Same rules as the other modules: colour
+ * is never the only carrier of status, focus is always visible, and only tables — never the page
+ * body — scroll sideways at 400px.
+ */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.page h1 {
+  font-size: 1.25rem;
+  margin: 0;
+  color: #0f172a;
+  overflow-wrap: anywhere;
+}
+
+.page h2 {
+  font-size: 1.05rem;
+  margin: 0 0 8px;
+  color: #0f172a;
+}
+
+.help {
+  font-size: 0.85rem;
+  color: #475569;
+  margin: 0;
+}
+
+.tableWrap {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.table th,
+.table td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid #e2e8f0;
+  vertical-align: top;
+}
+
+.amount {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  gap: 12px;
+}
+
+.control {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.error {
+  color: #b91c1c;
+  margin: 0;
+}
+
+.noticeOk,
+.noticeWarn,
+.noticeError {
+  border-radius: 8px;
+  padding: 10px 12px;
+  border: 1px solid;
+}
+
+.noticeOk {
+  border-color: #16a34a;
+  background: #f0fdf4;
+}
+
+.noticeWarn {
+  border-color: #d97706;
+  background: #fffbeb;
+}
+
+.noticeError {
+  border-color: #dc2626;
+  background: #fef2f2;
+}
+
+.noticeTitle {
+  font-weight: 600;
+  margin: 0 0 4px;
+}
+
+.noticeOk:focus,
+.noticeWarn:focus,
+.noticeError:focus {
+  outline: 2px solid #1d4ed8;
+  outline-offset: 2px;
+}
+
+/* Read by assistive technology, not drawn: the action column header. */
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

@@ -108,6 +108,14 @@ About re-drive:
   rejecting an unapproved proposal. Ö4 names only the approval; the withdraw/reject question is
   NEEDS-BUSINESS #66 5742097485. Until it is answered, a wrong proposal keeps its dates.
 - The period store refuses a period that overlaps another period of the company, whatever its status.
+- **Open for Finance (NEEDS-BUSINESS, card FIN-T05 #66 5743678389 Q1):** which of a Finance record's dates
+  decides its period (the transaction date `occurredOn` or the recording day). Ö5 separates the dates but does
+  not map them to the period. Accounting's own journals carry an explicit accounting date; nothing here picks
+  one for Finance.
+- **Ö2 rule for the first HTTP amount input (FIN-T05 / ACC-V1):** the amount TEXT is validated lexically
+  (Settings' `ExactPositiveDecimalV1`) before it is converted, because a `decimal` parse rounds past about
+  28 significant digits. Today no Accounting route takes an amount; journal amounts arrive in-process as
+  `decimal`, so the producing module owns that check.
 
 ## dependency_wait
 
@@ -152,10 +160,22 @@ The operation key on the GDC/TRY profile is a central Settings change (CARİ), w
   `Idempotency-Replayed` and `Idempotency-Original-Correlation-Id`; another request or actor is 409
   `idempotency_conflict`. A success is recorded in the same save as the period change and its audit
   event; an unknown period (404) and a stale version (409 `accounting_version_conflict`) are recorded as
-  the key's terminal answers; two attempts racing on one key leave one record and the loser answers from it.
-- **#276:** the permission is measured fresh before any stored answer is read; only a company-wide
-  grant writes, and its role codes go into the audit envelope. The approval's audit event carries the
-  O4 context (who prepared, who approved).
+  the key's terminal answers; two attempts racing on one key leave one record and the loser answers from it
+  (real SQL: the same approval sent twice at once is one approval and one replay).
+- **§7, decided for Accounting (SİPARİŞ #354 P3-2): the 422 state refusals are NOT terminal.** A proposal
+  that is no longer proposed, a period that is not open or already closed, an invalid period and an overlap
+  (409) answer this attempt only; nothing is recorded under the key, so the same key retried after the state
+  is corrected is measured again. Only a success, an unknown period (404) and a stale version (409
+  `accounting_version_conflict`) are the key's answer for good: those are facts of the request itself, the
+  others facts of a state that can change. ADR-011 §7 leaves this choice to each module; this is Accounting's.
+- **#276:** the permission is measured fresh before any stored answer is read, and AGAIN after that lookup,
+  right before the one write (the store reads the period and saves in that call; Manufacturing's `FenceAsync`
+  shape, SİPARİŞ #354 P3-1). A grant lost in between stores nothing (`AccountingApiFenceTests`). Only a
+  company-wide grant writes, and its role codes go into the audit envelope. The approval's audit event carries
+  the O4 context (who prepared, who approved).
+- **403 shape:** a denial by this service (a missing or site-scoped grant, the Ö4 preparer) is 403 with
+  `code: "forbidden"` (the Finance bank-account precedent); the platform's own policy 403 before the handler
+  stays code-less. Both are the same refusal to the client, and neither discloses anything.
 - Company: only the server-resolved context; another company's period or journal is a code-less 404.
 - Migration `AddPeriodApproval`: the preparer and approval facts (`CK_Periods_Status` holds approver ≠
   preparer in the schema too) and `Commands`. Up fails visibly on a table that already holds a period
