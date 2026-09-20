@@ -807,7 +807,7 @@ partial class SalesDbContextModelSnapshot : ModelSnapshot
 
                 t.HasCheckConstraint(
                     "CK_Drafts_State",
-                    "[Kind] = 1 AND [State] = 1 AND [Revision] = 0");
+                    "[Kind] = 1 AND [State] = 1 AND [Revision] >= 0");
 
                 t.HasCheckConstraint(
                     "CK_Drafts_Text",

@@ -12,6 +12,25 @@ public sealed class AddDraftRevisions : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)
     {
+        // Provenance — Sinan, Issue #66 comment 5748258299 (K3), verbatim: "Onaylı fiyat/iskonto değişikliği yeni revizyon +
+        // yeniden onaya girer, eski onaylı snapshot silinmez." So revisions EXIST from this decision on, and the header's
+        // Revision is a counter (0 at creation, +1 per archived approved revision). The initial migration (SALES-P2, R3)
+        // pinned "[Revision] = 0" into CK_Drafts_State as a statement about the world at that time — no revisions yet —
+        // and that premise is superseded by the decision above; widening it to ">= 0" removes the superseded pin, it does
+        // not choose a policy. Kind and State stay pinned exactly as they were (nothing supersedes them). The same shape
+        // already exists in Logistics: CK_LoadingInstructionLines_Revision "[SourceOrderRevision] >= 0" (a revision
+        // counter constrained to non-negative, not to a value). The real-SQL revision case is what found the pin.
+        migrationBuilder.DropCheckConstraint(
+            name: "CK_Drafts_State",
+            schema: "sales",
+            table: "Drafts");
+
+        migrationBuilder.AddCheckConstraint(
+            name: "CK_Drafts_State",
+            schema: "sales",
+            table: "Drafts",
+            sql: "[Kind] = 1 AND [State] = 1 AND [Revision] >= 0");
+
         migrationBuilder.CreateTable(
             name: "DraftRevisions",
             schema: "sales",
@@ -102,5 +121,23 @@ public sealed class AddDraftRevisions : Migration
         migrationBuilder.DropTable(
             name: "DraftRevisions",
             schema: "sales");
+
+        // The "= 0" pin is restored only past the guard above, and that ordering carries a DEPENDENCY on the service code
+        // of this head: SalesStore.ReviseDraftCommercialAsync archives the approved revision and advances the header's
+        // Revision in ONE SaveChanges, and no other path writes Revision (the context's write guard admits it only there).
+        // Under that invariant a header with Revision > 0 exists only beside an archived row, so a database that passed
+        // the 51049 guard has no such header and the restored "= 0" constraint holds. A Down runs against whatever data
+        // exists: if a later head ever writes Revision without archiving, this restore is what fails (the ALTER refuses),
+        // and that head owes its own guard here. No second guard is added on purpose — one refusal, one reason.
+        migrationBuilder.DropCheckConstraint(
+            name: "CK_Drafts_State",
+            schema: "sales",
+            table: "Drafts");
+
+        migrationBuilder.AddCheckConstraint(
+            name: "CK_Drafts_State",
+            schema: "sales",
+            table: "Drafts",
+            sql: "[Kind] = 1 AND [State] = 1 AND [Revision] = 0");
     }
 }

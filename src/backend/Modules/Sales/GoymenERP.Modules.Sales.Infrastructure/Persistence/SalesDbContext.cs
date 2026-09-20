@@ -124,7 +124,9 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                 "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [PartyId] <> '00000000-0000-0000-0000-000000000000' AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000' AND [MoneyProfileId] <> '00000000-0000-0000-0000-000000000000'");
-            table.HasCheckConstraint("CK_Drafts_State", "[Kind] = 1 AND [State] = 1 AND [Revision] = 0");
+            // K3 Head B: the header's Revision is a counter (0 at creation, +1 per archived approved revision), no longer
+            // R3's "= 0" pin; Kind and State stay pinned. AddDraftRevisions widens the constraint.
+            table.HasCheckConstraint("CK_Drafts_State", "[Kind] = 1 AND [State] = 1 AND [Revision] >= 0");
             // SALES-A1: the approval facts follow the approval state exactly (a row cannot say "approved" without a decision).
             table.HasCheckConstraint("CK_Drafts_Approval", ApprovalConstraint);
             table.HasCheckConstraint("CK_Drafts_Version", "[Version] >= 1");
