@@ -49,7 +49,7 @@ public sealed class CounterpartyShellCapabilityProvider : IShellCapabilityProvid
             ShellCapabilityContextRequirement.SingleCompany,
             ShellCapabilityScopeRequirement.CompanyWide,
             [ErpPermissions.CounterpartyPartiesCreate],
-            ImplementationAvailable: false),
+            ImplementationAvailable: true),
         new ShellCapabilityDeclaration(
             LinkCapabilityId,
             LinkRouteId,
@@ -72,6 +72,6 @@ public sealed class CounterpartyShellCapabilityProvider : IShellCapabilityProvid
             ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
             ShellCapabilityScopeRequirement.CompanyWide,
             [ErpPermissions.CounterpartyPartiesRead],
-            ImplementationAvailable: false),
+            ImplementationAvailable: true),
     ];
 }

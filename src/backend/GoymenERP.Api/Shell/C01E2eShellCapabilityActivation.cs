@@ -325,6 +325,16 @@ internal static class C01E2eStagedDeclarations
 {
     // The list is opened exactly as C-01 always has (single company); the detail only changes its
     // availability and keeps the canonical declaration's own context, scope and permission.
+    //
+    // EVERY declaration's availability is STATED here, including the ones this envelope closes.
+    // It used to end in `_ => declaration`, which passed create and link through with whatever the
+    // real provider happened to carry — correct only for as long as everything else was staged. The
+    // moment the normal provider publishes create, an envelope whose entire name is "list-only"
+    // would have started offering a create screen, and the two disposable authority constants would
+    // have moved with it: a silent widening of an acceptance surface as a side effect of an
+    // unrelated flip. An envelope's contents are DECLARED, not inherited — so this switch is
+    // exhaustive over the owner's four capabilities and the default arm now refuses an unknown one
+    // rather than quietly admitting it with the owner's flag.
     internal static IReadOnlyCollection<ShellCapabilityDeclaration> Open(
         CounterpartyShellCapabilityProvider source, bool detail) =>
         Array.AsReadOnly(source.GetDeclarations()
@@ -335,11 +345,19 @@ internal static class C01E2eStagedDeclarations
                     ContextRequirement = ShellCapabilityContextRequirement.SingleCompany,
                     ImplementationAvailable = true,
                 },
-                CounterpartyShellCapabilityProvider.DetailCapabilityId when detail => declaration with
+                CounterpartyShellCapabilityProvider.DetailCapabilityId => declaration with
                 {
-                    ImplementationAvailable = true,
+                    ImplementationAvailable = detail,
                 },
-                _ => declaration,
+                // Closed in both envelopes, independently of what the normal host publishes.
+                CounterpartyShellCapabilityProvider.CreateCapabilityId
+                    or CounterpartyShellCapabilityProvider.LinkCapabilityId => declaration with
+                {
+                    ImplementationAvailable = false,
+                },
+                _ => throw new InvalidOperationException(
+                    "C-01 disposable zarfı, Cari sağlayıcısının tanımadığı bir kabiliyetle karşılaştı: "
+                    + declaration.CapabilityId),
             })
             .ToArray());
 }
