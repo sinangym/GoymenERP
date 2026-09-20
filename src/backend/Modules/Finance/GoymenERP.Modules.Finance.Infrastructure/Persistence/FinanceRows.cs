@@ -94,6 +94,20 @@ internal sealed class BankAccountRow : IFinanceTenantRow
     public Guid CompanyId { get; set; }
     public Guid CurrencyId { get; set; }
     public string DisplayName { get; set; } = string.Empty;
+
+    // K2 (Sinan #66 5748258299): the card. BankName and AccountType are MANDATORY for a card written
+    // from now on — enforced where the card is written, not by the column, because the column also has
+    // to hold the rows that already exist. Those predate K2 and carry NULL; what they mean is the open
+    // question #66 5748390243, so nothing here backfills, defaults or reinterprets them.
+    public string? BankName { get; set; }
+    public string? AccountType { get; set; }
+    public string? BranchName { get; set; }
+    public string? BranchCode { get; set; }
+
+    // Normalised (no spaces, upper case) when present, so the stored value is the validated value.
+    public string? Iban { get; set; }
+    public string? AccountNumber { get; set; }
+
     public int Status { get; set; }
     public long Version { get; set; }
     public string ProposedBy { get; set; } = string.Empty;

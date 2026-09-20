@@ -81,7 +81,7 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
         var proposeCorrelation = Guid.NewGuid().ToString("N");
         Guid accountId;
         using (var proposed = await proposer.SendAsync(Post(FinanceEndpoints.BankAccountsPath, "SENTETIK-p-1", proposeCorrelation,
-                   new BankAccountProposeRequest("SENTETIK ana hesap", Lira))))
+                   new BankAccountProposeRequest("SENTETIK ana hesap", Lira, "SENTETIK Banka", "SENTETIK tür"))))
         {
             Assert.Equal(HttpStatusCode.OK, proposed.StatusCode);
             var result = await Json(proposed);
@@ -92,7 +92,7 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
         }
 
         using (var replayed = await proposer.SendAsync(Post(FinanceEndpoints.BankAccountsPath, "SENTETIK-p-1", Guid.NewGuid().ToString("N"),
-                   new BankAccountProposeRequest("SENTETIK ana hesap", Lira))))
+                   new BankAccountProposeRequest("SENTETIK ana hesap", Lira, "SENTETIK Banka", "SENTETIK tür"))))
         {
             Assert.Equal(HttpStatusCode.OK, replayed.StatusCode);
             AssertReplayOf(replayed, proposeCorrelation);
@@ -101,7 +101,7 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
 
         // A currency outside Settings' candidates is refused and stores nothing.
         using (var foreign = await proposer.SendAsync(Post(FinanceEndpoints.BankAccountsPath, "SENTETIK-p-2", Guid.NewGuid().ToString("N"),
-                   new BankAccountProposeRequest("SENTETIK yabancı", Guid.NewGuid()))))
+                   new BankAccountProposeRequest("SENTETIK yabancı", Guid.NewGuid(), "SENTETIK Banka", "SENTETIK tür"))))
         {
             Assert.Equal((HttpStatusCode)422, foreign.StatusCode);
             Assert.Equal("currency_not_a_candidate", Issue(await Json(foreign)));

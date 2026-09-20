@@ -130,6 +130,19 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         entity.Property(x => x.Id).ValueGeneratedNever();
         entity.Property(x => x.Version).IsConcurrencyToken();
         entity.Property(x => x.DisplayName).HasMaxLength(200).IsRequired();
+
+        // K2's card. Every column is NULLABLE, including the two K2 calls mandatory: the rows that
+        // existed before K2 have no value for them, and making the column required would force this
+        // slice to decide what those rows mean — which is the open question #66 5748390243. The
+        // mandatory pair is enforced where a card is WRITTEN, so new cards cannot omit it.
+        entity.Property(x => x.BankName).HasMaxLength(200);
+        entity.Property(x => x.AccountType).HasMaxLength(64);
+        entity.Property(x => x.BranchName).HasMaxLength(200);
+        entity.Property(x => x.BranchCode).HasMaxLength(64);
+        // ISO 13616's maximum is 34 characters; stored normalised, so the column never holds spacing.
+        entity.Property(x => x.Iban).HasMaxLength(34);
+        entity.Property(x => x.AccountNumber).HasMaxLength(64);
+
         entity.Property(x => x.ProposedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
         entity.Property(x => x.ApprovedBy).HasMaxLength(128).UseCollation(IdentityCollation);
         entity.HasIndex(x => new { x.CompanyId, x.Status });

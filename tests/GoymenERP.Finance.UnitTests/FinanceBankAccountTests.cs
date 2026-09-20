@@ -58,10 +58,11 @@ public sealed class FinanceBankAccountTests
         using var context = Context();
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddBankAccounts", StringComparison.Ordinal));
         // The NEWEST migration is pinned by name on purpose: adding one to this module must be a deliberate
-        // edit here, not a silent append. FIN-T05a moved it from RecordTerminalCommandResults to AddMoneyEvents
-        // (the money event's table); `FinanceDraftPersistenceModelTests` is where that migration's own shape is
-        // measured. If this line needs changing again, the new migration is what needs reading first.
-        Assert.Equal("20260920090000_AddMoneyEvents", context.Database.GetMigrations().Last());
+        // edit here, not a silent append. It has moved twice — RecordTerminalCommandResults → AddMoneyEvents
+        // (FIN-T05a's money event table) → AddBankAccountCardFields (K2's card columns). Each move was made by
+        // reading the new migration first, which is what this pin is for. The card migration's own shape — six
+        // NULLABLE columns, no backfill, nothing else touched — is measured in `The_card_columns_are_nullable…`.
+        Assert.Equal("20260920120000_AddBankAccountCardFields", context.Database.GetMigrations().Last());
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -101,11 +102,11 @@ public sealed class FinanceBankAccountTests
     [Fact]
     public void The_payload_hash_names_the_command_and_every_field()
     {
-        var propose = new BankAccountProposeRequest("SENTETIK hesap", Currency);
+        var propose = new BankAccountProposeRequest("SENTETIK hesap", Currency, "SENTETIK Banka", "SENTETIK tür");
         var hash = FinanceBankAccountService.PayloadHash(FinanceBankAccountService.ProposeCommand, propose);
         Assert.Equal(64, hash.Length);
         Assert.Equal(hash, FinanceBankAccountService.PayloadHash(FinanceBankAccountService.ProposeCommand,
-            new BankAccountProposeRequest("SENTETIK hesap", Currency)));
+            new BankAccountProposeRequest("SENTETIK hesap", Currency, "SENTETIK Banka", "SENTETIK tür")));
         Assert.NotEqual(hash, FinanceBankAccountService.PayloadHash(FinanceBankAccountService.ProposeCommand,
             propose with { DisplayName = "SENTETIK hesap 2" }));
         Assert.NotEqual(hash, FinanceBankAccountService.PayloadHash(FinanceBankAccountService.ProposeCommand,
@@ -120,6 +121,14 @@ public sealed class FinanceBankAccountTests
     [InlineData("permission-unavailable", CommandOutcome.Unavailable, "finance_permission_mapping_unavailable")]
     [InlineData("key-with-space", CommandOutcome.ValidationFailed, "idempotency_key_invalid")]
     [InlineData("null-name", CommandOutcome.ValidationFailed, "display_name_invalid")]
+    // K2 (Sinan #66 5748258299): bank name and account type are MANDATORY on a card written from now
+    // on, and an IBAN that is given must be structurally valid. These rows go through the real
+    // ProposeAsync against an unreachable database, so they also pin that the card is judged BEFORE
+    // anything is read — a refusal here cannot have touched a row.
+    [InlineData("no-bank-name", CommandOutcome.ValidationFailed, "bank_name_required")]
+    [InlineData("blank-bank-name", CommandOutcome.ValidationFailed, "bank_name_required")]
+    [InlineData("no-account-type", CommandOutcome.ValidationFailed, "account_type_required")]
+    [InlineData("bad-iban", CommandOutcome.ValidationFailed, "iban_invalid")]
     public async Task A_proposal_is_refused_before_anything_is_read(string fault, CommandOutcome outcome, string? code)
     {
         var permission = fault switch
@@ -133,7 +142,14 @@ public sealed class FinanceBankAccountTests
         var finance = new FinanceContext(fault == "other-company" ? CompanyB : CompanyA,
             fault == "other-actor" ? "SENTETIK-someone-else" : Actor, "SENTETIK-correlation", null);
         var key = new CommandMetadata(fault == "key-with-space" ? " k-1" : "k-1");
-        var request = new BankAccountProposeRequest(fault == "null-name" ? null! : "SENTETIK hesap", Currency);
+        var request = new BankAccountProposeRequest(
+            fault == "null-name" ? null! : "SENTETIK hesap",
+            Currency,
+            fault switch { "no-bank-name" => null!, "blank-bank-name" => "   ", _ => "SENTETIK Banka" },
+            fault == "no-account-type" ? null! : "SENTETIK tür",
+            // A structurally invalid IBAN: the published TR example with one character altered, so the
+            // refusal is the checksum and not the length or the shape.
+            Iban: fault == "bad-iban" ? "TR330006100519786457841327" : null);
 
         // The context's database is unreachable: any read would throw, so a result proves nothing was read.
         var result = await service.ProposeAsync(finance, key, request, CancellationToken.None);

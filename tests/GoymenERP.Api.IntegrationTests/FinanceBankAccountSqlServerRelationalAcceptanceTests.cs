@@ -42,7 +42,7 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
         BankAccountView proposed;
         await using (var a = run.Open(CompanyA, Proposer))
         {
-            var result = await a.Accounts.ProposeAsync(a.Context, Key("p-1"), new BankAccountProposeRequest("SENTETIK hesap", Currency),
+            var result = await a.Accounts.ProposeAsync(a.Context, Key("p-1"), new BankAccountProposeRequest("SENTETIK hesap", Currency, "SENTETIK Banka", "SENTETIK tür"),
                 CancellationToken.None);
             Assert.Equal(CommandOutcome.Succeeded, result.Outcome);
             proposed = result.Resource!;
@@ -110,7 +110,7 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
         BankAccountView accountA;
         await using (var a = run.Open(CompanyA, Proposer))
         {
-            accountA = (await a.Accounts.ProposeAsync(a.Context, Key("p-1"), new BankAccountProposeRequest("SENTETIK A", Currency),
+            accountA = (await a.Accounts.ProposeAsync(a.Context, Key("p-1"), new BankAccountProposeRequest("SENTETIK A", Currency, "SENTETIK Banka", "SENTETIK tür"),
                 CancellationToken.None)).Resource!;
         }
 
@@ -137,7 +137,7 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
         BankAccountView first;
         await using (var a = run.Open(CompanyA, Proposer))
         {
-            var request = new BankAccountProposeRequest("SENTETIK hesap", Currency);
+            var request = new BankAccountProposeRequest("SENTETIK hesap", Currency, "SENTETIK Banka", "SENTETIK tür");
             first = (await a.Accounts.ProposeAsync(a.Context, Key("k-1"), request, CancellationToken.None)).Resource!;
             var replay = await a.Accounts.ProposeAsync(a.Context, Key("k-1"), request, CancellationToken.None);
             Assert.True(replay.IsReplay);
@@ -155,7 +155,7 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
         {
             // ADR-011 §3: the same key and payload by ANOTHER actor is a conflict that discloses nothing.
             var conflict = await other.Accounts.ProposeAsync(other.Context, Key("k-1"),
-                new BankAccountProposeRequest("SENTETIK hesap", Currency), CancellationToken.None);
+                new BankAccountProposeRequest("SENTETIK hesap", Currency, "SENTETIK Banka", "SENTETIK tür"), CancellationToken.None);
             Assert.Equal(CommandOutcome.IdempotencyConflict, conflict.Outcome);
             Assert.Null(conflict.Resource);
         }
@@ -171,7 +171,7 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
         await using var run = await Run.StartAsync();
         await using (var a = run.Open(CompanyA, Proposer))
         {
-            var outside = await a.Accounts.ProposeAsync(a.Context, Key("k-1"), new BankAccountProposeRequest("SENTETIK", Guid.NewGuid()),
+            var outside = await a.Accounts.ProposeAsync(a.Context, Key("k-1"), new BankAccountProposeRequest("SENTETIK", Guid.NewGuid(), "SENTETIK Banka", "SENTETIK tür"),
                 CancellationToken.None);
             Assert.Equal("currency_not_a_candidate", Assert.Single(outside.Issues).Code);
         }
@@ -179,7 +179,7 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
         // The real adapter on main: no Settings currency source exists, so every proposal is refused.
         await using (var a = run.Open(CompanyA, Proposer, realSettings: true))
         {
-            var unavailable = await a.Accounts.ProposeAsync(a.Context, Key("k-2"), new BankAccountProposeRequest("SENTETIK", Currency),
+            var unavailable = await a.Accounts.ProposeAsync(a.Context, Key("k-2"), new BankAccountProposeRequest("SENTETIK", Currency, "SENTETIK Banka", "SENTETIK tür"),
                 CancellationToken.None);
             Assert.Equal(CommandOutcome.Unavailable, unavailable.Outcome);
             Assert.Equal("settings_provider_unavailable", Assert.Single(unavailable.Issues).Code);
@@ -197,7 +197,7 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
         BankAccountView proposed;
         await using (var a = run.Open(CompanyA, Proposer))
         {
-            proposed = (await a.Accounts.ProposeAsync(a.Context, Key("p-1"), new BankAccountProposeRequest("SENTETIK", Currency),
+            proposed = (await a.Accounts.ProposeAsync(a.Context, Key("p-1"), new BankAccountProposeRequest("SENTETIK", Currency, "SENTETIK Banka", "SENTETIK tür"),
                 CancellationToken.None)).Resource!;
         }
 
@@ -236,7 +236,7 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
         await using (var scope = run.Open(unknownCompany, Proposer))
         {
             var error = await Assert.ThrowsAsync<DbUpdateException>(() => scope.Accounts.ProposeAsync(scope.Context, Key("k-1"),
-                new BankAccountProposeRequest("SENTETIK", Currency), CancellationToken.None));
+                new BankAccountProposeRequest("SENTETIK", Currency, "SENTETIK Banka", "SENTETIK tür"), CancellationToken.None));
             Assert.Equal(547, Assert.IsType<SqlException>(error.InnerException).Number);
         }
 
