@@ -19,7 +19,8 @@
     "browser:fin01:ci": "playwright test --config playwright.finance-fin01.config.ts",
     "browser:s04:ci": "playwright test --config playwright.sales-s04.config.ts",
     "browser:acc01:ci": "playwright test --config playwright.accounting-acc01.config.ts",
-    "browser:l04:ci": "playwright test --config playwright.logistics-l04.config.ts"
+    "browser:l04:ci": "playwright test --config playwright.logistics-l04.config.ts",
+    "browser:org03:ci": "playwright test --config playwright.organization-org03.config.ts"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",
