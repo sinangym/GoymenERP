@@ -384,6 +384,98 @@ public static class FinanceEndpoints
             .ProducesErpUnsupportedMediaType()
             .ProducesErpServiceUnavailable();
 
+        // D4 (#66 5749046401): the IBAN change's own Ö4 pair. Two routes rather than one PATCH, because
+        // proposing and approving are two decisions by two people — the same reason the card itself has
+        // two. They carry the EXISTING propose/approve permission names; nothing new is granted here.
+        endpoints.MapPost(BankAccountsPath + "/{accountId:guid}/iban-change", async (
+                Guid accountId,
+                HttpContext httpContext,
+                IFinanceBankAccountMaster master,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key))
+                {
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                }
+
+                if (await ReadBodyAsync<BankAccountIbanChangeBody>(httpContext, cancellationToken) is not { } body)
+                {
+                    return httpContext.Request.HasJsonContentType()
+                        ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                        : Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+                }
+
+                var result = await master.ProposeIbanChangeAsync(Context(companyContext, currentUser, correlation),
+                    new CommandMetadata(key),
+                    new BankAccountIbanChangeProposeRequest(accountId, body.ExpectedVersion, body.Iban, body.Reason),
+                    cancellationToken);
+                return Command(httpContext, result, result.Outcome, result.IsReplay, result.OriginalCorrelationId);
+            })
+            .WithName("ProposeFinanceBankAccountIbanChangeV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
+            .Accepts<BankAccountIbanChangeBody>("application/json")
+            .Produces<BankAccountCommandResult>(StatusCodes.Status200OK)
+            .Produces<BankAccountCommandResult>(StatusCodes.Status422UnprocessableEntity)
+            .Produces<BankAccountCommandResult>(StatusCodes.Status409Conflict)
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapPost(BankAccountsPath + "/{accountId:guid}/iban-change/approval", async (
+                Guid accountId,
+                HttpContext httpContext,
+                IFinanceBankAccountMaster master,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key))
+                {
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                }
+
+                if (await ReadBodyAsync<BankAccountApprovalBody>(httpContext, cancellationToken) is not { } body)
+                {
+                    return httpContext.Request.HasJsonContentType()
+                        ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                        : Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+                }
+
+                var result = await master.ApproveIbanChangeAsync(Context(companyContext, currentUser, correlation),
+                    new CommandMetadata(key), new BankAccountIbanChangeApproveRequest(accountId, body.ExpectedVersion),
+                    cancellationToken);
+                return Command(httpContext, result, result.Outcome, result.IsReplay, result.OriginalCorrelationId);
+            })
+            .WithName("ApproveFinanceBankAccountIbanChangeV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
+            .Accepts<BankAccountApprovalBody>("application/json")
+            .Produces<BankAccountCommandResult>(StatusCodes.Status200OK)
+            .Produces<BankAccountCommandResult>(StatusCodes.Status422UnprocessableEntity)
+            .Produces<BankAccountCommandResult>(StatusCodes.Status409Conflict)
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpServiceUnavailable();
+
         endpoints.MapGet(BankAccountMasterPath, async (
                 HttpContext httpContext,
                 IFinanceBankAccountMaster master,
