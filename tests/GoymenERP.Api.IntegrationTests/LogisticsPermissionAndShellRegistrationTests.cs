@@ -92,6 +92,56 @@ public sealed class LogisticsPermissionAndShellRegistrationTests
             Assert.Single(services, item => item.ServiceType == typeof(IShellCapabilityProvider)).ImplementationType);
     }
 
+    // LOG-4b (log-staged): the disposable profile opens exactly Logistics's own three declarations beside the list-only
+    // C-01 set; the constant is pinned against ComputeCandidateRevision.
+    [Fact]
+    public void The_log_staged_profile_opens_only_Logisticss_own_declarations_beside_the_C01_list()
+    {
+        var services = NormalHost();
+        var envelope = new Dictionary<string, string?>(C01E2eShellCapabilityActivationTests.ExactEnvelope())
+        {
+            [C01E2eShellCapabilityActivation.ProfileConfigurationKey] =
+                C01E2eShellCapabilityActivation.LogisticsInstructionsProfile,
+        };
+
+        var authority = C01E2eShellCapabilityActivation.Configure(services, new TestingEnvironment(),
+            new ConfigurationBuilder().AddInMemoryCollection(envelope).Build());
+
+        Assert.Equal(ShellCapabilityRegistryAuthorities.C01DisposableLogisticsInstructionsV1, authority);
+        Assert.Equal(
+            [typeof(C01E2eShellCapabilityProvider), typeof(C01E2eLogisticsInstructionsShellCapabilityProvider)],
+            services.Where(item => item.ServiceType == typeof(IShellCapabilityProvider))
+                .Select(item => item.ImplementationType));
+        using var container = services.BuildServiceProvider();
+        var providers = container.GetServices<IShellCapabilityProvider>().ToArray();
+        // On failure xUnit prints the actual revision: the constant is never guessed.
+        Assert.Equal(authority, ShellCapabilityRegistry.ComputeCandidateRevision(providers));
+        var registry = new ShellCapabilityRegistry(providers, new ShellCapabilityAuthorityCatalog([authority]));
+
+        // Same ids, routes, access as the owner's declarations; only availability differs.
+        var owner = new LogisticsShellCapabilityProvider().GetDeclarations()
+            .ToDictionary(declaration => declaration.CapabilityId);
+        var opened = registry.Registrations
+            .Where(item => item.Owner == LogisticsShellCapabilityProvider.OwnerId)
+            .ToArray();
+        Assert.Equal(3, opened.Length);
+        Assert.Equal(owner.Keys.Order(), opened.Select(item => item.Declaration.CapabilityId).Order());
+        Assert.All(opened, item =>
+        {
+            var expected = owner[item.Declaration.CapabilityId];
+            var actual = item.Declaration;
+            Assert.True(actual.ImplementationAvailable);
+            Assert.Equal(
+                (expected.RouteId, expected.RoutePath, expected.ScreenId, expected.RoutePrecedence,
+                    expected.ContextRequirement, expected.ScopeRequirement, expected.ParentCapabilityId),
+                (actual.RouteId, actual.RoutePath, actual.ScreenId, actual.RoutePrecedence,
+                    actual.ContextRequirement, actual.ScopeRequirement, actual.ParentCapabilityId));
+            Assert.Equal(expected.RequiredPermissions.Order(), actual.RequiredPermissions.Order());
+        });
+        Assert.DoesNotContain(registry.Registrations, item => item.Owner == SalesShellCapabilityProvider.OwnerId
+                                                              || item.Owner == ManufacturingShellCapabilityProvider.OwnerId);
+    }
+
     private static ServiceCollection NormalHost()
     {
         var services = new ServiceCollection();

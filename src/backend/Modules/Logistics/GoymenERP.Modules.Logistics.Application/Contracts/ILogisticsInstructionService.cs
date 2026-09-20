@@ -21,4 +21,7 @@ public interface ILogisticsInstructionService
     Task<LoadingInstructionDetailView> GetInstructionDetailAsync(Guid instructionId, CancellationToken cancellationToken = default);
 
     Task<LoadingInstructionListResponse> GetInstructionListAsync(LoadingInstructionListQuery query, CancellationToken cancellationToken = default);
+
+    /// <summary>LOG-4b: the APPROVED sales order lines offered for loading, price-free, under the create name (Sinan §4).</summary>
+    Task<LogisticsApprovedOrderLinePage> GetApprovedOrderLinesAsync(LogisticsApprovedOrderLinesQuery query, CancellationToken cancellationToken = default);
 }

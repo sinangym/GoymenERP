@@ -28,6 +28,7 @@ public static class LogisticsEndpoints
     private const int MaximumCursorLength = 8192;
     private const int MaximumStatusLength = 32;
     private static readonly HashSet<string> ListQueryNames = new(["pageSize", "cursor", "status"], StringComparer.Ordinal);
+    private static readonly HashSet<string> ApprovedLinesQueryNames = new(["pageSize", "cursor"], StringComparer.Ordinal);
 
     public static IEndpointRouteBuilder MapLogisticsEndpoints(this IEndpointRouteBuilder endpoints)
     {
@@ -112,6 +113,36 @@ public static class LogisticsEndpoints
         })
             .WithName("GetLoadingInstructionsV1")
             .Produces<LoadingInstructionListResponse>()
+            .ProducesErpBadRequest("validation_failed", LogisticsProblemCodesV1.InvalidCursor)
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
+        // LOG-4b: the price-free picker read (Sinan §4 #66 5738113623 — the Sevkiyatçı sees orders, never prices): the APPROVED
+        // sales order lines as the Sales owner projects them for loading, under the create name. No price, discount, currency or
+        // payment member exists on the wire type (pinned by a contract test); a static segment, so it never reads as an instruction id.
+        group.MapGet("/approved-order-lines", async ([FromQuery] int? pageSize, [FromQuery] string? cursor, HttpContext httpContext,
+            [FromServices] ILogisticsInstructionService service, ICorrelationContext correlation, CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            if (!httpContext.Request.Query.All(pair => ApprovedLinesQueryNames.Contains(pair.Key) && pair.Value.Count == 1)
+                || pageSize is < 1 or > 100 || cursor?.Length > MaximumCursorLength)
+            {
+                return Problem(StatusCodes.Status400BadRequest, "validation_failed", correlation);
+            }
+
+            try
+            {
+                return Results.Json(await service.GetApprovedOrderLinesAsync(new LogisticsApprovedOrderLinesQuery(pageSize ?? 50, cursor), cancellationToken),
+                    LogisticsJson.Options);
+            }
+            catch (LogisticsInstructionServiceException exception)
+            {
+                return Problem(httpContext, exception, correlation);
+            }
+        })
+            .WithName("GetLogisticsApprovedOrderLinesV1")
+            .Produces<LogisticsApprovedOrderLinePage>()
             .ProducesErpBadRequest("validation_failed", LogisticsProblemCodesV1.InvalidCursor)
             .AllowsEmptyErpBadRequestBody()
             .ProducesErpServiceUnavailable()
@@ -331,8 +362,10 @@ public sealed class CounterpartyLogisticsPartyAccountPortV1(ICompanyContext comp
         }
 
         var account = accounts[0];
+        // LOG-4b (Business 5745076917): the party's names travel with the answer so the loading screens show the customer by
+        // name, never by a technical id; still nothing of price or finance.
         return new(LogisticsPartyAccountOutcomeV1.Found, new LogisticsPartyAccountV1(party.Id, account.Id, account.CompanyId,
-            party.IsActive, account.IsActive, party.Version, account.Version));
+            party.IsActive, account.IsActive, party.Version, account.Version, party.LegalName, party.TradeName));
     }
 
     private bool IsCurrent() =>
