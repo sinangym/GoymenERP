@@ -55,7 +55,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // Re-fingerprinted for ACC-V0a: the Accounting module (AddAccountingModule, its endpoints and initializer after
     // Organization); no shell provider (ACC-V0b).
     private const string ReviewedOpenApiStartupFingerprint =
-        "c2c2dad484c1712ab036d7bc48a3e56024579884c1bd3c58dfa683f72f538ee4";
+        "9f25bd758783c0f47f147560c4964f02a34f5eff352e0e5e7ed40c966fc83920";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedIdentityReconcilerPath =
@@ -147,7 +147,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // logistics
             ["tools/relational_inventory/logistics.txt"] =
-                "d3ebbd963dc4d1e7c305d76fbe1b8bef006e98f6d01b76c3f807374c4c324b45",
+                "97b79f9e068a4660a52f68062f0b03ec018a662eb5fe7d57f744a41963f983a9",
 
             // manufacturing
             ["tools/relational_inventory/manufacturing.txt"] =
@@ -171,7 +171,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // sales
             ["tools/relational_inventory/sales.txt"] =
-                "c2906e9ba18bf1942cc2ed5b03d164b1985287f5118b2f14b78e480cb1fd0047",
+                "81629fa047ec290b85a9c54ca4bc09055df1909328f7437b81f53f355bbe0d38",
         };
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
@@ -541,7 +541,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Sales.Infrastructure/"
                  + "SalesModuleExtensions.cs"] =
                     new(
-                        "e9e9bc39b1e3291de032e62a3ab2d2ebd0ba70e32c8b2ad7828207e6c331cfdc",
+                        "55a8a02d96ec51db9c71ab29ed42e8105e68cc55960c9862560e176c4008108c",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,

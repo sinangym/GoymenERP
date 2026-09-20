@@ -170,6 +170,12 @@ export const CAPABILITY = {
   accountingJournalsDetail: 'accounting.journals.detail',
   /** M-01 Muhasebe Kontrol Merkezi — the posting queues, read-only. Route `/muhasebe/kontrol`. */
   accountingPostingQueues: 'accounting.posting-queues',
+  /** L-02 loading-instruction list. Route `/lojistik/yukleme-talimatlari`, owner the Sales/Logistics lane (SİPARİŞ). */
+  logisticsInstructionsList: 'logistics.instructions.list',
+  /** L-03 new loading instruction. Route `/lojistik/yukleme-talimatlari/yeni`. A SEPARATE grant from reading. */
+  logisticsInstructionsCreate: 'logistics.instructions.create',
+  /** L-02-DETAIL one instruction. Route `/lojistik/yukleme-talimatlari/:instructionId`. A SEPARATE grant from the list. */
+  logisticsInstructionsDetail: 'logistics.instructions.detail',
 } as const
 
 export type CapabilityId = (typeof CAPABILITY)[keyof typeof CAPABILITY]
@@ -217,6 +223,10 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.accountingJournalsList]: '/muhasebe/fisler',
   [CAPABILITY.accountingJournalsDetail]: '/muhasebe/fisler/:journalId',
   [CAPABILITY.accountingPostingQueues]: '/muhasebe/kontrol',
+  [CAPABILITY.logisticsInstructionsList]: '/lojistik/yukleme-talimatlari',
+  // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as an instruction id.
+  [CAPABILITY.logisticsInstructionsCreate]: '/lojistik/yukleme-talimatlari/yeni',
+  [CAPABILITY.logisticsInstructionsDetail]: '/lojistik/yukleme-talimatlari/:instructionId',
 }
 
 /** Nav label per capability. Only rendered when the server granted the capability. */
@@ -260,4 +270,8 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   // Not these two: a period is proposed from the M-07 list and a journal opened from a row.
   [CAPABILITY.accountingPeriodsPropose]: '',
   [CAPABILITY.accountingJournalsDetail]: '',
+  [CAPABILITY.logisticsInstructionsList]: 'Yükleme Talimatları',
+  [CAPABILITY.logisticsInstructionsCreate]: 'Yeni Yükleme Talimatı',
+  // Nor this one: an instruction is opened from a list row, never from the sidebar.
+  [CAPABILITY.logisticsInstructionsDetail]: '',
 }

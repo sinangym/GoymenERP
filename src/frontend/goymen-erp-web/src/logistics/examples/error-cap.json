@@ -1,0 +1,12 @@
+{
+  "status": 409,
+  "title": "Conflict",
+  "code": "logistics_load_exceeds_instructed",
+  "correlationId": "corr-9",
+  "errors": [
+    {
+      "field": "quantity",
+      "code": "logistics_load_exceeds_instructed"
+    }
+  ]
+}

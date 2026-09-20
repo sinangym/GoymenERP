@@ -34,6 +34,13 @@ public static class SalesDraftProblemCodesV1
     /// <summary>422 (contract delta, card decision 3): an owner reference without an owner port is refused, never stored unvalidated.</summary>
     public const string OwnerReferenceUnavailable = "owner_reference_unavailable";
 
+    /// <summary>
+    /// 422 (SALES-A2a): a delivery address or contact reference the Cari owner does not list for the draft's party
+    /// and account (unknown, or not active). A reference at a stale owner version is the terminal 409
+    /// <see cref="VersionConflict"/> instead (ADR-011 §7).
+    /// </summary>
+    public const string OwnerReferenceInvalid = "owner_reference_invalid";
+
     /// <summary>503: the Product eligibility runtime is not composed, or answers an outage.</summary>
     public const string ProductEligibilityUnavailable = "product_eligibility_unavailable";
 

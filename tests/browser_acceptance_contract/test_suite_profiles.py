@@ -39,7 +39,8 @@ def model(profile):
     return result
 
 
-SUITE_FOR = {"c01-list-only": "smoke", "cari-staged": "c03", "normal": "org03", "acc-staged": "acc01"}
+SUITE_FOR = {"c01-list-only": "smoke", "cari-staged": "c03", "normal": "org03",
+             "acc-staged": "acc01", "log-staged": "l04"}
 
 
 class ProfileRegistryTests(unittest.TestCase):
@@ -102,6 +103,13 @@ class ComposeFileDerivationTests(unittest.TestCase):
         expected = self.canonical.replace(
             anchor, anchor + f"      {browser.CARI_STAGED_PROFILE_KEY}: {browser.STAGED_PROFILE_VALUES['acc-staged']}\n"
         ).replace(browser.CANONICAL_SUITE_LABEL, browser.PROFILE_SUITE_LABELS["acc-staged"])
+    def test_log_staged_is_the_canonical_file_plus_its_profile_line(self):
+        # LOG-4b: the same two transforms, with the logistics-instructions profile.
+        staged = self._body((ROOT / browser.PROFILE_COMPOSE_FILES["log-staged"]).read_text(encoding="utf-8"))
+        anchor = '      C01E2e__EnableListCapability: "true"\n'
+        expected = self.canonical.replace(
+            anchor, anchor + f"      {browser.CARI_STAGED_PROFILE_KEY}: {browser.STAGED_PROFILE_VALUES['log-staged']}\n"
+        ).replace(browser.CANONICAL_SUITE_LABEL, browser.PROFILE_SUITE_LABELS["log-staged"])
         self.assertEqual(expected, staged)
 
     def test_the_mfg_staged_profile_is_retired(self):
@@ -137,7 +145,9 @@ class ComposeFileDerivationTests(unittest.TestCase):
 
     def test_a_staged_profile_refuses_the_other_profile_value(self):
         for profile, suite, wrong in (("acc-staged", "acc01", "cari-list-detail"),
+                                      ("log-staged", "l04", "cari-list-detail"),
                                       ("cari-staged", "c03", "accounting-periods-and-journals"),
+                                      ("cari-staged", "c03", "logistics-instructions"),
                                       ("cari-staged", "c03", "manufacturing-order-detail"),
                                       ("cari-staged", "c03", "finance-bank-accounts-and-drafts")):
             with self.subTest(profile=profile):

@@ -1,4 +1,5 @@
 using GoymenERP.Modules.Identity.Infrastructure.Fixtures;
+using GoymenERP.Modules.Logistics.Infrastructure.Fixtures;
 using GoymenERP.Modules.Product.Infrastructure.Fixtures;
 using GoymenERP.Modules.Sales.Infrastructure.Fixtures;
 
@@ -52,6 +53,9 @@ internal static class C01E2eFixtureWriterActivation
         // s04 (SALES-A1 browser acceptance): Sales's draft port (SİPARİŞ's), behind the same gate.
         services.AddSalesDraftFixtureStore();
         services.AddScoped<C01E2eSalesDraftFixtureWriter>();
+        // l04 (LOG-4b browser acceptance): Logistics's line-block port (SİPARİŞ's), behind the same gate.
+        services.AddLogisticsLineBlockFixtureStore();
+        services.AddScoped<C01E2eLogisticsLineBlockFixtureWriter>();
         return true;
     }
 
@@ -203,5 +207,38 @@ public sealed class C01E2eSalesDraftFixtureWriter
         }
 
         return _store.EnsureAsync(request, cancellationToken);
+    }
+}
+
+/// <summary>
+/// Blocks ONE line of an ISSUED synthetic loading instruction through Logistics's fixture port (decision W1/C, l04):
+/// the only suite state no LOG-4a route produces. The sibling of <see cref="C01E2eSalesDraftFixtureWriter"/>: constructing
+/// it outside the gate fails, and the request's label must name its suite. Registered only by
+/// <see cref="C01E2eFixtureWriterActivation"/>; written by SİPARİŞ (l04), kept in this file by CARİ.
+/// </summary>
+public sealed class C01E2eLogisticsLineBlockFixtureWriter
+{
+    public const string LabelPrefix = "SENTETIK browser-suite:";
+
+    private readonly ILogisticsLineBlockFixtureStore _store;
+
+    public C01E2eLogisticsLineBlockFixtureWriter(
+        IHostEnvironment environment,
+        IConfiguration configuration,
+        ILogisticsLineBlockFixtureStore store)
+    {
+        C01E2eFixtureWriterActivation.RequireGate(environment, configuration);
+        _store = store;
+    }
+
+    public Task<LogisticsLineBlockFixtureOutcome> BlockAsync(LogisticsLineBlockFixtureRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (!request.Label.StartsWith(LabelPrefix, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"A fixture block label must start '{LabelPrefix}'.");
+        }
+
+        return _store.BlockAsync(request, cancellationToken);
     }
 }
