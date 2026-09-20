@@ -122,13 +122,16 @@ public sealed class AddDraftRevisions : Migration
             name: "DraftRevisions",
             schema: "sales");
 
-        // The "= 0" pin is restored only past the guard above, and that ordering carries a DEPENDENCY on the service code
-        // of this head: SalesStore.ReviseDraftCommercialAsync archives the approved revision and advances the header's
-        // Revision in ONE SaveChanges, and no other path writes Revision (the context's write guard admits it only there).
-        // Under that invariant a header with Revision > 0 exists only beside an archived row, so a database that passed
-        // the 51049 guard has no such header and the restored "= 0" constraint holds. A Down runs against whatever data
-        // exists: if a later head ever writes Revision without archiving, this restore is what fails (the ALTER refuses),
-        // and that head owes its own guard here. No second guard is added on purpose — one refusal, one reason.
+        // The "= 0" pin is restored only past the guard above, and that ordering DEPENDS on an invariant this head PINS:
+        // the archive of the approved revision and the advance of the header's Revision are ONE save, and nothing else
+        // writes Revision. Measured, not asserted — SalesDraftApprovalSqlServerRelationalAcceptanceTests
+        // .An_approved_drafts_price_change_archives_the_approved_revision_and_advances_it_in_one_save_on_real_sql records
+        // the store's saves on real SQL Server: exactly one, holding the archived rows, the header (Revision modified), the
+        // line, the attempt and the audit event together; a refused save leaves Rev.0 with no archived row; the replay
+        // saves nothing. Under that pin a header with Revision > 0 exists only beside an archived row, so a database that
+        // passed the 51049 guard has no such header and the restored constraint holds. A Down runs against whatever data
+        // exists: a later head that writes Revision without archiving breaks that case first, and owes its own guard here.
+        // No second guard is added on purpose — one refusal, one reason.
         migrationBuilder.DropCheckConstraint(
             name: "CK_Drafts_State",
             schema: "sales",

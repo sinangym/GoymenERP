@@ -428,13 +428,42 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
             await run.ScalarAsync<long>("SELECT Version FROM sales.Drafts WHERE Id = @id", ("@id", draft.Id))));
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.DraftRevisions WHERE DraftId = @id", ("@id", draft.Id)));
 
-        // (1) The pricer holds ONLY the separate price name: asked with that name in this company, answered yes, then the ONE save.
+        // (0) "One save" is MEASURED, not read from the store: a recorder sees every SavingChanges the store makes (which entries,
+        // in which state, with which modified properties) and can refuse the save before any statement reaches SQL Server.
+        // First the refused save: the command runs to its save with the WHOLE change set — the archived revision rows, the
+        // header with Revision among its modified properties, the line, the attempt and the audit event, together — and that
+        // one save is refused. Then SQL Server shows nothing partial: Rev.0, approved, no archived row, no attempt, no audit
+        // event. The case cannot pass vacuously: the recorder pins that the save was REACHED with the full set (a command that
+        // never ran records no save; a store that saved the header apart from the archive would record two, or leave Rev.1).
+        var faulting = new SaveRecorder { Fault = true };
+        await using (var a = run.Store(CompanyA, faulting))
+        {
+            var service = run.Service(a, pricer, new RecordingAuthority(SalesPermissionManifestV1.OrdersPriceWrite));
+            await Assert.ThrowsAsync<SaveFault>(() => service.ReviseCommercialAsync(draft.Id, request, run.Metadata("k-revise")));
+        }
+
+        var refusedSave = Assert.Single(faulting.Saves);
+        AssertRevisionChangeSet(refusedSave);
+        Assert.Equal((3, 0, 4L), (await run.ScalarAsync<int>("SELECT ApprovalState FROM sales.Drafts WHERE Id = @id", ("@id", draft.Id)),
+            await run.ScalarAsync<int>("SELECT Revision FROM sales.Drafts WHERE Id = @id", ("@id", draft.Id)),
+            await run.ScalarAsync<long>("SELECT Version FROM sales.Drafts WHERE Id = @id", ("@id", draft.Id))));
+        Assert.Equal("<null>", await run.ScalarAsync<string>("SELECT ISNULL(UnitPrice, N'<null>') FROM sales.DraftLines WHERE DraftId = @id", ("@id", draft.Id)));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.DraftRevisions WHERE DraftId = @id", ("@id", draft.Id)));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.DraftAttempts WHERE IdempotencyKeyHash = @h", ("@h", SalesStore.IdempotencyKeyHash("k-revise"))));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Sales.OrderDraft' AND EventType = N'sales.order-draft.commercial-revised.v1' AND EntityId = @id",
+            ("@id", draft.Id.ToString("D"))));
+
+        // (1) The pricer holds ONLY the separate price name: asked with that name in this company, answered yes, then the ONE save —
+        // under the SAME key as the refused save: nothing of it was recorded, so this is a fresh write, not a replay (ADR-011 §7:
+        // only a completed write or a terminal refusal is an attempt).
         var priced = new RecordingAuthority(SalesPermissionManifestV1.OrdersPriceWrite);
-        await using (var a = run.Store(CompanyA))
+        var recorder = new SaveRecorder();
+        await using (var a = run.Store(CompanyA, recorder))
         {
             var service = run.Service(a, pricer, priced);
             var revised = await service.ReviseCommercialAsync(draft.Id, request, run.Metadata("k-revise"));
             Assert.False(revised.IsReplay);
+            AssertRevisionChangeSet(Assert.Single(recorder.Saves));
             Assert.Equal(("Rev.1", "Preparing", "5", "13.00", KgUnit, "5"), (revised.Detail.Draft.Revision, revised.Detail.Draft.ApprovalState, revised.Detail.Draft.Version,
                 revised.Detail.Lines[0].UnitPrice, revised.Detail.Lines[0].PriceUnitId, revised.Detail.Lines[0].DiscountPercent));
             Assert.Equal(new SalesDraftApprovalV1(null, null, null, null, null), revised.Detail.Approval);
@@ -448,6 +477,8 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
             // The same key again through the service: the stored result, marked as the replay; the authority is asked again first.
             var replay = await service.ReviseCommercialAsync(draft.Id, request, run.Metadata("k-revise", correlation: "SENTETIK-second"));
             Assert.Equal((true, run.Correlation, "Rev.1", "5"), (replay.IsReplay, replay.OriginalCorrelationId, replay.Detail.Draft.Revision, replay.Detail.Draft.Version));
+            // The replay saves NOTHING — measured: the recorder still holds exactly the one save.
+            Assert.Single(recorder.Saves);
 
             // The history through the read: Rev.0 with its facts and the OLD texts.
             var history = await service.GetDraftRevisionsAsync(draft.Id);
@@ -800,6 +831,50 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
 
         public ValueTask DisposeAsync() => dbContext.DisposeAsync();
     }
+
+    /// <summary>
+    /// The change set of a commercial revision's ONE save, asserted TOGETHER (a count alone would accept a save holding only
+    /// some of it): the archived revision header and line (Added), the draft header (Modified — Revision, ApprovalState and
+    /// Version among its modified properties), the draft line (Modified — exactly the three commercial columns), the attempt
+    /// and the audit event (Added); nothing else.
+    /// </summary>
+    private static void AssertRevisionChangeSet(IReadOnlyList<SaveRecorder.Entry> save)
+    {
+        Assert.Equal(
+            ["AuditEvent:Added", "DraftAttemptRow:Added", "DraftLineRow:Modified", "DraftRevisionLineRow:Added", "DraftRevisionRow:Added", "DraftRow:Modified"],
+            save.Select(entry => $"{entry.Entity}:{entry.State}").Order(StringComparer.Ordinal));
+        var header = Assert.Single(save, entry => entry.Entity == nameof(DraftRow));
+        Assert.Superset(new HashSet<string>([nameof(DraftRow.Revision), nameof(DraftRow.ApprovalState), nameof(DraftRow.Version)]), header.Modified.ToHashSet());
+        var line = Assert.Single(save, entry => entry.Entity == nameof(DraftLineRow));
+        Assert.Equal([nameof(DraftLineRow.DiscountPercent), nameof(DraftLineRow.PriceUnitId), nameof(DraftLineRow.UnitPrice)], line.Modified);
+    }
+
+    /// <summary>
+    /// Records every SavingChanges the store makes — which entries, in which state, with which modified properties — and, when
+    /// <see cref="Fault"/> is set, refuses the save before any statement reaches SQL Server. Registered AFTER the audit
+    /// interceptor, so the audit rows it adds are in the recorded set.
+    /// </summary>
+    private sealed class SaveRecorder : SaveChangesInterceptor
+    {
+        public sealed record Entry(string Entity, EntityState State, string[] Modified);
+
+        public List<IReadOnlyList<Entry>> Saves { get; } = [];
+
+        public bool Fault { get; init; }
+
+        public override ValueTask<InterceptionResult<int>> SavingChangesAsync(DbContextEventData eventData,
+            InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            Saves.Add(eventData.Context!.ChangeTracker.Entries()
+                .Where(entry => entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
+                .Select(entry => new Entry(entry.Metadata.ClrType.Name, entry.State,
+                    entry.Properties.Where(property => property.IsModified).Select(property => property.Metadata.Name).Order(StringComparer.Ordinal).ToArray()))
+                .ToArray());
+            return Fault ? throw new SaveFault() : ValueTask.FromResult(result);
+        }
+    }
+
+    private sealed class SaveFault() : Exception("SENTETIK: the one save was refused before any statement reached SQL Server");
 
     /// <summary>Holds each save until both writers have reached it, so both pass the attempt lookup and the draft read first.</summary>
     private sealed class BarrierInterceptor(Barrier barrier) : SaveChangesInterceptor
