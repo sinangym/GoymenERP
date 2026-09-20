@@ -30,6 +30,7 @@ export const COMPANY_B = 'bbbbbbbb-0000-0000-0000-000000000002'
 export const ORDER = 'd0000000-0000-4000-8000-000000000001'
 export const PLAN = 'd0000000-0000-4000-8000-000000000002'
 export const WORK_CENTER = 'd0000000-0000-4000-8000-000000000003'
+export const APPROVER = '99999999-9999-9999-9999-999999999999'
 export const ROLL_1 = 'e0000000-0000-4000-8000-000000000001'
 export const ROLL_2 = 'e0000000-0000-4000-8000-000000000002'
 
@@ -67,6 +68,28 @@ export function roll(parentRollId: string, overrides: Record<string, unknown> = 
     workInProgressKg: '0',
     unexplainedKg: '0',
     isFullyAccounted: true,
+    ...overrides,
+  }
+}
+
+/** A synthetic `PlannedInputViewV1`, in the server's JSON shape. */
+export function plannedInput(parentRollId: string, plannedKg = '1000.125') {
+  return { parentRollId, plannedKg }
+}
+
+/** A synthetic `PlanViewV1`, in the server's JSON shape. */
+export function plan(overrides: Record<string, unknown> = {}) {
+  return {
+    planId: PLAN,
+    companyId: COMPANY_A,
+    workCenterId: WORK_CENTER,
+    process: 'Slitting',
+    status: 'Draft',
+    version: 1,
+    inputs: [plannedInput(ROLL_1), plannedInput(ROLL_2, '500.5')],
+    target: null,
+    approvedByUserId: null,
+    approvedAtUtc: null,
     ...overrides,
   }
 }
