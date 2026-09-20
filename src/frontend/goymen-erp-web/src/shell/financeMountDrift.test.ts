@@ -38,6 +38,18 @@ const CONTROLS: readonly string[] = [
 ]
 
 describe('shell ↔ Finance lane capability ids', () => {
+  it('classifies every lane id as either routed or a control', () => {
+    // Without this, an unclassified id still fails — but as a phantom MISSING MOUNT in the next
+    // case, which is how finance.receipts.record read at f3800f3c: "expected 5 to equal 6", sending
+    // the reader to the shell's table to add something that must never be there. Here the id is
+    // printed as unclassified, with the two places it can go.
+    const classified = [...ROUTED.map(([, laneId]) => laneId as string), ...CONTROLS]
+    expect(
+      (Object.values(FINANCE_CAPABILITY) as string[]).sort(),
+      'a lane id is either a screen (add it to ROUTED with its shell id and route) or a control (add it to CONTROLS)',
+    ).toEqual([...classified].sort())
+  })
+
   it('declares the lane’s five route ids with the lane’s values and routes', () => {
     for (const [shellId, laneId, route] of ROUTED) {
       expect(shellId).toBe(laneId)
