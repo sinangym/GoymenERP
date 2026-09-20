@@ -97,12 +97,40 @@ public sealed class AccountingShellRegistrationTests
 
         // Availability is the ONLY difference: ids, route ids, paths, screens, precedence, context, scope,
         // permissions and the two controls' parents stay exactly what the owner declared.
-        Assert.Equal(owner.Select(declaration => declaration with { ImplementationAvailable = true }), opened);
+        //
+        // Compared member by member, with the permissions as an ORDERED SEQUENCE, and deliberately NOT as
+        // whole records: ShellCapabilityDeclaration is a record whose RequiredPermissions is an
+        // IReadOnlyCollection<string>, so the synthesized equality compares that member BY REFERENCE. Two
+        // structurally identical declarations built from different provider instances are then never equal,
+        // and the failure prints two lines that look the same. This is not a weakening — every member is
+        // still asserted, and the projection is compared as a whole set, so a declaration that acc-staged
+        // added, dropped or altered still fails.
+        Assert.Equal(
+            owner.Select(declaration => Comparable(declaration with { ImplementationAvailable = true })).ToArray(),
+            opened.Select(Comparable).ToArray());
         // The envelope keeps the list-only C-01 Counterparty set; no other module's provider survives it.
         Assert.Equal(
             [AccountingShellCapabilityProvider.OwnerId, CounterpartyShellCapabilityProvider.OwnerId],
             registry.Registrations.Select(item => item.Owner).Distinct().Order(StringComparer.Ordinal).ToArray());
     }
+
+    /// <summary>
+    /// Every member of a declaration as one comparable value, with the permissions in order. See the
+    /// comment above: the record's own equality compares <c>RequiredPermissions</c> by reference.
+    /// </summary>
+    private static string Comparable(ShellCapabilityDeclaration declaration) => string.Join(
+        '\u001f',
+        declaration.CapabilityId,
+        declaration.RouteId,
+        declaration.RoutePath,
+        declaration.ScreenId,
+        declaration.RoutePrecedence.ToString(),
+        declaration.ContextRequirement.ToString(),
+        declaration.ScopeRequirement.ToString(),
+        declaration.ImplementationAvailable ? "available" : "staged",
+        declaration.GlobalProductOperation?.ToString() ?? "<no-global-operation>",
+        declaration.ParentCapabilityId ?? "<no-parent>",
+        string.Join(',', declaration.RequiredPermissions));
 
     private static ServiceCollection NormalHost()
     {
