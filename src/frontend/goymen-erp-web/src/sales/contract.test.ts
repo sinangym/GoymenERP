@@ -37,8 +37,8 @@ import { PROBLEM_CODE_TEXT } from './salesText'
 
 const EXAMPLES: Record<string, { raw: string; blob: string }> = {
   'create-request.json': { raw: createRequest, blob: 'a78328681578e18627a25a0cd200177d309a534b' },
-  'create-response.json': { raw: createResponse, blob: 'cec8db8a8b2374c49d2291e633b3762b29f1bf5e' },
-  'detail-response.json': { raw: detailResponse, blob: '4b0ae443724e4440998664ab8c0223bb10adecf3' },
+  'create-response.json': { raw: createResponse, blob: 'ec1238d624b4b76e3798cc7726fd0a27145a0452' },
+  'detail-response.json': { raw: detailResponse, blob: '06439a8f5074e6a70e19bf3bcefe86fbf6e2ea51' },
   'error-account.json': { raw: errorAccount, blob: '6b3e1ea7f2a986d8f1f401e4217a7ff42436a24e' },
   'error-company.json': { raw: errorCompany, blob: 'aa227cc06a73326e4db1d579c27f32795a8a41a1' },
   'error-forbidden.json': { raw: errorForbidden, blob: 'bd328f735086931db968d2efb2345e2637efadfd' },
@@ -48,7 +48,7 @@ const EXAMPLES: Record<string, { raw: string; blob: string }> = {
   'error-settings-access.json': { raw: errorSettingsAccess, blob: 'e2aec636bd687380cfdb520339c28c45f496ad5a' },
   'list-response.json': { raw: listResponse, blob: 'c6b9a267657a187f3b6404f41ff4431092fa35b4' },
   'product-owner-selection.json': { raw: productOwnerSelection, blob: 'a1e8a3aee04f385cccc9d3815e9cac6f78fbd620' },
-  'replay-response.json': { raw: replayResponse, blob: 'e4f876551bae30a9737d0047e68d68636636dac0' },
+  'replay-response.json': { raw: replayResponse, blob: '409298c470cc9636d9f94d4bc64751aba56ccc2c' },
 }
 
 async function gitBlobId(text: string): Promise<string> {
@@ -106,6 +106,14 @@ describe('decodeDraftMutation', () => {
       b.detail.draft.lineCount = 2
     }],
     ['slices that exceed the line', (b: any) => (b.detail.lines[0].requestedDeliverySlices[1].quantity = '700')],
+    // K3 P2: the disclosure marker is never absent, never a third word, and a withheld line carries no price text.
+    ['a line without the price disclosure', (b: any) => delete b.detail.lines[0].priceDisclosure],
+    ['a disclosure the contract does not name', (b: any) => (b.detail.lines[0].priceDisclosure = 'Redacted')],
+    ['a withheld line that still carries a price', (b: any) => {
+      b.detail.lines[0].priceDisclosure = 'Withheld'
+      b.detail.lines[0].unitPrice = '12.50'
+      b.detail.lines[0].priceUnitId = '44444444-4444-4444-4444-444444444444'
+    }],
     ['a slice in another unit', (b: any) => (b.detail.lines[0].requestedDeliverySlices[0].orderUnitId = '44444444-4444-4444-4444-444444444445')],
     ['a price without its unit', (b: any) => (b.detail.lines[0].unitPrice = '10')],
     ['a non-boolean isReplay', (b: any) => (b.isReplay = 'false')],

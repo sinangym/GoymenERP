@@ -46,7 +46,8 @@
             "requestedDeliveryDate": "2026-09-22"
           }
         ],
-        "discountPercent": null
+        "discountPercent": null,
+        "priceDisclosure": "Visible"
       }
     ],
     "deliveryAddress": null,

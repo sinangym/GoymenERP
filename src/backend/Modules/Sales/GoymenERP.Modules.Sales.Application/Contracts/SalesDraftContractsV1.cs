@@ -59,10 +59,24 @@ public sealed record SalesDraftLineCommercialV1(Guid LineId, string? UnitPrice =
 /// </summary>
 public sealed record SalesDraftCommercialRevisionRequest(string ExpectedVersion, IReadOnlyList<SalesDraftLineCommercialV1> Lines);
 
-/// <summary>A line of an archived approved revision, as it stood: identity, quantity text and the commercial fields, verbatim.</summary>
+/// <summary>
+/// K3 P2 (Sinan 5748258299): whether the caller may see a line's commercial fields. NEVER null, and that is the
+/// load-bearing part: an absent price is indistinguishable from a price of nothing and from a price the caller is
+/// not allowed to see. <see cref="Withheld"/> says "you may not see this" (the price texts are null BECAUSE of it);
+/// <see cref="Visible"/> with null texts says "there is none" — an unpriced line. The same argument that made
+/// <c>canOpenLocationDetail</c> a required field (#377): an absent answer cannot be told apart from a negative one.
+/// Decided by the narrow <c>sales.orders.price.read</c> name — the draft read alone never discloses.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter<SalesPriceDisclosure>))]
+public enum SalesPriceDisclosure { Visible, Withheld }
+
+/// <summary>
+/// A line of an archived approved revision, as it stood: identity, quantity text and the commercial fields, verbatim —
+/// or, for a caller without the price read, the WITHHELD marker with the three commercial fields null.
+/// </summary>
 public sealed record SalesDraftRevisionLineV1(
     Guid LineId, int LineNo, Guid ProductId, string ProductVersion, Guid OrderUnitId, string Quantity,
-    string? UnitPrice, Guid? PriceUnitId, string? DiscountPercent);
+    string? UnitPrice, Guid? PriceUnitId, string? DiscountPercent, SalesPriceDisclosure PriceDisclosure);
 
 /// <summary>
 /// An approved revision the draft left behind when its price or discount was changed (K3: the previous
@@ -82,7 +96,8 @@ public sealed record SalesOrderDraftLineDetail(
     string ProductCode, string ProductName, Guid OrderUnitId, string Quantity,
     string? UnitPrice, Guid? PriceUnitId, DateOnly? RequestedDeliveryDate, string? Note,
     IReadOnlyList<SalesDraftDeliverySliceV1>? RequestedDeliverySlices,
-    string? DiscountPercent);
+    string? DiscountPercent,
+    SalesPriceDisclosure PriceDisclosure);
 
 public sealed record SalesOrderDraftDetailView(
     SalesOrderDraftSummaryView Draft, DateOnly? RequestedDeliveryDate, string? Note,

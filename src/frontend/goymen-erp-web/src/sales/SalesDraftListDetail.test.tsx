@@ -137,6 +137,25 @@ describe('S-04 detail', () => {
     expect(screen.getByTestId('sales-draft-header-due').textContent).toBe(ORDER_DETAIL_TEXT.unknown)
   })
 
+  it('a withheld price reads as withheld, never as unpriced or unknown', async () => {
+    installFetch({
+      onDetail: () =>
+        json(
+          tweakDetail((b) => {
+            b.lines[0].priceDisclosure = 'Withheld'
+            b.lines[0].unitPrice = null
+            b.lines[0].priceUnitId = null
+            b.lines[0].discountPercent = null
+          }),
+        ),
+    })
+    renderSalesApp(`/satis/siparisler/${DRAFT}`)
+    const line = await screen.findByTestId('sales-line-1')
+    expect(within(line).getByTestId('sales-line-1-price').textContent).toBe(ORDER_DETAIL_TEXT.priceWithheld)
+    expect(within(line).getByTestId('sales-line-1-discount').textContent).toBe(ORDER_DETAIL_TEXT.priceWithheld)
+    expect(within(line).getByTestId('sales-line-1-price').textContent).not.toBe(ORDER_DETAIL_TEXT.notPriced)
+  })
+
   it('an unknown plan, an empty plan and a partial plan read differently', async () => {
     installFetch({
       onDetail: () =>

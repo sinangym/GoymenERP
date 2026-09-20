@@ -185,7 +185,18 @@ export interface DraftLine {
   readonly note: string | null
   readonly requestedDeliverySlices: readonly DeliverySlice[] | null
   readonly discountPercent: string | null
+  /**
+   * K3 P2 (Sinan 5748258299): whether THIS caller may see the line's price, unit and discount. Never absent:
+   * a null price cannot be told apart from a price of nothing and from a price the caller may not see, so
+   * the server says which. `Withheld` ⇒ the three commercial members are null BECAUSE of it; `Visible` with
+   * nulls ⇒ there is none. Decided by the narrow `sales.orders.price.read`; the draft read alone never discloses.
+   */
+  readonly priceDisclosure: PriceDisclosure
 }
+
+export type PriceDisclosure = 'Visible' | 'Withheld'
+const PRICE_DISCLOSURES: readonly PriceDisclosure[] = ['Visible', 'Withheld']
+const isPriceDisclosure = (v: unknown): v is PriceDisclosure => typeof v === 'string' && (PRICE_DISCLOSURES as readonly string[]).includes(v)
 
 export interface DraftDetail {
   readonly draft: DraftSummary
@@ -423,7 +434,7 @@ export function decodeDraftSummary(value: unknown): DraftSummary | null {
 const LINE_KEYS = [
   'lineId', 'lineNo', 'productId', 'productVersion', 'productCode', 'productName', 'orderUnitId',
   'quantity', 'unitPrice', 'priceUnitId', 'requestedDeliveryDate', 'note',
-  'requestedDeliverySlices', 'discountPercent',
+  'requestedDeliverySlices', 'discountPercent', 'priceDisclosure',
 ] as const
 
 function decodeLine(value: unknown): DraftLine | null {
@@ -446,7 +457,10 @@ function decodeLine(value: unknown): DraftLine | null {
     !isNullable(o.requestedDeliveryDate, isDateOnly) ||
     !isNote(o.note) ||
     slices === undefined ||
-    !isNullable(o.discountPercent, (v): v is string => isDecimal(v, false))
+    !isNullable(o.discountPercent, (v): v is string => isDecimal(v, false)) ||
+    !isPriceDisclosure(o.priceDisclosure) ||
+    // Withheld means the texts were withheld: a withheld line carrying a price is not this contract.
+    (o.priceDisclosure === 'Withheld' && (o.unitPrice !== null || o.priceUnitId !== null || o.discountPercent !== null))
   ) {
     return null
   }
@@ -467,6 +481,7 @@ function decodeLine(value: unknown): DraftLine | null {
     note: o.note,
     requestedDeliverySlices: slices,
     discountPercent: o.discountPercent,
+    priceDisclosure: o.priceDisclosure,
   }
 }
 

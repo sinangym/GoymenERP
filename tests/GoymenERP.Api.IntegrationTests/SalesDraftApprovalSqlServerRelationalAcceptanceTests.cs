@@ -540,6 +540,79 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftAttempts] WHERE [IdempotencyKeyHash] = @h", ("@h", SalesStore.IdempotencyKeyHash("k-revise-again"))));
     }
 
+    /// <summary>
+    /// K3 P2 (Sinan 5748258299, "Sevkiyatçıya fiyat/iskonto/tutar sızmaz" · "ilgili dar fiyat okuması"): the price READ is
+    /// its own narrow name, measured on real SQL. NON-VACUOUS by construction: the prices are STORED and read from the
+    /// columns FIRST (the current line and the archived Rev.0), so the reader below is withheld a value that exists.
+    /// A reader holding <c>sales.drafts.read</c> only gets the WITHHELD marker with the three commercial members null on
+    /// the detail and on the archived revisions — not a 403, not a bare null; the same reader holding the price read name
+    /// too gets the texts as stored. Layered, stated: which persona holds which name is the persona card's (deny-first);
+    /// this case measures that the draft read alone never discloses and that the read name alone is what does.
+    /// </summary>
+    [SqlServerFact]
+    public async Task The_price_read_is_its_own_name_a_draft_reader_gets_the_withheld_marker_never_the_texts_on_real_sql()
+    {
+        await using var run = await Run.StartAsync();
+        var owners = Owners.For(CompanyA);
+        SalesOrderDraft draft;
+        Guid lineId;
+        const string pricer = "SENTETIK-pricer";
+        await using (var a = run.Store(CompanyA))
+        {
+            draft = (await a.Store.StoreDraftAsync(run.Envelope("k-create"), Hash("payload-1"), documentNo => PricedDraft(owners, documentNo, T0))).Draft;
+            lineId = draft.Lines[0].Id;
+            await a.Store.UpdateDraftStateAsync(run.Envelope("k-submit"), Hash("submit-2"), SalesDraftCommands.SubmitV1, draft.Id,
+                (d, now) => d.Submit(2, run.Actor, now), Submitted);
+            await a.Store.UpdateDraftStateAsync(run.Envelope("k-approve", actor: "SENTETIK-approver"), Hash("approve-3"),
+                SalesDraftCommands.ApproveV1, draft.Id, (d, now) => d.Approve(3, "SENTETIK-approver", now), Approved);
+            LineCommercialInput[] priced = [new(lineId, new CommercialDraftFields("13.00", KgUnit, "5"))];
+            await a.Store.ReviseDraftCommercialAsync(run.Envelope("k-revise", actor: pricer), Hash("revise-4"),
+                SalesDraftCommands.ReviseCommercialV1, draft.Id, (d, now) => d.ReviseCommercial(4, priced, pricer, now), Revised);
+        }
+
+        // Written: the values the reader below must NOT receive are really in the columns (versions 2 → 3 → 4 → 5; Rev.1).
+        Assert.Equal(("13.00", "5", 1, 5L), (await run.ScalarAsync<string>("SELECT [UnitPrice] FROM [sales].[DraftLines] WHERE [DraftId] = @id", ("@id", draft.Id)),
+            await run.ScalarAsync<string>("SELECT [DiscountPercent] FROM [sales].[DraftLines] WHERE [DraftId] = @id", ("@id", draft.Id)),
+            await run.ScalarAsync<int>("SELECT [Revision] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id)),
+            await run.ScalarAsync<long>("SELECT [Version] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id))));
+        Assert.Equal("12.50", await run.ScalarAsync<string>(
+            "SELECT [UnitPrice] FROM [sales].[DraftRevisionLines] WHERE [DraftId] = @id AND [Revision] = 0 AND [LineId] = @l", ("@id", draft.Id), ("@l", lineId)));
+
+        var attemptsBefore = await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftAttempts] WHERE [CompanyId] = @c", ("@c", CompanyA));
+
+        // (1) The draft read ALONE: the marker, the nulls, and not a 403 — on the detail and on the history.
+        var readOnly = new RecordingAuthority(SalesPermissionManifestV1.DraftsRead);
+        await using (var a = run.Store(CompanyA))
+        {
+            var reader = run.Service(a, "SENTETIK-reader", readOnly);
+            var detail = await reader.GetDraftDetailAsync(draft.Id);
+            var line = Assert.Single(detail.Lines);
+            Assert.Equal((SalesPriceDisclosure.Withheld, null, null, null), (line.PriceDisclosure, line.UnitPrice, line.PriceUnitId, line.DiscountPercent));
+            Assert.Equal(("Rev.1", "1.25", "Preparing"), (detail.Draft.Revision, line.Quantity, detail.Draft.ApprovalState));
+            var history = await reader.GetDraftRevisionsAsync(draft.Id);
+            var archived = Assert.Single(Assert.Single(history.Items).Lines);
+            Assert.Equal((SalesPriceDisclosure.Withheld, null, null, null), (archived.PriceDisclosure, archived.UnitPrice, archived.PriceUnitId, archived.DiscountPercent));
+        }
+
+        // The price read name WAS asked, for this company, and it was the authority's refusal that withheld — pinned by property.
+        Assert.Contains((SalesPermissionManifestV1.OrdersPriceRead, CompanyA), readOnly.Measured);
+        Assert.All(readOnly.Measured, ask => Assert.Equal(CompanyA, ask.Company));
+
+        // (2) The draft read AND the price read: the texts as stored, current and archived.
+        await using (var a = run.Store(CompanyA))
+        {
+            var reader = run.Service(a, "SENTETIK-reader", new RecordingAuthority(SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersPriceRead));
+            var line = Assert.Single((await reader.GetDraftDetailAsync(draft.Id)).Lines);
+            Assert.Equal((SalesPriceDisclosure.Visible, "13.00", KgUnit, "5"), (line.PriceDisclosure, line.UnitPrice, line.PriceUnitId, line.DiscountPercent));
+            var archived = Assert.Single(Assert.Single((await reader.GetDraftRevisionsAsync(draft.Id)).Items).Lines);
+            Assert.Equal((SalesPriceDisclosure.Visible, "12.50", KgUnit, "5"), (archived.PriceDisclosure, archived.UnitPrice, archived.PriceUnitId, archived.DiscountPercent));
+        }
+
+        // Nothing was written by reading: the same version, the same number of attempts as before the reads.
+        Assert.Equal(5L, await run.ScalarAsync<long>("SELECT [Version] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id)));
+        Assert.Equal(attemptsBefore, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftAttempts] WHERE [CompanyId] = @c", ("@c", CompanyA)));
+    }
+
     [SqlServerFact]
     public async Task The_approval_migration_refuses_to_roll_back_while_any_draft_has_left_preparing()
     {
