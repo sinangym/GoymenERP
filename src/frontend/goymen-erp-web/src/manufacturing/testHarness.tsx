@@ -49,6 +49,10 @@ export const DIRECTORY = [
 export const READER_CAPABILITIES = [MANUFACTURING_CAPABILITY.orderDetail]
 /** Reader + the fact forms. */
 export const RECORDER_CAPABILITIES = [MANUFACTURING_CAPABILITY.orderDetail, MANUFACTURING_CAPABILITY.orderFacts]
+/** The list only: whoever opens the list may also open one order (the same read grant). */
+export const LIST_CAPABILITIES = [MANUFACTURING_CAPABILITY.orderList, MANUFACTURING_CAPABILITY.orderDetail]
+/** Reader + the close control, without the fact forms: closing is its own authority. */
+export const CLOSER_CAPABILITIES = [MANUFACTURING_CAPABILITY.orderDetail, MANUFACTURING_CAPABILITY.orderClose]
 
 const ZERO_OUTPUTS = { GoodProduct: '0', SecondQuality: '0', UsableRemnant: '0', Scrap: '0', ProcessLoss: '0' }
 
@@ -112,6 +116,29 @@ export function massBalance(overrides: Record<string, unknown> = {}) {
     rolls: [rollBalance(ROLL_1), rollBalance(ROLL_2)],
     ...overrides,
   }
+}
+
+/** A synthetic `OrderSummaryViewV1`, in the server's JSON shape. */
+export function orderSummary(overrides: Record<string, unknown> = {}) {
+  return {
+    orderId: ORDER,
+    planId: PLAN,
+    workCenterId: WORK_CENTER,
+    process: 'Slitting',
+    status: 'Open',
+    version: 1,
+    plannedRollCount: 2,
+    plannedInputKg: '2000',
+    target: null,
+    createdAtUtc: '2026-09-18T09:00:00.000Z',
+    closedAtUtc: null,
+    ...overrides,
+  }
+}
+
+/** A synthetic `OrderListViewV1`; `nextCursor` null is the end of the list. */
+export function orderList(orders: unknown[] = [orderSummary()], nextCursor: string | null = null) {
+  return { orders, nextCursor }
 }
 
 export function json(body: unknown, status = 200, headers: Record<string, string> = {}): Response {

@@ -451,6 +451,185 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'manufacturing.input.issued.v1'"));
     }
 
+    [SqlServerFact]
+    public async Task The_close_writes_once_replays_its_key_and_refuses_an_unexplained_difference()
+    {
+        // MFG-4 (Business 5728619644) against real SQL: every roll accounts for its own issued mass, no
+        // tolerance, and the close is one ADR-011 attempt per key.
+        await using var run = await Run.StartAsync();
+        var closer = await run.GrantAsync(TestUsers.CompanyA, CompanyA, [.. AllWrites, ErpPermissions.ManufacturingOrdersClose]);
+        var (orderId, roll) = await run.OpenOrderAsync(closer);
+
+        using (var client = run.ClientFor(closer, CompanyA))
+        {
+            var issued = await run.OkAsync(client, $"{Base}/orders/{orderId}/input-issues",
+                new RecordFactRequestV1(Guid.NewGuid(), 1, roll, "1000", At));
+
+            // 600 of 1000 declared: the difference is unexplained, so the close is refused and nothing moves.
+            var partial = await run.OkAsync(client, $"{Base}/orders/{orderId}/outputs",
+                new DeclareOutputRequestV1(Guid.NewGuid(), issued.Version, roll, "GoodProduct", "600", At.AddMinutes(1)));
+            using var refused = await client.PostWithKeyAsync($"{Base}/orders/{orderId}/close",
+                new CloseOrderRequestV1(partial.Version), "close-refused");
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, refused.StatusCode);
+            Assert.Equal(ManufacturingRuleCodes.UnexplainedDifference, (await Problem(refused)).Code);
+            Assert.Equal("Open", (await client.GetFromJsonAsync<OrderViewV1>($"{Base}/orders/{orderId}"))!.Status);
+            // A rule refusal is not this key's answer: no command row, and the order was not touched.
+            Assert.Equal(0, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM manufacturing.Commands WHERE CommandName = N'manufacturing.order.close.v1'"));
+
+            // A stale version is a TERMINAL refusal: recorded once, and the same key answers from it.
+            var balanced = await run.OkAsync(client, $"{Base}/orders/{orderId}/outputs",
+                new DeclareOutputRequestV1(Guid.NewGuid(), partial.Version, roll, "Scrap", "400", At.AddMinutes(2)));
+            using var stale = await client.PostWithKeyAsync($"{Base}/orders/{orderId}/close",
+                new CloseOrderRequestV1(balanced.Version - 1), "close-stale");
+            Assert.Equal(HttpStatusCode.Conflict, stale.StatusCode);
+            Assert.Equal(ManufacturingRuleCodes.VersionConflict, (await Problem(stale)).Code);
+            using var staleAgain = await client.PostWithKeyAsync($"{Base}/orders/{orderId}/close",
+                new CloseOrderRequestV1(balanced.Version - 1), "close-stale");
+            Assert.Equal(HttpStatusCode.Conflict, staleAgain.StatusCode);
+            Assert.Equal("true", staleAgain.Headers.GetValues("Idempotency-Replayed").Single());
+
+            // The accepted close: one write, one audit event, one command row for this key.
+            using var accepted = await client.PostWithKeyAsync($"{Base}/orders/{orderId}/close",
+                new CloseOrderRequestV1(balanced.Version), "close-1");
+            Assert.Equal(HttpStatusCode.OK, accepted.StatusCode);
+            var closed = (await accepted.Content.ReadFromJsonAsync<OrderViewV1>())!;
+            Assert.Equal(("Closed", balanced.Version + 1), (closed.Status, closed.Version));
+            Assert.NotNull(closed.ClosedByUserId);
+            Assert.NotNull(closed.ClosedAtUtc);
+
+            using var replay = await client.PostWithKeyAsync($"{Base}/orders/{orderId}/close",
+                new CloseOrderRequestV1(balanced.Version), "close-1");
+            Assert.Equal(HttpStatusCode.OK, replay.StatusCode);
+            Assert.Equal("true", replay.Headers.GetValues("Idempotency-Replayed").Single());
+
+            // A NEW key on a closed order is the domain's own refusal, not a second close.
+            using var second = await client.PostWithKeyAsync($"{Base}/orders/{orderId}/close",
+                new CloseOrderRequestV1(closed.Version), "close-2");
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, second.StatusCode);
+            Assert.Equal(ManufacturingRuleCodes.OrderClosed, (await Problem(second)).Code);
+
+            Assert.Equal(1, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM manufacturing.Orders WHERE Id = @o AND ClosedAtUtc IS NOT NULL", ("@o", orderId)));
+            Assert.Equal(1, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'manufacturing.order.closed.v1'"));
+            // Two attempts recorded: the terminal stale conflict and the success. The refusals are not.
+            Assert.Equal(2, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM manufacturing.Commands WHERE CommandName = N'manufacturing.order.close.v1'"));
+        }
+
+        // Another company cannot see or close it: the same code-less 404 as an unknown id.
+        var otherCompany = await run.GrantAsync(TestUsers.CompanyB, CompanyB, [.. AllWrites, ErpPermissions.ManufacturingOrdersClose]);
+        using (var client = run.ClientFor(otherCompany, CompanyB))
+        {
+            Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"{Base}/orders/{orderId}")).StatusCode);
+            using var denied = await client.PostWithKeyAsync($"{Base}/orders/{orderId}/close", new CloseOrderRequestV1(1));
+            Assert.Equal(HttpStatusCode.NotFound, denied.StatusCode);
+        }
+
+        // The read grant alone does not close: the close has its own permission.
+        var readerOnly = await run.GrantAsync(TestUsers.NoAssignment, CompanyA, ErpPermissions.ManufacturingOrdersRead);
+        using (var client = run.ClientFor(readerOnly, CompanyA))
+        {
+            using var forbidden = await client.PostWithKeyAsync($"{Base}/orders/{orderId}/close", new CloseOrderRequestV1(1));
+            Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
+        }
+
+        // Nothing above closed a second order or wrote a second close.
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'manufacturing.order.closed.v1'"));
+    }
+
+    [SqlServerFact]
+    public async Task The_order_list_is_this_companys_stored_orders_newest_first_under_the_read_grant()
+    {
+        await using var run = await Run.StartAsync();
+        var userA = await run.GrantAsync(TestUsers.CompanyA, CompanyA, [.. AllWrites, ErpPermissions.ManufacturingOrdersClose]);
+        var userB = await run.GrantAsync(TestUsers.CompanyB, CompanyB, AllWrites);
+        var (firstOrder, firstRoll) = await run.OpenOrderAsync(userA);
+        var (secondOrder, _) = await run.OpenOrderAsync(userA);
+
+        using (var client = run.ClientFor(userA, CompanyA))
+        {
+            using var response = await client.GetAsync($"{Base}/orders");
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.True(response.Headers.CacheControl is { Private: true, NoStore: true });
+            var page = (await response.Content.ReadFromJsonAsync<OrderListViewV1>())!;
+            Assert.Null(page.NextCursor);
+            // Both orders of this company, and only those, in the server's own sequence: createdAtUtc DESC,
+            // then id DESC. The two were created by separate API calls into a `datetimeoffset` (7 digits,
+            // 100 ns) column, so their instants differ and the PRIMARY sort alone decides — newest first.
+            // That is asserted, not assumed: if the instants ever tied, the next line would say so instead
+            // of the sequence quietly depending on SQL Server's uniqueidentifier tie-break.
+            Assert.Equal(2, page.Orders.Count);
+            Assert.NotEqual(page.Orders[0].CreatedAtUtc, page.Orders[1].CreatedAtUtc);
+            Assert.Equal([secondOrder, firstOrder], page.Orders.Select(row => row.OrderId));
+            var summary = page.Orders.Single(row => row.OrderId == firstOrder);
+            // The stored snapshot, as text: one planned roll of 1000 kg, no target, open, version 1.
+            Assert.Equal((firstOrder, "Slitting", "Open", 1L, 1, "1000"),
+                (summary.OrderId, summary.Process, summary.Status, summary.Version, summary.PlannedRollCount,
+                    summary.PlannedInputKg));
+            Assert.Null(summary.Target);
+            Assert.Null(summary.ClosedAtUtc);
+
+            // One page at a time: the cursor is the server's own and the second page is the rest.
+            using var firstPage = await client.GetAsync($"{Base}/orders?pageSize=1");
+            var one = (await firstPage.Content.ReadFromJsonAsync<OrderListViewV1>())!;
+            var onId = Assert.Single(one.Orders).OrderId;
+            Assert.NotNull(one.NextCursor);
+            using var nextPage = await client.GetAsync($"{Base}/orders?pageSize=1&cursor={Uri.EscapeDataString(one.NextCursor!)}");
+            var two = (await nextPage.Content.ReadFromJsonAsync<OrderListViewV1>())!;
+            var twoId = Assert.Single(two.Orders).OrderId;
+            // Walking one at a time answers exactly the sequence one whole page answers: the cursor
+            // continues where the page stopped, repeats nothing and skips nothing. This is the check that
+            // would catch an ORDER BY and a cursor predicate that did not compare the same way.
+            Assert.Equal([secondOrder, firstOrder], new[] { onId, twoId });
+            Assert.Null(two.NextCursor);
+
+            // A cursor that is not this company's and this ordering's is refused on the cursor, never a first page.
+            using var badCursor = await client.GetAsync($"{Base}/orders?cursor=not-a-cursor");
+            Assert.Equal(HttpStatusCode.BadRequest, badCursor.StatusCode);
+            Assert.Equal(ManufacturingApiCodes.RequestInvalid, (await Problem(badCursor)).Code);
+            using var badPage = await client.GetAsync($"{Base}/orders?pageSize=101");
+            Assert.Equal(HttpStatusCode.BadRequest, badPage.StatusCode);
+            using var badStatus = await client.GetAsync($"{Base}/orders?status=open");
+            Assert.Equal(HttpStatusCode.BadRequest, badStatus.StatusCode);
+
+            // The status filter follows the stored status: the closed order leaves the open list.
+            var issued = await run.OkAsync(client, $"{Base}/orders/{firstOrder}/input-issues",
+                new RecordFactRequestV1(Guid.NewGuid(), 1, firstRoll, "1000", At));
+            var declared = await run.OkAsync(client, $"{Base}/orders/{firstOrder}/outputs",
+                new DeclareOutputRequestV1(Guid.NewGuid(), issued.Version, firstRoll, "GoodProduct", "1000", At.AddMinutes(1)));
+            Assert.Equal(HttpStatusCode.OK, (await client.PostWithKeyAsync($"{Base}/orders/{firstOrder}/close",
+                new CloseOrderRequestV1(declared.Version), "close-list")).StatusCode);
+
+            var open = (await client.GetFromJsonAsync<OrderListViewV1>($"{Base}/orders?status=Open"))!;
+            Assert.Equal(secondOrder, Assert.Single(open.Orders).OrderId);
+            var closed = (await client.GetFromJsonAsync<OrderListViewV1>($"{Base}/orders?status=Closed"))!;
+            var closedSummary = Assert.Single(closed.Orders);
+            Assert.Equal((firstOrder, "Closed"), (closedSummary.OrderId, closedSummary.Status));
+            Assert.NotNull(closedSummary.ClosedAtUtc);
+
+            // A list is a read: it stores nothing.
+            Assert.Equal(0, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType LIKE N'manufacturing.order.list%'"));
+        }
+
+        // Company B's list is its own: another company's order is in no page of it.
+        using (var client = run.ClientFor(userB, CompanyB))
+        {
+            var page = (await client.GetFromJsonAsync<OrderListViewV1>($"{Base}/orders"))!;
+            Assert.Empty(page.Orders);
+        }
+
+        // Without the read grant there is no list at all.
+        var noGrant = await run.GrantAsync(TestUsers.Unprovisioned, CompanyA, ErpPermissions.ManufacturingPlansWrite);
+        using (var client = run.ClientFor(noGrant, CompanyA))
+        {
+            Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync($"{Base}/orders")).StatusCode);
+        }
+    }
+
     private static async Task<(string? Code, string? ExpectedVersion, string? CurrentVersion)> Problem(HttpResponseMessage response)
     {
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -495,6 +674,10 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
 
         public Task<ProductionOrder?> FindOrderAsync(Guid orderId, CancellationToken cancellationToken = default) =>
             throw new ManufacturingStoreException(ManufacturingStoreCodes.ConcurrentChange, "sentetik: yeniden okumalar tükendi");
+
+        public Task<ManufacturingOrderPage> ListOrdersAsync(int pageSize, string? cursor, OrderStatus? status,
+            CancellationToken cancellationToken = default) =>
+            store.ListOrdersAsync(pageSize, cursor, status, cancellationToken);
     }
 
     private sealed class Run : IAsyncDisposable

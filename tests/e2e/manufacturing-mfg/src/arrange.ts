@@ -74,6 +74,33 @@ export async function issueThroughApi(env: MfgEnvironment, arranged: ArrangedOrd
   }
 }
 
+/**
+ * Declares an output through the real API (MFG-ORD): the close case needs an order whose roll
+ * accounts for part, then all, of what it issued — the decided rule, arranged through the product's
+ * own routes and never in SQL.
+ */
+export async function declareThroughApi(
+  env: MfgEnvironment,
+  arranged: ArrangedOrder,
+  expectedVersion: number,
+  outputClass: string,
+  kg: string,
+): Promise<Record<string, unknown>> {
+  const api = await apiAs(env, env.seed.recorderActor)
+  try {
+    return await post(api, `/orders/${arranged.orderId}/outputs`, {
+      factId: randomUUID(),
+      expectedVersion,
+      parentRollId: arranged.rollId,
+      outputClass,
+      kg,
+      occurredAtUtc: new Date().toISOString(),
+    }, 200)
+  } finally {
+    await api.dispose()
+  }
+}
+
 /** The order's GDC-BAL/1 read (BAL slice 2) as the server answers it now: the panel's own source. */
 export async function readMassBalance(env: MfgEnvironment, orderId: string): Promise<Record<string, unknown>> {
   const api = await apiAs(env, env.seed.recorderActor)

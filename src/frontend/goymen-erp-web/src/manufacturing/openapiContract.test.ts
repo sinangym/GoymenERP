@@ -12,9 +12,18 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { decodeMassBalance, decodeOrder, factBody, FACT_KINDS, OUTPUT_CLASSES, type FactSnapshot } from './contract'
+import {
+  closeBody,
+  decodeMassBalance,
+  decodeOrder,
+  decodeOrderList,
+  factBody,
+  FACT_KINDS,
+  OUTPUT_CLASSES,
+  type FactSnapshot,
+} from './contract'
 import { MANUFACTURING_BASE } from './api'
-import { massBalance, order, roll, ROLL_1 } from './testHarness'
+import { massBalance, order, orderList, orderSummary, roll, ROLL_1 } from './testHarness'
 
 interface Schema {
   readonly properties?: Record<string, unknown>
@@ -106,6 +115,25 @@ describe('Manufacturing port ↔ canonical OpenAPI', () => {
     expect(decodeMassBalance(view)).not.toBeNull()
     const base = `${MANUFACTURING_BASE.replace(/^.*\/api\/v1/, '/api/v1')}/orders/{orderId}`
     expect(document.paths[`${base}/mass-balance`]).toHaveProperty('get')
+  })
+
+  it('reads exactly the properties OrderListViewV1 and OrderSummaryViewV1 declare, all required', () => {
+    const page = orderList([orderSummary()], 'CURSOR-1')
+    expect(Object.keys(page).sort()).toEqual(names('OrderListViewV1'))
+    expect(Object.keys(page.orders[0] as object).sort()).toEqual(names('OrderSummaryViewV1'))
+    for (const name of ['OrderListViewV1', 'OrderSummaryViewV1']) {
+      expect([...(schema(name).required ?? [])].sort()).toEqual(names(name))
+    }
+    expect(decodeOrderList(page)).not.toBeNull()
+  })
+
+  it('sends exactly the property the close request declares, and calls the list and close routes', () => {
+    expect(Object.keys(closeBody({ idempotencyKey: 'k', expectedVersion: 1 })).sort()).toEqual(
+      names('CloseOrderRequestV1'),
+    )
+    const orders = `${MANUFACTURING_BASE.replace(/^.*\/api\/v1/, '/api/v1')}/orders`
+    expect(document.paths[orders]).toHaveProperty('get')
+    expect(document.paths[`${orders}/{orderId}/close`]).toHaveProperty('post')
   })
 
   it('knows the five output classes by the server names the domain uses', () => {

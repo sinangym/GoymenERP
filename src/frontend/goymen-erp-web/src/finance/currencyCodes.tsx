@@ -4,7 +4,7 @@
  * The one read that labels a currency by its code is Settings' currency candidates
  * (`GET …/bank-accounts/currency-candidates`), and that read is the bank-account PROPOSE permission's
  * (the F-04 rule, BankAccountsPage). So a caller who may propose gets the code; anyone else gets the
- * existing honest reference (`currencyFallback`: "Para birimi kimliği …xxxx"), never a guessed or default
+ * existing honest reference (`currencyFallback`: "Para birimi ref. …xxxxxxxx"), never a guessed or default
  * code. No new read, no new permission, no policy.
  */
 

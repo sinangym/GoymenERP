@@ -76,6 +76,56 @@ export const TIME_REQUIRED = 'Olgunun zamanını girin.'
 export const CLASS_REQUIRED = 'Bir çıktı sınıfı seçin.'
 export const CLOSED_ORDER_TEXT = 'Emir kapalı; yeni gerçekleşme kaydedilmez.'
 
+/** MFG-02 order list. Column names are the summary's own fields; no figure is invented for a column. */
+export const ORDER_LIST_TEXT = {
+  heading: 'Üretim emirleri',
+  caption: 'Şirketin üretim emirleri, en yeniden eskiye.',
+  filter: 'Durum',
+  filterAll: 'Hepsi',
+  order: 'Emir (teknik referans)',
+  createdAt: 'Oluşturma',
+  status: 'Durum',
+  process: 'Süreç',
+  rollCount: 'Ana rulo',
+  plannedInput: 'Planlanan girdi (kg)',
+  target: 'Hedef',
+  targetNone: 'Hedef yok',
+  closedAt: 'Kapanış',
+  open: 'Aç',
+  loadMore: 'Sonraki sayfayı yükle',
+  loadingMore: 'Yükleniyor…',
+  nextPageFailed: 'Sonraki sayfa okunamadı; yukarıdaki satırlar yerinde kaldı.',
+  end: 'Liste sonu.',
+  labelNote: 'Rulo ve emir etiketleri ürün/etiket okumasıyla gelecek; burada teknik kimlik gösterilir.',
+} as const
+
+/**
+ * MFG-ORD close. The rule is the decided one (MFG-4, Business 5728619644) in the user's words —
+ * no tolerance is offered, no write-off is suggested and no new condition is introduced here.
+ */
+export const CLOSE_TEXT = {
+  heading: 'Emri kapat',
+  help:
+    'Kapanış, her ana rulonun kendi kütlesini açıklamasını ister: bir rulodaki fazla, başka bir rulodaki eksiği ' +
+    'kapatmaz. Kalan WIP emirde kendi pozisyonu olarak durur ve kapanışı engellemez. Açıklanamayan fark varsa emir ' +
+    'kapanmaz; fark tolerans ile geçilmez ve hiçbir sınıfa yazılmaz.',
+  action: 'Emri kapat',
+  confirmQuestion: 'Emir kapatılsın mı? Kapanan emre yeni gerçekleşme yazılamaz.',
+  confirm: 'Evet, emri kapat',
+  cancel: 'Vazgeç',
+  sending: 'Gönderiliyor…',
+  resend: 'Aynı işlem anahtarıyla yeniden gönder',
+  appliedTitle: 'Emir kapatıldı',
+  appliedDetail: 'Emir kapatıldı; yukarıdaki değerler emrin yeniden okunmuş hâlidir.',
+  replayedTitle: 'Emir zaten kapatılmıştı',
+  replayedDetail: 'Bu kapanış sunucuda zaten kayıtlıydı; ikinci bir kapanış oluşmadı.',
+  refusedTitle: 'Emir kapatılmadı',
+  unknownTitle: 'Kapanışın sonucu bilinmiyor',
+  unknownHelp:
+    'Aynı kapanışı aynı işlem anahtarıyla yeniden gönderin: kapanmışsa ikinci bir kapanış oluşmaz.',
+  closedAt: 'Kapanış zamanı',
+} as const
+
 export const APPLIED_TITLE = 'Kaydedildi'
 export const APPLIED_DETAIL = 'Olgu kaydedildi. Tablodaki değerler emrin yeniden okunmuş hâlidir.'
 export const REPLAYED_TITLE = 'Daha önce kaydedilmiş'
@@ -84,6 +134,9 @@ export const REPLAYED_DETAIL =
 
 const RULE_TEXT: Record<string, string> = {
   manufacturing_order_closed: CLOSED_ORDER_TEXT,
+  manufacturing_unexplained_difference:
+    'Emir kapanmadı: en az bir ana ruloda açıklanamayan kütle farkı var. Fark tolerans ile geçilmez ve bir sınıfa ' +
+    'yazılmaz; eksik kalan çıktı, iade ya da WIP kaydı tamamlandığında kapanış yeniden denenebilir.',
   manufacturing_roll_not_in_order: 'Bu ana rulo emirde yok.',
   manufacturing_roll_not_issued: 'Bu ana rulodan henüz girdi çıkışı yapılmadı.',
   manufacturing_input_already_issued: 'Bu olgu kimliğiyle bir girdi çıkışı zaten var.',
@@ -126,6 +179,23 @@ export function failureText(failure: FactFailure): string {
       return RULE_TEXT[failure.code] ?? `İşlem reddedildi (${failure.code}).`
     case 'unsupported-media':
       return 'İstek biçimi sunucu tarafından kabul edilmedi.'
+  }
+}
+
+/**
+ * The same refusals, told as a CLOSE. Only the sentences that would otherwise describe a fact are
+ * replaced; every rule code still comes from {@link failureText}, so a code has one meaning.
+ */
+export function closeFailureText(failure: FactFailure): string {
+  switch (failure.kind) {
+    case 'forbidden':
+      return 'Bu emri kapatma yetkiniz yok.'
+    case 'version-conflict':
+      return 'Emir siz bakarken değişti. Güncel hâli yeniden okundu; kapanışı yeniden değerlendirin.'
+    case 'concurrent-change':
+      return 'Aynı anda başka bir kayıt işlendi; emir kapatılmadı. Emir yeniden okundu; yeniden deneyin.'
+    default:
+      return failureText(failure)
   }
 }
 

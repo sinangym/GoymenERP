@@ -22,7 +22,7 @@
  *    as the same fact (R3).
  */
 
-import { factBody, type FactSnapshot } from './contract'
+import { closeBody, factBody, type CloseSnapshot, type FactSnapshot } from './contract'
 import { MANUFACTURING_BASE, devHeaders } from './api'
 
 /** A DEFINITE refusal: the command did not take effect, and the server said why. */
@@ -131,28 +131,64 @@ function classifyFailure(status: number, body: unknown, replayed: boolean): Fact
  * Sends one frozen fact. Returns a definite outcome or an explicitly UNKNOWN one; it
  * never guesses, never retries on its own and never changes the key or the fact id.
  */
-export async function recordFact(
+export function recordFact(
   companyId: string,
   orderId: string,
   snapshot: FactSnapshot,
   signal?: AbortSignal,
 ): Promise<FactOutcome> {
+  return sendCommand(
+    companyId,
+    `${MANUFACTURING_BASE}/orders/${encodeURIComponent(orderId)}/${snapshot.kind}`,
+    snapshot.idempotencyKey,
+    factBody(snapshot),
+    signal,
+  )
+}
+
+/**
+ * Closes one order (MFG-ORD): `POST …/orders/{orderId}/close` with the version the screen read.
+ *
+ * The same command discipline as a fact, and the same outcomes: 200 is the closed order, a
+ * replay is the first close's stored answer (no second close), a 409 names the version conflict,
+ * and a 422 names the domain's own refusal — `manufacturing_unexplained_difference` when a roll
+ * does not account for its issued mass. Nothing here softens a refusal or retries on its own.
+ */
+export function closeOrder(
+  companyId: string,
+  orderId: string,
+  snapshot: CloseSnapshot,
+  signal?: AbortSignal,
+): Promise<FactOutcome> {
+  return sendCommand(
+    companyId,
+    `${MANUFACTURING_BASE}/orders/${encodeURIComponent(orderId)}/close`,
+    snapshot.idempotencyKey,
+    closeBody(snapshot),
+    signal,
+  )
+}
+
+async function sendCommand(
+  companyId: string,
+  url: string,
+  idempotencyKey: string,
+  body: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<FactOutcome> {
   let response: Response
   try {
-    response = await fetch(
-      `${MANUFACTURING_BASE}/orders/${encodeURIComponent(orderId)}/${snapshot.kind}`,
-      {
-        method: 'POST',
-        headers: {
-          ...devHeaders(),
-          'Content-Type': 'application/json',
-          'X-Company-Id': companyId,
-          'Idempotency-Key': snapshot.idempotencyKey,
-        },
-        body: JSON.stringify(factBody(snapshot)),
-        signal,
+    response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        ...devHeaders(),
+        'Content-Type': 'application/json',
+        'X-Company-Id': companyId,
+        'Idempotency-Key': idempotencyKey,
       },
-    )
+      body: JSON.stringify(body),
+      signal,
+    })
   } catch {
     if (signal?.aborted) return { type: 'unknown', unknown: { kind: 'aborted' } }
     if (!navigator.onLine) return { type: 'unknown', unknown: { kind: 'offline' } }

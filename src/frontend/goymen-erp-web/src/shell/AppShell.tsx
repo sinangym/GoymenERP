@@ -60,6 +60,13 @@ const NAV_CAPABILITIES: readonly CapabilityId[] = [
   CAPABILITY.financeReceiptsList,
   CAPABILITY.financeBankAccountsList,
   /**
+   * Listed together with the routes that serve them (ACC-V0b). Each renders only where the server's
+   * snapshot carries the capability — staged until the acc01 acceptance — and the propose screen and
+   * the journal detail are reached from their own list, never from the sidebar.
+   */
+  CAPABILITY.accountingPeriodsList,
+  CAPABILITY.accountingJournalsList,
+  CAPABILITY.accountingPostingQueues,
    * Listed together with the routes that serve them (LOG-4b). Each renders only where the server's
    * snapshot carries the capability (staged until the l04 suite); the detail is reached from a row.
    */

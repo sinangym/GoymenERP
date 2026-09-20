@@ -1,0 +1,129 @@
+/*
+ * MFG-02 order list. The same tokens and spacing as the order screen
+ * (./OrderDetailPage.module.css); a list has its own header, filter and continuation row.
+ */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  padding: 1.5rem;
+}
+
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+}
+
+.title {
+  margin: 0;
+  font-size: 1.5rem;
+  line-height: 1.3;
+}
+
+.filter {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.filter select {
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--color-border, #9aa5b1);
+  border-radius: 0.25rem;
+  background: var(--color-surface, #fff);
+  color: inherit;
+}
+
+.tableWrap {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.caption {
+  text-align: left;
+  padding-bottom: 0.5rem;
+  color: var(--color-text-muted, #52606d);
+}
+
+.table th,
+.table td {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--color-border-subtle, #cbd2d9);
+  text-align: left;
+  vertical-align: top;
+}
+
+.table thead th {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.875rem;
+}
+
+.badgeOpen,
+.badgeClosed {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  white-space: nowrap;
+}
+
+.badgeOpen {
+  background: var(--color-success-surface, #e3f9e5);
+  color: var(--color-success-text, #0b6b2f);
+}
+
+.badgeClosed {
+  background: var(--color-neutral-surface, #e4e7eb);
+  color: var(--color-neutral-text, #3e4c59);
+}
+
+.help,
+.muted {
+  margin: 0;
+  color: var(--color-text-muted, #52606d);
+  font-size: 0.9375rem;
+}
+
+.continuation {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.secondaryButton {
+  align-self: flex-start;
+  padding: 0.45rem 1rem;
+  border: 1px solid var(--color-border, #9aa5b1);
+  border-radius: 0.25rem;
+  background: var(--color-surface, #fff);
+  color: inherit;
+  cursor: pointer;
+}
+
+.secondaryButton:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.inlineError {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
