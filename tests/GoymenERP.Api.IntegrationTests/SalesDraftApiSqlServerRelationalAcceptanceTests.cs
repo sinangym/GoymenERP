@@ -114,17 +114,19 @@ public sealed class SalesDraftApiSqlServerRelationalAcceptanceTests
         }
 
         // K3 Head A (Sinan 5748258299): a commercial field asks the SEPARATE price-write permission of the actor, right after
-        // the create permission and before any owner — this saver holds the draft names only, so the priced line is 403
-        // price_write_forbidden naming the field; the create permission does not confer it. Nothing is recorded (a 403 is
-        // never a terminal result), which the zero counts at the end of this case prove on real SQL.
+        // the create permission and before any owner — this saver holds the draft names only, so the priced line is 403;
+        // the create permission does not confer it. ON THE WIRE the 403 is code-less by the host's standing rule (platform
+        // 401/403 disclose nothing: no code, no field errors); the service's price_write_forbidden and its field list are
+        // measured at the service layer (unit). Nothing is recorded (a 403 is never a terminal result), which the zero
+        // counts at the end of this case prove on real SQL.
         using (var priced = new HttpRequestMessage(HttpMethod.Post, SalesEndpoints.DraftsPath) { Content = Body(unitPrice: "12.50") })
         {
             priced.Headers.Add("Idempotency-Key", "SENTETIK-priced");
             var response = await client.SendAsync(priced);
             Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
             var problem = await Result(response);
-            Assert.Equal(SalesDraftProblemCodesV1.PriceWriteForbidden, problem.GetProperty("code").GetString());
-            Assert.Equal("lines[0].unitPrice", problem.GetProperty("errors")[0].GetProperty("field").GetString());
+            Assert.False(problem.TryGetProperty("errors", out _), "a platform 403 discloses no field");
+            Assert.NotEqual(SalesDraftProblemCodesV1.PriceWriteForbidden, problem.TryGetProperty("code", out var code) ? code.GetString() : null);
         }
 
         // The SAME priced request from an actor who DOES hold the price name passes that fence and meets the first REAL
