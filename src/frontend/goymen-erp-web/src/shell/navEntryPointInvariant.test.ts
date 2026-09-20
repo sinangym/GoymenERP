@@ -28,9 +28,21 @@
  *
  * WHAT THIS IS NOT, and the limit matters for the orphan rule's remedy: this file reads the two
  * TABLES, never the pages. So it cannot tell "this screen is reached from a list row" from "nothing
- * links to this screen at all" — emptying a label satisfies it either way. That is why the orphan
- * rule's message refuses to offer an empty label as an equal remedy: silencing a guard is not the
- * same as fixing what it guards.
+ * links to this screen at all" — emptying a label satisfies it either way. An empty label is a
+ * NORMAL and correct choice, not a workaround: a screen opened from a list row, a card or a context
+ * action carries none, which is why so many here are empty.
+ *
+ * Careful with the rule this explains, because an earlier version of these lines was STRICTER than
+ * it (#372 review, CARİ): the rule is EXACTLY ONE entry point per creation route — the sidebar entry
+ * when the list does not link to it, or the list's own link when it does, never both
+ * (`docs/delivery/TEKNIK_TUZAKLAR.md` §8). It is NOT "create screens belong in the list". `/cari/yeni`
+ * is in the sidebar with no list link and is compliant; a reader who took the stricter sentence
+ * literally would delete Cari's only entry point and produce the very MFG-02 condition this file
+ * exists to catch. An explanation of a guard must never be stricter than the guard.
+ *
+ * What the file cannot do is confirm the link that makes an empty label correct, so the orphan rule's
+ * message states that obligation and points at the lane's own test rather than implying a guarantee
+ * this file does not provide.
  *
  * Nor is this the one-entry-point rule itself. Whether a list ALSO links to its create screen
  * is a fact about that lane's page, not about these two tables; the lane's own tests and the
@@ -71,12 +83,15 @@ describe('nav entry points', () => {
     expect(
       orphans,
       'these capabilities carry a nav label but are not in NAV_CAPABILITIES, so the label is never ' +
-        'rendered. Add the capability to the nav list. Emptying the label also silences this rule, ' +
-        'but it is only correct when the screen is genuinely reached from somewhere else — a list ' +
-        'row, a card, a context action — and it is WRONG when nothing links to the screen: that ' +
-        'leaves it reachable only by typing its URL, which is the MFG-02 condition this rule exists ' +
-        'to catch. This file cannot tell the two apart, because it reads the two tables and not the ' +
-        'pages; the lane that owns the screen has to show where it is reached from.',
+        'rendered. Two fixes, both legitimate. (1) The screen belongs in the sidebar: add the ' +
+        'capability to NAV_CAPABILITIES. (2) The screen is deliberately opened from a list row, a ' +
+        'card or a context action — the normal case for detail and create screens, which is why the ' +
+        'screens reached that way carry no label: empty its label. Option 2 carries an obligation, ' +
+        'not a free pass: the screen must then really be reachable from that row or list, and THIS ' +
+        'file does not verify it — it reads the two tables, never the pages, so the lane that owns ' +
+        'the screen has to pin that link in its own test. Emptying a label with nothing linking to ' +
+        'the screen silences this rule and leaves the screen reachable only by typing its URL, ' +
+        'which is the MFG-02 condition the rule exists to catch.',
     ).toEqual([])
     // A rule that filtered nothing would pass vacuously and mean nothing, so pin that it had input.
     expect(named.length).toBeGreaterThan(0)
