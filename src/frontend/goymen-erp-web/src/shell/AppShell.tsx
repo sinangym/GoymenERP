@@ -24,7 +24,8 @@ import {
 import styles from './AppShell.module.css'
 
 /** Every capability the frontend can actually mount, in nav order. */
-const NAV_CAPABILITIES: readonly CapabilityId[] = [
+/** Exported for `navEntryPointInvariant.test.ts`: the nav list and the label table must agree. */
+export const NAV_CAPABILITIES: readonly CapabilityId[] = [
   CAPABILITY.cariPartiesList,
   CAPABILITY.cariPartiesCreate,
   CAPABILITY.cariAccountsLink,
@@ -48,11 +49,29 @@ const NAV_CAPABILITIES: readonly CapabilityId[] = [
    */
   CAPABILITY.organizationSitesList,
   /**
+   * ORG-03. The sidebar is not one option among several here, it is the ONLY one: the
+   * route stands on `organization.work-centers.read` alone, so a holder of that and not
+   * `organization.locations.read` never opens ORG-01 and could never be linked from it.
+   * Nothing else renders only where the server granted it, as ever.
+   */
+  CAPABILITY.organizationWorkCentersList,
+  /**
    * Listed together with the routes that serve them (S03). Each renders only where the server's
    * snapshot carries the capability; the 360 is reached from a row, never from the sidebar.
    */
   CAPABILITY.salesDraftsList,
   CAPABILITY.salesDraftsCreate,
+  /**
+   * MFG-02, listed with the route that serves it (MFG-ORD). It renders only where the server's
+   * snapshot carries the capability; the order detail is reached from a list row, never the sidebar.
+   *
+   * It was MISSING until now, and the gap was invisible: the capability, its route and its label all
+   * existed and `manufacturingMountDrift` asserted the label — but nothing asserted that any nav entry
+   * NAMED it, and nothing in the tree links to `/uretim/emirler`. So a delivered screen could only be
+   * opened by typing the URL, and the order detail sat behind a list nobody could reach (#363 review,
+   * P3-3). The lesson is in the case beside this file: assert the LINK, not the label it would use.
+   */
+  CAPABILITY.manufacturingOrdersList,
   /**
    * Listed together with the routes that serve them (FIN-UI-1b). Each renders only where the server's
    * snapshot carries the capability; the new draft, the detail and the propose screen have none.
@@ -71,8 +90,11 @@ const NAV_CAPABILITIES: readonly CapabilityId[] = [
    * Listed together with the routes that serve them (LOG-4b). Each renders only where the server's
    * snapshot carries the capability (staged until the l04 suite); the detail is reached from a row.
    */
+  // The L-03 creation screen is NOT here: the L-02 list carries its own primary link, and the rule
+  // is exactly one entry point per creation route (coordinator, 19 September 2026). Two links with
+  // the same accessible name to one route is what l04's strict-mode violation found, and a screen
+  // reader announces it twice.
   CAPABILITY.logisticsInstructionsList,
-  CAPABILITY.logisticsInstructionsCreate,
 ]
 
 export function AppShell() {

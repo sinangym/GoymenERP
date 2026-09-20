@@ -13,6 +13,8 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence;
 /// resolved company.</item>
 /// <item>A receipt draft changes only its preparation fields, version and update trace; nothing is
 /// deleted. A command record is append-only.</item>
+/// <item>A money event (FIN-T05a) is one per (company, source, kind) and append-only; a recorded source never
+/// changes again.</item>
 /// <item>A bank account (FS0) changes only by its one approval; the database itself refuses an
 /// approval by the proposer (<c>CK_BankAccounts_Approval</c>, Ö4).</item>
 /// <item>Idempotency (ADR-011): (company, command, key hash) is the command record's key, so one key
@@ -34,6 +36,8 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
 
     internal DbSet<BankAccountRow> BankAccounts => Set<BankAccountRow>();
 
+    internal DbSet<MoneyEventRow> MoneyEvents => Set<MoneyEventRow>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -45,6 +49,7 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         ConfigureReceiptDrafts(modelBuilder);
         ConfigureBankAccounts(modelBuilder);
         ConfigureCommands(modelBuilder);
+        ConfigureMoneyEvents(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -78,6 +83,8 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                 "LEN([AmountText]) > 0 AND LEN([ProfileId]) > 0 AND LEN([ProfileVersion]) > 0 "
                 + "AND LEN([CreatedBy]) > 0 AND LEN([UpdatedBy]) > 0");
             table.HasCheckConstraint("CK_ReceiptDrafts_Version", "[Version] >= 1");
+            // FIN-T05a: a draft carries no record trace; a recorded source carries who and when.
+            table.HasCheckConstraint("CK_ReceiptDrafts_Stage", StageCheck);
         });
         entity.HasKey(x => x.Id);
         entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
@@ -93,6 +100,7 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         entity.Property(x => x.Description).HasMaxLength(1000);
         entity.Property(x => x.CreatedBy).HasMaxLength(128).IsRequired();
         entity.Property(x => x.UpdatedBy).HasMaxLength(128).IsRequired();
+        entity.Property(x => x.RecordedBy).HasMaxLength(128);
         entity.HasIndex(x => new { x.CompanyId, x.UpdatedAtUtc, x.Id });
         // The list's stable order (FIN-T04b): newest created first; an edit never moves a draft between pages.
         entity.HasIndex(x => new { x.CompanyId, x.CreatedAtUtc, x.Id });
@@ -122,10 +130,69 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         entity.Property(x => x.Id).ValueGeneratedNever();
         entity.Property(x => x.Version).IsConcurrencyToken();
         entity.Property(x => x.DisplayName).HasMaxLength(200).IsRequired();
+
+        // K2's card. Every column is NULLABLE, including the two K2 calls mandatory: the rows that
+        // existed before K2 have no value for them, and making the column required would force this
+        // slice to decide what those rows mean — which is the open question #66 5748390243. The
+        // mandatory pair is enforced where a card is WRITTEN, so new cards cannot omit it.
+        entity.Property(x => x.BankName).HasMaxLength(200);
+        entity.Property(x => x.AccountType).HasMaxLength(64);
+        entity.Property(x => x.BranchName).HasMaxLength(200);
+        entity.Property(x => x.BranchCode).HasMaxLength(64);
+        // ISO 13616's maximum is 34 characters; stored normalised, so the column never holds spacing.
+        entity.Property(x => x.Iban).HasMaxLength(34);
+        entity.Property(x => x.AccountNumber).HasMaxLength(64);
+
         entity.Property(x => x.ProposedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
         entity.Property(x => x.ApprovedBy).HasMaxLength(128).UseCollation(IdentityCollation);
         entity.HasIndex(x => new { x.CompanyId, x.Status });
         entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    /// <summary>The stage rule of a receipt source (FIN-T05a); the migration that introduced it uses the same text.</summary>
+    internal const string StageCheck =
+        "([Stage] = 0 AND [RecordedAtUtc] IS NULL AND [RecordedBy] IS NULL) OR "
+        + "([Stage] = 1 AND [RecordedAtUtc] IS NOT NULL AND [RecordedBy] IS NOT NULL AND LEN([RecordedBy]) > 0)";
+
+    /// <summary>
+    /// FIN-T05a: one money event per (company, source, kind). Its source is the company's receipt source, and every
+    /// fact is non-empty; the row is append-only (the write guard).
+    /// </summary>
+    private void ConfigureMoneyEvents(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<MoneyEventRow>();
+        entity.ToTable("MoneyEvents", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_MoneyEvents_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [SourceId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [PartyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [TreasuryAccountId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_MoneyEvents_Kind", "[Kind] = 1");
+            table.HasCheckConstraint("CK_MoneyEvents_Text",
+                "LEN([AmountText]) > 0 AND LEN([ProfileId]) > 0 AND LEN([ProfileVersion]) > 0 "
+                + "AND LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
+        });
+        entity.HasKey(x => x.Id);
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.AmountText).HasColumnType("varchar(max)").IsUnicode(false).IsRequired();
+        entity.Property(x => x.ProfileId).HasMaxLength(36).IsUnicode(false).IsRequired();
+        entity.Property(x => x.ProfileVersion).HasMaxLength(20).IsUnicode(false).IsRequired();
+        entity.Property(x => x.OccurredOn).HasColumnType("date");
+        entity.Property(x => x.ValueOn).HasColumnType("date");
+        entity.Property(x => x.RecordedBy).HasMaxLength(128).IsRequired();
+        entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        // Exactly once: a second event of the same kind for the same source cannot be stored, whoever races.
+        entity.HasIndex(x => new { x.CompanyId, x.SourceId, x.Kind }).IsUnique();
+        entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<ReceiptDraftRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.SourceId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
             .OnDelete(DeleteBehavior.Restrict);
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
@@ -199,6 +266,14 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                 throw new InvalidOperationException("Finans kaydı yalnız aktif şirket bağlamında ve o şirket için yazılır.");
             }
 
+            if (entry.State == EntityState.Modified
+                && entry.Entity is ReceiptDraftRow
+                && (int)entry.OriginalValues[nameof(ReceiptDraftRow.Stage)]! != ReceiptStages.Draft)
+            {
+                // FIN-T05a: a recorded source never changes again; its correction is a reversal (FIN-T06).
+                throw new InvalidOperationException("Kesin kayda alınmış finans kaynağı değişmez.");
+            }
+
             if (entry.State == EntityState.Modified)
             {
                 string[] allowed = entry.Entity switch
@@ -211,7 +286,8 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                         nameof(ReceiptDraftRow.ProfileVersion), nameof(ReceiptDraftRow.OccurredOn),
                         nameof(ReceiptDraftRow.ValueOn), nameof(ReceiptDraftRow.BankReference),
                         nameof(ReceiptDraftRow.Description), nameof(ReceiptDraftRow.UpdatedAtUtc),
-                        nameof(ReceiptDraftRow.UpdatedBy),
+                        nameof(ReceiptDraftRow.UpdatedBy), nameof(ReceiptDraftRow.Stage),
+                        nameof(ReceiptDraftRow.RecordedAtUtc), nameof(ReceiptDraftRow.RecordedBy),
                     ],
                     // The one approval; name and currency never change.
                     BankAccountRow =>

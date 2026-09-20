@@ -26,9 +26,10 @@ import {
 } from '../organization/capabilities'
 
 describe('shell ↔ Organization lane capability ids', () => {
-  it('declares the same two route ids the lane does', () => {
+  it('declares the same three route ids the lane does', () => {
     expect(CAPABILITY.organizationSitesList).toBe(ORGANIZATION_CAPABILITY.settingsList)
     expect(CAPABILITY.organizationLocationsDetail).toBe(ORGANIZATION_CAPABILITY.locationDetail)
+    expect(CAPABILITY.organizationWorkCentersList).toBe(ORGANIZATION_CAPABILITY.workCentersList)
   })
 
   it('mounts every ROUTE the lane declares, and nothing that is only a control', () => {
@@ -64,6 +65,7 @@ describe('shell ↔ Organization lane capability ids', () => {
     for (const [shellId, laneId] of [
       [CAPABILITY.organizationSitesList, ORGANIZATION_CAPABILITY.settingsList],
       [CAPABILITY.organizationLocationsDetail, ORGANIZATION_CAPABILITY.locationDetail],
+      [CAPABILITY.organizationWorkCentersList, ORGANIZATION_CAPABILITY.workCentersList],
     ] as const) {
       expect(CAPABILITY_ROUTE[shellId]).toBe(ORGANIZATION_ROUTE[laneId])
       expect(CAPABILITY_NAV_LABEL[shellId]).toBe(ORGANIZATION_NAV_LABEL[laneId])
@@ -90,8 +92,13 @@ describe('shell ↔ Organization lane capability ids', () => {
     expect(matchPath(CAPABILITY_ROUTE[CAPABILITY.organizationSitesList], url)).toBeNull()
   })
 
-  it('gives the card no nav entry, so the sidebar gains exactly one entry', () => {
+  it('gives the card no nav entry, so the sidebar gains exactly two entries', () => {
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.organizationSitesList]).toBe('Organizasyon')
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.organizationLocationsDetail]).toBe('')
+    // ORG-03 is the second, and it is a sidebar entry for a reason rather than by symmetry: its
+    // route stands on `organization.work-centers.read` alone, so a holder of that and not
+    // `organization.locations.read` never opens ORG-01 and could not be linked from it. The card
+    // stays empty — it is still reached from a location row.
+    expect(CAPABILITY_NAV_LABEL[CAPABILITY.organizationWorkCentersList]).toBe('İş Merkezleri')
   })
 })

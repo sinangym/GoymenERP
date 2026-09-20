@@ -28,9 +28,12 @@ public sealed class SalesVersionConflictException(long expected, long current)
 /// undefined enum value, a non-positive quantity where a positive one is required) stay
 /// <see cref="ArgumentException"/>s.
 /// </summary>
-public sealed class SalesRuleException(string code, string message) : InvalidOperationException(message)
+public sealed class SalesRuleException(string code, string message, Guid? lineId = null) : InvalidOperationException(message)
 {
     public string Code { get; } = code;
+
+    /// <summary>The client line id a per-line refusal is about (K3 Head B: the commercial revision names the line); null for a draft-level rule.</summary>
+    public Guid? LineId { get; } = lineId;
 }
 
 /// <summary>The stable refusal codes of the Sales domain. All prefixed <c>sales_</c>.</summary>
@@ -83,6 +86,21 @@ public static class SalesRuleCodes
 
     /// <summary>A unit price needs its price unit and a price unit needs a price (#257).</summary>
     public const string PriceUnitPairing = "sales_price_unit_pairing";
+
+    // K3 (Sinan 5748258299): manual price and discount before a price list. Mathematical validity only —
+    // no minimum price, margin floor or maximum discount is a rule here (none exists; none is invented).
+    /// <summary>The unit price text carries more decimals than the approved money profile's scale; nothing is rounded.</summary>
+    public const string PriceScaleExceeded = "sales_price_scale_exceeded";
+    /// <summary>The price unit is none of the product owner's three unit bindings (stock, sales, order).</summary>
+    public const string PriceUnitUnsupported = "sales_price_unit_unsupported";
+    /// <summary>The discount percent is outside 0..100 (a percentage, not a threshold).</summary>
+    public const string DiscountOutOfRange = "sales_discount_out_of_range";
+    /// <summary>A discount without a unit price: a percentage of nothing (ASSUMPTION-SALESP-1).</summary>
+    public const string DiscountWithoutPrice = "sales_discount_without_price";
+    /// <summary>A commercial revision must name every current line exactly once and no other line.</summary>
+    public const string RevisionLinesMismatch = "sales_revision_lines_mismatch";
+    /// <summary>A commercial revision that changes no value is refused: an approval is never discarded for nothing (ASSUMPTION-SALESP-5).</summary>
+    public const string RevisionNoChange = "sales_revision_no_change";
 
     public const string TooManySlices = "sales_too_many_slices";
     public const string DuplicateSliceId = "sales_duplicate_slice_id";

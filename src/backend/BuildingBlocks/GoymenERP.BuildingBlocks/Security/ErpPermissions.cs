@@ -105,7 +105,8 @@ public static class ErpPermissions
     /// no role and no user receives them here; who holds which is a human gate. All three are
     /// company-wide only: drafts, sources and amounts belong to the server-resolved company and the
     /// routes filter by nothing narrower. None is Critical: a draft moves no money and grants no
-    /// authority. Record and Reverse, which would, have no name yet (OPEN-009, a human decision).
+    /// authority. Record, which does move money, now has its own name below (FIN-T05); Reverse still
+    /// has none (FIN-T06, its authority still OPEN-009 — a human decision).
     /// </summary>
     public const string FinanceManualReceiptDraftSave = "finance.manual-receipt.draft.save";
 
@@ -114,6 +115,35 @@ public static class ErpPermissions
 
     /// <inheritdoc cref="FinanceManualReceiptDraftSave"/>
     public const string FinanceManualReceiptAmountRead = "finance.manual-receipt.amount.read";
+
+    /// <summary>
+    /// FIN-T05: making a manual bank receipt definitive — the Finance owner's name
+    /// (<c>FinancePermissionNames.Record</c>, same string), registered here so the port can measure it.
+    /// <para>
+    /// FIRST, BECAUSE IT IS READ WRONG OTHERWISE: <see cref="Critical"/> governs GRANT-TIME dual control
+    /// (ADR-004 §6: the requester or the target may not approve their own grant), not command-time
+    /// behaviour. It does not add an approval step to the command, and it is not a "this is dangerous"
+    /// marker. Record creates a money event, which makes the classification worth arguing — but the
+    /// question it answers is "must two people agree to GRANT this?", and no source decides that: no
+    /// maker≠checker, no threshold, no second person is named anywhere for recording a receipt. So it is
+    /// NOT Critical, for the same reason as the rest, and the lever is written down rather than pulled:
+    /// if Sinan wants a record grant to need two people, Critical is where that decision lands.
+    /// </para>
+    /// <para>
+    /// Company-wide only, argued from what the permission MEANS: a record writes a money event against
+    /// the company's own treasury account and its own books; the command carries a company and a source
+    /// and has no site, location or work-center dimension at all, so a narrower assignment would have
+    /// nothing to be narrower ABOUT. (The port also refuses a non-company-wide scope — corroboration,
+    /// not the reason: an implementation detail must not decide an authority classification, or the day
+    /// the port changes the classification has nothing left holding it up.)
+    /// </para>
+    /// Registered, not granted: no seeded role and no user receives it, and who may record is a human
+    /// gate. Registration is NOT behaviour-neutral here, unlike a name an endpoint already required: it
+    /// moves Record from the port's "name unknown → Unavailable" branch, which asks the authority
+    /// nothing, to "name known → measured", which asks and today answers Denied. Both refuse; the honest
+    /// one is the second, because the capability now exists and the actor simply does not hold it.
+    /// </summary>
+    public const string FinanceManualReceiptRecord = "finance.manual-receipt.record";
 
     /// <summary>
     /// Sales order drafts (SALES-API, #321): the Sales owner's names (SalesPermissionManifestV1, same
@@ -137,6 +167,20 @@ public static class ErpPermissions
     /// and an approved draft commits no stock, money or price.
     /// </summary>
     public const string SalesOrdersApprove = "sales.orders.approve";
+
+    /// <summary>
+    /// SALES-P (K3, Sinan #66 5748258299, closing 5745151414): writing a manual unit price or a discount
+    /// on a sales order line, the Sales owner's name (SalesPermissionManifestV1.OrdersPriceWrite, same
+    /// string). A SEPARATE name on purpose: <see cref="SalesDraftsCreate"/> does not confer it, so whoever
+    /// may raise a draft does not thereby set its commercial terms. Registered, not granted: no seeded role
+    /// and no user receives it; who prices is a human gate. Company-wide only, like the other Sales names.
+    /// Not Critical — Critical is the grant-time dual-control set (identity governance and the bank account
+    /// propose/approve pair), and no source makes pricing a segregated duty: no maker≠checker, no approval
+    /// threshold and no second person is decided, and the module validates arithmetic only (scale, unit,
+    /// 0..100) with no minimum price, margin floor or discount ceiling. If Sinan later wants a price grant
+    /// to need two people, Critical is the lever and that is his decision, not one taken here.
+    /// </summary>
+    public const string SalesOrdersPriceWrite = "sales.orders.price.write";
 
     /// <summary>
     /// LOG-4a (Business #66 5737790175: the loading instruction on approved order lines, one stock effect): the
@@ -220,6 +264,7 @@ public static class ErpPermissions
             SalesDraftsCreate,
             SalesDraftsRead,
             SalesOrdersApprove,
+            SalesOrdersPriceWrite,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,
             ManufacturingOrdersCreate,
@@ -247,6 +292,7 @@ public static class ErpPermissions
             FinanceManualReceiptDraftSave,
             FinanceManualReceiptDraftRead,
             FinanceManualReceiptAmountRead,
+            FinanceManualReceiptRecord,
             IdentityProfileRead,
             IdentityAccessRequest,
             IdentityAccessApprove,
@@ -276,6 +322,7 @@ public static class ErpPermissions
             SalesDraftsCreate,
             SalesDraftsRead,
             SalesOrdersApprove,
+            SalesOrdersPriceWrite,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,
             ManufacturingOrdersCreate,
@@ -303,6 +350,7 @@ public static class ErpPermissions
             FinanceManualReceiptDraftSave,
             FinanceManualReceiptDraftRead,
             FinanceManualReceiptAmountRead,
+            FinanceManualReceiptRecord,
             IdentityAuditRead,
         ],
         StringComparer.Ordinal);

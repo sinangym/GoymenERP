@@ -1,3 +1,4 @@
+using System.Globalization;
 using GoymenERP.Modules.Sales.Domain.Quantities;
 
 namespace GoymenERP.Modules.Sales.Domain.Drafts;
@@ -153,8 +154,17 @@ public sealed class SalesOrderDraft
     /// <summary>The approval facts as they stand: nothing until a submission, then who/when, then the decision.</summary>
     public ApprovalFacts Approval { get; private set; } = ApprovalFacts.None;
 
-    /// <summary>Commercial revision; <c>Rev.0</c> on the wire. Independent of <see cref="Version"/> and fixed in this slice (T33).</summary>
-    public int Revision => 0;
+    /// <summary>
+    /// Commercial revision; <c>Rev.N</c> on the wire, independent of <see cref="Version"/>. Born 0; advanced
+    /// ONLY by <see cref="ReviseCommercial"/> on an approved draft (K3, Sinan 5748258299), never by a
+    /// submission, an approval or a rejection.
+    /// </summary>
+    public int Revision { get; private set; }
+
+    private readonly List<ApprovedRevisionSnapshot> archivedRevisions = [];
+
+    /// <summary>The approved revisions this draft has left behind, oldest first; empty until an approved price was changed.</summary>
+    public IReadOnlyList<ApprovedRevisionSnapshot> ArchivedRevisions => archivedRevisions.AsReadOnly();
 
     /// <summary>Whether the lines may still change: only while the draft is being prepared or was rejected (DEC-SAL-002).</summary>
     public bool LinesAreOpen => ApprovalState is InternalApprovalState.Preparing or InternalApprovalState.Rejected;
@@ -254,11 +264,7 @@ public sealed class SalesOrderDraft
         var quantity = RequireQuantity(input.Quantity, input.OrderUnit);
         RequireQuantityText(input.QuantityText, input.Quantity);
         var commercial = input.Commercial ?? CommercialDraftFields.None;
-        if ((commercial.UnitPrice is null) != (commercial.PriceUnitId is null))
-        {
-            throw new SalesRuleException(SalesRuleCodes.PriceUnitPairing,
-                "Birim fiyat kendi fiyat birimini ister; fiyat birimi fiyatsız verilemez.");
-        }
+        RequireCommercial(commercial, input.Product);
 
         var slices = RequireSlices(input.RequestedDeliverySlices, input.OrderUnit, quantity);
         var line = new SalesOrderDraftLine(input.LineId, lines.Count + 1, input.Product, input.OrderUnit, quantity,
@@ -266,6 +272,84 @@ public sealed class SalesOrderDraft
         lines.Add(line);
         Touch(now);
         return line;
+    }
+
+    // ---- manual price and discount (K3, Sinan 5748258299) ------------------------------------------
+
+    /// <summary>
+    /// The commercial fields of a line, validated for mathematical validity ONLY (K3): a unit price is
+    /// exact text with at most the approved money profile's decimals (Ö2: never rounded), zero or more
+    /// (a zero price is an explicit price; refusing it would invent a minimum), and comes with a price
+    /// unit that is one of the product owner's three unit bindings; a discount is a percentage in
+    /// 0..100, kept as text, and needs a price to apply to. No minimum price, margin floor or maximum
+    /// discount threshold exists before a price list, and none is invented here. Null stays null:
+    /// an un-priced line is not free and not zero. Nothing is computed from these values in this slice.
+    /// Who may WRITE them is the caller's fence (the separate price-write permission), never this class.
+    /// </summary>
+    private void RequireCommercial(CommercialDraftFields commercial, ProductSnapshot product)
+    {
+        if ((commercial.UnitPrice is null) != (commercial.PriceUnitId is null))
+        {
+            throw new SalesRuleException(SalesRuleCodes.PriceUnitPairing,
+                "Birim fiyat kendi fiyat birimini ister; fiyat birimi fiyatsız verilemez.");
+        }
+
+        if (commercial.UnitPrice is { } price)
+        {
+            if (DecimalPlaces(price) > Money.Scale)
+            {
+                throw new SalesRuleException(SalesRuleCodes.PriceScaleExceeded,
+                    $"Birim fiyat en fazla {Money.Scale} ondalık taşıyabilir; fazlası yuvarlanmaz, reddedilir.");
+            }
+
+            var priceUnit = commercial.PriceUnitId!.Value;
+            if (priceUnit != product.StockUnit.UnitId && priceUnit != product.SalesUnit.UnitId && priceUnit != product.OrderUnit.UnitId)
+            {
+                throw new SalesRuleException(SalesRuleCodes.PriceUnitUnsupported,
+                    "Fiyat birimi, ürün sahibinin stok, satış ya da sipariş birimlerinden biri olmalıdır; Sales birim uydurmaz.");
+            }
+        }
+
+        if (commercial.DiscountPercent is { } discount)
+        {
+            if (commercial.UnitPrice is null)
+            {
+                throw new SalesRuleException(SalesRuleCodes.DiscountWithoutPrice,
+                    "İskonto uygulanacak bir birim fiyat olmadan verilemez.");
+            }
+
+            if (!IsPercent(discount))
+            {
+                throw new SalesRuleException(SalesRuleCodes.DiscountOutOfRange,
+                    "İskonto yüzdesi 0 ile 100 arasında olmalıdır.");
+            }
+        }
+    }
+
+    /// <summary>The decimals of a plain decimal text ("12.50" → 2, "12" → 0); the wire has already required the shape.</summary>
+    public static int DecimalPlaces(string text)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(text);
+        var point = text.IndexOf('.', StringComparison.Ordinal);
+        return point < 0 ? 0 : text.Length - point - 1;
+    }
+
+    /// <summary>
+    /// Whether a plain decimal text is within 0..100, decided lexically: more than three integer digits
+    /// (leading zeros aside) is out of range before any conversion, so no text can overflow a decimal.
+    /// </summary>
+    public static bool IsPercent(string text)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(text);
+        var point = text.IndexOf('.', StringComparison.Ordinal);
+        var integerPart = (point < 0 ? text : text[..point]).TrimStart('0');
+        if (integerPart.Length > 3)
+        {
+            return false;
+        }
+
+        return decimal.TryParse(text, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var value)
+            && value >= 0m && value <= 100m;
     }
 
     /// <summary>A draft is stored only with at least one line (#257: 1–500 lines).</summary>
@@ -346,6 +430,140 @@ public sealed class SalesOrderDraft
         Touch(now);
     }
 
+    // ---- commercial revision (K3 Head B, Sinan 5748258299) --------------------------------------
+
+    /// <summary>
+    /// Replaces the commercial fields (unit price, price unit, discount) of EVERY line — each current line
+    /// named exactly once, no other — under the caller's price-write fence. From <c>Preparing</c> or
+    /// <c>Rejected</c> the fields simply change (nothing approved is touched; the revision number stays).
+    /// From <c>Approved</c> the approved revision is archived FIRST — its approval facts, money profile and
+    /// every line's values as they were — and only then does the draft advance to the next revision, back
+    /// to <c>Preparing</c> with no approval facts: a changed price re-enters approval, and the previous
+    /// approved snapshot is never deleted. From <c>PendingApproval</c> it is refused: the pending decision
+    /// is made first (ASSUMPTION-SALESP-3). A revision that changes no value is refused: an approval is
+    /// never discarded for nothing (ASSUMPTION-SALESP-5) — the SAME command resent under the same key is
+    /// the caller's replay, decided before this method runs, never this refusal. Returns the archived
+    /// snapshot when one was made (the store persists it in the same save as the draft), else null.
+    /// </summary>
+    public ApprovedRevisionSnapshot? ReviseCommercial(long expectedVersion, IReadOnlyList<LineCommercialInput> inputs, string actorId,
+        DateTimeOffset now)
+    {
+        RequireVersion(expectedVersion);
+        var actor = RequireActor(actorId);
+        ArgumentNullException.ThrowIfNull(inputs);
+        // Not RequireDraft(): that guard closes the lines of an approved draft (DEC-SAL-002), and THIS command is the
+        // revision that decision points to. Only the lifecycle state is required here; the approval axis is decided below.
+        if (State != SalesDraftState.Draft)
+        {
+            throw new SalesRuleException(SalesRuleCodes.DraftNotDraft, "Yalnız taslak değiştirilebilir.");
+        }
+
+        if (ApprovalState == InternalApprovalState.PendingApproval)
+        {
+            throw StateConflict("Onay bekleyen taslağın fiyatı değiştirilmez; önce karar verilir.");
+        }
+
+        // Every current line exactly once, nothing else: the revision is of the whole commercial surface.
+        if (inputs.Count != lines.Count || inputs.Select(input => input.LineId).Distinct().Count() != inputs.Count
+            || inputs.Any(input => lines.All(line => line.Id != input.LineId)))
+        {
+            throw new SalesRuleException(SalesRuleCodes.RevisionLinesMismatch,
+                "Fiyat revizyonu taslağın her satırını tam bir kez adlandırır; başka satır adlandıramaz.");
+        }
+
+        var replacements = new List<(SalesOrderDraftLine Line, CommercialDraftFields Fields)>(inputs.Count);
+        foreach (var input in inputs)
+        {
+            var line = lines.Single(candidate => candidate.Id == input.LineId);
+            var fields = input.Commercial ?? CommercialDraftFields.None;
+            try
+            {
+                RequireCommercial(fields, line.Product);
+            }
+            catch (SalesRuleException exception)
+            {
+                // The same rule, now naming the line it is about (the caller answers lines[i].<field>).
+                throw new SalesRuleException(exception.Code, exception.Message, line.Id);
+            }
+
+            replacements.Add((line, fields));
+        }
+
+        if (replacements.All(pair => pair.Line.Commercial == pair.Fields))
+        {
+            throw new SalesRuleException(SalesRuleCodes.RevisionNoChange,
+                "Fiyat revizyonu hiçbir değeri değiştirmiyor; onay boşuna düşürülmez.");
+        }
+
+        ApprovedRevisionSnapshot? archived = null;
+        if (ApprovalState == InternalApprovalState.Approved)
+        {
+            // The approved revision as it stands, archived BEFORE anything of it changes.
+            archived = new ApprovedRevisionSnapshot(Revision, Approval, Money.ProfileId, Money.ProfileVersion, Money.Scale,
+                now.ToUniversalTime(), actor,
+                [.. lines.Select(line => new RevisionLineSnapshot(line.Id, line.LineNo, line.Product.ProductId, line.Product.ProductVersion,
+                    line.OrderUnit.UnitId, line.QuantityText, line.Commercial))]);
+            archivedRevisions.Add(archived);
+            Revision += 1;
+            ApprovalState = InternalApprovalState.Preparing;
+            Approval = ApprovalFacts.None;
+        }
+
+        foreach (var (line, fields) in replacements)
+        {
+            line.ReplaceCommercial(fields);
+        }
+
+        Touch(now);
+        return archived;
+    }
+
+    /// <summary>The store's rebuild of the stored revision number (no transition; a negative number is refused).</summary>
+    public void RestoreRevision(int revision)
+    {
+        if (revision < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(revision), "Revizyon numarası negatif olamaz.");
+        }
+
+        RequireApprovalNotRestored();
+        Revision = revision;
+    }
+
+    /// <summary>
+    /// FİNANS (#374 review, P3): the approval restore's version floor and its history check read the archived count,
+    /// so the revision number and the archived history must be restored BEFORE the approval axis. The store calls
+    /// in that order; this makes the order an invariant rather than a convention — restored the other way round,
+    /// the floor would drop to the lines' version and a wrong stored version would clear it with no symptom.
+    /// </summary>
+    private void RequireApprovalNotRestored()
+    {
+        if (approvalRestored)
+        {
+            throw new InvalidOperationException("Revizyon numarası ve arşivlenmiş revizyonlar onay ekseninden ÖNCE geri yüklenir.");
+        }
+    }
+
+    /// <summary>
+    /// The store's rebuild of one archived approved revision. Each must be older than the current revision
+    /// and appended in ascending order without a gap or a repeat; a stored history that does not fit is
+    /// refused, not repaired.
+    /// </summary>
+    public void RestoreArchivedRevision(ApprovedRevisionSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        RequireApprovalNotRestored();
+        var expected = archivedRevisions.Count == 0 ? 0 : archivedRevisions[^1].Revision + 1;
+        if (snapshot.Revision != expected || snapshot.Revision >= Revision
+            || snapshot.Approval.DecidedBy is null || snapshot.Approval.DecidedAtUtc is null || snapshot.Approval.RejectionReason is not null
+            || snapshot.Lines.Count == 0 || string.IsNullOrWhiteSpace(snapshot.ArchivedBy))
+        {
+            throw new InvalidOperationException("Kayıtlı revizyon geçmişi taslakla uyuşmuyor.");
+        }
+
+        archivedRevisions.Add(snapshot);
+    }
+
     /// <summary>
     /// The store's rebuild of a stored draft: after the lines were added again through the domain,
     /// the stored approval axis is restored as it was, without a transition. The facts must fit the
@@ -384,21 +602,41 @@ public sealed class SalesOrderDraft
             throw new InvalidOperationException("Kayıtlı onay olguları kayıtlı onay durumuyla uyuşmuyor.");
         }
 
-        // A draft that never left Preparing has had no transition: its stored version must be EXACTLY the
-        // one the lines account for (a version raised outside the application does not restore silently,
-        // ÜRÜN #338 P3-1). A submitted draft has had at least one transition, a decided one at least two.
+        // The lines' version is a FLOOR the transitions raise: a submitted draft has had at least one, a decided
+        // one at least two — and (K3 Head B) every archived approved revision carried its own submission, its
+        // approval and the commercial write that archived it, three steps each, restored just before this call.
+        // ÜRÜN #338 P3-1 pinned the Preparing case as EXACT ("a version raised outside the application does not
+        // restore silently"), which held while nothing but the approval axis moved a Preparing draft. K3 made a
+        // commercial write on a Preparing or Rejected draft a legitimate step (ReviseCommercial → Touch) that no
+        // stored fact counts, so a Preparing draft may sit above its lines' version by those writes. WHAT IS LOST:
+        // the exact check can no longer distinguish a version raised outside the application from a legitimate
+        // commercial write on a Preparing draft — K3 made the latter a movement with no stored counter. The check
+        // is therefore the same floor as the other states, declared here, in the flipped unit row and in the PR.
+        // Exactness would need a persisted commercial-write counter on the header (schema, migration, pins, its
+        // own real-SQL evidence) — a later slice owned by SİPARİŞ (the Sales lane), not this one.
         var minimumTransitions = state switch
         {
             InternalApprovalState.Preparing => 0,
             InternalApprovalState.PendingApproval => 1,
             _ => 2,
         };
-        var consistentVersion = state == InternalApprovalState.Preparing
-            ? storedVersion == Version
-            : storedVersion >= Version + minimumTransitions;
+        var archivedTransitions = checked(3L * archivedRevisions.Count);
+        var consistentVersion = storedVersion >= checked(Version + minimumTransitions + archivedTransitions);
         if (!consistentVersion)
         {
             throw new InvalidOperationException("Kayıtlı sürüm, satırların ve onay geçişlerinin hesabıyla uyuşmuyor.");
+        }
+
+        // ORG (#374 P3): the read layer's declared job is to refuse, not repair — and it checked only half of the
+        // history invariant. RestoreArchivedRevision pins the LOWER bound (contiguous from 0, each below Revision,
+        // so Revision >= count); nothing pinned the UPPER one, so a stored header at Revision 3 beside ONE archived
+        // row restored silently with a short history — a list missing a row reads like a correct list. The store
+        // loads every archive row of the draft (no paging, no filter, single and list paths alike), so on every
+        // legitimate restore Revision == archived count: the premise the migration's Down rests on ("a header above
+        // Revision 0 exists only beside an archived row"), now held on the read path as the write path measures it.
+        if (Revision != archivedRevisions.Count)
+        {
+            throw new InvalidOperationException("Kayıtlı revizyon numarası arşivlenmiş revizyon sayısıyla uyuşmuyor.");
         }
 
         ApprovalState = state;

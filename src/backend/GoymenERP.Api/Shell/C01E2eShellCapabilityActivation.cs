@@ -103,28 +103,28 @@ internal static class C01E2eShellCapabilityActivation
     [
         (Type.EmptyTypes, ShellCapabilityRegistryAuthorities.CounterpartyListCreateLinkAndDetailV15),
         (new[] { typeof(OrganizationShellCapabilityProvider) },
-            ShellCapabilityRegistryAuthorities.CounterpartyV15AndOrganizationV10),
+            ShellCapabilityRegistryAuthorities.CounterpartyV15AndOrganizationV11),
         (new[] { typeof(OrganizationShellCapabilityProvider), typeof(ProductShellCapabilityProvider) },
-            ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV10AndProductV10),
+            ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV11AndProductV10),
         (new[]
             {
                 typeof(OrganizationShellCapabilityProvider), typeof(ProductShellCapabilityProvider),
                 typeof(SalesShellCapabilityProvider),
             },
-            ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV10ProductV10AndPublishedSalesV10),
+            ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV11ProductV10AndPublishedSalesV10),
         (new[]
             {
                 typeof(OrganizationShellCapabilityProvider), typeof(ProductShellCapabilityProvider),
                 typeof(SalesShellCapabilityProvider), typeof(FinanceShellCapabilityProvider),
             },
-            ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV10ProductV10PublishedSalesV10AndPublishedFinanceV10),
+            ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV11ProductV10PublishedSalesV10AndPublishedFinanceV10),
         (new[]
             {
                 typeof(OrganizationShellCapabilityProvider), typeof(ProductShellCapabilityProvider),
                 typeof(SalesShellCapabilityProvider), typeof(FinanceShellCapabilityProvider),
                 typeof(ManufacturingShellCapabilityProvider),
             },
-            ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV10ProductV10PublishedSalesV10PublishedFinanceV10AndPublishedManufacturingV10),
+            ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV11ProductV10PublishedSalesV10PublishedFinanceV10AndPublishedManufacturingV10),
         // LOG-4a: Logistics's (staged) loading-instruction screens join the host set.
         (new[]
             {
@@ -132,7 +132,7 @@ internal static class C01E2eShellCapabilityActivation
                 typeof(SalesShellCapabilityProvider), typeof(FinanceShellCapabilityProvider),
                 typeof(ManufacturingShellCapabilityProvider), typeof(LogisticsShellCapabilityProvider),
             },
-            ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV10ProductV10PublishedSalesV10PublishedFinanceV10PublishedManufacturingV10AndLogisticsV10),
+            ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV11ProductV10PublishedSalesV10PublishedFinanceV10PublishedManufacturingV10AndLogisticsV10),
         // PUR-4a: Purchasing's (staged) order screens join the host set.
         (new[]
             {
@@ -141,7 +141,7 @@ internal static class C01E2eShellCapabilityActivation
                 typeof(ManufacturingShellCapabilityProvider), typeof(LogisticsShellCapabilityProvider),
                 typeof(PurchasingShellCapabilityProvider),
             },
-            ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV10ProductV10PublishedSalesV10PublishedFinanceV10PublishedManufacturingV10LogisticsV10AndPurchasingV10),
+            ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV11ProductV10PublishedSalesV10PublishedFinanceV10PublishedManufacturingV10LogisticsV10AndPurchasingV10),
         // ACC-V0b: Accounting's (staged) period, journal and posting-queue screens join the host set.
         (new[]
             {
@@ -150,7 +150,7 @@ internal static class C01E2eShellCapabilityActivation
                 typeof(ManufacturingShellCapabilityProvider), typeof(LogisticsShellCapabilityProvider),
                 typeof(PurchasingShellCapabilityProvider), typeof(AccountingShellCapabilityProvider),
             },
-            ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV10ProductV10PublishedSalesV10PublishedFinanceV10PublishedManufacturingV10LogisticsV10PurchasingV10AndAccountingV10),
+            ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV11ProductV10PublishedSalesV10PublishedFinanceV10PublishedManufacturingV10LogisticsV10PurchasingV10AndAccountingV10),
     ];
 
     private static string NormalAuthority(IServiceCollection services)

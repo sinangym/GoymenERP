@@ -7,6 +7,7 @@ using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Sales.Domain.Drafts;
 using GoymenERP.Modules.Sales.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 
@@ -31,6 +32,7 @@ public sealed class SalesPersistenceModelTests
         foreach (var type in new[]
                  {
                      typeof(DraftNumberRow), typeof(DraftRow), typeof(DraftLineRow), typeof(DraftDeliverySliceRow), typeof(DraftAttemptRow),
+                     typeof(DraftRevisionRow), typeof(DraftRevisionLineRow),
                  })
         {
             var entity = context.Model.FindEntityType(type)!;
@@ -131,6 +133,9 @@ public sealed class SalesPersistenceModelTests
     [InlineData("edit-slice")]
     [InlineData("edit-attempt")]
     [InlineData("edit-counter-company")]
+    [InlineData("edit-revision")]
+    [InlineData("delete-revision")]
+    [InlineData("edit-revision-line")]
     public void Drafts_lines_slices_and_attempts_never_change_and_nothing_is_deleted(string fault)
     {
         using var context = Context();
@@ -154,12 +159,56 @@ public sealed class SalesPersistenceModelTests
             case "edit-attempt":
                 Attach(context, Attempt()).RequestHash = new string('1', 64);
                 break;
+            case "edit-revision":
+                Attach(context, Revision()).ApprovedBy = "someone-else";
+                break;
+            case "delete-revision":
+                context.DraftRevisions.Remove(Attach(context, Revision()));
+                break;
+            case "edit-revision-line":
+                Attach(context, RevisionLine()).UnitPrice = "1";
+                break;
             default:
                 Attach(context, new DraftNumberRow { CompanyId = CompanyA, Next = 2, Version = 1, UpdatedAtUtc = At }).CompanyId = CompanyB;
                 break;
         }
 
         Assert.Throws<InvalidOperationException>(() => context.SaveChanges());
+    }
+
+    /// <summary>
+    /// K3 Head B — the DELIBERATE narrowing of "lines never change": ONLY the three commercial columns of a line
+    /// and the header's revision number pass the write guard (a commercial revision changes them); the guard is what
+    /// would have refused them before this head, so the cases above (quantity, header, slices, attempts, history)
+    /// stay refused and these reach the provider pipeline. "Reached" is MEASURED by the context's sentinel interceptor
+    /// (<see cref="GuardPassedException"/>): it fires only after the guard let the save through and before any
+    /// connection. The provider itself is never a witness here — its connection failure differs by platform (a plain
+    /// SqlException on Windows, EF's transient-failure InvalidOperationException on Linux), which is exactly what a
+    /// type-based "anything but the guard's exception" assertion could not tell apart.
+    /// </summary>
+    [Theory]
+    [InlineData("line-price")]
+    [InlineData("line-discount")]
+    [InlineData("header-revision")]
+    public void Only_a_lines_commercial_columns_and_the_headers_revision_pass_the_write_guard(string change)
+    {
+        using var context = Context();
+        switch (change)
+        {
+            case "line-price":
+                var line = Attach(context, Line());
+                line.UnitPrice = "12.50";
+                line.PriceUnitId = Guid.NewGuid();
+                break;
+            case "line-discount":
+                Attach(context, Line()).DiscountPercent = "5";
+                break;
+            default:
+                Attach(context, Draft()).Revision = 1;
+                break;
+        }
+
+        Assert.Throws<GuardPassedException>(() => context.SaveChanges());
     }
 
     [Fact]
@@ -273,6 +322,18 @@ public sealed class SalesPersistenceModelTests
         Quantity = 1m, QuantityText = "1", RequestedDeliveryDate = new DateOnly(2026, 9, 25),
     };
 
+    private static DraftRevisionRow Revision() => new()
+    {
+        CompanyId = CompanyA, DraftId = Guid.NewGuid(), Revision = 0, SubmittedBy = "prep", SubmittedAtUtc = At, ApprovedBy = "mgr", ApprovedAtUtc = At,
+        MoneyProfileId = Guid.NewGuid(), MoneyProfileVersion = "3", MoneyScale = 2, ArchivedAtUtc = At, ArchivedBy = "pricer", CorrelationId = "synthetic-correlation",
+    };
+
+    private static DraftRevisionLineRow RevisionLine() => new()
+    {
+        CompanyId = CompanyA, DraftId = Guid.NewGuid(), Revision = 0, LineNo = 1, LineId = Guid.NewGuid(), ProductId = Guid.NewGuid(), ProductVersion = "7",
+        OrderUnitId = Guid.NewGuid(), QuantityText = "1", UnitPrice = "12.50", PriceUnitId = Guid.NewGuid(), DiscountPercent = null,
+    };
+
     private static DraftAttemptRow Attempt() => new()
     {
         CompanyId = CompanyA, CommandName = SalesDraftCommands.CreateV1, IdempotencyKeyHash = new string('A', 64),
@@ -291,9 +352,28 @@ public sealed class SalesPersistenceModelTests
 
         var options = new DbContextOptionsBuilder<SalesDbContext>()
             .UseSqlServer("Server=unused.invalid;Database=unused;Connect Timeout=1;")
+            .AddInterceptors(new GuardPassedInterceptor())
             .Options;
         var context = new SalesDbContext(options, company);
         Companies[context] = company;
         return context;
+    }
+
+    /// <summary>
+    /// Thrown the moment a save reaches the provider pipeline — AFTER the context's write guard passed (it runs before
+    /// <c>base.SaveChanges</c>) and BEFORE any connection is opened. A guard refusal (InvalidOperationException) never
+    /// reaches it, so the two theories above are told apart by type on every platform: a refusal that leaked through
+    /// surfaces as this sentinel, never as the refusal's own type.
+    /// </summary>
+    private sealed class GuardPassedException() : Exception("the Sales write guard passed; the provider pipeline was reached");
+
+    private sealed class GuardPassedInterceptor : SaveChangesInterceptor
+    {
+        public override InterceptionResult<int> SavingChanges(DbContextEventData eventData, InterceptionResult<int> result)
+            => throw new GuardPassedException();
+
+        public override ValueTask<InterceptionResult<int>> SavingChangesAsync(DbContextEventData eventData, InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+            => throw new GuardPassedException();
     }
 }

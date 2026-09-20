@@ -7,7 +7,7 @@
  * decoded object, never from a localized `title`/`detail` the server sent.
  */
 
-import { SITE_TYPE } from './contract'
+import { SITE_TYPE, WORK_CENTER_KIND } from './contract'
 import type { CommandFailure, CommandUnknown } from './commandApi'
 
 /**
@@ -24,6 +24,44 @@ const SITE_TYPE_LABEL: Record<string, string> = {
 export function siteTypeLabel(type: string): string {
   return SITE_TYPE_LABEL[type] ?? type
 }
+
+/**
+ * `WorkCenterKind` tokens as they reach the wire. These are LABELS ONLY — the token is
+ * never parsed for business meaning, and no capacity, routing or costing rule may be
+ * derived from it here (that belongs to the backend calculator, not a screen).
+ *
+ * An unknown token is shown VERBATIM, exactly as `siteTypeLabel` does: a kind the
+ * backend added is a fact about the data, and inventing a Turkish label for it would be
+ * inventing meaning. Showing the raw token is also what makes the gap visible to whoever
+ * must add the label.
+ */
+const WORK_CENTER_KIND_LABEL: Record<string, string> = {
+  [WORK_CENTER_KIND.paint]: 'Boyama',
+  [WORK_CENTER_KIND.tubeProfile]: 'Boru/Profil',
+  [WORK_CENTER_KIND.slitting]: 'Dilme',
+  [WORK_CENTER_KIND.coldRolling]: 'Soğuk haddeleme',
+  [WORK_CENTER_KIND.cutToLength]: 'Boy kesme',
+}
+
+export function workCenterKindLabel(kind: string): string {
+  return WORK_CENTER_KIND_LABEL[kind] ?? kind
+}
+
+export const WORK_CENTERS_HEADING = 'İş Merkezleri'
+export const WORK_CENTERS_LEAD =
+  'Bu şirket bağlamındaki iş merkezleri. Bir iş merkezinin bulunduğu lokasyonun kartını ' +
+  'açmak için lokasyon bağlantısına tıklayın.'
+
+/**
+ * Shown in place of the link when the server says this caller may not open the row's
+ * location card. It states the SCOPE, not a failure: the row itself is legitimately
+ * visible, only its location card is out of reach.
+ *
+ * It must never read as an error and must never invite a retry — there is nothing to
+ * retry. `canOpenLocationDetail` is the server's own answer, and the screen renders it
+ * rather than probing the card to find out.
+ */
+export const LOCATION_NOT_OPENABLE = 'Lokasyon kartı bu yetkiyle açılamıyor'
 
 export const ACTIVE_LABEL = 'Aktif'
 export const PASSIVE_LABEL = 'Pasif'

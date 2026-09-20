@@ -202,6 +202,9 @@ public sealed partial class OpenApiContractGenerationTests
         new("post", "/api/v1/finance/manual-receipts/drafts", "SaveFinanceManualReceiptDraftV1",
             AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json", "400:application/problem+json", "415:", "503:application/problem+json"),
             "#/components/schemas/DraftSaveRequest"),
+        new("post", "/api/v1/finance/manual-receipts/{sourceId}/record", "RecordFinanceManualReceiptV1",
+            AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json", "400:application/problem+json", "415:", "503:application/problem+json"),
+            "#/components/schemas/RecordRequest", ["path:sourceId:true:type:string;format:uuid"]),
         new("get", "/api/v1/finance/manual-receipts", "GetFinanceManualReceiptsV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["query:cursor:false:type:string"]),
@@ -364,6 +367,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["DeclareManufacturingOutputV1"] = "ref:OrderViewV1",
             ["GetManufacturingOrderV1"] = "ref:OrderViewV1",
             ["SaveFinanceManualReceiptDraftV1"] = "ref:CommandResult",
+            ["RecordFinanceManualReceiptV1"] = "ref:CommandResult",
             ["GetFinanceManualReceiptsV1"] = "ref:SourcePage",
             ["GetFinanceManualReceiptV1"] = "ref:SourceDetail",
             ["GetFinanceBankAccountsV1"] = "ref:BankAccountPage",
@@ -438,6 +442,7 @@ public sealed partial class OpenApiContractGenerationTests
         "DeclareManufacturingOutputV1",
         "GetManufacturingOrderV1",
         "SaveFinanceManualReceiptDraftV1",
+        "RecordFinanceManualReceiptV1",
         "GetFinanceManualReceiptsV1",
         "GetFinanceManualReceiptV1",
         "GetFinanceBankAccountsV1",
@@ -503,6 +508,7 @@ public sealed partial class OpenApiContractGenerationTests
         "RecordManufacturingWorkInProgressV1",
         "DeclareManufacturingOutputV1",
         "SaveFinanceManualReceiptDraftV1",
+        "RecordFinanceManualReceiptV1",
         "CreateSalesOrderDraftV1",
         "SubmitSalesOrderDraftV1",
         "ApproveSalesOrderDraftV1",
@@ -559,6 +565,12 @@ public sealed partial class OpenApiContractGenerationTests
                 [
                     StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity,
                 ],
+                // FIN-T05: Record replays the same three — the recorded terminal refusals as well as
+                // the success, so a retried key never records a second money event (ADR-011 §7).
+                ["RecordFinanceManualReceiptV1"] =
+                [
+                    StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity,
+                ],
                 ["CreateSalesOrderDraftV1"] = [StatusCodes.Status201Created, StatusCodes.Status409Conflict],
                 ["SubmitSalesOrderDraftV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["ApproveSalesOrderDraftV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
@@ -601,6 +613,7 @@ public sealed partial class OpenApiContractGenerationTests
         "RecordManufacturingWorkInProgressV1",
         "DeclareManufacturingOutputV1",
         "SaveFinanceManualReceiptDraftV1",
+        "RecordFinanceManualReceiptV1",
         "GetFinanceManualReceiptsV1",
         "GetFinanceManualReceiptV1",
         "GetFinanceBankAccountsV1",
@@ -684,6 +697,7 @@ public sealed partial class OpenApiContractGenerationTests
         "RecordManufacturingWorkInProgressV1:400",
         "DeclareManufacturingOutputV1:400",
         "SaveFinanceManualReceiptDraftV1:400",
+        "RecordFinanceManualReceiptV1:400",
         "GetFinanceManualReceiptsV1:400",
         "GetFinanceManualReceiptV1:400",
         "GetFinanceBankAccountsV1:400",
@@ -1155,10 +1169,28 @@ public sealed partial class OpenApiContractGenerationTests
                     ["companyId", "items"],
                     ("companyId", "type:string;format:uuid"),
                     ("items", "type:array;items:ref:BankAccountCurrencyCandidate")),
+                // K2: the card travels on the MASTER item and nowhere else. BankAccountView — the flat
+                // read the receipt path uses — does not carry it, and that is enforced by the type
+                // system rather than by a filter: FİNANS's first attempt to read the card through the
+                // flat view failed to compile (CS1061). A field that travels unnecessarily is a field
+                // that leaks, so its absence there is the design, not an omission.
                 ["BankAccountMasterItem"] = ObjectSchema(
-                    ["account", "isOwnProposal"],
+                    ["account", "isOwnProposal", "card"],
                     ("account", "ref:BankAccountView"),
-                    ("isOwnProposal", "type:boolean")),
+                    ("isOwnProposal", "type:boolean"),
+                    ("card", "ref:BankAccountCard")),
+                // All six are REQUIRED on the wire while four are nullable, and the pair is the point:
+                // required means the property is always present, nullable means its value may be absent.
+                // A pre-K2 account has no branch, IBAN or account number, and the schema says so in
+                // types instead of leaving the client to infer it from a missing key.
+                ["BankAccountCard"] = ObjectSchema(
+                    ["bankName", "accountType", "branchName", "branchCode", "iban", "accountNumber"],
+                    ("bankName", "type:string"),
+                    ("accountType", "type:string"),
+                    ("branchName", "type:null|string"),
+                    ("branchCode", "type:null|string"),
+                    ("iban", "type:null|string"),
+                    ("accountNumber", "type:null|string")),
                 ["BankAccountMasterPage"] = ObjectSchema(
                     ["companyId", "items"],
                     ("companyId", "type:string;format:uuid"),
@@ -1658,14 +1690,18 @@ public sealed partial class OpenApiContractGenerationTests
                     ("name", "type:string"),
                     ("type", "type:string"),
                     ("isActive", "type:boolean")),
+                // ORG-03: canOpenLocationDetail is REQUIRED and boolean on purpose — the client must not
+                // have to treat "absent" as either answer, because the field is the server's statement
+                // about authorization and a default would be the client deciding one.
                 ["WorkCenterSummary"] = ObjectSchema(
-                    ["id", "locationId", "code", "name", "kind", "isActive"],
+                    ["id", "locationId", "code", "name", "kind", "isActive", "canOpenLocationDetail"],
                     ("id", "type:string;format:uuid"),
                     ("locationId", "type:string;format:uuid"),
                     ("code", "type:string"),
                     ("name", "type:string"),
                     ("kind", "type:string"),
-                    ("isActive", "type:boolean")),
+                    ("isActive", "type:boolean"),
+                    ("canOpenLocationDetail", "type:boolean")),
             };
 
     private static readonly IReadOnlyDictionary<string, ComponentSchemaExpectation>
@@ -1753,10 +1789,20 @@ public sealed partial class OpenApiContractGenerationTests
                 ["BankAccountApprovalBody"] = ObjectSchema(
                     ["expectedVersion"],
                     ("expectedVersion", "type:string")),
+                // K2: bankName and accountType join displayName and currencyId as REQUIRED on the
+                // proposal, which is where the mandatory pair is enforced — the columns are nullable
+                // because pre-K2 rows have no value, so the rule binds new cards rather than assigning
+                // a meaning to old NULLs (#66 5748390243 is still open).
                 ["BankAccountProposeRequest"] = ObjectSchema(
-                    ["displayName", "currencyId"],
+                    ["displayName", "currencyId", "bankName", "accountType"],
                     ("displayName", "type:string"),
-                    ("currencyId", "type:string;format:uuid")),
+                    ("currencyId", "type:string;format:uuid"),
+                    ("bankName", "type:string"),
+                    ("accountType", "type:string"),
+                    ("branchName", "type:null|string"),
+                    ("branchCode", "type:null|string"),
+                    ("iban", "type:null|string"),
+                    ("accountNumber", "type:null|string")),
                 ["CreateSalesOrderDraftRequest"] = ObjectSchema(
                     ["kind", "partyId", "companyAccountId", "businessDate", "currencyId", "lines"],
                     ("kind", "type:string"),
@@ -1806,6 +1852,13 @@ public sealed partial class OpenApiContractGenerationTests
                     ("valueOn", "type:null|string;format:date"),
                     ("bankReference", "type:null|string"),
                     ("description", "type:null|string")),
+                // FIN-T05: Record names the draft it makes definitive and the version it expects.
+                // Neither property is nullable, unlike DraftSaveRequest's — a save may create, a
+                // record may only act on something that already exists at a known version.
+                ["RecordRequest"] = ObjectSchema(
+                    ["draftId", "expectedVersion"],
+                    ("draftId", "type:string;format:uuid"),
+                    ("expectedVersion", "type:string")),
                 ["ApprovePlanRequestV1"] = ObjectSchema(
                     ["expectedVersion"],
                     ("expectedVersion", "type:integer|string;format:int64")),
@@ -2436,9 +2489,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(83, operations.Count);
+        Assert.Equal(84, operations.Count);
         Assert.Equal(
-            83,
+            84,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());

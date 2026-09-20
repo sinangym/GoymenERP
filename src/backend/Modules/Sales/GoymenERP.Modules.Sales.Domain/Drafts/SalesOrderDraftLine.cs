@@ -67,7 +67,11 @@ public sealed class SalesOrderDraftLine
 
     public string? Note { get; }
 
-    public CommercialDraftFields Commercial { get; }
+    public CommercialDraftFields Commercial { get; private set; }
+
+    /// <summary>The aggregate's commercial revision replaces the fields; the rules were applied by the aggregate first.</summary>
+    internal void ReplaceCommercial(CommercialDraftFields commercial) =>
+        Commercial = commercial ?? throw new ArgumentNullException(nameof(commercial));
 
     /// <summary>The requested delivery plan; empty means no slices planned, which is not a delivery.</summary>
     public IReadOnlyList<DeliverySlice> RequestedDeliverySlices => slices.AsReadOnly();

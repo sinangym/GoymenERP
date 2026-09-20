@@ -6,6 +6,10 @@ using System.Text.Json;
 using GoymenERP.Api.Endpoints;
 using GoymenERP.Api.Security;
 using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
+using GoymenERP.Modules.Sales.Application;
+using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
 using GoymenERP.Modules.Identity.Domain.Assignments;
@@ -374,6 +378,168 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
     /// ÜRÜN #338 P3-2: the approval migration's Down is a forward fix while any draft has left Preparing —
     /// THROW 51045 (the module rule of 51041–51044), the history unchanged, the facts untouched.
     /// </summary>
+    /// <summary>
+    /// K3 Head B (Sinan 5748258299): the real-SQL success path of an AUTHORISED price write — the item Head A (#370)
+    /// carried. Through the SERVICE over the real store, with a recording authority that grants ONLY the separate price
+    /// name at runtime to an actor who never held the create name, on a draft created, submitted and approved without
+    /// it: (1) the authority is ASKED, with that name and this company, and answered yes — pinned apart from the outcome;
+    /// (2) the approved revision's rows are written FIRST and beside the header's advance in ONE save, and the OLD price
+    /// stays in <c>sales.DraftRevisionLines</c> as the exact text "12.50" — the decision measured, not a row's presence;
+    /// (3) every money text is read back as TEXT (Ö2); (4) the same key replays, a different key with the same values is
+    /// the refusal, and an actor holding create/read/approve but NOT the price name is 403 with nothing changed. The same
+    /// through the HTTP route waits on the central host adapters (queued behind CARİ's next head).
+    /// </summary>
+    [SqlServerFact]
+    public async Task An_approved_drafts_price_change_archives_the_approved_revision_and_advances_it_in_one_save_on_real_sql()
+    {
+        await using var run = await Run.StartAsync();
+        var owners = Owners.For(CompanyA);
+        SalesOrderDraft draft;
+        Guid lineId;
+        await using (var a = run.Store(CompanyA))
+        {
+            draft = (await a.Store.StoreDraftAsync(run.Envelope("k-create"), Hash("payload-1"), documentNo => PricedDraft(owners, documentNo, T0))).Draft;
+            lineId = draft.Lines[0].Id;
+            await a.Store.UpdateDraftStateAsync(run.Envelope("k-submit"), Hash("submit-2"), SalesDraftCommands.SubmitV1, draft.Id,
+                (d, now) => d.Submit(2, run.Actor, now), Submitted);
+            await a.Store.UpdateDraftStateAsync(run.Envelope("k-approve", actor: "SENTETIK-approver"), Hash("approve-3"),
+                SalesDraftCommands.ApproveV1, draft.Id, (d, now) => d.Approve(3, "SENTETIK-approver", now), Approved);
+        }
+
+        Assert.Equal((3, 0, 4L, "12.50"), (await run.ScalarAsync<int>("SELECT [ApprovalState] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id)),
+            await run.ScalarAsync<int>("SELECT [Revision] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id)),
+            await run.ScalarAsync<long>("SELECT [Version] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id)),
+            await run.ScalarAsync<string>("SELECT [UnitPrice] FROM [sales].[DraftLines] WHERE [DraftId] = @id", ("@id", draft.Id))));
+
+        var request = new SalesDraftCommercialRevisionRequest("4", [new SalesDraftLineCommercialV1(lineId, "13.00", KgUnit, "5")]);
+        const string pricer = "SENTETIK-pricer";
+
+        // (4a) An actor with the draft names and the approval name but NOT the price name: asked, answered no, nothing changes.
+        await using (var a = run.Store(CompanyA))
+        {
+            var unpriced = new RecordingAuthority(SalesPermissionManifestV1.DraftsCreate, SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersApprove);
+            var service = run.Service(a, pricer, unpriced);
+            var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() => service.ReviseCommercialAsync(draft.Id, request, run.Metadata("k-revise-unpriced")));
+            Assert.Equal((403, "forbidden"), (refused.Status, refused.Code));
+            Assert.Equal([(SalesPermissionManifestV1.OrdersPriceWrite, CompanyA)], unpriced.Measured);
+        }
+
+        Assert.Equal((0, 4L), (await run.ScalarAsync<int>("SELECT [Revision] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id)),
+            await run.ScalarAsync<long>("SELECT [Version] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id))));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftRevisions] WHERE [DraftId] = @id", ("@id", draft.Id)));
+
+        // (0) "One save" is MEASURED, not read from the store: a recorder sees every SavingChanges the store makes (which entries,
+        // in which state, with which modified properties) and can refuse the save before any statement reaches SQL Server.
+        // First the refused save: the command runs to its save with the WHOLE change set — the archived revision rows, the
+        // header with Revision among its modified properties, the line, the attempt and the audit event, together — and that
+        // one save is refused. Then SQL Server shows nothing partial: Rev.0, approved, no archived row, no attempt, no audit
+        // event. The case cannot pass vacuously: the recorder pins that the save was REACHED with the full set (a command that
+        // never ran records no save; a store that saved the header apart from the archive would record two, or leave Rev.1).
+        var faulting = new SaveRecorder { Fault = true };
+        await using (var a = run.Store(CompanyA, faulting))
+        {
+            var service = run.Service(a, pricer, new RecordingAuthority(SalesPermissionManifestV1.OrdersPriceWrite));
+            await Assert.ThrowsAsync<SaveFault>(() => service.ReviseCommercialAsync(draft.Id, request, run.Metadata("k-revise")));
+        }
+
+        var refusedSave = Assert.Single(faulting.Saves);
+        AssertRevisionChangeSet(refusedSave);
+        Assert.Equal((3, 0, 4L), (await run.ScalarAsync<int>("SELECT [ApprovalState] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id)),
+            await run.ScalarAsync<int>("SELECT [Revision] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id)),
+            await run.ScalarAsync<long>("SELECT [Version] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id))));
+        // The APPROVED texts survive the refused save untouched (the fixture is priced 12.50 / kg / 5 from creation).
+        Assert.Equal(("12.50", "5"), (await run.ScalarAsync<string>("SELECT [UnitPrice] FROM [sales].[DraftLines] WHERE [DraftId] = @id", ("@id", draft.Id)),
+            await run.ScalarAsync<string>("SELECT [DiscountPercent] FROM [sales].[DraftLines] WHERE [DraftId] = @id", ("@id", draft.Id))));
+        Assert.Equal(KgUnit, await run.ScalarAsync<Guid>("SELECT [PriceUnitId] FROM [sales].[DraftLines] WHERE [DraftId] = @id", ("@id", draft.Id)));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftRevisions] WHERE [DraftId] = @id", ("@id", draft.Id)));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftAttempts] WHERE [IdempotencyKeyHash] = @h", ("@h", SalesStore.IdempotencyKeyHash("k-revise"))));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EntityType] = N'Sales.OrderDraft' AND [EventType] = N'sales.order-draft.commercial-revised.v1' AND [EntityId] = @id",
+            ("@id", draft.Id.ToString("D"))));
+
+        // (1) The pricer holds ONLY the separate price name: asked with that name in this company, answered yes, then the ONE save —
+        // under the SAME key as the refused save: nothing of it was recorded, so this is a fresh write, not a replay (ADR-011 §7:
+        // only a completed write or a terminal refusal is an attempt).
+        var priced = new RecordingAuthority(SalesPermissionManifestV1.OrdersPriceWrite);
+        var recorder = new SaveRecorder();
+        await using (var a = run.Store(CompanyA, recorder))
+        {
+            var service = run.Service(a, pricer, priced);
+            var revised = await service.ReviseCommercialAsync(draft.Id, request, run.Metadata("k-revise"));
+            Assert.False(revised.IsReplay);
+            AssertRevisionChangeSet(Assert.Single(recorder.Saves));
+            Assert.Equal(("Rev.1", "Preparing", "5", "13.00", KgUnit, "5"), (revised.Detail.Draft.Revision, revised.Detail.Draft.ApprovalState, revised.Detail.Draft.Version,
+                revised.Detail.Lines[0].UnitPrice, revised.Detail.Lines[0].PriceUnitId, revised.Detail.Lines[0].DiscountPercent));
+            Assert.Equal(new SalesDraftApprovalV1(null, null, null, null, null), revised.Detail.Approval);
+            // Asked and answered are pinned apart from the outcome, by the PROPERTY and not by a count of calls: the authority was asked,
+            // every ask was for the separate price name in THIS company, and no other name was ever asked for this write (a count
+            // would pin the service's call pattern, which may legitimately gain a fence; the ordering of the fences — before the
+            // replay read and again before the save — is the service's own pin in SalesDraftServiceTests).
+            Assert.NotEmpty(priced.Measured);
+            Assert.All(priced.Measured, ask => Assert.Equal((SalesPermissionManifestV1.OrdersPriceWrite, CompanyA), ask));
+
+            // The same key again through the service: the stored result, marked as the replay; the authority is asked again first.
+            var replay = await service.ReviseCommercialAsync(draft.Id, request, run.Metadata("k-revise", correlation: "SENTETIK-second"));
+            Assert.Equal((true, run.Correlation, "Rev.1", "5"), (replay.IsReplay, replay.OriginalCorrelationId, replay.Detail.Draft.Revision, replay.Detail.Draft.Version));
+            // The replay saves NOTHING — measured: the recorder still holds exactly the one save.
+            Assert.Single(recorder.Saves);
+
+            // K3's separation, the other way round: the price WRITE name grants no read — the pricer holding only it is refused
+            // the history (the read is under the draft read name), measured on real SQL; this refusal is what found the case
+            // reading the history with the wrong actor.
+            var unread = await Assert.ThrowsAsync<SalesDraftServiceException>(() => service.GetDraftRevisionsAsync(draft.Id));
+            Assert.Equal((403, "forbidden"), (unread.Status, unread.Code));
+        }
+
+        // The history through the READ name: Rev.0 with its facts and the OLD texts.
+        await using (var a = run.Store(CompanyA))
+        {
+            var reader = run.Service(a, "SENTETIK-reader", new RecordingAuthority(SalesPermissionManifestV1.DraftsRead));
+            var history = await reader.GetDraftRevisionsAsync(draft.Id);
+            var item = Assert.Single(history.Items);
+            Assert.Equal(("Rev.0", run.Actor, "SENTETIK-approver", pricer, "12.50", "5", 2), (item.Revision, item.SubmittedBy, item.ApprovedBy, item.ArchivedBy,
+                item.Lines[0].UnitPrice, item.Lines[0].DiscountPercent, item.MoneyScale));
+        }
+
+        // (2)(3) The rows, read back by SQL as TEXT: the header advanced, the line carries the new texts, Rev.0 keeps the OLD ones.
+        Assert.Equal((1, 1, 5L, "<null>"), (await run.ScalarAsync<int>("SELECT [ApprovalState] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id)),
+            await run.ScalarAsync<int>("SELECT [Revision] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id)),
+            await run.ScalarAsync<long>("SELECT [Version] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id)),
+            await run.ScalarAsync<string>("SELECT ISNULL([SubmittedBy], N'<null>') FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id))));
+        Assert.Equal(("13.00", "5"), (await run.ScalarAsync<string>("SELECT [UnitPrice] FROM [sales].[DraftLines] WHERE [DraftId] = @id", ("@id", draft.Id)),
+            await run.ScalarAsync<string>("SELECT [DiscountPercent] FROM [sales].[DraftLines] WHERE [DraftId] = @id", ("@id", draft.Id))));
+        Assert.Equal(KgUnit, await run.ScalarAsync<Guid>("SELECT [PriceUnitId] FROM [sales].[DraftLines] WHERE [DraftId] = @id", ("@id", draft.Id)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [sales].[DraftRevisions] WHERE [CompanyId] = @c AND [DraftId] = @id AND [Revision] = 0 AND [SubmittedBy] = @s AND [ApprovedBy] = N'SENTETIK-approver' "
+            + "AND [ArchivedBy] = @p AND [MoneyScale] = 2 AND [CorrelationId] = @corr",
+            ("@c", CompanyA), ("@id", draft.Id), ("@s", run.Actor), ("@p", pricer), ("@corr", run.Correlation)));
+        Assert.Equal("12.50", await run.ScalarAsync<string>(
+            "SELECT [UnitPrice] FROM [sales].[DraftRevisionLines] WHERE [CompanyId] = @c AND [DraftId] = @id AND [Revision] = 0 AND [LineNo] = 1 AND [LineId] = @l",
+            ("@c", CompanyA), ("@id", draft.Id), ("@l", lineId)));
+        Assert.Equal(("5", "1.25"), (await run.ScalarAsync<string>("SELECT [DiscountPercent] FROM [sales].[DraftRevisionLines] WHERE [DraftId] = @id AND [Revision] = 0", ("@id", draft.Id)),
+            await run.ScalarAsync<string>("SELECT [QuantityText] FROM [sales].[DraftRevisionLines] WHERE [DraftId] = @id AND [Revision] = 0", ("@id", draft.Id))));
+        Assert.Equal(KgUnit, await run.ScalarAsync<Guid>("SELECT [PriceUnitId] FROM [sales].[DraftRevisionLines] WHERE [DraftId] = @id AND [Revision] = 0", ("@id", draft.Id)));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftAttempts] WHERE [CommandName] = @cmd AND [DraftId] = @id AND [Outcome] = 1 AND [ActorId] = @p",
+            ("@cmd", SalesDraftCommands.ReviseCommercialV1), ("@id", draft.Id), ("@p", pricer)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EntityType] = N'Sales.OrderDraft' AND [EventType] = N'sales.order-draft.commercial-revised.v1' "
+            + "AND [EntityId] = @id AND [EntityVersionBefore] = 4 AND [EntityVersionAfter] = 5 AND [CorrelationId] = @corr AND [PermissionCode] = @perm",
+            ("@id", draft.Id.ToString("D")), ("@corr", run.Correlation), ("@perm", SalesPermissionManifestV1.OrdersPriceWrite)));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [CorrelationId] = N'SENTETIK-second'"));
+
+        // (4b) A DIFFERENT key carrying the values the draft already has is the refusal (ASSUMPTION-SALESP-5), never the replay above.
+        await using (var a = run.Store(CompanyA))
+        {
+            var service = run.Service(a, pricer, new RecordingAuthority(SalesPermissionManifestV1.OrdersPriceWrite));
+            var same = await Assert.ThrowsAsync<SalesDraftServiceException>(() => service.ReviseCommercialAsync(draft.Id,
+                request with { ExpectedVersion = "5" }, run.Metadata("k-revise-again")));
+            Assert.Equal((422, "validation_failed", "lines", SalesRuleCodes.RevisionNoChange), (same.Status, same.Code, Assert.Single(same.Errors).Field, Assert.Single(same.Errors).Code));
+        }
+
+        Assert.Equal(5L, await run.ScalarAsync<long>("SELECT [Version] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id)));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftRevisions] WHERE [DraftId] = @id", ("@id", draft.Id)));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftAttempts] WHERE [IdempotencyKeyHash] = @h", ("@h", SalesStore.IdempotencyKeyHash("k-revise-again"))));
+    }
+
     [SqlServerFact]
     public async Task The_approval_migration_refuses_to_roll_back_while_any_draft_has_left_preparing()
     {
@@ -389,10 +555,17 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
 
         await using var context = run.Context(CompanyA);
         var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
-        Assert.EndsWith("_AddDraftApproval", applied[^1], StringComparison.Ordinal);
-        var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[^2]));
+        // K3 Head B sits on top of the approval migration: rolling back BELOW the approval migration runs Head B's Down first.
+        // With no archived revision its empty tables roll back freely (nothing is lost), and the approval guard then refuses
+        // (51045) exactly as before — so the history ends at the approval migration and the approval facts stand.
+        Assert.EndsWith("_AddDraftRevisions", applied[^1], StringComparison.Ordinal);
+        Assert.EndsWith("_AddDraftApproval", applied[^2], StringComparison.Ordinal);
+        var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[^3]));
         Assert.Equal(51045, error.Number);
-        Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
+        Assert.Equal(applied[..^1], await context.Database.GetAppliedMigrationsAsync());
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'sales') AND name IN (N'DraftRevisions', N'DraftRevisionLines')"));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM sys.check_constraints WHERE [name] = N'CK_Drafts_State' AND schema_id = SCHEMA_ID(N'sales') AND definition LIKE N'%[[]Revision]=(0)%'"));
         Assert.Equal(2, await run.ScalarAsync<int>("SELECT ApprovalState FROM sales.Drafts WHERE Id = @id", ("@id", draft.Id)));
         Assert.Equal(run.Actor, await run.ScalarAsync<string>("SELECT SubmittedBy FROM sales.Drafts WHERE Id = @id", ("@id", draft.Id)));
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sys.check_constraints WHERE [name] = N'CK_Drafts_Approval'"));
@@ -407,6 +580,7 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
     private static readonly SalesDraftStateAudit Submitted = new("sales.order-draft.submitted.v1", "Submit", "SENTETIK onaya gönderildi");
     private static readonly SalesDraftStateAudit Approved = new("sales.order-draft.approved.v1", "Approve", "SENTETIK onaylandı");
     private static readonly SalesDraftStateAudit Rejected = new("sales.order-draft.rejected.v1", "Reject", "SENTETIK reddedildi");
+    private static readonly SalesDraftStateAudit Revised = new("sales.order-draft.commercial-revised.v1", "ReviseCommercial", "SENTETIK fiyat revize edildi");
 
     private static HttpRequestMessage Command(Guid draftId, string segment, string idempotencyKey, string json, string correlationId)
     {
@@ -440,6 +614,68 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
         }
 
         return draft;
+    }
+
+    /// <summary>The same draft with its one line PRICED (12.50 per kg, 5 %): the values an approved revision must keep verbatim.</summary>
+    private static SalesOrderDraft PricedDraft(Owners owners, string documentNo, DateTimeOffset at)
+    {
+        var header = new SalesDraftHeader(owners.Party, owners.Account, Currency, Day);
+        var money = new MoneyProfileSnapshot(owners.Company, Currency, SalesOrderDraft.MoneyOperation, MoneyProfile, "3", Day, true, From, null, 2);
+        var draft = SalesOrderDraft.Create(Guid.NewGuid(), owners.Company, documentNo, header, money, at);
+        var unit = new UnitProfileSnapshot(owners.Company, KgUnit, "kg", "weight", KgProfile, "4", true, 3, 3, true, From, null);
+        var binding = new UnitBindingSnapshot(owners.Company, KgUnit, KgProfile, "4");
+        var product = new ProductSnapshot(Product, "7", "GDC-001", "Sentetik bant", Day, binding, binding, binding);
+        draft.AddLine(draft.Version, new SalesDraftLineInput(Guid.NewGuid(), product, unit, "1.25", 1.25m,
+            Commercial: new CommercialDraftFields("12.50", KgUnit, "5")), at);
+        return draft;
+    }
+
+    /// <summary>An authority that answers from a fixed set of granted names and RECORDS every question (name, company).</summary>
+    private sealed class RecordingAuthority(params string[] granted) : IErpAuthorityRevalidationService
+    {
+        public List<(string Permission, Guid Company)> Measured { get; } = [];
+
+        public Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid companyId, CancellationToken cancellationToken = default)
+        {
+            Measured.Add((permission, companyId));
+            return Task.FromResult(granted.Contains(permission, StringComparer.Ordinal)
+                ? new PermissionScope(true, true, new HashSet<string>(["SENTETIK-PRICER"], StringComparer.Ordinal), new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>())
+                : PermissionScope.Denied);
+        }
+    }
+
+    private sealed class FixedUser(string userId, Guid company) : ICurrentUser
+    {
+        public bool IsAuthenticated => true;
+        public string? UserId => userId;
+        public IReadOnlySet<Guid> AllowedCompanyIds { get; } = new HashSet<Guid>([company]);
+        public bool CanAccessCompany(Guid companyId) => companyId == company;
+    }
+
+    private sealed class FixedCorrelation(string correlationId) : ICorrelationContext
+    {
+        public bool IsResolved => true;
+        public string CorrelationId => correlationId;
+        public string? CausationId => null;
+        public string SourceChannel => "Web";
+        public string? ClientIpAddress => "127.0.0.1";
+        public string? UserAgent => "SENTETIK-agent";
+        public void Set(string correlationId, string? causationId, string sourceChannel, string? clientIpAddress, string? userAgent)
+        {
+        }
+    }
+
+    /// <summary>The owner ports a commercial revision never asks; reaching one is a failure of the case, not a stub answer.</summary>
+    private sealed class NoOwners : ISalesPartyAccountPortV1, ISettingsPrerequisiteProvider
+    {
+        public Task<SalesPartyAccountAnswerV1> GetAuthorizedAsync(Guid partyId, Guid companyAccountId, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException("A commercial revision asks no owner.");
+        public Task<UnitProfileV1> GetUnitProfileAsync(Guid unitId, DateOnly effectiveOn, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException("A commercial revision asks no owner.");
+        public Task<MoneyProfileV1> GetMoneyProfileAsync(Guid currencyId, string operation, DateOnly effectiveOn, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException("A commercial revision asks no owner.");
+        public Task<PeriodEligibilityV1> GetPeriodEligibilityAsync(string operation, DateOnly occurredOn, DateOnly? valueOn, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException("A commercial revision asks no owner.");
     }
 
     private sealed record Owners(Guid Company, Guid Party, Guid Account)
@@ -480,6 +716,19 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
 
         public SalesDraftWriteEnvelope Envelope(string key, string? correlation = null, string? actor = null) =>
             new(actor ?? Actor, "SENTETIK-sales-permission", ["SENTETIK-SALES"], correlation ?? Correlation, null, key, "Web", "127.0.0.1", "SENTETIK-agent");
+
+        /// <summary>The REAL draft service over this scope's real store, for `actor` in the company, under `authority` (K3 Head B).</summary>
+        public SalesDraftService Service(StoreScope scope, string actor, IErpAuthorityRevalidationService authority)
+        {
+            var companyContext = new CompanyContext();
+            companyContext.Set(CompanyA);
+            var owners = new NoOwners();
+            return new SalesDraftService(companyContext, new FixedUser(actor, CompanyA), authority, new FixedCorrelation(Correlation), owners, owners, null,
+                scope.Store, new SalesDraftServiceBindings(), TimeProvider.System);
+        }
+
+        public SalesCommandMetadata Metadata(string key, string? correlation = null) =>
+            new(key, correlation ?? Correlation, null, T0);
 
         /// <summary>A plain Sales context of the company (no audit interceptor): for migration history and rollback checks.</summary>
         public SalesDbContext Context(Guid company)
@@ -595,6 +844,64 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
 
         public ValueTask DisposeAsync() => dbContext.DisposeAsync();
     }
+
+    /// <summary>
+    /// The change set of a commercial revision's ONE save, asserted TOGETHER (a count alone would accept a save holding only
+    /// some of it): the archived revision header and line (Added), the draft header (Modified — exactly the approval facts,
+    /// Revision, Version and the timestamp), the draft line (Modified — exactly the commercial column this request changes), the attempt
+    /// and the audit event (Added); nothing else.
+    /// </summary>
+    private static void AssertRevisionChangeSet(IReadOnlyList<SaveRecorder.Entry> save)
+    {
+        Assert.Equal(
+            ["AuditEvent:Added", "DraftAttemptRow:Added", "DraftLineRow:Modified", "DraftRevisionLineRow:Added", "DraftRevisionRow:Added", "DraftRow:Modified"],
+            save.Select(entry => $"{entry.Entity}:{entry.State}").Order(StringComparer.Ordinal));
+        // The header's modified set, EXACTLY (both directions, as the line below): Approved → Preparing clears the four approval
+        // facts, the revision counter and the version advance, the timestamp moves; RejectionReason stays null (not modified)
+        // and RowVersion is store-generated. An Assert.Superset was here first; its direction is easy to misread, and an exact
+        // set says what a superset cannot — that Revision IS among the modified properties, and nothing else is.
+        var header = Assert.Single(save, entry => entry.Entity == nameof(DraftRow));
+        Assert.Equal(
+            [
+                nameof(DraftRow.ApprovalState), nameof(DraftRow.DecidedAtUtc), nameof(DraftRow.DecidedBy), nameof(DraftRow.Revision),
+                nameof(DraftRow.SubmittedAtUtc), nameof(DraftRow.SubmittedBy), nameof(DraftRow.UpdatedAtUtc), nameof(DraftRow.Version),
+            ],
+            header.Modified);
+        // The line's modified set is EXACTLY the commercial column whose value CHANGED: this request moves the price
+        // (12.50 → 13.00) and re-sends the same unit (kg) and the same discount (5), so EF marks only UnitPrice — the store
+        // assigns all three, EF records what differs. What this pins: the changed column is inside the one save, and nothing
+        // outside the commercial columns is. The guard's ADMITTED set (all three) is the unit persistence test's pin, not this
+        // case's — the first version of this line asserted the admitted set here and was red on real SQL for that reason.
+        var line = Assert.Single(save, entry => entry.Entity == nameof(DraftLineRow));
+        Assert.Equal([nameof(DraftLineRow.UnitPrice)], line.Modified);
+    }
+
+    /// <summary>
+    /// Records every SavingChanges the store makes — which entries, in which state, with which modified properties — and, when
+    /// <see cref="Fault"/> is set, refuses the save before any statement reaches SQL Server. Registered AFTER the audit
+    /// interceptor, so the audit rows it adds are in the recorded set.
+    /// </summary>
+    private sealed class SaveRecorder : SaveChangesInterceptor
+    {
+        public sealed record Entry(string Entity, EntityState State, string[] Modified);
+
+        public List<IReadOnlyList<Entry>> Saves { get; } = [];
+
+        public bool Fault { get; init; }
+
+        public override ValueTask<InterceptionResult<int>> SavingChangesAsync(DbContextEventData eventData,
+            InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            Saves.Add(eventData.Context!.ChangeTracker.Entries()
+                .Where(entry => entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
+                .Select(entry => new Entry(entry.Metadata.ClrType.Name, entry.State,
+                    entry.Properties.Where(property => property.IsModified).Select(property => property.Metadata.Name).Order(StringComparer.Ordinal).ToArray()))
+                .ToArray());
+            return Fault ? throw new SaveFault() : ValueTask.FromResult(result);
+        }
+    }
+
+    private sealed class SaveFault() : Exception("SENTETIK: the one save was refused before any statement reached SQL Server");
 
     /// <summary>Holds each save until both writers have reached it, so both pass the attempt lookup and the draft read first.</summary>
     private sealed class BarrierInterceptor(Barrier barrier) : SaveChangesInterceptor

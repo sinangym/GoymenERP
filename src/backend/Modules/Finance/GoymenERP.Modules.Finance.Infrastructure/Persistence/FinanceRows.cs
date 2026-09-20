@@ -32,6 +32,54 @@ internal sealed class ReceiptDraftRow : IFinanceTenantRow
     public string CreatedBy { get; set; } = string.Empty;
     public DateTimeOffset UpdatedAtUtc { get; set; }
     public string UpdatedBy { get; set; } = string.Empty;
+
+    /// <summary>
+    /// FIN-T05a: <see cref="ReceiptStages.Draft"/> until one Record makes it <see cref="ReceiptStages.Recorded"/>;
+    /// a recorded source is never edited again (its correction is a separate reversal, FIN-T06).
+    /// </summary>
+    public int Stage { get; set; }
+    public DateTimeOffset? RecordedAtUtc { get; set; }
+    public string? RecordedBy { get; set; }
+}
+
+/// <summary>The stored stage of a manual receipt source.</summary>
+internal static class ReceiptStages
+{
+    public const int Draft = 0;
+    public const int Recorded = 1;
+}
+
+/// <summary>
+/// FIN-T05a: THE money event of a recorded manual bank receipt — one per source, by (company, source, kind), so a
+/// second event for the same source is impossible even for a lost race. The bank inflow and the customer credit are
+/// two READS of this one row, never two rows (card #66 5743678389 §2–§3); a distribution is not a money event.
+/// Append-only. Its facts are kept apart as Ö5 keeps them: the transaction date, the value date and the recording
+/// instant. The amount is the exact text that passed the Settings profile's scale; no database decimal is a scale.
+/// </summary>
+internal sealed class MoneyEventRow : IFinanceTenantRow
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public Guid SourceId { get; set; }
+    public int Kind { get; set; }
+    public Guid PartyId { get; set; }
+    public Guid CompanyAccountId { get; set; }
+    public Guid TreasuryAccountId { get; set; }
+    public Guid CurrencyId { get; set; }
+    public string AmountText { get; set; } = string.Empty;
+    public string ProfileId { get; set; } = string.Empty;
+    public string ProfileVersion { get; set; } = string.Empty;
+    public DateOnly OccurredOn { get; set; }
+    public DateOnly? ValueOn { get; set; }
+    public DateTimeOffset RecordedAtUtc { get; set; }
+    public string RecordedBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>The kinds of money event; only a recorded manual bank receipt exists (reversal is FIN-T06).</summary>
+internal static class MoneyEventKinds
+{
+    public const int ManualBankReceiptRecorded = 1;
 }
 
 /// <summary>
@@ -46,6 +94,20 @@ internal sealed class BankAccountRow : IFinanceTenantRow
     public Guid CompanyId { get; set; }
     public Guid CurrencyId { get; set; }
     public string DisplayName { get; set; } = string.Empty;
+
+    // K2 (Sinan #66 5748258299): the card. BankName and AccountType are MANDATORY for a card written
+    // from now on — enforced where the card is written, not by the column, because the column also has
+    // to hold the rows that already exist. Those predate K2 and carry NULL; what they mean is the open
+    // question #66 5748390243, so nothing here backfills, defaults or reinterprets them.
+    public string? BankName { get; set; }
+    public string? AccountType { get; set; }
+    public string? BranchName { get; set; }
+    public string? BranchCode { get; set; }
+
+    // Normalised (no spaces, upper case) when present, so the stored value is the validated value.
+    public string? Iban { get; set; }
+    public string? AccountNumber { get; set; }
+
     public int Status { get; set; }
     public long Version { get; set; }
     public string ProposedBy { get; set; } = string.Empty;

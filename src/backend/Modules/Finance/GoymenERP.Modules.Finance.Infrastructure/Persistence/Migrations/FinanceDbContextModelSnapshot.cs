@@ -167,6 +167,14 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
             b.Property<Guid>("Id")
                 .HasColumnType("uniqueidentifier");
 
+            b.Property<string>("AccountNumber")
+                .HasMaxLength(64)
+                .HasColumnType("nvarchar(64)");
+
+            b.Property<string>("AccountType")
+                .HasMaxLength(64)
+                .HasColumnType("nvarchar(64)");
+
             b.Property<DateTimeOffset?>("ApprovedAtUtc")
                 .HasColumnType("datetimeoffset");
 
@@ -174,6 +182,18 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
                 .HasMaxLength(128)
                 .HasColumnType("nvarchar(128)")
                 .UseCollation("Latin1_General_100_BIN2");
+
+            b.Property<string>("BankName")
+                .HasMaxLength(200)
+                .HasColumnType("nvarchar(200)");
+
+            b.Property<string>("BranchCode")
+                .HasMaxLength(64)
+                .HasColumnType("nvarchar(64)");
+
+            b.Property<string>("BranchName")
+                .HasMaxLength(200)
+                .HasColumnType("nvarchar(200)");
 
             b.Property<Guid>("CompanyId")
                 .HasColumnType("uniqueidentifier");
@@ -185,6 +205,10 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
                 .IsRequired()
                 .HasMaxLength(200)
                 .HasColumnType("nvarchar(200)");
+
+            b.Property<string>("Iban")
+                .HasMaxLength(34)
+                .HasColumnType("nvarchar(34)");
 
             b.Property<DateTimeOffset>("ProposedAtUtc")
                 .HasColumnType("datetimeoffset");
@@ -305,6 +329,89 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
             });
         });
 
+        modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.MoneyEventRow", b =>
+        {
+            b.Property<Guid>("Id")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<string>("AmountText")
+                .IsRequired()
+                .IsUnicode(false)
+                .HasColumnType("varchar(max)");
+
+            b.Property<Guid>("CompanyAccountId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<Guid>("CompanyId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<string>("CorrelationId")
+                .IsRequired()
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)");
+
+            b.Property<Guid>("CurrencyId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<int>("Kind")
+                .HasColumnType("int");
+
+            b.Property<DateOnly>("OccurredOn")
+                .HasColumnType("date");
+
+            b.Property<Guid>("PartyId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<string>("ProfileId")
+                .IsRequired()
+                .HasMaxLength(36)
+                .IsUnicode(false)
+                .HasColumnType("varchar(36)");
+
+            b.Property<string>("ProfileVersion")
+                .IsRequired()
+                .HasMaxLength(20)
+                .IsUnicode(false)
+                .HasColumnType("varchar(20)");
+
+            b.Property<DateTimeOffset>("RecordedAtUtc")
+                .HasColumnType("datetimeoffset");
+
+            b.Property<string>("RecordedBy")
+                .IsRequired()
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)");
+
+            b.Property<Guid>("SourceId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<Guid>("TreasuryAccountId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<DateOnly?>("ValueOn")
+                .HasColumnType("date");
+
+            b.HasKey("Id");
+
+            b.HasIndex("CompanyId", "SourceId", "Kind")
+                .IsUnique();
+
+            b.ToTable("MoneyEvents", "finance", t =>
+            {
+                t.HasCheckConstraint(
+                    "CK_MoneyEvents_Identity",
+                    "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [SourceId] <> '00000000-0000-0000-0000-000000000000' AND [PartyId] <> '00000000-0000-0000-0000-000000000000' AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' AND [TreasuryAccountId] <> '00000000-0000-0000-0000-000000000000' AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000'");
+
+                t.HasCheckConstraint(
+                    "CK_MoneyEvents_Kind",
+                    "[Kind] = 1");
+
+                t.HasCheckConstraint(
+                    "CK_MoneyEvents_Text",
+                    "LEN([AmountText]) > 0 AND LEN([ProfileId]) > 0 AND LEN([ProfileVersion]) > 0 AND LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
+            });
+        });
+
         modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.OrganizationCompanyReference", b =>
         {
             b.Property<Guid>("Id")
@@ -372,6 +479,16 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
                 .IsUnicode(false)
                 .HasColumnType("varchar(20)");
 
+            b.Property<DateTimeOffset?>("RecordedAtUtc")
+                .HasColumnType("datetimeoffset");
+
+            b.Property<string>("RecordedBy")
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)");
+
+            b.Property<int>("Stage")
+                .HasColumnType("int");
+
             b.Property<Guid>("TreasuryAccountId")
                 .HasColumnType("uniqueidentifier");
 
@@ -403,6 +520,10 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
                 t.HasCheckConstraint(
                     "CK_ReceiptDrafts_Identity",
                     "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [PartyId] <> '00000000-0000-0000-0000-000000000000' AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' AND [TreasuryAccountId] <> '00000000-0000-0000-0000-000000000000' AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000'");
+
+                t.HasCheckConstraint(
+                    "CK_ReceiptDrafts_Stage",
+                    "([Stage] = 0 AND [RecordedAtUtc] IS NULL AND [RecordedBy] IS NULL) OR ([Stage] = 1 AND [RecordedAtUtc] IS NOT NULL AND [RecordedBy] IS NOT NULL AND LEN([RecordedBy]) > 0)");
 
                 t.HasCheckConstraint(
                     "CK_ReceiptDrafts_Text",
@@ -442,6 +563,22 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
                 .HasForeignKey("CompanyId", "DraftId")
                 .HasPrincipalKey("CompanyId", "Id")
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.MoneyEventRow", b =>
+        {
+            b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                .WithMany()
+                .HasForeignKey("CompanyId")
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired();
+
+            b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.ReceiptDraftRow", null)
+                .WithMany()
+                .HasForeignKey("CompanyId", "SourceId")
+                .HasPrincipalKey("CompanyId", "Id")
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired();
         });
 
         modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.ReceiptDraftRow", b =>

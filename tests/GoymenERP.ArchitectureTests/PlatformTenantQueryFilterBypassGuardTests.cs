@@ -54,8 +54,14 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // and initializer after Organization) and its staged shell provider before the authority is chosen.
     // Re-fingerprinted for ACC-V0a: the Accounting module (AddAccountingModule, its endpoints and initializer after
     // Organization); no shell provider (ACC-V0b).
+    // Re-fingerprinted for FIN-T05: the two scoped host registrations of the record period rule (the Accounting
+    // period-status port and the occurredOn rule) placed before AddFinanceServices, and then TWICE MORE for
+    // COMMENT-ONLY edits beside them. The comment edits changed no registration, no generation mode, no network
+    // and no hosted-service surface — and they moved this fingerprint anyway, because a content hash has no
+    // opinion about whether a change is semantic. Any edit to a pinned file, comment included, is re-pinned in
+    // the same push.
     private const string ReviewedOpenApiStartupFingerprint =
-        "9f25bd758783c0f47f147560c4964f02a34f5eff352e0e5e7ed40c966fc83920";
+        "cb6209be50595339550165d45c6fdcae8eb6eca6004dea53d18d26f807718f86";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedIdentityReconcilerPath =
@@ -135,7 +141,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // finance
             ["tools/relational_inventory/finance.txt"] =
-                "cfd16410fe379d3482c4f49f5aebb1e47cd2e40808f370cc057e441d5ff66044",
+                "3c0677942d9fc2d4a85aa284c5cf61e2e7943779ac2049c60f92e5b8a2be0fa2",
 
             // identity
             ["tools/relational_inventory/identity.txt"] =
@@ -171,7 +177,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // sales
             ["tools/relational_inventory/sales.txt"] =
-                "81629fa047ec290b85a9c54ca4bc09055df1909328f7437b81f53f355bbe0d38",
+                "0b6eb5888c165ae3997f132fe7e2212eea8b9e4fca72bf0ecadc2ab7c38c2c1f",
         };
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
@@ -203,7 +209,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/"
              + "Persistence/SalesDbContext.cs"] =
-                "ef88262bd01e1d118b13f50944ae831870d42615a3f559e4fe95e6fdf3d5a498",
+                "715058a1d29fd45835d1bd4263c6423e26cbea71a487bf91968fd917b73d2018",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
@@ -225,7 +231,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
              + "Persistence/FinanceDbContext.cs"] =
-                "e94446bcd3e21a7695e4cbe1d437d38ed26165f4c4a2e945dae98d878f6d22ca",
+                "c32db0d914cb00489cb13a193c0f87ba8d0163f408193344c5524907e384a981",
             // ACC-3 (#298): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for ACC-V0a: the ADR-011 command log (Commands) is mapped here, company-scoped with the
@@ -426,7 +432,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Accounting/"
                  + "GoymenERP.Modules.Accounting.Infrastructure/Persistence/AccountingStore.cs"] =
                     new(
-                        "accee651496acb4a66b63ce77ae26f9871cac42d4f98cf26af3c24c86e49c148",
+                        "035e446bdbf3e8ff8c3bf3e8480dca2c2f016c7b4d8db004e87d964bba0c797b",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -436,7 +442,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Finance.Infrastructure/"
                  + "FinanceModuleExtensions.cs"] =
                     new(
-                        "248c5960bf7491900e66573bc00b781353c843f4a6b3367ed1784c900e2f604c",
+                        "203feaaa0e0fbb8a945877fd75ebd59cb950a229304d231cc9f8201d7b55ada2",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -449,7 +455,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Finance/"
                  + "GoymenERP.Modules.Finance.Infrastructure/ReceiptDraftService.cs"] =
                     new(
-                        "1e011359c62637e0bfe25263540306cb72073fd824fd5dba59d39d08357c4cd7",
+                        "aa38d29c817ac645014ed2fc1d05c32f00f76f0d4eedd94e585e4a5c72ea87d2",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -460,7 +466,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Finance/"
                  + "GoymenERP.Modules.Finance.Infrastructure/FinanceBankAccountService.cs"] =
                     new(
-                        "d5f0e66546d0cfd0c31d9a47abe3a015462f8c1afb32f4ca9de9c11ef2a1a550",
+                        "32dfae23381309cabda53be9f43ba0fa89f7698e39d602713133c42b6cf8ad2e",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -554,7 +560,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Sales/"
                  + "GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.cs"] =
                     new(
-                        "751ff0e47c4689b9d30a183b3ba4c8e96c5580250530bbc793586733c01e7f68",
+                        "c67497119ffd0bd57c62f575f02d7b6a5b6f73b17c0b09c0ef74c7496eed51db",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -651,10 +657,27 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new("d5aa478dc70559fa55e54df47a2fc6703a4677b1db4caab425fbe9b3ea10e89c",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
+                // SALES-P Head B: the Down's only raw SQL is Sales' module refusal (51049) while any archived approved
+                // revision is stored — Sinan's K3 says the previous approved snapshot is not deleted, so a rollback that
+                // would drop those rows is refused. Reviewed rather than inventoried: the THROW precedes both DropTables,
+                // an empty DraftRevisions rolls back freely, and 51049 is used by no other module (counted across
+                // src/backend). Forward fix, the AddDraftApproval (51045) pattern.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20260920073846_AddDraftRevisions.cs"] =
+                    new("d2ec4a9b1f6fbe736ee18da1898ded863cfc3486c8bcb6b81923d6ec9ea893bf",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
                 // ACC-V0a: the Down's only raw SQL is Accounting's module refusal (51048, coordinator-assigned) while any
                 // period or command row exists (the preparer/approver columns are NOT NULL facts of Ö4); forward fix.
                 ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/Migrations/20260919140000_AddPeriodApproval.cs"] =
                     new("e1e6fe554c5b58ea381316b99d17dd2fd64dd73780e0a475e849715b28ac42f9",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // FIN-T05: the Down's only raw SQL is Finance's module refusal (51051) while any money event
+                // exists or any draft has left Stage 0 — so a rollback can drop neither a money fact nor the
+                // trace of a record. Reviewed rather than assumed: the THROW precedes every Drop in the Down,
+                // and 51051 is used by no other module. Forward fix; nothing is deleted.
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20260920090000_AddMoneyEvents.cs"] =
+                    new("5af1d703aca150af6ca748c57b42e9f088cec37aaa3841116e31016a35a72eed",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // MFG-6 slice 2: the Down's only raw SQL is Manufacturing's module refusal (51047) while any plan

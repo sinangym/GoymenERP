@@ -167,3 +167,42 @@ internal sealed class DraftAttemptRow : ISalesTenantRow
     public string CorrelationId { get; set; } = string.Empty;
     public DateTimeOffset RecordedAtUtc { get; set; }
 }
+
+/// <summary>
+/// K3 Head B (Sinan 5748258299): an APPROVED revision archived the moment its price or discount was
+/// changed — the approval facts, the money profile it was approved under, who archived it and when.
+/// Written in the same save as the draft's advance to the next revision. Append-only, never changed.
+/// </summary>
+internal sealed class DraftRevisionRow : ISalesTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid DraftId { get; set; }
+    public int Revision { get; set; }
+    public string SubmittedBy { get; set; } = string.Empty;
+    public DateTimeOffset SubmittedAtUtc { get; set; }
+    public string ApprovedBy { get; set; } = string.Empty;
+    public DateTimeOffset ApprovedAtUtc { get; set; }
+    public Guid MoneyProfileId { get; set; }
+    public string MoneyProfileVersion { get; set; } = string.Empty;
+    public int MoneyScale { get; set; }
+    public DateTimeOffset ArchivedAtUtc { get; set; }
+    public string ArchivedBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>A line of an archived approved revision: identity, quantity text and the commercial fields exactly as they were. Append-only.</summary>
+internal sealed class DraftRevisionLineRow : ISalesTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid DraftId { get; set; }
+    public int Revision { get; set; }
+    public int LineNo { get; set; }
+    public Guid LineId { get; set; }
+    public Guid ProductId { get; set; }
+    public string ProductVersion { get; set; } = string.Empty;
+    public Guid OrderUnitId { get; set; }
+    public string QuantityText { get; set; } = string.Empty;
+    public string? UnitPrice { get; set; }
+    public Guid? PriceUnitId { get; set; }
+    public string? DiscountPercent { get; set; }
+}

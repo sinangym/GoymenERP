@@ -22,6 +22,14 @@ public interface ISalesDraftService
         SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
     Task<SalesOrderDraftResponse> RejectDraftAsync(Guid draftId, SalesDraftStateCommandRequest request,
         SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
+
+    // K3 Head B (Sinan 5748258299) — the commercial revision under `sales.orders.price.write`: every line's
+    // price, price unit and discount replaced; an APPROVED draft archives its approved revision first and
+    // advances to the next one, back in preparation; and the read of the archived revisions (`sales.drafts.read`).
+    Task<SalesOrderDraftResponse> ReviseCommercialAsync(Guid draftId, SalesDraftCommercialRevisionRequest request,
+        SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
+    Task<SalesOrderDraftRevisionsResponse> GetDraftRevisionsAsync(Guid draftId,
+        CancellationToken cancellationToken = default);
 }
 
 // Constructed by the server, never bound from the request body.

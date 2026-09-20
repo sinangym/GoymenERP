@@ -122,6 +122,22 @@ export const CAPABILITY = {
    * that is a fact about who holds them, not an argument for one id.
    */
   organizationLocationsDetail: 'organization.locations.detail',
+  /**
+   * ORG-03 the authorized work-centre list. Route `/ayarlar/organizasyon/is-merkezleri`,
+   * owner the Organization lane.
+   *
+   * ITS OWN PERMISSION, and that is the whole point of the slice rather than a detail:
+   * the route stands on `organization.work-centers.read` ALONE. ORG-01 stands on
+   * `organization.locations.read`, so a user holding work centres and not locations has
+   * no link into ORG-01 at all — there is nowhere to put a work-centre entry except the
+   * sidebar. The reverse holds too: holding the location screens does not reach here.
+   *
+   * It renders only where the server's snapshot carries the id, and the backend provider
+   * does not declare it yet (four declarations on main today). So this entry is the
+   * shell saying it HAS an implementation, not that anyone may see it — the same staged
+   * shape `organizationSitesList` had before #246 published it.
+   */
+  organizationWorkCentersList: 'organization.work-centers.list',
   /** S-02 sales order draft list. Route `/satis/siparisler`, owner the Sales lane (SİPARİŞ). */
   salesDraftsList: 'sales.drafts.list',
   /** S-04 Sales order 360, one draft. Route `/satis/siparisler/:draftId`. A SEPARATE grant from the list. */
@@ -203,6 +219,10 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   // rule the Cari and Ürün routes already follow. The Organization lane fixes that
   // shape in `organizationRoutes.tsx` rather than leaving it to this consumer.
   [CAPABILITY.organizationLocationsDetail]: '/ayarlar/organizasyon/lokasyon/:locationId',
+  // A STATIC sibling of the list, not a child of the card: `/ayarlar/organizasyon` and
+  // `/ayarlar/organizasyon/is-merkezleri` differ by a static segment, and neither can match the
+  // card's `lokasyon/:locationId` — no url matches two of the three (#172 P1-2).
+  [CAPABILITY.organizationWorkCentersList]: '/ayarlar/organizasyon/is-merkezleri',
   [CAPABILITY.salesDraftsList]: '/satis/siparisler',
   // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as a draft id.
   [CAPABILITY.salesDraftsCreate]: '/satis/siparisler/yeni',
@@ -249,6 +269,10 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   // Nor this one: the card is reached from a location row, never from the sidebar. So
   // `NAV_CAPABILITIES` gains exactly ONE Organization entry when the routes are mounted.
   [CAPABILITY.organizationLocationsDetail]: '',
+  // ORG-03 DOES get one: its only entry point is the sidebar, because a holder of
+  // work-centers.read without locations.read never reaches ORG-01 to be linked from it.
+  // So Organization's sidebar goes from one entry to two — a list each, no card, no control.
+  [CAPABILITY.organizationWorkCentersList]: 'İş Merkezleri',
   [CAPABILITY.salesDraftsList]: 'Sipariş Taslakları',
   [CAPABILITY.salesDraftsCreate]: 'Yeni Sipariş Taslağı',
   // Nor this one: the 360 is reached from a list row, never from the sidebar.
@@ -271,7 +295,9 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   [CAPABILITY.accountingPeriodsPropose]: '',
   [CAPABILITY.accountingJournalsDetail]: '',
   [CAPABILITY.logisticsInstructionsList]: 'Yükleme Talimatları',
-  [CAPABILITY.logisticsInstructionsCreate]: 'Yeni Yükleme Talimatı',
-  // Nor this one: an instruction is opened from a list row, never from the sidebar.
+  // Neither of these two: the new-instruction screen is reached from the L-02 list's own primary
+  // link (one entry point per creation route, the Finance and Accounting precedent), and an
+  // instruction is opened from a list row — never from the sidebar.
+  [CAPABILITY.logisticsInstructionsCreate]: '',
   [CAPABILITY.logisticsInstructionsDetail]: '',
 }

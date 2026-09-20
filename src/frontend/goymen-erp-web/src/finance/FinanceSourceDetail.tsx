@@ -72,16 +72,22 @@ function conflictedVersion(state: AttemptState): string | null {
 }
 
 /**
- * `offerRecordReverse`: Record and Reverse have no route yet (T05; their authority is OPEN-009), so the
- * mounted screen does NOT offer them — the HTTP port would only answer a local `Unavailable`, which
- * must never look like a sent command. Off by default; component tests of the actions turn it on.
+ * `offerRecord` (FIN-T05a): the Record control, offered only when the caller holds the Record control's capability
+ * (`finance.receipts.record`). No provider declares it until FIN-T05's central round, so the mounted screen does not
+ * offer it yet. The server decides the period from `occurredOn` (K1) and refuses definitively when it must.
+ * `offerReverse`: Reverse has no route (FIN-T06); the HTTP port would only answer a local `Unavailable`, which must
+ * never look like a sent command. `offerRecordReverse` turns both on (component tests of the actions).
  */
 export function FinanceSourceDetail({
   sourceId,
   offerRecordReverse = false,
+  offerRecord = offerRecordReverse,
+  offerReverse = offerRecordReverse,
 }: {
   readonly sourceId: string
   readonly offerRecordReverse?: boolean
+  readonly offerRecord?: boolean
+  readonly offerReverse?: boolean
 }) {
   const detail = useFinanceRead('source', [sourceId], (port, scope, signal) => port.sourceDetail(scope, { sourceId }, signal), decodeSourceDetailFor(sourceId))
   const banks = useFinanceRead('bank-accounts', [], (port, scope, signal) => port.listBankAccounts(scope, signal), decodeBankAccountPage)
@@ -159,10 +165,10 @@ export function FinanceSourceDetail({
         </p>
       ) : null}
 
-      {offerRecordReverse && data.source.stage === 'Draft' && !recordDone ? (
+      {offerRecord && data.source.stage === 'Draft' && !recordDone ? (
         <RecordAction command={record} source={data} onReread={detail.refetch} />
       ) : null}
-      {offerRecordReverse && data.source.stage === 'Recorded' && !reverseDone ? (
+      {offerReverse && data.source.stage === 'Recorded' && !reverseDone ? (
         <ReverseAction command={reverse} source={data} onReread={detail.refetch} />
       ) : null}
     </div>

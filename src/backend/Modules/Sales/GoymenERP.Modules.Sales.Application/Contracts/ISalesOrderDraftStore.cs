@@ -46,6 +46,9 @@ public static class SalesDraftCommands
     /// <summary>SALES-A1: POST /api/v1/sales/drafts/{id}/rejection — PendingApproval → Rejected.</summary>
     public const string RejectV1 = "sales.order-draft.reject.v1";
 
+    /// <summary>K3 Head B: POST /api/v1/sales/drafts/{id}/commercial-revision — the commercial fields of every line replaced; an approved draft is archived and advances a revision.</summary>
+    public const string ReviseCommercialV1 = "sales.order-draft.revise-commercial.v1";
+
     public static bool IsStateCommand(string commandName) =>
         commandName is SubmitV1 or ApproveV1 or RejectV1;
 }
@@ -181,6 +184,17 @@ public interface ISalesOrderDraftStore
         CancellationToken cancellationToken = default);
 
     /// <summary>The company's stored draft, or null (another company's draft is null too, never 403).</summary>
+    /// <summary>
+    /// K3 Head B: the commercial revision, one save — the same key rules as a state command (§3/§4/§7/§8);
+    /// <paramref name="mutate"/> is the domain's <c>ReviseCommercial</c> and returns the archived approved
+    /// snapshot when one was made. The store writes that snapshot's rows, the header (revision, approval
+    /// axis, version) and every line's commercial columns together with the attempt record and the audit
+    /// event, or nothing at all. The command name must be <see cref="SalesDraftCommands.ReviseCommercialV1"/>.
+    /// </summary>
+    Task<SalesDraftStateResult?> ReviseDraftCommercialAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+        Guid draftId, Func<SalesOrderDraft, DateTimeOffset, ApprovedRevisionSnapshot?> mutate, SalesDraftStateAudit audit,
+        CancellationToken cancellationToken = default);
+
     Task<SalesOrderDraft?> FindDraftAsync(Guid draftId, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -215,6 +229,14 @@ public static class SalesDraftRequestHash
         ArgumentNullException.ThrowIfNull(request);
         ArgumentException.ThrowIfNullOrWhiteSpace(commandName);
         return Hash(JsonSerializer.Serialize(new { command = commandName, draftId, request.ExpectedVersion, request.Reason }, SalesDraftJson.Options));
+    }
+
+    /// <summary>K3 Head B: the canonical content of a commercial revision — the command, the draft, the expected version and every line's fields in the order given.</summary>
+    public static string Compute(string commandName, Guid draftId, SalesDraftCommercialRevisionRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(commandName);
+        return Hash(JsonSerializer.Serialize(new { command = commandName, draftId, request.ExpectedVersion, request.Lines }, SalesDraftJson.Options));
     }
 
     private static string Hash(string canonical) =>

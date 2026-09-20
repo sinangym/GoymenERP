@@ -335,6 +335,7 @@ public sealed class CounterpartyLogisticsPartyAccountPortV1(ICompanyContext comp
         }
 
         var companyId = companyContext.CompanyId;
+        var actorId = currentUser.UserId;
         CounterpartyDetailView? party;
         try
         {
@@ -345,7 +346,11 @@ public sealed class CounterpartyLogisticsPartyAccountPortV1(ICompanyContext comp
             return new(LogisticsPartyAccountOutcomeV1.Denied, null);
         }
 
-        if (!IsCurrent() || companyContext.CompanyId != companyId)
+        // The owner answered for the context captured before the await — the company AND the actor;
+        // a changed context releases nothing. IsCurrent() alone is not enough: it re-checks the
+        // CURRENT actor, so a swap to another actor with access to the same company would pass it.
+        if (!IsCurrent() || companyContext.CompanyId != companyId
+            || !string.Equals(currentUser.UserId, actorId, StringComparison.Ordinal))
         {
             return new(LogisticsPartyAccountOutcomeV1.Denied, null);
         }

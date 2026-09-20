@@ -42,7 +42,7 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
         BankAccountView proposed;
         await using (var a = run.Open(CompanyA, Proposer))
         {
-            var result = await a.Accounts.ProposeAsync(a.Context, Key("p-1"), new BankAccountProposeRequest("SENTETIK hesap", Currency),
+            var result = await a.Accounts.ProposeAsync(a.Context, Key("p-1"), new BankAccountProposeRequest("SENTETIK hesap", Currency, "SENTETIK Banka", "SENTETIK tür"),
                 CancellationToken.None);
             Assert.Equal(CommandOutcome.Succeeded, result.Outcome);
             proposed = result.Resource!;
@@ -94,9 +94,143 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Finance.BankAccount' AND CorrelationId = @c", ("@c", run.Correlation)));
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.bank-account.approved.v1' AND ApprovalContextJson IS NOT NULL"));
-        // Money effect 0: the finance schema holds drafts, bank accounts and command records only.
-        Assert.Equal("BankAccounts,Commands,ReceiptDrafts,__EFMigrationsHistory", await run.ScalarAsync<string>(
+        // Money effect 0. FIN-T05a gave the schema a MoneyEvents table, so listing the tables no longer says
+        // "no money was moved" by itself — the table now exists whether or not anything is in it. The inventory
+        // is kept (a new Finance table must be a deliberate edit here) and the claim it used to carry is stated
+        // directly underneath: approving a bank account writes NO money event.
+        Assert.Equal("BankAccounts,Commands,MoneyEvents,ReceiptDrafts,__EFMigrationsHistory", await run.ScalarAsync<string>(
             "SELECT STRING_AGG(name, ',') WITHIN GROUP (ORDER BY name COLLATE Latin1_General_BIN2) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'finance')"));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.MoneyEvents"));
+    }
+
+    /// <summary>
+    /// K2 (Sinan #66 5748258299) against real SQL: what the CARD actually holds after a proposal.
+    /// <para>
+    /// The IBAN is typed the way a person types it — in groups of four — and the claim is that the
+    /// database holds the NORMALISED form. That claim is only meaningful here: a unit test could not
+    /// tell normalisation-on-write from normalisation-on-read, and the spaced input is the witness that
+    /// separates them, because a read-path normalisation would leave the spacing in the column.
+    /// </para>
+    /// <para>
+    /// The second account is K2's other half: "IBAN'sız özel kredi/vadeli hesapların tanımı
+    /// desteklenir". It is stored with a NULL IBAN rather than an empty string, so "no IBAN was given"
+    /// and "an IBAN was given as blank" stay different facts in the column.
+    /// </para>
+    /// </summary>
+    [SqlServerFact]
+    public async Task A_card_keeps_what_was_typed_with_its_IBAN_normalised_and_an_IBAN_less_card_is_storable()
+    {
+        await using var run = await Run.StartAsync();
+
+        BankAccountView withIban;
+        BankAccountView withoutIban;
+        await using (var a = run.Open(CompanyA, Proposer))
+        {
+            var typed = await a.Accounts.ProposeAsync(a.Context, Key("p-iban"),
+                new BankAccountProposeRequest("SENTETIK hesap", Currency, "SENTETIK Banka", "SENTETIK tür",
+                    BranchName: "SENTETIK şube", BranchCode: "0001",
+                    Iban: "TR33 0006 1005 1978 6457 8413 26", AccountNumber: "123456"),
+                CancellationToken.None);
+            Assert.Equal(CommandOutcome.Succeeded, typed.Outcome);
+            withIban = typed.Resource!;
+
+            // K2: a special credit or term account with no IBAN is definable. It must not be refused.
+            var special = await a.Accounts.ProposeAsync(a.Context, Key("p-no-iban"),
+                new BankAccountProposeRequest("SENTETIK vadeli", Currency, "SENTETIK Banka", "SENTETIK özel tür"),
+                CancellationToken.None);
+            Assert.Equal(CommandOutcome.Succeeded, special.Outcome);
+            withoutIban = special.Resource!;
+        }
+
+        // Stored normalised: no spacing, upper case — the value validated is the value kept.
+        Assert.Equal("TR330006100519786457841326", await run.ScalarAsync<string>(
+            "SELECT Iban FROM finance.BankAccounts WHERE Id = @id", ("@id", withIban.Id)));
+        Assert.Equal(("SENTETIK Banka", "SENTETIK tür"), (
+            await run.ScalarAsync<string>("SELECT BankName FROM finance.BankAccounts WHERE Id = @id", ("@id", withIban.Id)),
+            await run.ScalarAsync<string>("SELECT AccountType FROM finance.BankAccounts WHERE Id = @id", ("@id", withIban.Id))));
+        Assert.Equal(("SENTETIK şube", "0001", "123456"), (
+            await run.ScalarAsync<string>("SELECT BranchName FROM finance.BankAccounts WHERE Id = @id", ("@id", withIban.Id)),
+            await run.ScalarAsync<string>("SELECT BranchCode FROM finance.BankAccounts WHERE Id = @id", ("@id", withIban.Id)),
+            await run.ScalarAsync<string>("SELECT AccountNumber FROM finance.BankAccounts WHERE Id = @id", ("@id", withIban.Id))));
+
+        // An absent IBAN is NULL, not "": the two are different facts and the column keeps them apart.
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.BankAccounts WHERE Id = @id AND Iban IS NULL AND BranchName IS NULL",
+            ("@id", withoutIban.Id)));
+
+        // The card moves no money and this slice touches no usability: both accounts are still PROPOSED.
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.MoneyEvents"));
+        Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.BankAccounts WHERE Status = 1"));
+
+        // And the card reaches its reader on the MASTER, which is the only place it travels.
+        await using (var a = run.Open(CompanyA, Proposer))
+        {
+            // The MASTER read is the one that carries the card; ListAuthorizedAsync answers plain views,
+            // which is exactly the separation this slice relies on.
+            var page = await a.Accounts.ListMasterAsync(a.Context, CancellationToken.None);
+            var card = Assert.Single(page.Resource!.Items, item => item.Account.Id == withIban.Id).Card;
+            Assert.Equal(("SENTETIK Banka", "SENTETIK tür", "TR330006100519786457841326"),
+                (card.BankName, card.AccountType, card.Iban));
+        }
+    }
+
+    /// <summary>
+    /// K2's leak clause, as its own case rather than an aside: "yetkisiz kişi/Sevkiyatçıya IBAN/para
+    /// verisi sızmaması". An actor the permission port refuses receives no account at all — so no IBAN
+    /// — and another company's actor cannot see the card either, which the tenant filter decides in the
+    /// database rather than in the projection.
+    /// <para>
+    /// The IBAN really is stored, read straight from the column here, so the case cannot pass merely
+    /// because nothing was written: the value exists and still does not reach either caller.
+    /// </para>
+    /// </summary>
+    [SqlServerFact]
+    public async Task Without_the_bank_account_permission_and_from_another_company_no_card_and_no_IBAN_is_answered()
+    {
+        await using var run = await Run.StartAsync();
+
+        BankAccountView account;
+        await using (var a = run.Open(CompanyA, Proposer))
+        {
+            account = (await a.Accounts.ProposeAsync(a.Context, Key("p-1"),
+                new BankAccountProposeRequest("SENTETIK hesap", Currency, "SENTETIK Banka", "SENTETIK tür",
+                    Iban: "TR330006100519786457841326"),
+                CancellationToken.None)).Resource!;
+        }
+
+        // Written: the value the two callers below must NOT receive is really in the database.
+        Assert.Equal("TR330006100519786457841326", await run.ScalarAsync<string>(
+            "SELECT Iban FROM finance.BankAccounts WHERE Id = @id", ("@id", account.Id)));
+
+        // (1) The same company, but the action is refused — a Sevkiyatçı holds no Finance read name.
+        await using (var denied = run.OpenRefused(CompanyA, "SENTETIK-sevkiyatci"))
+        {
+            var master = await denied.Accounts.ListMasterAsync(denied.Context, CancellationToken.None);
+            Assert.Equal(ReadOutcome.Denied, master.Outcome);
+            Assert.Null(master.Resource);
+
+            var page = await denied.Accounts.ListAuthorizedAsync(denied.Context, CancellationToken.None);
+            Assert.Equal(ReadOutcome.Denied, page.Outcome);
+            Assert.Null(page.Resource);
+
+            var byId = await denied.Accounts.GetAuthorizedAsync(denied.Context, account.Id, CancellationToken.None);
+            Assert.Equal(ReadOutcome.Denied, byId.Outcome);
+            Assert.Null(byId.Resource);
+        }
+
+        // (2) Another company, permitted for ITS own company — the row is not theirs to see.
+        await using (var b = run.Open(CompanyB, Approver))
+        {
+            var master = await b.Accounts.ListMasterAsync(b.Context, CancellationToken.None);
+            Assert.Equal(ReadOutcome.Found, master.Outcome);
+            Assert.Empty(master.Resource!.Items);
+
+            var page = await b.Accounts.ListAuthorizedAsync(b.Context, CancellationToken.None);
+            Assert.Equal(ReadOutcome.Found, page.Outcome);
+            Assert.Empty(page.Resource!.Items);
+            Assert.Equal(ReadOutcome.NotFound,
+                (await b.Accounts.GetAuthorizedAsync(b.Context, account.Id, CancellationToken.None)).Outcome);
+        }
     }
 
     [SqlServerFact]
@@ -106,7 +240,7 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
         BankAccountView accountA;
         await using (var a = run.Open(CompanyA, Proposer))
         {
-            accountA = (await a.Accounts.ProposeAsync(a.Context, Key("p-1"), new BankAccountProposeRequest("SENTETIK A", Currency),
+            accountA = (await a.Accounts.ProposeAsync(a.Context, Key("p-1"), new BankAccountProposeRequest("SENTETIK A", Currency, "SENTETIK Banka", "SENTETIK tür"),
                 CancellationToken.None)).Resource!;
         }
 
@@ -133,7 +267,7 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
         BankAccountView first;
         await using (var a = run.Open(CompanyA, Proposer))
         {
-            var request = new BankAccountProposeRequest("SENTETIK hesap", Currency);
+            var request = new BankAccountProposeRequest("SENTETIK hesap", Currency, "SENTETIK Banka", "SENTETIK tür");
             first = (await a.Accounts.ProposeAsync(a.Context, Key("k-1"), request, CancellationToken.None)).Resource!;
             var replay = await a.Accounts.ProposeAsync(a.Context, Key("k-1"), request, CancellationToken.None);
             Assert.True(replay.IsReplay);
@@ -151,7 +285,7 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
         {
             // ADR-011 §3: the same key and payload by ANOTHER actor is a conflict that discloses nothing.
             var conflict = await other.Accounts.ProposeAsync(other.Context, Key("k-1"),
-                new BankAccountProposeRequest("SENTETIK hesap", Currency), CancellationToken.None);
+                new BankAccountProposeRequest("SENTETIK hesap", Currency, "SENTETIK Banka", "SENTETIK tür"), CancellationToken.None);
             Assert.Equal(CommandOutcome.IdempotencyConflict, conflict.Outcome);
             Assert.Null(conflict.Resource);
         }
@@ -167,7 +301,7 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
         await using var run = await Run.StartAsync();
         await using (var a = run.Open(CompanyA, Proposer))
         {
-            var outside = await a.Accounts.ProposeAsync(a.Context, Key("k-1"), new BankAccountProposeRequest("SENTETIK", Guid.NewGuid()),
+            var outside = await a.Accounts.ProposeAsync(a.Context, Key("k-1"), new BankAccountProposeRequest("SENTETIK", Guid.NewGuid(), "SENTETIK Banka", "SENTETIK tür"),
                 CancellationToken.None);
             Assert.Equal("currency_not_a_candidate", Assert.Single(outside.Issues).Code);
         }
@@ -175,7 +309,7 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
         // The real adapter on main: no Settings currency source exists, so every proposal is refused.
         await using (var a = run.Open(CompanyA, Proposer, realSettings: true))
         {
-            var unavailable = await a.Accounts.ProposeAsync(a.Context, Key("k-2"), new BankAccountProposeRequest("SENTETIK", Currency),
+            var unavailable = await a.Accounts.ProposeAsync(a.Context, Key("k-2"), new BankAccountProposeRequest("SENTETIK", Currency, "SENTETIK Banka", "SENTETIK tür"),
                 CancellationToken.None);
             Assert.Equal(CommandOutcome.Unavailable, unavailable.Outcome);
             Assert.Equal("settings_provider_unavailable", Assert.Single(unavailable.Issues).Code);
@@ -193,7 +327,7 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
         BankAccountView proposed;
         await using (var a = run.Open(CompanyA, Proposer))
         {
-            proposed = (await a.Accounts.ProposeAsync(a.Context, Key("p-1"), new BankAccountProposeRequest("SENTETIK", Currency),
+            proposed = (await a.Accounts.ProposeAsync(a.Context, Key("p-1"), new BankAccountProposeRequest("SENTETIK", Currency, "SENTETIK Banka", "SENTETIK tür"),
                 CancellationToken.None)).Resource!;
         }
 
@@ -232,7 +366,7 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
         await using (var scope = run.Open(unknownCompany, Proposer))
         {
             var error = await Assert.ThrowsAsync<DbUpdateException>(() => scope.Accounts.ProposeAsync(scope.Context, Key("k-1"),
-                new BankAccountProposeRequest("SENTETIK", Currency), CancellationToken.None));
+                new BankAccountProposeRequest("SENTETIK", Currency, "SENTETIK Banka", "SENTETIK tür"), CancellationToken.None));
             Assert.Equal(547, Assert.IsType<SqlException>(error.InnerException).Number);
         }
 
@@ -288,8 +422,20 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
         public Scope Open(Guid company, string actor, params Microsoft.EntityFrameworkCore.Diagnostics.IInterceptor[] extra) =>
             Open(company, actor, realSettings: false, extra);
 
+        /// <summary>
+        /// The same scope with an action the permission port REFUSES — a caller holding no Finance
+        /// bank-account name, which is what a Sevkiyatçı is. The port is the only synthetic part; the
+        /// database, the tenant filter and the reader are the real ones.
+        /// </summary>
+        public Scope OpenRefused(Guid company, string actor) =>
+            Open(company, actor, realSettings: false, new RefusingPermissions(), []);
+
         public Scope Open(Guid company, string actor, bool realSettings,
-            params Microsoft.EntityFrameworkCore.Diagnostics.IInterceptor[] extra)
+            params Microsoft.EntityFrameworkCore.Diagnostics.IInterceptor[] extra) =>
+            Open(company, actor, realSettings, new SyntheticPermissions(), extra);
+
+        private Scope Open(Guid company, string actor, bool realSettings, IFinancePermissionPort permissions,
+            Microsoft.EntityFrameworkCore.Diagnostics.IInterceptor[] extra)
         {
             var companyContext = new CompanyContext();
             companyContext.Set(company);
@@ -306,7 +452,6 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
                 .AddInterceptors(interceptors)
                 .Options;
             var dbContext = new FinanceDbContext(options, companyContext);
-            var permissions = new SyntheticPermissions();
             ISettingsMoneyCandidateReader currencies = realSettings
                 ? new UnavailableSettingsPrerequisiteProvider(companyContext, currentUser)
                 : new SyntheticCandidates();
@@ -387,6 +532,17 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
     {
         public Task<PermissionDecision> CheckAsync(FinanceContext context, FinanceAction action, Guid? sourceId,
             CancellationToken cancellationToken) => Task.FromResult(PermissionDecision.Allowed);
+    }
+
+    /// <summary>
+    /// SENTETIK: a caller the authority refuses for every Finance action — someone holding no
+    /// `finance.bank-account.read` name at all. K2 asks that such a person receive no IBAN; the case
+    /// using this port proves they receive no ACCOUNT, which is the stronger statement.
+    /// </summary>
+    private sealed class RefusingPermissions : IFinancePermissionPort
+    {
+        public Task<PermissionDecision> CheckAsync(FinanceContext context, FinanceAction action, Guid? sourceId,
+            CancellationToken cancellationToken) => Task.FromResult(PermissionDecision.Denied);
     }
 
     /// <summary>SENTETIK: one currency candidate. Not a Settings source; none exists on main.</summary>
