@@ -219,7 +219,35 @@ raporla, koşuların varlığından **çıkarım yapma**.
 
 ---
 
-## 7. Bir oluşturma ekranına iki giriş noktası
+## 7. Tarayıcı senaryolarında modül düzeyi paylaşılan durum, ilk hatadan sonra kaybolur
+
+**Belirti.** Seri bir tarayıcı yolculuğunda bir vaka düşüyor; SONRAKİ vakalar, ilk vakanın ürettiği
+kimliği boş görüyor. Locator `getByTestId('logistics-row-')` gibi **sonu boş** çıkıyor — yanlış
+kimlik değil, hiç kimlik yok.
+
+**Sebep.** Playwright, **başarısız** bir testten sonra worker sürecini atar ve kalan vakalar için
+yenisini başlatır; spec modülü yeniden import edilir ve `let createdId = ''` tekrar boşalır. Bu,
+`workers: 1`, `fullyParallel: false` ve `retries: 0` olsa bile geçerlidir — yani "tek worker, seri
+akış" bu durumu **engellemez**. Sonuç: ilk hatanın ardından gelen her hata, kendi başına bir kusur
+gibi görünür ve iki tur teşhis yenir.
+
+**Bu projede (19 Eylül 2026, l04):** bir koşuda L04-01'in düşmesi 02/03/05'i, sonraki koşuda
+L04-03'ün düşmesi 05'i boşalttı.
+
+**Doğru desen.**
+- Vakalar arası kimliği **modül değişkeninden** değil, gerçek kaynaktan kurtar (listeden/API'den
+  oku); durum paylaşmak zorundaysan dosya/fixture üzerinden paylaş.
+- Yardımcıları **boş kimliğe karşı korumalı** yaz: `''` gelirse hemen ve anlaşılır biçimde patlasın,
+  15 saniye timeout'la değil.
+- Bir koşuda birden fazla vaka düştüyse, **önce ilkini** düzelt ve tekrar koş: sonrakiler çoğu zaman
+  onun gölgesidir. Teşhisi ikinci hatadan başlatma.
+- Bu tuzak, teşhisi dışarıdan yapanın **göremeyeceği** bir çalışma-zamanı davranışıdır; log'dan
+  "boş kimlik" görünür ama sebebi görünmez. Şeridin kendi koşusundan doğrulaması gerekir — bu
+  maddeyi de SİPARİŞ öyle kapattı.
+
+---
+
+## 8. Bir oluşturma ekranına iki giriş noktası
 
 **Belirti.** Tarayıcı testi strict-mode ihlali veriyor: aynı erişilebilir ada sahip iki bağlantı.
 Ekran okuyucu da aynı rotaya giden iki özdeş bağlantı okuyor.
