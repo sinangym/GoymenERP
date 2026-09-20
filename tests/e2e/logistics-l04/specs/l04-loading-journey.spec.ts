@@ -158,7 +158,9 @@ test('L04-01 the preparer creates an instruction from a real selection of the ap
   await expect(page.getByRole('heading', { level: 1, name: 'Yükleme talimatları' })).toBeVisible({ timeout: 30_000 })
   await expect(page.getByTestId(`logistics-row-${instructionId}`)).toBeVisible()
   await expectNoPriceText(page)
-  await page.getByRole('link', { name: 'Yeni yükleme talimatı' }).click()
+  // The shell's nav entry (the central mount) and the list screen's own link share the name: the journey clicks the
+  // screen's, inside the main region (first l04 run 35478322479: strict-mode violation, two matches).
+  await page.getByRole('main').getByRole('link', { name: 'Yeni yükleme talimatı' }).click()
   await expect(page.getByRole('heading', { level: 1, name: 'Yeni yükleme talimatı' })).toBeVisible({ timeout: 30_000 })
 
   // The customer and the line come from the price-free Logistics read of this company's approved lines, picked by their
