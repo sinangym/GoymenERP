@@ -209,7 +209,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/"
              + "Persistence/SalesDbContext.cs"] =
-                "266cd553d0ef98b8dda3cf23f197f2650a2b07bdda940f820df7e1c080894e9e",
+                "715058a1d29fd45835d1bd4263c6423e26cbea71a487bf91968fd917b73d2018",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
@@ -663,7 +663,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // an empty DraftRevisions rolls back freely, and 51049 is used by no other module (counted across
                 // src/backend). Forward fix, the AddDraftApproval (51045) pattern.
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20260920073846_AddDraftRevisions.cs"] =
-                    new("a0bbfdba188b3125f769e96ce6f4742399d3f3a9258990c8455a34d1e1dc1e1a",
+                    new("b3ce29d5714f32b9f6251badaa957889b6de254eabf04efcc647e4d83f5243bd",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // ACC-V0a: the Down's only raw SQL is Accounting's module refusal (51048, coordinator-assigned) while any
