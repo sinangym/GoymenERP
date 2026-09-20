@@ -1226,7 +1226,7 @@ public sealed partial class OpenApiContractGenerationTests
                     ("package", "oneOf:ref:SalesDraftOwnerReferenceV1|type:null"),
                     ("approval", "ref:SalesDraftApprovalV1")),
                 ["SalesOrderDraftLineDetail"] = ObjectSchema(
-                    ["lineId", "lineNo", "productId", "productVersion", "productCode", "productName", "orderUnitId", "quantity", "unitPrice", "priceUnitId", "requestedDeliveryDate", "note", "requestedDeliverySlices", "discountPercent"],
+                    ["lineId", "lineNo", "productId", "productVersion", "productCode", "productName", "orderUnitId", "quantity", "unitPrice", "priceUnitId", "requestedDeliveryDate", "note", "requestedDeliverySlices", "discountPercent", "priceDisclosure"],
                     ("lineId", "type:string;format:uuid"),
                     ("lineNo", "type:integer|string;format:int32"),
                     ("productId", "type:string;format:uuid"),
@@ -1240,7 +1240,12 @@ public sealed partial class OpenApiContractGenerationTests
                     ("requestedDeliveryDate", "type:null|string;format:date"),
                     ("note", "type:null|string"),
                     ("requestedDeliverySlices", "type:array|null;items:ref:SalesDraftDeliverySliceV1"),
-                    ("discountPercent", "type:null|string")),
+                    ("discountPercent", "type:null|string"),
+                    // SALES-P2: REQUIRED and not nullable, and the pairing is the point. The three commercial
+                    // texts above stay nullable and come back null for a caller without sales.orders.price.read;
+                    // this marker is what says WHY, so "withheld" stays distinguishable from "unpriced". A
+                    // nullable marker would have reintroduced the very ambiguity it exists to remove.
+                    ("priceDisclosure", "ref:SalesPriceDisclosure")),
                 ["SalesOrderDraftListResponse"] = ObjectSchema(
                     ["items", "nextCursor"],
                     ("items", "type:array;items:ref:SalesOrderDraftSummaryView"),
@@ -1266,6 +1271,11 @@ public sealed partial class OpenApiContractGenerationTests
                     ("createdAtUtc", "type:string;format:date-time"),
                     ("lineCount", "type:integer|string;format:int32"),
                     ("approvalState", "type:string")),
+                // SALES-P2: the disclosure marker's own component. Two members only — there is deliberately no
+                // "Unavailable" third value as AmountDisclosure and CommandOutcome carry, because this answer is
+                // computed at the moment of answering and can never be "not asked": the module throws 503 if the
+                // name is unregistered rather than emitting a placeholder.
+                ["SalesPriceDisclosure"] = ScalarSchema("enum:Visible|Withheld"),
                 ["AllocationKnowledge"] = ScalarSchema("enum:Unavailable|Known"),
                 ["AmountDisclosure"] = ScalarSchema("enum:Unavailable|Redacted|Visible"),
                 ["AmountView"] = ObjectSchema(

@@ -177,7 +177,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // sales
             ["tools/relational_inventory/sales.txt"] =
-                "0b6eb5888c165ae3997f132fe7e2212eea8b9e4fca72bf0ecadc2ab7c38c2c1f",
+                "515d8815193c6ee7275f93c9be97cde6a91d72d69eebc26238d206326bfa5d24",
         };
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =

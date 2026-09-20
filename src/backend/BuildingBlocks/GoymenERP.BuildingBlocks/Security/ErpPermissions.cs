@@ -183,6 +183,41 @@ public static class ErpPermissions
     public const string SalesOrdersPriceWrite = "sales.orders.price.write";
 
     /// <summary>
+    /// SALES-P2 (K3, Sinan #66 5748258299), the Sales owner's name (SalesPermissionManifestV1.OrdersPriceRead,
+    /// same string). It governs DISCLOSURE, not reachability, and that is why it needed a name of its own:
+    /// <see cref="SalesDraftsRead"/> already shows the row, so without a second name there would be no way to
+    /// show a Sevkiyatçı the line while withholding its price — which Sinan's acceptance requires in those
+    /// words ("Sevkiyatçıya fiyat/iskonto/tutar sızmaz"), and whose other half he states as "Sipariş onayının
+    /// fiyat/tutar bağlamı ilgili dar fiyat okumasıyla sağlanır; bu maliyet/marj/banka sınırsız okuması
+    /// değildir". A narrow read, then: the line's unit price, price unit and discount, and nothing adjacent —
+    /// no cost, margin, bank or Finance read.
+    /// <para>
+    /// What a holder without it sees is not an omission but an ANSWER: the three commercial fields come back
+    /// null beside a never-null <c>PriceDisclosure: Withheld</c>. The owner's contract carries the reason —
+    /// an absent price cannot otherwise be told apart from a price of nothing, the same argument that made
+    /// <c>canOpenLocationDetail</c> required (#377).
+    /// </para>
+    /// <para>
+    /// Company-wide only, matching what the module actually asks: its disclosure check requires a grant that
+    /// <c>IsCompanyWide</c>, so a site-scoped grant would be accepted at grant time and then silently never
+    /// disclose. The set makes the catalogue refuse what the code would not honour.
+    /// </para>
+    /// <para>
+    /// Not Critical, for the reason spelled out on <see cref="SalesOrdersPriceWrite"/>: Critical is the
+    /// GRANT-TIME dual-control set, and no source makes seeing a price a segregated duty.
+    /// </para>
+    /// <para>
+    /// REGISTERING IS NOT IMPLYING, and this row was checked against the opposite reading: holding
+    /// <see cref="SalesOrdersPriceWrite"/> does not confer this name. Nothing here builds an implication —
+    /// membership of <see cref="All"/> only makes the name KNOWN (the module throws 503 on an unregistered
+    /// one rather than disclosing), and membership of <see cref="CompanyWideOnly"/> only narrows how it may
+    /// be granted. The module asks for this name specifically. Whether a pricer should also see prices is a
+    /// grant, and Sinan is silent on it, so it stays a human gate rather than a side effect.
+    /// </para>
+    /// </summary>
+    public const string SalesOrdersPriceRead = "sales.orders.price.read";
+
+    /// <summary>
     /// LOG-4a (Business #66 5737790175: the loading instruction on approved order lines, one stock effect): the
     /// Logistics owner's names (LogisticsPermissionManifestV1), the backend owners' technical mapping (Business
     /// #254 5654539215) recorded and confirmed by the coordinator (#66 5743488059). Registered, not granted: no
@@ -265,6 +300,7 @@ public static class ErpPermissions
             SalesDraftsRead,
             SalesOrdersApprove,
             SalesOrdersPriceWrite,
+            SalesOrdersPriceRead,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,
             ManufacturingOrdersCreate,
@@ -323,6 +359,7 @@ public static class ErpPermissions
             SalesDraftsRead,
             SalesOrdersApprove,
             SalesOrdersPriceWrite,
+            SalesOrdersPriceRead,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,
             ManufacturingOrdersCreate,

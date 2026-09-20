@@ -29,6 +29,13 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
     // and not Critical (the reason is on ErpPermissions.SalesOrdersPriceWrite). The row matters because the
     // set pin below would accept the name registered with the WRONG scope or flagged Critical.
     [InlineData(SalesPermissionManifestV1.OrdersPriceWrite, ErpPermissions.SalesOrdersPriceWrite)]
+    // SALES-P2: the price/discount READ. Its own name because drafts.read already shows the row — without a
+    // second name there is no way to show the line and withhold its price. Company-wide is not decoration
+    // here: the module's disclosure check requires a grant that IsCompanyWide, so a site-scoped grant would
+    // be accepted at grant time and then never disclose; RequiresCompanyWideScope below is what stops the
+    // catalogue accepting what the code will not honour. Not Critical (the reason is on
+    // ErpPermissions.SalesOrdersPriceRead).
+    [InlineData(SalesPermissionManifestV1.OrdersPriceRead, ErpPermissions.SalesOrdersPriceRead)]
     public void The_owner_name_is_the_registered_central_name(string ownerName, string centralName)
     {
         Assert.Equal(ownerName, centralName);
