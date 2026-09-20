@@ -1,4 +1,5 @@
 using System.Text.Json;
+using GoymenERP.Api.Contracts;
 
 namespace GoymenERP.BrowserSuiteFixtureTool.Shared;
 
@@ -13,8 +14,16 @@ namespace GoymenERP.BrowserSuiteFixtureTool.Shared;
 public static class CariBrowserSeed
 {
     public const string CounterpartiesPath = "/api/v1/counterparties";
-    public const string ClientContractHeader = "X-ERP-Counterparty-Contract";
-    public const string ClientContractVersion = "optional-trade-roles-v1";
+    // The Cari client contract is the owner's, so these ALIAS it instead of copying it: the fixture
+    // tool already references GoymenERP.Api. A copy drifts silently and the drift does not show up
+    // as a red unit test — it kills a whole browser run at seed time with a 409 "Uyumlu istemci
+    // gerekli", which is what s04 paid for once.
+    // `static readonly`, not `const`: a C# const is baked into the CONSUMING assembly's IL at compile
+    // time, so a fixture tool built against an older Api could still carry the previous value even
+    // after the contract moved — one layer below the copy this alias removes. These resolve at run
+    // time. Neither usage (a dictionary value and a Headers.Add) needs a compile-time constant.
+    public static readonly string ClientContractHeader = CounterpartyClientContract.HeaderName;
+    public static readonly string ClientContractVersion = CounterpartyClientContract.Version;
     public const int LegalEntity = 1;
 
     public static async Task<CariBrowserAccount> OpenPartyWithAccountAsync(

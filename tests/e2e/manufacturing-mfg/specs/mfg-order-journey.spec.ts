@@ -14,13 +14,15 @@
  */
 
 import { expect, test, type BrowserContext, type Page, type Request, type Route } from '@playwright/test'
-import { arrangeOpenOrder, issueThroughApi, readMassBalance, readOrder } from '../src/arrange.js'
+import { arrangeOpenOrder, declareThroughApi, issueThroughApi, readMassBalance, readOrder } from '../src/arrange.js'
 import { readEnvironment } from '../src/env.js'
 
 const env = readEnvironment()
 const FACT_RE = /\/api\/v1\/manufacturing\/orders\/[^/]+\/(input-issues|input-returns|wip-measurements|outputs)$/
 const ORDER_RE = /\/api\/v1\/manufacturing\/orders\/[^/]+$/
 const BALANCE_RE = /\/api\/v1\/manufacturing\/orders\/[^/]+\/mass-balance$/
+const CLOSE_RE = /\/api\/v1\/manufacturing\/orders\/[^/]+\/close$/
+const LIST_RE = /\/api\/v1\/manufacturing\/orders(\?|$)/
 
 /** Binds `actor` to every API request of this context and records which requests it rewrote. */
 async function asActor(context: BrowserContext, actor: string): Promise<Set<Request>> {
@@ -199,6 +201,69 @@ test.describe('MFG order screen (real API, real SQL)', () => {
     // The read grant alone opens the GDC-BAL/1 panel too: the same order, read through the close's calculator.
     await expect(balanceRow(page, arranged.rollId).getByTestId('scrap-percent')).toContainText('Hesaplanamıyor')
     expect(posts).toEqual([])
+    expectEveryAnswerRewritten(answered, rewritten)
+  })
+
+  test('the list opens one order, and the order it opens is the one the list named', async ({ page, context }) => {
+    const arranged = await arrangeOpenOrder(env)
+    const rewritten = await asActor(context, env.seed.recorderActor)
+    const answered = watchAnswers(page)
+
+    const listed = page.waitForResponse((response) => LIST_RE.test(response.url()) && response.request().method() === 'GET')
+    await page.goto('/uretim/emirler')
+    await expect(page.getByRole('heading', { name: 'Üretim emirleri' })).toBeVisible()
+    expect((await listed).status()).toBe(200)
+
+    const row = page.getByRole('row', { name: new RegExp(arranged.orderId.slice(-8)) })
+    await expect(row).toContainText('Açık')
+    await expect(row).toContainText('1000')
+    // The list carries the stored summary only: no balance column, and no invented label.
+    await expect(page.getByRole('region', { name: 'Kütle dengesi (GDC-BAL/1)' })).toHaveCount(0)
+
+    await row.getByRole('link').click()
+    await expect(page.getByRole('heading', { name: 'Üretim emri' })).toBeVisible()
+    expect(new URL(page.url()).pathname).toBe(`/uretim/emir/${arranged.orderId}`)
+    await expect(rollRow(page, arranged.rollId)).toContainText('1000')
+    expectEveryAnswerRewritten(answered, rewritten)
+  })
+
+  test('a closer is refused while a roll is unexplained, and closes it once the mass is accounted', async ({ page, context }) => {
+    // MFG-4 (Business 5728619644) through the real stack: 1000 issued, 600 declared → refused with the
+    // rule's own code; the remaining 400 declared → accepted. No tolerance anywhere.
+    const arranged = await arrangeOpenOrder(env)
+    const issued = await issueThroughApi(env, arranged, arranged.version, '1000')
+    const partial = await declareThroughApi(env, arranged, issued.version as number, 'GoodProduct', '600')
+    const rewritten = await asActor(context, env.seed.closerActor)
+    const answered = watchAnswers(page)
+
+    await openOrder(page, arranged.orderId)
+    // The closer records no fact: the close is its own authority.
+    await expect(page.getByRole('heading', { name: 'Gerçekleşme kaydı' })).toHaveCount(0)
+    await expect(page.getByRole('heading', { name: 'Emri kapat' })).toBeVisible()
+
+    const refusedPost = page.waitForRequest((request) => CLOSE_RE.test(request.url()) && request.method() === 'POST')
+    await page.getByRole('button', { name: 'Emri kapat', exact: true }).click()
+    await page.getByRole('button', { name: 'Evet, emri kapat', exact: true }).click()
+    const sent = await refusedPost
+    expect(sent.postDataJSON()).toMatchObject({ expectedVersion: partial.version })
+    expect(sent.headers()['idempotency-key']).toMatch(/^[0-9a-f-]{36}$/)
+    await expect(page.getByTestId('close-refusal')).toContainText('açıklanamayan kütle farkı')
+    expect((await readOrder(env, arranged.orderId)).status).toBe('Open')
+
+    // The missing 400 kg is declared through the real API; the screen re-reads and the close is accepted.
+    const balanced = await declareThroughApi(env, arranged, partial.version as number, 'Scrap', '400')
+    await page.reload()
+    await expect(page.getByRole('heading', { name: 'Emri kapat' })).toBeVisible()
+    const acceptedPost = page.waitForRequest((request) => CLOSE_RE.test(request.url()) && request.method() === 'POST')
+    await page.getByRole('button', { name: 'Emri kapat', exact: true }).click()
+    await page.getByRole('button', { name: 'Evet, emri kapat', exact: true }).click()
+    expect((await acceptedPost).postDataJSON()).toMatchObject({ expectedVersion: balanced.version })
+    await expect(page.getByText('Emir kapatıldı', { exact: true })).toBeVisible()
+    await expect(page.getByTestId('order-already-closed')).toBeVisible()
+
+    const stored = await readOrder(env, arranged.orderId)
+    expect(stored.status).toBe('Closed')
+    expect(stored.closedAtUtc).not.toBeNull()
     expectEveryAnswerRewritten(answered, rewritten)
   })
 })

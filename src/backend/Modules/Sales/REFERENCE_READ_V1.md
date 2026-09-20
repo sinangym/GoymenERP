@@ -92,6 +92,8 @@ query/body companyId or client actor is trusted.
 | GET /api/v1/sales/references/accounts?q=...&pageSize=50&cursor=... | GetAccountsAsync(query, serverSessionBinding, ct) | SalesAccountOptionsV1 |
 | GET /api/v1/sales/references/currency?currencyId=...&effectiveOn=2026-09-13 | GetCurrencyAsync(query, ct) | SalesCurrencyReferenceV1 |
 | GET /api/v1/sales/references/product?productId=...&expectedProductVersion=7&orderUnitId=...&effectiveOn=2026-09-13 | GetProductAsync(query, ct) | SalesProductReferenceV1 |
+| GET /api/v1/sales/references/contact-information?partyId=...&companyAccountId=... (SALES-A2a) | GetContactInformationAsync(query, ct) | SalesContactInformationOptionsV1 |
+| GET /api/v1/sales/references/currencies?effectiveOn=2026-09-13 (SALES-A2a) | GetCurrenciesAsync(query, ct) | SalesCurrencyOptionsV1 |
 
 These routes are implemented in SalesEndpoints.cs; they are not catalogue listings.
 Status 200 serializes result.Value only, never the internal result wrapper. Every
@@ -103,6 +105,8 @@ which handler code reaches the client:
 | accounts | 400, 401, 403, 503 | validation_failed, invalid_cursor |
 | currency | 400, 401, 403, 422, 503 | validation_failed, unsupported_currency |
 | product | 400, 401, 403, 404, 409, 422, 503 | validation_failed, product_selection_changed, unsupported_product, unsupported_unit |
+| contact-information | 400, 401, 403, 404, 503 | validation_failed |
+| currencies | 400, 401, 403, 503 | validation_failed |
 
 The platform writer owns 401/403/500/503 bodies and replaces any handler code with
 authentication_required, forbidden, internal_error or service_unavailable. So
@@ -137,6 +141,63 @@ Example IDs, accepted test profiles and successful snapshots are synthetic only.
 They explain the wire, not available production options or permissions. Error
 examples carry only the public status and code; SalesReferenceHttpAcceptanceTests
 compares them with responses of the real handler behind the routes.
+
+## SALES-A2a list reads (Business 5745076917 item 2)
+
+Two LIST reads feed the create form's selects; both are read-only, bound to the same
+create-form permissions as the reads above, and offer no default and no price.
+
+Operation ids: `GetSalesContactInformationReferencesV1`, `GetSalesCurrencyReferencesV1`.
+Both routes refuse a missing, repeated, unknown or malformed query with 400
+`validation_failed` (empty ids, a non-ISO date) before the handler is reached, and set
+`Cache-Control: private, no-store`.
+
+**contact-information** — the Cari owner's ACTIVE operational addresses and contacts of
+ONE party account, through the Sales-owned `ISalesPartyContactInformationPortV1` (a
+separate interface beside `ISalesPartyAccountPortV1`, so no existing implementer breaks).
+The host adapter is `CounterpartySalesPartyAccountPortV1`, which now also implements this
+port over `ICounterpartyContactInformationService.GetContactInformationAsync(partyId)`:
+the owner measures its own read permission for the actor (`counterparty.parties.read`,
+company-wide); an `UnauthorizedAccessException` is Denied; a missing account of that
+party in the server company, another account id or another company is NotFound; the
+answer is the account's version and its addresses/contacts with the owner's ids,
+versions and active flags, mapped 1:1 and without channels (no phone or e-mail crosses
+into Sales). The handler binds to `AccountsPermission`, measures it again after the
+owner read, and offers only ACTIVE items: Denied → 403, NotFound → 404 code-less,
+Unavailable → 503; the owner's identities and versions are re-checked (party/account
+mismatch, a version that is not a positive integer text, a blank Line1/CountryCode/
+Purpose/DisplayName → 503 `reference_provider_invalid`; another company → 403). Success
+keys: `companyId, partyId, companyAccountId, accountVersion, addresses[{id, version,
+purpose, text, countryCode, line1, line2, city, district, postalCode}], contacts[{id,
+version, displayName, jobTitle, purpose}]`; `text` is the address joined for display —
+"Line1, Line2, District City PostalCode, CountryCode" with blank parts left out. The
+`version` texts are what a draft stores as the reference's expected version.
+
+**currencies** — the company's currencies a draft may be opened in on `effectiveOn`. The
+source is the EXISTING Settings owner list `ISettingsMoneyCandidateReader
+.GetMoneyCurrencyCandidatesAsync` (candidates of the server-resolved company; "being
+listed is not validity"), checked with `MoneyCurrencyCandidatesV1.EnsureWellFormed` and
+then revalidated candidate by candidate through the same known-id money read the
+currency route and the create use (`GetMoneyProfileAsync(candidate.CurrencyId,
+MoneyOperation, effectiveOn)`), with the permission measured after the list read and
+after every profile read. A candidate whose profile is `settings_money_profile_not_found`
+for the operation, inactive, or not in effect on the date is left out; an empty list is
+a 200 with `currencies: []` (distinct from unavailable). A malformed list, a missing
+reader or any other Settings exception fails the whole read as the currency route maps
+it (403 `settings_access_denied`, otherwise 503); a profile of another company is 403; a
+malformed profile is 503 `reference_provider_invalid`. Each option is the currency
+route's `SalesCurrencyReferenceV1` (label = the owner's code). Keys: `companyId,
+effectiveOn, currencies[{companyId, effectiveOn, currencyId, code, label, profileId,
+profileVersion}]`. Order is the owner's; nothing is selected automatically.
+
+Composition: the handler takes the candidate reader and the contact-information port as
+OPTIONAL trailing constructor inputs. Program.cs's factory rows (passing
+`ISettingsMoneyCandidateReader` and `ISalesPartyContactInformationPortV1`) and the
+`ISalesPartyContactInformationPortV1 → CounterpartySalesPartyAccountPortV1`
+registration are the central writer's (CARİ); until they land, both reads answer 503
+(`counterparty_provider_unavailable` / `settings_provider_unavailable`, redacted to
+`service_unavailable`), never an empty list. The OpenAPI rows for the two operations are
+central as well.
 
 ## FE mapping and command revalidation
 

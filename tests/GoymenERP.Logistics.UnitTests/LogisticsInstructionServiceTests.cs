@@ -275,6 +275,74 @@ public sealed class LogisticsInstructionServiceTests
         Assert.Empty(world.Store.Refusals);
     }
 
+    [Fact]
+    public async Task The_approved_order_lines_read_is_price_free_needs_the_create_name_and_is_the_companys_own()
+    {
+        // Sinan §4 (#66 5738113623): the Sevkiyatçı sees orders, never prices — the wire and port types carry no such member at all.
+        foreach (var type in new[] { typeof(LogisticsApprovedOrderLineView), typeof(SalesApprovedLineReferenceV1) })
+        {
+            Assert.DoesNotContain(type.GetProperties(), property =>
+                property.Name.Contains("Price", StringComparison.OrdinalIgnoreCase) || property.Name.Contains("Discount", StringComparison.OrdinalIgnoreCase)
+                || property.Name.Contains("Payment", StringComparison.OrdinalIgnoreCase) || property.Name.Contains("Currency", StringComparison.OrdinalIgnoreCase)
+                || property.Name.Contains("Amount", StringComparison.OrdinalIgnoreCase));
+        }
+
+        var world = new World();
+        var page = await world.Service().GetApprovedOrderLinesAsync(new LogisticsApprovedOrderLinesQuery());
+        var item = Assert.Single(page.Items);
+        Assert.Equal((Order, "SENTETIK SO-0001", OrderLine, 1, Party, Account, "Sentetik Müşteri", Product, "7", "GDC-001", "Sentetik rulo", KgUnit, "kg", "12.500", new DateOnly(2026, 9, 25), 0, "SENTETIK-next"),
+            (item.OrderId, item.DocumentNo, item.LineId, item.LineNo, item.CustomerPartyId, item.CompanyAccountId, item.CustomerName, item.ProductId, item.ProductVersion,
+                item.ProductCode, item.ProductName, item.UnitId, item.UnitCode, item.Quantity, item.RequestedDeliveryDate, item.Revision, page.NextCursor));
+        Assert.Equal(CreatePermission, world.Authority.LastPermission);
+        // Business 5745076917: the customer's NAME comes from the Cari owner (trade name, else legal name). A customer the owner
+        // does not answer for (not found) keeps its line under a labelled reference — the #358 case three lines below, never a
+        // dropped line; only the owner's DENIAL (403) or OUTAGE (503) is the whole read's answer (both asserted below).
+        world.Accounts.Fault = "no-trade-name";
+        Assert.Equal("Sentetik Müşteri Anonim Şirketi", Assert.Single((await world.Service().GetApprovedOrderLinesAsync(new LogisticsApprovedOrderLinesQuery())).Items).CustomerName);
+        // #358 P1 (coordinator ruling): a customer the Cari owner does not answer (a missing grant reads the same as a missing
+        // party there) keeps its line on the page under a labelled reference, never a name and never a dropped line; a
+        // genuinely empty approved set is an empty page — the two must never look alike.
+        world.Accounts.Fault = "not-found";
+        var unreadable = Assert.Single((await world.Service().GetApprovedOrderLinesAsync(new LogisticsApprovedOrderLinesQuery())).Items);
+        Assert.Equal((OrderLine, $"ref. …{Party.ToString("D")[^8..]}"), (unreadable.LineId, unreadable.CustomerName));
+        Assert.DoesNotContain(Party.ToString("D"), unreadable.CustomerName, StringComparison.OrdinalIgnoreCase);
+        world.Accounts.Fault = "";
+        world.ResetOwnerCalls();
+        world.OrderLines.Fault = "empty";
+        var none = await world.Service().GetApprovedOrderLinesAsync(new LogisticsApprovedOrderLinesQuery());
+        Assert.Empty(none.Items);
+        Assert.Null(none.NextCursor);
+        Assert.Equal(0, world.Accounts.Calls);
+        world.OrderLines.Fault = "";
+        world.Accounts.Fault = "unavailable";
+        var cari = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() => world.Service().GetApprovedOrderLinesAsync(new LogisticsApprovedOrderLinesQuery()));
+        Assert.Equal((503, LogisticsProblemCodesV1.CounterpartyProviderUnavailable), (cari.Status, cari.Code));
+        world.Accounts.Fault = "";
+
+        // A read-only holder (no create name) is refused before the Sales owner is asked.
+        world.Bindings = world.Bindings with { CreatePermission = null };
+        var unbound = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() => world.Service().GetApprovedOrderLinesAsync(new LogisticsApprovedOrderLinesQuery()));
+        Assert.Equal((503, LogisticsProblemCodesV1.PermissionUnregistered), (unbound.Status, unbound.Code));
+        world.Bindings = world.Bindings with { CreatePermission = CreatePermission };
+
+        // The owner's page must be this company's; an outage is 503; a refused cursor is the caller's 400.
+        world.OrderLines.Fault = "other-company";
+        var foreign = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() => world.Service().GetApprovedOrderLinesAsync(new LogisticsApprovedOrderLinesQuery()));
+        Assert.Equal((503, LogisticsProblemCodesV1.ReferenceProviderInvalid), (foreign.Status, foreign.Code));
+        // FİNANS #358 P2: the page is a LINE page; an owner answering more lines than the cap contradicts the contract.
+        world.OrderLines.Fault = "over-cap";
+        var overCap = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() => world.Service().GetApprovedOrderLinesAsync(new LogisticsApprovedOrderLinesQuery(1)));
+        Assert.Equal((503, LogisticsProblemCodesV1.ReferenceProviderInvalid), (overCap.Status, overCap.Code));
+        world.OrderLines.Fault = "throws";
+        var outage = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() => world.Service().GetApprovedOrderLinesAsync(new LogisticsApprovedOrderLinesQuery()));
+        Assert.Equal((503, LogisticsProblemCodesV1.SalesProviderUnavailable), (outage.Status, outage.Code));
+        world.OrderLines.Fault = "bad-cursor";
+        var cursor = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() => world.Service().GetApprovedOrderLinesAsync(new LogisticsApprovedOrderLinesQuery(50, "SENTETIK")));
+        Assert.Equal((400, LogisticsProblemCodesV1.InvalidCursor), (cursor.Status, cursor.Code));
+        var tooWide = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() => world.Service().GetApprovedOrderLinesAsync(new LogisticsApprovedOrderLinesQuery(101)));
+        Assert.Equal(400, tooWide.Status);
+    }
+
     private static CreateLoadingInstructionRequest Request(string quantity = "1.25") =>
         new(Party, Account, Day, [new LoadingInstructionLineRequest(Guid.NewGuid(), Order, OrderLine, KgUnit, quantity)]);
 
@@ -358,7 +426,8 @@ public sealed class LogisticsInstructionServiceTests
                 "denied" => new LogisticsPartyAccountAnswerV1(LogisticsPartyAccountOutcomeV1.Denied, null),
                 "unavailable" => new LogisticsPartyAccountAnswerV1(LogisticsPartyAccountOutcomeV1.Unavailable, null),
                 _ => new LogisticsPartyAccountAnswerV1(LogisticsPartyAccountOutcomeV1.Found, new LogisticsPartyAccountV1(partyId, companyAccountId,
-                    Fault == "other-company" ? Guid.NewGuid() : Company, true, Fault != "passive-account", "3", "2")),
+                    Fault == "other-company" ? Guid.NewGuid() : Company, true, Fault != "passive-account", "3", "2",
+                    "Sentetik Müşteri Anonim Şirketi", Fault == "no-trade-name" ? null : "Sentetik Müşteri")),
             });
         }
     }
@@ -367,6 +436,32 @@ public sealed class LogisticsInstructionServiceTests
     {
         public string Fault { get; set; } = "";
         public int Calls { get; set; }
+
+        /// <summary>LOG-4b: the price-free picker page the Sales owner answers; "other-company" answers a foreign row, "throws" an outage.</summary>
+        public Task<SalesApprovedLinePageV1> ListApprovedLinesAsync(int pageSize, string? cursor, CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return Fault switch
+            {
+                "throws" => Task.FromException<SalesApprovedLinePageV1>(new InvalidOperationException("synthetic outage")),
+                "bad-cursor" => Task.FromException<SalesApprovedLinePageV1>(new ArgumentException("synthetic cursor")),
+                "empty" => Task.FromResult(new SalesApprovedLinePageV1([], null)),
+                "over-cap" => Task.FromResult(new SalesApprovedLinePageV1(
+                    [
+                        new SalesApprovedLineReferenceV1(Company, Order, "SENTETIK SO-0001", OrderLine, 1, Party, Account, Product, "7", "GDC-001",
+                            "Sentetik rulo", KgUnit, "kg", "12.500", new DateOnly(2026, 9, 25), 0),
+                        new SalesApprovedLineReferenceV1(Company, Order, "SENTETIK SO-0001", Guid.NewGuid(), 2, Party, Account, Product, "7", "GDC-001",
+                            "Sentetik rulo", KgUnit, "kg", "1.000", new DateOnly(2026, 9, 25), 0),
+                    ],
+                    null)),
+                _ => Task.FromResult(new SalesApprovedLinePageV1(
+                    [
+                        new SalesApprovedLineReferenceV1(Fault == "other-company" ? Guid.NewGuid() : Company, Order, "SENTETIK SO-0001", OrderLine, 1,
+                            Party, Account, Product, "7", "GDC-001", "Sentetik rulo", KgUnit, "kg", "12.500", new DateOnly(2026, 9, 25), 0),
+                    ],
+                    cursor is null ? "SENTETIK-next" : null)),
+            };
+        }
 
         public Task<SalesOrderLineReferenceAnswerV1> GetApprovedLineAsync(Guid orderId, Guid lineId, CancellationToken cancellationToken = default)
         {

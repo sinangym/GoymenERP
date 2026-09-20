@@ -386,3 +386,118 @@ export function decodeMassBalance(body: unknown): MassBalanceView | null {
   }
   return { orderId, version: balanceVersion, formulaVersion: body.formulaVersion, rolls }
 }
+
+// ---- MFG-ORD: `GET /api/v1/manufacturing/orders` (OrderListViewV1) and the close command ----------------------
+
+/**
+ * One order in the list, exactly as the server summarises it: the stored row and its input
+ * snapshot. No balance and no difference — those are the order read's, roll by roll — and no roll
+ * label: the label is Inventory's read (ÜRÜN / T15), not this module's, so the list shows none.
+ */
+export interface OrderSummary {
+  readonly orderId: string
+  readonly planId: string
+  readonly workCenterId: string
+  readonly process: string
+  readonly status: OrderStatus
+  readonly version: number
+  readonly plannedRollCount: number
+  readonly plannedInputKg: string
+  readonly target: { readonly basis: string; readonly kg: string } | null
+  readonly createdAtUtc: string
+  readonly closedAtUtc: string | null
+}
+
+/** `nextCursor === null` is the end of the list; the cursor is opaque and is sent back unchanged. */
+export interface OrderListView {
+  readonly orders: readonly OrderSummary[]
+  readonly nextCursor: string | null
+}
+
+/** A non-negative safe integer count. */
+function count(value: unknown): number | null {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null
+}
+
+function utc(value: unknown): string | null | undefined {
+  if (value === null) return null
+  return typeof value === 'string' && !Number.isNaN(Date.parse(value)) ? value : undefined
+}
+
+function decodeSummary(value: unknown): OrderSummary | null {
+  if (!isObject(value)) return null
+  const orderId = guid(value.orderId)
+  const planId = guid(value.planId)
+  const workCenterId = guid(value.workCenterId)
+  const orderVersion = version(value.version)
+  const plannedRollCount = count(value.plannedRollCount)
+  const plannedInputKg = kg(value.plannedInputKg)
+  const target = decodeTarget(value.target)
+  const createdAtUtc = utc(value.createdAtUtc)
+  const closedAtUtc = utc(value.closedAtUtc)
+  if (
+    orderId === null ||
+    planId === null ||
+    workCenterId === null ||
+    orderVersion === null ||
+    plannedRollCount === null ||
+    plannedInputKg === null ||
+    target === undefined ||
+    createdAtUtc === undefined ||
+    createdAtUtc === null ||
+    closedAtUtc === undefined ||
+    typeof value.process !== 'string' ||
+    (value.status !== 'Open' && value.status !== 'Closed')
+  ) {
+    return null
+  }
+  // A closed order carries its close time and an open one carries none: a half-told status is not
+  // a contract shape, and the screen never infers one from the other.
+  if ((value.status === 'Closed') !== (closedAtUtc !== null)) return null
+  return {
+    orderId,
+    planId,
+    workCenterId,
+    process: value.process,
+    status: value.status,
+    version: orderVersion,
+    plannedRollCount,
+    plannedInputKg,
+    target,
+    createdAtUtc,
+    closedAtUtc,
+  }
+}
+
+export function decodeOrderList(body: unknown): OrderListView | null {
+  if (!isObject(body) || !Array.isArray(body.orders)) return null
+  const nextCursor =
+    body.nextCursor === null
+      ? null
+      : typeof body.nextCursor === 'string' && body.nextCursor.length > 0
+        ? body.nextCursor
+        : undefined
+  if (nextCursor === undefined) return null
+  const orders: OrderSummary[] = []
+  for (const raw of body.orders) {
+    const summary = decodeSummary(raw)
+    if (summary === null) return null
+    orders.push(summary)
+  }
+  return { orders, nextCursor }
+}
+
+/**
+ * One close as the caller froze it: the version the screen read and the key that names this
+ * attempt. Re-sending the SAME snapshot sends both unchanged, so the server answers it as the
+ * same command (ADR-011 §4) instead of closing twice.
+ */
+export interface CloseSnapshot {
+  readonly idempotencyKey: string
+  readonly expectedVersion: number
+}
+
+/** The request body exactly as `CloseOrderRequestV1` names it. */
+export function closeBody(snapshot: CloseSnapshot): Record<string, unknown> {
+  return { expectedVersion: snapshot.expectedVersion }
+}

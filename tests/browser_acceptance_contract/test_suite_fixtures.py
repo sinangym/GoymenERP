@@ -130,7 +130,7 @@ class SeedSourceTests(unittest.TestCase):
         for key in ("Host", "TestedCommit", "RunId", "ComposeProject"):
             with self.subTest(key=key):
                 self.assertIn(f'new("BrowserSuiteFixture:{key}", ', host)
-        for suite in ("s03", "s04", "org03", "smoke"):
+        for suite in ("s03", "s04", "l04", "org03", "smoke"):
             for key in ("BrowserSuiteFixture__Host", "BrowserSuiteFixture__TestedCommit"):
                 with self.subTest(suite=suite, key=key):
                     model = profile_tests.model(browser.profile_of(suite))

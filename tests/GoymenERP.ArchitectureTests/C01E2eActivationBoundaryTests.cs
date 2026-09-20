@@ -94,6 +94,15 @@ public sealed class C01E2eActivationBoundaryTests
                 + "SalesDraftFixtureStore.cs",
             ],
             BackendFilesContaining("AddSalesDraftFixtureStore"));
+        // l04: Logistics's line-block port, the same shape (the store saves through LogisticsDbContext's public
+        // SaveChangesAsync under its own write guards; no second save path).
+        Assert.Equal(
+            [
+                "src/backend/GoymenERP.Api/Shell/C01E2eFixtureWriterActivation.cs",
+                "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Fixtures/"
+                + "LogisticsLineBlockFixtureStore.cs",
+            ],
+            BackendFilesContaining("AddLogisticsLineBlockFixtureStore"));
     }
 
     // u02 (#331): ProductDbContext refuses every public save; AddFixtureCodeGroupAsync is a second write path
@@ -133,6 +142,8 @@ public sealed class C01E2eActivationBoundaryTests
                      "infra/docker-compose.yml",
                      "infra/docker-compose.c01-e2e.yml",
                      "infra/docker-compose.browser-normal.yml",
+                     "infra/docker-compose.browser-acc-staged.yml",
+                     "infra/docker-compose.browser-log-staged.yml",
                      "infra/docker-compose.browser-cari-staged.yml",
                      "src/backend/GoymenERP.Api/Dockerfile",
                      "src/backend/GoymenERP.Api/appsettings.json",

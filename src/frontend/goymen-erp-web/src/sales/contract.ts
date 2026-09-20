@@ -249,6 +249,9 @@ export const SALES_PROBLEM_CODE = {
   concurrentChange: 'concurrent_change',
   commercialNotAvailable: 'commercial_not_available',
   ownerReferenceUnavailable: 'owner_reference_unavailable',
+  // SALES-A2a: a delivery address / contact the Cari owner does not list (or lists inactive) for the
+  // draft's party account (422). A stale reference version is the terminal `version_conflict`.
+  ownerReferenceInvalid: 'owner_reference_invalid',
   commandMetadataInvalid: 'command_metadata_invalid',
   invalidCursor: 'invalid_cursor',
   // SALES-A1 (contract deltas): the transition is not allowed from the draft's approval state
@@ -558,4 +561,158 @@ export function decodeProblem(value: unknown, status: number): SalesProblem | nu
     correlationId: typeof o.correlationId === 'string' ? o.correlationId : null,
     errors,
   }
+}
+
+/* ── SALES-A2a: the two reference LIST reads of the create form's selects ────── */
+
+/**
+ * `GET /api/v1/sales/references/currencies?effectiveOn=` → `SalesCurrencyOptionsV1`: the Settings owner's
+ * currency candidates of the company, each revalidated for the Sales operation on the date, as
+ * `SalesCurrencyReferenceV1` rows. The code is a label; `currencyId` is the only identity sent back.
+ */
+export interface CurrencyOption {
+  readonly currencyId: string
+  readonly code: string
+  readonly profileId: string
+  readonly profileVersion: string
+}
+
+/**
+ * `GET /api/v1/sales/references/contact-information?partyId=&companyAccountId=` →
+ * `SalesContactInformationOptionsV1`: the Cari owner's ACTIVE delivery addresses and contact persons of
+ * one party account, with the owner's versions — what a draft stores as `{id, expectedVersion}`.
+ * `text` is the owner's address joined for display; no channel, phone or e-mail crosses into Sales.
+ */
+export interface AddressOption {
+  readonly id: string
+  readonly version: string
+  readonly purpose: string
+  readonly text: string
+}
+
+export interface ContactOption {
+  readonly id: string
+  readonly version: string
+  readonly displayName: string
+  readonly jobTitle: string | null
+  readonly purpose: string
+}
+
+export interface ContactInformationOptions {
+  readonly partyId: string
+  readonly companyAccountId: string
+  readonly accountVersion: string
+  readonly addresses: readonly AddressOption[]
+  readonly contacts: readonly ContactOption[]
+}
+
+/**
+ * No price, discount, amount or payment member has any place on these reads (Sinan §4 #66
+ * 5738113623: a reference read never carries a price). A body that names one anywhere — even
+ * unused — is not the contract this build was written for, and is refused as malformed.
+ */
+const PRICE_LIKE_KEY = /price|discount|amount|payment|fiyat|iskonto|tutar/i
+
+export function hasPriceLikeKey(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(hasPriceLikeKey)
+  if (typeof value !== 'object' || value === null) return false
+  return Object.entries(value as Obj).some(([key, member]) => PRICE_LIKE_KEY.test(key) || hasPriceLikeKey(member))
+}
+
+const CURRENCY_OPTION_KEYS = ['companyId', 'effectiveOn', 'currencyId', 'code', 'label', 'profileId', 'profileVersion'] as const
+const isNullableText = (v: unknown, max: number): v is string | null => v === null || isText(v, max)
+
+/** The list bound to the company and date it was read for; any row of another company or date fails the whole read. */
+export function decodeCurrencyOptions(value: unknown, companyId: string, effectiveOn: string): readonly CurrencyOption[] | null {
+  if (hasPriceLikeKey(value)) return null
+  const o = exact(value, ['companyId', 'effectiveOn', 'currencies'])
+  if (o === null || o.companyId !== companyId || o.effectiveOn !== effectiveOn || !Array.isArray(o.currencies)) return null
+  const currencies: CurrencyOption[] = []
+  const ids = new Set<string>()
+  for (const entry of o.currencies) {
+    const c = exact(entry, CURRENCY_OPTION_KEYS)
+    if (
+      c === null ||
+      c.companyId !== companyId ||
+      c.effectiveOn !== effectiveOn ||
+      !isReferenceId(c.currencyId) ||
+      ids.has(c.currencyId) ||
+      !isText(c.code, 64) ||
+      !isText(c.label, 200) ||
+      !isReferenceId(c.profileId) ||
+      !isOwnerVersion(c.profileVersion)
+    ) {
+      return null
+    }
+    ids.add(c.currencyId)
+    currencies.push({ currencyId: c.currencyId, code: c.code, profileId: c.profileId, profileVersion: c.profileVersion })
+  }
+  return currencies
+}
+
+const ADDRESS_OPTION_KEYS = ['id', 'version', 'purpose', 'text', 'countryCode', 'line1', 'line2', 'city', 'district', 'postalCode'] as const
+const CONTACT_OPTION_KEYS = ['id', 'version', 'displayName', 'jobTitle', 'purpose'] as const
+
+/** The options bound to the company and the party account they were read for. */
+export function decodeContactInformationOptions(
+  value: unknown,
+  companyId: string,
+  partyId: string,
+  companyAccountId: string,
+): ContactInformationOptions | null {
+  if (hasPriceLikeKey(value)) return null
+  const o = exact(value, ['companyId', 'partyId', 'companyAccountId', 'accountVersion', 'addresses', 'contacts'])
+  if (
+    o === null ||
+    o.companyId !== companyId ||
+    o.partyId !== partyId ||
+    o.companyAccountId !== companyAccountId ||
+    !isOwnerVersion(o.accountVersion) ||
+    !Array.isArray(o.addresses) ||
+    !Array.isArray(o.contacts)
+  ) {
+    return null
+  }
+  const addresses: AddressOption[] = []
+  const addressIds = new Set<string>()
+  for (const entry of o.addresses) {
+    const a = exact(entry, ADDRESS_OPTION_KEYS)
+    if (
+      a === null ||
+      !isReferenceId(a.id) ||
+      addressIds.has(a.id) ||
+      !isOwnerVersion(a.version) ||
+      !isText(a.purpose, 64) ||
+      !isText(a.text, 1000) ||
+      !isText(a.countryCode, 8) ||
+      !isText(a.line1, 500) ||
+      !isNullableText(a.line2, 500) ||
+      !isNullableText(a.city, 200) ||
+      !isNullableText(a.district, 200) ||
+      !isNullableText(a.postalCode, 32)
+    ) {
+      return null
+    }
+    addressIds.add(a.id)
+    addresses.push({ id: a.id, version: a.version, purpose: a.purpose, text: a.text })
+  }
+  const contacts: ContactOption[] = []
+  const contactIds = new Set<string>()
+  for (const entry of o.contacts) {
+    const c = exact(entry, CONTACT_OPTION_KEYS)
+    if (
+      c === null ||
+      !isReferenceId(c.id) ||
+      contactIds.has(c.id) ||
+      !isOwnerVersion(c.version) ||
+      !isText(c.displayName, 200) ||
+      !isNullableText(c.jobTitle, 200) ||
+      !isText(c.purpose, 64)
+    ) {
+      return null
+    }
+    contactIds.add(c.id)
+    contacts.push({ id: c.id, version: c.version, displayName: c.displayName, jobTitle: c.jobTitle, purpose: c.purpose })
+  }
+  return { partyId, companyAccountId, accountVersion: o.accountVersion, addresses, contacts }
 }

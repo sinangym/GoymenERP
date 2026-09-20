@@ -22,5 +22,12 @@ public enum LogisticsPartyAccountOutcomeV1
 
 public sealed record LogisticsPartyAccountAnswerV1(LogisticsPartyAccountOutcomeV1 Outcome, LogisticsPartyAccountV1? Account);
 
+/// <param name="PartyLegalName">The Cari party's legal name as the owner stores it — the customer's presentation on the loading screens (Business 5745076917: technical ids are not final presentation; §4 allows names, only price and finance are barred).</param>
+/// <param name="PartyTradeName">The owner's trade name when it has one; presentation prefers it over the legal name.</param>
 public sealed record LogisticsPartyAccountV1(Guid PartyId, Guid CompanyAccountId, Guid CompanyId,
-    bool PartyIsActive, bool AccountIsActive, string PartyVersion, string AccountVersion);
+    bool PartyIsActive, bool AccountIsActive, string PartyVersion, string AccountVersion,
+    string PartyLegalName = "", string? PartyTradeName = null)
+{
+    /// <summary>The name a screen shows: the trade name when present, else the legal name.</summary>
+    public string DisplayName => string.IsNullOrWhiteSpace(PartyTradeName) ? PartyLegalName : PartyTradeName;
+}

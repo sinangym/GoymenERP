@@ -1,0 +1,38 @@
+{
+  "detail": {
+    "instruction": {
+      "id": "cccccccc-cccc-cccc-cccc-cccccccccccc",
+      "companyId": "99999999-9999-9999-9999-999999999999",
+      "status": "Issued",
+      "version": "3",
+      "customerPartyId": "11111111-1111-1111-1111-111111111111",
+      "companyAccountId": "55555555-5555-5555-5555-555555555555",
+      "effectiveOn": "2026-09-19",
+      "createdAtUtc": "2026-09-19T09:00:00Z",
+      "updatedAtUtc": "2026-09-19T09:05:00Z",
+      "lineCount": 1
+    },
+    "lines": [
+      {
+        "lineId": "dddddddd-dddd-dddd-dddd-dddddddddddd",
+        "lineNo": 1,
+        "sourceOrderId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        "sourceOrderLineId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+        "sourceOrderRevision": 0,
+        "productId": "22222222-2222-2222-2222-222222222222",
+        "unitId": "44444444-4444-4444-4444-444444444444",
+        "instructed": "4.5",
+        "loaded": "0",
+        "shipped": "0",
+        "delivered": "0",
+        "remainingToLoad": "4.5",
+        "loadedNotShipped": "0",
+        "shippedNotDelivered": "0",
+        "isBlocked": false
+      }
+    ],
+    "shares": []
+  },
+  "isReplay": false,
+  "originalCorrelationId": "corr-2"
+}

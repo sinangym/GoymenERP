@@ -19,6 +19,9 @@ public static class SalesEndpoints
     public const string AccountsPath = "/api/v1/sales/references/accounts";
     public const string CurrencyPath = "/api/v1/sales/references/currency";
     public const string ProductPath = "/api/v1/sales/references/product";
+    // SALES-A2a: the two list reads of the create form's selects.
+    public const string ContactInformationPath = "/api/v1/sales/references/contact-information";
+    public const string CurrenciesPath = "/api/v1/sales/references/currencies";
     public const string DraftsPath = SalesDraftApiV1.DraftPath;
     private const string IdempotencyHeaderName = SalesDraftApiV1.IdempotencyHeader;
     private const int MaximumIdempotencyKeyLength = 128;
@@ -32,6 +35,11 @@ public static class SalesEndpoints
         new(["currencyId", "effectiveOn"], StringComparer.Ordinal);
     private static readonly HashSet<string> ProductQueryNames =
         new(["productId", "expectedProductVersion", "orderUnitId", "effectiveOn"], StringComparer.Ordinal);
+    // SALES-A2a list reads: every query name is required and single.
+    private static readonly HashSet<string> ContactInformationQueryNames =
+        new(["partyId", "companyAccountId"], StringComparer.Ordinal);
+    private static readonly HashSet<string> CurrenciesQueryNames =
+        new(["effectiveOn"], StringComparer.Ordinal);
 
     public static IEndpointRouteBuilder MapSalesEndpoints(this IEndpointRouteBuilder endpoints)
     {
@@ -135,6 +143,64 @@ public static class SalesEndpoints
             .ProducesErpCodeLessNotFound()
             .ProducesErpConflict("product_selection_changed")
             .ProducesErpUnprocessableEntity("unsupported_product", "unsupported_unit")
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
+        // SALES-A2a: the Cari owner's ACTIVE delivery addresses and contacts of one party account, for the
+        // create form's selects. A LIST read like the accounts route (same permission binding); no default,
+        // no price. 404 code-less when the pair is not the owner's in this company.
+        group.MapGet("/contact-information", async (
+            [FromQuery] Guid partyId,
+            [FromQuery] Guid companyAccountId,
+            HttpContext httpContext,
+            ISalesReferenceReadService service,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            if (!HasOnlySingleQuery(httpContext.Request.Query, ContactInformationQueryNames, ContactInformationQueryNames)
+                || partyId == Guid.Empty || companyAccountId == Guid.Empty)
+            {
+                return Problem(StatusCodes.Status400BadRequest, "validation_failed");
+            }
+
+            return ToHttpResult(await service.GetContactInformationAsync(
+                new(partyId, companyAccountId), cancellationToken),
+                [400, 401, 403, 404, 503],
+                ["validation_failed"]);
+        })
+            .WithName("GetSalesContactInformationReferencesV1")
+            .Produces<SalesContactInformationOptionsV1>()
+            .ProducesErpBadRequest("validation_failed")
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
+        // SALES-A2a: the company's currencies a draft may be opened in on the business date — the Settings
+        // owner's candidates, each revalidated through the known-id money read for the Sales operation. An
+        // empty list is a 200 answer; a missing or failing owner is never an empty list.
+        group.MapGet("/currencies", async (
+            [FromQuery] DateOnly effectiveOn,
+            HttpContext httpContext,
+            ISalesReferenceReadService service,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            if (!HasOnlySingleQuery(httpContext.Request.Query, CurrenciesQueryNames, CurrenciesQueryNames)
+                || !HasExactDate(httpContext.Request.Query, "effectiveOn"))
+            {
+                return Problem(StatusCodes.Status400BadRequest, "validation_failed");
+            }
+
+            return ToHttpResult(await service.GetCurrenciesAsync(
+                new(effectiveOn), cancellationToken),
+                [400, 401, 403, 503],
+                ["validation_failed"]);
+        })
+            .WithName("GetSalesCurrencyReferencesV1")
+            .Produces<SalesCurrencyOptionsV1>()
+            .ProducesErpBadRequest("validation_failed")
+            .AllowsEmptyErpBadRequestBody()
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
@@ -584,10 +650,63 @@ public sealed class CounterpartySalesAccountSelectionSourceV1(
 /// authorized Counterparty party read, as the Finance party port does: the party, the account of that
 /// party in the server company, and both active flags with the owner's versions. Denied when the
 /// server context is not the request's; NotFound when the party or the account is not the owner's.
+/// <para>
+/// SALES-A2a: the same adapter answers <see cref="ISalesPartyContactInformationPortV1"/> over the
+/// authorized Counterparty contact-information read (the owner measures its own read permission for the
+/// actor): the account's version and its operational addresses and contacts, ids and versions as the
+/// owner holds them, no channel. NotFound when the owner has no account of that party in the server
+/// company, or the account is not the one asked for. PROPOSAL of the Sales lane; the central writer
+/// adopts it and registers the interface in Program.cs.
+/// </para>
 /// </summary>
 public sealed class CounterpartySalesPartyAccountPortV1(ICompanyContext companyContext, ICurrentUser currentUser,
-    ICounterpartyReadService counterparties) : ISalesPartyAccountPortV1
+    ICounterpartyReadService counterparties, ICounterpartyContactInformationService contactInformation)
+    : ISalesPartyAccountPortV1, ISalesPartyContactInformationPortV1
 {
+    public async Task<SalesPartyContactInformationAnswerV1> GetContactInformationAsync(Guid partyId, Guid companyAccountId,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!IsCurrent() || partyId == Guid.Empty || companyAccountId == Guid.Empty)
+        {
+            return new(SalesPartyContactInformationOutcomeV1.Denied, null);
+        }
+
+        var companyId = companyContext.CompanyId;
+        var actorId = currentUser.UserId;
+        CounterpartyContactInformationView? view;
+        try
+        {
+            view = await contactInformation.GetContactInformationAsync(partyId, cancellationToken);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return new(SalesPartyContactInformationOutcomeV1.Denied, null);
+        }
+
+        // The owner answered for the context captured before the await — the company AND the actor; a changed context releases nothing.
+        if (!IsCurrent() || companyContext.CompanyId != companyId || !string.Equals(currentUser.UserId, actorId, StringComparison.Ordinal))
+        {
+            return new(SalesPartyContactInformationOutcomeV1.Denied, null);
+        }
+
+        if (view is null || view.PartyId != partyId || view.AccountId != companyAccountId || view.CompanyId != companyId)
+        {
+            return new(SalesPartyContactInformationOutcomeV1.NotFound, null);
+        }
+
+        var addresses = view.Information.Addresses
+            .Select(address => new SalesPartyAddressV1(address.Id, address.Version, address.IsActive, address.Purpose,
+                address.CountryCode, address.Line1, address.Line2, address.City, address.District, address.PostalCode))
+            .ToArray();
+        var contacts = view.Information.Contacts
+            .Select(contact => new SalesPartyContactV1(contact.Id, contact.Version, contact.IsActive, contact.DisplayName,
+                contact.JobTitle, contact.Purpose))
+            .ToArray();
+        return new(SalesPartyContactInformationOutcomeV1.Found, new SalesPartyContactInformationV1(view.PartyId, view.AccountId,
+            view.CompanyId, view.Version, addresses, contacts));
+    }
+
     public async Task<SalesPartyAccountAnswerV1> GetAuthorizedAsync(Guid partyId, Guid companyAccountId,
         CancellationToken cancellationToken = default)
     {
@@ -598,6 +717,7 @@ public sealed class CounterpartySalesPartyAccountPortV1(ICompanyContext companyC
         }
 
         var companyId = companyContext.CompanyId;
+        var actorId = currentUser.UserId;
         CounterpartyDetailView? party;
         try
         {
@@ -608,8 +728,8 @@ public sealed class CounterpartySalesPartyAccountPortV1(ICompanyContext companyC
             return new(SalesPartyAccountOutcomeV1.Denied, null);
         }
 
-        // The owner answered for the context captured before the await; a changed context releases nothing.
-        if (!IsCurrent() || companyContext.CompanyId != companyId)
+        // The owner answered for the context captured before the await — the company AND the actor; a changed context releases nothing.
+        if (!IsCurrent() || companyContext.CompanyId != companyId || !string.Equals(currentUser.UserId, actorId, StringComparison.Ordinal))
         {
             return new(SalesPartyAccountOutcomeV1.Denied, null);
         }

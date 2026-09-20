@@ -128,11 +128,14 @@ export const CAPABILITY = {
   salesDraftsDetail: 'sales.drafts.detail',
   /** S-03 new sales order draft. Route `/satis/siparisler/yeni`. A SEPARATE grant from reading. */
   salesDraftsCreate: 'sales.drafts.create',
+  /** MFG-02 the company's production orders (MFG-ORD). Route `/uretim/emirler`. */
+  manufacturingOrdersList: 'manufacturing.orders.list',
   /**
    * MFG-01 production order (technical sub-view, MFG-UI D1). Route `/uretim/emir/:orderId`.
    *
-   * `manufacturing.orders.facts` is a CONTROL inside that screen (read with `hasCapability`,
-   * the `organization.locations.status` precedent), not a route, so it is not in this table.
+   * `manufacturing.orders.facts` and `manufacturing.orders.close` are CONTROLS inside that screen
+   * (read with `hasCapability`, the `organization.locations.status` precedent), not routes, so
+   * neither is in this table.
    */
   manufacturingOrdersDetail: 'manufacturing.orders.detail',
   /** F-02 manual-receipt draft list. Route `/finans/tahsilatlar`, owner the Finance lane (FİNANS). */
@@ -151,6 +154,28 @@ export const CAPABILITY = {
    * it itself, and the server refuses a self-approval anyway.
    */
   financeBankAccountsPropose: 'finance.bank-accounts.propose',
+  /** M-07 Muhasebe Dönemleri. Route `/muhasebe/donemler`, owner the Accounting lane (FİNANS). */
+  accountingPeriodsList: 'accounting.periods.list',
+  /** M-07 propose a period opening. Route `/muhasebe/donemler/yeni`. A SEPARATE grant from reading. */
+  accountingPeriodsPropose: 'accounting.periods.propose',
+  /**
+   * M-04 Muhasebe Fişleri, read-only. Route `/muhasebe/fisler`.
+   *
+   * `accounting.periods.approve` (Ö4) and `accounting.periods.close` (Ö5) are CONTROLS of the M-07
+   * list (the provider's `ParentCapabilityId`), not routes, so neither is in these tables; the list
+   * reads them with `hasCapability` and the server refuses a self-approval regardless.
+   */
+  accountingJournalsList: 'accounting.journals.list',
+  /** M-04-DETAIL one journal, read-only. Route `/muhasebe/fisler/:journalId`. A SEPARATE grant from the list. */
+  accountingJournalsDetail: 'accounting.journals.detail',
+  /** M-01 Muhasebe Kontrol Merkezi — the posting queues, read-only. Route `/muhasebe/kontrol`. */
+  accountingPostingQueues: 'accounting.posting-queues',
+  /** L-02 loading-instruction list. Route `/lojistik/yukleme-talimatlari`, owner the Sales/Logistics lane (SİPARİŞ). */
+  logisticsInstructionsList: 'logistics.instructions.list',
+  /** L-03 new loading instruction. Route `/lojistik/yukleme-talimatlari/yeni`. A SEPARATE grant from reading. */
+  logisticsInstructionsCreate: 'logistics.instructions.create',
+  /** L-02-DETAIL one instruction. Route `/lojistik/yukleme-talimatlari/:instructionId`. A SEPARATE grant from the list. */
+  logisticsInstructionsDetail: 'logistics.instructions.detail',
 } as const
 
 export type CapabilityId = (typeof CAPABILITY)[keyof typeof CAPABILITY]
@@ -182,6 +207,9 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as a draft id.
   [CAPABILITY.salesDraftsCreate]: '/satis/siparisler/yeni',
   [CAPABILITY.salesDraftsDetail]: '/satis/siparisler/:draftId',
+  // Static before the parameter route, the /cari/yeni rule: 'emirler' must never be read as an
+  // order id. The lane orders its own route table the same way.
+  [CAPABILITY.manufacturingOrdersList]: '/uretim/emirler',
   [CAPABILITY.manufacturingOrdersDetail]: '/uretim/emir/:orderId',
   [CAPABILITY.financeReceiptsList]: '/finans/tahsilatlar',
   // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as a source id.
@@ -189,6 +217,16 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.financeReceiptsDetail]: '/finans/tahsilatlar/:sourceId',
   [CAPABILITY.financeBankAccountsList]: '/finans/banka-hesaplari',
   [CAPABILITY.financeBankAccountsPropose]: '/finans/banka-hesaplari/yeni',
+  [CAPABILITY.accountingPeriodsList]: '/muhasebe/donemler',
+  // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as a period id.
+  [CAPABILITY.accountingPeriodsPropose]: '/muhasebe/donemler/yeni',
+  [CAPABILITY.accountingJournalsList]: '/muhasebe/fisler',
+  [CAPABILITY.accountingJournalsDetail]: '/muhasebe/fisler/:journalId',
+  [CAPABILITY.accountingPostingQueues]: '/muhasebe/kontrol',
+  [CAPABILITY.logisticsInstructionsList]: '/lojistik/yukleme-talimatlari',
+  // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as an instruction id.
+  [CAPABILITY.logisticsInstructionsCreate]: '/lojistik/yukleme-talimatlari/yeni',
+  [CAPABILITY.logisticsInstructionsDetail]: '/lojistik/yukleme-talimatlari/:instructionId',
 }
 
 /** Nav label per capability. Only rendered when the server granted the capability. */
@@ -215,7 +253,9 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   [CAPABILITY.salesDraftsCreate]: 'Yeni Sipariş Taslağı',
   // Nor this one: the 360 is reached from a list row, never from the sidebar.
   [CAPABILITY.salesDraftsDetail]: '',
-  // Nor this one: an order is opened by its id, never from the sidebar.
+  [CAPABILITY.manufacturingOrdersList]: 'Üretim emirleri',
+  // Nor this one: an order is opened from the list or by its id, never from the sidebar. So
+  // `NAV_CAPABILITIES` gains exactly ONE Manufacturing entry.
   [CAPABILITY.manufacturingOrdersDetail]: '',
   [CAPABILITY.financeReceiptsList]: 'Tahsilat Taslakları',
   [CAPABILITY.financeBankAccountsList]: 'Banka Hesapları',
@@ -224,4 +264,16 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   [CAPABILITY.financeReceiptsDraft]: '',
   [CAPABILITY.financeReceiptsDetail]: '',
   [CAPABILITY.financeBankAccountsPropose]: '',
+  [CAPABILITY.accountingPeriodsList]: 'Muhasebe Dönemleri',
+  [CAPABILITY.accountingJournalsList]: 'Muhasebe Fişleri',
+  [CAPABILITY.accountingPostingQueues]: 'Muhasebe Kontrol',
+  // Not these two: a period is proposed from the M-07 list and a journal opened from a row.
+  [CAPABILITY.accountingPeriodsPropose]: '',
+  [CAPABILITY.accountingJournalsDetail]: '',
+  [CAPABILITY.logisticsInstructionsList]: 'Yükleme Talimatları',
+  // Neither of these two: the new-instruction screen is reached from the L-02 list's own primary
+  // link (one entry point per creation route, the Finance and Accounting precedent), and an
+  // instruction is opened from a list row — never from the sidebar.
+  [CAPABILITY.logisticsInstructionsCreate]: '',
+  [CAPABILITY.logisticsInstructionsDetail]: '',
 }

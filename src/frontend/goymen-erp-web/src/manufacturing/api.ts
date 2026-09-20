@@ -9,7 +9,15 @@
  * module's requirement.
  */
 
-import { decodeMassBalance, decodeOrder, type MassBalanceView, type ProductionOrderView } from './contract'
+import {
+  decodeMassBalance,
+  decodeOrder,
+  decodeOrderList,
+  type MassBalanceView,
+  type OrderListView,
+  type OrderStatus,
+  type ProductionOrderView,
+} from './contract'
 import type { ViewOutcome } from '../shell/uiState'
 
 export const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '/api/v1'
@@ -92,4 +100,50 @@ export async function fetchMassBalance(
   if (response.status !== 200) return { type: 'http', status: response.status, body }
   const balance = decodeMassBalance(body)
   return balance === null ? { type: 'malformed' } : { type: 'ok-single', data: balance }
+}
+
+/** What the list asks for; every part is optional and the server decides the page it answers. */
+export interface OrderListQuery {
+  readonly pageSize?: number
+  readonly cursor?: string | null
+  readonly status?: OrderStatus | null
+}
+
+/**
+ * `GET /api/v1/manufacturing/orders` — one page of the company's orders, newest first (MFG-ORD).
+ *
+ * The same read grant as {@link fetchOrder}: another company's order is in no page. The cursor is the
+ * server's own opaque value, sent back unchanged; this layer never builds, parses or guesses one, and a
+ * cursor the server refuses is that 400, never a silent first page.
+ */
+export async function fetchOrders(
+  companyId: string,
+  query: OrderListQuery = {},
+  signal?: AbortSignal,
+): Promise<ViewOutcome<OrderListView>> {
+  const search = new URLSearchParams()
+  if (query.pageSize !== undefined) search.set('pageSize', String(query.pageSize))
+  if (query.cursor !== undefined && query.cursor !== null) search.set('cursor', query.cursor)
+  if (query.status !== undefined && query.status !== null) search.set('status', query.status)
+  const suffix = search.toString()
+  let response: Response
+  try {
+    response = await fetch(`${MANUFACTURING_BASE}/orders${suffix.length === 0 ? '' : `?${suffix}`}`, {
+      headers: { ...devHeaders(), 'X-Company-Id': companyId },
+      signal,
+    })
+  } catch {
+    if (signal?.aborted) return { type: 'fence-stale' }
+    return navigator.onLine ? { type: 'network-error' } : { type: 'offline' }
+  }
+  let body: unknown = null
+  try {
+    body = await response.json()
+  } catch {
+    if (signal?.aborted) return { type: 'fence-stale' }
+    body = null
+  }
+  if (response.status !== 200) return { type: 'http', status: response.status, body }
+  const page = decodeOrderList(body)
+  return page === null ? { type: 'malformed' } : { type: 'ok-single', data: page }
 }

@@ -13,6 +13,7 @@ using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Shell;
 using GoymenERP.Modules.Accounting.Infrastructure;
+using GoymenERP.Modules.Accounting.Infrastructure.Shell;
 using GoymenERP.Modules.Audit.Infrastructure;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Counterparty.Infrastructure;
@@ -117,6 +118,9 @@ builder.Services.AddSingleton(new SalesReferenceReadBindings(
     ProductPermission: SalesPermissionManifestV1.DraftsCreate,
     MoneyOperation: SalesMoneyOperations.OrderDraftV1));
 builder.Services.AddScoped<ISalesPartyAccountPortV1, CounterpartySalesPartyAccountPortV1>();
+// SALES-A2a: the same Cari adapter answers the contact-information port — one authorized owner read,
+// not a second copy of the party's addresses and contacts in Sales.
+builder.Services.AddScoped<ISalesPartyContactInformationPortV1, CounterpartySalesPartyAccountPortV1>();
 builder.Services.AddScoped<ISalesReferenceReadService>(CreateSalesReferenceReadService);
 builder.Services.AddAuditModule(builder.Configuration);
 
@@ -128,7 +132,11 @@ static ISalesReferenceReadService CreateSalesReferenceReadService(IServiceProvid
     services.GetRequiredService<ISalesAccountSelectionSourceV1>(),
     services.GetRequiredService<ISettingsPrerequisiteProvider>(),
     services.GetService<IProductSalesEligibilityV1>(),
-    services.GetRequiredService<SalesReferenceReadBindings>());
+    services.GetRequiredService<SalesReferenceReadBindings>(),
+    // SALES-A2a: both optional, and both answer 503 while absent — the currencies list is Settings'
+    // approved candidates, the delivery address and contact the Cari owner's contact information.
+    services.GetService<ISettingsMoneyCandidateReader>(),
+    services.GetService<ISalesPartyContactInformationPortV1>());
 builder.Services.AddIdempotencyModule(builder.Configuration);
 builder.Services.AddOrganizationModule(
     builder.Configuration,
@@ -191,6 +199,8 @@ builder.Services.AddSingleton<IShellCapabilityProvider, ManufacturingShellCapabi
 builder.Services.AddSingleton<IShellCapabilityProvider, LogisticsShellCapabilityProvider>();
 // PUR-4a: Purchasing's (staged) order screens, before the authority is chosen.
 builder.Services.AddSingleton<IShellCapabilityProvider, PurchasingShellCapabilityProvider>();
+// ACC-V0b: Accounting's (staged) period, journal and posting-queue screens, before the authority is chosen.
+builder.Services.AddSingleton<IShellCapabilityProvider, AccountingShellCapabilityProvider>();
 var shellCapabilityAuthority = C01E2eShellCapabilityActivation.Configure(
     builder.Services,
     builder.Environment,

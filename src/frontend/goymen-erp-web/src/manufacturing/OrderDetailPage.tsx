@@ -18,19 +18,22 @@
  *    cost is a status ("Hesaplanmadı"), never 0.
  *  - A fact whose outcome is unknown freezes the forms until it is re-sent unchanged
  *    (./factAttempt.ts, ./pendingFactStore.ts).
- *  - Without `manufacturing.orders.facts` no form is drawn (card D3); the server
- *    enforces either way.
+ *  - Without `manufacturing.orders.facts` no form is drawn (card D3), and without
+ *    `manufacturing.orders.close` no close button is drawn; the server enforces either way.
+ *  - The close (MFG-ORD) sends the version this screen read, under its own frozen key, and
+ *    shows the server's refusal by its code — no tolerance and no write-off is offered here.
  */
 
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useParams } from 'react-router'
 import { fetchMassBalance, fetchOrder } from './api'
-import { recordFact } from './commandApi'
+import { closeOrder, recordFact, type FactFailure, type FactUnknown } from './commandApi'
 import {
   FACT_KINDS,
   OUTPUT_CLASSES,
   isKilogramText,
+  type CloseSnapshot,
   type EngineAnswer,
   type FactKind,
   type FactSnapshot,
@@ -59,6 +62,7 @@ import {
   APPLIED_TITLE,
   CLASS_REQUIRED,
   CLOSED_ORDER_TEXT,
+  CLOSE_TEXT,
   COST_STATUS_TEXT,
   ENGINE_REFUSED,
   ENGINE_UNAVAILABLE,
@@ -78,6 +82,7 @@ import {
   TARGET_BASIS_LABEL,
   TIME_REQUIRED,
   UNKNOWN_ACTION_HELP,
+  closeFailureText,
   engineParameterLabel,
   failureText,
   unknownText,
@@ -123,6 +128,8 @@ function OrderDetail({ namespace }: { readonly namespace: string | null }) {
   const singleCompanyContext =
     (shell.activeContext?.scopeMode ?? 'single') === 'single' && activeCompanyId !== null
   const canRecord = hasCapability(shell, MANUFACTURING_CAPABILITY.orderFacts)
+  // A third authority (MFG-ORD): recording a fact never closes an order.
+  const canClose = hasCapability(shell, MANUFACTURING_CAPABILITY.orderClose)
   const storeKey = pendingFactKey(
     shell.sessionEpoch,
     shell.activeContext?.userId ?? null,
@@ -197,6 +204,9 @@ function OrderDetail({ namespace }: { readonly namespace: string | null }) {
           refreshing={query.isFetching}
           onRefresh={refresh}
         />
+      ) : null}
+      {canClose ? (
+        <CloseSection order={order} companyId={activeCompanyId ?? ''} onRefresh={refresh} />
       ) : null}
     </Frame>
   )
@@ -296,6 +306,121 @@ function MassBalancePanel({
     </section>
   )
 }
+
+/**
+ * The close (MFG-ORD), a control of this screen for a holder of `manufacturing.orders.close`.
+ *
+ *  - The rule is the server's and the text only repeats the decided one (MFG-4): no tolerance is
+ *    offered here, nothing is written off and no condition is added.
+ *  - The version sent is the one this screen READ. The attempt is frozen once — key and version
+ *    together — so a re-send of an unknown outcome is the same command (ADR-011), never a second
+ *    close. A new attempt is a new key.
+ *  - After an accepted (or replayed) close the order is re-read; nothing is predicted locally.
+ */
+function CloseSection({
+  order,
+  companyId,
+  onRefresh,
+}: {
+  readonly order: ProductionOrderView
+  readonly companyId: string
+  readonly onRefresh: () => Promise<void>
+}) {
+  const [attempt, setAttempt] = useState<CloseAttempt>({ phase: 'idle' })
+
+  const send = async (snapshot: CloseSnapshot) => {
+    setAttempt({ phase: 'sending', snapshot })
+    const outcome = await closeOrder(companyId, order.orderId, snapshot)
+    if (outcome.type === 'applied') {
+      setAttempt({ phase: 'applied', replayed: outcome.replayed })
+      await onRefresh()
+      return
+    }
+    if (outcome.type === 'failed') {
+      setAttempt({ phase: 'refused', failure: outcome.failure })
+      // The order moved on, or another writer committed: the screen reads it again so the next
+      // decision is taken on the current figures.
+      if (outcome.failure.kind === 'version-conflict' || outcome.failure.kind === 'concurrent-change') {
+        await onRefresh()
+      }
+      return
+    }
+    setAttempt({ phase: 'unknown', snapshot, unknown: outcome.unknown })
+  }
+
+  return (
+    <section aria-labelledby="mfg-close-heading" className={styles.section} data-testid="order-close">
+      <h2 id="mfg-close-heading">{CLOSE_TEXT.heading}</h2>
+      <p className={styles.help}>{CLOSE_TEXT.help}</p>
+      {order.status === 'Closed' ? (
+        <p className={styles.help} data-testid="order-already-closed">
+          {CLOSED_ORDER_TEXT}
+          {order.closedAtUtc !== null ? ` ${CLOSE_TEXT.closedAt}: ${order.closedAtUtc}` : ''}
+        </p>
+      ) : attempt.phase === 'confirming' ? (
+        <div className={styles.actions}>
+          <p role="alert">{CLOSE_TEXT.confirmQuestion}</p>
+          <button
+            type="button"
+            onClick={() => void send({ idempotencyKey: newId(), expectedVersion: order.version })}
+          >
+            {CLOSE_TEXT.confirm}
+          </button>
+          <button type="button" onClick={() => setAttempt({ phase: 'idle' })}>
+            {CLOSE_TEXT.cancel}
+          </button>
+        </div>
+      ) : attempt.phase === 'unknown' ? (
+        <div className={styles.actions}>
+          <button type="button" onClick={() => void send(attempt.snapshot)}>
+            {CLOSE_TEXT.resend}
+          </button>
+        </div>
+      ) : (
+        <div className={styles.actions}>
+          <button
+            type="button"
+            onClick={() => setAttempt({ phase: 'confirming' })}
+            disabled={attempt.phase === 'sending'}
+            aria-busy={attempt.phase === 'sending'}
+          >
+            {attempt.phase === 'sending' ? CLOSE_TEXT.sending : CLOSE_TEXT.action}
+          </button>
+        </div>
+      )}
+      {attempt.phase === 'applied' ? (
+        <div className={styles.noticeOk} role="status" data-outcome={attempt.replayed ? 'replayed' : 'applied'}>
+          <p className={styles.noticeTitle}>
+            {attempt.replayed ? CLOSE_TEXT.replayedTitle : CLOSE_TEXT.appliedTitle}
+          </p>
+          <p>{attempt.replayed ? CLOSE_TEXT.replayedDetail : CLOSE_TEXT.appliedDetail}</p>
+        </div>
+      ) : null}
+      {attempt.phase === 'refused' ? (
+        <div className={styles.noticeError} role="alert" data-outcome="refused">
+          <p className={styles.noticeTitle}>{CLOSE_TEXT.refusedTitle}</p>
+          <p data-testid="close-refusal">{closeFailureText(attempt.failure)}</p>
+        </div>
+      ) : null}
+      {attempt.phase === 'unknown' ? (
+        <div className={styles.noticeWarn} role="alert" data-outcome="unknown">
+          <p className={styles.noticeTitle}>{CLOSE_TEXT.unknownTitle}</p>
+          <p>{unknownText(attempt.unknown)}</p>
+          <p>{CLOSE_TEXT.unknownHelp}</p>
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
+/** One close attempt on this screen; the snapshot is kept exactly while its outcome is unknown. */
+type CloseAttempt =
+  | { readonly phase: 'idle' }
+  | { readonly phase: 'confirming' }
+  | { readonly phase: 'sending'; readonly snapshot: CloseSnapshot }
+  | { readonly phase: 'applied'; readonly replayed: boolean }
+  | { readonly phase: 'refused'; readonly failure: FactFailure }
+  | { readonly phase: 'unknown'; readonly snapshot: CloseSnapshot; readonly unknown: FactUnknown }
 
 function EngineAnswerCell({ answer }: { readonly answer: EngineAnswer }) {
   if (answer.outcome === 'Computed') return <span data-outcome="computed">{answer.value}</span>
