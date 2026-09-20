@@ -238,19 +238,20 @@ describe('D2 persona fences on S-04', () => {
     return body
   }
 
-  it('hides approve/reject for the submitter\'s own pending draft and says whose the decision is; shows them for another\'s', async () => {
-    installFetch({ capabilities: ALL_SALES_WITH_APPROVE, onDetail: () => json(detail('PendingApproval', OWN_SUBMISSION)) })
+  it('hides approve/reject for the pending draft one PREPARED (isOwnDraft), whoever submitted it; shows them for another\'s', async () => {
+    // Own draft, submitted by a colleague (satis-1): the preparer still cannot decide it; the preparer may withdraw it.
+    installFetch({ capabilities: ALL_SALES_WITH_APPROVE, onDetail: () => json(own(detail('PendingApproval', PENDING))) })
     renderSalesApp(`/satis/siparisler/${DRAFT}`)
     await screen.findByRole('heading', { name: 'SO-2026-0001' })
     expect(screen.queryByRole('button', { name: T.approval.approve })).toBeNull()
     expect(screen.queryByRole('button', { name: T.approval.reject })).toBeNull()
     expect(screen.getByTestId('sales-own-decision-note').textContent).toBe(T.approval.ownDecisionNote)
-    // Not one's own draft (the example says isOwnDraft: false): no withdraw either.
-    expect(screen.queryByRole('button', { name: T.approval.withdraw })).toBeNull()
+    expect(screen.getByRole('button', { name: T.approval.withdraw })).toBeTruthy()
     cleanup()
     vi.unstubAllGlobals()
 
-    installFetch({ capabilities: ALL_SALES_WITH_APPROVE, onDetail: () => json(detail('PendingApproval', PENDING)) })
+    // Another's draft that THIS actor submitted (isOwnDraft false, submittedBy = me): decided as on main — offered.
+    installFetch({ capabilities: ALL_SALES_WITH_APPROVE, onDetail: () => json(detail('PendingApproval', OWN_SUBMISSION)) })
     renderSalesApp(`/satis/siparisler/${DRAFT}`)
     await screen.findByRole('heading', { name: 'SO-2026-0001' })
     expect(screen.getByRole('button', { name: T.approval.approve })).toBeTruthy()

@@ -177,7 +177,12 @@ public sealed class SalesOrderDraft
     /// <summary>Whether the lines may still change: only while the draft is being prepared or was rejected (DEC-SAL-002).</summary>
     public bool LinesAreOpen => ApprovalState is InternalApprovalState.Preparing or InternalApprovalState.Rejected;
 
-    /// <summary>Optimistic concurrency; starts at 1 and advances by one per recorded mutation.</summary>
+    /// <summary>
+    /// Optimistic concurrency; starts at 1 and advances by one per RECORDED mutation. A refused command (state conflict,
+    /// stale version, rule) records an attempt in the store and moves NOTHING here — the version after a refusal is the
+    /// version before it. Ladder authors: create = 1, + one per line added, + one per recorded transition/revision;
+    /// count refusals as zero (D2 lost one run to each direction of that mistake).
+    /// </summary>
     public long Version { get; private set; } = 1;
 
     public SalesDraftHeader Header { get; }
@@ -442,14 +447,17 @@ public sealed class SalesOrderDraft
     }
 
     /// <summary>
-    /// D2 (Sinan 5749046401): the preparer withdraws their own not-yet-approved draft —
-    /// <c>Preparing | PendingApproval | Rejected → Withdrawn</c> (a rejected draft is still "not yet approved";
-    /// ASSUMPTION-SALESD2-2, reversible). An APPROVED draft is refused here (<see cref="SalesRuleCodes.StateConflict"/>):
-    /// the easy path is not extended to an approved record, and a record with a fulfilment/allocation/shipment link
-    /// is by construction an approved one (only approved lines are ever answered to the consumers). Withdrawn is
-    /// terminal: no further transition. Who may withdraw (the draft's own preparer, the create name) is the
-    /// service's fence; the reason is optional audit text, bounded like the rejection reason. No money or stock
-    /// effect exists to undo — a draft never produced one.
+    /// D2 (Sinan 5749046401): the preparer withdraws their own NEVER-approved draft —
+    /// <c>Preparing | PendingApproval | Rejected → Withdrawn</c>, and only at <c>Revision 0</c> (a rejected draft is
+    /// still "not yet approved"; ASSUMPTION-SALESD2-2, reversible). Refused (<see cref="SalesRuleCodes.StateConflict"/>):
+    /// an APPROVED draft, and a draft with an APPROVED HISTORY — <see cref="ReviseCommercial"/> brings an approved draft
+    /// back to <c>Preparing</c> at <c>Rev.N+1</c>, so the current state alone cannot say "never approved"; while it was
+    /// approved its lines were answered to the consumers (the line reference port) and may have been linked by
+    /// allocation, loading or fulfilment records Sales neither holds nor can see. The easy path therefore stops at
+    /// <c>Revision != 0</c>: the archived snapshot and whatever the consumers hold stay untouched. Withdrawn is
+    /// terminal: EVERY mutation entry refuses it (pinned by the population test). Who may withdraw (the draft's own
+    /// preparer, the create name) is the service's fence; the reason is optional audit text, bounded like the
+    /// rejection reason. No money or stock effect exists to undo — a draft never produced one.
     /// </summary>
     public void Withdraw(long expectedVersion, string actorId, string? reason, DateTimeOffset now)
     {
@@ -465,6 +473,11 @@ public sealed class SalesOrderDraft
         if (ApprovalState is not (InternalApprovalState.Preparing or InternalApprovalState.PendingApproval or InternalApprovalState.Rejected))
         {
             throw StateConflict("Yalnız henüz onaylanmamış taslak geri çekilir.");
+        }
+
+        if (Revision != 0)
+        {
+            throw StateConflict("Onaylanmış geçmişi olan taslak geri çekilmez; bağlı kayıtlar sahiplerinde durur.");
         }
 
         ApprovalState = InternalApprovalState.Withdrawn;
@@ -503,6 +516,12 @@ public sealed class SalesOrderDraft
         if (ApprovalState == InternalApprovalState.PendingApproval)
         {
             throw StateConflict("Onay bekleyen taslağın fiyatı değiştirilmez; önce karar verilir.");
+        }
+
+        // D2: Withdrawn is terminal at every mutation entry — this one refused only PendingApproval before D2.
+        if (ApprovalState == InternalApprovalState.Withdrawn)
+        {
+            throw StateConflict("Geri çekilmiş taslak değiştirilmez.");
         }
 
         // Every current line exactly once, nothing else: the revision is of the whole commercial surface.

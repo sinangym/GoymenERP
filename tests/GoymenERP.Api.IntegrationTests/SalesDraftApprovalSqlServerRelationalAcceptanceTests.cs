@@ -812,6 +812,75 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
             (await AttemptsAsync(), (await EventsAsync(priced.Id), await EventsAsync(unpriced.Id)), await QuietCountsAsync()));
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM [sales].[DraftAttempts] WHERE [DraftId] = @id AND [CommandName] = @c AND [Outcome] = 1", ("@id", unpriced.Id), ("@c", SalesDraftCommands.WithdrawV1)));
+
+        // (4) An APPROVED HISTORY (Sinan 5750987986 point 3): while the priced draft was approved its line was answered to
+        //     the consumers through the port (the read a Logistics/Manufacturing record would link from — Sales holds no
+        //     link table and cannot see the link); then a commercial revision brings it back to Preparing at Rev.1. The
+        //     easy path is refused (409 recorded), the archived snapshot row and its line stay, nothing else moves.
+        await using (var a = run.Store(CompanyA))
+        {
+            var answered = (await a.Port.ListApprovedLinesAsync(10, null)).Items;
+            Assert.Contains(answered, item => item.OrderId == priced.Id);
+            var pricer = run.Service(a, run.Actor, new RecordingAuthority(SalesPermissionManifestV1.DraftsCreate, SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersPriceWrite));
+            var revised = await pricer.ReviseCommercialAsync(priced.Id,
+                new SalesDraftCommercialRevisionRequest("4", [new SalesDraftLineCommercialV1(priced.Lines[0].Id, "13.00", KgUnit, "5")]), run.Metadata("k-revise"));
+            Assert.Equal(("Preparing", "Rev.1", "5"), (revised.Detail.Draft.ApprovalState, revised.Detail.Draft.Revision, revised.Detail.Draft.Version));
+        }
+
+        var snapshots = (
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftRevisions] WHERE [DraftId] = @id", ("@id", priced.Id)),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftRevisionLines] WHERE [DraftId] = @id", ("@id", priced.Id)),
+            await run.ScalarAsync<string>("SELECT [UnitPrice] FROM [sales].[DraftRevisionLines] WHERE [DraftId] = @id AND [Revision] = 0", ("@id", priced.Id)));
+        Assert.Equal((1, 1, "12.50"), snapshots);
+        var attemptsBeforeHistory = await AttemptsAsync();
+        await using (var a = run.Store(CompanyA))
+        {
+            var creator = run.Service(a, run.Actor, new RecordingAuthority(SalesPermissionManifestV1.DraftsCreate, SalesPermissionManifestV1.DraftsRead));
+            var history = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+                creator.WithdrawDraftAsync(priced.Id, new SalesDraftStateCommandRequest("5"), run.Metadata("k-withdraw-history")));
+            Assert.Equal((409, SalesDraftProblemCodesV1.StateConflict), (history.Status, history.Code));
+        }
+
+        Assert.Equal((1, 1, 5L, snapshots, attemptsBeforeHistory + 1), (
+            await run.ScalarAsync<int>("SELECT [ApprovalState] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", priced.Id)),
+            await run.ScalarAsync<int>("SELECT [Revision] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", priced.Id)),
+            await run.ScalarAsync<long>("SELECT [Version] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", priced.Id)),
+            (await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftRevisions] WHERE [DraftId] = @id", ("@id", priced.Id)),
+                await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftRevisionLines] WHERE [DraftId] = @id", ("@id", priced.Id)),
+                await run.ScalarAsync<string>("SELECT [UnitPrice] FROM [sales].[DraftRevisionLines] WHERE [DraftId] = @id AND [Revision] = 0", ("@id", priced.Id))),
+            await AttemptsAsync()));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'sales.order-draft.withdrawn.v1' AND EntityId = @id", ("@id", priced.Id.ToString())));
+
+        // (5) Ownership is the PREPARER, not the submitter (Sinan 5750987986 point 2): A prepares, B submits, A (holding the
+        //     approve name) is fenced on their own order; B — authorized, not the preparer — decides it as on main, the
+        //     own name never asked.
+        const string submitter = "SENTETIK-submitter";
+        SalesOrderDraft third;
+        await using (var a = run.Store(CompanyA))
+        {
+            third = (await a.Store.StoreDraftAsync(run.Envelope("k-create-3"), Hash("payload-3"), documentNo => Draft(owners, documentNo, T0))).Draft;
+            await a.Store.UpdateDraftStateAsync(run.Envelope("k-submit-3", actor: submitter), Hash("submit-3"), SalesDraftCommands.SubmitV1, third.Id,
+                (d, now) => d.Submit(2, submitter, now), Submitted);
+        }
+
+        Assert.Equal((run.Actor, submitter), (await run.ScalarAsync<string>("SELECT [CreatedBy] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", third.Id)),
+            await run.ScalarAsync<string>("SELECT [SubmittedBy] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", third.Id))));
+        var preparerAsks = new RecordingAuthority(SalesPermissionManifestV1.DraftsCreate, SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersApprove);
+        var submitterAsks = new RecordingAuthority(SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersApprove);
+        await using (var a = run.Store(CompanyA))
+        {
+            var fenced = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+                run.Service(a, run.Actor, preparerAsks).ApproveDraftAsync(third.Id, new SalesDraftStateCommandRequest("3"), run.Metadata("k-third-self")));
+            Assert.Equal((403, "forbidden"), (fenced.Status, fenced.Code));
+            var decided = await run.Service(a, submitter, submitterAsks).ApproveDraftAsync(third.Id, new SalesDraftStateCommandRequest("3"), run.Metadata("k-third-submitter"));
+            Assert.Equal(("Approved", submitter, submitter, false), (decided.Detail.Draft.ApprovalState, decided.Detail.Approval.SubmittedBy, decided.Detail.Approval.DecidedBy, decided.Detail.IsOwnDraft));
+        }
+
+        Assert.Contains((SalesPermissionManifestV1.OrdersApproveOwn, CompanyA), preparerAsks.Measured);
+        Assert.DoesNotContain(submitterAsks.Measured, ask => ask.Permission == SalesPermissionManifestV1.OrdersApproveOwn);
+        Assert.All(submitterAsks.Measured, ask => Assert.Contains(ask.Permission, new[] { SalesPermissionManifestV1.OrdersApprove, SalesPermissionManifestV1.OrdersPriceRead }));
+        Assert.Equal((3, submitter), (await run.ScalarAsync<int>("SELECT [ApprovalState] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", third.Id)),
+            await run.ScalarAsync<string>("SELECT [DecidedBy] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", third.Id))));
     }
 
     /// <summary>D2's Down is a forward fix: while any withdrawn draft exists the rollback is refused with 51050 and the five-arm constraint stands.</summary>
@@ -868,7 +937,11 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
     private static string Hash(string seed) =>
         Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(seed)));
 
-    /// <summary>A draft of the company from SYNTHETIC owner snapshots with <paramref name="lines"/> lines (one by default; version 1 + lines).</summary>
+    /// <summary>
+    /// A draft of the company from SYNTHETIC owner snapshots with <paramref name="lines"/> lines (one by default; version 1 + lines).
+    /// Version ladder for a case: 1 + lines, then +1 per RECORDED transition or revision; a REFUSED command (409/422/403)
+    /// records at most an attempt and advances nothing — expect the same version after it as before it.
+    /// </summary>
     private static SalesOrderDraft Draft(Owners owners, string documentNo, DateTimeOffset at, int lines = 1)
     {
         var header = new SalesDraftHeader(owners.Party, owners.Account, Currency, Day);

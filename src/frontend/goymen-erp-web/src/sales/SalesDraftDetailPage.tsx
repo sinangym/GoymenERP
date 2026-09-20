@@ -428,7 +428,7 @@ function ApprovalCommands({
   readonly companyId: string
   readonly onRecorded: () => void
 }) {
-  const { draft, approval } = detail
+  const { draft } = detail
   const canSubmit = hasCapability(shell, SALES_CAPABILITY.draftsCreate)
   const canDecide = hasCapability(shell, SALES_CAPABILITY.ordersApprove)
   const [attempt, setAttempt] = useState<CommandAttempt>({ phase: 'idle' })
@@ -438,11 +438,9 @@ function ApprovalCommands({
   const attemptRef = useRef(attempt)
   attemptRef.current = attempt
 
-  // D2 (Sinan 5749046401): the persona fences are the SERVER's (403 at the API); the screen mirrors them from what it was
-  // given — the signed-in actor against the stored submitter (A1 discloses it), and the server-computed `isOwnDraft`
-  // relationship (the creator's identity does not travel) — and never decides on its own.
-  const actorId = shell.activeContext?.userId ?? null
-  const ownSubmission = actorId !== null && approval.submittedBy === actorId
+  // D2 (Sinan 5749046401, 5750987986): the persona fences are the SERVER's (403 at the API); both are measured against
+  // ONE server fact — the stored creator, the order this actor PREPARED (not the submitter) — which travels only as the
+  // server-computed `isOwnDraft` relationship. The screen mirrors it and never decides on its own.
   const ownDraft = detail.isOwnDraft
   const unapproved =
     draft.approvalState === APPROVAL_STATE.preparing ||
@@ -451,8 +449,8 @@ function ApprovalCommands({
   const offerSubmit =
     canSubmit && (draft.approvalState === APPROVAL_STATE.preparing || draft.approvalState === APPROVAL_STATE.rejected)
   const pending = draft.approvalState === APPROVAL_STATE.pendingApproval
-  const offerDecision = canDecide && pending && !ownSubmission
-  const ownDecisionWithheld = canDecide && pending && ownSubmission
+  const offerDecision = canDecide && pending && !ownDraft
+  const ownDecisionWithheld = canDecide && pending && ownDraft
   const offerWithdraw = canSubmit && ownDraft && unapproved
   if (!offerSubmit && !offerDecision && !offerWithdraw && !ownDecisionWithheld && attempt.phase === 'idle') return null
 

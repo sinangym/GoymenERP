@@ -484,6 +484,48 @@ public sealed class SalesDraftServiceTests
     }
 
     /// <summary>
+    /// D2 (Sinan 5750987986 points 1–2): "own order" is the order the actor PREPARED (the stored creator), not the one
+    /// they submitted. A creates, an authorized B submits: A holding the general approve name is still fenced (the own
+    /// name is asked and refused); B — the submitter, not the preparer — decides it exactly as on main: only the approve
+    /// name and the disclosure name are asked, nothing new enters, the transition is recorded. No persona D2 did not name
+    /// gains a silent new self-approval policy.
+    /// </summary>
+    [Theory]
+    [InlineData("approve")]
+    [InlineData("reject")]
+    public async Task Ownership_is_the_preparer_not_the_submitter_and_an_authorized_non_preparer_behaves_as_on_main(string decision)
+    {
+        var world = new World();
+        world.Authority.Denied.Add(ApproveOwnPermission);
+        var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-1"))).Detail;
+        world.User.Id = "synthetic-submitter";
+        await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("k-submit"));
+        Assert.Equal("synthetic-submitter", (await world.Service().GetDraftDetailAsync(created.Draft.Id)).Approval.SubmittedBy);
+
+        Task<SalesOrderDraftResponse> Decide() => decision == "approve"
+            ? world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("k-" + world.User.Id))
+            : world.Service().RejectDraftAsync(created.Draft.Id, Command("3", "SENTETIK"), Metadata("k-" + world.User.Id));
+
+        // The preparer, holding the approve name, deciding the order they prepared but did not submit: fenced.
+        world.User.Id = Actor;
+        var transitions = world.Store.Transitions.Count;
+        world.Authority.Measured.Clear();
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(Decide);
+        Assert.Equal((403, "forbidden", transitions, 0), (refused.Status, refused.Code, world.Store.Transitions.Count, world.Store.Refusals.Count));
+        Assert.Contains(ApproveOwnPermission, world.Authority.Measured);
+
+        // The submitter — authorized, not the preparer — decides it as on main: the same names main's path asked, no other.
+        world.User.Id = "synthetic-submitter";
+        world.Authority.Measured.Clear();
+        var decided = await Decide();
+        Assert.Equal(decision == "approve" ? "Approved" : "Rejected", decided.Detail.Draft.ApprovalState);
+        Assert.Equal(("synthetic-submitter", "synthetic-submitter"), (decided.Detail.Approval.SubmittedBy, decided.Detail.Approval.DecidedBy));
+        Assert.Equal(transitions + 1, world.Store.Transitions.Count);
+        Assert.All(world.Authority.Measured, name => Assert.Contains(name, new[] { ApprovePermission, PriceReadPermission }));
+        Assert.DoesNotContain(ApproveOwnPermission, world.Authority.Measured);
+    }
+
+    /// <summary>
     /// D2: an own-decision name the platform does not register is the module's 503 (PermissionUnregistered) — asked only when
     /// it matters (the submitter's own submission), never recorded, the draft untouched; another's submission never asks it.
     /// </summary>
@@ -555,6 +597,15 @@ public sealed class SalesDraftServiceTests
         var refusals = world.Store.Refusals.Count;
         var conflict = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().WithdrawDraftAsync(approved.Draft.Id, Command("4"), Metadata("k-a-w")));
         Assert.Equal((409, SalesDraftProblemCodesV1.StateConflict, refusals + 1), (conflict.Status, conflict.Code, world.Store.Refusals.Count));
+        // An APPROVED HISTORY (Sinan 5750987986 point 3a): a commercial revision brings the approved draft back to Preparing
+        // at Rev.1 — the easy path is still refused (the key's terminal 409, recorded); the archived snapshot stays.
+        // (The refused withdrawal above did not advance the version: still 4 here.)
+        var revised = await world.Service().ReviseCommercialAsync(approved.Draft.Id,
+            Revision("4", new SalesDraftLineCommercialV1(approved.Lines[0].LineId, "13.00", KgUnit, "5")), Metadata("k-a-revise"));
+        Assert.Equal(("Preparing", "Rev.1", "5"), (revised.Detail.Draft.ApprovalState, revised.Detail.Draft.Revision, revised.Detail.Draft.Version));
+        var history = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().WithdrawDraftAsync(approved.Draft.Id, Command("5"), Metadata("k-a-w2")));
+        Assert.Equal((409, SalesDraftProblemCodesV1.StateConflict, refusals + 2, 1), (history.Status, history.Code, world.Store.Refusals.Count, world.Store.Archived.Count));
+        Assert.Equal(("Preparing", "Rev.1"), ((await world.Service().GetDraftDetailAsync(approved.Draft.Id)).Draft.ApprovalState, revised.Detail.Draft.Revision));
         var tooLong = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().WithdrawDraftAsync(created.Draft.Id, Command("4", new string('x', SalesOrderDraft.MaximumRejectionReasonLength + 1)), Metadata("k-w-long")));
         Assert.Equal((422, SalesDraftProblemCodesV1.ApprovalReasonTooLong), (tooLong.Status, tooLong.Code));
     }

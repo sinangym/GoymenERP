@@ -1,3 +1,4 @@
+using System.Reflection;
 using GoymenERP.Modules.Sales.Domain;
 using GoymenERP.Modules.Sales.Domain.Drafts;
 
@@ -115,6 +116,19 @@ public sealed class SalesOrderDraftApprovalTests
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => approved.Withdraw(4, Preparer, null, T0)));
         Assert.Equal((InternalApprovalState.Approved, 4L), (approved.ApprovalState, approved.Version));
 
+        // An APPROVED HISTORY: approved, then a commercial revision brings it back to Preparing at Rev.1 — the current
+        // state says "Preparing", the history says "was approved, may be linked": the easy path is refused, the archived
+        // snapshot stays. (Sinan 5750987986 point 3; ReviseCommercial → Preparing verified at source.)
+        var revised = Draft();
+        revised.Submit(2, Preparer, T0);
+        revised.Approve(3, Approver, T0);
+        var archived = revised.ReviseCommercial(4, [Commercial(revised.Lines[0], "13.00", KgUnit, "5")], "synthetic-pricer", T0.AddMinutes(1));
+        Assert.NotNull(archived);
+        Assert.Equal((InternalApprovalState.Preparing, 1, 5L), (revised.ApprovalState, revised.Revision, revised.Version));
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => revised.Withdraw(5, Preparer, null, T0)));
+        Assert.Equal((InternalApprovalState.Preparing, 1, 5L, 1), (revised.ApprovalState, revised.Revision, revised.Version, revised.ArchivedRevisions.Count));
+        Assert.Same(archived, revised.ArchivedRevisions[0]);
+
         var pending = Draft();
         pending.Submit(2, Preparer, T0);
         Assert.Throws<SalesVersionConflictException>(() => pending.Withdraw(2, Preparer, null, T0));
@@ -124,6 +138,38 @@ public sealed class SalesOrderDraftApprovalTests
         // Blank is "no reason", never a default text.
         pending.Withdraw(3, Preparer, "   ", T0);
         Assert.Null(pending.Approval.RejectionReason);
+    }
+
+    /// <summary>
+    /// D2 (Sinan 5750987986 point 3d): Withdrawn is terminal only if EVERY mutation entry refuses it — the third
+    /// population (after the recorded-ask pins and the Response callers). The population is pinned by reflection
+    /// (every public instance method that is not a store restore or a Require* guard), then each entry is driven
+    /// against a withdrawn draft: state conflict, nothing changed.
+    /// </summary>
+    [Fact]
+    public void Withdrawn_is_terminal_at_every_mutation_entry_and_the_population_is_pinned()
+    {
+        var entries = typeof(SalesOrderDraft)
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            .Where(method => !method.IsSpecialName
+                && !method.Name.StartsWith("Restore", StringComparison.Ordinal)
+                && !method.Name.StartsWith("Require", StringComparison.Ordinal))
+            .Select(method => method.Name)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        Assert.Equal(["AddLine", "Approve", "Reject", "ReviseCommercial", "Submit", "Withdraw"], entries);
+
+        var draft = Draft();
+        draft.Withdraw(2, Preparer, "SENTETIK", T0);
+        var before = (draft.ApprovalState, draft.Version, draft.Revision, draft.Approval, draft.Lines.Count);
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.AddLine(3, Line(), T0)));
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.Submit(3, Preparer, T0)));
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.Approve(3, Approver, T0)));
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.Reject(3, Approver, null, T0)));
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.Withdraw(3, Preparer, null, T0)));
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.ReviseCommercial(3, [Commercial(draft.Lines[0], "13.00", KgUnit, "5")], "synthetic-pricer", T0)));
+        Assert.Equal(before, (draft.ApprovalState, draft.Version, draft.Revision, draft.Approval, draft.Lines.Count));
+        Assert.Equal(InternalApprovalState.Withdrawn, draft.ApprovalState);
     }
 
     [Fact]
@@ -267,6 +313,9 @@ public sealed class SalesOrderDraftApprovalTests
     }
 
     /// <summary>A one-line draft at version 2 (1 at birth + 1 line).</summary>
+    private static LineCommercialInput Commercial(SalesOrderDraftLine line, string? price, Guid? unit, string? discount) =>
+        new(line.Id, new CommercialDraftFields(price, unit, discount));
+
     private static SalesOrderDraft Draft()
     {
         var draft = SalesOrderDraft.Create(Guid.NewGuid(), Company, "SO-2026-000001", Header(), Money(), T0);

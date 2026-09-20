@@ -226,8 +226,8 @@ export const ORDER_DETAIL_TEXT = {
     withdrawnAt: 'Geri çekme zamanı',
     withdrawalReason: 'Geri çekme nedeni',
     withdrawnNote: 'Geri çekilen taslak kapalıdır; kayıt ve satırlar silinmez. Yeni sipariş yeni bir taslakla açılır.',
-    // D2: the submitter's own submission is decided by someone else; the server refuses regardless of this screen.
-    ownDecisionNote: 'Kendi gönderdiğiniz taslağı onaylayamaz veya reddedemezsiniz; karar başka bir yetkiliye aittir.',
+    // D2: the order one PREPARED is decided by someone else; the server refuses regardless of this screen.
+    ownDecisionNote: 'Kendi hazırladığınız taslağı onaylayamaz veya reddedemezsiniz; karar başka bir yetkiliye aittir.',
     submitting: 'İşlem gönderiliyor…',
     unknown:
       'İşlemin sonucu alınamadı; kaydedilmiş olabilir. Aynı işlemi tekrar göndermek ikinci bir geçiş oluşturmaz.',

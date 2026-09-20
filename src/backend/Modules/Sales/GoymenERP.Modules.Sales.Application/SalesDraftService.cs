@@ -484,15 +484,15 @@ public sealed class SalesDraftService(
 
         // D2 (Sinan 5749046401): the persona fences are AUTHORITY questions about THIS draft, so the draft is read first
         // and the fence is asked before the transition — the price-write fence's shape: a refusal is 403, never recorded,
-        // code-less on the wire. Approve/Reject of one's OWN submission needs the separate own-decision name (registered
-        // to nobody); Withdraw is the CREATOR's alone. A draft another company owns is null under the tenant filter and
-        // stays a 404, never a 403.
+        // code-less on the wire. Approve/Reject of one's OWN draft (the one the actor CREATED) needs the separate
+        // own-decision name (registered to nobody); Withdraw is the CREATOR's alone. A draft another company owns is
+        // null under the tenant filter and stays a 404, never a 403.
         //
         // What this pre-read asks and what it does not confer (measured on main before D2, this file :458/:466/:482/:531):
         // a state command asked ONLY the command's name (`permission`) and RETURNED the full draft detail under it;
         // `bindings.ReadPermission` is asked by the three read operations alone. The pre-read asks the SAME name
         // (RequireStill after the read, inside GuardedAsync) and exposes nothing the command's response did not already
-        // carry — neither a narrowing nor a widening; it only supplies the fence's input (SubmittedBy / CreatedBy). Two
+        // carry — neither a narrowing nor a widening; it only supplies the fence's input (CreatedBy). Two
         // facts keep that defensible and are deliberate, not defects: (a) a command returning its own result is not
         // browsing — the actor names one draft they may act on and cannot enumerate or open others; (b) the sensitive
         // field is fenced by a different name — every response-side path passes Disclosed(...), so the price travels as
@@ -572,17 +572,20 @@ public sealed class SalesDraftService(
     }
 
     /// <summary>
-    /// D2's two persona fences. Approve/Reject: if the actor is the draft's SUBMITTER, the SEPARATE own-decision name is
-    /// asked (ASSUMPTION-SALESD2-1; nobody holds it today) — refused → 403 forbidden, unrecorded (ADR-011 §5). Withdraw:
-    /// the actor must be the draft's CREATOR — anyone else → 403 forbidden, unrecorded; no name lifts it (D2: the easy
-    /// path is one's own draft only). Other commands: no persona fence. Measured on the server; hiding a button is not this.
+    /// D2's two persona fences, both measured against ONE server fact: the stored creator (<c>CreatedBy</c>, the order the
+    /// Satış Destek PREPARED — not the submitter; a colleague submitting it does not erase the preparer's ownership).
+    /// Approve/Reject: if the actor is the draft's CREATOR, the SEPARATE own-decision name is asked (ASSUMPTION-SALESD2-1;
+    /// nobody holds it today) — refused → 403 forbidden, unrecorded (ADR-011 §5). Any OTHER authorized actor — including
+    /// the one who submitted it — is asked nothing new: their approval behaves exactly as on main (no silent new
+    /// self-approval policy for personas D2 did not name). Withdraw: the actor must be the CREATOR — anyone else → 403
+    /// forbidden, unrecorded; no name lifts it. Other commands: no persona fence. Measured on the server; hiding a
+    /// button is not this.
     /// </summary>
     private async Task RequirePersonaFenceAsync(Scope scope, string commandName, SalesOrderDraft current, CancellationToken cancellationToken)
     {
         switch (commandName)
         {
-            case SalesDraftCommands.ApproveV1 or SalesDraftCommands.RejectV1
-                when string.Equals(current.Approval.SubmittedBy, scope.ActorId, StringComparison.Ordinal):
+            case SalesDraftCommands.ApproveV1 or SalesDraftCommands.RejectV1 when IsOwn(scope, current):
                 await RequireOwnDecisionAsync(scope, cancellationToken);
                 return;
             case SalesDraftCommands.WithdrawV1 when !IsOwn(scope, current):
