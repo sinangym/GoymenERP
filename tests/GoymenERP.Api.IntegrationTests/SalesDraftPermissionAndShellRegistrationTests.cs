@@ -25,6 +25,10 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
     [InlineData(SalesPermissionManifestV1.DraftsRead, ErpPermissions.SalesDraftsRead)]
     // SALES-A1: the approval name. Company-wide, not Critical (the reason is on ErpPermissions.SalesOrdersApprove).
     [InlineData(SalesPermissionManifestV1.OrdersApprove, ErpPermissions.SalesOrdersApprove)]
+    // SALES-P: the price/discount write. Its own name, so drafts.create does not confer it; company-wide
+    // and not Critical (the reason is on ErpPermissions.SalesOrdersPriceWrite). The row matters because the
+    // set pin below would accept the name registered with the WRONG scope or flagged Critical.
+    [InlineData(SalesPermissionManifestV1.OrdersPriceWrite, ErpPermissions.SalesOrdersPriceWrite)]
     public void The_owner_name_is_the_registered_central_name(string ownerName, string centralName)
     {
         Assert.Equal(ownerName, centralName);

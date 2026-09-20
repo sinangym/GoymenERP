@@ -139,6 +139,20 @@ public static class ErpPermissions
     public const string SalesOrdersApprove = "sales.orders.approve";
 
     /// <summary>
+    /// SALES-P (K3, Sinan #66 5748258299, closing 5745151414): writing a manual unit price or a discount
+    /// on a sales order line, the Sales owner's name (SalesPermissionManifestV1.OrdersPriceWrite, same
+    /// string). A SEPARATE name on purpose: <see cref="SalesDraftsCreate"/> does not confer it, so whoever
+    /// may raise a draft does not thereby set its commercial terms. Registered, not granted: no seeded role
+    /// and no user receives it; who prices is a human gate. Company-wide only, like the other Sales names.
+    /// Not Critical — Critical is the grant-time dual-control set (identity governance and the bank account
+    /// propose/approve pair), and no source makes pricing a segregated duty: no maker≠checker, no approval
+    /// threshold and no second person is decided, and the module validates arithmetic only (scale, unit,
+    /// 0..100) with no minimum price, margin floor or discount ceiling. If Sinan later wants a price grant
+    /// to need two people, Critical is the lever and that is his decision, not one taken here.
+    /// </summary>
+    public const string SalesOrdersPriceWrite = "sales.orders.price.write";
+
+    /// <summary>
     /// LOG-4a (Business #66 5737790175: the loading instruction on approved order lines, one stock effect): the
     /// Logistics owner's names (LogisticsPermissionManifestV1), the backend owners' technical mapping (Business
     /// #254 5654539215) recorded and confirmed by the coordinator (#66 5743488059). Registered, not granted: no
@@ -220,6 +234,7 @@ public static class ErpPermissions
             SalesDraftsCreate,
             SalesDraftsRead,
             SalesOrdersApprove,
+            SalesOrdersPriceWrite,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,
             ManufacturingOrdersCreate,
@@ -276,6 +291,7 @@ public static class ErpPermissions
             SalesDraftsCreate,
             SalesDraftsRead,
             SalesOrdersApprove,
+            SalesOrdersPriceWrite,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,
             ManufacturingOrdersCreate,
