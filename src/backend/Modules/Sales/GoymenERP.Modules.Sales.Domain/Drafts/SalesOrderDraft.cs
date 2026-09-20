@@ -1,3 +1,4 @@
+using System.Globalization;
 using GoymenERP.Modules.Sales.Domain.Quantities;
 
 namespace GoymenERP.Modules.Sales.Domain.Drafts;
@@ -254,11 +255,7 @@ public sealed class SalesOrderDraft
         var quantity = RequireQuantity(input.Quantity, input.OrderUnit);
         RequireQuantityText(input.QuantityText, input.Quantity);
         var commercial = input.Commercial ?? CommercialDraftFields.None;
-        if ((commercial.UnitPrice is null) != (commercial.PriceUnitId is null))
-        {
-            throw new SalesRuleException(SalesRuleCodes.PriceUnitPairing,
-                "Birim fiyat kendi fiyat birimini ister; fiyat birimi fiyatsız verilemez.");
-        }
+        RequireCommercial(commercial, input.Product);
 
         var slices = RequireSlices(input.RequestedDeliverySlices, input.OrderUnit, quantity);
         var line = new SalesOrderDraftLine(input.LineId, lines.Count + 1, input.Product, input.OrderUnit, quantity,
@@ -266,6 +263,84 @@ public sealed class SalesOrderDraft
         lines.Add(line);
         Touch(now);
         return line;
+    }
+
+    // ---- manual price and discount (K3, Sinan 5748258299) ------------------------------------------
+
+    /// <summary>
+    /// The commercial fields of a line, validated for mathematical validity ONLY (K3): a unit price is
+    /// exact text with at most the approved money profile's decimals (Ö2: never rounded), zero or more
+    /// (a zero price is an explicit price; refusing it would invent a minimum), and comes with a price
+    /// unit that is one of the product owner's three unit bindings; a discount is a percentage in
+    /// 0..100, kept as text, and needs a price to apply to. No minimum price, margin floor or maximum
+    /// discount threshold exists before a price list, and none is invented here. Null stays null:
+    /// an un-priced line is not free and not zero. Nothing is computed from these values in this slice.
+    /// Who may WRITE them is the caller's fence (the separate price-write permission), never this class.
+    /// </summary>
+    private void RequireCommercial(CommercialDraftFields commercial, ProductSnapshot product)
+    {
+        if ((commercial.UnitPrice is null) != (commercial.PriceUnitId is null))
+        {
+            throw new SalesRuleException(SalesRuleCodes.PriceUnitPairing,
+                "Birim fiyat kendi fiyat birimini ister; fiyat birimi fiyatsız verilemez.");
+        }
+
+        if (commercial.UnitPrice is { } price)
+        {
+            if (DecimalPlaces(price) > Money.Scale)
+            {
+                throw new SalesRuleException(SalesRuleCodes.PriceScaleExceeded,
+                    $"Birim fiyat en fazla {Money.Scale} ondalık taşıyabilir; fazlası yuvarlanmaz, reddedilir.");
+            }
+
+            var priceUnit = commercial.PriceUnitId!.Value;
+            if (priceUnit != product.StockUnit.UnitId && priceUnit != product.SalesUnit.UnitId && priceUnit != product.OrderUnit.UnitId)
+            {
+                throw new SalesRuleException(SalesRuleCodes.PriceUnitUnsupported,
+                    "Fiyat birimi, ürün sahibinin stok, satış ya da sipariş birimlerinden biri olmalıdır; Sales birim uydurmaz.");
+            }
+        }
+
+        if (commercial.DiscountPercent is { } discount)
+        {
+            if (commercial.UnitPrice is null)
+            {
+                throw new SalesRuleException(SalesRuleCodes.DiscountWithoutPrice,
+                    "İskonto uygulanacak bir birim fiyat olmadan verilemez.");
+            }
+
+            if (!IsPercent(discount))
+            {
+                throw new SalesRuleException(SalesRuleCodes.DiscountOutOfRange,
+                    "İskonto yüzdesi 0 ile 100 arasında olmalıdır.");
+            }
+        }
+    }
+
+    /// <summary>The decimals of a plain decimal text ("12.50" → 2, "12" → 0); the wire has already required the shape.</summary>
+    internal static int DecimalPlaces(string text)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(text);
+        var point = text.IndexOf('.', StringComparison.Ordinal);
+        return point < 0 ? 0 : text.Length - point - 1;
+    }
+
+    /// <summary>
+    /// Whether a plain decimal text is within 0..100, decided lexically: more than three integer digits
+    /// (leading zeros aside) is out of range before any conversion, so no text can overflow a decimal.
+    /// </summary>
+    internal static bool IsPercent(string text)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(text);
+        var point = text.IndexOf('.', StringComparison.Ordinal);
+        var integerPart = (point < 0 ? text : text[..point]).TrimStart('0');
+        if (integerPart.Length > 3)
+        {
+            return false;
+        }
+
+        return decimal.TryParse(text, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var value)
+            && value >= 0m && value <= 100m;
     }
 
     /// <summary>A draft is stored only with at least one line (#257: 1–500 lines).</summary>

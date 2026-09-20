@@ -278,15 +278,66 @@ public sealed class SalesOrderDraftTests
     }
 
     [Fact]
-    public void Commercial_fields_are_kept_as_text_and_only_the_price_unit_pairing_is_enforced()
+    public void Commercial_fields_are_kept_as_text_and_the_price_unit_pairing_is_enforced()
     {
         var draft = Draft();
         var priced = draft.AddLine(1, Line(1m, commercial: new CommercialDraftFields("12.50", KgUnit, "0")), T0);
         Assert.Equal(("12.50", KgUnit, "0"), (priced.Commercial.UnitPrice, priced.Commercial.PriceUnitId, priced.Commercial.DiscountPercent));
         Assert.Equal(SalesRuleCodes.PriceUnitPairing, CodeOf(() => draft.AddLine(2, Line(1m, commercial: new CommercialDraftFields("12.50", null, null)), T0)));
         Assert.Equal(SalesRuleCodes.PriceUnitPairing, CodeOf(() => draft.AddLine(2, Line(1m, commercial: new CommercialDraftFields(null, KgUnit, null)), T0)));
-        var unpriced = draft.AddLine(2, Line(1m, commercial: new CommercialDraftFields(null, null, "5")), T0);
-        Assert.Equal("5", unpriced.Commercial.DiscountPercent);
+        // K3 (ASSUMPTION-SALESP-1): a discount is a percentage OF a price; without one it is refused, not kept.
+        Assert.Equal(SalesRuleCodes.DiscountWithoutPrice, CodeOf(() => draft.AddLine(2, Line(1m, commercial: new CommercialDraftFields(null, null, "5")), T0)));
+    }
+
+    [Fact]
+    public void A_unit_price_is_exact_text_within_the_money_profiles_scale_and_zero_is_an_explicit_price()
+    {
+        // K3 (Sinan 5748258299): mathematical validity only — the approved money scale (2 here), never a
+        // rounding, never a minimum. "0" is a price the caller wrote; null is not a price at all.
+        var draft = Draft();
+        Assert.Equal(SalesRuleCodes.PriceScaleExceeded, CodeOf(() => draft.AddLine(1, Line(1m, commercial: new CommercialDraftFields("12.505", KgUnit, null)), T0)));
+        Assert.Equal("12.50", draft.AddLine(1, Line(1m, commercial: new CommercialDraftFields("12.50", KgUnit, null)), T0).Commercial.UnitPrice);
+        Assert.Equal("0", draft.AddLine(2, Line(1m, commercial: new CommercialDraftFields("0", KgUnit, null)), T0).Commercial.UnitPrice);
+        Assert.Equal("0.00", draft.AddLine(3, Line(1m, commercial: new CommercialDraftFields("0.00", KgUnit, null)), T0).Commercial.UnitPrice);
+        Assert.Equal(1, draft.Lines[0].LineNo);
+        Assert.Equal(3, draft.Lines.Count);
+        Assert.Equal((0, 2, 3), (SalesOrderDraft.DecimalPlaces("12"), SalesOrderDraft.DecimalPlaces("12.50"), SalesOrderDraft.DecimalPlaces("0.000")));
+
+        // A wider approved scale admits the wider text as it is (nothing is normalised to the scale).
+        var wide = SalesOrderDraft.Create(Guid.NewGuid(), Company, "SO-2026-000002", Header(), Money(scale: 4), T0);
+        Assert.Equal("12.5050", wide.AddLine(1, Line(1m, commercial: new CommercialDraftFields("12.5050", KgUnit, null)), T0).Commercial.UnitPrice);
+    }
+
+    [Fact]
+    public void The_price_unit_is_one_of_the_product_owners_three_unit_bindings()
+    {
+        // K3 / ASSUMPTION-SALESP-2: the real source of a price unit is the product owner's stock, sales or
+        // order binding; any other id is refused, never mapped to a guessed unit.
+        var draft = Draft();
+        var orderUnit = KgUnitProfile();
+        var stock = new UnitBindingSnapshot(Company, PieceUnit, Guid.Parse("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"), "1");
+        var order = new UnitBindingSnapshot(Company, orderUnit.UnitId, orderUnit.ProfileId, orderUnit.ProfileVersion);
+        var product = new ProductSnapshot(Product, "7", "GDC-001", "Sentetik bant", Day, stock, order, order);
+        Assert.Equal(PieceUnit, draft.AddLine(1, Line(1m, product: product, commercial: new CommercialDraftFields("3", PieceUnit, null)), T0).Commercial.PriceUnitId);
+        Assert.Equal(KgUnit, draft.AddLine(2, Line(1m, product: product, commercial: new CommercialDraftFields("3", KgUnit, null)), T0).Commercial.PriceUnitId);
+        Assert.Equal(SalesRuleCodes.PriceUnitUnsupported,
+            CodeOf(() => draft.AddLine(3, Line(1m, product: product, commercial: new CommercialDraftFields("3", Guid.NewGuid(), null)), T0)));
+    }
+
+    [Fact]
+    public void A_discount_is_a_percentage_within_0_and_100_kept_as_text_with_no_threshold_invented()
+    {
+        // K3 / D5: 0 and 100 are the arithmetic bounds of a percentage; no maximum discount, margin floor or
+        // minimum price exists before a price list, so 100 is admitted and nothing between 0 and 100 is refused.
+        var draft = Draft();
+        Assert.Equal("0", draft.AddLine(1, Line(1m, commercial: new CommercialDraftFields("12.50", KgUnit, "0")), T0).Commercial.DiscountPercent);
+        Assert.Equal("100", draft.AddLine(2, Line(1m, commercial: new CommercialDraftFields("12.50", KgUnit, "100")), T0).Commercial.DiscountPercent);
+        Assert.Equal("12.345678", draft.AddLine(3, Line(1m, commercial: new CommercialDraftFields("12.50", KgUnit, "12.345678")), T0).Commercial.DiscountPercent);
+        Assert.Equal(SalesRuleCodes.DiscountOutOfRange, CodeOf(() => draft.AddLine(4, Line(1m, commercial: new CommercialDraftFields("12.50", KgUnit, "100.01")), T0)));
+        Assert.Equal(SalesRuleCodes.DiscountOutOfRange, CodeOf(() => draft.AddLine(4, Line(1m, commercial: new CommercialDraftFields("12.50", KgUnit, "1000")), T0)));
+        // Lexical first: a text with more than three integer digits is out of range before any conversion could overflow.
+        Assert.False(SalesOrderDraft.IsPercent("99999999999999999999999999999999999999999"));
+        Assert.True(SalesOrderDraft.IsPercent("000100"));
     }
 
     [Fact]

@@ -84,6 +84,17 @@ public static class SalesRuleCodes
     /// <summary>A unit price needs its price unit and a price unit needs a price (#257).</summary>
     public const string PriceUnitPairing = "sales_price_unit_pairing";
 
+    // K3 (Sinan 5748258299): manual price and discount before a price list. Mathematical validity only —
+    // no minimum price, margin floor or maximum discount is a rule here (none exists; none is invented).
+    /// <summary>The unit price text carries more decimals than the approved money profile's scale; nothing is rounded.</summary>
+    public const string PriceScaleExceeded = "sales_price_scale_exceeded";
+    /// <summary>The price unit is none of the product owner's three unit bindings (stock, sales, order).</summary>
+    public const string PriceUnitUnsupported = "sales_price_unit_unsupported";
+    /// <summary>The discount percent is outside 0..100 (a percentage, not a threshold).</summary>
+    public const string DiscountOutOfRange = "sales_discount_out_of_range";
+    /// <summary>A discount without a unit price: a percentage of nothing (ASSUMPTION-SALESP-1).</summary>
+    public const string DiscountWithoutPrice = "sales_discount_without_price";
+
     public const string TooManySlices = "sales_too_many_slices";
     public const string DuplicateSliceId = "sales_duplicate_slice_id";
     public const string SliceUnitMismatch = "sales_slice_unit_mismatch";

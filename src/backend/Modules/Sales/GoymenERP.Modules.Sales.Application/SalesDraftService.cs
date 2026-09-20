@@ -65,9 +65,19 @@ public sealed class SalesDraftService(
         // 1. Authority first (ADR-011 §5): nothing — not even the replay — is read before it.
         var scope = await RequireAsync(bindings.CreatePermission, cancellationToken);
 
+        // 1b. K3 (Sinan 5748258299): a line that carries a unit price, a price unit or a discount needs the
+        // SEPARATE price-write permission of the same actor in the same company — the create permission
+        // does not confer it. Asked only when a commercial field is present, still before anything is read
+        // or recorded (a 403 is never a recorded terminal result), and re-measured after the awaited owner
+        // reads like the create permission (#276).
+        var priced = CommercialFields(request);
+        if (priced.Count > 0)
+        {
+            await RequirePriceWriteAsync(scope, priced, cancellationToken);
+        }
+
         // 2. Contract deltas the card fixed: fail-closed before any owner is asked.
         RefuseUnavailableOwnerReferences(request);
-        RefuseCommercialFields(request);
 
         var requestHash = SalesDraftRequestHash.Compute(request);
         var envelope = Envelope(scope, metadata);
@@ -92,12 +102,18 @@ public sealed class SalesDraftService(
             money = await ReadMoneyProfileAsync(scope, request, cancellationToken);
             for (var index = 0; index < request.Lines.Count; index++)
             {
-                lineInputs.Add(await ReadLineAsync(scope, request, index, envelope, requestHash, cancellationToken));
+                lineInputs.Add(await ReadLineAsync(scope, request, money, index, envelope, requestHash, cancellationToken));
             }
         }
         catch (RaceWon won)
         {
             return won.Response;
+        }
+
+        if (priced.Count > 0)
+        {
+            // The price fence again after every awaited read, right before the single save (the last fence).
+            await RequirePriceWriteAsync(scope, priced, cancellationToken);
         }
 
         // 5. The domain builds the draft on the store's document number; the store keeps one save.
@@ -475,20 +491,38 @@ public sealed class SalesDraftService(
         }
     }
 
-    private static void RefuseCommercialFields(CreateSalesOrderDraftRequest request)
+    // ---- manual price and discount (K3, Sinan 5748258299) --------------------------------------
+
+    /// <summary>Every commercial field the request carries, as the field errors a refusal would name.</summary>
+    private static List<SalesDraftFieldError> CommercialFields(CreateSalesOrderDraftRequest request)
     {
-        var errors = new List<SalesDraftFieldError>();
+        var fields = new List<SalesDraftFieldError>();
         for (var index = 0; index < request.Lines.Count; index++)
         {
             var line = request.Lines[index];
-            if (line.UnitPrice is not null) errors.Add(new($"lines[{index}].unitPrice", SalesDraftProblemCodesV1.CommercialNotAvailable));
-            if (line.PriceUnitId is not null) errors.Add(new($"lines[{index}].priceUnitId", SalesDraftProblemCodesV1.CommercialNotAvailable));
-            if (line.DiscountPercent is not null) errors.Add(new($"lines[{index}].discountPercent", SalesDraftProblemCodesV1.CommercialNotAvailable));
+            if (line.UnitPrice is not null) fields.Add(new($"lines[{index}].unitPrice", SalesDraftProblemCodesV1.PriceWriteForbidden));
+            if (line.PriceUnitId is not null) fields.Add(new($"lines[{index}].priceUnitId", SalesDraftProblemCodesV1.PriceWriteForbidden));
+            if (line.DiscountPercent is not null) fields.Add(new($"lines[{index}].discountPercent", SalesDraftProblemCodesV1.PriceWriteForbidden));
         }
 
-        if (errors.Count > 0)
+        return fields;
+    }
+
+    /// <summary>
+    /// The separate price-write fence: the SAME actor in the SAME company as the create scope must hold
+    /// the price permission now. Anything else — not granted, another actor, another company, a name the
+    /// catalogue does not know (503, a setup gap) — refuses the whole request: nothing of a price is
+    /// stored without it, and the create permission alone never confers it.
+    /// </summary>
+    private async Task RequirePriceWriteAsync(Scope scope, IReadOnlyList<SalesDraftFieldError> fields, CancellationToken cancellationToken)
+    {
+        try
         {
-            throw new SalesDraftServiceException(422, SalesDraftProblemCodesV1.CommercialNotAvailable, errors);
+            await RequireStillAsync(scope, bindings.PricePermission, cancellationToken);
+        }
+        catch (SalesDraftServiceException exception) when (exception.Status == 403)
+        {
+            throw new SalesDraftServiceException(403, SalesDraftProblemCodesV1.PriceWriteForbidden, fields);
         }
     }
 
@@ -660,8 +694,8 @@ public sealed class SalesDraftService(
             profile.EffectiveFrom, profile.EffectiveThrough, profile.Scale);
     }
 
-    private async Task<SalesDraftLineInput> ReadLineAsync(Scope scope, CreateSalesOrderDraftRequest request, int index,
-        SalesDraftWriteEnvelope envelope, string requestHash, CancellationToken cancellationToken)
+    private async Task<SalesDraftLineInput> ReadLineAsync(Scope scope, CreateSalesOrderDraftRequest request, MoneyProfileSnapshot money,
+        int index, SalesDraftWriteEnvelope envelope, string requestHash, CancellationToken cancellationToken)
     {
         var line = request.Lines[index];
         var productField = $"lines[{index}].productId";
@@ -755,7 +789,53 @@ public sealed class SalesDraftService(
                 slice.RequestedDeliveryDate))
             .ToArray();
         return new SalesDraftLineInput(line.LineId, product, orderUnit, line.Quantity, Decimal(line.Quantity),
-            line.RequestedDeliveryDate, line.Note, Commercial: null, RequestedDeliverySlices: slices);
+            line.RequestedDeliveryDate, line.Note, Commercial: Commercial(line, index, product, money), RequestedDeliverySlices: slices);
+    }
+
+    /// <summary>
+    /// K3: the line's commercial fields as the domain takes them, checked here first so a refusal names the
+    /// field (`lines[i].unitPrice` …) — the domain applies the same rules again on the draft (its word is
+    /// final). Mathematical validity only: the price's decimals against the approved money profile's scale
+    /// (Ö2, never rounded; zero is an explicit price), the price unit among the product owner's three unit
+    /// bindings, the discount within 0..100 and never without a price. No threshold is invented (D5), and
+    /// no amount is computed. Null stays null.
+    /// </summary>
+    private static CommercialDraftFields? Commercial(SalesOrderDraftLineRequest line, int index, ProductSnapshot product, MoneyProfileSnapshot money)
+    {
+        if (line.UnitPrice is null && line.PriceUnitId is null && line.DiscountPercent is null)
+        {
+            return null;
+        }
+
+        // The wire already required the pairing and the decimal shape (SalesDraftJson.ReadCreate).
+        if (line.UnitPrice is { } price)
+        {
+            if (SalesOrderDraft.DecimalPlaces(price) > money.Scale)
+            {
+                throw new SalesDraftServiceException(422, "validation_failed", [new($"lines[{index}].unitPrice", SalesRuleCodes.PriceScaleExceeded)]);
+            }
+
+            var priceUnit = line.PriceUnitId!.Value;
+            if (priceUnit != product.StockUnit.UnitId && priceUnit != product.SalesUnit.UnitId && priceUnit != product.OrderUnit.UnitId)
+            {
+                throw new SalesDraftServiceException(422, "validation_failed", [new($"lines[{index}].priceUnitId", SalesRuleCodes.PriceUnitUnsupported)]);
+            }
+        }
+
+        if (line.DiscountPercent is { } discount)
+        {
+            if (line.UnitPrice is null)
+            {
+                throw new SalesDraftServiceException(422, "validation_failed", [new($"lines[{index}].discountPercent", SalesRuleCodes.DiscountWithoutPrice)]);
+            }
+
+            if (!SalesOrderDraft.IsPercent(discount))
+            {
+                throw new SalesDraftServiceException(422, "validation_failed", [new($"lines[{index}].discountPercent", SalesRuleCodes.DiscountOutOfRange)]);
+            }
+        }
+
+        return new CommercialDraftFields(line.UnitPrice, line.PriceUnitId, line.DiscountPercent);
     }
 
     private static UnitBindingSnapshot Binding(ProductSalesUnitProfileV1 unit) =>
