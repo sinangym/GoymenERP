@@ -24,7 +24,7 @@
 
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router'
-import { createDraft } from './api'
+import { createDraft, type AccountOption } from './api'
 import { SALES_DRAFT_PATH, SALES_PROBLEM_CODE } from './contract'
 import {
   abandon,
@@ -137,15 +137,27 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
   // with its own state; nothing is offered before its owner answered.
   const useOptions = useContext(SalesReferenceSourceContext)
   // #361: the customer select is one server page; the person searches with the server's own `q` (submitted, never
-  // typed-through) or continues with the server's cursor. The draft's chosen account is kept across searches.
+  // typed-through) or continues with the server's cursor. The chosen account is kept across searches in the STATE and
+  // on the SCREEN: when the current page does not carry it, the option is merged back in with the label captured at
+  // the choice (no extra read), so the select keeps showing it and the submit is validated against the list shown.
   const [accountSearchInput, setAccountSearchInput] = useState('')
   const [accountSearch, setAccountSearch] = useState('')
+  const [chosenAccount, setChosenAccount] = useState<AccountOption | null>(null)
   const source = useOptions(companyId, values.businessDate, accountSearch)
   const useContactInformation = useContext(SalesContactInformationSourceContext)
   const delivery = useContactInformation(companyId, values.partyId, values.companyAccountId)
   /** The full options (lines included) — only when every owner offers a list; never on main until E1. */
   const options: OrderDraftOptions | null = source.status === 'ready' ? source.options : null
-  const accounts = source.status === 'ready' ? source.options.accounts : (source.header?.accounts ?? null)
+  const pageAccounts = source.status === 'ready' ? source.options.accounts : (source.header?.accounts ?? null)
+  const accounts = useMemo<readonly AccountOption[] | null>(() => {
+    if (pageAccounts === null) return null
+    const chosen =
+      chosenAccount !== null && chosenAccount.partyId === values.partyId && chosenAccount.companyAccountId === values.companyAccountId
+        ? chosenAccount
+        : null
+    if (chosen === null || pageAccounts.some((a) => a.partyId === chosen.partyId && a.companyAccountId === chosen.companyAccountId)) return pageAccounts
+    return [...pageAccounts, chosen]
+  }, [pageAccounts, chosenAccount, values.partyId, values.companyAccountId])
   const accountsOffer = source.status === 'ready' ? null : (source.header?.accountsOffer ?? null)
   const currencyState: CurrencyReadState | null = source.status === 'ready' ? null : (source.header?.currencies ?? null)
   const missing: readonly MissingReference[] | null = source.status === 'unavailable' ? (source.missing ?? null) : null
@@ -252,7 +264,8 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
   function onSubmit(event: React.FormEvent) {
     event.preventDefault()
     if (options === null) return
-    const validation = validateOrderDraft(values, options, deliveryOptions)
+    // The same list the select renders from, the chosen account merged in: screen and payload never disagree.
+    const validation = validateOrderDraft(values, accounts === null ? options : { ...options, accounts }, deliveryOptions)
     if (!validation.ok) {
       // Nothing was sent, so no key is minted.
       setErrors(validation.errors)
@@ -432,6 +445,7 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
                 value={values.partyId === '' ? '' : `${values.partyId}|${values.companyAccountId}`}
                 onChange={(event) => {
                   const [partyId = '', companyAccountId = ''] = event.target.value.split('|')
+                  setChosenAccount(accounts.find((a) => a.partyId === partyId && a.companyAccountId === companyAccountId) ?? null)
                   setValues((v) => setAccount(v, partyId, companyAccountId))
                 }}
               >

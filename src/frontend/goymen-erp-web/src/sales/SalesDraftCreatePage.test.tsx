@@ -12,7 +12,7 @@ import replayResponseRaw from './examples/replay-response.json?raw'
 import errorProductRaw from './examples/error-product.json?raw'
 import errorReplayRaw from './examples/error-replay.json?raw'
 import { resetPendingDrafts } from './pendingDrafts'
-import { unavailableReferenceSource, type UseContactInformation, type UseCurrencyOptions } from './referenceSource'
+import { unavailableReferenceSource, type UseContactInformation, type UseCurrencyOptions, type UseReferenceOptions } from './referenceSource'
 import { SALES_CAPABILITY } from './capabilities'
 import { ORDER_FIELD } from './orderDraftForm'
 import { ORDER_DRAFT_TEXT as T } from './salesText'
@@ -27,6 +27,7 @@ import {
   CURRENCIES_A,
   CURRENCY,
   KG,
+  OPTIONS_A,
   OTHER_ACCOUNT,
   PARTY,
   PRODUCT,
@@ -374,6 +375,45 @@ describe('SALES-A2a — delivery address, contact and the currencies list', () =
     // The answer reflects the references by value, so the attempt completes.
     await act(async () => pending.resolve(json(answerWithReferences(createResponseRaw, call.body), 201)))
     expect(await screen.findByRole('heading', { name: T.attempt.completed })).toBeTruthy()
+  })
+
+  it('the chosen account stays shown and is sent when a search page no longer carries it (#361)', async () => {
+    // A ready source whose accounts page honours the search term, like the server's `q`.
+    const searching: UseReferenceOptions = (companyId, _businessDate, accountSearch = '') =>
+      companyId === COMPANY_A
+        ? { status: 'ready', options: { ...OPTIONS_A, accounts: OPTIONS_A.accounts.filter((a) => accountSearch === '' || a.label.includes(accountSearch)) } }
+        : { status: 'unavailable' }
+    const fetch = installFetch({ onCreate: () => deferred<Response>().promise })
+    renderSalesApp(PATH, searching)
+    await fillExample()
+    const customer = screen.getByLabelText(T.field.customer) as HTMLSelectElement
+    await userEvent.selectOptions(customer, `${PARTY}|${OTHER_ACCOUNT}`)
+    // A search that matches only the A account: the page is [A]; the chosen B is merged back in, still selected.
+    await userEvent.type(screen.getByTestId('sales-customer-search'), 'A hesabı')
+    await userEvent.click(screen.getByTestId('sales-customer-search-button'))
+    await waitFor(() => expect(Array.from(customer.options).map((o) => o.textContent)).toEqual([T.choose, 'ABC Demir — A hesabı', 'ABC Demir — B hesabı']))
+    expect(customer.value).toBe(`${PARTY}|${OTHER_ACCOUNT}`)
+    // Choosing A from the searched page drops the merged B option: only the page and the current choice are offered.
+    await userEvent.selectOptions(customer, `${PARTY}|${ACCOUNT}`)
+    expect(Array.from(customer.options).map((o) => o.textContent)).toEqual([T.choose, 'ABC Demir — A hesabı'])
+    // Back to B through its own search, then a search excluding it again: B is shown, and the submit carries B.
+    await userEvent.clear(screen.getByTestId('sales-customer-search'))
+    await userEvent.type(screen.getByTestId('sales-customer-search'), 'B hesabı')
+    await userEvent.click(screen.getByTestId('sales-customer-search-button'))
+    // (A is the current choice now, so it is the one merged in beside the page's B.)
+    await waitFor(() => expect(Array.from(customer.options).map((o) => o.textContent)).toEqual([T.choose, 'ABC Demir — B hesabı', 'ABC Demir — A hesabı']))
+    await userEvent.selectOptions(customer, `${PARTY}|${OTHER_ACCOUNT}`)
+    await userEvent.clear(screen.getByTestId('sales-customer-search'))
+    await userEvent.type(screen.getByTestId('sales-customer-search'), 'A hesabı')
+    await userEvent.click(screen.getByTestId('sales-customer-search-button'))
+    await waitFor(() => expect(Array.from(customer.options).map((o) => o.textContent)).toEqual([T.choose, 'ABC Demir — A hesabı', 'ABC Demir — B hesabı']))
+    expect(customer.value).toBe(`${PARTY}|${OTHER_ACCOUNT}`)
+    // The submit carries B and is not refused as "no longer offered".
+    await userEvent.click(saveButton())
+    await screen.findByText(T.attempt.submitting)
+    expect(document.getElementById(`${ORDER_FIELD.customer}-error`)).toBeNull()
+    const body = JSON.parse(fetch.salesCalls()[0].body as string)
+    expect(body).toMatchObject({ partyId: PARTY, companyAccountId: OTHER_ACCOUNT })
   })
 
   it('sends null when nothing is chosen; choosing another account clears the chosen references', async () => {
