@@ -116,6 +116,17 @@ taşımıyor ve `IsCurrent(context)` parametre alıyor — iki desen de onu asla
 **beş** adapter var ve Finance aktörü ilk günden beri kontrol ediyor (`IsCurrent(FinanceContext)`,
 yakalanan `ActorId` ve `CompanyId` ile).
 
+**İkinci vaka, aynı gece (#363).** "Hangi liste ekranı kendi oluşturma rotasına bağlanıyor?" sorusu
+için depoda **düz rota metinleri** (`/urun/yeni`, `/satis/siparisler/yeni`, …) arandı; eşleşme
+çıkmayınca "başka hiçbir liste bağlanmıyor" denildi ve PR gövdesine yazıldı. Oysa `ProductListPage`
+ve `SalesDraftListPage` bağlantıyı **rota sabitinden** kuruyor
+(`PRODUCT_CAPABILITY_ROUTE[…]`, `SALES_ROUTE.create`), yani düz metin araması onları asla
+yakalayamazdı. Üstelik Logistics'teki tek örnek, arama çalıştığı için değil, o dosya **okunduğu**
+için bulunmuştu — yani eldeki tek isabet, yöntemin işlediğinin kanıtı değildi.
+
+**FE bağlantıları için kural:** her liste ekranının bağlantılarını kendi **rota tablosundan** sayarak
+çıkar ya da sayfaları oku; düz rota metni grep'inden "bağlanmıyor" sonucu çıkarma.
+
 **Dikkat: sonuç ayakta kaldı, gerekçe kalmadı.** FİNANS'ın yapacak bir işi yine yoktu — ama bu,
 yöntemin doğru olduğu anlamına gelmez; şanstır. Bir iddianın doğru çıkması, onu elde etme biçimini
 doğrulamaz.
