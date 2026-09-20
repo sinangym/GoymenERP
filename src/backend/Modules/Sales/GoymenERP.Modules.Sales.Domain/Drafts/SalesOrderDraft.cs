@@ -318,7 +318,7 @@ public sealed class SalesOrderDraft
     }
 
     /// <summary>The decimals of a plain decimal text ("12.50" → 2, "12" → 0); the wire has already required the shape.</summary>
-    internal static int DecimalPlaces(string text)
+    public static int DecimalPlaces(string text)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(text);
         var point = text.IndexOf('.', StringComparison.Ordinal);
@@ -329,7 +329,7 @@ public sealed class SalesOrderDraft
     /// Whether a plain decimal text is within 0..100, decided lexically: more than three integer digits
     /// (leading zeros aside) is out of range before any conversion, so no text can overflow a decimal.
     /// </summary>
-    internal static bool IsPercent(string text)
+    public static bool IsPercent(string text)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(text);
         var point = text.IndexOf('.', StringComparison.Ordinal);
