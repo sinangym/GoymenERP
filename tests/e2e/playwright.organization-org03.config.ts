@@ -8,9 +8,15 @@ import { defineConfig, devices } from '@playwright/test'
  * real SQL, the suite's capability profile (`normal`, where the Organization capabilities are published),
  * the authorized web.
  *
- * It WRITES NOTHING. There is no command, no form and no state change in any case, and the suite is
- * registered read-only: everything it reads is already in the built-in organization seed, so it needs no
- * fixture and no seed envelope. The cases are independent reads and could run in any order; they are
+ * It WRITES NOTHING: there is no command, no form and no state change in any case, and everything it
+ * reads is already in the built-in organization seed, so it needs no fixture and no seed envelope.
+ *
+ * That is a property of the CASES, not a registration — an earlier version of this comment said the
+ * suite was "registered read-only", and it is not. org03 resolves on the workflow's writing arm and is
+ * absent from the validator's read-only set, so the post-browser SQL verification that would prove
+ * nothing was written is not run for it. Registering it is a separate slice; see src/env.ts.
+ *
+ * The cases are independent reads and could run in any order; they are
  * kept serial (`fullyParallel: false`, `workers: 1`) so a failure names one case rather than a race, and
  * because two of them sign in as different actors against one disposable API.
  *

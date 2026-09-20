@@ -289,8 +289,11 @@ def validate_suite_identity(suite: str, extra: dict, actor_ids: list[str]) -> No
         require(_IDENTITY_FIELDS[section].fullmatch(field) is not None, f"IdentitySeed field is not allowed: {key}")
         grouped[section].setdefault(index, {})[field] = value
     if not any(grouped.values()):
-        # A suite with an Identity list must give its actors their users; one without (org03 until its
-        # owner declares the grants) keeps #322's actors-only shape, whose actors cannot sign in yet.
+        # A suite with an Identity list must give its actors their users; one without keeps #322's
+        # actors-only shape, whose actors cannot sign in yet. org03 USED to be that example and is no
+        # longer: it declared its grants and is `identity: True` above, so citing it here would hand the
+        # next reader an example that the same file contradicts. No suite carries the actors-only shape
+        # today; the rule stands for the next one that does.
         require(not actor_ids or not SUITE_API_EXTENSIONS[suite]["identity"],
                 f"suite {suite} actors need their Identity users (IdentitySeed) to sign in")
         return

@@ -63,7 +63,17 @@ services:
       IdentitySeed__Users__6__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000302
       IdentitySeed__Users__6__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
       IdentitySeed__Users__6__ExternalIdentities__0__Subject: org03-reader
-      # ONE name. A second here would end the suite's claim without failing a single case.
+      # ONE name, and here is exactly what protects that — an earlier version of this line said a second
+      # name would pass "without failing a single case", which UNDERSELLS the protection and invites
+      # someone to build a guard that already exists.
+      # WHAT DOES NOT CATCH IT: the closed permitted list is a UNION check (one `require` over
+      # `set(permissions) - permitted`), so it permits both names anywhere and says nothing about which
+      # actor holds which subset; the per-actor comment beside it is an intent statement, not a guard.
+      # Nor do the PR's required checks, which do not run this suite.
+      # WHAT DOES CATCH IT: this suite's own cases, when dispatched. Adding organization.locations.read
+      # here turns ORG03-01's link count from 0 to 5 and its closed-cell count from 5 to 0, and ORG03-02's
+      # Organizasyon nav-entry count from 0 to 1 — three assertions, in two cases, all red.
+      # So the protection is real and it is the suite itself; what it is not is automatic.
       IdentitySeed__Roles__5__Id: b3000000-0000-4000-8000-000000000301
       IdentitySeed__Roles__5__Code: BROWSER_ORG03_WORK_CENTERS
       IdentitySeed__Roles__5__Name: SENTETIK browser-suite:org03 yalnız iş merkezi okuma rolü
