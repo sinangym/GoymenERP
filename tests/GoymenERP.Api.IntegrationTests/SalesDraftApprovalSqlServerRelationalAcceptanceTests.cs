@@ -834,8 +834,8 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
 
     /// <summary>
     /// The change set of a commercial revision's ONE save, asserted TOGETHER (a count alone would accept a save holding only
-    /// some of it): the archived revision header and line (Added), the draft header (Modified — Revision, ApprovalState and
-    /// Version among its modified properties), the draft line (Modified — exactly the three commercial columns), the attempt
+    /// some of it): the archived revision header and line (Added), the draft header (Modified — exactly the approval facts,
+    /// Revision, Version and the timestamp), the draft line (Modified — exactly the three commercial columns), the attempt
     /// and the audit event (Added); nothing else.
     /// </summary>
     private static void AssertRevisionChangeSet(IReadOnlyList<SaveRecorder.Entry> save)
@@ -843,8 +843,17 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
         Assert.Equal(
             ["AuditEvent:Added", "DraftAttemptRow:Added", "DraftLineRow:Modified", "DraftRevisionLineRow:Added", "DraftRevisionRow:Added", "DraftRow:Modified"],
             save.Select(entry => $"{entry.Entity}:{entry.State}").Order(StringComparer.Ordinal));
+        // The header's modified set, EXACTLY (both directions, as the line below): Approved → Preparing clears the four approval
+        // facts, the revision counter and the version advance, the timestamp moves; RejectionReason stays null (not modified)
+        // and RowVersion is store-generated. An Assert.Superset was here first; its direction is easy to misread, and an exact
+        // set says what a superset cannot — that Revision IS among the modified properties, and nothing else is.
         var header = Assert.Single(save, entry => entry.Entity == nameof(DraftRow));
-        Assert.Superset(new HashSet<string>([nameof(DraftRow.Revision), nameof(DraftRow.ApprovalState), nameof(DraftRow.Version)]), header.Modified.ToHashSet());
+        Assert.Equal(
+            [
+                nameof(DraftRow.ApprovalState), nameof(DraftRow.DecidedAtUtc), nameof(DraftRow.DecidedBy), nameof(DraftRow.Revision),
+                nameof(DraftRow.SubmittedAtUtc), nameof(DraftRow.SubmittedBy), nameof(DraftRow.UpdatedAtUtc), nameof(DraftRow.Version),
+            ],
+            header.Modified);
         var line = Assert.Single(save, entry => entry.Entity == nameof(DraftLineRow));
         Assert.Equal([nameof(DraftLineRow.DiscountPercent), nameof(DraftLineRow.PriceUnitId), nameof(DraftLineRow.UnitPrice)], line.Modified);
     }
