@@ -14,6 +14,7 @@ using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Shell;
 using GoymenERP.Modules.Accounting.Infrastructure;
 using GoymenERP.Modules.Accounting.Infrastructure.Shell;
+using GoymenERP.Modules.Accounting.Application.Contracts;
 using GoymenERP.Modules.Audit.Infrastructure;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Counterparty.Infrastructure;
@@ -100,6 +101,37 @@ builder.Services.AddFinancePersistence(
     builder.Configuration,
     (services, options) => options.AddInterceptors(
         services.GetRequiredService<AuditSaveChangesInterceptor>()));
+// FIN-T05 (Sinan's K1, #66 5748258299, closing 5745134466): a definitive manual bank receipt's period
+// is decided by its occurredOn. The rule that maps the date needs Accounting's period port, which the
+// Finance module deliberately cannot see, so the HOST composes the two — and the mapping stays in one
+// host class rather than becoming a rule every accounting source inherits.
+//
+// BEFORE AddFinanceServices() on purpose: that method ends with
+// TryAddSingleton<IFinanceRecordPeriodRule, UndecidedFinanceRecordPeriodRule>, and TryAdd tests the
+// SERVICE TYPE only — so registering first makes it a no-op and EXACTLY ONE descriptor for this
+// service ever enters the container. The undecided fallback is never registered at all.
+//
+// Why one descriptor is worth insisting on, which is a property of the container and needs no
+// prediction: with two, the next reader cannot see which registration is dead, and a later consumer
+// that ENUMERATES instead of resolving would get both. (Nothing injects
+// IEnumerable<IFinanceRecordPeriodRule> today — checked — so that second risk is future, not present.)
+//
+// What the REVERSE order actually does is measured, not described here: the FIN-T05 host composition
+// cases pin the container's behaviour under both orders. Find them by searching the API integration
+// tests for IFinanceRecordPeriodRule, and believe them over any sentence in this file. The first
+// version of this comment predicted that outcome, confidently and wrongly, which is why this one
+// points at the test instead: a comment that names a pin cannot go stale, a comment that predicts a
+// result can.
+//
+// Scoped, not singleton: both depend on ICompanyContext, ICurrentUser and IAccountingPeriodStore, which
+// are per request. A singleton would capture one request's context — the defect #366 closed in two
+// other host adapters this morning. Verified safe: the rule is resolved inside the SCOPED
+// IManualReceiptService factory, so nothing longer-lived captures it.
+//
+// This grants nothing. The port reads under the CALLER's own accounting.periods.read; an actor without
+// that name is refused with finance_period_rule_unavailable, and granting it is a human decision.
+builder.Services.AddScoped<IAccountingPeriodStatusPortV1, AccountingPeriodStatusPort>();
+builder.Services.AddScoped<IFinanceRecordPeriodRule, OccurredOnFinanceRecordPeriodRule>();
 builder.Services.AddFinanceServices();
 builder.Services.AddScoped<IFinancePartyAccountPort, CounterpartyFinancePartyAccountPort>();
 builder.Services.AddScoped<DraftReadContextReader>();

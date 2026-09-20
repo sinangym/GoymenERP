@@ -23,7 +23,33 @@ const ROUTED = [
   [CAPABILITY.financeBankAccountsPropose, FINANCE_CAPABILITY.bankAccountsPropose, FINANCE_ROUTE.bankAccountsPropose],
 ] as const
 
+/**
+ * CONTROLS are capabilities the lane offers INSIDE a screen, never as a screen of their own: the
+ * bank-account approval on F-04's list, and the Record of a definitive receipt on F-02's detail
+ * (FIN-T05a). Each is deliberately absent from the shell's table, from `CAPABILITY_ROUTE` and from
+ * `CAPABILITY_NAV_LABEL` — a control with a route would be a second entry point to an action that
+ * belongs inside its list, and a control with a nav label would be a sidebar link to something that
+ * is not a screen. They are listed here rather than excused one by one, so the next control fails
+ * this test loudly instead of being quietly appended to a filter.
+ */
+const CONTROLS: readonly string[] = [
+  FINANCE_CAPABILITY.bankAccountsApprove,
+  FINANCE_CAPABILITY.receiptsRecord,
+]
+
 describe('shell ↔ Finance lane capability ids', () => {
+  it('classifies every lane id as either routed or a control', () => {
+    // Without this, an unclassified id still fails — but as a phantom MISSING MOUNT in the next
+    // case, which is how finance.receipts.record read at f3800f3c: "expected 5 to equal 6", sending
+    // the reader to the shell's table to add something that must never be there. Here the id is
+    // printed as unclassified, with the two places it can go.
+    const classified = [...ROUTED.map(([, laneId]) => laneId as string), ...CONTROLS]
+    expect(
+      (Object.values(FINANCE_CAPABILITY) as string[]).sort(),
+      'a lane id is either a screen (add it to ROUTED with its shell id and route) or a control (add it to CONTROLS)',
+    ).toEqual([...classified].sort())
+  })
+
   it('declares the lane’s five route ids with the lane’s values and routes', () => {
     for (const [shellId, laneId, route] of ROUTED) {
       expect(shellId).toBe(laneId)
@@ -31,14 +57,22 @@ describe('shell ↔ Finance lane capability ids', () => {
     }
   })
 
-  it('mounts every routed Finance id and nothing else under finance.; the approval control is no route', () => {
+  it('mounts every routed Finance id and nothing else under finance.; a control is no route', () => {
     const shellFinanceIds = (Object.values(CAPABILITY) as string[]).filter((id) => id.startsWith('finance.'))
     const laneRoutedIds = (Object.values(FINANCE_CAPABILITY) as string[]).filter(
-      (id) => id !== FINANCE_CAPABILITY.bankAccountsApprove,
+      (id) => !CONTROLS.includes(id),
     )
     expect([...shellFinanceIds].sort()).toEqual([...laneRoutedIds].sort())
-    expect(Object.keys(CAPABILITY_ROUTE)).not.toContain(FINANCE_CAPABILITY.bankAccountsApprove)
-    expect(Object.keys(CAPABILITY_NAV_LABEL)).not.toContain(FINANCE_CAPABILITY.bankAccountsApprove)
+    for (const control of CONTROLS) {
+      expect(Object.keys(CAPABILITY_ROUTE), `${control} is a control, so it must have no route`).not.toContain(control)
+      expect(
+        Object.keys(CAPABILITY_NAV_LABEL),
+        `${control} is a control, so it must have no nav label`,
+      ).not.toContain(control)
+    }
+    // A filter that excused everything would make the comparison above meaningless, so pin that the
+    // lane still declares screens as well as controls.
+    expect(laneRoutedIds.length).toBeGreaterThan(0)
   })
 
   it('matches the lane’s own link helpers, and the static routes are never a source id', () => {

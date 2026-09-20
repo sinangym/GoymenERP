@@ -24,8 +24,11 @@
  * carries no command result.
  * No answer at all is `no-reply`, an UNKNOWN outcome the command hook retries with the same key.
  *
- * Record and Reverse have no route (T05; authority is OPEN-009). They answer an explicit local
- * `Unavailable`, never a success and never a request to a guessed URL.
+ * Record (FIN-T05a): `POST …/manual-receipts/{draftId}/record` with the #258 `RecordRequest`, answered like every
+ * command. The server decides the period from `occurredOn` (K1) and answers a definite 422 when it refuses —
+ * `finance_period_not_open` for a closed period, `finance_period_rule_unavailable` when it could not decide. The
+ * control is not offered yet anyway: no provider declares its capability. Reverse has no route (FIN-T06): it answers an
+ * explicit local `Unavailable`, never a success and never a request to a guessed URL.
  *
  * The company is only the verified shell company in `X-Company-Id`; it is never put into a body.
  */
@@ -138,7 +141,8 @@ export function createHttpFinancePort(): FinanceReceiptPort {
 
     draftSave: (scope, idempotencyKey, request) => command(`${API_BASE}${DRAFTS_PATH}`, scope, idempotencyKey, request),
 
-    record: () => unpublishedCommand(),
+    record: (scope, idempotencyKey, request) =>
+      command(`${API_BASE}${MANUAL_RECEIPTS_PATH}/${encodeURIComponent(request.draftId)}/record`, scope, idempotencyKey, request),
     reverse: () => unpublishedCommand(),
 
     listBankAccountMaster: (scope, signal) => read(`${API_BASE}${BANK_ACCOUNT_MASTER_PATH}`, scope, signal),

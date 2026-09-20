@@ -24,7 +24,7 @@ public sealed class FinanceDraftPersistenceModelTests
     public void Every_finance_table_is_in_its_schema_and_filtered_by_the_active_company()
     {
         using var context = Context();
-        foreach (var type in new[] { typeof(ReceiptDraftRow), typeof(FinanceCommandRow) })
+        foreach (var type in new[] { typeof(ReceiptDraftRow), typeof(FinanceCommandRow), typeof(MoneyEventRow) })
         {
             var entity = context.Model.FindEntityType(type)!;
             Assert.Equal(FinanceDbContext.Schema, entity.GetSchema());
@@ -68,6 +68,7 @@ public sealed class FinanceDraftPersistenceModelTests
         using var context = Context();
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_InitialFinanceDrafts", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AlignCommandsWithAdr011", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddMoneyEvents", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -89,6 +90,9 @@ public sealed class FinanceDraftPersistenceModelTests
     [InlineData("delete-draft")]
     [InlineData("edit-draft-creator")]
     [InlineData("edit-command")]
+    [InlineData("edit-money-event")]
+    [InlineData("delete-money-event")]
+    [InlineData("edit-recorded-source")]
     public void Drafts_are_never_deleted_and_command_records_never_change(string fault)
     {
         using var context = Context();
@@ -100,12 +104,64 @@ public sealed class FinanceDraftPersistenceModelTests
             case "edit-draft-creator":
                 Attach(context, Draft()).CreatedBy = "someone-else";
                 break;
+            // FIN-T05a: a money event is append-only; a recorded source never changes again.
+            case "edit-money-event":
+                Attach(context, MoneyEvent()).AmountText = "1";
+                break;
+            case "delete-money-event":
+                context.MoneyEvents.Remove(Attach(context, MoneyEvent()));
+                break;
+            case "edit-recorded-source":
+                var recorded = Draft();
+                recorded.Stage = ReceiptStages.Recorded;
+                recorded.RecordedAtUtc = At;
+                recorded.RecordedBy = "synthetic-actor";
+                Attach(context, recorded).Description = "changed";
+                break;
             default:
                 Attach(context, Command()).PayloadHash = new string('1', 64);
                 break;
         }
 
         Assert.Throws<InvalidOperationException>(() => context.SaveChanges());
+    }
+
+    [Fact]
+    public void A_money_event_is_one_per_company_source_and_kind_bound_to_its_source_and_kept_as_text()
+    {
+        using var context = Context();
+        var design = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(MoneyEventRow))!;
+        var unique = Assert.Single(design.GetIndexes(), index => index.IsUnique);
+        Assert.Equal(["CompanyId", "SourceId", "Kind"], unique.Properties.Select(property => property.Name));
+        var source = Assert.Single(design.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(ReceiptDraftRow));
+        Assert.Equal(["CompanyId", "SourceId"], source.Properties.Select(property => property.Name));
+        Assert.Equal(typeof(string), design.FindProperty(nameof(MoneyEventRow.AmountText))!.ClrType);
+        Assert.DoesNotContain(design.GetProperties(), property => property.ClrType == typeof(decimal));
+        // Ö5: the transaction date, the value date and the recording instant are three separate facts.
+        Assert.NotNull(design.FindProperty(nameof(MoneyEventRow.OccurredOn)));
+        Assert.True(design.FindProperty(nameof(MoneyEventRow.ValueOn))!.IsNullable);
+        Assert.NotNull(design.FindProperty(nameof(MoneyEventRow.RecordedAtUtc)));
+        Assert.Contains(context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(ReceiptDraftRow))!.GetCheckConstraints(),
+            check => check.Name == "CK_ReceiptDrafts_Stage");
+    }
+
+    [Fact]
+    public void The_record_payload_hash_names_the_source_and_the_version()
+    {
+        var request = new RecordRequest(Guid.Parse("88888888-8888-8888-8888-888888888888"), "1");
+        Assert.Equal(64, ReceiptDraftService.RecordPayloadHash(request).Length);
+        Assert.Equal(ReceiptDraftService.RecordPayloadHash(request), ReceiptDraftService.RecordPayloadHash(request with { }));
+        Assert.NotEqual(ReceiptDraftService.RecordPayloadHash(request), ReceiptDraftService.RecordPayloadHash(request with { ExpectedVersion = "2" }));
+        Assert.NotEqual(ReceiptDraftService.RecordPayloadHash(request), ReceiptDraftService.RecordPayloadHash(request with { DraftId = Guid.NewGuid() }));
+    }
+
+    [Fact]
+    public async Task The_undecided_period_rule_reads_nothing_and_answers_unavailable()
+    {
+        var answer = await new UndecidedFinanceRecordPeriodRule().CheckAsync(
+            new FinanceContext(CompanyA, "synthetic-actor", "synthetic-correlation", null), new DateOnly(2026, 9, 21), null, At,
+            CancellationToken.None);
+        Assert.Equal((RecordPeriodOutcome.Unavailable, RecordPeriodAnswer.RuleUnavailableCode), (answer.Outcome, answer.Code));
     }
 
     [Fact]
@@ -140,6 +196,14 @@ public sealed class FinanceDraftPersistenceModelTests
         TreasuryAccountId = Guid.NewGuid(), CurrencyId = Guid.NewGuid(), AmountText = "1000", ProfileId = Guid.NewGuid().ToString("D"),
         ProfileVersion = "1", OccurredOn = new DateOnly(2026, 9, 13), CreatedAtUtc = At, CreatedBy = "synthetic-actor",
         UpdatedAtUtc = At, UpdatedBy = "synthetic-actor",
+    };
+
+    private static MoneyEventRow MoneyEvent() => new MoneyEventRow
+    {
+        Id = Guid.NewGuid(), CompanyId = CompanyA, SourceId = Guid.NewGuid(), Kind = MoneyEventKinds.ManualBankReceiptRecorded,
+        PartyId = Guid.NewGuid(), CompanyAccountId = Guid.NewGuid(), TreasuryAccountId = Guid.NewGuid(), CurrencyId = Guid.NewGuid(),
+        AmountText = "1000", ProfileId = Guid.NewGuid().ToString("D"), ProfileVersion = "1", OccurredOn = new DateOnly(2026, 9, 21),
+        RecordedAtUtc = At, RecordedBy = "synthetic-actor", CorrelationId = "synthetic-correlation",
     };
 
     private static FinanceCommandRow Command() => new FinanceCommandRow

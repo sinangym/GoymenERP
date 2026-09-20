@@ -133,21 +133,38 @@ describe('draftSave', () => {
 })
 
 describe('record and reverse', () => {
-  it('answer an explicit local Unavailable and send nothing: there is no route (T05, OPEN-009)', async () => {
-    const fetchMock = stubFetch(new Response(null, { status: 200 }))
-    const port = createHttpFinancePort()
-
-    const replies = [
-      await port.record(SCOPE, 'k', { draftId: 'd', expectedVersion: '1' } as never),
-      await port.reverse(SCOPE, 'k', { sourceId: 's' } as never),
-    ]
-
-    for (const reply of replies) {
-      expect(reply).toEqual({
-        kind: 'body',
-        body: { outcome: 'Unavailable', resource: null, isReplay: false, originalCorrelationId: '', issues: [] },
-      })
+  it('records through its route with the #258 RecordRequest, the key and the company header (FIN-T05a)', async () => {
+    const refused = {
+      outcome: 'ValidationFailed',
+      resource: null,
+      isReplay: false,
+      originalCorrelationId: 'c-1',
+      issues: [{ field: 'period', code: 'finance_period_rule_unavailable' }],
     }
+    const fetchMock = stubFetch(new Response(JSON.stringify(refused), { status: 422 }))
+    const draftId = 'dddddddd-0000-4000-8000-000000000001'
+
+    const reply = await createHttpFinancePort().record(SCOPE, 'key-r', { draftId, expectedVersion: '3' })
+
+    // A refused Record is a definite body (here the rule could not decide), never an unknown outcome to resend.
+    expect(reply).toEqual({ kind: 'body', body: refused })
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe(`${API_BASE}${MANUAL_RECEIPTS_PATH}/${draftId}/record`)
+    expect(init?.method).toBe('POST')
+    expect(headersOf(init)['Idempotency-Key']).toBe('key-r')
+    expect(headersOf(init)['X-Company-Id']).toBe(SCOPE.companyId)
+    expect(init?.body).toBe(JSON.stringify({ draftId, expectedVersion: '3' }))
+  })
+
+  it('reverse answers an explicit local Unavailable and sends nothing: there is no route (FIN-T06)', async () => {
+    const fetchMock = stubFetch(new Response(null, { status: 200 }))
+
+    const reply = await createHttpFinancePort().reverse(SCOPE, 'k', { sourceId: 's' } as never)
+
+    expect(reply).toEqual({
+      kind: 'body',
+      body: { outcome: 'Unavailable', resource: null, isReplay: false, originalCorrelationId: '', issues: [] },
+    })
     expect(fetchMock).not.toHaveBeenCalled()
   })
 })

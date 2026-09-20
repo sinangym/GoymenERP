@@ -94,9 +94,13 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Finance.BankAccount' AND CorrelationId = @c", ("@c", run.Correlation)));
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.bank-account.approved.v1' AND ApprovalContextJson IS NOT NULL"));
-        // Money effect 0: the finance schema holds drafts, bank accounts and command records only.
-        Assert.Equal("BankAccounts,Commands,ReceiptDrafts,__EFMigrationsHistory", await run.ScalarAsync<string>(
+        // Money effect 0. FIN-T05a gave the schema a MoneyEvents table, so listing the tables no longer says
+        // "no money was moved" by itself — the table now exists whether or not anything is in it. The inventory
+        // is kept (a new Finance table must be a deliberate edit here) and the claim it used to carry is stated
+        // directly underneath: approving a bank account writes NO money event.
+        Assert.Equal("BankAccounts,Commands,MoneyEvents,ReceiptDrafts,__EFMigrationsHistory", await run.ScalarAsync<string>(
             "SELECT STRING_AGG(name, ',') WITHIN GROUP (ORDER BY name COLLATE Latin1_General_BIN2) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'finance')"));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.MoneyEvents"));
     }
 
     [SqlServerFact]

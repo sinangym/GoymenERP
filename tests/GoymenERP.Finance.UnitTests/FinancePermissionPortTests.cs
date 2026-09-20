@@ -15,7 +15,7 @@ public sealed class FinancePermissionPortTests
     private const string Actor = "SENTETIK-actor";
 
     [Fact]
-    public void Each_action_has_its_owner_name_and_record_and_reverse_have_none()
+    public void Each_action_has_its_owner_name_Record_has_the_card_s_name_and_Reverse_has_none()
     {
         Assert.Equal("finance.manual-receipt.draft.save", FinancePermissionPort.NameOf(FinanceAction.SaveDraft));
         Assert.Equal("finance.manual-receipt.draft.read", FinancePermissionPort.NameOf(FinanceAction.ReadSources));
@@ -23,8 +23,12 @@ public sealed class FinancePermissionPortTests
         Assert.Equal(ErpPermissions.FinanceBankAccountRead, FinancePermissionPort.NameOf(FinanceAction.ReadBankAccounts));
         Assert.Equal(ErpPermissions.FinanceBankAccountPropose, FinancePermissionPort.NameOf(FinanceAction.ProposeBankAccount));
         Assert.Equal(ErpPermissions.FinanceBankAccountApprove, FinancePermissionPort.NameOf(FinanceAction.ApproveBankAccount));
-        // OPEN-009: no name is invented for the money-recording actions.
-        Assert.Null(FinancePermissionPort.NameOf(FinanceAction.Record));
+        // Record's name is NOT invented here: card #66 5743678389 §1 names it and sources it to Ö4
+        // (Sinan 5722637822), which answers #254 §5's OPEN-009 question FOR THIS COMMAND ONLY — one narrow
+        // authorised operator, no second approval, no amount threshold. A name grants nothing: the central
+        // writer registers it and a human assigns it.
+        Assert.Equal("finance.manual-receipt.record", FinancePermissionPort.NameOf(FinanceAction.Record));
+        // Reverse still has none: FIN-T06, and its authority is the part of OPEN-009 nobody has answered.
         Assert.Null(FinancePermissionPort.NameOf(FinanceAction.Reverse));
     }
 
@@ -44,11 +48,26 @@ public sealed class FinancePermissionPortTests
         Assert.Equal(new[] { (ErpPermissions.FinanceBankAccountRead, Company) }, authority.Asked);
     }
 
+    /// <summary>
+    /// Both answer Unavailable and ask nothing, but for DIFFERENT reasons, and this file used to hide that:
+    /// the case was called "an action without a name" and kept passing for Record after the card gave Record
+    /// a name — because the central registry does not know that name yet. A case that passes for a reason its
+    /// own title denies is not measuring what it claims, so the two reasons are now separated and each is
+    /// asserted at its source. Neither must ever become Denied: "I cannot tell" is not "you may not".
+    /// </summary>
     [Theory]
-    [InlineData(FinanceAction.Record)]
-    [InlineData(FinanceAction.Reverse)]
-    public async Task An_action_without_a_name_is_unavailable_and_asks_nothing(FinanceAction action)
+    [InlineData(FinanceAction.Record, true)]
+    [InlineData(FinanceAction.Reverse, false)]
+    public async Task An_unmapped_or_unregistered_action_is_unavailable_and_asks_nothing(FinanceAction action, bool named)
     {
+        // The reason, pinned rather than assumed: Record HAS a name the registry does not know yet;
+        // Reverse has no name at all (FIN-T06).
+        Assert.Equal(named, FinancePermissionPort.NameOf(action) is not null);
+        if (named)
+        {
+            Assert.False(ErpPermissions.IsKnown(FinancePermissionPort.NameOf(action)!));
+        }
+
         var authority = new FixedAuthority(true, true);
 
         Assert.Equal(PermissionDecision.Unavailable, await Port(authority).CheckAsync(Context(), action, null, CancellationToken.None));

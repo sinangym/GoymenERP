@@ -12,8 +12,11 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 /// <item><b>Allowed</b> only for the server-resolved company and actor of the request, a granted and
 /// company-wide scope (the names are CompanyWideOnly: Finance records have no site dimension).</item>
 /// <item><b>Denied</b> when the grant is missing or narrower, or the context is not the request's.</item>
-/// <item><b>Unavailable</b> when the action has no name (Record, Reverse: OPEN-009) or the name is not
-/// yet registered centrally: an unmapped action is not reported as a refusal.</item>
+/// <item><b>Unavailable</b> when the action has no name (Reverse: FIN-T06, its authority still OPEN-009)
+/// or the name is not yet registered centrally — which is Record's case today: the card gives it
+/// <c>finance.manual-receipt.record</c>, but until the central registry knows that name the port answers
+/// Unavailable. Either way an unmapped action is not reported as a refusal: "I cannot tell" must not
+/// look like "you may not".</item>
 /// </list>
 /// The role codes of each action's latest allowed measurement are kept for the ADR-009 audit
 /// envelope (<see cref="RoleCodesOf"/>): a save is audited with the roles that granted the save.
@@ -38,6 +41,7 @@ public sealed class FinancePermissionPort(
         FinanceAction.SaveDraft => FinancePermissionNames.DraftSave,
         FinanceAction.ReadSources => FinancePermissionNames.DraftRead,
         FinanceAction.ReadAmount => FinancePermissionNames.AmountRead,
+        FinanceAction.Record => FinancePermissionNames.Record,
         FinanceAction.ReadBankAccounts => ErpPermissions.FinanceBankAccountRead,
         FinanceAction.ProposeBankAccount => ErpPermissions.FinanceBankAccountPropose,
         FinanceAction.ApproveBankAccount => ErpPermissions.FinanceBankAccountApprove,
