@@ -22,11 +22,13 @@ namespace GoymenERP.Organization.UnitTests;
 /// against what <c>GetLocationAsync</c> ACTUALLY answers, not against a re-implementation of the rule.
 /// </para>
 /// <para>
-/// The scope predicate has three independent branches (a location by id, its site, or a work centre on
-/// it), which is exactly why a second implementation would drift — forgetting one branch is easy and
-/// silent. So the granted scope below exercises ALL THREE, plus an ungranted location, and the case
-/// pins that the answers are not uniform: an equivalence that held because everything was false would
-/// prove nothing.
+/// The scope predicate has FOUR branches, and each is a way a second implementation can drift by
+/// forgetting one — silently. Three narrow ones (a location by its own id, by its site, or by a work
+/// centre on it) and, standing before them, an early return that leaves the query UNNARROWED when the
+/// scope is company-wide. The cases below exercise all four: the granted scope drives the three narrow
+/// branches plus a location none of them names, and a company-wide case drives the early return.
+/// They also pin that the answers are not uniform — an equivalence holding because everything was
+/// false would prove nothing.
 /// </para>
 /// <para>
 /// The two reads deliberately use DIFFERENT permissions — rows come from
@@ -83,6 +85,43 @@ public sealed class WorkCenterLocationOpenabilityTests
         Assert.True(Flag(rows, WorkCenterBySite), "a location granted through its site must open");
         Assert.True(Flag(rows, WorkCenterGranting), "a location granted through a work centre on it must open");
         Assert.False(Flag(rows, WorkCenterUngranted), "an ungranted location must not open");
+    }
+
+    [Fact]
+    public async Task A_company_wide_reader_opens_every_row_because_the_scope_never_narrows_the_query()
+    {
+        // The FOURTH branch, and the one a re-implementation is likeliest to skip: ApplyLocationScope
+        // returns the query UNNARROWED when the scope is company-wide (OrganizationService.cs:445-448),
+        // and that early return stands BEFORE the id / site / work-centre branches. The first version of
+        // these cases exercised only the three narrow ones (#377 review, CARİ), so the branch that runs
+        // for the MOST authorised actor was the one branch the pin never looked at.
+        //
+        // The direction of that failure is what makes it worth a case rather than a comment: a flag
+        // computed without the early return answers FALSE for a reader the card answers 200 for — access
+        // loss for the most privileged actor, not disclosure. Which direction it breaks bounds the
+        // seriousness; it does not make it safe.
+        var database = await SeedAsync(nameof(A_company_wide_reader_opens_every_row_because_the_scope_never_narrows_the_query));
+        var companyWide = new PermissionScope(
+            IsGranted: true,
+            IsCompanyWide: true,
+            RoleCodes: new HashSet<string>(StringComparer.Ordinal),
+            SiteIds: new HashSet<Guid>(),
+            LocationIds: new HashSet<Guid>(),
+            WorkCenterIds: new HashSet<Guid>());
+        var service = Service(database, companyWide);
+
+        var rows = await service.GetWorkCentersAsync(CancellationToken.None);
+        Assert.Equal(4, rows.Count);
+
+        // Every row opens, INCLUDING the location that carries no id, site or work-centre grant — that row
+        // is the one that can only pass through the early return, so it is the branch's own witness.
+        Assert.All(rows, row => Assert.True(row.CanOpenLocationDetail));
+        Assert.True(Flag(rows, WorkCenterUngranted), "company-wide reaches the location no narrow grant names");
+
+        foreach (var row in rows)
+        {
+            Assert.NotNull(await service.GetLocationAsync(row.LocationId, CancellationToken.None));
+        }
     }
 
     [Fact]
