@@ -1672,14 +1672,18 @@ public sealed partial class OpenApiContractGenerationTests
                     ("name", "type:string"),
                     ("type", "type:string"),
                     ("isActive", "type:boolean")),
+                // ORG-03: canOpenLocationDetail is REQUIRED and boolean on purpose — the client must not
+                // have to treat "absent" as either answer, because the field is the server's statement
+                // about authorization and a default would be the client deciding one.
                 ["WorkCenterSummary"] = ObjectSchema(
-                    ["id", "locationId", "code", "name", "kind", "isActive"],
+                    ["id", "locationId", "code", "name", "kind", "isActive", "canOpenLocationDetail"],
                     ("id", "type:string;format:uuid"),
                     ("locationId", "type:string;format:uuid"),
                     ("code", "type:string"),
                     ("name", "type:string"),
                     ("kind", "type:string"),
-                    ("isActive", "type:boolean")),
+                    ("isActive", "type:boolean"),
+                    ("canOpenLocationDetail", "type:boolean")),
             };
 
     private static readonly IReadOnlyDictionary<string, ComponentSchemaExpectation>
