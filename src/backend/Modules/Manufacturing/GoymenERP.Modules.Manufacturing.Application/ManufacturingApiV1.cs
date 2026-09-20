@@ -485,6 +485,49 @@ public sealed partial class ManufacturingCommandService(
     }
 
     /// <summary>
+    /// K4.4: one plan, read back. Until this, a plan could be CREATED and APPROVED but never read again —
+    /// there was no plan read at any layer above the store, so "reopen a plan" was not a missing screen but
+    /// a missing ANSWER. This is what makes a created plan reachable a second time.
+    ///
+    /// <para>
+    /// It invents no reading: <c>FindPlanAsync</c> already existed on the plan store, and the projection is
+    /// the SAME <see cref="PlanView"/> the create and approve answers return — so a reopened plan and a
+    /// just-created one are identical in shape by construction, rather than by two projections kept in step
+    /// by hand. Another company's plan is NOT FOUND, never forbidden: a 403 would confirm the row exists,
+    /// which is the order read's rule here too.
+    /// </para>
+    /// <para>
+    /// The 503-not-409 split is <see cref="GetOrderAsync"/>'s and deliberate: a read that still meets
+    /// concurrent commits after the store's own re-reads is a retryable consistency failure, and 409 belongs
+    /// to commands (FİNANS #313 INFO-4).
+    /// </para>
+    /// </summary>
+    public async Task<ManufacturingApiResult<PlanViewV1>> GetPlanAsync(Guid planId, CancellationToken cancellationToken)
+    {
+        if (!HasContext())
+        {
+            return Denied<PlanViewV1>();
+        }
+
+        if (planId == Guid.Empty)
+        {
+            return NotFoundResult<PlanViewV1>();
+        }
+
+        try
+        {
+            var plan = await plans.FindPlanAsync(planId, cancellationToken);
+            return plan is null
+                ? NotFoundResult<PlanViewV1>()
+                : new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Ok, PlanView(plan), false, null);
+        }
+        catch (ManufacturingStoreException exception) when (exception.Code == ManufacturingStoreCodes.ConcurrentChange)
+        {
+            return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Unavailable, null, false, null);
+        }
+    }
+
+    /// <summary>
     /// The order's GDC-BAL/1 read (BAL slice 2): the same company context, read permission and not-found /
     /// retryable-503 answers as <see cref="GetOrderAsync"/>, because it is the same order read through the one
     /// calculator the close uses. It computes; it stores nothing.
