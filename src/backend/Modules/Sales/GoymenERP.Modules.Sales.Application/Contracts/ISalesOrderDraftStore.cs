@@ -49,8 +49,11 @@ public static class SalesDraftCommands
     /// <summary>K3 Head B: POST /api/v1/sales/drafts/{id}/commercial-revision — the commercial fields of every line replaced; an approved draft is archived and advances a revision.</summary>
     public const string ReviseCommercialV1 = "sales.order-draft.revise-commercial.v1";
 
+    /// <summary>D2 (Sinan 5749046401): POST /api/v1/sales/drafts/{id}/withdrawal — Preparing/PendingApproval/Rejected → Withdrawn (terminal; nothing deleted).</summary>
+    public const string WithdrawV1 = "sales.order-draft.withdraw.v1";
+
     public static bool IsStateCommand(string commandName) =>
-        commandName is SubmitV1 or ApproveV1 or RejectV1;
+        commandName is SubmitV1 or ApproveV1 or RejectV1 or WithdrawV1;
 }
 
 /// <summary>The stable refusal codes of the Sales draft store, beside the domain's own rule codes.</summary>

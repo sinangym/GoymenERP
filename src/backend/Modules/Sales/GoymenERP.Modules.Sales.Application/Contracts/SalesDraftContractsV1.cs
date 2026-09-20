@@ -29,7 +29,7 @@ public sealed record SalesDraftDeliverySliceV1(
     Guid SliceId, Guid OrderUnitId, string Quantity, DateOnly RequestedDeliveryDate);
 
 // SALES-A1 (contract delta): `approvalState` is the internal approval axis — "Preparing",
-// "PendingApproval", "Approved" or "Rejected" — beside the lifecycle `state` ("Draft"), the
+// "PendingApproval", "Approved", "Rejected" or (D2) "Withdrawn" — beside the lifecycle `state` ("Draft"), the
 // commercial `revision` and the concurrency `version`. Four separate facts, never merged.
 public sealed record SalesOrderDraftSummaryView(
     Guid Id, Guid CompanyId, string DocumentNo, string Kind, string State,
@@ -99,6 +99,13 @@ public sealed record SalesOrderDraftLineDetail(
     string? DiscountPercent,
     SalesPriceDisclosure PriceDisclosure);
 
+/// <summary>
+/// D2 (Sinan 5749046401): <c>IsOwnDraft</c> is the RELATIONSHIP, computed on the server for the caller — "the caller is
+/// this draft's stored creator" — never the creator's identity (which does not travel: the list is the module's widest
+/// surface and no screen displays "created by"). The same shape as P2's disclosure marker: computed at response time
+/// under the caller's scope, so a replay is the replaying actor's own answer (ADR-011 §3 keeps that the same actor).
+/// The screen mirrors it; the server refuses regardless.
+/// </summary>
 public sealed record SalesOrderDraftDetailView(
     SalesOrderDraftSummaryView Draft, DateOnly? RequestedDeliveryDate, string? Note,
     IReadOnlyList<SalesOrderDraftLineDetail> Lines,
@@ -108,7 +115,8 @@ public sealed record SalesOrderDraftDetailView(
     SalesDraftOwnerReferenceV1? PaymentTerms,
     SalesDraftOwnerReferenceV1? SourceStrategy,
     SalesDraftOwnerReferenceV1? Package,
-    SalesDraftApprovalV1 Approval);
+    SalesDraftApprovalV1 Approval,
+    bool IsOwnDraft);
 
 public sealed record SalesOrderDraftResponse(
     SalesOrderDraftDetailView Detail, bool IsReplay, string OriginalCorrelationId);
@@ -141,6 +149,9 @@ public static class SalesDraftApiV1
     public const string SubmissionPath = "/api/v1/sales/drafts/{id}/submission";
     public const string ApprovalPath = "/api/v1/sales/drafts/{id}/approval";
     public const string RejectionPath = "/api/v1/sales/drafts/{id}/rejection";
+
+    /// <summary>D2: POST …/{id}/withdrawal — the preparer takes back their own not-yet-approved draft (own state, own trail, no deletion).</summary>
+    public const string WithdrawalPath = "/api/v1/sales/drafts/{id}/withdrawal";
     public const int StateCommandStatus = 200;
 
     // K3 Head B: the commercial revision (200 with the detail after the change; same-key replay 200 +

@@ -38,7 +38,8 @@ public sealed class SalesOrderDraftApprovalTests
         Assert.Null(draft.Approval.DecidedBy);
         Assert.Equal(T0.ToUniversalTime(), draft.UpdatedAtUtc);
 
-        // The submitter approving their own draft is not refused: no maker≠checker was decided (Business 5737989917).
+        // The DOMAIN does not refuse the submitter approving their own draft: D2 (5749046401) makes that a persona-based
+        // authority rule measured by the service (SalesDraftServiceTests), not a state rule; here the state is decided.
         draft.Approve(3, Preparer, T0.AddMinutes(5));
         Assert.Equal((InternalApprovalState.Approved, 4L, Preparer, T0.AddMinutes(5).ToUniversalTime(), false),
             (draft.ApprovalState, draft.Version, draft.Approval.DecidedBy, draft.Approval.DecidedAtUtc, draft.LinesAreOpen));
@@ -69,6 +70,60 @@ public sealed class SalesOrderDraftApprovalTests
         Assert.Null(draft.Approval.DecidedBy);
         Assert.Null(draft.Approval.DecidedAtUtc);
         Assert.Null(draft.Approval.RejectionReason);
+    }
+
+    /// <summary>
+    /// D2 (Sinan 5749046401): the preparer withdraws their own not-yet-approved draft into a terminal state of its own,
+    /// with the withdrawer and the time in the decision columns and an optional reason; nothing is deleted, the lines
+    /// and the revision stay. From Preparing (never submitted), from PendingApproval and — ASSUMPTION-SALESD2-2 — from
+    /// Rejected; never from Approved (the easy path is not extended to an approved record) and never twice.
+    /// </summary>
+    [Theory]
+    [InlineData("preparing")]
+    [InlineData("pending")]
+    [InlineData("rejected")]
+    public void Withdraw_takes_back_an_unapproved_draft_into_its_own_terminal_state_and_deletes_nothing(string from)
+    {
+        var draft = Draft();
+        var expected = 2L;
+        if (from is "pending" or "rejected") { draft.Submit(expected++, Preparer, T0); }
+        if (from is "rejected") { draft.Reject(expected++, Approver, "SENTETIK ret", T0); }
+        var linesBefore = draft.Lines.Count;
+
+        draft.Withdraw(expected, $" {Preparer} ", "  SENTETIK vazgeçildi  ", T0.AddMinutes(3));
+
+        Assert.Equal((InternalApprovalState.Withdrawn, expected + 1, Preparer, T0.AddMinutes(3).ToUniversalTime(), "SENTETIK vazgeçildi"),
+            (draft.ApprovalState, draft.Version, draft.Approval.DecidedBy, draft.Approval.DecidedAtUtc, draft.Approval.RejectionReason));
+        // The submission facts are what they were: none from Preparing, the preparer's from the other two.
+        Assert.Equal(from == "preparing" ? null : Preparer, draft.Approval.SubmittedBy);
+        Assert.Equal((linesBefore, 0, SalesDraftState.Draft), (draft.Lines.Count, draft.Revision, draft.State));
+        // Terminal: nothing moves after it, and nothing changes.
+        var version = draft.Version;
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.Submit(version, Preparer, T0)));
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.Approve(version, Approver, T0)));
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.Reject(version, Approver, null, T0)));
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.Withdraw(version, Preparer, null, T0)));
+        Assert.Equal((InternalApprovalState.Withdrawn, version), (draft.ApprovalState, draft.Version));
+    }
+
+    [Fact]
+    public void Withdraw_is_refused_for_an_approved_draft_a_stale_version_a_blank_actor_and_an_overlong_reason_and_changes_nothing()
+    {
+        var approved = Draft();
+        approved.Submit(2, Preparer, T0);
+        approved.Approve(3, Approver, T0);
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => approved.Withdraw(4, Preparer, null, T0)));
+        Assert.Equal((InternalApprovalState.Approved, 4L), (approved.ApprovalState, approved.Version));
+
+        var pending = Draft();
+        pending.Submit(2, Preparer, T0);
+        Assert.Throws<SalesVersionConflictException>(() => pending.Withdraw(2, Preparer, null, T0));
+        Assert.Throws<ArgumentException>(() => pending.Withdraw(3, " ", null, T0));
+        Assert.Equal(SalesRuleCodes.ApprovalReasonTooLong, CodeOf(() => pending.Withdraw(3, Preparer, new string('x', SalesOrderDraft.MaximumRejectionReasonLength + 1), T0)));
+        Assert.Equal((InternalApprovalState.PendingApproval, 3L, null), (pending.ApprovalState, pending.Version, pending.Approval.DecidedBy));
+        // Blank is "no reason", never a default text.
+        pending.Withdraw(3, Preparer, "   ", T0);
+        Assert.Null(pending.Approval.RejectionReason);
     }
 
     [Fact]
@@ -131,6 +186,9 @@ public sealed class SalesOrderDraftApprovalTests
     [InlineData(InternalApprovalState.PendingApproval, 3L, true)]
     [InlineData(InternalApprovalState.Approved, 4L, true)]
     [InlineData(InternalApprovalState.Rejected, 4L, true)]
+    // D2: withdrawn — at least one step (from Preparing, no submission) or two (after a submission).
+    [InlineData(InternalApprovalState.Withdrawn, 3L, true)]
+    [InlineData(InternalApprovalState.Withdrawn, 2L, false)]
     [InlineData(InternalApprovalState.PendingApproval, 2L, false)]
     [InlineData(InternalApprovalState.Approved, 3L, false)]
     // ÜRÜN #338 P3-1 pinned "Preparing at 3 is refused" (no transition could have raised a Preparing draft above its
@@ -147,6 +205,7 @@ public sealed class SalesOrderDraftApprovalTests
             InternalApprovalState.Preparing => ApprovalFacts.None,
             InternalApprovalState.PendingApproval => new ApprovalFacts(Preparer, T0, null, null, null),
             InternalApprovalState.Approved => new ApprovalFacts(Preparer, T0, Approver, T0.AddMinutes(1), null),
+            InternalApprovalState.Withdrawn => new ApprovalFacts(null, null, Preparer, T0.AddMinutes(1), null),
             _ => new ApprovalFacts(Preparer, T0, Approver, T0.AddMinutes(1), "SENTETIK neden"),
         };
 
@@ -168,6 +227,8 @@ public sealed class SalesOrderDraftApprovalTests
     [InlineData("preparing-with-submission")]
     [InlineData("pending-with-decision")]
     [InlineData("rejected-empty-reason")]
+    [InlineData("withdrawn-without-decision")]
+    [InlineData("withdrawn-half-submission")]
     [InlineData("undefined-state")]
     public void Inconsistent_stored_facts_are_refused_not_repaired(string fault)
     {
@@ -179,6 +240,9 @@ public sealed class SalesOrderDraftApprovalTests
             "preparing-with-submission" => (InternalApprovalState.Preparing, new ApprovalFacts(Preparer, T0, null, null, null)),
             "pending-with-decision" => (InternalApprovalState.PendingApproval, new ApprovalFacts(Preparer, T0, Approver, T0, null)),
             "rejected-empty-reason" => (InternalApprovalState.Rejected, new ApprovalFacts(Preparer, T0, Approver, T0, "")),
+            // D2: a withdrawn row needs the withdrawer; a submission is all-or-nothing.
+            "withdrawn-without-decision" => (InternalApprovalState.Withdrawn, new ApprovalFacts(Preparer, T0, null, null, null)),
+            "withdrawn-half-submission" => (InternalApprovalState.Withdrawn, new ApprovalFacts(Preparer, null, Preparer, T0, null)),
             _ => ((InternalApprovalState)9, ApprovalFacts.None),
         };
 

@@ -116,6 +116,9 @@ public sealed class SalesStore(
         }
 
         AddDraft(draft, envelope, now);
+        // D2: the aggregate returned from the create carries its creator the way every later read does (the row's CreatedBy IS
+        // the envelope's actor, written by SalesDraftRows.Add just above).
+        draft.RestoreCreator(envelope.ActorId);
         dbContext.DraftAttempts.Add(new DraftAttemptRow
         {
             CompanyId = companyId,
@@ -610,6 +613,8 @@ public sealed class SalesStore(
             }
 
             // K3 Head B: the revision number and the archived approved revisions, oldest first; a history that does not fit is refused.
+            // D2: the creator is restored so "one's OWN draft" is a fact of the aggregate, measured on the server.
+            draft.RestoreCreator(row.CreatedBy);
             draft.RestoreRevision(row.Revision);
             foreach (var archived in revisions.Where(revision => revision.DraftId == row.Id).OrderBy(revision => revision.Revision))
             {
@@ -735,7 +740,7 @@ public sealed class SalesStore(
     private static void RequireCommand(string commandName)
     {
         if (commandName is not (SalesDraftCommands.CreateV1 or SalesDraftCommands.SubmitV1 or SalesDraftCommands.ApproveV1
-            or SalesDraftCommands.RejectV1 or SalesDraftCommands.ReviseCommercialV1))
+            or SalesDraftCommands.RejectV1 or SalesDraftCommands.ReviseCommercialV1 or SalesDraftCommands.WithdrawV1))
         {
             throw new ArgumentException("Bilinmeyen Sales komut adı.", nameof(commandName));
         }

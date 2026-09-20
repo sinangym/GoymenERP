@@ -37,8 +37,8 @@ import { PROBLEM_CODE_TEXT } from './salesText'
 
 const EXAMPLES: Record<string, { raw: string; blob: string }> = {
   'create-request.json': { raw: createRequest, blob: 'a78328681578e18627a25a0cd200177d309a534b' },
-  'create-response.json': { raw: createResponse, blob: 'ec1238d624b4b76e3798cc7726fd0a27145a0452' },
-  'detail-response.json': { raw: detailResponse, blob: '06439a8f5074e6a70e19bf3bcefe86fbf6e2ea51' },
+  'create-response.json': { raw: createResponse, blob: 'bfad7dc06b9c11b8881b09cc3838f42aae8a4828' },
+  'detail-response.json': { raw: detailResponse, blob: 'af251f840face16305c9b3cc97e82d3b8139c956' },
   'error-account.json': { raw: errorAccount, blob: '6b3e1ea7f2a986d8f1f401e4217a7ff42436a24e' },
   'error-company.json': { raw: errorCompany, blob: 'aa227cc06a73326e4db1d579c27f32795a8a41a1' },
   'error-forbidden.json': { raw: errorForbidden, blob: 'bd328f735086931db968d2efb2345e2637efadfd' },
@@ -48,7 +48,7 @@ const EXAMPLES: Record<string, { raw: string; blob: string }> = {
   'error-settings-access.json': { raw: errorSettingsAccess, blob: 'e2aec636bd687380cfdb520339c28c45f496ad5a' },
   'list-response.json': { raw: listResponse, blob: 'c6b9a267657a187f3b6404f41ff4431092fa35b4' },
   'product-owner-selection.json': { raw: productOwnerSelection, blob: 'a1e8a3aee04f385cccc9d3815e9cac6f78fbd620' },
-  'replay-response.json': { raw: replayResponse, blob: '409298c470cc9636d9f94d4bc64751aba56ccc2c' },
+  'replay-response.json': { raw: replayResponse, blob: '82b84d9990460cbf1c988fbf627d5d8d21c3f9e4' },
 }
 
 async function gitBlobId(text: string): Promise<string> {
@@ -68,6 +68,16 @@ describe('example provenance', () => {
   it('every copied example is byte-identical to its pinned source', async () => {
     for (const [name, { raw, blob }] of Object.entries(EXAMPLES)) {
       expect(await gitBlobId(raw), name).toBe(blob)
+    }
+  })
+
+  // D2 (coordinator): a pin that only accepts is not shown to reject — one byte of each copy, changed, must miss its pin.
+  it('a one-byte mutation of any copy misses its pin', async () => {
+    for (const [name, { raw, blob }] of Object.entries(EXAMPLES)) {
+      const at = Math.floor(raw.length / 2)
+      const mutated = raw.slice(0, at) + (raw[at] === ' ' ? '\t' : ' ') + raw.slice(at + 1)
+      expect(mutated, name).not.toBe(raw)
+      expect(await gitBlobId(mutated), name).not.toBe(blob)
     }
   })
 })
@@ -124,6 +134,14 @@ describe('decodeDraftMutation', () => {
     ['an approval block with an extra member', (b: any) => (b.detail.approval.approvedBy = 'x')],
     ['a preparing draft with a submitter', (b: any) => (b.detail.approval.submittedBy = 'someone')],
     ['an approved draft without a decision', (b: any) => (b.detail.draft.approvalState = 'Approved')],
+    // D2: the own-draft relationship is a boolean of every detail; a withdrawn draft carries its decision and a whole-or-absent submission.
+    ['a detail without isOwnDraft', (b: any) => delete b.detail.isOwnDraft],
+    ['a detail whose isOwnDraft is not a boolean', (b: any) => (b.detail.isOwnDraft = 'true')],
+    ['a withdrawn draft without a decision', (b: any) => (b.detail.draft.approvalState = 'Withdrawn')],
+    ['a withdrawn draft with half a submission', (b: any) => {
+      b.detail.draft.approvalState = 'Withdrawn'
+      b.detail.approval = { submittedBy: 'a', submittedAtUtc: null, decidedBy: 'a', decidedAtUtc: '2026-09-19T09:05:00Z', rejectionReason: null }
+    }],
     ['an approved draft with a rejection reason', (b: any) => {
       b.detail.draft.approvalState = 'Approved'
       b.detail.approval = { submittedBy: 'a', submittedAtUtc: '2026-09-19T09:00:00Z', decidedBy: 'b', decidedAtUtc: '2026-09-19T09:05:00Z', rejectionReason: 'x' }
@@ -206,6 +224,9 @@ describe('decodeProblem', () => {
 describe('SALES-A1 approval axis', () => {
   it.each([
     ['PendingApproval', { submittedBy: 'satis-1', submittedAtUtc: '2026-09-19T09:00:00Z', decidedBy: null, decidedAtUtc: null, rejectionReason: null }],
+    // D2: withdrawn after a submission, and withdrawn from Preparing (no submission at all).
+    ['Withdrawn', { submittedBy: 'satis-1', submittedAtUtc: '2026-09-19T09:00:00Z', decidedBy: 'satis-1', decidedAtUtc: '2026-09-19T09:05:00Z', rejectionReason: 'Vazgeçildi' }],
+    ['Withdrawn', { submittedBy: null, submittedAtUtc: null, decidedBy: 'satis-1', decidedAtUtc: '2026-09-19T09:05:00Z', rejectionReason: null }],
     ['Approved', { submittedBy: 'satis-1', submittedAtUtc: '2026-09-19T09:00:00Z', decidedBy: 'onay-1', decidedAtUtc: '2026-09-19T09:05:00Z', rejectionReason: null }],
     ['Rejected', { submittedBy: 'satis-1', submittedAtUtc: '2026-09-19T09:00:00Z', decidedBy: 'onay-1', decidedAtUtc: '2026-09-19T09:05:00Z', rejectionReason: 'Fiyat yok' }],
     ['Rejected', { submittedBy: 'satis-1', submittedAtUtc: '2026-09-19T09:00:00Z', decidedBy: 'onay-1', decidedAtUtc: '2026-09-19T09:05:00Z', rejectionReason: null }],

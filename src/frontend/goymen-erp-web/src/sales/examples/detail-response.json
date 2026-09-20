@@ -61,5 +61,6 @@
     "decidedBy": null,
     "decidedAtUtc": null,
     "rejectionReason": null
-  }
+  },
+  "isOwnDraft": false
 }

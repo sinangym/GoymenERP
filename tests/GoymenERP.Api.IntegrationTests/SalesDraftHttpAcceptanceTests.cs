@@ -152,7 +152,7 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
     private static SalesOrderDraftDetailView Detail(Guid draftId, string approvalState = "Preparing") => new(
         new SalesOrderDraftSummaryView(draftId, CompanyA, "SO-2026-000001", "Order", "Draft", "1", "Rev.0", Guid.NewGuid(), Guid.NewGuid(),
             Guid.NewGuid(), new DateOnly(2026, 9, 18), new DateTimeOffset(2026, 9, 18, 14, 0, 0, TimeSpan.Zero), 0, approvalState),
-        null, null, [], null, null, null, null, null, null, new SalesDraftApprovalV1(null, null, null, null, null));
+        null, null, [], null, null, null, null, null, null, new SalesDraftApprovalV1(null, null, null, null, null), false);
 
     private WebApplicationFactory<Program> CreateHost(ISalesDraftService service) => factory.WithWebHostBuilder(builder =>
         builder.ConfigureTestServices(services =>
@@ -206,6 +206,9 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
 
         public Task<SalesOrderDraftResponse> ApproveDraftAsync(Guid draftId, SalesDraftStateCommandRequest request, SalesCommandMetadata metadata,
             CancellationToken cancellationToken = default) => StateAsync("approve", draftId, request, metadata);
+
+        public Task<SalesOrderDraftResponse> WithdrawDraftAsync(Guid draftId, SalesDraftStateCommandRequest request, SalesCommandMetadata metadata,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException("D2: the withdrawal route waits on the central adapter.");
 
         public Task<SalesOrderDraftResponse> RejectDraftAsync(Guid draftId, SalesDraftStateCommandRequest request, SalesCommandMetadata metadata,
             CancellationToken cancellationToken = default) => StateAsync("reject", draftId, request, metadata);
