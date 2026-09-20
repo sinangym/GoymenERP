@@ -1,0 +1,103 @@
+# org03 (ORGANİZASYON, ORG-03 work-centre list acceptance): the suite's closed-list API extensions on
+# top of its capability profile (`normal`), validated by tools/validate_browser_acceptance.py with the
+# merged model (SUITE_API_EXTENSIONS["org03"]: actors + identity; no Product issuer binding — the suite
+# reads and writes no Product data, and writes nothing at all).
+#
+# WHAT THIS SUITE EXISTS TO PROVE, and therefore why the actors are split the way they are:
+# ORG-03 stands on `organization.work-centers.read` ALONE. A user holding it WITHOUT
+# `organization.locations.read` must still see the İş Merkezleri entry in the sidebar and open the
+# screen from it — for that user ORG-01 does not open at all, which is why ORG-03 is its own sidebar
+# entry rather than a link inside the location list (K5). Give both names to ONE actor and the suite
+# goes green while proving nothing, and the next reader has no way to notice.
+#
+#   org03-work-centers-only  BROWSER_ORG03_WORK_CENTERS  organization.work-centers.read ONLY
+#                            The slice's reason to exist: the sidebar entry is drawn, ORG-03 opens,
+#                            EVERY row's location cell is closed, and ORG-01 does not open for them.
+#   org03-reader             BROWSER_ORG03_READER        work-centers.read + locations.read
+#                            The link resolves and the location card opens.
+#
+# Both are company-wide in GDC. The canonical two BootstrapIdentity users are NOT used: the seeded
+# ORGANIZATION_READER and ORGANIZATION_OPERATOR roles carry work-centres AND locations together, so
+# neither of them can express the distinction above.
+#
+# HELD, AND WHAT IS LOST BY IT — stated plainly, because a soft phrasing here would let a reader believe
+# the suite covers something it does not.
+#
+# The held actor is the row-scoped one: both names, with the location grant narrowed to ONE location, so
+# SOME rows link and some do not.
+#
+# WHAT THE SUITE THEREFORE PROVES: the slice's primary claim (a user holding `work-centers.read` and NOT
+# `locations.read` reaches ORG-03 from the sidebar, with every row's location closed) and that the link
+# resolves for a user holding both.
+# WHAT IT DOES NOT PROVE: the MIXED case — some rows open, some do not. That is exactly what
+# `CanOpenLocationDetail` (#377) discriminates, so BROWSER EVIDENCE FOR THE FIELD'S OWN REASON FOR
+# EXISTING REMAINS OWED. The all-closed and all-open ends are covered; the discrimination between them
+# is not.
+#
+# WHY, in both halves, because one clause alone misleads: THE PRODUCT SUPPORTS a scoped grant — none of
+# these permissions is in `ErpPermissions.CompanyWideOnly` (measured 2026-09-20), so a Location scope is
+# expressible in the permission model. THE SUITE CONTRACT DOES NOT — tools/validate_browser_acceptance.py
+# requires every suite assignment to be Company-scoped on its own company, with no exemption. Two gates;
+# only one was open, and the closed one is not the product's.
+#
+# Relaxing that contract rule is a central change with its own reasoning, owned by the validator's owner,
+# and it is a QUESTION before it is a proposal: nobody has measured why the contract requires company-wide
+# for every suite. Until that is measured, no relaxation is reviewable. It is not folded in here.
+#
+# Every value is synthetic (SENTETIK browser-suite:org03 …) and exists only in the run's disposable
+# database. Not a production grant, role or user.
+services:
+  api:
+    environment:
+      BootstrapIdentity__Users__2__UserId: org03-work-centers-only
+      BootstrapIdentity__Users__2__DisplayName: SENTETIK browser-suite:org03 yalnız iş merkezi okuyucusu
+      BootstrapIdentity__Users__3__UserId: org03-reader
+      BootstrapIdentity__Users__3__DisplayName: SENTETIK browser-suite:org03 iş merkezi ve lokasyon okuyucusu
+      IdentitySeed__Users__5__Id: b2000000-0000-4000-8000-000000000301
+      IdentitySeed__Users__5__DisplayName: SENTETIK browser-suite:org03 yalnız iş merkezi okuyucusu
+      IdentitySeed__Users__5__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000301
+      IdentitySeed__Users__5__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
+      IdentitySeed__Users__5__ExternalIdentities__0__Subject: org03-work-centers-only
+      IdentitySeed__Users__6__Id: b2000000-0000-4000-8000-000000000302
+      IdentitySeed__Users__6__DisplayName: SENTETIK browser-suite:org03 iş merkezi ve lokasyon okuyucusu
+      IdentitySeed__Users__6__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000302
+      IdentitySeed__Users__6__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
+      IdentitySeed__Users__6__ExternalIdentities__0__Subject: org03-reader
+      # ONE name, and here is exactly what protects that — an earlier version of this line said a second
+      # name would pass "without failing a single case", which UNDERSELLS the protection and invites
+      # someone to build a guard that already exists.
+      # WHAT DOES NOT CATCH IT: the closed permitted list is a UNION check (one `require` over
+      # `set(permissions) - permitted`), so it permits both names anywhere and says nothing about which
+      # actor holds which subset; the per-actor comment beside it is an intent statement, not a guard.
+      # Nor do the PR's required checks, which do not run this suite.
+      # WHAT DOES CATCH IT: this suite's own cases, when dispatched. Adding organization.locations.read
+      # here turns ORG03-01's link count from 0 to 5 and its closed-cell count from 5 to 0, and ORG03-02's
+      # Organizasyon nav-entry count from 0 to 1 — three assertions, in two cases, all red.
+      # So the protection is real and it is the suite itself; what it is not is automatic.
+      IdentitySeed__Roles__5__Id: b3000000-0000-4000-8000-000000000301
+      IdentitySeed__Roles__5__Code: BROWSER_ORG03_WORK_CENTERS
+      IdentitySeed__Roles__5__Name: SENTETIK browser-suite:org03 yalnız iş merkezi okuma rolü
+      IdentitySeed__Roles__5__IsSystem: "false"
+      IdentitySeed__Roles__5__Permissions__0: organization.work-centers.read
+      IdentitySeed__Roles__6__Id: b3000000-0000-4000-8000-000000000302
+      IdentitySeed__Roles__6__Code: BROWSER_ORG03_READER
+      IdentitySeed__Roles__6__Name: SENTETIK browser-suite:org03 iş merkezi ve lokasyon okuma rolü
+      IdentitySeed__Roles__6__IsSystem: "false"
+      IdentitySeed__Roles__6__Permissions__0: organization.work-centers.read
+      IdentitySeed__Roles__6__Permissions__1: organization.locations.read
+      IdentitySeed__Assignments__7__Id: b4000000-0000-4000-8000-000000000301
+      IdentitySeed__Assignments__7__UserId: b2000000-0000-4000-8000-000000000301
+      IdentitySeed__Assignments__7__RoleId: b3000000-0000-4000-8000-000000000301
+      IdentitySeed__Assignments__7__CompanyId: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__7__ValidFromUtc: "2026-01-01T00:00:00+00:00"
+      IdentitySeed__Assignments__7__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
+      IdentitySeed__Assignments__7__Scopes__0__Type: Company
+      IdentitySeed__Assignments__7__Scopes__0__Id: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__8__Id: b4000000-0000-4000-8000-000000000302
+      IdentitySeed__Assignments__8__UserId: b2000000-0000-4000-8000-000000000302
+      IdentitySeed__Assignments__8__RoleId: b3000000-0000-4000-8000-000000000302
+      IdentitySeed__Assignments__8__CompanyId: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__8__ValidFromUtc: "2026-01-01T00:00:00+00:00"
+      IdentitySeed__Assignments__8__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
+      IdentitySeed__Assignments__8__Scopes__0__Type: Company
+      IdentitySeed__Assignments__8__Scopes__0__Id: 10000000-0000-0000-0000-000000000001

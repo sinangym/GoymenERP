@@ -11,6 +11,7 @@ import importlib.util
 import pathlib
 import sys
 import unittest
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools"))
@@ -261,7 +262,13 @@ class SuiteExtensionTests(unittest.TestCase):
 
     def test_u02_may_bind_the_product_issuer_and_org03_may_add_actors(self):
         browser.validate_suite_compose(extended("u02", ISSUER), "u02", COMMIT, PROJECT)
-        browser.validate_suite_compose(extended("org03", actors("org03", 6)), "org03", COMMIT, PROJECT)
+        # What this case is about is the EXTENSION ALLOW-LIST: may org03 add development actors at
+        # all. Since the browser slice org03 also declares Identity grants, so actors now arrive with
+        # seeded users — a separate rule, covered by its own cases in test_suite_fixtures. The flag is
+        # held off here so this case keeps testing the one thing its name claims.
+        without_identity = dict(browser.SUITE_API_EXTENSIONS["org03"], identity=False)
+        with mock.patch.dict(browser.SUITE_API_EXTENSIONS, {"org03": without_identity}):
+            browser.validate_suite_compose(extended("org03", actors("org03", 6)), "org03", COMMIT, PROJECT)
 
     def test_an_extension_is_refused_for_a_suite_whose_list_does_not_allow_it(self):
         cases = (
