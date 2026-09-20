@@ -192,7 +192,18 @@ public sealed record ProductCardView(ProductDraftView Product, ProductReferences
 }
 
 public sealed record ProductCompletenessView(string Evaluation, IReadOnlyList<string> MissingFields);
-public sealed record ProductReferenceLabels(string? Group, string? Class, string? Family, string? PrimaryStockUnit);
+/// <summary>
+/// The server-resolved names a card is reopened with; the client never maps an id. Since PRD-CARD-1 the card
+/// also carries its template's name, the family's fixed facts (Cins/Tür/Tip) and, for each stored attribute
+/// whose value is a controlled code, that entry's display name. A name is null when the release does not state
+/// it; a null is shown as unavailable, never as a value.
+/// </summary>
+public sealed record ProductReferenceLabels(string? Group, string? Class, string? Family, string? PrimaryStockUnit,
+    string? Template = null, ProductFamilyFactsLabels? FamilyFacts = null,
+    IReadOnlyDictionary<string, string>? Attributes = null);
+
+/// <summary>The family's fixed facts as the release states them (#66 5739827887): never typed on a card.</summary>
+public sealed record ProductFamilyFactsLabels(string Cins, string Tur, string Tip);
 
 public static class ProductVersion
 {
