@@ -47,7 +47,8 @@ describe('M-04 journals', () => {
     const row = await screen.findByText('Asıl')
     expect(within(row.closest('tr') as HTMLElement).getByRole('link', { name: /Aç/ })).toBeTruthy()
     expect(requestsFor(withDetail, `/accounting/journals?periodId=${PERIOD_SEPTEMBER}`, 'GET')).toHaveLength(1)
-    opened.unmount()
+    // The harness returns { queryClient, router, view }: the unmount is the render result's.
+    opened.view.unmount()
 
     // Without the detail capability the row still SHOWS the journal — by its labelled reference — and offers
     // no link the shell would close onto its neutral not-found block.
