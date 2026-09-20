@@ -18,9 +18,39 @@ import {
   type ValidationIssue,
 } from './contract'
 
+/**
+ * B3 (#66 5750700247): what the card SAYS about money movement. Three words and never absent —
+ * `Undeclared` is a card written before the declaration existed, and it is NOT `NotEligible`: one is
+ * unanswered, the other is answered "no", and Sinan asks for the first to be shown specifically.
+ */
+export type MoneyEligibility = 'Eligible' | 'NotEligible' | 'Undeclared'
+const MONEY_ELIGIBILITIES: readonly MoneyEligibility[] = ['Eligible', 'NotEligible', 'Undeclared']
+
+/** D4: an IBAN change waiting for its own Ö4 approval, or null when there is none. */
+export interface PendingIbanChange {
+  readonly iban: string
+  readonly proposedBy: string
+  readonly proposedAtUtc: string
+  readonly reason: string
+}
+
+/** K2's card fields, carried only on the master — the receipt paths never see an IBAN. */
+export interface BankAccountCard {
+  readonly bankName: string
+  readonly accountType: string
+  readonly branchName: string | null
+  readonly branchCode: string | null
+  readonly iban: string | null
+  readonly accountNumber: string | null
+  readonly moneyEligibility: MoneyEligibility
+  readonly pendingIbanChange: PendingIbanChange | null
+}
+
 export interface BankAccountMasterItem {
   readonly account: BankAccountView
   readonly isOwnProposal: boolean
+  readonly card: BankAccountCard
+  readonly isOwnPendingIbanProposal: boolean
 }
 
 export interface BankAccountMasterPage {
@@ -59,6 +89,20 @@ export type BankAccountCommandResult =
 export interface BankAccountProposeRequest {
   readonly displayName: string
   readonly currencyId: string
+  readonly bankName: string
+  readonly accountType: string
+  readonly moneyMovementEligible: boolean
+  readonly branchName: string | null
+  readonly branchCode: string | null
+  readonly iban: string | null
+  readonly accountNumber: string | null
+}
+
+/** D4: the IBAN-change body — exactly `BankAccountIbanChangeBody` (the account is the route's). */
+export interface BankAccountIbanChangeBody {
+  readonly expectedVersion: string
+  readonly iban: string
+  readonly reason: string
 }
 
 /** The approval body: exactly `BankAccountApprovalBody` (the account is the route's). */
@@ -90,16 +134,88 @@ export function decodeBankAccountMasterPage(value: unknown, companyId: string): 
   const items: BankAccountMasterItem[] = []
   const seen = new Set<string>()
   for (const raw of value.items) {
-    if (!isRecord(raw) || !hasExactKeys(raw, ['account', 'isOwnProposal']) || typeof raw.isOwnProposal !== 'boolean') return FAIL
+    if (
+      !isRecord(raw) ||
+      !hasExactKeys(raw, ['account', 'isOwnProposal', 'card', 'isOwnPendingIbanProposal']) ||
+      typeof raw.isOwnProposal !== 'boolean' ||
+      typeof raw.isOwnPendingIbanProposal !== 'boolean'
+    ) {
+      return FAIL
+    }
+
     const account = decodeAccount(raw.account, companyId)
-    if (account === null || seen.has(account.id)) return FAIL
+    const card = decodeCard(raw.card)
+    if (account === null || card === null || seen.has(account.id)) return FAIL
     // Only a proposal (not active) can be the caller's pending one to wait on; an approved account
     // is shown the same to everyone.
     seen.add(account.id)
-    items.push({ account, isOwnProposal: raw.isOwnProposal })
+    items.push({ account, isOwnProposal: raw.isOwnProposal, card, isOwnPendingIbanProposal: raw.isOwnPendingIbanProposal })
   }
   return ok({ companyId, items })
 }
+
+/**
+ * K2's card, strictly. The two mandatory texts arrive as empty strings for a row written before K2 —
+ * that is the server showing what it has rather than inventing a value, so the decoder accepts empty
+ * and the screen decides how to say "not filled in". What it does NOT accept is a missing member, a
+ * fourth word for the eligibility, or a half-written pending change.
+ */
+function decodeCard(value: unknown): BankAccountCard | null {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, [
+      'bankName', 'accountType', 'branchName', 'branchCode', 'iban', 'accountNumber',
+      'moneyEligibility', 'pendingIbanChange',
+    ])
+  ) {
+    return null
+  }
+
+  if (
+    typeof value.bankName !== 'string' ||
+    typeof value.accountType !== 'string' ||
+    !isNullableText(value.branchName) ||
+    !isNullableText(value.branchCode) ||
+    !isNullableText(value.iban) ||
+    !isNullableText(value.accountNumber) ||
+    typeof value.moneyEligibility !== 'string' ||
+    !(MONEY_ELIGIBILITIES as readonly string[]).includes(value.moneyEligibility)
+  ) {
+    return null
+  }
+
+  const pending = decodePendingIbanChange(value.pendingIbanChange)
+  if (pending === undefined) return null
+  return {
+    bankName: value.bankName,
+    accountType: value.accountType,
+    branchName: value.branchName,
+    branchCode: value.branchCode,
+    iban: value.iban,
+    accountNumber: value.accountNumber,
+    moneyEligibility: value.moneyEligibility as MoneyEligibility,
+    pendingIbanChange: pending,
+  }
+}
+
+/** `null` is "no pending change"; `undefined` is "this is not the contract" — the two must not be confused. */
+function decodePendingIbanChange(value: unknown): PendingIbanChange | null | undefined {
+  if (value === null) return null
+  if (!isRecord(value) || !hasExactKeys(value, ['iban', 'proposedBy', 'proposedAtUtc', 'reason'])) return undefined
+  const { iban, proposedBy, proposedAtUtc, reason } = value
+  if (
+    typeof iban !== 'string' || iban.length === 0 ||
+    typeof proposedBy !== 'string' || proposedBy.length === 0 ||
+    typeof proposedAtUtc !== 'string' || proposedAtUtc.length === 0 ||
+    typeof reason !== 'string' || reason.length === 0
+  ) {
+    return undefined
+  }
+  return { iban, proposedBy, proposedAtUtc, reason }
+}
+
+const isNullableText = (value: unknown): value is string | null =>
+  value === null || (typeof value === 'string' && value.length > 0)
 
 export function decodeCurrencyCandidates(value: unknown, companyId: string): Decoded<CurrencyCandidates> {
   if (!isRecord(value) || !hasExactKeys(value, ['companyId', 'items'])) return FAIL

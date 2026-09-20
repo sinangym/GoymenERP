@@ -12,6 +12,8 @@
  * | `bankAccountCurrencyCandidates` | `GET /finance/bank-accounts/currency-candidates` (FIN-UI-1a) |
  * | `proposeBankAccount` | `POST /finance/bank-accounts` with `Idempotency-Key` (FIN-UI-1a) |
  * | `approveBankAccount` | `POST /finance/bank-accounts/{accountId}/approval` with `Idempotency-Key` (FIN-UI-1a) |
+ * | `proposeBankAccountIbanChange` | `POST …/{accountId}/iban-change` with `Idempotency-Key` (D4) |
+ * | `approveBankAccountIbanChange` | `POST …/{accountId}/iban-change/approval` with `Idempotency-Key` (D4) |
  *
  * Reads: the Backend answers a found resource with 200 and platform problems otherwise, so the
  * adapter restates the status as the #258 `ReadResult` the screens decode — 403 Denied, 404
@@ -155,5 +157,16 @@ export function createHttpFinancePort(): FinanceReceiptPort {
 
     approveBankAccount: (scope, idempotencyKey, accountId, body) =>
       command(`${API_BASE}${BANK_ACCOUNTS_PATH}/${encodeURIComponent(accountId)}/approval`, scope, idempotencyKey, body),
+
+    proposeBankAccountIbanChange: (scope, idempotencyKey, accountId, body) =>
+      command(`${API_BASE}${BANK_ACCOUNTS_PATH}/${encodeURIComponent(accountId)}/iban-change`, scope, idempotencyKey, body),
+
+    approveBankAccountIbanChange: (scope, idempotencyKey, accountId, body) =>
+      command(
+        `${API_BASE}${BANK_ACCOUNTS_PATH}/${encodeURIComponent(accountId)}/iban-change/approval`,
+        scope,
+        idempotencyKey,
+        body,
+      ),
   }
 }

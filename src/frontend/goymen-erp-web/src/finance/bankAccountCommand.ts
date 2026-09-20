@@ -19,16 +19,36 @@
  * Kept in memory only — never storage, URL or log.
  */
 
-import { decodeBankAccountCommandResult, type BankAccountApprovalBody, type BankAccountProposeRequest } from './bankAccountContract'
+import {
+  decodeBankAccountCommandResult,
+  type BankAccountApprovalBody,
+  type BankAccountIbanChangeBody,
+  type BankAccountProposeRequest,
+} from './bankAccountContract'
 import type { BankAccountView, ValidationIssue } from './contract'
 import type { PortReply } from './port'
 import { generateAttemptKey, type AttemptBinding } from './receiptCommand'
 
-export type BankAccountOperation = 'bank-account-propose' | 'bank-account-approve'
+export type BankAccountOperation =
+  | 'bank-account-propose'
+  | 'bank-account-approve'
+  // D4 (#66 5749046401): the IBAN change's own Ö4 pair, on the EXISTING propose/approve permissions.
+  | 'bank-account-iban-change'
+  | 'bank-account-iban-change-approve'
 
 export type BankAccountRequest =
   | { readonly operation: 'bank-account-propose'; readonly body: BankAccountProposeRequest }
   | { readonly operation: 'bank-account-approve'; readonly accountId: string; readonly body: BankAccountApprovalBody }
+  | {
+      readonly operation: 'bank-account-iban-change'
+      readonly accountId: string
+      readonly body: BankAccountIbanChangeBody
+    }
+  | {
+      readonly operation: 'bank-account-iban-change-approve'
+      readonly accountId: string
+      readonly body: BankAccountApprovalBody
+    }
 
 export interface BankAccountSnapshot {
   readonly key: string
@@ -66,6 +86,12 @@ export function accountAnswers(request: BankAccountRequest, account: BankAccount
       )
     case 'bank-account-approve':
       return account.id === request.accountId && account.isActive
+    // D4: both answer the named account. The account's own members do not carry the IBAN — the card
+    // does, and the card is not on this view — so identity is all this can check, and claiming more
+    // would be asserting something the answer does not contain. The list is re-read after settling.
+    case 'bank-account-iban-change':
+    case 'bank-account-iban-change-approve':
+      return account.id === request.accountId
   }
 }
 
