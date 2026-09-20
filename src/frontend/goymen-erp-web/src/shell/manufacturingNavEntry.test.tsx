@@ -78,9 +78,9 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-async function renderShell(granted: readonly string[]): Promise<string[]> {
+async function renderShell(granted: readonly string[], path = '/'): Promise<string[]> {
   const calls = installFetch(granted)
-  const router = createMemoryRouter(shellRoutes, { initialEntries: ['/'] })
+  const router = createMemoryRouter(shellRoutes, { initialEntries: [path] })
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 30_000 } } })
   render(
     <ShellProvider queryClient={queryClient}>
@@ -115,17 +115,32 @@ describe('MFG-02 is reachable from the sidebar (K5)', () => {
     expect(document.querySelector('[data-state="not-found"]')).toBeNull()
   })
 
-  it('offers no Manufacturing link to an actor the server did not grant it, and reads no orders', async () => {
-    const calls = await renderShell([])
+  it('offers no link to an ungranted actor, and the screen itself reads nothing at its own URL', async () => {
+    // Started AT the list route on purpose (#368 review, SİPARİŞ P3). Rendering the home page and
+    // then asserting "no orders were read" is true by CONSTRUCTION — the list never mounts there, so
+    // the assertion documents an intent it cannot fail on. Opening `/uretim/emirler` directly is the
+    // case that matters anyway: it is the one way an ungranted actor can still reach the screen, and
+    // it is exactly how MFG-02 was reachable before the sidebar entry existed.
+    const calls = await renderShell([], CAPABILITY_ROUTE[CAPABILITY.manufacturingOrdersList])
 
-    await waitFor(() =>
-      expect(
-        within(navigation()).queryByRole('link', {
-          name: CAPABILITY_NAV_LABEL[CAPABILITY.manufacturingOrdersList],
-        }),
-      ).toBeNull(),
-    )
-    expect(calls.some((url) => url.includes('/manufacturing/orders'))).toBe(false)
+    // The route closes onto the neutral not-found block: denied and non-existent look the same.
+    await waitFor(() => expect(document.querySelector('[data-state="not-found"]')).not.toBeNull())
+    expect(
+      screen.queryByRole('heading', { level: 1, name: ORDER_LIST_TEXT.heading }),
+      'an ungranted actor reached the order list heading by typing its URL',
+    ).toBeNull()
+    // …and nothing was read on its behalf. This CAN fail now: the screen was mounted at its own path,
+    // so a route that skipped its capability gate would issue the read and turn this red.
+    expect(
+      calls.filter((url) => url.includes('/manufacturing/orders')),
+      'an ungranted actor caused a Manufacturing read',
+    ).toEqual([])
+    // The sidebar offers nothing either.
+    expect(
+      within(navigation()).queryByRole('link', {
+        name: CAPABILITY_NAV_LABEL[CAPABILITY.manufacturingOrdersList],
+      }),
+    ).toBeNull()
   })
 
   it('offers no second, parallel create entry: creation belongs inside the list (K5)', async () => {
@@ -137,6 +152,12 @@ describe('MFG-02 is reachable from the sidebar (K5)', () => {
     const manufacturingLinks = within(navigation())
       .getAllByRole('link')
       .filter((element) => element.getAttribute('href')?.startsWith('/uretim'))
-    expect(manufacturingLinks).toHaveLength(1)
+    expect(
+      manufacturingLinks,
+      'K5 (Sinan, 20 September 2026): creation is a single authorised action INSIDE its list, so the ' +
+        'sidebar carries one Manufacturing entry — the list — and never a second create link beside ' +
+        'it. If Manufacturing legitimately gained another WORK LIST, update this count and this ' +
+        'message together; if a create entry appeared, it belongs in the list instead.',
+    ).toHaveLength(1)
   })
 })
