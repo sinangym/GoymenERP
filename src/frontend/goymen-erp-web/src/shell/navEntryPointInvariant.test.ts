@@ -75,8 +75,8 @@ describe('nav entry points', () => {
       'these capabilities carry a nav label but are not in NAV_CAPABILITIES, so the label is never ' +
         'rendered. Two fixes, both legitimate. (1) The screen belongs in the sidebar: add the ' +
         'capability to NAV_CAPABILITIES. (2) The screen is deliberately opened from a list row, a ' +
-        'card or a context action — which is the normal case for detail and create screens, and why ' +
-        'most capabilities here carry no label: empty its label. Option 2 carries an obligation, ' +
+        'card or a context action — the normal case for detail and create screens, which is why the ' +
+        'screens reached that way carry no label: empty its label. Option 2 carries an obligation, ' +
         'not a free pass: the screen must then really be reachable from that row or list, and THIS ' +
         'file does not verify it — it reads the two tables, never the pages, so the lane that owns ' +
         'the screen has to pin that link in its own test. Emptying a label with nothing linking to ' +
