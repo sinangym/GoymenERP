@@ -17,10 +17,11 @@ using Microsoft.Extensions.Hosting;
 namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>
-/// ACC-V0b: the staged Accounting shell provider joins the host set with its own reviewed normal-host
-/// authority, and the disposable acc-staged profile opens exactly the same declarations — only their
-/// availability — beside the list-only C-01 Counterparty set. The permission names themselves were
-/// registered with ACC-V0a and are pinned by <c>AccountingPermissionRegistrationTests</c>.
+/// ACC-V0c: the Accounting shell provider joins the host set with its own reviewed normal-host authority,
+/// publishing six of its seven declarations and leaving the journal detail staged. The disposable
+/// acc-staged profile that carried these screens before the flip is retired, and the test below pins
+/// what its value means now: nothing, failing closed. The permission names themselves were registered
+/// with ACC-V0a and are pinned by <c>AccountingPermissionRegistrationTests</c>.
 /// </summary>
 public sealed class AccountingShellRegistrationTests
 {
@@ -37,7 +38,7 @@ public sealed class AccountingShellRegistrationTests
         ];
 
         // On failure xUnit prints the actual revision: the constant is never guessed.
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV11ProductV10PublishedSalesV10PublishedFinanceV10PublishedManufacturingV10LogisticsV10PurchasingV10AndAccountingV10,
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV11ProductV10PublishedSalesV10PublishedFinanceV10PublishedManufacturingV10LogisticsV10PurchasingV10AndPublishedAccountingV10,
             ShellCapabilityRegistry.ComputeCandidateRevision(providers));
     }
 
@@ -49,7 +50,7 @@ public sealed class AccountingShellRegistrationTests
         var authority = C01E2eShellCapabilityActivation.Configure(services, new TestingEnvironment(),
             new ConfigurationBuilder().Build());
 
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV11ProductV10PublishedSalesV10PublishedFinanceV10PublishedManufacturingV10LogisticsV10PurchasingV10AndAccountingV10,
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV11ProductV10PublishedSalesV10PublishedFinanceV10PublishedManufacturingV10LogisticsV10PurchasingV10AndPublishedAccountingV10,
             authority);
         using var container = services.BuildServiceProvider();
         var registry = new ShellCapabilityRegistry(container.GetServices<IShellCapabilityProvider>(),
@@ -58,9 +59,25 @@ public sealed class AccountingShellRegistrationTests
             .Where(item => item.Owner == AccountingShellCapabilityProvider.OwnerId)
             .ToArray();
         // M-07 and its propose screen, the approve and close controls of that list, M-04 and its detail, M-01:
-        // seven declarations, every one staged until the acc01 acceptance flips them in a separate change.
+        // seven declarations. ACC-V0c is the separate change the previous version of this test predicted:
+        // the acc01 acceptance published six of them.
         Assert.Equal(7, accounting.Length);
-        Assert.All(accounting, item => Assert.False(item.Declaration.ImplementationAvailable));
+        // Named rather than counted, and asserted as a SET: "all staged" was true only until the flip, while
+        // "these six and no others" stays true and fails loudly if a seventh is ever published without an
+        // acceptance to stand on.
+        string[] published =
+        [
+            "accounting.journals.list", "accounting.periods.approve", "accounting.periods.close",
+            "accounting.periods.list", "accounting.periods.propose", "accounting.posting-queues",
+        ];
+        Assert.Equal(published, accounting.Where(item => item.Declaration.ImplementationAvailable)
+            .Select(item => item.Declaration.CapabilityId).Order(StringComparer.Ordinal).ToArray());
+        // M-04-DETAIL stays staged on purpose: acc01 never opened a journal — its seed writes none and no
+        // flow produces one before ACC-V1 — so that route has no acceptance to stand on, and publishing it
+        // would claim a screen nobody walked.
+        var journalDetail = Assert.Single(accounting,
+            item => item.Declaration.CapabilityId == AccountingShellCapabilityProvider.JournalDetailCapabilityId);
+        Assert.False(journalDetail.Declaration.ImplementationAvailable);
         string[] expected =
         [
             "accounting.journals.detail", "accounting.journals.list", "accounting.periods.approve",
@@ -71,66 +88,29 @@ public sealed class AccountingShellRegistrationTests
             accounting.Select(item => item.Declaration.CapabilityId).Order(StringComparer.Ordinal).ToArray());
     }
 
+    // ACC-V0c: the disposable acc-staged profile ("accounting-periods-and-journals", ACC-V0b) is retired.
+    // Its value is no profile any more: inside the C-01 envelope it fails closed at startup, as any unknown
+    // one. The string is kept HERE rather than deleted with the case arm, so that the day someone puts it
+    // back the failure names it; a retirement that leaves no test leaves no way to notice the return.
     [Fact]
-    public void The_acc_staged_profile_opens_the_owners_own_declarations_and_nothing_else()
+    public void The_retired_acc_staged_profile_value_fails_closed()
     {
-        var services = NormalHost();
-        var envelope = C01E2eShellCapabilityActivationTests.ExactEnvelope();
-        envelope[C01E2eShellCapabilityActivation.ProfileConfigurationKey] =
-            C01E2eShellCapabilityActivation.AccountingPeriodsAndJournalsProfile;
+        var services = new ServiceCollection();
+        services.AddSingleton<IShellCapabilityProvider, CounterpartyShellCapabilityProvider>();
+        services.AddSingleton<IShellCapabilityProvider, AccountingShellCapabilityProvider>();
+        var envelope = new Dictionary<string, string?>(C01E2eShellCapabilityActivationTests.ExactEnvelope())
+        {
+            [C01E2eShellCapabilityActivation.ProfileConfigurationKey] = "accounting-periods-and-journals",
+        };
 
-        var authority = C01E2eShellCapabilityActivation.Configure(services, new TestingEnvironment(),
-            new ConfigurationBuilder().AddInMemoryCollection(envelope).Build());
+        var error = Assert.Throws<InvalidOperationException>(() => C01E2eShellCapabilityActivation.Configure(services,
+            new TestingEnvironment(), new ConfigurationBuilder().AddInMemoryCollection(envelope).Build()));
 
-        Assert.Equal(ShellCapabilityRegistryAuthorities.C01DisposableAccountingPeriodsAndJournalsV1, authority);
-        using var container = services.BuildServiceProvider();
-        var registry = new ShellCapabilityRegistry(container.GetServices<IShellCapabilityProvider>(),
-            new ShellCapabilityAuthorityCatalog([authority]));
-        var owner = new AccountingShellCapabilityProvider().GetDeclarations()
-            .OrderBy(declaration => declaration.CapabilityId, StringComparer.Ordinal)
-            .ToArray();
-        var opened = registry.Registrations
-            .Where(item => item.Owner == AccountingShellCapabilityProvider.OwnerId)
-            .Select(item => item.Declaration)
-            .OrderBy(declaration => declaration.CapabilityId, StringComparer.Ordinal)
-            .ToArray();
-
-        // Availability is the ONLY difference: ids, route ids, paths, screens, precedence, context, scope,
-        // permissions and the two controls' parents stay exactly what the owner declared.
-        //
-        // Compared member by member, with the permissions as an ORDERED SEQUENCE, and deliberately NOT as
-        // whole records: ShellCapabilityDeclaration is a record whose RequiredPermissions is an
-        // IReadOnlyCollection<string>, so the synthesized equality compares that member BY REFERENCE. Two
-        // structurally identical declarations built from different provider instances are then never equal,
-        // and the failure prints two lines that look the same. This is not a weakening — every member is
-        // still asserted, and the projection is compared as a whole set, so a declaration that acc-staged
-        // added, dropped or altered still fails.
-        Assert.Equal(
-            owner.Select(declaration => Comparable(declaration with { ImplementationAvailable = true })).ToArray(),
-            opened.Select(Comparable).ToArray());
-        // The envelope keeps the list-only C-01 Counterparty set; no other module's provider survives it.
-        Assert.Equal(
-            [AccountingShellCapabilityProvider.OwnerId, CounterpartyShellCapabilityProvider.OwnerId],
-            registry.Registrations.Select(item => item.Owner).Distinct().Order(StringComparer.Ordinal).ToArray());
+        // The TYPE alone would not have proved the refusal: this minimal two-provider collection can
+        // raise InvalidOperationException for reasons of its own, so "it threw" and "it refused the
+        // profile" are different claims. Assert the default arm's own message.
+        Assert.Contains("profili tanınmıyor", error.Message, StringComparison.Ordinal);
     }
-
-    /// <summary>
-    /// Every member of a declaration as one comparable value, with the permissions in order. See the
-    /// comment above: the record's own equality compares <c>RequiredPermissions</c> by reference.
-    /// </summary>
-    private static string Comparable(ShellCapabilityDeclaration declaration) => string.Join(
-        '\u001f',
-        declaration.CapabilityId,
-        declaration.RouteId,
-        declaration.RoutePath,
-        declaration.ScreenId,
-        declaration.RoutePrecedence.ToString(),
-        declaration.ContextRequirement.ToString(),
-        declaration.ScopeRequirement.ToString(),
-        declaration.ImplementationAvailable ? "available" : "staged",
-        declaration.GlobalProductOperation?.ToString() ?? "<no-global-operation>",
-        declaration.ParentCapabilityId ?? "<no-parent>",
-        string.Join(',', declaration.RequiredPermissions));
 
     private static ServiceCollection NormalHost()
     {

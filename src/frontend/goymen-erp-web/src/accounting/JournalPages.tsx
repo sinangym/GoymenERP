@@ -33,7 +33,8 @@ import {
 import { formatDecimalTextTr } from '../finance/decimalText'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { useShellState } from '../shell/shellContext'
-import { contextKey, contextKeyString } from '../shell/shellState'
+import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
+import { ACCOUNTING_CAPABILITY } from './capabilities'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { StateBlock } from '../shell/StateBlock'
 import styles from './Accounting.module.css'
@@ -67,6 +68,9 @@ export function JournalsPage() {
 
 function Journals({ namespace, periodParam }: { readonly namespace: string | null; readonly periodParam: string | null }) {
   const { shell, companyId, singleCompany } = useSingleCompany()
+  // The detail is its own capability and is published only once a slice has accepted it (ACC-V0c: acc01 opened
+  // no journal). While the server does not publish it, the row shows the journal's reference and no dead link.
+  const canOpenDetail = hasCapability(shell, ACCOUNTING_CAPABILITY.journalsDetail)
   const boundary = useAuthBoundary()
   // A malformed filter is never read as "all journals": it is not sent, and the page says so.
   const periodId = periodParam !== null && GUID_RE.test(periodParam) ? periodParam : null
@@ -167,9 +171,18 @@ function Journals({ namespace, periodParam }: { readonly namespace: string | nul
                   <td className={styles.amount}>{amount(row.totalCredit)}</td>
                   <td>{row.lineCount}</td>
                   <td>
-                    <Link to={journalDetailPath(row.journalId)} aria-label={`${OPEN_JOURNAL}: ${row.accountingDate} ${JOURNAL_KIND_LABEL[row.kind]} ${shortRef(row.journalId)}`}>
-                      {OPEN_JOURNAL}
-                    </Link>
+                    {/* ACC-V0c: the detail is published only when a slice has accepted it; a list must never offer
+                        a link the shell would close onto its neutral not-found block. */}
+                    {canOpenDetail ? (
+                      <Link to={journalDetailPath(row.journalId)} aria-label={`${OPEN_JOURNAL}: ${row.accountingDate} ${JOURNAL_KIND_LABEL[row.kind]} ${shortRef(row.journalId)}`}>
+                        {OPEN_JOURNAL}
+                      </Link>
+                    ) : (
+                      // Two references can share their last eight characters (the fixture's journal and source do),
+                      // so this one carries its full id in the title exactly as the source reference does — a reader
+                      // must never see two identical-looking references meaning different things.
+                      <span className={styles.mono} title={row.journalId}>{shortRef(row.journalId)}</span>
+                    )}
                   </td>
                 </tr>
               ))}
