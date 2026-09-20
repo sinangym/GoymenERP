@@ -39,6 +39,11 @@ Business 5737790175 (loading instruction → loaded / shipped / delivered, one s
 - No physical effect: no stock exit, no allocation consumption, no label scan, no weighing ticket. Definite shipment's stock exit + allocation consumption belong to Inventory (T11/T12) and are **one transaction** with the shipped share (§7.4); `MarkShipped` is never wired on its own.
 - No vehicle/driver data (authorization and audit scope), no documents/invoices; no shipment / delivery route until the Inventory seam (LOG-5).
 
+
+### Approved-order-lines read — the customer's name (LOG-4b, #358)
+
+`GET /api/v1/logistics/loading-instructions/approved-order-lines` is a LINE page (`pageSize` 1–100 caps the lines answered; the Sales owner's opaque, company-bound COMPOSITE cursor — draft + line position — so a page boundary neither skips nor repeats a draft's lines). Every line's customer is shown by NAME from the Cari owner (`ILogisticsPartyAccountPortV1`, one fenced read per distinct customer, memoized for the one request). A customer the Cari owner does not answer for — it answers a missing grant exactly as a missing party, nothing — keeps its lines on the page under the labelled reference `ref. …` + the last 8 of the party id (the Finance #356/#357 shape), never a dropped line: an empty page would say "nothing to load" while lines exist (coordinator ruling on #358). Picking such a line meets the create's own explicit refusal (`account_state` / `invalid_reference`). The loading preparer's suite role therefore holds `counterparty.parties.read` (identity-only read: no bank, IBAN, tax, registry or price field; ASSUMPTION-LOG4B-3).
+
 ## dependency_wait
 - Definite shipment → stock exit + allocation consumption: Inventory T11/T12 on main.
 - Block source (Inventory/Quality record) replacing the local flag.

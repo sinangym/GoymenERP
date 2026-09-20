@@ -39,6 +39,10 @@ internal static class C01E2eShellCapabilityActivation
     // list-only C-01 Counterparty set, before any normal-runtime availability (the FIN-UI-1b / MFG-UI D4
     // precedent; retired again at the flip after the acc01 suite).
     internal const string AccountingPeriodsAndJournalsProfile = "accounting-periods-and-journals";
+    // LOG-4b (log-staged): Logistics's three loading-instruction screens opened inside this envelope only, beside the
+    // list-only C-01 Counterparty set, before any normal-runtime availability (the FIN-UI-1b / MFG-UI D4 precedent;
+    // retired again at the flip after the l04 suite).
+    internal const string LogisticsInstructionsProfile = "logistics-instructions";
 
     internal static string Configure(
         IServiceCollection services,
@@ -67,6 +71,10 @@ internal static class C01E2eShellCapabilityActivation
                 ReplaceExactCounterpartyProvider<C01E2eShellCapabilityProvider>(services);
                 services.AddSingleton<IShellCapabilityProvider, C01E2eAccountingShellCapabilityProvider>();
                 return ShellCapabilityRegistryAuthorities.C01DisposableAccountingPeriodsAndJournalsV1;
+            case LogisticsInstructionsProfile:
+                ReplaceExactCounterpartyProvider<C01E2eShellCapabilityProvider>(services);
+                services.AddSingleton<IShellCapabilityProvider, C01E2eLogisticsInstructionsShellCapabilityProvider>();
+                return ShellCapabilityRegistryAuthorities.C01DisposableLogisticsInstructionsV1;
             default:
                 throw new InvalidOperationException(
                     "C-01 disposable capability profili tanınmıyor.");
@@ -307,6 +315,22 @@ internal sealed class C01E2eCariListDetailShellCapabilityProvider : IShellCapabi
 internal sealed class C01E2eAccountingShellCapabilityProvider : IShellCapabilityProvider
 {
     private readonly AccountingShellCapabilityProvider _source = new();
+
+    public string Owner => _source.Owner;
+
+    public string ContractVersion => _source.ContractVersion;
+
+    public IReadOnlyCollection<ShellCapabilityDeclaration> GetDeclarations() =>
+        Array.AsReadOnly(_source.GetDeclarations()
+            .Select(declaration => declaration with { ImplementationAvailable = true })
+            .ToArray());
+}
+
+// log-staged (LOG-4b): Logistics's own declarations, only their availability opened; ids, routes, context, scope and
+// permissions stay the owner's.
+internal sealed class C01E2eLogisticsInstructionsShellCapabilityProvider : IShellCapabilityProvider
+{
+    private readonly LogisticsShellCapabilityProvider _source = new();
 
     public string Owner => _source.Owner;
 
