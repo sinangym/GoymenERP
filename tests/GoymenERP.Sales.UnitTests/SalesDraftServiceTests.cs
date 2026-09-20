@@ -317,7 +317,7 @@ public sealed class SalesDraftServiceTests
         var approved = await world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("k-approve"));
         Assert.Equal(("Approved", SalesDraftApiV1.Rev0), (approved.Detail.Draft.ApprovalState, approved.Detail.Draft.Revision));
 
-        var revised = await world.Service().ReviseCommercialAsync(created.Draft.Id, Revision("4", new(lineId, "13.00", KgUnit, "5")), Metadata("k-r1"));
+        var revised = await world.Service().ReviseCommercialAsync(created.Draft.Id, Revision("4", new SalesDraftLineCommercialV1(lineId, "13.00", KgUnit, "5")), Metadata("k-r1"));
 
         Assert.False(revised.IsReplay);
         Assert.Equal(("Rev.1", "Preparing", "5", "13.00", KgUnit, "5"), (revised.Detail.Draft.Revision, revised.Detail.Draft.ApprovalState,
@@ -333,13 +333,13 @@ public sealed class SalesDraftServiceTests
         var item = Assert.Single(history.Items);
         Assert.Equal(("Rev.0", Actor, Actor, "12.50", "5", 1), (item.Revision, item.SubmittedBy, item.ApprovedBy, item.Lines[0].UnitPrice, item.Lines[0].DiscountPercent, item.Lines.Count));
         // The SAME key resent is the replay of the stored result — never the "no change" refusal (ADR-011 §4/§8).
-        var replay = await world.Service().ReviseCommercialAsync(created.Draft.Id, Revision("4", new(lineId, "13.00", KgUnit, "5")), Metadata("k-r1"));
+        var replay = await world.Service().ReviseCommercialAsync(created.Draft.Id, Revision("4", new SalesDraftLineCommercialV1(lineId, "13.00", KgUnit, "5")), Metadata("k-r1"));
         Assert.True(replay.IsReplay);
         Assert.Equal("Rev.1", replay.Detail.Draft.Revision);
         Assert.Single(world.Store.Archived);
         // A DIFFERENT key with the values the draft already has is the refusal, on `lines`, and archives nothing more.
         var same = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ReviseCommercialAsync(created.Draft.Id,
-            Revision("5", new(lineId, "13.00", KgUnit, "5")), Metadata("k-r2")));
+            Revision("5", new SalesDraftLineCommercialV1(lineId, "13.00", KgUnit, "5")), Metadata("k-r2")));
         Assert.Equal((422, "validation_failed", "lines", SalesRuleCodes.RevisionNoChange), (same.Status, same.Code, Assert.Single(same.Errors).Field, Assert.Single(same.Errors).Code));
         Assert.Single(world.Store.Archived);
     }
@@ -353,30 +353,30 @@ public sealed class SalesDraftServiceTests
 
         world.Authority.Denied.Add(PricePermission);
         var forbidden = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ReviseCommercialAsync(created.Draft.Id,
-            Revision("2", new(a, "1", KgUnit, null), new(b)), Metadata("k-r1")));
+            Revision("3", new SalesDraftLineCommercialV1(a, "1", KgUnit, null), new SalesDraftLineCommercialV1(b)), Metadata("k-r1")));
         Assert.Equal((403, "forbidden"), (forbidden.Status, forbidden.Code));
         Assert.DoesNotContain(world.Store.Transitions, item => item.Command == SalesDraftCommands.ReviseCommercialV1);
         world.Authority.Denied.Clear();
 
         // The 422 names the line by its index in THIS request (the second draft line sent first).
         var scale = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ReviseCommercialAsync(created.Draft.Id,
-            Revision("2", new(b, "1.005", KgUnit, null), new(a)), Metadata("k-r2")));
+            Revision("3", new SalesDraftLineCommercialV1(b, "1.005", KgUnit, null), new SalesDraftLineCommercialV1(a)), Metadata("k-r2")));
         Assert.Equal((422, "lines[0].unitPrice", SalesRuleCodes.PriceScaleExceeded), (scale.Status, Assert.Single(scale.Errors).Field, Assert.Single(scale.Errors).Code));
         var mismatch = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ReviseCommercialAsync(created.Draft.Id,
-            Revision("2", new(a, "1", KgUnit, null)), Metadata("k-r3")));
+            Revision("3", new SalesDraftLineCommercialV1(a, "1", KgUnit, null)), Metadata("k-r3")));
         Assert.Equal((422, "lines", SalesRuleCodes.RevisionLinesMismatch), (mismatch.Status, Assert.Single(mismatch.Errors).Field, Assert.Single(mismatch.Errors).Code));
 
         // Pending: decide first. The refusal is terminal for the key and replays with the first correlation.
-        await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("k-submit"));
+        await world.Service().SubmitDraftAsync(created.Draft.Id, Command("3"), Metadata("k-submit"));
         var pending = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ReviseCommercialAsync(created.Draft.Id,
-            Revision("3", new(a, "1", KgUnit, null), new(b)), Metadata("k-r4")));
+            Revision("4", new SalesDraftLineCommercialV1(a, "1", KgUnit, null), new SalesDraftLineCommercialV1(b)), Metadata("k-r4")));
         Assert.Equal((409, SalesDraftProblemCodesV1.StateConflict, false), (pending.Status, pending.Code, pending.IsReplay));
         var again = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ReviseCommercialAsync(created.Draft.Id,
-            Revision("3", new(a, "1", KgUnit, null), new(b)), Metadata("k-r4")));
+            Revision("4", new SalesDraftLineCommercialV1(a, "1", KgUnit, null), new SalesDraftLineCommercialV1(b)), Metadata("k-r4")));
         Assert.Equal((409, SalesDraftProblemCodesV1.StateConflict, true, "synthetic-correlation"), (again.Status, again.Code, again.IsReplay, again.OriginalCorrelationId));
         // Malformed version and unknown draft answer as the state commands do.
-        Assert.Equal(400, (await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ReviseCommercialAsync(created.Draft.Id, Revision("x", new(a)), Metadata("k-r5")))).Status);
-        Assert.Equal(404, (await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ReviseCommercialAsync(Guid.NewGuid(), Revision("1", new(a)), Metadata("k-r6")))).Status);
+        Assert.Equal(400, (await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ReviseCommercialAsync(created.Draft.Id, Revision("x", new SalesDraftLineCommercialV1(a)), Metadata("k-r5")))).Status);
+        Assert.Equal(404, (await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ReviseCommercialAsync(Guid.NewGuid(), Revision("1", new SalesDraftLineCommercialV1(a)), Metadata("k-r6")))).Status);
         Assert.Equal(404, (await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().GetDraftRevisionsAsync(Guid.NewGuid()))).Status);
     }
 

@@ -451,7 +451,13 @@ public sealed class SalesOrderDraft
         RequireVersion(expectedVersion);
         var actor = RequireActor(actorId);
         ArgumentNullException.ThrowIfNull(inputs);
-        RequireDraft();
+        // Not RequireDraft(): that guard closes the lines of an approved draft (DEC-SAL-002), and THIS command is the
+        // revision that decision points to. Only the lifecycle state is required here; the approval axis is decided below.
+        if (State != SalesDraftState.Draft)
+        {
+            throw new SalesRuleException(SalesRuleCodes.DraftNotDraft, "Yalnız taslak değiştirilebilir.");
+        }
+
         if (ApprovalState == InternalApprovalState.PendingApproval)
         {
             throw StateConflict("Onay bekleyen taslağın fiyatı değiştirilmez; önce karar verilir.");

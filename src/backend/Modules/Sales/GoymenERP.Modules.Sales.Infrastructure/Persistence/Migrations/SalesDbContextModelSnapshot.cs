@@ -229,6 +229,125 @@ partial class SalesDbContextModelSnapshot : ModelSnapshot
             });
         });
 
+        modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftRevisionLineRow", b =>
+        {
+            b.Property<Guid>("CompanyId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<Guid>("DraftId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<int>("Revision")
+                .HasColumnType("int");
+
+            b.Property<int>("LineNo")
+                .HasColumnType("int");
+
+            b.Property<string>("DiscountPercent")
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)");
+
+            b.Property<Guid>("LineId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<Guid>("OrderUnitId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<Guid?>("PriceUnitId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<Guid>("ProductId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<string>("ProductVersion")
+                .IsRequired()
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)");
+
+            b.Property<string>("QuantityText")
+                .IsRequired()
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)");
+
+            b.Property<string>("UnitPrice")
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)");
+
+            b.HasKey("CompanyId", "DraftId", "Revision", "LineNo");
+
+            b.HasIndex("CompanyId", "DraftId", "Revision", "LineId")
+                .IsUnique()
+                .HasDatabaseName("UX_DraftRevisionLines_LineId");
+
+            b.ToTable("DraftRevisionLines", "sales", t =>
+                {
+                    t.HasCheckConstraint("CK_DraftRevisionLines_Identity", "[LineNo] >= 1 AND [LineId] <> '00000000-0000-0000-0000-000000000000' AND [ProductId] <> '00000000-0000-0000-0000-000000000000' AND [OrderUnitId] <> '00000000-0000-0000-0000-000000000000' AND LEN([QuantityText]) > 0");
+
+                    t.HasCheckConstraint("CK_DraftRevisionLines_Price", "([UnitPrice] IS NULL AND [PriceUnitId] IS NULL) OR ([UnitPrice] IS NOT NULL AND [PriceUnitId] IS NOT NULL)");
+                });
+        });
+
+        modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftRevisionRow", b =>
+        {
+            b.Property<Guid>("CompanyId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<Guid>("DraftId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<int>("Revision")
+                .HasColumnType("int");
+
+            b.Property<DateTimeOffset>("ApprovedAtUtc")
+                .HasColumnType("datetimeoffset");
+
+            b.Property<string>("ApprovedBy")
+                .IsRequired()
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)");
+
+            b.Property<DateTimeOffset>("ArchivedAtUtc")
+                .HasColumnType("datetimeoffset");
+
+            b.Property<string>("ArchivedBy")
+                .IsRequired()
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)");
+
+            b.Property<string>("CorrelationId")
+                .IsRequired()
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)");
+
+            b.Property<Guid>("MoneyProfileId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<string>("MoneyProfileVersion")
+                .IsRequired()
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)");
+
+            b.Property<int>("MoneyScale")
+                .HasColumnType("int");
+
+            b.Property<DateTimeOffset>("SubmittedAtUtc")
+                .HasColumnType("datetimeoffset");
+
+            b.Property<string>("SubmittedBy")
+                .IsRequired()
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)");
+
+            b.HasKey("CompanyId", "DraftId", "Revision");
+
+            b.ToTable("DraftRevisions", "sales", t =>
+                {
+                    t.HasCheckConstraint("CK_DraftRevisions_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [Revision] >= 0 AND LEN([SubmittedBy]) > 0 AND LEN([ApprovedBy]) > 0 AND LEN([ArchivedBy]) > 0 AND LEN([CorrelationId]) > 0");
+
+                    t.HasCheckConstraint("CK_DraftRevisions_Money", "[MoneyProfileId] <> '00000000-0000-0000-0000-000000000000' AND LEN([MoneyProfileVersion]) > 0 AND [MoneyScale] >= 0");
+                });
+        });
+
         modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftDeliverySliceRow", b =>
         {
             b.Property<Guid>("CompanyId")
@@ -727,6 +846,25 @@ partial class SalesDbContextModelSnapshot : ModelSnapshot
                 .HasForeignKey("CompanyId", "DraftId")
                 .HasPrincipalKey("CompanyId", "Id")
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftRevisionLineRow", b =>
+        {
+            b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftRevisionRow", null)
+                .WithMany()
+                .HasForeignKey("CompanyId", "DraftId", "Revision")
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired();
+        });
+
+        modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftRevisionRow", b =>
+        {
+            b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftRow", null)
+                .WithMany()
+                .HasForeignKey("CompanyId", "DraftId")
+                .HasPrincipalKey("CompanyId", "Id")
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired();
         });
 
         modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftDeliverySliceRow", b =>
