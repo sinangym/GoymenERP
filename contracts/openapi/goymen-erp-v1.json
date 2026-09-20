@@ -22832,6 +22832,49 @@
           }
         }
       },
+      "BankAccountCard": {
+        "required": [
+          "bankName",
+          "accountType",
+          "branchName",
+          "branchCode",
+          "iban",
+          "accountNumber"
+        ],
+        "type": "object",
+        "properties": {
+          "bankName": {
+            "type": "string"
+          },
+          "accountType": {
+            "type": "string"
+          },
+          "branchName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "branchCode": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "iban": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "accountNumber": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "BankAccountCommandResult": {
         "required": [
           "outcome",
@@ -22911,7 +22954,8 @@
       "BankAccountMasterItem": {
         "required": [
           "account",
-          "isOwnProposal"
+          "isOwnProposal",
+          "card"
         ],
         "type": "object",
         "properties": {
@@ -22920,6 +22964,9 @@
           },
           "isOwnProposal": {
             "type": "boolean"
+          },
+          "card": {
+            "$ref": "#/components/schemas/BankAccountCard"
           }
         }
       },
@@ -22964,7 +23011,9 @@
       "BankAccountProposeRequest": {
         "required": [
           "displayName",
-          "currencyId"
+          "currencyId",
+          "bankName",
+          "accountType"
         ],
         "type": "object",
         "properties": {
@@ -22974,6 +23023,36 @@
           "currencyId": {
             "type": "string",
             "format": "uuid"
+          },
+          "bankName": {
+            "type": "string"
+          },
+          "accountType": {
+            "type": "string"
+          },
+          "branchName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "branchCode": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "iban": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "accountNumber": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
