@@ -271,10 +271,32 @@ sidebar'dan hem L-02 listesinden "Yeni Yükleme Talimatı" gidiyordu.
 noktası olur:** ya sidebar girdisi (listesi ona bağlanmıyorsa) ya listenin kendi birincil bağlantısı
 (bağlanıyorsa) — ikisi birden asla.
 
-Bugünkü durum bu kurala göre: Cari, Ürün ve Sipariş taslağı yalnız sidebar'dan (listeleri bağlanmıyor,
-ihlal yok, dokunulmuyor); Finance'in iki ekranı ve Muhasebe dönem önerisi yalnız listelerinden
-(nav etiketi boş); Logistics tek ihlaldi ve nav etiketi kaldırılarak çözüldü — sayfa içi bağlantı
-kullanıcının zaten bulunduğu bağlamda durduğu için o korundu.
+**Bugünkü durum (ORG'un #367 review'ünde ölçtüğü, benim `678e38d0` üzerinde bağımsız doğruladığım
+hâl — ve bu paragrafın önceki sürümü §4'ün YANLIŞ olduğunu kaydettiği taramanın sonucunu
+yayınlıyordu; düzeltmesi budur):**
+
+| Oluşturma rotası | Sidebar girdisi | Liste bağlantısı | Durum |
+|---|---|---|---|
+| `/cari/yeni` | var | yok | kurala uygun, tek giriş |
+| `/urun/yeni` | var (`Yeni Ürün`) | var — `ProductListPage.tsx:345`, `PRODUCT_LIST_TEXT.createAction` = `Yeni ürün` | **iki giriş — ihlal** |
+| `/satis/siparisler/yeni` | var (`Yeni Sipariş Taslağı`) | var — `SalesDraftListPage.tsx:111`, `ORDER_LIST_TEXT.newDraft` = `Yeni taslak` | **iki giriş — ihlal** |
+| Finance'in iki ekranı, Muhasebe dönem önerisi | yok (nav etiketi boş) | var | kurala uygun |
+| `/lojistik/yukleme-talimatlari/yeni` | kaldırıldı (LOG-4b) | var | çözüldü |
+
+Yani **Logistics tek ihlal değildi**; yalnız literal yol araması ile bulunabilen ihlaldi. Ürün ve
+Sipariş bağlantılarını rota sabitlerinden kuruyor (`PRODUCT_CAPABILITY_ROUTE[…]`, `SALES_ROUTE.create`),
+bu yüzden `/urun/yeni` metnini arayan tarama onları göremezdi — §4'ün anlattığı hatanın ta kendisi.
+
+**u02 ayrıca strict-mode'a açık, Sipariş değil.** Ürün'ün iki adı yalnız büyük/küçük harfte ayrılıyor
+(`Yeni Ürün` / `Yeni ürün`) ve erişilebilir ad eşleşmesi varsayılan olarak harf duyarsızdır: aynı
+sorgu iki bağlantı bulur, l04'ün bir koşu ödediği ihlalin aynısı. Sipariş'in iki adı farklı
+(`Yeni Sipariş Taslağı` / `Yeni taslak`), yani strict-mode patlamaz — ama K5 kuralı **giriş noktası**
+kuralıdır, ad kuralı değil; farklı ad ihlali gizler, kaldırmaz.
+
+**Bu satırlar burada bir tespittir, bir düzeltme emri değil:** `/urun/yeni` ÜRÜN şeridinin,
+`/satis/siparisler/yeni` SİPARİŞ şeridinin dosyalarıdır ve hangi girişin kalacağı (kurala göre:
+listesi bağlanıyorsa liste bağlantısı kalır, nav girdisi **listeden** çıkar ve etiketi boşalır) o
+şeritlerin kendi dilimlerinde uygulanır.
 
 **Kaldıraç etiket DEĞİLDİR — kapasite `NAV_CAPABILITIES`'ten de çıkar.** İlk karar "etiketi boşalt"
 biçimindeydi; uygularken görüldü ki `AppShell`, `NAV_CAPABILITIES` listesini doğrudan nav öğelerine

@@ -3,8 +3,14 @@
 **Kaynak:** Sinan, 19 Eylül 2026 — Issue #66
 [yorum 5738113623](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-5738113623) §4.
 **Kart sahibi:** CARİ (merkezi yazar). **Durum:** öneri; hiçbir grant açılmadı.
-**Ölçüldüğü ağaç:** `main` @ `1c88e904` — o head'de `ErpPermissions` **45** ad kaydediyor
-(5 Critical, 36 yalnız şirket-geneli).
+**Ölçüldüğü ağaç:** `main` @ `1c88e904` — o head'de `ErpPermissions` **45** ad kaydediyordu
+(5 Critical, 36 yalnız şirket-geneli). **Bugün (`main` @ `678e38d0`) 46'dır**: 5 Critical, 37 yalnız
+şirket-geneli. Fark, kart ölçüldükten sonra MFG-ORD ile gelen **`manufacturing.orders.close`**'dur;
+aşağıdaki tabloda satırı yoktur. Eksik satır hiçbir şeyi açmaz — kartın kuralı **önce-reddet**, yani
+tabloda görünmeyen ad kimseye önerilmemiş sayılır — ama bir "45" bir sonraki okuyucuya tablonun
+tam olduğunu söyler, o yüzden sayı burada güncel tutulur. (Ölçüm: `All`/`Critical`/`CompanyWideOnly`
+kümeleri `678e38d0` üzerinde sayıldı; kartın kendisi yeniden ölçülmedi, bu yüzden yukarıdaki ilk
+cümle tarihiyle birlikte duruyor.)
 
 ## Bu kart ne yapar, ne yapmaz
 
