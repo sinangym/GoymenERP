@@ -48,7 +48,14 @@ export function shellFor(companyId: string, revision = 1, capabilities: readonly
   }
 }
 
-type CommandName = 'draftSave' | 'record' | 'reverse' | 'proposeBankAccount' | 'approveBankAccount'
+type CommandName =
+  | 'draftSave'
+  | 'record'
+  | 'reverse'
+  | 'proposeBankAccount'
+  | 'approveBankAccount'
+  | 'proposeBankAccountIbanChange'
+  | 'approveBankAccountIbanChange'
 type ReadName =
   | 'listBankAccounts'
   | 'listSources'
@@ -136,6 +143,10 @@ export function recordingPort(respond: ReadResponder) {
     bankAccountCurrencyCandidates: read('bankAccountCurrencyCandidates') as FinanceReceiptPort['bankAccountCurrencyCandidates'],
     proposeBankAccount: command('proposeBankAccount'),
     approveBankAccount: (scope, key, accountId, approval) => command('approveBankAccount')(scope, key, { accountId, body: approval }),
+    proposeBankAccountIbanChange: (scope, key, accountId, body) =>
+      command('proposeBankAccountIbanChange')(scope, key, { accountId, body }),
+    approveBankAccountIbanChange: (scope, key, accountId, body) =>
+      command('approveBankAccountIbanChange')(scope, key, { accountId, body }),
   }
   return { port, commands, reads }
 }

@@ -380,9 +380,18 @@ export function useReceiptCommand(operation: CommandRequest['operation'], target
 function sendBank(port: FinanceReceiptPort, snapshot: BankAccountSnapshot): Promise<PortReply> {
   const scope = { companyId: snapshot.binding.companyId }
   const { request, key } = snapshot
-  return request.operation === 'bank-account-propose'
-    ? port.proposeBankAccount(scope, key, request.body)
-    : port.approveBankAccount(scope, key, request.accountId, request.body)
+  // A switch rather than a ternary chain: each operation names its own call, so a new one added to
+  // BankAccountRequest cannot silently fall into another operation's branch.
+  switch (request.operation) {
+    case 'bank-account-propose':
+      return port.proposeBankAccount(scope, key, request.body)
+    case 'bank-account-approve':
+      return port.approveBankAccount(scope, key, request.accountId, request.body)
+    case 'bank-account-iban-change':
+      return port.proposeBankAccountIbanChange(scope, key, request.accountId, request.body)
+    case 'bank-account-iban-change-approve':
+      return port.approveBankAccountIbanChange(scope, key, request.accountId, request.body)
+  }
 }
 
 export interface BankAccountCommand {

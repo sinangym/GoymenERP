@@ -59,4 +59,19 @@ export interface FinanceReceiptPort {
     accountId: string,
     body: BankAccountApprovalBody,
   ): Promise<PortReply>
+
+  /** D4: `POST /finance/bank-accounts/{accountId}/iban-change` → `BankAccountCommandResult`. The value waits. */
+  proposeBankAccountIbanChange(
+    scope: FinanceScope,
+    idempotencyKey: string,
+    accountId: string,
+    body: BankAccountIbanChangeBody,
+  ): Promise<PortReply>
+  /** D4: `POST …/iban-change/approval` → `BankAccountCommandResult`. Ö4 against the CHANGE's proposer. */
+  approveBankAccountIbanChange(
+    scope: FinanceScope,
+    idempotencyKey: string,
+    accountId: string,
+    body: BankAccountApprovalBody,
+  ): Promise<PortReply>
 }
