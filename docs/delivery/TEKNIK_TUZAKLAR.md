@@ -131,7 +131,57 @@ doğrulamaz.
 
 ---
 
-## 5. Bir oluşturma ekranına iki giriş noktası
+## 5. Çakışma çözümünde "liste sanılan" kod bloğu
+
+**Belirti.** İki şerit aynı listeye eklediği için bütün çakışmalar birleşim (union) gibi görünüyor;
+script hepsini birleştiriyor; sonuçta **kod iki kez** yazılmış oluyor.
+
+**Bu projede (19 Eylül 2026, iki kez aynı gece).** LOG-4b'nin main merge'ünde
+`OpenApiContractGenerationTests` çakışmalarının hepsi satır listesiydi — biri hariç: operasyon
+sayısı bloğu. Kör birleşim şunu üretti:
+
+```csharp
+Assert.Equal(80, operations.Count);
+Assert.Equal(
+    80,
+Assert.Equal(79, operations.Count);   // ← ikinci kopya, dilin izin verdiği ama anlamsız hâli
+```
+
+Doğrusu tek bir çift ve **birleşmiş belgeden ölçülmüş** sayıydı (81 = main'in 80'i + şeridin bir
+okuması). Aynı aile: `tests/e2e/package.json`'da iki script'in birleşimi, aradaki **virgülü**
+yiyordu.
+
+**Doğru desen.**
+- Çakışmaları script'le çözsen bile **her hunk'ı okuyarak** geç; "kaç satır" değil, "ne" olduğuna bak.
+- Sayı, versiyon, alternation (`a|b|c`) ve tek satırlık tuple/dict'ler **birleşim değildir**; iki
+  tarafı da taşıyan tek bir satır elle yazılır.
+- Çözümden sonra **makineyle sına**: JSON parse et, modülü yükle, sayıyı birleşmiş kaynaktan
+  yeniden ölç; testin beklediği sayıyı çakışmanın iki tarafından biri olarak seçme.
+- Her iki ebeveyn de aynı dosyayı değiştirdiyse, o dosyanın **pin'i hiçbir ebeveynden alınamaz**;
+  birleşmiş dosyadan yeniden ölçülür. Bir merge commit'inde ebeveynlerden biriyle birebir aynı olan
+  pin, kokudur.
+
+---
+
+## 6. "Hiç koşu görünmedi" workflow hakkında bilgi değildir
+
+**Belirti.** Etiket olayı hiçbir şey tetiklemiyor, push'tan sonra da hiç check çıkmıyor; iki tur
+workflow tetikleyicisi araştırılıyor.
+
+**Sebep.** PR main ile **çakışıklı**. GitHub birleşme commit'ini hesaplayamadığı için `pull_request`
+olayları **hiç** koşu yaratmaz. Sorun tetikleyicide değil, PR'ın durumundadır.
+
+**Doğru desen.** Koşu yokluğunu görünce **önce** `mergeable` / `mergeable_state` sor:
+`gh api repos/<o>/<r>/pulls/<n> --jq '[.mergeable,.mergeable_state]'`. `unknown` gelirse GitHub
+hesaplıyordur — bekleme; yerelde `git merge --no-commit --no-ff origin/main` ile kendin ölç. Durumu
+raporla, koşuların varlığından **çıkarım yapma**.
+
+**Bu projede:** #358 iki tur "tetikleyici sorunu" olarak kovalandı; gerçek sebep dirty PR'dı
+(#360 ve #362 aynı merkezi satırlara inmişti).
+
+---
+
+## 7. Bir oluşturma ekranına iki giriş noktası
 
 **Belirti.** Tarayıcı testi strict-mode ihlali veriyor: aynı erişilebilir ada sahip iki bağlantı.
 Ekran okuyucu da aynı rotaya giden iki özdeş bağlantı okuyor.
