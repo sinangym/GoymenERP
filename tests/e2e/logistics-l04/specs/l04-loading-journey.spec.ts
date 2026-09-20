@@ -305,7 +305,11 @@ test('L04-03 the loader records within the remainder; over it is refused; a stal
   await stale.close()
 
   const after = await readInstruction(page, loaderActor, createdId)
-  expect([after.instruction.version, after.lines[0].loaded, after.lines[0].remainingToLoad, after.shares.length]).toEqual(['5', '3.5', '1', 2])
+  // The quantities are the server's own decimal text at the inputs' scale (the same rule as the remainder above: 4.5 − 3.5
+  // answers "1.0", never a canonical "1"); compare them by value, never by a hand-written literal. Version and count stay exact.
+  expect([after.instruction.version, after.shares.length]).toEqual(['5', 2])
+  expect(Number(after.lines[0].loaded)).toBe(3.5)
+  expect(Number(after.lines[0].remainingToLoad)).toBe(1)
 
   // The same load id under a NEW key is the same physical load twice: refused as a duplicate share, nothing recorded.
   const duplicate = await page.request.post(`${env.apiBaseUrl}${INSTRUCTIONS_PATH}/${createdId}/lines/${after.lines[0].lineId}/loads`, {
