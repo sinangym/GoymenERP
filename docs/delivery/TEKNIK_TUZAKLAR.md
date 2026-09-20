@@ -101,7 +101,37 @@ Koordinatör 19 Eylül 2026'da bunu her cross-check için kural yaptı.
 
 ---
 
-## 4. Bir oluşturma ekranına iki giriş noktası
+## 4. Desen aramasından çıkan "yok" cevabı kanıt değildir
+
+**Belirti.** Biri "şu şekilde bir şey yok" diyor, karşı taraf kabul ediyor, sonra bir şerit kodu
+okuyup olanı gösteriyor. Kayda yanlış bir cümle girmiş oluyor.
+
+**Sebep.** `grep` beklediğin şekli kodlar, aradığın şeyi değil. Eşleşme yokluğu, yalnız o desenin
+yokluğudur.
+
+**Bu projede (19 Eylül 2026).** Host'taki Cari adapter'ları sayarken `class Counterparty.*PortV1` ve
+`IsCurrent()` arandı; "dört adapter var, Finance'te bu şekilde bir adapter yok" denildi ve kabul
+edildi. Oysa `CounterpartyFinancePartyAccountPort` (FinanceEndpoints.cs:487) adında `V1` eki
+taşımıyor ve `IsCurrent(context)` parametre alıyor — iki desen de onu asla yakalayamazdı. Doğrusu:
+**beş** adapter var ve Finance aktörü ilk günden beri kontrol ediyor (`IsCurrent(FinanceContext)`,
+yakalanan `ActorId` ve `CompanyId` ile).
+
+**Dikkat: sonuç ayakta kaldı, gerekçe kalmadı.** FİNANS'ın yapacak bir işi yine yoktu — ama bu,
+yöntemin doğru olduğu anlamına gelmez; şanstır. Bir iddianın doğru çıkması, onu elde etme biçimini
+doğrulamaz.
+
+**Doğru desen.**
+- Negatif bir iddiayı **kümesini sayarak** kur: arayüzün tüm implementasyonları, DI'daki tüm
+  kayıtlar, tablonun tüm satırları — adlandırma geleneğini grep'leyerek değil.
+- Yine de grep kullanıyorsan, **hangi deseni** kullandığını ve o desenin aranan şeyi neden
+  yakalaması gerektiğini birlikte söyle. Okuyan, deseni yargılayabilsin.
+- "Yok" cümlesini, "şu deseni aradım, şunu buldum" cümlesinden daha güçlü kurma.
+- **Kodu okuyup grep'i yalanlayan şerit daha güçlü kanıttır.** İtiraz geldiğinde kaynağı kendin aç,
+  doğrula ve kaydı düzelt — ve düzeltmeyi, ilk iddiayı kabul etmiş olanlara da gönder.
+
+---
+
+## 5. Bir oluşturma ekranına iki giriş noktası
 
 **Belirti.** Tarayıcı testi strict-mode ihlali veriyor: aynı erişilebilir ada sahip iki bağlantı.
 Ekran okuyucu da aynı rotaya giden iki özdeş bağlantı okuyor.
