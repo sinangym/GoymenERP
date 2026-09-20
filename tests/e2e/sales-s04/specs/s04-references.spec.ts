@@ -47,6 +47,16 @@ const {
 const deliveryAddressText = 'SENTETIK browser-suite:s04 Sanayi Cad. 1'
 const deliveryContactName = 'SENTETIK browser-suite:s04 Ayşe Yükleme'
 const currencyCode = 'TRY'
+/**
+ * The SEED's own business date, not a number picked here: it mirrors `S04BrowserSeed.BusinessDate` (2026-09-18,
+ * S04BrowserSeed.cs:88). The approved TRY candidate the seed wrote is effective from `TurkishLiraEffectiveFrom`
+ * (2026-09-18, S04BrowserSeed.cs:85) with no end date (`EffectiveThrough: null`, SalesDraftFixtureStore.cs:153), so
+ * the seeded draft already proved TRY valid on this date. Bound: the suite proves the list for THIS date, not the
+ * run's own date (follow-up: exercise the create path on the run's date).
+ */
+const businessDate = '2026-09-18'
+/** The screen's idle rule for the currency select, word for word (salesText references.currencyIdle). */
+const currencyIdleText = 'Para birimleri sipariş tarihine göre listelenir; önce sipariş tarihini girin.'
 const DRAFTS_PATH = '/api/v1/sales/drafts'
 const CONTACT_INFORMATION_PATH = '/api/v1/sales/references/contact-information'
 const CURRENCIES_PATH = '/api/v1/sales/references/currencies'
@@ -164,12 +174,19 @@ test('S04-06 the preparer sees the REAL currency, delivery address and contact o
   for (const answer of accountReads) expect(answer.status()).toBe(200)
   await customer.selectOption(`${realPartyId}|${realCompanyAccountId}`)
 
-  // Currency: the real Settings candidates revalidated for the business date; the approved code is offered.
+  // Currency: the real Settings candidates revalidated for the BUSINESS DATE. Until a date is entered the screen keeps the
+  // select idle and says so (run 35483437287 at 03815a6b: the spec expected TRY on the idle select — the spec's omission,
+  // the screen's rule). The date is the seed's own business date, for which the seed already proved TRY valid.
   await expect(currencySelect(page)).toBeVisible()
   await expect(page.getByLabel('Para birimi')).toBeVisible()
+  await expect(currencySelect(page)).toBeDisabled()
+  await expect(page.getByTestId('sales-currency-status')).toHaveText(currencyIdleText)
+  await page.getByLabel('Sipariş tarihi').fill(businessDate)
+  await expect(currencySelect(page)).toBeEnabled({ timeout: 15_000 })
   await expect(currencySelect(page).locator('option', { hasText: currencyCode })).toHaveCount(1)
   await currencySelect(page).selectOption({ label: currencyCode })
   expect(currencyReads.length, 'the browser read the real currencies reference').toBeGreaterThan(0)
+  expect(currencyReads.some((answer) => new URL(answer.url()).searchParams.get('effectiveOn') === businessDate), 'the read was for the business date').toBe(true)
   for (const answer of currencyReads) expect(answer.status()).toBe(200)
 
   // Delivery address and contact: the real Cari contact information of the chosen account, by text.
