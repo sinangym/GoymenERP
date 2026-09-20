@@ -46,6 +46,11 @@ public sealed class FinancePermissionPort(
         FinanceAction.ReadBankAccounts => ErpPermissions.FinanceBankAccountRead,
         FinanceAction.ProposeBankAccount => ErpPermissions.FinanceBankAccountPropose,
         FinanceAction.ApproveBankAccount => ErpPermissions.FinanceBankAccountApprove,
+        // D4: the same Ö4 names, deliberately. The IBAN change re-enters the EXISTING dual control, so
+        // whoever may propose a card may propose its IBAN change and whoever may approve one may
+        // approve the other. A new name here would be a grant nobody decided.
+        FinanceAction.ProposeBankAccountIbanChange => ErpPermissions.FinanceBankAccountPropose,
+        FinanceAction.ApproveBankAccountIbanChange => ErpPermissions.FinanceBankAccountApprove,
         _ => null,
     };
 

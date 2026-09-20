@@ -24,10 +24,21 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 /// A given IBAN must be structurally valid (<see cref="FinanceIban"/>), which is arithmetic and NOT
 /// proof of ownership — that is Ö4's approval — and no bank datum is derived from it. A currency
 /// change and closing are still not decided and not built.</item>
-/// <item><b>NOT here, deliberately:</b> K2's "an account used for payment or collection must carry an
-/// IBAN". <c>IsUsableForReceipt</c> still derives from approval alone, so a card declaring itself not
-/// transfer-capable would be contradicted by behaviour; the declaration and the derivation are one
-/// change. It also cannot land until #66 5748390243 says what the rows written before K2 mean.</item>
+/// <item><b>Money eligibility (B3, Sinan #66 5750700247):</b> the card DECLARES whether it may move
+/// money, and <c>IsUsableForReceipt</c> derives from that declaration — approval alone no longer makes
+/// an account usable. The declaration has THREE states because the third is the answer's point: a row
+/// written before it exists is <c>Undeclared</c>, not <c>false</c>, and is refused on the money path
+/// while being shown as "beyan tamamlanmamış". Completeness of bank name, type and IBAN does NOT stand
+/// in for the declaration — "Banka adı+tür+IBAN'ın dolu olması bu açık beyanın yerine geçmez" — so
+/// there is no field-completeness route to eligibility anywhere in this file. Declaring eligible brings
+/// K2's IBAN rule with it: such a card without a valid IBAN is refused where it is written.</item>
+/// <item><b>IBAN change (D4, #66 5749046401):</b> changing an approved account's IBAN re-enters Ö4.
+/// The proposed value waits in <c>PendingIban*</c> BESIDE the row and never in <c>Iban</c> until a
+/// different authorized actor approves it, so the approved value the money path reads does not move —
+/// "eski onaylı değer korunur" and "değişen IBAN onaylanmadan yeni para işleminde kullanılamaz" both
+/// hold with no second refusal site. The account is NOT frozen for money while a change is pending:
+/// Sinan's sentence restricts the CHANGED value, not the account, and freezing it would be a
+/// restriction nobody decided.</item>
 /// <item><b>Lifecycle (Ö4, #66 5722637822):</b> a proposal is neither active nor usable; one approval
 /// by an authorized user OTHER than the proposer makes it both. The database refuses an approval by
 /// the proposer too (<c>CK_BankAccounts_Approval</c>).</item>
@@ -61,6 +72,10 @@ public sealed class FinanceBankAccountService(
 {
     public const string ProposeCommand = "finance.bank-account.propose";
     public const string ApproveCommand = "finance.bank-account.approve";
+    // D4: the IBAN change is its own command name, so its idempotency records and replays never
+    // collide with the card's own propose/approve under the same key.
+    public const string ProposeIbanChangeCommand = "finance.bank-account.iban-change.propose";
+    public const string ApproveIbanChangeCommand = "finance.bank-account.iban-change.approve";
     private const string EntityType = "Finance.BankAccount";
     private const int Proposed = 1;
     private const int Approved = 2;
@@ -69,6 +84,8 @@ public sealed class FinanceBankAccountService(
 
     /// <summary>K2's shorter card fields: account type, branch code and account number (column widths).</summary>
     private const int AccountTypeMaximumLength = 64;
+    // D4's reason, bounded like the existing approval reason rather than by a new limit class.
+    private const int ReasonMaximumLength = 500;
 
     private static readonly JsonSerializerOptions Json = FinanceJson.CreateOptions();
 
@@ -140,6 +157,9 @@ public sealed class FinanceBankAccountService(
             // Stored NORMALISED, so the value kept is the value validated — see CardRefusal.
             Iban = request.Iban is null ? null : FinanceIban.Normalize(request.Iban),
             AccountNumber = Held(request.AccountNumber),
+            // B3: a card written from now on always states this, so it is never NULL here. NULL is
+            // reserved for the rows that predate the declaration, and this path cannot produce one.
+            MoneyMovementEligible = request.MoneyMovementEligible,
             Status = Proposed,
             Version = 1,
             ProposedBy = context.ActorId,
@@ -246,6 +266,197 @@ public sealed class FinanceBankAccountService(
     }
 
     /// <summary>
+    /// D4 (Sinan #66 5749046401): propose a new IBAN for an APPROVED account. The value is written
+    /// BESIDE the row, never into <see cref="BankAccountRow.Iban"/>, so the approved value the money
+    /// path reads does not move — that is how "eski onaylı değer korunur" and "değişen IBAN
+    /// onaylanmadan yeni para işleminde kullanılamaz" both hold without a second refusal site.
+    /// <para>
+    /// <b>The account is NOT frozen for money while this waits.</b> Sinan's sentence restricts the
+    /// CHANGED value, not the account, and the old approved value is stated to be preserved. Freezing
+    /// would be a restriction nobody decided — and inventing a restriction is as much fabrication as
+    /// inventing a permission, with the extra hazard that withholding reads as prudence.
+    /// </para>
+    /// <para>
+    /// Replacing a change that is already waiting is allowed and is not a second transition: the
+    /// pending slot holds one proposal, the newest one, and ADR-011 still makes the same key replay.
+    /// </para>
+    /// </summary>
+    public async Task<BankAccountCommandResult> ProposeIbanChangeAsync(FinanceContext context, CommandMetadata metadata,
+        BankAccountIbanChangeProposeRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(metadata);
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (await StartAsync(context, metadata, FinanceAction.ProposeBankAccountIbanChange, request.AccountId, cancellationToken)
+            is { } refused)
+        {
+            return refused;
+        }
+
+        if (request.AccountId == Guid.Empty || !IsCanonical(request.ExpectedVersion))
+        {
+            return Refused(context, CommandOutcome.ValidationFailed, Issue("expectedVersion", "identity_required"));
+        }
+
+        if (!IsCanonical(request.Reason))
+        {
+            return Refused(context, CommandOutcome.ValidationFailed, Issue("reason", "reason_required"));
+        }
+
+        if (request.Reason.Length > ReasonMaximumLength)
+        {
+            return Refused(context, CommandOutcome.ValidationFailed, Issue("reason", "finance_value_does_not_fit"));
+        }
+
+        var proposedIban = FinanceIban.Normalize(request.Iban ?? string.Empty);
+        if (!FinanceIban.IsStructurallyValid(proposedIban))
+        {
+            return Refused(context, CommandOutcome.ValidationFailed, Issue("iban", "iban_invalid"));
+        }
+
+        var payloadHash = PayloadHash(ProposeIbanChangeCommand, request);
+        if (await PriorAsync(context, metadata, FinanceAction.ProposeBankAccountIbanChange, ProposeIbanChangeCommand,
+            payloadHash, cancellationToken) is { } prior)
+        {
+            return prior;
+        }
+
+        var row = await dbContext.BankAccounts.SingleOrDefaultAsync(candidate => candidate.Id == request.AccountId, cancellationToken);
+        if (row is null)
+        {
+            return await TerminalAsync(context, metadata, FinanceAction.ProposeBankAccountIbanChange, ProposeIbanChangeCommand,
+                payloadHash, accountId: null,
+                Refused(context, CommandOutcome.ValidationFailed, Issue("accountId", "bank_account_not_found")),
+                cancellationToken);
+        }
+
+        if (!string.Equals(VersionText(row.Version), request.ExpectedVersion, StringComparison.Ordinal))
+        {
+            return await TerminalAsync(context, metadata, FinanceAction.ProposeBankAccountIbanChange, ProposeIbanChangeCommand,
+                payloadHash, row.Id, Refused(context, CommandOutcome.VersionConflict, Issue("expectedVersion", "version_conflict")),
+                cancellationToken);
+        }
+
+        // An unapproved card has no approved value to preserve: its IBAN is still part of the proposal
+        // its own Ö4 covers, so changing it here would be a second process over the same decision.
+        if (row.Status != Approved)
+        {
+            return Refused(context, CommandOutcome.ValidationFailed, Issue("accountId", "bank_account_not_approved"));
+        }
+
+        // A change to the value already in force is not a change; recording one would put an approval
+        // in front of a human for a difference that does not exist.
+        if (string.Equals(row.Iban, proposedIban, StringComparison.Ordinal))
+        {
+            return Refused(context, CommandOutcome.ValidationFailed, Issue("iban", "iban_unchanged"));
+        }
+
+        var now = timeProvider.GetUtcNow();
+        var versionBefore = row.Version;
+        var before = AccountAudit(row);
+        row.PendingIban = proposedIban;
+        row.PendingIbanProposedBy = context.ActorId;
+        row.PendingIbanProposedAtUtc = now;
+        row.PendingIbanReason = request.Reason;
+        row.UpdatedAtUtc = now;
+        row.Version = checked(row.Version + 1);
+        var result = Succeeded(context, row);
+        AddCommand(context, metadata, ProposeIbanChangeCommand, payloadHash, row.Id, result, now);
+        Audit(context, metadata, envelopes.Propose, row.Id, "finance.bank-account.iban-change-proposed.v1",
+            "ProposeIbanChange", versionBefore, row.Version, before, AccountAudit(row), approvalContextJson: null,
+            "Finans banka hesabı IBAN değişikliği önerisi (onaya kadar para yolunda kullanılmaz)");
+        return await SaveAsync(context, metadata, FinanceAction.ProposeBankAccountIbanChange, ProposeIbanChangeCommand, payloadHash,
+            result, cancellationToken);
+    }
+
+    /// <summary>
+    /// D4: approve the waiting IBAN, by a single authorized actor OTHER than the one who proposed the
+    /// change (Ö4). Only here does the new value enter <see cref="BankAccountRow.Iban"/>, and the audit
+    /// carries the old value, the new one, the reason and both actors — Sinan's "audit'te eski/yeni,
+    /// sebep ve aktör görünür".
+    /// <para>
+    /// Ö4 compares against the CHANGE's proposer, not the card's original proposer: the decision being
+    /// double-checked is this change. Someone who proposed the card years ago and did not propose this
+    /// change is a legitimate approver of it.
+    /// </para>
+    /// </summary>
+    public async Task<BankAccountCommandResult> ApproveIbanChangeAsync(FinanceContext context, CommandMetadata metadata,
+        BankAccountIbanChangeApproveRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(metadata);
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (await StartAsync(context, metadata, FinanceAction.ApproveBankAccountIbanChange, request.AccountId, cancellationToken)
+            is { } refused)
+        {
+            return refused;
+        }
+
+        if (request.AccountId == Guid.Empty || !IsCanonical(request.ExpectedVersion))
+        {
+            return Refused(context, CommandOutcome.ValidationFailed, Issue("expectedVersion", "identity_required"));
+        }
+
+        var payloadHash = PayloadHash(ApproveIbanChangeCommand, request);
+        if (await PriorAsync(context, metadata, FinanceAction.ApproveBankAccountIbanChange, ApproveIbanChangeCommand,
+            payloadHash, cancellationToken) is { } prior)
+        {
+            return prior;
+        }
+
+        var row = await dbContext.BankAccounts.SingleOrDefaultAsync(candidate => candidate.Id == request.AccountId, cancellationToken);
+        if (row is null)
+        {
+            return await TerminalAsync(context, metadata, FinanceAction.ApproveBankAccountIbanChange, ApproveIbanChangeCommand,
+                payloadHash, accountId: null,
+                Refused(context, CommandOutcome.ValidationFailed, Issue("accountId", "bank_account_not_found")),
+                cancellationToken);
+        }
+
+        if (!string.Equals(VersionText(row.Version), request.ExpectedVersion, StringComparison.Ordinal))
+        {
+            return await TerminalAsync(context, metadata, FinanceAction.ApproveBankAccountIbanChange, ApproveIbanChangeCommand,
+                payloadHash, row.Id, Refused(context, CommandOutcome.VersionConflict, Issue("expectedVersion", "version_conflict")),
+                cancellationToken);
+        }
+
+        if (row.PendingIban is not { } pendingIban || row.PendingIbanProposedBy is not { } pendingBy
+            || row.PendingIbanReason is not { } pendingReason)
+        {
+            return Refused(context, CommandOutcome.ValidationFailed, Issue("accountId", "iban_change_not_proposed"));
+        }
+
+        if (string.Equals(pendingBy, context.ActorId, StringComparison.Ordinal))
+        {
+            return Refused(context, CommandOutcome.Denied, Issue("approval", "finance_approver_is_proposer"));
+        }
+
+        var now = timeProvider.GetUtcNow();
+        var versionBefore = row.Version;
+        var before = AccountAudit(row);
+        var previousIban = row.Iban;
+        row.Iban = pendingIban;
+        row.PendingIban = null;
+        row.PendingIbanProposedBy = null;
+        row.PendingIbanProposedAtUtc = null;
+        row.PendingIbanReason = null;
+        row.UpdatedAtUtc = now;
+        row.Version = checked(row.Version + 1);
+        var result = Succeeded(context, row);
+        AddCommand(context, metadata, ApproveIbanChangeCommand, payloadHash, row.Id, result, now);
+        var approval = JsonSerializer.Serialize(
+            new { rule = "O4", proposedBy = pendingBy, approvedBy = context.ActorId, previousIban, newIban = pendingIban, reason = pendingReason },
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        Audit(context, metadata, envelopes.Approve, row.Id, "finance.bank-account.iban-change-approved.v1",
+            "ApproveIbanChange", versionBefore, row.Version, before, AccountAudit(row), approval,
+            "Finans banka hesabı IBAN değişikliği onayı (öneren≠onaylayan; eski değer audit'te korunur)");
+        return await SaveAsync(context, metadata, FinanceAction.ApproveBankAccountIbanChange, ApproveIbanChangeCommand, payloadHash,
+            result, cancellationToken);
+    }
+
+    /// <summary>
     /// F-04's list: every account of the company, proposals included, each with whether the caller
     /// proposed it. Read authority as for the picker; the order is the picker's.
     /// </summary>
@@ -267,7 +478,11 @@ public sealed class FinanceBankAccountService(
         return new ReadResult<BankAccountMasterPage>(ReadOutcome.Found, new BankAccountMasterPage(context.CompanyId,
             [.. rows.Select(row => new BankAccountMasterItem(View(row),
                 string.Equals(row.ProposedBy, context.ActorId, StringComparison.Ordinal),
-                Card(row)))]));
+                Card(row),
+                // D4, mirroring IsOwnProposal: a screen may offer the pending change's approval to
+                // someone else. The server refuses the proposer's own approval regardless.
+                row.PendingIbanProposedBy is { } pendingBy
+                && string.Equals(pendingBy, context.ActorId, StringComparison.Ordinal)))]));
     }
 
     /// <summary>
@@ -367,19 +582,55 @@ public sealed class FinanceBankAccountService(
 
     internal static string VersionText(long version) => version.ToString(CultureInfo.InvariantCulture);
 
-    /// <summary>Approved is the only active and usable state; a proposal is never selectable.</summary>
+    /// <summary>
+    /// Approved is the only ACTIVE state; a proposal is never selectable. Usable for money is narrower
+    /// still, and B3 is what narrows it: approval says a human accepted the card, the DECLARATION says
+    /// the card is for money movement, and both are required. This is the ONE site that decides
+    /// usability — the money paths (<c>ManualReceiptV1</c>'s Record and <c>DraftReadContext</c>) already
+    /// refuse on <c>!IsUsableForReceipt</c>, so narrowing here reaches them without a new refusal point.
+    /// <para>
+    /// <b>Note what is NOT in this expression:</b> no bank name, no account type, no IBAN. Eligibility
+    /// comes from the declaration alone. Reading it from field completeness would be the option Sinan
+    /// rejected — "Banka adı+tür+IBAN'ın dolu olması bu açık beyanın yerine geçmez" — arriving by the
+    /// back door, and a card whose declaration is NULL stays unusable however complete it looks.
+    /// </para>
+    /// </summary>
     private static BankAccountView View(BankAccountRow row) =>
         new BankAccountView(row.Id, row.CompanyId, row.CurrencyId, row.DisplayName,
-            IsActive: row.Status == Approved, IsUsableForReceipt: row.Status == Approved, VersionText(row.Version));
+            IsActive: row.Status == Approved,
+            IsUsableForReceipt: row.Status == Approved && row.MoneyMovementEligible == true,
+            VersionText(row.Version));
 
     /// <summary>
     /// K2's card as stored. A row written before K2 carries NULL where K2 calls a value mandatory; that
-    /// is shown as it is, never as a blank or a placeholder, because what those rows mean is the open
-    /// question #66 5748390243 and a projection is not the place to answer it.
+    /// is shown as it is, never as a blank or a placeholder — B3 decided what those rows MEAN for the
+    /// money path, and it deliberately did not invent values for their fields.
     /// </summary>
     private static BankAccountCard Card(BankAccountRow row) =>
         new BankAccountCard(row.BankName ?? string.Empty, row.AccountType ?? string.Empty,
-            row.BranchName, row.BranchCode, row.Iban, row.AccountNumber);
+            row.BranchName, row.BranchCode, row.Iban, row.AccountNumber, Eligibility(row), PendingIbanChange(row));
+
+    /// <summary>
+    /// B3's three states. NULL is <see cref="BankAccountMoneyEligibility.Undeclared"/> and never
+    /// <see cref="BankAccountMoneyEligibility.NotEligible"/>: the first is a card nobody has answered
+    /// for, the second is a card someone answered "no" for, and Sinan asks for the first to be shown
+    /// specifically. Both are refused on the money path; only the reason differs, and the user is told
+    /// which one applies.
+    /// </summary>
+    private static BankAccountMoneyEligibility Eligibility(BankAccountRow row) => row.MoneyMovementEligible switch
+    {
+        true => BankAccountMoneyEligibility.Eligible,
+        false => BankAccountMoneyEligibility.NotEligible,
+        null => BankAccountMoneyEligibility.Undeclared,
+    };
+
+    /// <summary>D4: the waiting change, or null when there is none. The four members move together.</summary>
+    private static BankAccountPendingIbanChange? PendingIbanChange(BankAccountRow row) =>
+        row.PendingIban is null || row.PendingIbanProposedBy is null || row.PendingIbanProposedAtUtc is null
+        || row.PendingIbanReason is null
+            ? null
+            : new BankAccountPendingIbanChange(row.PendingIban, row.PendingIbanProposedBy,
+                row.PendingIbanProposedAtUtc.Value, row.PendingIbanReason);
 
     /// <summary>A holdable field: absent and blank are the same thing, and neither is invented.</summary>
     private static string? Held(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
@@ -432,10 +683,14 @@ public sealed class FinanceBankAccountService(
             return Issue("accountNumber", "finance_value_does_not_fit");
         }
 
-        // Absent is allowed: K2 requires that an IBAN-less special credit or term account be definable.
+        // Absent is allowed ONLY for a card that does not declare itself money-eligible: K2 requires an
+        // IBAN-less special credit or term account to be definable, and equally requires that "ödeme/
+        // tahsilatta kullanılacak hesapta IBAN zorunlu". B3 is what lets both be true at once — the
+        // declaration says which kind of card this is, so the rule can attach to the declaration instead
+        // of guessing from the data.
         if (request.Iban is null)
         {
-            return null;
+            return request.MoneyMovementEligible ? Issue("iban", "iban_required_for_money_movement") : null;
         }
 
         var normalized = FinanceIban.Normalize(request.Iban);
