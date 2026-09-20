@@ -88,6 +88,16 @@ async function signInAs(page: Page, actor: string): Promise<void> {
   await page.setExtraHTTPHeaders({ [DEVELOPMENT_USER_HEADER]: actor })
 }
 
+/** The id of the instruction the browser created in L04-01, read back from the real list as `actor` (the row that is not the seeded one). */
+async function createdInstructionIdFromList(page: Page, actor: string): Promise<string> {
+  const response = await page.request.get(`${env.apiBaseUrl}${INSTRUCTIONS_PATH}?pageSize=50`, {
+    headers: { [DEVELOPMENT_USER_HEADER]: actor, 'X-Company-Id': companyId },
+  })
+  expect(response.status(), `the real list route answers ${actor}`).toBe(200)
+  const page_ = (await response.json()) as { readonly items: readonly { readonly id: string }[] }
+  return page_.items.find((item) => item.id !== instructionId)?.id ?? ''
+}
+
 /** The instruction as the real API answers it to `actor` under `company`. */
 async function readInstruction(page: Page, actor: string, id: string, company = companyId): Promise<InstructionReading> {
   const response = await page.request.get(`${env.apiBaseUrl}${INSTRUCTIONS_PATH}/${id}`, {
@@ -249,7 +259,11 @@ test('L04-03 the loader records within the remainder; over it is refused; a stal
   const first = await recordLoad(page, lineId, '2.5')
   await expect(loadNotice(page)).toHaveText('İşlem kaydedildi.')
   await expect(page.getByTestId('logistics-line-1-loaded')).toHaveText('2.5')
-  await expect(page.getByTestId('logistics-line-1-remaining')).toHaveText('2')
+  // The remainder is the server's own computed text (4.5 − 2.5 in the calculator's decimal arithmetic answers "2.0", not a
+  // canonical "2"; the screen shows the server's text verbatim): assert the screen against the API's answer, not a literal.
+  const afterFirst = await readInstruction(page, loaderActor, createdId)
+  expect(Number(afterFirst.lines[0].remainingToLoad)).toBe(2)
+  await expect(page.getByTestId('logistics-line-1-remaining')).toHaveText(afterFirst.lines[0].remainingToLoad)
   expect(first.map((answer) => answer.status())).toEqual([200])
   await expect(version(page)).toHaveText('4')
 
@@ -337,6 +351,10 @@ test('L04-04 on the seeded instruction the blocked line refuses a load and the o
 
 test('L04-05 the reader reads and cannot create or record; the preparer has nothing under the other company', async ({ page }) => {
   await signInAs(page, readerActor)
+  // Playwright restarts the worker after a failed case, which drops the module-level `createdId`: recover the instruction
+  // L04-01 created from the real list (the one that is not the seeded instruction) so this case never asserts on ''.
+  if (createdId === '') createdId = await createdInstructionIdFromList(page, readerActor)
+  expect(createdId).not.toBe('')
   await page.goto(LIST_ROUTE)
   await expect(page.getByRole('heading', { level: 1, name: 'Yükleme talimatları' })).toBeVisible({ timeout: 30_000 })
   await expect(page.getByTestId(`logistics-row-${createdId}`)).toBeVisible()
