@@ -57,7 +57,11 @@ public sealed class FinanceBankAccountTests
     {
         using var context = Context();
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddBankAccounts", StringComparison.Ordinal));
-        Assert.Equal("20260919110000_RecordTerminalCommandResults", context.Database.GetMigrations().Last());
+        // The NEWEST migration is pinned by name on purpose: adding one to this module must be a deliberate
+        // edit here, not a silent append. FIN-T05a moved it from RecordTerminalCommandResults to AddMoneyEvents
+        // (the money event's table); `FinanceDraftPersistenceModelTests` is where that migration's own shape is
+        // measured. If this line needs changing again, the new migration is what needs reading first.
+        Assert.Equal("20260920090000_AddMoneyEvents", context.Database.GetMigrations().Last());
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
