@@ -9,7 +9,6 @@ which keeps the script directory off sys.path).
 Stage 2: each suite runs under one capability profile, each with its own compose file:
 - "c01-list-only": the canonical C-01 stack, validated by the canonical validator unchanged;
 - "cari-staged": the same disposable envelope plus C01E2e__Profile=cari-list-detail;
-- "acc-staged": the same disposable envelope plus C01E2e__Profile=accounting-periods-and-journals;
 - "log-staged": the same disposable envelope plus C01E2e__Profile=logistics-instructions;
 - "normal": the same stack without the envelope, so the API serves its normal shell authority.
 A suite compose model is mapped back to the canonical shape by exactly its profile's documented
@@ -41,7 +40,7 @@ SUITES = ("smoke", "c03", "org03", "u02", "s03", "mfg", "fin01", "s04", "acc01",
 READ_ONLY_SUITES = ("smoke", "c03")
 _SUITE_PATTERN = re.compile(r"^[a-z0-9]+$")
 
-PROFILES = ("c01-list-only", "cari-staged", "normal", "acc-staged", "log-staged")
+PROFILES = ("c01-list-only", "cari-staged", "normal", "log-staged")
 SUITE_PROFILES = {
     "smoke": "c01-list-only",
     "c03": "cari-staged",
@@ -56,9 +55,9 @@ SUITE_PROFILES = {
     "fin01": "normal",
     # S-04 (SİPARİŞ, SALES-A1): the approval journey on the normal host over a gated synthetic draft.
     "s04": "normal",
-    # ACC-01 (FİNANS, ACC-V0b): the period, journal and posting-queue screens opened only inside the
-    # disposable envelope, until the flip after this suite is green.
-    "acc01": "acc-staged",
+    # ACC-01 (FİNANS): the Accounting screens are published on the normal host (ACC-V0c, after the acc01
+    # acceptance on the staged profile), so the suite runs there and the acc-staged envelope is retired.
+    "acc01": "normal",
     # L-04 (SİPARİŞ, LOG-4b): the loading-instruction screens opened only inside the disposable envelope, until the
     # flip after this suite is green.
     "l04": "log-staged",
@@ -68,14 +67,12 @@ PROFILE_COMPOSE_FILES = {
     "cari-staged": "infra/docker-compose.browser-cari-staged.yml",
     "log-staged": "infra/docker-compose.browser-log-staged.yml",
     "normal": "infra/docker-compose.browser-normal.yml",
-    "acc-staged": "infra/docker-compose.browser-acc-staged.yml",
 }
 PROFILE_SUITE_LABELS = {
     "c01-list-only": "C01-REAL-BROWSER-E2E-V1",
     "cari-staged": "BROWSER-SUITE-CARI-STAGED-V1",
     "log-staged": "BROWSER-SUITE-LOG-STAGED-V1",
     "normal": "BROWSER-SUITE-NORMAL-V1",
-    "acc-staged": "BROWSER-SUITE-ACC-STAGED-V1",
 }
 CANONICAL_SUITE_LABEL = PROFILE_SUITE_LABELS["c01-list-only"]
 CARI_STAGED_PROFILE_KEY = "C01E2e__Profile"
@@ -83,7 +80,6 @@ CARI_STAGED_PROFILE_VALUE = "cari-list-detail"
 # Each envelope profile's exact C01E2e__Profile value (C01E2eShellCapabilityActivation's profiles).
 STAGED_PROFILE_VALUES = {
     "cari-staged": CARI_STAGED_PROFILE_VALUE,
-    "acc-staged": "accounting-periods-and-journals",
     "log-staged": "logistics-instructions",
 }
 # The disposable C-01 capability envelope, as the canonical compose file sets it on the API.

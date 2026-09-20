@@ -155,13 +155,6 @@ internal static class ShellCapabilityRegistryAuthorities
     internal const string C01DisposableCariListDetailV1 =
         "sha256:LM81M4d4tKOqR9OaKvZM_uT5HQIcoffoTMEzMFH4atg";
 
-    // The disposable "accounting-periods-and-journals" profile (BROWSER-CI acc-staged, ACC-V0b): the C-01
-    // list-only Counterparty provider plus Accounting's own seven declarations with only their availability
-    // opened (M-07 list and propose, its approve and close controls, M-04 list and detail, M-01). Computed by
-    // the ComputeRevision reproduction, independently re-checked (DATA ONLY); pinned by a test against
-    // ComputeCandidateRevision.
-    internal const string C01DisposableAccountingPeriodsAndJournalsV1 =
-        "sha256:meLXKsKx_dZtvOZvMdkrHM6Ih-U8TeadJumWY4vfcuY";
     // The disposable "logistics-instructions" profile (BROWSER-CI log-staged, LOG-4b): the C-01 list-only Counterparty
     // provider plus Logistics's own three declarations with only their availability opened (L-02 list, L-03 new,
     // L-02-DETAIL). Computed by the ComputeRevision reproduction; pinned by a test against ComputeCandidateRevision.
@@ -173,4 +166,10 @@ internal static class ShellCapabilityRegistryAuthorities
 
     // The disposable "finance-bank-accounts-and-drafts" profile (fin-staged, FIN-UI-1b #332,
     // sha256:EsjgjVRX…) is retired: Finance is published on the normal host (FIN-UI-1c) and fin01 runs there.
+
+    // The disposable "accounting-periods-and-journals" profile (acc-staged, ACC-V0b, sha256:meLXKsKx…) is
+    // retired: Accounting is published on the normal host (ACC-V0c) and acc01 runs there. Note what the
+    // two hosts do NOT share — the envelope opened all SEVEN declarations, while the normal host publishes
+    // six and leaves the journal detail staged, so this value was never the published host's and could not
+    // have been reused for it.
 }
