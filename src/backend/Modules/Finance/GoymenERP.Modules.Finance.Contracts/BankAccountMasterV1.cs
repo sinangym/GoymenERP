@@ -48,6 +48,21 @@ public sealed record BankAccountProposeRequest(
 // Approve: Ö4 (#66 5722637822) — a single authorized person other than the one who proposed it.
 public sealed record BankAccountApproveRequest(Guid AccountId, string ExpectedVersion);
 
+/// <summary>
+/// D4: propose a new IBAN for an already-approved account. The value does not take effect here — it
+/// waits for a different authorized actor's approval, which is what "yeni değer Ö4 öneren≠onaylayan
+/// sürecine girer" asks for.
+/// <para>
+/// <paramref name="Reason"/> is required because Sinan's acceptance says the audit must show "eski/yeni,
+/// sebep ve aktör": a reason that may be omitted is a reason the audit cannot show. Its length bound
+/// follows the existing approval-reason precedent rather than inventing a new limit class.
+/// </para>
+/// </summary>
+public sealed record BankAccountIbanChangeProposeRequest(Guid AccountId, string ExpectedVersion, string Iban, string Reason);
+
+/// <summary>D4: approve the waiting IBAN. Ö4 — never the actor who proposed the change.</summary>
+public sealed record BankAccountIbanChangeApproveRequest(Guid AccountId, string ExpectedVersion);
+
 public sealed record BankAccountCommandResult(CommandOutcome Outcome, BankAccountView? Resource,
     bool IsReplay, string OriginalCorrelationId, IReadOnlyList<ValidationIssue> Issues);
 
@@ -127,6 +142,14 @@ public interface IFinanceBankAccountMaster
 
     Task<BankAccountCommandResult> ApproveAsync(FinanceContext context, CommandMetadata metadata,
         BankAccountApproveRequest request, CancellationToken cancellationToken);
+
+    // D4: the IBAN change's own Ö4 pair. Separate actions with their own idempotency records and audit
+    // events, on the EXISTING propose/approve permission names — the same dual control, applied to a change.
+    Task<BankAccountCommandResult> ProposeIbanChangeAsync(FinanceContext context, CommandMetadata metadata,
+        BankAccountIbanChangeProposeRequest request, CancellationToken cancellationToken);
+
+    Task<BankAccountCommandResult> ApproveIbanChangeAsync(FinanceContext context, CommandMetadata metadata,
+        BankAccountIbanChangeApproveRequest request, CancellationToken cancellationToken);
 
     // Under the read authority: the company's accounts for F-04, proposals included.
     Task<ReadResult<BankAccountMasterPage>> ListMasterAsync(FinanceContext context, CancellationToken cancellationToken);

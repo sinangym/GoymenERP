@@ -35,7 +35,16 @@ public sealed record ReverseRequest(Guid SourceId, string ExpectedVersion, DateO
 public sealed record SourceListRequest(string? Cursor);
 public sealed record SourceDetailRequest(Guid SourceId);
 
-public enum FinanceAction { ReadBankAccounts, ReadSources, ReadAmount, SaveDraft, Record, Reverse, ProposeBankAccount, ApproveBankAccount }
+// D4 (#66 5749046401) adds ProposeBankAccountIbanChange and ApproveBankAccountIbanChange. They are
+// separate ACTIONS — they carry their own idempotency records and audit envelopes — but they map onto
+// the EXISTING finance.bank-account.propose/.approve permission NAMES, because D4 says the changed
+// value "Ö4 öneren≠onaylayan sürecine girer": the same dual control, applied to a change. Minting new
+// permission names would be granting authority nobody approved.
+public enum FinanceAction
+{
+    ReadBankAccounts, ReadSources, ReadAmount, SaveDraft, Record, Reverse, ProposeBankAccount, ApproveBankAccount,
+    ProposeBankAccountIbanChange, ApproveBankAccountIbanChange,
+}
 public enum PermissionDecision { Unavailable, Denied, Allowed }
 
 public enum ReadOutcome { Unavailable, Denied, NotFound, Found }
