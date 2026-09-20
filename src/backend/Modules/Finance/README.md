@@ -20,7 +20,7 @@ contract `GoymenERP.Modules.Finance.Contracts` (#258, #261). The contract's own 
 | Part | What |
 |---|---|
 | `FinanceDbContext` | Schema `finance`. `ReceiptDrafts` and `Commands` are tenant tables: filtered by the server-resolved company and write-guarded (no delete, no company change, allowed fields only). Audit's sidecar is written in the same save |
-| `ReceiptDraftService` | `IManualReceiptService.DraftSaveAsync`, `ListAuthorizedAsync` (FIN-T04b) and `DetailAuthorizedAsync`. `RecordAsync` since FIN-T05a (below; refused until Q1); `Reverse` answers `Unavailable` (FIN-T06) |
+| `ReceiptDraftService` | `IManualReceiptService.DraftSaveAsync`, `ListAuthorizedAsync` (FIN-T04b) and `DetailAuthorizedAsync`. `RecordAsync` since FIN-T05a (below; the period follows `occurredOn`); `Reverse` answers `Unavailable` (FIN-T06) |
 | Migration | `20260918200000_InitialFinanceDrafts` (hand-written; a unit test pins snapshot == model) |
 | `FinanceModuleExtensions` | DbContext registration and the migrate initializer. The host does not call it yet |
 | `FinanceBankAccountService` | FS0: the bank account master (`IFinanceBankAccountMaster`) and its authorized reader (`IFinanceBankAccountReader`); see below |
@@ -134,14 +134,28 @@ contract `GoymenERP.Modules.Finance.Contracts` (#258, #261). The contract's own 
 - **ADR-011 §8:** a save that loses a race (a unique key or the row version) keeps nothing tracked and reads the key afresh: if another caller of the same key won, its record is this answer too, as a replay; only a race that left the key empty is `concurrent_change` (409).
 - **Shell (published, FIN-UI-1c):** `Shell/FinanceShellCapabilityProvider` declares F-02's list, draft and detail routes, F-04's list and propose routes and the approval as a control of the list, all `ImplementationAvailable: true` since the flip after the FIN-01 browser acceptance (#332). A screen reaches an actor only with its own narrow Finance permission (real-SQL grant matrix: `FinanceShellCapabilitySqlServerRelationalAcceptanceTests`); no grant is seeded. One screen id per route, as the registry requires: F-02 and F-04 (the catalog's ids) for the lists, F-02-NEW, F-02-DETAIL and F-04-NEW for the others; the approval keeps F-04. `FinanceShellCapabilityRegistryTests` runs it through the real registry. The host registers it with its shell authority (central).
 
-## FIN-T05a: Record of a realized manual bank receipt (card #66 5743678389) — PREPARATION, refused until Q1
+## FIN-T05: Record of a realized manual bank receipt (card #66 5743678389)
 
-> **Runtime status: every Record is refused and nothing is stored.** Q1 — which date decides a recorded receipt's
-> period (#66 5745134466) — is open, so the only registered period rule (`UndecidedFinanceRecordPeriodRule`) reads
-> nothing and answers Unavailable; `RecordAsync` answers 422 `ValidationFailed` with
-> `period: finance_period_rule_unavailable`, before any write. It is a definite refusal (not an outage 503, which the
-> screen would treat as an unknown outcome to resend) and not the key's answer. This slice is **not a finance
-> delivery**: Q1's answer changes ONE binding (which date, read through Accounting's period port), not the command.
+> **Which date decides the period: `occurredOn`** — Sinan's K1 (#66 `5748258299`, 20 September 2026, closing
+> `5745134466`). `valueOn` is the value date and does not move the period; `recordedAtUtc` is only the server's audit
+> moment, so a back-dated event recorded today stays in its own period. A closed period goes to controlled correction:
+> no silent date change, no automatic reopening.
+>
+> The mapping lives in ONE host class (`OccurredOnFinanceRecordPeriodRule`), not in this module and not in Finance's
+> shared contract — deliberately, so the decision stays this source's date mapping instead of becoming a rule every
+> accounting source inherits. The host also composes `AccountingPeriodStatusPort`, which reads the period covering a
+> date under the CALLER's own `accounting.periods.read`. A persona that records definitive entries therefore needs
+> that name; who holds it is a human grant decision (#66 `5748296481`).
+>
+> **Two refusals that must not be collapsed:** a period that is closed, proposed or absent answers 422
+> `finance_period_not_open` ("decided, and the answer is no"); a rule that could not decide — none registered, the
+> grant missing, or the context changed mid-read — answers 422 `finance_period_rule_unavailable` ("could not decide").
+> Both are definite refusals, not an outage 503 that a screen would treat as an unknown outcome to resend, and neither
+> is the idempotency key's answer.
+>
+> **Still open:** the Record control's capability (`finance.receipts.record`) is declared by no provider yet, because
+> its authority revision is central; until that round the screen never offers Record. FIN-T05's number format is also
+> unanswered, so the source keeps showing its own labelled reference.
 
 - **Command:** `POST /api/v1/finance/manual-receipts/{sourceId}/record`, body the #258 `RecordRequest` (`draftId` must be
   the route's `sourceId`, else 400), `Idempotency-Key`; answered like the save (200 / 422 / 409; 403 / 503 code-less).

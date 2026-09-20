@@ -92,7 +92,7 @@ public static class FinanceEndpoints
     /// platform problems. A malformed or foreign list cursor is 400.</item>
     /// </list>
     /// Permission is not a route policy: the services ask the Finance permission port afresh at every
-    /// fence (#276), so a revocation in flight is seen. Record exists since FIN-T05a (refused until Q1); Reverse has no route (FIN-T06).
+    /// fence (#276), so a revocation in flight is seen. Record exists since FIN-T05a and decides its period from occurredOn (K1, #66 5748258299); Reverse has no route (FIN-T06).
     /// </summary>
     private static void MapManualReceiptEndpoints(IEndpointRouteBuilder endpoints)
     {
@@ -154,8 +154,9 @@ public static class FinanceEndpoints
             .ProducesErpServiceUnavailable();
 
         // FIN-T05a: the Record of a realized manual bank receipt (card #66 5743678389): one money event, exactly once,
-        // under the narrow Record name (Ö4). The route's source id and the body's draftId name the same source. Until Q1
-        // (#66 5745134466) names the period date every Record is a 422 finance_period_rule_unavailable, before any write.
+        // under the narrow Record name (Ö4). The route's source id and the body's draftId name the same source. The
+        // period follows occurredOn (K1, #66 5748258299); a closed period is a 422 finance_period_not_open and a rule
+        // that could not decide is a 422 finance_period_rule_unavailable — different answers, both before any write.
         endpoints.MapPost(ManualReceiptsPath + "/{sourceId:guid}/record", async (
                 Guid sourceId,
                 HttpContext httpContext,

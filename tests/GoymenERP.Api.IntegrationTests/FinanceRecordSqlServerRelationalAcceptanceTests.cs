@@ -20,7 +20,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// <summary>
 /// FIN-T05a against a REAL SQL Server: the Record of a realized manual bank receipt (card #66 5743678389).
 /// <para>
-/// Q1 — which date decides a recorded receipt's period (#66 5745134466) — is OPEN, so the product's only period rule
+/// Q1 was answered by Sinan's K1 (#66 5748258299): occurredOn decides. The module's fallback rule
 /// decides nothing and every Record is refused (<see cref="Undecided_period_rule_refuses_every_record_and_stores_nothing"/>).
 /// The other cases inject <see cref="SyntheticOpenPeriodRule"/>, a TEST INPUT that answers "open" for any date: it
 /// proves the one-event write, the ADR-011 answers and the race, NOT a period policy. Owner ports (bank account, party
@@ -333,7 +333,7 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
 
         /// <summary>
         /// A service scope. By default its period rule is the <see cref="SyntheticOpenPeriodRule"/> test input;
-        /// <paramref name="productRule"/> uses the product's only rule, which decides nothing while Q1 is open.
+        /// <paramref name="productRule"/> uses the module's fallback rule, which decides nothing and refuses.
         /// </summary>
         public ServiceScope Service(Guid company, Owners owners, string? actor = null, string? correlation = null,
             bool productRule = false, IFinanceRecordPeriodRule? rule = null)
@@ -466,7 +466,8 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
         public ValueTask DisposeAsync() => dbContext.DisposeAsync();
     }
 
-    /// <summary>TEST INPUT: answers "open" for any date. Not a period policy — Q1 (#66 5745134466) decides the date.</summary>
+    /// <summary>TEST INPUT: answers "open" for any date. Not a period policy — the product's rule (K1, #66 5748258299)
+    /// is what the case below measures against real Accounting periods.</summary>
     private sealed class SyntheticOpenPeriodRule : IFinanceRecordPeriodRule
     {
         public Task<RecordPeriodAnswer> CheckAsync(FinanceContext context, DateOnly occurredOn, DateOnly? valueOn,

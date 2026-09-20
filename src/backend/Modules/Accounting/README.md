@@ -108,10 +108,11 @@ About re-drive:
   rejecting an unapproved proposal. Ö4 names only the approval; the withdraw/reject question is
   NEEDS-BUSINESS #66 5742097485. Until it is answered, a wrong proposal keeps its dates.
 - The period store refuses a period that overlaps another period of the company, whatever its status.
-- **Open for Finance (NEEDS-BUSINESS, card FIN-T05 #66 5743678389 Q1):** which of a Finance record's dates
-  decides its period (the transaction date `occurredOn` or the recording day). Ö5 separates the dates but does
-  not map them to the period. Accounting's own journals carry an explicit accounting date; nothing here picks
-  one for Finance.
+- **Answered for Finance (Sinan's K1, #66 5748258299, closing 5745134466):** a definitive manual bank receipt's
+  period follows its transaction date `occurredOn`. Accounting does NOT hold that mapping: `IAccountingPeriodStatusPortV1`
+  answers only "the period covering this date is open / not open / absent", and never learns which of a caller's dates
+  was handed to it. The mapping is one host class, so no other accounting source inherits it. Accounting's own
+  journals keep carrying their explicit accounting date; nothing here picks a date for another module.
 - **Ö2 rule for the first HTTP amount input (FIN-T05 / ACC-V1):** the amount TEXT is validated lexically
   (Settings' `ExactPositiveDecimalV1`) before it is converted, because a `decimal` parse rounds past about
   28 significant digits. Today no Accounting route takes an amount; journal amounts arrive in-process as

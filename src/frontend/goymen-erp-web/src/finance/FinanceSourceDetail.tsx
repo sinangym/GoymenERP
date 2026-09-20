@@ -74,7 +74,7 @@ function conflictedVersion(state: AttemptState): string | null {
 /**
  * `offerRecord` (FIN-T05a): the Record control, offered only when the caller holds the Record control's capability
  * (`finance.receipts.record`). No provider declares it until FIN-T05's central round, so the mounted screen does not
- * offer it yet; and until Q1 names the period date the server refuses every Record anyway.
+ * offer it yet. The server decides the period from `occurredOn` (K1) and refuses definitively when it must.
  * `offerReverse`: Reverse has no route (FIN-T06); the HTTP port would only answer a local `Unavailable`, which must
  * never look like a sent command. `offerRecordReverse` turns both on (component tests of the actions).
  */

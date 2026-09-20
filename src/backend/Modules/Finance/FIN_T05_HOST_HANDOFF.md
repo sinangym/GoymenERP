@@ -4,8 +4,9 @@
 **Source:** Sinan's K1, #66 `5748258299` (20 September 2026), which closes `5745134466`.
 
 The decision is implemented on this branch; what is missing is the composition, and `Program.cs` is
-yours. Two registrations, both **scoped**, both **before** `AddFinanceModule(...)` — the module's own
-registration is `TryAdd`, so an earlier one wins and the undecided fallback then does nothing.
+yours. Two registrations, both **scoped**, both **before** `AddFinanceServices(...)` — the module's own
+registration is `TryAdd` (it tests the SERVICE TYPE only), so an earlier one wins and the undecided fallback then
+does nothing. **DONE** in `7a9fe94c`, with the ordering written down in `Program.cs` where it could be undone.
 
 ```csharp
 // FIN-T05 (Sinan's K1, #66 5748258299): a definitive manual bank receipt's period is decided by its

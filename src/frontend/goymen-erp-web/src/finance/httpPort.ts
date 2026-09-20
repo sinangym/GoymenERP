@@ -25,8 +25,9 @@
  * No answer at all is `no-reply`, an UNKNOWN outcome the command hook retries with the same key.
  *
  * Record (FIN-T05a): `POST …/manual-receipts/{draftId}/record` with the #258 `RecordRequest`, answered like every
- * command. Until Q1 names the period date the server refuses every Record (422 `finance_period_rule_unavailable`),
- * and the control is not offered anyway (no capability is declared). Reverse has no route (FIN-T06): it answers an
+ * command. The server decides the period from `occurredOn` (K1) and answers a definite 422 when it refuses —
+ * `finance_period_not_open` for a closed period, `finance_period_rule_unavailable` when it could not decide. The
+ * control is not offered yet anyway: no provider declares its capability. Reverse has no route (FIN-T06): it answers an
  * explicit local `Unavailable`, never a success and never a request to a guessed URL.
  *
  * The company is only the verified shell company in `X-Company-Id`; it is never put into a body.

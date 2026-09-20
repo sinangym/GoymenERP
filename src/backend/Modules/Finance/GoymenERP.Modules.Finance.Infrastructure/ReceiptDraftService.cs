@@ -381,9 +381,12 @@ public sealed class ReceiptDraftService(
     /// <item><b>At record time</b> the owners are read again: the bank account (approved, usable, same currency), the
     /// party account (active) and the Settings money profile (in effect, same profile, the stored amount within its
     /// scale — Ö2, never rounded).</item>
-    /// <item><b>Period (Ö5):</b> <see cref="IFinanceRecordPeriodRule"/>. Q1 (which date decides) is open, so the only
-    /// rule answers Unavailable and every Record is refused with <c>finance_period_rule_unavailable</c>: nothing below
-    /// runs in the product until Q1 is answered.</item>
+    /// <item><b>Period (Ö5):</b> <see cref="IFinanceRecordPeriodRule"/>. Which date decides was answered by Sinan's
+    /// K1 (#66 <c>5748258299</c>, closing <c>5745134466</c>): <c>occurredOn</c>. The host registers the rule that reads
+    /// Accounting's period port under the CALLER's own <c>accounting.periods.read</c>; this module does not see
+    /// Accounting and does not map the date itself. A rule that could not decide — none registered, or the period
+    /// owner unreadable — refuses with <c>finance_period_rule_unavailable</c>, which is NOT
+    /// <c>finance_period_not_open</c>; either way nothing below runs.</item>
     /// <item><b>One save:</b> the source turns Recorded (its version moves once), ONE <c>MoneyEvents</c> row, the
     /// command record and the audit event. A second event for the same source is refused by the unique index even to a
     /// lost race. The bank inflow and the customer credit are reads of that one row; no allocation, journal or
@@ -527,8 +530,8 @@ public sealed class ReceiptDraftService(
             return Refused(context, CommandOutcome.ValidationFailed, [.. issues]);
         }
 
-        // Ö5: recorded only in an OPEN period. Which date decides is Q1 (#66 5745134466); until it is answered the rule
-        // decides nothing and this refuses, before any write.
+        // Ö5: recorded only in an OPEN period. Which date decides is Sinan's K1 (#66 5748258299): occurredOn. Both
+        // dates are handed over because the mapping belongs to the rule, not here; a refusal lands before any write.
         var now = timeProvider.GetUtcNow();
         var period = await _periodRule.CheckAsync(context, row.OccurredOn, row.ValueOn, now, cancellationToken);
         if (await FenceAsync(context, FinanceAction.Record, row.Id, cancellationToken) is { } afterPeriod)

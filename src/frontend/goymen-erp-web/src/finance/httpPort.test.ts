@@ -146,7 +146,7 @@ describe('record and reverse', () => {
 
     const reply = await createHttpFinancePort().record(SCOPE, 'key-r', { draftId, expectedVersion: '3' })
 
-    // Until Q1 names the period date the server refuses every Record; the refusal is a definite body, not an unknown.
+    // A refused Record is a definite body (here the rule could not decide), never an unknown outcome to resend.
     expect(reply).toEqual({ kind: 'body', body: refused })
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toBe(`${API_BASE}${MANUAL_RECEIPTS_PATH}/${draftId}/record`)

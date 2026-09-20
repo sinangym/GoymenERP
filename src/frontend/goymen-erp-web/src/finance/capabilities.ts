@@ -27,8 +27,8 @@ export const FINANCE_CAPABILITY = {
   bankAccountsApprove: 'finance.bank-accounts.approve',
   /**
    * F-02 — the Record control of the detail (not a route; FIN-T05a). No provider declares it yet: the declaration and
-   * its authority revision are central (FIN-T05's round, after Q1 names the period date), so `hasCapability` answers
-   * false and the control is never offered before then.
+   * its authority revision are central, so `hasCapability` answers false and the control is never offered before that
+   * round — which is a separate slice from K1, the decision that gave the server its period rule.
    */
   receiptsRecord: 'finance.receipts.record',
 } as const
