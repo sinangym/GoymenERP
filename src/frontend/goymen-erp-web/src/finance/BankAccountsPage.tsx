@@ -18,7 +18,12 @@ import { Link } from 'react-router'
 import { StateBlock } from '../shell/StateBlock'
 import { useShellState } from '../shell/shellContext'
 import { hasCapability } from '../shell/shellState'
-import { decodeBankAccountMasterPage, decodeCurrencyCandidates, type BankAccountMasterItem } from './bankAccountContract'
+import {
+  decodeBankAccountMasterPage,
+  decodeCurrencyCandidates,
+  type BankAccountCard,
+  type BankAccountMasterItem,
+} from './bankAccountContract'
 import { isBankFrozen } from './bankAccountCommand'
 import {
   APPROVE,
@@ -28,7 +33,17 @@ import {
   APPROVE_CONFIRM,
   APPROVE_CONFIRM_TEXT,
   APPROVE_CONFIRM_TITLE,
+  BANK_CARD,
   BANK_COLUMN,
+  BANK_ELIGIBILITY,
+  BANK_IBAN_CHANGE_APPROVE,
+  BANK_IBAN_CHANGE_LINK,
+  BANK_PENDING_IBAN_NOTICE,
+  BANK_PENDING_IBAN_OWN,
+  BANK_PENDING_IBAN_TITLE,
+  BANK_UNDECLARED_HINT,
+  bankPendingIban,
+  bankPendingIbanReason,
   BANK_MASTER_EMPTY,
   BANK_MASTER_NOTICE,
   BANK_MASTER_SUBJECT,
@@ -38,6 +53,16 @@ import {
   BANK_STATE_APPROVED,
   BANK_STATE_PENDING,
   currencyFallback,
+  IBAN_CHANGE_APPROVED,
+  IBAN_CHANGE_ERROR,
+  IBAN_CHANGE_NEW,
+  IBAN_CHANGE_NOTICE,
+  IBAN_CHANGE_PROPOSED,
+  IBAN_CHANGE_REASON,
+  IBAN_CHANGE_REASON_HINT,
+  IBAN_CHANGE_REPLAYED,
+  IBAN_CHANGE_SUBMIT,
+  IBAN_CHANGE_TITLE,
 } from './bankAccountText'
 import { FINANCE_CAPABILITY, FINANCE_ROUTE } from './capabilities'
 import { CommandAttemptPanel } from './CommandAttemptPanel'
@@ -69,9 +94,9 @@ export function BankAccountsPage() {
       ) : list.state.data.items.length === 0 ? (
         <StateBlock state={{ kind: 'empty-no-data' }} subject={BANK_MASTER_EMPTY} />
       ) : canPropose ? (
-        <AccountTableWithCodes items={list.state.data.items} canApprove={canApprove} onSettled={list.refetch} />
+        <AccountTableWithCodes items={list.state.data.items} canApprove={canApprove} canPropose onSettled={list.refetch} />
       ) : (
-        <AccountTable items={list.state.data.items} codes={null} canApprove={canApprove} onSettled={list.refetch} />
+        <AccountTable items={list.state.data.items} codes={null} canApprove={canApprove} canPropose={false} onSettled={list.refetch} />
       )}
     </section>
   )
@@ -81,6 +106,7 @@ export function BankAccountsPage() {
 function AccountTableWithCodes(props: {
   readonly items: readonly BankAccountMasterItem[]
   readonly canApprove: boolean
+  readonly canPropose: boolean
   readonly onSettled: () => void
 }) {
   const candidates = useFinanceRead(
@@ -100,11 +126,13 @@ function AccountTable({
   items,
   codes,
   canApprove,
+  canPropose,
   onSettled,
 }: {
   readonly items: readonly BankAccountMasterItem[]
   readonly codes: ReadonlyMap<string, string> | null
   readonly canApprove: boolean
+  readonly canPropose: boolean
   readonly onSettled: () => void
 }) {
   return (
@@ -119,16 +147,57 @@ function AccountTable({
           </tr>
         </thead>
         <tbody>
-          {items.map(({ account, isOwnProposal }) => (
-            <tr key={account.id} data-account-state={account.isActive ? 'approved' : 'pending'}>
-              <th scope="row">{account.displayName}</th>
+          {items.map(({ account, isOwnProposal, card, isOwnPendingIbanProposal }) => (
+            <tr
+              key={account.id}
+              data-account-state={account.isActive ? 'approved' : 'pending'}
+              data-money-eligibility={card.moneyEligibility}
+            >
+              <th scope="row">
+                {account.displayName}
+                <CardLine card={card} />
+              </th>
               <td>{codes?.get(account.currencyId) ?? currencyFallback(account.currencyId)}</td>
-              <td>{account.isActive ? BANK_STATE_APPROVED : BANK_STATE_PENDING}</td>
+              <td>
+                <p data-testid={`bank-${account.id}-state`}>{account.isActive ? BANK_STATE_APPROVED : BANK_STATE_PENDING}</p>
+                {/*
+                  B3: the declaration is its own sentence beside the approval state, never merged into
+                  it. Approved-and-undeclared is a real combination — the card exists and is not for
+                  money — and one line saying "onaylı" would hide exactly that.
+                */}
+                <p data-testid={`bank-${account.id}-eligibility`}>{BANK_ELIGIBILITY[card.moneyEligibility]}</p>
+                {card.moneyEligibility === 'Undeclared' ? (
+                  <p className={styles.hint}>{BANK_UNDECLARED_HINT}</p>
+                ) : null}
+                {card.pendingIbanChange ? (
+                  <div data-testid={`bank-${account.id}-pending-iban`}>
+                    <p>{BANK_PENDING_IBAN_TITLE}</p>
+                    <p>{bankPendingIban(card.pendingIbanChange.iban)}</p>
+                    <p>{bankPendingIbanReason(card.pendingIbanChange.reason)}</p>
+                    <p className={styles.hint}>{BANK_PENDING_IBAN_NOTICE}</p>
+                  </div>
+                ) : null}
+              </td>
               <td>
                 {account.isActive ? null : isOwnProposal ? (
                   <span>{BANK_OWN_PROPOSAL}</span>
                 ) : canApprove ? (
                   <ApproveControl accountId={account.id} name={account.displayName} version={account.version} onSettled={onSettled} />
+                ) : null}
+                {/*
+                  D4: the change's own Ö4, offered to someone other than the person who proposed it.
+                  The server refuses a self-approval regardless; this only avoids offering a control
+                  that cannot succeed.
+                */}
+                {account.isActive && card.pendingIbanChange ? (
+                  isOwnPendingIbanProposal ? (
+                    <span>{BANK_PENDING_IBAN_OWN}</span>
+                  ) : canApprove ? (
+                    <IbanChangeApproveControl accountId={account.id} version={account.version} onSettled={onSettled} />
+                  ) : null
+                ) : null}
+                {account.isActive && !card.pendingIbanChange && canPropose ? (
+                  <IbanChangeProposeControl accountId={account.id} version={account.version} onSettled={onSettled} />
                 ) : null}
               </td>
             </tr>
@@ -209,6 +278,179 @@ function ApproveControl({
           {APPROVE}
         </button>
       )}
+      <CommandAttemptPanel command={command} />
+    </div>
+  )
+}
+
+/**
+ * K2's card beneath the account's name. An empty mandatory text is a row written before K2 — it is
+ * said as "Girilmemiş" rather than left blank, because a blank cell reads as "nothing to say" and
+ * this cell has something to say. The IBAN is shown as stored; nothing is masked here, since
+ * reaching this list already requires the narrow bank-account read.
+ */
+function CardLine({ card }: { readonly card: BankAccountCard }) {
+  const text = (value: string) => (value.trim().length === 0 ? BANK_CARD.missing : value)
+  return (
+    <p className={styles.hint}>
+      {`${BANK_CARD.bank}: ${text(card.bankName)} · ${BANK_CARD.type}: ${text(card.accountType)} · `}
+      {`${BANK_CARD.iban}: ${card.iban ?? BANK_CARD.noIban}`}
+    </p>
+  )
+}
+
+/**
+ * D4: propose a new IBAN for an approved account. The form is on the row rather than its own screen
+ * because it needs nothing the row does not already have, and a new route would need a capability
+ * registration for what is a control of this list.
+ *
+ * The IBAN's STRUCTURE is not judged here — the checksum is the server's `FinanceIban`, and a second
+ * copy on the screen would be the same rule written twice. This only requires that a value and a
+ * reason were entered at all; the server decides whether the value is an IBAN.
+ */
+function IbanChangeProposeControl({
+  accountId,
+  version,
+  onSettled,
+}: {
+  readonly accountId: string
+  readonly version: string
+  readonly onSettled: () => void
+}) {
+  const command = useBankAccountCommand('bank-account-iban-change', accountId)
+  const [open, setOpen] = useState(false)
+  const [iban, setIban] = useState('')
+  const [reason, setReason] = useState('')
+  const [error, setError] = useState<keyof typeof IBAN_CHANGE_ERROR | null>(null)
+  const reread = useRef<string | null>(null)
+  const { state } = command
+
+  useEffect(() => {
+    const settledKey =
+      state.phase === 'succeeded' || (state.phase === 'refused' && state.reason === 'version-conflict')
+        ? state.snapshot.key
+        : null
+    if (settledKey !== null && reread.current !== settledKey) {
+      reread.current = settledKey
+      onSettled()
+    }
+  }, [state, onSettled])
+
+  if (state.phase === 'succeeded') {
+    return <p role="status">{state.replayed ? IBAN_CHANGE_REPLAYED : IBAN_CHANGE_PROPOSED}</p>
+  }
+
+  const frozen = isBankFrozen(state)
+  if (!open || frozen) {
+    return (
+      <div>
+        <button type="button" disabled={frozen || !command.available} onClick={() => setOpen(true)}>
+          {BANK_IBAN_CHANGE_LINK}
+        </button>
+        <CommandAttemptPanel command={command} />
+      </div>
+    )
+  }
+
+  return (
+    <div role="group" aria-labelledby={`finance-iban-change-${accountId}`}>
+      <p id={`finance-iban-change-${accountId}`} className={styles.attemptTitle}>
+        {IBAN_CHANGE_TITLE}
+      </p>
+      <p>{IBAN_CHANGE_NOTICE}</p>
+      <div className={styles.field}>
+        <label htmlFor={`finance-iban-change-value-${accountId}`}>{IBAN_CHANGE_NEW}</label>
+        <input
+          id={`finance-iban-change-value-${accountId}`}
+          value={iban}
+          onChange={(event) => setIban(event.target.value)}
+        />
+      </div>
+      <div className={styles.field}>
+        <label htmlFor={`finance-iban-change-reason-${accountId}`}>{IBAN_CHANGE_REASON}</label>
+        <input
+          id={`finance-iban-change-reason-${accountId}`}
+          value={reason}
+          aria-describedby={`finance-iban-change-reason-hint-${accountId}`}
+          onChange={(event) => setReason(event.target.value)}
+        />
+        <p id={`finance-iban-change-reason-hint-${accountId}`} className={styles.hint}>
+          {IBAN_CHANGE_REASON_HINT}
+        </p>
+      </div>
+      {error ? <p className={styles.error}>{IBAN_CHANGE_ERROR[error]}</p> : null}
+      <div className={styles.actions}>
+        <button
+          type="button"
+          disabled={!command.available}
+          onClick={() => {
+            const next =
+              iban.trim().length === 0 ? 'ibanRequired' : reason.trim().length === 0 ? 'reasonRequired' : null
+            setError(next)
+            if (next !== null) return
+            command.submit({
+              operation: 'bank-account-iban-change',
+              accountId,
+              body: { expectedVersion: version, iban: iban.trim(), reason: reason.trim() },
+            })
+          }}
+        >
+          {IBAN_CHANGE_SUBMIT}
+        </button>
+        <button type="button" onClick={() => setOpen(false)}>
+          {APPROVE_CANCEL}
+        </button>
+      </div>
+      <CommandAttemptPanel command={command} />
+    </div>
+  )
+}
+
+/** D4: approve the waiting IBAN. Ö4 is the server's; this control is simply not offered to its proposer. */
+function IbanChangeApproveControl({
+  accountId,
+  version,
+  onSettled,
+}: {
+  readonly accountId: string
+  readonly version: string
+  readonly onSettled: () => void
+}) {
+  const command = useBankAccountCommand('bank-account-iban-change-approve', accountId)
+  const reread = useRef<string | null>(null)
+  const { state } = command
+
+  useEffect(() => {
+    const settledKey =
+      state.phase === 'succeeded' || (state.phase === 'refused' && state.reason === 'version-conflict')
+        ? state.snapshot.key
+        : null
+    if (settledKey !== null && reread.current !== settledKey) {
+      reread.current = settledKey
+      onSettled()
+    }
+  }, [state, onSettled])
+
+  if (state.phase === 'succeeded') {
+    return <p role="status">{state.replayed ? IBAN_CHANGE_REPLAYED : IBAN_CHANGE_APPROVED}</p>
+  }
+
+  const frozen = isBankFrozen(state)
+  return (
+    <div>
+      <button
+        type="button"
+        disabled={frozen || !command.available}
+        onClick={() =>
+          command.submit({
+            operation: 'bank-account-iban-change-approve',
+            accountId,
+            body: { expectedVersion: version },
+          })
+        }
+      >
+        {BANK_IBAN_CHANGE_APPROVE}
+      </button>
       <CommandAttemptPanel command={command} />
     </div>
   )
