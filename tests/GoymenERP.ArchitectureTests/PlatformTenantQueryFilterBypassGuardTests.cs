@@ -663,7 +663,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // an empty DraftRevisions rolls back freely, and 51049 is used by no other module (counted across
                 // src/backend). Forward fix, the AddDraftApproval (51045) pattern.
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20260920073846_AddDraftRevisions.cs"] =
-                    new("b3ce29d5714f32b9f6251badaa957889b6de254eabf04efcc647e4d83f5243bd",
+                    new("d2ec4a9b1f6fbe736ee18da1898ded863cfc3486c8bcb6b81923d6ec9ea893bf",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // ACC-V0a: the Down's only raw SQL is Accounting's module refusal (51048, coordinator-assigned) while any
