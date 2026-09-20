@@ -151,6 +151,20 @@ Doğrusu tek bir çift ve **birleşmiş belgeden ölçülmüş** sayıydı (81 =
 okuması). Aynı aile: `tests/e2e/package.json`'da iki script'in birleşimi, aradaki **virgülü**
 yiyordu.
 
+**Çok hunk'lu bir merge çözümü, her satır bir ebeveynden gelse bile YENİ KODDUR.** 19 Eylül gecesi
+LOG-4b'nin 24 hunk'lık çözümünde üçünde şerit tarafı, açılışı ortak bağlamda kalan bir bloğun
+İÇİNDE başlıyordu; birleştirme her birinde tek bir token yuttu: bir sınıfın gövdesi ve kapanış
+`}`'ı, iki `/**`. Sonuç: C# ve TSX **derlenmiyordu** — ama contract suite 84/84, pin audit 87 ve
+OpenAPI küme-eşitliği kanıtı hepsi YEŞİLDİ, çünkü hiçbiri derleme yapmıyor. Yerel kapıların
+sessizliği, ağacın ayakta olduğu anlamına gelmez.
+
+**Bu yüzden zorunlu adım (yuva da araç zinciri de gerektirmez):** çözümden sonra merge'ün dokunduğu
+**her** dosyada parantez/ayraç dengesini ölç. Ve ölçeni **kalibre et**: ham bir denge sayacı, regex
+literal'lerini (`/…\)/g`), verbatim string'leri ve yorumdaki kesme işaretlerini bozukluk sanır.
+Doğrusu: yorumları ve literal'leri soy, sonra bir dosyayı **yalnız** burada dengesizse VE bir
+ebeveynde dengeliyse bildir. Bu kalibrasyon, aynı ağaçta 29 "sorunu" 0 bulguya + 4 "sayaç okuyamıyor"
+satırına indirdi; bozuk ağaçta ise tam olarak o üç gerçek kırığı buldu.
+
 **Doğru desen.**
 - Çakışmaları script'le çözsen bile **her hunk'ı okuyarak** geç; "kaç satır" değil, "ne" olduğuna bak.
 - Sayı, versiyon, alternation (`a|b|c`) ve tek satırlık tuple/dict'ler **birleşim değildir**; iki
