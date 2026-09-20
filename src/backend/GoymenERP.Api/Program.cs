@@ -108,9 +108,17 @@ builder.Services.AddFinancePersistence(
 //
 // BEFORE AddFinanceServices() on purpose: that method ends with
 // TryAddSingleton<IFinanceRecordPeriodRule, UndecidedFinanceRecordPeriodRule>, and TryAdd tests the
-// SERVICE TYPE only — so an earlier registration wins and the undecided fallback becomes a no-op. The
-// other order would leave the undecided rule in place and every downstream check would still be green,
-// which is the failure this comment exists to prevent.
+// SERVICE TYPE only — so registering first makes it a no-op and EXACTLY ONE descriptor for this
+// service ever enters the container. The undecided fallback is never registered at all.
+//
+// What the other order would actually do, stated correctly because the first version of this comment
+// got it wrong: the fallback would be registered, this line would add a SECOND descriptor, and the
+// single consumer — GetRequiredService at FinanceModuleExtensions.cs:123 — would still resolve THIS
+// rule, because the last descriptor wins. So the reverse order would not silently restore the
+// undecided rule; it would leave a dead singleton shadowed behind a live scoped one. That is still
+// worth avoiding: nothing injects IEnumerable<IFinanceRecordPeriodRule> today, so the shadow is
+// invisible, and a two-descriptor container is a trap for the next reader, who cannot see which one
+// is dead — or for the next consumer, who may enumerate rather than resolve.
 //
 // Scoped, not singleton: both depend on ICompanyContext, ICurrentUser and IAccountingPeriodStore, which
 // are per request. A singleton would capture one request's context — the defect #366 closed in two
