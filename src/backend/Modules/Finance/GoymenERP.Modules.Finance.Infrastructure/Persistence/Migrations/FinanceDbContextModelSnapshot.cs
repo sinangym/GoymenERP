@@ -210,6 +210,25 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
                 .HasMaxLength(34)
                 .HasColumnType("nvarchar(34)");
 
+            b.Property<bool?>("MoneyMovementEligible")
+                .HasColumnType("bit");
+
+            b.Property<string>("PendingIban")
+                .HasMaxLength(34)
+                .HasColumnType("nvarchar(34)");
+
+            b.Property<DateTimeOffset?>("PendingIbanProposedAtUtc")
+                .HasColumnType("datetimeoffset");
+
+            b.Property<string>("PendingIbanProposedBy")
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)")
+                .UseCollation("Latin1_General_100_BIN2");
+
+            b.Property<string>("PendingIbanReason")
+                .HasMaxLength(500)
+                .HasColumnType("nvarchar(500)");
+
             b.Property<DateTimeOffset>("ProposedAtUtc")
                 .HasColumnType("datetimeoffset");
 
@@ -244,6 +263,10 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
                 t.HasCheckConstraint(
                     "CK_BankAccounts_Identity",
                     "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000'");
+
+                t.HasCheckConstraint(
+                    "CK_BankAccounts_PendingIbanChange",
+                    "([PendingIban] IS NULL AND [PendingIbanProposedBy] IS NULL AND [PendingIbanProposedAtUtc] IS NULL AND [PendingIbanReason] IS NULL) OR ([PendingIban] IS NOT NULL AND [PendingIbanProposedBy] IS NOT NULL AND LEN([PendingIbanProposedBy]) > 0 AND [PendingIbanProposedAtUtc] IS NOT NULL AND [PendingIbanReason] IS NOT NULL AND LEN([PendingIbanReason]) > 0)");
 
                 t.HasCheckConstraint(
                     "CK_BankAccounts_Text",

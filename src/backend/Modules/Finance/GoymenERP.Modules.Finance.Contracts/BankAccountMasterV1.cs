@@ -67,7 +67,12 @@ public sealed record BankAccountCommandResult(CommandOutcome Outcome, BankAccoun
     bool IsReplay, string OriginalCorrelationId, IReadOnlyList<ValidationIssue> Issues);
 
 // FIN-UI-1 HTTP: the approval body. The account is the route's; only the expected version travels.
+// D4 reuses it for the IBAN change's approval: that decision carries no payload of its own either —
+// the value being approved is the one already waiting on the row, not one the approver supplies.
 public sealed record BankAccountApprovalBody(string ExpectedVersion);
+
+/// <summary>D4 HTTP: proposing the change. The account is the route's; the new IBAN and its reason travel.</summary>
+public sealed record BankAccountIbanChangeBody(string ExpectedVersion, string Iban, string Reason);
 
 /// <summary>
 /// K2's card fields, carried ONLY on the master (F-04). They are deliberately NOT on
