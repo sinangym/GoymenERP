@@ -271,9 +271,15 @@ sidebar'dan hem L-02 listesinden "Yeni Yükleme Talimatı" gidiyordu.
 noktası olur:** ya sidebar girdisi (listesi ona bağlanmıyorsa) ya listenin kendi birincil bağlantısı
 (bağlanıyorsa) — ikisi birden asla.
 
-**Bugünkü durum (ORG'un #367 review'ünde ölçtüğü, benim `678e38d0` üzerinde bağımsız doğruladığım
-hâl — ve bu paragrafın önceki sürümü §4'ün YANLIŞ olduğunu kaydettiği taramanın sonucunu
-yayınlıyordu; düzeltmesi budur):**
+**Durum — `main` @ `678e38d0`, 20 Eylül 2026'da ölçüldü** (ORG'un #367 review'ünde bulduğu, benim
+aynı head üzerinde bağımsız doğruladığım hâl). Bu paragrafın önceki sürümü §4'ün YANLIŞ olduğunu
+kaydettiği taramanın sonucunu yayınlıyordu; düzeltmesi budur.
+
+**Tablo bir ölçümdür, kalıcı bir gerçek değil** — ve tarih tam olarak bu yüzden burada. §8 zaten bir
+kez, "bugünkü durum" diyip ne zaman ölçüldüğünü söylemediği için yanlışa düştü. ÜRÜN veya SİPARİŞ
+kendi ihlalini kapattığı an aşağıdaki satırlar eskir; head damgası sayesinde sonraki okuyucu bunu
+**keşfetmek zorunda kalmadan** görür: `678e38d0`'dan sonra ilgili şeritte bir değişiklik varsa tablo
+yeniden ölçülene kadar tarihî kayıttır.
 
 | Oluşturma rotası | Sidebar girdisi | Liste bağlantısı | Durum |
 |---|---|---|---|
