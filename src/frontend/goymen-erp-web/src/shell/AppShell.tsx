@@ -49,6 +49,13 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
    */
   CAPABILITY.organizationSitesList,
   /**
+   * ORG-03. The sidebar is not one option among several here, it is the ONLY one: the
+   * route stands on `organization.work-centers.read` alone, so a holder of that and not
+   * `organization.locations.read` never opens ORG-01 and could never be linked from it.
+   * Nothing else renders only where the server granted it, as ever.
+   */
+  CAPABILITY.organizationWorkCentersList,
+  /**
    * Listed together with the routes that serve them (S03). Each renders only where the server's
    * snapshot carries the capability; the 360 is reached from a row, never from the sidebar.
    */

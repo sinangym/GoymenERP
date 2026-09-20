@@ -21,9 +21,11 @@ import {
   decodeLocation,
   decodeLocationPage,
   decodeSites,
+  decodeWorkCenters,
   type LocationPage,
   type LocationSummary,
   type SiteSummary,
+  type WorkCenterSummary,
 } from './contract'
 import type { ViewOutcome } from '../shell/uiState'
 
@@ -96,6 +98,30 @@ export async function fetchSites(
   const sites = decodeSites(result.body)
   if (sites === null) return { type: 'malformed' }
   return { type: 'ok-single', data: sites }
+}
+
+/**
+ * `GET /api/v1/organization/work-centers` — the caller's work centres, UNPAGED.
+ *
+ * Unpaged is the server's shape, not a simplification here: the endpoint takes no
+ * `page`/`pageSize` and `GetWorkCentersAsync` returns the whole authorized set. So the
+ * screen must not grow a pager that would only ever have one page, and must not offer a
+ * search box that silently covers a partial set — the same rule `fetchSites` carries.
+ *
+ * `decodeWorkCenters` rejects the WHOLE array when one row is bad, for the reason it
+ * states: on an unpaged endpoint the array IS the caller's entire authorized set, so a
+ * list one row short cannot be told apart from a correct one.
+ */
+export async function fetchWorkCenters(
+  companyId: string,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<readonly WorkCenterSummary[]>> {
+  const result = await read('/organization/work-centers', companyId, signal)
+  if (typeof result === 'string') return transportOutcome(result)
+  if (!result.isOk200) return { type: 'http', status: result.status, body: result.body }
+  const workCenters = decodeWorkCenters(result.body)
+  if (workCenters === null) return { type: 'malformed' }
+  return { type: 'ok-single', data: workCenters }
 }
 
 export interface LocationPageQuery {
