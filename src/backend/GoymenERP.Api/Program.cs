@@ -14,6 +14,7 @@ using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Shell;
 using GoymenERP.Modules.Accounting.Infrastructure;
 using GoymenERP.Modules.Accounting.Infrastructure.Shell;
+using GoymenERP.Modules.Accounting.Application.Contracts;
 using GoymenERP.Modules.Audit.Infrastructure;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Counterparty.Infrastructure;
@@ -100,6 +101,26 @@ builder.Services.AddFinancePersistence(
     builder.Configuration,
     (services, options) => options.AddInterceptors(
         services.GetRequiredService<AuditSaveChangesInterceptor>()));
+// FIN-T05 (Sinan's K1, #66 5748258299, closing 5745134466): a definitive manual bank receipt's period
+// is decided by its occurredOn. The rule that maps the date needs Accounting's period port, which the
+// Finance module deliberately cannot see, so the HOST composes the two — and the mapping stays in one
+// host class rather than becoming a rule every accounting source inherits.
+//
+// BEFORE AddFinanceServices() on purpose: that method ends with
+// TryAddSingleton<IFinanceRecordPeriodRule, UndecidedFinanceRecordPeriodRule>, and TryAdd tests the
+// SERVICE TYPE only — so an earlier registration wins and the undecided fallback becomes a no-op. The
+// other order would leave the undecided rule in place and every downstream check would still be green,
+// which is the failure this comment exists to prevent.
+//
+// Scoped, not singleton: both depend on ICompanyContext, ICurrentUser and IAccountingPeriodStore, which
+// are per request. A singleton would capture one request's context — the defect #366 closed in two
+// other host adapters this morning. Verified safe: the rule is resolved inside the SCOPED
+// IManualReceiptService factory, so nothing longer-lived captures it.
+//
+// This grants nothing. The port reads under the CALLER's own accounting.periods.read; an actor without
+// that name is refused with finance_period_rule_unavailable, and granting it is a human decision.
+builder.Services.AddScoped<IAccountingPeriodStatusPortV1, AccountingPeriodStatusPort>();
+builder.Services.AddScoped<IFinanceRecordPeriodRule, OccurredOnFinanceRecordPeriodRule>();
 builder.Services.AddFinanceServices();
 builder.Services.AddScoped<IFinancePartyAccountPort, CounterpartyFinancePartyAccountPort>();
 builder.Services.AddScoped<DraftReadContextReader>();

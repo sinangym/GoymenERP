@@ -55,7 +55,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // Re-fingerprinted for ACC-V0a: the Accounting module (AddAccountingModule, its endpoints and initializer after
     // Organization); no shell provider (ACC-V0b).
     private const string ReviewedOpenApiStartupFingerprint =
-        "9f25bd758783c0f47f147560c4964f02a34f5eff352e0e5e7ed40c966fc83920";
+        "41dc7843f04a39637d11a5529b534b7667d36b3ddfc3e6ac48042942a193e9cf";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedIdentityReconcilerPath =
@@ -135,7 +135,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // finance
             ["tools/relational_inventory/finance.txt"] =
-                "cfd16410fe379d3482c4f49f5aebb1e47cd2e40808f370cc057e441d5ff66044",
+                "9fea3b626d8bf3f57d4269e152b01f8e10ed2e02b8b855ee7a6693c2e8faca32",
 
             // identity
             ["tools/relational_inventory/identity.txt"] =
@@ -225,7 +225,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
              + "Persistence/FinanceDbContext.cs"] =
-                "e94446bcd3e21a7695e4cbe1d437d38ed26165f4c4a2e945dae98d878f6d22ca",
+                "aaa0d82e67ac4f6ed3edcbd1bea16ad10957e5a71d8bb5d752ebcbb7ceabb81f",
             // ACC-3 (#298): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for ACC-V0a: the ADR-011 command log (Commands) is mapped here, company-scoped with the
@@ -426,7 +426,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Accounting/"
                  + "GoymenERP.Modules.Accounting.Infrastructure/Persistence/AccountingStore.cs"] =
                     new(
-                        "accee651496acb4a66b63ce77ae26f9871cac42d4f98cf26af3c24c86e49c148",
+                        "035e446bdbf3e8ff8c3bf3e8480dca2c2f016c7b4d8db004e87d964bba0c797b",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -436,7 +436,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Finance.Infrastructure/"
                  + "FinanceModuleExtensions.cs"] =
                     new(
-                        "248c5960bf7491900e66573bc00b781353c843f4a6b3367ed1784c900e2f604c",
+                        "203feaaa0e0fbb8a945877fd75ebd59cb950a229304d231cc9f8201d7b55ada2",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -449,7 +449,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Finance/"
                  + "GoymenERP.Modules.Finance.Infrastructure/ReceiptDraftService.cs"] =
                     new(
-                        "1e011359c62637e0bfe25263540306cb72073fd824fd5dba59d39d08357c4cd7",
+                        "ac75ae5de403ae9f6fbac48c87224c540a64b1138b972a1ced59bbba6e465780",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
