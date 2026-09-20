@@ -483,8 +483,18 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
             // The replay saves NOTHING — measured: the recorder still holds exactly the one save.
             Assert.Single(recorder.Saves);
 
-            // The history through the read: Rev.0 with its facts and the OLD texts.
-            var history = await service.GetDraftRevisionsAsync(draft.Id);
+            // K3's separation, the other way round: the price WRITE name grants no read — the pricer holding only it is refused
+            // the history (the read is under the draft read name), measured on real SQL; this refusal is what found the case
+            // reading the history with the wrong actor.
+            var unread = await Assert.ThrowsAsync<SalesDraftServiceException>(() => service.GetDraftRevisionsAsync(draft.Id));
+            Assert.Equal((403, "forbidden"), (unread.Status, unread.Code));
+        }
+
+        // The history through the READ name: Rev.0 with its facts and the OLD texts.
+        await using (var a = run.Store(CompanyA))
+        {
+            var reader = run.Service(a, "SENTETIK-reader", new RecordingAuthority(SalesPermissionManifestV1.DraftsRead));
+            var history = await reader.GetDraftRevisionsAsync(draft.Id);
             var item = Assert.Single(history.Items);
             Assert.Equal(("Rev.0", run.Actor, "SENTETIK-approver", pricer, "12.50", "5", 2), (item.Revision, item.SubmittedBy, item.ApprovedBy, item.ArchivedBy,
                 item.Lines[0].UnitPrice, item.Lines[0].DiscountPercent, item.MoneyScale));
