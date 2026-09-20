@@ -102,11 +102,11 @@ public sealed class FinanceBankAccountTests
     [Fact]
     public void The_payload_hash_names_the_command_and_every_field()
     {
-        var propose = new BankAccountProposeRequest("SENTETIK hesap", Currency, "SENTETIK Banka", "SENTETIK tür");
+        var propose = new BankAccountProposeRequest("SENTETIK hesap", Currency, "SENTETIK Banka", "SENTETIK tür", false);
         var hash = FinanceBankAccountService.PayloadHash(FinanceBankAccountService.ProposeCommand, propose);
         Assert.Equal(64, hash.Length);
         Assert.Equal(hash, FinanceBankAccountService.PayloadHash(FinanceBankAccountService.ProposeCommand,
-            new BankAccountProposeRequest("SENTETIK hesap", Currency, "SENTETIK Banka", "SENTETIK tür")));
+            new BankAccountProposeRequest("SENTETIK hesap", Currency, "SENTETIK Banka", "SENTETIK tür", false)));
         Assert.NotEqual(hash, FinanceBankAccountService.PayloadHash(FinanceBankAccountService.ProposeCommand,
             propose with { DisplayName = "SENTETIK hesap 2" }));
         Assert.NotEqual(hash, FinanceBankAccountService.PayloadHash(FinanceBankAccountService.ProposeCommand,
@@ -129,6 +129,10 @@ public sealed class FinanceBankAccountTests
     [InlineData("blank-bank-name", CommandOutcome.ValidationFailed, "bank_name_required")]
     [InlineData("no-account-type", CommandOutcome.ValidationFailed, "account_type_required")]
     [InlineData("bad-iban", CommandOutcome.ValidationFailed, "iban_invalid")]
+    // B3 + K2: the IBAN requirement attaches to the DECLARATION, not to the other fields. A card that
+    // says it is for payment or collection and carries no IBAN is refused; the very same card
+    // declaring false is accepted, which is K2's IBAN-less special credit or term account.
+    [InlineData("eligible-without-iban", CommandOutcome.ValidationFailed, "iban_required_for_money_movement")]
     public async Task A_proposal_is_refused_before_anything_is_read(string fault, CommandOutcome outcome, string? code)
     {
         var permission = fault switch
@@ -147,6 +151,9 @@ public sealed class FinanceBankAccountTests
             Currency,
             fault switch { "no-bank-name" => null!, "blank-bank-name" => "   ", _ => "SENTETIK Banka" },
             fault == "no-account-type" ? null! : "SENTETIK tür",
+            // B3: only the money-eligible fault declares itself for money movement. Every other case
+            // declares false, so the IBAN rule cannot be what refuses them.
+            MoneyMovementEligible: fault == "eligible-without-iban",
             // A structurally invalid IBAN: the published TR example with one character altered, so the
             // refusal is the checksum and not the length or the shape.
             Iban: fault == "bad-iban" ? "TR330006100519786457841327" : null);
