@@ -158,12 +158,33 @@ LOG-4b'nin 24 hunk'lık çözümünde üçünde şerit tarafı, açılışı ort
 OpenAPI küme-eşitliği kanıtı hepsi YEŞİLDİ, çünkü hiçbiri derleme yapmıyor. Yerel kapıların
 sessizliği, ağacın ayakta olduğu anlamına gelmez.
 
-**Bu yüzden zorunlu adım (yuva da araç zinciri de gerektirmez):** çözümden sonra merge'ün dokunduğu
-**her** dosyada parantez/ayraç dengesini ölç. Ve ölçeni **kalibre et**: ham bir denge sayacı, regex
-literal'lerini (`/…\)/g`), verbatim string'leri ve yorumdaki kesme işaretlerini bozukluk sanır.
-Doğrusu: yorumları ve literal'leri soy, sonra bir dosyayı **yalnız** burada dengesizse VE bir
-ebeveynde dengeliyse bildir. Bu kalibrasyon, aynı ağaçta 29 "sorunu" 0 bulguya + 4 "sayaç okuyamıyor"
-satırına indirdi; bozuk ağaçta ise tam olarak o üç gerçek kırığı buldu.
+**Bu yüzden zorunlu adım (yuva da araç zinciri de gerektirmez).** Çözümden sonra merge'ün dokunduğu
+**her** dosyada, HAM metin üzerinde dört sayının da sıfır olması gerekir:
+
+```
+count('{') - count('}')   ==  0
+count('(') - count(')')   ==  0
+count('[') - count(']')   ==  0
+count('/*') - count('*/') ==  0        # ← bunu atlamak, kırıkların üçte ikisini kaçırmaktır
+```
+
+Son satır pazarlık konusu değil: 19 Eylül gecesinin üç kırığından **yalnız biri** parantez
+dengesizliğiydi (`braces +1`); diğer ikisinde ayraçlar dengeliydi ve tek kusur yutulmuş bir `/**`
+idi (`comments -1`). İlk yazdığım kontrolcü blok yorumları sayacaktan **önce siliyordu**, yani o iki
+vakayı tanım gereği göremezdi — "0 bulgu" dediğim şey aslında yalnız ayraç sonucuydu. Ham sayım,
+soyan sürümden bilerek daha aptaldır; soymak, kaçıran şeydi.
+
+**Kalibre et ve kalibrasyonu YAZDIR.** Ham sayım regex literal'lerini (`/…\)/g`), verbatim
+string'leri ve string içindeki `/*`'ı dengesiz sanır. Bu yüzden bir dosya yalnız **burada**
+dengesizse VE bir **ebeveynde** dengeliyse bildirilir. Atlanan dosya sayısı çıktıya yazılır —
+sessizce atlamak, tabanı olduğundan güçlü gösterir; okuyan, kontrolcünün neyi okuyamadığını bilmeli.
+
+**Kontrolcüyü önce bozuk ağaçta sına.** Hiç kırmızı vermemiş bir kontrolcü, çalıştığı gösterilmiş
+değildir. Bu taban, bozuk commit üzerinde tam olarak üç kırığı bildirdi (braces +1, comments -1,
+comments -1) ve düzeltilmiş iki head'de 0 bulgu verdi.
+
+**Taban, derlemenin yerini tutmaz.** Dengeli bir dosya pekâlâ derlenmeyebilir; bu adım yalnız
+merge'ün ürettiği ucuz ve mekanik kırık sınıfını yakalar.
 
 **Doğru desen.**
 - Çakışmaları script'le çözsen bile **her hunk'ı okuyarak** geç; "kaç satır" değil, "ne" olduğuna bak.
@@ -171,6 +192,9 @@ satırına indirdi; bozuk ağaçta ise tam olarak o üç gerçek kırığı buld
   tarafı da taşıyan tek bir satır elle yazılır.
 - Çözümden sonra **makineyle sına**: JSON parse et, modülü yükle, sayıyı birleşmiş kaynaktan
   yeniden ölç; testin beklediği sayıyı çakışmanın iki tarafından biri olarak seçme.
+- **Dersi yazmış olmak, uygulamış olmak değildir.** "Liste sanılan kod bloğu" maddesi, aynı
+  merge'ün üç hunk'ında o hatayı yapmamdan bir saat önce yazılmıştı. Koruyan şey metin değil,
+  mekanik adımdır: yukarıdaki dört sayı.
 - Her iki ebeveyn de aynı dosyayı değiştirdiyse, o dosyanın **pin'i hiçbir ebeveynden alınamaz**;
   birleşmiş dosyadan yeniden ölçülür. Bir merge commit'inde ebeveynlerden biriyle birebir aynı olan
   pin, kokudur.
