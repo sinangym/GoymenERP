@@ -107,6 +107,29 @@ public sealed class CounterpartyLogisticsPartyAccountPortTests
         Assert.Equal(new LogisticsPartyAccountAnswerV1(LogisticsPartyAccountOutcomeV1.Denied, null), answer);
     }
 
+    [Fact]
+    // 8699d007: the adapter answers for the caller it STARTED with. A second actor with access to the SAME company
+    // takes the context during the owner's awaited read: IsCurrent() passes for that actor and the company is
+    // unchanged, so before the fence this answered Found with the owner's facts to an actor who never asked.
+    public async Task An_actor_swapped_while_the_owner_answered_releases_nothing()
+    {
+        var user = new User(Company);
+        var owner = new Owner(Detail(new CounterpartyDetailAccountView(Account, Company, PartyRole.Customer, true, "1")))
+        {
+            DuringRead = () => user.SwapTo("synthetic-logistics-other-planner"),
+        };
+
+        var answer = await new CounterpartyLogisticsPartyAccountPortV1(Context(Company), user, owner)
+            .GetAuthorizedAsync(Party, Account);
+
+        Assert.Equal(new LogisticsPartyAccountAnswerV1(LogisticsPartyAccountOutcomeV1.Denied, null), answer);
+        // The owner WAS asked (the swap came during its answer) and nothing of that answer was released; and the
+        // second actor CAN access the company, so IsCurrent() and the company comparison alone would have let
+        // this through — only the actor comparison denies it.
+        Assert.Equal([Party], owner.Reads);
+        Assert.True(user.CanAccessCompany(Company));
+    }
+
     private static CounterpartyLogisticsPartyAccountPortV1 Port(Owner owner) =>
         new CounterpartyLogisticsPartyAccountPortV1(Context(Company), new User(Company), owner);
 
@@ -153,12 +176,15 @@ public sealed class CounterpartyLogisticsPartyAccountPortTests
 
         public bool IsAuthenticated => true;
 
-        public string? UserId => "synthetic-logistics-planner";
+        public string? UserId { get; private set; } = "synthetic-logistics-planner";
 
         public IReadOnlySet<Guid> AllowedCompanyIds => _allowed;
 
         public bool CanAccessCompany(Guid companyId) => _allowed.Contains(companyId);
 
         public void Revoke() => _allowed.Clear();
+
+        /// <summary>Another actor took the context: same company access, a different identity.</summary>
+        public void SwapTo(string userId) => UserId = userId;
     }
 }
