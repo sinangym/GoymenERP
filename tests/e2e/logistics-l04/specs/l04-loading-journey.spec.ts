@@ -105,8 +105,16 @@ function rememberCreatedId(id: string): void {
   writeFileSync(CREATED_ID_FILE, id, 'utf8')
 }
 
+/**
+ * A MISSING file is a loud failure naming the path and the case that should have written it — L04-01 aborting
+ * before its write, another tmpdir, a rename. There is deliberately NO other way of finding the instruction here:
+ * a fallback to the list would quietly restore the two-row assumption this helper exists to remove.
+ */
 function recallCreatedId(): string {
-  return existsSync(CREATED_ID_FILE) ? readFileSync(CREATED_ID_FILE, 'utf8').trim() : ''
+  expect(existsSync(CREATED_ID_FILE), `L04-01 should have written the created instruction's id to ${CREATED_ID_FILE}; the file is missing`).toBe(true)
+  const id = readFileSync(CREATED_ID_FILE, 'utf8').trim()
+  expect(id, `the id file ${CREATED_ID_FILE} written by L04-01 is empty`).not.toBe('')
+  return id
 }
 
 /** The instruction as the real API answers it to `actor` under `company`. */
@@ -381,7 +389,6 @@ test('L04-05 the reader reads and cannot create or record; the preparer has noth
   // Playwright restarts the worker after a failed case, which drops the module-level `createdId`: recover the id L04-01
   // wrote down (the stable mark), then prove it is a real instruction of this company before asserting on it.
   if (createdId === '') createdId = recallCreatedId()
-  expect(createdId, 'L04-01 recorded the created instruction').not.toBe('')
   expect(createdId).not.toBe(instructionId)
   await readInstruction(page, readerActor, createdId)
   await page.goto(LIST_ROUTE)
