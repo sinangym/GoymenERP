@@ -59,14 +59,68 @@ public sealed class OrganizationShellCapabilityAcceptanceTests(GoymenErpApiFacto
             duplicate, new TestingEnvironment(), configuration));
     }
 
-    // FOUR permission bits now, not three: ORG-03 added `organization.work-centers.read`, and
-    // before this the fixture's `_ => 0` default denied it in every case — so the theory would
-    // have kept passing while covering none of the new capability's combinations. A check that
-    // silently stops covering what it claims to cover is worse than no check, because its green
-    // is read as a statement about the whole set.
+    /// <summary>
+    /// One bit per Organization permission, in this order. `ControlledAuthority` reads a permission's
+    /// bit from its POSITION here, and <see cref="PermissionCases"/> derives its bound from the LENGTH,
+    /// so the theory's case count follows this list instead of a hand-written number.
+    /// </summary>
+    private static readonly string[] PermissionBits =
+    [
+        ErpPermissions.OrganizationLocationsRead,
+        ErpPermissions.OrganizationSitesRead,
+        ErpPermissions.OrganizationLocationsStatusUpdate,
+        ErpPermissions.OrganizationWorkCentersRead,
+    ];
+
+    /// <summary>The mask of one permission, by its position above. Unknown here is 0 — see the fact below.</summary>
+    private static int Bit(string permission)
+    {
+        var index = Array.IndexOf(PermissionBits, permission);
+        return index < 0 ? 0 : 1 << index;
+    }
+
+    private static int Bits(params string[] permissions) => permissions.Aggregate(0, (mask, p) => mask | Bit(p));
+
+    /// <summary>
+    /// The bit list is EXACTLY the permissions the Organization provider declares — the guard that makes
+    /// the fixture's "unknown permission" arm unreachable for this module.
+    ///
+    /// <para>
+    /// WHY THIS EXISTS. `ControlledAuthority` answers 0 for a permission it does not know, and 0 means
+    /// DENIED in every case. So a permission added to the provider and not added here would be refused in
+    /// all of the theory's cases, the theory would stay green, and its green would be read as a statement
+    /// about the whole set while covering none of the new permission's combinations. That is exactly what
+    /// happened to `organization.work-centers.read` (#379): the fourth bit fixed the INSTANCE; this fixes
+    /// the CAUSE. The same shape bit Finance the same day — `FinancePermissionPort.NameOf` ended in
+    /// `_ => null`, making namelessness the default (#376). A catch-all arm answers for everything added
+    /// after the theory was written.
+    /// </para>
+    /// <para>
+    /// IT REDDENS RATHER THAN THROWS, deliberately. Making the fake throw on an unknown permission would
+    /// be wrong: the host asks this same authority about OTHER modules' permissions, and those are
+    /// legitimately unknown to it and must simply be denied. The unknown arm has to stay; what must not
+    /// stay silent is an ORGANIZATION permission falling into it. So the pin is here, on the set, where it
+    /// fails by NAME and in both directions — a permission added to the provider and not mapped, and a
+    /// mapped name the provider no longer declares.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void TheFixturesPermissionBits_AreExactlyTheProvidersDeclaredPermissions()
+    {
+        var declared = new OrganizationShellCapabilityProvider().GetDeclarations()
+            .SelectMany(declaration => declaration.RequiredPermissions)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal);
+        Assert.Equal(declared, PermissionBits.Order(StringComparer.Ordinal));
+    }
+
+    // The bound is DERIVED: every subset of the bits above, so adding a permission to the provider (and
+    // therefore to the list, which the fact above enforces) widens the theory by itself. The previous
+    // hand-written `16` was the other half of the same defect as the `_ => 0` arm — a number that had to
+    // be remembered, beside a default that made forgetting invisible.
     public static IEnumerable<object[]> PermissionCases()
     {
-        for (var permissions = 0; permissions < 16; permissions++)
+        for (var permissions = 0; permissions < 1 << PermissionBits.Length; permissions++)
         for (var scope = 0; scope < 4; scope++)
             yield return [permissions, scope];
     }
@@ -79,14 +133,16 @@ public sealed class OrganizationShellCapabilityAcceptanceTests(GoymenErpApiFacto
         await using var host = ControlledHost(authority);
         using var client = Client(host);
         var snapshot = await Snapshot(client);
+        // Each branch names the PERMISSION it turns on rather than a numeric mask, so the expectation
+        // cannot drift from the bit list when its order changes.
         var expected = new List<string>();
-        if ((permissions & 1) != 0)
+        if ((permissions & Bit(ErpPermissions.OrganizationLocationsRead)) != 0)
         {
             expected.Add(OrganizationShellCapabilityProvider.ListCapabilityId);
             expected.Add(OrganizationShellCapabilityProvider.DetailCapabilityId);
-            if ((permissions & 2) != 0)
+            if ((permissions & Bit(ErpPermissions.OrganizationSitesRead)) != 0)
                 expected.Add(OrganizationShellCapabilityProvider.SitesReadCapabilityId);
-            if ((permissions & 4) != 0)
+            if ((permissions & Bit(ErpPermissions.OrganizationLocationsStatusUpdate)) != 0)
                 expected.Add(OrganizationShellCapabilityProvider.StatusCapabilityId);
         }
 
@@ -94,7 +150,7 @@ public sealed class OrganizationShellCapabilityAcceptanceTests(GoymenErpApiFacto
         // `organization.work-centers.read` ALONE. A work-centre reader with no location access still
         // gets this capability — which is why the screen exists as its own sidebar entry rather than
         // a link inside ORG-01, a screen that caller cannot open at all.
-        if ((permissions & 8) != 0)
+        if ((permissions & Bit(ErpPermissions.OrganizationWorkCentersRead)) != 0)
             expected.Add(OrganizationShellCapabilityProvider.WorkCenterListCapabilityId);
 
         Assert.Equal(expected.Order(StringComparer.Ordinal), snapshot.Capabilities);
@@ -103,7 +159,8 @@ public sealed class OrganizationShellCapabilityAcceptanceTests(GoymenErpApiFacto
     [Fact]
     public async Task LocationsOnly_KeepListAndDetailWhileSitesAndStatusStillReturn403()
     {
-        await using var host = ControlledHost(new ControlledAuthority(1, 0));
+        await using var host = ControlledHost(
+            new ControlledAuthority(Bit(ErpPermissions.OrganizationLocationsRead), 0));
         using var client = Client(host);
         var snapshot = await Snapshot(client);
         Assert.DoesNotContain(OrganizationShellCapabilityProvider.SitesReadCapabilityId, snapshot.Capabilities);
@@ -127,12 +184,18 @@ public sealed class OrganizationShellCapabilityAcceptanceTests(GoymenErpApiFacto
     [Fact]
     public async Task FreshSnapshot_DropsRevokedControlsAndGroupContextNeverPublishesOrganization()
     {
-        var authority = new ControlledAuthority(7, 0);
+        // NAMED, not `7` (SİPARİŞ's note on #379). The literal used to mean "all of them"; once ORG-03
+        // added a fourth bit it silently came to mean "all but the new one" — still the right input for
+        // this case, but correct BY ACCIDENT. Naming the three permissions makes it a decision: this case
+        // is about revoking the two CONTROLS, so it grants exactly the location read and those two.
+        var authority = new ControlledAuthority(
+            Bits(ErpPermissions.OrganizationLocationsRead, ErpPermissions.OrganizationSitesRead,
+                ErpPermissions.OrganizationLocationsStatusUpdate), 0);
         await using var host = ControlledHost(authority);
         using var client = Client(host);
         var before = await Snapshot(client);
         Assert.Equal(4, before.Capabilities.Count);
-        authority.Permissions = 1;
+        authority.Permissions = Bit(ErpPermissions.OrganizationLocationsRead);
         var after = await Snapshot(client);
         Assert.NotEqual(before.Generation, after.Generation);
         Assert.Equal(2, after.Capabilities.Count);
@@ -185,14 +248,11 @@ public sealed class OrganizationShellCapabilityAcceptanceTests(GoymenErpApiFacto
 
         private PermissionScope Scope(string permission, Guid companyId)
         {
-            var bit = permission switch
-            {
-                ErpPermissions.OrganizationLocationsRead => 1,
-                ErpPermissions.OrganizationSitesRead => 2,
-                ErpPermissions.OrganizationLocationsStatusUpdate => 4,
-                ErpPermissions.OrganizationWorkCentersRead => 8,
-                _ => 0,
-            };
+            // The bit comes from PermissionBits' ORDER, not from a switch that has to be extended by hand.
+            // A permission this fixture does not know still answers 0 and is denied — which is CORRECT,
+            // because the host asks this same authority about other modules' permissions. What guarantees
+            // no ORGANIZATION permission lands here is the set-equality fact above, not this line.
+            var bit = Bit(permission);
             if (companyId != TestCompanyIds.CompanyA || bit == 0 || (Permissions & bit) == 0)
                 return PermissionScope.Denied;
             return new PermissionScope(true, scopeKind == 0, new HashSet<string>(),
