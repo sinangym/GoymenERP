@@ -55,7 +55,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // Re-fingerprinted for ACC-V0a: the Accounting module (AddAccountingModule, its endpoints and initializer after
     // Organization); no shell provider (ACC-V0b).
     private const string ReviewedOpenApiStartupFingerprint =
-        "c6346f331d88242a0636177f1c93999edf8d03a87b24e1b954db978c521776b7";
+        "9f25bd758783c0f47f147560c4964f02a34f5eff352e0e5e7ed40c966fc83920";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedIdentityReconcilerPath =
@@ -127,7 +127,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         {
             // accounting
             ["tools/relational_inventory/accounting.txt"] =
-                "f422e44ed15eecbc29079fa7640dde820b1214a2d29653daf08ec76f5cc026ec",
+                "1f9cfbd91972157a4bf0b06af369a5b9db97df3f157d272a7a93fc5af8be8e7f",
 
             // counterparty
             ["tools/relational_inventory/counterparty.txt"] =

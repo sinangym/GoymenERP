@@ -19,6 +19,8 @@ using GoymenERP.Modules.Settings.Application;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.Api.IntegrationTests;
@@ -318,6 +320,87 @@ public sealed class AccountingApiSqlServerRelationalAcceptanceTests
         var exception = Assert.Single(queues.GetProperty("exceptions").EnumerateArray());
         Assert.Equal(["synthetic-credit-key"], exception.GetProperty("missingMappingKeys").EnumerateArray().Select(key => key.GetString()));
         Assert.Empty(queues.GetProperty("pending").EnumerateArray());
+    }
+
+    /// <summary>
+    /// ORG #354 P3-1: AddPeriodApproval's Down on real SQL. With no period and no Accounting command it rolls back and
+    /// forward cleanly; once a period is proposed it refuses (THROW 51048, Accounting's one module number) and keeps
+    /// the migration and the period.
+    /// </summary>
+    [SqlServerFact]
+    public async Task The_period_approval_migration_rolls_back_only_while_no_period_or_command_is_stored()
+    {
+        await using var run = await Run.StartAsync();
+        const string beforeApproval = "20260918220000_AddDeliveryRequestHash";
+
+        await using (var context = run.Context(CompanyA))
+        {
+            await context.GetService<IMigrator>().MigrateAsync(beforeApproval);
+            Assert.Equal(beforeApproval, (await context.Database.GetAppliedMigrationsAsync()).Last());
+            Assert.Equal(0, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM sys.tables WHERE [name] = N'Commands' AND [schema_id] = SCHEMA_ID(N'accounting')"));
+            await context.Database.MigrateAsync();
+        }
+
+        await run.GrantAsync(Preparer, CompanyA, PreparerGrants);
+        using var preparer = run.Client(Preparer, CompanyA);
+        var periodId = Guid.NewGuid();
+        Assert.Equal(HttpStatusCode.Created, (await preparer.SendAsync(Post(PeriodsPath, "SENTETIK-down-1", Guid.NewGuid().ToString("N"),
+            new ProposePeriodRequestV1(periodId, September1, September30)))).StatusCode);
+
+        await using (var context = run.Context(CompanyA))
+        {
+            var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(beforeApproval));
+            Assert.Equal(51048, error.Number);
+            Assert.EndsWith("_AddPeriodApproval", (await context.Database.GetAppliedMigrationsAsync()).Last(), StringComparison.Ordinal);
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM accounting.Periods WHERE Id = @p", ("@p", periodId)));
+    }
+
+    /// <summary>
+    /// SİPARİŞ #354 P3-3: the same approval (same key, body and approver) sent twice at once. Whatever the interleaving
+    /// (both miss the stored answer and one loses the save or the version, or one finds the other's record), both are
+    /// answered 200 with the one approval; exactly one is the first answer and the other its replay; one command row, one
+    /// version step.
+    /// </summary>
+    [SqlServerFact]
+    public async Task The_same_approval_sent_twice_at_once_is_one_approval_and_one_replay()
+    {
+        await using var run = await Run.StartAsync();
+        await run.GrantAsync(Preparer, CompanyA, PreparerGrants);
+        await run.GrantAsync(Approver, CompanyA, ApproverGrants);
+        using var preparer = run.Client(Preparer, CompanyA);
+        using var first = run.Client(Approver, CompanyA);
+        using var second = run.Client(Approver, CompanyA);
+        var periodId = Guid.NewGuid();
+        Assert.Equal(HttpStatusCode.Created, (await preparer.SendAsync(Post(PeriodsPath, "SENTETIK-race-p", Guid.NewGuid().ToString("N"),
+            new ProposePeriodRequestV1(periodId, September1, September30)))).StatusCode);
+
+        var answers = await Task.WhenAll(
+            Task.Run(() => first.SendAsync(Approval(periodId, "SENTETIK-race-a", 1))),
+            Task.Run(() => second.SendAsync(Approval(periodId, "SENTETIK-race-a", 1))));
+        try
+        {
+            Assert.All(answers, answer => Assert.Equal(HttpStatusCode.OK, answer.StatusCode));
+            Assert.Single(answers, answer => answer.Headers.Contains("Idempotency-Replayed"));
+            foreach (var answer in answers)
+            {
+                var period = await Json(answer);
+                Assert.Equal(("Open", 2L), (period.GetProperty("status").GetString(), period.GetProperty("version").GetInt64()));
+            }
+        }
+        finally
+        {
+            foreach (var answer in answers)
+            {
+                answer.Dispose();
+            }
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM accounting.Commands WHERE CommandName = @n",
+            ("@n", AccountingCommandNames.ApprovePeriod)));
+        Assert.Equal(2L, await run.ScalarAsync<long>("SELECT Version FROM accounting.Periods WHERE Id = @p", ("@p", periodId)));
     }
 
     // Synthetic dates inside the proposed September period AND the approved GDC/TRY profile's window (Ö2: effective

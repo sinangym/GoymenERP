@@ -1,4 +1,5 @@
 using GoymenERP.BuildingBlocks.Shell;
+using GoymenERP.Modules.Accounting.Infrastructure.Shell;
 using GoymenERP.Modules.Counterparty.Infrastructure.Shell;
 using GoymenERP.Modules.Finance.Infrastructure.Shell;
 using GoymenERP.Modules.Logistics.Infrastructure.Shell;
@@ -34,6 +35,10 @@ internal static class C01E2eShellCapabilityActivation
     // published on the normal host (MFG-UI-F), so its screen needs no disposable envelope any more.
     // FIN-UI-1b's fin-staged profile ("finance-bank-accounts-and-drafts", #332) is retired: Finance is
     // published on the normal host (FIN-UI-1c), so its screens need no disposable envelope any more.
+    // ACC-V0b (acc-staged): Accounting's seven declarations opened inside this envelope only, beside the
+    // list-only C-01 Counterparty set, before any normal-runtime availability (the FIN-UI-1b / MFG-UI D4
+    // precedent; retired again at the flip after the acc01 suite).
+    internal const string AccountingPeriodsAndJournalsProfile = "accounting-periods-and-journals";
 
     internal static string Configure(
         IServiceCollection services,
@@ -58,6 +63,10 @@ internal static class C01E2eShellCapabilityActivation
             case CariListDetailProfile:
                 ReplaceExactCounterpartyProvider<C01E2eCariListDetailShellCapabilityProvider>(services);
                 return ShellCapabilityRegistryAuthorities.C01DisposableCariListDetailV1;
+            case AccountingPeriodsAndJournalsProfile:
+                ReplaceExactCounterpartyProvider<C01E2eShellCapabilityProvider>(services);
+                services.AddSingleton<IShellCapabilityProvider, C01E2eAccountingShellCapabilityProvider>();
+                return ShellCapabilityRegistryAuthorities.C01DisposableAccountingPeriodsAndJournalsV1;
             default:
                 throw new InvalidOperationException(
                     "C-01 disposable capability profili tanınmıyor.");
@@ -76,6 +85,7 @@ internal static class C01E2eShellCapabilityActivation
         typeof(ManufacturingShellCapabilityProvider),
         typeof(LogisticsShellCapabilityProvider),
         typeof(PurchasingShellCapabilityProvider),
+        typeof(AccountingShellCapabilityProvider),
     ];
 
     // The accepted normal-host authority for each set of optional module providers present (in the
@@ -124,6 +134,15 @@ internal static class C01E2eShellCapabilityActivation
                 typeof(PurchasingShellCapabilityProvider),
             },
             ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV10ProductV10PublishedSalesV10PublishedFinanceV10PublishedManufacturingV10LogisticsV10AndPurchasingV10),
+        // ACC-V0b: Accounting's (staged) period, journal and posting-queue screens join the host set.
+        (new[]
+            {
+                typeof(OrganizationShellCapabilityProvider), typeof(ProductShellCapabilityProvider),
+                typeof(SalesShellCapabilityProvider), typeof(FinanceShellCapabilityProvider),
+                typeof(ManufacturingShellCapabilityProvider), typeof(LogisticsShellCapabilityProvider),
+                typeof(PurchasingShellCapabilityProvider), typeof(AccountingShellCapabilityProvider),
+            },
+            ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV10ProductV10PublishedSalesV10PublishedFinanceV10PublishedManufacturingV10LogisticsV10PurchasingV10AndAccountingV10),
     ];
 
     private static string NormalAuthority(IServiceCollection services)
@@ -281,6 +300,22 @@ internal sealed class C01E2eCariListDetailShellCapabilityProvider : IShellCapabi
 
     public IReadOnlyCollection<ShellCapabilityDeclaration> GetDeclarations() =>
         C01E2eStagedDeclarations.Open(_source, detail: true);
+}
+
+// acc-staged (ACC-V0b): Accounting's own declarations, only their availability opened; ids, routes, screens,
+// context, scope, permissions and the two controls' parents stay the owner's.
+internal sealed class C01E2eAccountingShellCapabilityProvider : IShellCapabilityProvider
+{
+    private readonly AccountingShellCapabilityProvider _source = new();
+
+    public string Owner => _source.Owner;
+
+    public string ContractVersion => _source.ContractVersion;
+
+    public IReadOnlyCollection<ShellCapabilityDeclaration> GetDeclarations() =>
+        Array.AsReadOnly(_source.GetDeclarations()
+            .Select(declaration => declaration with { ImplementationAvailable = true })
+            .ToArray());
 }
 
 internal static class C01E2eStagedDeclarations

@@ -13,6 +13,7 @@ using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Shell;
 using GoymenERP.Modules.Accounting.Infrastructure;
+using GoymenERP.Modules.Accounting.Infrastructure.Shell;
 using GoymenERP.Modules.Audit.Infrastructure;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Counterparty.Infrastructure;
@@ -198,6 +199,8 @@ builder.Services.AddSingleton<IShellCapabilityProvider, ManufacturingShellCapabi
 builder.Services.AddSingleton<IShellCapabilityProvider, LogisticsShellCapabilityProvider>();
 // PUR-4a: Purchasing's (staged) order screens, before the authority is chosen.
 builder.Services.AddSingleton<IShellCapabilityProvider, PurchasingShellCapabilityProvider>();
+// ACC-V0b: Accounting's (staged) period, journal and posting-queue screens, before the authority is chosen.
+builder.Services.AddSingleton<IShellCapabilityProvider, AccountingShellCapabilityProvider>();
 var shellCapabilityAuthority = C01E2eShellCapabilityActivation.Configure(
     builder.Services,
     builder.Environment,
