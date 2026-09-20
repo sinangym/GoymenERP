@@ -29,7 +29,10 @@ public sealed class OrganizationShellCapabilityAcceptanceTests(GoymenErpApiFacto
         var providers = container.GetServices<IShellCapabilityProvider>().ToArray();
         var registry = new ShellCapabilityRegistry(providers, new ShellCapabilityAuthorityCatalog([authority]));
         Assert.Equal(authority, registry.Revision);
-        Assert.Equal(8, registry.Registrations.Count);
+        // Counterparty's four plus Organization's FIVE (ORG-03 joined the four ORG-01/02
+        // declarations). Measured, not incremented: the count is asserted here so that a
+        // declaration appearing or vanishing has to be stated rather than absorbed.
+        Assert.Equal(9, registry.Registrations.Count);
         Assert.Throws<InvalidOperationException>(() => new ShellCapabilityRegistry(
             providers, new ShellCapabilityAuthorityCatalog(
                 [ShellCapabilityRegistryAuthorities.CounterpartyListCreateLinkAndDetailV15])));

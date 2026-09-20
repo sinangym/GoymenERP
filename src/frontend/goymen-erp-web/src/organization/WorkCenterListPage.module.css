@@ -1,0 +1,130 @@
+/*
+ * ORG-03 styling. Tokens are the UI_DESIGN_SYSTEM §2 starting values, written literally
+ * like ORG-01's module beside it (this project has no token file yet).
+ *
+ * Responsive rule followed here (§9): the table is the ONLY thing allowed to scroll
+ * sideways, and it does it inside its own container — the page body never scrolls
+ * horizontally at 400px.
+ */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.header h1 {
+  font-size: 1.25rem;
+  margin: 0 0 4px;
+  color: #0f172a;
+  overflow-wrap: anywhere;
+}
+
+.lead {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.9rem;
+  max-width: 60ch;
+}
+
+/* The one element permitted to scroll sideways, and only within itself. */
+.tableScroll {
+  overflow-x: auto;
+}
+
+.table {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 34rem;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+}
+
+.caption {
+  caption-side: top;
+  text-align: left;
+  font-weight: 600;
+  color: #0f172a;
+  padding: 0 0 6px;
+  overflow-wrap: anywhere;
+}
+
+.captionMeta {
+  font-weight: 400;
+  color: #64748b;
+  margin-left: 8px;
+}
+
+.table th,
+.table td {
+  text-align: left;
+  padding: 9px 12px;
+  border-bottom: 1px solid #eef2f7;
+  font-size: 0.9rem;
+  color: #0f172a;
+  overflow-wrap: anywhere;
+}
+
+.table thead th {
+  background: #f5f7fa;
+  color: #64748b;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.table tbody tr:last-child th,
+.table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.codeCell {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.rowLink {
+  color: #0b6fe8;
+  text-decoration: none;
+}
+.rowLink:hover {
+  text-decoration: underline;
+}
+.rowLink:focus-visible {
+  outline: 2px solid #0b6fe8;
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/*
+ * The out-of-scope location cell. Muted, but NOT styled as a disabled control and not
+ * given a link's affordance: there is nothing to click and nothing to wait for. Contrast
+ * is kept at body-text level rather than the lighter meta grey, because this sentence
+ * carries information the user needs rather than decoration (UI_DESIGN_SYSTEM §2).
+ */
+.locationClosed {
+  color: #64748b;
+  font-size: 0.85rem;
+}
+
+.badgeActive,
+.badgePassive {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.badgeActive {
+  background: #e8f5ec;
+  color: #15803d;
+  border: 1px solid #bfe3cb;
+}
+
+.badgePassive {
+  background: #fdf3e7;
+  color: #a3592f;
+  border: 1px solid #f0d3ae;
+  font-weight: 600;
+}

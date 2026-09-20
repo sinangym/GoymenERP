@@ -1,30 +1,36 @@
 /**
- * Capability ids the Ayarlar/Organizasyon screens need — PROPOSED SOURCE, not a grant.
+ * Capability ids the Ayarlar/Organizasyon screens need — a STATEMENT OF INTENT, not a grant.
  *
  * READ THIS BEFORE USING ANY VALUE HERE.
  *
- * The server publishes NO `organization.*` shell capability today. At `main@3e7dd98`
- * the only implementation of `IShellCapabilityProvider` is
- * `CounterpartyShellCapabilityProvider`; there is no Organization counterpart. So the
- * three ids below are a PROPOSAL handed to the owners who can actually publish them
- * (see ./SHARED_MOUNT_HANDOFF.md), and until the backend registry declares them:
+ * The header here used to say the server published no `organization.*` capability at all,
+ * which was true at `main@3e7dd98` and has not been true since #246. It now publishes all
+ * of the ids below (`OrganizationShellCapabilityProvider`). The correction matters more
+ * than the fact: a stale "the server does not do this yet" reads as a live constraint to
+ * the next person, who then builds around a staging problem that was solved months ago.
  *
- *   - `hasCapability` answers false for all three,
- *   - `CapabilityRoute` closes these routes onto the same neutral not-found block any
+ * What has NOT changed is what listing an id here means. It is this lane saying it has an
+ * implementation for that id — nothing more. Whether the id is GRANTED is the server's
+ * answer, per caller, and:
+ *
+ *   - `hasCapability` answers false for an id the server did not grant THIS caller,
+ *   - `CapabilityRoute` then closes that route onto the same neutral not-found block any
  *     unknown path gets, and
- *   - the nav shows nothing.
+ *   - the nav entry is not drawn.
  *
  * That is the INTENDED state, not a gap. Listing an id grants nothing; the server
  * decides availability and re-authorizes every request regardless (ERP-000K §10.2).
  * The frontend must never mint a capability to open its own screen.
  *
- * WHY THESE THREE, AND WHY NOT FEWER. Each maps onto a permission that already exists
+ * WHY THESE, AND WHY NOT FEWER. Each maps onto a permission that already exists
  * and is already enforced in merged code (`ErpPermissions`), so the split mirrors a
  * real authority boundary rather than a UI convenience:
  *
- *   organization.sites.list       <- organization.sites.read + organization.locations.read
- *   organization.locations.detail <- organization.locations.read
- *   organization.locations.status <- organization.locations.status.update
+ *   organization.sites.list        <- organization.locations.read
+ *   organization.locations.detail  <- organization.locations.read
+ *   organization.locations.status  <- organization.locations.status.update
+ *   organization.sites.read        <- organization.sites.read
+ *   organization.work-centers.list <- organization.work-centers.read
  *
  * Reading a location and being allowed to deactivate it are DIFFERENT authorities on
  * the server — the endpoints carry different `RequireAuthorization` attributes — so
@@ -75,6 +81,21 @@ export const ORGANIZATION_CAPABILITY = {
    * the ordinary capture/report path like any other.
    */
   sitesRead: 'organization.sites.read',
+  /**
+   * ORG-03 — the company's work centres.
+   * Route `/ayarlar/organizasyon/is-merkezleri`.
+   *
+   * A SEPARATE grant from ORG-01, and deliberately not a subview of it: the server
+   * authorizes `/organization/work-centers` with `organization.work-centers.read` and
+   * `/organization/locations` with `organization.locations.read`, so a user can hold
+   * either without the other. Folding this screen behind the location list would hide
+   * it from a work-centre reader who is entitled to it.
+   *
+   * The reverse case is carried in the ROW, not in this table: a work-centre reader
+   * without location access still sees every row, and `canOpenLocationDetail` (#377)
+   * says per row whether its location card would open. The screen never derives that.
+   */
+  workCentersList: 'organization.work-centers.list',
 } as const
 
 export type OrganizationCapabilityId =
@@ -84,12 +105,21 @@ export type OrganizationCapabilityId =
 export const ORGANIZATION_ROUTE: Record<string, string> = {
   [ORGANIZATION_CAPABILITY.settingsList]: '/ayarlar/organizasyon',
   [ORGANIZATION_CAPABILITY.locationDetail]: '/ayarlar/organizasyon/lokasyon/:locationId',
+  [ORGANIZATION_CAPABILITY.workCentersList]: '/ayarlar/organizasyon/is-merkezleri',
 }
 
-/** Nav label. Only the list gets one — the card is reached from a row, never the sidebar. */
+/**
+ * Nav label. The two LISTS get one; the card does not — it is reached from a row.
+ *
+ * ORG-03 gets its own sidebar entry rather than a link inside ORG-01 because of the
+ * permission split above: a user may hold `organization.work-centers.read` without
+ * `organization.locations.read`, and for that user ORG-01 does not open at all. An entry
+ * point that only exists inside a screen they cannot reach is no entry point (K5).
+ */
 export const ORGANIZATION_NAV_LABEL: Record<string, string> = {
   [ORGANIZATION_CAPABILITY.settingsList]: 'Organizasyon',
   [ORGANIZATION_CAPABILITY.locationDetail]: '',
+  [ORGANIZATION_CAPABILITY.workCentersList]: 'İş Merkezleri',
 }
 
 /** Concrete path to one location's card. */

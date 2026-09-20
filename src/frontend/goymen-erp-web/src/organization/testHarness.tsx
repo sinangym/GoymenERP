@@ -79,6 +79,45 @@ export const LOCATIONS_ONLY_CAPABILITIES = [
   ORGANIZATION_CAPABILITY.locationStatus,
 ]
 
+/**
+ * ORG-03 only — the work-centre list and NOTHING else.
+ *
+ * Deliberately a set of its own rather than a line added to `READ_CAPABILITIES`. That
+ * constant claims to mirror the seeded ORGANIZATION_READER role, and whether that role
+ * carries `organization.work-centers.read` is a ROLE-CONTENT question with an owner who
+ * is not this lane. Adding the id there would have made a permission-policy claim inside
+ * a test fixture, where nobody would look for one. This set asserts only what the shell
+ * grants in the case that uses it.
+ *
+ * It is also the interesting configuration: this caller may read work centres and may
+ * NOT read locations, which is exactly when `canOpenLocationDetail` has work to do.
+ */
+export const WORK_CENTERS_ONLY_CAPABILITIES = [ORGANIZATION_CAPABILITY.workCentersList]
+
+export const WC_PAINT = '88888888-8888-8888-8888-888888888888'
+export const WC_SLIT = 'aaaaaaaa-1111-1111-1111-111111111111'
+export const WC_UNKNOWN_KIND = 'bbbbbbbb-2222-2222-2222-222222222222'
+
+export function workCenter(
+  id: string,
+  locationId: string,
+  code: string,
+  name: string,
+  overrides: { kind?: string; isActive?: boolean; canOpenLocationDetail?: boolean } = {},
+) {
+  return {
+    id,
+    locationId,
+    code,
+    name,
+    kind: overrides.kind ?? 'Paint',
+    isActive: overrides.isActive ?? true,
+    // No default that flatters the screen: a fixture that always opened the card would
+    // never exercise the closed branch, which is the branch that protects scope.
+    canOpenLocationDetail: overrides.canOpenLocationDetail ?? false,
+  }
+}
+
 export function site(id: string, code: string, name: string, type = 'Factory', isActive = true) {
   return { id, code, name, type, isActive }
 }
