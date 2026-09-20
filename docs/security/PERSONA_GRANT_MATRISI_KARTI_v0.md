@@ -17,14 +17,25 @@ dokunmamaktan kötü olurdu:
 | Kayıtlı ad | Ne zaman geldi | Tabloda neden yok |
 |---|---|---|
 | `manufacturing.orders.close` | MFG-ORD, kart ölçüldükten sonra | Sinan'ın §4 metni üretim emrini **kapatma**nın hangi personada olduğunu söylemiyor |
-| `sales.orders.price.write` | SALES-P (K3, #66 5748258299) | K3 fiyat yazmayı **ayrı bir izin** yapıyor ama hangi personanın taşıyacağını söylemiyor; kart K4.4'te Satış Destek'e tahsis/rezervasyon verirken **fiyat** demiyor |
+| `sales.orders.price.write` | SALES-P (K3, #66 5748258299) | K3 personayı **söylüyor** ama grant'ı **önermiyor**: *"Satış Destek, ayrı fiyat-yazma izni **verilmişse** … girebilir"* — koşullu bir cümle. Bir `+` koymak, Sinan'ın bilerek koşullu bıraktığı bir grant'i önerilmiş gösterirdi |
 | `finance.manual-receipt.record` | FIN-T05 | Kart (#66 5743678389 §1) "tek dar yetkili operatör" diyor — bir **kişi sayısı**, bir persona değil |
 
 **Üçü de doldurulmadı, çünkü bir satır eklemek bir yetki önerisidir ve kartın kendi kuralı her satırı
-Sinan'ın kendi cümlesine dayandırmaktır.** Üçünde de o cümle yok; tahminle doldurmak kartı bir
-öneri olmaktan çıkarıp bir varsayım listesine çevirirdi. **Bunları kapatacak şey teknik değil:**
-Sinan'ın her biri için hangi personanın taşıyacağını söylemesi. O gelene kadar üçü de **önce-reddet**
-altındadır — tabloda görünmeyen ad kimseye önerilmemiş sayılır, yani eksiklik hiçbir şey açmaz.
+Sinan'ın kendi cümlesine dayandırmaktır.** Ama üçünün eksikliği **aynı sebepten değil**, ve ayrımı
+korumak kuralın kendisini korumaktır:
+
+- **İkisinde cümle yok:** `manufacturing.orders.close` için §4 emri kimin kapatacağını hiç söylemiyor;
+  `finance.manual-receipt.record` için söylenen şey *"tek dar yetkili operatör"*, yani bir **kişi
+  sayısı** — bir persona değil.
+- **Birinde cümle VAR ama grant önermiyor:** K3, `sales.orders.price.write` için personayı açıkça
+  söylüyor (*"Satış Destek … verilmişse"*) ve tam da **koşullu** bıraktığı için bir `+` yazmak,
+  Sinan'ın vermediği bir öneriyi ona atfetmek olurdu.
+
+Tahminle doldurmak kartı bir öneri olmaktan çıkarıp bir varsayım listesine çevirirdi. **Bunları
+kapatacak şey teknik değil:** ilk ikisi için Sinan'ın personayı söylemesi, üçüncüsü için koşulun
+karşılandığını — yani izni kime **vermek istediğini** — söylemesi. O gelene kadar üçü de
+**önce-reddet** altındadır; tabloda görünmeyen ad kimseye önerilmemiş sayılır, eksiklik hiçbir şey
+açmaz.
 
 ## Bu kart ne yapar, ne yapmaz
 
