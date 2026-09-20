@@ -190,8 +190,12 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
             Assert.True(reopened.Headers.CacheControl is { Private: true, NoStore: true });
             var view = (await reopened.Content.ReadFromJsonAsync<PlanViewV1>())!;
             Assert.Equal(JsonSerializer.Serialize(created), JsonSerializer.Serialize(view));
-            // Not vacuous: the comparison is over a view that carries the plan's content.
-            Assert.Equal(("Draft", 1L, "1000.250"), (view.Status, view.Version, Assert.Single(view.Inputs).PlannedKg));
+            // Not vacuous: the comparison is over a view that carries the plan's content. The kilogram is
+            // "1000.25", not the "1000.250" that was sent: the read projects through the SAME Text(decimal)
+            // normalization the write answer uses, so a trailing zero the caller typed does not survive
+            // either answer. Measured on the formatter, and on the existing journey case where a declared
+            // "900.000" reads back as "900".
+            Assert.Equal(("Draft", 1L, "1000.25"), (view.Status, view.Version, Assert.Single(view.Inputs).PlannedKg));
 
             // The read answers from STORAGE: approving through another command changes what it returns.
             Assert.Equal(HttpStatusCode.OK,
