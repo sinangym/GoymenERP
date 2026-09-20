@@ -67,6 +67,7 @@ const NAV_CAPABILITIES: readonly CapabilityId[] = [
   CAPABILITY.accountingPeriodsList,
   CAPABILITY.accountingJournalsList,
   CAPABILITY.accountingPostingQueues,
+  /**
    * Listed together with the routes that serve them (LOG-4b). Each renders only where the server's
    * snapshot carries the capability (staged until the l04 suite); the detail is reached from a row.
    */

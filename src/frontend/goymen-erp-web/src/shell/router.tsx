@@ -167,6 +167,7 @@ export const shellRoutes: RouteObject[] = [
        * not-found block and reads nothing.
        */
       ...accountingRoutes,
+      /**
        * The Logistics lane's own routes, declared in `src/logistics/logisticsRoutes.tsx` (list, `yeni`, then
        * `:instructionId`) and mounted here by the shared-integration owner (LOG-4b handoff), before the
        * catch-all. Each is wrapped in `CapabilityRoute`: while the declarations are staged (until the l04

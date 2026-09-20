@@ -315,6 +315,17 @@ internal sealed class C01E2eCariListDetailShellCapabilityProvider : IShellCapabi
 internal sealed class C01E2eAccountingShellCapabilityProvider : IShellCapabilityProvider
 {
     private readonly AccountingShellCapabilityProvider _source = new();
+
+    public string Owner => _source.Owner;
+
+    public string ContractVersion => _source.ContractVersion;
+
+    public IReadOnlyCollection<ShellCapabilityDeclaration> GetDeclarations() =>
+        Array.AsReadOnly(_source.GetDeclarations()
+            .Select(declaration => declaration with { ImplementationAvailable = true })
+            .ToArray());
+}
+
 // log-staged (LOG-4b): Logistics's own declarations, only their availability opened; ids, routes, context, scope and
 // permissions stay the owner's.
 internal sealed class C01E2eLogisticsInstructionsShellCapabilityProvider : IShellCapabilityProvider
