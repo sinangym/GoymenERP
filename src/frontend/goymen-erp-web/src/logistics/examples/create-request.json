@@ -1,0 +1,14 @@
+{
+  "customerPartyId": "11111111-1111-1111-1111-111111111111",
+  "companyAccountId": "55555555-5555-5555-5555-555555555555",
+  "effectiveOn": "2026-09-19",
+  "lines": [
+    {
+      "lineId": "dddddddd-dddd-dddd-dddd-dddddddddddd",
+      "sourceOrderId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      "sourceOrderLineId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+      "unitId": "44444444-4444-4444-4444-444444444444",
+      "quantity": "4.5"
+    }
+  ]
+}

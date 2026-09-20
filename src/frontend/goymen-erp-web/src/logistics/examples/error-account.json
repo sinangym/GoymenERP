@@ -1,0 +1,12 @@
+{
+  "status": 409,
+  "title": "Conflict",
+  "code": "account_state",
+  "correlationId": "corr-9",
+  "errors": [
+    {
+      "field": "companyAccountId",
+      "code": "passive_company_account"
+    }
+  ]
+}

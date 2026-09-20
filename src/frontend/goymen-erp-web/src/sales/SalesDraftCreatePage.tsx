@@ -15,13 +15,17 @@
  * never paints, navigates or announces in company B.
  *
  * Fails closed without a selection source (see ./referenceSource.ts): no guessed
- * account, product, version, unit or currency is ever offered.
+ * account, product, version, unit or currency is ever offered. SALES-A2a: the header
+ * references are real on main — the accounts list, the currencies list for the business
+ * date, and the chosen account's delivery addresses / contact persons (the Cari owner's
+ * contact information) — while the lines and the submit stay withheld until the product
+ * list (E1); the withheld notice says so honestly.
  */
 
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router'
-import { createDraft } from './api'
-import { SALES_DRAFT_PATH } from './contract'
+import { createDraft, type AccountOption } from './api'
+import { SALES_DRAFT_PATH, SALES_PROBLEM_CODE } from './contract'
 import {
   abandon,
   applyOutcome,
@@ -46,19 +50,29 @@ import {
   linePlanHint,
   removeLine,
   removeSlice,
+  setAccount,
   setLineProduct,
   sliceFieldId,
   updateLine,
   updateSlice,
   validateOrderDraft,
+  type DeliveryReferenceOptions,
   type LineValues,
   type OrderDraftErrors,
   type OrderDraftFormValues,
   type OrderDraftOptions,
 } from './orderDraftForm'
 import { rememberDraftAttempt, recallDraftAttempt, type DraftAttempt } from './pendingDrafts'
-import { SalesReferenceSourceContext } from './referenceSource'
+import {
+  SalesContactInformationSourceContext,
+  SalesReferenceSourceContext,
+  currencyOptionsOf,
+  type CurrencyReadState,
+  type MissingReference,
+  type ReferenceReadState,
+} from './referenceSource'
 import { SALES_CAPABILITY, SALES_ROUTE, salesDetailPath } from './capabilities'
+import { contactLabel } from './format'
 import { ORDER_DRAFT_TEXT as T, problemCodeText } from './salesText'
 import type { DraftCreateRequest, DraftMutation } from './contract'
 import { useShellDispatch, useShellState } from '../shell/shellContext'
@@ -74,8 +88,6 @@ export function SalesDraftCreatePage() {
   const shell = useShellState()
   const binding = orderAttemptBinding(shell, SALES_CREATE_DIRTY_SCOPE)
   const companyId = shell.activeContext?.companyId ?? null
-  const useOptions = useContext(SalesReferenceSourceContext)
-  const source = useOptions(companyId ?? '')
 
   if (binding === null || companyId === null) {
     // A group view is not a write target (#254 §2); nothing can be bound here.
@@ -92,24 +104,17 @@ export function SalesDraftCreatePage() {
       key={binding}
       binding={binding}
       companyId={companyId}
-      options={source.status === 'ready' ? source.options : null}
-      missing={source.status === 'unavailable' ? (source.missing ?? null) : null}
     />
   )
 }
 
-function CreateForm({
-  binding,
-  companyId,
-  options,
-  missing = null,
-}: {
-  readonly binding: string
-  readonly companyId: string
-  readonly options: OrderDraftOptions | null
-  /** The unavailable source's own account of what is missing (S03); null when it says nothing. */
-  readonly missing?: readonly { readonly source: string; readonly reason: string }[] | null
-}) {
+/** A form remembered by an earlier build may predate the SALES-A2a members: nothing chosen, never undefined. */
+function withDeliveryMembers(values: OrderDraftFormValues): OrderDraftFormValues {
+  const remembered: Partial<Pick<OrderDraftFormValues, 'deliveryAddressId' | 'contactId'>> = values
+  return { ...values, deliveryAddressId: remembered.deliveryAddressId ?? '', contactId: remembered.contactId ?? '' }
+}
+
+function CreateForm({ binding, companyId }: { readonly binding: string; readonly companyId: string }) {
   const shell = useShellState()
   const dispatch = useShellDispatch()
   const boundary = useAuthBoundary()
@@ -117,8 +122,8 @@ function CreateForm({
   const company = directory.find((entry) => entry.id === companyId)
 
   const [recalled] = useState(() => recallDraftAttempt(binding))
-  const [values, setValues] = useState<OrderDraftFormValues>(
-    () => recalled?.values ?? emptyOrderDraftForm(browserIds()),
+  const [values, setValues] = useState<OrderDraftFormValues>(() =>
+    recalled === null ? emptyOrderDraftForm(browserIds()) : withDeliveryMembers(recalled.values),
   )
   const [attempt, setAttempt] = useState<DraftAttempt>(recalled?.attempt ?? { phase: 'idle' })
   const [errors, setErrors] = useState<OrderDraftErrors>({})
@@ -126,6 +131,56 @@ function CreateForm({
   const [blockedChange, setBlockedChange] = useState(false)
   const [summaryRequest, setSummaryRequest] = useState(0)
   const summaryRef = useRef<HTMLDivElement>(null)
+
+  // The selection sources (S03 / SALES-A2a): the accounts + products composition for the company, the
+  // currencies for the business date, and the chosen account's contact information. Each is a real read
+  // with its own state; nothing is offered before its owner answered.
+  const useOptions = useContext(SalesReferenceSourceContext)
+  // #361: the customer select is one server page; the person searches with the server's own `q` (submitted, never
+  // typed-through) or continues with the server's cursor. The chosen account is kept across searches in the STATE and
+  // on the SCREEN: when the current page does not carry it, the option is merged back in with the label captured at
+  // the choice (no extra read), so the select keeps showing it and the submit is validated against the list shown.
+  const [accountSearchInput, setAccountSearchInput] = useState('')
+  const [accountSearch, setAccountSearch] = useState('')
+  const [chosenAccount, setChosenAccount] = useState<AccountOption | null>(null)
+  const source = useOptions(companyId, values.businessDate, accountSearch)
+  const useContactInformation = useContext(SalesContactInformationSourceContext)
+  const delivery = useContactInformation(companyId, values.partyId, values.companyAccountId)
+  /** The full options (lines included) — only when every owner offers a list; never on main until E1. */
+  const options: OrderDraftOptions | null = source.status === 'ready' ? source.options : null
+  const pageAccounts = source.status === 'ready' ? source.options.accounts : (source.header?.accounts ?? null)
+  const accounts = useMemo<readonly AccountOption[] | null>(() => {
+    if (pageAccounts === null) return null
+    const chosen =
+      chosenAccount !== null && chosenAccount.partyId === values.partyId && chosenAccount.companyAccountId === values.companyAccountId
+        ? chosenAccount
+        : null
+    if (chosen === null || pageAccounts.some((a) => a.partyId === chosen.partyId && a.companyAccountId === chosen.companyAccountId)) return pageAccounts
+    return [...pageAccounts, chosen]
+  }, [pageAccounts, chosenAccount, values.partyId, values.companyAccountId])
+  const accountsOffer = source.status === 'ready' ? null : (source.header?.accountsOffer ?? null)
+  const currencyState: CurrencyReadState | null = source.status === 'ready' ? null : (source.header?.currencies ?? null)
+  const missing: readonly MissingReference[] | null = source.status === 'unavailable' ? (source.missing ?? null) : null
+  const currencyOptions = useMemo<OrderDraftOptions['currencies']>(
+    () =>
+      source.status === 'ready'
+        ? source.options.currencies
+        : currencyState?.status === 'ready'
+          ? currencyOptionsOf(currencyState.data)
+          : [],
+    [source, currencyState],
+  )
+  const currenciesListed = source.status === 'ready' || currencyState?.status === 'ready'
+  const deliveryOptions: DeliveryReferenceOptions | null =
+    delivery.status === 'ready' ? { addresses: delivery.data.addresses, contacts: delivery.data.contacts } : null
+
+  // A chosen currency the real list (for this date) no longer offers is cleared and said so: the form
+  // never sends a reference nobody offered, and never keeps one silently.
+  useEffect(() => {
+    if (!currenciesListed || values.currencyId === '' || currencyOptions.some((c) => c.currencyId === values.currencyId)) return
+    setValues((v) => ({ ...v, currencyId: '' }))
+    setErrors((e) => ({ ...e, [ORDER_FIELD.currency]: T.validation.currencyNotOffered }))
+  }, [currenciesListed, currencyOptions, values.currencyId])
 
   // Mirrors for the async continuation, written in effects (render purity).
   const attemptRef = useRef(attempt)
@@ -190,8 +245,11 @@ function CreateForm({
         const fieldErrors: Record<string, string> = {}
         const unplaced: string[] = []
         for (const error of next.problem.errors) {
-          const message = problemCodeText(error.code) ?? T.attempt.unexpected
           const field = formFieldForServerPath(error.field, snapshot.payload.lines)
+          // A stale delivery address / contact is the Cari owner's version moving, not the product's.
+          const referenceMoved =
+            (field === ORDER_FIELD.deliveryAddress || field === ORDER_FIELD.contact) && error.code === SALES_PROBLEM_CODE.versionConflict
+          const message = referenceMoved ? T.references.versionConflict : (problemCodeText(error.code) ?? T.attempt.unexpected)
           if (field === null) unplaced.push(message)
           else fieldErrors[field] = message
         }
@@ -206,7 +264,8 @@ function CreateForm({
   function onSubmit(event: React.FormEvent) {
     event.preventDefault()
     if (options === null) return
-    const validation = validateOrderDraft(values, options)
+    // The same list the select renders from, the chosen account merged in: screen and payload never disagree.
+    const validation = validateOrderDraft(values, accounts === null ? options : { ...options, accounts }, deliveryOptions)
     if (!validation.ok) {
       // Nothing was sent, so no key is minted.
       setErrors(validation.errors)
@@ -320,7 +379,7 @@ function CreateForm({
         </div>
       )}
 
-      {options === null ? (
+      {accounts === null ? (
         <div role="status" className={styles.notice} data-tone="unknown">
           <p>{T.referencesUnavailable}</p>
           {missing !== null && missing.length > 0 ? (
@@ -356,23 +415,66 @@ function CreateForm({
           <fieldset disabled={frozen} className={styles.fieldset}>
             <legend>Sipariş bilgileri</legend>
             <div className={styles.grid}>
+              <label htmlFor="sales-customer-search">{T.references.accountSearch}</label>
+              <div className={styles.actions}>
+                <input
+                  id="sales-customer-search"
+                  type="search"
+                  maxLength={200}
+                  value={accountSearchInput}
+                  onChange={(event) => setAccountSearchInput(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault()
+                      setAccountSearch(accountSearchInput)
+                    }
+                  }}
+                  aria-describedby="sales-customer-search-hint"
+                  data-testid="sales-customer-search"
+                />
+                <button type="button" onClick={() => setAccountSearch(accountSearchInput)} data-testid="sales-customer-search-button">
+                  {T.references.accountSearchSubmit}
+                </button>
+                <span id="sales-customer-search-hint" className={styles.muted}>
+                  {T.references.accountSearchHint}
+                </span>
+              </div>
               <label htmlFor={ORDER_FIELD.customer}>{T.field.customer}</label>
               <select
                 {...fieldProps(ORDER_FIELD.customer)}
                 value={values.partyId === '' ? '' : `${values.partyId}|${values.companyAccountId}`}
                 onChange={(event) => {
                   const [partyId = '', companyAccountId = ''] = event.target.value.split('|')
-                  setValues((v) => ({ ...v, partyId, companyAccountId }))
+                  setChosenAccount(accounts.find((a) => a.partyId === partyId && a.companyAccountId === companyAccountId) ?? null)
+                  setValues((v) => setAccount(v, partyId, companyAccountId))
                 }}
               >
                 <option value="">{T.choose}</option>
-                {options.accounts.map((a) => (
+                {accounts.map((a) => (
                   <option key={`${a.partyId}|${a.companyAccountId}`} value={`${a.partyId}|${a.companyAccountId}`}>
                     {a.label}
                   </option>
                 ))}
               </select>
               {fieldError(ORDER_FIELD.customer)}
+              {accountsOffer !== null ? (
+                <p className={styles.muted} style={{ gridColumn: 2 }} data-testid="sales-customer-more-status">
+                  {accountsOffer.nextCursor !== null ? (
+                    <button
+                      type="button"
+                      onClick={accountsOffer.loadMore}
+                      disabled={accountsOffer.loadingMore}
+                      aria-busy={accountsOffer.loadingMore}
+                      data-testid="sales-customer-more"
+                    >
+                      {accountsOffer.loadingMore ? T.references.accountsMoreLoading : T.references.accountsMore}
+                    </button>
+                  ) : (
+                    T.references.accountsEnd
+                  )}
+                  {accountsOffer.moreFailed !== null ? ` ${T.references.accountsMoreFailed(accountsOffer.moreFailed)}` : ''}
+                </p>
+              ) : null}
 
               <label htmlFor={ORDER_FIELD.businessDate}>{T.field.businessDate}</label>
               <input
@@ -386,17 +488,30 @@ function CreateForm({
               <label htmlFor={ORDER_FIELD.currency}>{T.field.currency}</label>
               <select
                 {...fieldProps(ORDER_FIELD.currency)}
+                data-testid="sales-currency-select"
                 value={values.currencyId}
+                disabled={!currenciesListed}
                 onChange={(event) => setValues((v) => ({ ...v, currencyId: event.target.value }))}
               >
                 <option value="">{T.choose}</option>
-                {options.currencies.map((c) => (
+                {currencyOptions.map((c) => (
                   <option key={c.currencyId} value={c.currencyId}>
                     {c.label}
                   </option>
                 ))}
               </select>
               {fieldError(ORDER_FIELD.currency)}
+              {currencyState === null ? null : (
+                <ReadStatus
+                  testId="sales-currency-status"
+                  state={currencyState}
+                  idle={T.references.currencyIdle}
+                  loading={T.references.currencyLoading}
+                  empty={currencyState.status === 'ready' && currencyState.data.length === 0 ? T.references.currencyEmpty : null}
+                  unavailable={T.references.currencyUnavailable}
+                  retryTestId="sales-currency-retry"
+                />
+              )}
 
               <label htmlFor={ORDER_FIELD.requestedDeliveryDate}>{T.field.requestedDeliveryDate}</label>
               <input
@@ -414,31 +529,100 @@ function CreateForm({
                 onChange={(event) => setValues((v) => ({ ...v, note: event.target.value }))}
               />
               {fieldError(ORDER_FIELD.note)}
+
+              <label htmlFor={ORDER_FIELD.deliveryAddress}>{T.field.deliveryAddress}</label>
+              <select
+                {...fieldProps(ORDER_FIELD.deliveryAddress)}
+                data-testid="sales-delivery-address-select"
+                value={values.deliveryAddressId}
+                disabled={delivery.status !== 'ready' || delivery.data.addresses.length === 0}
+                onChange={(event) => setValues((v) => ({ ...v, deliveryAddressId: event.target.value }))}
+              >
+                {delivery.status === 'ready' && delivery.data.addresses.length === 0 ? (
+                  <option value="" disabled>
+                    {T.references.noAddress}
+                  </option>
+                ) : (
+                  <option value="">{delivery.status === 'loading' ? T.references.deliveryLoading : T.notChosen}</option>
+                )}
+                {delivery.status === 'ready'
+                  ? delivery.data.addresses.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.text}
+                      </option>
+                    ))
+                  : null}
+              </select>
+              {fieldError(ORDER_FIELD.deliveryAddress)}
+
+              <label htmlFor={ORDER_FIELD.contact}>{T.field.deliveryContact}</label>
+              <select
+                {...fieldProps(ORDER_FIELD.contact)}
+                data-testid="sales-delivery-contact-select"
+                value={values.contactId}
+                disabled={delivery.status !== 'ready' || delivery.data.contacts.length === 0}
+                onChange={(event) => setValues((v) => ({ ...v, contactId: event.target.value }))}
+              >
+                {delivery.status === 'ready' && delivery.data.contacts.length === 0 ? (
+                  <option value="" disabled>
+                    {T.references.noContact}
+                  </option>
+                ) : (
+                  <option value="">{delivery.status === 'loading' ? T.references.deliveryLoading : T.notChosen}</option>
+                )}
+                {delivery.status === 'ready'
+                  ? delivery.data.contacts.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {contactLabel(c)}
+                      </option>
+                    ))
+                  : null}
+              </select>
+              {fieldError(ORDER_FIELD.contact)}
+              <ReadStatus
+                testId="sales-delivery-status"
+                state={delivery}
+                idle={T.references.deliveryIdle}
+                loading={T.references.deliveryLoading}
+                empty={null}
+                unavailable={T.references.deliveryUnavailable}
+                retryTestId="sales-contact-information-retry"
+              />
             </div>
           </fieldset>
 
-          <fieldset disabled={frozen} className={styles.fieldset}>
-            <legend>{T.field.lines}</legend>
-            {fieldError(ORDER_FIELD.lines)}
-            {values.lines.map((line, index) => (
-              <LineEditor
-                key={line.lineId}
-                line={line}
-                index={index}
-                options={options}
-                fieldProps={fieldProps}
-                fieldError={fieldError}
-                onChange={setValues}
-              />
-            ))}
-            <button
-              type="button"
-              className={styles.secondaryButton}
-              onClick={() => setValues((v) => addLine(v, browserIds()))}
-            >
-              {T.addLine}
-            </button>
-          </fieldset>
+          {options === null ? (
+            // E1: the header is real; the lines and the submit wait for the product list. Said plainly.
+            <div role="status" className={styles.notice} data-tone="unknown" data-testid="sales-lines-withheld">
+              <p>{T.references.linesWithheld}</p>
+              {missing !== null && missing.length > 0 ? (
+                <p data-testid="sales-references-missing">{T.referencesMissing(missing)}</p>
+              ) : null}
+            </div>
+          ) : (
+            <fieldset disabled={frozen} className={styles.fieldset}>
+              <legend>{T.field.lines}</legend>
+              {fieldError(ORDER_FIELD.lines)}
+              {values.lines.map((line, index) => (
+                <LineEditor
+                  key={line.lineId}
+                  line={line}
+                  index={index}
+                  options={options}
+                  fieldProps={fieldProps}
+                  fieldError={fieldError}
+                  onChange={setValues}
+                />
+              ))}
+              <button
+                type="button"
+                className={styles.secondaryButton}
+                onClick={() => setValues((v) => addLine(v, browserIds()))}
+              >
+                {T.addLine}
+              </button>
+            </fieldset>
+          )}
 
           <section className={styles.summary} aria-labelledby="sales-summary-heading">
             <h2 id="sales-summary-heading">{T.summary.heading}</h2>
@@ -452,15 +636,69 @@ function CreateForm({
             <p className={styles.muted}>{T.summary.noEffects}</p>
           </section>
 
-          <div className={styles.actions}>
-            <button type="submit" className={styles.primaryButton} disabled={frozen} aria-busy={frozen}>
-              {T.save}
-            </button>
-          </div>
+          {options === null ? null : (
+            <div className={styles.actions}>
+              <button type="submit" className={styles.primaryButton} disabled={frozen} aria-busy={frozen}>
+                {T.save}
+              </button>
+            </div>
+          )}
         </form>
       )}
     </section>
   )
+}
+
+/**
+ * One list read's state beside its select: idle (inputs incomplete), loading, empty (the owner lists
+ * none), or unavailable with the real reason and a retry. Nothing is shown for a ready, non-empty list.
+ */
+function ReadStatus({
+  testId,
+  state,
+  idle,
+  loading,
+  empty,
+  unavailable,
+  retryTestId,
+}: {
+  readonly testId: string
+  readonly state: ReferenceReadState<unknown>
+  readonly idle: string
+  readonly loading: string
+  readonly empty: string | null
+  readonly unavailable: (reason: string) => string
+  readonly retryTestId: string
+}) {
+  switch (state.status) {
+    case 'idle':
+      return (
+        <p className={styles.muted} style={{ gridColumn: 2 }} data-testid={testId} data-state="idle">
+          {idle}
+        </p>
+      )
+    case 'loading':
+      return (
+        <p className={styles.muted} style={{ gridColumn: 2 }} data-testid={testId} data-state="loading" aria-live="polite">
+          {loading}
+        </p>
+      )
+    case 'ready':
+      return empty === null ? null : (
+        <p className={styles.muted} style={{ gridColumn: 2 }} data-testid={testId} data-state="empty">
+          {empty}
+        </p>
+      )
+    case 'unavailable':
+      return (
+        <p className={styles.fieldError} data-testid={testId} data-state="unavailable" role="status">
+          {unavailable(state.reason)}{' '}
+          <button type="button" className={styles.linkButton} data-testid={retryTestId} onClick={state.retry}>
+            {T.references.retry}
+          </button>
+        </p>
+      )
+  }
 }
 
 function LineEditor({

@@ -1,0 +1,12 @@
+{
+  "status": 409,
+  "title": "Conflict",
+  "code": "logistics_instruction_state",
+  "correlationId": "corr-9",
+  "errors": [
+    {
+      "field": "status",
+      "code": "logistics_instruction_not_issued"
+    }
+  ]
+}

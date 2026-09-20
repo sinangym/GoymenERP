@@ -288,6 +288,107 @@ public sealed class SalesDraftApiSqlServerRelationalAcceptanceTests
         Assert.Equal(1, stored.GetProperty("draft").GetProperty("lineCount").GetInt32());
     }
 
+    [SqlServerFact]
+    public async Task A_create_with_a_delivery_address_and_contact_stores_the_owners_versions_and_a_stale_reference_is_the_keys_terminal_refusal()
+    {
+        // SALES-A2a: the same real host and store, the Cari contact information answered by a SENTETIK port (the
+        // host's own adapter is the central registration). The stored draft carries the owner's identities and
+        // versions only; the stale version is the key's terminal refusal (ADR-011 §7); an unlisted reference is the
+        // non-terminal 422 that records nothing.
+        await using var run = await Run.StartAsync(services =>
+        {
+            services.RemoveAll<ISalesPartyAccountPortV1>();
+            services.AddScoped<ISalesPartyAccountPortV1, SyntheticAccounts>();
+            services.RemoveAll<ISalesPartyContactInformationPortV1>();
+            services.AddScoped<ISalesPartyContactInformationPortV1, SyntheticContactInformation>();
+            services.RemoveAll<ISettingsPrerequisiteProvider>();
+            services.AddScoped<ISettingsPrerequisiteProvider, SyntheticSettings>();
+            services.RemoveAll<IProductSalesEligibilityV1>();
+            services.AddSingleton<SyntheticGate>();
+            services.AddScoped<IProductSalesEligibilityV1, SyntheticProducts>();
+        });
+        var saver = await run.GrantAsync(TestUsers.CompanyA, CompanyA, DraftGrants);
+        using var client = run.Factory.CreateClientFor(saver, CompanyA);
+        client.DefaultRequestHeaders.Remove("Idempotency-Key");
+        client.DefaultRequestHeaders.Remove("X-Correlation-Id");
+
+        Guid draftId;
+        var referenced = Json(FixedProduct, deliveryAddress: new(FixedAddress, FixedAddressVersion), contact: new(FixedContact, FixedContactVersion));
+        using (var created = await client.SendAsync(Post("SENTETIK-referenced", referenced, Guid.NewGuid().ToString("N"))))
+        {
+            Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+            var body = await Result(created);
+            var detail = body.GetProperty("detail");
+            draftId = detail.GetProperty("draft").GetProperty("id").GetGuid();
+            Assert.Equal((FixedAddress, FixedAddressVersion),
+                (detail.GetProperty("deliveryAddress").GetProperty("id").GetGuid(), detail.GetProperty("deliveryAddress").GetProperty("expectedVersion").GetString()));
+            Assert.Equal((FixedContact, FixedContactVersion),
+                (detail.GetProperty("contact").GetProperty("id").GetGuid(), detail.GetProperty("contact").GetProperty("expectedVersion").GetString()));
+            Assert.Equal(JsonValueKind.Null, detail.GetProperty("responsible").ValueKind);
+        }
+
+        // The rows hold the identities and the owner's versions (DeliveryAddressVersion '5', ContactVersion '2'); no address text or person name is stored anywhere in Sales.
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM sales.Drafts WHERE Id = @id AND DeliveryAddressId = @a AND DeliveryAddressVersion = @av AND ContactId = @c AND ContactVersion = @cv AND ResponsibleId IS NULL",
+            ("@id", draftId), ("@a", FixedAddress), ("@av", FixedAddressVersion), ("@c", FixedContact), ("@cv", FixedContactVersion)));
+
+        // The detail route reopens the same references (the FE's reopen reads them from here).
+        using (var detail = await client.GetAsync($"{SalesEndpoints.DraftsPath}/{draftId:D}"))
+        {
+            Assert.Equal(HttpStatusCode.OK, detail.StatusCode);
+            var stored = await Result(detail);
+            Assert.Equal(FixedAddress, stored.GetProperty("deliveryAddress").GetProperty("id").GetGuid());
+            Assert.Equal(FixedContactVersion, stored.GetProperty("contact").GetProperty("expectedVersion").GetString());
+        }
+
+        // §7: the owner's version moved on — recorded under the key, replayed with the first correlation.
+        var stale = Json(FixedProduct, deliveryAddress: new(FixedAddress, "1"), contact: new(FixedContact, FixedContactVersion));
+        var staleCorrelation = Guid.NewGuid().ToString("N");
+        using (var first = await client.SendAsync(Post("SENTETIK-stale-address", stale, staleCorrelation)))
+        {
+            Assert.Equal(HttpStatusCode.Conflict, first.StatusCode);
+            var problem = await Result(first);
+            Assert.Equal(SalesDraftProblemCodesV1.VersionConflict, problem.GetProperty("code").GetString());
+            Assert.Equal("deliveryAddress", problem.GetProperty("errors")[0].GetProperty("field").GetString());
+            Assert.False(first.Headers.Contains("Idempotency-Replayed"));
+        }
+
+        using (var replayed = await client.SendAsync(Post("SENTETIK-stale-address", stale, Guid.NewGuid().ToString("N"))))
+        {
+            Assert.Equal(HttpStatusCode.Conflict, replayed.StatusCode);
+            Assert.Equal(SalesDraftProblemCodesV1.VersionConflict, (await Result(replayed)).GetProperty("code").GetString());
+            Assert.Equal("true", Assert.Single(replayed.Headers.GetValues("Idempotency-Replayed")));
+            Assert.Equal(staleCorrelation, Assert.Single(replayed.Headers.GetValues("Idempotency-Original-Correlation-Id")));
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM sales.DraftAttempts WHERE Outcome = 2 AND DraftId IS NULL AND ISJSON(RefusalJson) = 1 AND CorrelationId = @c",
+            ("@c", staleCorrelation)));
+
+        // An address the owner lists inactive (or not at all): 422 owner_reference_invalid, nothing recorded, the owners asked again next time.
+        var unlisted = Json(FixedProduct, deliveryAddress: new(FixedInactiveAddress, "3"));
+        using (var refused = await client.SendAsync(Post("SENTETIK-inactive-address", unlisted, Guid.NewGuid().ToString("N"))))
+        {
+            Assert.Equal((HttpStatusCode)422, refused.StatusCode);
+            var problem = await Result(refused);
+            Assert.Equal(SalesDraftProblemCodesV1.OwnerReferenceInvalid, problem.GetProperty("code").GetString());
+            Assert.Equal("deliveryAddress", problem.GetProperty("errors")[0].GetProperty("field").GetString());
+            Assert.False(refused.Headers.Contains("Idempotency-Replayed"));
+        }
+
+        // The four references without an owner port are still the fail-closed delta, before any owner.
+        var unavailable = Json(FixedProduct, responsible: new(Guid.NewGuid(), "1"));
+        using (var refused = await client.SendAsync(Post("SENTETIK-responsible", unavailable, Guid.NewGuid().ToString("N"))))
+        {
+            Assert.Equal((HttpStatusCode)422, refused.StatusCode);
+            Assert.Equal(SalesDraftProblemCodesV1.OwnerReferenceUnavailable, (await Result(refused)).GetProperty("code").GetString());
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.Drafts"));
+        Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.DraftAttempts"));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Sales.OrderDraft'"));
+    }
+
     private static readonly Guid GateProduct = Guid.Parse("5e11e000-0000-4000-8000-000000000001");
     private static readonly Guid StaleProduct = Guid.Parse("5e11e000-0000-4000-8000-000000000002");
     private static readonly Guid UnavailableParty = Guid.Parse("5e11e000-0000-4000-8000-000000000003");
@@ -298,12 +399,21 @@ public sealed class SalesDraftApiSqlServerRelationalAcceptanceTests
     private static readonly Guid FixedCurrency = Guid.Parse("5e11e000-0000-4000-8000-000000000008");
     private static readonly Guid FixedUnit = Guid.Parse("5e11e000-0000-4000-8000-000000000009");
     private static readonly Guid FixedLine = Guid.Parse("5e11e000-0000-4000-8000-00000000000a");
+    private static readonly Guid FixedProduct = Guid.Parse("5e11e000-0000-4000-8000-00000000000b");
+    // SALES-A2a: the SENTETIK contact information of the fixed account — one active address and one active contact.
+    private static readonly Guid FixedAddress = Guid.Parse("5e11e000-0000-4000-8000-00000000000c");
+    private static readonly Guid FixedContact = Guid.Parse("5e11e000-0000-4000-8000-00000000000d");
+    private static readonly Guid FixedInactiveAddress = Guid.Parse("5e11e000-0000-4000-8000-00000000000e");
+    private const string FixedAddressVersion = "5";
+    private const string FixedContactVersion = "2";
 
-    /// <summary>A fixed #257 body (the same bytes each time it is asked for the same product and party).</summary>
-    private static string Json(Guid productId, Guid? partyId = null)
+    /// <summary>A fixed #257 body (the same bytes each time it is asked for the same product, party and references).</summary>
+    private static string Json(Guid productId, Guid? partyId = null, SalesDraftOwnerReferenceV1? deliveryAddress = null,
+        SalesDraftOwnerReferenceV1? contact = null, SalesDraftOwnerReferenceV1? responsible = null)
     {
         var line = new SalesOrderDraftLineRequest(FixedLine, productId, "7", FixedUnit, "1.25");
-        var request = new CreateSalesOrderDraftRequest("Order", partyId ?? FixedParty, FixedAccount, new DateOnly(2026, 9, 18), FixedCurrency, [line]);
+        var request = new CreateSalesOrderDraftRequest("Order", partyId ?? FixedParty, FixedAccount, new DateOnly(2026, 9, 18), FixedCurrency, [line],
+            DeliveryAddress: deliveryAddress, Contact: contact, Responsible: responsible);
         return JsonSerializer.Serialize(request, SalesDraftJson.Options);
     }
 
@@ -342,6 +452,20 @@ public sealed class SalesDraftApiSqlServerRelationalAcceptanceTests
                 ? new SalesPartyAccountAnswerV1(SalesPartyAccountOutcomeV1.Unavailable, null)
                 : new SalesPartyAccountAnswerV1(SalesPartyAccountOutcomeV1.Found,
                     new SalesPartyAccountV1(partyId, companyAccountId, companyContext.CompanyId, true, true, "3", "2")));
+    }
+
+    /// <summary>SALES-A2a: the Cari owner's contact information of the fixed account (the host's adapter is central, not this test's).</summary>
+    private sealed class SyntheticContactInformation(ICompanyContext companyContext) : ISalesPartyContactInformationPortV1
+    {
+        public Task<SalesPartyContactInformationAnswerV1> GetContactInformationAsync(Guid partyId, Guid companyAccountId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new SalesPartyContactInformationAnswerV1(SalesPartyContactInformationOutcomeV1.Found,
+                new SalesPartyContactInformationV1(partyId, companyAccountId, companyContext.CompanyId, "2",
+                    [
+                        new SalesPartyAddressV1(FixedAddress, FixedAddressVersion, true, "delivery", "TR", "SENTETIK Sanayi Cad. 1", null, "Kocaeli", null, null),
+                        new SalesPartyAddressV1(FixedInactiveAddress, "3", false, "delivery", "TR", "SENTETIK eski adres", null, null, null, null),
+                    ],
+                    [new SalesPartyContactV1(FixedContact, FixedContactVersion, true, "SENTETIK Ayşe Yükleme", null, "delivery")])));
     }
 
     private sealed class SyntheticSettings(ICompanyContext companyContext) : ISettingsPrerequisiteProvider

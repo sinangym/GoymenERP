@@ -22,6 +22,8 @@ import { organizationRoutes } from '../organization/organizationRoutes'
 import { salesRoutes } from '../sales/salesRoutes'
 import { manufacturingRoutes } from '../manufacturing/manufacturingRoutes'
 import { financeRoutes } from '../finance/financeRoutes'
+import { accountingRoutes } from '../accounting/accountingRoutes'
+import { logisticsRoutes } from '../logistics/logisticsRoutes'
 import { StateBlock } from './StateBlock'
 
 export const shellRoutes: RouteObject[] = [
@@ -157,6 +159,21 @@ export const shellRoutes: RouteObject[] = [
        * else it closes onto the neutral not-found block.
        */
       ...financeRoutes,
+      /**
+       * The Accounting lane's own routes, declared in `src/accounting/accountingRoutes.tsx` (the static
+       * `donemler/yeni` ahead of every parameter route) and mounted here by the shared-integration owner
+       * (ACC-V0b handoff), before the catch-all. Each is wrapped in `CapabilityRoute`: every Accounting
+       * declaration is staged until the acc01 acceptance, so each route closes onto the neutral
+       * not-found block and reads nothing.
+       */
+      ...accountingRoutes,
+      /**
+       * The Logistics lane's own routes, declared in `src/logistics/logisticsRoutes.tsx` (list, `yeni`, then
+       * `:instructionId`) and mounted here by the shared-integration owner (LOG-4b handoff), before the
+       * catch-all. Each is wrapped in `CapabilityRoute`: while the declarations are staged (until the l04
+       * suite), every Logistics route closes onto the neutral not-found block and reads nothing.
+       */
+      ...logisticsRoutes,
       {
         /**
          * Catch-all. Without it react-router renders its own error boundary —

@@ -35,7 +35,9 @@ public sealed class CounterpartyLogisticsPartyAccountPortTests
         var answer = await Port(owner).GetAuthorizedAsync(Party, Account);
 
         Assert.Equal(LogisticsPartyAccountOutcomeV1.Found, answer.Outcome);
-        Assert.Equal(new LogisticsPartyAccountV1(Party, Account, Company, true, false, "3", "7"), answer.Account);
+        // LOG-4b: the party's own names travel with the answer (never price or finance).
+        Assert.Equal(new LogisticsPartyAccountV1(Party, Account, Company, true, false, "3", "7", "SENTETIK Müşteri A.Ş.",
+            "SENTETIK Müşteri"), answer.Account);
         Assert.Equal([Party], owner.Reads);
     }
 
@@ -139,7 +141,8 @@ public sealed class CounterpartyLogisticsPartyAccountPortTests
     }
 
     private static CounterpartyDetailView Detail(params CounterpartyDetailAccountView[] accounts) =>
-        new CounterpartyDetailView(Party, "C-0001", PartyKind.LegalEntity, "SENTETIK Müşteri A.Ş.", null, true, "3", accounts);
+        new CounterpartyDetailView(Party, "C-0001", PartyKind.LegalEntity, "SENTETIK Müşteri A.Ş.", "SENTETIK Müşteri", true, "3",
+            accounts);
 
     private sealed class Owner(CounterpartyDetailView? party) : ICounterpartyReadService
     {

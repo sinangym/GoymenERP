@@ -90,6 +90,16 @@ internal static class ShellCapabilityRegistryAuthorities
     internal const string CounterpartyV15OrganizationV10ProductV10PublishedSalesV10PublishedFinanceV10PublishedManufacturingV10LogisticsV10AndPurchasingV10 =
         "sha256:FTHNU_KsDs6eQMkaYavYF6Jgu0z5kNxq9SZNZPMQkC0";
 
+    // ACC-V0b: ... + Accounting 1.0 STAGED (the period list M-07 and its propose screen, the approve and
+    // close controls of that list, the journal list M-04 and its detail, the posting queues M-01): the normal
+    // host (C+O+P+S(pub)+F(pub)+M(pub)+L(staged)+Pu(staged)+Acc(staged)). Computed by the ComputeRevision
+    // reproduction, independently re-checked (DATA ONLY); pinned by test.
+    // RE-MEASURED after MFG-ORD (#360) landed: Manufacturing now declares FOUR capabilities, not two, so the
+    // earlier value of this row (sha256:kxDfAaAN…) is SUPERSEDED and describes a host that no longer exists.
+    // Its earlier independent check is superseded with it — a match against the old value is not evidence.
+    internal const string CounterpartyV15OrganizationV10ProductV10PublishedSalesV10PublishedFinanceV10PublishedManufacturingV10LogisticsV10PurchasingV10AndAccountingV10 =
+        "sha256:oQPU6TLYV8t5VDbXWW8TZQ3vFuXGMJ1oC9KTRVLL6wk";
+
     internal const string CounterpartyListCreateLinkAndDetailV15 =
         "sha256:3GiwcHV6aVuN1Y-wBzElxLJLCok2bblGc6pRruhqTx4";
 
@@ -101,6 +111,19 @@ internal static class ShellCapabilityRegistryAuthorities
     // three accepted constants exactly) and pinned by a test against ComputeCandidateRevision.
     internal const string C01DisposableCariListDetailV1 =
         "sha256:LM81M4d4tKOqR9OaKvZM_uT5HQIcoffoTMEzMFH4atg";
+
+    // The disposable "accounting-periods-and-journals" profile (BROWSER-CI acc-staged, ACC-V0b): the C-01
+    // list-only Counterparty provider plus Accounting's own seven declarations with only their availability
+    // opened (M-07 list and propose, its approve and close controls, M-04 list and detail, M-01). Computed by
+    // the ComputeRevision reproduction, independently re-checked (DATA ONLY); pinned by a test against
+    // ComputeCandidateRevision.
+    internal const string C01DisposableAccountingPeriodsAndJournalsV1 =
+        "sha256:meLXKsKx_dZtvOZvMdkrHM6Ih-U8TeadJumWY4vfcuY";
+    // The disposable "logistics-instructions" profile (BROWSER-CI log-staged, LOG-4b): the C-01 list-only Counterparty
+    // provider plus Logistics's own three declarations with only their availability opened (L-02 list, L-03 new,
+    // L-02-DETAIL). Computed by the ComputeRevision reproduction; pinned by a test against ComputeCandidateRevision.
+    internal const string C01DisposableLogisticsInstructionsV1 =
+        "sha256:G6ic5Cbh7NH1-kw430fr2eeOFViX0QGiv7w1qosZpbI";
 
     // The disposable "manufacturing-order-detail" profile (mfg-staged, MFG-UI D4 #323, sha256:eZi6K5tQ…) is
     // retired: Manufacturing is published on the normal host (MFG-UI-F) and the mfg suite runs there.

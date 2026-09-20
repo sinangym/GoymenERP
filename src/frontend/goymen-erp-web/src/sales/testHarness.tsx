@@ -5,6 +5,7 @@
  * exists, and nothing here proves one.
  */
 
+import { useContext } from 'react'
 import { render } from '@testing-library/react'
 import { RouterProvider, createMemoryRouter } from 'react-router'
 import { QueryClient } from '@tanstack/react-query'
@@ -14,7 +15,15 @@ import { AppShell } from '../shell/AppShell'
 import { SHELL_CAPABILITY_CONTRACT_VERSION } from '../shell/api'
 import { SALES_CAPABILITY } from './capabilities'
 import { salesRoutes } from './salesRoutes'
-import { SalesReferenceSourceContext, type UseReferenceOptions } from './referenceSource'
+import {
+  SalesContactInformationSourceContext,
+  SalesCurrencySourceContext,
+  SalesReferenceSourceContext,
+  type UseContactInformation,
+  type UseCurrencyOptions,
+  type UseReferenceOptions,
+} from './referenceSource'
+import type { ContactInformationOptions, CurrencyOption } from './contract'
 import type { OrderDraftOptions } from './orderDraftForm'
 
 // Company A is the examples' company, so the Backend's own bodies describe it.
@@ -25,20 +34,68 @@ export const ACCOUNT = '55555555-5555-5555-5555-555555555555'
 export const CURRENCY = '33333333-3333-3333-3333-333333333333'
 export const PRODUCT = '22222222-2222-2222-2222-222222222222'
 export const KG = '44444444-4444-4444-4444-444444444444'
+/** SALES-A2a: the controlled Cari contact information of the example account, and the currencies list of company A. */
+export const ADDRESS = 'aaaaaaaa-1111-4111-8111-000000000401'
+export const CONTACT = 'bbbbbbbb-1111-4111-8111-000000000401'
+export const MONEY_PROFILE = 'cccccccc-1111-4111-8111-000000000401'
+export const ADDRESS_TEXT = 'Sanayi Cad. 1, Kocaeli, TR'
+export const CONTACT_NAME = 'Ayşe Yükleme'
 
 export const ALL_SALES = [SALES_CAPABILITY.draftsList, SALES_CAPABILITY.draftsDetail, SALES_CAPABILITY.draftsCreate]
 /** SALES-A1: the three screens plus the approve control the shell publishes to an approver. */
 export const ALL_SALES_WITH_APPROVE = [...ALL_SALES, SALES_CAPABILITY.ordersApprove]
 
+export const CURRENCIES_A: readonly CurrencyOption[] = [
+  { currencyId: CURRENCY, code: 'TRY', profileId: MONEY_PROFILE, profileVersion: '3' },
+]
+
+export const CONTACT_INFORMATION_A: ContactInformationOptions = {
+  partyId: PARTY,
+  companyAccountId: ACCOUNT,
+  accountVersion: '2',
+  addresses: [{ id: ADDRESS, version: '4', purpose: 'delivery', text: ADDRESS_TEXT }],
+  contacts: [{ id: CONTACT, version: '2', displayName: CONTACT_NAME, jobTitle: 'Sevkiyat', purpose: 'delivery' }],
+}
+
+/** A second account of company A (SALES-A2a: choosing it clears the delivery selects; it lists no address). */
+export const OTHER_ACCOUNT = '55555555-5555-5555-5555-555555555556'
+
 export const OPTIONS_A: OrderDraftOptions = {
-  accounts: [{ partyId: PARTY, companyAccountId: ACCOUNT, label: 'ABC Demir — A hesabı' }],
-  currencies: [{ currencyId: CURRENCY, label: 'TRY' }],
+  accounts: [
+    { partyId: PARTY, companyAccountId: ACCOUNT, label: 'ABC Demir — A hesabı' },
+    { partyId: PARTY, companyAccountId: OTHER_ACCOUNT, label: 'ABC Demir — B hesabı' },
+  ],
+  currencies: CURRENCIES_A.map((c) => ({ currencyId: c.currencyId, label: c.code })),
   products: [{ productId: PRODUCT, productVersion: '7', label: '40x40 profil', orderUnits: [{ unitId: KG, label: 'kg' }] }],
 }
 
 /** Offers choices for company A only; B has no source, like the running app everywhere. */
 export const controlledSource: UseReferenceOptions = (companyId) =>
   companyId === COMPANY_A ? { status: 'ready', options: OPTIONS_A } : { status: 'unavailable' }
+
+/** The currencies list of company A for any real date; idle without a date (the real hook's shape). */
+export const controlledCurrencies: UseCurrencyOptions = (companyId, effectiveOn) =>
+  companyId === COMPANY_A && effectiveOn !== '' ? { status: 'ready', data: CURRENCIES_A } : { status: 'idle' }
+
+/**
+ * SALES-A2a: the header-only source of the running app on main — accounts and currencies real, products
+ * `no-list-route` (E1) — so the header selects are shown and the lines / submit are withheld.
+ */
+export const useHeaderOnlySource: UseReferenceOptions = (companyId, businessDate) => {
+  const useCurrencies = useContext(SalesCurrencySourceContext)
+  const currencies = useCurrencies(companyId, businessDate)
+  return companyId === COMPANY_A
+    ? { status: 'unavailable', missing: [{ source: 'products', reason: 'no-list-route' }], header: { accounts: OPTIONS_A.accounts, accountsOffer: { items: OPTIONS_A.accounts, nextCursor: null, loadingMore: false, moreFailed: null, loadMore: () => {} }, currencies } }
+    : { status: 'unavailable' }
+}
+
+/** The example account's contact information; another account lists nothing; no account chosen → idle. */
+export const controlledContactInformation: UseContactInformation = (companyId, partyId, companyAccountId) =>
+  partyId === '' || companyAccountId === '' || companyId === ''
+    ? { status: 'idle' }
+    : companyId === COMPANY_A && partyId === PARTY && companyAccountId === ACCOUNT
+      ? { status: 'ready', data: CONTACT_INFORMATION_A }
+      : { status: 'ready', data: { partyId, companyAccountId, accountVersion: '1', addresses: [], contacts: [] } }
 
 const IDENTITY = {
   userId: '77777777-7777-7777-7777-777777777777',
@@ -125,7 +182,16 @@ export function installFetch(config: HarnessConfig = {}) {
   return { calls, salesCalls: () => calls.filter((c) => c.url.includes('/sales/')) }
 }
 
-export function renderSalesApp(initialPath: string, source: UseReferenceOptions = controlledSource) {
+export interface HarnessSources {
+  readonly currencies?: UseCurrencyOptions
+  readonly contactInformation?: UseContactInformation
+}
+
+export function renderSalesApp(
+  initialPath: string,
+  source: UseReferenceOptions = controlledSource,
+  sources: HarnessSources = {},
+) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: 0, refetchOnWindowFocus: false } },
   })
@@ -135,9 +201,13 @@ export function renderSalesApp(initialPath: string, source: UseReferenceOptions 
   return {
     ...render(
       <SalesReferenceSourceContext.Provider value={source}>
-        <ShellProvider queryClient={queryClient}>
-          <RouterProvider router={router} />
-        </ShellProvider>
+        <SalesCurrencySourceContext.Provider value={sources.currencies ?? controlledCurrencies}>
+          <SalesContactInformationSourceContext.Provider value={sources.contactInformation ?? controlledContactInformation}>
+            <ShellProvider queryClient={queryClient}>
+              <RouterProvider router={router} />
+            </ShellProvider>
+          </SalesContactInformationSourceContext.Provider>
+        </SalesCurrencySourceContext.Provider>
       </SalesReferenceSourceContext.Provider>,
     ),
     router,
