@@ -293,6 +293,9 @@ aynı dilimde değişmezse drift testi kırmızıya döner.
 ister; tek vaka için makine kurulmadı. Kural burada, drift testi de etiketleri iki taraf arasında
 zaten sabitliyor.
 
-**Kararlaşmamış, Sinan'a ait olan kısım:** sidebar'ın oluşturma eylemi *sunup sunmaması* gerektiği.
-O bir tutarlılık sorusu değil, insanların nasıl çalıştığına dair bir sorudur; persona/UX kartında
-açık madde olarak durur ve bu kural onu kapatmaz.
+**Sinan'a ait olan kısım artık KARARLI (K5, 20 Eylül 2026, #66 5748258299):** sidebar modülleri ve
+çalışma listelerini taşır; oluşturma, ilgili listenin içinde tek ve yetkili bir "Yeni …" eylemidir;
+bağlamdan gelen gerçek kısayollar aynı canonical route'u kullanır ve ikinci bir kayıt motoru
+kurulmaz; hiçbir yerden ulaşılamayan ekranlar modülünden veya listesinden bağlanır. Bu kural o
+kararın teknik tarafıdır ve onunla uyumludur. Karar **hiçbir rolü ve izni genişletmez** — sidebar'da
+bir oluşturma girdisi görmek, o eylemi yapma yetkisi değildir.

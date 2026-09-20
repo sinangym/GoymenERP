@@ -30,9 +30,18 @@ Uygulama kuralı Sinan'ın koyduğu gibi **deny-first**: bir ad listede yoksa pe
 
 ## Önerilen eşleme
 
-`+` = önerilir · `—` = verilmez (gerekçe aşağıda) · `?` = Sinan'ın metni belirlemiyor (NEEDS-SINAN).
+`+` = önerilir · `—` = verilmez (gerekçe aşağıda) · `?` = bu tabloda belirsizdi.
 Admin sütunu bilerek boş bırakılmadı: "tüm ERP işlevleri" cümlesi tüm kayıtlı adları kapsar,
 ama Critical adlar ayrı insan kapısına tabidir (aşağıda).
+
+**Tablo Sinan'ın 20 Eylül kararlarından ÖNCE hazırlandı ve olduğu gibi bırakıldı** — bir kararın
+neyi değiştirdiği, ancak öncesi de görülebilirse okunabilir. Kararların bağladığı satırlar için
+aşağıdaki "Sinan'ın cevapları — KARAR" bölümü tabloya üstündür; çeliştiği her yerde karar geçerlidir.
+Özellikle: `accounting.journals.read` Sevkiyatçı'ya verilmez ve yerine parasız dar bir okuma gerekir
+(K4.1); `accounting.periods.read` Sevkiyatçı'ya verilir, `accounting.posting-queues.read` verilmez
+(K4.5); Müdür sütunundaki `?` işaretleri "onayın gerektirdiği okuma evet, genel Finance hayır"
+çerçevesiyle doldurulur (K4.2); Satış Destek'in stok/üretim satırları artık salt-okunur değildir —
+ayrı plan ve tahsis/rezervasyon komut izinleri eşlenir (K4.4).
 
 | İzin adı | Admin | Sevkiyatçı | Satış Destek | Müdür |
 |---|---|---|---|---|
@@ -131,33 +140,83 @@ görüyor. Bu, bu kartın veya bir suite PR'ının içinde değiştirilecek bir 
 kendi dilimini ve kendi kanıtını hak ediyor. **Sahibi:** CARİ. (SİPARİŞ'in LOG-4b sırasındaki
 tespiti; koordinatör 19 Eylül 2026'da Cari maddesi olarak kaydetti.)
 
-## NEEDS-SINAN (kartın kapatamadığı sorular)
+## Sinan'ın cevapları — KARAR (20 Eylül 2026, #66 5748258299 K4/K5)
 
-1. **Muhasebe ve para:** Sevkiyatçı muhasebe fişlerini **tutarlarıyla** mı görecek, yoksa yalnız
-   belge/tarih/durum düzeyinde mi? (Yukarıdaki 3. engel.)
-2. **Müdür'ün okuma yüzeyi:** "Siparişleri onaylayabilir" onay için gereken okumaları ima ediyor.
-   Müdür'ün okuması Satış Destek'in okumasıyla aynı mı, yoksa Sevkiyatçı gibi geniş mi?
-   Matristeki Müdür `?` işaretlerinin tamamı bu tek sorudan geliyor.
-3. **Satış Destek ve cari kartı:** Sipariş girebilen kişi yeni cari kartı/hesabı **açabilir** mi,
-   yoksa yalnız var olanı mı seçer? (`counterparty.*.create` satırları.)
-4. **Stok ve üretim okuması Satış Destek'te:** sipariş girerken stok/üretim durumunu görmesi
-   gerekiyor mu? (`inventory.*.read`, `manufacturing.orders.read`.)
-5. **Sevkiyatçı ve dönem okuması:** `accounting.periods.read` / `accounting.posting-queues.read`
-   "muhasebe kayıtları" kapsamında mı?
+Kartın beş sorusu kapandı. Aşağıdakiler öneri değil **karar**dır; yine de hiçbiri grant değildir —
+izin adları sahibinin teknik işi, atama ve production grant insan kapısıdır.
 
-## Açık UX maddesi (yetki değil, çalışma biçimi)
+**1. Sevkiyatçı muhasebe tutarı: HAYIR.** Yalnız belge, tarih, durum ve operasyonel muhasebe
+bağlantısı görür; borç/alacak ve tutar, fiyat, marj, Finance hareketi ve bakiye görmez.
+**Doğrudan teknik sonucu var ve kartın tablosunu değiştirir:** tutar döndüren mevcut
+`accounting.journals.read` bu rolün ihtiyacını **karşılamaz**. Sunucudan **parasız (money-free) dar
+bir projection ve kendi izni** gerekir; alanı frontend'de gizlemek **yeterli değildir** — bu cümle
+kararın parçasıdır, çünkü aksi hâlde biri bunu React'te "çözer". Sahibi: Accounting owner.
+Dolayısıyla matristeki `accounting.journals.read` satırı Sevkiyatçı için `—` olarak kalır ve yerine
+gelecek dar okuma ayrı bir addır.
 
-Sidebar oluşturma eylemi sunmalı mı? Bugün Cari, Ürün ve Sipariş taslağı için sunuyor; Finance'in iki
-ekranı ve Muhasebe dönem önerisi için sunmuyor (onlara kendi listelerinden gidiliyor). Her iki biçim
-de tek giriş noktası kuralına uyuyor, yani ortada tutarsızlık yok — ama hangisinin doğru olduğu
-kullanıcının nasıl çalıştığına bağlı ve bunu ne CARİ ne koordinatör icat eder. Personalar bakımından
-önemi şu: sidebar'da bir oluşturma girdisi görmek, o eylemi yapma yetkisi anlamına gelmez — girdi
-yalnız izni olana çizilir, ama izin insan kapısından gelir. Sinan'a sorulacak açık madde; hiçbir işi
-bloke etmiyor.
+**2. Müdür:** sipariş onayı için gereken alış/satış, cari/ürün ve karar özetlerini okur; onayın
+fiyat/tutar bağlamı **ilgili dar fiyat okumasıyla** sağlanır. Finance'te ve diğer modüllerde genel
+erişim bundan doğmaz; maliyet, marj ve banka okuması sınırsız değildir. Matristeki Müdür `?`
+işaretleri bu çerçevede doldurulur: onayın gerektirdiği okuma evet, genel Finance hayır.
+
+**3. Satış Destek ve cari kartı:** başlangıçta **mevcut** cariyi ve şirket hesabını seçer. Cari veya
+hesap **oluşturmak ayrı ve dar bir izindir**, sipariş girme yetkisiyle otomatik gelmez.
+
+**4. Satış Destek stok/üretim: READ-ONLY DEĞİL.** Sinan az personelle çalışıldığı için **şimdilik**
+Satış Destek'in üretim planı yapabilmesini ve müşteri/sipariş için malzeme tahsis/rezerve
+edebilmesini istedi. Gereken stok/arz/üretim okumaları ile **ayrı plan oluştur/düzenle** ve
+**tahsis/rezervasyon** komut izinleri eşlenir. Bu cümleden **otomatik çıkmayanlar**: sipariş
+onaylama, üretim planı onaylama, fiziksel stok düzeltme, üretim gerçekleşmesi, sevkiyat, para
+kaydı. Korunan kural aynen durur: **talep/taslak fiziksel stok bloke etmez; aktif satış tahsisi iç
+onaylı siparişe dayanır.** Müşteri bağlamından başlatılan işlem uygun onaylı satıra bağlanır; bu
+karar bağsız serbest rezervasyon ya da aşım toleransı **seçmez**. Hak ileride yönetici tarafından
+kaldırılabilir; kendiliğinden bir süre sonu **uydurulmaz**.
+
+**5. Sevkiyatçı dönem/queue:** dönem **açık/kapalı durumunu okuyabilir**; posting ve error queue
+verilmez, dönem açma/onaylama/kapatma yazmaları verilmez. Yani `accounting.periods.read` evet,
+`accounting.posting-queues.read` hayır, üç period yazma adı hayır.
+
+**Kabul ölçütü (Sinan'ın kendi cümlesi):** Satış Destek ayrı plan+tahsis izinleriyle plan ve tahsis
+kaydedebilir ama sipariş onayı ile fiziksel gerçekleşme/para yetkisini almaz; bu iki izin
+kaldırıldığında sipariş girişi kalır, plan/tahsis komutları reddedilir.
+
+## UX kararı (K5, 20 Eylül 2026) — yetki genişletmez
+
+Kart bu soruyu bilerek açık bırakmıştı: sidebar oluşturma eylemi sunmalı mı? Sinan karar verdi.
+
+**Sidebar modülleri ve çalışma listelerini taşır. Oluşturma, ilgili listenin içinde tek ve yetkili
+bir "Yeni …" eylemidir.** Cari, ürün ve sipariş için paralel sidebar-create + liste-create
+çoğaltması kaldırılır. Bağlamdan gelen gerçek iş kısayolları ("bu cari için sipariş/tahsilat")
+korunur, ama **aynı canonical route**'u kullanır ve bağlamı taşır; ikinci bir kayıt motoru
+kurulmaz. Hiçbir yerden ulaşılamayan ekranlar (MFG listesi gibi) modülünden veya listesinden
+bağlanır.
+
+Gerekçe Sinan'ın: sidebar sade kalır, kişi önce kayıtlarını görür, aynı adlı iki linkin belirsizliği
+biter, tek form korunur.
+
+**Bu bir çalışma biçimi kararıdır; hiçbir rolü ve hiçbir izni genişletmez.** Sidebar'da bir
+oluşturma girdisi görmek o eylemi yapma yetkisi anlamına gelmez: girdi yalnız izni olana çizilir ve
+izin insan kapısından gelir.
+
+İlişki: `docs/delivery/TEKNIK_TUZAKLAR.md` §8'deki "tek giriş noktası" kuralı bu kararın teknik
+tarafıdır ve onunla uyumludur — L-03 düzeltildi, Ürün ve Sipariş taslağı için takip maddeleri açık.
 
 ## Sonraki adım
 
-Bu kart merge edilse bile hiçbir şey etkinleşmez. Etkinleşme sırası, Sinan'ın yukarıdaki beş
-sorusu yanıtlandıktan sonra: (a) eksik fiyatsız okumanın sahibi tarafından eklenmesi,
-(b) persona başına rol kodlarının Identity modelinde tasarlanması, (c) grant'lerin insan kapısında
-açılması. (a)–(c) bu kartın kapsamı **değildir**.
+Bu kart merge edilse bile hiçbir şey etkinleşmez. Beş soru artık yanıtlı olduğuna göre sıradaki
+işler sahipleriyle şunlardır ve **hiçbiri bu kartın kapsamı değildir**:
+
+1. **Fiyatsız satış okuması** — Sevkiyatçı sipariş görebilsin ama fiyat görmesin (LOG-4b'nin
+   fiyatsız okuma emsali). Sahibi: Sales owner.
+2. **Parasız muhasebe projection'ı + kendi izni** — K4.1'in doğrudan sonucu; `accounting.journals.read`
+   tutar döndürdüğü için bu rolü karşılamıyor, ve bu **sunucu tarafında** çözülür. Sahibi:
+   Accounting owner.
+3. **Plan oluştur/düzenle ve tahsis/rezervasyon izinleri** — K4.4'ün gerektirdiği yeni komut adları,
+   korunan "taslak stok bloke etmez / aktif tahsis iç onaylı siparişe dayanır" kuralıyla birlikte.
+   Sahipleri: Manufacturing ve Inventory owner'ları.
+4. **Dar fiyat okuması** — Müdür'ün sipariş onayı bağlamı için (K4.2). Sahibi: Sales owner.
+5. **Cari/hesap oluşturma için ayrı dar izin** — K4.3. Sahibi: Cari owner.
+6. Ardından persona başına rol kodlarının Identity modelinde tasarlanması ve **en sonda** grant'lerin
+   insan kapısında açılması.
+
+İzin adları her durumda sahibinin teknik işidir; bu kart ad önermez ve atama yapmaz.
