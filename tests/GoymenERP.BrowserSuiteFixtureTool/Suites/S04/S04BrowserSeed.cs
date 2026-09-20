@@ -39,6 +39,13 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
     /// <summary>The canonical bootstrap administrator, whose seeded SYSTEM_ADMINISTRATOR role opens Cari parties (the fin01 way).</summary>
     public const string CariActor = "group-bootstrap-admin";
 
+    /// <summary>
+    /// ASSUMPTION-SALESA2A-1: the seed-only fixture actor that writes the customer's contact information through the real
+    /// Cari command (counterparty.parties.read + counterparty.parties.update.basic; no canonical actor holds update.basic).
+    /// Never a persona the browser signs in as, and not a seed output.
+    /// </summary>
+    public const string CariWriterActor = "s04-cari";
+
     /// <summary>The GDC company of the built-in organization seed (the context company of the web profile).</summary>
     public static readonly Guid CompanyGdc = Guid.Parse("10000000-0000-0000-0000-000000000001");
 
@@ -283,13 +290,13 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
         CancellationToken cancellationToken)
     {
         var path = $"{CariBrowserSeed.CounterpartiesPath}/{customer.PartyId:D}/contact-information";
-        var current = await context.GetJsonAsync(CariActor, CompanyGdc, path, cancellationToken);
+        var current = await context.GetJsonAsync(CariWriterActor, CompanyGdc, path, cancellationToken);
         if (!current.GetProperty("information").GetProperty("addresses").EnumerateArray()
                 .Any(address => address.GetProperty("id").GetGuid() == DeliveryAddressId))
         {
             var expectedVersion = current.GetProperty("version").GetString()
                 ?? throw new InvalidOperationException("The contact information version is missing.");
-            using var client = context.Api(CariActor, CompanyGdc);
+            using var client = context.Api(CariWriterActor, CompanyGdc);
             using var request = new HttpRequestMessage(HttpMethod.Put, path)
             {
                 Content = JsonContent.Create(new
@@ -324,7 +331,7 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
             };
             request.Headers.Add(BrowserSuiteFixtureContext.IdempotencyHeader, context.IdempotencyKey("contact-information"));
             using var response = await client.SendAsync(request, cancellationToken);
-            current = await context.GetJsonAsync(CariActor, CompanyGdc, path, cancellationToken);
+            current = await context.GetJsonAsync(CariWriterActor, CompanyGdc, path, cancellationToken);
         }
 
         var information = current.GetProperty("information");
