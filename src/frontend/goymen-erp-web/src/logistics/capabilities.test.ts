@@ -59,5 +59,8 @@ describe('Logistics lane ↔ backend shell provider', () => {
     expect(matchPath(LOGISTICS_ROUTE.detail, instructionDetailRoute(id))?.params.instructionId).toBe(id)
     expect(matchPath(LOGISTICS_ROUTE.detail, LOGISTICS_ROUTE.create)?.params.instructionId).toBe('yeni')
     expect(LOGISTICS_NAV_LABEL[LOGISTICS_CAPABILITY.instructionsDetail]).toBe('')
+    // One entry point per creation route: the create screen has no nav entry either; the L-02 list links to it.
+    expect(LOGISTICS_NAV_LABEL[LOGISTICS_CAPABILITY.instructionsCreate]).toBe('')
+    expect(LOGISTICS_NAV_LABEL[LOGISTICS_CAPABILITY.instructionsList]).not.toBe('')
   })
 })

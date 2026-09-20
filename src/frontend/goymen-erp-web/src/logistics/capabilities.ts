@@ -41,7 +41,10 @@ export const LOGISTICS_SCREEN_ID = {
 
 export const LOGISTICS_NAV_LABEL = {
   [LOGISTICS_CAPABILITY.instructionsList]: 'Yükleme Talimatları',
-  [LOGISTICS_CAPABILITY.instructionsCreate]: 'Yeni Yükleme Talimatı',
+  // No nav entry: one entry point per creation route (coordinator, 19 September 2026) — the L-02 list carries
+  // its own primary link to L-03, as Finance and Accounting do; a second sidebar link with the same accessible
+  // name is what l04's strict-mode violation found. The shell's table must say the same (logisticsMountDrift).
+  [LOGISTICS_CAPABILITY.instructionsCreate]: '',
   // No nav entry: an instruction is opened from the list row.
   [LOGISTICS_CAPABILITY.instructionsDetail]: '',
 } as const
