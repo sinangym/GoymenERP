@@ -33,6 +33,30 @@ Bu dosya bir istek değil, **uygulanmaya hazır kaynak**. Delta tamamen **ekleyi
 
 `manufacturing.orders.facts` **route değil, kontroldür**. Shell tablosuna girmez; ekran onu `hasCapability` ile okur (Organization'daki `organization.locations.status` emsali).
 
+### 1b. MFG-ORD deltası (emir listesi + kapanış)
+
+`CAPABILITY` nesnesinin sonuna:
+
+```ts
+  /** MFG-02 Üretim emirleri listesi (MFG-ORD). Route `/uretim/emirler`. */
+  manufacturingOrdersList: 'manufacturing.orders.list',
+```
+
+`CAPABILITY_ROUTE` ve `CAPABILITY_NAV_LABEL` sonuna:
+
+```ts
+  [CAPABILITY.manufacturingOrdersList]: '/uretim/emirler',
+  [CAPABILITY.manufacturingOrdersList]: 'Üretim emirleri',
+```
+
+(Liste, modülün tek sidebar girdisidir; emir detayının nav etiketi boş kalır.)
+
+`manufacturing.orders.close` **route değil, kontroldür** (emir ekranının içinde, `manufacturing.orders.facts` gibi): shell tablosuna **girmez**.
+
+Bu iki satır gelene kadar `shell/manufacturingMountDrift.test.ts` kırmızıdır — şerit tarafı `MANUFACTURING_ROUTE`'a listeyi ekledi, shell tarafı henüz eklemedi. Test dosyası merkezi tarafın sahibindedir; beklenen düzeltme yalnız yukarıdaki iki satırın eklenmesidir.
+
+Ayrıca merkezde: `ErpPermissions`'a `manufacturing.orders.close` (`ManufacturingOrdersClose`, `All` + `CompanyWideOnly`, Critical değil, hiçbir role verilmez) ve BROWSER-CI doğrulayıcısında `SUITE_IDENTITY_PERMISSIONS["mfg"]` altı isim / `SUITE_API_EXTENSIONS["mfg"]` üç aktör.
+
 ### 2. `src/shell/router.tsx`
 
 ```ts

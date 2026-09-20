@@ -24,7 +24,8 @@ import {
 import styles from './AppShell.module.css'
 
 /** Every capability the frontend can actually mount, in nav order. */
-const NAV_CAPABILITIES: readonly CapabilityId[] = [
+/** Exported for `navEntryPointInvariant.test.ts`: the nav list and the label table must agree. */
+export const NAV_CAPABILITIES: readonly CapabilityId[] = [
   CAPABILITY.cariPartiesList,
   CAPABILITY.cariPartiesCreate,
   CAPABILITY.cariAccountsLink,
@@ -59,6 +60,23 @@ const NAV_CAPABILITIES: readonly CapabilityId[] = [
    */
   CAPABILITY.financeReceiptsList,
   CAPABILITY.financeBankAccountsList,
+  /**
+   * Listed together with the routes that serve them (ACC-V0b). Each renders only where the server's
+   * snapshot carries the capability — staged until the acc01 acceptance — and the propose screen and
+   * the journal detail are reached from their own list, never from the sidebar.
+   */
+  CAPABILITY.accountingPeriodsList,
+  CAPABILITY.accountingJournalsList,
+  CAPABILITY.accountingPostingQueues,
+  /**
+   * Listed together with the routes that serve them (LOG-4b). Each renders only where the server's
+   * snapshot carries the capability (staged until the l04 suite); the detail is reached from a row.
+   */
+  // The L-03 creation screen is NOT here: the L-02 list carries its own primary link, and the rule
+  // is exactly one entry point per creation route (coordinator, 19 September 2026). Two links with
+  // the same accessible name to one route is what l04's strict-mode violation found, and a screen
+  // reader announces it twice.
+  CAPABILITY.logisticsInstructionsList,
 ]
 
 export function AppShell() {

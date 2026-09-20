@@ -63,20 +63,42 @@ internal static class ShellCapabilityRegistryAuthorities
     // MFG-UI-F: ... + Manufacturing 1.0 PUBLISHED (the order detail and its facts control flip only their
     // availability): the normal host (C+O+P+S(published)+F(published)+M(published)). Computed by the
     // ComputeRevision reproduction and, independently, by ORG and SİPARİŞ (DATA ONLY); pinned by test.
+    // Re-measured for MFG-ORD (the MFG-02 order list route and the close control of the order screen:
+    // four Manufacturing declarations, the control keeping its parent's route, screen, precedence,
+    // context and scope): ComputeRevision reproduction, calibrated against the three constants this
+    // file already served, and independently re-checked (DATA ONLY); pinned by test.
     internal const string CounterpartyV15OrganizationV10ProductV10PublishedSalesV10PublishedFinanceV10AndPublishedManufacturingV10 =
-        "sha256:a5pdyL0p3KsMrsfEuwKWoXa8RtqJmZRAicrLmDAWxsU";
+        "sha256:tc_PnhgkBI6_EfkP2xl3JKc64Wrd7YYESEg4HnLHbPA";
 
     // LOG-4a: ... + Logistics 1.0 STAGED (the loading-instruction list L-02, new L-03 and detail L-02-DETAIL,
     // master v3 §27.8): the normal host (C+O+P+S(published)+F(published)+M(published)+L(staged)). Computed by
     // the ComputeRevision reproduction and, independently, by ORG (DATA ONLY); pinned by test.
+    // Re-measured for MFG-ORD (the MFG-02 order list route and the close control of the order screen:
+    // four Manufacturing declarations, the control keeping its parent's route, screen, precedence,
+    // context and scope): ComputeRevision reproduction, calibrated against the three constants this
+    // file already served, and independently re-checked (DATA ONLY); pinned by test.
     internal const string CounterpartyV15OrganizationV10ProductV10PublishedSalesV10PublishedFinanceV10PublishedManufacturingV10AndLogisticsV10 =
-        "sha256:qmTCFPlD-biVAyLgFvimrWzMq9aC-5F-0o2AALnEZH8";
+        "sha256:LlNH5-bouF79CKxrcrdWZQEQMEVRma5z1rtR0G452C4";
 
     // PUR-4a: ... + Purchasing 1.0 STAGED (the purchase-order list P-03, new P-04 and detail P-03-DETAIL,
     // master v3 §27.3): the normal host (C+O+P+S(pub)+F(pub)+M(pub)+L(staged)+Pu(staged)). Computed by the
     // ComputeRevision reproduction and, independently, by ORG (DATA ONLY); pinned by test.
+    // Re-measured for MFG-ORD (the MFG-02 order list route and the close control of the order screen:
+    // four Manufacturing declarations, the control keeping its parent's route, screen, precedence,
+    // context and scope): ComputeRevision reproduction, calibrated against the three constants this
+    // file already served, and independently re-checked (DATA ONLY); pinned by test.
     internal const string CounterpartyV15OrganizationV10ProductV10PublishedSalesV10PublishedFinanceV10PublishedManufacturingV10LogisticsV10AndPurchasingV10 =
-        "sha256:gv0JwWffycJQ08eCF4U7vpHSVIyVahDWM-1XSZPNQ3I";
+        "sha256:FTHNU_KsDs6eQMkaYavYF6Jgu0z5kNxq9SZNZPMQkC0";
+
+    // ACC-V0b: ... + Accounting 1.0 STAGED (the period list M-07 and its propose screen, the approve and
+    // close controls of that list, the journal list M-04 and its detail, the posting queues M-01): the normal
+    // host (C+O+P+S(pub)+F(pub)+M(pub)+L(staged)+Pu(staged)+Acc(staged)). Computed by the ComputeRevision
+    // reproduction, independently re-checked (DATA ONLY); pinned by test.
+    // RE-MEASURED after MFG-ORD (#360) landed: Manufacturing now declares FOUR capabilities, not two, so the
+    // earlier value of this row (sha256:kxDfAaAN…) is SUPERSEDED and describes a host that no longer exists.
+    // Its earlier independent check is superseded with it — a match against the old value is not evidence.
+    internal const string CounterpartyV15OrganizationV10ProductV10PublishedSalesV10PublishedFinanceV10PublishedManufacturingV10LogisticsV10PurchasingV10AndAccountingV10 =
+        "sha256:oQPU6TLYV8t5VDbXWW8TZQ3vFuXGMJ1oC9KTRVLL6wk";
 
     internal const string CounterpartyListCreateLinkAndDetailV15 =
         "sha256:3GiwcHV6aVuN1Y-wBzElxLJLCok2bblGc6pRruhqTx4";
@@ -89,6 +111,19 @@ internal static class ShellCapabilityRegistryAuthorities
     // three accepted constants exactly) and pinned by a test against ComputeCandidateRevision.
     internal const string C01DisposableCariListDetailV1 =
         "sha256:LM81M4d4tKOqR9OaKvZM_uT5HQIcoffoTMEzMFH4atg";
+
+    // The disposable "accounting-periods-and-journals" profile (BROWSER-CI acc-staged, ACC-V0b): the C-01
+    // list-only Counterparty provider plus Accounting's own seven declarations with only their availability
+    // opened (M-07 list and propose, its approve and close controls, M-04 list and detail, M-01). Computed by
+    // the ComputeRevision reproduction, independently re-checked (DATA ONLY); pinned by a test against
+    // ComputeCandidateRevision.
+    internal const string C01DisposableAccountingPeriodsAndJournalsV1 =
+        "sha256:meLXKsKx_dZtvOZvMdkrHM6Ih-U8TeadJumWY4vfcuY";
+    // The disposable "logistics-instructions" profile (BROWSER-CI log-staged, LOG-4b): the C-01 list-only Counterparty
+    // provider plus Logistics's own three declarations with only their availability opened (L-02 list, L-03 new,
+    // L-02-DETAIL). Computed by the ComputeRevision reproduction; pinned by a test against ComputeCandidateRevision.
+    internal const string C01DisposableLogisticsInstructionsV1 =
+        "sha256:G6ic5Cbh7NH1-kw430fr2eeOFViX0QGiv7w1qosZpbI";
 
     // The disposable "manufacturing-order-detail" profile (mfg-staged, MFG-UI D4 #323, sha256:eZi6K5tQ…) is
     // retired: Manufacturing is published on the normal host (MFG-UI-F) and the mfg suite runs there.

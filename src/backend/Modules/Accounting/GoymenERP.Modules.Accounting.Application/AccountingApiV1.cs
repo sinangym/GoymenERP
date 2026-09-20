@@ -356,6 +356,15 @@ public sealed class AccountingApiService(
             return Answer<T>(prior, actorId, requestHash);
         }
 
+        // #276, measured again after the awaited lookup and right before the one write (the store reads the period
+        // and saves in that call; Manufacturing's FenceAsync shape). A grant lost meanwhile stores nothing.
+        var fence = await authority.RevalidatePermissionScopeAsync(permission, companyContext.CompanyId, cancellationToken);
+        if (!fence.IsGranted || !fence.IsCompanyWide || !HasContext()
+            || !string.Equals(currentUser.UserId, actorId, StringComparison.Ordinal))
+        {
+            return Denied<T>();
+        }
+
         AccountingApiResult<T>? completed = null;
         AccountingCommandRecord Complete(object stored)
         {

@@ -19,24 +19,38 @@
  * as the create: one key per snapshot, an unknown outcome keeps its key, a retry resends the same
  * snapshot). After a recorded transition the detail is re-read — the answer is the server's.
  *
+ * SALES-A2a — the "Teslimat" block: the stored delivery address / contact references (ids + the owner's
+ * versions) are shown with the Cari owner's CURRENT texts, read afresh through the contact-information
+ * reference; the currency id with its code from the currencies reference for the business date. A
+ * reference the owner no longer lists says so beside the id; a read that fails names its reason; nothing
+ * is guessed and no read hides the draft. The reference reads are bound to `sales.drafts.create` on the
+ * server, so an actor without that grant is told the names cannot be read, and nothing is asked.
+ *
  * No allocation, shipment, invoice or money tab: none exists for a draft.
  */
 
-import { useRef, useState } from 'react'
+import { useContext, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router'
 import { fetchDraftDetail, sendDraftCommand } from './api'
 import {
   APPROVAL_STATE,
   OWNER_REFERENCE_FIELDS,
+  type ContactInformationOptions,
   type DraftDetail,
   type DraftLine,
   type DraftMutation,
   type DraftStateCommand,
   type DraftStateCommandRequest,
+  type OwnerReference,
 } from './contract'
 import { unplannedQuantity } from './deliveryPlan'
-import { formatBusinessDate, formatInstant } from './format'
+import { contactLabel, formatBusinessDate, formatInstant } from './format'
+import {
+  SalesContactInformationSourceContext,
+  SalesCurrencySourceContext,
+  type ContactInformationReadState,
+} from './referenceSource'
 import {
   abandon,
   applyOutcome,
@@ -50,7 +64,7 @@ import {
   type OrderAttemptState,
 } from './orderAttempt'
 import { SALES_CAPABILITY, SALES_ROUTE } from './capabilities'
-import { APPROVAL_STATE_TEXT, ORDER_DETAIL_TEXT as T, problemCodeText } from './salesText'
+import { APPROVAL_STATE_TEXT, ORDER_DETAIL_TEXT as T, ORDER_DRAFT_TEXT, problemCodeText } from './salesText'
 import { SALES_PROBLEM_CODE } from './contract'
 import { classifyOutcome } from '../shell/uiState'
 import { useShellState } from '../shell/shellContext'
@@ -105,6 +119,7 @@ export function SalesDraftDetailPage() {
     <DraftView
       detail={outcome.data}
       backLink={backLink}
+      delivery={companyId === null ? null : <DeliveryBlock shell={shell} detail={outcome.data} companyId={companyId} />}
       commands={
         companyId === null ? null : (
           <ApprovalCommands
@@ -124,10 +139,13 @@ export function DraftView({
   detail,
   backLink,
   commands = null,
+  delivery = null,
 }: {
   readonly detail: DraftDetail
   readonly backLink: React.ReactNode
   readonly commands?: React.ReactNode
+  /** SALES-A2a: the "Teslimat" block (the owner's texts for the stored references); null when no company is bound. */
+  readonly delivery?: React.ReactNode
 }) {
   const { draft, approval } = detail
   return (
@@ -190,6 +208,8 @@ export function DraftView({
         </div>
       </dl>
 
+      {delivery}
+
       <section className={styles.section} aria-labelledby="sales-approval-heading" data-testid="sales-approval">
         <h2 id="sales-approval-heading">{T.approval.heading}</h2>
         <dl className={styles.facts}>
@@ -248,6 +268,143 @@ export function DraftView({
         ))}
       </section>
     </article>
+  )
+}
+
+/* ── SALES-A2a: the delivery block ─────────────────────────────────────────── */
+
+function DeliveryBlock({
+  shell,
+  detail,
+  companyId,
+}: {
+  readonly shell: ShellState
+  readonly detail: DraftDetail
+  readonly companyId: string
+}) {
+  const { draft } = detail
+  const D = T.delivery
+  // The reference reads are the create form's (bound to sales.drafts.create): without that grant the
+  // ids are shown with the reason, and no read is attempted.
+  const canRead = hasCapability(shell, SALES_CAPABILITY.draftsCreate)
+  const wanted = detail.deliveryAddress !== null || detail.contact !== null
+  const useCurrencies = useContext(SalesCurrencySourceContext)
+  const useContactInformation = useContext(SalesContactInformationSourceContext)
+  const currencies = useCurrencies(canRead ? companyId : '', draft.businessDate)
+  const contactInformation = useContactInformation(canRead && wanted ? companyId : '', draft.partyId, draft.companyAccountId)
+  const currency = currencies.status === 'ready' ? (currencies.data.find((c) => c.currencyId === draft.currencyId) ?? null) : null
+
+  return (
+    <section className={styles.section} aria-labelledby="sales-delivery-heading" data-testid="sales-delivery-block">
+      <h2 id="sales-delivery-heading">{D.heading}</h2>
+      <dl className={styles.facts}>
+        <div>
+          <dt>{D.currency}</dt>
+          <dd data-testid="sales-currency-code">
+            {!canRead ? (
+              <IdWithNote id={draft.currencyId} note={D.noGrant} />
+            ) : currency !== null ? (
+              currency.code
+            ) : currencies.status === 'unavailable' ? (
+              <IdWithNote id={draft.currencyId} note={D.unreadable(currencies.reason)} retry={currencies.retry} />
+            ) : currencies.status === 'ready' ? (
+              <IdWithNote id={draft.currencyId} note={D.currencyNotListed} />
+            ) : (
+              D.reading
+            )}
+          </dd>
+        </div>
+        <ReferenceCell
+          testId="sales-delivery-address-text"
+          label={D.address}
+          reference={detail.deliveryAddress}
+          notChosen={D.addressNotChosen}
+          canRead={canRead}
+          read={contactInformation}
+          pick={(options, id) => {
+            const address = options.addresses.find((a) => a.id === id)
+            return address === undefined ? null : { version: address.version, text: address.text }
+          }}
+        />
+        <ReferenceCell
+          testId="sales-delivery-contact-text"
+          label={D.contact}
+          reference={detail.contact}
+          notChosen={D.contactNotChosen}
+          canRead={canRead}
+          read={contactInformation}
+          pick={(options, id) => {
+            const contact = options.contacts.find((c) => c.id === id)
+            return contact === undefined ? null : { version: contact.version, text: contactLabel(contact) }
+          }}
+        />
+      </dl>
+      {wanted ? null : (
+        <p className={styles.muted} data-testid="sales-delivery-none">
+          {D.notChosen}
+        </p>
+      )}
+    </section>
+  )
+}
+
+/** The stored id in mono beside the reason it cannot be shown as a name — never a guessed name. */
+function IdWithNote({ id, note, retry }: { readonly id: string; readonly note: string; readonly retry?: () => void }) {
+  return (
+    <>
+      <span className={styles.identifier}>{id}</span> — {note}
+      {retry === undefined ? null : (
+        <>
+          {' '}
+          <button type="button" className={styles.linkButton} onClick={retry}>
+            {ORDER_DRAFT_TEXT.references.retry}
+          </button>
+        </>
+      )}
+    </>
+  )
+}
+
+function ReferenceCell({
+  testId,
+  label,
+  reference,
+  notChosen,
+  canRead,
+  read,
+  pick,
+}: {
+  readonly testId: string
+  readonly label: string
+  readonly reference: OwnerReference | null
+  readonly notChosen: string
+  readonly canRead: boolean
+  readonly read: ContactInformationReadState
+  readonly pick: (options: ContactInformationOptions, id: string) => { readonly version: string; readonly text: string } | null
+}) {
+  const D = T.delivery
+  let content: React.ReactNode
+  if (reference === null) content = notChosen
+  else if (!canRead) content = <IdWithNote id={reference.id} note={D.noGrant} />
+  else if (read.status === 'unavailable') content = <IdWithNote id={reference.id} note={D.unreadable(read.reason)} retry={read.retry} />
+  else if (read.status !== 'ready') content = D.reading
+  else {
+    const found = pick(read.data, reference.id)
+    content =
+      found === null ? (
+        <IdWithNote id={reference.id} note={D.notListed} />
+      ) : (
+        <>
+          {found.text}
+          {found.version === reference.expectedVersion ? null : <span className={styles.muted}> — {D.versionChanged}</span>}
+        </>
+      )
+  }
+  return (
+    <div>
+      <dt>{label}</dt>
+      <dd data-testid={testId}>{content}</dd>
+    </div>
   )
 }
 

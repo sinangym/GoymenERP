@@ -27,6 +27,13 @@ public sealed class SalesDraftServiceTests
     private static readonly Guid KgProfile = Guid.Parse("77777777-7777-4777-8777-777777777777");
     private static readonly Guid MoneyProfile = Guid.Parse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
     private static readonly Guid Product = Guid.Parse("99999999-9999-4999-8999-999999999999");
+    // SALES-A2a: the Cari owner's operational address / contact of the account (versions "5" / "8"), plus an inactive address.
+    private static readonly Guid AddressId = Guid.Parse("a5a5a5a5-a5a5-4a5a-8a5a-a5a5a5a5a5a5");
+    private static readonly Guid InactiveAddressId = Guid.Parse("a6a6a6a6-a6a6-4a6a-8a6a-a6a6a6a6a6a6");
+    private static readonly Guid ContactId = Guid.Parse("c8c8c8c8-c8c8-4c8c-8c8c-c8c8c8c8c8c8");
+    private static readonly Guid InactiveContactId = Guid.Parse("c9c9c9c9-c9c9-4c9c-8c9c-c9c9c9c9c9c9");
+    private const string AddressVersion = "5";
+    private const string ContactVersion = "8";
     private static readonly DateOnly Day = new(2026, 9, 18);
     private const string Actor = "synthetic-actor";
     // Registered platform names stand in for the Sales names until the central catalogue knows them.
@@ -52,6 +59,8 @@ public sealed class SalesDraftServiceTests
         Assert.Null(line.UnitPrice);
         Assert.Equal(2, line.RequestedDeliverySlices!.Count);
         Assert.Null(response.Detail.DeliveryAddress);
+        // A draft naming no address or contact never asks the contact-information owner.
+        Assert.Equal(0, world.ContactInformation.Calls);
         // One stored attempt, its envelope from the server context and the fresh measurement's roles.
         var envelope = Assert.Single(world.Store.Envelopes);
         Assert.Equal((Actor, CreatePermission, "synthetic-correlation", "k-1", "Web"),
@@ -187,11 +196,26 @@ public sealed class SalesDraftServiceTests
     {
         var world = new World();
 
+        // SALES-A2a: the delivery address and the contact have their owner port now; the other four still have none.
         var references = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CreateDraftAsync(
-            Request() with { DeliveryAddress = new SalesDraftOwnerReferenceV1(Guid.NewGuid(), "2"), Contact = new(Guid.NewGuid(), "1") },
+            Request() with
+            {
+                DeliveryAddress = new SalesDraftOwnerReferenceV1(AddressId, AddressVersion), Contact = new(ContactId, ContactVersion),
+                Responsible = new(Guid.NewGuid(), "2"), PaymentTerms = new(Guid.NewGuid(), "1"),
+                SourceStrategy = new(Guid.NewGuid(), "1"), Package = new(Guid.NewGuid(), "1"),
+            },
             Metadata("k-1")));
         Assert.Equal((422, SalesDraftProblemCodesV1.OwnerReferenceUnavailable), (references.Status, references.Code));
-        Assert.Equal(["deliveryAddress", "contact"], references.Errors.Select(error => error.Field));
+        Assert.Equal(["responsible", "paymentTerms", "sourceStrategy", "package"], references.Errors.Select(error => error.Field));
+        Assert.Equal(0, world.ContactInformation.Calls);
+
+        // Without the Cari contact-information port (the host's registration is central) a named address or contact is
+        // 503, never stored unvalidated; the account was asked first, nothing after it.
+        var withoutPort = new World { NoContactInformation = true };
+        var noPort = await Assert.ThrowsAsync<SalesDraftServiceException>(() => withoutPort.Service().CreateDraftAsync(
+            Request() with { DeliveryAddress = new SalesDraftOwnerReferenceV1(AddressId, AddressVersion) }, Metadata("k-3")));
+        Assert.Equal((503, SalesDraftProblemCodesV1.CounterpartyProviderUnavailable), (noPort.Status, noPort.Code));
+        Assert.Equal((1, 0, 0), (withoutPort.Accounts.Calls, withoutPort.Settings.Calls, withoutPort.Store.Envelopes.Count));
 
         var priced = Request();
         priced = priced with { Lines = [priced.Lines[0] with { UnitPrice = "12.50", PriceUnitId = KgUnit, DiscountPercent = "5" }] };
@@ -219,6 +243,123 @@ public sealed class SalesDraftServiceTests
         if (fieldCode is not null) Assert.Contains(error.Errors, item => item.Code == fieldCode);
         // Refused before the money profile or any product is read; nothing recorded.
         Assert.Equal((0, 0, 0), (world.Settings.Calls, world.Products.Calls, world.Store.Refusals.Count));
+    }
+
+    // ---- SALES-A2a: the delivery address and the contact are the Cari owner's -------------------
+
+    [Fact]
+    public async Task A_delivery_address_and_a_contact_the_Cari_owner_lists_are_stored_with_the_owners_versions()
+    {
+        var world = new World();
+        var request = Request() with { DeliveryAddress = new SalesDraftOwnerReferenceV1(AddressId, AddressVersion), Contact = new(ContactId, ContactVersion) };
+
+        var response = await world.Service().CreateDraftAsync(request, Metadata("k-1"));
+
+        Assert.Equal(new SalesDraftOwnerReferenceV1(AddressId, AddressVersion), response.Detail.DeliveryAddress);
+        Assert.Equal(new SalesDraftOwnerReferenceV1(ContactId, ContactVersion), response.Detail.Contact);
+        Assert.Null(response.Detail.Responsible);
+        // Read once, for this party and account, after the account answered and before the money profile.
+        Assert.Equal((1, 1), (world.Accounts.Calls, world.ContactInformation.Calls));
+        Assert.Equal((Party, Account), world.ContactInformation.Asked!.Value);
+        Assert.Single(world.Store.Envelopes);
+        Assert.Empty(world.Store.Refusals);
+
+        // The stored draft reopens with the same identities and versions; nothing of the address text is kept.
+        var detail = await world.Service().GetDraftDetailAsync(response.Detail.Draft.Id);
+        Assert.Equal((response.Detail.DeliveryAddress, response.Detail.Contact), (detail.DeliveryAddress, detail.Contact));
+
+        // One of the two alone is fine as well: no reference is not an error, and the missing one stays null.
+        var only = await world.Service().CreateDraftAsync(Request() with { Contact = new(ContactId, ContactVersion) }, Metadata("k-2"));
+        Assert.Null(only.Detail.DeliveryAddress);
+        Assert.Equal(new SalesDraftOwnerReferenceV1(ContactId, ContactVersion), only.Detail.Contact);
+    }
+
+    [Theory]
+    [InlineData("unknown-address", "deliveryAddress")]
+    [InlineData("inactive-address", "deliveryAddress")]
+    [InlineData("unknown-contact", "contact")]
+    [InlineData("inactive-contact", "contact")]
+    public async Task A_reference_the_Cari_owner_does_not_list_or_lists_inactive_is_refused_and_nothing_is_recorded(string variant, string field)
+    {
+        var world = new World();
+        var request = variant switch
+        {
+            "unknown-address" => Request() with { DeliveryAddress = new SalesDraftOwnerReferenceV1(Guid.NewGuid(), "1"), Contact = new(ContactId, ContactVersion) },
+            "inactive-address" => Request() with { DeliveryAddress = new SalesDraftOwnerReferenceV1(InactiveAddressId, "2") },
+            "unknown-contact" => Request() with { Contact = new SalesDraftOwnerReferenceV1(Guid.NewGuid(), "1") },
+            _ => Request() with { DeliveryAddress = new SalesDraftOwnerReferenceV1(AddressId, AddressVersion), Contact = new(InactiveContactId, "3") },
+        };
+
+        var refusal = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CreateDraftAsync(request, Metadata("k-1")));
+
+        Assert.Equal((422, SalesDraftProblemCodesV1.OwnerReferenceInvalid, false), (refusal.Status, refusal.Code, refusal.IsReplay));
+        Assert.Equal((field, SalesDraftProblemCodesV1.OwnerReferenceInvalid), (Assert.Single(refusal.Errors).Field, refusal.Errors[0].Code));
+        // A non-terminal owner refusal: not recorded, the money profile and the products never asked, nothing stored.
+        Assert.Equal((0, 0, 0, 0), (world.Settings.Calls, world.Products.Calls, world.Store.Refusals.Count, world.Store.Envelopes.Count));
+    }
+
+    [Fact]
+    public async Task A_reference_at_another_version_than_the_owners_is_the_terminal_refusal_recorded_and_replayed()
+    {
+        var world = new World();
+        var request = Request() with { DeliveryAddress = new SalesDraftOwnerReferenceV1(AddressId, "4"), Contact = new(ContactId, ContactVersion) };
+
+        var refusal = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CreateDraftAsync(request, Metadata("k-1")));
+        Assert.Equal((409, SalesDraftProblemCodesV1.VersionConflict, false), (refusal.Status, refusal.Code, refusal.IsReplay));
+        Assert.Equal(("deliveryAddress", SalesDraftProblemCodesV1.VersionConflict), (Assert.Single(refusal.Errors).Field, refusal.Errors[0].Code));
+        var recorded = Assert.Single(world.Store.Refusals);
+        Assert.Equal(("k-1", 409), (recorded.Envelope.IdempotencyKey, recorded.Refusal.Status));
+        Assert.Equal((0, 0), (world.Settings.Calls, world.Store.Envelopes.Count));
+        world.ResetOwnerCalls();
+
+        // ADR-011 §7: the same key, content and actor answers the recorded refusal again, without any owner.
+        var again = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CreateDraftAsync(request, Metadata("k-1", correlation: "retry")));
+        Assert.Equal((409, SalesDraftProblemCodesV1.VersionConflict, true, "synthetic-correlation"),
+            (again.Status, again.Code, again.IsReplay, again.OriginalCorrelationId));
+        Assert.Equal((0, 0), (world.Accounts.Calls, world.ContactInformation.Calls));
+
+        // An unlisted reference beside a stale one is the 422 (the owner must know the item before its version matters).
+        var mixed = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CreateDraftAsync(
+            Request() with { DeliveryAddress = new SalesDraftOwnerReferenceV1(AddressId, "4"), Contact = new(Guid.NewGuid(), "1") }, Metadata("k-2")));
+        Assert.Equal((422, SalesDraftProblemCodesV1.OwnerReferenceInvalid, "contact"), (mixed.Status, mixed.Code, Assert.Single(mixed.Errors).Field));
+        Assert.Single(world.Store.Refusals);
+    }
+
+    [Fact]
+    public async Task A_stale_reference_record_that_loses_its_race_answers_the_winners_recorded_refusal_as_a_replay()
+    {
+        // ADR-011 §8, the product race test's mirror: the winner recorded the same key's refusal first.
+        var world = new World { Store = { Race = "refusal-at-record" } };
+        var request = Request() with { Contact = new SalesDraftOwnerReferenceV1(ContactId, "7") };
+
+        var refusal = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CreateDraftAsync(request, Metadata("k-1", correlation: "loser")));
+
+        Assert.Equal((409, SalesDraftProblemCodesV1.VersionConflict, true, "winner-correlation"),
+            (refusal.Status, refusal.Code, refusal.IsReplay, refusal.OriginalCorrelationId));
+        Assert.Empty(world.Store.Refusals);
+        Assert.Empty(world.Store.Envelopes);
+    }
+
+    [Theory]
+    [InlineData("port-missing", 503, "counterparty_provider_unavailable", null)]
+    [InlineData("unavailable", 503, "counterparty_provider_unavailable", null)]
+    [InlineData("denied", 403, "forbidden", null)]
+    [InlineData("not-found", 409, "account_state", "invalid_reference")]
+    [InlineData("other-company", 503, "reference_provider_invalid", null)]
+    [InlineData("other-account", 503, "reference_provider_invalid", null)]
+    [InlineData("malformed-version", 503, "reference_provider_invalid", null)]
+    public async Task The_contact_information_is_the_Cari_owners_answer(string fault, int status, string code, string? fieldCode)
+    {
+        var world = new World { ContactInformation = { Fault = fault } };
+        if (fault == "port-missing") world.NoContactInformation = true;
+        var request = Request() with { DeliveryAddress = new SalesDraftOwnerReferenceV1(AddressId, AddressVersion) };
+
+        var error = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CreateDraftAsync(request, Metadata("k-1")));
+
+        Assert.Equal((status, code), (error.Status, error.Code));
+        if (fieldCode is not null) Assert.Contains(error.Errors, item => item.Code == fieldCode);
+        // The account was asked first; nothing after the contact information; nothing recorded.
+        Assert.Equal((1, 0, 0, 0), (world.Accounts.Calls, world.Settings.Calls, world.Products.Calls, world.Store.Refusals.Count));
     }
 
     [Theory]
@@ -527,10 +668,12 @@ public sealed class SalesDraftServiceTests
         public FixedUser User { get; } = new();
         public FixedAuthority Authority { get; } = new();
         public FakeAccounts Accounts { get; init; } = new();
+        public FakeContactInformation ContactInformation { get; init; } = new();
         public FakeSettings Settings { get; init; } = new();
         public FakeProducts Products { get; init; } = new();
         public FakeStore Store { get; init; } = new();
         public bool NoProducts { get; set; }
+        public bool NoContactInformation { get; set; }
         public SalesDraftServiceBindings Bindings { get; set; } = new(CreatePermission, ReadPermission, ApprovePermission);
 
         public SalesDraftService Service()
@@ -538,12 +681,13 @@ public sealed class SalesDraftServiceTests
             var company = new CompanyContext();
             company.Set(Company);
             return new SalesDraftService(company, User, Authority, new FixedCorrelation(), Accounts, Settings,
-                NoProducts ? null : Products, Store, Bindings, TimeProvider.System);
+                NoProducts ? null : Products, Store, Bindings, TimeProvider.System, NoContactInformation ? null : ContactInformation);
         }
 
         public void ResetOwnerCalls()
         {
             Accounts.Calls = 0;
+            ContactInformation.Calls = 0;
             Settings.Calls = 0;
             Products.Calls = 0;
         }
@@ -604,6 +748,38 @@ public sealed class SalesDraftServiceTests
                 "unavailable" => new SalesPartyAccountAnswerV1(SalesPartyAccountOutcomeV1.Unavailable, null),
                 _ => new SalesPartyAccountAnswerV1(SalesPartyAccountOutcomeV1.Found, new SalesPartyAccountV1(partyId, companyAccountId,
                     Fault == "other-company" ? Guid.NewGuid() : Company, Fault != "passive-party", Fault != "passive-account", "3", "2")),
+            });
+        }
+    }
+
+    /// <summary>SALES-A2a: the Cari owner's contact information of the account — one active and one inactive address and contact.</summary>
+    private sealed class FakeContactInformation : ISalesPartyContactInformationPortV1
+    {
+        public string Fault { get; set; } = "";
+        public int Calls { get; set; }
+        public (Guid Party, Guid Account)? Asked { get; private set; }
+
+        public Task<SalesPartyContactInformationAnswerV1> GetContactInformationAsync(Guid partyId, Guid companyAccountId,
+            CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            Asked = (partyId, companyAccountId);
+            return Task.FromResult(Fault switch
+            {
+                "not-found" => new SalesPartyContactInformationAnswerV1(SalesPartyContactInformationOutcomeV1.NotFound, null),
+                "denied" => new SalesPartyContactInformationAnswerV1(SalesPartyContactInformationOutcomeV1.Denied, null),
+                "unavailable" => new SalesPartyContactInformationAnswerV1(SalesPartyContactInformationOutcomeV1.Unavailable, null),
+                _ => new SalesPartyContactInformationAnswerV1(SalesPartyContactInformationOutcomeV1.Found, new SalesPartyContactInformationV1(
+                    partyId, Fault == "other-account" ? Guid.NewGuid() : companyAccountId, Fault == "other-company" ? Guid.NewGuid() : Company, "2",
+                    [
+                        new SalesPartyAddressV1(AddressId, Fault == "malformed-version" ? " " : AddressVersion, true, "delivery", "TR",
+                            "Sentetik Sanayi Cad. 1", null, "Kocaeli", "Gebze", "41400"),
+                        new SalesPartyAddressV1(InactiveAddressId, "2", false, "delivery", "TR", "Eski adres", null, null, null, null),
+                    ],
+                    [
+                        new SalesPartyContactV1(ContactId, ContactVersion, true, "Sentetik Kişi", "Satın alma", "delivery"),
+                        new SalesPartyContactV1(InactiveContactId, "3", false, "Ayrılan Kişi", null, "delivery"),
+                    ])),
             });
         }
     }

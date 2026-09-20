@@ -55,7 +55,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // Re-fingerprinted for ACC-V0a: the Accounting module (AddAccountingModule, its endpoints and initializer after
     // Organization); no shell provider (ACC-V0b).
     private const string ReviewedOpenApiStartupFingerprint =
-        "454d42b0735a6f509d7e0a3d5fec56b6d48c8c8fbeb7134f0a97497e7487f069";
+        "9f25bd758783c0f47f147560c4964f02a34f5eff352e0e5e7ed40c966fc83920";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedIdentityReconcilerPath =
@@ -127,7 +127,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         {
             // accounting
             ["tools/relational_inventory/accounting.txt"] =
-                "f422e44ed15eecbc29079fa7640dde820b1214a2d29653daf08ec76f5cc026ec",
+                "1f9cfbd91972157a4bf0b06af369a5b9db97df3f157d272a7a93fc5af8be8e7f",
 
             // counterparty
             ["tools/relational_inventory/counterparty.txt"] =
@@ -147,11 +147,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // logistics
             ["tools/relational_inventory/logistics.txt"] =
-                "d3ebbd963dc4d1e7c305d76fbe1b8bef006e98f6d01b76c3f807374c4c324b45",
+                "97b79f9e068a4660a52f68062f0b03ec018a662eb5fe7d57f744a41963f983a9",
 
             // manufacturing
             ["tools/relational_inventory/manufacturing.txt"] =
-                "d2319e1cab2894185ef5e9450886a90a9200be602cbfa5ec9f87e8da68f593fb",
+                "ece62e44f90d8396f12fff01fbb0625b7d202b77196bf368fd3dffea5ced64f1",
 
             // organization
             ["tools/relational_inventory/organization.txt"] =
@@ -171,7 +171,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // sales
             ["tools/relational_inventory/sales.txt"] =
-                "c2906e9ba18bf1942cc2ed5b03d164b1985287f5118b2f14b78e480cb1fd0047",
+                "81629fa047ec290b85a9c54ca4bc09055df1909328f7437b81f53f355bbe0d38",
         };
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
@@ -483,12 +483,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // connection, command or raw SQL.
                 // Re-measured for MFG-API (#313): the same single SqlClient use now also recognises 547 on the
                 // named composite work-center FK (manufacturing_work_center_not_found); still recognition only,
-                // no connection, command or raw SQL. Re-fingerprinted for MFG-BAL: the order close reads the
-                // GDC-BAL/1 mass-balance result (BAL-003); SqlClient count unchanged (1).
+                // no connection, command or raw SQL. Re-fingerprinted for MFG-BAL: the Decimal18Scale3Limit rename
+                // (FİNANS #342 INFO-3: one neutral name for every decimal(18,3) column bound); SqlClient count
+                // unchanged (1).
                 ["src/backend/Modules/Manufacturing/"
                  + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.cs"] =
                     new(
-                        "55bbdf12bddf4c74e0cfb2bb4a1131e2f8385d2332bc457658b8ff1d3cfd420b",
+                        "f89b494d209ca3be43b950d33dfad580ff71a968f856eb5314ac77e88334af08",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -540,7 +541,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Sales.Infrastructure/"
                  + "SalesModuleExtensions.cs"] =
                     new(
-                        "e9e9bc39b1e3291de032e62a3ab2d2ebd0ba70e32c8b2ad7828207e6c331cfdc",
+                        "55a8a02d96ec51db9c71ab29ed42e8105e68cc55960c9862560e176c4008108c",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,

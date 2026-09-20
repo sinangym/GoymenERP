@@ -43,6 +43,9 @@ public sealed class ManufacturingStore(
     private const string PlanEntityType = "Manufacturing.ProductionPlan";
     private const string OrderEntityType = "Manufacturing.ProductionOrder";
     private const int ActorMaximumLength = 128;
+    // The list page bound, as Sales' draft list (#257): a default the caller may keep and a maximum it cannot pass.
+    private const int DefaultPageSize = 50;
+    private const int MaximumPageSize = 100;
     // The exclusive bound of a decimal(18,3) column (15 integer digits): every such column — the masses and the
     // plan's band widths alike — refuses a value at or above it before the save (FİNANS #342 INFO-3: a neutral name).
     private const decimal Decimal18Scale3Limit = 1_000_000_000_000_000m;
@@ -297,7 +300,84 @@ public sealed class ManufacturingStore(
                 }),
             }, Json),
             "Üretim emri kapanışı");
+        // ADR-011 §6: the close's command record commits with the close itself and its audit event.
+        Complete(metadata, companyId, order);
         await SaveAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// One page of this company's orders from the order rows and their input snapshot: no fact is
+    /// read and no balance is computed (a balance is the order read's answer, roll by roll). The
+    /// ordering is the stored createdAtUtc and id, so a page is stable while orders are added.
+    /// </summary>
+    public async Task<ManufacturingOrderPage> ListOrdersAsync(int pageSize, string? cursor, OrderStatus? status,
+        CancellationToken cancellationToken = default)
+    {
+        var companyId = RequireResolvedCompany();
+        if (pageSize is < 1 or > MaximumPageSize)
+        {
+            throw new ArgumentOutOfRangeException(nameof(pageSize), pageSize,
+                $"Sayfa boyutu 1–{MaximumPageSize} olmalıdır (varsayılan {DefaultPageSize}).");
+        }
+
+        var query = dbContext.Orders.AsNoTracking();
+        if (status is { } requested)
+        {
+            if (!Enum.IsDefined(requested))
+            {
+                throw new ArgumentOutOfRangeException(nameof(status), requested, "Tanımsız emir durumu.");
+            }
+
+            var statusValue = (int)requested;
+            query = query.Where(row => row.Status == statusValue);
+        }
+
+        if (cursor is not null)
+        {
+            var (createdAtUtc, id) = ListCursor.Decode(cursor, companyId);
+            query = query.Where(row => row.CreatedAtUtc < createdAtUtc
+                || (row.CreatedAtUtc == createdAtUtc && row.Id.CompareTo(id) < 0));
+        }
+
+        var rows = await query
+            .OrderByDescending(row => row.CreatedAtUtc).ThenByDescending(row => row.Id)
+            .Take(pageSize + 1)
+            .ToListAsync(cancellationToken);
+        var hasMore = rows.Count > pageSize;
+        var page = hasMore ? rows.Take(pageSize).ToList() : rows;
+        if (page.Count == 0)
+        {
+            return new ManufacturingOrderPage([], null);
+        }
+
+        var ids = page.Select(row => row.Id).ToArray();
+        var inputs = await dbContext.OrderInputs.AsNoTracking()
+            .Where(input => ids.Contains(input.OrderId))
+            .GroupBy(input => input.OrderId)
+            .Select(group => new { OrderId = group.Key, Count = group.Count(), PlannedKg = group.Sum(input => input.PlannedKg) })
+            .ToListAsync(cancellationToken);
+
+        var summaries = new List<ManufacturingOrderSummary>(page.Count);
+        foreach (var row in page)
+        {
+            var snapshot = inputs.SingleOrDefault(input => input.OrderId == row.Id);
+            if (snapshot is null)
+            {
+                // An order always has its own input snapshot; without one the row is not summarised.
+                throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                    "Kayıtlı emrin planlanan girdi anlık görüntüsü yok.");
+            }
+
+            summaries.Add(new ManufacturingOrderSummary(row.Id, row.CompanyId, row.PlanId, row.WorkCenterId,
+                (ManufacturingProcess)row.Process, (OrderStatus)row.Status, row.Version, snapshot.Count,
+                new Kilograms(snapshot.PlannedKg), (TargetBasis?)row.TargetBasis,
+                row.TargetKg is { } targetKg ? new Kilograms(targetKg) : null, row.CreatedAtUtc, row.ClosedByUserId,
+                row.ClosedAtUtc));
+        }
+
+        var last = page.LastOrDefault();
+        return new ManufacturingOrderPage(summaries,
+            hasMore && last is not null ? ListCursor.Encode(companyId, last.CreatedAtUtc, last.Id) : null);
     }
 
     public async Task<ProductionOrder?> FindOrderAsync(Guid orderId, CancellationToken cancellationToken = default)
@@ -729,4 +809,48 @@ public sealed class ManufacturingStore(
 
     private static ManufacturingStoreException Refused(string code, string message, Exception? inner = null) =>
         new ManufacturingStoreException(code, message, inner);
+
+    /// <summary>
+    /// The opaque order-list cursor, as Sales' draft cursor (#257): the last row's ordering key,
+    /// bound to the company that read it and to this ordering. A malformed cursor, another company's
+    /// or another ordering's is <see cref="ManufacturingStoreCodes.ListCursorInvalid"/> — never a
+    /// silent restart at the first page.
+    /// </summary>
+    internal static class ListCursor
+    {
+        private const string Ordering = "createdAtUtc desc, id desc";
+
+        public static string Encode(Guid companyId, DateTimeOffset createdAtUtc, Guid id) =>
+            Convert.ToBase64String(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(
+                new Payload(companyId, Ordering, createdAtUtc.UtcDateTime.ToString("O", CultureInfo.InvariantCulture), id), Json)))
+                .TrimEnd('=').Replace('+', '-').Replace('/', '_');
+
+        public static (DateTimeOffset CreatedAtUtc, Guid Id) Decode(string cursor, Guid companyId)
+        {
+            Payload? payload;
+            try
+            {
+                var padded = cursor.Replace('-', '+').Replace('_', '/');
+                padded = padded.PadRight(padded.Length + ((4 - (padded.Length % 4)) % 4), '=');
+                payload = JsonSerializer.Deserialize<Payload>(Encoding.UTF8.GetString(Convert.FromBase64String(padded)), Json);
+            }
+            catch (Exception exception) when (exception is FormatException or JsonException or DecoderFallbackException)
+            {
+                throw Refused(ManufacturingStoreCodes.ListCursorInvalid, "Liste imleci çözülemedi.", exception);
+            }
+
+            if (payload is null || payload.Company != companyId
+                || !string.Equals(payload.Ordering, Ordering, StringComparison.Ordinal) || payload.Id == Guid.Empty
+                || !DateTimeOffset.TryParseExact(payload.CreatedAtUtc, "O", CultureInfo.InvariantCulture,
+                    DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var createdAtUtc))
+            {
+                throw Refused(ManufacturingStoreCodes.ListCursorInvalid,
+                    "Liste imleci bu şirketin ve bu sıralamanın imleci değil.");
+            }
+
+            return (createdAtUtc, payload.Id);
+        }
+
+        private sealed record Payload(Guid Company, string Ordering, string CreatedAtUtc, Guid Id);
+    }
 }

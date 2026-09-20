@@ -44,13 +44,22 @@ public sealed record SalesDraftFixtureRequest(
     string CorrelationId,
     DateTimeOffset At);
 
-/// <summary>The synthetic owner identities the header and the money snapshot name (no owner is read).</summary>
+/// <summary>
+/// The owner identities the header and the money snapshot name (no owner is read). SALES-A2a: a suite may
+/// name a REAL Cari address and contact (id + the owner's version, as the real create would store them); the
+/// fixture validates nothing about them — the suite proves them by reopening through the real reads.
+/// </summary>
 public sealed record SalesDraftFixtureOwners(
     Guid PartyId,
     Guid CompanyAccountId,
     Guid CurrencyId,
     Guid MoneyProfileId,
-    DateOnly EffectiveFrom);
+    DateOnly EffectiveFrom,
+    SalesDraftFixtureOwnerReference? DeliveryAddress = null,
+    SalesDraftFixtureOwnerReference? Contact = null);
+
+/// <summary>An owner reference as the draft stores it: the owner's identity and its version text.</summary>
+public sealed record SalesDraftFixtureOwnerReference(Guid Id, string Version);
 
 /// <summary>One synthetic line: the product and unit snapshots are built from these values, one binding for stock, sales and order unit.</summary>
 public sealed record SalesDraftFixtureLine(
@@ -138,7 +147,8 @@ internal sealed class SalesDraftFixtureStore(SalesDbContext dbContext, ICompanyC
     private static SalesOrderDraft Build(SalesDraftFixtureRequest request)
     {
         var owners = request.Owners;
-        var header = new SalesDraftHeader(owners.PartyId, owners.CompanyAccountId, owners.CurrencyId, request.BusinessDate);
+        var header = new SalesDraftHeader(owners.PartyId, owners.CompanyAccountId, owners.CurrencyId, request.BusinessDate,
+            DeliveryAddress: Reference(owners.DeliveryAddress), Contact: Reference(owners.Contact));
         var money = new MoneyProfileSnapshot(request.CompanyId, owners.CurrencyId, SalesOrderDraft.MoneyOperation, owners.MoneyProfileId,
             SnapshotVersion, request.BusinessDate, IsActive: true, owners.EffectiveFrom, EffectiveThrough: null, MoneyScale);
         var draft = SalesOrderDraft.Create(request.DraftId, request.CompanyId, request.DocumentNo, header, money, request.At);
@@ -155,4 +165,7 @@ internal sealed class SalesDraftFixtureStore(SalesDbContext dbContext, ICompanyC
         draft.RequireStorable();
         return draft;
     }
+
+    private static OwnerReference? Reference(SalesDraftFixtureOwnerReference? reference) =>
+        reference is null ? null : new OwnerReference(reference.Id, reference.Version);
 }

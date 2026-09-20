@@ -1,0 +1,116 @@
+# BROWSER-CI stage 2, profile "acc-staged" (ACC-V0b): the canonical C-01 stack with the same disposable
+# envelope plus C01E2e__Profile=accounting-periods-and-journals (the list-only C-01 Counterparty set plus
+# Accounting's seven declarations, opened only inside this envelope). Derived from the canonical file by two
+# transforms only (one profile line added, suite label renamed), pinned by tests/browser_acceptance_contract.
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server@sha256:ba4c8329f48fb8f02e1416be6a930ebfd71268caee78aa985f3af4315e457c89
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: Developer
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?MSSQL_SA_PASSWORD must be set}
+    ports:
+      - target: 1433
+        published: ${C01_E2E_SQL_PORT:-11433}
+        host_ip: 127.0.0.1
+        protocol: tcp
+    volumes:
+      - c01-sqlserver-data:/var/opt/mssql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$${MSSQL_SA_PASSWORD}" -C -Q "SELECT 1" || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 20s
+    labels:
+      com.goymen.e2e.suite: BROWSER-SUITE-ACC-STAGED-V1
+      com.goymen.e2e.tested-commit: ${C01_E2E_TESTED_COMMIT:?C01_E2E_TESTED_COMMIT must be set}
+
+  api:
+    build:
+      context: ..
+      dockerfile: src/backend/GoymenERP.Api/Dockerfile
+      labels:
+        org.opencontainers.image.revision: ${C01_E2E_TESTED_COMMIT:?C01_E2E_TESTED_COMMIT must be set}
+        com.goymen.e2e.suite: BROWSER-SUITE-ACC-STAGED-V1
+    environment:
+      ASPNETCORE_ENVIRONMENT: Testing
+      DB_PROVIDER: SqlServer
+      DB_CONNECTION_STRING: Server=sqlserver,1433;Database=${C01_E2E_DATABASE_NAME:?C01_E2E_DATABASE_NAME must be set};User Id=sa;Password=${MSSQL_SA_PASSWORD};Encrypt=True;TrustServerCertificate=True
+      Counterparty__CursorSigningKey: ${C01_E2E_CURSOR_SIGNING_KEY:?C01_E2E_CURSOR_SIGNING_KEY must be set}
+      C01E2e__EnableListCapability: "true"
+      C01E2e__Profile: accounting-periods-and-journals
+      GOYMEN_ERP_C01_E2E_DISPOSABLE: ${GOYMEN_ERP_C01_E2E_DISPOSABLE:?GOYMEN_ERP_C01_E2E_DISPOSABLE must be set}
+      GOYMEN_ERP_C01_E2E_TESTED_COMMIT: ${GOYMEN_ERP_C01_E2E_TESTED_COMMIT:?GOYMEN_ERP_C01_E2E_TESTED_COMMIT must be set}
+      GOYMEN_ERP_C01_E2E_RUN_ID: ${GOYMEN_ERP_C01_E2E_RUN_ID:?GOYMEN_ERP_C01_E2E_RUN_ID must be set}
+      GOYMEN_ERP_C01_E2E_COMPOSE_PROJECT: ${GOYMEN_ERP_C01_E2E_COMPOSE_PROJECT:?GOYMEN_ERP_C01_E2E_COMPOSE_PROJECT must be set}
+      BootstrapIdentity__HeaderName: X-Development-User
+      BootstrapIdentity__Users__0__UserId: group-bootstrap-admin
+      BootstrapIdentity__Users__0__DisplayName: C01 E2E Group Administrator
+      BootstrapIdentity__Users__1__UserId: company-a-user
+      BootstrapIdentity__Users__1__DisplayName: C01 E2E Unauthorized User
+    ports:
+      - target: 8080
+        published: ${C01_E2E_API_PORT:-15080}
+        host_ip: 127.0.0.1
+        protocol: tcp
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    labels:
+      com.goymen.e2e.suite: BROWSER-SUITE-ACC-STAGED-V1
+      com.goymen.e2e.tested-commit: ${C01_E2E_TESTED_COMMIT:?C01_E2E_TESTED_COMMIT must be set}
+
+  web-authorized:
+    build:
+      context: ..
+      dockerfile: src/frontend/goymen-erp-web/Dockerfile
+      args:
+        VITE_BOOTSTRAP_IDENTITY_ENABLED: "true"
+        VITE_DEV_USER: group-bootstrap-admin
+      labels:
+        org.opencontainers.image.revision: ${C01_E2E_TESTED_COMMIT:?C01_E2E_TESTED_COMMIT must be set}
+        com.goymen.e2e.profile: authorized
+        com.goymen.e2e.suite: BROWSER-SUITE-ACC-STAGED-V1
+    ports:
+      - target: 80
+        published: ${C01_E2E_AUTHORIZED_WEB_PORT:-15173}
+        host_ip: 127.0.0.1
+        protocol: tcp
+    depends_on:
+      - api
+    labels:
+      com.goymen.e2e.profile: authorized
+      com.goymen.e2e.suite: BROWSER-SUITE-ACC-STAGED-V1
+      com.goymen.e2e.tested-commit: ${C01_E2E_TESTED_COMMIT:?C01_E2E_TESTED_COMMIT must be set}
+
+  web-unauthorized:
+    build:
+      context: ..
+      dockerfile: src/frontend/goymen-erp-web/Dockerfile
+      args:
+        VITE_BOOTSTRAP_IDENTITY_ENABLED: "true"
+        VITE_DEV_USER: company-a-user
+      labels:
+        org.opencontainers.image.revision: ${C01_E2E_TESTED_COMMIT:?C01_E2E_TESTED_COMMIT must be set}
+        com.goymen.e2e.profile: unauthorized
+        com.goymen.e2e.suite: BROWSER-SUITE-ACC-STAGED-V1
+    ports:
+      - target: 80
+        published: ${C01_E2E_UNAUTHORIZED_WEB_PORT:-15174}
+        host_ip: 127.0.0.1
+        protocol: tcp
+    depends_on:
+      - api
+    labels:
+      com.goymen.e2e.profile: unauthorized
+      com.goymen.e2e.suite: BROWSER-SUITE-ACC-STAGED-V1
+      com.goymen.e2e.tested-commit: ${C01_E2E_TESTED_COMMIT:?C01_E2E_TESTED_COMMIT must be set}
+
+volumes:
+  c01-sqlserver-data:
+    labels:
+      com.goymen.e2e.suite: BROWSER-SUITE-ACC-STAGED-V1
+      com.goymen.e2e.tested-commit: ${C01_E2E_TESTED_COMMIT:?C01_E2E_TESTED_COMMIT must be set}

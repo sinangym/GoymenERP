@@ -17,16 +17,22 @@
  *  - price, price unit and discount are NOT offered: the contract represents them,
  *    but price-read permission, a price-unit source and pricing policy do not exist,
  *    so they go out as null (unknown), which is not zero and not free of charge;
- *  - the six commercial owner references go out as null for the same reason: no
- *    authorized address/contact/responsible/payment/source/package read exists.
+ *  - SALES-A2a: the delivery address and the contact person are CHOSEN from the Cari
+ *    owner's contact information of the chosen account (id + the owner's version) and
+ *    are optional — nothing chosen is null (unknown), never a default address;
+ *  - the other four owner references (responsible, payment terms, source, package) go
+ *    out as null: no authorized read exists and no policy was decided for them.
  */
 
 import {
   LIMITS,
   ORDER_KIND,
+  type AddressOption,
+  type ContactOption,
   type DeliverySlice,
   type DraftCreateRequest,
   type DraftLineRequest,
+  type OwnerReference,
 } from './contract'
 import { unplannedQuantity } from './deliveryPlan'
 import { ORDER_DRAFT_TEXT } from './salesText'
@@ -83,6 +89,15 @@ export interface OrderDraftFormValues {
   readonly requestedDeliveryDate: string
   readonly note: string
   readonly lines: readonly LineValues[]
+  /** SALES-A2a: an address / contact of the CHOSEN account, or '' (nothing chosen → null on the wire). */
+  readonly deliveryAddressId: string
+  readonly contactId: string
+}
+
+/** SALES-A2a: what the Cari owner lists for the chosen account; null while nothing is offered (not read, or failed). */
+export interface DeliveryReferenceOptions {
+  readonly addresses: readonly AddressOption[]
+  readonly contacts: readonly ContactOption[]
 }
 
 export type LineField = 'productId' | 'quantity' | 'orderUnitId' | 'requestedDeliveryDate' | 'note' | 'slices'
@@ -95,6 +110,8 @@ export const ORDER_FIELD = {
   requestedDeliveryDate: 'requestedDeliveryDate',
   note: 'note',
   lines: 'lines',
+  deliveryAddress: 'deliveryAddress',
+  contact: 'contact',
 } as const
 
 export const lineFieldId = (lineId: string, field: LineField) => `lines.${lineId}.${field}`
@@ -149,6 +166,8 @@ export function emptyOrderDraftForm(firstLineId: string): OrderDraftFormValues {
     requestedDeliveryDate: '',
     note: '',
     lines: [emptyLine(firstLineId)],
+    deliveryAddressId: '',
+    contactId: '',
   }
 }
 
@@ -160,6 +179,8 @@ export function isOrderDraftPristine(values: OrderDraftFormValues): boolean {
     values.currencyId === '' &&
     values.requestedDeliveryDate === '' &&
     values.note.trim() === '' &&
+    values.deliveryAddressId === '' &&
+    values.contactId === '' &&
     values.lines.every(
       (line) =>
         line.productId === '' &&
@@ -198,6 +219,15 @@ export const updateLine = (
  * unit chosen for the previous one riding onto the new one is a reference nobody
  * offered for it.
  */
+/**
+ * SALES-A2a: choosing another account clears the delivery address and contact. They are offered PER
+ * account; a reference chosen for the previous account riding onto the new one is one nobody offered.
+ */
+export const setAccount = (values: OrderDraftFormValues, partyId: string, companyAccountId: string): OrderDraftFormValues =>
+  values.partyId === partyId && values.companyAccountId === companyAccountId
+    ? values
+    : { ...values, partyId, companyAccountId, deliveryAddressId: '', contactId: '' }
+
 export const setLineProduct = (values: OrderDraftFormValues, lineId: string, productId: string) =>
   mapLine(values, lineId, (line) => (line.productId === productId ? line : { ...line, productId, orderUnitId: '' }))
 
@@ -255,6 +285,7 @@ export function linePlanHint(line: LineValues): { readonly unplanned: string } |
 export function validateOrderDraft(
   values: OrderDraftFormValues,
   options: OrderDraftOptions,
+  delivery: DeliveryReferenceOptions | null = null,
 ): OrderDraftValidation {
   const text = ORDER_DRAFT_TEXT.validation
   const errors: Record<string, string> = {}
@@ -281,6 +312,15 @@ export function validateOrderDraft(
     errors[ORDER_FIELD.requestedDeliveryDate] = text.dateInvalid
   }
   if (values.note.length > LIMITS.note) errors[ORDER_FIELD.note] = text.noteTooLong
+
+  // SALES-A2a: optional, but a chosen one must be what the owner lists for the chosen account, at the
+  // owner's version — a reference the owner no longer offers is refused like an invented one.
+  const address = delivery?.addresses.find((a) => a.id === values.deliveryAddressId)
+  const contact = delivery?.contacts.find((c) => c.id === values.contactId)
+  if (values.deliveryAddressId !== '' && address === undefined) errors[ORDER_FIELD.deliveryAddress] = text.deliveryAddressNotOffered
+  if (values.contactId !== '' && contact === undefined) errors[ORDER_FIELD.contact] = text.contactNotOffered
+  const reference = (option: { readonly id: string; readonly version: string } | undefined): OwnerReference | null =>
+    option === undefined ? null : { id: option.id, expectedVersion: option.version }
 
   if (values.lines.length === 0) errors[ORDER_FIELD.lines] = text.linesRequired
   else if (values.lines.length > LIMITS.lines) errors[ORDER_FIELD.lines] = text.tooManyLines
@@ -368,8 +408,8 @@ export function validateOrderDraft(
       lines,
       requestedDeliveryDate: values.requestedDeliveryDate === '' ? null : values.requestedDeliveryDate,
       note: noteOrNull(values.note),
-      deliveryAddress: null,
-      contact: null,
+      deliveryAddress: reference(address),
+      contact: reference(contact),
       responsible: null,
       paymentTerms: null,
       sourceStrategy: null,
@@ -393,6 +433,8 @@ export function formFieldForServerPath(path: string, sentLines: readonly { reado
   if (path === 'requestedDeliveryDate') return ORDER_FIELD.requestedDeliveryDate
   if (path === 'note') return ORDER_FIELD.note
   if (path === 'lines') return ORDER_FIELD.lines
+  if (path === 'deliveryAddress') return ORDER_FIELD.deliveryAddress
+  if (path === 'contact') return ORDER_FIELD.contact
   const match = /^lines\[(\d+)\]\.(productId|expectedProductVersion|orderUnitId|quantity|requestedDeliveryDate|note|requestedDeliverySlices)/.exec(path)
   if (match === null) return null
   const line = sentLines[Number(match[1])]

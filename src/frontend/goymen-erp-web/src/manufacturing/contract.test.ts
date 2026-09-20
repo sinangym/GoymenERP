@@ -4,8 +4,16 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { decodeOrder, factBody, isKilogramText, type FactSnapshot } from './contract'
-import { ROLL_1, order, roll } from './testHarness'
+import {
+  closeBody,
+  decodeMassBalance,
+  decodeOrder,
+  decodeOrderList,
+  factBody,
+  isKilogramText,
+  type FactSnapshot,
+} from './contract'
+import { ORDER, ROLL_1, massBalance, order, orderList, orderSummary, roll, rollBalance, unavailable } from './testHarness'
 
 describe('decodeOrder', () => {
   it('keeps every kilogram as the server wrote it, the signed difference included', () => {
@@ -54,6 +62,51 @@ describe('decodeOrder', () => {
   })
 })
 
+describe('decodeMassBalance (GDC-BAL/1)', () => {
+  it("keeps BAL-003's signed difference as text and the engine's Unavailable with its input names", () => {
+    const decoded = decodeMassBalance(
+      massBalance({
+        rolls: [
+          rollBalance(ROLL_1, {
+            difference: { actualInputKg: '1000.125', accountedKg: '1002.625', differenceKg: '-2.5', isFullyAccounted: false },
+          }),
+        ],
+      }),
+    )
+    expect(decoded?.rolls[0].difference).toEqual({
+      actualInputKg: '1000.125',
+      accountedKg: '1002.625',
+      differenceKg: '-2.5',
+      isFullyAccounted: false,
+    })
+    expect(decoded?.rolls[0].scrapPercent).toEqual({
+      outcome: 'Unavailable',
+      value: null,
+      missingParameters: ['fireKg', 'rawMaterialKg'],
+      refusalCode: null,
+      refusedParameter: null,
+    })
+    expect(decoded?.formulaVersion).toBe('GDC-BAL/1 (master v3 §28.9)')
+  })
+
+  it.each([
+    ['a number where text is expected', { scrapPercent: { ...unavailable('fireKg'), value: 4 } }],
+    ['a computed answer without its value', { scrapPercent: { outcome: 'Computed', value: null, missingParameters: [], refusalCode: null, refusedParameter: null } }],
+    ['an unavailable answer that names no input', { actualUnitKg: unavailable() }],
+    ['an unknown outcome', { actualUnitKg: { ...unavailable('actualCount'), outcome: 'Estimated' } }],
+    ['a refused answer without its code', { scrapPercent: { outcome: 'Refused', value: null, missingParameters: [], refusalCode: null, refusedParameter: null } }],
+    ['a padded difference', { difference: { actualInputKg: '10', accountedKg: '0', differenceKg: '10.50', isFullyAccounted: false } }],
+    ['a difference without its flag', { difference: { actualInputKg: '10', accountedKg: '0', differenceKg: '10' } }],
+  ])('fails closed on %s', (_label, overrides) => {
+    expect(decodeMassBalance(massBalance({ rolls: [rollBalance(ROLL_1, overrides)] }))).toBeNull()
+  })
+
+  it('fails closed on a missing formula version or version', () => {
+    expect(decodeMassBalance(massBalance({ formulaVersion: '' }))).toBeNull()
+    expect(decodeMassBalance(massBalance({ version: 0 }))).toBeNull()
+  })
+})
+
 describe('isKilogramText (the server grammar, not the scale)', () => {
   it.each(['0', '10', '10.5', '1000.125', '0.0001'])('accepts %s', (text) => {
     expect(isKilogramText(text)).toBe(true)
@@ -89,5 +142,48 @@ describe('factBody', () => {
   it('adds the output class only to an output', () => {
     expect(factBody({ ...base, kind: 'outputs', outputClass: 'Scrap' })).toMatchObject({ outputClass: 'Scrap' })
     expect(factBody({ ...base, kind: 'wip-measurements', outputClass: 'Scrap' })).not.toHaveProperty('outputClass')
+  })
+})
+
+describe('decodeOrderList', () => {
+  it('keeps the summary the server wrote, kilograms as text and the cursor opaque', () => {
+    const decoded = decodeOrderList(
+      orderList([orderSummary({ plannedInputKg: '1000.125', target: { basis: 'InputMass', kg: '900' } })], 'CURSOR-1'),
+    )
+    expect(decoded?.nextCursor).toBe('CURSOR-1')
+    expect(decoded?.orders[0]).toMatchObject({
+      orderId: ORDER,
+      status: 'Open',
+      plannedRollCount: 2,
+      plannedInputKg: '1000.125',
+      target: { basis: 'InputMass', kg: '900' },
+      closedAtUtc: null,
+    })
+  })
+
+  it('reads an empty page as an empty page, not as a missing answer', () => {
+    expect(decodeOrderList(orderList([], null))).toEqual({ orders: [], nextCursor: null })
+  })
+
+  it.each([
+    ['no orders array', { nextCursor: null }],
+    ['a cursor that is neither text nor null', orderList([orderSummary()], 7 as unknown as string)],
+    ['an empty cursor', orderList([orderSummary()], '')],
+    ['an id that is not a guid', orderList([orderSummary({ orderId: 'nope' })])],
+    ['a status the contract does not have', orderList([orderSummary({ status: 'Cancelled' })])],
+    ['a kilogram that is not the server’s text', orderList([orderSummary({ plannedInputKg: '1,5' })])],
+    ['a negative roll count', orderList([orderSummary({ plannedRollCount: -1 })])],
+    ['a version of zero', orderList([orderSummary({ version: 0 })])],
+    ['a closed order without its close time', orderList([orderSummary({ status: 'Closed' })])],
+    ['an open order with a close time', orderList([orderSummary({ closedAtUtc: '2026-09-19T10:00:00.000Z' })])],
+    ['a half-filled target', orderList([orderSummary({ target: { basis: 'InputMass' } })])],
+  ])('fails closed on %s', (_case, body) => {
+    expect(decodeOrderList(body)).toBeNull()
+  })
+})
+
+describe('closeBody', () => {
+  it('sends the version the screen read and nothing else', () => {
+    expect(closeBody({ idempotencyKey: 'k', expectedVersion: 4 })).toEqual({ expectedVersion: 4 })
   })
 })

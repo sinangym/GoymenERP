@@ -7,6 +7,8 @@ using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Manufacturing.Domain.Common;
+using GoymenERP.Modules.Manufacturing.Domain.Engines;
+using GoymenERP.Modules.Manufacturing.Domain.Engines.Balance;
 using GoymenERP.Modules.Manufacturing.Domain.Orders;
 using GoymenERP.Modules.Manufacturing.Domain.Plans;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
@@ -28,6 +30,9 @@ public sealed record TargetRequestV1(string? Basis, string? Kg);
 public sealed record ApprovePlanRequestV1(long ExpectedVersion);
 
 public sealed record CreateOrderRequestV1(Guid OrderId, Guid PlanId);
+
+/// <summary>The close of the order at the version the caller read; the close chooses nothing else (MFG-4).</summary>
+public sealed record CloseOrderRequestV1(long ExpectedVersion);
 
 /// <summary>An input issue, an unused-input return or a WIP reading of one parent roll, at its own time (R6).</summary>
 public sealed record RecordFactRequestV1(
@@ -61,6 +66,45 @@ public sealed record OrderViewV1(
     Guid OrderId, Guid CompanyId, Guid PlanId, Guid WorkCenterId, string Process, string Status, long Version,
     TargetViewV1? Target, RemainingTargetViewV1 RemainingTarget, IReadOnlyList<RollBalanceViewV1> Rolls,
     string CostStatus, Guid? ClosedByUserId, DateTimeOffset? ClosedAtUtc);
+
+/// <summary>
+/// One order in the list: its stored facts only — the plan and work center it came from, its status and
+/// version, how many parent rolls its snapshot plans and their planned mass together. No balance, no engine
+/// answer and no roll label: a balance is the order read's answer roll by roll, and the label is Inventory's
+/// read (ÜRÜN / T15), not this module's.
+/// </summary>
+public sealed record OrderSummaryViewV1(
+    Guid OrderId, Guid PlanId, Guid WorkCenterId, string Process, string Status, long Version,
+    int PlannedRollCount, string PlannedInputKg, TargetViewV1? Target, DateTimeOffset CreatedAtUtc,
+    DateTimeOffset? ClosedAtUtc);
+
+/// <summary>
+/// One page of the company's orders, newest first. <see cref="NextCursor"/> null is the end; the cursor is
+/// opaque and belongs to the company and ordering that produced it.
+/// </summary>
+public sealed record OrderListViewV1(IReadOnlyList<OrderSummaryViewV1> Orders, string? NextCursor);
+
+/// <summary>
+/// One GDC-BAL/1 answer as the engine gave it: <c>Computed</c> with its unrounded value as lossless text, or
+/// <c>Unavailable</c> naming every missing input, or <c>Refused</c> with its code. Never a guessed number.
+/// </summary>
+public sealed record EngineAnswerViewV1(string Outcome, string? Value, IReadOnlyList<string> MissingParameters,
+    string? RefusalCode, string? RefusedParameter);
+
+/// <summary>BAL-003 for one parent roll: the actual input, what the categories account for, and the signed difference.</summary>
+public sealed record MassDifferenceViewV1(string ActualInputKg, string AccountedKg, string DifferenceKg, bool IsFullyAccounted);
+
+/// <summary>
+/// One parent roll through GDC-BAL/1 (master v3 §28.9). <see cref="Difference"/> is BAL-003 from the order's own facts.
+/// <see cref="ScrapPercent"/> (BAL-004) and <see cref="ActualUnitKg"/> (BAL-006) are the engine's answer to the inputs
+/// the order can supply without a decision — none: which classes are "fire" and on which base is Business's open
+/// question, and the order records no piece count — so they answer <c>Unavailable</c>, naming the inputs.
+/// </summary>
+public sealed record RollMassBalanceViewV1(Guid ParentRollId, MassDifferenceViewV1 Difference,
+    EngineAnswerViewV1 ScrapPercent, EngineAnswerViewV1 ActualUnitKg);
+
+/// <summary>The order's mass balance, roll by roll, through the one calculator the close uses; the order's version it was read at.</summary>
+public sealed record MassBalanceViewV1(Guid OrderId, long Version, string FormulaVersion, IReadOnlyList<RollMassBalanceViewV1> Rolls);
 
 /// <summary>How a command ended, before HTTP: the endpoint maps it and adds nothing of its own.</summary>
 public enum ManufacturingApiStatus
@@ -110,6 +154,7 @@ public static class ManufacturingCommandNames
     public const string ReturnInput = "manufacturing.input.return.v1";
     public const string DeclareOutput = "manufacturing.output.declare.v1";
     public const string RecordWorkInProgress = "manufacturing.wip.record.v1";
+    public const string CloseOrder = "manufacturing.order.close.v1";
 }
 
 /// <summary>
@@ -152,6 +197,14 @@ public sealed partial class ManufacturingCommandService(
 {
     /// <summary>Any integer mantissa of this many digits fits a decimal's 96 bits, so such a text converts exactly.</summary>
     private const int ExactDecimalDigits = 28;
+
+    /// <summary>The list page the caller gets without asking, and the one it cannot pass (the store's own bound).</summary>
+    private const int DefaultPageSize = 50;
+
+    private const int MaximumPageSize = 100;
+
+    /// <summary>A cursor longer than any this surface produces is refused before it is decoded.</summary>
+    private const int MaximumCursorLength = 512;
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
@@ -319,6 +372,92 @@ public sealed partial class ManufacturingCommandService(
     }
 
     /// <summary>
+    /// Closes the order at the version the caller read (MFG-4, Business 5728619644). The decision is the
+    /// domain's and nothing here softens it: every planned roll must account for its own issued mass, a
+    /// surplus on one roll never covers a gap on another, remaining WIP stays on the order as its own
+    /// position, and an unexplained difference refuses the close with
+    /// <see cref="ManufacturingRuleCodes.UnexplainedDifference"/> (422) — there is no tolerance and no
+    /// write-off. A closed order refuses a second close with <see cref="ManufacturingRuleCodes.OrderClosed"/>;
+    /// the same <c>Idempotency-Key</c> replays the first close's answer (ADR-011 §4), and a stale
+    /// <see cref="CloseOrderRequestV1.ExpectedVersion"/> is a recorded terminal conflict (§7).
+    /// </summary>
+    public Task<ManufacturingApiResult<OrderViewV1>> CloseOrderAsync(Guid orderId, CloseOrderRequestV1? request,
+        string idempotencyKey, string permission, CancellationToken cancellationToken)
+    {
+        if (orderId == Guid.Empty || request is null || request.ExpectedVersion <= 0)
+        {
+            return Task.FromResult(Invalid<OrderViewV1>("expectedVersion"));
+        }
+
+        return RunAsync<OrderViewV1>(permission, idempotencyKey, ManufacturingCommandNames.CloseOrder,
+            new { orderId, expectedVersion = request.ExpectedVersion }, ManufacturingApiStatus.Ok,
+            async (metadata, actor) =>
+            {
+                if (await FenceAsync<OrderViewV1>(permission, cancellationToken) is { } fenced)
+                {
+                    return fenced;
+                }
+
+                await orders.CloseOrderAsync(orderId, request.ExpectedVersion, actor, timeProvider.GetUtcNow(), metadata,
+                    cancellationToken);
+                return await OrderResultAsync(orderId, ManufacturingApiStatus.Ok, isReplay: false, cancellationToken);
+            }, stored => OrderView((ProductionOrder)stored), cancellationToken);
+    }
+
+    /// <summary>
+    /// One page of the company's orders, newest first, from the stored rows: another company's order is not
+    /// in any page, and the same read permission as the order read is required. <paramref name="status"/> is
+    /// an <c>OrderStatus</c> name or null (every status); <paramref name="cursor"/> is the previous page's,
+    /// and a cursor of another company, another ordering or no grammar is a 400 on <c>cursor</c>, never a
+    /// silent first page. It computes nothing and stores nothing.
+    /// </summary>
+    public async Task<ManufacturingApiResult<OrderListViewV1>> ListOrdersAsync(int? pageSize, string? cursor,
+        string? status, CancellationToken cancellationToken)
+    {
+        if (!HasContext())
+        {
+            return Denied<OrderListViewV1>();
+        }
+
+        var size = pageSize ?? DefaultPageSize;
+        if (size is < 1 or > MaximumPageSize)
+        {
+            return Invalid<OrderListViewV1>("pageSize");
+        }
+
+        if (cursor is { Length: 0 or > MaximumCursorLength })
+        {
+            return Invalid<OrderListViewV1>("cursor");
+        }
+
+        OrderStatus? requested = null;
+        if (status is not null)
+        {
+            if (ParseStatus(status) is not { } parsed)
+            {
+                return Invalid<OrderListViewV1>("status");
+            }
+
+            requested = parsed;
+        }
+
+        try
+        {
+            var page = await orders.ListOrdersAsync(size, cursor, requested, cancellationToken);
+            return new ManufacturingApiResult<OrderListViewV1>(ManufacturingApiStatus.Ok,
+                new OrderListViewV1([.. page.Orders.Select(OrderSummaryView)], page.NextCursor), false, null);
+        }
+        catch (ManufacturingStoreException exception) when (exception.Code == ManufacturingStoreCodes.ListCursorInvalid)
+        {
+            return Invalid<OrderListViewV1>("cursor");
+        }
+        catch (ManufacturingStoreException exception) when (exception.Code == ManufacturingStoreCodes.ConcurrentChange)
+        {
+            return new ManufacturingApiResult<OrderListViewV1>(ManufacturingApiStatus.Unavailable, null, false, null);
+        }
+    }
+
+    /// <summary>
     /// The company's order rebuilt from its stored facts; another company's order is not found. A read
     /// that still meets concurrent commits after the store's own re-reads is a retryable consistency
     /// failure (503), not a command conflict: 409 belongs to commands (FİNANS #313 INFO-4).
@@ -342,6 +481,36 @@ public sealed partial class ManufacturingCommandService(
         catch (ManufacturingStoreException exception) when (exception.Code == ManufacturingStoreCodes.ConcurrentChange)
         {
             return new ManufacturingApiResult<OrderViewV1>(ManufacturingApiStatus.Unavailable, null, false, null);
+        }
+    }
+
+    /// <summary>
+    /// The order's GDC-BAL/1 read (BAL slice 2): the same company context, read permission and not-found /
+    /// retryable-503 answers as <see cref="GetOrderAsync"/>, because it is the same order read through the one
+    /// calculator the close uses. It computes; it stores nothing.
+    /// </summary>
+    public async Task<ManufacturingApiResult<MassBalanceViewV1>> GetMassBalanceAsync(Guid orderId, CancellationToken cancellationToken)
+    {
+        if (!HasContext())
+        {
+            return Denied<MassBalanceViewV1>();
+        }
+
+        if (orderId == Guid.Empty)
+        {
+            return NotFoundResult<MassBalanceViewV1>();
+        }
+
+        try
+        {
+            var order = await orders.FindOrderAsync(orderId, cancellationToken);
+            return order is null
+                ? NotFoundResult<MassBalanceViewV1>()
+                : new ManufacturingApiResult<MassBalanceViewV1>(ManufacturingApiStatus.Ok, MassBalanceView(order), false, null);
+        }
+        catch (ManufacturingStoreException exception) when (exception.Code == ManufacturingStoreCodes.ConcurrentChange)
+        {
+            return new ManufacturingApiResult<MassBalanceViewV1>(ManufacturingApiStatus.Unavailable, null, false, null);
         }
     }
 
@@ -565,7 +734,15 @@ public sealed partial class ManufacturingCommandService(
         var verification = await masses.VerifyAsync(companyContext.CompanyId, value, effectiveOn, cancellationToken);
         if (verification.Mass is { } verified)
         {
-            return (verified.Mass, null);
+            // Ö2 on the TEXT, as Settings' ExactPositiveDecimalV1 counts it (FİNANS #353 INFO-1, coordinator ruling:
+            // consistency with the platform contract, not a new policy): every written decimal is a decimal, trailing
+            // zeros included, so "1.5000" claims a precision the profile does not allow and is refused. The value
+            // came from ParseKg, which converts only texts a decimal holds exactly, so its Scale is the text's.
+            // Settings still answers first (its refusals keep their precedence); zero stays a valid reading.
+            return value.Scale > verified.Scale
+                ? (default, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unprocessable, null, false,
+                    ManufacturingMassCodes.ScaleExceeded, field))
+                : (verified.Mass, null);
         }
 
         var status = verification.Code switch
@@ -618,6 +795,11 @@ public sealed partial class ManufacturingCommandService(
         return (integer == "0" ? 0 : integer.Length) + fraction.Length;
     }
 
+    private static OrderStatus? ParseStatus(string? text) =>
+        Enum.TryParse<OrderStatus>(text, ignoreCase: false, out var status) && Enum.IsDefined(status) && IsName(text)
+            ? status
+            : null;
+
     private static TargetBasis? ParseBasis(string? text) =>
         Enum.TryParse<TargetBasis>(text, ignoreCase: false, out var basis) && Enum.IsDefined(basis) && IsName(text)
             ? basis
@@ -634,6 +816,15 @@ public sealed partial class ManufacturingCommandService(
         [.. plan.Inputs.Select(input => new PlannedInputViewV1(input.ParentRollId, Text(input.PlannedMass.Value)))],
         plan.Target is { } target ? new TargetViewV1(target.Basis.ToString(), Text(target.Mass.Value)) : null,
         plan.ApprovedByUserId, plan.ApprovedAtUtc);
+
+    /// <summary>The stored summary as text: the same lossless kilogram text as every other mass here.</summary>
+    internal static OrderSummaryViewV1 OrderSummaryView(ManufacturingOrderSummary summary) => new(
+        summary.OrderId, summary.PlanId, summary.WorkCenterId, summary.Process.ToString(), summary.Status.ToString(),
+        summary.Version, summary.PlannedRollCount, Text(summary.PlannedInputMass.Value),
+        summary is { TargetBasis: { } basis, TargetMass: { } targetMass }
+            ? new TargetViewV1(basis.ToString(), Text(targetMass.Value))
+            : null,
+        summary.CreatedAtUtc, summary.ClosedAtUtc);
 
     internal static OrderViewV1 OrderView(ProductionOrder order)
     {
@@ -657,6 +848,32 @@ public sealed partial class ManufacturingCommandService(
             })],
             nameof(CostStatus.NotCalculated), order.ClosedByUserId, order.ClosedAtUtc);
     }
+
+    /// <summary>
+    /// GDC-BAL/1 per planned parent roll. BAL-003 is the roll's own <see cref="MassBalance.Reconciliation"/> (the
+    /// close's calculation). BAL-004 and BAL-006 are asked with what the order can supply without a decision —
+    /// nothing — so the engine answers <c>Unavailable</c> and names the inputs; no definition of "fire", base mass
+    /// or piece count is chosen here (BAL-004: Business, #66 5744055923; BAL-006: the count-producing slices).
+    /// </summary>
+    internal static MassBalanceViewV1 MassBalanceView(ProductionOrder order) =>
+        new(order.Id, order.Version, MassBalanceEngineV1.FormulaVersion,
+        [
+            .. order.PlannedInputs.Select(input =>
+            {
+                var balance = order.BalanceOf(input.ParentRollId);
+                var difference = balance.Reconciliation;
+                return new RollMassBalanceViewV1(input.ParentRollId,
+                    new MassDifferenceViewV1(Text(balance.NetIssued.Value), Text(difference.AccountedKg),
+                        Text(difference.DifferenceKg), difference.IsFullyAccounted),
+                    Answer(MassBalanceEngineV1.ScrapPercent(new ScrapPercentInputV1(null, null)), result => result.FirePercent),
+                    Answer(MassBalanceEngineV1.ActualUnitMass(new ActualUnitMassInputV1(null, null)), result => result.ActualUnitKg));
+            }),
+        ]);
+
+    private static EngineAnswerViewV1 Answer<T>(EngineResult<T> result, Func<T, decimal> value)
+        where T : class =>
+        new(result.Outcome.ToString(), result.Value is { } computed ? Text(value(computed)) : null,
+            result.MissingParameters, result.RefusalCode, result.RefusedParameter);
 
     /// <summary>Lossless invariant text without trailing zeros: 5.00 and 5 are both "5".</summary>
     internal static string Text(decimal value) =>

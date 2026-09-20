@@ -12,6 +12,13 @@ import { defineConfig, devices } from '@playwright/test'
  * wrote (`BROWSER_E2E_S04_SEED`, sales-s04/src/env.ts), and every step is re-read through the real API.
  * The cases are one serial journey on that draft; `fullyParallel: false`, `workers: 1`, file order.
  *
+ * SALES-A2a (specs/s04-references.spec.ts, after the journey): the seed also opens a REAL Cari party with a
+ * REAL delivery address and contact through the real Cari API, and writes a SECOND draft through the gated
+ * writer carrying those references; the browser proves the REAL options of the new-draft selects and the
+ * reopen of the stored references. The create WITH references is proven on real SQL, not here, until the
+ * product picker (E1) exists. The seed's central rows are CARİ's: Program.cs handler-factory arguments and
+ * the ISalesPartyContactInformationPortV1 registration; SUITE_SEED_FIELDS["s04"] +8 in the validator.
+ *
  * The contract (tests/e2e/browser-ci/README.md), no defaults. Retries 0 and forbidOnly; traces,
  * screenshots and video off (the C-01 artifact-privacy decision).
  */
@@ -28,7 +35,8 @@ const artifactsDir = required('BROWSER_E2E_ARTIFACTS_DIR')
 
 export default defineConfig({
   testDir: path.join(here, 'sales-s04', 'specs'),
-  testMatch: /(^|[\\/])s04-approval-journey\.spec\.ts$/,
+  // SALES-A2a: the references spec runs after the journey (alphabetical file order; draft 2 + the create screen only).
+  testMatch: /(^|[\\/])s04-(approval-journey|references)\.spec\.ts$/,
   fullyParallel: false,
   workers: 1,
   retries: 0,

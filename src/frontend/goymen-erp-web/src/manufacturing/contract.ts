@@ -276,3 +276,228 @@ export function factBody(snapshot: FactSnapshot): Record<string, unknown> {
   if (snapshot.kind === 'outputs') body.outputClass = snapshot.outputClass
   return body
 }
+
+// ---- GDC-BAL/1: `GET /api/v1/manufacturing/orders/{orderId}/mass-balance` (MassBalanceViewV1) ----------------
+
+export type EngineOutcome = 'Computed' | 'Unavailable' | 'Refused'
+
+/**
+ * One engine answer exactly as the server gave it. `Unavailable` names every missing input and carries no number;
+ * the screen shows that, never a 0 or an estimate. `value` is lossless text (unrounded, the server's `Text`).
+ */
+export interface EngineAnswer {
+  readonly outcome: EngineOutcome
+  readonly value: string | null
+  readonly missingParameters: readonly string[]
+  readonly refusalCode: string | null
+  readonly refusedParameter: string | null
+}
+
+/** BAL-003 of one parent roll: the actual input, what the categories account for, and the SIGNED difference. */
+export interface MassDifference {
+  readonly actualInputKg: string
+  readonly accountedKg: string
+  readonly differenceKg: string
+  readonly isFullyAccounted: boolean
+}
+
+export interface RollMassBalance {
+  readonly parentRollId: string
+  readonly difference: MassDifference
+  /** BAL-004 (fire %). */
+  readonly scrapPercent: EngineAnswer
+  /** BAL-006 (actual unit kg). */
+  readonly actualUnitKg: EngineAnswer
+}
+
+export interface MassBalanceView {
+  readonly orderId: string
+  readonly version: number
+  readonly formulaVersion: string
+  readonly rolls: readonly RollMassBalance[]
+}
+
+/** The server's `Text(decimal)` of an unrounded engine value (a percent may carry many decimals). */
+const DECIMAL_OUT = /^-?(0|[1-9][0-9]*)(\.[0-9]*[1-9])?$/
+
+function nullableText(value: unknown): string | null | undefined {
+  if (value === null) return null
+  return typeof value === 'string' && value.length > 0 ? value : undefined
+}
+
+function decodeAnswer(value: unknown): EngineAnswer | null {
+  if (!isObject(value)) return null
+  const outcome = value.outcome
+  if (outcome !== 'Computed' && outcome !== 'Unavailable' && outcome !== 'Refused') return null
+  const answerValue = value.value === null ? null : typeof value.value === 'string' && DECIMAL_OUT.test(value.value) ? value.value : undefined
+  const refusalCode = nullableText(value.refusalCode)
+  const refusedParameter = nullableText(value.refusedParameter)
+  const missing = value.missingParameters
+  if (
+    answerValue === undefined ||
+    refusalCode === undefined ||
+    refusedParameter === undefined ||
+    !Array.isArray(missing) ||
+    !missing.every((name) => typeof name === 'string' && name.length > 0)
+  ) {
+    return null
+  }
+  // The outcome and its payload must agree: a number only when computed, a name list only when unavailable.
+  if ((outcome === 'Computed') !== (answerValue !== null)) return null
+  if ((outcome === 'Unavailable') !== (missing.length > 0)) return null
+  if ((outcome === 'Refused') !== (refusalCode !== null)) return null
+  return { outcome, value: answerValue, missingParameters: missing as string[], refusalCode, refusedParameter }
+}
+
+function decodeDifference(value: unknown): MassDifference | null {
+  if (!isObject(value)) return null
+  const actualInputKg = kg(value.actualInputKg)
+  const accountedKg = kg(value.accountedKg, true)
+  const differenceKg = kg(value.differenceKg, true)
+  if (actualInputKg === null || accountedKg === null || differenceKg === null || typeof value.isFullyAccounted !== 'boolean') {
+    return null
+  }
+  return { actualInputKg, accountedKg, differenceKg, isFullyAccounted: value.isFullyAccounted }
+}
+
+/** Fails CLOSED like {@link decodeOrder}: a body that is not the contract is `null`, never a partial balance. */
+export function decodeMassBalance(body: unknown): MassBalanceView | null {
+  if (!isObject(body)) return null
+  const orderId = guid(body.orderId)
+  const balanceVersion = version(body.version)
+  if (
+    orderId === null ||
+    balanceVersion === null ||
+    typeof body.formulaVersion !== 'string' ||
+    body.formulaVersion.length === 0 ||
+    !Array.isArray(body.rolls)
+  ) {
+    return null
+  }
+  const rolls: RollMassBalance[] = []
+  for (const raw of body.rolls) {
+    if (!isObject(raw)) return null
+    const parentRollId = guid(raw.parentRollId)
+    const difference = decodeDifference(raw.difference)
+    const scrapPercent = decodeAnswer(raw.scrapPercent)
+    const actualUnitKg = decodeAnswer(raw.actualUnitKg)
+    if (parentRollId === null || difference === null || scrapPercent === null || actualUnitKg === null) return null
+    rolls.push({ parentRollId, difference, scrapPercent, actualUnitKg })
+  }
+  return { orderId, version: balanceVersion, formulaVersion: body.formulaVersion, rolls }
+}
+
+// ---- MFG-ORD: `GET /api/v1/manufacturing/orders` (OrderListViewV1) and the close command ----------------------
+
+/**
+ * One order in the list, exactly as the server summarises it: the stored row and its input
+ * snapshot. No balance and no difference — those are the order read's, roll by roll — and no roll
+ * label: the label is Inventory's read (ÜRÜN / T15), not this module's, so the list shows none.
+ */
+export interface OrderSummary {
+  readonly orderId: string
+  readonly planId: string
+  readonly workCenterId: string
+  readonly process: string
+  readonly status: OrderStatus
+  readonly version: number
+  readonly plannedRollCount: number
+  readonly plannedInputKg: string
+  readonly target: { readonly basis: string; readonly kg: string } | null
+  readonly createdAtUtc: string
+  readonly closedAtUtc: string | null
+}
+
+/** `nextCursor === null` is the end of the list; the cursor is opaque and is sent back unchanged. */
+export interface OrderListView {
+  readonly orders: readonly OrderSummary[]
+  readonly nextCursor: string | null
+}
+
+/** A non-negative safe integer count. */
+function count(value: unknown): number | null {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null
+}
+
+function utc(value: unknown): string | null | undefined {
+  if (value === null) return null
+  return typeof value === 'string' && !Number.isNaN(Date.parse(value)) ? value : undefined
+}
+
+function decodeSummary(value: unknown): OrderSummary | null {
+  if (!isObject(value)) return null
+  const orderId = guid(value.orderId)
+  const planId = guid(value.planId)
+  const workCenterId = guid(value.workCenterId)
+  const orderVersion = version(value.version)
+  const plannedRollCount = count(value.plannedRollCount)
+  const plannedInputKg = kg(value.plannedInputKg)
+  const target = decodeTarget(value.target)
+  const createdAtUtc = utc(value.createdAtUtc)
+  const closedAtUtc = utc(value.closedAtUtc)
+  if (
+    orderId === null ||
+    planId === null ||
+    workCenterId === null ||
+    orderVersion === null ||
+    plannedRollCount === null ||
+    plannedInputKg === null ||
+    target === undefined ||
+    createdAtUtc === undefined ||
+    createdAtUtc === null ||
+    closedAtUtc === undefined ||
+    typeof value.process !== 'string' ||
+    (value.status !== 'Open' && value.status !== 'Closed')
+  ) {
+    return null
+  }
+  // A closed order carries its close time and an open one carries none: a half-told status is not
+  // a contract shape, and the screen never infers one from the other.
+  if ((value.status === 'Closed') !== (closedAtUtc !== null)) return null
+  return {
+    orderId,
+    planId,
+    workCenterId,
+    process: value.process,
+    status: value.status,
+    version: orderVersion,
+    plannedRollCount,
+    plannedInputKg,
+    target,
+    createdAtUtc,
+    closedAtUtc,
+  }
+}
+
+export function decodeOrderList(body: unknown): OrderListView | null {
+  if (!isObject(body) || !Array.isArray(body.orders)) return null
+  const nextCursor =
+    body.nextCursor === null
+      ? null
+      : typeof body.nextCursor === 'string' && body.nextCursor.length > 0
+        ? body.nextCursor
+        : undefined
+  if (nextCursor === undefined) return null
+  const orders: OrderSummary[] = []
+  for (const raw of body.orders) {
+    const summary = decodeSummary(raw)
+    if (summary === null) return null
+    orders.push(summary)
+  }
+  return { orders, nextCursor }
+}
+
+/**
+ * One close as the caller froze it: the version the screen read and the key that names this
+ * attempt. Re-sending the SAME snapshot sends both unchanged, so the server answers it as the
+ * same command (ADR-011 §4) instead of closing twice.
+ */
+export interface CloseSnapshot {
+  readonly idempotencyKey: string
+  readonly expectedVersion: number
+}
+
+/** The request body exactly as `CloseOrderRequestV1` names it. */
+export function closeBody(snapshot: CloseSnapshot): Record<string, unknown> {
+  return { expectedVersion: snapshot.expectedVersion }
+}

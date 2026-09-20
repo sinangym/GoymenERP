@@ -1,0 +1,16 @@
+{
+  "status": 409,
+  "title": "Conflict",
+  "code": "order_line_state",
+  "correlationId": "corr-9",
+  "errors": [
+    {
+      "field": "lines[0].sourceOrderLineId",
+      "code": "not_approved"
+    },
+    {
+      "field": "lines[0].approvalState",
+      "code": "PendingApproval"
+    }
+  ]
+}
