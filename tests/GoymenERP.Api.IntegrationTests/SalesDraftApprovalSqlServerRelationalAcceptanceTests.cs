@@ -438,8 +438,12 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
             Assert.Equal(("Rev.1", "Preparing", "5", "13.00", KgUnit, "5"), (revised.Detail.Draft.Revision, revised.Detail.Draft.ApprovalState, revised.Detail.Draft.Version,
                 revised.Detail.Lines[0].UnitPrice, revised.Detail.Lines[0].PriceUnitId, revised.Detail.Lines[0].DiscountPercent));
             Assert.Equal(new SalesDraftApprovalV1(null, null, null, null, null), revised.Detail.Approval);
-            // Asked and answered are pinned apart from the outcome: the price name, this company, before the replay read and again before the save.
-            Assert.Equal([(SalesPermissionManifestV1.OrdersPriceWrite, CompanyA), (SalesPermissionManifestV1.OrdersPriceWrite, CompanyA)], priced.Measured);
+            // Asked and answered are pinned apart from the outcome, by the PROPERTY and not by a count of calls: the authority was asked,
+            // every ask was for the separate price name in THIS company, and no other name was ever asked for this write (a count
+            // would pin the service's call pattern, which may legitimately gain a fence; the ordering of the fences — before the
+            // replay read and again before the save — is the service's own pin in SalesDraftServiceTests).
+            Assert.NotEmpty(priced.Measured);
+            Assert.All(priced.Measured, ask => Assert.Equal((SalesPermissionManifestV1.OrdersPriceWrite, CompanyA), ask));
 
             // The same key again through the service: the stored result, marked as the replay; the authority is asked again first.
             var replay = await service.ReviseCommercialAsync(draft.Id, request, run.Metadata("k-revise", correlation: "SENTETIK-second"));
