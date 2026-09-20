@@ -133,8 +133,10 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
 
         // K2's card. Every column is NULLABLE, including the two K2 calls mandatory: the rows that
         // existed before K2 have no value for them, and making the column required would force this
-        // slice to decide what those rows mean — which is the open question #66 5748390243. The
-        // mandatory pair is enforced where a card is WRITTEN, so new cards cannot omit it.
+        // slice to decide what those rows mean. B3 (#66 5750700247) has now decided it — UNDECLARED,
+        // refused on the money path — and the answer does NOT change these columns: it adds a
+        // declaration beside them rather than reinterpreting them. The mandatory pair is still
+        // enforced where a card is WRITTEN, so new cards cannot omit it.
         entity.Property(x => x.BankName).HasMaxLength(200);
         entity.Property(x => x.AccountType).HasMaxLength(64);
         entity.Property(x => x.BranchName).HasMaxLength(200);
@@ -143,6 +145,17 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         entity.Property(x => x.Iban).HasMaxLength(34);
         entity.Property(x => x.AccountNumber).HasMaxLength(64);
 
+        // B3's declaration. Nullable ONLY to carry the pre-declaration rows; NULL is read as UNDECLARED
+        // and never as false, so the two can be told apart and shown apart.
+        entity.Property(x => x.MoneyMovementEligible);
+
+        // D4's pending IBAN change, beside the row and never in [Iban] until approved. The check keeps
+        // the four members all-null or all-set, so a half-written pending change cannot exist.
+        entity.Property(x => x.PendingIban).HasMaxLength(34);
+        entity.Property(x => x.PendingIbanProposedBy).HasMaxLength(128).UseCollation(IdentityCollation);
+        entity.Property(x => x.PendingIbanReason).HasMaxLength(500);
+        entity.ToTable(table => table.HasCheckConstraint("CK_BankAccounts_PendingIbanChange", PendingIbanCheck));
+
         entity.Property(x => x.ProposedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
         entity.Property(x => x.ApprovedBy).HasMaxLength(128).UseCollation(IdentityCollation);
         entity.HasIndex(x => new { x.CompanyId, x.Status });
@@ -150,6 +163,18 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
             .OnDelete(DeleteBehavior.Restrict);
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
+
+    /// <summary>
+    /// D4: a pending IBAN change is all four members or none of them (the migration that introduced it
+    /// uses the same text). A half-written pending change would be a value nobody proposed — the
+    /// approver would see an IBAN with no proposer to be different from, and Ö4 would have nothing to
+    /// compare against.
+    /// </summary>
+    internal const string PendingIbanCheck =
+        "([PendingIban] IS NULL AND [PendingIbanProposedBy] IS NULL AND [PendingIbanProposedAtUtc] IS NULL "
+        + "AND [PendingIbanReason] IS NULL) OR "
+        + "([PendingIban] IS NOT NULL AND [PendingIbanProposedBy] IS NOT NULL AND LEN([PendingIbanProposedBy]) > 0 "
+        + "AND [PendingIbanProposedAtUtc] IS NOT NULL AND [PendingIbanReason] IS NOT NULL AND LEN([PendingIbanReason]) > 0)";
 
     /// <summary>The stage rule of a receipt source (FIN-T05a); the migration that introduced it uses the same text.</summary>
     internal const string StageCheck =
