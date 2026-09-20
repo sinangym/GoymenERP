@@ -72,11 +72,38 @@ public sealed class OrganizationShellCapabilityAcceptanceTests(GoymenErpApiFacto
         ErpPermissions.OrganizationWorkCentersRead,
     ];
 
-    /// <summary>The mask of one permission, by its position above. Unknown here is 0 — see the fact below.</summary>
-    private static int Bit(string permission)
+    /// <summary>
+    /// The mask of one permission for the AUTHORITY path, where an unknown name must answer 0 and be
+    /// denied — the host asks this same authority about other modules' permissions. Only
+    /// <see cref="ControlledAuthority.Scope"/> may use this; the authoring side uses <see cref="Bit"/>.
+    /// </summary>
+    private static int AuthorityBit(string permission)
     {
         var index = Array.IndexOf(PermissionBits, permission);
         return index < 0 ? 0 : 1 << index;
+    }
+
+    /// <summary>
+    /// The mask of one permission for the TEST-AUTHORING side — the granted sets and the expectation
+    /// arms — where an unknown name is a mistake in the test and must say so.
+    ///
+    /// <para>
+    /// FİNANS's P3 on the first version of this head, and it was this head's own lesson turned on it:
+    /// the permissive lookup was correct for the authority and I reused it here, so the silent zero was
+    /// not removed but MOVED UP ONE LEVEL. `Bits(LocationsRead, SomethingElse)` would have contributed
+    /// only the first and left the case green. No call site was wrong — every one used a pinned name —
+    /// which is exactly the state the `_ => 0` arm was in before ORG-03 added a permission to it.
+    /// Repairing an example is not closing a class, so the two uses now have two functions.
+    /// </para>
+    /// </summary>
+    private static int Bit(string permission)
+    {
+        var index = Array.IndexOf(PermissionBits, permission);
+        Assert.True(index >= 0,
+            $"'{permission}' is not one of this fixture's permission bits, so it can grant nothing and "
+            + "assert nothing here. Add it to PermissionBits (and the provider), or name one of: "
+            + string.Join(", ", PermissionBits));
+        return 1 << index;
     }
 
     private static int Bits(params string[] permissions) => permissions.Aggregate(0, (mask, p) => mask | Bit(p));
@@ -249,10 +276,12 @@ public sealed class OrganizationShellCapabilityAcceptanceTests(GoymenErpApiFacto
         private PermissionScope Scope(string permission, Guid companyId)
         {
             // The bit comes from PermissionBits' ORDER, not from a switch that has to be extended by hand.
-            // A permission this fixture does not know still answers 0 and is denied — which is CORRECT,
-            // because the host asks this same authority about other modules' permissions. What guarantees
-            // no ORGANIZATION permission lands here is the set-equality fact above, not this line.
-            var bit = Bit(permission);
+            // AuthorityBit, not Bit: a permission this fixture does not know still answers 0 and is denied
+            // — which is CORRECT here, because the host asks this same authority about other modules'
+            // permissions. The strict Bit() belongs to the authoring side, where an unknown name is a
+            // mistake rather than a legitimate question. What guarantees no ORGANIZATION permission lands
+            // in this arm is the set-equality fact above, not this line.
+            var bit = AuthorityBit(permission);
             if (companyId != TestCompanyIds.CompanyA || bit == 0 || (Permissions & bit) == 0)
                 return PermissionScope.Denied;
             return new PermissionScope(true, scopeKind == 0, new HashSet<string>(),
