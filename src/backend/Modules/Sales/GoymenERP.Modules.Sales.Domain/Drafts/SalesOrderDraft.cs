@@ -154,8 +154,17 @@ public sealed class SalesOrderDraft
     /// <summary>The approval facts as they stand: nothing until a submission, then who/when, then the decision.</summary>
     public ApprovalFacts Approval { get; private set; } = ApprovalFacts.None;
 
-    /// <summary>Commercial revision; <c>Rev.0</c> on the wire. Independent of <see cref="Version"/> and fixed in this slice (T33).</summary>
-    public int Revision => 0;
+    /// <summary>
+    /// Commercial revision; <c>Rev.N</c> on the wire, independent of <see cref="Version"/>. Born 0; advanced
+    /// ONLY by <see cref="ReviseCommercial"/> on an approved draft (K3, Sinan 5748258299), never by a
+    /// submission, an approval or a rejection.
+    /// </summary>
+    public int Revision { get; private set; }
+
+    private readonly List<ApprovedRevisionSnapshot> archivedRevisions = [];
+
+    /// <summary>The approved revisions this draft has left behind, oldest first; empty until an approved price was changed.</summary>
+    public IReadOnlyList<ApprovedRevisionSnapshot> ArchivedRevisions => archivedRevisions.AsReadOnly();
 
     /// <summary>Whether the lines may still change: only while the draft is being prepared or was rejected (DEC-SAL-002).</summary>
     public bool LinesAreOpen => ApprovalState is InternalApprovalState.Preparing or InternalApprovalState.Rejected;
@@ -419,6 +428,118 @@ public sealed class SalesOrderDraft
         ApprovalState = InternalApprovalState.Rejected;
         Approval = Approval with { DecidedBy = actor, DecidedAtUtc = now.ToUniversalTime(), RejectionReason = trimmedReason };
         Touch(now);
+    }
+
+    // ---- commercial revision (K3 Head B, Sinan 5748258299) --------------------------------------
+
+    /// <summary>
+    /// Replaces the commercial fields (unit price, price unit, discount) of EVERY line — each current line
+    /// named exactly once, no other — under the caller's price-write fence. From <c>Preparing</c> or
+    /// <c>Rejected</c> the fields simply change (nothing approved is touched; the revision number stays).
+    /// From <c>Approved</c> the approved revision is archived FIRST — its approval facts, money profile and
+    /// every line's values as they were — and only then does the draft advance to the next revision, back
+    /// to <c>Preparing</c> with no approval facts: a changed price re-enters approval, and the previous
+    /// approved snapshot is never deleted. From <c>PendingApproval</c> it is refused: the pending decision
+    /// is made first (ASSUMPTION-SALESP-3). A revision that changes no value is refused: an approval is
+    /// never discarded for nothing (ASSUMPTION-SALESP-5) — the SAME command resent under the same key is
+    /// the caller's replay, decided before this method runs, never this refusal. Returns the archived
+    /// snapshot when one was made (the store persists it in the same save as the draft), else null.
+    /// </summary>
+    public ApprovedRevisionSnapshot? ReviseCommercial(long expectedVersion, IReadOnlyList<LineCommercialInput> inputs, string actorId,
+        DateTimeOffset now)
+    {
+        RequireVersion(expectedVersion);
+        var actor = RequireActor(actorId);
+        ArgumentNullException.ThrowIfNull(inputs);
+        RequireDraft();
+        if (ApprovalState == InternalApprovalState.PendingApproval)
+        {
+            throw StateConflict("Onay bekleyen taslağın fiyatı değiştirilmez; önce karar verilir.");
+        }
+
+        // Every current line exactly once, nothing else: the revision is of the whole commercial surface.
+        if (inputs.Count != lines.Count || inputs.Select(input => input.LineId).Distinct().Count() != inputs.Count
+            || inputs.Any(input => lines.All(line => line.Id != input.LineId)))
+        {
+            throw new SalesRuleException(SalesRuleCodes.RevisionLinesMismatch,
+                "Fiyat revizyonu taslağın her satırını tam bir kez adlandırır; başka satır adlandıramaz.");
+        }
+
+        var replacements = new List<(SalesOrderDraftLine Line, CommercialDraftFields Fields)>(inputs.Count);
+        foreach (var input in inputs)
+        {
+            var line = lines.Single(candidate => candidate.Id == input.LineId);
+            var fields = input.Commercial ?? CommercialDraftFields.None;
+            try
+            {
+                RequireCommercial(fields, line.Product);
+            }
+            catch (SalesRuleException exception)
+            {
+                // The same rule, now naming the line it is about (the caller answers lines[i].<field>).
+                throw new SalesRuleException(exception.Code, exception.Message, line.Id);
+            }
+
+            replacements.Add((line, fields));
+        }
+
+        if (replacements.All(pair => pair.Line.Commercial == pair.Fields))
+        {
+            throw new SalesRuleException(SalesRuleCodes.RevisionNoChange,
+                "Fiyat revizyonu hiçbir değeri değiştirmiyor; onay boşuna düşürülmez.");
+        }
+
+        ApprovedRevisionSnapshot? archived = null;
+        if (ApprovalState == InternalApprovalState.Approved)
+        {
+            // The approved revision as it stands, archived BEFORE anything of it changes.
+            archived = new ApprovedRevisionSnapshot(Revision, Approval, Money.ProfileId, Money.ProfileVersion, Money.Scale,
+                now.ToUniversalTime(), actor,
+                [.. lines.Select(line => new RevisionLineSnapshot(line.Id, line.LineNo, line.Product.ProductId, line.Product.ProductVersion,
+                    line.OrderUnit.UnitId, line.QuantityText, line.Commercial))]);
+            archivedRevisions.Add(archived);
+            Revision += 1;
+            ApprovalState = InternalApprovalState.Preparing;
+            Approval = ApprovalFacts.None;
+        }
+
+        foreach (var (line, fields) in replacements)
+        {
+            line.ReplaceCommercial(fields);
+        }
+
+        Touch(now);
+        return archived;
+    }
+
+    /// <summary>The store's rebuild of the stored revision number (no transition; a negative number is refused).</summary>
+    public void RestoreRevision(int revision)
+    {
+        if (revision < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(revision), "Revizyon numarası negatif olamaz.");
+        }
+
+        Revision = revision;
+    }
+
+    /// <summary>
+    /// The store's rebuild of one archived approved revision. Each must be older than the current revision
+    /// and appended in ascending order without a gap or a repeat; a stored history that does not fit is
+    /// refused, not repaired.
+    /// </summary>
+    public void RestoreArchivedRevision(ApprovedRevisionSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        var expected = archivedRevisions.Count == 0 ? 0 : archivedRevisions[^1].Revision + 1;
+        if (snapshot.Revision != expected || snapshot.Revision >= Revision
+            || snapshot.Approval.DecidedBy is null || snapshot.Approval.DecidedAtUtc is null || snapshot.Approval.RejectionReason is not null
+            || snapshot.Lines.Count == 0 || string.IsNullOrWhiteSpace(snapshot.ArchivedBy))
+        {
+            throw new InvalidOperationException("Kayıtlı revizyon geçmişi taslakla uyuşmuyor.");
+        }
+
+        archivedRevisions.Add(snapshot);
     }
 
     /// <summary>

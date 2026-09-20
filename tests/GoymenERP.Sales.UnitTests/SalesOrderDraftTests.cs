@@ -340,6 +340,118 @@ public sealed class SalesOrderDraftTests
         Assert.True(SalesOrderDraft.IsPercent("000100"));
     }
 
+    // ---- K3 Head B: the commercial revision ----------------------------------------------------------
+
+    private static SalesOrderDraft PricedDraft(out SalesOrderDraftLine first, out SalesOrderDraftLine second)
+    {
+        var draft = Draft();
+        first = draft.AddLine(1, Line(1m, commercial: new CommercialDraftFields("12.50", KgUnit, "5")), T0);
+        second = draft.AddLine(2, Line(2m), T0);
+        return draft;
+    }
+
+    private static LineCommercialInput Input(SalesOrderDraftLine line, string? price, Guid? unit, string? discount) =>
+        new(line.Id, new CommercialDraftFields(price, unit, discount));
+
+    [Fact]
+    public void A_revision_before_any_approval_replaces_the_fields_and_archives_nothing()
+    {
+        var draft = PricedDraft(out var first, out var second);
+
+        var archived = draft.ReviseCommercial(3, [Input(first, "13.00", KgUnit, null), Input(second, "1", KgUnit, "10")], "pricer", T0.AddMinutes(1));
+
+        Assert.Null(archived);
+        Assert.Empty(draft.ArchivedRevisions);
+        Assert.Equal((0, 4L, InternalApprovalState.Preparing), (draft.Revision, draft.Version, draft.ApprovalState));
+        Assert.Equal(("13.00", KgUnit, null), (first.Commercial.UnitPrice, first.Commercial.PriceUnitId, first.Commercial.DiscountPercent));
+        Assert.Equal(("1", KgUnit, "10"), (second.Commercial.UnitPrice, second.Commercial.PriceUnitId, second.Commercial.DiscountPercent));
+        // A rejected draft is open the same way.
+        draft.Submit(4, "prep", T0);
+        draft.Reject(5, "mgr", "no", T0);
+        Assert.Null(draft.ReviseCommercial(6, [Input(first, "14", KgUnit, null), Input(second, null, null, null)], "pricer", T0));
+        Assert.Equal((0, 7L, InternalApprovalState.Rejected), (draft.Revision, draft.Version, draft.ApprovalState));
+    }
+
+    [Fact]
+    public void A_revision_of_an_approved_draft_archives_the_approved_snapshot_first_then_advances_and_reenters_preparation()
+    {
+        var draft = PricedDraft(out var first, out var second);
+        draft.Submit(3, "prep", T0);
+        draft.Approve(4, "mgr", T0.AddMinutes(1));
+        var approvedFacts = draft.Approval;
+
+        var archived = draft.ReviseCommercial(5, [Input(first, "13.00", KgUnit, "5"), Input(second, null, null, null)], "pricer", T0.AddMinutes(2));
+
+        // The snapshot is the approved revision AS IT WAS: Rev.0, its facts, its money profile, the OLD values.
+        Assert.NotNull(archived);
+        Assert.Equal((0, approvedFacts, draft.Money.ProfileId, draft.Money.ProfileVersion, draft.Money.Scale, "pricer"),
+            (archived.Revision, archived.Approval, archived.MoneyProfileId, archived.MoneyProfileVersion, archived.MoneyScale, archived.ArchivedBy));
+        Assert.Equal(T0.AddMinutes(2).ToUniversalTime(), archived.ArchivedAtUtc);
+        Assert.Equal([(first.Id, 1, "1", "12.50", KgUnit, "5"), (second.Id, 2, "2", null, null, null)],
+            archived.Lines.Select(line => (line.LineId, line.LineNo, line.QuantityText, line.Commercial.UnitPrice, line.Commercial.PriceUnitId, line.Commercial.DiscountPercent)));
+        Assert.Same(archived, Assert.Single(draft.ArchivedRevisions));
+        // The draft went on: Rev.1, preparing, no approval facts, the NEW values, one version step.
+        Assert.Equal((1, 6L, InternalApprovalState.Preparing, ApprovalFacts.None), (draft.Revision, draft.Version, draft.ApprovalState, draft.Approval));
+        Assert.Equal("13.00", first.Commercial.UnitPrice);
+        Assert.True(draft.LinesAreOpen);
+        // It re-enters approval as any preparing draft, and a second approved change archives Rev.1 beside Rev.0.
+        draft.Submit(6, "prep", T0);
+        draft.Approve(7, "mgr", T0);
+        var again = draft.ReviseCommercial(8, [Input(first, "12.00", KgUnit, "5"), Input(second, null, null, null)], "pricer", T0);
+        Assert.Equal((1, "13.00"), (again!.Revision, again.Lines[0].Commercial.UnitPrice));
+        Assert.Equal([0, 1], draft.ArchivedRevisions.Select(item => item.Revision));
+        Assert.Equal(2, draft.Revision);
+    }
+
+    [Fact]
+    public void A_pending_draft_a_mismatched_line_list_and_a_change_of_nothing_are_refused_and_change_nothing()
+    {
+        var draft = PricedDraft(out var first, out var second);
+        draft.Submit(3, "prep", T0);
+        Assert.Equal(SalesRuleCodes.StateConflict,
+            CodeOf(() => draft.ReviseCommercial(4, [Input(first, "13", KgUnit, null), Input(second, null, null, null)], "pricer", T0)));
+        draft.Reject(4, "mgr", null, T0);
+
+        // Every current line exactly once: a missing line, an extra line and a duplicate are one refusal.
+        Assert.Equal(SalesRuleCodes.RevisionLinesMismatch, CodeOf(() => draft.ReviseCommercial(5, [Input(first, "13", KgUnit, null)], "pricer", T0)));
+        Assert.Equal(SalesRuleCodes.RevisionLinesMismatch, CodeOf(() => draft.ReviseCommercial(5,
+            [Input(first, "13", KgUnit, null), Input(second, null, null, null), new(Guid.NewGuid(), CommercialDraftFields.None)], "pricer", T0)));
+        Assert.Equal(SalesRuleCodes.RevisionLinesMismatch, CodeOf(() => draft.ReviseCommercial(5,
+            [Input(first, "13", KgUnit, null), Input(first, "14", KgUnit, null)], "pricer", T0)));
+        // The same values again change nothing: refused, so an approval is never discarded for nothing (ASSUMPTION-SALESP-5).
+        Assert.Equal(SalesRuleCodes.RevisionNoChange, CodeOf(() => draft.ReviseCommercial(5,
+            [Input(first, "12.50", KgUnit, "5"), Input(second, null, null, null)], "pricer", T0)));
+        // The commercial rules apply per line and the refusal names the line.
+        var scale = Assert.Throws<SalesRuleException>(() => draft.ReviseCommercial(5,
+            [Input(first, "13", KgUnit, null), Input(second, "1.005", KgUnit, null)], "pricer", T0));
+        Assert.Equal((SalesRuleCodes.PriceScaleExceeded, second.Id), (scale.Code, scale.LineId));
+        Assert.Throws<SalesVersionConflictException>(() => draft.ReviseCommercial(4, [Input(first, "13", KgUnit, null), Input(second, null, null, null)], "pricer", T0));
+        Assert.Throws<ArgumentException>(() => draft.ReviseCommercial(5, [Input(first, "13", KgUnit, null), Input(second, null, null, null)], " ", T0));
+
+        Assert.Equal((0, 5L, "12.50", InternalApprovalState.Rejected), (draft.Revision, draft.Version, first.Commercial.UnitPrice, draft.ApprovalState));
+        Assert.Empty(draft.ArchivedRevisions);
+    }
+
+    [Fact]
+    public void The_store_restores_the_revision_number_and_the_archived_history_in_order_and_refuses_a_history_that_does_not_fit()
+    {
+        var draft = PricedDraft(out var first, out _);
+        var facts = new ApprovalFacts("prep", T0, "mgr", T0, null);
+        ApprovedRevisionSnapshot Snapshot(int revision) => new(revision, facts, draft.Money.ProfileId, draft.Money.ProfileVersion, 2, T0, "pricer",
+            [new RevisionLineSnapshot(first.Id, 1, first.Product.ProductId, "7", KgUnit, "1", new CommercialDraftFields("12.50", KgUnit, null))]);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => draft.RestoreRevision(-1));
+        draft.RestoreRevision(2);
+        Assert.Throws<InvalidOperationException>(() => draft.RestoreArchivedRevision(Snapshot(1)));   // a gap: Rev.0 first
+        draft.RestoreArchivedRevision(Snapshot(0));
+        Assert.Throws<InvalidOperationException>(() => draft.RestoreArchivedRevision(Snapshot(0)));   // a repeat
+        Assert.Throws<InvalidOperationException>(() => draft.RestoreArchivedRevision(Snapshot(2)));   // not older than the current revision
+        draft.RestoreArchivedRevision(Snapshot(1));
+        Assert.Equal([0, 1], draft.ArchivedRevisions.Select(item => item.Revision));
+        Assert.Throws<InvalidOperationException>(() => draft.RestoreArchivedRevision(
+            Snapshot(2) with { Revision = 2, Approval = facts with { DecidedBy = null } }));
+    }
+
     [Fact]
     public void Line_identity_note_and_count_bounds_are_held_by_the_aggregate()
     {

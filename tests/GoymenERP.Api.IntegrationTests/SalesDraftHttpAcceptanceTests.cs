@@ -195,6 +195,12 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
 
         public List<(string Command, Guid DraftId, string ExpectedVersion, string? Reason, string Key)> StateCalls { get; } = [];
 
+        public Task<SalesOrderDraftResponse> ReviseCommercialAsync(Guid draftId, SalesDraftCommercialRevisionRequest request, SalesCommandMetadata metadata,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException("Not reached by these cases.");
+
+        public Task<SalesOrderDraftRevisionsResponse> GetDraftRevisionsAsync(Guid draftId, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException("Not reached by these cases.");
+
         public Task<SalesOrderDraftResponse> SubmitDraftAsync(Guid draftId, SalesDraftStateCommandRequest request, SalesCommandMetadata metadata,
             CancellationToken cancellationToken = default) => StateAsync("submit", draftId, request, metadata);
 

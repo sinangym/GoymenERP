@@ -90,3 +90,20 @@ public sealed record CommercialDraftFields(string? UnitPrice, Guid? PriceUnitId,
 {
     public static CommercialDraftFields None { get; } = new(null, null, null);
 }
+
+/// <summary>K3 Head B: one line's new commercial fields in a commercial revision, addressed by the client line id.</summary>
+public sealed record LineCommercialInput(Guid LineId, CommercialDraftFields Commercial);
+
+/// <summary>A line as it stood in an approved revision: identity, quantity text and the commercial fields, kept verbatim.</summary>
+public sealed record RevisionLineSnapshot(
+    Guid LineId, int LineNo, Guid ProductId, string ProductVersion, Guid OrderUnitId, string QuantityText,
+    CommercialDraftFields Commercial);
+
+/// <summary>
+/// K3 (Sinan 5748258299): an APPROVED revision archived the moment its price or discount was changed —
+/// the approval facts, the money profile it was approved under and every line's commercial values as
+/// they were. The previous approved snapshot is never deleted; the draft goes on as the next revision.
+/// </summary>
+public sealed record ApprovedRevisionSnapshot(
+    int Revision, ApprovalFacts Approval, Guid MoneyProfileId, string MoneyProfileVersion, int MoneyScale,
+    DateTimeOffset ArchivedAtUtc, string ArchivedBy, IReadOnlyList<RevisionLineSnapshot> Lines);

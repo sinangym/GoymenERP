@@ -325,6 +325,184 @@ public sealed class SalesStore(
         return new SalesDraftStateResult(draft, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId.Trim());
     }
 
+    /// <summary>
+    /// K3 Head B: the commercial revision, one save. The same key rules as a state command; the header AND
+    /// the line rows are tracked; the domain decides (expected version, state, every line, the rules, the
+    /// no-change refusal) and returns the archived approved snapshot when it made one, whose rows are written
+    /// beside the header's revision/approval axis and the lines' commercial columns — together with the
+    /// attempt record and the audit event, or nothing at all.
+    /// </summary>
+    public async Task<SalesDraftStateResult?> ReviseDraftCommercialAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+        Guid draftId, Func<SalesOrderDraft, DateTimeOffset, ApprovedRevisionSnapshot?> mutate, SalesDraftStateAudit audit,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(mutate);
+        ArgumentNullException.ThrowIfNull(audit);
+        RequireEnvelope(envelope);
+        RequireHash(requestHash);
+        RequireCommand(commandName);
+        if (commandName != SalesDraftCommands.ReviseCommercialV1)
+        {
+            throw new ArgumentException("Yalnız fiyat revizyonu komutu satırların ticari alanlarını değiştirir.", nameof(commandName));
+        }
+
+        if (string.IsNullOrWhiteSpace(audit.EventType) || string.IsNullOrWhiteSpace(audit.Operation) || string.IsNullOrWhiteSpace(audit.Reason))
+        {
+            throw new ArgumentException("Revizyon komutunun audit olayı tür, işlem ve gerekçe ister.", nameof(audit));
+        }
+
+        var companyId = RequireResolvedCompany();
+        var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
+        var actorId = envelope.ActorId.Trim();
+        var attempt = await dbContext.DraftAttempts.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.CommandName == commandName && row.IdempotencyKeyHash == keyHash, cancellationToken);
+        if (attempt is not null)
+        {
+            if (!string.Equals(attempt.ActorId, actorId, StringComparison.Ordinal)
+                || !string.Equals(attempt.RequestHash, requestHash, StringComparison.Ordinal))
+            {
+                throw Refused(SalesDraftStoreCodes.SameKeyPayloadMismatch,
+                    "Aynı Idempotency-Key başka bir istekle geldi; ilk cevap bu isteğe verilmez.");
+            }
+
+            if (attempt.Outcome != AttemptOutcomeRecorded || attempt.DraftId is not { } recordedId)
+            {
+                throw Refused(SalesDraftStoreCodes.ConcurrentChange, "Bu anahtar kayıtlı bir terminal reddi taşıyor; tekrar aynı reddi alır.");
+            }
+
+            var stored = await FindDraftAsync(recordedId, cancellationToken)
+                ?? throw new InvalidOperationException("Kayıtlı deneme kaydının taslağı bulunamadı.");
+            return new SalesDraftStateResult(stored, SalesDraftWriteOutcome.Replayed, attempt.CorrelationId);
+        }
+
+        if (draftId == Guid.Empty)
+        {
+            return null;
+        }
+
+        var row = await dbContext.Drafts.SingleOrDefaultAsync(candidate => candidate.Id == draftId, cancellationToken);
+        if (row is null)
+        {
+            return null;
+        }
+
+        // The line rows are tracked here so their commercial columns can change in this save (the guard admits only those).
+        var lineRows = await dbContext.DraftLines.Where(line => line.DraftId == draftId).OrderBy(line => line.LineNo).ToListAsync(cancellationToken);
+        var draft = (await RestoreAsync([row], cancellationToken)).Single();
+        var before = Commercial(draft);
+        var versionBefore = draft.Version;
+        var now = timeProvider.GetUtcNow();
+        var archived = mutate(draft, now);
+        if (draft.Version != versionBefore + 1 || draft.Id != row.Id || draft.CompanyId != companyId)
+        {
+            throw new InvalidOperationException("Fiyat revizyonu tam olarak bir sürüm ilerletir ve taslağı değiştirmez.");
+        }
+
+        if (archived is not null)
+        {
+            // The approved revision as it stood, written BEFORE the header advances in the same save.
+            dbContext.DraftRevisions.Add(new DraftRevisionRow
+            {
+                CompanyId = companyId,
+                DraftId = draft.Id,
+                Revision = archived.Revision,
+                SubmittedBy = archived.Approval.SubmittedBy ?? throw new InvalidOperationException("Onaylı revizyonun göndereni yok."),
+                SubmittedAtUtc = archived.Approval.SubmittedAtUtc ?? throw new InvalidOperationException("Onaylı revizyonun gönderim zamanı yok."),
+                ApprovedBy = archived.Approval.DecidedBy ?? throw new InvalidOperationException("Onaylı revizyonun onaylayanı yok."),
+                ApprovedAtUtc = archived.Approval.DecidedAtUtc ?? throw new InvalidOperationException("Onaylı revizyonun onay zamanı yok."),
+                MoneyProfileId = archived.MoneyProfileId,
+                MoneyProfileVersion = archived.MoneyProfileVersion,
+                MoneyScale = archived.MoneyScale,
+                ArchivedAtUtc = archived.ArchivedAtUtc,
+                ArchivedBy = archived.ArchivedBy,
+                CorrelationId = envelope.CorrelationId.Trim(),
+            });
+            foreach (var line in archived.Lines)
+            {
+                dbContext.DraftRevisionLines.Add(new DraftRevisionLineRow
+                {
+                    CompanyId = companyId,
+                    DraftId = draft.Id,
+                    Revision = archived.Revision,
+                    LineNo = line.LineNo,
+                    LineId = line.LineId,
+                    ProductId = line.ProductId,
+                    ProductVersion = line.ProductVersion,
+                    OrderUnitId = line.OrderUnitId,
+                    QuantityText = line.QuantityText,
+                    UnitPrice = line.Commercial.UnitPrice,
+                    PriceUnitId = line.Commercial.PriceUnitId,
+                    DiscountPercent = line.Commercial.DiscountPercent,
+                });
+            }
+        }
+
+        row.Revision = draft.Revision;
+        row.ApprovalState = (int)draft.ApprovalState;
+        row.SubmittedBy = draft.Approval.SubmittedBy;
+        row.SubmittedAtUtc = draft.Approval.SubmittedAtUtc;
+        row.DecidedBy = draft.Approval.DecidedBy;
+        row.DecidedAtUtc = draft.Approval.DecidedAtUtc;
+        row.RejectionReason = draft.Approval.RejectionReason;
+        row.Version = draft.Version;
+        row.UpdatedAtUtc = draft.UpdatedAtUtc;
+        foreach (var lineRow in lineRows)
+        {
+            var line = draft.Lines.Single(candidate => candidate.LineNo == lineRow.LineNo);
+            lineRow.UnitPrice = line.Commercial.UnitPrice;
+            lineRow.PriceUnitId = line.Commercial.PriceUnitId;
+            lineRow.DiscountPercent = line.Commercial.DiscountPercent;
+        }
+
+        dbContext.DraftAttempts.Add(new DraftAttemptRow
+        {
+            CompanyId = companyId,
+            CommandName = commandName,
+            IdempotencyKeyHash = keyHash,
+            RequestHash = requestHash,
+            ActorId = actorId,
+            Outcome = AttemptOutcomeRecorded,
+            DraftId = draft.Id,
+            CorrelationId = envelope.CorrelationId.Trim(),
+            RecordedAtUtc = now,
+        });
+        auditEvents.Enqueue(new AuditEventDraft(
+            companyId,
+            audit.EventType,
+            DraftEntityType,
+            draft.Id.ToString("D"),
+            audit.Operation,
+            EntityVersionBefore: versionBefore,
+            EntityVersionAfter: draft.Version,
+            AuditActorTypes.User,
+            envelope.ActorId,
+            envelope.PermissionCode,
+            envelope.RoleCodes,
+            JsonSerializer.Serialize(before, Json),
+            JsonSerializer.Serialize(Commercial(draft), Json),
+            audit.Reason,
+            ApprovalContextJson: null,
+            AuditAiInvolvement.None,
+            AiContextJson: null,
+            envelope.SourceChannel,
+            envelope.ClientIpAddress,
+            envelope.UserAgent,
+            envelope.CorrelationId,
+            envelope.CausationId,
+            envelope.IdempotencyKey));
+        await SaveAsync(cancellationToken);
+        return new SalesDraftStateResult(draft, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId.Trim());
+    }
+
+    /// <summary>The audit picture of a draft's commercial surface: revision, approval axis and every line's fields.</summary>
+    private static object Commercial(SalesOrderDraft draft) => new
+    {
+        revision = draft.Revision,
+        state = draft.ApprovalState.ToString(),
+        approval = draft.Approval,
+        lines = draft.Lines.Select(line => new { line.LineNo, line.Commercial.UnitPrice, line.Commercial.PriceUnitId, line.Commercial.DiscountPercent }).ToArray(),
+    };
+
     public async Task<SalesOrderDraft?> FindDraftAsync(Guid draftId, CancellationToken cancellationToken = default)
     {
         RequireResolvedCompany();
@@ -388,6 +566,8 @@ public sealed class SalesStore(
         var ids = rows.Select(row => row.Id).ToArray();
         var lines = await dbContext.DraftLines.AsNoTracking().Where(line => ids.Contains(line.DraftId)).ToListAsync(cancellationToken);
         var slices = await dbContext.DraftDeliverySlices.AsNoTracking().Where(slice => ids.Contains(slice.DraftId)).ToListAsync(cancellationToken);
+        var revisions = await dbContext.DraftRevisions.AsNoTracking().Where(revision => ids.Contains(revision.DraftId)).ToListAsync(cancellationToken);
+        var revisionLines = await dbContext.DraftRevisionLines.AsNoTracking().Where(line => ids.Contains(line.DraftId)).ToListAsync(cancellationToken);
         var drafts = new List<SalesOrderDraft>(rows.Count);
         foreach (var row in rows)
         {
@@ -427,6 +607,18 @@ public sealed class SalesStore(
                 {
                     throw new InvalidOperationException("Kayıtlı satır numaraları taslağın satır sırasıyla uyuşmuyor.");
                 }
+            }
+
+            // K3 Head B: the revision number and the archived approved revisions, oldest first; a history that does not fit is refused.
+            draft.RestoreRevision(row.Revision);
+            foreach (var archived in revisions.Where(revision => revision.DraftId == row.Id).OrderBy(revision => revision.Revision))
+            {
+                draft.RestoreArchivedRevision(new ApprovedRevisionSnapshot(archived.Revision,
+                    new ApprovalFacts(archived.SubmittedBy, archived.SubmittedAtUtc, archived.ApprovedBy, archived.ApprovedAtUtc, null),
+                    archived.MoneyProfileId, archived.MoneyProfileVersion, archived.MoneyScale, archived.ArchivedAtUtc, archived.ArchivedBy,
+                    [.. revisionLines.Where(line => line.DraftId == row.Id && line.Revision == archived.Revision).OrderBy(line => line.LineNo)
+                        .Select(line => new RevisionLineSnapshot(line.LineId, line.LineNo, line.ProductId, line.ProductVersion, line.OrderUnitId,
+                            line.QuantityText, new CommercialDraftFields(line.UnitPrice, line.PriceUnitId, line.DiscountPercent)))]));
             }
 
             // SALES-A1: the stored approval axis, restored without a transition; the facts must fit the state.

@@ -31,6 +31,7 @@ public sealed class SalesPersistenceModelTests
         foreach (var type in new[]
                  {
                      typeof(DraftNumberRow), typeof(DraftRow), typeof(DraftLineRow), typeof(DraftDeliverySliceRow), typeof(DraftAttemptRow),
+                     typeof(DraftRevisionRow), typeof(DraftRevisionLineRow),
                  })
         {
             var entity = context.Model.FindEntityType(type)!;
@@ -131,6 +132,9 @@ public sealed class SalesPersistenceModelTests
     [InlineData("edit-slice")]
     [InlineData("edit-attempt")]
     [InlineData("edit-counter-company")]
+    [InlineData("edit-revision")]
+    [InlineData("delete-revision")]
+    [InlineData("edit-revision-line")]
     public void Drafts_lines_slices_and_attempts_never_change_and_nothing_is_deleted(string fault)
     {
         using var context = Context();
@@ -154,12 +158,53 @@ public sealed class SalesPersistenceModelTests
             case "edit-attempt":
                 Attach(context, Attempt()).RequestHash = new string('1', 64);
                 break;
+            case "edit-revision":
+                Attach(context, Revision()).ApprovedBy = "someone-else";
+                break;
+            case "delete-revision":
+                context.DraftRevisions.Remove(Attach(context, Revision()));
+                break;
+            case "edit-revision-line":
+                Attach(context, RevisionLine()).UnitPrice = "1";
+                break;
             default:
                 Attach(context, new DraftNumberRow { CompanyId = CompanyA, Next = 2, Version = 1, UpdatedAtUtc = At }).CompanyId = CompanyB;
                 break;
         }
 
         Assert.Throws<InvalidOperationException>(() => context.SaveChanges());
+    }
+
+    /// <summary>
+    /// K3 Head B — the DELIBERATE narrowing of "lines never change": ONLY the three commercial columns of a line
+    /// and the header's revision number pass the write guard (a commercial revision changes them); the guard is what
+    /// would have refused them before this head, so the cases above (quantity, header, slices, attempts, history)
+    /// stay refused and these reach the provider (which is unreachable here — anything but the guard's refusal).
+    /// </summary>
+    [Theory]
+    [InlineData("line-price")]
+    [InlineData("line-discount")]
+    [InlineData("header-revision")]
+    public void Only_a_lines_commercial_columns_and_the_headers_revision_pass_the_write_guard(string change)
+    {
+        using var context = Context();
+        switch (change)
+        {
+            case "line-price":
+                var line = Attach(context, Line());
+                line.UnitPrice = "12.50";
+                line.PriceUnitId = Guid.NewGuid();
+                break;
+            case "line-discount":
+                Attach(context, Line()).DiscountPercent = "5";
+                break;
+            default:
+                Attach(context, Draft()).Revision = 1;
+                break;
+        }
+
+        var exception = Record.Exception(() => context.SaveChanges());
+        Assert.IsNotType<InvalidOperationException>(exception);
     }
 
     [Fact]
@@ -271,6 +316,18 @@ public sealed class SalesPersistenceModelTests
     {
         CompanyId = CompanyA, DraftId = Guid.NewGuid(), LineNo = 1, SliceNo = 1, SliceId = Guid.NewGuid(), OrderUnitId = Guid.NewGuid(),
         Quantity = 1m, QuantityText = "1", RequestedDeliveryDate = new DateOnly(2026, 9, 25),
+    };
+
+    private static DraftRevisionRow Revision() => new()
+    {
+        CompanyId = CompanyA, DraftId = Guid.NewGuid(), Revision = 0, SubmittedBy = "prep", SubmittedAtUtc = At, ApprovedBy = "mgr", ApprovedAtUtc = At,
+        MoneyProfileId = Guid.NewGuid(), MoneyProfileVersion = "3", MoneyScale = 2, ArchivedAtUtc = At, ArchivedBy = "pricer", CorrelationId = "synthetic-correlation",
+    };
+
+    private static DraftRevisionLineRow RevisionLine() => new()
+    {
+        CompanyId = CompanyA, DraftId = Guid.NewGuid(), Revision = 0, LineNo = 1, LineId = Guid.NewGuid(), ProductId = Guid.NewGuid(), ProductVersion = "7",
+        OrderUnitId = Guid.NewGuid(), QuantityText = "1", UnitPrice = "12.50", PriceUnitId = Guid.NewGuid(), DiscountPercent = null,
     };
 
     private static DraftAttemptRow Attempt() => new()

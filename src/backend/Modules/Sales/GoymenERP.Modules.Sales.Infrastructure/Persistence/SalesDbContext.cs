@@ -62,6 +62,10 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
 
     internal DbSet<DraftAttemptRow> DraftAttempts => Set<DraftAttemptRow>();
 
+    internal DbSet<DraftRevisionRow> DraftRevisions => Set<DraftRevisionRow>();
+
+    internal DbSet<DraftRevisionLineRow> DraftRevisionLines => Set<DraftRevisionLineRow>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -75,6 +79,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         ConfigureDraftLines(modelBuilder);
         ConfigureDraftDeliverySlices(modelBuilder);
         ConfigureDraftAttempts(modelBuilder);
+        ConfigureDraftRevisions(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -264,6 +269,52 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    // K3 Head B: the archived approved revisions and their lines — append-only history beside the draft.
+    private void ConfigureDraftRevisions(ModelBuilder modelBuilder)
+    {
+        var revision = modelBuilder.Entity<DraftRevisionRow>();
+        revision.ToTable("DraftRevisions", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_DraftRevisions_Identity",
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [Revision] >= 0 AND LEN([SubmittedBy]) > 0 AND LEN([ApprovedBy]) > 0 AND LEN([ArchivedBy]) > 0 AND LEN([CorrelationId]) > 0");
+            table.HasCheckConstraint("CK_DraftRevisions_Money",
+                "[MoneyProfileId] <> '00000000-0000-0000-0000-000000000000' AND LEN([MoneyProfileVersion]) > 0 AND [MoneyScale] >= 0");
+        });
+        revision.HasKey(x => new { x.CompanyId, x.DraftId, x.Revision });
+        revision.Property(x => x.SubmittedBy).HasMaxLength(128).IsRequired();
+        revision.Property(x => x.ApprovedBy).HasMaxLength(128).IsRequired();
+        revision.Property(x => x.ArchivedBy).HasMaxLength(128).IsRequired();
+        revision.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        revision.Property(x => x.MoneyProfileVersion).HasMaxLength(128).IsRequired();
+        revision.HasOne<DraftRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.DraftId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        revision.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var line = modelBuilder.Entity<DraftRevisionLineRow>();
+        line.ToTable("DraftRevisionLines", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_DraftRevisionLines_Identity",
+                "[LineNo] >= 1 AND [LineId] <> '00000000-0000-0000-0000-000000000000' AND [ProductId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [OrderUnitId] <> '00000000-0000-0000-0000-000000000000' AND LEN([QuantityText]) > 0");
+            table.HasCheckConstraint("CK_DraftRevisionLines_Price",
+                "([UnitPrice] IS NULL AND [PriceUnitId] IS NULL) OR ([UnitPrice] IS NOT NULL AND [PriceUnitId] IS NOT NULL)");
+        });
+        line.HasKey(x => new { x.CompanyId, x.DraftId, x.Revision, x.LineNo });
+        line.HasIndex(x => new { x.CompanyId, x.DraftId, x.Revision, x.LineId }).IsUnique().HasDatabaseName("UX_DraftRevisionLines_LineId");
+        line.Property(x => x.ProductVersion).HasMaxLength(128).IsRequired();
+        line.Property(x => x.QuantityText).HasMaxLength(128).IsRequired();
+        line.Property(x => x.UnitPrice).HasMaxLength(128);
+        line.Property(x => x.DiscountPercent).HasMaxLength(128);
+        line.HasOne<DraftRevisionRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.DraftId, x.Revision })
+            .HasPrincipalKey(x => new { x.CompanyId, x.DraftId, x.Revision })
+            .OnDelete(DeleteBehavior.Restrict);
+        line.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     private void ApplyWriteGuards()
     {
         SalesAuditEventTenantGuard.Validate(this, companyContext);
@@ -295,12 +346,17 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                 string[] allowed = entry.Entity switch
                 {
                     DraftNumberRow => [nameof(DraftNumberRow.Next), nameof(DraftNumberRow.UpdatedAtUtc)],
-                    // SALES-A1: the header moves only along the approval axis (state, facts, time; the version is the token).
+                    // SALES-A1: the header moves only along the approval axis (state, facts, time; the version is the token);
+                    // K3 Head B: and its commercial revision number, which the archived history explains.
                     DraftRow =>
                     [
                         nameof(DraftRow.UpdatedAtUtc), nameof(DraftRow.ApprovalState), nameof(DraftRow.SubmittedBy), nameof(DraftRow.SubmittedAtUtc),
-                        nameof(DraftRow.DecidedBy), nameof(DraftRow.DecidedAtUtc), nameof(DraftRow.RejectionReason),
+                        nameof(DraftRow.DecidedBy), nameof(DraftRow.DecidedAtUtc), nameof(DraftRow.RejectionReason), nameof(DraftRow.Revision),
                     ],
+                    // K3 Head B — a DELIBERATE narrowing of "lines never change", declared here and in the PR: ONLY the three
+                    // commercial columns may change, under a commercial revision; identity, product, unit and quantity
+                    // columns stay immutable (the persistence test pins both halves).
+                    DraftLineRow => [nameof(DraftLineRow.UnitPrice), nameof(DraftLineRow.PriceUnitId), nameof(DraftLineRow.DiscountPercent)],
                     _ => [],
                 };
                 var changed = entry.Properties
