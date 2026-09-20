@@ -167,6 +167,14 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
             b.Property<Guid>("Id")
                 .HasColumnType("uniqueidentifier");
 
+            b.Property<string>("AccountNumber")
+                .HasMaxLength(64)
+                .HasColumnType("nvarchar(64)");
+
+            b.Property<string>("AccountType")
+                .HasMaxLength(64)
+                .HasColumnType("nvarchar(64)");
+
             b.Property<DateTimeOffset?>("ApprovedAtUtc")
                 .HasColumnType("datetimeoffset");
 
@@ -174,6 +182,18 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
                 .HasMaxLength(128)
                 .HasColumnType("nvarchar(128)")
                 .UseCollation("Latin1_General_100_BIN2");
+
+            b.Property<string>("BankName")
+                .HasMaxLength(200)
+                .HasColumnType("nvarchar(200)");
+
+            b.Property<string>("BranchCode")
+                .HasMaxLength(64)
+                .HasColumnType("nvarchar(64)");
+
+            b.Property<string>("BranchName")
+                .HasMaxLength(200)
+                .HasColumnType("nvarchar(200)");
 
             b.Property<Guid>("CompanyId")
                 .HasColumnType("uniqueidentifier");
@@ -185,6 +205,10 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
                 .IsRequired()
                 .HasMaxLength(200)
                 .HasColumnType("nvarchar(200)");
+
+            b.Property<string>("Iban")
+                .HasMaxLength(34)
+                .HasColumnType("nvarchar(34)");
 
             b.Property<DateTimeOffset>("ProposedAtUtc")
                 .HasColumnType("datetimeoffset");

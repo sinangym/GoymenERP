@@ -1169,10 +1169,28 @@ public sealed partial class OpenApiContractGenerationTests
                     ["companyId", "items"],
                     ("companyId", "type:string;format:uuid"),
                     ("items", "type:array;items:ref:BankAccountCurrencyCandidate")),
+                // K2: the card travels on the MASTER item and nowhere else. BankAccountView — the flat
+                // read the receipt path uses — does not carry it, and that is enforced by the type
+                // system rather than by a filter: FİNANS's first attempt to read the card through the
+                // flat view failed to compile (CS1061). A field that travels unnecessarily is a field
+                // that leaks, so its absence there is the design, not an omission.
                 ["BankAccountMasterItem"] = ObjectSchema(
-                    ["account", "isOwnProposal"],
+                    ["account", "isOwnProposal", "card"],
                     ("account", "ref:BankAccountView"),
-                    ("isOwnProposal", "type:boolean")),
+                    ("isOwnProposal", "type:boolean"),
+                    ("card", "ref:BankAccountCard")),
+                // All six are REQUIRED on the wire while four are nullable, and the pair is the point:
+                // required means the property is always present, nullable means its value may be absent.
+                // A pre-K2 account has no branch, IBAN or account number, and the schema says so in
+                // types instead of leaving the client to infer it from a missing key.
+                ["BankAccountCard"] = ObjectSchema(
+                    ["bankName", "accountType", "branchName", "branchCode", "iban", "accountNumber"],
+                    ("bankName", "type:string"),
+                    ("accountType", "type:string"),
+                    ("branchName", "type:null|string"),
+                    ("branchCode", "type:null|string"),
+                    ("iban", "type:null|string"),
+                    ("accountNumber", "type:null|string")),
                 ["BankAccountMasterPage"] = ObjectSchema(
                     ["companyId", "items"],
                     ("companyId", "type:string;format:uuid"),
@@ -1771,10 +1789,20 @@ public sealed partial class OpenApiContractGenerationTests
                 ["BankAccountApprovalBody"] = ObjectSchema(
                     ["expectedVersion"],
                     ("expectedVersion", "type:string")),
+                // K2: bankName and accountType join displayName and currencyId as REQUIRED on the
+                // proposal, which is where the mandatory pair is enforced — the columns are nullable
+                // because pre-K2 rows have no value, so the rule binds new cards rather than assigning
+                // a meaning to old NULLs (#66 5748390243 is still open).
                 ["BankAccountProposeRequest"] = ObjectSchema(
-                    ["displayName", "currencyId"],
+                    ["displayName", "currencyId", "bankName", "accountType"],
                     ("displayName", "type:string"),
-                    ("currencyId", "type:string;format:uuid")),
+                    ("currencyId", "type:string;format:uuid"),
+                    ("bankName", "type:string"),
+                    ("accountType", "type:string"),
+                    ("branchName", "type:null|string"),
+                    ("branchCode", "type:null|string"),
+                    ("iban", "type:null|string"),
+                    ("accountNumber", "type:null|string")),
                 ["CreateSalesOrderDraftRequest"] = ObjectSchema(
                     ["kind", "partyId", "companyAccountId", "businessDate", "currencyId", "lines"],
                     ("kind", "type:string"),

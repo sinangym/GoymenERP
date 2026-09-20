@@ -141,7 +141,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // finance
             ["tools/relational_inventory/finance.txt"] =
-                "f3a40e3fa9d8a6d791d70e136bc5dcf2c17e4123d07aa37cee4661f9719accdd",
+                "3c0677942d9fc2d4a85aa284c5cf61e2e7943779ac2049c60f92e5b8a2be0fa2",
 
             // identity
             ["tools/relational_inventory/identity.txt"] =
@@ -231,7 +231,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
              + "Persistence/FinanceDbContext.cs"] =
-                "aaa0d82e67ac4f6ed3edcbd1bea16ad10957e5a71d8bb5d752ebcbb7ceabb81f",
+                "c32db0d914cb00489cb13a193c0f87ba8d0163f408193344c5524907e384a981",
             // ACC-3 (#298): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for ACC-V0a: the ADR-011 command log (Commands) is mapped here, company-scoped with the
@@ -466,7 +466,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Finance/"
                  + "GoymenERP.Modules.Finance.Infrastructure/FinanceBankAccountService.cs"] =
                     new(
-                        "d5f0e66546d0cfd0c31d9a47abe3a015462f8c1afb32f4ca9de9c11ef2a1a550",
+                        "32dfae23381309cabda53be9f43ba0fa89f7698e39d602713133c42b6cf8ad2e",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1

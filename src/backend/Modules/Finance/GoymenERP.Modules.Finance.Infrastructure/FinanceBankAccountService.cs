@@ -17,8 +17,17 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 /// FS0 (card #66 5731563923): the Finance bank account master and its authorized reader, the
 /// real source behind <see cref="IFinanceBankAccountReader"/>. It holds no balance and moves no money.
 /// <list type="bullet">
-/// <item><b>Fields:</b> exactly <see cref="BankAccountView"/>'s. Bank name, branch, IBAN, account
-/// number, type, a currency change and closing are not decided and not built.</item>
+/// <item><b>Fields (K2, Sinan #66 5748258299):</b> <see cref="BankAccountView"/>'s, plus the card —
+/// bank name and account type MANDATORY, branch name/code, IBAN and account number holdable. The card
+/// travels on <see cref="BankAccountCard"/>, which the master carries and the receipt path does not:
+/// a draft or a Record needs an account to exist, be approved and match the currency, never its IBAN.
+/// A given IBAN must be structurally valid (<see cref="FinanceIban"/>), which is arithmetic and NOT
+/// proof of ownership — that is Ö4's approval — and no bank datum is derived from it. A currency
+/// change and closing are still not decided and not built.</item>
+/// <item><b>NOT here, deliberately:</b> K2's "an account used for payment or collection must carry an
+/// IBAN". <c>IsUsableForReceipt</c> still derives from approval alone, so a card declaring itself not
+/// transfer-capable would be contradicted by behaviour; the declaration and the derivation are one
+/// change. It also cannot land until #66 5748390243 says what the rows written before K2 mean.</item>
 /// <item><b>Lifecycle (Ö4, #66 5722637822):</b> a proposal is neither active nor usable; one approval
 /// by an authorized user OTHER than the proposer makes it both. The database refuses an approval by
 /// the proposer too (<c>CK_BankAccounts_Approval</c>).</item>
@@ -58,6 +67,9 @@ public sealed class FinanceBankAccountService(
     private const int IdentityMaximumLength = 128;
     private const int DisplayNameMaximumLength = 200;
 
+    /// <summary>K2's shorter card fields: account type, branch code and account number (column widths).</summary>
+    private const int AccountTypeMaximumLength = 64;
+
     private static readonly JsonSerializerOptions Json = FinanceJson.CreateOptions();
 
     public async Task<BankAccountCommandResult> ProposeAsync(FinanceContext context, CommandMetadata metadata,
@@ -76,6 +88,14 @@ public sealed class FinanceBankAccountService(
         if (request.DisplayName is null)
         {
             return Refused(context, CommandOutcome.ValidationFailed, Issue("displayName", "display_name_invalid"));
+        }
+
+        // K2's card, judged here for the same reason: its mandatory fields are non-nullable in the
+        // contract, so a null one cannot be serialised and the hash below would throw rather than
+        // refuse. Nothing is read or recorded for a card that is not a card.
+        if (CardRefusal(request) is { } cardRefused)
+        {
+            return Refused(context, CommandOutcome.ValidationFailed, cardRefused);
         }
 
         var payloadHash = PayloadHash(ProposeCommand, request);
@@ -113,6 +133,13 @@ public sealed class FinanceBankAccountService(
             CompanyId = context.CompanyId,
             CurrencyId = request.CurrencyId,
             DisplayName = request.DisplayName,
+            BankName = request.BankName,
+            AccountType = request.AccountType,
+            BranchName = Held(request.BranchName),
+            BranchCode = Held(request.BranchCode),
+            // Stored NORMALISED, so the value kept is the value validated — see CardRefusal.
+            Iban = request.Iban is null ? null : FinanceIban.Normalize(request.Iban),
+            AccountNumber = Held(request.AccountNumber),
             Status = Proposed,
             Version = 1,
             ProposedBy = context.ActorId,
@@ -239,7 +266,8 @@ public sealed class FinanceBankAccountService(
 
         return new ReadResult<BankAccountMasterPage>(ReadOutcome.Found, new BankAccountMasterPage(context.CompanyId,
             [.. rows.Select(row => new BankAccountMasterItem(View(row),
-                string.Equals(row.ProposedBy, context.ActorId, StringComparison.Ordinal)))]));
+                string.Equals(row.ProposedBy, context.ActorId, StringComparison.Ordinal),
+                Card(row)))]));
     }
 
     /// <summary>
@@ -343,6 +371,76 @@ public sealed class FinanceBankAccountService(
     private static BankAccountView View(BankAccountRow row) =>
         new BankAccountView(row.Id, row.CompanyId, row.CurrencyId, row.DisplayName,
             IsActive: row.Status == Approved, IsUsableForReceipt: row.Status == Approved, VersionText(row.Version));
+
+    /// <summary>
+    /// K2's card as stored. A row written before K2 carries NULL where K2 calls a value mandatory; that
+    /// is shown as it is, never as a blank or a placeholder, because what those rows mean is the open
+    /// question #66 5748390243 and a projection is not the place to answer it.
+    /// </summary>
+    private static BankAccountCard Card(BankAccountRow row) =>
+        new BankAccountCard(row.BankName ?? string.Empty, row.AccountType ?? string.Empty,
+            row.BranchName, row.BranchCode, row.Iban, row.AccountNumber);
+
+    /// <summary>A holdable field: absent and blank are the same thing, and neither is invented.</summary>
+    private static string? Held(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
+
+    /// <summary>
+    /// K2 (Sinan #66 5748258299) on a card being WRITTEN: bank name and account type are mandatory;
+    /// branch name/code, IBAN and account number are holdable. An IBAN that IS given must be
+    /// structurally valid — and a valid one is still not proof of ownership (Ö4's approval is), nor is
+    /// any bank datum derived from it.
+    /// <para>
+    /// The account TYPE is stored as the owner's text and no list of types is enforced here: which
+    /// types exist is a business list nobody has decided, and inventing one would close a question K2
+    /// left open. What K2 does fix is that the field cannot be empty.
+    /// </para>
+    /// </summary>
+    private static ValidationIssue? CardRefusal(BankAccountProposeRequest request)
+    {
+        if (!IsCanonical(request.BankName))
+        {
+            return Issue("bankName", "bank_name_required");
+        }
+
+        if (request.BankName.Length > DisplayNameMaximumLength)
+        {
+            return Issue("bankName", "finance_value_does_not_fit");
+        }
+
+        if (!IsCanonical(request.AccountType))
+        {
+            return Issue("accountType", "account_type_required");
+        }
+
+        if (request.AccountType.Length > AccountTypeMaximumLength)
+        {
+            return Issue("accountType", "finance_value_does_not_fit");
+        }
+
+        if (Held(request.BranchName) is { Length: > DisplayNameMaximumLength })
+        {
+            return Issue("branchName", "finance_value_does_not_fit");
+        }
+
+        if (Held(request.BranchCode) is { Length: > AccountTypeMaximumLength })
+        {
+            return Issue("branchCode", "finance_value_does_not_fit");
+        }
+
+        if (Held(request.AccountNumber) is { Length: > AccountTypeMaximumLength })
+        {
+            return Issue("accountNumber", "finance_value_does_not_fit");
+        }
+
+        // Absent is allowed: K2 requires that an IBAN-less special credit or term account be definable.
+        if (request.Iban is null)
+        {
+            return null;
+        }
+
+        var normalized = FinanceIban.Normalize(request.Iban);
+        return FinanceIban.IsStructurallyValid(normalized) ? null : Issue("iban", "iban_invalid");
+    }
 
     /// <summary>Context, the action's fresh authority, and the key and context storage limits.</summary>
     private async Task<BankAccountCommandResult?> StartAsync(FinanceContext context, CommandMetadata metadata,
