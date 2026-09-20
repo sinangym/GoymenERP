@@ -216,7 +216,12 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
             var refused = await a.Service.RecordAsync(a.Context, Key("record-closed"),
                 new RecordRequest(backDated.Id, backDated.Version), CancellationToken.None);
             Assert.Equal(CommandOutcome.ValidationFailed, refused.Outcome);
-            Assert.Equal(new ValidationIssue("period", RecordPeriodAnswer.PeriodNotOpenCode), Assert.Single(refused.Issues));
+            // The FIELD differs from the unavailable refusal on purpose, and the product is what decided it:
+            // a period that is not open is reported on `occurredOn`, the date that DECIDED it (K1), so the
+            // recorder is pointed at the thing to correct; a rule that could not decide is reported on
+            // `period`, because no date is at fault. This case had it as "period" and the server said
+            // otherwise — the server is right, and the difference is now asserted rather than assumed.
+            Assert.Equal(new ValidationIssue("occurredOn", RecordPeriodAnswer.PeriodNotOpenCode), Assert.Single(refused.Issues));
         }
 
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.MoneyEvents"));
