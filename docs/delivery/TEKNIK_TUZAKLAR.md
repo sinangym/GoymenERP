@@ -265,6 +265,14 @@ ihlal yok, dokunulmuyor); Finance'in iki ekranı ve Muhasebe dönem önerisi yal
 (nav etiketi boş); Logistics tek ihlaldi ve nav etiketi kaldırılarak çözüldü — sayfa içi bağlantı
 kullanıcının zaten bulunduğu bağlamda durduğu için o korundu.
 
+**Kaldıraç etiket DEĞİLDİR — kapasite `NAV_CAPABILITIES`'ten de çıkar.** İlk karar "etiketi boşalt"
+biçimindeydi; uygularken görüldü ki `AppShell`, `NAV_CAPABILITIES` listesini doğrudan nav öğelerine
+map ediyor, yani etiketi boş bir kapasite **adı olmayan bir bağlantı** olarak çizilir. O zaman
+mükerrer bağlantı yerine isimsiz bağlantı elde edilir; kuralın korumaya çalıştığı ekran okuyucu
+kullanıcısı için bu daha kötüdür. Doğrusu: kapasite listeden çıkar **ve** etiketi boşalır; ayrıca
+şeridin mount-drift testi kuralı ima etmek yerine **açıkça iddia eder**. (Koordinatör kararının
+uygulama sırasında düzeltilmiş hâli, 19 Eylül 2026.)
+
 **Etiket değiştirmenin dokunduğu yerler** (sürprize yer bırakmamak için): `CAPABILITY_NAV_LABEL`,
 şeridin kendi `*_NAV_LABEL` tablosu, `AppShell`'in `NAV_CAPABILITIES` listesi, şeridin mount-drift
 testi (değer değer karşılaştırır) ve `AppShell.test.tsx` içindeki nav iddiaları. Merkez ile şerit
