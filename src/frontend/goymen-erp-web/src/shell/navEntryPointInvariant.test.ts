@@ -9,9 +9,22 @@
  * replaced. A gate that cannot fail on the thing it guards is not a gate.
  *
  * `AppShell` maps `NAV_CAPABILITIES` straight to nav items and reads each one's label from
- * `CAPABILITY_NAV_LABEL`, so the two rules below are exactly what "no nameless link, no orphan
- * label" means in this codebase. They hold for every module, so a future creation screen gets the
- * protection without anyone remembering to add a test.
+ * `CAPABILITY_NAV_LABEL`, so the rules below are what "no nameless link, no orphan label" means in
+ * this codebase. They hold for every module, so a future screen gets the protection without anyone
+ * remembering to add a test.
+ *
+ * CORRECTION (#367 review, P3 carried from #363): the first two rules are CONTRAPOSITIVES of one
+ * another — "every nav entry has a label" and "no empty-labelled capability is in nav" are the same
+ * proposition written twice, so they always pass and fail together. This file promised two
+ * guarantees and delivered one. The third rule below is the direction that was missing: a NON-empty
+ * label whose capability is absent from the nav list — a label that can never be rendered, which is
+ * what "orphan label" actually means.
+ *
+ * It was not hypothetical. `manufacturingOrdersList` had a mounted route and the label
+ * 'Üretim emirleri', its drift test asserted that label, and it was absent from `NAV_CAPABILITIES`:
+ * MFG-02 could only be opened by typing its URL (#368 fixed the entry; this rule stops it coming
+ * back). The rule is added AFTER that fix on purpose — landing it first would have turned a gate red
+ * for a defect belonging to another lane's slice, which teaches people to distrust the gate.
  *
  * WHAT THIS IS NOT: the one-entry-point rule itself. Whether a list ALSO links to its create screen
  * is a fact about that lane's page, not about these two tables; the lane's own tests and the
@@ -34,6 +47,24 @@ describe('nav entry points', () => {
     )
     const leaked = emptyLabelled.filter((capability) => NAV_CAPABILITIES.includes(capability))
     expect(leaked).toEqual([])
+  })
+
+  it('keeps no ORPHAN label: a named capability that the nav list never renders', () => {
+    // The direction the first two rules cannot see. A non-empty label is a promise that the entry is
+    // drawn somewhere; if its capability is not in the nav list, the promise is dead text and the
+    // screen it names may be reachable only by typing a URL.
+    const named = (Object.values(CAPABILITY) as CapabilityId[]).filter((capability) =>
+      CAPABILITY_NAV_LABEL[capability]?.trim(),
+    )
+    const orphans = named.filter((capability) => !NAV_CAPABILITIES.includes(capability))
+    expect(
+      orphans,
+      'these capabilities carry a nav label but are not in NAV_CAPABILITIES, so the label is never ' +
+        'rendered: either add the capability to the nav list, or empty its label if the screen is ' +
+        'deliberately reached from a row or a list instead of the sidebar',
+    ).toEqual([])
+    // A rule that filtered nothing would pass vacuously and mean nothing, so pin that it had input.
+    expect(named.length).toBeGreaterThan(0)
   })
 
   it('lists every known capability in the label table, so neither side can drift silently', () => {
