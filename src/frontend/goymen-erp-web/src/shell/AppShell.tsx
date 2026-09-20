@@ -24,7 +24,8 @@ import {
 import styles from './AppShell.module.css'
 
 /** Every capability the frontend can actually mount, in nav order. */
-const NAV_CAPABILITIES: readonly CapabilityId[] = [
+/** Exported for `navEntryPointInvariant.test.ts`: the nav list and the label table must agree. */
+export const NAV_CAPABILITIES: readonly CapabilityId[] = [
   CAPABILITY.cariPartiesList,
   CAPABILITY.cariPartiesCreate,
   CAPABILITY.cariAccountsLink,
