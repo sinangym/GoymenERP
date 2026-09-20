@@ -115,6 +115,12 @@ contract `GoymenERP.Modules.Finance.Contracts` (#258, #261). The contract's own 
 
   Record's name is `finance.manual-receipt.record` since FIN-T05a (Ö4; registered centrally in FIN-T05's round). Reverse has
   no name (FIN-T06).
+
+  Registering it was **not behaviour-neutral**, and the change is visible to the caller: Record moved from the port's
+  "name unknown → `Unavailable`" branch, which asks the authority nothing and answers 503, to "name known → measured",
+  which asks and — for an actor who does not hold the grant — answers `Denied`, so 403. Both refuse and neither stores
+  anything; the second is the honest one once the capability exists, because the person simply does not have it. A name
+  is still not a grant: nobody holds it until a human assigns it.
 - **Settings' `settings_money_profile_not_found`** (the chosen currency has no approved profile) is a 422 validation result of the save (`money.currencyId`), not an outage. The draft-context read keeps it as 503 with its code: there the currency is the bank account's, not the request's.
 - **List:** newest created first (`CreatedAtUtc desc, Id desc`, new index), so an edit never moves a draft between pages. The page size is a fixed technical 50, not a policy, and each amount is disclosed only with a fresh `ReadAmount`.
 - **Honest runtime:** until T02-b is on main and a real bank account is approved, a save answers 503 or 422 with its owner's code. It is never painted green.
