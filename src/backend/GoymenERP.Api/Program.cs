@@ -111,14 +111,17 @@ builder.Services.AddFinancePersistence(
 // SERVICE TYPE only — so registering first makes it a no-op and EXACTLY ONE descriptor for this
 // service ever enters the container. The undecided fallback is never registered at all.
 //
-// What the other order would actually do, stated correctly because the first version of this comment
-// got it wrong: the fallback would be registered, this line would add a SECOND descriptor, and the
-// single consumer — GetRequiredService at FinanceModuleExtensions.cs:123 — would still resolve THIS
-// rule, because the last descriptor wins. So the reverse order would not silently restore the
-// undecided rule; it would leave a dead singleton shadowed behind a live scoped one. That is still
-// worth avoiding: nothing injects IEnumerable<IFinanceRecordPeriodRule> today, so the shadow is
-// invisible, and a two-descriptor container is a trap for the next reader, who cannot see which one
-// is dead — or for the next consumer, who may enumerate rather than resolve.
+// Why one descriptor is worth insisting on, which is a property of the container and needs no
+// prediction: with two, the next reader cannot see which registration is dead, and a later consumer
+// that ENUMERATES instead of resolving would get both. (Nothing injects
+// IEnumerable<IFinanceRecordPeriodRule> today — checked — so that second risk is future, not present.)
+//
+// What the REVERSE order actually does is measured, not described here: the FIN-T05 host composition
+// cases pin the container's behaviour under both orders. Find them by searching the API integration
+// tests for IFinanceRecordPeriodRule, and believe them over any sentence in this file. The first
+// version of this comment predicted that outcome, confidently and wrongly, which is why this one
+// points at the test instead: a comment that names a pin cannot go stale, a comment that predicts a
+// result can.
 //
 // Scoped, not singleton: both depend on ICompanyContext, ICurrentUser and IAccountingPeriodStore, which
 // are per request. A singleton would capture one request's context — the defect #366 closed in two

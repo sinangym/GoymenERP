@@ -54,8 +54,14 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // and initializer after Organization) and its staged shell provider before the authority is chosen.
     // Re-fingerprinted for ACC-V0a: the Accounting module (AddAccountingModule, its endpoints and initializer after
     // Organization); no shell provider (ACC-V0b).
+    // Re-fingerprinted for FIN-T05: the two scoped host registrations of the record period rule (the Accounting
+    // period-status port and the occurredOn rule) placed before AddFinanceServices, and then TWICE MORE for
+    // COMMENT-ONLY edits beside them. The comment edits changed no registration, no generation mode, no network
+    // and no hosted-service surface — and they moved this fingerprint anyway, because a content hash has no
+    // opinion about whether a change is semantic. Any edit to a pinned file, comment included, is re-pinned in
+    // the same push.
     private const string ReviewedOpenApiStartupFingerprint =
-        "41dc7843f04a39637d11a5529b534b7667d36b3ddfc3e6ac48042942a193e9cf";
+        "cb6209be50595339550165d45c6fdcae8eb6eca6004dea53d18d26f807718f86";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedIdentityReconcilerPath =
