@@ -85,7 +85,7 @@ export const useHeaderOnlySource: UseReferenceOptions = (companyId, businessDate
   const useCurrencies = useContext(SalesCurrencySourceContext)
   const currencies = useCurrencies(companyId, businessDate)
   return companyId === COMPANY_A
-    ? { status: 'unavailable', missing: [{ source: 'products', reason: 'no-list-route' }], header: { accounts: OPTIONS_A.accounts, currencies } }
+    ? { status: 'unavailable', missing: [{ source: 'products', reason: 'no-list-route' }], header: { accounts: OPTIONS_A.accounts, accountsOffer: { items: OPTIONS_A.accounts, nextCursor: null, loadingMore: false, moreFailed: null, loadMore: () => {} }, currencies } }
     : { status: 'unavailable' }
 }
 

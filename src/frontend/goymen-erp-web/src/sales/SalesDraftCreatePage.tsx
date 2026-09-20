@@ -136,12 +136,17 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
   // currencies for the business date, and the chosen account's contact information. Each is a real read
   // with its own state; nothing is offered before its owner answered.
   const useOptions = useContext(SalesReferenceSourceContext)
-  const source = useOptions(companyId, values.businessDate)
+  // #361: the customer select is one server page; the person searches with the server's own `q` (submitted, never
+  // typed-through) or continues with the server's cursor. The draft's chosen account is kept across searches.
+  const [accountSearchInput, setAccountSearchInput] = useState('')
+  const [accountSearch, setAccountSearch] = useState('')
+  const source = useOptions(companyId, values.businessDate, accountSearch)
   const useContactInformation = useContext(SalesContactInformationSourceContext)
   const delivery = useContactInformation(companyId, values.partyId, values.companyAccountId)
   /** The full options (lines included) — only when every owner offers a list; never on main until E1. */
   const options: OrderDraftOptions | null = source.status === 'ready' ? source.options : null
   const accounts = source.status === 'ready' ? source.options.accounts : (source.header?.accounts ?? null)
+  const accountsOffer = source.status === 'ready' ? null : (source.header?.accountsOffer ?? null)
   const currencyState: CurrencyReadState | null = source.status === 'ready' ? null : (source.header?.currencies ?? null)
   const missing: readonly MissingReference[] | null = source.status === 'unavailable' ? (source.missing ?? null) : null
   const currencyOptions = useMemo<OrderDraftOptions['currencies']>(
@@ -397,6 +402,30 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
           <fieldset disabled={frozen} className={styles.fieldset}>
             <legend>Sipariş bilgileri</legend>
             <div className={styles.grid}>
+              <label htmlFor="sales-customer-search">{T.references.accountSearch}</label>
+              <div className={styles.actions}>
+                <input
+                  id="sales-customer-search"
+                  type="search"
+                  maxLength={200}
+                  value={accountSearchInput}
+                  onChange={(event) => setAccountSearchInput(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault()
+                      setAccountSearch(accountSearchInput)
+                    }
+                  }}
+                  aria-describedby="sales-customer-search-hint"
+                  data-testid="sales-customer-search"
+                />
+                <button type="button" onClick={() => setAccountSearch(accountSearchInput)} data-testid="sales-customer-search-button">
+                  {T.references.accountSearchSubmit}
+                </button>
+                <span id="sales-customer-search-hint" className={styles.muted}>
+                  {T.references.accountSearchHint}
+                </span>
+              </div>
               <label htmlFor={ORDER_FIELD.customer}>{T.field.customer}</label>
               <select
                 {...fieldProps(ORDER_FIELD.customer)}
@@ -414,6 +443,24 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
                 ))}
               </select>
               {fieldError(ORDER_FIELD.customer)}
+              {accountsOffer !== null ? (
+                <p className={styles.muted} style={{ gridColumn: 2 }} data-testid="sales-customer-more-status">
+                  {accountsOffer.nextCursor !== null ? (
+                    <button
+                      type="button"
+                      onClick={accountsOffer.loadMore}
+                      disabled={accountsOffer.loadingMore}
+                      aria-busy={accountsOffer.loadingMore}
+                      data-testid="sales-customer-more"
+                    >
+                      {accountsOffer.loadingMore ? T.references.accountsMoreLoading : T.references.accountsMore}
+                    </button>
+                  ) : (
+                    T.references.accountsEnd
+                  )}
+                  {accountsOffer.moreFailed !== null ? ` ${T.references.accountsMoreFailed(accountsOffer.moreFailed)}` : ''}
+                </p>
+              ) : null}
 
               <label htmlFor={ORDER_FIELD.businessDate}>{T.field.businessDate}</label>
               <input

@@ -30,6 +30,14 @@ export const ORDER_DRAFT_TEXT = {
   notChosen: '— seçilmedi —',
   /** SALES-A2a: the header selects' own read states (each real answer, never a guessed option). */
   references: {
+    /** #361: the customer select is one page of the Cari owner's list; the search and the continuation are the server's own. */
+    accountSearch: 'Cari ara',
+    accountSearchHint: 'Kod ya da ada göre; eşleştirmeyi sunucu yapar.',
+    accountSearchSubmit: 'Ara',
+    accountsMore: 'Daha fazla cari',
+    accountsMoreLoading: 'Yükleniyor…',
+    accountsMoreFailed: (reason: string) => `Sonraki cariler okunamadı (${reason}); listelenenler yerinde kaldı.`,
+    accountsEnd: 'Aramaya uyan tüm cariler listelendi.',
     currencyIdle: 'Para birimleri sipariş tarihine göre listelenir; önce sipariş tarihini girin.',
     currencyLoading: 'Para birimleri okunuyor…',
     currencyEmpty: 'Bu sipariş tarihinde onaylı para birimi yok.',

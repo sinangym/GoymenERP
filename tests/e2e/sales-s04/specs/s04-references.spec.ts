@@ -50,6 +50,7 @@ const currencyCode = 'TRY'
 const DRAFTS_PATH = '/api/v1/sales/drafts'
 const CONTACT_INFORMATION_PATH = '/api/v1/sales/references/contact-information'
 const CURRENCIES_PATH = '/api/v1/sales/references/currencies'
+const ACCOUNTS_PATH = '/api/v1/sales/references/accounts'
 const CREATE_ROUTE = '/satis/siparisler/yeni'
 const DETAIL_ROUTE = `/satis/siparisler/${deliveryDraftId}`
 const DEVELOPMENT_USER_HEADER = 'X-Development-User'
@@ -143,9 +144,24 @@ test('S04-06 the preparer sees the REAL currency, delivery address and contact o
   await page.goto(CREATE_ROUTE)
   await expect(page.getByRole('heading', { level: 1, name: 'Yeni satış siparişi taslağı' })).toBeVisible({ timeout: 30_000 })
 
-  // The REAL customer the seed opened is offered by the real accounts read; its option carries both ids.
+  // The REAL customer the seed opened is offered by the real accounts read; its option carries both ids. The disposable
+  // database carries the C01 golden fixture (52 active GDC accounts) before the seed, so the seeded customer is NOT on
+  // the first page of 50 (#361, first s04 run): the screen reaches it the two ways the API offers — the server's own
+  // cursor ("Daha fazla cari") and the server's own search (`q`). Both are exercised; nothing is filtered on the client.
   const customer = page.getByLabel('Cari ve şirket hesabı')
-  await expect(customer.locator('option', { hasText: 'Teslimat müşterisi' })).toHaveCount(1)
+  const accountReads = watchRead(page, ACCOUNTS_PATH)
+  await expect(page.getByTestId('sales-customer-more')).toBeVisible({ timeout: 30_000 })
+  await expect(customer.locator('option', { hasText: 'Teslimat müşterisi' })).toHaveCount(0)
+  await page.getByTestId('sales-customer-more').click()
+  await expect(customer.locator('option', { hasText: 'Teslimat müşterisi' })).toHaveCount(1, { timeout: 15_000 })
+  expect(accountReads.some((answer) => new URL(answer.url()).searchParams.has('cursor')), 'the continuation sent the server cursor').toBe(true)
+  // The search: a new first page from the server for `q`; the seeded customer is the one match.
+  await page.getByLabel('Cari ara').fill('Teslimat müşterisi')
+  await page.getByTestId('sales-customer-search-button').click()
+  await expect(customer.locator('option', { hasText: 'Teslimat müşterisi' })).toHaveCount(1, { timeout: 15_000 })
+  await expect(customer.locator('option')).toHaveCount(2)
+  expect(accountReads.some((answer) => new URL(answer.url()).searchParams.get('q') === 'Teslimat müşterisi'), 'the search sent the server q').toBe(true)
+  for (const answer of accountReads) expect(answer.status()).toBe(200)
   await customer.selectOption(`${realPartyId}|${realCompanyAccountId}`)
 
   // Currency: the real Settings candidates revalidated for the business date; the approved code is offered.

@@ -88,7 +88,7 @@ describe('fetchAccountOptions — the real accounts list, strictly decoded', () 
   it('reads the first page under the company header and keeps only the option fields', async () => {
     const calls = respond(200, ACCOUNTS_BODY)
     const outcome = await fetchAccountOptions(COMPANY)
-    expect(outcome).toEqual({ type: 'ready', accounts: [{ partyId: PARTY, companyAccountId: ACCOUNT, label: 'ACME · Ana hesap' }] })
+    expect(outcome).toEqual({ type: 'ready', accounts: [{ partyId: PARTY, companyAccountId: ACCOUNT, label: 'ACME · Ana hesap' }], nextCursor: null })
     expect(calls[0].url).toBe('/api/v1/sales/references/accounts?pageSize=50')
     expect((calls[0].init.headers as Record<string, string>)['X-Company-Id']).toBe(COMPANY)
   })
@@ -211,7 +211,52 @@ describe('SALES-A2a: useHttpContactInformation — one read per chosen account',
   })
 })
 
+describe('fetchAccountOptions — the server\'s own search and cursor (#361)', () => {
+  it('sends q trimmed and the cursor unchanged, and never both by accident', async () => {
+    const calls = respond(200, { ...ACCOUNTS_BODY, nextCursor: 'opaque/+=' })
+    const outcome = await fetchAccountOptions(COMPANY, undefined, { q: '  Teslimat  ' })
+    expect(calls[0].url).toBe('/api/v1/sales/references/accounts?pageSize=50&q=Teslimat')
+    expect(outcome.type === 'ready' && outcome.nextCursor).toBe('opaque/+=')
+    await fetchAccountOptions(COMPANY, undefined, { q: 'Teslimat', cursor: 'opaque/+=' })
+    expect(calls[1].url).toBe('/api/v1/sales/references/accounts?pageSize=50&q=Teslimat&cursor=opaque%2F%2B%3D')
+    await fetchAccountOptions(COMPANY, undefined, { q: '   ' })
+    expect(calls[2].url).toBe('/api/v1/sales/references/accounts?pageSize=50')
+  })
+})
+
 describe('useHttpReferenceOptions — the real source', () => {
+  it('re-reads the accounts with the server\'s q when the search changes, and appends the next page with its cursor (#361)', async () => {
+    const calls: string[] = []
+    const second = { partyId: '11111111-1111-1111-1111-111111111112', companyAccountId: '55555555-5555-5555-5555-555555555552', label: 'ZZ · Teslimat müşterisi' }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        calls.push(url)
+        const u = new URL(url, 'http://x')
+        const body = u.searchParams.get('cursor') === 'c2'
+          ? { companyId: COMPANY, accounts: [second], nextCursor: null }
+          : u.searchParams.get('q') === 'Teslimat'
+            ? { companyId: COMPANY, accounts: [second], nextCursor: null }
+            : { ...ACCOUNTS_BODY, nextCursor: 'c2' }
+        return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      }),
+    )
+    const { result, rerender } = renderHook(({ q }) => useHttpReferenceOptions(COMPANY, '', q), { initialProps: { q: '' } })
+    await waitFor(() => expect(result.current.status === 'unavailable' && result.current.header?.accountsOffer.nextCursor).toBe('c2'))
+    expect(calls[0]).toBe('/api/v1/sales/references/accounts?pageSize=50')
+    // Continuation: the server's cursor, sent back unchanged; the page is appended, nothing re-sorted or filtered.
+    act(() => {
+      if (result.current.status === 'unavailable') result.current.header?.accountsOffer.loadMore()
+    })
+    await waitFor(() => expect(result.current.status === 'unavailable' && result.current.header?.accountsOffer.items).toHaveLength(2))
+    expect(calls[1]).toBe('/api/v1/sales/references/accounts?pageSize=50&cursor=c2')
+    expect(result.current.status === 'unavailable' && result.current.header?.accountsOffer.nextCursor).toBeNull()
+    // Search: a new q is a new first page from the server; the previous pages are not kept.
+    rerender({ q: 'Teslimat' })
+    await waitFor(() => expect(calls[2]).toBe('/api/v1/sales/references/accounts?pageSize=50&q=Teslimat'))
+    await waitFor(() => expect(result.current.status === 'unavailable' && result.current.header?.accounts).toEqual([second]))
+  })
+
   it('is unavailable until the answer arrives, then names what the owners do not offer and offers the header', async () => {
     respond(200, ACCOUNTS_BODY)
     const { result } = renderHook(() => useHttpReferenceOptions(COMPANY, ''))
