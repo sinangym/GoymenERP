@@ -96,6 +96,15 @@ class ComposeFileDerivationTests(unittest.TestCase):
         ).replace(browser.CANONICAL_SUITE_LABEL, browser.PROFILE_SUITE_LABELS["cari-staged"])
         self.assertEqual(expected, staged)
 
+    def test_log_staged_is_the_canonical_file_plus_its_profile_line(self):
+        # LOG-4b: the same two transforms, with the logistics-instructions profile.
+        staged = self._body((ROOT / browser.PROFILE_COMPOSE_FILES["log-staged"]).read_text(encoding="utf-8"))
+        anchor = '      C01E2e__EnableListCapability: "true"\n'
+        expected = self.canonical.replace(
+            anchor, anchor + f"      {browser.CARI_STAGED_PROFILE_KEY}: {browser.STAGED_PROFILE_VALUES['log-staged']}\n"
+        ).replace(browser.CANONICAL_SUITE_LABEL, browser.PROFILE_SUITE_LABELS["log-staged"])
+        self.assertEqual(expected, staged)
+
     def test_the_acc_staged_profile_is_retired(self):
         # ACC-V0c: Accounting's screens are published on the normal host and acc01 runs there; the
         # disposable acc-staged profile (ACC-V0b) has no compose file, no label and no activation value
