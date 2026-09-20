@@ -178,7 +178,10 @@ function Journals({ namespace, periodParam }: { readonly namespace: string | nul
                         {OPEN_JOURNAL}
                       </Link>
                     ) : (
-                      <span className={styles.mono}>{shortRef(row.journalId)}</span>
+                      // Two references can share their last eight characters (the fixture's journal and source do),
+                      // so this one carries its full id in the title exactly as the source reference does — a reader
+                      // must never see two identical-looking references meaning different things.
+                      <span className={styles.mono} title={row.journalId}>{shortRef(row.journalId)}</span>
                     )}
                   </td>
                 </tr>

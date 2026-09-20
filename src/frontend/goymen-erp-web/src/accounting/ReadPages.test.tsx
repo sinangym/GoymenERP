@@ -59,7 +59,10 @@ describe('M-04 journals', () => {
     renderAt(`/muhasebe/fisler?periodId=${PERIOD_SEPTEMBER}`)
     const closedRow = (await screen.findByText('Asıl')).closest('tr') as HTMLElement
     expect(within(closedRow).queryByRole('link', { name: /Aç/ })).toBeNull()
-    expect(within(closedRow).getByText(/^ref\. …/)).toBeTruthy()
+    // Targeted by the journal's own full id (the title), never by "any ref in the row": the source reference
+    // sits in the same row and can render the SAME shortened text.
+    const reference = within(closedRow).getByTitle(JOURNAL)
+    expect(reference.textContent).toMatch(/^ref\. …/)
     expect(closedRow.textContent).not.toContain(JOURNAL)
   })
 
