@@ -406,10 +406,10 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
                 SalesDraftCommands.ApproveV1, draft.Id, (d, now) => d.Approve(3, "SENTETIK-approver", now), Approved);
         }
 
-        Assert.Equal((3, 0, 4L, "12.50"), (await run.ScalarAsync<int>("SELECT ApprovalState FROM sales.Drafts WHERE Id = @id", ("@id", draft.Id)),
-            await run.ScalarAsync<int>("SELECT Revision FROM sales.Drafts WHERE Id = @id", ("@id", draft.Id)),
-            await run.ScalarAsync<long>("SELECT Version FROM sales.Drafts WHERE Id = @id", ("@id", draft.Id)),
-            await run.ScalarAsync<string>("SELECT UnitPrice FROM sales.DraftLines WHERE DraftId = @id", ("@id", draft.Id))));
+        Assert.Equal((3, 0, 4L, "12.50"), (await run.ScalarAsync<int>("SELECT [ApprovalState] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id)),
+            await run.ScalarAsync<int>("SELECT [Revision] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id)),
+            await run.ScalarAsync<long>("SELECT [Version] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id)),
+            await run.ScalarAsync<string>("SELECT [UnitPrice] FROM [sales].[DraftLines] WHERE [DraftId] = @id", ("@id", draft.Id))));
 
         var request = new SalesDraftCommercialRevisionRequest("4", [new SalesDraftLineCommercialV1(lineId, "13.00", KgUnit, "5")]);
         const string pricer = "SENTETIK-pricer";
@@ -424,9 +424,9 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
             Assert.Equal([(SalesPermissionManifestV1.OrdersPriceWrite, CompanyA)], unpriced.Measured);
         }
 
-        Assert.Equal((0, 4L), (await run.ScalarAsync<int>("SELECT Revision FROM sales.Drafts WHERE Id = @id", ("@id", draft.Id)),
-            await run.ScalarAsync<long>("SELECT Version FROM sales.Drafts WHERE Id = @id", ("@id", draft.Id))));
-        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.DraftRevisions WHERE DraftId = @id", ("@id", draft.Id)));
+        Assert.Equal((0, 4L), (await run.ScalarAsync<int>("SELECT [Revision] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id)),
+            await run.ScalarAsync<long>("SELECT [Version] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id))));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftRevisions] WHERE [DraftId] = @id", ("@id", draft.Id)));
 
         // (0) "One save" is MEASURED, not read from the store: a recorder sees every SavingChanges the store makes (which entries,
         // in which state, with which modified properties) and can refuse the save before any statement reaches SQL Server.
@@ -444,16 +444,16 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
 
         var refusedSave = Assert.Single(faulting.Saves);
         AssertRevisionChangeSet(refusedSave);
-        Assert.Equal((3, 0, 4L), (await run.ScalarAsync<int>("SELECT ApprovalState FROM sales.Drafts WHERE Id = @id", ("@id", draft.Id)),
-            await run.ScalarAsync<int>("SELECT Revision FROM sales.Drafts WHERE Id = @id", ("@id", draft.Id)),
-            await run.ScalarAsync<long>("SELECT Version FROM sales.Drafts WHERE Id = @id", ("@id", draft.Id))));
+        Assert.Equal((3, 0, 4L), (await run.ScalarAsync<int>("SELECT [ApprovalState] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id)),
+            await run.ScalarAsync<int>("SELECT [Revision] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id)),
+            await run.ScalarAsync<long>("SELECT [Version] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id))));
         // The APPROVED texts survive the refused save untouched (the fixture is priced 12.50 / kg / 5 from creation).
-        Assert.Equal(("12.50", "5"), (await run.ScalarAsync<string>("SELECT UnitPrice FROM sales.DraftLines WHERE DraftId = @id", ("@id", draft.Id)),
-            await run.ScalarAsync<string>("SELECT DiscountPercent FROM sales.DraftLines WHERE DraftId = @id", ("@id", draft.Id))));
-        Assert.Equal(KgUnit, await run.ScalarAsync<Guid>("SELECT PriceUnitId FROM sales.DraftLines WHERE DraftId = @id", ("@id", draft.Id)));
-        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.DraftRevisions WHERE DraftId = @id", ("@id", draft.Id)));
-        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.DraftAttempts WHERE IdempotencyKeyHash = @h", ("@h", SalesStore.IdempotencyKeyHash("k-revise"))));
-        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Sales.OrderDraft' AND EventType = N'sales.order-draft.commercial-revised.v1' AND EntityId = @id",
+        Assert.Equal(("12.50", "5"), (await run.ScalarAsync<string>("SELECT [UnitPrice] FROM [sales].[DraftLines] WHERE [DraftId] = @id", ("@id", draft.Id)),
+            await run.ScalarAsync<string>("SELECT [DiscountPercent] FROM [sales].[DraftLines] WHERE [DraftId] = @id", ("@id", draft.Id))));
+        Assert.Equal(KgUnit, await run.ScalarAsync<Guid>("SELECT [PriceUnitId] FROM [sales].[DraftLines] WHERE [DraftId] = @id", ("@id", draft.Id)));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftRevisions] WHERE [DraftId] = @id", ("@id", draft.Id)));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftAttempts] WHERE [IdempotencyKeyHash] = @h", ("@h", SalesStore.IdempotencyKeyHash("k-revise"))));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EntityType] = N'Sales.OrderDraft' AND [EventType] = N'sales.order-draft.commercial-revised.v1' AND [EntityId] = @id",
             ("@id", draft.Id.ToString("D"))));
 
         // (1) The pricer holds ONLY the separate price name: asked with that name in this company, answered yes, then the ONE save —
@@ -501,30 +501,30 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
         }
 
         // (2)(3) The rows, read back by SQL as TEXT: the header advanced, the line carries the new texts, Rev.0 keeps the OLD ones.
-        Assert.Equal((1, 1, 5L, "<null>"), (await run.ScalarAsync<int>("SELECT ApprovalState FROM sales.Drafts WHERE Id = @id", ("@id", draft.Id)),
-            await run.ScalarAsync<int>("SELECT Revision FROM sales.Drafts WHERE Id = @id", ("@id", draft.Id)),
-            await run.ScalarAsync<long>("SELECT Version FROM sales.Drafts WHERE Id = @id", ("@id", draft.Id)),
-            await run.ScalarAsync<string>("SELECT ISNULL(SubmittedBy, N'<null>') FROM sales.Drafts WHERE Id = @id", ("@id", draft.Id))));
-        Assert.Equal(("13.00", "5"), (await run.ScalarAsync<string>("SELECT UnitPrice FROM sales.DraftLines WHERE DraftId = @id", ("@id", draft.Id)),
-            await run.ScalarAsync<string>("SELECT DiscountPercent FROM sales.DraftLines WHERE DraftId = @id", ("@id", draft.Id))));
-        Assert.Equal(KgUnit, await run.ScalarAsync<Guid>("SELECT PriceUnitId FROM sales.DraftLines WHERE DraftId = @id", ("@id", draft.Id)));
+        Assert.Equal((1, 1, 5L, "<null>"), (await run.ScalarAsync<int>("SELECT [ApprovalState] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id)),
+            await run.ScalarAsync<int>("SELECT [Revision] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id)),
+            await run.ScalarAsync<long>("SELECT [Version] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id)),
+            await run.ScalarAsync<string>("SELECT ISNULL([SubmittedBy], N'<null>') FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id))));
+        Assert.Equal(("13.00", "5"), (await run.ScalarAsync<string>("SELECT [UnitPrice] FROM [sales].[DraftLines] WHERE [DraftId] = @id", ("@id", draft.Id)),
+            await run.ScalarAsync<string>("SELECT [DiscountPercent] FROM [sales].[DraftLines] WHERE [DraftId] = @id", ("@id", draft.Id))));
+        Assert.Equal(KgUnit, await run.ScalarAsync<Guid>("SELECT [PriceUnitId] FROM [sales].[DraftLines] WHERE [DraftId] = @id", ("@id", draft.Id)));
         Assert.Equal(1, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM sales.DraftRevisions WHERE CompanyId = @c AND DraftId = @id AND Revision = 0 AND SubmittedBy = @s AND ApprovedBy = N'SENTETIK-approver' "
-            + "AND ArchivedBy = @p AND MoneyScale = 2 AND CorrelationId = @corr",
+            "SELECT COUNT(*) FROM [sales].[DraftRevisions] WHERE [CompanyId] = @c AND [DraftId] = @id AND [Revision] = 0 AND [SubmittedBy] = @s AND [ApprovedBy] = N'SENTETIK-approver' "
+            + "AND [ArchivedBy] = @p AND [MoneyScale] = 2 AND [CorrelationId] = @corr",
             ("@c", CompanyA), ("@id", draft.Id), ("@s", run.Actor), ("@p", pricer), ("@corr", run.Correlation)));
         Assert.Equal("12.50", await run.ScalarAsync<string>(
-            "SELECT UnitPrice FROM sales.DraftRevisionLines WHERE CompanyId = @c AND DraftId = @id AND Revision = 0 AND LineNo = 1 AND LineId = @l",
+            "SELECT [UnitPrice] FROM [sales].[DraftRevisionLines] WHERE [CompanyId] = @c AND [DraftId] = @id AND [Revision] = 0 AND [LineNo] = 1 AND [LineId] = @l",
             ("@c", CompanyA), ("@id", draft.Id), ("@l", lineId)));
-        Assert.Equal(("5", "1.25"), (await run.ScalarAsync<string>("SELECT DiscountPercent FROM sales.DraftRevisionLines WHERE DraftId = @id AND Revision = 0", ("@id", draft.Id)),
-            await run.ScalarAsync<string>("SELECT QuantityText FROM sales.DraftRevisionLines WHERE DraftId = @id AND Revision = 0", ("@id", draft.Id))));
-        Assert.Equal(KgUnit, await run.ScalarAsync<Guid>("SELECT PriceUnitId FROM sales.DraftRevisionLines WHERE DraftId = @id AND Revision = 0", ("@id", draft.Id)));
-        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.DraftAttempts WHERE CommandName = @cmd AND DraftId = @id AND Outcome = 1 AND ActorId = @p",
+        Assert.Equal(("5", "1.25"), (await run.ScalarAsync<string>("SELECT [DiscountPercent] FROM [sales].[DraftRevisionLines] WHERE [DraftId] = @id AND [Revision] = 0", ("@id", draft.Id)),
+            await run.ScalarAsync<string>("SELECT [QuantityText] FROM [sales].[DraftRevisionLines] WHERE [DraftId] = @id AND [Revision] = 0", ("@id", draft.Id))));
+        Assert.Equal(KgUnit, await run.ScalarAsync<Guid>("SELECT [PriceUnitId] FROM [sales].[DraftRevisionLines] WHERE [DraftId] = @id AND [Revision] = 0", ("@id", draft.Id)));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftAttempts] WHERE [CommandName] = @cmd AND [DraftId] = @id AND [Outcome] = 1 AND [ActorId] = @p",
             ("@cmd", SalesDraftCommands.ReviseCommercialV1), ("@id", draft.Id), ("@p", pricer)));
         Assert.Equal(1, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Sales.OrderDraft' AND EventType = N'sales.order-draft.commercial-revised.v1' "
-            + "AND EntityId = @id AND EntityVersionBefore = 4 AND EntityVersionAfter = 5 AND CorrelationId = @corr AND PermissionCode = @perm",
+            "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EntityType] = N'Sales.OrderDraft' AND [EventType] = N'sales.order-draft.commercial-revised.v1' "
+            + "AND [EntityId] = @id AND [EntityVersionBefore] = 4 AND [EntityVersionAfter] = 5 AND [CorrelationId] = @corr AND [PermissionCode] = @perm",
             ("@id", draft.Id.ToString("D")), ("@corr", run.Correlation), ("@perm", SalesPermissionManifestV1.OrdersPriceWrite)));
-        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = N'SENTETIK-second'"));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [CorrelationId] = N'SENTETIK-second'"));
 
         // (4b) A DIFFERENT key carrying the values the draft already has is the refusal (ASSUMPTION-SALESP-5), never the replay above.
         await using (var a = run.Store(CompanyA))
@@ -535,9 +535,9 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
             Assert.Equal((422, "validation_failed", "lines", SalesRuleCodes.RevisionNoChange), (same.Status, same.Code, Assert.Single(same.Errors).Field, Assert.Single(same.Errors).Code));
         }
 
-        Assert.Equal(5L, await run.ScalarAsync<long>("SELECT Version FROM sales.Drafts WHERE Id = @id", ("@id", draft.Id)));
-        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.DraftRevisions WHERE DraftId = @id", ("@id", draft.Id)));
-        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.DraftAttempts WHERE IdempotencyKeyHash = @h", ("@h", SalesStore.IdempotencyKeyHash("k-revise-again"))));
+        Assert.Equal(5L, await run.ScalarAsync<long>("SELECT [Version] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id)));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftRevisions] WHERE [DraftId] = @id", ("@id", draft.Id)));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftAttempts] WHERE [IdempotencyKeyHash] = @h", ("@h", SalesStore.IdempotencyKeyHash("k-revise-again"))));
     }
 
     [SqlServerFact]
