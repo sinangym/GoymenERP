@@ -94,11 +94,19 @@ internal static class ShellCapabilityRegistryAuthorities
     // close controls of that list, the journal list M-04 and its detail, the posting queues M-01): the normal
     // host (C+O+P+S(pub)+F(pub)+M(pub)+L(staged)+Pu(staged)+Acc(staged)). Computed by the ComputeRevision
     // reproduction, independently re-checked (DATA ONLY); pinned by test.
+    // RE-MEASURED for ACC-V0c: six of Accounting's seven declarations become available (the period
+    // list and its propose screen, the journal list, the posting queues — and the approve and close
+    // CONTROLS, which are `periods with { … }` and therefore inherit the list's availability, so the
+    // count is six even though nothing says available: true on their own lines). M-04-DETAIL stays
+    // staged: acc01 never opened a journal, so that route has no acceptance to stand on. The earlier
+    // value (sha256:oQPU6TLY…) is SUPERSEDED — it describes a host that no longer exists.
+    // Two BLIND derivations from the source declarations, CARİ and ORG, neither having seen the
+    // other's value, both calibrated first against the constants this tree already serves.
     // RE-MEASURED after MFG-ORD (#360) landed: Manufacturing now declares FOUR capabilities, not two, so the
     // earlier value of this row (sha256:kxDfAaAN…) is SUPERSEDED and describes a host that no longer exists.
     // Its earlier independent check is superseded with it — a match against the old value is not evidence.
     internal const string CounterpartyV15OrganizationV10ProductV10PublishedSalesV10PublishedFinanceV10PublishedManufacturingV10LogisticsV10PurchasingV10AndAccountingV10 =
-        "sha256:oQPU6TLYV8t5VDbXWW8TZQ3vFuXGMJ1oC9KTRVLL6wk";
+        "sha256:OOlEtnDx45fVDzs98US4T6h2k8vR_BaJ9rrRQMMFvv0";
 
     internal const string CounterpartyListCreateLinkAndDetailV15 =
         "sha256:3GiwcHV6aVuN1Y-wBzElxLJLCok2bblGc6pRruhqTx4";
