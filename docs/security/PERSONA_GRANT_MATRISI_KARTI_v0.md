@@ -145,6 +145,16 @@ tespiti; koordinatör 19 Eylül 2026'da Cari maddesi olarak kaydetti.)
 5. **Sevkiyatçı ve dönem okuması:** `accounting.periods.read` / `accounting.posting-queues.read`
    "muhasebe kayıtları" kapsamında mı?
 
+## Açık UX maddesi (yetki değil, çalışma biçimi)
+
+Sidebar oluşturma eylemi sunmalı mı? Bugün Cari, Ürün ve Sipariş taslağı için sunuyor; Finance'in iki
+ekranı ve Muhasebe dönem önerisi için sunmuyor (onlara kendi listelerinden gidiliyor). Her iki biçim
+de tek giriş noktası kuralına uyuyor, yani ortada tutarsızlık yok — ama hangisinin doğru olduğu
+kullanıcının nasıl çalıştığına bağlı ve bunu ne CARİ ne koordinatör icat eder. Personalar bakımından
+önemi şu: sidebar'da bir oluşturma girdisi görmek, o eylemi yapma yetkisi anlamına gelmez — girdi
+yalnız izni olana çizilir, ama izin insan kapısından gelir. Sinan'a sorulacak açık madde; hiçbir işi
+bloke etmiyor.
+
 ## Sonraki adım
 
 Bu kart merge edilse bile hiçbir şey etkinleşmez. Etkinleşme sırası, Sinan'ın yukarıdaki beş

@@ -98,3 +98,36 @@ hesaplamalı. Ölçümü yapan ve satırı yazan kişi kontrolcü olamaz.
 **Bu projede:** ACC-V0b host sabiti — ilk kontrol anchored kaldı (değer daha önce bir mesajda
 geçmişti) ve kayda böyle geçti; kapıyı, sayıyı hiç görmemiş bir şeridin kör türetmesi kapattı.
 Koordinatör 19 Eylül 2026'da bunu her cross-check için kural yaptı.
+
+---
+
+## 4. Bir oluşturma ekranına iki giriş noktası
+
+**Belirti.** Tarayıcı testi strict-mode ihlali veriyor: aynı erişilebilir ada sahip iki bağlantı.
+Ekran okuyucu da aynı rotaya giden iki özdeş bağlantı okuyor.
+
+**Sebep.** Ekranın hem shell nav girdisi (`CAPABILITY_NAV_LABEL`) hem de listesinin kendi birincil
+bağlantısı var. LOG-4b'de tam olarak bu oldu: `/lojistik/yukleme-talimatlari/yeni` rotasına hem
+sidebar'dan hem L-02 listesinden "Yeni Yükleme Talimatı" gidiyordu.
+
+**Kural (koordinatör kararı, 19 Eylül 2026).** **Her oluşturma rotasının tam olarak BİR giriş
+noktası olur:** ya sidebar girdisi (listesi ona bağlanmıyorsa) ya listenin kendi birincil bağlantısı
+(bağlanıyorsa) — ikisi birden asla.
+
+Bugünkü durum bu kurala göre: Cari, Ürün ve Sipariş taslağı yalnız sidebar'dan (listeleri bağlanmıyor,
+ihlal yok, dokunulmuyor); Finance'in iki ekranı ve Muhasebe dönem önerisi yalnız listelerinden
+(nav etiketi boş); Logistics tek ihlaldi ve nav etiketi kaldırılarak çözüldü — sayfa içi bağlantı
+kullanıcının zaten bulunduğu bağlamda durduğu için o korundu.
+
+**Etiket değiştirmenin dokunduğu yerler** (sürprize yer bırakmamak için): `CAPABILITY_NAV_LABEL`,
+şeridin kendi `*_NAV_LABEL` tablosu, `AppShell`'in `NAV_CAPABILITIES` listesi, şeridin mount-drift
+testi (değer değer karşılaştırır) ve `AppShell.test.tsx` içindeki nav iddiaları. Merkez ile şerit
+aynı dilimde değişmezse drift testi kırmızıya döner.
+
+**Otomatik pin yok, bilerek.** "Tek giriş noktası"nı mekanik olarak doğrulamak FE tarama jimnastiği
+ister; tek vaka için makine kurulmadı. Kural burada, drift testi de etiketleri iki taraf arasında
+zaten sabitliyor.
+
+**Kararlaşmamış, Sinan'a ait olan kısım:** sidebar'ın oluşturma eylemi *sunup sunmaması* gerektiği.
+O bir tutarlılık sorusu değil, insanların nasıl çalıştığına dair bir sorudur; persona/UX kartında
+açık madde olarak durur ve bu kural onu kapatmaz.
