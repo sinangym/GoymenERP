@@ -49,29 +49,57 @@ public sealed class FinancePermissionPortTests
     }
 
     /// <summary>
-    /// Both answer Unavailable and ask nothing, but for DIFFERENT reasons, and this file used to hide that:
-    /// the case was called "an action without a name" and kept passing for Record after the card gave Record
-    /// a name — because the central registry does not know that name yet. A case that passes for a reason its
-    /// own title denies is not measuring what it claims, so the two reasons are now separated and each is
-    /// asserted at its source. Neither must ever become Denied: "I cannot tell" is not "you may not".
+    /// The port's "I cannot tell" branch: no name at all, so the authority is never consulted. Record used to
+    /// sit here too — first because it had no name, then, after the card gave it one, because the central
+    /// registry did not know that name. Now that <see cref="ErpPermissions.FinanceManualReceiptRecord"/> is
+    /// registered, Record has left this branch (see the case below), but the branch itself has NOT gone away:
+    /// Reverse is still on it, and it stays pinned. Retiring a live path because one of its inputs changed
+    /// would be the opposite of what the registration proves.
+    /// <para>
+    /// UNMAPPED, not "unregistered": the two are different inputs to the same answer, and the port reaches
+    /// Unavailable from either. This must never become Denied — "I cannot tell" is not "you may not".
+    /// </para>
     /// </summary>
     [Theory]
-    [InlineData(FinanceAction.Record, true)]
-    [InlineData(FinanceAction.Reverse, false)]
-    public async Task An_unmapped_or_unregistered_action_is_unavailable_and_asks_nothing(FinanceAction action, bool named)
+    [InlineData(FinanceAction.Reverse)]
+    public async Task An_unmapped_action_is_unavailable_and_asks_nothing(FinanceAction action)
     {
-        // The reason, pinned rather than assumed: Record HAS a name the registry does not know yet;
-        // Reverse has no name at all (FIN-T06).
-        Assert.Equal(named, FinancePermissionPort.NameOf(action) is not null);
-        if (named)
-        {
-            Assert.False(ErpPermissions.IsKnown(FinancePermissionPort.NameOf(action)!));
-        }
+        // The reason, pinned rather than assumed: no name exists for this action (FIN-T06, and its authority
+        // is the half of OPEN-009 nobody has answered).
+        Assert.Null(FinancePermissionPort.NameOf(action));
 
         var authority = new FixedAuthority(true, true);
 
         Assert.Equal(PermissionDecision.Unavailable, await Port(authority).CheckAsync(Context(), action, null, CancellationToken.None));
         Assert.Empty(authority.Asked);
+    }
+
+    /// <summary>
+    /// Record after the registration: the name is KNOWN, so the port asks — and an actor who does not hold it
+    /// is <see cref="PermissionDecision.Denied"/>, not Unavailable. That is the honest answer once the
+    /// capability exists: the person simply does not have it.
+    /// <para>
+    /// The cause is forced and asserted, not inferred, because this Denied is reached by THREE paths — a
+    /// missing grant, a grant that is not company-wide, and a context that drifted during the await (the
+    /// #276/#366 fence). Asserting only the outcome would leave the case green on the day the fence breaks.
+    /// So the authority is driven to "not granted" and the ask itself is pinned: the registered name, the
+    /// request's company. This is the <c>Assert.Empty(Asked)</c> idea inverted rather than discarded.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task A_registered_name_the_actor_does_not_hold_is_denied_and_the_authority_IS_asked()
+    {
+        Assert.Equal(ErpPermissions.FinanceManualReceiptRecord, FinancePermissionPort.NameOf(FinanceAction.Record));
+        Assert.True(ErpPermissions.IsKnown(ErpPermissions.FinanceManualReceiptRecord));
+
+        var authority = new FixedAuthority(granted: false, companyWide: true);
+
+        var decision = await Port(authority).CheckAsync(Context(), FinanceAction.Record, null, CancellationToken.None);
+
+        Assert.Equal(PermissionDecision.Denied, decision);
+        // Asked once, with the registered name and the request's own company — so a future context-drift
+        // defect cannot hide behind the same Denied.
+        Assert.Equal(new[] { (ErpPermissions.FinanceManualReceiptRecord, Company) }, authority.Asked);
     }
 
     [Theory]
