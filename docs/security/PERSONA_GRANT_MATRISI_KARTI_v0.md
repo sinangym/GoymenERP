@@ -4,13 +4,27 @@
 [yorum 5738113623](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-5738113623) §4.
 **Kart sahibi:** CARİ (merkezi yazar). **Durum:** öneri; hiçbir grant açılmadı.
 **Ölçüldüğü ağaç:** `main` @ `1c88e904` — o head'de `ErpPermissions` **45** ad kaydediyordu
-(5 Critical, 36 yalnız şirket-geneli). **Bugün (`main` @ `678e38d0`) 46'dır**: 5 Critical, 37 yalnız
-şirket-geneli. Fark, kart ölçüldükten sonra MFG-ORD ile gelen **`manufacturing.orders.close`**'dur;
-aşağıdaki tabloda satırı yoktur. Eksik satır hiçbir şeyi açmaz — kartın kuralı **önce-reddet**, yani
-tabloda görünmeyen ad kimseye önerilmemiş sayılır — ama bir "45" bir sonraki okuyucuya tablonun
-tam olduğunu söyler, o yüzden sayı burada güncel tutulur. (Ölçüm: `All`/`Critical`/`CompanyWideOnly`
-kümeleri `678e38d0` üzerinde sayıldı; kartın kendisi yeniden ölçülmedi, bu yüzden yukarıdaki ilk
-cümle tarihiyle birlikte duruyor.)
+(5 Critical, 36 yalnız şirket-geneli). Kartın tablosu o ölçümün ürünüdür ve tarihiyle durur.
+
+**Bugün kayıtlı olan: 48 ad — 5 Critical, 39 yalnız şirket-geneli.** (`ErpPermissions`'ın
+`All`/`Critical`/`CompanyWideOnly` kümeleri bu head'de sayıldı; dört şerit bağımsız olarak aynı üç
+sayıya vardı. Kartın tablosu yeniden ölçülmedi.)
+
+**Tabloda satırı olmayan ÜÇ ad var, ve üçü de burada adıyla yazılıdır** — çünkü bir sayı, sonraki
+okuyucuya tablonun tam olduğunu söyler. Eksikliği görünür kılmadan sayıyı güncellemek, karta hiç
+dokunmamaktan kötü olurdu:
+
+| Kayıtlı ad | Ne zaman geldi | Tabloda neden yok |
+|---|---|---|
+| `manufacturing.orders.close` | MFG-ORD, kart ölçüldükten sonra | Sinan'ın §4 metni üretim emrini **kapatma**nın hangi personada olduğunu söylemiyor |
+| `sales.orders.price.write` | SALES-P (K3, #66 5748258299) | K3 fiyat yazmayı **ayrı bir izin** yapıyor ama hangi personanın taşıyacağını söylemiyor; kart K4.4'te Satış Destek'e tahsis/rezervasyon verirken **fiyat** demiyor |
+| `finance.manual-receipt.record` | FIN-T05 | Kart (#66 5743678389 §1) "tek dar yetkili operatör" diyor — bir **kişi sayısı**, bir persona değil |
+
+**Üçü de doldurulmadı, çünkü bir satır eklemek bir yetki önerisidir ve kartın kendi kuralı her satırı
+Sinan'ın kendi cümlesine dayandırmaktır.** Üçünde de o cümle yok; tahminle doldurmak kartı bir
+öneri olmaktan çıkarıp bir varsayım listesine çevirirdi. **Bunları kapatacak şey teknik değil:**
+Sinan'ın her biri için hangi personanın taşıyacağını söylemesi. O gelene kadar üçü de **önce-reddet**
+altındadır — tabloda görünmeyen ad kimseye önerilmemiş sayılır, yani eksiklik hiçbir şey açmaz.
 
 ## Bu kart ne yapar, ne yapmaz
 
