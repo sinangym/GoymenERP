@@ -29,10 +29,20 @@
  * WHAT THIS IS NOT, and the limit matters for the orphan rule's remedy: this file reads the two
  * TABLES, never the pages. So it cannot tell "this screen is reached from a list row" from "nothing
  * links to this screen at all" — emptying a label satisfies it either way. An empty label is a
- * NORMAL and correct choice, not a workaround: detail and create screens belong in their list, not
- * the sidebar (K5), which is why most capabilities here carry none. What the file cannot do is
- * confirm the link that makes it correct, so the orphan rule's message states that obligation and
- * points at the lane's own test rather than implying a guarantee this file does not provide.
+ * NORMAL and correct choice, not a workaround: a screen opened from a list row, a card or a context
+ * action carries none, which is why so many here are empty.
+ *
+ * Careful with the rule this explains, because an earlier version of these lines was STRICTER than
+ * it (#372 review, CARİ): the rule is EXACTLY ONE entry point per creation route — the sidebar entry
+ * when the list does not link to it, or the list's own link when it does, never both
+ * (`docs/delivery/TEKNIK_TUZAKLAR.md` §8). It is NOT "create screens belong in the list". `/cari/yeni`
+ * is in the sidebar with no list link and is compliant; a reader who took the stricter sentence
+ * literally would delete Cari's only entry point and produce the very MFG-02 condition this file
+ * exists to catch. An explanation of a guard must never be stricter than the guard.
+ *
+ * What the file cannot do is confirm the link that makes an empty label correct, so the orphan rule's
+ * message states that obligation and points at the lane's own test rather than implying a guarantee
+ * this file does not provide.
  *
  * Nor is this the one-entry-point rule itself. Whether a list ALSO links to its create screen
  * is a fact about that lane's page, not about these two tables; the lane's own tests and the
