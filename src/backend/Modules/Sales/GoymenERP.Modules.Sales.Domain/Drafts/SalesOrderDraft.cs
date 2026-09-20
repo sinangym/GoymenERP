@@ -526,7 +526,22 @@ public sealed class SalesOrderDraft
             throw new ArgumentOutOfRangeException(nameof(revision), "Revizyon numarası negatif olamaz.");
         }
 
+        RequireApprovalNotRestored();
         Revision = revision;
+    }
+
+    /// <summary>
+    /// FİNANS (#374 review, P3): the approval restore's version floor and its history check read the archived count,
+    /// so the revision number and the archived history must be restored BEFORE the approval axis. The store calls
+    /// in that order; this makes the order an invariant rather than a convention — restored the other way round,
+    /// the floor would drop to the lines' version and a wrong stored version would clear it with no symptom.
+    /// </summary>
+    private void RequireApprovalNotRestored()
+    {
+        if (approvalRestored)
+        {
+            throw new InvalidOperationException("Revizyon numarası ve arşivlenmiş revizyonlar onay ekseninden ÖNCE geri yüklenir.");
+        }
     }
 
     /// <summary>
@@ -537,6 +552,7 @@ public sealed class SalesOrderDraft
     public void RestoreArchivedRevision(ApprovedRevisionSnapshot snapshot)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
+        RequireApprovalNotRestored();
         var expected = archivedRevisions.Count == 0 ? 0 : archivedRevisions[^1].Revision + 1;
         if (snapshot.Revision != expected || snapshot.Revision >= Revision
             || snapshot.Approval.DecidedBy is null || snapshot.Approval.DecidedAtUtc is null || snapshot.Approval.RejectionReason is not null
@@ -597,7 +613,7 @@ public sealed class SalesOrderDraft
         // commercial write on a Preparing draft — K3 made the latter a movement with no stored counter. The check
         // is therefore the same floor as the other states, declared here, in the flipped unit row and in the PR.
         // Exactness would need a persisted commercial-write counter on the header (schema, migration, pins, its
-        // own real-SQL evidence) — a later slice with a named owner, not this one.
+        // own real-SQL evidence) — a later slice owned by SİPARİŞ (the Sales lane), not this one.
         var minimumTransitions = state switch
         {
             InternalApprovalState.Preparing => 0,
@@ -609,6 +625,18 @@ public sealed class SalesOrderDraft
         if (!consistentVersion)
         {
             throw new InvalidOperationException("Kayıtlı sürüm, satırların ve onay geçişlerinin hesabıyla uyuşmuyor.");
+        }
+
+        // ORG (#374 P3): the read layer's declared job is to refuse, not repair — and it checked only half of the
+        // history invariant. RestoreArchivedRevision pins the LOWER bound (contiguous from 0, each below Revision,
+        // so Revision >= count); nothing pinned the UPPER one, so a stored header at Revision 3 beside ONE archived
+        // row restored silently with a short history — a list missing a row reads like a correct list. The store
+        // loads every archive row of the draft (no paging, no filter, single and list paths alike), so on every
+        // legitimate restore Revision == archived count: the premise the migration's Down rests on ("a header above
+        // Revision 0 exists only beside an archived row"), now held on the read path as the write path measures it.
+        if (Revision != archivedRevisions.Count)
+        {
+            throw new InvalidOperationException("Kayıtlı revizyon numarası arşivlenmiş revizyon sayısıyla uyuşmuyor.");
         }
 
         ApprovalState = state;

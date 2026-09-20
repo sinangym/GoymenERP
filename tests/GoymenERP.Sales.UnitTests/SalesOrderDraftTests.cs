@@ -460,6 +460,42 @@ public sealed class SalesOrderDraftTests
         Assert.Equal((9L, InternalApprovalState.Preparing, 2), (draft.Version, draft.ApprovalState, draft.Revision));
     }
 
+    /// <summary>
+    /// ORG (#374 P3): the history invariant is Revision == archived count, and the read layer must hold BOTH bounds.
+    /// The archive restore pins the lower one (Rev.0 first, each below the current revision); this pins the upper one:
+    /// a stored header at Revision 3 beside a single archived row is refused at the approval restore — a silently short
+    /// history is the failure the read layer exists to refuse — while Revision 1 beside that row restores.
+    /// </summary>
+    [Fact]
+    public void A_stored_revision_number_above_the_archived_count_is_refused_not_restored_short()
+    {
+        var facts = new ApprovalFacts("prep", T0, "mgr", T0, null);
+        ApprovedRevisionSnapshot Snapshot(SalesOrderDraft of, SalesOrderDraftLine line) => new(0, facts, of.Money.ProfileId, of.Money.ProfileVersion, 2, T0, "pricer",
+            [new RevisionLineSnapshot(line.Id, 1, line.Product.ProductId, "7", KgUnit, "1", new CommercialDraftFields("12.50", KgUnit, null))]);
+
+        var tooHigh = PricedDraft(out var firstOfHigh, out _);
+        tooHigh.RestoreRevision(3);
+        tooHigh.RestoreArchivedRevision(Snapshot(tooHigh, firstOfHigh));
+        Assert.Throws<InvalidOperationException>(() => tooHigh.RestoreApproval(InternalApprovalState.Preparing, ApprovalFacts.None, 12, T0));
+        Assert.Equal((3, 1, 3L), (tooHigh.Revision, tooHigh.ArchivedRevisions.Count, tooHigh.Version));
+
+        var exact = PricedDraft(out var firstOfExact, out _);
+        exact.RestoreRevision(1);
+        exact.RestoreArchivedRevision(Snapshot(exact, firstOfExact));
+        exact.RestoreApproval(InternalApprovalState.Preparing, ApprovalFacts.None, 6, T0);
+        Assert.Equal((1, 1, 6L), (exact.Revision, exact.ArchivedRevisions.Count, exact.Version));
+
+        // FİNANS (#374 review, P3): the order is an invariant, not a convention. Restored the other way round the floor
+        // would read an archived count of 0 and a wrong stored version would clear it with no symptom — so the revision
+        // number and the archived history REFUSE to be restored after the approval axis, and the draft stays as it was.
+        // (The right order is the "exact" draft just above; this is the wrong one, on a fresh draft.)
+        var reordered = PricedDraft(out var firstOfReordered, out _);
+        reordered.RestoreApproval(InternalApprovalState.Preparing, ApprovalFacts.None, 3, T0);
+        Assert.Throws<InvalidOperationException>(() => reordered.RestoreRevision(1));
+        Assert.Throws<InvalidOperationException>(() => reordered.RestoreArchivedRevision(Snapshot(reordered, firstOfReordered)));
+        Assert.Equal((0, 0, 3L), (reordered.Revision, reordered.ArchivedRevisions.Count, reordered.Version));
+    }
+
     [Fact]
     public void Line_identity_note_and_count_bounds_are_held_by_the_aggregate()
     {
