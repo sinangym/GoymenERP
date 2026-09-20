@@ -330,6 +330,9 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
                 }),
             };
             request.Headers.Add(BrowserSuiteFixtureContext.IdempotencyHeader, context.IdempotencyKey("contact-information"));
+            // The Cari command routes require the negotiated client contract (409 client_contract_required without it — the
+            // second s04 run, 35480444505); the same header the shared seed sends on the party create.
+            request.Headers.Add(CariBrowserSeed.ClientContractHeader, CariBrowserSeed.ClientContractVersion);
             using var response = await client.SendAsync(request, cancellationToken);
             current = await context.GetJsonAsync(CariWriterActor, CompanyGdc, path, cancellationToken);
         }
