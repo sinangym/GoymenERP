@@ -447,7 +447,10 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
         Assert.Equal((3, 0, 4L), (await run.ScalarAsync<int>("SELECT ApprovalState FROM sales.Drafts WHERE Id = @id", ("@id", draft.Id)),
             await run.ScalarAsync<int>("SELECT Revision FROM sales.Drafts WHERE Id = @id", ("@id", draft.Id)),
             await run.ScalarAsync<long>("SELECT Version FROM sales.Drafts WHERE Id = @id", ("@id", draft.Id))));
-        Assert.Equal("<null>", await run.ScalarAsync<string>("SELECT ISNULL(UnitPrice, N'<null>') FROM sales.DraftLines WHERE DraftId = @id", ("@id", draft.Id)));
+        // The APPROVED texts survive the refused save untouched (the fixture is priced 12.50 / kg / 5 from creation).
+        Assert.Equal(("12.50", "5"), (await run.ScalarAsync<string>("SELECT UnitPrice FROM sales.DraftLines WHERE DraftId = @id", ("@id", draft.Id)),
+            await run.ScalarAsync<string>("SELECT DiscountPercent FROM sales.DraftLines WHERE DraftId = @id", ("@id", draft.Id))));
+        Assert.Equal(KgUnit, await run.ScalarAsync<Guid>("SELECT PriceUnitId FROM sales.DraftLines WHERE DraftId = @id", ("@id", draft.Id)));
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.DraftRevisions WHERE DraftId = @id", ("@id", draft.Id)));
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.DraftAttempts WHERE IdempotencyKeyHash = @h", ("@h", SalesStore.IdempotencyKeyHash("k-revise"))));
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Sales.OrderDraft' AND EventType = N'sales.order-draft.commercial-revised.v1' AND EntityId = @id",
