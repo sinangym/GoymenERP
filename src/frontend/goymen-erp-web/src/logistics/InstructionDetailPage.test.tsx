@@ -133,6 +133,36 @@ describe('L-02-DETAIL', () => {
     expect(firstBody.loadId).not.toBe(secondBody.loadId)
   })
 
+  it('the SAME quantity and measurement submitted again after a completion is a second load: two POSTs, two keys, two load ids, both recorded', async () => {
+    // The key and the load id belong to the ATTEMPT, never to the payload: two genuinely equal loads (an ordinary thing
+    // for a loader to do) must not collapse into one key or one load id — that would be one stock event lost.
+    let reads = 0
+    const harness = installFetch({
+      onDetail: () => {
+        reads += 1
+        return json(issued())
+      },
+      onLoad: (_, call) => loadAnswer(call),
+    })
+    renderLogisticsApp(path)
+    const quantity = await screen.findByLabelText(T.load.quantity)
+    await userEvent.type(quantity, '2,5')
+    await userEvent.click(screen.getByTestId('logistics-load-button'))
+    await waitFor(() => expect(screen.getByTestId('logistics-load-notice').textContent).toBe(T.command.completed))
+    await waitFor(() => expect(reads).toBeGreaterThanOrEqual(2))
+    await userEvent.clear(quantity)
+    await userEvent.type(quantity, '2,5')
+    await userEvent.click(screen.getByTestId('logistics-load-button'))
+    await waitFor(() => expect(harness.logisticsCalls().filter((call) => call.method === 'POST')).toHaveLength(2))
+    await waitFor(() => expect(reads).toBeGreaterThanOrEqual(3))
+    expect(screen.getByTestId('logistics-load-notice').textContent).toBe(T.command.completed)
+    const posts = harness.logisticsCalls().filter((call) => call.method === 'POST')
+    const bodies = posts.map((post) => JSON.parse(post.body ?? '{}') as { loadId: string; quantity: string; measurement: string })
+    expect(bodies.map((body) => [body.quantity, body.measurement])).toEqual([['2.5', 'Measured'], ['2.5', 'Measured']])
+    expect(posts[0].idempotencyKey).not.toBe(posts[1].idempotencyKey)
+    expect(bodies[0].loadId).not.toBe(bodies[1].loadId)
+  })
+
   it.each([
     ['logistics_load_exceeds_instructed', true],
     ['logistics_line_blocked', true],

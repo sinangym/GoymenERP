@@ -53,6 +53,13 @@ describe('one key per snapshot', () => {
     expect(decideSubmit(left, request('5'), newKey)).toMatchObject({ type: 'send', reusedKey: false, snapshot: { key: 'key-2' } })
   })
 
+  it('a submit while the attempt is in flight is blocked as in-flight, same payload or not (#358: the completed relaxation must never reach this branch)', () => {
+    const inFlight = beginSend<P, R>({ ...request('4.5'), key: 'key-1' })
+    expect(decideSubmit(inFlight, request('4.5'), keys())).toEqual({ type: 'blocked', reason: 'in-flight' })
+    expect(decideSubmit(inFlight, request('9'), keys())).toEqual({ type: 'blocked', reason: 'in-flight' })
+    expect(decideSubmit<P, R>({ phase: 'completed', snapshot: { ...request('4.5'), key: 'key-1' }, result: { isReplay: false } }, request('4.5'), keys())).toEqual({ type: 'blocked', reason: 'completed' })
+  })
+
   it('a definite 4xx closes the attempt, but not when it answered a retry of an unknown outcome', () => {
     const snapshot = { ...request('4.5'), key: 'key-1' }
     const refused = applyOutcome<P, R>(beginSend(snapshot), sent, 'b', { type: 'http', status: 409, problem: null }, { phase: 'idle' })
