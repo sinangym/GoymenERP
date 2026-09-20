@@ -55,6 +55,17 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
   CAPABILITY.salesDraftsList,
   CAPABILITY.salesDraftsCreate,
   /**
+   * MFG-02, listed with the route that serves it (MFG-ORD). It renders only where the server's
+   * snapshot carries the capability; the order detail is reached from a list row, never the sidebar.
+   *
+   * It was MISSING until now, and the gap was invisible: the capability, its route and its label all
+   * existed and `manufacturingMountDrift` asserted the label — but nothing asserted that any nav entry
+   * NAMED it, and nothing in the tree links to `/uretim/emirler`. So a delivered screen could only be
+   * opened by typing the URL, and the order detail sat behind a list nobody could reach (#363 review,
+   * P3-3). The lesson is in the case beside this file: assert the LINK, not the label it would use.
+   */
+  CAPABILITY.manufacturingOrdersList,
+  /**
    * Listed together with the routes that serve them (FIN-UI-1b). Each renders only where the server's
    * snapshot carries the capability; the new draft, the detail and the propose screen have none.
    */
