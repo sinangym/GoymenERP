@@ -135,7 +135,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // finance
             ["tools/relational_inventory/finance.txt"] =
-                "9fea3b626d8bf3f57d4269e152b01f8e10ed2e02b8b855ee7a6693c2e8faca32",
+                "f3a40e3fa9d8a6d791d70e136bc5dcf2c17e4123d07aa37cee4661f9719accdd",
 
             // identity
             ["tools/relational_inventory/identity.txt"] =
@@ -655,6 +655,14 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // period or command row exists (the preparer/approver columns are NOT NULL facts of Ö4); forward fix.
                 ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/Migrations/20260919140000_AddPeriodApproval.cs"] =
                     new("e1e6fe554c5b58ea381316b99d17dd2fd64dd73780e0a475e849715b28ac42f9",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // FIN-T05: the Down's only raw SQL is Finance's module refusal (51051) while any money event
+                // exists or any draft has left Stage 0 — so a rollback can drop neither a money fact nor the
+                // trace of a record. Reviewed rather than assumed: the THROW precedes every Drop in the Down,
+                // and 51051 is used by no other module. Forward fix; nothing is deleted.
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20260920090000_AddMoneyEvents.cs"] =
+                    new("5af1d703aca150af6ca748c57b42e9f088cec37aaa3841116e31016a35a72eed",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // MFG-6 slice 2: the Down's only raw SQL is Manufacturing's module refusal (51047) while any plan

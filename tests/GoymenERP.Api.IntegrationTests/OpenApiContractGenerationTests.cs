@@ -202,6 +202,9 @@ public sealed partial class OpenApiContractGenerationTests
         new("post", "/api/v1/finance/manual-receipts/drafts", "SaveFinanceManualReceiptDraftV1",
             AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json", "400:application/problem+json", "415:", "503:application/problem+json"),
             "#/components/schemas/DraftSaveRequest"),
+        new("post", "/api/v1/finance/manual-receipts/{sourceId}/record", "RecordFinanceManualReceiptV1",
+            AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json", "400:application/problem+json", "415:", "503:application/problem+json"),
+            "#/components/schemas/RecordRequest", ["path:sourceId:true:type:string;format:uuid"]),
         new("get", "/api/v1/finance/manual-receipts", "GetFinanceManualReceiptsV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["query:cursor:false:type:string"]),
@@ -364,6 +367,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["DeclareManufacturingOutputV1"] = "ref:OrderViewV1",
             ["GetManufacturingOrderV1"] = "ref:OrderViewV1",
             ["SaveFinanceManualReceiptDraftV1"] = "ref:CommandResult",
+            ["RecordFinanceManualReceiptV1"] = "ref:CommandResult",
             ["GetFinanceManualReceiptsV1"] = "ref:SourcePage",
             ["GetFinanceManualReceiptV1"] = "ref:SourceDetail",
             ["GetFinanceBankAccountsV1"] = "ref:BankAccountPage",
@@ -438,6 +442,7 @@ public sealed partial class OpenApiContractGenerationTests
         "DeclareManufacturingOutputV1",
         "GetManufacturingOrderV1",
         "SaveFinanceManualReceiptDraftV1",
+        "RecordFinanceManualReceiptV1",
         "GetFinanceManualReceiptsV1",
         "GetFinanceManualReceiptV1",
         "GetFinanceBankAccountsV1",
@@ -503,6 +508,7 @@ public sealed partial class OpenApiContractGenerationTests
         "RecordManufacturingWorkInProgressV1",
         "DeclareManufacturingOutputV1",
         "SaveFinanceManualReceiptDraftV1",
+        "RecordFinanceManualReceiptV1",
         "CreateSalesOrderDraftV1",
         "SubmitSalesOrderDraftV1",
         "ApproveSalesOrderDraftV1",
@@ -559,6 +565,12 @@ public sealed partial class OpenApiContractGenerationTests
                 [
                     StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity,
                 ],
+                // FIN-T05: Record replays the same three — the recorded terminal refusals as well as
+                // the success, so a retried key never records a second money event (ADR-011 §7).
+                ["RecordFinanceManualReceiptV1"] =
+                [
+                    StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity,
+                ],
                 ["CreateSalesOrderDraftV1"] = [StatusCodes.Status201Created, StatusCodes.Status409Conflict],
                 ["SubmitSalesOrderDraftV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["ApproveSalesOrderDraftV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
@@ -601,6 +613,7 @@ public sealed partial class OpenApiContractGenerationTests
         "RecordManufacturingWorkInProgressV1",
         "DeclareManufacturingOutputV1",
         "SaveFinanceManualReceiptDraftV1",
+        "RecordFinanceManualReceiptV1",
         "GetFinanceManualReceiptsV1",
         "GetFinanceManualReceiptV1",
         "GetFinanceBankAccountsV1",
@@ -684,6 +697,7 @@ public sealed partial class OpenApiContractGenerationTests
         "RecordManufacturingWorkInProgressV1:400",
         "DeclareManufacturingOutputV1:400",
         "SaveFinanceManualReceiptDraftV1:400",
+        "RecordFinanceManualReceiptV1:400",
         "GetFinanceManualReceiptsV1:400",
         "GetFinanceManualReceiptV1:400",
         "GetFinanceBankAccountsV1:400",
@@ -1806,6 +1820,13 @@ public sealed partial class OpenApiContractGenerationTests
                     ("valueOn", "type:null|string;format:date"),
                     ("bankReference", "type:null|string"),
                     ("description", "type:null|string")),
+                // FIN-T05: Record names the draft it makes definitive and the version it expects.
+                // Neither property is nullable, unlike DraftSaveRequest's — a save may create, a
+                // record may only act on something that already exists at a known version.
+                ["RecordRequest"] = ObjectSchema(
+                    ["draftId", "expectedVersion"],
+                    ("draftId", "type:string;format:uuid"),
+                    ("expectedVersion", "type:string")),
                 ["ApprovePlanRequestV1"] = ObjectSchema(
                     ["expectedVersion"],
                     ("expectedVersion", "type:integer|string;format:int64")),
@@ -2436,9 +2457,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(83, operations.Count);
+        Assert.Equal(84, operations.Count);
         Assert.Equal(
-            83,
+            84,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());
