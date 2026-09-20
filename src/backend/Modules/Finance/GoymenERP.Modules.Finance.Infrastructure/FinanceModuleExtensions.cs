@@ -75,8 +75,11 @@ public static class FinanceModuleExtensions
         services.AddScoped<IFinanceBankAccountReader>(provider => provider.GetRequiredService<FinanceBankAccountService>());
         services.AddScoped<IFinanceBankAccountMaster>(provider => provider.GetRequiredService<FinanceBankAccountService>());
         services.AddScoped<IManualReceiptService>(CreateReceiptDraftService);
-        // FIN-T05a: the Record's period gate. Q1 (#66 5745134466) is open, so the only rule decides nothing and every
-        // Record is refused (finance_period_rule_unavailable); Q1's answer replaces this one binding.
+        // FIN-T05: the Record's period gate. K1 (#66 5748258299) answered it — occurredOn decides — but the rule
+        // that maps the date reads Accounting's period port, which this module cannot see. So the HOST registers
+        // OccurredOnFinanceRecordPeriodRule before calling this method and the TryAdd below then does nothing;
+        // a composition that registers none still gets the undecided rule, which refuses every Record rather
+        // than guessing a period.
         services.TryAddSingleton<IFinanceRecordPeriodRule, UndecidedFinanceRecordPeriodRule>();
         services.TryAddSingleton(TimeProvider.System);
         return services;

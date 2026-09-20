@@ -187,6 +187,17 @@ public sealed class AccountingStore(
         return row is null ? null : new AccountingPeriodRecord(RestorePeriod(row), row.Version);
     }
 
+    public async Task<AccountingPeriodRecord?> FindPeriodCoveringAsync(DateOnly on, CancellationToken cancellationToken = default)
+    {
+        // The company is the ambient one (the tenant filter); another company's period is not visible here.
+        RequireResolvedCompany();
+        // One company's periods never overlap, so SingleOrDefault is the right shape: two rows covering one
+        // date would be a stored contradiction and must fail loudly rather than pick one.
+        var row = await dbContext.Periods.AsNoTracking()
+            .SingleOrDefaultAsync(candidate => candidate.StartsOn <= on && candidate.EndsOn >= on, cancellationToken);
+        return row is null ? null : new AccountingPeriodRecord(RestorePeriod(row), row.Version);
+    }
+
     public async Task<AccountingPage<AccountingPeriodRecord>> ListPeriodsAsync(int pageSize, string? cursor,
         CancellationToken cancellationToken = default)
     {

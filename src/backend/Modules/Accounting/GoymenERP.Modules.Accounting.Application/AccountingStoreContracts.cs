@@ -164,6 +164,14 @@ public interface IAccountingPeriodStore
     /// <summary>The company's periods, newest first (by start date, then id), one page at a time.</summary>
     Task<AccountingPage<AccountingPeriodRecord>> ListPeriodsAsync(int pageSize, string? cursor,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// FIN-T05: the company's period COVERING <paramref name="on"/>, or null when no period does. One
+    /// company's periods never overlap (the propose path refuses an overlap), so at most one covers a date.
+    /// It answers the period and its status as stored — it decides nothing about which date a caller
+    /// should ask with, and it reads no journal, amount or queue.
+    /// </summary>
+    Task<AccountingPeriodRecord?> FindPeriodCoveringAsync(DateOnly on, CancellationToken cancellationToken = default);
 }
 
 /// <summary>

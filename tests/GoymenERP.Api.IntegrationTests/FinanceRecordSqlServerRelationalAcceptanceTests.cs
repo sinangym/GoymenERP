@@ -1,10 +1,14 @@
+using GoymenERP.Api.Shell;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Accounting.Application;
+using GoymenERP.Modules.Accounting.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure;
 using GoymenERP.Modules.Finance.Infrastructure.Persistence;
+using GoymenERP.Modules.Settings.Application;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -184,12 +188,93 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.MoneyEvents"));
     }
 
+    /// <summary>
+    /// FIN-T05, Sinan's K1 (#66 5748258299, closes 5745134466): <c>occurredOn</c> decides the open-period
+    /// check; <c>valueOn</c> does not move the period and <c>recordedAtUtc</c> is only the audit moment. The
+    /// rule is the PRODUCT's (OccurredOnFinanceRecordPeriodRule over the real AccountingPeriodStatusPort) and
+    /// the periods are real Accounting rows in the same database — no synthetic period rule here.
+    /// The permission the port measures is a synthetic TEST grant, not a Sinan or production grant.
+    /// </summary>
+    [SqlServerFact]
+    public async Task The_period_follows_occurredOn_and_a_closed_period_records_nothing()
+    {
+        await using var run = await Run.StartAsync();
+        await run.MigrateAccountingAsync();
+        var owners = Owners.For(CompanyA);
+
+        // A CLOSED period over the transaction date, and an OPEN one over "today" — the shape the decision
+        // names: a back-dated event recorded today must NOT move into today's period.
+        var closed = await run.PeriodAsync(CompanyA, new DateOnly(2026, 8, 1), new DateOnly(2026, 8, 31), close: true);
+        var open = await run.PeriodAsync(CompanyA, new DateOnly(2026, 9, 1), new DateOnly(2026, 9, 30), close: false);
+        Assert.NotEqual(closed, open);
+
+        // (1) occurredOn in the CLOSED period, recorded today: refused, and it is the period's refusal —
+        // never the rule-could-not-decide one — and nothing is stored.
+        var backDated = await run.SaveDraftAsync(owners, "1000", occurredOn: new DateOnly(2026, 8, 20));
+        await using (var a = run.Service(CompanyA, owners, rule: run.RealRule(CompanyA)))
+        {
+            var refused = await a.Service.RecordAsync(a.Context, Key("record-closed"),
+                new RecordRequest(backDated.Id, backDated.Version), CancellationToken.None);
+            Assert.Equal(CommandOutcome.ValidationFailed, refused.Outcome);
+            Assert.Equal(new ValidationIssue("period", RecordPeriodAnswer.PeriodNotOpenCode), Assert.Single(refused.Issues));
+        }
+
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.MoneyEvents"));
+
+        // (2) occurredOn in the OPEN period with a DIFFERENT value date — the value date lies in the CLOSED
+        // one, so a rule that consulted valueOn would refuse. It records: the period follows occurredOn.
+        var current = await run.SaveDraftAsync(owners, "1250.5",
+            occurredOn: new DateOnly(2026, 9, 15), valueOn: new DateOnly(2026, 8, 25));
+        await using (var a = run.Service(CompanyA, owners, rule: run.RealRule(CompanyA)))
+        {
+            var recorded = await a.Service.RecordAsync(a.Context, Key("record-open"),
+                new RecordRequest(current.Id, current.Version), CancellationToken.None);
+            Assert.Equal(CommandOutcome.Succeeded, recorded.Outcome);
+            Assert.Equal(SourceStage.Recorded, recorded.Resource!.Source.Stage);
+
+            // (3) the same key again: the stored answer, never a second money or cari effect.
+            var again = await a.Service.RecordAsync(a.Context, Key("record-open"),
+                new RecordRequest(current.Id, current.Version), CancellationToken.None);
+            Assert.Equal(CommandOutcome.Succeeded, again.Outcome);
+            Assert.True(again.IsReplay);
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.MoneyEvents"));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.MoneyEvents WHERE SourceId = @id", ("@id", current.Id)));
+
+        // (4) The port could not answer — the actor lost the period read — so the rule DECIDED NOTHING and the
+        // refusal says so. This must never look like "the period is not open" (the LOG-4b lesson).
+        var third = await run.SaveDraftAsync(owners, "10", occurredOn: new DateOnly(2026, 9, 16));
+        await using (var a = run.Service(CompanyA, owners, rule: run.RealRule(CompanyA, granted: false)))
+        {
+            var undecided = await a.Service.RecordAsync(a.Context, Key("record-ungranted"),
+                new RecordRequest(third.Id, third.Version), CancellationToken.None);
+            Assert.Equal(CommandOutcome.ValidationFailed, undecided.Outcome);
+            Assert.Equal(new ValidationIssue("period", RecordPeriodAnswer.RuleUnavailableCode), Assert.Single(undecided.Issues));
+        }
+
+        // (5) The actor is swapped WHILE the owner answers: the port releases nothing, so the rule is
+        // undecided again — the #366 fence, measured in the round that introduces the port.
+        await using (var a = run.Service(CompanyA, owners, rule: run.RealRule(CompanyA, swapDuringRead: true)))
+        {
+            var swapped = await a.Service.RecordAsync(a.Context, Key("record-swapped"),
+                new RecordRequest(third.Id, third.Version), CancellationToken.None);
+            Assert.Equal(CommandOutcome.ValidationFailed, swapped.Outcome);
+            Assert.Equal(new ValidationIssue("period", RecordPeriodAnswer.RuleUnavailableCode), Assert.Single(swapped.Issues));
+        }
+
+        // Nothing of (1), (4) or (5) reached the ledger: one money event in the whole database.
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.MoneyEvents"));
+    }
+
     private static CommandMetadata Key(string key) => new CommandMetadata(key);
 
-    private static DraftSaveRequest Save(Owners owners, string amount, Guid? draftId = null, string? expectedVersion = null) =>
+    private static DraftSaveRequest Save(Owners owners, string amount, Guid? draftId = null, string? expectedVersion = null,
+        DateOnly? occurredOn = null, DateOnly? valueOn = null) =>
         new DraftSaveRequest(draftId, expectedVersion, new ReceiptPreparation(
             owners.Party, owners.Account, owners.Bank, new MoneyText(amount, Currency),
-            new ProfileReference(ProfileId.ToString("D"), "1"), OccurredOn, ValueOn, "SENTETIK-REF", null));
+            new ProfileReference(ProfileId.ToString("D"), "1"), occurredOn ?? OccurredOn, valueOn ?? ValueOn, "SENTETIK-REF", null));
 
     private sealed record Owners(Guid Company, Guid Bank, Guid Party, Guid Account)
     {
@@ -236,10 +321,12 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
                 .Options, companyContext);
         }
 
-        public async Task<SavedDraft> SaveDraftAsync(Owners owners, string amount)
+        public async Task<SavedDraft> SaveDraftAsync(Owners owners, string amount,
+            DateOnly? occurredOn = null, DateOnly? valueOn = null)
         {
             await using var a = Service(owners.Company, owners);
-            var saved = await a.Service.DraftSaveAsync(a.Context, Key($"save-{Guid.NewGuid():N}"), Save(owners, amount), CancellationToken.None);
+            var saved = await a.Service.DraftSaveAsync(a.Context, Key($"save-{Guid.NewGuid():N}"),
+                Save(owners, amount, occurredOn: occurredOn, valueOn: valueOn), CancellationToken.None);
             Assert.Equal(CommandOutcome.Succeeded, saved.Outcome);
             return new SavedDraft(saved.Resource!.Source.Id, saved.Resource.Source.Version);
         }
@@ -249,7 +336,7 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
         /// <paramref name="productRule"/> uses the product's only rule, which decides nothing while Q1 is open.
         /// </summary>
         public ServiceScope Service(Guid company, Owners owners, string? actor = null, string? correlation = null,
-            bool productRule = false)
+            bool productRule = false, IFinanceRecordPeriodRule? rule = null)
         {
             var companyContext = new CompanyContext();
             companyContext.Set(company);
@@ -267,8 +354,76 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
                 new FinanceAuditEnvelope(ReceiptDraftService.SaveDraftCommand, ["SENTETIK-FINANCE"], "Web"),
                 TimeProvider.System,
                 new FinanceAuditEnvelope(ReceiptDraftService.RecordCommand, ["SENTETIK-FINANCE"], "Web"),
-                productRule ? new UndecidedFinanceRecordPeriodRule() : new SyntheticOpenPeriodRule());
+                rule ?? (productRule ? new UndecidedFinanceRecordPeriodRule() : new SyntheticOpenPeriodRule()));
             return new ServiceScope(dbContext, service, new FinanceContext(company, actor ?? Actor, correlation ?? Correlation, null));
+        }
+
+        /// <summary>The Accounting tables in the SAME database, so a period and a money event are one system.</summary>
+        public async Task MigrateAccountingAsync()
+        {
+            await using var context = AccountingContext(CompanyA);
+            await context.Database.MigrateAsync();
+        }
+
+        public AccountingDbContext AccountingContext(Guid company)
+        {
+            var companyContext = new CompanyContext();
+            companyContext.Set(company);
+            return new AccountingDbContext(new DbContextOptionsBuilder<AccountingDbContext>()
+                .UseSqlServer(Factory.DatabaseConnectionString,
+                    sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", AccountingDbContext.Schema))
+                .Options, companyContext);
+        }
+
+        /// <summary>
+        /// A REAL period of the company through the real store: proposed by one actor, approved by ANOTHER
+        /// (Ö4), and closed when asked. No period is written by hand.
+        /// </summary>
+        public async Task<Guid> PeriodAsync(Guid company, DateOnly startsOn, DateOnly endsOn, bool close)
+        {
+            var companyContext = new CompanyContext();
+            companyContext.Set(company);
+            await using var dbContext = AccountingContext(company);
+            var settings = new ApprovedSettingsPrerequisiteProvider(companyContext, new FixedCurrentUser(Actor, company));
+            var store = new AccountingStore(dbContext, companyContext, new AuditEventCollector(), TimeProvider.System,
+                new AccountingAmountScaleVerifier(settings));
+            var preparer = Guid.NewGuid();
+            var approver = Guid.NewGuid();
+            var periodId = Guid.NewGuid();
+            var (proposed, _) = await store.ProposePeriodAsync(periodId, startsOn, endsOn, preparer, PeriodMetadata());
+            var approved = await store.ApprovePeriodAsync(periodId, proposed.Version, approver, PeriodMetadata());
+            if (close)
+            {
+                await store.ClosePeriodAsync(periodId, approved.Version, approver, PeriodMetadata());
+            }
+
+            return periodId;
+        }
+
+        private AccountingCommandMetadata PeriodMetadata() => new AccountingCommandMetadata(
+            Guid.NewGuid().ToString("D"), "synthetic.accounting.test-write", ["SYNTHETIC-FINANCE-T05-TEST"],
+            $"fin-t05-{Guid.NewGuid():N}", null, Guid.NewGuid().ToString("N"), "Web");
+
+        /// <summary>
+        /// The PRODUCT's rule over the PRODUCT's port, against the real Accounting rows. The permission the
+        /// port measures is a synthetic TEST grant (never a Sinan or production grant); `granted: false` is an
+        /// actor that does not hold `accounting.periods.read`, and `swapDuringRead` is another actor taking
+        /// the context while the owner answers.
+        /// </summary>
+        public IFinanceRecordPeriodRule RealRule(Guid company, bool granted = true, bool swapDuringRead = false)
+        {
+            var companyContext = new CompanyContext();
+            companyContext.Set(company);
+            var user = new SwappableUser(Actor, company);
+            var dbContext = AccountingContext(company);
+            var settings = new ApprovedSettingsPrerequisiteProvider(companyContext, new FixedCurrentUser(Actor, company));
+            var store = new AccountingStore(dbContext, companyContext, new AuditEventCollector(), TimeProvider.System,
+                new AccountingAmountScaleVerifier(settings));
+            var reads = swapDuringRead
+                ? (IAccountingPeriodStore)new SwappingPeriodStore(store, user)
+                : store;
+            return new OccurredOnFinanceRecordPeriodRule(
+                new AccountingPeriodStatusPort(companyContext, user, new SyntheticAuthority(granted), reads));
         }
 
         public async Task<T> ScalarAsync<T>(string sql, params (string Name, object Value)[] parameters)
@@ -364,6 +519,68 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
 
         public Task<PeriodEligibilityV1> GetPeriodEligibilityAsync(string operation, DateOnly occurredOn, DateOnly? valueOn,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    /// <summary>The caller's own authority as a synthetic TEST grant: `accounting.periods.read`, company-wide.</summary>
+    private sealed class SyntheticAuthority(bool granted) : IErpAuthorityRevalidationService
+    {
+        public Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid companyId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(granted && permission == AccountingPermissionManifestV1.PeriodsRead
+                ? new PermissionScope(true, true, new HashSet<string>(StringComparer.Ordinal) { "SYNTHETIC-FINANCE-T05-TEST" },
+                    new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>())
+                : PermissionScope.Denied);
+    }
+
+    /// <summary>An actor whose identity can change mid-request, as a second actor taking the context would.</summary>
+    private sealed class SwappableUser(string userId, Guid company) : ICurrentUser
+    {
+        private readonly HashSet<Guid> _allowed = [company];
+
+        public string? UserId { get; private set; } = userId;
+
+        public bool IsAuthenticated => true;
+
+        public IReadOnlySet<Guid> AllowedCompanyIds => _allowed;
+
+        public bool CanAccessCompany(Guid companyId) => _allowed.Contains(companyId);
+
+        /// <summary>Another actor with access to the SAME company takes the context.</summary>
+        public void Swap() => UserId = $"synthetic-other-{Guid.NewGuid():N}";
+    }
+
+    /// <summary>
+    /// The real period store, with the context swapped WHILE it answers: the shape the adapter's fence
+    /// exists for (#366). It stores nothing and changes no row; it only moves the swap into the await.
+    /// </summary>
+    private sealed class SwappingPeriodStore(IAccountingPeriodStore inner, SwappableUser user) : IAccountingPeriodStore
+    {
+        public async Task<AccountingPeriodRecord?> FindPeriodCoveringAsync(DateOnly on, CancellationToken cancellationToken = default)
+        {
+            var record = await inner.FindPeriodCoveringAsync(on, cancellationToken);
+            user.Swap();
+            return record;
+        }
+
+        public Task<(AccountingPeriodRecord Record, AccountingWriteOutcome Outcome)> ProposePeriodAsync(Guid periodId,
+            DateOnly startsOn, DateOnly endsOn, Guid preparedByUserId, AccountingCommandMetadata metadata,
+            CancellationToken cancellationToken = default) =>
+            inner.ProposePeriodAsync(periodId, startsOn, endsOn, preparedByUserId, metadata, cancellationToken);
+
+        public Task<AccountingPeriodRecord> ApprovePeriodAsync(Guid periodId, long expectedVersion, Guid approvedByUserId,
+            AccountingCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+            inner.ApprovePeriodAsync(periodId, expectedVersion, approvedByUserId, metadata, cancellationToken);
+
+        public Task<AccountingPeriodRecord> ClosePeriodAsync(Guid periodId, long expectedVersion, Guid closedByUserId,
+            AccountingCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+            inner.ClosePeriodAsync(periodId, expectedVersion, closedByUserId, metadata, cancellationToken);
+
+        public Task<AccountingPeriodRecord?> FindPeriodAsync(Guid periodId, CancellationToken cancellationToken = default) =>
+            inner.FindPeriodAsync(periodId, cancellationToken);
+
+        public Task<AccountingPage<AccountingPeriodRecord>> ListPeriodsAsync(int pageSize, string? cursor,
+            CancellationToken cancellationToken = default) =>
+            inner.ListPeriodsAsync(pageSize, cursor, cancellationToken);
     }
 
     private sealed class FixedCurrentUser(string userId, Guid company) : ICurrentUser
