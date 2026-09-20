@@ -26,7 +26,13 @@
  * back). The rule is added AFTER that fix on purpose — landing it first would have turned a gate red
  * for a defect belonging to another lane's slice, which teaches people to distrust the gate.
  *
- * WHAT THIS IS NOT: the one-entry-point rule itself. Whether a list ALSO links to its create screen
+ * WHAT THIS IS NOT, and the limit matters for the orphan rule's remedy: this file reads the two
+ * TABLES, never the pages. So it cannot tell "this screen is reached from a list row" from "nothing
+ * links to this screen at all" — emptying a label satisfies it either way. That is why the orphan
+ * rule's message refuses to offer an empty label as an equal remedy: silencing a guard is not the
+ * same as fixing what it guards.
+ *
+ * Nor is this the one-entry-point rule itself. Whether a list ALSO links to its create screen
  * is a fact about that lane's page, not about these two tables; the lane's own tests and the
  * per-module drift tests cover the pairing. This guards the shell's half.
  */
@@ -41,7 +47,12 @@ describe('nav entry points', () => {
     expect(nameless).toEqual([])
   })
 
-  it('keeps every empty-labelled capability OUT of the nav list', () => {
+  // REDUNDANT, and kept deliberately (#371 review, FİNANS note (a)): this is the contrapositive of
+  // the rule above, so rules 1 and 3 together already give nav === named and this one cannot fail
+  // alone. It stays because "no empty-labelled capability is in nav" is the form a reader looks for
+  // when they are asking about a specific screen. Counting it as a third independent guarantee is
+  // the mistake this comment exists to prevent: there are TWO.
+  it('keeps every empty-labelled capability OUT of the nav list (contrapositive of the rule above)', () => {
     const emptyLabelled = (Object.values(CAPABILITY) as CapabilityId[]).filter(
       (capability) => !CAPABILITY_NAV_LABEL[capability]?.trim(),
     )
@@ -60,8 +71,12 @@ describe('nav entry points', () => {
     expect(
       orphans,
       'these capabilities carry a nav label but are not in NAV_CAPABILITIES, so the label is never ' +
-        'rendered: either add the capability to the nav list, or empty its label if the screen is ' +
-        'deliberately reached from a row or a list instead of the sidebar',
+        'rendered. Add the capability to the nav list. Emptying the label also silences this rule, ' +
+        'but it is only correct when the screen is genuinely reached from somewhere else — a list ' +
+        'row, a card, a context action — and it is WRONG when nothing links to the screen: that ' +
+        'leaves it reachable only by typing its URL, which is the MFG-02 condition this rule exists ' +
+        'to catch. This file cannot tell the two apart, because it reads the two tables and not the ' +
+        'pages; the lane that owns the screen has to show where it is reached from.',
     ).toEqual([])
     // A rule that filtered nothing would pass vacuously and mean nothing, so pin that it had input.
     expect(named.length).toBeGreaterThan(0)
