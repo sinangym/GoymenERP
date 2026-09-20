@@ -232,6 +232,35 @@ public sealed class SalesDraftService(
         return draft is null ? throw new SalesDraftServiceException(404, "not_found") : Detail(draft);
     }
 
+    /// <summary>K3 Head B: the archived approved revisions of a draft, oldest first, under the draft read; another company's draft is 404.</summary>
+    public async Task<SalesOrderDraftRevisionsResponse> GetDraftRevisionsAsync(Guid draftId, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var scope = await RequireAsync(bindings.ReadPermission, cancellationToken);
+        if (draftId == Guid.Empty)
+        {
+            throw new SalesDraftServiceException(404, "not_found");
+        }
+
+        SalesOrderDraft? draft;
+        try
+        {
+            draft = await GuardedAsync(scope, bindings.ReadPermission,
+                () => store.FindDraftAsync(draftId, cancellationToken), cancellationToken);
+        }
+        catch (SalesDraftStoreException exception)
+        {
+            throw Store(exception);
+        }
+
+        if (draft is null)
+        {
+            throw new SalesDraftServiceException(404, "not_found");
+        }
+
+        return new SalesOrderDraftRevisionsResponse([.. draft.ArchivedRevisions.Select(Revision)]);
+    }
+
     public async Task<SalesOrderDraftListResponse> GetDraftListAsync(SalesOrderDraftListQuery query,
         CancellationToken cancellationToken = default)
     {
@@ -303,6 +332,116 @@ public sealed class SalesDraftService(
     /// answers the winner (§8). Nothing is measured after the commit (S03). Another company's draft, or
     /// none, is 404, never 403.
     /// </summary>
+    // ---- commercial revision (K3 Head B, Sinan 5748258299) ---------------------------------------
+
+    /// <summary>
+    /// Replaces every line's price, price unit and discount under the price-write permission (the command's
+    /// own permission, so a missing grant is a plain 403). The same key with the same content and actor
+    /// answers the stored result again (a replay is never the "no change" refusal: the key decides first);
+    /// a stale version or a pending draft is the key's terminal 409 (recorded, replayed); a line refusal is
+    /// a 422 on `lines[i].<field>` with the domain's code, where i is the line's index in THIS request.
+    /// </summary>
+    public async Task<SalesOrderDraftResponse> ReviseCommercialAsync(Guid draftId, SalesDraftCommercialRevisionRequest request,
+        SalesCommandMetadata metadata, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(metadata);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var permission = bindings.PricePermission;
+        var scope = await RequireAsync(permission, cancellationToken);
+        if (!long.TryParse(request.ExpectedVersion, NumberStyles.None, CultureInfo.InvariantCulture, out var expectedVersion) || expectedVersion < 1)
+        {
+            throw new SalesDraftServiceException(400, "validation_failed", [new("expectedVersion", "validation_failed")]);
+        }
+
+        const string commandName = SalesDraftCommands.ReviseCommercialV1;
+        var requestHash = SalesDraftRequestHash.Compute(commandName, draftId, request);
+        var envelope = Envelope(scope, metadata, permission!);
+        var replay = await FindReplayAsync(scope, permission, envelope, requestHash, commandName, cancellationToken);
+        if (replay is not null)
+        {
+            return Replayed(replay);
+        }
+
+        if (draftId == Guid.Empty)
+        {
+            throw new SalesDraftServiceException(404, "not_found");
+        }
+
+        var inputs = request.Lines
+            .Select(line => new LineCommercialInput(line.LineId, new CommercialDraftFields(line.UnitPrice, line.PriceUnitId, line.DiscountPercent)))
+            .ToArray();
+        var audit = new SalesDraftStateAudit("sales.order-draft.commercial-revised.v1", "ReviseCommercial",
+            "Satış sipariş taslağının fiyat ve iskontosu revize edildi");
+
+        await RequireStillAsync(scope, permission, cancellationToken);
+        SalesDraftStateResult? result;
+        try
+        {
+            result = await store.ReviseDraftCommercialAsync(envelope, requestHash, commandName, draftId,
+                (draft, now) => draft.ReviseCommercial(expectedVersion, inputs, scope.ActorId, now), audit, cancellationToken);
+        }
+        catch (SalesVersionConflictException exception)
+        {
+            throw await TerminalAsync(envelope, requestHash, new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.VersionConflict,
+                [new("expectedVersion", exception.Code)]), cancellationToken, commandName);
+        }
+        catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.StateConflict)
+        {
+            throw await TerminalAsync(envelope, requestHash, new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.StateConflict,
+                [new("approvalState", exception.Code)]), cancellationToken, commandName);
+        }
+        catch (SalesRuleException exception)
+        {
+            throw new SalesDraftServiceException(422, "validation_failed", [new(RevisionField(request, exception), exception.Code)]);
+        }
+        catch (ArgumentException)
+        {
+            throw new SalesDraftServiceException(400, "validation_failed");
+        }
+        catch (SalesDraftStoreException exception) when (exception.Code == SalesDraftStoreCodes.ConcurrentChange)
+        {
+            var won = await FindReplayAsync(scope, permission, envelope, requestHash, commandName, cancellationToken);
+            if (won is null)
+            {
+                throw Store(exception);
+            }
+
+            return Replayed(won);
+        }
+        catch (SalesDraftStoreException exception)
+        {
+            throw Store(exception);
+        }
+
+        if (result is null)
+        {
+            throw new SalesDraftServiceException(404, "not_found");
+        }
+
+        return Response(result.Draft, result.Outcome == SalesDraftWriteOutcome.Replayed, result.OriginalCorrelationId);
+    }
+
+    /// <summary>The field a revision refusal is answered on: the line's index in the request and the field its code is about, else the whole `lines` member.</summary>
+    private static string RevisionField(SalesDraftCommercialRevisionRequest request, SalesRuleException exception)
+    {
+        var member = exception.Code switch
+        {
+            SalesRuleCodes.PriceScaleExceeded or SalesRuleCodes.PriceUnitPairing => "unitPrice",
+            SalesRuleCodes.PriceUnitUnsupported => "priceUnitId",
+            SalesRuleCodes.DiscountOutOfRange or SalesRuleCodes.DiscountWithoutPrice => "discountPercent",
+            _ => null,
+        };
+        if (member is null || exception.LineId is not { } lineId)
+        {
+            return "lines";
+        }
+
+        var index = request.Lines.ToList().FindIndex(line => line.LineId == lineId);
+        return index < 0 ? "lines" : $"lines[{index}].{member}";
+    }
+
     private async Task<SalesOrderDraftResponse> StateCommandAsync(Guid draftId, SalesDraftStateCommandRequest request,
         SalesCommandMetadata metadata, string commandName, string? permission,
         Action<SalesOrderDraft, string, long, DateTimeOffset> transition, SalesDraftStateAudit audit, CancellationToken cancellationToken)
@@ -943,7 +1082,7 @@ public sealed class SalesDraftService(
 
     private static SalesOrderDraftSummaryView Summary(SalesOrderDraft draft) =>
         new(draft.Id, draft.CompanyId, draft.DocumentNo, draft.Kind.ToString(), draft.State.ToString(),
-            draft.Version.ToString(CultureInfo.InvariantCulture), SalesDraftApiV1.Rev0, draft.Header.PartyId,
+            draft.Version.ToString(CultureInfo.InvariantCulture), SalesDraftApiV1.RevisionText(draft.Revision), draft.Header.PartyId,
             draft.Header.CompanyAccountId, draft.Header.CurrencyId, draft.Header.BusinessDate, draft.CreatedAtUtc, draft.Lines.Count,
             draft.ApprovalState.ToString());
 
@@ -961,6 +1100,13 @@ public sealed class SalesDraftService(
             Reference(draft.Header.PaymentTerms), Reference(draft.Header.SourceStrategy), Reference(draft.Header.Package),
             new SalesDraftApprovalV1(draft.Approval.SubmittedBy, draft.Approval.SubmittedAtUtc, draft.Approval.DecidedBy,
                 draft.Approval.DecidedAtUtc, draft.Approval.RejectionReason));
+
+    private static SalesDraftRevisionV1 Revision(ApprovedRevisionSnapshot archived) =>
+        new(SalesDraftApiV1.RevisionText(archived.Revision), archived.Approval.SubmittedBy, archived.Approval.SubmittedAtUtc,
+            archived.Approval.DecidedBy, archived.Approval.DecidedAtUtc, archived.ArchivedAtUtc, archived.ArchivedBy,
+            archived.MoneyProfileId, archived.MoneyProfileVersion, archived.MoneyScale,
+            [.. archived.Lines.Select(line => new SalesDraftRevisionLineV1(line.LineId, line.LineNo, line.ProductId, line.ProductVersion,
+                line.OrderUnitId, line.QuantityText, line.Commercial.UnitPrice, line.Commercial.PriceUnitId, line.Commercial.DiscountPercent))]);
 
     private static SalesDraftOwnerReferenceV1? Reference(OwnerReference? reference) =>
         reference is null ? null : new SalesDraftOwnerReferenceV1(reference.Id, reference.ExpectedVersion);

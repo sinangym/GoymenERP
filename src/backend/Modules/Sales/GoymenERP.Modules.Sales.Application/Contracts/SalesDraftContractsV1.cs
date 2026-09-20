@@ -50,6 +50,33 @@ public sealed record SalesDraftApprovalV1(
 /// </summary>
 public sealed record SalesDraftStateCommandRequest(string ExpectedVersion, string? Reason = null);
 
+/// <summary>K3 Head B: one line's commercial fields in a commercial revision — the client line id and the three fields (all nullable, as on the create).</summary>
+public sealed record SalesDraftLineCommercialV1(Guid LineId, string? UnitPrice = null, Guid? PriceUnitId = null, string? DiscountPercent = null);
+
+/// <summary>
+/// K3 Head B (Sinan 5748258299): POST …/{id}/commercial-revision — the expected concurrency version and
+/// EVERY line of the draft exactly once with its new commercial fields. Strict: no other member.
+/// </summary>
+public sealed record SalesDraftCommercialRevisionRequest(string ExpectedVersion, IReadOnlyList<SalesDraftLineCommercialV1> Lines);
+
+/// <summary>A line of an archived approved revision, as it stood: identity, quantity text and the commercial fields, verbatim.</summary>
+public sealed record SalesDraftRevisionLineV1(
+    Guid LineId, int LineNo, Guid ProductId, string ProductVersion, Guid OrderUnitId, string Quantity,
+    string? UnitPrice, Guid? PriceUnitId, string? DiscountPercent);
+
+/// <summary>
+/// An approved revision the draft left behind when its price or discount was changed (K3: the previous
+/// approved snapshot is never deleted): who submitted and who approved it, when it was archived and by
+/// whom, the money profile it was approved under, and its lines.
+/// </summary>
+public sealed record SalesDraftRevisionV1(
+    string Revision, string? SubmittedBy, DateTimeOffset? SubmittedAtUtc, string? ApprovedBy, DateTimeOffset? ApprovedAtUtc,
+    DateTimeOffset ArchivedAtUtc, string ArchivedBy, Guid MoneyProfileId, string MoneyProfileVersion, int MoneyScale,
+    IReadOnlyList<SalesDraftRevisionLineV1> Lines);
+
+/// <summary>GET …/{id}/revisions: the archived approved revisions, oldest first; empty for a draft never revised after an approval.</summary>
+public sealed record SalesOrderDraftRevisionsResponse(IReadOnlyList<SalesDraftRevisionV1> Items);
+
 public sealed record SalesOrderDraftLineDetail(
     Guid LineId, int LineNo, Guid ProductId, string ProductVersion,
     string ProductCode, string ProductName, Guid OrderUnitId, string Quantity,
@@ -100,6 +127,16 @@ public static class SalesDraftApiV1
     public const string ApprovalPath = "/api/v1/sales/drafts/{id}/approval";
     public const string RejectionPath = "/api/v1/sales/drafts/{id}/rejection";
     public const int StateCommandStatus = 200;
+
+    // K3 Head B: the commercial revision (200 with the detail after the change; same-key replay 200 +
+    // `Idempotency-Replayed`) and the read of the archived approved revisions (200; a draft never revised
+    // after an approval answers an empty list). The detail wire itself is unchanged: `revision` reads
+    // "Rev.N", and the history lives on its own route so the S-04 decoder (exact members) keeps working.
+    public const string CommercialRevisionPath = "/api/v1/sales/drafts/{id}/commercial-revision";
+    public const string RevisionsPath = "/api/v1/sales/drafts/{id}/revisions";
+
+    /// <summary>The wire text of a revision number (<c>Rev.0</c>, <c>Rev.1</c>, …).</summary>
+    public static string RevisionText(int revision) => $"Rev.{revision.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
 }
 
 // Shape validation only. Owner profile scale, current permissions and references
@@ -153,6 +190,34 @@ public static class SalesDraftJson
             if (line.DiscountPercent is not null) RequireDecimalShape(line.DiscountPercent, positive: false);
             SalesDraftDeliveryPlanV1.GetUnscheduledQuantity(line);
         }
+        return request;
+    }
+
+    /// <summary>
+    /// K3 Head B: the strict body of a commercial revision — the expected version as on every state
+    /// command, and 1..500 lines each with a client line id given once; the commercial shapes are the
+    /// create's (price↔price-unit pairing, plain decimal text). The domain decides the rest (every current
+    /// line named, scale, unit source, range, no-change).
+    /// </summary>
+    public static SalesDraftCommercialRevisionRequest ReadCommercialRevision(string json)
+    {
+        var request = JsonSerializer.Deserialize<SalesDraftCommercialRevisionRequest>(json, Options)
+            ?? throw new JsonException("Request body is required.");
+        if (string.IsNullOrEmpty(request.ExpectedVersion) || request.ExpectedVersion.Length > 19
+            || !Regex.IsMatch(request.ExpectedVersion, "\\A[1-9][0-9]*\\z"))
+            throw new JsonException("Invalid expected version.");
+        if (request.Lines is null || request.Lines.Count is < 1 or > 500)
+            throw new JsonException("Invalid revision lines.");
+        var ids = new HashSet<Guid>();
+        foreach (var line in request.Lines)
+        {
+            if (line is null || line.LineId == Guid.Empty || !ids.Add(line.LineId) || line.PriceUnitId == Guid.Empty
+                || (line.UnitPrice is null) != (line.PriceUnitId is null))
+                throw new JsonException("Invalid line fields.");
+            if (line.UnitPrice is not null) RequireDecimalShape(line.UnitPrice, positive: false);
+            if (line.DiscountPercent is not null) RequireDecimalShape(line.DiscountPercent, positive: false);
+        }
+
         return request;
     }
 

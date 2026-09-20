@@ -76,9 +76,25 @@ public sealed class SalesDraftSqlServerRelationalAcceptanceTests
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Sales.OrderDraft' AND CorrelationId = @c", ("@c", run.Correlation)));
         Assert.Equal(0, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Sales.OrderDraft' AND CorrelationId = N'SENTETIK-second-correlation'"));
-        // The sales schema holds drafts, lines, slices, attempts and the counter only (beside its own
-        // migration history): no approval, revision, shipment, invoice or receipt table.
-        Assert.Equal("DraftAttempts,DraftDeliverySlices,DraftLines,DraftNumbers,Drafts,__EFMigrationsHistory", await run.ScalarAsync<string>(
+        // The sales schema is EXACTLY the set of tables the Sales model maps into it, beside its own migration history —
+        // the claim is exhaustive in both directions: no table the model does not know (no approval, shipment, invoice or
+        // receipt table: those are other owners' records), and no mapped table missing. The model's set is itself pinned
+        // by name (K3 Head B adds the two archived-revision tables), so neither side can grow unnoticed. Ordinal and
+        // BIN2 order agree ("DraftR…" before "Drafts", "_" after the letters).
+        string[] mapped;
+        await using (var model = run.Context(CompanyA))
+        {
+            mapped = model.Model.GetEntityTypes()
+                .Where(entity => entity.GetSchema() == SalesDbContext.Schema)
+                .Select(entity => entity.GetTableName()!)
+                .Distinct()
+                .Append("__EFMigrationsHistory")
+                .OrderBy(name => name, StringComparer.Ordinal)
+                .ToArray();
+        }
+
+        Assert.Equal(["DraftAttempts", "DraftDeliverySlices", "DraftLines", "DraftNumbers", "DraftRevisionLines", "DraftRevisions", "Drafts", "__EFMigrationsHistory"], mapped);
+        Assert.Equal(string.Join(',', mapped), await run.ScalarAsync<string>(
             "SELECT STRING_AGG(name, ',') WITHIN GROUP (ORDER BY name COLLATE Latin1_General_BIN2) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'sales')"));
         // ADR-011 §2: the raw key is not a column; the attempt row holds the command name, the key hash and the actor.
         Assert.Equal("ActorId,CommandName,CorrelationId,DraftId,IdempotencyKeyHash,Outcome,RecordedAtUtc,RefusalJson,RequestHash", await run.ScalarAsync<string>(
@@ -383,6 +399,13 @@ public sealed class SalesDraftSqlServerRelationalAcceptanceTests
 
         public SalesDraftWriteEnvelope Envelope(string key, string? correlation = null, string? actor = null) =>
             new(actor ?? Actor, "SENTETIK-sales-permission", ["SENTETIK-SALES"], correlation ?? Correlation, null, key, "Web", "127.0.0.1", "SENTETIK-agent");
+
+        public SalesDbContext Context(Guid company)
+        {
+            var companyContext = new CompanyContext();
+            companyContext.Set(company);
+            return new SalesDbContext(Options(Factory), companyContext);
+        }
 
         public StoreScope Store(Guid company, IInterceptor? extra = null)
         {
