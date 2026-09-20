@@ -42,7 +42,12 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
         BankAccountView proposed;
         await using (var a = run.Open(CompanyA, Proposer))
         {
-            var result = await a.Accounts.ProposeAsync(a.Context, Key("p-1"), new BankAccountProposeRequest("SENTETIK hesap", Currency, "SENTETIK Banka", "SENTETIK tür"),
+            var result = await a.Accounts.ProposeAsync(a.Context, Key("p-1"), new BankAccountProposeRequest("SENTETIK hesap", Currency, "SENTETIK Banka", "SENTETIK tür",
+                    // B3: this case is about APPROVAL making a card usable, so the card must be one that
+                    // approval CAN make usable — it declares itself for money movement and therefore
+                    // carries an IBAN (K2). A card declaring false stays unusable however it is approved,
+                    // and that is the separate case below.
+                    MoneyMovementEligible: true, Iban: "TR33 0006 1005 1978 6457 8413 26"),
                 CancellationToken.None);
             Assert.Equal(CommandOutcome.Succeeded, result.Outcome);
             proposed = result.Resource!;
@@ -128,6 +133,7 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
         {
             var typed = await a.Accounts.ProposeAsync(a.Context, Key("p-iban"),
                 new BankAccountProposeRequest("SENTETIK hesap", Currency, "SENTETIK Banka", "SENTETIK tür",
+                    MoneyMovementEligible: true,
                     BranchName: "SENTETIK şube", BranchCode: "0001",
                     Iban: "TR33 0006 1005 1978 6457 8413 26", AccountNumber: "123456"),
                 CancellationToken.None);
@@ -136,7 +142,7 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
 
             // K2: a special credit or term account with no IBAN is definable. It must not be refused.
             var special = await a.Accounts.ProposeAsync(a.Context, Key("p-no-iban"),
-                new BankAccountProposeRequest("SENTETIK vadeli", Currency, "SENTETIK Banka", "SENTETIK özel tür"),
+                new BankAccountProposeRequest("SENTETIK vadeli", Currency, "SENTETIK Banka", "SENTETIK özel tür", false),
                 CancellationToken.None);
             Assert.Equal(CommandOutcome.Succeeded, special.Outcome);
             withoutIban = special.Resource!;
@@ -194,7 +200,7 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
         {
             account = (await a.Accounts.ProposeAsync(a.Context, Key("p-1"),
                 new BankAccountProposeRequest("SENTETIK hesap", Currency, "SENTETIK Banka", "SENTETIK tür",
-                    Iban: "TR330006100519786457841326"),
+                    MoneyMovementEligible: true, Iban: "TR330006100519786457841326"),
                 CancellationToken.None)).Resource!;
         }
 
@@ -240,7 +246,7 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
         BankAccountView accountA;
         await using (var a = run.Open(CompanyA, Proposer))
         {
-            accountA = (await a.Accounts.ProposeAsync(a.Context, Key("p-1"), new BankAccountProposeRequest("SENTETIK A", Currency, "SENTETIK Banka", "SENTETIK tür"),
+            accountA = (await a.Accounts.ProposeAsync(a.Context, Key("p-1"), new BankAccountProposeRequest("SENTETIK A", Currency, "SENTETIK Banka", "SENTETIK tür", false),
                 CancellationToken.None)).Resource!;
         }
 
@@ -267,7 +273,7 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
         BankAccountView first;
         await using (var a = run.Open(CompanyA, Proposer))
         {
-            var request = new BankAccountProposeRequest("SENTETIK hesap", Currency, "SENTETIK Banka", "SENTETIK tür");
+            var request = new BankAccountProposeRequest("SENTETIK hesap", Currency, "SENTETIK Banka", "SENTETIK tür", false);
             first = (await a.Accounts.ProposeAsync(a.Context, Key("k-1"), request, CancellationToken.None)).Resource!;
             var replay = await a.Accounts.ProposeAsync(a.Context, Key("k-1"), request, CancellationToken.None);
             Assert.True(replay.IsReplay);
@@ -285,7 +291,7 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
         {
             // ADR-011 §3: the same key and payload by ANOTHER actor is a conflict that discloses nothing.
             var conflict = await other.Accounts.ProposeAsync(other.Context, Key("k-1"),
-                new BankAccountProposeRequest("SENTETIK hesap", Currency, "SENTETIK Banka", "SENTETIK tür"), CancellationToken.None);
+                new BankAccountProposeRequest("SENTETIK hesap", Currency, "SENTETIK Banka", "SENTETIK tür", false), CancellationToken.None);
             Assert.Equal(CommandOutcome.IdempotencyConflict, conflict.Outcome);
             Assert.Null(conflict.Resource);
         }
@@ -301,7 +307,7 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
         await using var run = await Run.StartAsync();
         await using (var a = run.Open(CompanyA, Proposer))
         {
-            var outside = await a.Accounts.ProposeAsync(a.Context, Key("k-1"), new BankAccountProposeRequest("SENTETIK", Guid.NewGuid(), "SENTETIK Banka", "SENTETIK tür"),
+            var outside = await a.Accounts.ProposeAsync(a.Context, Key("k-1"), new BankAccountProposeRequest("SENTETIK", Guid.NewGuid(), "SENTETIK Banka", "SENTETIK tür", false),
                 CancellationToken.None);
             Assert.Equal("currency_not_a_candidate", Assert.Single(outside.Issues).Code);
         }
@@ -309,7 +315,7 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
         // The real adapter on main: no Settings currency source exists, so every proposal is refused.
         await using (var a = run.Open(CompanyA, Proposer, realSettings: true))
         {
-            var unavailable = await a.Accounts.ProposeAsync(a.Context, Key("k-2"), new BankAccountProposeRequest("SENTETIK", Currency, "SENTETIK Banka", "SENTETIK tür"),
+            var unavailable = await a.Accounts.ProposeAsync(a.Context, Key("k-2"), new BankAccountProposeRequest("SENTETIK", Currency, "SENTETIK Banka", "SENTETIK tür", false),
                 CancellationToken.None);
             Assert.Equal(CommandOutcome.Unavailable, unavailable.Outcome);
             Assert.Equal("settings_provider_unavailable", Assert.Single(unavailable.Issues).Code);
@@ -327,7 +333,7 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
         BankAccountView proposed;
         await using (var a = run.Open(CompanyA, Proposer))
         {
-            proposed = (await a.Accounts.ProposeAsync(a.Context, Key("p-1"), new BankAccountProposeRequest("SENTETIK", Currency, "SENTETIK Banka", "SENTETIK tür"),
+            proposed = (await a.Accounts.ProposeAsync(a.Context, Key("p-1"), new BankAccountProposeRequest("SENTETIK", Currency, "SENTETIK Banka", "SENTETIK tür", false),
                 CancellationToken.None)).Resource!;
         }
 
@@ -366,7 +372,7 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
         await using (var scope = run.Open(unknownCompany, Proposer))
         {
             var error = await Assert.ThrowsAsync<DbUpdateException>(() => scope.Accounts.ProposeAsync(scope.Context, Key("k-1"),
-                new BankAccountProposeRequest("SENTETIK", Currency, "SENTETIK Banka", "SENTETIK tür"), CancellationToken.None));
+                new BankAccountProposeRequest("SENTETIK", Currency, "SENTETIK Banka", "SENTETIK tür", false), CancellationToken.None));
             Assert.Equal(547, Assert.IsType<SqlException>(error.InnerException).Number);
         }
 
