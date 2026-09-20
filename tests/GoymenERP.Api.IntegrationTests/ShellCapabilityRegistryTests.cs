@@ -16,11 +16,11 @@ public sealed partial class ShellCapabilityRegistryTests
         var registry = new ShellCapabilityRegistry(
             [provider],
             new ShellCapabilityAuthorityCatalog(
-                [ShellCapabilityRegistryAuthorities.CounterpartyListCreateLinkAndDetailV15]));
+                [ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedCreateAndDetail]));
 
         Assert.Equal(4, registry.Registrations.Count);
         Assert.Equal(
-            ShellCapabilityRegistryAuthorities.CounterpartyListCreateLinkAndDetailV15,
+            ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedCreateAndDetail,
             registry.Revision);
         var registration = Assert.Single(
             registry.Registrations,

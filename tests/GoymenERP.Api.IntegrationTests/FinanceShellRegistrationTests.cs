@@ -30,7 +30,7 @@ public sealed class FinanceShellRegistrationTests
         ];
 
         // On failure xUnit prints the actual revision: the constant is never guessed.
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV11ProductV10PublishedSalesV10AndPublishedFinanceV10,
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedCreateAndDetailOrganizationV11ProductV10PublishedSalesV10AndPublishedFinanceV10,
             ShellCapabilityRegistry.ComputeCandidateRevision(providers));
     }
 
@@ -47,7 +47,7 @@ public sealed class FinanceShellRegistrationTests
         var authority = C01E2eShellCapabilityActivation.Configure(services, new TestingEnvironment(),
             new ConfigurationBuilder().Build());
 
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV11ProductV10PublishedSalesV10AndPublishedFinanceV10,
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedCreateAndDetailOrganizationV11ProductV10PublishedSalesV10AndPublishedFinanceV10,
             authority);
         using var container = services.BuildServiceProvider();
         var registry = new ShellCapabilityRegistry(container.GetServices<IShellCapabilityProvider>(),
@@ -77,7 +77,7 @@ public sealed class FinanceShellRegistrationTests
         var authority = C01E2eShellCapabilityActivation.Configure(services, new TestingEnvironment(),
             new ConfigurationBuilder().Build());
 
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyListCreateLinkAndDetailV15, authority);
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedCreateAndDetail, authority);
         using var container = services.BuildServiceProvider();
         Assert.Throws<InvalidOperationException>(() => new ShellCapabilityRegistry(
             container.GetServices<IShellCapabilityProvider>(), new ShellCapabilityAuthorityCatalog([authority])));

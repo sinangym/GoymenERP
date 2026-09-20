@@ -20,16 +20,40 @@ namespace GoymenERP.Api.Shell;
 /// under a 1.0 name, describing a composition that no longer exists. That is a true statement about
 /// a dead set, which is a better thing to leave behind than a fresh value under a stale name.
 /// Deleting them is a separate claim and is not made here.
+///
+/// CARI-NORMAL (this slice) publishes TWO of Counterparty's four declarations — C-02 create and
+/// C-03 detail — so all NINE host rows moved, Counterparty being in every composition. Their names
+/// gained <c>PublishedCreateAndDetail</c>, and the form needs a word because it differs from the
+/// <c>Published…</c> prefix Sales, Finance, Manufacturing and Accounting carry:
+/// <list type="bullet">
+/// <item>A bare <c>Published</c> prefix asserts WHOLENESS, which is false at two of four. That is
+/// the defect caught in <c>…AndAccountingV10</c>, where the identifier said "staged" while six of
+/// seven were live — there the name could not carry the partiality and a comment had to. Here it
+/// can, and a name is checked by a compiler while a comment ages.</item>
+/// <item>The DECLARATION set is already pinned by <c>V15</c>: the contract version IS the statement
+/// "these four exist", and if that set changes the version moves. So the old
+/// <c>ListCreateLinkAndDetail</c> restated an invariant the version already carried. The PUBLISHED
+/// subset is the only part that varies, so it is the only part the name should carry — a name whose
+/// content never changes is noise.</item>
+/// <item>The convention closes on itself: at full publication these become
+/// <c>PublishedListCreateLinkAndDetail</c>, the enumerative form Counterparty already used, rather
+/// than leaving a prefix that needs reinterpreting.</item>
+/// </list>
+/// The values are two independent blind derivations that agreed byte for byte (CARİ and ORG,
+/// neither having seen the other's) — ORG's primary path called the real
+/// <c>ComputeCandidateRevision</c> on real provider instances, with a second hand-written
+/// implementation as a perpendicular check. Both derivers asserted the same two controls
+/// separately: the three disposable envelope constants must NOT move, and all nine of these MUST.
 /// </summary>
 internal static class ShellCapabilityRegistryAuthorities
 {
-    internal const string CounterpartyV15AndOrganizationV11 =
-        "sha256:JGyoGF1wX_PNfnq4vY17VltFXS_pTDueuQdFr_gtOds";
+    internal const string CounterpartyV15PublishedCreateAndDetailAndOrganizationV11 =
+        "sha256:a3RppVTLbiOUouUccKKSl6V0v0VkAenmTODkjlrfK9U";
 
     // Counterparty 1.5 + Organization 1.0 + Product 1.0 (#316): the normal host's set once Product
     // publishes its four screens.
-    internal const string CounterpartyV15OrganizationV11AndProductV10 =
-        "sha256:C2zUvo8ysYwRmZRbyFoaLzO9GgKePepqe4L7g7-gXOU";
+    internal const string CounterpartyV15PublishedCreateAndDetailOrganizationV11AndProductV10 =
+        "sha256:I7UV2UmsHY38CkpcgV0DlRdhRJwjBrlokkEaFm0mXD8";
 
     // Counterparty 1.5 + Organization 1.0 + Product 1.0 + Sales 1.0 (#321): the normal host while Sales'
     // draft screens were staged. Superseded by the published set below (#328); no host serves it now.
@@ -41,8 +65,8 @@ internal static class ShellCapabilityRegistryAuthorities
     // constant) and, independently, by ORG (5735275571) and SİPARİŞ; pinned by test.
     // Re-measured for SALES-A1 (the Sales approve control on S-04): ComputeRevision reproduction, and
     // independently re-checked (ORG DATA ONLY); the control keeps its parent's context; pinned by test.
-    internal const string CounterpartyV15OrganizationV11ProductV10AndPublishedSalesV10 =
-        "sha256:2_TXo2GAtWmdU1Xeaylb0fOq06XTglb2R4QzdxJw3XE";
+    internal const string CounterpartyV15PublishedCreateAndDetailOrganizationV11ProductV10AndPublishedSalesV10 =
+        "sha256:-uK2Qr_XSiLhaLLb2N18aDXd7ik3AKsQhLVT5NmG7oA";
 
     // ... + Finance 1.0 (#325, FIN-UI-1a) beside the STAGED Sales screens. Superseded when Sales was published
     // (#328, below); no host serves it now. Computed by the ComputeRevision reproduction and,
@@ -72,8 +96,8 @@ internal static class ShellCapabilityRegistryAuthorities
     // control) + Finance 1.0 PUBLISHED: the six Finance declarations flip only their availability after the
     // FIN-01 acceptance (#332, run 35444049175). Computed by the ComputeRevision reproduction and, independently,
     // by ORG (DATA ONLY); pinned by test.
-    internal const string CounterpartyV15OrganizationV11ProductV10PublishedSalesV10AndPublishedFinanceV10 =
-        "sha256:TWQmapcXx4UfR6oE4LB3oYvoyZz_iRydY5x-sxA2w-c";
+    internal const string CounterpartyV15PublishedCreateAndDetailOrganizationV11ProductV10PublishedSalesV10AndPublishedFinanceV10 =
+        "sha256:k_-1O4xYi-gI4SRCstTIzlJKbhbuBnNPORbyJ4ohwpw";
 
     // FIN-UI-1c: ... + Manufacturing 1.0 staged: the normal host (C+O+P+S(published)+F(published)+M(staged)).
     // Computed by the ComputeRevision reproduction and, independently, by ORG (DATA ONLY); pinned by test.
@@ -88,8 +112,8 @@ internal static class ShellCapabilityRegistryAuthorities
     // four Manufacturing declarations, the control keeping its parent's route, screen, precedence,
     // context and scope): ComputeRevision reproduction, calibrated against the three constants this
     // file already served, and independently re-checked (DATA ONLY); pinned by test.
-    internal const string CounterpartyV15OrganizationV11ProductV10PublishedSalesV10PublishedFinanceV10AndPublishedManufacturingV10 =
-        "sha256:zoNzL1Axwp8xnTDOSUKBpVwo-AwgzbXqBLoxmeDXJzc";
+    internal const string CounterpartyV15PublishedCreateAndDetailOrganizationV11ProductV10PublishedSalesV10PublishedFinanceV10AndPublishedManufacturingV10 =
+        "sha256:G9YaJV46ofErzfqA7ncXmoCCtCOdWleRXGqhcSZuqUc";
 
     // LOG-4a: ... + Logistics 1.0 STAGED (the loading-instruction list L-02, new L-03 and detail L-02-DETAIL,
     // master v3 §27.8): the normal host (C+O+P+S(published)+F(published)+M(published)+L(staged)). Computed by
@@ -98,8 +122,8 @@ internal static class ShellCapabilityRegistryAuthorities
     // four Manufacturing declarations, the control keeping its parent's route, screen, precedence,
     // context and scope): ComputeRevision reproduction, calibrated against the three constants this
     // file already served, and independently re-checked (DATA ONLY); pinned by test.
-    internal const string CounterpartyV15OrganizationV11ProductV10PublishedSalesV10PublishedFinanceV10PublishedManufacturingV10AndLogisticsV10 =
-        "sha256:nvq21ejUsAjGC08N0mb5vgKrON5W3PzkgG44NvyVOrE";
+    internal const string CounterpartyV15PublishedCreateAndDetailOrganizationV11ProductV10PublishedSalesV10PublishedFinanceV10PublishedManufacturingV10AndLogisticsV10 =
+        "sha256:cv_yCuNRDcRCBUUlOjgt7K30JITwz31DTCAfdxSGF-I";
 
     // PUR-4a: ... + Purchasing 1.0 STAGED (the purchase-order list P-03, new P-04 and detail P-03-DETAIL,
     // master v3 §27.3): the normal host (C+O+P+S(pub)+F(pub)+M(pub)+L(staged)+Pu(staged)). Computed by the
@@ -108,8 +132,8 @@ internal static class ShellCapabilityRegistryAuthorities
     // four Manufacturing declarations, the control keeping its parent's route, screen, precedence,
     // context and scope): ComputeRevision reproduction, calibrated against the three constants this
     // file already served, and independently re-checked (DATA ONLY); pinned by test.
-    internal const string CounterpartyV15OrganizationV11ProductV10PublishedSalesV10PublishedFinanceV10PublishedManufacturingV10LogisticsV10AndPurchasingV10 =
-        "sha256:wvfEFxRJdXuaNYCFx5UsE0y1N7DjgaNGWugAtuxvvY0";
+    internal const string CounterpartyV15PublishedCreateAndDetailOrganizationV11ProductV10PublishedSalesV10PublishedFinanceV10PublishedManufacturingV10LogisticsV10AndPurchasingV10 =
+        "sha256:Wh94ZLUSbXZlNQIV_MWCChXOwANoB9OZFIRB6wdnSdc";
 
     // ACC-V0b: ... + Accounting 1.0 STAGED (the period list M-07 and its propose screen, the approve and
     // close controls of that list, the journal list M-04 and its detail, the posting queues M-01): the normal
@@ -148,11 +172,11 @@ internal static class ShellCapabilityRegistryAuthorities
     // before the value was trusted: all eight of main's Organization 1.1 rows reproduce byte-for-byte
     // with Accounting staged (the old half), and the same ACC-V0c model placed back at Organization 1.0
     // reproduces this branch's own sha256:OOlEtnDx… (the new half, which no accepted constant covered).
-    internal const string CounterpartyV15OrganizationV11ProductV10PublishedSalesV10PublishedFinanceV10PublishedManufacturingV10LogisticsV10PurchasingV10AndPublishedAccountingV10 =
-        "sha256:GSJl1UPkrFt2sYKZ7xH43DPvsLlDUAKTjAoFv85N8y8";
+    internal const string CounterpartyV15PublishedCreateAndDetailOrganizationV11ProductV10PublishedSalesV10PublishedFinanceV10PublishedManufacturingV10LogisticsV10PurchasingV10AndPublishedAccountingV10 =
+        "sha256:coGY86d1CjbyVv7pocey3Qf8ocuzHRDmYBm4722fZg4";
 
-    internal const string CounterpartyListCreateLinkAndDetailV15 =
-        "sha256:3GiwcHV6aVuN1Y-wBzElxLJLCok2bblGc6pRruhqTx4";
+    internal const string CounterpartyV15PublishedCreateAndDetail =
+        "sha256:o9s1X7SzoS43e2LZtKEDSp0-Tr-eHohqK4M-H2OGdsw";
 
     internal const string C01DisposableListOnlyV1 =
         "sha256:SXjogFbPGJiI4BxV5pC3wL7ywOTKV1fdsWR-nb5kreg";

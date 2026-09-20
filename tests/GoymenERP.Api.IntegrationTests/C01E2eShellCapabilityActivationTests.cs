@@ -21,7 +21,7 @@ public sealed class C01E2eShellCapabilityActivationTests
             Configuration([]));
 
         Assert.Equal(
-            ShellCapabilityRegistryAuthorities.CounterpartyListCreateLinkAndDetailV15,
+            ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedCreateAndDetail,
             authority);
         var descriptor = Assert.Single(
             services,
