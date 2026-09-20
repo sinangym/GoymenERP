@@ -79,7 +79,7 @@ public sealed class EndpointAuthorizationPolicyRegistrationTests
         var demanded = CollectPolicyNames([endpoint]);
 
         Assert.Equal(new[] { unregistered }, demanded);
-        Assert.True(demanded.Any(name => !ErpPermissions.IsKnown(name)));
+        Assert.Contains(demanded, name => !ErpPermissions.IsKnown(name));
 
         var provider = factory.Services.GetRequiredService<IAuthorizationPolicyProvider>();
         Assert.Null(await provider.GetPolicyAsync(unregistered));
