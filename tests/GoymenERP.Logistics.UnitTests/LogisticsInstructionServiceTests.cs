@@ -296,7 +296,7 @@ public sealed class LogisticsInstructionServiceTests
         Assert.Equal(CreatePermission, world.Authority.LastPermission);
         // Business 5745076917: the customer's NAME comes from the Cari owner (trade name, else legal name). A customer the owner
         // does not answer for (not found) keeps its line under a labelled reference — the #358 case three lines below, never a
-        // dropped line; only the owner's DENIAL or OUTAGE is the whole read's answer (503, further below).
+        // dropped line; only the owner's DENIAL (403) or OUTAGE (503) is the whole read's answer (both asserted below).
         world.Accounts.Fault = "no-trade-name";
         Assert.Equal("Sentetik Müşteri Anonim Şirketi", Assert.Single((await world.Service().GetApprovedOrderLinesAsync(new LogisticsApprovedOrderLinesQuery())).Items).CustomerName);
         // #358 P1 (coordinator ruling): a customer the Cari owner does not answer (a missing grant reads the same as a missing
