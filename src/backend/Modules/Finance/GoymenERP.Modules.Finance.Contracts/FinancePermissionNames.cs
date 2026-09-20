@@ -7,8 +7,9 @@ namespace GoymenERP.Modules.Finance.Contracts;
 /// <para>
 /// <see cref="Record"/> (FIN-T05a): Ö4 (Sinan #66 5722637822) answers the "who may record" part of OPEN-009
 /// for a realized routine receipt — one narrow authorised operator, no second approval, no amount
-/// threshold (card #66 5743678389). Until the central registry knows the name, the port answers
-/// Unavailable. Reverse has no name: it is FIN-T06, maker≠checker (Ö4).
+/// threshold (card #66 5743678389). The central registry now knows the name, so the port MEASURES it: an
+/// actor without it is Denied, not Unavailable. A name is still not a grant — nobody holds it until a human
+/// assigns it. Reverse has no name: it is FIN-T06, maker≠checker (Ö4).
 /// </para>
 /// </summary>
 public static class FinancePermissionNames
