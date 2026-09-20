@@ -478,7 +478,13 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
             // would pin the service's call pattern, which may legitimately gain a fence; the ordering of the fences — before the
             // replay read and again before the save — is the service's own pin in SalesDraftServiceTests).
             Assert.NotEmpty(priced.Measured);
-            Assert.All(priced.Measured, ask => Assert.Equal((SalesPermissionManifestV1.OrdersPriceWrite, CompanyA), ask));
+            // K3 P2 lengthens this sequence by ONE legitimate trailing ask — the price READ, for the disclosure — so the pin keeps
+            // its meaning and gains the element: every ask for this write is one of the two PRICE names (a draft name can still
+            // never appear here), all in THIS company; the write name was asked; the read name is the LAST ask.
+            Assert.All(priced.Measured, ask => Assert.Equal(CompanyA, ask.Company));
+            Assert.All(priced.Measured, ask => Assert.Contains(ask.Permission, new[] { SalesPermissionManifestV1.OrdersPriceWrite, SalesPermissionManifestV1.OrdersPriceRead }));
+            Assert.Contains((SalesPermissionManifestV1.OrdersPriceWrite, CompanyA), priced.Measured);
+            Assert.Equal(SalesPermissionManifestV1.OrdersPriceRead, priced.Measured[^1].Permission);
 
             // The same key again through the service: the stored result, marked as the replay; the authority is asked again first.
             var replay = await service.ReviseCommercialAsync(draft.Id, request, run.Metadata("k-revise", correlation: "SENTETIK-second"));
