@@ -177,7 +177,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // sales
             ["tools/relational_inventory/sales.txt"] =
-                "81629fa047ec290b85a9c54ca4bc09055df1909328f7437b81f53f355bbe0d38",
+                "0b6eb5888c165ae3997f132fe7e2212eea8b9e4fca72bf0ecadc2ab7c38c2c1f",
         };
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
@@ -209,7 +209,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/"
              + "Persistence/SalesDbContext.cs"] =
-                "ef88262bd01e1d118b13f50944ae831870d42615a3f559e4fe95e6fdf3d5a498",
+                "266cd553d0ef98b8dda3cf23f197f2650a2b07bdda940f820df7e1c080894e9e",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
@@ -560,7 +560,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Sales/"
                  + "GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.cs"] =
                     new(
-                        "751ff0e47c4689b9d30a183b3ba4c8e96c5580250530bbc793586733c01e7f68",
+                        "c67497119ffd0bd57c62f575f02d7b6a5b6f73b17c0b09c0ef74c7496eed51db",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -655,6 +655,15 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // forward fix, no approval fact or attempt is dropped.
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20260919120000_AddDraftApproval.cs"] =
                     new("d5aa478dc70559fa55e54df47a2fc6703a4677b1db4caab425fbe9b3ea10e89c",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // SALES-P Head B: the Down's only raw SQL is Sales' module refusal (51049) while any archived approved
+                // revision is stored — Sinan's K3 says the previous approved snapshot is not deleted, so a rollback that
+                // would drop those rows is refused. Reviewed rather than inventoried: the THROW precedes both DropTables,
+                // an empty DraftRevisions rolls back freely, and 51049 is used by no other module (counted across
+                // src/backend). Forward fix, the AddDraftApproval (51045) pattern.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20260920073846_AddDraftRevisions.cs"] =
+                    new("a0bbfdba188b3125f769e96ce6f4742399d3f3a9258990c8455a34d1e1dc1e1a",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // ACC-V0a: the Down's only raw SQL is Accounting's module refusal (51048, coordinator-assigned) while any
