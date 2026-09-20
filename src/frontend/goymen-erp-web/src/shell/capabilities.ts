@@ -271,7 +271,9 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   [CAPABILITY.accountingPeriodsPropose]: '',
   [CAPABILITY.accountingJournalsDetail]: '',
   [CAPABILITY.logisticsInstructionsList]: 'Yükleme Talimatları',
-  [CAPABILITY.logisticsInstructionsCreate]: 'Yeni Yükleme Talimatı',
-  // Nor this one: an instruction is opened from a list row, never from the sidebar.
+  // Neither of these two: the new-instruction screen is reached from the L-02 list's own primary
+  // link (one entry point per creation route, the Finance and Accounting precedent), and an
+  // instruction is opened from a list row — never from the sidebar.
+  [CAPABILITY.logisticsInstructionsCreate]: '',
   [CAPABILITY.logisticsInstructionsDetail]: '',
 }

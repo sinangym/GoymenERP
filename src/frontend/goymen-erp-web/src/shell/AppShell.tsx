@@ -71,8 +71,11 @@ const NAV_CAPABILITIES: readonly CapabilityId[] = [
    * Listed together with the routes that serve them (LOG-4b). Each renders only where the server's
    * snapshot carries the capability (staged until the l04 suite); the detail is reached from a row.
    */
+  // The L-03 creation screen is NOT here: the L-02 list carries its own primary link, and the rule
+  // is exactly one entry point per creation route (coordinator, 19 September 2026). Two links with
+  // the same accessible name to one route is what l04's strict-mode violation found, and a screen
+  // reader announces it twice.
   CAPABILITY.logisticsInstructionsList,
-  CAPABILITY.logisticsInstructionsCreate,
 ]
 
 export function AppShell() {

@@ -42,11 +42,16 @@ describe('shell ↔ Logistics lane capability ids', () => {
     expect(matchPath(CAPABILITY_ROUTE[CAPABILITY.logisticsInstructionsList], instructionDetailRoute(instructionId))).toBeNull()
   })
 
-  it('gives the list and the create screen the lane’s nav labels, and the detail none', () => {
+  it('gives the list the lane’s nav label, and neither the create screen nor the detail one', () => {
     for (const id of Object.values(LOGISTICS_CAPABILITY)) {
       const shellId = (Object.values(CAPABILITY) as string[]).find((value) => value === id)!
       expect(CAPABILITY_NAV_LABEL[shellId as keyof typeof CAPABILITY_NAV_LABEL]).toBe(LOGISTICS_NAV_LABEL[id])
     }
+    // One entry point per creation route (coordinator, 19 September 2026): the L-02 list carries its
+    // own primary link to L-03, so the sidebar must not carry a second one with the same accessible
+    // name — that duplication is what l04's strict-mode violation found, and a screen reader reads
+    // both. The detail has no label either; an instruction is opened from a row.
+    expect(CAPABILITY_NAV_LABEL[CAPABILITY.logisticsInstructionsCreate]).toBe('')
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.logisticsInstructionsDetail]).toBe('')
   })
 })
