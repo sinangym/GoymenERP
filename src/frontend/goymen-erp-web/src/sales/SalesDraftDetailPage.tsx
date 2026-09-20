@@ -599,12 +599,12 @@ function LineView({ line }: { readonly line: DraftLine }) {
         <div>
           <dt>{T.price}</dt>
           <dd data-testid={`sales-line-${line.lineNo}-price`}>
-            {line.unitPrice === null ? T.notPriced : `${line.unitPrice} / ${line.priceUnitId}`}
+            {line.priceDisclosure === 'Withheld' ? T.priceWithheld : line.unitPrice === null ? T.notPriced : `${line.unitPrice} / ${line.priceUnitId}`}
           </dd>
         </div>
         <div>
           <dt>{T.discount}</dt>
-          <dd>{orUnknown(line.discountPercent)}</dd>
+          <dd data-testid={`sales-line-${line.lineNo}-discount`}>{line.priceDisclosure === 'Withheld' ? T.priceWithheld : orUnknown(line.discountPercent)}</dd>
         </div>
         <div>
           <dt>{T.note}</dt>

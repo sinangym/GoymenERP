@@ -86,7 +86,7 @@ public sealed class SalesDraftService(
         var replay = await FindReplayAsync(scope, envelope, requestHash, cancellationToken);
         if (replay is not null)
         {
-            return Replayed(replay);
+            return await ReplayedAsync(scope, replay, cancellationToken);
         }
 
         // 4. The owners, each answered for this company and business date. A stale product version
@@ -153,7 +153,7 @@ public sealed class SalesDraftService(
                 throw Store(exception);
             }
 
-            return Replayed(won);
+            return await ReplayedAsync(scope, won, cancellationToken);
         }
         catch (SalesDraftStoreException exception)
         {
@@ -165,7 +165,7 @@ public sealed class SalesDraftService(
         // can still prevent the write); a fence after the commit could only hide a stored draft behind
         // a 403 — the caller would drop its key and create a second draft (S03, ORG #321 P3-1). The
         // next request of this key meets the fence again before the replay is read (ADR-011 §5).
-        return Response(stored.Draft, stored.Outcome == SalesDraftWriteOutcome.Replayed, stored.OriginalCorrelationId);
+        return Response(stored.Draft, stored.Outcome == SalesDraftWriteOutcome.Replayed, stored.OriginalCorrelationId, await DiscloseAsync(scope, cancellationToken));
     }
 
     /// <summary>
@@ -190,8 +190,12 @@ public sealed class SalesDraftService(
         }
     }
 
-    /// <summary>ADR-011 §4 / §7: what the key answered before — a stored draft as the 201 replay, a recorded refusal as the same refusal.</summary>
-    private static SalesOrderDraftResponse Replayed(SalesDraftReplay replay)
+    /// <summary>
+    /// ADR-011 §4 / §7: what the key answered before — a stored draft as the 201 replay, a recorded refusal as the same
+    /// refusal. K3 P2: a replayed draft is disclosed under TODAY's price read, not the original answer's — the stored
+    /// result is the same, what this caller may see of it is measured now.
+    /// </summary>
+    private async Task<SalesOrderDraftResponse> ReplayedAsync(Scope scope, SalesDraftReplay replay, CancellationToken cancellationToken)
     {
         if (replay.Refusal is { } refusal)
         {
@@ -199,7 +203,7 @@ public sealed class SalesDraftService(
                 originalCorrelationId: replay.OriginalCorrelationId);
         }
 
-        return Response(replay.Draft!, isReplay: true, replay.OriginalCorrelationId);
+        return Response(replay.Draft!, isReplay: true, replay.OriginalCorrelationId, await DiscloseAsync(scope, cancellationToken));
     }
 
     /// <summary>Raised inside the owner reads when another caller of the same key stored a draft first; carries that draft's replay.</summary>
@@ -229,7 +233,7 @@ public sealed class SalesDraftService(
         }
 
         // Another company's draft is null under the tenant filter: 404, never 403 (#257).
-        return draft is null ? throw new SalesDraftServiceException(404, "not_found") : Detail(draft);
+        return draft is null ? throw new SalesDraftServiceException(404, "not_found") : Detail(draft, await DiscloseAsync(scope, cancellationToken));
     }
 
     /// <summary>K3 Head B: the archived approved revisions of a draft, oldest first, under the draft read; another company's draft is 404.</summary>
@@ -258,7 +262,8 @@ public sealed class SalesDraftService(
             throw new SalesDraftServiceException(404, "not_found");
         }
 
-        return new SalesOrderDraftRevisionsResponse([.. draft.ArchivedRevisions.Select(Revision)]);
+        var disclosure = await DiscloseAsync(scope, cancellationToken);
+        return new SalesOrderDraftRevisionsResponse([.. draft.ArchivedRevisions.Select(archived => Revision(archived, disclosure))]);
     }
 
     public async Task<SalesOrderDraftListResponse> GetDraftListAsync(SalesOrderDraftListQuery query,
@@ -361,7 +366,7 @@ public sealed class SalesDraftService(
         var replay = await FindReplayAsync(scope, permission, envelope, requestHash, commandName, cancellationToken);
         if (replay is not null)
         {
-            return Replayed(replay);
+            return await ReplayedAsync(scope, replay, cancellationToken);
         }
 
         if (draftId == Guid.Empty)
@@ -384,12 +389,12 @@ public sealed class SalesDraftService(
         }
         catch (SalesVersionConflictException exception)
         {
-            throw await TerminalAsync(envelope, requestHash, new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.VersionConflict,
+            throw await TerminalAsync(scope, envelope, requestHash, new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.VersionConflict,
                 [new("expectedVersion", exception.Code)]), cancellationToken, commandName);
         }
         catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.StateConflict)
         {
-            throw await TerminalAsync(envelope, requestHash, new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.StateConflict,
+            throw await TerminalAsync(scope, envelope, requestHash, new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.StateConflict,
                 [new("approvalState", exception.Code)]), cancellationToken, commandName);
         }
         catch (SalesRuleException exception)
@@ -408,7 +413,7 @@ public sealed class SalesDraftService(
                 throw Store(exception);
             }
 
-            return Replayed(won);
+            return await ReplayedAsync(scope, won, cancellationToken);
         }
         catch (SalesDraftStoreException exception)
         {
@@ -420,7 +425,7 @@ public sealed class SalesDraftService(
             throw new SalesDraftServiceException(404, "not_found");
         }
 
-        return Response(result.Draft, result.Outcome == SalesDraftWriteOutcome.Replayed, result.OriginalCorrelationId);
+        return Response(result.Draft, result.Outcome == SalesDraftWriteOutcome.Replayed, result.OriginalCorrelationId, await DiscloseAsync(scope, cancellationToken));
     }
 
     /// <summary>The field a revision refusal is answered on: the line's index in the request and the field its code is about, else the whole `lines` member.</summary>
@@ -461,7 +466,7 @@ public sealed class SalesDraftService(
         var replay = await FindReplayAsync(scope, permission, envelope, requestHash, commandName, cancellationToken);
         if (replay is not null)
         {
-            return Replayed(replay);
+            return await ReplayedAsync(scope, replay, cancellationToken);
         }
 
         if (draftId == Guid.Empty)
@@ -480,13 +485,13 @@ public sealed class SalesDraftService(
         catch (SalesVersionConflictException exception)
         {
             // §7: the caller's expected version is stale — recorded under the key, replayed on retry.
-            throw await TerminalAsync(envelope, requestHash, new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.VersionConflict,
+            throw await TerminalAsync(scope, envelope, requestHash, new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.VersionConflict,
                 [new("expectedVersion", exception.Code)]), cancellationToken, commandName);
         }
         catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.StateConflict)
         {
             // §7: the transition is not allowed from the draft's state — terminal for this key too.
-            throw await TerminalAsync(envelope, requestHash, new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.StateConflict,
+            throw await TerminalAsync(scope, envelope, requestHash, new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.StateConflict,
                 [new("approvalState", exception.Code)]), cancellationToken, commandName);
         }
         catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.ApprovalReasonTooLong)
@@ -511,7 +516,7 @@ public sealed class SalesDraftService(
                 throw Store(exception);
             }
 
-            return Replayed(won);
+            return await ReplayedAsync(scope, won, cancellationToken);
         }
         catch (SalesDraftStoreException exception)
         {
@@ -523,7 +528,7 @@ public sealed class SalesDraftService(
             throw new SalesDraftServiceException(404, "not_found");
         }
 
-        return Response(result.Draft, result.Outcome == SalesDraftWriteOutcome.Replayed, result.OriginalCorrelationId);
+        return Response(result.Draft, result.Outcome == SalesDraftWriteOutcome.Replayed, result.OriginalCorrelationId, await DiscloseAsync(scope, cancellationToken));
     }
 
     // ---- authority ------------------------------------------------------------------------------
@@ -766,7 +771,7 @@ public sealed class SalesDraftService(
 
         if (stale.Count > 0)
         {
-            throw await TerminalAsync(envelope, requestHash,
+            throw await TerminalAsync(scope, envelope, requestHash,
                 new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.VersionConflict, stale), cancellationToken);
         }
 
@@ -857,7 +862,7 @@ public sealed class SalesDraftService(
             {
                 401 => new SalesDraftServiceException(401, "unauthenticated"),
                 403 => new SalesDraftServiceException(403, "forbidden"),
-                409 => await TerminalAsync(envelope, requestHash,
+                409 => await TerminalAsync(scope, envelope, requestHash,
                     new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.VersionConflict, [new(productField, exception.Code)]),
                     cancellationToken),
                 400 or 404 or 422 => new SalesDraftServiceException(422, "unsupported_product", [new(productField, exception.Code)]),
@@ -876,7 +881,7 @@ public sealed class SalesDraftService(
             // A stale product version is the terminal refusal of ADR-011 §7: recorded and replayed under this key.
             if (errors.Any(error => error.Code == ProductApiV1.VersionConflict))
             {
-                throw await TerminalAsync(envelope, requestHash,
+                throw await TerminalAsync(scope, envelope, requestHash,
                     new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.VersionConflict, errors), cancellationToken);
             }
 
@@ -1023,7 +1028,7 @@ public sealed class SalesDraftService(
     /// refusal as a replay, its draft through <see cref="RaceWon"/>; a key left empty by the race
     /// answers this refusal unrecorded (the retry records or replays).
     /// </summary>
-    private async Task<SalesDraftServiceException> TerminalAsync(SalesDraftWriteEnvelope envelope, string requestHash,
+    private async Task<SalesDraftServiceException> TerminalAsync(Scope scope, SalesDraftWriteEnvelope envelope, string requestHash,
         SalesDraftTerminalRefusal refusal, CancellationToken cancellationToken, string commandName = SalesDraftCommands.CreateV1)
     {
         try
@@ -1050,7 +1055,7 @@ public sealed class SalesDraftService(
                         originalCorrelationId: won.OriginalCorrelationId);
                 }
 
-                throw new RaceWon(Response(won.Draft!, isReplay: true, won.OriginalCorrelationId));
+                throw new RaceWon(Response(won.Draft!, isReplay: true, won.OriginalCorrelationId, await DiscloseAsync(scope, cancellationToken)));
             }
         }
 
@@ -1077,8 +1082,29 @@ public sealed class SalesDraftService(
 
     // ---- mapping --------------------------------------------------------------------------------
 
-    private static SalesOrderDraftResponse Response(SalesOrderDraft draft, bool isReplay, string originalCorrelationId) =>
-        new(Detail(draft), isReplay, originalCorrelationId);
+    private static SalesOrderDraftResponse Response(SalesOrderDraft draft, bool isReplay, string originalCorrelationId, SalesPriceDisclosure disclosure) =>
+        new(Detail(draft, disclosure), isReplay, originalCorrelationId);
+
+    /// <summary>
+    /// K3 P2: the price READ name is ASKED, never required — the operation's own permission was required before
+    /// this. Unregistered → 503 (a setup gap, reported, never a grant — Head A's rule); granted company-wide for
+    /// this actor in this company → the texts are disclosed; anything else → <see cref="SalesPriceDisclosure.Withheld"/>.
+    /// Asked at the moment of answering, after every other fence, so the disclosure is the authority's freshest word.
+    /// The WRITE name does not confer it (ASSUMPTION-SALESP-6, reversible by a grant, not by code).
+    /// </summary>
+    private async Task<SalesPriceDisclosure> DiscloseAsync(Scope scope, CancellationToken cancellationToken)
+    {
+        var permission = bindings.PriceReadPermission;
+        if (string.IsNullOrWhiteSpace(permission) || !ErpPermissions.IsKnown(permission))
+        {
+            throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.PermissionUnregistered);
+        }
+
+        var read = await authority.RevalidatePermissionScopeAsync(permission, scope.CompanyId, cancellationToken);
+        return read.IsGranted && read.IsCompanyWide && Matches(scope.CompanyId, scope.ActorId)
+            ? SalesPriceDisclosure.Visible
+            : SalesPriceDisclosure.Withheld;
+    }
 
     private static SalesOrderDraftSummaryView Summary(SalesOrderDraft draft) =>
         new(draft.Id, draft.CompanyId, draft.DocumentNo, draft.Kind.ToString(), draft.State.ToString(),
@@ -1086,27 +1112,32 @@ public sealed class SalesDraftService(
             draft.Header.CompanyAccountId, draft.Header.CurrencyId, draft.Header.BusinessDate, draft.CreatedAtUtc, draft.Lines.Count,
             draft.ApprovalState.ToString());
 
-    private static SalesOrderDraftDetailView Detail(SalesOrderDraft draft) =>
+    /// <summary>Withheld ⇒ the three commercial fields are null BECAUSE of the marker; Visible ⇒ the texts as stored (null = unpriced).</summary>
+    private static SalesOrderDraftDetailView Detail(SalesOrderDraft draft, SalesPriceDisclosure disclosure) =>
         new(Summary(draft), draft.Header.RequestedDeliveryDate, draft.Header.Note,
             [.. draft.Lines.Select(line => new SalesOrderDraftLineDetail(line.Id, line.LineNo, line.Product.ProductId,
                 line.Product.ProductVersion, line.Product.Code, line.Product.Name, line.OrderUnit.UnitId, line.QuantityText,
-                line.Commercial.UnitPrice, line.Commercial.PriceUnitId, line.RequestedDeliveryDate, line.Note,
+                Disclosed(disclosure, line.Commercial.UnitPrice), Disclosed(disclosure, line.Commercial.PriceUnitId), line.RequestedDeliveryDate, line.Note,
                 line.RequestedDeliverySlices.Count == 0
                     ? null
                     : [.. line.RequestedDeliverySlices.Select(slice => new SalesDraftDeliverySliceV1(slice.SliceId, line.OrderUnit.UnitId,
                         slice.QuantityText, slice.RequestedDeliveryDate))],
-                line.Commercial.DiscountPercent))],
+                Disclosed(disclosure, line.Commercial.DiscountPercent), disclosure))],
             Reference(draft.Header.DeliveryAddress), Reference(draft.Header.Contact), Reference(draft.Header.Responsible),
             Reference(draft.Header.PaymentTerms), Reference(draft.Header.SourceStrategy), Reference(draft.Header.Package),
             new SalesDraftApprovalV1(draft.Approval.SubmittedBy, draft.Approval.SubmittedAtUtc, draft.Approval.DecidedBy,
                 draft.Approval.DecidedAtUtc, draft.Approval.RejectionReason));
 
-    private static SalesDraftRevisionV1 Revision(ApprovedRevisionSnapshot archived) =>
+    private static SalesDraftRevisionV1 Revision(ApprovedRevisionSnapshot archived, SalesPriceDisclosure disclosure) =>
         new(SalesDraftApiV1.RevisionText(archived.Revision), archived.Approval.SubmittedBy, archived.Approval.SubmittedAtUtc,
             archived.Approval.DecidedBy, archived.Approval.DecidedAtUtc, archived.ArchivedAtUtc, archived.ArchivedBy,
             archived.MoneyProfileId, archived.MoneyProfileVersion, archived.MoneyScale,
             [.. archived.Lines.Select(line => new SalesDraftRevisionLineV1(line.LineId, line.LineNo, line.ProductId, line.ProductVersion,
-                line.OrderUnitId, line.QuantityText, line.Commercial.UnitPrice, line.Commercial.PriceUnitId, line.Commercial.DiscountPercent))]);
+                line.OrderUnitId, line.QuantityText, Disclosed(disclosure, line.Commercial.UnitPrice), Disclosed(disclosure, line.Commercial.PriceUnitId),
+                Disclosed(disclosure, line.Commercial.DiscountPercent), disclosure))]);
+
+    private static T? Disclosed<T>(SalesPriceDisclosure disclosure, T? value) =>
+        disclosure == SalesPriceDisclosure.Visible ? value : default;
 
     private static SalesDraftOwnerReferenceV1? Reference(OwnerReference? reference) =>
         reference is null ? null : new SalesDraftOwnerReferenceV1(reference.Id, reference.ExpectedVersion);

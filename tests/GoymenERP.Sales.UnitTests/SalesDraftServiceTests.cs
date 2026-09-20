@@ -42,6 +42,8 @@ public sealed class SalesDraftServiceTests
     private const string ReadPermission = ErpPermissions.CounterpartyPartiesRead;
     // K3: the separate price-write name, bound here to a central name the fence knows (the same stand-in pattern as the others).
     private const string PricePermission = ErpPermissions.CounterpartyAccountsCreate;
+    /// <summary>K3 P2: the separate price READ name — a known stand-in, distinct from every other binding.</summary>
+    private const string PriceReadPermission = ErpPermissions.CounterpartyAccountsStatusUpdate;
 
     [Fact]
     public async Task A_valid_request_is_stored_once_and_answered_as_the_wire_detail()
@@ -183,8 +185,8 @@ public sealed class SalesDraftServiceTests
             case "not-granted": world.Authority.Granted = false; break;
             case "site-scoped": world.Authority.CompanyWide = false; break;
             // A name outside the central catalogue (the Sales names themselves are registered since #321's central commit).
-            case "unregistered-name": world.Bindings = new SalesDraftServiceBindings("sales.synthetic.unregistered", ReadPermission, ApprovePermission); break;
-            default: world.Bindings = new SalesDraftServiceBindings(null, ReadPermission, ApprovePermission); break;
+            case "unregistered-name": world.Bindings = new SalesDraftServiceBindings("sales.synthetic.unregistered", ReadPermission, ApprovePermission, PriceReadPermission: PriceReadPermission); break;
+            default: world.Bindings = new SalesDraftServiceBindings(null, ReadPermission, ApprovePermission, PriceReadPermission: PriceReadPermission); break;
         }
 
         var error = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CreateDraftAsync(Request(), Metadata("k-1")));
@@ -265,8 +267,12 @@ public sealed class SalesDraftServiceTests
         Assert.Equal(("12.50", KgUnit, "5"), (line.UnitPrice, line.PriceUnitId, line.DiscountPercent));
         // The price fence: asked right after the create permission, and again after every owner read, right before the save.
         Assert.Equal(PricePermission, world.Authority.Measured[1]);
-        Assert.Equal(PricePermission, world.Authority.LastPermission);
         Assert.True(world.Authority.Measured.Count(name => name == PricePermission) == 2, string.Join(",", world.Authority.Measured));
+        // K3 P2: the price READ is asked LAST — after the save, at the moment of answering — so the response's
+        // disclosure is the authority's freshest word; the write fence's second ask is the one before it.
+        Assert.Equal(PriceReadPermission, world.Authority.LastPermission);
+        Assert.Equal(PricePermission, world.Authority.Measured[^2]);
+        Assert.Equal(SalesPriceDisclosure.Visible, line.PriceDisclosure);
         // The envelope of the create stays the create's (the price name is a fence, not the command's permission).
         Assert.Equal(CreatePermission, Assert.Single(world.Store.Envelopes).PermissionCode);
     }
@@ -342,6 +348,87 @@ public sealed class SalesDraftServiceTests
             Revision("5", new SalesDraftLineCommercialV1(lineId, "13.00", KgUnit, "5")), Metadata("k-r2")));
         Assert.Equal((422, "validation_failed", "lines", SalesRuleCodes.RevisionNoChange), (same.Status, same.Code, Assert.Single(same.Errors).Field, Assert.Single(same.Errors).Code));
         Assert.Single(world.Store.Archived);
+    }
+
+    /// <summary>
+    /// K3 P2 (Sinan 5748258299): the price READ is its own narrow name. A reader holding the draft read but not it gets
+    /// the WITHHELD marker with the three commercial members null — never the texts, never a bare null that could read
+    /// as "unpriced" — on the detail and on the archived revisions; the same reader with the name gets the texts. The
+    /// name is ASKED, not required: refusing it never turns a read into a 403.
+    /// </summary>
+    [Fact]
+    public async Task A_reader_without_the_price_read_gets_the_withheld_marker_on_the_detail_and_the_history_and_with_it_the_texts()
+    {
+        var world = new World();
+        var created = (await world.Service().CreateDraftAsync(Priced(), Metadata("k-1"))).Detail;
+        var lineId = created.Lines[0].LineId;
+        await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("k-submit"));
+        await world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("k-approve"));
+        await world.Service().ReviseCommercialAsync(created.Draft.Id, Revision("4", new SalesDraftLineCommercialV1(lineId, "13.00", KgUnit, "5")), Metadata("k-r1"));
+
+        world.Authority.Denied.Add(PriceReadPermission);
+        world.Authority.Measured.Clear();
+        var withheld = await world.Service().GetDraftDetailAsync(created.Draft.Id);
+        var line = Assert.Single(withheld.Lines);
+        Assert.Equal((SalesPriceDisclosure.Withheld, null, null, null), (line.PriceDisclosure, line.UnitPrice, line.PriceUnitId, line.DiscountPercent));
+        // Not a 403, and the other facts of the line are untouched by the marker.
+        Assert.Equal(("1.25", "Rev.1"), (line.Quantity, withheld.Draft.Revision));
+        var history = await world.Service().GetDraftRevisionsAsync(created.Draft.Id);
+        var archivedLine = Assert.Single(Assert.Single(history.Items).Lines);
+        Assert.Equal((SalesPriceDisclosure.Withheld, null, null, null), (archivedLine.PriceDisclosure, archivedLine.UnitPrice, archivedLine.PriceUnitId, archivedLine.DiscountPercent));
+        // The ask is pinned by its property: the read name was asked (each read once, after the draft read), for this company.
+        Assert.Equal([ReadPermission, ReadPermission, PriceReadPermission, ReadPermission, ReadPermission, PriceReadPermission], world.Authority.Measured);
+
+        world.Authority.Denied.Remove(PriceReadPermission);
+        var visible = await world.Service().GetDraftDetailAsync(created.Draft.Id);
+        Assert.Equal((SalesPriceDisclosure.Visible, "13.00", KgUnit, "5"), (visible.Lines[0].PriceDisclosure, visible.Lines[0].UnitPrice, visible.Lines[0].PriceUnitId, visible.Lines[0].DiscountPercent));
+        var visibleHistory = await world.Service().GetDraftRevisionsAsync(created.Draft.Id);
+        Assert.Equal((SalesPriceDisclosure.Visible, "12.50"), (visibleHistory.Items[0].Lines[0].PriceDisclosure, visibleHistory.Items[0].Lines[0].UnitPrice));
+    }
+
+    /// <summary>
+    /// ASSUMPTION-SALESP-6 (reversible by a GRANT, never by code): the WRITE name does not confer the READ. A pricer
+    /// holding only the write name stores the exact texts and gets the WITHHELD marker back on its own response; the
+    /// texts are in the store, and a holder of the read name sees them. K3 names two separate names and says nothing
+    /// about one implying the other; making the write imply the read would be choosing a policy here.
+    /// </summary>
+    [Fact]
+    public async Task A_pricer_without_the_price_read_stores_the_texts_and_gets_the_withheld_marker_on_its_own_response()
+    {
+        var world = new World();
+        world.Authority.Denied.Add(PriceReadPermission);
+        // Built ONCE: Priced() mints a fresh line id per call, and a same-key resend with another payload is the 409 (ADR-011 §3).
+        var priced = Priced();
+
+        var response = await world.Service().CreateDraftAsync(priced, Metadata("k-p6"));
+
+        var line = Assert.Single(response.Detail.Lines);
+        Assert.Equal((SalesPriceDisclosure.Withheld, null, null, null), (line.PriceDisclosure, line.UnitPrice, line.PriceUnitId, line.DiscountPercent));
+        Assert.Equal(CreatePermission, Assert.Single(world.Store.Envelopes).PermissionCode);
+        // The store holds what the pricer wrote: the marker withheld the answer, not the write.
+        world.Authority.Denied.Remove(PriceReadPermission);
+        var detail = await world.Service().GetDraftDetailAsync(response.Detail.Draft.Id);
+        Assert.Equal(("12.50", KgUnit, "5"), (detail.Lines[0].UnitPrice, detail.Lines[0].PriceUnitId, detail.Lines[0].DiscountPercent));
+
+        // A REPLAY is disclosed for the REPLAYING caller, not carried over from the original answer: the same key resent
+        // by a holder of the read name shows the texts the first response withheld; resent again without it, withheld.
+        var replayVisible = await world.Service().CreateDraftAsync(priced, Metadata("k-p6"));
+        Assert.Equal((true, SalesPriceDisclosure.Visible, "12.50"), (replayVisible.IsReplay, replayVisible.Detail.Lines[0].PriceDisclosure, replayVisible.Detail.Lines[0].UnitPrice));
+        world.Authority.Denied.Add(PriceReadPermission);
+        var replayWithheld = await world.Service().CreateDraftAsync(priced, Metadata("k-p6"));
+        Assert.Equal((true, SalesPriceDisclosure.Withheld, null), (replayWithheld.IsReplay, replayWithheld.Detail.Lines[0].PriceDisclosure, replayWithheld.Detail.Lines[0].UnitPrice));
+    }
+
+    /// <summary>A price READ name the central catalogue does not know is a setup gap on every answer that would disclose: 503, never a silent "withheld".</summary>
+    [Fact]
+    public async Task An_unregistered_price_read_name_is_503_on_the_detail_never_a_silent_withheld()
+    {
+        var world = new World();
+        var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-1"))).Detail;
+        world.Bindings = world.Bindings with { PriceReadPermission = "sales.synthetic.unregistered" };
+
+        var gap = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().GetDraftDetailAsync(created.Draft.Id));
+        Assert.Equal((503, SalesDraftProblemCodesV1.PermissionUnregistered), (gap.Status, gap.Code));
     }
 
     [Fact]
@@ -598,7 +685,10 @@ public sealed class SalesDraftServiceTests
         var detail = await world.Service().GetDraftDetailAsync(created.Detail.Draft.Id);
         Assert.Equal(created.Detail.Draft, detail.Draft);
         Assert.Equal(created.Detail.Lines.Select(line => line.LineId), detail.Lines.Select(line => line.LineId));
-        Assert.Equal(ReadPermission, world.Authority.LastPermission);
+        // The read's own fence is re-measured AFTER the read (#276); K3 P2 then asks the price READ last, fresh, to decide the
+        // disclosure — so the read name is the second-to-last measurement and the disclosure ask is the last.
+        Assert.Equal(ReadPermission, world.Authority.Measured[^2]);
+        Assert.Equal(PriceReadPermission, world.Authority.LastPermission);
 
         var missing = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().GetDraftDetailAsync(Guid.NewGuid()));
         Assert.Equal(404, missing.Status);
@@ -640,7 +730,9 @@ public sealed class SalesDraftServiceTests
         Assert.Null(approved.Detail.Approval.RejectionReason);
         Assert.Equal((SalesDraftCommands.ApproveV1, ApprovePermission, "sales.order-draft.approved.v1", "Approve"),
             (world.Store.Transitions[1].Command, world.Store.Transitions[1].Envelope.PermissionCode, world.Store.Transitions[1].Audit.EventType, world.Store.Transitions[1].Audit.Operation));
-        Assert.Equal(ApprovePermission, world.Authority.LastPermission);
+        // The approval's fence is re-measured after the transition; K3 P2 then asks the price READ last to disclose the response.
+        Assert.Equal(ApprovePermission, world.Authority.Measured[^2]);
+        Assert.Equal(PriceReadPermission, world.Authority.LastPermission);
 
         // The list shows the axis and narrows to it; the detail carries the facts.
         var pending = await world.Service().GetDraftListAsync(new SalesOrderDraftListQuery(ApprovalState: "PendingApproval"));
@@ -734,7 +826,7 @@ public sealed class SalesDraftServiceTests
         {
             case "not-granted": world.Authority.Granted = false; break;
             case "site-scoped": world.Authority.CompanyWide = false; break;
-            case "unbound-approve": world.Bindings = new SalesDraftServiceBindings(CreatePermission, ReadPermission, null); break;
+            case "unbound-approve": world.Bindings = new SalesDraftServiceBindings(CreatePermission, ReadPermission, null, PriceReadPermission: PriceReadPermission); break;
             default: world.User.Authenticated = false; break;
         }
 
@@ -828,7 +920,7 @@ public sealed class SalesDraftServiceTests
         public FakeStore Store { get; init; } = new();
         public bool NoProducts { get; set; }
         public bool NoContactInformation { get; set; }
-        public SalesDraftServiceBindings Bindings { get; set; } = new(CreatePermission, ReadPermission, ApprovePermission, PricePermission);
+        public SalesDraftServiceBindings Bindings { get; set; } = new(CreatePermission, ReadPermission, ApprovePermission, PricePermission, PriceReadPermission);
 
         public SalesDraftService Service()
         {

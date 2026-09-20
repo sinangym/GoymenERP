@@ -12,7 +12,7 @@ namespace GoymenERP.Modules.Sales.Application.Contracts;
 /// </summary>
 public static class SalesPermissionManifestV1
 {
-    public const int Version = 3;
+    public const int Version = 4;
     public const string Subject = "Sales";
 
     /// <summary>POST /api/v1/sales/drafts, the reference reads of the draft form, and POST …/{id}/submission (SALES-A1: whoever may create a draft may send it for approval).</summary>
@@ -37,6 +37,15 @@ public static class SalesPermissionManifestV1
     /// </summary>
     public const string OrdersPriceWrite = "sales.orders.price.write";
 
+    /// <summary>
+    /// K3 P2 (Sinan 5748258299): READING a line's unit price, price unit and discount on the draft detail, on every
+    /// command response and on the archived revisions — "Sipariş onayının fiyat/tutar bağlamı ilgili dar fiyat
+    /// okumasıyla sağlanır; bu maliyet/marj/banka sınırsız okuması değildir." A SEPARATE, NARROW name: the draft
+    /// read does NOT confer it (a holder of the draft read alone gets the WITHHELD marker, never the texts), and it
+    /// confers nothing adjacent — no cost, margin, bank or Finance read. Company-wide; the grant is a human gate.
+    /// </summary>
+    public const string OrdersPriceRead = "sales.orders.price.read";
+
     public static IReadOnlySet<string> Names { get; } =
-        new[] { DraftsCreate, DraftsRead, OrdersApprove, OrdersPriceWrite }.ToFrozenSet(StringComparer.Ordinal);
+        new[] { DraftsCreate, DraftsRead, OrdersApprove, OrdersPriceWrite, OrdersPriceRead }.ToFrozenSet(StringComparer.Ordinal);
 }

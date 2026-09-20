@@ -262,6 +262,8 @@ export const ORDER_DETAIL_TEXT = {
   planEmpty: 'Planlanmış dilim yok',
   unknown: 'Bilinmiyor',
   notPriced: 'Fiyatlandırılmadı',
+  /** K3 P2: the server withheld the price from this caller — not "no price", not "unknown". */
+  priceWithheld: 'Fiyat bu yetkiyle görüntülenmez',
   referenceNote:
     'Cari ve birim adları bu sözleşmede yok; kimlikler gösteriliyor. Taslak onay, stok veya finans etkisi oluşturmaz.',
   /** SALES-A2a: the delivery block — the owner's texts for the stored references, read afresh; never a guessed name. */
