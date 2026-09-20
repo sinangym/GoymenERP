@@ -450,6 +450,14 @@ public sealed class SalesOrderDraftTests
         Assert.Equal([0, 1], draft.ArchivedRevisions.Select(item => item.Revision));
         Assert.Throws<InvalidOperationException>(() => draft.RestoreArchivedRevision(
             Snapshot(2) with { Revision = 2, Approval = facts with { DecidedBy = null } }));
+
+        // K3 Head B: the archived history raises the version floor the approval restore checks — three steps per archived
+        // revision (its submission, its approval, the write that archived it) on top of the lines' version (1 + 2 lines = 3):
+        // a Preparing draft with two archived revisions below 9 is refused; at 9 it restores. The real-SQL revision case is
+        // what found this (a revised draft re-read by the store failed the pre-K3 exact check).
+        Assert.Throws<InvalidOperationException>(() => draft.RestoreApproval(InternalApprovalState.Preparing, ApprovalFacts.None, 8, T0));
+        draft.RestoreApproval(InternalApprovalState.Preparing, ApprovalFacts.None, 9, T0);
+        Assert.Equal((9L, InternalApprovalState.Preparing, 2), (draft.Version, draft.ApprovalState, draft.Revision));
     }
 
     [Fact]

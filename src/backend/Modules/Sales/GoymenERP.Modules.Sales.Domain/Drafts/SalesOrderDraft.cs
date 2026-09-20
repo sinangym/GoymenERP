@@ -586,18 +586,26 @@ public sealed class SalesOrderDraft
             throw new InvalidOperationException("Kayıtlı onay olguları kayıtlı onay durumuyla uyuşmuyor.");
         }
 
-        // A draft that never left Preparing has had no transition: its stored version must be EXACTLY the
-        // one the lines account for (a version raised outside the application does not restore silently,
-        // ÜRÜN #338 P3-1). A submitted draft has had at least one transition, a decided one at least two.
+        // The lines' version is a FLOOR the transitions raise: a submitted draft has had at least one, a decided
+        // one at least two — and (K3 Head B) every archived approved revision carried its own submission, its
+        // approval and the commercial write that archived it, three steps each, restored just before this call.
+        // ÜRÜN #338 P3-1 pinned the Preparing case as EXACT ("a version raised outside the application does not
+        // restore silently"), which held while nothing but the approval axis moved a Preparing draft. K3 made a
+        // commercial write on a Preparing or Rejected draft a legitimate step (ReviseCommercial → Touch) that no
+        // stored fact counts, so a Preparing draft may sit above its lines' version by those writes. WHAT IS LOST:
+        // the exact check can no longer distinguish a version raised outside the application from a legitimate
+        // commercial write on a Preparing draft — K3 made the latter a movement with no stored counter. The check
+        // is therefore the same floor as the other states, declared here, in the flipped unit row and in the PR.
+        // Exactness would need a persisted commercial-write counter on the header (schema, migration, pins, its
+        // own real-SQL evidence) — a later slice with a named owner, not this one.
         var minimumTransitions = state switch
         {
             InternalApprovalState.Preparing => 0,
             InternalApprovalState.PendingApproval => 1,
             _ => 2,
         };
-        var consistentVersion = state == InternalApprovalState.Preparing
-            ? storedVersion == Version
-            : storedVersion >= Version + minimumTransitions;
+        var archivedTransitions = checked(3L * archivedRevisions.Count);
+        var consistentVersion = storedVersion >= checked(Version + minimumTransitions + archivedTransitions);
         if (!consistentVersion)
         {
             throw new InvalidOperationException("Kayıtlı sürüm, satırların ve onay geçişlerinin hesabıyla uyuşmuyor.");
