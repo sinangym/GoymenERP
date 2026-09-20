@@ -35,10 +35,9 @@ internal static class C01E2eShellCapabilityActivation
     // published on the normal host (MFG-UI-F), so its screen needs no disposable envelope any more.
     // FIN-UI-1b's fin-staged profile ("finance-bank-accounts-and-drafts", #332) is retired: Finance is
     // published on the normal host (FIN-UI-1c), so its screens need no disposable envelope any more.
-    // ACC-V0b (acc-staged): Accounting's seven declarations opened inside this envelope only, beside the
-    // list-only C-01 Counterparty set, before any normal-runtime availability (the FIN-UI-1b / MFG-UI D4
-    // precedent; retired again at the flip after the acc01 suite).
-    internal const string AccountingPeriodsAndJournalsProfile = "accounting-periods-and-journals";
+    // ACC-V0b's acc-staged profile ("accounting-periods-and-journals") is retired: Accounting is
+    // published on the normal host (ACC-V0c), so its screens need no disposable envelope any more —
+    // the retirement its own comment promised at the flip after the acc01 suite.
     // LOG-4b (log-staged): Logistics's three loading-instruction screens opened inside this envelope only, beside the
     // list-only C-01 Counterparty set, before any normal-runtime availability (the FIN-UI-1b / MFG-UI D4 precedent;
     // retired again at the flip after the l04 suite).
@@ -67,10 +66,6 @@ internal static class C01E2eShellCapabilityActivation
             case CariListDetailProfile:
                 ReplaceExactCounterpartyProvider<C01E2eCariListDetailShellCapabilityProvider>(services);
                 return ShellCapabilityRegistryAuthorities.C01DisposableCariListDetailV1;
-            case AccountingPeriodsAndJournalsProfile:
-                ReplaceExactCounterpartyProvider<C01E2eShellCapabilityProvider>(services);
-                services.AddSingleton<IShellCapabilityProvider, C01E2eAccountingShellCapabilityProvider>();
-                return ShellCapabilityRegistryAuthorities.C01DisposableAccountingPeriodsAndJournalsV1;
             case LogisticsInstructionsProfile:
                 ReplaceExactCounterpartyProvider<C01E2eShellCapabilityProvider>(services);
                 services.AddSingleton<IShellCapabilityProvider, C01E2eLogisticsInstructionsShellCapabilityProvider>();
@@ -150,7 +145,7 @@ internal static class C01E2eShellCapabilityActivation
                 typeof(ManufacturingShellCapabilityProvider), typeof(LogisticsShellCapabilityProvider),
                 typeof(PurchasingShellCapabilityProvider), typeof(AccountingShellCapabilityProvider),
             },
-            ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV11ProductV10PublishedSalesV10PublishedFinanceV10PublishedManufacturingV10LogisticsV10PurchasingV10AndAccountingV10),
+            ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV11ProductV10PublishedSalesV10PublishedFinanceV10PublishedManufacturingV10LogisticsV10PurchasingV10AndPublishedAccountingV10),
     ];
 
     private static string NormalAuthority(IServiceCollection services)
@@ -308,22 +303,6 @@ internal sealed class C01E2eCariListDetailShellCapabilityProvider : IShellCapabi
 
     public IReadOnlyCollection<ShellCapabilityDeclaration> GetDeclarations() =>
         C01E2eStagedDeclarations.Open(_source, detail: true);
-}
-
-// acc-staged (ACC-V0b): Accounting's own declarations, only their availability opened; ids, routes, screens,
-// context, scope, permissions and the two controls' parents stay the owner's.
-internal sealed class C01E2eAccountingShellCapabilityProvider : IShellCapabilityProvider
-{
-    private readonly AccountingShellCapabilityProvider _source = new();
-
-    public string Owner => _source.Owner;
-
-    public string ContractVersion => _source.ContractVersion;
-
-    public IReadOnlyCollection<ShellCapabilityDeclaration> GetDeclarations() =>
-        Array.AsReadOnly(_source.GetDeclarations()
-            .Select(declaration => declaration with { ImplementationAvailable = true })
-            .ToArray());
 }
 
 // log-staged (LOG-4b): Logistics's own declarations, only their availability opened; ids, routes, context, scope and

@@ -54,3 +54,32 @@ Shell'in mount ettiği Accounting route kümesi `ACCOUNTING_ROUTE` ile birebir a
 ## Yapılmayanlar
 
 Fiş oluşturma / onay / ters kayıt yok (ACC-V1; NEEDS-BUSINESS 5740501573, 5740501655, OPEN-009). Hesap planı yok; eksik eşleme kuyrukta kalır.
+
+---
+
+# ACC-V0c — staged → normal flip (hazır delta, CARİ için)
+
+**Kimden:** FİNANS (Accounting sahibi). **Kime:** CARİ (merkezi yazar). **Emsal:** FIN-UI-1c, MFG-UI-F.
+
+ACC-V0b indi (#362) ve `acc01` o head'de **acc-staged** profilinde yeşil oldu (run 35479050164, 8 vaka, failure=0). Bu delta ekranları normal runtime'da açar. Ekran, metin, rota, izin ya da iş kuralı DEĞİŞMİYOR — yalnız availability.
+
+## Bu dalda olan (benim dosyalarım)
+
+- `AccountingShellCapabilityProvider`: **yedi bildirimden ALTISI** `ImplementationAvailable: true` — M-07 dönem listesi, M-07-NEW öneri ekranı, onay ve kapatma **kontrolleri**, M-04 fiş listesi, M-01 kuyruklar.
+- **`accounting.journals.detail` STAGED KALIYOR.** Gerekçe kanıt: `acc01` bu rotayı hiç açmadı — spec yalnız `/muhasebe/donemler`, `/muhasebe/donemler/yeni`, `/muhasebe/fisler`, `/muhasebe/kontrol` adreslerine gidiyor; seed hiçbir şey yazmadığı ve ACC-V1'den önce fiş üreten bir akış olmadığı için açılacak fiş yok. Kabulü olmayan ekranı yayımlamıyorum.
+- `JournalPages`: M-04 listesindeki satır bağlantısı artık `accounting.journals.detail` kabiliyetine bağlı. Detay yayımlanmamışken satır fişi **etiketli referansıyla** gösteriyor ve kapalı bir rotaya bağlantı vermiyor (shell onu nötr not-found bloğuna kapatırdı). Component testi iki durumu da sabitliyor.
+- Modülün kendi sağlayıcı testi: yayımlanan altı kimlik tek tek pinlendi, detayın kapalı olduğu ayrıca ölçülüyor.
+
+## Merkezi satırlar (CARİ)
+
+1. **Normal host authority sabiti yeniden ölçülür.** Girdiler: Counterparty 1.5 + Organization 1.0 + Product 1.0 + Sales 1.0 (yayımlı, approve kontrolüyle) + Finance 1.0 (yayımlı) + Manufacturing 1.0 (yayımlı, MFG-ORD'un dört bildirimi) + Logistics 1.0 (staged) + Purchasing 1.0 (staged) + **Accounting 1.0 (altı yayımlı + `accounting.journals.detail` staged)**. Accounting'in bildirim listesi, route/screen/precedence/context/scope ve izinleri bu dalda değişmedi; yalnız altı bildirimin availability'si `false` → `true` oldu. **Değeri bu dosyaya yazmıyorum** — kör türetme kuralı: değeri görmemiş bir şerit türetir, koordinatör karşılaştırır.
+2. **`acc-staged` profili emekliye ayrılır** (mfg-staged / fin-staged deseni): `C01E2eShellCapabilityActivation`'daki profil dalı ve `C01E2eAccountingShellCapabilityProvider`, `ShellCapabilityRegistryAuthorities`'teki `C01DisposableAccountingPeriodsAndJournalsV1` (yorumla "retired"), `infra/docker-compose.browser-acc-staged.yml`, validator tabloları (`PROFILES`, `PROFILE_COMPOSE_FILES`, `PROFILE_SUITE_LABELS`, `STAGED_PROFILE_VALUES`) ve `test_suite_profiles.py`'deki acc-staged satırları.
+3. **`acc01` normal profile taşınır**: `tools/validate_browser_acceptance.py` → `SUITE_PROFILES["acc01"] = "normal"` ve `SUITE_FOR` haritasındaki acc-staged girdisi kalkar.
+
+## `acc01` bu taşımada ne ister?
+
+Spec ve seed **değişmeden** koşar; şunları kontrol ettim: suite hiçbir yerde `acc-staged` profiline ya da disposable zarfa ad vermiyor, kabiliyet anlık görüntüsünü gerçek host'tan okuyor ve aktörleri kendi grant'leriyle doğruluyor. Tek koşul: normal host'ta Accounting sağlayıcısı yayımlı olmalı — bu deltanın kendisi. **Kabul, final head'de `acc01`'in NORMAL profilde yeniden koşmasıdır; acc-staged'deki yeşil buraya taşınmaz** ve PR gövdesinde bunu böyle yazacağım.
+
+## İddia (büyütmeden)
+
+Flip ekranları **ulaşılabilir** yapar, **dolu** yapmaz: M-04 ve M-01 gerçek ama BOŞ okuma görünümleridir, fiş üreten akış ACC-V1'dir (NEEDS-BUSINESS 5740501655, OPEN-009). Hesap planı hâlâ açık karar (5740501573); ekran "Hesap referansı" gösteriyor, ad uydurmuyor.

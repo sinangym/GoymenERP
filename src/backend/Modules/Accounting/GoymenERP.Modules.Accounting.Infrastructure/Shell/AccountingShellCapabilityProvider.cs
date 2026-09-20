@@ -13,8 +13,11 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Shell;
 /// are controls of the M-07 list and keep its screen.
 /// </para>
 /// <para>
-/// <b>Staged first:</b> every declaration is <c>ImplementationAvailable: false</c> until the ACC-01 browser
-/// acceptance; a separate flip PR makes them available (card FIN-UI-1 §6, the FIN-01 pattern). The approval
+/// <b>Published (ACC-V0c), except the journal detail:</b> the six declarations acc01 actually walked on the
+/// normal profile are <c>ImplementationAvailable: true</c> — the period list and its propose screen, the approve
+/// and close controls, the M-04 journal list and the M-01 queues. The journal DETAIL stays staged: acc01 opened
+/// no journal (its seed writes nothing and no flow produces one before ACC-V1), so nothing accepted that route.
+/// The staged-then-flip order is the FIN-UI-1c / MFG-UI-F pattern (card FIN-UI-1 §6). The approval
 /// and the close are controls of the period list (<c>ParentCapabilityId</c>), not routes, and keep the
 /// list's route, context and scope. A declaration grants nothing: each route's service measures its own
 /// narrow permission afresh (persona rule: every read is its own name).
@@ -62,12 +65,12 @@ public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
     public IReadOnlyCollection<ShellCapabilityDeclaration> GetDeclarations()
     {
         var periods = Declaration(PeriodListCapabilityId, PeriodListRouteId, PeriodListRoutePath, PeriodListScreenId,
-            ShellCapabilityRoutePrecedence.Static, [AccountingPermissionManifestV1.PeriodsRead]);
+            ShellCapabilityRoutePrecedence.Static, [AccountingPermissionManifestV1.PeriodsRead], available: true);
         return
         [
             periods,
             Declaration(PeriodProposeCapabilityId, PeriodProposeRouteId, PeriodProposeRoutePath, PeriodProposeScreenId,
-                ShellCapabilityRoutePrecedence.Static, [AccountingPermissionManifestV1.PeriodsPropose]),
+                ShellCapabilityRoutePrecedence.Static, [AccountingPermissionManifestV1.PeriodsPropose], available: true),
             // Ö4: the approval is a control on the list — the list's route, context and scope, plus the approve name.
             periods with
             {
@@ -83,18 +86,24 @@ public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
                 RequiredPermissions = [AccountingPermissionManifestV1.PeriodsRead, AccountingPermissionManifestV1.PeriodsClose],
             },
             Declaration(JournalListCapabilityId, JournalListRouteId, JournalListRoutePath, JournalListScreenId,
-                ShellCapabilityRoutePrecedence.Static, [AccountingPermissionManifestV1.JournalsRead]),
+                ShellCapabilityRoutePrecedence.Static, [AccountingPermissionManifestV1.JournalsRead], available: true),
+            // STILL STAGED (ACC-V0c): acc01 never opened a journal, because its seed writes nothing and no flow
+            // produces a journal before ACC-V1 — so this route has no acceptance to stand on. Publishing it would
+            // claim a screen nobody walked. It flips with the slice that first produces a journal, and the M-04
+            // list does not link into it while it is closed.
             Declaration(JournalDetailCapabilityId, JournalDetailRouteId, JournalDetailRoutePath, JournalDetailScreenId,
-                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [AccountingPermissionManifestV1.JournalsRead]),
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [AccountingPermissionManifestV1.JournalsRead],
+                available: false),
             Declaration(PostingQueuesCapabilityId, PostingQueuesRouteId, PostingQueuesRoutePath, PostingQueuesScreenId,
-                ShellCapabilityRoutePrecedence.Static, [AccountingPermissionManifestV1.PostingQueuesRead]),
+                ShellCapabilityRoutePrecedence.Static, [AccountingPermissionManifestV1.PostingQueuesRead], available: true),
         ];
     }
 
     // Accounting records are one company's and have no site dimension: a single company, company-wide.
     private static ShellCapabilityDeclaration Declaration(string capabilityId, string routeId, string routePath,
-        string screenId, ShellCapabilityRoutePrecedence precedence, IReadOnlyCollection<string> permissions) =>
+        string screenId, ShellCapabilityRoutePrecedence precedence, IReadOnlyCollection<string> permissions,
+        bool available) =>
         new(capabilityId, routeId, routePath, screenId, precedence,
             ShellCapabilityContextRequirement.SingleCompany, ShellCapabilityScopeRequirement.CompanyWide, permissions,
-            ImplementationAvailable: false);
+            ImplementationAvailable: available);
 }

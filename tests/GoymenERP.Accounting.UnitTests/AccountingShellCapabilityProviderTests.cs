@@ -13,12 +13,29 @@ namespace GoymenERP.Accounting.UnitTests;
 public sealed class AccountingShellCapabilityProviderTests
 {
     [Fact]
-    public void Every_declaration_is_staged_until_the_flip()
+    public void Only_the_screens_acc01_walked_are_published_and_the_journal_detail_stays_staged()
     {
         var declarations = new AccountingShellCapabilityProvider().GetDeclarations();
 
         Assert.Equal(7, declarations.Count);
-        Assert.All(declarations, declaration => Assert.False(declaration.ImplementationAvailable));
+        // ACC-V0c: the flip publishes exactly what the acc01 acceptance walked — the period list, its propose
+        // screen, the approve and close controls, the M-04 list and the M-01 queues.
+        Assert.Equal(
+            [
+                AccountingShellCapabilityProvider.JournalListCapabilityId,
+                AccountingShellCapabilityProvider.PeriodApproveCapabilityId,
+                AccountingShellCapabilityProvider.PeriodCloseCapabilityId,
+                AccountingShellCapabilityProvider.PeriodListCapabilityId,
+                AccountingShellCapabilityProvider.PeriodProposeCapabilityId,
+                AccountingShellCapabilityProvider.PostingQueuesCapabilityId,
+            ],
+            declarations.Where(declaration => declaration.ImplementationAvailable)
+                .Select(declaration => declaration.CapabilityId).Order(StringComparer.Ordinal).ToArray());
+        // The journal DETAIL is the one route acc01 never opened (its seed writes nothing and no flow produces a
+        // journal before ACC-V1), so it stays closed until a slice accepts it.
+        var detail = Assert.Single(declarations,
+            item => item.CapabilityId == AccountingShellCapabilityProvider.JournalDetailCapabilityId);
+        Assert.False(detail.ImplementationAvailable);
     }
 
     [Fact]
