@@ -35,6 +35,9 @@
  *          Logistics screen there
  */
 
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { expect, test, type Page, type Response } from '@playwright/test'
 import { readEnvironment } from '../src/env.js'
 
@@ -88,14 +91,22 @@ async function signInAs(page: Page, actor: string): Promise<void> {
   await page.setExtraHTTPHeaders({ [DEVELOPMENT_USER_HEADER]: actor })
 }
 
-/** The id of the instruction the browser created in L04-01, read back from the real list as `actor` (the row that is not the seeded one). */
-async function createdInstructionIdFromList(page: Page, actor: string): Promise<string> {
-  const response = await page.request.get(`${env.apiBaseUrl}${INSTRUCTIONS_PATH}?pageSize=50`, {
-    headers: { [DEVELOPMENT_USER_HEADER]: actor, 'X-Company-Id': companyId },
-  })
-  expect(response.status(), `the real list route answers ${actor}`).toBe(200)
-  const page_ = (await response.json()) as { readonly items: readonly { readonly id: string }[] }
-  return page_.items.find((item) => item.id !== instructionId)?.id ?? ''
+/**
+ * The stable mark of the instruction L04-01 created: its OWN id, written by L04-01 the moment the real API answered
+ * it and read back by a later case after Playwright restarted the worker (module state is gone then, the file is
+ * not). The file is named after the seeded instruction, i.e. after this disposable database, so a file left by
+ * another run cannot be mistaken for this run's; and a wrong id fails loudly at the detail read (200 + the same id),
+ * never silently. This replaces "the row that is not the seeded one" (ORG INFO-9 on #358): that recovery was an
+ * assumption about the list holding exactly two rows, and a third instruction would have made it pick the wrong row.
+ */
+const CREATED_ID_FILE = join(tmpdir(), `goymen-l04-created-${instructionId}.id`)
+
+function rememberCreatedId(id: string): void {
+  writeFileSync(CREATED_ID_FILE, id, 'utf8')
+}
+
+function recallCreatedId(): string {
+  return existsSync(CREATED_ID_FILE) ? readFileSync(CREATED_ID_FILE, 'utf8').trim() : ''
 }
 
 /** The instruction as the real API answers it to `actor` under `company`. */
@@ -220,6 +231,7 @@ test('L04-01 the preparer creates an instruction from a real selection of the ap
   const body = (await replay.json()) as { detail: InstructionReading; isReplay: boolean }
   expect(body.isReplay).toBe(true)
   createdId = body.detail.instruction.id
+  rememberCreatedId(createdId)
   expect(creates.filter((answer) => answer.headers()['idempotency-replayed'] !== 'true').length, 'the page received no non-replay create answer').toBe(0)
 
   // Exactly ONE instruction was created: the real detail, with the quantity text kept verbatim.
@@ -366,10 +378,12 @@ test('L04-04 on the seeded instruction the blocked line refuses a load and the o
 
 test('L04-05 the reader reads and cannot create or record; the preparer has nothing under the other company', async ({ page }) => {
   await signInAs(page, readerActor)
-  // Playwright restarts the worker after a failed case, which drops the module-level `createdId`: recover the instruction
-  // L04-01 created from the real list (the one that is not the seeded instruction) so this case never asserts on ''.
-  if (createdId === '') createdId = await createdInstructionIdFromList(page, readerActor)
-  expect(createdId).not.toBe('')
+  // Playwright restarts the worker after a failed case, which drops the module-level `createdId`: recover the id L04-01
+  // wrote down (the stable mark), then prove it is a real instruction of this company before asserting on it.
+  if (createdId === '') createdId = recallCreatedId()
+  expect(createdId, 'L04-01 recorded the created instruction').not.toBe('')
+  expect(createdId).not.toBe(instructionId)
+  await readInstruction(page, readerActor, createdId)
   await page.goto(LIST_ROUTE)
   await expect(page.getByRole('heading', { level: 1, name: 'Yükleme talimatları' })).toBeVisible({ timeout: 30_000 })
   await expect(instructionRow(page, createdId)).toBeVisible()
