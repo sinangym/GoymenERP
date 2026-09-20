@@ -150,6 +150,7 @@ public sealed class EndpointAuthorizationPolicyRegistrationTests
                 displayName: "endpoint policy guard probe"),
         ];
 
-        public override IChangeToken GetChangeToken() => NullChangeToken.Singleton;
+        // The probe never changes, so a token that never fires. NullChangeToken is not public.
+        public override IChangeToken GetChangeToken() => new CancellationChangeToken(CancellationToken.None);
     }
 }
