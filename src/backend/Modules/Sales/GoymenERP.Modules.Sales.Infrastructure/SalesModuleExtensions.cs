@@ -75,7 +75,10 @@ public static class SalesModuleExtensions
         serviceProvider.GetService<IProductSalesEligibilityV1>(),
         serviceProvider.GetRequiredService<ISalesOrderDraftStore>(),
         serviceProvider.GetRequiredService<SalesDraftServiceBindings>(),
-        serviceProvider.GetRequiredService<TimeProvider>());
+        serviceProvider.GetRequiredService<TimeProvider>(),
+        // SALES-A2a: the Cari contact-information port is the host's registration (central); until it is
+        // registered a draft naming a delivery address or contact is 503, never stored unvalidated.
+        serviceProvider.GetService<ISalesPartyContactInformationPortV1>());
 
     /// <summary>Applies Sales's migrations. Its foreign keys need Organization's tables first.</summary>
     public static async Task InitializeSalesModuleAsync(

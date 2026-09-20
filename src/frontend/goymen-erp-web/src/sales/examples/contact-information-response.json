@@ -1,0 +1,29 @@
+{
+  "companyId": "99999999-9999-9999-9999-999999999999",
+  "partyId": "11111111-1111-1111-1111-111111111111",
+  "companyAccountId": "55555555-5555-5555-5555-555555555555",
+  "accountVersion": "2",
+  "addresses": [
+    {
+      "id": "aaaaaaaa-1111-4111-8111-000000000401",
+      "version": "4",
+      "purpose": "delivery",
+      "text": "SENTETIK Sanayi Cad. 1, Kocaeli, TR",
+      "countryCode": "TR",
+      "line1": "SENTETIK Sanayi Cad. 1",
+      "line2": null,
+      "city": "Kocaeli",
+      "district": null,
+      "postalCode": null
+    }
+  ],
+  "contacts": [
+    {
+      "id": "bbbbbbbb-1111-4111-8111-000000000401",
+      "version": "2",
+      "displayName": "SENTETIK Ayşe Yükleme",
+      "jobTitle": "Sevkiyat",
+      "purpose": "delivery"
+    }
+  ]
+}

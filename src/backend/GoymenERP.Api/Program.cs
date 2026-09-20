@@ -118,6 +118,9 @@ builder.Services.AddSingleton(new SalesReferenceReadBindings(
     ProductPermission: SalesPermissionManifestV1.DraftsCreate,
     MoneyOperation: SalesMoneyOperations.OrderDraftV1));
 builder.Services.AddScoped<ISalesPartyAccountPortV1, CounterpartySalesPartyAccountPortV1>();
+// SALES-A2a: the same Cari adapter answers the contact-information port — one authorized owner read,
+// not a second copy of the party's addresses and contacts in Sales.
+builder.Services.AddScoped<ISalesPartyContactInformationPortV1, CounterpartySalesPartyAccountPortV1>();
 builder.Services.AddScoped<ISalesReferenceReadService>(CreateSalesReferenceReadService);
 builder.Services.AddAuditModule(builder.Configuration);
 
@@ -129,7 +132,11 @@ static ISalesReferenceReadService CreateSalesReferenceReadService(IServiceProvid
     services.GetRequiredService<ISalesAccountSelectionSourceV1>(),
     services.GetRequiredService<ISettingsPrerequisiteProvider>(),
     services.GetService<IProductSalesEligibilityV1>(),
-    services.GetRequiredService<SalesReferenceReadBindings>());
+    services.GetRequiredService<SalesReferenceReadBindings>(),
+    // SALES-A2a: both optional, and both answer 503 while absent — the currencies list is Settings'
+    // approved candidates, the delivery address and contact the Cari owner's contact information.
+    services.GetService<ISettingsMoneyCandidateReader>(),
+    services.GetService<ISalesPartyContactInformationPortV1>());
 builder.Services.AddIdempotencyModule(builder.Configuration);
 builder.Services.AddOrganizationModule(
     builder.Configuration,
