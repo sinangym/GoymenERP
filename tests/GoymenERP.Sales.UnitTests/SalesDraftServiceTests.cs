@@ -5,6 +5,7 @@ using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Sales.Application;
 using GoymenERP.Modules.Sales.Application.Contracts;
+using GoymenERP.Modules.Sales.Domain;
 using GoymenERP.Modules.Sales.Domain.Drafts;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
@@ -39,6 +40,8 @@ public sealed class SalesDraftServiceTests
     // Registered platform names stand in for the Sales names until the central catalogue knows them.
     private const string CreatePermission = ErpPermissions.CounterpartyPartiesCreate;
     private const string ReadPermission = ErpPermissions.CounterpartyPartiesRead;
+    // K3: the separate price-write name, bound here to a central name the fence knows (the same stand-in pattern as the others).
+    private const string PricePermission = ErpPermissions.CounterpartyAccountsCreate;
 
     [Fact]
     public async Task A_valid_request_is_stored_once_and_answered_as_the_wire_detail()
@@ -217,13 +220,87 @@ public sealed class SalesDraftServiceTests
         Assert.Equal((503, SalesDraftProblemCodesV1.CounterpartyProviderUnavailable), (noPort.Status, noPort.Code));
         Assert.Equal((1, 0, 0), (withoutPort.Accounts.Calls, withoutPort.Settings.Calls, withoutPort.Store.Envelopes.Count));
 
-        var priced = Request();
-        priced = priced with { Lines = [priced.Lines[0] with { UnitPrice = "12.50", PriceUnitId = KgUnit, DiscountPercent = "5" }] };
-        var commercial = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CreateDraftAsync(priced, Metadata("k-2")));
-        Assert.Equal((422, SalesDraftProblemCodesV1.CommercialNotAvailable), (commercial.Status, commercial.Code));
-        Assert.Equal(["lines[0].unitPrice", "lines[0].priceUnitId", "lines[0].discountPercent"], commercial.Errors.Select(error => error.Field));
-
         Assert.Equal((0, 0, 0, 0), (world.Store.Replays, world.Accounts.Calls, world.Settings.Calls, world.Products.Calls));
+    }
+
+    // ---- K3 (Sinan 5748258299): manual price and discount under the SEPARATE price-write permission ----------
+
+    private static CreateSalesOrderDraftRequest Priced(string? unitPrice = "12.50", Guid? priceUnit = null, string? discount = "5")
+    {
+        var request = Request();
+        return request with { Lines = [request.Lines[0] with { UnitPrice = unitPrice, PriceUnitId = priceUnit ?? (unitPrice is null ? null : KgUnit), DiscountPercent = discount }] };
+    }
+
+    [Fact]
+    public async Task A_commercial_field_without_the_separate_price_permission_is_403_before_anything_is_read_and_the_create_permission_does_not_confer_it()
+    {
+        var world = new World();
+        world.Authority.Denied.Add(PricePermission);
+
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CreateDraftAsync(Priced(), Metadata("k-p1")));
+
+        Assert.Equal((403, SalesDraftProblemCodesV1.PriceWriteForbidden), (refused.Status, refused.Code));
+        Assert.Equal(["lines[0].unitPrice", "lines[0].priceUnitId", "lines[0].discountPercent"], refused.Errors.Select(error => error.Field));
+        Assert.All(refused.Errors, error => Assert.Equal(SalesDraftProblemCodesV1.PriceWriteForbidden, error.Code));
+        // The create permission was granted and measured first; the price name was asked next and refused; nothing after it.
+        Assert.Equal([CreatePermission, PricePermission], world.Authority.Measured);
+        Assert.Equal((0, 0, 0, 0, 0), (world.Store.Replays, world.Store.Envelopes.Count, world.Accounts.Calls, world.Settings.Calls, world.Products.Calls));
+        // A discount alone, or a price alone, asks the same fence: any commercial field is the price owner's.
+        var discountOnly = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CreateDraftAsync(Priced(unitPrice: null, discount: "5"), Metadata("k-p2")));
+        Assert.Equal(403, discountOnly.Status);
+        Assert.Equal(["lines[0].discountPercent"], discountOnly.Errors.Select(error => error.Field));
+        // Without any commercial field the price name is never asked (an un-priced draft needs only the create permission).
+        await world.Service().CreateDraftAsync(Request(), Metadata("k-p3"));
+        Assert.DoesNotContain(PricePermission, world.Authority.Measured.Skip(4));
+    }
+
+    [Fact]
+    public async Task A_priced_line_is_stored_as_the_exact_texts_under_the_price_permission_measured_again_after_the_owner_reads()
+    {
+        var world = new World();
+
+        var response = await world.Service().CreateDraftAsync(Priced(), Metadata("k-p4"));
+
+        var line = response.Detail.Lines[0];
+        Assert.Equal(("12.50", KgUnit, "5"), (line.UnitPrice, line.PriceUnitId, line.DiscountPercent));
+        // The price fence: asked right after the create permission, and again after every owner read, right before the save.
+        Assert.Equal(PricePermission, world.Authority.Measured[1]);
+        Assert.Equal(PricePermission, world.Authority.LastPermission);
+        Assert.True(world.Authority.Measured.Count(name => name == PricePermission) == 2, string.Join(",", world.Authority.Measured));
+        // The envelope of the create stays the create's (the price name is a fence, not the command's permission).
+        Assert.Equal(CreatePermission, Assert.Single(world.Store.Envelopes).PermissionCode);
+    }
+
+    [Fact]
+    public async Task A_price_permission_lost_while_the_owners_answered_refuses_the_write_and_stores_nothing()
+    {
+        var world = new World();
+        // Granted at the first measurement (call 2), gone by the re-measurement after the reads.
+        world.Authority.LostLater = (PricePermission, 2);
+
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CreateDraftAsync(Priced(), Metadata("k-p5")));
+
+        Assert.Equal((403, SalesDraftProblemCodesV1.PriceWriteForbidden), (refused.Status, refused.Code));
+        Assert.True(world.Accounts.Calls > 0 && world.Products.Calls > 0, "the owners were read before the late fence");
+        Assert.Empty(world.Store.Envelopes);
+    }
+
+    [Theory]
+    [InlineData("12.505", "kg", "5", "lines[0].unitPrice", SalesRuleCodes.PriceScaleExceeded)]
+    [InlineData("12.50", "other", "5", "lines[0].priceUnitId", SalesRuleCodes.PriceUnitUnsupported)]
+    [InlineData(null, null, "5", "lines[0].discountPercent", SalesRuleCodes.DiscountWithoutPrice)]
+    [InlineData("12.50", "kg", "100.5", "lines[0].discountPercent", SalesRuleCodes.DiscountOutOfRange)]
+    public async Task A_commercial_value_that_is_not_mathematically_valid_is_422_on_its_own_field_and_nothing_is_stored(
+        string? unitPrice, string? unit, string? discount, string field, string code)
+    {
+        var world = new World();
+        Guid? priceUnit = unit switch { "kg" => KgUnit, "other" => Guid.NewGuid(), _ => null };
+
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CreateDraftAsync(Priced(unitPrice, priceUnit, discount), Metadata("k-p6")));
+
+        Assert.Equal((422, "validation_failed"), (refused.Status, refused.Code));
+        Assert.Equal((field, code), (Assert.Single(refused.Errors).Field, Assert.Single(refused.Errors).Code));
+        Assert.Empty(world.Store.Envelopes);
     }
 
     [Theory]
@@ -674,7 +751,7 @@ public sealed class SalesDraftServiceTests
         public FakeStore Store { get; init; } = new();
         public bool NoProducts { get; set; }
         public bool NoContactInformation { get; set; }
-        public SalesDraftServiceBindings Bindings { get; set; } = new(CreatePermission, ReadPermission, ApprovePermission);
+        public SalesDraftServiceBindings Bindings { get; set; } = new(CreatePermission, ReadPermission, ApprovePermission, PricePermission);
 
         public SalesDraftService Service()
         {
@@ -709,12 +786,20 @@ public sealed class SalesDraftServiceTests
         public bool CompanyWide { get; set; } = true;
         public int Calls { get; private set; }
         public string? LastPermission { get; private set; }
+        /// <summary>Names never granted (K3: the separate price permission is measured on its own).</summary>
+        public HashSet<string> Denied { get; } = new(StringComparer.Ordinal);
+        /// <summary>A name granted at first and lost from the given measurement on (the late-loss fence).</summary>
+        public (string Permission, int AfterCall)? LostLater { get; set; }
+        public List<string> Measured { get; } = [];
 
         public Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid companyId, CancellationToken cancellationToken = default)
         {
             Calls++;
             LastPermission = permission;
-            return Task.FromResult(new PermissionScope(Granted, CompanyWide, new HashSet<string>(["ROLE-B", "ROLE-A"], StringComparer.Ordinal),
+            Measured.Add(permission);
+            var granted = Granted && !Denied.Contains(permission)
+                && !(LostLater is { } lost && lost.Permission == permission && Calls > lost.AfterCall);
+            return Task.FromResult(new PermissionScope(granted, CompanyWide, new HashSet<string>(["ROLE-B", "ROLE-A"], StringComparer.Ordinal),
                 new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>()));
         }
     }

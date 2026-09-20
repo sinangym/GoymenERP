@@ -113,15 +113,37 @@ public sealed class SalesDraftApiSqlServerRelationalAcceptanceTests
             Assert.Equal("validation_failed", (await Result(response)).GetProperty("code").GetString());
         }
 
-        // The card's fail-closed deltas answer before any owner: a commercial field, an owner reference.
+        // K3 Head A (Sinan 5748258299): a commercial field asks the SEPARATE price-write permission of the actor, right after
+        // the create permission and before any owner — this saver holds the draft names only, so the priced line is 403;
+        // the create permission does not confer it. LAYERED evidence, by the coordinator's ruling: the platform deliberately
+        // strips codes and fields from every 401/403 (naming the missing permission would let a caller enumerate
+        // permissions by probing), so the wire cannot carry price_write_forbidden and this case asserts the 403 and that
+        // nothing was stored (the zero counts at the end, on real SQL); the code and the named fields are pinned one layer
+        // down, at the service (SalesDraftServiceTests). The screen tells a person which permission they lack from its OWN
+        // capability state, never from the 403.
         using (var priced = new HttpRequestMessage(HttpMethod.Post, SalesEndpoints.DraftsPath) { Content = Body(unitPrice: "12.50") })
         {
             priced.Headers.Add("Idempotency-Key", "SENTETIK-priced");
             var response = await client.SendAsync(priced);
-            Assert.Equal((HttpStatusCode)422, response.StatusCode);
-            var problem = await Result(response);
-            Assert.Equal(SalesDraftProblemCodesV1.CommercialNotAvailable, problem.GetProperty("code").GetString());
-            Assert.Equal("lines[0].unitPrice", problem.GetProperty("errors")[0].GetProperty("field").GetString());
+            Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        }
+
+        // The SAME priced request from an actor who DOES hold the price name passes that fence and meets the first REAL
+        // owner instead (the Counterparty read knows no such party here: 409 account_state, as below) — the fence is the
+        // actor's, not the request's. A priced draft STORED with its texts needs a real party and product, which this host
+        // does not seed through the API; that positive real-SQL case rides with the revision command (Head B).
+        // The pricer is a synthetic test-host role (the l04/s04 precedent): it exists only here, widens no seed and no
+        // browser persona signs in as it. No real-SQL evidence exists in this head for the SUCCESS path (a priced draft
+        // stored with its texts through the command): it comes with Head B's revision command on a fixture-stored draft.
+        var pricer = await run.GrantAsync(TestUsers.CompanyAViewer, CompanyA, [.. DraftGrants, SalesPermissionManifestV1.OrdersPriceWrite]);
+        using var pricerClient = run.Factory.CreateClientFor(pricer, CompanyA);
+        pricerClient.DefaultRequestHeaders.Remove("Idempotency-Key");
+        using (var priced = new HttpRequestMessage(HttpMethod.Post, SalesEndpoints.DraftsPath) { Content = Body(unitPrice: "12.50") })
+        {
+            priced.Headers.Add("Idempotency-Key", "SENTETIK-priced-2");
+            var response = await pricerClient.SendAsync(priced);
+            Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+            Assert.Equal(SalesDraftProblemCodesV1.AccountState, (await Result(response)).GetProperty("code").GetString());
         }
 
         // With a well-formed request the first REAL owner answers: the Counterparty party read knows no

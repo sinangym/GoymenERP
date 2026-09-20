@@ -28,8 +28,20 @@ public static class SalesDraftProblemCodesV1
     /// <summary>422: the currency has no approved money profile, or the profile is not in effect on the business date.</summary>
     public const string UnsupportedCurrency = "unsupported_currency";
 
-    /// <summary>422 (contract delta, card decision 2): a commercial field is not accepted before T28; nothing of a price is stored.</summary>
+    /// <summary>
+    /// RETIRED by K3 (Sinan 5748258299): commercial fields are accepted now, under the separate price-write
+    /// permission. The name is kept for one release so a client that still maps it does not break; it is
+    /// no longer thrown.
+    /// </summary>
     public const string CommercialNotAvailable = "commercial_not_available";
+
+    /// <summary>
+    /// 403 (K3): a line carries a unit price, a price unit or a discount and the actor does not hold the
+    /// separate price-write permission. Authority is decided before anything is read or recorded
+    /// (ADR-011 §5): nothing is stored, nothing is replayed, and the draft's create permission alone
+    /// never confers it. The field errors name every commercial field the request carried.
+    /// </summary>
+    public const string PriceWriteForbidden = "price_write_forbidden";
 
     /// <summary>422 (contract delta, card decision 3): an owner reference without an owner port is refused, never stored unvalidated.</summary>
     public const string OwnerReferenceUnavailable = "owner_reference_unavailable";
@@ -87,4 +99,5 @@ public sealed class SalesDraftServiceException(int status, string code,
 public sealed record SalesDraftServiceBindings(
     string? CreatePermission = SalesPermissionManifestV1.DraftsCreate,
     string? ReadPermission = SalesPermissionManifestV1.DraftsRead,
-    string? ApprovePermission = SalesPermissionManifestV1.OrdersApprove);
+    string? ApprovePermission = SalesPermissionManifestV1.OrdersApprove,
+    string? PricePermission = SalesPermissionManifestV1.OrdersPriceWrite);

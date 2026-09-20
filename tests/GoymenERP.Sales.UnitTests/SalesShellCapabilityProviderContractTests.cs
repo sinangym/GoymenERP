@@ -69,9 +69,12 @@ public sealed class SalesShellCapabilityProviderContractTests
         Assert.Equal("sales.drafts.read", SalesPermissionManifestV1.DraftsRead);
         // SALES-A1 (Business 5737989917): the decision's own name, company-wide; its class and grant are the central writer's and a human's.
         Assert.Equal("sales.orders.approve", SalesPermissionManifestV1.OrdersApprove);
-        Assert.Equal(3, SalesPermissionManifestV1.Names.Count);
+        // K3 (Sinan 5748258299): the SEPARATE price-write name; the create name does not confer it, and it confers no approval.
+        Assert.Equal("sales.orders.price.write", SalesPermissionManifestV1.OrdersPriceWrite);
+        Assert.Equal(4, SalesPermissionManifestV1.Names.Count);
         Assert.Equal(new SalesDraftServiceBindings(),
-            new SalesDraftServiceBindings(SalesPermissionManifestV1.DraftsCreate, SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersApprove));
+            new SalesDraftServiceBindings(SalesPermissionManifestV1.DraftsCreate, SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersApprove,
+                SalesPermissionManifestV1.OrdersPriceWrite));
     }
 
     private static string FindRepositoryRoot()
