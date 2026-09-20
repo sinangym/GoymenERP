@@ -114,19 +114,18 @@ public sealed class SalesDraftApiSqlServerRelationalAcceptanceTests
         }
 
         // K3 Head A (Sinan 5748258299): a commercial field asks the SEPARATE price-write permission of the actor, right after
-        // the create permission and before any owner — this saver holds the draft names only, so the priced line is 403
-        // price_write_forbidden naming the field ON THE WIRE: a separate permission earns a separate refusal, because a
-        // generic 403 cannot tell the person WHICH permission is missing (a Satış Destek who may create but not price must
-        // not read it as their order rights being revoked). The create permission does not confer it. Nothing is recorded
-        // (a 403 is never a terminal result), which the zero counts at the end of this case prove on real SQL.
+        // the create permission and before any owner — this saver holds the draft names only, so the priced line is 403;
+        // the create permission does not confer it. LAYERED evidence, by the coordinator's ruling: the platform deliberately
+        // strips codes and fields from every 401/403 (naming the missing permission would let a caller enumerate
+        // permissions by probing), so the wire cannot carry price_write_forbidden and this case asserts the 403 and that
+        // nothing was stored (the zero counts at the end, on real SQL); the code and the named fields are pinned one layer
+        // down, at the service (SalesDraftServiceTests). The screen tells a person which permission they lack from its OWN
+        // capability state, never from the 403.
         using (var priced = new HttpRequestMessage(HttpMethod.Post, SalesEndpoints.DraftsPath) { Content = Body(unitPrice: "12.50") })
         {
             priced.Headers.Add("Idempotency-Key", "SENTETIK-priced");
             var response = await client.SendAsync(priced);
             Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-            var problem = await Result(response);
-            Assert.Equal(SalesDraftProblemCodesV1.PriceWriteForbidden, problem.GetProperty("code").GetString());
-            Assert.Equal("lines[0].unitPrice", problem.GetProperty("errors")[0].GetProperty("field").GetString());
         }
 
         // The SAME priced request from an actor who DOES hold the price name passes that fence and meets the first REAL
