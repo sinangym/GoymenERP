@@ -7,6 +7,7 @@ using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Sales.Domain.Drafts;
 using GoymenERP.Modules.Sales.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 
@@ -179,7 +180,11 @@ public sealed class SalesPersistenceModelTests
     /// K3 Head B — the DELIBERATE narrowing of "lines never change": ONLY the three commercial columns of a line
     /// and the header's revision number pass the write guard (a commercial revision changes them); the guard is what
     /// would have refused them before this head, so the cases above (quantity, header, slices, attempts, history)
-    /// stay refused and these reach the provider (which is unreachable here — anything but the guard's refusal).
+    /// stay refused and these reach the provider pipeline. "Reached" is MEASURED by the context's sentinel interceptor
+    /// (<see cref="GuardPassedException"/>): it fires only after the guard let the save through and before any
+    /// connection. The provider itself is never a witness here — its connection failure differs by platform (a plain
+    /// SqlException on Windows, EF's transient-failure InvalidOperationException on Linux), which is exactly what a
+    /// type-based "anything but the guard's exception" assertion could not tell apart.
     /// </summary>
     [Theory]
     [InlineData("line-price")]
@@ -203,8 +208,7 @@ public sealed class SalesPersistenceModelTests
                 break;
         }
 
-        var exception = Record.Exception(() => context.SaveChanges());
-        Assert.IsNotType<InvalidOperationException>(exception);
+        Assert.Throws<GuardPassedException>(() => context.SaveChanges());
     }
 
     [Fact]
@@ -348,9 +352,28 @@ public sealed class SalesPersistenceModelTests
 
         var options = new DbContextOptionsBuilder<SalesDbContext>()
             .UseSqlServer("Server=unused.invalid;Database=unused;Connect Timeout=1;")
+            .AddInterceptors(new GuardPassedInterceptor())
             .Options;
         var context = new SalesDbContext(options, company);
         Companies[context] = company;
         return context;
+    }
+
+    /// <summary>
+    /// Thrown the moment a save reaches the provider pipeline — AFTER the context's write guard passed (it runs before
+    /// <c>base.SaveChanges</c>) and BEFORE any connection is opened. A guard refusal (InvalidOperationException) never
+    /// reaches it, so the two theories above are told apart by type on every platform: a refusal that leaked through
+    /// surfaces as this sentinel, never as the refusal's own type.
+    /// </summary>
+    private sealed class GuardPassedException() : Exception("the Sales write guard passed; the provider pipeline was reached");
+
+    private sealed class GuardPassedInterceptor : SaveChangesInterceptor
+    {
+        public override InterceptionResult<int> SavingChanges(DbContextEventData eventData, InterceptionResult<int> result)
+            => throw new GuardPassedException();
+
+        public override ValueTask<InterceptionResult<int>> SavingChangesAsync(DbContextEventData eventData, InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+            => throw new GuardPassedException();
     }
 }

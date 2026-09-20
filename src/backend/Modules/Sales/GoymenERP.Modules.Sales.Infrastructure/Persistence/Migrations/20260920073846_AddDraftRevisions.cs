@@ -87,6 +87,14 @@ public sealed class AddDraftRevisions : Migration
 
     protected override void Down(MigrationBuilder migrationBuilder)
     {
+        // K3 (Sinan 5748258299): "the previous approved snapshot is not deleted" — a rollback that would drop archived
+        // approved revisions is refused with the module's own error (51049, used by no other module); the empty tables of a
+        // database that never archived one roll back freely. Forward fix, the AddDraftApproval (51045) pattern.
+        migrationBuilder.Sql("""
+            IF EXISTS (SELECT 1 FROM [sales].[DraftRevisions])
+                THROW 51049, 'Sales archived approved revisions exist; AddDraftRevisions is not rolled back (forward fix).', 1;
+            """);
+
         migrationBuilder.DropTable(
             name: "DraftRevisionLines",
             schema: "sales");

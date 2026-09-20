@@ -735,7 +735,7 @@ public sealed class SalesStore(
     private static void RequireCommand(string commandName)
     {
         if (commandName is not (SalesDraftCommands.CreateV1 or SalesDraftCommands.SubmitV1 or SalesDraftCommands.ApproveV1
-            or SalesDraftCommands.RejectV1))
+            or SalesDraftCommands.RejectV1 or SalesDraftCommands.ReviseCommercialV1))
         {
             throw new ArgumentException("Bilinmeyen Sales komut adı.", nameof(commandName));
         }

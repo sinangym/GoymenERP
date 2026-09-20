@@ -511,10 +511,15 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
 
         await using var context = run.Context(CompanyA);
         var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
-        Assert.EndsWith("_AddDraftApproval", applied[^1], StringComparison.Ordinal);
-        var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[^2]));
+        // K3 Head B sits on top of the approval migration: rolling back BELOW the approval migration runs Head B's Down first.
+        // With no archived revision its empty tables roll back freely (nothing is lost), and the approval guard then refuses
+        // (51045) exactly as before — so the history ends at the approval migration and the approval facts stand.
+        Assert.EndsWith("_AddDraftRevisions", applied[^1], StringComparison.Ordinal);
+        Assert.EndsWith("_AddDraftApproval", applied[^2], StringComparison.Ordinal);
+        var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[^3]));
         Assert.Equal(51045, error.Number);
-        Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
+        Assert.Equal(applied[..^1], await context.Database.GetAppliedMigrationsAsync());
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'sales') AND name IN (N'DraftRevisions', N'DraftRevisionLines')"));
         Assert.Equal(2, await run.ScalarAsync<int>("SELECT ApprovalState FROM sales.Drafts WHERE Id = @id", ("@id", draft.Id)));
         Assert.Equal(run.Actor, await run.ScalarAsync<string>("SELECT SubmittedBy FROM sales.Drafts WHERE Id = @id", ("@id", draft.Id)));
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sys.check_constraints WHERE [name] = N'CK_Drafts_Approval'"));
