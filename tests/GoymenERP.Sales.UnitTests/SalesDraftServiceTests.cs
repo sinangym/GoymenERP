@@ -397,8 +397,10 @@ public sealed class SalesDraftServiceTests
     {
         var world = new World();
         world.Authority.Denied.Add(PriceReadPermission);
+        // Built ONCE: Priced() mints a fresh line id per call, and a same-key resend with another payload is the 409 (ADR-011 §3).
+        var priced = Priced();
 
-        var response = await world.Service().CreateDraftAsync(Priced(), Metadata("k-p6"));
+        var response = await world.Service().CreateDraftAsync(priced, Metadata("k-p6"));
 
         var line = Assert.Single(response.Detail.Lines);
         Assert.Equal((SalesPriceDisclosure.Withheld, null, null, null), (line.PriceDisclosure, line.UnitPrice, line.PriceUnitId, line.DiscountPercent));
@@ -410,10 +412,10 @@ public sealed class SalesDraftServiceTests
 
         // A REPLAY is disclosed for the REPLAYING caller, not carried over from the original answer: the same key resent
         // by a holder of the read name shows the texts the first response withheld; resent again without it, withheld.
-        var replayVisible = await world.Service().CreateDraftAsync(Priced(), Metadata("k-p6"));
+        var replayVisible = await world.Service().CreateDraftAsync(priced, Metadata("k-p6"));
         Assert.Equal((true, SalesPriceDisclosure.Visible, "12.50"), (replayVisible.IsReplay, replayVisible.Detail.Lines[0].PriceDisclosure, replayVisible.Detail.Lines[0].UnitPrice));
         world.Authority.Denied.Add(PriceReadPermission);
-        var replayWithheld = await world.Service().CreateDraftAsync(Priced(), Metadata("k-p6"));
+        var replayWithheld = await world.Service().CreateDraftAsync(priced, Metadata("k-p6"));
         Assert.Equal((true, SalesPriceDisclosure.Withheld, null), (replayWithheld.IsReplay, replayWithheld.Detail.Lines[0].PriceDisclosure, replayWithheld.Detail.Lines[0].UnitPrice));
     }
 
@@ -683,7 +685,10 @@ public sealed class SalesDraftServiceTests
         var detail = await world.Service().GetDraftDetailAsync(created.Detail.Draft.Id);
         Assert.Equal(created.Detail.Draft, detail.Draft);
         Assert.Equal(created.Detail.Lines.Select(line => line.LineId), detail.Lines.Select(line => line.LineId));
-        Assert.Equal(ReadPermission, world.Authority.LastPermission);
+        // The read's own fence is re-measured AFTER the read (#276); K3 P2 then asks the price READ last, fresh, to decide the
+        // disclosure — so the read name is the second-to-last measurement and the disclosure ask is the last.
+        Assert.Equal(ReadPermission, world.Authority.Measured[^2]);
+        Assert.Equal(PriceReadPermission, world.Authority.LastPermission);
 
         var missing = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().GetDraftDetailAsync(Guid.NewGuid()));
         Assert.Equal(404, missing.Status);
@@ -725,7 +730,9 @@ public sealed class SalesDraftServiceTests
         Assert.Null(approved.Detail.Approval.RejectionReason);
         Assert.Equal((SalesDraftCommands.ApproveV1, ApprovePermission, "sales.order-draft.approved.v1", "Approve"),
             (world.Store.Transitions[1].Command, world.Store.Transitions[1].Envelope.PermissionCode, world.Store.Transitions[1].Audit.EventType, world.Store.Transitions[1].Audit.Operation));
-        Assert.Equal(ApprovePermission, world.Authority.LastPermission);
+        // The approval's fence is re-measured after the transition; K3 P2 then asks the price READ last to disclose the response.
+        Assert.Equal(ApprovePermission, world.Authority.Measured[^2]);
+        Assert.Equal(PriceReadPermission, world.Authority.LastPermission);
 
         // The list shows the axis and narrows to it; the detail carries the facts.
         var pending = await world.Service().GetDraftListAsync(new SalesOrderDraftListQuery(ApprovalState: "PendingApproval"));

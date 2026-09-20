@@ -467,8 +467,11 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
             var revised = await service.ReviseCommercialAsync(draft.Id, request, run.Metadata("k-revise"));
             Assert.False(revised.IsReplay);
             AssertRevisionChangeSet(Assert.Single(recorder.Saves));
-            Assert.Equal(("Rev.1", "Preparing", "5", "13.00", KgUnit, "5"), (revised.Detail.Draft.Revision, revised.Detail.Draft.ApprovalState, revised.Detail.Draft.Version,
-                revised.Detail.Lines[0].UnitPrice, revised.Detail.Lines[0].PriceUnitId, revised.Detail.Lines[0].DiscountPercent));
+            // K3 P2 / ASSUMPTION-SALESP-6, on real SQL: this pricer holds ONLY the price WRITE name, so its own response is
+            // WITHHELD — the texts are null BECAUSE of the marker, not because nothing was written; the columns two blocks
+            // below hold 13.00 / kg / 5. (The pre-P2 version of this line asserted the texts here; the read name decides.)
+            Assert.Equal(("Rev.1", "Preparing", "5", SalesPriceDisclosure.Withheld, null, null, null), (revised.Detail.Draft.Revision, revised.Detail.Draft.ApprovalState, revised.Detail.Draft.Version,
+                revised.Detail.Lines[0].PriceDisclosure, revised.Detail.Lines[0].UnitPrice, revised.Detail.Lines[0].PriceUnitId, revised.Detail.Lines[0].DiscountPercent));
             Assert.Equal(new SalesDraftApprovalV1(null, null, null, null, null), revised.Detail.Approval);
             // Asked and answered are pinned apart from the outcome, by the PROPERTY and not by a count of calls: the authority was asked,
             // every ask was for the separate price name in THIS company, and no other name was ever asked for this write (a count
@@ -490,10 +493,11 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
             Assert.Equal((403, "forbidden"), (unread.Status, unread.Code));
         }
 
-        // The history through the READ name: Rev.0 with its facts and the OLD texts.
+        // The history through the READ names — the draft read to reach it, the price read to see the texts (K3 P2; the
+        // draft-read-only reader's WITHHELD answer is pinned in the price-read case): Rev.0 with its facts and the OLD texts.
         await using (var a = run.Store(CompanyA))
         {
-            var reader = run.Service(a, "SENTETIK-reader", new RecordingAuthority(SalesPermissionManifestV1.DraftsRead));
+            var reader = run.Service(a, "SENTETIK-reader", new RecordingAuthority(SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersPriceRead));
             var history = await reader.GetDraftRevisionsAsync(draft.Id);
             var item = Assert.Single(history.Items);
             Assert.Equal(("Rev.0", run.Actor, "SENTETIK-approver", pricer, "12.50", "5", 2), (item.Revision, item.SubmittedBy, item.ApprovedBy, item.ArchivedBy,
