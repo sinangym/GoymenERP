@@ -373,18 +373,36 @@ class SuiteIdentityTests(unittest.TestCase):
             self._validate(actors_only)
 
     def test_a_suite_without_an_identity_list_cannot_seed_users(self):
+        """The rule is about the FLAG, so the flag is what the case sets.
+
+        This used to borrow org03, the last configured suite whose `identity` was False. The org03
+        browser slice flipped it, and now NO configured suite has it False — so a case written
+        against a real suite would have had to be deleted or quietly re-pointed, and either way the
+        rule would have stopped being covered on the day its last example disappeared. Constructing
+        the condition keeps the rule tested no matter how the suites are configured.
+        """
         extension = {key: value for key, value in self.identity().items()
                      if key.startswith("IdentitySeed__") or key.startswith("BootstrapIdentity__")}
         extension = {key.replace("s03-", "org03-"): value.replace("s03-", "org03-")
                      for key, value in extension.items()}
-        with self.assertRaisesRegex(browser.ContractError, "may not seed Identity users"):
-            self._validate(extension, suite="org03")
+        without_identity = dict(browser.SUITE_API_EXTENSIONS["org03"], identity=False)
+        with mock.patch.dict(browser.SUITE_API_EXTENSIONS, {"org03": without_identity}):
+            with self.assertRaisesRegex(browser.ContractError, "may not seed Identity users"):
+                self._validate(extension, suite="org03")
 
-    def test_org03_keeps_the_actors_only_shape_until_its_grants_are_declared(self):
-        self._validate({
-            "BootstrapIdentity__Users__2__UserId": "org03-approver",
-            "BootstrapIdentity__Users__2__DisplayName": "SENTETIK ORG-03 Onaycı",
-        }, suite="org03")
+    def test_org03_actors_without_any_identity_user_are_refused(self):
+        """The successor to the case this replaces, and the reason the replacement is not a deletion.
+
+        While org03's grants were undeclared, actors WITHOUT Identity users were the correct shape and
+        this case asserted it. The browser slice declared them, so the same input is now a defect: its
+        actors cannot sign in. The fact moved, so the case moves with it rather than being dropped —
+        an expired case removed leaves no record that the rule reversed.
+        """
+        with self.assertRaisesRegex(browser.ContractError, "need their Identity users"):
+            self._validate({
+                "BootstrapIdentity__Users__2__UserId": "org03-approver",
+                "BootstrapIdentity__Users__2__DisplayName": "SENTETIK ORG-03 Onaycı",
+            }, suite="org03")
 
 
 class IssuerUserRuleTests(unittest.TestCase):

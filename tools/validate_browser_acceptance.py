@@ -124,8 +124,10 @@ SUITE_API_EXTENSIONS = {
     # U-02: the Product runtime's issuer binding, matching the suite seed's local user and
     # external identity (ÜRÜN, #319 P3).
     "u02": {"issuer": True, "actors": False, "identity": True},
-    # ORG-03: extra synthetic development actors after the canonical two (ORG, #319 P3-1).
-    "org03": {"issuer": False, "actors": True, "identity": False},
+    # ORG-03: extra synthetic development actors after the canonical two (ORG, #319 P3-1), and
+    # since the browser slice, their Identity users and grants — no seeded role reads work centres
+    # WITHOUT locations, which is exactly the user this suite exists to walk.
+    "org03": {"issuer": False, "actors": True, "identity": True},
     # S-03 (SİPARİŞ): the deployment's Product issuer binding (shared with u02, ÜRÜN's values), the
     # suite's actors and their Identity users and grants (coordinator decisions 1 and 3, a2 part 2).
     "s03": {"issuer": True, "actors": True, "identity": True},
@@ -163,6 +165,28 @@ _IDENTITY_FIELDS = {
 }
 _SYNTHETIC_ID_PREFIX = {"Users": "b20", "External": "b21", "Roles": "b30", "Assignments": "b40"}
 SUITE_IDENTITY_PERMISSIONS = {
+    # ORG-03. TWO names, and which actor holds which SUBSET is the evidence rather than a note —
+    # this list is the suite's closed set, not a grant, so an actor holding both would leave the
+    # suite green while proving nothing the slice claims. ORG's two actors:
+    #   org03-work-centers-only  holds organization.work-centers.read ALONE. This is the user the
+    #                            slice exists for: no link into ORG-01 exists for them, so the
+    #                            sidebar entry is the only way in.
+    #   org03-reader             holds both — the row's location link is offered.
+    # Both company-wide, because a suite assignment MUST be: the single `require` in
+    # validate_suite_identity below demands `Scopes__0__Type == "Company"` and the scope id to be
+    # the assignment's own company. Cited by its condition rather than by a line number, which
+    # this very comment shifted when it was added.
+    # A third actor was designed and withdrawn for that reason: work centres company-wide with
+    # locations scoped to ONE location would show every row while only some open, which is the
+    # sharpest demonstration of what CanOpenLocationDetail (#377) decides. The PRODUCT supports it —
+    # organization.locations.read is not in CompanyWideOnly — but this contract does not, and the
+    # two are separate gates. Loosening the rule without first measuring why it exists is a change
+    # that deserves its own slice, not a line in this one — and whoever writes that slice starts at
+    # test_suite_fixtures' "scope narrower than the company" case, which sends Scopes__0__Type "Site"
+    # and pins the refusal ON PURPOSE. So the rule is intentional, not incidental: the argument to
+    # make is not "nobody generalised this" but "this was decided, and here is why the decision does
+    # not cover a work-centre reader scoped to one location".
+    "org03": ("organization.work-centers.read", "organization.locations.read"),
     # u02 seeds only the issuer's Identity user, which holds nothing (the issuer-user rule).
     "u02": (),
     # SALES-A1 (coordinator): the approval and the draft's party read, for the v2b positive path.
