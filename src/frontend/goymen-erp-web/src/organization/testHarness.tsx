@@ -82,15 +82,21 @@ export const LOCATIONS_ONLY_CAPABILITIES = [
 /**
  * ORG-03 only — the work-centre list and NOTHING else.
  *
- * Deliberately a set of its own rather than a line added to `READ_CAPABILITIES`. That
- * constant claims to mirror the seeded ORGANIZATION_READER role, and whether that role
- * carries `organization.work-centers.read` is a ROLE-CONTENT question with an owner who
- * is not this lane. Adding the id there would have made a permission-policy claim inside
- * a test fixture, where nobody would look for one. This set asserts only what the shell
- * grants in the case that uses it.
+ * A set of its own rather than a line added to `READ_CAPABILITIES`, because this is the
+ * INTERESTING configuration: the caller may read work centres and may NOT read locations,
+ * which is exactly when `canOpenLocationDetail` has work to do. `READ_CAPABILITIES` holds
+ * the location grants, so it cannot express that case.
  *
- * It is also the interesting configuration: this caller may read work centres and may
- * NOT read locations, which is exactly when `canOpenLocationDetail` has work to do.
+ * It is worth recording what this set is NOT evidence of, since an earlier version of this
+ * comment got it wrong. It does not say the seeded ORGANIZATION_READER role lacks
+ * `organization.work-centers.read`. That role DOES carry it (`Seed/identity-seed.json`),
+ * along with `organization.locations.read` — which is also why no seeded role can express
+ * the configuration above, and why a work-centres-only actor has to be synthetic.
+ *
+ * The rule the earlier comment was reaching for still stands: a test fixture must not
+ * assert role CONTENT, because nobody looks for a permission-policy claim inside one. But
+ * "the lane cannot know" was the wrong reason for it — the answer was in the repository
+ * and was checkable.
  */
 export const WORK_CENTERS_ONLY_CAPABILITIES = [ORGANIZATION_CAPABILITY.workCentersList]
 
