@@ -295,12 +295,34 @@ class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
         required = {
             prefix + name for name in (
                 "A_proposal_is_not_usable_until_another_user_approves_it_once_and_moves_no_money",
+                "A_legacy_NULL_money_declaration_is_visible_as_undeclared_and_is_refused_on_the_money_path",
+                "A_pending_IBAN_never_replaces_the_approved_value_and_only_another_actor_can_approve_it",
                 "Company_B_can_neither_see_nor_approve_company_A_account",
                 "The_same_key_replays_and_another_payload_or_actor_conflicts",
                 "A_currency_outside_the_settings_candidates_or_an_unavailable_source_stores_nothing",
                 "Two_racing_approvals_store_one_and_the_database_refuses_a_self_approval",
                 "A_save_that_fails_in_the_database_leaves_nothing_behind",
             )
+        }
+        self.assertTrue(required.issubset(VERIFIER.BROAD_EXPECTED_TESTS))
+        for omitted in required:
+            with self.subTest(omitted=omitted):
+                with self.assertRaisesRegex(RuntimeError, "exact"):
+                    VERIFIER.verify_broad_discovery("\n".join(
+                        name for name in VERIFIER.BROAD_EXPECTED_TESTS if name != omitted
+                    ))
+
+    def test_finance_reversal_cases_are_mandatory_and_reject_omission(self) -> None:
+        prefix = "GoymenERP.Api.IntegrationTests."
+        required = {
+            prefix + "FinanceCommandApiSqlServerRelationalAcceptanceTests."
+            "A_reversal_proposal_requires_another_HTTP_user_and_preserves_both_history_links",
+            prefix + "FinanceRecordSqlServerRelationalAcceptanceTests."
+            "Reversal_requires_another_checker_and_keeps_the_original_with_two_way_history",
+            prefix + "FinanceRecordSqlServerRelationalAcceptanceTests."
+            "A_closed_reversal_period_refuses_approval_and_writes_no_reversal",
+            prefix + "FinanceRecordSqlServerRelationalAcceptanceTests."
+            "An_allocated_source_refuses_reversal_approval_and_writes_nothing",
         }
         self.assertTrue(required.issubset(VERIFIER.BROAD_EXPECTED_TESTS))
         for omitted in required:
