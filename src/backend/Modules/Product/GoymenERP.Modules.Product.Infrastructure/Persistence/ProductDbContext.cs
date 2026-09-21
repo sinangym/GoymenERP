@@ -196,6 +196,24 @@ public sealed class ProductDbContext(DbContextOptions<ProductDbContext> options)
         return base.SaveChangesAsync(acceptAllChangesOnSuccess: true, cancellationToken);
     }
 
+    internal Task<int> AddTechnicalCardFixtureAsync(CancellationToken cancellationToken)
+    {
+        // Fixed test data only; no arbitrary release input and no public SaveChanges enrollment.
+        if (ChangeTracker.Entries().Any())
+            throw new InvalidOperationException("A technical fixture requires a clean Product context.");
+        var definition = Fixtures.ProductTechnicalCardFixture.Definition();
+        Families.AddRange(definition.Families.Select(value => new ProductFamilyRow(value)));
+        foreach (var value in definition.Templates)
+        {
+            var template = new ProductTemplateRow(value);
+            Templates.Add(template);
+            TemplateFamilies.AddRange(value.FamilyIds.Select(id => new ProductTemplateFamilyRow(template, id)));
+            TemplateFields.AddRange(value.Fields.Select((field, index) => new ProductTemplateFieldRow(template, field, index + 1)));
+        }
+        DictionaryEntries.AddRange(definition.Entries.Select(value => new ProductDictionaryEntryRow(value)));
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess: true, cancellationToken);
+    }
+
     internal Task<int> AddFixtureCodeGroupAsync(ProductCodeGroupRow group, CancellationToken cancellationToken)
     {
         // The gated browser-suite code-group port (Fixtures/ProductCodeGroupFixtureStore) only: the change
