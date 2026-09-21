@@ -265,10 +265,10 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   // Nor this one: it is reached from the card of the record it edits.
   [CAPABILITY.cariAccountsContactUpdate]: '',
   [CAPABILITY.productItemsList]: 'Ürünler',
-  [CAPABILITY.productItemsCreate]: 'Yeni Ürün',
-  // Nor these two, for the same reason as the Cari detail: the 360 is reached from a row
-  // and the editor from the card it edits, never from the sidebar. So `NAV_CAPABILITIES`
-  // gains two Product entries when the routes are mounted, not four.
+  // K5: create is reached through the list's single action, never from the sidebar.
+  [CAPABILITY.productItemsCreate]: '',
+  // The 360 is reached from a row and the editor from the card it edits. Therefore
+  // `NAV_CAPABILITIES` gains exactly one Product entry when the routes are mounted.
   [CAPABILITY.productItemsDetail]: '',
   [CAPABILITY.productItemsEdit]: '',
   [CAPABILITY.organizationSitesList]: 'Organizasyon',

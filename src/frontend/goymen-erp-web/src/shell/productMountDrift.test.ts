@@ -17,6 +17,7 @@
 import { describe, expect, it } from 'vitest'
 import { CAPABILITY, CAPABILITY_ROUTE, CAPABILITY_NAV_LABEL } from './capabilities'
 import { PRODUCT_CAPABILITY, PRODUCT_CAPABILITY_ROUTE, PRODUCT_CAPABILITY_NAV_LABEL } from '../product/capabilities'
+import { NAV_CAPABILITIES } from './AppShell'
 
 describe('shell ↔ Product lane capability ids', () => {
   it('declares the same four ids the Product lane does', () => {
@@ -73,12 +74,16 @@ describe('shell ↔ Product lane capability ids', () => {
     expect(edit.split('/').length).toBe(detail.split('/').length + 1)
   })
 
-  it('gives the 360 and the editor no nav entry', () => {
-    // Both are reached from a record, not from the sidebar, so `NAV_CAPABILITIES` gains
-    // exactly two Product entries when the routes are mounted — not four.
+  it('keeps Product creation inside the list instead of adding a second nav entry', () => {
+    // K5 leaves only the list in the sidebar. Create remains a separately authorised,
+    // mounted route reached by the list action; detail and edit remain record actions.
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.productItemsDetail]).toBe('')
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.productItemsEdit]).toBe('')
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.productItemsList]).toBe('Ürünler')
-    expect(CAPABILITY_NAV_LABEL[CAPABILITY.productItemsCreate]).toBe('Yeni Ürün')
+    expect(CAPABILITY_NAV_LABEL[CAPABILITY.productItemsCreate]).toBe('')
+    expect(NAV_CAPABILITIES).toContain(CAPABILITY.productItemsList)
+    expect(NAV_CAPABILITIES).not.toContain(CAPABILITY.productItemsCreate)
+    expect(NAV_CAPABILITIES).not.toContain(CAPABILITY.productItemsDetail)
+    expect(NAV_CAPABILITIES).not.toContain(CAPABILITY.productItemsEdit)
   })
 })
