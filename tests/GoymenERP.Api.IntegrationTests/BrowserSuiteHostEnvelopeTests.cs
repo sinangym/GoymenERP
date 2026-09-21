@@ -2,6 +2,7 @@ using GoymenERP.Api.Shell;
 using GoymenERP.BrowserSuiteFixtureTool;
 using GoymenERP.BuildingBlocks.Shell;
 using GoymenERP.Modules.Counterparty.Infrastructure.Shell;
+using GoymenERP.Modules.Product.Infrastructure.Fixtures;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -36,6 +37,23 @@ public sealed class BrowserSuiteHostEnvelopeTests
         ["GOYMEN_ERP_C01_E2E_FIXTURE_EVIDENCE"] = "artifacts/browser-fixture-evidence.json",
         ["GOYMEN_ERP_C01_E2E_SQLSERVER_CONNECTION"] = "Server=127.0.0.1,11433;Database=runner-only;",
     };
+
+    [Fact]
+    public void A_normal_application_host_does_not_register_product_technical_fixture_services()
+    {
+        WithoutProcessEnvelope(() =>
+        {
+            using var host = new GoymenErpApiFactory();
+            using (host.CreateClient())
+            {
+                // Creating the first client builds and starts Program.cs as a normal Testing host.
+            }
+
+            var registered = host.Services.GetRequiredService<IServiceProviderIsService>();
+            Assert.False(registered.IsService(typeof(C01E2eProductTechnicalCardFixtureWriter)));
+            Assert.False(registered.IsService(typeof(IProductTechnicalCardFixtureStore)));
+        });
+    }
 
     [Fact]
     public void A_normal_profile_host_starts_without_the_envelope_the_process_carries_and_opens_the_writers()
@@ -130,6 +148,29 @@ public sealed class BrowserSuiteHostEnvelopeTests
             foreach (var (name, value) in ProcessEnvelope)
             {
                 Environment.SetEnvironmentVariable(name, value);
+            }
+
+            test();
+        }
+        finally
+        {
+            foreach (var (name, value) in saved)
+            {
+                Environment.SetEnvironmentVariable(name, value);
+            }
+        }
+    }
+
+    private static void WithoutProcessEnvelope(Action test)
+    {
+        var saved = ProcessEnvelope.Keys
+            .Concat(["C01E2e__EnableListCapability", "C01E2e__Profile"])
+            .ToDictionary(name => name, name => Environment.GetEnvironmentVariable(name));
+        try
+        {
+            foreach (var name in saved.Keys)
+            {
+                Environment.SetEnvironmentVariable(name, null);
             }
 
             test();
