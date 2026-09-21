@@ -231,9 +231,10 @@ function decodePlannedInput(value: unknown): PlannedInput | null {
  * says the answer could not be read. A half-trusted plan would show one roll's planned kilogram
  * beside another's.
  *
- * Approval is decoded as a PAIR and never half-believed: a plan that names an approver but no
- * instant (or the reverse) is not a shape this contract has — the server's own check constraint
- * says the two move together — so it is refused rather than displayed as a partial approval.
+ * Approval is decoded as a status-bound pair and never half-believed: Draft has neither approval
+ * value and Approved has both. Any other combination is not a shape this contract has — the
+ * server's own check constraint says status and the pair move together — so it is refused rather
+ * than displayed as a contradictory or partial approval.
  */
 export function decodePlan(body: unknown): ProductionPlanView | null {
   if (!isObject(body)) return null
@@ -258,8 +259,12 @@ export function decodePlan(body: unknown): ProductionPlanView | null {
   ) {
     return null
   }
-  // Both or neither: an approver without an instant is not this contract.
-  if ((approvedByUserId === null) !== (approvedAtUtc === null)) return null
+  // CK_Plans_Approval: Draft has neither value; Approved has both. No other combination is trusted.
+  if (body.status === 'Draft') {
+    if (approvedByUserId !== null || approvedAtUtc !== null) return null
+  } else if (approvedByUserId === null || approvedAtUtc === null) {
+    return null
+  }
   const inputs: PlannedInput[] = []
   for (const raw of body.inputs) {
     const input = decodePlannedInput(raw)

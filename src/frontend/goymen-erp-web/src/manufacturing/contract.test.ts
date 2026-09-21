@@ -247,8 +247,13 @@ describe('decodePlan', () => {
     ['a negative planned kilogram', plan({ inputs: [{ parentRollId: ROLL_1, plannedKg: '-1' }] })],
     ['a planned roll that is not a guid', plan({ inputs: [{ parentRollId: 'nope', plannedKg: '1' }] })],
     ['a half-filled target', plan({ target: { basis: 'GoodOutputMass' } })],
-    // Both halves of the approval move together on the server (CK_Plans_Approval); half of one
-    // would be displayed as an approval nobody made, or an approval with no time.
+    // Status and both halves of the approval move together on the server (CK_Plans_Approval); any
+    // cross-combination would display a contradictory approval state.
+    ['an approved status with no approval pair', plan({ status: 'Approved', version: 2 })],
+    [
+      'a draft status with a complete approval pair',
+      plan({ approvedByUserId: APPROVER, approvedAtUtc: '2026-09-18T09:00:00.000Z' }),
+    ],
     ['an approver with no instant', plan({ status: 'Approved', approvedByUserId: APPROVER })],
     ['an instant with no approver', plan({ status: 'Approved', approvedAtUtc: '2026-09-18T09:00:00.000Z' })],
     ['an instant that is not a time', plan({ status: 'Approved', approvedByUserId: APPROVER, approvedAtUtc: 'dün' })],
