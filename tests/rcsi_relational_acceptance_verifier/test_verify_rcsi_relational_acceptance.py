@@ -381,6 +381,7 @@ class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
                 "An_authorized_user_plans_approves_orders_records_facts_and_reads_the_roll_balance",
                 "Each_endpoint_needs_its_own_grant_and_a_refused_write_stores_nothing",
                 "Another_companys_order_is_not_found_and_the_company_comes_only_from_the_context",
+                "A_plan_is_read_back_from_storage_under_its_own_grant_and_only_for_the_context_company",
                 "Stale_versions_reused_ids_masses_outside_the_profile_and_foreign_work_centers_are_refused",
                 "The_idempotency_key_replays_one_attempt_and_refuses_another_request_or_actor",
                 "Two_attempts_racing_on_one_key_store_one_command_and_both_answer_it",
