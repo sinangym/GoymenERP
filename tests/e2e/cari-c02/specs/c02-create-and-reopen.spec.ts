@@ -42,8 +42,6 @@ const CREATE_TITLE = 'Yeni Cari'
 const KIND_LABEL = 'Taraf türü'
 const LEGAL_NAME_LABEL = 'Hukuki ad'
 const SUBMIT_LABEL = 'Cari oluştur'
-const SUCCESS_TITLE = 'Cari oluşturuldu'
-const SUCCESS_CODE_LABEL = 'Cari kodu'
 const LEGAL_PERSON_KIND = 'Tüzel kişi'
 const CARD_IDENTITY_HEADING = 'Kimlik'
 
@@ -63,6 +61,8 @@ test.beforeAll(() => {
 test.describe.configure({ mode: 'serial' })
 
 let createdPartyPath = ''
+let createdPartyId = ''
+let createdPartyCode = ''
 
 test('C02-01 a creator reaches C-02 THROUGH THE LIST and the record is persisted through the real API', async ({ page }) => {
   await signInAs(page, CREATOR_ACTOR)
@@ -88,16 +88,37 @@ test('C02-01 a creator reaches C-02 THROUGH THE LIST and the record is persisted
 
   await page.getByLabel(KIND_LABEL).selectOption({ label: LEGAL_PERSON_KIND })
   await page.getByLabel(new RegExp(`^${LEGAL_NAME_LABEL}`)).fill(LEGAL_NAME)
+
+  const createResponsePromise = page.waitForResponse((response) => {
+    const url = new URL(response.url())
+    return response.request().method() === 'POST' && url.pathname === '/api/v1/counterparties'
+  })
   await page.getByRole('button', { name: SUBMIT_LABEL }).click()
 
-  // The success panel is the API's answer, not the form's optimism: it carries the server-assigned code.
-  await expect(page.getByText(SUCCESS_TITLE)).toBeVisible()
-  await expect(page.getByText(SUCCESS_CODE_LABEL)).toBeVisible()
+  // Bind the journey to the command that completed. This actor can open detail, so the create page
+  // navigates immediately and never renders its no-detail success panel.
+  const createResponse = await createResponsePromise
+  expect(createResponse.status()).toBe(201)
+  const createdBody: unknown = await createResponse.json()
+  if (typeof createdBody !== 'object' || createdBody === null) {
+    throw new Error('C02-01 create response must be an object')
+  }
+  const { id, code } = createdBody as Record<string, unknown>
+  if (typeof id !== 'string' || !/^[0-9a-f-]{36}$/i.test(id)) {
+    throw new Error('C02-01 create response must carry a UUID id')
+  }
+  if (typeof code !== 'string' || code.length === 0) {
+    throw new Error('C02-01 create response must carry the server-assigned code')
+  }
+
+  createdPartyId = id
+  createdPartyCode = code
+  createdPartyPath = `/cari/${createdPartyId}`
 
   // The detail is published in this head, so the create navigates there rather than summarising.
-  await expect(page).toHaveURL(/\/cari\/[0-9a-f-]{36}$/)
-  createdPartyPath = new URL(page.url()).pathname
-  expect(createdPartyPath).toMatch(/^\/cari\/[0-9a-f-]{36}$/)
+  await expect(page).toHaveURL(new RegExp(`${createdPartyPath}$`))
+  await expect(page.getByRole('heading', { name: new RegExp(LEGAL_NAME) })).toBeVisible()
+  await expect(page.getByText(createdPartyCode, { exact: true })).toBeVisible()
 })
 
 test('C02-02 closing and reopening the card reads the SAME record back from the server', async ({ page }) => {
@@ -127,9 +148,25 @@ test('C02-02 closing and reopening the card reads the SAME record back from the 
 
 test('C02-03 an actor authorized in ANOTHER company does not reach the record', async ({ page }) => {
   expect(createdPartyPath, 'C02-01 must have created the record').not.toBe('')
+  expect(createdPartyId, 'C02-01 must have captured the returned record id').not.toBe('')
   await signInAs(page, OTHER_COMPANY_ACTOR)
 
+  const refusalResponsePromise = page.waitForResponse((response) => {
+    const url = new URL(response.url())
+    return (
+      response.request().method() === 'GET' &&
+      url.pathname === `/api/v1/counterparties/${createdPartyId}`
+    )
+  })
   await page.goto(createdPartyPath)
+
+  // Bind the check to the completed target refusal and its terminal UI. Name absence alone could
+  // pass while either the shell or the detail request was still loading.
+  const refusalResponse = await refusalResponsePromise
+  expect(refusalResponse.status()).toBe(404)
+  const refusal = page.locator('[data-state="not-found"]')
+  await expect(refusal).toBeVisible()
+  await expect(refusal).toContainText('Bulunamadı')
 
   // Refused, and the name must not leak through the refusal — a 404 body that still renders the
   // heading would be a leak with a passing status code.
