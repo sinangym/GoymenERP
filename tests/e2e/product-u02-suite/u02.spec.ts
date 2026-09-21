@@ -19,13 +19,15 @@ type Seed = {
   readonly codeGroupId: string
   readonly authorizedActor: string
   readonly unauthorizedActor: string
+  /** Supplied only by the gated u02 SYNTHETIC release fixture; never a real Q6 release. */
+  readonly technicalFamilyId: string
 }
 
 function seed(): Seed {
   const raw = process.env.BROWSER_E2E_U02_SEED?.trim()
   if (!raw) throw new Error('BROWSER_E2E_U02_SEED is not set; the u02 fixture did not run.')
   const value = JSON.parse(raw) as Seed
-  for (const key of ['companyId', 'codeGroupId', 'authorizedActor', 'unauthorizedActor'] as const) {
+  for (const key of ['companyId', 'codeGroupId', 'authorizedActor', 'unauthorizedActor', 'technicalFamilyId'] as const) {
     if (typeof value[key] !== 'string' || value[key] === '') throw new Error(`BROWSER_E2E_U02_SEED.${key} is missing.`)
   }
   return value
@@ -51,8 +53,8 @@ function watchProducts(page: Page): { reads: number; writes: number; writeStatus
   return traffic
 }
 
-test('U02-FIX-01 the authorized actor saves a draft in the fixture code group through the real API', async ({ page }) => {
-  const { codeGroupId } = seed()
+test('U02-FIX-01 the authorized actor creates, edits and reopens technical fields through the real API', async ({ page }) => {
+  const { codeGroupId, technicalFamilyId } = seed()
   const traffic = watchProducts(page)
   const groupsAnswer = page.waitForResponse((response) =>
     new URL(response.url()).pathname === `${PRODUCTS_PATH}/code-groups` && response.request().method() === 'GET')
@@ -67,15 +69,74 @@ test('U02-FIX-01 the authorized actor saves a draft in the fixture code group th
 
   const name = `SENTETIK u02 fixture proof ${Date.now()}`
   await page.getByLabel('Ürün adı').fill(name)
+  const optionsAnswer = page.waitForResponse(response => new URL(response.url()).pathname === `${PRODUCTS_PATH}/reference-options`)
   await page.getByLabel('Kod grubu').selectOption(codeGroupId)
+  const optionsResponse = await optionsAnswer
+  expect(optionsResponse.status()).toBe(200)
+  const options = await optionsResponse.json() as {
+    familyFacts: { id: string; templateId: string; templateVersion: string; cins: string; tur: string; tip: string }[]
+    templates: { id: string; version: string; fields: { key: string; kind: string; role: string | null; dictionary: string | null; appliesWhenField: string | null }[] }[]
+    dictionaries: { name: string; entries: { code: string; displayName: string; status: string; isExplicitNone: boolean }[] }[]
+    units: { id: string; isKilogram: boolean; displayName: string }[]
+  }
+  const family = options.familyFacts.find(item => item.id === technicalFamilyId)
+  expect(family, 'the test-only released family must come from the real registry read').toBeDefined()
+  const template = options.templates.find(item => item.id === family!.templateId && item.version === family!.templateVersion)!
+  expect(template).toBeDefined()
+  await page.getByLabel('Ürün ailesi').selectOption(technicalFamilyId)
+  const thickness = template.fields.find(field => field.role === 'thickness')!
+  expect(thickness).toBeDefined()
+  const expectedAttributes: Record<string, number | string> = {}
+  let coatingName = ''
+  for (const field of template.fields.filter(field => field.appliesWhenField === null)) {
+    if (field.kind === 'measureMillimetre') {
+      const value = field.role === 'thickness' ? '1.25' : '500'
+      await page.getByLabel(`${field.key} (mm)`, { exact: false }).fill(value)
+      expectedAttributes[field.key] = Number(value)
+    } else if (field.role === 'quality' || field.role === 'coating') {
+      const entries = options.dictionaries.find(dictionary => dictionary.name === field.dictionary)!.entries
+      const entry = entries.find(item => item.status === 'approved' && (field.role !== 'coating' || item.isExplicitNone))!
+      expect(entry).toBeDefined()
+      await page.getByLabel(field.key, { exact: false }).selectOption(entry.code)
+      expectedAttributes[field.key] = entry.code
+      if (field.role === 'coating') coatingName = entry.displayName
+    }
+  }
+  const kilogram = options.units.find(unit => unit.isKilogram)!
+  expect(kilogram).toBeDefined()
+  await page.getByLabel('Stok birimi (kg)').selectOption(kilogram.id)
+  await page.getByLabel('Satış birimi').selectOption(kilogram.id)
   const created = page.waitForResponse((response) =>
     new URL(response.url()).pathname === PRODUCTS_PATH && response.request().method() === 'POST')
   await page.getByRole('button', { name: 'Taslak olarak kaydet' }).click()
 
-  expect((await created).status(), 'the real create').toBe(201)
+  const createdResponse = await created
+  expect(createdResponse.status(), 'the real create').toBe(201)
+  const createdBody = await createdResponse.json() as { card: { product: { id: string; version: string }; references: { attributes: Record<string, unknown> } } }
+  expect(createdBody.card.references.attributes).toEqual(expectedAttributes)
   await expect(page.getByRole('heading', { level: 1, name: 'Taslak kaydedildi' })).toBeVisible()
   await expect(page.getByText(new RegExp(`^${group!.prefix}-[0-9]+ — ${name}$`))).toBeVisible()
-  expect(traffic.writeStatuses).toEqual([201])
+  const id = createdBody.card.product.id
+  await page.goto(`/urun/${id}`)
+  await expect(page.getByText(coatingName, { exact: true })).toBeVisible()
+  await expect(page.getByTestId('product-unit-stock')).toHaveText(kilogram.displayName)
+  await expect(page.getByTestId('product-unit-sales')).toHaveText(kilogram.displayName)
+  await page.goto(`/urun/${id}/duzenle`)
+  await page.getByLabel(`${thickness.key} (mm)`, { exact: false }).fill('2.5')
+  await page.getByLabel('Değişiklik gerekçesi').fill('SENTETIK u02 teknik ölçü düzeltmesi')
+  const edited = page.waitForResponse(response => new URL(response.url()).pathname === `${PRODUCTS_PATH}/${id}/draft` && response.request().method() === 'PATCH')
+  await page.getByRole('button', { name: 'Değişiklikleri kaydet' }).click()
+  const editedResponse = await edited
+  expect(editedResponse.status()).toBe(200)
+  expect(editedResponse.request().postDataJSON().expectedVersion).toBe(createdBody.card.product.version)
+  await expect(page.getByRole('heading', { name: 'Değişiklikler kaydedildi' })).toBeVisible()
+  const reopened = page.waitForResponse(response => new URL(response.url()).pathname === `${PRODUCTS_PATH}/${id}` && response.request().method() === 'GET')
+  await page.goto(`/urun/${id}`)
+  const persisted = await (await reopened).json()
+  expect(persisted.references.attributes).toEqual({ ...expectedAttributes, [thickness.key]: 2.5 })
+  await expect(page.getByText('2.5', { exact: true })).toBeVisible()
+  await expect(page.getByText(coatingName, { exact: true })).toBeVisible()
+  expect(traffic.writeStatuses).toEqual([201, 200])
 })
 
 test('U02-FIX-02 the unauthorized actor is closed out of the Product screens and sends no Product request', async ({ page }) => {

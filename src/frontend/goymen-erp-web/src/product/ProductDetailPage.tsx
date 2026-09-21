@@ -273,6 +273,15 @@ function ProductCardView({
             {/* Carried verbatim: a master change must not rewrite what a record meant. */}
             <dd>{references.templateVersion ?? UNASSIGNED}</dd>
           </div>
+          <div><dt>Teknik şablon</dt><dd>{labelOrUnavailable(product.labels.template ?? null, references.templateId)}</dd></div>
+          {(['cins', 'tur', 'tip'] as const).map((fact, index) => <div key={fact}>
+            <dt>{['Cins', 'Tür', 'Tip'][index]}</dt>
+            <dd>{product.labels.familyFacts?.[fact] ?? UNASSIGNED}</dd>
+          </div>)}
+          {Object.entries(references.attributes ?? {}).map(([key, value]) => <div key={key}>
+            <dt>{key}</dt>
+            <dd>{product.labels.attributes?.[key] ?? (typeof value === 'number' ? String(value) : 'Katalog adı okunamıyor')}</dd>
+          </div>)}
           {UNIT_ROLE.map((role) => (
             <div key={role}>
               <dt>{UNIT_ROLE_LABEL[role]}</dt>
@@ -282,7 +291,7 @@ function ProductCardView({
                 the screen inventing a conversion.
               */}
               <dd className={styles.identifier} data-testid={`product-unit-${role}`}>
-                {references.units[role] ?? UNASSIGNED}
+                {labelOrUnavailable(product.labels.units?.[role] ?? null, references.units[role])}
               </dd>
             </div>
           ))}

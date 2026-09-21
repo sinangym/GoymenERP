@@ -227,15 +227,15 @@ describe('what the screen deliberately does not offer', () => {
     expect((screen.getByLabelText(/Ürün ailesi/) as HTMLSelectElement).disabled).toBe(false)
   })
 
-  it('offers no template, unit or tracking-policy editor, and says why', async () => {
-    // The coordinator keeps attribute/unit completeness in the NEXT slice.
+  it('offers no arbitrary template or tracking-policy editor and explains the release boundary', async () => {
     installFetch({ capabilities: CREATE_ONLY })
     renderProductApp(PATH)
 
     await formVisible()
     expect(screen.queryByLabelText(/Takip politikası/)).toBeNull()
     expect(screen.queryByLabelText(/Şablon/)).toBeNull()
-    expect(screen.getByText(/sonraki dilimde aile bazlı tamlık/)).toBeTruthy()
+    expect(screen.getByLabelText('Stok birimi (kg)')).toBeTruthy()
+    expect(screen.getByText(/Takip politikası henüz düzenlenemez/)).toBeTruthy()
   })
 
   it('has no activate action — the contract includes no activation command', async () => {

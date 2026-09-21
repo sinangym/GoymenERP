@@ -33,6 +33,7 @@ import {
   isMachineToken,
   isNonEmptyString,
 } from './wireGuards'
+import { decodeTechnicalOptions, type TechnicalOptions } from './technicalContract'
 
 /**
  * Marks the module as aligned to a published backend source rather than to a
@@ -234,6 +235,7 @@ export const REFERENCE_CATALOG = [
 export type ReferenceCatalog = (typeof REFERENCE_CATALOG)[number]
 
 export interface ProductReferenceOptions {
+  readonly technical?: TechnicalOptions
   readonly groupId: string
   readonly classId: string | null
   readonly classes: readonly ProductReferenceOption[]
@@ -268,11 +270,8 @@ function decodeOptionList(raw: unknown): readonly ProductReferenceOption[] | nul
 /**
  * Decode the reference options, bound to the group they were requested for.
  *
- * Only `classes` and `families` are modelled: this slice offers class and family,
- * which are first-class members of `CreateProductDraftRequest`. Units, templates
- * and tracking policies belong to the `references` block, which §19.6 and the
- * coordinator keep in the NEXT slice — decoding options this screen cannot use
- * would be carrying weight for a feature that is not here.
+ * PRD-CARD-1 carries the released fields/dictionaries and Settings unit identities.
+ * Missing legacy metadata offers no technical choices; malformed metadata fails closed.
  */
 export function decodeReferenceOptions(
   raw: unknown,
@@ -289,6 +288,8 @@ export function decodeReferenceOptions(
   if (classes === null) return null
   const families = decodeOptionList(o.families)
   if (families === null) return null
+  const technical = decodeTechnicalOptions(o)
+  if (technical === null) return null
 
   if (!Array.isArray(o.unavailableCatalogs)) return null
   const unavailable: ReferenceCatalog[] = []
@@ -305,6 +306,7 @@ export function decodeReferenceOptions(
     classId: (o.classId as string | null) ?? null,
     classes,
     families,
+    technical,
     unavailableCatalogs: unavailable,
   }
 }
@@ -330,6 +332,10 @@ export function isCatalogUnavailable(
  * These exist so the client never fans a UUID out into another module's read.
  */
 export interface ProductReferenceLabels {
+  readonly template?: string | null
+  readonly familyFacts?: { readonly cins: string; readonly tur: string; readonly tip: string } | null
+  readonly attributes?: Readonly<Record<string, string>> | null
+  readonly units?: Readonly<Record<string, string>> | null
   readonly group: string | null
   readonly class: string | null
   readonly family: string | null
@@ -353,7 +359,18 @@ function decodeLabels(raw: unknown): ProductReferenceLabels | null {
     else if (isNonEmptyString(value, 200)) out[key] = value
     else return null
   }
-  return out as ProductReferenceLabels
+  if (source.template != null && !isNonEmptyString(source.template, 200)) return null
+  const facts = source.familyFacts
+  if (facts != null && (typeof facts !== 'object' || Array.isArray(facts)
+    || !['cins', 'tur', 'tip'].every(key => isNonEmptyString((facts as Record<string, unknown>)[key], 200)))) return null
+  const attributes = source.attributes
+  if (attributes != null && (typeof attributes !== 'object' || Array.isArray(attributes)
+    || !Object.values(attributes).every(value => isNonEmptyString(value, 200)))) return null
+  const units = source.units
+  if (units != null && (typeof units !== 'object' || Array.isArray(units)
+    || !Object.entries(units).every(([key, value]) => (UNIT_ROLE as readonly string[]).includes(key) && isNonEmptyString(value, 200)))) return null
+  return { ...out, template: source.template ?? null, familyFacts: facts ?? null,
+    attributes: attributes ?? null, units: units ?? null } as ProductReferenceLabels
 }
 
 /* ── Product core (ProductDraftView) ──────────────────────────────────────── */

@@ -11,6 +11,20 @@ namespace GoymenERP.Modules.Product.Application;
 /// </summary>
 public static class ProductCardPresentation
 {
+    /// <summary>Resolve assigned unit roles through Settings identities, without a fallback or conversion.</summary>
+    public static ProductReferenceLabels WithUnitLabels(ProductReferenceLabels labels, ProductUnitReferences? units,
+        IReadOnlyDictionary<Guid, string> codes)
+    {
+        var names = new Dictionary<string, string>(StringComparer.Ordinal);
+        (string Role, Guid? Id)[] assignments = [("stock", units?.Stock), ("sales", units?.Sales),
+            ("purchase", units?.Purchase), ("price", units?.Price), ("production", units?.Production), ("package", units?.Package)];
+        foreach (var (role, id) in assignments)
+        {
+            if (id is { } assigned && codes.TryGetValue(assigned, out var code)) names[role] = code;
+        }
+        return labels with { PrimaryStockUnit = names.GetValueOrDefault("stock"), Units = names.Count == 0 ? null : names };
+    }
+
     /// <summary>The released templates with their own fields, in the release's order.</summary>
     public static IEnumerable<ProductTemplateOption> Templates(ProductFamilyDefinitionV2? definition) =>
         (definition?.Templates ?? []).Select(template => new ProductTemplateOption(template.Id, template.Version,

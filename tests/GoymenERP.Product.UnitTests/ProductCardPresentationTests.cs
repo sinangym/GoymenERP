@@ -11,6 +11,19 @@ namespace GoymenERP.Product.UnitTests;
 /// </summary>
 public sealed class ProductCardPresentationTests
 {
+    [Fact]
+    public void Unit_names_follow_each_assigned_settings_identity_without_stock_fallback()
+    {
+        var kilogram = Guid.NewGuid();
+        var piece = Guid.NewGuid();
+        var labels = ProductCardPresentation.WithUnitLabels(new("Group", null, null, null),
+            new(Stock: kilogram, Sales: piece, Purchase: Guid.NewGuid()),
+            new Dictionary<Guid, string> { [kilogram] = "kg", [piece] = "piece" });
+        Assert.Equal("kg", labels.PrimaryStockUnit);
+        Assert.Equal(new Dictionary<string, string> { ["stock"] = "kg", ["sales"] = "piece" }, labels.Units);
+        Assert.Null(ProductCardPresentation.WithUnitLabels(labels, new(), new Dictionary<Guid, string>()).Units);
+    }
+
     private static readonly Guid HotCoil = Guid.Parse("7a2f1c40-0b51-4f8e-9c33-51d0a7e6b001");
     private static readonly Guid TemplateId = Guid.Parse("7a2f1c40-0b51-4f8e-9c33-51d0a7e6b011");
     private const string Thickness = "syn-thickness-mm";

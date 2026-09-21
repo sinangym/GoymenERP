@@ -200,7 +200,8 @@ public sealed record ProductCompletenessView(string Evaluation, IReadOnlyList<st
 /// </summary>
 public sealed record ProductReferenceLabels(string? Group, string? Class, string? Family, string? PrimaryStockUnit,
     string? Template = null, ProductFamilyFactsLabels? FamilyFacts = null,
-    IReadOnlyDictionary<string, string>? Attributes = null);
+    IReadOnlyDictionary<string, string>? Attributes = null,
+    IReadOnlyDictionary<string, string>? Units = null);
 
 /// <summary>The family's fixed facts as the release states them (#66 5739827887): never typed on a card.</summary>
 public sealed record ProductFamilyFactsLabels(string Cins, string Tur, string Tip);
