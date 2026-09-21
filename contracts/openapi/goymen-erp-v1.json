@@ -13493,6 +13493,228 @@
         ]
       }
     },
+    "/api/v1/manufacturing/plans/{planId}": {
+      "get": {
+        "tags": [
+          "Manufacturing"
+        ],
+        "operationId": "GetManufacturingPlanV1",
+        "parameters": [
+          {
+            "name": "planId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "X-Correlation-Id",
+            "in": "header",
+            "description": "Optional client correlation identifier; the server creates one when absent.",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Causation-Id",
+            "in": "header",
+            "description": "Optional identifier of the command or event that caused this request.",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Company-Id",
+            "in": "header",
+            "description": "Selected company identifier for this company-scoped request.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "x-erp-non-empty-uuid": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanViewV1"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "company_context_invalid",
+              "correlation_metadata_invalid"
+            ]
+          },
+          "404": {
+            "description": "Not Found",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpCodeLessProblemDetailsContract"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "service_unavailable"
+            ]
+          },
+          "401": {
+            "description": "Unauthorized",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "authentication_required"
+            ]
+          },
+          "403": {
+            "description": "Forbidden",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "forbidden"
+            ]
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "internal_error"
+            ]
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
     "/api/v1/manufacturing/orders": {
       "post": {
         "tags": [
@@ -26423,6 +26645,64 @@
           }
         }
       },
+      "ProductDictionaryEntryOption": {
+        "required": [
+          "code",
+          "displayName",
+          "status",
+          "parentCode",
+          "isExplicitNone",
+          "massGm2"
+        ],
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "parentCode": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "isExplicitNone": {
+            "type": "boolean"
+          },
+          "massGm2": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          }
+        }
+      },
+      "ProductDictionaryOption": {
+        "required": [
+          "name",
+          "entries"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProductDictionaryEntryOption"
+            }
+          }
+        }
+      },
       "ProductDraftChanges": {
         "minProperties": 1,
         "type": "object",
@@ -26520,6 +26800,72 @@
           }
         }
       },
+      "ProductFamilyFactsLabels": {
+        "required": [
+          "cins",
+          "tur",
+          "tip"
+        ],
+        "type": "object",
+        "properties": {
+          "cins": {
+            "type": "string"
+          },
+          "tur": {
+            "type": "string"
+          },
+          "tip": {
+            "type": "string"
+          }
+        }
+      },
+      "ProductFamilyFactsOption": {
+        "required": [
+          "id",
+          "code",
+          "displayName",
+          "cins",
+          "tur",
+          "tip",
+          "templateId",
+          "templateVersion"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "cins": {
+            "type": "string"
+          },
+          "tur": {
+            "type": "string"
+          },
+          "tip": {
+            "type": "string"
+          },
+          "templateId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "templateVersion": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "ProductMutationResponse": {
         "required": [
           "card",
@@ -26609,6 +26955,40 @@
               "null",
               "string"
             ]
+          },
+          "template": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "familyFacts": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ProductFamilyFactsLabels"
+              }
+            ]
+          },
+          "attributes": {
+            "type": [
+              "null",
+              "object"
+            ],
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "units": {
+            "type": [
+              "null",
+              "object"
+            ],
+            "additionalProperties": {
+              "type": "string"
+            }
           }
         }
       },
@@ -26686,6 +27066,24 @@
             "type": "array",
             "items": {
               "type": "string"
+            }
+          },
+          "familyFacts": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/ProductFamilyFactsOption"
+            }
+          },
+          "dictionaries": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/ProductDictionaryOption"
             }
           }
         }
@@ -26957,6 +27355,64 @@
         },
         "description": "Actual Product problem body. Type/title/status are present; code/detail/correlationId/errors and lossless string version fields are conditional. A handler 403 can omit code. No problem response establishes success or current authority."
       },
+      "ProductTemplateFieldOption": {
+        "required": [
+          "key",
+          "kind",
+          "role",
+          "required",
+          "dictionary",
+          "allowsCandidate",
+          "appliesWhenField",
+          "appliesWhenCode",
+          "parentField"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "role": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "dictionary": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "allowsCandidate": {
+            "type": "boolean"
+          },
+          "appliesWhenField": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "appliesWhenCode": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "parentField": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "ProductTemplateOption": {
         "required": [
           "id",
@@ -26974,6 +27430,15 @@
           },
           "displayName": {
             "type": "string"
+          },
+          "fields": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/ProductTemplateFieldOption"
+            }
           }
         }
       },

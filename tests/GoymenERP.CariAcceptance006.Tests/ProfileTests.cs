@@ -66,7 +66,13 @@ public sealed class ProfileTests
             Assert.Equal(source.RequiredPermissions, declaration.RequiredPermissions);
             Assert.Equal(source.ScopeRequirement, declaration.ScopeRequirement);
         }
-        Assert.All(original, x => Assert.False(x.ImplementationAvailable));
+        Assert.All(
+            original.Where(x => x.CapabilityId != CounterpartyShellCapabilityProvider.LinkCapabilityId),
+            x => Assert.True(x.ImplementationAvailable));
+        Assert.False(Assert.Single(
+            original,
+            x => x.CapabilityId == CounterpartyShellCapabilityProvider.LinkCapabilityId)
+            .ImplementationAvailable);
     }
 
     [Fact]

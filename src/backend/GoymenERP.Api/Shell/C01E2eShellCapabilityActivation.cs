@@ -96,30 +96,30 @@ internal static class C01E2eShellCapabilityActivation
     // refuses for the providers it actually holds: startup fails closed, nothing unreviewed is served.
     private static readonly (Type[] Providers, string Authority)[] NormalAuthorities =
     [
-        (Type.EmptyTypes, ShellCapabilityRegistryAuthorities.CounterpartyListCreateLinkAndDetailV15),
+        (Type.EmptyTypes, ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetail),
         (new[] { typeof(OrganizationShellCapabilityProvider) },
-            ShellCapabilityRegistryAuthorities.CounterpartyV15AndOrganizationV11),
+            ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailAndOrganizationV11),
         (new[] { typeof(OrganizationShellCapabilityProvider), typeof(ProductShellCapabilityProvider) },
-            ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV11AndProductV10),
+            ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11AndProductV10),
         (new[]
             {
                 typeof(OrganizationShellCapabilityProvider), typeof(ProductShellCapabilityProvider),
                 typeof(SalesShellCapabilityProvider),
             },
-            ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV11ProductV10AndPublishedSalesV10),
+            ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10AndPublishedSalesV10),
         (new[]
             {
                 typeof(OrganizationShellCapabilityProvider), typeof(ProductShellCapabilityProvider),
                 typeof(SalesShellCapabilityProvider), typeof(FinanceShellCapabilityProvider),
             },
-            ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV11ProductV10PublishedSalesV10AndPublishedFinanceV10),
+            ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV10AndPublishedFinanceV10),
         (new[]
             {
                 typeof(OrganizationShellCapabilityProvider), typeof(ProductShellCapabilityProvider),
                 typeof(SalesShellCapabilityProvider), typeof(FinanceShellCapabilityProvider),
                 typeof(ManufacturingShellCapabilityProvider),
             },
-            ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV11ProductV10PublishedSalesV10PublishedFinanceV10AndPublishedManufacturingV10),
+            ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV10PublishedFinanceV10AndPublishedManufacturingV10),
         // LOG-4a: Logistics's (staged) loading-instruction screens join the host set.
         (new[]
             {
@@ -127,7 +127,7 @@ internal static class C01E2eShellCapabilityActivation
                 typeof(SalesShellCapabilityProvider), typeof(FinanceShellCapabilityProvider),
                 typeof(ManufacturingShellCapabilityProvider), typeof(LogisticsShellCapabilityProvider),
             },
-            ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV11ProductV10PublishedSalesV10PublishedFinanceV10PublishedManufacturingV10AndLogisticsV10),
+            ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV10PublishedFinanceV10PublishedManufacturingV10AndLogisticsV10),
         // PUR-4a: Purchasing's (staged) order screens join the host set.
         (new[]
             {
@@ -136,7 +136,7 @@ internal static class C01E2eShellCapabilityActivation
                 typeof(ManufacturingShellCapabilityProvider), typeof(LogisticsShellCapabilityProvider),
                 typeof(PurchasingShellCapabilityProvider),
             },
-            ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV11ProductV10PublishedSalesV10PublishedFinanceV10PublishedManufacturingV10LogisticsV10AndPurchasingV10),
+            ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV10PublishedFinanceV10PublishedManufacturingV10LogisticsV10AndPurchasingV10),
         // ACC-V0b: Accounting's (staged) period, journal and posting-queue screens join the host set.
         (new[]
             {
@@ -145,7 +145,7 @@ internal static class C01E2eShellCapabilityActivation
                 typeof(ManufacturingShellCapabilityProvider), typeof(LogisticsShellCapabilityProvider),
                 typeof(PurchasingShellCapabilityProvider), typeof(AccountingShellCapabilityProvider),
             },
-            ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV11ProductV10PublishedSalesV10PublishedFinanceV10PublishedManufacturingV10LogisticsV10PurchasingV10AndPublishedAccountingV10),
+            ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV10PublishedFinanceV10PublishedManufacturingV10LogisticsV10PurchasingV10AndPublishedAccountingV10),
     ];
 
     private static string NormalAuthority(IServiceCollection services)
@@ -163,7 +163,7 @@ internal static class C01E2eShellCapabilityActivation
             }
         }
 
-        return ShellCapabilityRegistryAuthorities.CounterpartyListCreateLinkAndDetailV15;
+        return ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetail;
     }
 
     private static bool IsActivationRequested(IConfiguration configuration) =>
@@ -325,6 +325,16 @@ internal static class C01E2eStagedDeclarations
 {
     // The list is opened exactly as C-01 always has (single company); the detail only changes its
     // availability and keeps the canonical declaration's own context, scope and permission.
+    //
+    // EVERY declaration's availability is STATED here, including the ones this envelope closes.
+    // It used to end in `_ => declaration`, which passed create and link through with whatever the
+    // real provider happened to carry — correct only for as long as everything else was staged. The
+    // moment the normal provider publishes create, an envelope whose entire name is "list-only"
+    // would have started offering a create screen, and the two disposable authority constants would
+    // have moved with it: a silent widening of an acceptance surface as a side effect of an
+    // unrelated flip. An envelope's contents are DECLARED, not inherited — so this switch is
+    // exhaustive over the owner's four capabilities and the default arm now refuses an unknown one
+    // rather than quietly admitting it with the owner's flag.
     internal static IReadOnlyCollection<ShellCapabilityDeclaration> Open(
         CounterpartyShellCapabilityProvider source, bool detail) =>
         Array.AsReadOnly(source.GetDeclarations()
@@ -335,11 +345,19 @@ internal static class C01E2eStagedDeclarations
                     ContextRequirement = ShellCapabilityContextRequirement.SingleCompany,
                     ImplementationAvailable = true,
                 },
-                CounterpartyShellCapabilityProvider.DetailCapabilityId when detail => declaration with
+                CounterpartyShellCapabilityProvider.DetailCapabilityId => declaration with
                 {
-                    ImplementationAvailable = true,
+                    ImplementationAvailable = detail,
                 },
-                _ => declaration,
+                // Closed in both envelopes, independently of what the normal host publishes.
+                CounterpartyShellCapabilityProvider.CreateCapabilityId
+                    or CounterpartyShellCapabilityProvider.LinkCapabilityId => declaration with
+                {
+                    ImplementationAvailable = false,
+                },
+                _ => throw new InvalidOperationException(
+                    "C-01 disposable zarfı, Cari sağlayıcısının tanımadığı bir kabiliyetle karşılaştı: "
+                    + declaration.CapabilityId),
             })
             .ToArray());
 }

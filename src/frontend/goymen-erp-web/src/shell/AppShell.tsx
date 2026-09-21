@@ -27,19 +27,26 @@ import styles from './AppShell.module.css'
 /** Exported for `navEntryPointInvariant.test.ts`: the nav list and the label table must agree. */
 export const NAV_CAPABILITIES: readonly CapabilityId[] = [
   CAPABILITY.cariPartiesList,
-  CAPABILITY.cariPartiesCreate,
+  /**
+   * `cariPartiesCreate` is deliberately ABSENT, and it is the one removal here that is a decision
+   * rather than a layout fact: K5 (Sinan, 20 Eylül 2026, #66 5748258299) makes creation a single
+   * authorised "Yeni …" action INSIDE the relevant list and names cari among the modules whose
+   * parallel sidebar-create must not be duplicated. C-01 carries that action from this change on,
+   * so the route keeps exactly one entry point — the invariant `TEKNIK_TUZAKLAR §8` states, whose
+   * CHOICE clause K5 narrowed.
+   *
+   * The two moves are in ONE change on purpose: `navEntryPointInvariant.test.ts` warns that
+   * removing an entry without adding its replacement produces a screen reachable from nowhere,
+   * which is the MFG-02 condition that file exists to catch.
+   */
   CAPABILITY.cariAccountsLink,
   /**
-   * Listed together with the routes that serve them, on purpose: a nav entry whose
-   * route is not mounted is a link to the not-found block. Each still renders only
-   * where the server's snapshot carries the capability — the backend registry grants
-   * `product.items.*` from the global Product authority (read / draft create), never
-   * from a company permission — so an actor without that authority sees neither. The
-   * 360 and the editor are deliberately absent — reached from a row and from the card,
-   * never from the sidebar.
+   * K5 gives Product exactly one sidebar entry: the list. Create remains a mounted,
+   * separately authorised route reached through the list's single create action; the
+   * 360 and editor likewise stay route-only. Product capabilities still come from the
+   * global Product authority, never from a company permission.
    */
   CAPABILITY.productItemsList,
-  CAPABILITY.productItemsCreate,
   /**
    * Listed together with the route that serves it, on purpose: a nav entry whose route
    * is not mounted is a link to the not-found block. It still renders only where the

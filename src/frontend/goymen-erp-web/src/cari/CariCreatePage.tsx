@@ -88,6 +88,12 @@ function CariCreateForm({ namespace }: { readonly namespace: string | null }) {
   // The detail is a SEPARATE grant (#182). Success navigates there only when held;
   // otherwise the record is summarised here, with no link the route would refuse.
   const canOpenDetail = hasCapability(shell, CAPABILITY.cariPartiesDetail)
+  // The "look it up in the list instead" advice is only advice if the list EXISTS. C-02 is published
+  // ahead of C-01, so a creator without the detail grant would otherwise be sent to a screen the shell
+  // has not mounted — the same defect as the two back links, reached through a sentence rather than a
+  // link, and found by the same enumeration. Suppressed rather than reworded: no user-facing text is
+  // invented here, and the sentence returns unchanged when C-01 publishes.
+  const canOpenList = hasCapability(shell, CAPABILITY.cariPartiesList)
   const activeCompany = useMemo(
     () => directory.find((company) => company.id === activeCompanyId) ?? null,
     [directory, activeCompanyId],
@@ -338,7 +344,7 @@ function CariCreateForm({ namespace }: { readonly namespace: string | null }) {
                 .join(', ')}
             />
           </dl>
-          <p className={styles.successNote}>{TEXT.successNoDetail}</p>
+          {canOpenList ? <p className={styles.successNote}>{TEXT.successNoDetail}</p> : null}
           <button
             type="button"
             className={styles.secondary}

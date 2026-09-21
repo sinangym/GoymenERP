@@ -252,17 +252,23 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
 /** Nav label per capability. Only rendered when the server granted the capability. */
 export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   [CAPABILITY.cariPartiesList]: 'Cari Kartlar',
-  [CAPABILITY.cariPartiesCreate]: 'Yeni Cari',
+  // No nav entry, and this one is a DECISION rather than the usual "reached from a row": K5 (Sinan,
+  // 20 Eylül 2026, #66 5748258299) puts creation inside the relevant list as a single authorised
+  // "Yeni …" action and names cari among the modules whose parallel sidebar-create must not be
+  // duplicated. C-01 carries that action now. The entry is removed and the list's link is added in
+  // the SAME change, because removing one without the other is the MFG-02 condition
+  // `navEntryPointInvariant.test.ts` exists to catch.
+  [CAPABILITY.cariPartiesCreate]: '',
   [CAPABILITY.cariAccountsLink]: 'Cariyi Şirkete Bağla',
   // No nav entry: the detail is reached from a row, never from the sidebar.
   [CAPABILITY.cariPartiesDetail]: '',
   // Nor this one: it is reached from the card of the record it edits.
   [CAPABILITY.cariAccountsContactUpdate]: '',
   [CAPABILITY.productItemsList]: 'Ürünler',
-  [CAPABILITY.productItemsCreate]: 'Yeni Ürün',
-  // Nor these two, for the same reason as the Cari detail: the 360 is reached from a row
-  // and the editor from the card it edits, never from the sidebar. So `NAV_CAPABILITIES`
-  // gains two Product entries when the routes are mounted, not four.
+  // K5: create is reached through the list's single action, never from the sidebar.
+  [CAPABILITY.productItemsCreate]: '',
+  // The 360 is reached from a row and the editor from the card it edits. Therefore
+  // `NAV_CAPABILITIES` gains exactly one Product entry when the routes are mounted.
   [CAPABILITY.productItemsDetail]: '',
   [CAPABILITY.productItemsEdit]: '',
   [CAPABILITY.organizationSitesList]: 'Organizasyon',

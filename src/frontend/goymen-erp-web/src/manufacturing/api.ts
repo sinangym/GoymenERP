@@ -1,5 +1,5 @@
 /**
- * Manufacturing read transport — one production order.
+ * Manufacturing read transport — one production order, one production plan.
  *
  * Thin and hand-written, like the other modules' `api.ts`. HANDOFF: when the generated
  * client lands (Issue #122) the fetch moves to `src/api/generated/**`; the decoder in
@@ -13,10 +13,12 @@ import {
   decodeMassBalance,
   decodeOrder,
   decodeOrderList,
+  decodePlan,
   type MassBalanceView,
   type OrderListView,
   type OrderStatus,
   type ProductionOrderView,
+  type ProductionPlanView,
 } from './contract'
 import type { ViewOutcome } from '../shell/uiState'
 
@@ -100,6 +102,45 @@ export async function fetchMassBalance(
   if (response.status !== 200) return { type: 'http', status: response.status, body }
   const balance = decodeMassBalance(body)
   return balance === null ? { type: 'malformed' } : { type: 'ok-single', data: balance }
+}
+
+/**
+ * `GET /api/v1/manufacturing/plans/{planId}` — the stored plan, reopened.
+ *
+ * Its own narrow grant (`manufacturing.plans.read`): every write grant in the module together does
+ * not add up to it, so a caller who may plan is not thereby a caller who may reopen. Another
+ * company's plan is the same 404 as an unknown id — never a 403, which would confirm the plan
+ * exists — and this layer passes that status through rather than turning it into an empty view.
+ *
+ * A 503 is a real, retryable answer, as for {@link fetchOrder}: a read that keeps meeting a
+ * concurrent commit says so instead of guessing (FİNANS #313 INFO-4).
+ */
+export async function fetchPlan(
+  companyId: string,
+  planId: string,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<ProductionPlanView>> {
+  let response: Response
+  try {
+    response = await fetch(`${MANUFACTURING_BASE}/plans/${encodeURIComponent(planId)}`, {
+      headers: { ...devHeaders(), 'X-Company-Id': companyId },
+      signal,
+    })
+  } catch {
+    if (signal?.aborted) return { type: 'fence-stale' }
+    return navigator.onLine ? { type: 'network-error' } : { type: 'offline' }
+  }
+  let body: unknown = null
+  try {
+    body = await response.json()
+  } catch {
+    if (signal?.aborted) return { type: 'fence-stale' }
+    body = null
+  }
+  // EXACT 200: `Response.ok` spans all of 2xx, which is not this contract.
+  if (response.status !== 200) return { type: 'http', status: response.status, body }
+  const plan = decodePlan(body)
+  return plan === null ? { type: 'malformed' } : { type: 'ok-single', data: plan }
 }
 
 /** What the list asks for; every part is optional and the server decides the page it answers. */

@@ -103,7 +103,7 @@ describe('C-02 route and capability (G-002 check 5)', () => {
     installFetch()
     renderAt('/cari/yeni')
     await openCreate()
-    expect(screen.getByRole('link', { name: 'Yeni Cari' })).toBeTruthy()
+    expect(screen.queryByRole('link', { name: 'Yeni Cari' })).toBeNull()
     expect(kindSelect().tagName).toBe('SELECT')
     expect(kindSelect().getAttribute('aria-required')).toBe('true')
     expect(legalNameInput().getAttribute('aria-required')).toBe('true')

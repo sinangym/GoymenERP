@@ -35,7 +35,7 @@ _spec.loader.exec_module(c01)
 ContractError = c01.ContractError
 require = c01.require
 
-SUITES = ("smoke", "c03", "org03", "u02", "s03", "mfg", "fin01", "s04", "acc01", "l04")
+SUITES = ("smoke", "c03", "org03", "u02", "s03", "mfg", "fin01", "s04", "acc01", "l04", "c02")
 # s03 writes since S03 (#327): V2A-02 attempts a POST (nothing is stored, but it is no read-only run).
 READ_ONLY_SUITES = ("smoke", "c03")
 _SUITE_PATTERN = re.compile(r"^[a-z0-9]+$")
@@ -58,6 +58,9 @@ SUITE_PROFILES = {
     # ACC-01 (FİNANS): the Accounting screens are published on the normal host (ACC-V0c, after the acc01
     # acceptance on the staged profile), so the suite runs there and the acc-staged envelope is retired.
     "acc01": "normal",
+    # CARI-NORMAL: the create/reopen journey runs on the NORMAL host, which is the whole point —
+    # C-01's list-only envelope and the never-runnable c03 are not acceptance for it.
+    "c02": "normal",
     # L-04 (SİPARİŞ, LOG-4b): the loading-instruction screens opened only inside the disposable envelope, until the
     # flip after this suite is green.
     "l04": "log-staged",
@@ -138,6 +141,9 @@ SUITE_API_EXTENSIONS = {
     "acc01": {"issuer": False, "actors": True, "identity": True},
     # L-04 (SİPARİŞ): a preparer, a loader and a reader actor plus the two Sales seed actors, with their grants.
     "l04": {"issuer": False, "actors": True, "identity": True},
+    # CARI-NORMAL: two actors holding the SAME two names in DIFFERENT companies, with their Identity
+    # users and grants — the difference is the company, because that is the fence being measured.
+    "c02": {"issuer": False, "actors": True, "identity": True},
 }
 ISSUER_KEYS = ("ProductRuntime__IssuerLocalUserId", "ProductRuntime__IssuerExternalIdentityId")
 
@@ -182,6 +188,11 @@ SUITE_IDENTITY_PERMISSIONS = {
     # and pins the refusal ON PURPOSE. So the rule is intentional, not incidental: the argument to
     # make is not "nobody generalised this" but "this was decided, and here is why the decision does
     # not cover a work-centre reader scoped to one location".
+    # CARI-NORMAL. TWO names, and BOTH actors hold BOTH — which is the opposite of org03's design and
+    # deliberate. org03 varies the permissions to show a capability boundary; c02 holds them CONSTANT
+    # and varies the COMPANY, so that when the other-company actor is refused, permissions cannot be
+    # the explanation. A closed list of two, therefore, with no per-actor subset to record.
+    "c02": ("counterparty.parties.create", "counterparty.parties.read"),
     "org03": ("organization.work-centers.read", "organization.locations.read"),
     # u02 seeds only the issuer's Identity user, which holds nothing (the issuer-user rule).
     "u02": (),
@@ -369,8 +380,8 @@ def validate_suite_identity(suite: str, extra: dict, actor_ids: list[str]) -> No
 # canonical baseline, which a seed would move.
 FIXTURE_TOOL_SUITES_DIRECTORY = "tests/GoymenERP.BrowserSuiteFixtureTool/Suites"
 SUITE_FIXTURE_OUTPUTS: dict[str, frozenset[str]] = {
-    # ÜRÜN's Suites/U02 seed (#331): the company, the gated code group and the two canonical actors.
-    "u02": frozenset({"companyId", "codeGroupId", "authorizedActor", "unauthorizedActor"}),
+    # ÜRÜN's Suites/U02 seed: the company, gated code group, fixed synthetic technical family and actors.
+    "u02": frozenset({"companyId", "codeGroupId", "technicalFamilyId", "authorizedActor", "unauthorizedActor"}),
     # ORG's Suites/MFG seed (#323 5735635840): the actors, the company, the seeded work centre (read
     # through the real Organization API) and the plan -> approval -> order it writes through the real API.
     # MFG-ORD adds the closer actor; the list and the close need no further seeded row.
