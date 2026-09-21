@@ -383,16 +383,16 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
             Assert.Contains(
                 CounterpartyShellCapabilityProvider.DetailCapabilityId,
                 granted.Capabilities);
-            Assert.Contains(
+            Assert.DoesNotContain(
                 CounterpartyShellCapabilityProvider.ListCapabilityId,
                 operatorSnapshot.Capabilities);
-            Assert.Contains(
+            Assert.DoesNotContain(
                 CounterpartyShellCapabilityProvider.CreateCapabilityId,
                 operatorSnapshot.Capabilities);
             Assert.DoesNotContain(
                 CounterpartyShellCapabilityProvider.LinkCapabilityId,
                 operatorSnapshot.Capabilities);
-            Assert.Contains(
+            Assert.DoesNotContain(
                 CounterpartyShellCapabilityProvider.DetailCapabilityId,
                 operatorSnapshot.Capabilities);
 
