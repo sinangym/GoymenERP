@@ -271,6 +271,23 @@ sidebar'dan hem L-02 listesinden "Yeni Yükleme Talimatı" gidiyordu.
 noktası olur:** ya sidebar girdisi (listesi ona bağlanmıyorsa) ya listenin kendi birincil bağlantısı
 (bağlanıyorsa) — ikisi birden asla.
 
+**Seçim maddesi süpersede (K5, Sinan, 20 Eylül 2026, `5748258299`).** Yukarıdaki **değişmez —
+oluşturma rotası başına tam olarak BİR giriş noktası — aynen geçerli.** Süpersede olan, *"ya sidebar
+ya liste"* **seçimi**: K5 tek yetkili “Yeni …” eyleminin **ilgili listenin içinde** olmasını
+istiyor ve cari/ürün/sipariş'i adıyla anıyor. Yani 19 Eylül koordinatör kararı, sahibinin bir gün
+sonraki kararıyla **daraltıldı**; guard değişmedi, izin verilen konum değişti. Bunu kaynak önceliği
+belirledi, tercih değil: sahibin en yeni açık kararı koordinatör kararının üstündedir, ve bu kural
+K5 var olmadan bir gün önce yazılmıştı.
+
+**Uygulama durumu, ölçüldü (CARI-NORMAL, 20 Eylül 2026):** depoda **hiçbir liste sayfası** kendi
+oluşturma rotasına bağlanmıyor (`urun/yeni` ve `siparisler/yeni` liste sayfalarında sıfır kez).
+Cari, create yayımlayan ilk modül olduğu için K5'e ilk geçen oldu: sidebar girdisi kaldırıldı ve
+C-01 eylemi taşıyor — **ikisi tek değişiklikte**, çünkü birini diğeri olmadan yapmak ekranı hiçbir
+yerden ulaşılamaz bırakır (`navEntryPointInvariant.test.ts`'in yakalamak için var olduğu MFG-02
+durumu). Ürün ve Sipariş hâlâ sidebar-create kullanıyor; bunu **mekanizmaya** çevirmek, o modüller
+geçtikten sonraki bir iştir — bugün yazılacak bir kural, başka şeritlerin ekranlarını kırar ve
+geriye yalnız bir muafiyet listesi bırakır.
+
 **Durum — `main` @ `678e38d0`, 20 Eylül 2026'da ölçüldü** (ORG'un #367 review'ünde bulduğu, benim
 aynı head üzerinde bağımsız doğruladığım hâl). Bu paragrafın önceki sürümü §4'ün YANLIŞ olduğunu
 kaydettiği taramanın sonucunu yayınlıyordu; düzeltmesi budur.

@@ -315,6 +315,20 @@ describe('C-03 context binding (spec §6)', () => {
     const back = screen.getByRole('link', { name: /listesine dön/ })
     expect(back.getAttribute('href')).toBe('/cari')
   })
+
+  // The other direction, and it is the one the normal-runtime slice creates: C-03 is published
+  // BEFORE C-01, so a card can exist while `/cari` is not a mounted route. An unguarded return
+  // would then land the user on the shell's neutral not-found block from a control that promises
+  // the opposite — the M-04 row-link defect. Pinned both ways, because a one-way pin passes just as
+  // well when the link is never drawn at all.
+  it('offers NO way back when the list is not published, and the card still works', async () => {
+    installFetch({ capabilities: [CAPABILITY.cariPartiesDetail] })
+    renderAt(`/cari/${PARTY}`)
+    await screen.findByRole('heading', { name: /Örnek Metal/ }, CHAIN)
+
+    expect(screen.queryByRole('link', { name: /listesine dön/ })).toBeNull()
+    expect(document.querySelectorAll('a[href="/cari"]')).toHaveLength(0)
+  })
 })
 
 describe('C-03 accessibility', () => {

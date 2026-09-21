@@ -62,7 +62,7 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
         ];
 
         // On failure xUnit prints the actual revision: the constant is never guessed.
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV11ProductV10AndPublishedSalesV10,
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10AndPublishedSalesV10,
             ShellCapabilityRegistry.ComputeCandidateRevision(providers));
     }
 
@@ -78,7 +78,7 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
         var authority = C01E2eShellCapabilityActivation.Configure(services, new TestingEnvironment(),
             new ConfigurationBuilder().Build());
 
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV11ProductV10AndPublishedSalesV10, authority);
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10AndPublishedSalesV10, authority);
         using var container = services.BuildServiceProvider();
         var registry = new ShellCapabilityRegistry(container.GetServices<IShellCapabilityProvider>(),
             new ShellCapabilityAuthorityCatalog([authority]));
