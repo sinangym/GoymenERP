@@ -26,7 +26,7 @@ import {
   UNKNOWN_TITLE,
   financeRef,
 } from './financeText'
-import { FINANCE_CAPABILITY } from './capabilities'
+import { FINANCE_CAPABILITY, receiptDetailPath } from './capabilities'
 import { EXAMPLE_CURRENCY, EXAMPLE_SOURCE, NEGATIVE_EXAMPLE, NORMAL_EXAMPLE } from './contractExamples'
 import {
   COMPANY_A,
@@ -314,6 +314,12 @@ describe('FinanceSourceDetail — references and the currency code', () => {
     expect(factValue(DETAIL.sourceNumber)).toBe(`${NO_SOURCE_NUMBER} · ${financeRef(EXAMPLE_SOURCE)}`)
     expect(factValue(DETAIL.reversedBy)).toBe(financeRef(REVERSAL_SOURCE))
     expect(factValue(DETAIL.reverses)).toBe(financeRef(REVERSED_SOURCE))
+    expect(screen.getByRole('link', { name: financeRef(REVERSAL_SOURCE) }).getAttribute('href')).toBe(
+      receiptDetailPath(REVERSAL_SOURCE),
+    )
+    expect(screen.getByRole('link', { name: financeRef(REVERSED_SOURCE) }).getAttribute('href')).toBe(
+      receiptDetailPath(REVERSED_SOURCE),
+    )
     for (const id of [EXAMPLE_SOURCE, EXAMPLE_CURRENCY, REVERSAL_SOURCE, REVERSED_SOURCE]) {
       expect(container.textContent).not.toContain(id)
     }

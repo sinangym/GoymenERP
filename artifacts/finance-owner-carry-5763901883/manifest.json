@@ -1,0 +1,103 @@
+﻿{
+    "schema":  "goymenerp.finance-owner-carry-provenance.v1",
+    "sourceComments":  [
+                           "https://github.com/sinangym/GoymenERP/issues/66#issuecomment-5763901883",
+                           "https://github.com/sinangym/GoymenERP/issues/66#issuecomment-5763981839"
+                       ],
+    "donorBranch":  "codex/resume-finance-20260921",
+    "donorHead":  "b223298ac0c135825c81bb985a6ca6fb8e763a0c",
+    "capturedAtUtc":  "2026-09-21T18:36:38.2114615+00:00",
+    "scope":  [
+                  "pre-save fresh permission fence",
+                  "synthetic permission transition plus real SQL side-effect absence",
+                  "pending first-to-empty terminal result preservation",
+                  "seven non-overlap Finance-owned paths",
+                  "canonical finance inventory and central guard pins"
+              ],
+    "excluded":  [
+                     "tests/GoymenERP.Api.IntegrationTests/FinanceShellCapabilityRegistryTests.cs",
+                     "later reverse-of-reversal donor hunks"
+                 ],
+    "files":  [
+                  {
+                      "path":  "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/ReversalProposalService.cs",
+                      "baseCommit":  "b223298ac0c135825c81bb985a6ca6fb8e763a0c",
+                      "baseBlob":  "6ad65c9fabd762f80ee25c10a9ef83393dfe12bf",
+                      "donorSha256":  "bd2543914231235ea39dfd6e54719eab3563b51b16a565fba30bebeeae40aa79",
+                      "donorSize":  25090,
+                      "preservedCopy":  "artifacts\\finance-owner-carry-5763901883\\donor\\src\\backend\\Modules\\Finance\\GoymenERP.Modules.Finance.Infrastructure\\ReversalProposalService.cs"
+                  },
+                  {
+                      "path":  "tests/GoymenERP.Api.IntegrationTests/FinanceRecordSqlServerRelationalAcceptanceTests.cs",
+                      "baseCommit":  "b223298ac0c135825c81bb985a6ca6fb8e763a0c",
+                      "baseBlob":  "07d9fd63ab2d2fc460619eccc801622675ad6f3c",
+                      "donorSha256":  "4cc5b9008471b412d0aa3f2e2150c1b29c27adf37cb00b738a7243888774c9bd",
+                      "donorSize":  59313,
+                      "preservedCopy":  "artifacts\\finance-owner-carry-5763901883\\donor\\tests\\GoymenERP.Api.IntegrationTests\\FinanceRecordSqlServerRelationalAcceptanceTests.cs"
+                  },
+                  {
+                      "path":  "src/frontend/goymen-erp-web/src/finance/capabilities.ts",
+                      "baseCommit":  "b223298ac0c135825c81bb985a6ca6fb8e763a0c",
+                      "baseBlob":  "fa71642a0cdcb785660ac6d0cf1d2daadd0858c7",
+                      "donorSha256":  "ebd0b90fd6ce4ab5b83faf8dc4d7532fd884de34467aa37f392f282ecafffe21",
+                      "donorSize":  3122,
+                      "preservedCopy":  "artifacts\\finance-owner-carry-5763901883\\donor\\src\\frontend\\goymen-erp-web\\src\\finance\\capabilities.ts"
+                  },
+                  {
+                      "path":  "src/frontend/goymen-erp-web/src/finance/ReceiptPages.tsx",
+                      "baseCommit":  "b223298ac0c135825c81bb985a6ca6fb8e763a0c",
+                      "baseBlob":  "283157b0e60f7cc6bc62f7a5908539d9cdd28fee",
+                      "donorSha256":  "e50dd6c16b8731929a337c306290a128fc8ebf0b182d94d2c791fc5a69609f0e",
+                      "donorSize":  3669,
+                      "preservedCopy":  "artifacts\\finance-owner-carry-5763901883\\donor\\src\\frontend\\goymen-erp-web\\src\\finance\\ReceiptPages.tsx"
+                  },
+                  {
+                      "path":  "src/frontend/goymen-erp-web/src/finance/SHARED_MOUNT_HANDOFF.md",
+                      "baseCommit":  "b223298ac0c135825c81bb985a6ca6fb8e763a0c",
+                      "baseBlob":  "a829659359a47027fe4dd7f9a28ab676f594a068",
+                      "donorSha256":  "d3603b81a75e1f1c243e1f5b65a3c908f47eb1b612f805037e82d6d85abd69fa",
+                      "donorSize":  3530,
+                      "preservedCopy":  "artifacts\\finance-owner-carry-5763901883\\donor\\src\\frontend\\goymen-erp-web\\src\\finance\\SHARED_MOUNT_HANDOFF.md"
+                  },
+                  {
+                      "path":  "src/backend/Modules/Finance/README.md",
+                      "baseCommit":  "b223298ac0c135825c81bb985a6ca6fb8e763a0c",
+                      "baseBlob":  "15dfd968ca98ec881de34ce9a0762cc80a48b1af",
+                      "donorSha256":  "412b30e72dfa852450c3d3244974663dff45ced5f7597658447beb4269d4c3ff",
+                      "donorSize":  20901,
+                      "preservedCopy":  "artifacts\\finance-owner-carry-5763901883\\donor\\src\\backend\\Modules\\Finance\\README.md"
+                  },
+                  {
+                      "path":  "src/frontend/goymen-erp-web/src/finance/FinanceSourceDetail.test.tsx",
+                      "baseCommit":  "b223298ac0c135825c81bb985a6ca6fb8e763a0c",
+                      "baseBlob":  "6d5d98f958c1c7d7d1379a5190c2ef59097c8d62",
+                      "donorSha256":  "d739fcd2974013ddebc49ddfa75335f8265d99250473eabd7038cabd4fd946c5",
+                      "donorSize":  17802,
+                      "preservedCopy":  "artifacts\\finance-owner-carry-5763901883\\donor\\src\\frontend\\goymen-erp-web\\src\\finance\\FinanceSourceDetail.test.tsx"
+                  },
+                  {
+                      "path":  "tools/relational_inventory/finance.txt",
+                      "baseCommit":  "b223298ac0c135825c81bb985a6ca6fb8e763a0c",
+                      "baseBlob":  "efa64cafb11b2504832ea9d9a7c3e1f5d072c1ba",
+                      "donorSha256":  "71c81f7da5157db56f14b1831a0274a2817637507737bc7b06bd3cb57aa80e80",
+                      "donorSize":  5406,
+                      "preservedCopy":  "artifacts\\finance-owner-carry-5763901883\\donor\\tools\\relational_inventory\\finance.txt"
+                  },
+                  {
+                      "path":  "src/frontend/goymen-erp-web/src/finance/ReversalApprovalsPage.tsx",
+                      "baseCommit":  "b223298ac0c135825c81bb985a6ca6fb8e763a0c",
+                      "baseBlob":  "dc888df5a9ab8d6e6891e423b5d1410216406acf",
+                      "donorSha256":  "5dec607f0648886556d31db0ddfabb7d242d721f8d50e776f3cde773272e016e",
+                      "donorSize":  7802,
+                      "preservedCopy":  "artifacts\\finance-owner-carry-5763901883\\donor\\src\\frontend\\goymen-erp-web\\src\\finance\\ReversalApprovalsPage.tsx"
+                  },
+                  {
+                      "path":  "src/frontend/goymen-erp-web/src/finance/ReversalApprovalsPage.test.tsx",
+                      "baseCommit":  "b223298ac0c135825c81bb985a6ca6fb8e763a0c",
+                      "baseBlob":  "40ebb0f9e32105cc3f5c74c41d446edf526393fb",
+                      "donorSha256":  "65e3827c5f975e5ab89bcac5fafd48ea9606fcb51ccedd7d7a1d4a0e0a7afc80",
+                      "donorSize":  4213,
+                      "preservedCopy":  "artifacts\\finance-owner-carry-5763901883\\donor\\src\\frontend\\goymen-erp-web\\src\\finance\\ReversalApprovalsPage.test.tsx"
+                  }
+              ]
+}

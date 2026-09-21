@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { StateBlock } from '../shell/StateBlock'
 import { useShellDispatch } from '../shell/shellContext'
@@ -16,15 +16,32 @@ import styles from './Finance.module.css'
 const SUBJECT = 'ters kayıt önerileri'
 
 export function ReversalApprovalsPage() {
+  const binding = useFinanceBinding()
   const pending = useFinanceRead(
     'reversal-proposals-pending',
     [],
     (port, scope, signal) => port.pendingReversals(scope, signal),
     (resource) => decodeReversalProposalPage(resource),
   )
+  const namespace = binding?.namespace ?? null
+  const [settled, setSettled] = useState<{
+    readonly namespace: string
+    readonly result: ReversalProposalView
+  } | null>(null)
+  const settledResult = settled?.namespace === namespace ? settled.result : null
+  const onSettled = useCallback((result: ReversalProposalView) => {
+    if (namespace === null) return
+    setSettled({ namespace, result })
+    pending.refetch()
+  }, [namespace, pending.refetch])
 
   if (pending.state.kind !== 'ready') {
-    return <StateBlock state={pending.state} subject={SUBJECT} onRetry={pending.refetch} />
+    return (
+      <>
+        <StateBlock state={pending.state} subject={SUBJECT} onRetry={pending.refetch} />
+        <SettledDecision result={settledResult} />
+      </>
+    )
   }
 
   return (
@@ -33,12 +50,13 @@ export function ReversalApprovalsPage() {
       <p className={styles.notice}>
         Öneriyi hazırlayan kişi karar veremez. Onay, orijinal kaydı değiştirmez; ayrı ve bağlantılı bir ters kayıt oluşturur.
       </p>
+      <SettledDecision result={settledResult} />
       {pending.state.data.items.length === 0 ? (
         <p role="status">Onay bekleyen ters kayıt önerisi yok.</p>
       ) : (
         <div className={styles.stack}>
           {pending.state.data.items.map((proposal) => (
-            <ReversalProposalDecision key={proposal.id} proposal={proposal} onSettled={pending.refetch} />
+            <ReversalProposalDecision key={proposal.id} proposal={proposal} onSettled={onSettled} />
           ))}
         </div>
       )}
@@ -51,23 +69,26 @@ function ReversalProposalDecision({
   onSettled,
 }: {
   readonly proposal: ReversalProposalView
-  readonly onSettled: () => void
+  readonly onSettled: (result: ReversalProposalView) => void
 }) {
   const binding = useFinanceBinding()
   const approve = useReversalCommand('approve', proposal.id)
   const reject = useReversalCommand('reject', proposal.id)
   const [reason, setReason] = useState('')
+  const resultReported = useRef(false)
   const ownProposal = binding?.binding.actorId === proposal.proposedBy
   const frozen = frozenCommand(approve) || frozenCommand(reject)
   const dirty = reason.trim().length > 0 && !ownProposal
   useDecisionDirty(`finance.reversal.${proposal.id}`, dirty)
 
-  useEffect(() => {
-    if (approve.state.phase === 'succeeded' || reject.state.phase === 'succeeded') onSettled()
-  }, [approve.state.phase, reject.state.phase, onSettled])
-
   const result = approve.state.phase === 'succeeded' ? approve.state.resource
     : reject.state.phase === 'succeeded' ? reject.state.resource : null
+  useEffect(() => {
+    if (result !== null && !resultReported.current) {
+      resultReported.current = true
+      onSettled(result)
+    }
+  }, [result, onSettled])
 
   return (
     <article className={styles.command} aria-label={`Ters kayıt önerisi ${proposal.id}`}>
@@ -121,6 +142,22 @@ function ReversalProposalDecision({
           </button>
         </div>
       )}
+    </article>
+  )
+}
+
+function SettledDecision({ result }: { readonly result: ReversalProposalView | null }) {
+  if (result === null) return null
+  return (
+    <article className={styles.command} aria-label={`Sonuçlanan ters kayıt önerisi ${result.id}`}>
+      <p>
+        <Link to={receiptDetailPath(result.originalSourceId)}>Orijinal kaydı yeniden aç</Link>
+      </p>
+      <p role="status">
+        {result.status === 'Approved' && result.reversalSourceId !== null ? (
+          <Link to={receiptDetailPath(result.reversalSourceId)}>Oluşturulan ters kaydı aç</Link>
+        ) : 'Öneri reddedildi; para olayı oluşturulmadı.'}
+      </p>
     </article>
   )
 }

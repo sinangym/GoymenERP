@@ -399,6 +399,68 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
                 ("@c", ReversalProposalService.ApproveCommand), ("@p", secondProposal.Resource.Id))));
     }
 
+    [SqlServerFact]
+    public async Task Permission_revoked_during_reads_refuses_propose_and_reject_before_save()
+    {
+        await using var run = await Run.StartAsync();
+        var owners = Owners.For(CompanyA);
+        var draft = await run.SaveDraftAsync(owners, "1250.50");
+
+        CommandResult recorded;
+        await using (var recording = run.Service(CompanyA, owners))
+        {
+            recorded = await recording.Service.RecordAsync(recording.Context, Key("revoke-record"),
+                new RecordRequest(draft.Id, draft.Version), CancellationToken.None);
+        }
+        Assert.Equal(CommandOutcome.Succeeded, recorded.Outcome);
+
+        var proposePermission = new RevokeAfterFirstPermissionCheck();
+        await using (var maker = run.ReversalService(CompanyA, run.Actor, permissions: proposePermission))
+        {
+            var refused = await maker.Service.ProposeAsync(maker.Context, Key("revoke-propose"),
+                new ProposeReversalRequest(draft.Id, recorded.Resource!.Source.Version, OccurredOn.AddDays(2),
+                    "SENTETIK-yetki-geri-alindi"), CancellationToken.None);
+            Assert.Equal(CommandOutcome.Denied, refused.Outcome);
+            Assert.Null(refused.Resource);
+        }
+        Assert.Equal(2, proposePermission.CheckCount);
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.ReversalProposals"));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.Commands WHERE CommandName = @c",
+            ("@c", ReversalProposalService.ProposeCommand)));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.receipt-reversal.proposed.v1'"));
+
+        ReversalProposalCommandResult proposed;
+        await using (var maker = run.ReversalService(CompanyA, run.Actor))
+        {
+            proposed = await maker.Service.ProposeAsync(maker.Context, Key("allowed-propose"),
+                new ProposeReversalRequest(draft.Id, recorded.Resource!.Source.Version, OccurredOn.AddDays(2),
+                    "SENTETIK-reject-hazirligi"), CancellationToken.None);
+        }
+        Assert.Equal(CommandOutcome.Succeeded, proposed.Outcome);
+
+        var rejectPermission = new RevokeAfterFirstPermissionCheck();
+        await using (var checker = run.ReversalService(CompanyA, Guid.NewGuid().ToString("D"),
+                         permissions: rejectPermission))
+        {
+            var refused = await checker.Service.RejectAsync(checker.Context, Key("revoke-reject"),
+                new RejectReversalRequest(proposed.Resource!.Id, proposed.Resource.Version,
+                    "SENTETIK-yetki-geri-alindi"), CancellationToken.None);
+            Assert.Equal(CommandOutcome.Denied, refused.Outcome);
+            Assert.Null(refused.Resource);
+        }
+        Assert.Equal(2, rejectPermission.CheckCount);
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.ReversalProposals WHERE Id = @p AND Status = 0 AND Version = 1 AND DecidedBy IS NULL AND DecisionReason IS NULL",
+            ("@p", proposed.Resource!.Id)));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.Commands WHERE CommandName = @c",
+            ("@c", ReversalProposalService.RejectCommand)));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.receipt-reversal.rejected.v1'"));
+    }
+
     /// <summary>
     /// FIN-T06 keeps the period decision at approval time and on the requested reversal occurrence date.
     /// A closed real Accounting period leaves the pending proposal, original source and original event intact.
@@ -598,7 +660,8 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
 
         public ReversalServiceScope ReversalService(Guid company, string actor,
             IFinanceRecordPeriodRule? rule = null, string? correlation = null,
-            IFinanceReversalAllocationGate? allocationGate = null)
+            IFinanceReversalAllocationGate? allocationGate = null,
+            IFinancePermissionPort? permissions = null)
         {
             var companyContext = new CompanyContext();
             companyContext.Set(company);
@@ -611,7 +674,7 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
                 .Options;
             var dbContext = new FinanceDbContext(options, companyContext);
             var service = new ReversalProposalService(dbContext, companyContext, currentUser,
-                new SyntheticPermissions(), rule ?? new SyntheticOpenPeriodRule(),
+                permissions ?? new SyntheticPermissions(), rule ?? new SyntheticOpenPeriodRule(),
                 allocationGate ?? new NoAllocationSubsystemFinanceReversalGate(), collector,
                 new FinanceReversalEnvelopes(
                     new FinanceAuditEnvelope(ReversalProposalService.ProposeCommand, ["SENTETIK-FINANCE"], "Web"),
@@ -761,6 +824,20 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
     {
         public Task<PermissionDecision> CheckAsync(FinanceContext context, FinanceAction action, Guid? sourceId,
             CancellationToken cancellationToken) => Task.FromResult(PermissionDecision.Allowed);
+    }
+
+    /// <summary>SENTETIK: Start is allowed, then the same actor/company loses the action before SaveChanges.</summary>
+    private sealed class RevokeAfterFirstPermissionCheck : IFinancePermissionPort
+    {
+        private int _checkCount;
+
+        public int CheckCount => Volatile.Read(ref _checkCount);
+
+        public Task<PermissionDecision> CheckAsync(FinanceContext context, FinanceAction action, Guid? sourceId,
+            CancellationToken cancellationToken) => Task.FromResult(
+            Interlocked.Increment(ref _checkCount) == 1
+                ? PermissionDecision.Allowed
+                : PermissionDecision.Denied);
     }
 
     /// <summary>SENTETIK: one usable bank account of the company in the test currency.</summary>

@@ -141,7 +141,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // finance
             ["tools/relational_inventory/finance.txt"] =
-                "55569cd091bae0d9ef43318ced38415ed476ffab775b6509b0e71d4c51e2efab",
+                "71c81f7da5157db56f14b1831a0274a2817637507737bc7b06bd3cb57aa80e80",
 
             // identity
             ["tools/relational_inventory/identity.txt"] =
@@ -477,7 +477,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Finance/"
                  + "GoymenERP.Modules.Finance.Infrastructure/ReversalProposalService.cs"] =
                     new(
-                        "06e63d82116d5c028ed0ee99db1f0a54c6ea5c543ce3b7f53d9eebe915ee2713",
+                        "83ace87e9d77c047c9f23465470d98275ffc188fd92f6421f63e239530932fb8",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1

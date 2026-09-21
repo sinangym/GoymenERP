@@ -50,8 +50,12 @@ describe('FIN-T06 reversal checker screen', () => {
 
   it('sends the exact checker approval and links the separately created reversal source', async () => {
     const user = userEvent.setup()
-    const recorder = recordingPort((method) =>
-      method === 'pendingReversals' ? found({ items: [proposal()] }) : found(null))
+    let pendingReads = 0
+    const recorder = recordingPort((method) => {
+      if (method !== 'pendingReversals') return found(null)
+      pendingReads += 1
+      return found({ items: pendingReads === 1 ? [proposal()] : [] })
+    })
     renderFinance(<ReversalApprovalsPage />, {
       port: recorder.port,
       shell: shellFor(COMPANY_A, 1, ['finance.receipts.reverse.approve']),
@@ -74,8 +78,13 @@ describe('FIN-T06 reversal checker screen', () => {
       reversalSourceId,
       version: '2',
     }))
+    await waitFor(() => expect(pendingReads).toBe(2))
+    expect(screen.getByText('Onay bekleyen ters kayıt önerisi yok.')).toBeTruthy()
     const link = await screen.findByRole('link', { name: /oluşturulan ters kaydı aç/i })
     expect(link.getAttribute('href')).toBe(`/finans/tahsilatlar/${reversalSourceId}`)
+    expect(screen.getByRole('link', { name: /orijinal kaydı yeniden aç/i }).getAttribute('href')).toBe(
+      `/finans/tahsilatlar/${originalSourceId}`,
+    )
   })
 
   it('keeps rejection closed until a reason and sends a separate reject command', async () => {

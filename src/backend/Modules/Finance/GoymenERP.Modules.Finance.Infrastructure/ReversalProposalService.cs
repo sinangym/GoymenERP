@@ -398,6 +398,15 @@ public sealed class ReversalProposalService(
         FinanceContext context, CommandMetadata metadata, FinanceAction action, string command, string payloadHash,
         ReversalProposalCommandResult result, CancellationToken cancellationToken)
     {
+        // The command may have awaited proposal/source/owner reads since StartAsync. Measure the action
+        // again immediately before the write; a revoked permission must not persist the business row,
+        // idempotency answer or audit sidecar prepared by the stale authorization decision.
+        if (await FenceAsync(context, action, result.Resource?.Id, cancellationToken) is { } fenced)
+        {
+            dbContext.ChangeTracker.Clear();
+            return fenced;
+        }
+
         try
         {
             await dbContext.SaveChangesAsync(cancellationToken);
