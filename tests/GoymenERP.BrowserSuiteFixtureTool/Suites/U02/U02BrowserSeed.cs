@@ -76,11 +76,11 @@ public sealed class U02BrowserSeed : IBrowserSuiteFixture
                     ValidFromUtc), cancellationToken);
             }
 
+            await scope.ServiceProvider.GetRequiredService<C01E2eProductTechnicalCardFixtureWriter>()
+                .EnsureAsync(cancellationToken);
             await scope.ServiceProvider.GetRequiredService<C01E2eProductCodeGroupFixtureWriter>().EnsureAsync(
                 new ProductCodeGroupFixtureRow(CodeGroupId, context.Label("kod grubu"), CodeGroupPrefix),
                 cancellationToken);
-            await scope.ServiceProvider.GetRequiredService<C01E2eProductTechnicalCardFixtureWriter>()
-                .EnsureAsync(cancellationToken);
         }
 
         // Read back through the real host, as each actor: the fixture is only done when the product
