@@ -151,7 +151,7 @@ test('C02-02 closing and reopening the card reads the SAME record back from the 
       url.searchParams.get('q') === LEGAL_NAME
     )
   })
-  await page.getByLabel('Ara').fill(LEGAL_NAME)
+  await page.getByRole('searchbox', { name: 'Ara', exact: true }).fill(LEGAL_NAME)
   const filteredListResponse = await filteredListResponsePromise
   expect(filteredListResponse.status()).toBe(200)
   const filteredBody: unknown = await filteredListResponse.json()
