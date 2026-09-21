@@ -79,6 +79,6 @@ describe('shell ↔ Product lane capability ids', () => {
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.productItemsDetail]).toBe('')
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.productItemsEdit]).toBe('')
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.productItemsList]).toBe('Ürünler')
-    expect(CAPABILITY_NAV_LABEL[CAPABILITY.productItemsCreate]).toBe('Yeni ürün')
+    expect(CAPABILITY_NAV_LABEL[CAPABILITY.productItemsCreate]).toBe('Yeni Ürün')
   })
 })

@@ -59,6 +59,12 @@ public sealed class U02BrowserSeed : IBrowserSuiteFixture
         BrowserSuiteFixtureContext context,
         CancellationToken cancellationToken)
     {
+        await using (var technicalScope = context.Services.CreateAsyncScope())
+        {
+            await technicalScope.ServiceProvider.GetRequiredService<C01E2eProductTechnicalCardFixtureWriter>()
+                .EnsureAsync(cancellationToken);
+        }
+
         await using (var scope = context.Services.CreateAsyncScope())
         {
             var assignments = scope.ServiceProvider.GetRequiredService<C01E2eProductMasterAssignmentFixtureWriter>();
@@ -76,8 +82,6 @@ public sealed class U02BrowserSeed : IBrowserSuiteFixture
                     ValidFromUtc), cancellationToken);
             }
 
-            await scope.ServiceProvider.GetRequiredService<C01E2eProductTechnicalCardFixtureWriter>()
-                .EnsureAsync(cancellationToken);
             await scope.ServiceProvider.GetRequiredService<C01E2eProductCodeGroupFixtureWriter>().EnsureAsync(
                 new ProductCodeGroupFixtureRow(CodeGroupId, context.Label("kod grubu"), CodeGroupPrefix),
                 cancellationToken);
