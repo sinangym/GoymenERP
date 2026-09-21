@@ -76,10 +76,16 @@ internal sealed class MoneyEventRow : IFinanceTenantRow
     public string CorrelationId { get; set; } = string.Empty;
 }
 
-/// <summary>The kinds of money event; only a recorded manual bank receipt exists (reversal is FIN-T06).</summary>
+/// <summary>The distinct recorded and reversing manual bank receipt money-event kinds.</summary>
 internal static class MoneyEventKinds
 {
     public const int ManualBankReceiptRecorded = 1;
+
+    /// <summary>
+    /// FIN-T06: an immutable counter-event. Amount stays exact-positive text;
+    /// the kind, source link and proposal establish reversal semantics.
+    /// </summary>
+    public const int ManualBankReceiptReversed = 2;
 }
 
 /// <summary>
@@ -152,6 +158,7 @@ internal sealed class FinanceCommandRow : IFinanceTenantRow
     public string PayloadHash { get; set; } = string.Empty;
     public Guid? DraftId { get; set; }
     public Guid? BankAccountId { get; set; }
+    public Guid? ReversalProposalId { get; set; }
     public string ResultJson { get; set; } = string.Empty;
     public string CorrelationId { get; set; } = string.Empty;
     public DateTimeOffset RecordedAtUtc { get; set; }

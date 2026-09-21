@@ -12,6 +12,7 @@
 import {
   decodeBankAccountPage,
   isBoundUuid,
+  isInstant,
   type BankAccountView,
   type CommandOutcomeName,
   type Decoded,
@@ -204,10 +205,10 @@ function decodePendingIbanChange(value: unknown): PendingIbanChange | null | und
   if (!isRecord(value) || !hasExactKeys(value, ['iban', 'proposedBy', 'proposedAtUtc', 'reason'])) return undefined
   const { iban, proposedBy, proposedAtUtc, reason } = value
   if (
-    typeof iban !== 'string' || iban.length === 0 ||
-    typeof proposedBy !== 'string' || proposedBy.length === 0 ||
-    typeof proposedAtUtc !== 'string' || proposedAtUtc.length === 0 ||
-    typeof reason !== 'string' || reason.length === 0
+    typeof iban !== 'string' || iban.length === 0 || iban.length > 34 || iban.trim() !== iban ||
+    typeof proposedBy !== 'string' || proposedBy.length === 0 || proposedBy.length > 128 || proposedBy.trim() !== proposedBy ||
+    !isInstant(proposedAtUtc) ||
+    typeof reason !== 'string' || reason.length === 0 || reason.length > 500 || reason.trim() !== reason
   ) {
     return undefined
   }

@@ -75,12 +75,16 @@ public static class FinanceModuleExtensions
         services.AddScoped<IFinanceBankAccountReader>(provider => provider.GetRequiredService<FinanceBankAccountService>());
         services.AddScoped<IFinanceBankAccountMaster>(provider => provider.GetRequiredService<FinanceBankAccountService>());
         services.AddScoped<IManualReceiptService>(CreateReceiptDraftService);
+        services.AddScoped(CreateReversalProposalService);
+        services.AddScoped<IReversalProposalService>(provider =>
+            provider.GetRequiredService<ReversalProposalService>());
         // FIN-T05: the Record's period gate. K1 (#66 5748258299) answered it — occurredOn decides — but the rule
         // that maps the date reads Accounting's period port, which this module cannot see. So the HOST registers
         // OccurredOnFinanceRecordPeriodRule before calling this method and the TryAdd below then does nothing;
         // a composition that registers none still gets the undecided rule, which refuses every Record rather
         // than guessing a period.
         services.TryAddSingleton<IFinanceRecordPeriodRule, UndecidedFinanceRecordPeriodRule>();
+        services.TryAddSingleton<IFinanceReversalAllocationGate, NoAllocationSubsystemFinanceReversalGate>();
         services.TryAddSingleton(TimeProvider.System);
         return services;
     }
@@ -121,6 +125,25 @@ public static class FinanceModuleExtensions
             provider.GetRequiredService<TimeProvider>(),
             Envelope(provider, FinancePermissionNames.Record, permissions, FinanceAction.Record),
             provider.GetRequiredService<IFinanceRecordPeriodRule>());
+    }
+
+    private static ReversalProposalService CreateReversalProposalService(IServiceProvider provider)
+    {
+        var permissions = provider.GetRequiredService<FinancePermissionPort>();
+        return new ReversalProposalService(
+            provider.GetRequiredService<FinanceDbContext>(),
+            provider.GetRequiredService<ICompanyContext>(),
+            provider.GetRequiredService<ICurrentUser>(),
+            permissions,
+            provider.GetRequiredService<IFinanceRecordPeriodRule>(),
+            provider.GetRequiredService<IFinanceReversalAllocationGate>(),
+            provider.GetRequiredService<IAuditEventCollector>(),
+            new FinanceReversalEnvelopes(
+                Envelope(provider, FinancePermissionNames.ReversePropose, permissions,
+                    FinanceAction.ProposeReversal),
+                Envelope(provider, FinancePermissionNames.ReverseApprove, permissions,
+                    FinanceAction.ApproveReversal)),
+            provider.GetRequiredService<TimeProvider>());
     }
 
     /// <summary>The ADR-009 envelope of the request: the permission that authorizes the write and its roles.</summary>

@@ -12,7 +12,8 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 /// <item><b>Allowed</b> only for the server-resolved company and actor of the request, a granted and
 /// company-wide scope (the names are CompanyWideOnly: Finance records have no site dimension).</item>
 /// <item><b>Denied</b> when the grant is missing or narrower, or the context is not the request's.</item>
-/// <item><b>Unavailable</b> when the action has no name (Reverse: FIN-T06, its authority still OPEN-009) or
+/// <item><b>Unavailable</b> when the action has no name (only the unpublished legacy direct Reverse; FIN-T06
+/// proposal/approval actions have distinct declared names) or
 /// the name is not registered centrally. Record left this branch when
 /// <c>finance.manual-receipt.record</c> was registered: its name is now known, so it is MEASURED, and an
 /// actor without the grant is Denied. The branch itself remains for Reverse and for any future name the
@@ -43,6 +44,8 @@ public sealed class FinancePermissionPort(
         FinanceAction.ReadSources => FinancePermissionNames.DraftRead,
         FinanceAction.ReadAmount => FinancePermissionNames.AmountRead,
         FinanceAction.Record => FinancePermissionNames.Record,
+        FinanceAction.ProposeReversal => FinancePermissionNames.ReversePropose,
+        FinanceAction.ApproveReversal => FinancePermissionNames.ReverseApprove,
         FinanceAction.ReadBankAccounts => ErpPermissions.FinanceBankAccountRead,
         FinanceAction.ProposeBankAccount => ErpPermissions.FinanceBankAccountPropose,
         FinanceAction.ApproveBankAccount => ErpPermissions.FinanceBankAccountApprove,

@@ -18,10 +18,18 @@
  */
 
 import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { Link } from 'react-router'
 import { StateBlock } from '../shell/StateBlock'
 import { useShellDispatch } from '../shell/shellContext'
 import { decodeBankAccountPage, decodeSourceDetailFor, type SourceDetail } from './contract'
-import { useFinanceRead, useReceiptCommand, type ReceiptCommand } from './financePort'
+import {
+  useFinanceRead,
+  useReceiptCommand,
+  useReversalCommand,
+  type ReceiptCommand,
+  type ReversalCommand,
+  type ReversalCommandState,
+} from './financePort'
 import {
   BANK_NAME_UNAVAILABLE,
   CANCEL,
@@ -41,6 +49,14 @@ import {
   REVERSE_DONE,
   REVERSE_REASON,
   REVERSE_REASON_REQUIRED,
+  UNKNOWN_TITLE,
+  UNKNOWN_FROZEN,
+  RESEND_SAME,
+  ABANDON,
+  CONFLICT_TITLE,
+  CONFLICT_TEXT,
+  REFUSAL_TITLE,
+  issueText,
   SOURCE_SUBJECT,
   financeRef,
   sourceNumberShown,
@@ -52,6 +68,7 @@ import { statusViewOf } from './sourceView'
 import { SourceStatus } from './SourceStatus'
 import { CommandAttemptPanel } from './CommandAttemptPanel'
 import styles from './Finance.module.css'
+import { receiptDetailPath } from './capabilities'
 
 export const FINANCE_RECORD_DIRTY_SCOPE = 'finance.source.record'
 export const FINANCE_REVERSE_DIRTY_SCOPE = 'finance.source.reverse'
@@ -73,10 +90,9 @@ function conflictedVersion(state: AttemptState): string | null {
 
 /**
  * `offerRecord` (FIN-T05a): the Record control, offered only when the caller holds the Record control's capability
- * (`finance.receipts.record`). No provider declares it until FIN-T05's central round, so the mounted screen does not
- * offer it yet. The server decides the period from `occurredOn` (K1) and refuses definitively when it must.
- * `offerReverse`: Reverse has no route (FIN-T06); the HTTP port would only answer a local `Unavailable`, which must
- * never look like a sent command. `offerRecordReverse` turns both on (component tests of the actions).
+ * (`finance.receipts.record`). The server decides the period from `occurredOn` (K1) and refuses definitively when it
+ * must. `offerReverse` starts FIN-T06's persistent reversal-proposal flow; it does not expose the deliberately
+ * unpublished legacy direct-Reverse action. `offerRecordReverse` turns both controls on in component tests.
  */
 export function FinanceSourceDetail({
   sourceId,
@@ -92,14 +108,14 @@ export function FinanceSourceDetail({
   const detail = useFinanceRead('source', [sourceId], (port, scope, signal) => port.sourceDetail(scope, { sourceId }, signal), decodeSourceDetailFor(sourceId))
   const banks = useFinanceRead('bank-accounts', [], (port, scope, signal) => port.listBankAccounts(scope, signal), decodeBankAccountPage)
   const record = useReceiptCommand('record', sourceId)
-  const reverse = useReceiptCommand('reverse', sourceId)
+  const reverse = useReversalCommand('propose', sourceId)
 
   // One re-read per settled attempt key (success or version conflict), for BOTH commands.
   // A Set, not a single slot: two settled keys must not take turns re-triggering each other.
   const reread = useRef(new Set<string>())
   const { refetch } = detail
   useEffect(() => {
-    for (const { state } of [record, reverse]) {
+    for (const { state } of [record]) {
       const key =
         state.phase === 'succeeded' || (state.phase === 'refused' && state.reason === 'version-conflict')
           ? state.snapshot.key
@@ -109,7 +125,7 @@ export function FinanceSourceDetail({
         refetch()
       }
     }
-  }, [record, reverse, refetch])
+  }, [record, refetch])
 
   const recordDone = record.state.phase === 'succeeded'
   const reverseDone = reverse.state.phase === 'succeeded'
@@ -150,8 +166,8 @@ export function FinanceSourceDetail({
         <Fact term={DETAIL.bankReference} value={data.bankReference} />
         <Fact term={DETAIL.description} value={data.description} />
         <Fact term={DETAIL.recordedAt} value={data.recordedAtUtc} />
-        <Fact term={DETAIL.reversedBy} value={data.reversalSourceId === null ? null : financeRef(data.reversalSourceId)} />
-        <Fact term={DETAIL.reverses} value={data.reversesSourceId === null ? null : financeRef(data.reversesSourceId)} />
+        <SourceLinkFact term={DETAIL.reversedBy} sourceId={data.reversalSourceId} />
+        <SourceLinkFact term={DETAIL.reverses} sourceId={data.reversesSourceId} />
       </dl>
 
       {recordDone ? (
@@ -180,6 +196,15 @@ function Fact({ term, value }: { readonly term: string; readonly value: string |
     <div>
       <dt>{term}</dt>
       <dd>{value ?? DETAIL.none}</dd>
+    </div>
+  )
+}
+
+function SourceLinkFact({ term, sourceId }: { readonly term: string; readonly sourceId: string | null }) {
+  return (
+    <div>
+      <dt>{term}</dt>
+      <dd>{sourceId === null ? DETAIL.none : <Link to={receiptDetailPath(sourceId)}>{financeRef(sourceId)}</Link>}</dd>
     </div>
   )
 }
@@ -253,7 +278,7 @@ function ReverseAction({
   source,
   onReread,
 }: {
-  readonly command: ReceiptCommand
+  readonly command: ReversalCommand
   readonly source: SourceDetail
   readonly onReread: () => void
 }) {
@@ -261,8 +286,10 @@ function ReverseAction({
   const [occurredOn, setOccurredOn] = useState('')
   const [reason, setReason] = useState('')
   const [errors, setErrors] = useState<{ occurredOn?: string; reason?: string }>({})
-  const frozen = isFrozen(command.state)
-  const stale = conflictedVersion(command.state) === source.source.version
+  const frozen = command.state.phase === 'submitting' || command.state.phase === 'unknown'
+    || command.state.phase === 'conflicted'
+  const stale = command.state.phase === 'refused' && command.state.reason === 'version-conflict'
+    && command.state.request.body.expectedVersion === source.source.version
   useShellDirty(FINANCE_REVERSE_DIRTY_SCOPE, frozen || (open && (occurredOn.trim().length > 0 || reason.trim().length > 0)))
 
   const onSubmit = (event: FormEvent) => {
@@ -275,14 +302,14 @@ function ReverseAction({
     setErrors(next)
     if (Object.keys(next).length > 0) return
     command.submit({
-      operation: 'reverse',
+      operation: 'propose',
       body: { sourceId: source.source.id, expectedVersion: source.source.version, occurredOn: occurredOn.trim(), reason: reason.trim() },
     })
   }
 
   return (
     <section className={styles.command} aria-label={REVERSE_ACTION}>
-      {stale ? <StaleVersionNotice onReread={onReread} /> : <CommandAttemptPanel command={command} />}
+      {stale ? <StaleVersionNotice onReread={onReread} /> : <ReversalAttemptPanel command={command} />}
       {!open && !frozen ? (
         <button type="button" disabled={!command.available} onClick={() => setOpen(true)}>
           {REVERSE_ACTION}
@@ -336,5 +363,40 @@ function ReverseAction({
         </form>
       )}
     </section>
+  )
+}
+
+function ReversalAttemptPanel({ command }: { readonly command: ReversalCommand }) {
+  const state: ReversalCommandState = command.state
+  if (state.phase === 'idle' || state.phase === 'succeeded') return null
+  if (state.phase === 'submitting') return <p role="status">İşlem gönderiliyor…</p>
+  if (state.phase === 'unknown') {
+    return (
+      <div className={styles.attempt} role="status">
+        <p className={styles.attemptTitle}>{UNKNOWN_TITLE}</p>
+        <p>{UNKNOWN_FROZEN}</p>
+        <div className={styles.actions}>
+          <button type="button" onClick={command.resend}>{RESEND_SAME}</button>
+          <button type="button" onClick={command.abandon}>{ABANDON}</button>
+        </div>
+      </div>
+    )
+  }
+  if (state.phase === 'conflicted') {
+    return (
+      <div className={styles.attempt} role="status">
+        <p className={styles.attemptTitle}>{CONFLICT_TITLE}</p>
+        <p>{CONFLICT_TEXT}</p>
+        <button type="button" onClick={command.abandon}>{ABANDON}</button>
+      </div>
+    )
+  }
+  return (
+    <div className={styles.attempt} role="status">
+      <p className={styles.attemptTitle}>{REFUSAL_TITLE[state.reason]}</p>
+      {state.issues.map((issue, index) => (
+        <p key={`${issue.field}-${issue.code}-${index}`}>{issueText(issue.code)}</p>
+      ))}
+    </div>
   )
 }

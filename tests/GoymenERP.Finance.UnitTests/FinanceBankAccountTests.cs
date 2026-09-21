@@ -46,7 +46,7 @@ public sealed class FinanceBankAccountTests
         var commands = design.FindEntityType(typeof(FinanceCommandRow))!;
         var target = Assert.Single(commands.GetCheckConstraints(), check => check.Name == "CK_Commands_Target");
         Assert.Equal(FinanceDbContext.TargetCheck, target.Sql);
-        Assert.EndsWith("OR ([DraftId] IS NULL AND [BankAccountId] IS NULL AND JSON_VALUE([ResultJson], '$.outcome') = 'ValidationFailed')",
+        Assert.EndsWith("OR ([DraftId] IS NULL AND [BankAccountId] IS NULL AND [ReversalProposalId] IS NULL AND JSON_VALUE([ResultJson], '$.outcome') = 'ValidationFailed')",
             target.Sql, StringComparison.Ordinal);
         Assert.All(commands.GetForeignKeys().Where(key => key.PrincipalEntityType.ClrType != typeof(OrganizationCompanyReference)),
             key => Assert.False(key.IsRequired));
@@ -57,12 +57,9 @@ public sealed class FinanceBankAccountTests
     {
         using var context = Context();
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddBankAccounts", StringComparison.Ordinal));
-        // The NEWEST migration is pinned by name on purpose: adding one to this module must be a deliberate
-        // edit here, not a silent append. It has moved twice — RecordTerminalCommandResults → AddMoneyEvents
-        // (FIN-T05a's money event table) → AddBankAccountCardFields (K2's card columns). Each move was made by
-        // reading the new migration first, which is what this pin is for. The card migration's own shape — six
-        // NULLABLE columns, no backfill, nothing else touched — is measured in `The_card_columns_are_nullable…`.
-        Assert.Equal("20260920120000_AddBankAccountCardFields", context.Database.GetMigrations().Last());
+        // The NEWEST migration is pinned by name on purpose: FIN-T06's persistent proposal lifecycle must be
+        // a deliberate append after D4/B3, never an unreviewed migration that silently becomes authoritative.
+        Assert.Equal("20260921120000_AddReversalProposals", context.Database.GetMigrations().Last());
         Assert.False(context.Database.HasPendingModelChanges());
     }
 

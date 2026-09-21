@@ -32,6 +32,49 @@ public sealed record DraftSaveRequest(Guid? DraftId, string? ExpectedVersion, Re
 public sealed record RecordRequest(Guid DraftId, string ExpectedVersion);
 // Original amount/currency/account are resolved from the source, never supplied for reversal.
 public sealed record ReverseRequest(Guid SourceId, string ExpectedVersion, DateOnly OccurredOn, string Reason);
+
+/// <summary>
+/// FIN-T06/B1-B2 command that opens a persistent reversal proposal. The requested
+/// occurrence date belongs to the future reversal event; it never changes the
+/// original receipt's occurrence date or accounting period.
+/// </summary>
+public sealed record ProposeReversalRequest(
+    Guid SourceId,
+    string ExpectedVersion,
+    DateOnly OccurredOn,
+    string Reason);
+
+/// <summary>FIN-T06/B1 checker command. The service must refuse the proposal's maker.</summary>
+public sealed record ApproveReversalRequest(Guid ProposalId, string ExpectedVersion);
+
+/// <summary>FIN-T06/B1 checker command. Rejection is audited separately from approval.</summary>
+public sealed record RejectReversalRequest(Guid ProposalId, string ExpectedVersion, string Reason);
+
+[JsonConverter(typeof(JsonStringEnumConverter<ReversalProposalStatus>))]
+public enum ReversalProposalStatus
+{
+    Pending = 0,
+    Approved = 1,
+    Rejected = 2
+}
+
+/// <summary>
+/// Persistent FIN-T06 proposal projection. <paramref name="ReversalSourceId"/> is
+/// populated only after approval creates the immutable reversing source/event.
+/// </summary>
+public sealed record ReversalProposalView(
+    Guid Id,
+    Guid OriginalSourceId,
+    DateOnly OccurredOn,
+    string Reason,
+    ReversalProposalStatus Status,
+    string ProposedBy,
+    DateTimeOffset ProposedAtUtc,
+    string? DecidedBy,
+    DateTimeOffset? DecidedAtUtc,
+    string? DecisionReason,
+    Guid? ReversalSourceId,
+    string Version);
 public sealed record SourceListRequest(string? Cursor);
 public sealed record SourceDetailRequest(Guid SourceId);
 
@@ -42,7 +85,8 @@ public sealed record SourceDetailRequest(Guid SourceId);
 // permission names would be granting authority nobody approved.
 public enum FinanceAction
 {
-    ReadBankAccounts, ReadSources, ReadAmount, SaveDraft, Record, Reverse, ProposeBankAccount, ApproveBankAccount,
+    ReadBankAccounts, ReadSources, ReadAmount, SaveDraft, Record, Reverse, ProposeReversal, ApproveReversal,
+    ProposeBankAccount, ApproveBankAccount,
     ProposeBankAccountIbanChange, ApproveBankAccountIbanChange,
 }
 public enum PermissionDecision { Unavailable, Denied, Allowed }

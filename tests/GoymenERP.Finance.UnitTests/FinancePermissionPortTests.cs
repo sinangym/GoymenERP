@@ -15,7 +15,7 @@ public sealed class FinancePermissionPortTests
     private const string Actor = "SENTETIK-actor";
 
     [Fact]
-    public void Each_action_has_its_owner_name_Record_has_the_card_s_name_and_Reverse_has_none()
+    public void Each_action_has_its_owner_name_FIN_T06_has_two_names_and_legacy_Reverse_has_none()
     {
         Assert.Equal("finance.manual-receipt.draft.save", FinancePermissionPort.NameOf(FinanceAction.SaveDraft));
         Assert.Equal("finance.manual-receipt.draft.read", FinancePermissionPort.NameOf(FinanceAction.ReadSources));
@@ -28,7 +28,11 @@ public sealed class FinancePermissionPortTests
         // authorised operator, no second approval, no amount threshold. A name grants nothing: the central
         // writer registers it and a human assigns it.
         Assert.Equal("finance.manual-receipt.record", FinancePermissionPort.NameOf(FinanceAction.Record));
-        // Reverse still has none: FIN-T06, and its authority is the part of OPEN-009 nobody has answered.
+        Assert.Equal("finance.manual-receipt.reverse.propose",
+            FinancePermissionPort.NameOf(FinanceAction.ProposeReversal));
+        Assert.Equal("finance.manual-receipt.reverse.approve",
+            FinancePermissionPort.NameOf(FinanceAction.ApproveReversal));
+        // The superseded one-step action stays nameless and therefore cannot bypass B1's two commands.
         Assert.Null(FinancePermissionPort.NameOf(FinanceAction.Reverse));
     }
 
@@ -53,8 +57,8 @@ public sealed class FinancePermissionPortTests
     /// sit here too — first because it had no name, then, after the card gave it one, because the central
     /// registry did not know that name. Now that <see cref="ErpPermissions.FinanceManualReceiptRecord"/> is
     /// registered, Record has left this branch (see the case below), but the branch itself has NOT gone away:
-    /// Reverse is still on it, and it stays pinned. Retiring a live path because one of its inputs changed
-    /// would be the opposite of what the registration proves.
+    /// The unpublished legacy direct Reverse is still on it, and it stays pinned. Retiring the fail-closed
+    /// branch because FIN-T06 replaced that path with proposal/approval commands would hide a future bypass.
     /// <para>
     /// UNMAPPED, not "unregistered": the two are different inputs to the same answer, and the port reaches
     /// Unavailable from either. This must never become Denied — "I cannot tell" is not "you may not".
@@ -64,8 +68,8 @@ public sealed class FinancePermissionPortTests
     [InlineData(FinanceAction.Reverse)]
     public async Task An_unmapped_action_is_unavailable_and_asks_nothing(FinanceAction action)
     {
-        // The reason, pinned rather than assumed: no name exists for this action (FIN-T06, and its authority
-        // is the half of OPEN-009 nobody has answered).
+        // The reason, pinned rather than assumed: no name exists for the superseded one-step action.
+        // FIN-T06's proposal and approval actions are separately named and measured below.
         Assert.Null(FinancePermissionPort.NameOf(action));
 
         var authority = new FixedAuthority(true, true);
@@ -100,6 +104,37 @@ public sealed class FinancePermissionPortTests
         // Asked once, with the registered name and the request's own company — so a future context-drift
         // defect cannot hide behind the same Denied.
         Assert.Equal(new[] { (ErpPermissions.FinanceManualReceiptRecord, Company) }, authority.Asked);
+    }
+
+    [Theory]
+    [InlineData(FinanceAction.ProposeReversal, FinancePermissionNames.ReversePropose)]
+    [InlineData(FinanceAction.ApproveReversal, FinancePermissionNames.ReverseApprove)]
+    public async Task Each_FIN_T06_command_revalidates_its_own_permission_on_every_call(
+        FinanceAction action, string permission)
+    {
+        var authority = new FixedAuthority(granted: true, companyWide: true, "SENTETIK-FIN-T06");
+        var port = Port(authority);
+
+        Assert.Equal(PermissionDecision.Allowed,
+            await port.CheckAsync(Context(), action, null, CancellationToken.None));
+        Assert.Equal(PermissionDecision.Allowed,
+            await port.CheckAsync(Context(), action, null, CancellationToken.None));
+
+        Assert.Equal(new[] { (permission, Company), (permission, Company) }, authority.Asked);
+        Assert.Equal(new[] { "SENTETIK-FIN-T06" }, port.RoleCodesOf(action));
+    }
+
+    [Theory]
+    [InlineData(FinanceAction.ProposeReversal, FinancePermissionNames.ReversePropose)]
+    [InlineData(FinanceAction.ApproveReversal, FinancePermissionNames.ReverseApprove)]
+    public async Task A_missing_FIN_T06_grant_is_denied_after_a_real_authority_measurement(
+        FinanceAction action, string permission)
+    {
+        var authority = new FixedAuthority(granted: false, companyWide: true);
+
+        Assert.Equal(PermissionDecision.Denied,
+            await Port(authority).CheckAsync(Context(), action, null, CancellationToken.None));
+        Assert.Equal(new[] { (permission, Company) }, authority.Asked);
     }
 
     [Theory]

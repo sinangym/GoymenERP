@@ -38,6 +38,8 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
 
     internal DbSet<MoneyEventRow> MoneyEvents => Set<MoneyEventRow>();
 
+    internal DbSet<ReversalProposalRow> ReversalProposals => Set<ReversalProposalRow>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -50,6 +52,7 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         ConfigureBankAccounts(modelBuilder);
         ConfigureCommands(modelBuilder);
         ConfigureMoneyEvents(modelBuilder);
+        ConfigureReversalProposals(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -197,7 +200,7 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                 + "AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [TreasuryAccountId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000'");
-            table.HasCheckConstraint("CK_MoneyEvents_Kind", "[Kind] = 1");
+            table.HasCheckConstraint("CK_MoneyEvents_Kind", "[Kind] IN (1, 2)");
             table.HasCheckConstraint("CK_MoneyEvents_Text",
                 "LEN([AmountText]) > 0 AND LEN([ProfileId]) > 0 AND LEN([ProfileVersion]) > 0 "
                 + "AND LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
@@ -222,11 +225,61 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    private void ConfigureReversalProposals(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<ReversalProposalRow>();
+        entity.ToTable("ReversalProposals", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_ReversalProposals_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[OriginalSourceId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_ReversalProposals_Text",
+                "LEN([Reason]) > 0 AND LEN([ProposedBy]) > 0");
+            table.HasCheckConstraint("CK_ReversalProposals_Version", "[Version] >= 1");
+            table.HasCheckConstraint("CK_ReversalProposals_Decision", ReversalProposalDecisionCheck);
+        });
+        entity.HasKey(x => x.Id);
+        entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.OccurredOn).HasColumnType("date");
+        entity.Property(x => x.Reason).HasMaxLength(1000).IsRequired();
+        entity.Property(x => x.ProposedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        entity.Property(x => x.DecidedBy).HasMaxLength(128).UseCollation(IdentityCollation);
+        entity.Property(x => x.DecisionReason).HasMaxLength(1000);
+        entity.Property(x => x.Version).IsConcurrencyToken();
+        entity.HasIndex(x => new { x.CompanyId, x.OriginalSourceId }, "UX_ReversalProposals_PendingOriginal")
+            .HasFilter("[Status] = 0").IsUnique();
+        entity.HasIndex(x => new { x.CompanyId, x.OriginalSourceId }, "UX_ReversalProposals_ApprovedOriginal")
+            .HasFilter("[Status] = 1").IsUnique();
+        entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<ReceiptDraftRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.OriginalSourceId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<ReceiptDraftRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.ReversalSourceId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    internal const string ReversalProposalDecisionCheck =
+        "([Status] = 0 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [DecisionReason] IS NULL AND [ReversalSourceId] IS NULL) OR "
+        + "([Status] = 1 AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL "
+        + "AND [DecisionReason] IS NULL AND [ReversalSourceId] IS NOT NULL AND [ReversalSourceId] <> [OriginalSourceId] "
+        + "AND [ProposedBy] <> [DecidedBy]) OR "
+        + "([Status] = 2 AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL "
+        + "AND [DecisionReason] IS NOT NULL AND LEN([DecisionReason]) > 0 AND [ReversalSourceId] IS NULL "
+        + "AND [ProposedBy] <> [DecidedBy])";
+
     /// <summary>The command record's target rule; the migration that introduced it uses the same text.</summary>
     internal const string TargetCheck =
-        "([DraftId] IS NOT NULL AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [BankAccountId] IS NULL) OR "
-        + "([BankAccountId] IS NOT NULL AND [BankAccountId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL) OR "
-        + "([DraftId] IS NULL AND [BankAccountId] IS NULL AND JSON_VALUE([ResultJson], '$.outcome') = 'ValidationFailed')";
+        "([DraftId] IS NOT NULL AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [BankAccountId] IS NULL AND [ReversalProposalId] IS NULL) OR "
+        + "([BankAccountId] IS NOT NULL AND [BankAccountId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL AND [ReversalProposalId] IS NULL) OR "
+        + "([ReversalProposalId] IS NOT NULL AND [ReversalProposalId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL AND [BankAccountId] IS NULL) OR "
+        + "([DraftId] IS NULL AND [BankAccountId] IS NULL AND [ReversalProposalId] IS NULL AND JSON_VALUE([ResultJson], '$.outcome') = 'ValidationFailed')";
 
     private void ConfigureCommands(ModelBuilder modelBuilder)
     {
@@ -252,6 +305,7 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
         entity.HasIndex(x => new { x.CompanyId, x.DraftId });
         entity.HasIndex(x => new { x.CompanyId, x.BankAccountId });
+        entity.HasIndex(x => new { x.CompanyId, x.ReversalProposalId });
         entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
             .OnDelete(DeleteBehavior.Restrict);
         entity.HasOne<ReceiptDraftRow>().WithMany()
@@ -260,6 +314,10 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
             .OnDelete(DeleteBehavior.Restrict);
         entity.HasOne<BankAccountRow>().WithMany()
             .HasForeignKey(x => new { x.CompanyId, x.BankAccountId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<ReversalProposalRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.ReversalProposalId })
             .HasPrincipalKey(x => new { x.CompanyId, x.Id })
             .OnDelete(DeleteBehavior.Restrict);
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -319,6 +377,12 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                     [
                         nameof(BankAccountRow.Status), nameof(BankAccountRow.ApprovedBy),
                         nameof(BankAccountRow.ApprovedAtUtc), nameof(BankAccountRow.UpdatedAtUtc),
+                    ],
+                    ReversalProposalRow =>
+                    [
+                        nameof(ReversalProposalRow.Status), nameof(ReversalProposalRow.DecidedBy),
+                        nameof(ReversalProposalRow.DecidedAtUtc), nameof(ReversalProposalRow.DecisionReason),
+                        nameof(ReversalProposalRow.ReversalSourceId),
                     ],
                     _ => [],
                 };

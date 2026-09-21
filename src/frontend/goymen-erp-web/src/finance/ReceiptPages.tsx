@@ -5,7 +5,8 @@
  * - The new draft needs the party and its company account from its ENTRY: the Cari account screen
  *   links here with both (`receiptDraftPath`). Finance has no party picker and invents none; the
  *   draft-context read validates both server-side for this company, date and bank account.
- * - The detail page does not offer Record or Reverse: they have no route (T05, OPEN-009).
+ * - The detail page offers Record and the FIN-T06 reversal-proposal flow only when shell capabilities allow them.
+ *   It never substitutes the unpublished legacy direct-Reverse action.
  */
 
 import { useState } from 'react'
@@ -74,11 +75,12 @@ export function ReceiptDetailPage() {
   const shell = useShellState()
   // FIN-T05a: the Record control only for the holder of its capability (declared in FIN-T05's central round).
   const canRecord = hasCapability(shell, FINANCE_CAPABILITY.receiptsRecord)
+  const canProposeReversal = hasCapability(shell, FINANCE_CAPABILITY.receiptsReversePropose)
   return (
     <section aria-labelledby="finance-receipt-detail-title">
       <h1 id="finance-receipt-detail-title">{RECEIPT_DETAIL_TITLE}</h1>
       {isBoundUuid(sourceId) ? (
-        <FinanceSourceDetail sourceId={sourceId} offerRecord={canRecord} />
+        <FinanceSourceDetail sourceId={sourceId} offerRecord={canRecord} offerReverse={canProposeReversal} />
       ) : (
         <StateBlock state={{ kind: 'not-found' }} subject={SOURCE_SUBJECT} />
       )}
