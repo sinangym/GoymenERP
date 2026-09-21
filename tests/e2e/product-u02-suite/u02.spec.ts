@@ -59,7 +59,9 @@ test('U02-FIX-01 the authorized actor creates, edits and reopens technical field
   const groupsAnswer = page.waitForResponse((response) =>
     new URL(response.url()).pathname === `${PRODUCTS_PATH}/code-groups` && response.request().method() === 'GET')
 
-  await page.goto('/urun/yeni')
+  await page.goto('/urun')
+  await expect(page.getByRole('heading', { level: 1, name: 'Ürünler' })).toBeVisible({ timeout: 30_000 })
+  await page.getByRole('main').getByRole('link', { name: 'Yeni ürün', exact: true }).click()
   await expect(page.getByRole('heading', { level: 1, name: 'Yeni ürün' })).toBeVisible({ timeout: 30_000 })
   const groups = await groupsAnswer
   expect(groups.status(), 'the real code-group read').toBe(200)
@@ -112,8 +114,12 @@ test('U02-FIX-01 the authorized actor creates, edits and reopens technical field
 
   const createdResponse = await created
   expect(createdResponse.status(), 'the real create').toBe(201)
-  const createdBody = await createdResponse.json() as { card: { product: { id: string; version: string }; references: { attributes: Record<string, unknown> } } }
+  const createdBody = await createdResponse.json() as { card: { product: { id: string; version: string }; references: { templateId: string; templateVersion: string; attributes: Record<string, unknown>; units: { stock: string; sales: string } } } }
   expect(createdBody.card.references.attributes).toEqual(expectedAttributes)
+  expect(createdBody.card.references.templateId).toBe(template.id)
+  expect(createdBody.card.references.templateVersion).toBe(template.version)
+  expect(createdBody.card.references.units.stock).toBe(kilogram.id)
+  expect(createdBody.card.references.units.sales).toBe(kilogram.id)
   await expect(page.getByRole('heading', { level: 1, name: 'Taslak kaydedildi' })).toBeVisible()
   await expect(page.getByText(new RegExp(`^${group!.prefix}-[0-9]+ — ${name}$`))).toBeVisible()
   const id = createdBody.card.product.id
@@ -121,7 +127,7 @@ test('U02-FIX-01 the authorized actor creates, edits and reopens technical field
   await expect(page.getByText(coatingName, { exact: true })).toBeVisible()
   await expect(page.getByTestId('product-unit-stock')).toHaveText(kilogram.displayName)
   await expect(page.getByTestId('product-unit-sales')).toHaveText(kilogram.displayName)
-  await page.goto(`/urun/${id}/duzenle`)
+  await page.locator(`a[href="/urun/${id}/duzenle"]`).click()
   await page.getByLabel(`${thickness.key} (mm)`, { exact: false }).fill('2.5')
   await page.getByLabel('Değişiklik gerekçesi').fill('SENTETIK u02 teknik ölçü düzeltmesi')
   const edited = page.waitForResponse(response => new URL(response.url()).pathname === `${PRODUCTS_PATH}/${id}/draft` && response.request().method() === 'PATCH')
@@ -129,13 +135,27 @@ test('U02-FIX-01 the authorized actor creates, edits and reopens technical field
   const editedResponse = await edited
   expect(editedResponse.status()).toBe(200)
   expect(editedResponse.request().postDataJSON().expectedVersion).toBe(createdBody.card.product.version)
+  const editedBody = await editedResponse.json()
+  expect(editedBody.card.product.id).toBe(id)
+  expect(editedBody.card.product.version).not.toBe(createdBody.card.product.version)
   await expect(page.getByRole('heading', { name: 'Değişiklikler kaydedildi' })).toBeVisible()
+  await page.goto('about:blank')
   const reopened = page.waitForResponse(response => new URL(response.url()).pathname === `${PRODUCTS_PATH}/${id}` && response.request().method() === 'GET')
   await page.goto(`/urun/${id}`)
-  const persisted = await (await reopened).json()
+  const reopenedResponse = await reopened
+  expect(reopenedResponse.status()).toBe(200)
+  const persisted = await reopenedResponse.json()
+  expect(persisted.product.id).toBe(id)
+  expect(persisted.product.version).toBe(editedBody.card.product.version)
+  expect(persisted.references.templateId).toBe(template.id)
+  expect(persisted.references.templateVersion).toBe(template.version)
+  expect(persisted.references.units.stock).toBe(kilogram.id)
+  expect(persisted.references.units.sales).toBe(kilogram.id)
   expect(persisted.references.attributes).toEqual({ ...expectedAttributes, [thickness.key]: 2.5 })
   await expect(page.getByText('2.5', { exact: true })).toBeVisible()
   await expect(page.getByText(coatingName, { exact: true })).toBeVisible()
+  await expect(page.getByTestId('product-unit-stock')).toHaveText(kilogram.displayName)
+  await expect(page.getByTestId('product-unit-sales')).toHaveText(kilogram.displayName)
   expect(traffic.writeStatuses).toEqual([201, 200])
 })
 
