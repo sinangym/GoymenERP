@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace GoymenERP.Modules.Finance.Contracts;
 
 // FS0: the Finance bank account master (card #66 5731563923). It moves no money.
@@ -108,6 +110,7 @@ public sealed record BankAccountCard(
 /// <see cref="Undeclared"/> are both refused there, for different reasons that the user is told apart.
 /// </para>
 /// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter<BankAccountMoneyEligibility>))]
 public enum BankAccountMoneyEligibility { Eligible, NotEligible, Undeclared }
 
 /// <summary>

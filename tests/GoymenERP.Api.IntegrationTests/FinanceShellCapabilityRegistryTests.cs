@@ -30,6 +30,9 @@ public sealed class FinanceShellCapabilityRegistryTests
                 ("finance.receipts.detail", "F-02-DETAIL", null),
                 ("finance.receipts.draft", "F-02-NEW", null),
                 ("finance.receipts.list", "F-02", null),
+                ("finance.receipts.record", "F-02-DETAIL", "finance.receipts.detail"),
+                ("finance.receipts.reverse.approve", "F-02-REVERSAL-APPROVAL", null),
+                ("finance.receipts.reverse.propose", "F-02-DETAIL", "finance.receipts.detail"),
             ],
             registry.Registrations.Select(registration => (registration.Declaration.CapabilityId,
                 registration.Declaration.ScreenId, registration.Declaration.ParentCapabilityId)));
@@ -53,7 +56,7 @@ public sealed class FinanceShellCapabilityRegistryTests
         var registry = new ShellCapabilityRegistry(providers,
             new ShellCapabilityAuthorityCatalog([ShellCapabilityRegistry.ComputeCandidateRevision(providers)]));
 
-        Assert.Equal(6, registry.Registrations.Count(registration => registration.Owner == FinanceShellCapabilityProvider.OwnerId));
+        Assert.Equal(9, registry.Registrations.Count(registration => registration.Owner == FinanceShellCapabilityProvider.OwnerId));
     }
 
     [Fact]

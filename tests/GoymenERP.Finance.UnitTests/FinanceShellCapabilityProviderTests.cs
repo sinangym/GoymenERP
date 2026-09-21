@@ -29,7 +29,6 @@ public sealed class FinanceShellCapabilityProviderTests
 
         Assert.Equal("CHATGPT-BUSINESS/FINANCE", provider.Owner);
         Assert.Equal("1.1", provider.ContractVersion);
-        Assert.Equal("1.0", provider.ContractVersion);
         (string Capability, string Route, string Path, string Screen, ShellCapabilityRoutePrecedence Precedence, string[] Permissions)[] expected =
         [
             ("finance.receipts.list", "finance.receipts", "/finans/tahsilatlar", "F-02", ShellCapabilityRoutePrecedence.Static,

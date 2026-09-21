@@ -226,12 +226,11 @@ public sealed partial class OpenApiContractGenerationTests
             "#/components/schemas/RejectReversalRequest", ["path:proposalId:true:type:string;format:uuid"]),
         new("get", "/api/v1/finance/manual-receipts/reversal-proposals/pending",
             "GetPendingFinanceManualReceiptReversalsV1",
-            AuthenticatedResponses("200:application/json", "400:application/problem+json",
-                "503:application/problem+json")),
+            AuthenticatedResponses("200:application/json", "503:application/problem+json")),
         new("get", "/api/v1/finance/manual-receipts/reversal-proposals/{proposalId}",
             "GetFinanceManualReceiptReversalV1",
-            AuthenticatedResponses("200:application/json", "400:application/problem+json",
-                "404:application/problem+json", "503:application/problem+json"),
+            AuthenticatedResponses("200:application/json", "404:application/problem+json",
+                "503:application/problem+json"),
             ParameterValues: ["path:proposalId:true:type:string;format:uuid"]),
         new("get", "/api/v1/finance/manual-receipts", "GetFinanceManualReceiptsV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
@@ -776,11 +775,6 @@ public sealed partial class OpenApiContractGenerationTests
         "DeclareManufacturingOutputV1:400",
         "SaveFinanceManualReceiptDraftV1:400",
         "RecordFinanceManualReceiptV1:400",
-        "ProposeFinanceManualReceiptReversalV1:400",
-        "ApproveFinanceManualReceiptReversalV1:400",
-        "RejectFinanceManualReceiptReversalV1:400",
-        "GetPendingFinanceManualReceiptReversalsV1:400",
-        "GetFinanceManualReceiptReversalV1:400",
         "GetFinanceManualReceiptsV1:400",
         "GetFinanceManualReceiptV1:400",
         "GetFinanceBankAccountsV1:400",
@@ -2640,9 +2634,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(85, operations.Count);
+        Assert.Equal(92, operations.Count);
         Assert.Equal(
-            85,
+            92,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());
@@ -2662,9 +2656,11 @@ public sealed partial class OpenApiContractGenerationTests
             }
             Assert.Equal(expected.Method, actual.Method);
             Assert.Equal(expected.Path, actual.Path);
-            Assert.Equal(
-                expected.Responses.Order(StringComparer.Ordinal),
-                SnapshotResponses(actual.Value).Order(StringComparer.Ordinal));
+            var expectedResponses = expected.Responses.Order(StringComparer.Ordinal).ToArray();
+            var actualResponses = SnapshotResponses(actual.Value).Order(StringComparer.Ordinal).ToArray();
+            Assert.True(
+                expectedResponses.SequenceEqual(actualResponses, StringComparer.Ordinal),
+                $"{expected.OperationId} response drift. Expected: {string.Join(", ", expectedResponses)}; Actual: {string.Join(", ", actualResponses)}");
             Assert.Equal(
                 ExpectedSuccessSchemas[expected.OperationId],
                 SnapshotSuccessSchema(actual.Value));

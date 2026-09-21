@@ -432,7 +432,7 @@ public sealed class ReversalProposalService(
             AuditAiInvolvement.None, AiContextJson: null, envelope.SourceChannel, envelope.ClientIpAddress,
             envelope.UserAgent, context.CorrelationId, context.CausationId, metadata.IdempotencyKey));
 
-    private static ReversalProposalView View(ReversalProposalRow row) => new(
+    private static ReversalProposalView View(ReversalProposalRow row) => new ReversalProposalView(
         row.Id, row.OriginalSourceId, row.OccurredOn, row.Reason,
         (ReversalProposalStatus)row.Status, row.ProposedBy, row.ProposedAtUtc,
         row.DecidedBy, row.DecidedAtUtc, row.DecisionReason, row.ReversalSourceId,
@@ -451,7 +451,7 @@ public sealed class ReversalProposalService(
     }, new JsonSerializerOptions(JsonSerializerDefaults.Web));
 
     private static ReversalProposalCommandResult Succeeded(FinanceContext context, ReversalProposalRow row) =>
-        new(CommandOutcome.Succeeded, View(row), false, context.CorrelationId, []);
+        new ReversalProposalCommandResult(CommandOutcome.Succeeded, View(row), false, context.CorrelationId, []);
 
     private static ReversalProposalCommandResult PolicyRefusal(
         FinanceContext context, ReversalPolicyException exception) => exception.Failure switch
@@ -470,11 +470,11 @@ public sealed class ReversalProposalService(
     private static bool Canonical(string? value) =>
         !string.IsNullOrWhiteSpace(value) && string.Equals(value, value.Trim(), StringComparison.Ordinal);
 
-    private static ValidationIssue Issue(string field, string code) => new(field, code);
+    private static ValidationIssue Issue(string field, string code) => new ValidationIssue(field, code);
 
     private static ReversalProposalCommandResult Refused(
         FinanceContext context, CommandOutcome outcome, params ValidationIssue[] issues) =>
-        new(outcome, null, false, context.CorrelationId, issues);
+        new ReversalProposalCommandResult(outcome, null, false, context.CorrelationId, issues);
 }
 
 public sealed record FinanceReversalEnvelopes(FinanceAuditEnvelope Propose, FinanceAuditEnvelope Approve);

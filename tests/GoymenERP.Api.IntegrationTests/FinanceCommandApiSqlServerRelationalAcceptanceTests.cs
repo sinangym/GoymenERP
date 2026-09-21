@@ -684,7 +684,7 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
     private sealed class SyntheticOpenPeriodRule : IFinanceRecordPeriodRule
     {
         public Task<RecordPeriodAnswer> CheckAsync(FinanceContext context, DateOnly occurredOn, DateOnly? valueOn,
-            CancellationToken cancellationToken) =>
+            DateTimeOffset decidedAt, CancellationToken cancellationToken) =>
             Task.FromResult(new RecordPeriodAnswer(RecordPeriodOutcome.Open, null));
     }
 
