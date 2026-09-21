@@ -16,11 +16,11 @@ public sealed partial class ShellCapabilityRegistryTests
         var registry = new ShellCapabilityRegistry(
             [provider],
             new ShellCapabilityAuthorityCatalog(
-                [ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedCreateAndDetail]));
+                [ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetail]));
 
         Assert.Equal(4, registry.Registrations.Count);
         Assert.Equal(
-            ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedCreateAndDetail,
+            ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetail,
             registry.Revision);
         var registration = Assert.Single(
             registry.Registrations,
@@ -54,7 +54,7 @@ public sealed partial class ShellCapabilityRegistryTests
         Assert.Equal(
             [ErpPermissions.CounterpartyPartiesRead],
             registration.Declaration.RequiredPermissions);
-        Assert.False(registration.Declaration.ImplementationAvailable);
+        Assert.True(registration.Declaration.ImplementationAvailable);
 
         var createRegistration = Assert.Single(
             registry.Registrations,
@@ -85,7 +85,7 @@ public sealed partial class ShellCapabilityRegistryTests
         Assert.Equal(
             [ErpPermissions.CounterpartyPartiesCreate],
             createRegistration.Declaration.RequiredPermissions);
-        Assert.False(createRegistration.Declaration.ImplementationAvailable);
+        Assert.True(createRegistration.Declaration.ImplementationAvailable);
 
         var linkRegistration = Assert.Single(
             registry.Registrations,
@@ -150,7 +150,7 @@ public sealed partial class ShellCapabilityRegistryTests
         Assert.Equal(
             [ErpPermissions.CounterpartyPartiesRead],
             detailRegistration.Declaration.RequiredPermissions);
-        Assert.False(detailRegistration.Declaration.ImplementationAvailable);
+        Assert.True(detailRegistration.Declaration.ImplementationAvailable);
     }
 
     [Fact]

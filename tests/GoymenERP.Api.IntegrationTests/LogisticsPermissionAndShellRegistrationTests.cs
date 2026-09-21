@@ -55,7 +55,7 @@ public sealed class LogisticsPermissionAndShellRegistrationTests
         ];
 
         // On failure xUnit prints the actual revision: the constant is never guessed.
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedCreateAndDetailOrganizationV11ProductV10PublishedSalesV10PublishedFinanceV10PublishedManufacturingV10AndLogisticsV10,
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV10PublishedFinanceV10PublishedManufacturingV10AndLogisticsV10,
             ShellCapabilityRegistry.ComputeCandidateRevision(providers));
     }
 
@@ -67,7 +67,7 @@ public sealed class LogisticsPermissionAndShellRegistrationTests
         var authority = C01E2eShellCapabilityActivation.Configure(services, new TestingEnvironment(),
             new ConfigurationBuilder().Build());
 
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedCreateAndDetailOrganizationV11ProductV10PublishedSalesV10PublishedFinanceV10PublishedManufacturingV10AndLogisticsV10, authority);
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV10PublishedFinanceV10PublishedManufacturingV10AndLogisticsV10, authority);
         using var container = services.BuildServiceProvider();
         var registry = new ShellCapabilityRegistry(container.GetServices<IShellCapabilityProvider>(),
             new ShellCapabilityAuthorityCatalog([authority]));

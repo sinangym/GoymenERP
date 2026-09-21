@@ -26,7 +26,7 @@ public sealed partial class ShellCapabilityRegistryTests
         Assert.Throws<InvalidOperationException>(() => new ShellCapabilityRegistry(providers));
         Assert.Equal(4, AuthorizedRegistry(providers).Registrations.Count);
         var companyProvider = new GoymenERP.Modules.Counterparty.Infrastructure.Shell.CounterpartyShellCapabilityProvider();
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedCreateAndDetail,
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetail,
             ShellCapabilityRegistry.ComputeCandidateRevision([companyProvider]));
     }
 
@@ -87,7 +87,7 @@ public sealed partial class ShellCapabilityRegistryTests
             new GoymenERP.Modules.Counterparty.Infrastructure.Shell.CounterpartyShellCapabilityProvider(),
             new GoymenERP.Modules.Organization.Infrastructure.Shell.OrganizationShellCapabilityProvider(),
         ];
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedCreateAndDetailAndOrganizationV11,
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailAndOrganizationV11,
             ShellCapabilityRegistry.ComputeCandidateRevision(normal));
         var combined = AuthorizedRegistry([.. normal, Provider("PRODUCT", ProductDeclarations())]);
         // Counterparty's four + Organization's five (ORG-03 joined) + Product's four.
@@ -96,7 +96,7 @@ public sealed partial class ShellCapabilityRegistryTests
         Assert.Equal(2, combined.Registrations.Count(item => item.Declaration.ParentCapabilityId is not null));
         Assert.All(combined.Registrations.Where(item => item.Declaration.ParentCapabilityId is not null),
             item => Assert.Null(item.Declaration.GlobalProductOperation));
-        Assert.NotEqual(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedCreateAndDetailAndOrganizationV11, combined.Revision);
+        Assert.NotEqual(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailAndOrganizationV11, combined.Revision);
     }
 
     [Fact]

@@ -11,7 +11,7 @@ public sealed class ShellControlCapabilityRegistryTests
     public void ExistingRouteOnlyAuthority_RemainsByteIdentical()
     {
         Assert.Equal(
-            ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedCreateAndDetail,
+            ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetail,
             ShellCapabilityRegistry.ComputeCandidateRevision([new CounterpartyShellCapabilityProvider()]));
     }
 
