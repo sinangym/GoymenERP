@@ -31,6 +31,40 @@ public sealed class ProductSalesEligibilityAuthoritySqlServerRelationalAcceptanc
     private const string Permission = ErpPermissions.ProductOperationalSelectionRead;
 
     [SqlServerFact]
+    public async Task Candidate_discovery_denies_before_storage_without_the_narrow_grant()
+    {
+        var run = await Run.StartAsync();
+        try
+        {
+            await using var request = run.Factory.Services.CreateAsyncScope();
+            var reader = new EmptyCandidateReader();
+            var error = await Assert.ThrowsAsync<ProductOperationException>(() =>
+                run.Candidates(request, reader).SearchAsync(new(null, new(2026, 9, 21)), default));
+            Assert.Equal(403, error.StatusCode);
+            Assert.Equal(0, reader.Reads);
+        }
+        finally { await run.DisposeAsync(); }
+    }
+
+    [SqlServerFact]
+    public async Task Candidate_discovery_discards_window_when_another_request_revokes_authority()
+    {
+        var run = await Run.StartAsync();
+        try
+        {
+            await run.GrantAsync();
+            await using var request = run.Factory.Services.CreateAsyncScope();
+            var reader = new EmptyCandidateReader { During = run.RevokeAsync };
+            var error = await Assert.ThrowsAsync<ProductOperationException>(() =>
+                run.Candidates(request, reader).SearchAsync(new(null, new(2026, 9, 21)), default));
+            Assert.Equal((403, "product_access_denied"), (error.StatusCode, error.Code));
+            Assert.Equal(1, reader.Reads);
+            Assert.Equal(2, run.AuthorityReads.Count);
+        }
+        finally { await run.DisposeAsync(); }
+    }
+
+    [SqlServerFact]
     public async Task A_standing_grant_passes_every_fence_with_one_authority_read_per_fence()
     {
         var run = await Run.StartAsync();
@@ -162,6 +196,16 @@ public sealed class ProductSalesEligibilityAuthoritySqlServerRelationalAcceptanc
                 new ProductUnitProfileAdapter(provider.GetRequiredService<ISettingsPrerequisiteProvider>(), company));
         }
 
+        public ProductSalesCandidateService Candidates(AsyncServiceScope request, IProductSalesCandidateReader reader)
+        {
+            var eligibility = Service(request, new MissingProductReader());
+            var provider = request.ServiceProvider;
+            var company = provider.GetRequiredService<ICompanyContext>();
+            return new(company, provider.GetRequiredService<ICurrentUser>(),
+                provider.GetRequiredService<IErpAuthorityRevalidationService>(), reader, eligibility,
+                new ProductUnitProfileAdapter(provider.GetRequiredService<ISettingsPrerequisiteProvider>(), company));
+        }
+
         public async Task GrantAsync()
         {
             await using var scope = Factory.Services.CreateAsyncScope();
@@ -192,6 +236,19 @@ public sealed class ProductSalesEligibilityAuthoritySqlServerRelationalAcceptanc
         }
 
         public ValueTask DisposeAsync() => Factory.DisposeAsync();
+    }
+
+    private sealed class EmptyCandidateReader : IProductSalesCandidateReader
+    {
+        public Func<Task>? During { get; init; }
+        public int Reads { get; private set; }
+        public async Task<ProductSalesCandidateWindow> ReadAsync(ProductSalesReadScope scope,
+            ProductSalesCandidateQueryV1 query, CancellationToken cancellationToken)
+        {
+            Reads++;
+            if (During is not null) await During();
+            return new([], false);
+        }
     }
 
     private sealed class MissingProductReader : IProductSalesRecordReader

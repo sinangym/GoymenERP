@@ -39,6 +39,38 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
     private static readonly Guid GroupId = Guid.Parse("82000000-0000-0000-0000-000000000001");
 
     [SqlServerFact]
+    public Task ProductSalesCandidateWindow_FiltersAndBoundsRealSqlWithoutWrites() =>
+        WithDatabaseAsync(async (factory, _) =>
+        {
+            using var client = factory.CreateClientFor("group-bootstrap-admin", CompanyA);
+            var ids = new List<Guid>();
+            foreach (var name in new[] { "Candidate Alpha", "Candidate Beta", "Candidate Draft", "Other" })
+            {
+                using var created = await CreateAsync(client, Guid.NewGuid().ToString("N"), name);
+                Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+                ids.Add((await created.Content.ReadFromJsonAsync<ProductMutationResponse>())!.Card.Product.Id);
+            }
+            await using var scope = factory.Services.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<ProductDbContext>();
+            // Isolated relational query fixture, NOT an activation or real released-family acceptance.
+            await db.Products.Where(row => row.Id == ids[0] || row.Id == ids[1] || row.Id == ids[3])
+                .ExecuteUpdateAsync(update => update.SetProperty(row => row.Lifecycle, 1)
+                    .SetProperty(row => row.SellableValue, true).SetProperty(row => row.SellableProvenance, 1));
+            var before = await SnapshotAsync(factory.DatabaseConnectionString);
+            var reader = new SqlProductSalesCandidateReader(new ProductReadStore(db));
+            var authority = new ProductSalesReadScope(CompanyA, ActorId.ToString("D"));
+            var first = await reader.ReadAsync(authority, new("Candidate", new(2026, 9, 21), 1), default);
+            Assert.Equal(ids[0], Assert.Single(first.Items).Id);
+            Assert.True(first.HasMore);
+            var all = await reader.ReadAsync(authority, new("Candidate", new(2026, 9, 21), 10), default);
+            Assert.Equal(new[] { ids[0], ids[1] }, all.Items.Select(item => item.Id));
+            Assert.False(all.HasMore);
+            var code = await reader.ReadAsync(authority, new("psql-2", new(2026, 9, 21)), default);
+            Assert.Equal(ids[1], Assert.Single(code.Items).Id);
+            Assert.Equal(before, await SnapshotAsync(factory.DatabaseConnectionString));
+        });
+
+    [SqlServerFact]
     public Task ProductGlobalRuntime_SharedSnapshotEmitsEmptyAndPopulatedJsonArrays() =>
         WithDatabaseAsync(async (factory, _) =>
         {
