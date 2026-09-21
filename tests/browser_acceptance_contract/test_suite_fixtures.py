@@ -65,6 +65,11 @@ class FixtureListTests(unittest.TestCase):
                 with self.subTest(suite=suite, key=key):
                     self.assertRegex(key, r"^[a-z][A-Za-z0-9]{0,39}$")
 
+    def test_u02_exports_the_fixed_technical_family_identity(self):
+        self.assertEqual(
+            frozenset({"companyId", "codeGroupId", "technicalFamilyId", "authorizedActor", "unauthorizedActor"}),
+            browser.SUITE_FIXTURE_OUTPUTS["u02"])
+
     def test_a_read_only_suite_cannot_have_a_fixture(self):
         with mock.patch.dict(browser.SUITE_FIXTURE_OUTPUTS, {"c03": frozenset({"partyId"})}):
             with self.assertRaisesRegex(browser.ContractError, "read-only suite c03"):

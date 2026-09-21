@@ -176,7 +176,7 @@ export function fieldErrorText(code: string): string {
  * would pull an unfinished decision forward rather than complete this one.
  */
 export const PENDING_REFERENCE_NOTE =
-  'Şablon, nitelikler, birim rolleri ve takip politikası bu dilimde düzenlenmiyor; sonraki dilimde aile bazlı tamlık çalışmasıyla birlikte gelecek.'
+  'Teknik alanlar yayımlanmış aile şablonundan gelir. Takip politikası henüz düzenlenemez; eksik taslak kullanıma onaylanmış ürün anlamına gelmez.'
 
 /**
  * A catalogue the server could not read. Distinct from an empty one: README —

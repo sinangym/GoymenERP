@@ -50,6 +50,10 @@ internal static class C01E2eFixtureWriterActivation
         // u02 (#331): Product's code-group port (ÜRÜN's), behind the same gate.
         services.AddProductCodeGroupFixtureStore();
         services.AddScoped<C01E2eProductCodeGroupFixtureWriter>();
+        // u02 technical-card continuation: Product's fixed synthetic family/template/dictionary fixture,
+        // behind the same complete runner-bound gate. The port accepts no caller-selected values.
+        services.AddProductTechnicalCardFixtureStore();
+        services.AddScoped<C01E2eProductTechnicalCardFixtureWriter>();
         // s04 (SALES-A1 browser acceptance): Sales's draft port (SİPARİŞ's), behind the same gate.
         services.AddSalesDraftFixtureStore();
         services.AddScoped<C01E2eSalesDraftFixtureWriter>();
@@ -173,6 +177,27 @@ public sealed class C01E2eProductCodeGroupFixtureWriter
 
         return _store.EnsureAsync(row, cancellationToken);
     }
+}
+
+/// <summary>
+/// Exposes Product's fixed u02 technical-card fixture only inside the browser runner's complete gate.
+/// The Product-owned port has no input, so the host cannot turn this into a general data writer.
+/// </summary>
+public sealed class C01E2eProductTechnicalCardFixtureWriter
+{
+    private readonly IProductTechnicalCardFixtureStore _store;
+
+    public C01E2eProductTechnicalCardFixtureWriter(
+        IHostEnvironment environment,
+        IConfiguration configuration,
+        IProductTechnicalCardFixtureStore store)
+    {
+        C01E2eFixtureWriterActivation.RequireGate(environment, configuration);
+        _store = store;
+    }
+
+    public Task EnsureAsync(CancellationToken cancellationToken) =>
+        _store.EnsureAsync(cancellationToken);
 }
 
 /// <summary>

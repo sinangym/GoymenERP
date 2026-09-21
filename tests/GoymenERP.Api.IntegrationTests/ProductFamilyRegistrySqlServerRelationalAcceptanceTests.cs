@@ -95,6 +95,15 @@ public sealed class ProductFamilyRegistrySqlServerRelationalAcceptanceTests
             Assert.Equal((TemplateId, "1"), (Assert.Single(options.Templates).Id, options.Templates[0].Version));
             Assert.DoesNotContain("families", options.UnavailableCatalogs);
             Assert.DoesNotContain("templates", options.UnavailableCatalogs);
+            var fields = Assert.Single(options.Templates).Fields!;
+            Assert.Equal(template.Fields.Select(field => field.Key), fields.Select(field => field.Key));
+            Assert.Equal("measureMillimetre", fields[0].Kind);
+            Assert.Equal("syn-coating", fields.Single(field => field.Key == "syn-designation").AppliesWhenField);
+            Assert.Equal("candidate", options.Dictionaries!.Single(dictionary => dictionary.Name == "syn-grades")
+                .Entries.Single(entry => entry.Code == "SYN-C").Status);
+            Assert.True(options.Dictionaries!.Single(dictionary => dictionary.Name == "syn-coatings")
+                .Entries.Single(entry => entry.Code == "syn-none").IsExplicitNone);
+            Assert.Equal(TemplateId, options.FamilyFacts!.Single(family => family.Id == HotCoil).TemplateId);
         });
 
     [SqlServerFact]
@@ -164,6 +173,23 @@ public sealed class ProductFamilyRegistrySqlServerRelationalAcceptanceTests
             // FAMILY error; its only errors are the unit bindings a card cannot hold yet (PRD-UNIT-1).
             var stored = (await client.GetFromJsonAsync<ProductCardView>($"/api/v1/products/{completeId:D}"))!;
             var partial = (await client.GetFromJsonAsync<ProductCardView>($"/api/v1/products/{incompleteId:D}"))!;
+            Assert.Equal("Sentetik A", stored.Product.Labels.Attributes!["syn-grade"]);
+            Assert.Equal("Sentetik kaplamasız", stored.Product.Labels.Attributes["syn-coating"]);
+            Assert.NotNull(stored.Product.Labels.Template);
+            Assert.NotNull(stored.Product.Labels.FamilyFacts);
+            using var edit = new HttpRequestMessage(HttpMethod.Patch, $"/api/v1/products/{completeId:D}/draft")
+            {
+                Content = JsonContent.Create(new { expectedVersion = stored.Product.Version,
+                    changes = new { references = new { attributes = new Dictionary<string, object?>(Valid())
+                        { ["syn-thickness-mm"] = 2.125m } } }, reason = "Synthetic technical card correction" }),
+            };
+            edit.Headers.Add("Idempotency-Key", "family-card-technical-edit");
+            using var edited = await client.SendAsync(edit);
+            Assert.Equal(HttpStatusCode.OK, edited.StatusCode);
+            var reopened = (await client.GetFromJsonAsync<ProductCardView>($"/api/v1/products/{completeId:D}"))!;
+            Assert.Equal("2", reopened.Product.Version);
+            Assert.Equal(2.125m, reopened.References.Attributes!["syn-thickness-mm"].GetDecimal());
+            Assert.Equal("Sentetik kaplamasız", reopened.Product.Labels.Attributes!["syn-coating"]);
             await using var scope = factory.Services.CreateAsyncScope();
             var policy = new ProductFamilyRequirementPolicyV2(
                 new SqlProductFamilyDefinitionSource(scope.ServiceProvider.GetRequiredService<ProductDbContext>()));
