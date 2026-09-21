@@ -90,6 +90,33 @@ public sealed class ProductCardPresentationTests
         }, labels.Attributes);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Another_template_identity_or_version_cannot_relabel_a_stored_card(bool changeIdentity)
+    {
+        var definition = Definition();
+        var released = Assert.Single(definition.Templates);
+        definition = definition with
+        {
+            Templates = [released with
+            {
+                Id = changeIdentity ? Guid.Parse("7a2f1c40-0b51-4f8e-9c33-51d0a7e6b012") : released.Id,
+                Version = changeIdentity ? released.Version : "2",
+                Name = "Another released template",
+            }],
+            Entries = [.. definition.Entries.Select(entry => entry with { DisplayName = "Another released label" })],
+        };
+
+        var labels = ProductCardPresentation.Labels("Sentetik grup", definition, HotCoil, References(Attributes()));
+
+        Assert.Equal("Sentetik grup", labels.Group);
+        Assert.Equal("Sentetik sıcak rulo", labels.Family);
+        Assert.Equal(new ProductFamilyFactsLabels("Sentetik cins", "Sentetik tür", "Sentetik tip"), labels.FamilyFacts);
+        Assert.Null(labels.Template);
+        Assert.Null(labels.Attributes);
+    }
+
     [Fact]
     public void Without_a_release_or_a_released_family_there_are_no_options_and_no_names()
     {

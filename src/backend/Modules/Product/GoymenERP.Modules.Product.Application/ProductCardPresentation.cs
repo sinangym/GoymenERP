@@ -60,8 +60,8 @@ public static class ProductCardPresentation
 
     /// <summary>
     /// The reopened card's names: the group's, and — when a well-formed release holds the card's family — the
-    /// family's name and fixed facts, its template's name, and the display name of every stored attribute whose
-    /// value is a code of that field's dictionary. A value the release does not hold has no name (null).
+    /// family's name and fixed facts. Template and attribute names require the card's exact stored template
+    /// identity and version; another release cannot supply labels for an older card.
     /// </summary>
     public static ProductReferenceLabels Labels(string? group, ProductFamilyDefinitionV2? definition, Guid? familyId,
         ProductReferences references)
@@ -75,6 +75,11 @@ public static class ProductCardPresentation
         }
 
         var template = ProductFamilyDefinitionRulesV2.TemplateOf(definition, family.Id);
+        if (template?.Id != references.TemplateId
+            || !string.Equals(template?.Version, references.TemplateVersion, StringComparison.Ordinal))
+        {
+            template = null;
+        }
         var names = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var field in template?.Fields ?? [])
         {
