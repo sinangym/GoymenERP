@@ -13,17 +13,32 @@ import {
   APPROVE,
   APPROVED_NOTICE,
   APPROVE_CONFIRM,
+  BANK_CARD,
+  BANK_ELIGIBILITY,
+  BANK_IBAN_CHANGE_APPROVE,
+  BANK_IBAN_CHANGE_LINK,
   BANK_OWN_PROPOSAL,
+  BANK_PENDING_IBAN_NOTICE,
+  BANK_PENDING_IBAN_OWN,
   BANK_PROPOSE_LINK,
   BANK_STATE_APPROVED,
   BANK_STATE_PENDING,
+  IBAN_CHANGE_APPROVED,
+  IBAN_CHANGE_NEW,
+  IBAN_CHANGE_PROPOSED,
+  IBAN_CHANGE_REASON,
+  IBAN_CHANGE_SUBMIT,
   PROPOSED_NOTICE,
+  PROPOSE_BANK,
   PROPOSE_CURRENCY,
   PROPOSE_CURRENCY_PLACEHOLDER,
   PROPOSE_ERROR,
   PROPOSE_NAME,
   PROPOSE_NO_CANDIDATES,
   PROPOSE_SUBMIT,
+  PROPOSE_TYPE,
+  bankPendingIban,
+  bankPendingIbanReason,
   currencyFallback,
 } from './bankAccountText'
 import { FINANCE_CAPABILITY } from './capabilities'
@@ -32,6 +47,7 @@ import {
   COMPANY_A,
   NO_REPLY,
   bankAccount,
+  bankAccountCard,
   body,
   found,
   recordingPort,
@@ -46,6 +62,8 @@ const OWN = 'aaaaaaaa-0000-4000-8000-0000000000b2'
 const APPROVED = 'aaaaaaaa-0000-4000-8000-0000000000b3'
 const TRY = 'cccccccc-0000-4000-8000-0000000000c1'
 const USD = 'cccccccc-0000-4000-8000-0000000000c2'
+const CURRENT_IBAN = 'TR330006100519786457841326'
+const PROPOSED_IBAN = 'TR120006200519786457841327'
 
 const account = (id: string, name: string, active: boolean, version = '1') =>
   bankAccount(COMPANY_A, { id, currencyId: TRY, displayName: name, isActive: active, isUsableForReceipt: active, version })
@@ -53,9 +71,9 @@ const account = (id: string, name: string, active: boolean, version = '1') =>
 const MASTER = {
   companyId: COMPANY_A,
   items: [
-    { account: account(APPROVED, 'SENTETIK Onaylı', true, '2'), isOwnProposal: false },
-    { account: account(OWN, 'SENTETIK Benim', false), isOwnProposal: true },
-    { account: account(PENDING, 'SENTETIK Bekleyen', false), isOwnProposal: false },
+    { account: account(APPROVED, 'SENTETIK Onaylı', true, '2'), isOwnProposal: false, card: bankAccountCard(), isOwnPendingIbanProposal: false },
+    { account: account(OWN, 'SENTETIK Benim', false), isOwnProposal: true, card: bankAccountCard({ moneyEligibility: 'NotEligible', iban: null }), isOwnPendingIbanProposal: false },
+    { account: account(PENDING, 'SENTETIK Bekleyen', false), isOwnProposal: false, card: bankAccountCard({ moneyEligibility: 'Undeclared' }), isOwnPendingIbanProposal: false },
   ],
 }
 
@@ -66,6 +84,26 @@ const CANDIDATES = {
     { currencyId: TRY, code: 'TRY', displayLabel: 'SENTETIK Lira' },
   ],
 }
+
+const ibanMaster = (isOwnPendingIbanProposal: boolean) => ({
+  companyId: COMPANY_A,
+  items: [
+    {
+      account: account(APPROVED, 'SENTETIK Onayli IBAN', true, '3'),
+      isOwnProposal: false,
+      card: bankAccountCard({
+        iban: CURRENT_IBAN,
+        pendingIbanChange: {
+          iban: PROPOSED_IBAN,
+          proposedBy: 'SENTETIK-proposer',
+          proposedAtUtc: '2026-09-21T10:00:00Z',
+          reason: 'SENTETIK banka gecisi',
+        },
+      }),
+      isOwnPendingIbanProposal,
+    },
+  ],
+})
 
 function responder(master: unknown = MASTER, candidates: unknown = CANDIDATES): ReadResponder {
   return (method) => {
@@ -91,6 +129,7 @@ describe('F-04 list', () => {
     expect(within(row('SENTETIK Benim')).getByText(BANK_OWN_PROPOSAL)).toBeTruthy()
     expect(within(row('SENTETIK Benim')).queryByRole('button', { name: new RegExp(APPROVE) })).toBeNull()
     expect(within(row('SENTETIK Bekleyen')).getByText(BANK_STATE_PENDING)).toBeTruthy()
+    expect(within(row('SENTETIK Bekleyen')).getByText(BANK_ELIGIBILITY.Undeclared)).toBeTruthy()
     expect(within(row('SENTETIK Bekleyen')).getByRole('button', { name: `${APPROVE}: SENTETIK Bekleyen` })).toBeTruthy()
     // Not a proposer: no candidate read, no propose link, the currency's identity instead of a guessed code.
     expect(reads.map((read) => read.method)).not.toContain('bankAccountCurrencyCandidates')
@@ -153,6 +192,97 @@ describe('F-04 list', () => {
     expect(commands).toHaveLength(2)
     expect(commands[1].key).toBe(commands[0].key)
   })
+
+  it('shows a pending IBAN separately and keeps the current approved IBAN effective', async () => {
+    const { port, commands } = recordingPort(responder(ibanMaster(true)))
+    renderFinance(routed(<BankAccountsPage />), {
+      port,
+      shell: shellFor(COMPANY_A, 1, [
+        FINANCE_CAPABILITY.bankAccountsList,
+        FINANCE_CAPABILITY.bankAccountsPropose,
+        FINANCE_CAPABILITY.bankAccountsApprove,
+      ]),
+    })
+
+    const accountRow = await screen.findByRole('row', { name: /SENTETIK Onayli IBAN/ })
+    expect(accountRow.textContent).toContain(`${BANK_CARD.iban}: ${CURRENT_IBAN}`)
+    expect(within(accountRow).getByText(bankPendingIban(PROPOSED_IBAN))).toBeTruthy()
+    expect(within(accountRow).getByText(bankPendingIbanReason('SENTETIK banka gecisi'))).toBeTruthy()
+    expect(within(accountRow).getByText(BANK_PENDING_IBAN_NOTICE)).toBeTruthy()
+    expect(within(accountRow).getByText(BANK_PENDING_IBAN_OWN)).toBeTruthy()
+    expect(within(accountRow).queryByRole('button', { name: BANK_IBAN_CHANGE_APPROVE })).toBeNull()
+    expect(within(accountRow).queryByRole('button', { name: BANK_IBAN_CHANGE_LINK })).toBeNull()
+    expect(commands).toHaveLength(0)
+  })
+
+  it('a different checker approves the pending IBAN with the row version and re-reads', async () => {
+    const { port, commands, reads } = recordingPort(responder(ibanMaster(false)))
+    renderFinance(routed(<BankAccountsPage />), {
+      port,
+      shell: shellFor(COMPANY_A, 1, [FINANCE_CAPABILITY.bankAccountsList, FINANCE_CAPABILITY.bankAccountsApprove]),
+    })
+
+    fireEvent.click(await screen.findByRole('button', { name: BANK_IBAN_CHANGE_APPROVE }))
+    expect(commands).toHaveLength(1)
+    expect(commands[0]).toMatchObject({
+      method: 'approveBankAccountIbanChange',
+      request: { accountId: APPROVED, body: { expectedVersion: '3' } },
+    })
+    const before = reads.filter((read) => read.method === 'listBankAccountMaster').length
+    await commands[0].resolve(
+      body({
+        outcome: 'Succeeded',
+        resource: account(APPROVED, 'SENTETIK Onayli IBAN', true, '4'),
+        isReplay: false,
+        originalCorrelationId: 'SENTETIK-iban-approval',
+        issues: [],
+      }),
+    )
+    expect(await screen.findByText(IBAN_CHANGE_APPROVED)).toBeTruthy()
+    await waitFor(() => expect(reads.filter((read) => read.method === 'listBankAccountMaster')).toHaveLength(before + 1))
+  })
+
+  it('proposes a trimmed IBAN change without replacing the displayed approved value', async () => {
+    const { port, commands } = recordingPort(responder({
+      companyId: COMPANY_A,
+      items: [{
+        account: account(APPROVED, 'SENTETIK Onayli IBAN', true, '2'),
+        isOwnProposal: false,
+        card: bankAccountCard({ iban: CURRENT_IBAN, pendingIbanChange: null }),
+        isOwnPendingIbanProposal: false,
+      }],
+    }))
+    renderFinance(routed(<BankAccountsPage />), {
+      port,
+      shell: shellFor(COMPANY_A, 1, [FINANCE_CAPABILITY.bankAccountsList, FINANCE_CAPABILITY.bankAccountsPropose]),
+    })
+
+    const accountRow = await screen.findByRole('row', { name: /SENTETIK Onayli IBAN/ })
+    fireEvent.click(within(accountRow).getByRole('button', { name: BANK_IBAN_CHANGE_LINK }))
+    fireEvent.change(within(accountRow).getByLabelText(IBAN_CHANGE_NEW), { target: { value: ` ${PROPOSED_IBAN} ` } })
+    fireEvent.change(within(accountRow).getByLabelText(IBAN_CHANGE_REASON), { target: { value: ' SENTETIK banka gecisi ' } })
+    fireEvent.click(within(accountRow).getByRole('button', { name: IBAN_CHANGE_SUBMIT }))
+
+    expect(commands).toHaveLength(1)
+    expect(commands[0]).toMatchObject({
+      method: 'proposeBankAccountIbanChange',
+      request: {
+        accountId: APPROVED,
+        body: { expectedVersion: '2', iban: PROPOSED_IBAN, reason: 'SENTETIK banka gecisi' },
+      },
+    })
+    expect(accountRow.textContent).toContain(`${BANK_CARD.iban}: ${CURRENT_IBAN}`)
+    await commands[0].resolve(
+      body({
+        outcome: 'Succeeded',
+        resource: account(APPROVED, 'SENTETIK Onayli IBAN', true, '3'),
+        isReplay: false,
+        originalCorrelationId: 'SENTETIK-iban-proposal',
+        issues: [],
+      }),
+    )
+    expect(await screen.findByText(IBAN_CHANGE_PROPOSED)).toBeTruthy()
+  })
 })
 
 describe('F-04 propose', () => {
@@ -174,11 +304,23 @@ describe('F-04 propose', () => {
     expect(screen.getByText(PROPOSE_ERROR.currencyRequired)).toBeTruthy()
     expect(commands).toHaveLength(0)
 
+    fireEvent.change(screen.getByLabelText(PROPOSE_BANK), { target: { value: 'SENTETIK Banka' } })
+    fireEvent.change(screen.getByLabelText(PROPOSE_TYPE), { target: { value: 'SENTETIK Vadesiz' } })
     fireEvent.change(select, { target: { value: TRY } })
     fireEvent.click(screen.getByRole('button', { name: PROPOSE_SUBMIT }))
     expect(commands).toHaveLength(1)
     expect(commands[0].method).toBe('proposeBankAccount')
-    expect(commands[0].request).toEqual({ displayName: 'SENTETIK Ana', currencyId: TRY })
+    expect(commands[0].request).toEqual({
+      displayName: 'SENTETIK Ana',
+      currencyId: TRY,
+      bankName: 'SENTETIK Banka',
+      accountType: 'SENTETIK Vadesiz',
+      moneyMovementEligible: false,
+      branchName: null,
+      branchCode: null,
+      iban: null,
+      accountNumber: null,
+    })
 
     await commands[0].resolve(
       body({ outcome: 'Succeeded', resource: account(PENDING, 'SENTETIK Ana', false), isReplay: false, originalCorrelationId: 'SENTETIK-1', issues: [] }),

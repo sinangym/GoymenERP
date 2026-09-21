@@ -30,10 +30,11 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Shell;
 public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "CHATGPT-BUSINESS/FINANCE";
-    public const string OwnerContractVersion = "1.0";
+    public const string OwnerContractVersion = "1.1";
     public const string ReceiptListScreenId = "F-02";
     public const string ReceiptDraftScreenId = "F-02-NEW";
     public const string ReceiptDetailScreenId = "F-02-DETAIL";
+    public const string ReceiptReversalApprovalScreenId = "F-02-REVERSAL-APPROVAL";
     public const string BankAccountListScreenId = "F-04";
     public const string BankAccountProposeScreenId = "F-04-NEW";
 
@@ -44,8 +45,13 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
     public const string ReceiptDraftRouteId = "finance.receipts.new";
     public const string ReceiptDraftRoutePath = "/finans/tahsilatlar/yeni";
     public const string ReceiptDetailCapabilityId = "finance.receipts.detail";
+    public const string ReceiptRecordCapabilityId = "finance.receipts.record";
+    public const string ReceiptReverseProposeCapabilityId = "finance.receipts.reverse.propose";
+    public const string ReceiptReverseApproveCapabilityId = "finance.receipts.reverse.approve";
     public const string ReceiptDetailRouteId = "finance.receipts.detail";
     public const string ReceiptDetailRoutePath = "/finans/tahsilatlar/:sourceId";
+    public const string ReceiptReversalApprovalRouteId = "finance.receipts.reversal-approvals";
+    public const string ReceiptReversalApprovalRoutePath = "/finans/ters-kayit-onaylari";
 
     public const string BankAccountListCapabilityId = "finance.bank-accounts.list";
     public const string BankAccountListRouteId = "finance.bank-accounts";
@@ -61,6 +67,8 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
 
     public IReadOnlyCollection<ShellCapabilityDeclaration> GetDeclarations()
     {
+        var receiptDetail = Declaration(ReceiptDetailCapabilityId, ReceiptDetailRouteId, ReceiptDetailRoutePath,
+            ReceiptDetailScreenId, ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [FinancePermissionNames.DraftRead]);
         var bankAccounts = Declaration(BankAccountListCapabilityId, BankAccountListRouteId, BankAccountListRoutePath,
             BankAccountListScreenId, ShellCapabilityRoutePrecedence.Static, [ErpPermissions.FinanceBankAccountRead]);
         return
@@ -70,8 +78,25 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
             Declaration(ReceiptDraftCapabilityId, ReceiptDraftRouteId, ReceiptDraftRoutePath, ReceiptDraftScreenId,
                 ShellCapabilityRoutePrecedence.Static,
                 [FinancePermissionNames.DraftSave, ErpPermissions.FinanceBankAccountRead]),
-            Declaration(ReceiptDetailCapabilityId, ReceiptDetailRouteId, ReceiptDetailRoutePath, ReceiptDetailScreenId,
-                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [FinancePermissionNames.DraftRead]),
+            receiptDetail,
+            // FIN-T05 + D1: Record is a control of a readable detail. Its money permission does not
+            // imply the caller's narrow Accounting period read, and neither permission alone opens it.
+            receiptDetail with
+            {
+                CapabilityId = ReceiptRecordCapabilityId,
+                ParentCapabilityId = ReceiptDetailCapabilityId,
+                RequiredPermissions =
+                    [FinancePermissionNames.DraftRead, FinancePermissionNames.Record, ErpPermissions.AccountingPeriodsRead],
+            },
+            receiptDetail with
+            {
+                CapabilityId = ReceiptReverseProposeCapabilityId,
+                ParentCapabilityId = ReceiptDetailCapabilityId,
+                RequiredPermissions = [FinancePermissionNames.DraftRead, FinancePermissionNames.ReversePropose],
+            },
+            Declaration(ReceiptReverseApproveCapabilityId, ReceiptReversalApprovalRouteId,
+                ReceiptReversalApprovalRoutePath, ReceiptReversalApprovalScreenId,
+                ShellCapabilityRoutePrecedence.Static, [FinancePermissionNames.ReverseApprove]),
             bankAccounts,
             Declaration(BankAccountProposeCapabilityId, BankAccountProposeRouteId, BankAccountProposeRoutePath,
                 BankAccountProposeScreenId, ShellCapabilityRoutePrecedence.Static, [ErpPermissions.FinanceBankAccountPropose]),

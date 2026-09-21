@@ -28,9 +28,9 @@
  *
  * Record (FIN-T05a): `POST …/manual-receipts/{draftId}/record` with the #258 `RecordRequest`, answered like every
  * command. The server decides the period from `occurredOn` (K1) and answers a definite 422 when it refuses —
- * `finance_period_not_open` for a closed period, `finance_period_rule_unavailable` when it could not decide. The
- * control is not offered yet anyway: no provider declares its capability. Reverse has no route (FIN-T06): it answers an
- * explicit local `Unavailable`, never a success and never a request to a guessed URL.
+ * `finance_period_not_open` for a closed period, `finance_period_rule_unavailable` when it could not decide.
+ * FIN-T06 uses the explicit persistent proposal and checker-decision routes; the legacy direct-Reverse action remains
+ * unpublished and is not a fallback URL.
  *
  * The company is only the verified shell company in `X-Company-Id`; it is never put into a body.
  */
@@ -41,6 +41,7 @@ import type { FinanceReceiptPort, FinanceScope, PortReply } from './port'
 export const BANK_ACCOUNTS_PATH = '/finance/bank-accounts'
 export const MANUAL_RECEIPTS_PATH = '/finance/manual-receipts'
 export const DRAFTS_PATH = '/finance/manual-receipts/drafts'
+export const REVERSAL_PROPOSALS_PATH = '/finance/manual-receipts/reversal-proposals'
 export const BANK_ACCOUNT_MASTER_PATH = '/finance/bank-accounts/master'
 export const BANK_ACCOUNT_CURRENCY_CANDIDATES_PATH = '/finance/bank-accounts/currency-candidates'
 
@@ -146,6 +147,30 @@ export function createHttpFinancePort(): FinanceReceiptPort {
     record: (scope, idempotencyKey, request) =>
       command(`${API_BASE}${MANUAL_RECEIPTS_PATH}/${encodeURIComponent(request.draftId)}/record`, scope, idempotencyKey, request),
     reverse: () => unpublishedCommand(),
+    proposeReversal: (scope, idempotencyKey, request) =>
+      command(
+        `${API_BASE}${MANUAL_RECEIPTS_PATH}/${encodeURIComponent(request.sourceId)}/reversal-proposals`,
+        scope,
+        idempotencyKey,
+        request,
+      ),
+    approveReversal: (scope, idempotencyKey, request) =>
+      command(
+        `${API_BASE}${REVERSAL_PROPOSALS_PATH}/${encodeURIComponent(request.proposalId)}/approval`,
+        scope,
+        idempotencyKey,
+        request,
+      ),
+    rejectReversal: (scope, idempotencyKey, request) =>
+      command(
+        `${API_BASE}${REVERSAL_PROPOSALS_PATH}/${encodeURIComponent(request.proposalId)}/rejection`,
+        scope,
+        idempotencyKey,
+        request,
+      ),
+    pendingReversals: (scope, signal) => read(`${API_BASE}${REVERSAL_PROPOSALS_PATH}/pending`, scope, signal),
+    reversalProposal: (scope, proposalId, signal) =>
+      read(`${API_BASE}${REVERSAL_PROPOSALS_PATH}/${encodeURIComponent(proposalId)}`, scope, signal),
 
     listBankAccountMaster: (scope, signal) => read(`${API_BASE}${BANK_ACCOUNT_MASTER_PATH}`, scope, signal),
 

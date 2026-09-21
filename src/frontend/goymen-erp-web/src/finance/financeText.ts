@@ -151,12 +151,12 @@ export const RECORD_CONFIRM = 'Kesin kaydı onayla'
 export const CANCEL = 'Vazgeç'
 export const RECORD_DONE = 'Kesin kayıt yapıldı.'
 
-export const REVERSE_ACTION = 'Ters kayıtla düzelt'
+export const REVERSE_ACTION = 'Ters kayıt öner'
 export const REVERSE_DATE = 'Ters kayıt işlem tarihi'
 export const REVERSE_REASON = 'Gerekçe'
 export const REVERSE_REASON_REQUIRED = 'Gerekçe zorunludur.'
-export const REVERSE_CONFIRM = 'Ters kaydı gönder'
-export const REVERSE_DONE = 'Ters kayıt yapıldı.'
+export const REVERSE_CONFIRM = 'Onaya gönder'
+export const REVERSE_DONE = 'Ters kayıt önerisi oluşturuldu; başka bir yetkilinin onayı bekleniyor.'
 
 export const REREAD_AFTER_SUCCESS =
   'İşlem tamamlandı ancak güncel kayıt okunamadı. İşlem yeniden gönderilmez; yalnız kaydı yeniden okuyun.'
@@ -213,7 +213,16 @@ const ISSUE_TEXT: Readonly<Record<string, string>> = {
   currency_not_a_candidate: 'Seçilen para birimi bu şirketin para birimleri arasında değil.',
   bank_account_not_found: 'Bu banka hesabı bu şirkette bulunamadı.',
   bank_account_not_proposed: 'Bu hesap onay beklemiyor; zaten onaylanmış olabilir.',
-  finance_approver_is_proposer: 'Hesabı öneren kişi onu onaylayamaz; başka bir yetkili onaylamalı.',
+  finance_approver_is_proposer: 'Öneriyi yapan kişi kendi onay veya ret kararını veremez; başka bir yetkili karar vermeli.',
+  finance_reversal_proposal_not_found: 'Ters kayıt önerisi bu şirkette bulunamadı.',
+  finance_reversal_proposal_not_pending: 'Bu ters kayıt önerisi artık onay beklemiyor.',
+  finance_source_not_found: 'Düzeltilecek finansal kaynak bu şirkette bulunamadı.',
+  finance_source_not_recorded: 'Yalnız kesin kayda alınmış bir kaynak için ters kayıt önerilebilir.',
+  finance_reversal_has_allocations: 'Bu kaynağa dağıtım bağlı; ters kayıt onaylanamaz.',
+  finance_allocation_rule_unavailable: 'Dağıtım durumu doğrulanamadı; ters kayıt onayı kapalı.',
+  finance_period_rule_unavailable: 'Ters kayıt dönemi doğrulanamadı; onay kapalı.',
+  finance_period_not_open: 'Ters kayıt işlem tarihi açık bir muhasebe dönemine ait değil.',
+  concurrent_change: 'Bu kaynak başka bir işlemle değişti; güncel durumu yeniden okuyun.',
   idempotency_key_invalid: 'İşlem anahtarı geçersiz.',
   settings_money_profile_not_found: 'Seçilen para birimi için onaylı tutar profili yok.',
 }

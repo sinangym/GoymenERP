@@ -240,6 +240,111 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
+    public async Task A_legacy_NULL_money_declaration_is_visible_as_undeclared_and_is_refused_on_the_money_path()
+    {
+        await using var run = await Run.StartAsync();
+        BankAccountView account;
+        await using (var proposer = run.Open(CompanyA, Proposer))
+        {
+            account = (await proposer.Accounts.ProposeAsync(proposer.Context, Key("legacy-null-propose"),
+                new BankAccountProposeRequest("SENTETIK legacy", Currency, "SENTETIK Banka", "SENTETIK tur",
+                    MoneyMovementEligible: true, Iban: "TR330006100519786457841326"), CancellationToken.None)).Resource!;
+        }
+
+        await using (var approver = run.Open(CompanyA, Approver))
+        {
+            account = (await approver.Accounts.ApproveAsync(approver.Context, Key("legacy-null-approve"),
+                new BankAccountApproveRequest(account.Id, "1"), CancellationToken.None)).Resource!;
+        }
+
+        // Represents a row written before B3. No invented true/false backfill is allowed.
+        await run.ExecuteAsync("UPDATE finance.BankAccounts SET MoneyMovementEligible = NULL WHERE Id = @id", ("@id", account.Id));
+
+        await using (var reader = run.Open(CompanyA, Proposer))
+        {
+            var item = Assert.Single((await reader.Accounts.ListMasterAsync(reader.Context, CancellationToken.None)).Resource!.Items);
+            Assert.Equal(BankAccountMoneyEligibility.Undeclared, item.Card.MoneyEligibility);
+            Assert.False(item.Account.IsUsableForReceipt);
+
+            var draft = await reader.Drafts.DraftSaveAsync(reader.Context, Key("legacy-null-draft"), Draft(account.Id),
+                CancellationToken.None);
+            Assert.Equal(CommandOutcome.ValidationFailed, draft.Outcome);
+            Assert.Equal("bank_account_ineligible", Assert.Single(draft.Issues).Code);
+        }
+
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.ReceiptDrafts"));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.BankAccounts WHERE Id = @id AND MoneyMovementEligible IS NULL", ("@id", account.Id)));
+    }
+
+    [SqlServerFact]
+    public async Task A_pending_IBAN_never_replaces_the_approved_value_and_only_another_actor_can_approve_it()
+    {
+        await using var run = await Run.StartAsync();
+        const string oldIban = "TR330006100519786457841326";
+        const string newIban = "TR680006200119000006672315";
+        BankAccountView account;
+
+        await using (var proposer = run.Open(CompanyA, Proposer))
+        {
+            account = (await proposer.Accounts.ProposeAsync(proposer.Context, Key("iban-card-propose"),
+                new BankAccountProposeRequest("SENTETIK IBAN", Currency, "SENTETIK Banka", "SENTETIK tur",
+                    MoneyMovementEligible: true, Iban: oldIban), CancellationToken.None)).Resource!;
+        }
+        await using (var approver = run.Open(CompanyA, Approver))
+        {
+            account = (await approver.Accounts.ApproveAsync(approver.Context, Key("iban-card-approve"),
+                new BankAccountApproveRequest(account.Id, "1"), CancellationToken.None)).Resource!;
+        }
+
+        Guid historicalDraftId;
+        await using (var proposer = run.Open(CompanyA, Proposer))
+        {
+            var draft = await proposer.Drafts.DraftSaveAsync(proposer.Context, Key("iban-historical-draft"), Draft(account.Id),
+                CancellationToken.None);
+            Assert.Equal(CommandOutcome.Succeeded, draft.Outcome);
+            historicalDraftId = draft.Resource!.Source.Id;
+
+            var pending = await proposer.Accounts.ProposeIbanChangeAsync(proposer.Context, Key("iban-change-propose"),
+                new BankAccountIbanChangeProposeRequest(account.Id, "2", newIban, "SENTETIK banka degisikligi"),
+                CancellationToken.None);
+            Assert.Equal(CommandOutcome.Succeeded, pending.Outcome);
+            Assert.Equal("3", pending.Resource!.Version);
+
+            var self = await proposer.Accounts.ApproveIbanChangeAsync(proposer.Context, Key("iban-change-self"),
+                new BankAccountIbanChangeApproveRequest(account.Id, "3"), CancellationToken.None);
+            Assert.Equal(CommandOutcome.Denied, self.Outcome);
+            Assert.Equal("finance_approver_is_proposer", Assert.Single(self.Issues).Code);
+        }
+
+        Assert.Equal(oldIban, await run.ScalarAsync<string>(
+            "SELECT Iban FROM finance.BankAccounts WHERE Id = @id", ("@id", account.Id)));
+        Assert.Equal(newIban, await run.ScalarAsync<string>(
+            "SELECT PendingIban FROM finance.BankAccounts WHERE Id = @id", ("@id", account.Id)));
+        Assert.Equal(account.Id, await run.ScalarAsync<Guid>(
+            "SELECT BankAccountId FROM finance.ReceiptDrafts WHERE Id = @id", ("@id", historicalDraftId)));
+
+        await using (var approver = run.Open(CompanyA, Approver))
+        {
+            var approved = await approver.Accounts.ApproveIbanChangeAsync(approver.Context, Key("iban-change-approve"),
+                new BankAccountIbanChangeApproveRequest(account.Id, "3"), CancellationToken.None);
+            Assert.Equal(CommandOutcome.Succeeded, approved.Outcome);
+            Assert.Equal("4", approved.Resource!.Version);
+        }
+
+        Assert.Equal(newIban, await run.ScalarAsync<string>(
+            "SELECT Iban FROM finance.BankAccounts WHERE Id = @id", ("@id", account.Id)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.BankAccounts WHERE Id = @id AND PendingIban IS NULL AND PendingIbanProposedBy IS NULL AND PendingIbanProposedAtUtc IS NULL AND PendingIbanReason IS NULL",
+            ("@id", account.Id)));
+        Assert.Equal(account.Id, await run.ScalarAsync<Guid>(
+            "SELECT BankAccountId FROM finance.ReceiptDrafts WHERE Id = @id", ("@id", historicalDraftId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityId = CONVERT(nvarchar(36), @id) AND EventType = N'finance.bank-account.iban-change-approved.v1' AND JSON_VALUE(ApprovalContextJson, '$.previousIban') = @old AND JSON_VALUE(ApprovalContextJson, '$.newIban') = @new AND JSON_VALUE(ApprovalContextJson, '$.proposedBy') = @proposer AND JSON_VALUE(ApprovalContextJson, '$.approvedBy') = @approver",
+            ("@id", account.Id), ("@old", oldIban), ("@new", newIban), ("@proposer", Proposer), ("@approver", Approver)));
+    }
+
+    [SqlServerFact]
     public async Task Company_B_can_neither_see_nor_approve_company_A_account()
     {
         await using var run = await Run.StartAsync();

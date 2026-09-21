@@ -18,7 +18,16 @@ import { useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString } from '../shell/shellState'
 import type { RemoteViewState } from '../shell/uiState'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
-import { decodeReadResult, type Decoded } from './contract'
+import {
+  decodeReadResult,
+  decodeReversalProposalCommandResult,
+  type ApproveReversalRequest,
+  type Decoded,
+  type ProposeReversalRequest,
+  type RejectReversalRequest,
+  type ReversalProposalView,
+  type ValidationIssue,
+} from './contract'
 import { decodeDraftContext, type DraftContext, type DraftContextRequest } from './draftContext'
 import type { HttpReadReply } from './http'
 import type { FinanceReceiptPort, FinanceScope, PortReply } from './port'
@@ -368,6 +377,164 @@ export function useReceiptCommand(operation: CommandRequest['operation'], target
     const reason: UnknownReason = state.phase === 'unknown' ? state.reason : 'idempotency-conflict'
     abandonOutstanding(storeKey, { snapshot: state.snapshot, reason })
     dispatch({ type: 'ABANDON' })
+  }
+
+  return { state, available: port !== null && bound !== null, submit, resend, abandon }
+}
+
+// ---------------------------------------------------------------------------------
+// FIN-T06 maker-checker reversal commands
+// ---------------------------------------------------------------------------------
+
+export type ReversalOperation = 'propose' | 'approve' | 'reject'
+export type ReversalRequest =
+  | { readonly operation: 'propose'; readonly body: ProposeReversalRequest }
+  | { readonly operation: 'approve'; readonly body: ApproveReversalRequest }
+  | { readonly operation: 'reject'; readonly body: RejectReversalRequest }
+
+export type ReversalCommandState =
+  | { readonly phase: 'idle' }
+  | { readonly phase: 'submitting'; readonly key: string; readonly request: ReversalRequest }
+  | { readonly phase: 'unknown'; readonly key: string; readonly request: ReversalRequest; readonly reason: 'no-reply' | 'malformed' | 'unavailable' }
+  | { readonly phase: 'conflicted'; readonly key: string; readonly request: ReversalRequest }
+  | { readonly phase: 'refused'; readonly request: ReversalRequest; readonly reason: 'denied' | 'validation' | 'version-conflict'; readonly issues: readonly ValidationIssue[] }
+  | { readonly phase: 'succeeded'; readonly resource: ReversalProposalView; readonly replayed: boolean }
+
+type ReversalUnknownReason = 'no-reply' | 'malformed' | 'unavailable'
+
+interface StoredReversalAttempt {
+  readonly key: string
+  readonly request: ReversalRequest
+  readonly reason: ReversalUnknownReason
+  readonly unresolvedSince?: ReversalUnknownReason
+}
+
+const reversalAttempts = new Map<string, StoredReversalAttempt>()
+
+export function clearReversalAttemptStore(): void {
+  reversalAttempts.clear()
+}
+
+function reversalTarget(request: ReversalRequest): string {
+  return request.operation === 'propose' ? request.body.sourceId : request.body.proposalId
+}
+
+export interface ReversalCommand {
+  readonly state: ReversalCommandState
+  readonly available: boolean
+  submit(request: ReversalRequest): SubmitResult
+  resend(): SubmitResult
+  abandon(): void
+}
+
+export function useReversalCommand(operation: ReversalOperation, target: string): ReversalCommand {
+  const port = useContext(FinancePortContext)
+  const bound = useFinanceBinding()
+  const slot = bound === null ? null : JSON.stringify([bound.namespace, 'finance-reversal', operation, target])
+  const stored = slot === null ? undefined : reversalAttempts.get(slot)
+  const [state, setState] = useReducer(
+    (_: ReversalCommandState, next: ReversalCommandState) => next,
+    stored === undefined
+      ? { phase: 'idle' }
+      : { phase: 'unknown', key: stored.key, request: stored.request, reason: stored.reason },
+  )
+  const shownSlot = useRef(slot)
+  useEffect(() => {
+    shownSlot.current = slot
+    const current = slot === null ? undefined : reversalAttempts.get(slot)
+    if (slot !== null && current !== undefined && current.unresolvedSince === undefined) {
+      reversalAttempts.set(slot, { ...current, unresolvedSince: current.reason })
+    }
+    setState(current === undefined
+      ? { phase: 'idle' }
+      : { phase: 'unknown', key: current.key, request: current.request, reason: current.reason })
+  }, [slot])
+
+  const run = useCallback((key: string, request: ReversalRequest, currentSlot: string, companyId: string) => {
+    if (port === null) return
+    const scope = { companyId }
+    let pending: Promise<PortReply>
+    try {
+      pending = request.operation === 'propose'
+        ? port.proposeReversal(scope, key, request.body)
+        : request.operation === 'approve'
+          ? port.approveReversal(scope, key, request.body)
+          : port.rejectReversal(scope, key, request.body)
+    } catch {
+      pending = Promise.resolve({ kind: 'no-reply' })
+    }
+    void pending.catch((): PortReply => ({ kind: 'no-reply' })).then((reply) => {
+      const active = reversalAttempts.get(currentSlot)
+      const unresolvedSince = active?.unresolvedSince
+      if (reply.kind === 'no-reply') {
+        reversalAttempts.set(currentSlot, { key, request, reason: 'no-reply', unresolvedSince: unresolvedSince ?? 'no-reply' })
+        if (shownSlot.current === currentSlot) setState({ phase: 'unknown', key, request, reason: 'no-reply' })
+        return
+      }
+      const decoded = decodeReversalProposalCommandResult(reply.body)
+      if (!decoded.ok) {
+        reversalAttempts.set(currentSlot, { key, request, reason: 'malformed', unresolvedSince: unresolvedSince ?? 'malformed' })
+        if (shownSlot.current === currentSlot) setState({ phase: 'unknown', key, request, reason: 'malformed' })
+        return
+      }
+      const result = decoded.value
+      if (result.outcome === 'Unavailable') {
+        reversalAttempts.set(currentSlot, { key, request, reason: 'unavailable', unresolvedSince: unresolvedSince ?? 'unavailable' })
+        if (shownSlot.current === currentSlot) setState({ phase: 'unknown', key, request, reason: 'unavailable' })
+        return
+      }
+      if (unresolvedSince !== undefined && !result.isReplay
+        && result.outcome !== 'Succeeded' && result.outcome !== 'IdempotencyConflict') {
+        reversalAttempts.set(currentSlot, { key, request, reason: unresolvedSince, unresolvedSince })
+        if (shownSlot.current === currentSlot) {
+          setState({ phase: 'unknown', key, request, reason: unresolvedSince })
+        }
+        return
+      }
+      reversalAttempts.delete(currentSlot)
+      if (shownSlot.current !== currentSlot) return
+      if (result.outcome === 'Succeeded') {
+        setState({ phase: 'succeeded', resource: result.resource, replayed: result.isReplay })
+      } else if (result.outcome === 'IdempotencyConflict') {
+        setState({ phase: 'conflicted', key, request })
+      } else {
+        setState({
+          phase: 'refused',
+          request,
+          reason: result.outcome === 'Denied' ? 'denied'
+            : result.outcome === 'VersionConflict' ? 'version-conflict' : 'validation',
+          issues: result.issues,
+        })
+      }
+    })
+  }, [port])
+
+  const submit = (request: ReversalRequest): SubmitResult => {
+    if (port === null || bound === null || slot === null || request.operation !== operation
+      || reversalTarget(request) !== target || state.phase === 'submitting' || state.phase === 'unknown'
+      || state.phase === 'conflicted') return 'blocked'
+    const previous = reversalAttempts.get(slot)
+    // State updates are asynchronous. The store reservation is synchronous, so a second submit
+    // from the same stale render cannot issue another request or allocate another key.
+    if (previous !== undefined) return 'blocked'
+    const key = generateAttemptKey()
+    reversalAttempts.set(slot, { key, request, reason: 'no-reply' })
+    setState({ phase: 'submitting', key, request })
+    run(key, request, slot, bound.binding.companyId)
+    return 'started'
+  }
+
+  const resend = (): SubmitResult => {
+    if (bound === null || slot === null || state.phase !== 'unknown') return 'blocked'
+    setState({ phase: 'submitting', key: state.key, request: state.request })
+    run(state.key, state.request, slot, bound.binding.companyId)
+    return 'started'
+  }
+
+  const abandon = () => {
+    if (slot === null || (state.phase !== 'unknown' && state.phase !== 'conflicted')) return
+    reversalAttempts.delete(slot)
+    setState({ phase: 'idle' })
   }
 
   return { state, available: port !== null && bound !== null, submit, resend, abandon }

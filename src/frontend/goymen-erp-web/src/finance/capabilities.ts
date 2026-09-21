@@ -31,6 +31,10 @@ export const FINANCE_CAPABILITY = {
    * round — which is a separate slice from K1, the decision that gave the server its period rule.
    */
   receiptsRecord: 'finance.receipts.record',
+  /** FIN-T06/B1: proposal control on a recorded receipt detail. */
+  receiptsReversePropose: 'finance.receipts.reverse.propose',
+  /** FIN-T06/B1: pending reversal checker route. */
+  receiptsReverseApprove: 'finance.receipts.reverse.approve',
 } as const
 
 export type FinanceCapabilityId = (typeof FINANCE_CAPABILITY)[keyof typeof FINANCE_CAPABILITY]
@@ -40,6 +44,7 @@ export const FINANCE_ROUTE = {
   // Static before the parameter route: `yeni` must never be read as a source id.
   receiptsDraft: '/finans/tahsilatlar/yeni',
   receiptsDetail: '/finans/tahsilatlar/:sourceId',
+  reversalApprovals: '/finans/ters-kayit-onaylari',
   bankAccountsList: '/finans/banka-hesaplari',
   bankAccountsPropose: '/finans/banka-hesaplari/yeni',
 } as const
