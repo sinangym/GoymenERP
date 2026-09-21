@@ -287,11 +287,10 @@ export type ProductRoleWrites = Partial<Readonly<Record<ProductRoleName, Product
  *    `JsonUnmappedMemberHandling.Disallow` would reject them outright;
  *  - `expectedVersion` — README: "Create has no expectedVersion";
  *  - `companyId` — §15;
- *  - `references` — the source accepts them, but every member is a UUID into a
- *    catalogue this client has no read for. Sending an invented one is exactly what
- *    §19.3 forbids, so the first slice sends none.
+ * Technical references use the released Product reference-options read; no id is invented.
  */
 export interface CreateProductDraftPayload {
+  readonly references?: ProductReferenceWrite
   readonly name: string
   readonly groupId: string
   readonly classId?: string | null
@@ -308,10 +307,19 @@ export interface CreateProductDraftPayload {
  * "name/roles/reference container and attribute/unit collections cannot be null".
  */
 export interface ProductDraftChanges {
+  readonly references?: ProductReferenceWrite
   readonly name?: string
   readonly classId?: string | null
   readonly familyId?: string | null
   readonly roles?: ProductRoleWrites
+}
+
+/** Omitted members are preserved on PATCH; null clears only a nullable member. */
+export interface ProductReferenceWrite {
+  readonly templateId?: string | null
+  readonly templateVersion?: string | null
+  readonly attributes?: Readonly<Record<string, unknown>>
+  readonly units?: { readonly stock?: string | null; readonly sales?: string | null }
 }
 
 /**

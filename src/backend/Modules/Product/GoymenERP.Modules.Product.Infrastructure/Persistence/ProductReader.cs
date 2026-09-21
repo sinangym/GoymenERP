@@ -35,6 +35,9 @@ public sealed class ProductReader(ProductReadStore store, ProductCursorCodec cur
             // release (Q6) they stay null and the screen shows "unavailable"; nothing is guessed from an id.
             var definition = await store.ReadFamilyDefinitionAsync(context, cancellationToken);
             var labels = ProductCardPresentation.Labels(label, definition, product.FamilyId, references);
+            IReadOnlyList<UnitIdentityV1> identities = units is null ? [] : await units.ListAsync(cancellationToken);
+            labels = ProductCardPresentation.WithUnitLabels(labels, references.Units,
+                identities.ToDictionary(identity => identity.UnitId, identity => identity.Code));
             return new(ProductDraftView.FromProduct(product, labels), references);
         }, cancellationToken);
 

@@ -53,6 +53,8 @@ public sealed class ProductUnitReferenceSqlServerRelationalAcceptanceTests
             var stored = (await client.GetFromJsonAsync<ProductCardView>($"/api/v1/products/{id:D}"))!;
             Assert.Equal((SettingsUnitIdentitiesV1.Kilogram, SettingsUnitIdentitiesV1.Kilogram),
                 (stored.References.Units!.Stock, stored.References.Units.Sales));
+            Assert.Equal("kg", stored.Product.Labels.PrimaryStockUnit);
+            Assert.Equal(new Dictionary<string, string> { ["stock"] = "kg", ["sales"] = "kg" }, stored.Product.Labels.Units);
         });
 
     [SqlServerFact]

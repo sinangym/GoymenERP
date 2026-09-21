@@ -187,7 +187,7 @@ describe('references', () => {
     await cardVisible()
     // DEC-PRD-006 keeps the six roles separate; a fallback would be the screen
     // inventing a conversion.
-    expect(screen.getByTestId('product-unit-stock').textContent).toBe(FAMILY_FLAT)
+    expect(screen.getByTestId('product-unit-stock').textContent).toBe('ad okunamadı')
     expect(screen.getByTestId('product-unit-production').textContent).toBe('atanmadı')
   })
 
@@ -232,7 +232,7 @@ describe('references', () => {
     renderProductApp(PATH)
 
     await cardVisible()
-    expect(screen.getByText(/sonraki dilimde aile bazlı tamlık/)).toBeTruthy()
+    expect(screen.getByText(/Takip politikası henüz düzenlenemez/)).toBeTruthy()
   })
 })
 
