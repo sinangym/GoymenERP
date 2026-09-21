@@ -736,9 +736,10 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
             await using var connection = new SqlConnection(Factory.DatabaseConnectionString);
             await connection.OpenAsync();
             await using var command = new SqlCommand(
-                "INSERT INTO finance.BankAccounts (Id, CompanyId, CurrencyId, DisplayName, Status, Version, ProposedBy, "
-                + "ProposedAtUtc, ApprovedBy, ApprovedAtUtc, UpdatedAtUtc) VALUES (@id, @c, @cur, N'SENTETIK banka', 2, 2, "
-                + "N'SENTETIK-proposer', SYSDATETIMEOFFSET(), N'SENTETIK-approver', SYSDATETIMEOFFSET(), SYSDATETIMEOFFSET())",
+                "INSERT INTO finance.BankAccounts (Id, CompanyId, CurrencyId, DisplayName, MoneyMovementEligible, Iban, "
+                + "Status, Version, ProposedBy, ProposedAtUtc, ApprovedBy, ApprovedAtUtc, UpdatedAtUtc) VALUES "
+                + "(@id, @c, @cur, N'SENTETIK banka', 1, N'TR330006100519786457841326', 2, 2, N'SENTETIK-proposer', "
+                + "SYSDATETIMEOFFSET(), N'SENTETIK-approver', SYSDATETIMEOFFSET(), SYSDATETIMEOFFSET())",
                 connection);
             command.Parameters.AddWithValue("@id", id);
             command.Parameters.AddWithValue("@c", company);
