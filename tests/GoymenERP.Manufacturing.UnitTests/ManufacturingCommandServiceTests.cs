@@ -281,6 +281,71 @@ public sealed class ManufacturingCommandServiceTests
         Assert.Equal(new[] { DateOnly.FromDateTime(At.UtcDateTime), DateOnly.FromDateTime(At.UtcDateTime) }, fixture.Settings.Days);
     }
 
+    /// <summary>
+    /// K4.4: a created plan can be READ BACK, and the reopened answer is the created one — not merely
+    /// "similar". Before this read existed a plan could be saved and approved and then never seen again,
+    /// so "reopen" was a missing ANSWER rather than a missing screen.
+    ///
+    /// <para>
+    /// The assertion compares the WHOLE view, not field by field: picking three fields would pass just as
+    /// well if a fourth drifted, and a drifting fourth field is exactly what two projections kept in step
+    /// by hand would produce. Comparing the two RECORDS cannot do that — <c>PlanViewV1</c> holds an
+    /// <c>IReadOnlyList</c>, and a record compares that by REFERENCE, so two structurally identical views
+    /// are unequal (measured: the first version of this test failed with the two values printing the same).
+    /// So the comparison is on the serialized form, which is by value all the way down AND covers a field
+    /// added to the view later without anyone editing this test.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task A_saved_plan_is_read_back_whole_and_the_reopened_answer_equals_the_created_one()
+    {
+        var fixture = new Fixture();
+        var request = new SavePlanRequestV1(Guid.NewGuid(), WorkCenter,
+            [new PlannedInputRequestV1(Roll, "1000.250")], new TargetRequestV1("GoodOutputMass", "950"));
+        var created = await fixture.Service.SavePlanAsync(request, "key-1", "manufacturing.plans.write", CancellationToken.None);
+        Assert.Equal(ManufacturingApiStatus.Created, created.Status);
+
+        var reopened = await fixture.Service.GetPlanAsync(created.Resource!.PlanId, CancellationToken.None);
+
+        Assert.Equal(ManufacturingApiStatus.Ok, reopened.Status);
+        Assert.False(reopened.IsReplay);
+        Assert.Equal(System.Text.Json.JsonSerializer.Serialize(created.Resource),
+            System.Text.Json.JsonSerializer.Serialize(reopened.Resource));
+        // …and the serialized comparison is not vacuous: it really carries the plan's content.
+        Assert.Equal("1000.25", Assert.Single(reopened.Resource!.Inputs).PlannedKg);
+    }
+
+    /// <summary>
+    /// A plan id that names nothing, and the empty id, are both NOT FOUND — never a 403 and never an empty
+    /// success. The empty id is separate on purpose: it never reaches the store, so without its own case a
+    /// store that answered something for <c>Guid.Empty</c> would go unnoticed.
+    /// </summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task An_unknown_or_empty_plan_id_is_not_found(bool empty)
+    {
+        var fixture = new Fixture();
+
+        var result = await fixture.Service.GetPlanAsync(empty ? Guid.Empty : Guid.NewGuid(), CancellationToken.None);
+
+        Assert.Equal(ManufacturingApiStatus.NotFound, result.Status);
+        Assert.Null(result.Resource);
+    }
+
+    /// <summary>The order read's rule, and for its reason: without a company context there is nothing to read for.</summary>
+    [Fact]
+    public async Task A_plan_read_without_the_company_context_is_denied()
+    {
+        var fixture = new Fixture();
+        var request = new SavePlanRequestV1(Guid.NewGuid(), WorkCenter, [new PlannedInputRequestV1(Roll, "10")], null);
+        var created = await fixture.Service.SavePlanAsync(request, "key-1", "manufacturing.plans.write", CancellationToken.None);
+        fixture.User.Companies.Clear();
+
+        Assert.Equal(ManufacturingApiStatus.Denied,
+            (await fixture.Service.GetPlanAsync(created.Resource!.PlanId, CancellationToken.None)).Status);
+    }
+
     [Theory]
     [InlineData("inputMass")]
     [InlineData("1")]

@@ -123,7 +123,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // Re-fingerprinted for LOG-4a: a Logistics class maps to its own module.
     // Re-fingerprinted for PUR-4a: a Purchasing class maps to its own module.
     private const string ReviewedSqlServerRcsiVerifierTestsFingerprint =
-        "6e2f12da3324e4464be9b7ab6c5584e7ea01081323241cf9db2bc73d2a28ec19";
+        "e181223c2db5e16c69685a3bae8aaa4031ef18d0035223059f1b827189a56cfe";
     // The broad relational inventory, one file per module (see RelationalInventoryDirectory). Each
     // pin is its own paragraph so that two modules re-pinning their own files change lines that are
     // not adjacent and combine cleanly; a file's owner is its module, the pin line is central.
@@ -157,7 +157,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // manufacturing
             ["tools/relational_inventory/manufacturing.txt"] =
-                "ece62e44f90d8396f12fff01fbb0625b7d202b77196bf368fd3dffea5ced64f1",
+                "df8cd3aaf7e5dadc7ac3605644dc87f6f4c4c43394a7f109202f8e28f520825b",
 
             // organization
             ["tools/relational_inventory/organization.txt"] =
