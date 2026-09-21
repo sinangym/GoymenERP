@@ -23,12 +23,14 @@ export interface DictionaryEntry {
   readonly status: 'approved' | 'candidate'
   readonly parentCode: string | null
   readonly isExplicitNone: boolean
+  readonly massGm2: number | string | null
 }
 export interface TechnicalOptions {
   readonly templates: readonly TemplateOption[]
   readonly dictionaries: readonly { readonly name: string; readonly entries: readonly DictionaryEntry[] }[]
   readonly familyFacts: readonly {
-    readonly id: string; readonly cins: string; readonly tur: string; readonly tip: string
+    readonly id: string; readonly code: string; readonly displayName: string
+    readonly cins: string; readonly tur: string; readonly tip: string
     readonly templateId: string | null; readonly templateVersion: string | null
   }[]
   readonly units: readonly {
@@ -41,6 +43,10 @@ function object(value: unknown): value is Record<string, unknown> {
 }
 const text = (value: unknown): value is string => isNonEmptyString(value, 250)
 const nullableText = (value: unknown) => value === null || text(value)
+const decimalText = /^-?(?:0|[1-9]\d*)(?:\.\d+)?$/
+const nullableDecimal = (value: unknown): value is number | string | null => value === null
+  || (typeof value === 'number' && Number.isFinite(value))
+  || (typeof value === 'string' && decimalText.test(value))
 function unique<T>(items: readonly T[], key: (item: T) => string): boolean {
   return new Set(items.map(key)).size === items.length
 }
@@ -77,14 +83,16 @@ export function decodeTechnicalOptions(raw: Record<string, unknown>): TechnicalO
     for (const entry of item.entries) {
       if (!object(entry) || !text(entry.code) || !text(entry.displayName)
         || (entry.status !== 'approved' && entry.status !== 'candidate')
-        || !nullableText(entry.parentCode) || typeof entry.isExplicitNone !== 'boolean') return null
+        || !nullableText(entry.parentCode) || typeof entry.isExplicitNone !== 'boolean'
+        || !nullableDecimal(entry.massGm2)) return null
       entries.push(entry as unknown as DictionaryEntry)
     }
     if (!unique(entries, e => e.code)) return null
     dictionaries.push({ name: item.name, entries })
   }
   for (const item of (raw.familyFacts ?? []) as unknown[]) {
-    if (!object(item) || !isBoundUuid(item.id) || !text(item.cins) || !text(item.tur) || !text(item.tip)
+    if (!object(item) || !isBoundUuid(item.id) || !text(item.code) || !text(item.displayName)
+      || !text(item.cins) || !text(item.tur) || !text(item.tip)
       || (item.templateId !== null && !isBoundUuid(item.templateId))
       || !nullableText(item.templateVersion)
       || ((item.templateId === null) !== (item.templateVersion === null))) return null

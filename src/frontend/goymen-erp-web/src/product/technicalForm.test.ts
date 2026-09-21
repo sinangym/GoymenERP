@@ -22,8 +22,8 @@ export function technicalOptionsWire() {
     ] }],
     familyFacts: [{ id: FAMILY_FLAT, code: 'TEST', displayName: 'Sentetik aile', cins: 'Metal', tur: 'Sac', tip: 'Düz', templateId: TEMPLATE, templateVersion: '1' }],
     dictionaries: [{ name: 'coatings', entries: [
-      { code: 'NONE', displayName: 'Kaplamasız', status: 'approved', parentCode: null, isExplicitNone: true },
-      { code: 'NEW', displayName: 'Yeni kaplama', status: 'candidate', parentCode: null, isExplicitNone: false },
+      { code: 'NONE', displayName: 'Kaplamasız', status: 'approved', parentCode: null, isExplicitNone: true, massGm2: null },
+      { code: 'NEW', displayName: 'Yeni kaplama', status: 'candidate', parentCode: null, isExplicitNone: false, massGm2: 125.5 },
     ] }],
     units: [{ id: KG, displayName: 'Kilogram', symbol: 'kg', isKilogram: true },
       { id: PIECE, displayName: 'Adet', symbol: 'adet', isKilogram: false }],
@@ -42,6 +42,29 @@ describe('released technical fields', () => {
     expect(decodeReferenceOptions({ ...raw, units: [{ id: KG, displayName: 'kg', symbol: 'kg', isKilogram: true },
       { id: KG, displayName: 'kg', symbol: 'kg', isKilogram: true }] }, GROUP_SAC)).toBeNull()
     expect(decodeReferenceOptions({ ...raw, templates: [{ id: TEMPLATE, version: '1', displayName: 'Test', fields: [{ key: 'x', kind: 'unknown' }] }] }, GROUP_SAC)).toBeNull()
+  })
+  it('rejects missing family labels and missing or malformed nullable decimal mass', () => {
+    const missingCode = technicalOptionsWire()
+    delete (missingCode.familyFacts[0] as unknown as Record<string, unknown>).code
+    expect(decodeReferenceOptions(missingCode, GROUP_SAC)).toBeNull()
+
+    const missingDisplayName = technicalOptionsWire()
+    delete (missingDisplayName.familyFacts[0] as unknown as Record<string, unknown>).displayName
+    expect(decodeReferenceOptions(missingDisplayName, GROUP_SAC)).toBeNull()
+
+    const missingMass = technicalOptionsWire()
+    delete (missingMass.dictionaries[0].entries[0] as unknown as Record<string, unknown>).massGm2
+    expect(decodeReferenceOptions(missingMass, GROUP_SAC)).toBeNull()
+
+    for (const malformed of ['01.5', '1e3', '', Number.NaN, Number.POSITIVE_INFINITY]) {
+      const raw = technicalOptionsWire()
+      ;(raw.dictionaries[0].entries[0] as unknown as Record<string, unknown>).massGm2 = malformed
+      expect(decodeReferenceOptions(raw, GROUP_SAC)).toBeNull()
+    }
+
+    const losslessDecimal = technicalOptionsWire()
+    ;(losslessDecimal.dictionaries[0].entries[0] as unknown as Record<string, unknown>).massGm2 = '125.50'
+    expect(decodeReferenceOptions(losslessDecimal, GROUP_SAC)).not.toBeNull()
   })
   it('writes explicit none, measured attributes and independently selected units into the POST payload', () => {
     const result = validateCreateForm({ ...EMPTY_CREATE_FORM, name: 'Sentetik ürün', groupId: GROUP_SAC, familyId: FAMILY_FLAT,
