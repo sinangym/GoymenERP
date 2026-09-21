@@ -380,8 +380,8 @@ def validate_suite_identity(suite: str, extra: dict, actor_ids: list[str]) -> No
 # canonical baseline, which a seed would move.
 FIXTURE_TOOL_SUITES_DIRECTORY = "tests/GoymenERP.BrowserSuiteFixtureTool/Suites"
 SUITE_FIXTURE_OUTPUTS: dict[str, frozenset[str]] = {
-    # ÜRÜN's Suites/U02 seed (#331): the company, the gated code group and the two canonical actors.
-    "u02": frozenset({"companyId", "codeGroupId", "authorizedActor", "unauthorizedActor"}),
+    # ÜRÜN's Suites/U02 seed: the company, gated code group, fixed synthetic technical family and actors.
+    "u02": frozenset({"companyId", "codeGroupId", "technicalFamilyId", "authorizedActor", "unauthorizedActor"}),
     # ORG's Suites/MFG seed (#323 5735635840): the actors, the company, the seeded work centre (read
     # through the real Organization API) and the plan -> approval -> order it writes through the real API.
     # MFG-ORD adds the closer actor; the list and the close need no further seeded row.

@@ -79,6 +79,8 @@ public sealed class U02BrowserSeed : IBrowserSuiteFixture
             await scope.ServiceProvider.GetRequiredService<C01E2eProductCodeGroupFixtureWriter>().EnsureAsync(
                 new ProductCodeGroupFixtureRow(CodeGroupId, context.Label("kod grubu"), CodeGroupPrefix),
                 cancellationToken);
+            await scope.ServiceProvider.GetRequiredService<C01E2eProductTechnicalCardFixtureWriter>()
+                .EnsureAsync(cancellationToken);
         }
 
         // Read back through the real host, as each actor: the fixture is only done when the product
@@ -108,6 +110,7 @@ public sealed class U02BrowserSeed : IBrowserSuiteFixture
         {
             ["companyId"] = CompanyId.ToString("D"),
             ["codeGroupId"] = CodeGroupId.ToString("D"),
+            ["technicalFamilyId"] = ProductTechnicalCardFixture.FamilyId.ToString("D"),
             ["authorizedActor"] = AuthorizedActor,
             ["unauthorizedActor"] = UnauthorizedActor,
         };

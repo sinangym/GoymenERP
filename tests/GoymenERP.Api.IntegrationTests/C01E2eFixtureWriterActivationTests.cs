@@ -2,6 +2,7 @@ using GoymenERP.Api.Shell;
 using GoymenERP.Modules.Identity.Domain.Assignments;
 using GoymenERP.Modules.Identity.Infrastructure.Fixtures;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
+using GoymenERP.Modules.Product.Infrastructure.Fixtures;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -36,7 +37,9 @@ public sealed class C01E2eFixtureWriterActivationTests
             services, new TestHostEnvironment("Testing"), Configuration(new Dictionary<string, string?>())));
         Assert.DoesNotContain(services, descriptor =>
             descriptor.ServiceType == typeof(C01E2eProductMasterAssignmentFixtureWriter)
-            || descriptor.ServiceType == typeof(IProductMasterAssignmentFixtureStore));
+            || descriptor.ServiceType == typeof(IProductMasterAssignmentFixtureStore)
+            || descriptor.ServiceType == typeof(C01E2eProductTechnicalCardFixtureWriter)
+            || descriptor.ServiceType == typeof(IProductTechnicalCardFixtureStore));
     }
 
     [Fact]
@@ -50,6 +53,10 @@ public sealed class C01E2eFixtureWriterActivationTests
             descriptor.ServiceType == typeof(C01E2eProductMasterAssignmentFixtureWriter));
         Assert.Single(services, descriptor =>
             descriptor.ServiceType == typeof(IProductMasterAssignmentFixtureStore));
+        Assert.Single(services, descriptor =>
+            descriptor.ServiceType == typeof(C01E2eProductTechnicalCardFixtureWriter));
+        Assert.Single(services, descriptor =>
+            descriptor.ServiceType == typeof(IProductTechnicalCardFixtureStore));
     }
 
     public static TheoryData<string, string, string?> BrokenGates => new()
@@ -90,9 +97,16 @@ public sealed class C01E2eFixtureWriterActivationTests
         Assert.Throws<InvalidOperationException>(() =>
             C01E2eFixtureWriterActivation.Configure(services, environment, configuration));
         Assert.DoesNotContain(services, descriptor =>
-            descriptor.ServiceType == typeof(C01E2eProductMasterAssignmentFixtureWriter));
+            descriptor.ServiceType == typeof(C01E2eProductMasterAssignmentFixtureWriter)
+            || descriptor.ServiceType == typeof(C01E2eProductTechnicalCardFixtureWriter)
+            || descriptor.ServiceType == typeof(IProductTechnicalCardFixtureStore));
         Assert.Throws<InvalidOperationException>(() =>
             new C01E2eProductMasterAssignmentFixtureWriter(environment, configuration, new RecordingStore()));
+        Assert.Throws<InvalidOperationException>(() =>
+            new C01E2eProductTechnicalCardFixtureWriter(
+                environment,
+                configuration,
+                new RecordingTechnicalCardStore()));
         Assert.False(string.IsNullOrEmpty(label));
     }
 
@@ -161,6 +175,11 @@ public sealed class C01E2eFixtureWriterActivationTests
             Rows.Add(row);
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class RecordingTechnicalCardStore : IProductTechnicalCardFixtureStore
+    {
+        public Task EnsureAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     private sealed class TestHostEnvironment(string environmentName) : IHostEnvironment

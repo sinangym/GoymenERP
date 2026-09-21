@@ -66,7 +66,7 @@ export const PRODUCT_CAPABILITY_ROUTE: Record<ProductCapabilityId, string> = {
 /** Nav label per capability. Only rendered when the server granted the capability. */
 export const PRODUCT_CAPABILITY_NAV_LABEL: Record<ProductCapabilityId, string> = {
   [PRODUCT_CAPABILITY.productsList]: 'Ürünler',
-  [PRODUCT_CAPABILITY.productsCreate]: 'Yeni Ürün',
+  [PRODUCT_CAPABILITY.productsCreate]: 'Yeni ürün',
   // No nav entry: the 360 is reached from a row, never from the sidebar.
   [PRODUCT_CAPABILITY.productsDetail]: '',
   // Nor the edit: it is reached from the card it edits.
