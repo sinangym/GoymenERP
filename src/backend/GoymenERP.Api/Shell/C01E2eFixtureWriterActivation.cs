@@ -1,3 +1,4 @@
+using GoymenERP.Modules.Accounting.Infrastructure.Fixtures;
 using GoymenERP.Modules.Identity.Infrastructure.Fixtures;
 using GoymenERP.Modules.Logistics.Infrastructure.Fixtures;
 using GoymenERP.Modules.Product.Infrastructure.Fixtures;
@@ -60,6 +61,9 @@ internal static class C01E2eFixtureWriterActivation
         // l04 (LOG-4b browser acceptance): Logistics's line-block port (SİPARİŞ's), behind the same gate.
         services.AddLogisticsLineBlockFixtureStore();
         services.AddScoped<C01E2eLogisticsLineBlockFixtureWriter>();
+        // fin01 FIN-T05/T06: one fixed synthetic Open Accounting period. No API grant or caller-selected row.
+        services.AddAccountingOpenPeriodFixtureStore();
+        services.AddScoped<C01E2eAccountingOpenPeriodFixtureWriter>();
         return true;
     }
 
@@ -266,4 +270,25 @@ public sealed class C01E2eLogisticsLineBlockFixtureWriter
 
         return _store.BlockAsync(request, cancellationToken);
     }
+}
+
+/// <summary>
+/// Exposes Accounting's fixed fin01 Open-period fixture only inside the browser runner's complete gate.
+/// The owner port accepts no caller-selected identity, date, status or actor.
+/// </summary>
+public sealed class C01E2eAccountingOpenPeriodFixtureWriter
+{
+    private readonly IAccountingOpenPeriodFixtureStore _store;
+
+    public C01E2eAccountingOpenPeriodFixtureWriter(
+        IHostEnvironment environment,
+        IConfiguration configuration,
+        IAccountingOpenPeriodFixtureStore store)
+    {
+        C01E2eFixtureWriterActivation.RequireGate(environment, configuration);
+        _store = store;
+    }
+
+    public Task EnsureAsync(CancellationToken cancellationToken) =>
+        _store.EnsureAsync(cancellationToken);
 }

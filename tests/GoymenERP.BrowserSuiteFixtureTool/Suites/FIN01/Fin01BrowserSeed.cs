@@ -1,13 +1,16 @@
+using GoymenERP.Api.Shell;
 using GoymenERP.BrowserSuiteFixtureTool.Shared;
+using GoymenERP.Modules.Accounting.Infrastructure.Fixtures;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.BrowserSuiteFixtureTool.Suites.FIN01;
 
 /// <summary>
-/// The `fin01` seed (FİNANS, card FIN-UI-1 §9): the one thing the Finance screens cannot create — the
-/// customer. A synthetic party and its company account in GDC are opened through the real counterparty
-/// endpoint (CARİ's shared seed) as the canonical <c>group-bootstrap-admin</c>, whose seeded
-/// SYSTEM_ADMINISTRATOR role creates parties there. No SQL, no gated writer, no Finance row: the bank
-/// account is proposed and approved, and the draft saved, by the browser suite through the screens.
+/// The `fin01` seed (FİNANS, card FIN-UI-1 §9): the two prerequisites the Finance screens cannot create.
+/// A synthetic party and its company account in GDC are opened through the real counterparty endpoint
+/// (CARİ's shared seed), and Accounting's fixed synthetic Open period is installed through its owner
+/// fixture port behind the existing complete runner gate. No raw SQL, no Finance row and no grant: the
+/// bank account, draft, definitive receipt and reversal are created by the browser suite through screens.
 /// <para>
 /// The seed then reads the F-04 master list through the real host as both suite actors, so the run
 /// fails here — not in the browser — if their grants or the Finance routes are missing. Those reads
@@ -24,6 +27,7 @@ public sealed class Fin01BrowserSeed : IBrowserSuiteFixture
     public static readonly Guid CompanyGdc = Guid.Parse("10000000-0000-0000-0000-000000000001");
 
     private const string BankAccountMasterPath = "/api/v1/finance/bank-accounts/master";
+    private const string AccountingPeriodsPath = "/api/v1/accounting/periods";
     private const int CustomerRole = 1;
 
     public string Suite => "fin01";
@@ -32,6 +36,24 @@ public sealed class Fin01BrowserSeed : IBrowserSuiteFixture
         BrowserSuiteFixtureContext context,
         CancellationToken cancellationToken)
     {
+        await using (var scope = context.Services.CreateAsyncScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<C01E2eAccountingOpenPeriodFixtureWriter>()
+                .EnsureAsync(cancellationToken);
+        }
+
+        var periodPage = await context.GetJsonAsync(ProposerActor, CompanyGdc, AccountingPeriodsPath, cancellationToken);
+        var periods = periodPage.GetProperty("items");
+        if (periods.GetArrayLength() != 1
+            || periods[0].GetProperty("periodId").GetGuid() != AccountingOpenPeriodFixture.PeriodId
+            || periods[0].GetProperty("companyId").GetGuid() != CompanyGdc
+            || periods[0].GetProperty("startsOn").GetString() != "2026-09-01"
+            || periods[0].GetProperty("endsOn").GetString() != "2026-09-30"
+            || periods[0].GetProperty("status").GetString() != "Open")
+        {
+            throw new InvalidOperationException("The real Accounting period list did not return the synthetic fin01 Open period.");
+        }
+
         var customer = await CariBrowserSeed.OpenPartyWithAccountAsync(
             context, CariActor, CompanyGdc, "customer", "Tahsilat müşterisi", CustomerRole, cancellationToken);
 

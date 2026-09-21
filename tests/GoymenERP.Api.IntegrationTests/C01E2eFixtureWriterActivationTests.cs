@@ -1,4 +1,5 @@
 using GoymenERP.Api.Shell;
+using GoymenERP.Modules.Accounting.Infrastructure.Fixtures;
 using GoymenERP.Modules.Identity.Domain.Assignments;
 using GoymenERP.Modules.Identity.Infrastructure.Fixtures;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
@@ -39,7 +40,9 @@ public sealed class C01E2eFixtureWriterActivationTests
             descriptor.ServiceType == typeof(C01E2eProductMasterAssignmentFixtureWriter)
             || descriptor.ServiceType == typeof(IProductMasterAssignmentFixtureStore)
             || descriptor.ServiceType == typeof(C01E2eProductTechnicalCardFixtureWriter)
-            || descriptor.ServiceType == typeof(IProductTechnicalCardFixtureStore));
+            || descriptor.ServiceType == typeof(IProductTechnicalCardFixtureStore)
+            || descriptor.ServiceType == typeof(C01E2eAccountingOpenPeriodFixtureWriter)
+            || descriptor.ServiceType == typeof(IAccountingOpenPeriodFixtureStore));
     }
 
     [Fact]
@@ -57,6 +60,10 @@ public sealed class C01E2eFixtureWriterActivationTests
             descriptor.ServiceType == typeof(C01E2eProductTechnicalCardFixtureWriter));
         Assert.Single(services, descriptor =>
             descriptor.ServiceType == typeof(IProductTechnicalCardFixtureStore));
+        Assert.Single(services, descriptor =>
+            descriptor.ServiceType == typeof(C01E2eAccountingOpenPeriodFixtureWriter));
+        Assert.Single(services, descriptor =>
+            descriptor.ServiceType == typeof(IAccountingOpenPeriodFixtureStore));
     }
 
     public static TheoryData<string, string, string?> BrokenGates => new()
@@ -99,7 +106,9 @@ public sealed class C01E2eFixtureWriterActivationTests
         Assert.DoesNotContain(services, descriptor =>
             descriptor.ServiceType == typeof(C01E2eProductMasterAssignmentFixtureWriter)
             || descriptor.ServiceType == typeof(C01E2eProductTechnicalCardFixtureWriter)
-            || descriptor.ServiceType == typeof(IProductTechnicalCardFixtureStore));
+            || descriptor.ServiceType == typeof(IProductTechnicalCardFixtureStore)
+            || descriptor.ServiceType == typeof(C01E2eAccountingOpenPeriodFixtureWriter)
+            || descriptor.ServiceType == typeof(IAccountingOpenPeriodFixtureStore));
         Assert.Throws<InvalidOperationException>(() =>
             new C01E2eProductMasterAssignmentFixtureWriter(environment, configuration, new RecordingStore()));
         Assert.Throws<InvalidOperationException>(() =>
@@ -107,6 +116,11 @@ public sealed class C01E2eFixtureWriterActivationTests
                 environment,
                 configuration,
                 new RecordingTechnicalCardStore()));
+        Assert.Throws<InvalidOperationException>(() =>
+            new C01E2eAccountingOpenPeriodFixtureWriter(
+                environment,
+                configuration,
+                new RecordingAccountingOpenPeriodStore()));
         Assert.False(string.IsNullOrEmpty(label));
     }
 
@@ -178,6 +192,11 @@ public sealed class C01E2eFixtureWriterActivationTests
     }
 
     private sealed class RecordingTechnicalCardStore : IProductTechnicalCardFixtureStore
+    {
+        public Task EnsureAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    private sealed class RecordingAccountingOpenPeriodStore : IAccountingOpenPeriodFixtureStore
     {
         public Task EnsureAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     }
