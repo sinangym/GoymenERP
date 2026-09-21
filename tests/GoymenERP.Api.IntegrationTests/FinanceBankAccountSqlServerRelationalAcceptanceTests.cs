@@ -322,7 +322,7 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
         Assert.Equal(newIban, await run.ScalarAsync<string>(
             "SELECT PendingIban FROM finance.BankAccounts WHERE Id = @id", ("@id", account.Id)));
         Assert.Equal(account.Id, await run.ScalarAsync<Guid>(
-            "SELECT BankAccountId FROM finance.ReceiptDrafts WHERE Id = @id", ("@id", historicalDraftId)));
+            "SELECT TreasuryAccountId FROM finance.ReceiptDrafts WHERE Id = @id", ("@id", historicalDraftId)));
 
         await using (var approver = run.Open(CompanyA, Approver))
         {
@@ -338,7 +338,7 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
             "SELECT COUNT(*) FROM finance.BankAccounts WHERE Id = @id AND PendingIban IS NULL AND PendingIbanProposedBy IS NULL AND PendingIbanProposedAtUtc IS NULL AND PendingIbanReason IS NULL",
             ("@id", account.Id)));
         Assert.Equal(account.Id, await run.ScalarAsync<Guid>(
-            "SELECT BankAccountId FROM finance.ReceiptDrafts WHERE Id = @id", ("@id", historicalDraftId)));
+            "SELECT TreasuryAccountId FROM finance.ReceiptDrafts WHERE Id = @id", ("@id", historicalDraftId)));
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityId = CONVERT(nvarchar(36), @id) AND EventType = N'finance.bank-account.iban-change-approved.v1' AND JSON_VALUE(ApprovalContextJson, '$.previousIban') = @old AND JSON_VALUE(ApprovalContextJson, '$.newIban') = @new AND JSON_VALUE(ApprovalContextJson, '$.proposedBy') = @proposer AND JSON_VALUE(ApprovalContextJson, '$.approvedBy') = @approver",
             ("@id", account.Id), ("@old", oldIban), ("@new", newIban), ("@proposer", Proposer), ("@approver", Approver)));
