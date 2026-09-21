@@ -30,6 +30,14 @@ export function technicalOptionsWire() {
   })
 }
 
+function firstFamilyFact(raw: unknown): Record<string, unknown> {
+  return (raw as { familyFacts: Record<string, unknown>[] }).familyFacts[0]
+}
+
+function firstDictionaryEntry(raw: unknown): Record<string, unknown> {
+  return (raw as { dictionaries: { entries: Record<string, unknown>[] }[] }).dictionaries[0].entries[0]
+}
+
 describe('released technical fields', () => {
   const options = decodeReferenceOptions(technicalOptionsWire(), GROUP_SAC)!
   it('decodes actual field kinds, explicit none, candidates and Settings unit identities', () => {
@@ -45,25 +53,25 @@ describe('released technical fields', () => {
   })
   it('rejects missing family labels and missing or malformed nullable decimal mass', () => {
     const missingCode = technicalOptionsWire()
-    delete (missingCode.familyFacts[0] as unknown as Record<string, unknown>).code
+    delete firstFamilyFact(missingCode).code
     expect(decodeReferenceOptions(missingCode, GROUP_SAC)).toBeNull()
 
     const missingDisplayName = technicalOptionsWire()
-    delete (missingDisplayName.familyFacts[0] as unknown as Record<string, unknown>).displayName
+    delete firstFamilyFact(missingDisplayName).displayName
     expect(decodeReferenceOptions(missingDisplayName, GROUP_SAC)).toBeNull()
 
     const missingMass = technicalOptionsWire()
-    delete (missingMass.dictionaries[0].entries[0] as unknown as Record<string, unknown>).massGm2
+    delete firstDictionaryEntry(missingMass).massGm2
     expect(decodeReferenceOptions(missingMass, GROUP_SAC)).toBeNull()
 
     for (const malformed of ['01.5', '1e3', '', Number.NaN, Number.POSITIVE_INFINITY]) {
       const raw = technicalOptionsWire()
-      ;(raw.dictionaries[0].entries[0] as unknown as Record<string, unknown>).massGm2 = malformed
+      firstDictionaryEntry(raw).massGm2 = malformed
       expect(decodeReferenceOptions(raw, GROUP_SAC)).toBeNull()
     }
 
     const losslessDecimal = technicalOptionsWire()
-    ;(losslessDecimal.dictionaries[0].entries[0] as unknown as Record<string, unknown>).massGm2 = '125.50'
+    firstDictionaryEntry(losslessDecimal).massGm2 = '125.50'
     expect(decodeReferenceOptions(losslessDecimal, GROUP_SAC)).not.toBeNull()
   })
   it('writes explicit none, measured attributes and independently selected units into the POST payload', () => {
