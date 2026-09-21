@@ -141,9 +141,23 @@ test('C02-02 closing and reopening the card reads the SAME record back from the 
   await back.click()
   await expect(page.getByRole('heading', { name: 'Cari Kartlar' })).toBeVisible()
 
+  // The unfiltered first page has no ordering guarantee that places the new record on it. Ask the
+  // server for the record by its legal name, then bind the visible row to the id returned by create.
+  const filteredListResponsePromise = page.waitForResponse((response) => {
+    const url = new URL(response.url())
+    return (
+      response.request().method() === 'GET' &&
+      url.pathname === '/api/v1/counterparties' &&
+      url.searchParams.get('q') === LEGAL_NAME
+    )
+  })
+  await page.getByLabel('Ara').fill(LEGAL_NAME)
+  const filteredListResponse = await filteredListResponsePromise
+  expect(filteredListResponse.status()).toBe(200)
+
   // And the created row is IN the list: "persisted" means the record is where the user looks for
   // it, not merely that a detail URL resolves.
-  await expect(page.getByRole('link', { name: new RegExp(LEGAL_NAME) })).toBeVisible()
+  await expect(page.locator(`[data-row-link="${createdPartyId}"]`)).toBeVisible()
 })
 
 test('C02-03 an actor authorized in ANOTHER company does not reach the record', async ({ page }) => {
