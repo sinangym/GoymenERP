@@ -442,7 +442,9 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
                    new ApproveReversalRequest(proposalId, proposalVersion))))
         {
             Assert.Equal(HttpStatusCode.Forbidden, ownApproval.StatusCode);
-            Assert.Equal("finance_approver_is_proposer", Issue(await Json(ownApproval)));
+            var problem = await Json(ownApproval);
+            Assert.Equal("forbidden", problem.GetProperty("code").GetString());
+            Assert.False(problem.TryGetProperty("issues", out _));
         }
 
         using (var foreignPending = await foreignCompany.GetAsync(FinanceEndpoints.ReversalProposalsPath + "/pending"))

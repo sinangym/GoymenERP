@@ -372,11 +372,14 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                         nameof(ReceiptDraftRow.UpdatedBy), nameof(ReceiptDraftRow.Stage),
                         nameof(ReceiptDraftRow.RecordedAtUtc), nameof(ReceiptDraftRow.RecordedBy),
                     ],
-                    // The one approval; name and currency never change.
+                    // Approval and the separate D4 IBAN-change lifecycle; name, currency and card metadata never change.
                     BankAccountRow =>
                     [
                         nameof(BankAccountRow.Status), nameof(BankAccountRow.ApprovedBy),
-                        nameof(BankAccountRow.ApprovedAtUtc), nameof(BankAccountRow.UpdatedAtUtc),
+                        nameof(BankAccountRow.ApprovedAtUtc), nameof(BankAccountRow.Iban),
+                        nameof(BankAccountRow.PendingIban), nameof(BankAccountRow.PendingIbanProposedBy),
+                        nameof(BankAccountRow.PendingIbanProposedAtUtc), nameof(BankAccountRow.PendingIbanReason),
+                        nameof(BankAccountRow.UpdatedAtUtc),
                     ],
                     ReversalProposalRow =>
                     [

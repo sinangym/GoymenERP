@@ -231,7 +231,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
              + "Persistence/FinanceDbContext.cs"] =
-            "129932def555d44668b02f460944660c3c0349e046e99a4b6806ad907eae7e72",
+            "34c9ed6e4f40bd7e6ff336292f4d3a0d658ef77bb2c1ef62f6117cd86ca3db43",
             // ACC-3 (#298): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for ACC-V0a: the ADR-011 command log (Commands) is mapped here, company-scoped with the
