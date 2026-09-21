@@ -318,7 +318,9 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
     await page.getByRole('button', { name: 'Onayla ve ters kaydı oluştur', exact: true }).click()
     expect((await post).postDataJSON()).toEqual({ proposalId: expect.any(String), expectedVersion: '1' })
     expect((await answer).status()).toBe(200)
-    const link = page.getByRole('link', { name: 'Oluşturulan ters kaydı aç', exact: true })
+    const link = page
+      .getByLabel('Sonuçlanan ters kayıt önerisi')
+      .getByRole('link', { name: 'Oluşturulan ters kaydı aç', exact: true })
     await expect(link).toBeVisible({ timeout: 30_000 })
     reversalSourceId = (await link.getAttribute('href'))!.split('/').at(-1)!
     expect(reversalSourceId).toMatch(/^[0-9a-f-]{36}$/)
