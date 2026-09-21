@@ -154,6 +154,26 @@ test('C02-02 closing and reopening the card reads the SAME record back from the 
   await page.getByLabel('Ara').fill(LEGAL_NAME)
   const filteredListResponse = await filteredListResponsePromise
   expect(filteredListResponse.status()).toBe(200)
+  const filteredBody: unknown = await filteredListResponse.json()
+  if (typeof filteredBody !== 'object' || filteredBody === null) {
+    throw new Error('C02-02 filtered list response must be an object')
+  }
+  const filteredItems = (filteredBody as Record<string, unknown>).items
+  if (!Array.isArray(filteredItems)) {
+    throw new Error('C02-02 filtered list response must carry items')
+  }
+  expect(
+    filteredItems.some(
+      (item) =>
+        typeof item === 'object' &&
+        item !== null &&
+        (item as Record<string, unknown>).id === createdPartyId,
+    ),
+    'the server-filtered page must contain the id returned by create',
+  ).toBe(true)
+
+  const table = page.getByRole('region', { name: 'Cari listesi tablosu' }).getByRole('table')
+  await expect(table).toHaveAttribute('aria-busy', 'false')
 
   // And the created row is IN the list: "persisted" means the record is where the user looks for
   // it, not merely that a detail URL resolves.
