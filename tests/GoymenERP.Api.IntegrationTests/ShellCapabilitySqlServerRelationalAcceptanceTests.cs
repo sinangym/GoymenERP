@@ -348,7 +348,7 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
-    public async Task PublishedCounterpartyCapabilities_TrackPersistedPermissionsAndRevision()
+    public async Task StagedCounterpartyCapability_RemainsHiddenAndTracksPermissionRevision()
     {
         var baseConnectionString = Environment.GetEnvironmentVariable(
             SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
