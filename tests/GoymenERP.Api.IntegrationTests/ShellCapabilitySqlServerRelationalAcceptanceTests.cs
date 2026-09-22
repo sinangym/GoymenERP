@@ -172,7 +172,7 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
             using (var groupClient = factory.CreateClient())
             {
                 groupClient.DefaultRequestHeaders.Add("X-Development-User", TestUsers.GroupAdmin);
-                AssertExactEmptySnapshot(await ReadSnapshotAsync(groupClient));
+                AssertExactCounterpartyReadSnapshot(await ReadSnapshotAsync(groupClient));
             }
 
             // The existing SITE-OSM reader is a real persisted narrow grant,
@@ -370,31 +370,31 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
                 TestCompanyIds.CompanyA);
 
             var granted = await ReadSnapshotAsync(administratorClient);
-            var denied = await ReadSnapshotAsync(operatorClient);
-            Assert.DoesNotContain(
+            var operatorSnapshot = await ReadSnapshotAsync(operatorClient);
+            Assert.Contains(
                 CounterpartyShellCapabilityProvider.ListCapabilityId,
                 granted.Capabilities);
-            Assert.DoesNotContain(
+            Assert.Contains(
                 CounterpartyShellCapabilityProvider.CreateCapabilityId,
                 granted.Capabilities);
             Assert.DoesNotContain(
                 CounterpartyShellCapabilityProvider.LinkCapabilityId,
                 granted.Capabilities);
-            Assert.DoesNotContain(
+            Assert.Contains(
                 CounterpartyShellCapabilityProvider.DetailCapabilityId,
                 granted.Capabilities);
             Assert.DoesNotContain(
                 CounterpartyShellCapabilityProvider.ListCapabilityId,
-                denied.Capabilities);
+                operatorSnapshot.Capabilities);
             Assert.DoesNotContain(
                 CounterpartyShellCapabilityProvider.CreateCapabilityId,
-                denied.Capabilities);
+                operatorSnapshot.Capabilities);
             Assert.DoesNotContain(
                 CounterpartyShellCapabilityProvider.LinkCapabilityId,
-                denied.Capabilities);
+                operatorSnapshot.Capabilities);
             Assert.DoesNotContain(
                 CounterpartyShellCapabilityProvider.DetailCapabilityId,
-                denied.Capabilities);
+                operatorSnapshot.Capabilities);
 
             await using var connection = new SqlConnection(factory.DatabaseConnectionString);
             await connection.OpenAsync();
@@ -415,7 +415,7 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
             Assert.DoesNotContain(
                 CounterpartyShellCapabilityProvider.ListCapabilityId,
                 revoked.Capabilities);
-            Assert.DoesNotContain(
+            Assert.Contains(
                 CounterpartyShellCapabilityProvider.CreateCapabilityId,
                 revoked.Capabilities);
             Assert.DoesNotContain(
@@ -846,6 +846,18 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
     {
         AssertSnapshotEnvelope(snapshot);
         Assert.Empty(snapshot.Capabilities);
+    }
+
+    private static void AssertExactCounterpartyReadSnapshot(CapabilitySnapshotProbe snapshot)
+    {
+        AssertSnapshotEnvelope(snapshot);
+        Assert.Equal(
+            new[]
+            {
+                CounterpartyShellCapabilityProvider.ListCapabilityId,
+                CounterpartyShellCapabilityProvider.DetailCapabilityId,
+            }.Order(StringComparer.Ordinal),
+            snapshot.Capabilities);
     }
 
     private static void AssertExactOrganizationSnapshot(

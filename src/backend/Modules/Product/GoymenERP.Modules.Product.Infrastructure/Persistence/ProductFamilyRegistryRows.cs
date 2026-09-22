@@ -11,6 +11,11 @@ namespace GoymenERP.Modules.Product.Infrastructure.Persistence;
 public sealed class ProductFamilyRow
 {
     private ProductFamilyRow() { }
+    internal ProductFamilyRow(ProductFamilyV2 value)
+    {
+        Id = value.Id; Code = value.Code; Name = value.Name; Cins = value.Cins; Tur = value.Tur;
+        Tip = value.Tip; RuleSet = value.RuleSet; SourceRef = value.SourceRef;
+    }
     public Guid Id { get; private set; }
     public string Code { get; private set; } = string.Empty;
     public string Name { get; private set; } = string.Empty;
@@ -27,6 +32,11 @@ public sealed class ProductFamilyRow
 public sealed class ProductTemplateRow
 {
     private ProductTemplateRow() { }
+    internal ProductTemplateRow(ProductTemplateV2 value)
+    {
+        Id = value.Id; Version = long.Parse(value.Version, CultureInfo.InvariantCulture);
+        Code = value.Code; Name = value.Name; SourceRef = value.SourceRef;
+    }
     public Guid Id { get; private set; }
     public long Version { get; private set; }
     public string Code { get; private set; } = string.Empty;
@@ -40,6 +50,10 @@ public sealed class ProductTemplateRow
 public sealed class ProductTemplateFamilyRow
 {
     private ProductTemplateFamilyRow() { }
+    internal ProductTemplateFamilyRow(ProductTemplateRow template, Guid familyId)
+    {
+        TemplateId = template.Id; TemplateVersion = template.Version; FamilyId = familyId;
+    }
     public Guid TemplateId { get; private set; }
     public long TemplateVersion { get; private set; }
     public Guid FamilyId { get; private set; }
@@ -49,6 +63,14 @@ public sealed class ProductTemplateFamilyRow
 public sealed class ProductTemplateFieldRow
 {
     private ProductTemplateFieldRow() { }
+    internal ProductTemplateFieldRow(ProductTemplateRow template, ProductTemplateFieldV2 value, int position)
+    {
+        TemplateId = template.Id; TemplateVersion = template.Version; Position = position;
+        Key = value.Key; Kind = (int)value.Kind; Role = value.Role; Required = value.Required;
+        Dictionary = value.Dictionary; AllowsCandidate = value.AllowsCandidate;
+        AppliesWhenField = value.AppliesWhenField; AppliesWhenCode = value.AppliesWhenCode;
+        ParentField = value.ParentField;
+    }
     public Guid TemplateId { get; private set; }
     public long TemplateVersion { get; private set; }
     public string Key { get; private set; } = string.Empty;
@@ -73,6 +95,12 @@ public sealed class ProductTemplateFieldRow
 public sealed class ProductDictionaryEntryRow
 {
     private ProductDictionaryEntryRow() { }
+    internal ProductDictionaryEntryRow(ProductDictionaryEntryV2 value)
+    {
+        Dictionary = value.Dictionary; Code = value.Code; DisplayName = value.DisplayName;
+        Status = (int)value.Status; SourceRef = value.SourceRef; ParentCode = value.ParentCode;
+        MassGm2 = value.MassGm2; IsExplicitNone = value.IsExplicitNone;
+    }
     public string Dictionary { get; private set; } = string.Empty;
     public string Code { get; private set; } = string.Empty;
     public string DisplayName { get; private set; } = string.Empty;

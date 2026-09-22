@@ -74,6 +74,31 @@ public static class ManufacturingEndpoints
             .Produces<PlanViewV1>(StatusCodes.Status200OK)
             .WithWriteProblems(notFound: true);
 
+        // K4.4: the plan read. Until this the surface could CREATE and APPROVE a plan and never answer for
+        // it again, so a created plan could not be reopened — the missing piece was an answer, not a screen.
+        // Its own narrow name: `manufacturing.plans.read` is company-wide because this module narrows no read
+        // by scope, so a site-scoped grant would pass the policy and then return every plan in the company.
+        // Another company's plan is the same code-less 404 as an unknown id (never 403, which would confirm
+        // the row exists), and a read that still meets concurrent commits is a retryable 503 — 409 belongs to
+        // commands.
+        group.MapGet("/plans/{planId:guid}", async (
+                Guid planId,
+                ManufacturingCommandService service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response.Headers);
+                return ToHttpResult(httpContext, await service.GetPlanAsync(planId, cancellationToken), location: null);
+            })
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.ManufacturingPlansRead)
+            .WithName("GetManufacturingPlanV1")
+            .Produces<PlanViewV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
         group.MapPost("/orders", async (
                 CreateOrderRequestV1 request,
                 ManufacturingCommandService service,

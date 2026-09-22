@@ -15,9 +15,8 @@
  *  - an unknown outcome retries the SAME key and never claims a rollback;
  *  - a committed context change abandons the attempt visibly.
  *
- * Editable here: `name`, `classId`, `familyId` and the MANUAL roles. Not editable:
- * group and code (the contract freezes both in basic edit), and the `references`
- * block — the coordinator keeps attribute/unit completeness in the next slice.
+ * Editable here: basic fields, manual roles, released technical attributes and
+ * stock/sales unit identities. Group/code are immutable; tracking policy is closed.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -83,6 +82,8 @@ import {
   type AttemptBinding,
 } from './pendingAttempt'
 import styles from './ProductCreatePage.module.css'
+import { ProductTechnicalFields } from './ProductTechnicalFields'
+import { technicalDraft } from './technicalForm'
 
 type EditAttempt = AttemptState<EditProductDraftPayload, ProductMutationResult>
 
@@ -318,7 +319,7 @@ function ProductEditForm({
     if (frozen) return
     setSubmitted(true)
 
-    const validation = validateEditForm(card, values, classIds, familyIds)
+    const validation = validateEditForm(card, values, classIds, familyIds, options)
     if (!validation.ok) {
       setErrors(validation.errors)
       return
@@ -561,7 +562,9 @@ function ProductEditForm({
               fieldRefs.current[EDIT_FIELD.classId] = el
             }}
             onChange={(event) =>
-              setValues((v) => ({ ...v, classId: event.target.value, familyId: '' }))
+              setValues((v) => ({ ...v, classId: event.target.value, familyId: '',
+                technical: { ...(v.technical ?? technicalDraft(card.references)), attributes: {}, attributesChanged: true,
+                  sourceTemplateId: null, sourceTemplateVersion: null } }))
             }
           >
             <option value="">{PRODUCT_EDIT_TEXT.chooseNone}</option>
@@ -604,7 +607,9 @@ function ProductEditForm({
             ref={(el) => {
               fieldRefs.current[EDIT_FIELD.familyId] = el
             }}
-            onChange={(event) => setValues((v) => ({ ...v, familyId: event.target.value }))}
+            onChange={(event) => setValues((v) => ({ ...v, familyId: event.target.value,
+              technical: { ...(v.technical ?? technicalDraft(card.references)), attributes: {}, attributesChanged: true,
+                sourceTemplateId: null, sourceTemplateVersion: null } }))}
           >
             <option value="">{PRODUCT_EDIT_TEXT.chooseNone}</option>
             {card.product.familyId !== null && !familyIds.includes(card.product.familyId) ? (
@@ -630,6 +635,11 @@ function ProductEditForm({
           ) : null}
         </div>
 
+        <ProductTechnicalFields familyId={values.familyId} options={options} value={values.technical}
+          fieldRef={el => { fieldRefs.current.references = el }}
+          frozen={frozen} onChange={technical => setValues(v => ({ ...v, technical }))}
+          errors={attempt.phase === 'failed' ? attempt.fieldErrors : undefined} />
+        {errors.references ? <p role="alert">{errors.references}</p> : null}
         <fieldset
           className={styles.roles}
           ref={(el) => {

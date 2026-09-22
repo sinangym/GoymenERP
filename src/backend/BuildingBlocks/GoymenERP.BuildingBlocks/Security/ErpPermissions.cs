@@ -100,6 +100,31 @@ public static class ErpPermissions
     public const string ManufacturingOrdersClose = "manufacturing.orders.close";
 
     /// <summary>
+    /// K4.4 (ORG): reading one production plan back. Its own name because approving a plan is not
+    /// reading one, and because until now a plan could be created and approved but **never read
+    /// again** — there was no plan read at any layer above the store. Registered, not granted.
+    /// <para>
+    /// COMPANY-WIDE ONLY, and the reason is the OPPOSITE of the Sales price-read's — written out
+    /// because the reason is what the next module inherits, not the membership. Manufacturing
+    /// narrows no read by scope: <c>ManufacturingEndpoints</c> contains ZERO occurrences of
+    /// <c>IsCompanyWide</c> (measured), and the module's only two scope checks are command fences.
+    /// So a site-scoped grant of this name would pass policy and then return EVERY plan of the
+    /// company — it would fail OPEN. Membership is what stops that:
+    /// <c>ErpAuthorizationService</c> denies a non-company-wide grant of any name in
+    /// <see cref="CompanyWideOnly"/>. Contrast <see cref="SalesOrdersPriceRead"/>, which is in the
+    /// same set for the reverse hazard: there the module DOES require company-wide, so a narrow
+    /// grant would be accepted and then disclose nothing — a dead grant, failing closed. Same
+    /// membership, opposite failure; "consistent with the others" would have been the wrong reason.
+    /// </para>
+    /// <para>
+    /// Not Critical: Critical is the grant-time dual-control set, no source makes SEEING a plan a
+    /// segregated duty, and <see cref="ManufacturingPlansApprove"/> — the heavier act — is not
+    /// Critical either.
+    /// </para>
+    /// </summary>
+    public const string ManufacturingPlansRead = "manufacturing.plans.read";
+
+    /// <summary>
     /// Finance manual-receipt draft (FIN-T04b, #320): the Finance owner's technical names
     /// (FinancePermissionNames, Business #254 5654539215), same strings. Registered, not granted:
     /// no role and no user receives them here; who holds which is a human gate. All three are
@@ -307,6 +332,7 @@ public static class ErpPermissions
             ManufacturingFactsRecord,
             ManufacturingOrdersRead,
             ManufacturingOrdersClose,
+            ManufacturingPlansRead,
             InventoryLabelsRead,
             InventoryBalancesRead,
             InventoryOpeningStockRecord,
@@ -366,6 +392,7 @@ public static class ErpPermissions
             ManufacturingFactsRecord,
             ManufacturingOrdersRead,
             ManufacturingOrdersClose,
+            ManufacturingPlansRead,
             InventoryLabelsRead,
             InventoryBalancesRead,
             InventoryOpeningStockRecord,

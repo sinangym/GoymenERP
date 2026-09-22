@@ -6,15 +6,15 @@ public sealed class C01E2eActivationBoundaryTests
     private const string DisposableKey = "GOYMEN_ERP_C01_E2E_DISPOSABLE";
 
     [Fact]
-    public void CanonicalCounterpartyProvider_RemainsFullyStaged()
+    public void CanonicalCounterpartyProvider_PublishesNormalCapabilitiesButKeepsLinkStaged()
     {
         var source = ReadRepositoryFile(
             "src/backend/Modules/Counterparty/"
             + "GoymenERP.Modules.Counterparty.Infrastructure/Shell/"
             + "CounterpartyShellCapabilityProvider.cs");
 
-        Assert.Equal(4, Count(source, "ImplementationAvailable: false"));
-        Assert.DoesNotContain("ImplementationAvailable: true", source, StringComparison.Ordinal);
+        Assert.Equal(3, Count(source, "ImplementationAvailable: true"));
+        Assert.Equal(1, Count(source, "ImplementationAvailable: false"));
         Assert.DoesNotContain("C01E2e", source, StringComparison.Ordinal);
     }
 

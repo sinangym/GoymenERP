@@ -156,6 +156,94 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
             "SELECT CASE [Status] WHEN 1 THEN N'Draft' ELSE N'Approved' END FROM manufacturing.Plans"));
     }
 
+    /// <summary>
+    /// The plan read against real SQL. Until this slice a plan could be created and approved but never
+    /// read back, so every claim below is new evidence rather than a restatement: that the read returns
+    /// the STORED plan (the approval is visible through it, not just in the approve response), that it
+    /// carries its own narrow grant, and that another company's plan is the same code-less 404 as an
+    /// unknown id — which is the company query filter on <c>PlanRow</c> doing the work, not a UI check.
+    /// </summary>
+    [SqlServerFact]
+    public async Task A_plan_is_read_back_from_storage_under_its_own_grant_and_only_for_the_context_company()
+    {
+        await using var run = await Run.StartAsync();
+        var workCenter = await run.WorkCenterOfAsync(CompanyA);
+        var reader = await run.GrantAsync(TestUsers.CompanyA, CompanyA,
+            [.. AllWrites, ErpPermissions.ManufacturingPlansRead]);
+        // Every Manufacturing write, but NOT the plan read: the grant is measured, not assumed from the others.
+        var writerWithoutRead = await run.GrantAsync(TestUsers.Unprovisioned, CompanyA, AllWrites);
+        var userB = await run.GrantAsync(TestUsers.CompanyB, CompanyB,
+            [.. AllWrites, ErpPermissions.ManufacturingPlansRead]);
+
+        var request = new SavePlanRequestV1(Guid.NewGuid(), workCenter,
+            [new PlannedInputRequestV1(Guid.NewGuid(), "1000.250")], new TargetRequestV1("GoodOutputMass", "900"));
+        PlanViewV1 created;
+        using (var client = run.ClientFor(reader, CompanyA))
+        {
+            created = (await (await client.PostWithKeyAsync($"{Base}/plans", request)).Content
+                .ReadFromJsonAsync<PlanViewV1>())!;
+
+            // Reopened == created, compared as a WHOLE view. Naming three fields would pass while a fourth
+            // drifted, and a drifting fourth field is exactly what two hand-mapped projections produce.
+            var reopened = await client.GetAsync($"{Base}/plans/{created.PlanId}");
+            Assert.Equal(HttpStatusCode.OK, reopened.StatusCode);
+            Assert.True(reopened.Headers.CacheControl is { Private: true, NoStore: true });
+            var view = (await reopened.Content.ReadFromJsonAsync<PlanViewV1>())!;
+            Assert.Equal(JsonSerializer.Serialize(created), JsonSerializer.Serialize(view));
+            // Not vacuous: the comparison is over a view that carries the plan's content. The kilogram is
+            // "1000.25", not the "1000.250" that was sent: the read projects through the SAME Text(decimal)
+            // normalization the write answer uses, so a trailing zero the caller typed does not survive
+            // either answer. Measured on the formatter, and on the existing journey case where a declared
+            // "900.000" reads back as "900".
+            Assert.Equal(("Draft", 1L, "1000.25"), (view.Status, view.Version, Assert.Single(view.Inputs).PlannedKg));
+
+            // The read answers from STORAGE: approving through another command changes what it returns.
+            Assert.Equal(HttpStatusCode.OK,
+                (await client.PostWithKeyAsync($"{Base}/plans/{created.PlanId}/approval", new ApprovePlanRequestV1(1)))
+                    .StatusCode);
+            var afterApproval = (await (await client.GetAsync($"{Base}/plans/{created.PlanId}")).Content
+                .ReadFromJsonAsync<PlanViewV1>())!;
+            Assert.Equal(("Approved", 2L), (afterApproval.Status, afterApproval.Version));
+            Assert.NotNull(afterApproval.ApprovedByUserId);
+
+            // An unknown id in the caller's own company is the code-less 404 the other company gets below.
+            Assert.Equal(HttpStatusCode.NotFound,
+                (await client.GetAsync($"{Base}/plans/{Guid.NewGuid()}")).StatusCode);
+        }
+
+        // Every write grant in the module does not add up to the read.
+        using (var client = run.ClientFor(writerWithoutRead, CompanyA))
+        {
+            Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync($"{Base}/plans/{created.PlanId}")).StatusCode);
+        }
+
+        // Company B holds the read grant in its OWN company and still cannot see A's plan: not found, never
+        // forbidden — a 403 would confirm the row exists (#257, the order read's rule).
+        using (var client = run.ClientFor(userB, CompanyB))
+        {
+            Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"{Base}/plans/{created.PlanId}")).StatusCode);
+        }
+
+        // B's user naming company A is refused before anything is read.
+        using (var client = run.ClientFor(userB, CompanyA))
+        {
+            Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync($"{Base}/plans/{created.PlanId}")).StatusCode);
+        }
+
+        // Without a company context nothing runs.
+        using (var client = run.Factory.CreateClient())
+        {
+            client.DefaultRequestHeaders.Add("X-Development-User", reader);
+            client.DefaultRequestHeaders.Add("X-Correlation-Id", Guid.NewGuid().ToString("N"));
+            Assert.Equal(HttpStatusCode.BadRequest, (await client.GetAsync($"{Base}/plans/{created.PlanId}")).StatusCode);
+        }
+
+        // The refusals stored nothing and created no second plan.
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM manufacturing.Plans"));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM manufacturing.Plans WHERE CompanyId = @c", ("@c", CompanyB)));
+    }
+
     [SqlServerFact]
     public async Task Another_companys_order_is_not_found_and_the_company_comes_only_from_the_context()
     {

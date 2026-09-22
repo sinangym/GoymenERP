@@ -16,8 +16,7 @@
  *  - `classId` / `familyId`, chosen from `reference-options` scoped to the record's
  *    group. Clearing them is legitimate — the contract lets an explicit null clear a
  *    nullable scalar reference;
- *  - `references` are NOT offered: §19.6 and the coordinator keep attribute/unit
- *    completeness in the next slice;
+ *  - released technical references are partial writes; untouched roles are preserved;
  *  - group and code are immutable in basic edit by the contract's own statement.
  */
 
@@ -26,10 +25,14 @@ import type { EditProductDraftPayload, ProductDraftChanges, ProductRoleWrites } 
 import { REASON_MAX } from './api'
 import { PRODUCT_EDIT_TEXT } from './productText'
 import type { CreateFormRoles, RoleChoice } from './createForm'
+import { technicalDraft, technicalDirty, technicalWrite, type TechnicalDraft } from './technicalForm'
+import type { ProductReferenceOptions } from './contract'
+import type { ProductReferenceWrite } from './api'
 
 export const NAME_MAX = 250
 
 export interface EditFormValues {
+  readonly technical?: TechnicalDraft
   readonly name: string
   /** `''` means no class — a real, clearable state. */
   readonly classId: string
@@ -40,6 +43,7 @@ export interface EditFormValues {
 }
 
 export const EDIT_FIELD = {
+  references: 'references',
   name: 'name',
   classId: 'classId',
   familyId: 'familyId',
@@ -53,11 +57,13 @@ export const EDIT_FIELD_ORDER: readonly EditFieldId[] = [
   EDIT_FIELD.name,
   EDIT_FIELD.classId,
   EDIT_FIELD.familyId,
+  EDIT_FIELD.references,
   EDIT_FIELD.roles,
   EDIT_FIELD.reason,
 ]
 
 export const EDIT_FIELD_LABEL: Record<EditFieldId, string> = {
+  references: 'Teknik özellikler',
   [EDIT_FIELD.name]: PRODUCT_EDIT_TEXT.nameLabel,
   [EDIT_FIELD.classId]: PRODUCT_EDIT_TEXT.classLabel,
   [EDIT_FIELD.familyId]: PRODUCT_EDIT_TEXT.familyLabel,
@@ -101,6 +107,7 @@ export function editFormFrom(card: ProductCard): EditFormValues {
   for (const role of PRODUCT_ROLE) roles[role] = roleChoiceOf(card, role)
   return {
     name: card.product.name,
+    technical: technicalDraft(card.references),
     classId: card.product.classId ?? '',
     familyId: card.product.familyId ?? '',
     roles,
@@ -122,7 +129,10 @@ export function changesFrom(card: ProductCard, values: EditFormValues): ProductD
     classId?: string | null
     familyId?: string | null
     roles?: ProductRoleWrites
+    references?: ProductReferenceWrite
   } = {}
+  // Validation replaces this dirty marker with the exact partial reference write.
+  if (values.technical && technicalDirty(values.technical)) changes.references = {}
 
   const name = values.name.trim()
   if (name !== card.product.name) changes.name = name
@@ -184,8 +194,11 @@ export function validateEditForm(
   values: EditFormValues,
   availableClassIds: readonly string[] = [],
   availableFamilyIds: readonly string[] = [],
+  options: ProductReferenceOptions | null = null,
 ): EditFormValidation {
   const errors: EditFormErrors = {}
+  const technical = values.technical ? technicalWrite(values.technical, options, values.familyId) : null
+  if (technical && !technical.ok) errors.references = Object.values(technical.errors).join(' ')
 
   const name = values.name.trim()
   if (name.length === 0) errors.name = PRODUCT_EDIT_TEXT.validation.nameRequired
@@ -236,7 +249,7 @@ export function validateEditForm(
       // Carried verbatim from the card as READ — never from a conflict response,
       // and never parsed into a number.
       expectedVersion: card.product.version,
-      changes,
+      changes: { ...changes, ...(technical?.ok && Object.keys(technical.references).length ? { references: technical.references } : {}) },
       reason: values.reason.trim(),
     },
   }
