@@ -77,7 +77,7 @@ public sealed class SalesPersistenceModelTests
         Assert.NotNull(attempts.FindProperty(nameof(DraftAttemptRow.Outcome)));
         Assert.NotNull(attempts.FindProperty(nameof(DraftAttemptRow.RefusalJson)));
         Assert.Equal(SalesDbContext.AttemptOutcomeConstraint,
-            attempts.GetCheckConstraints().Single(constraint => constraint.Name == "CK_DraftAttempts_Outcome").Sql);
+            design.GetCheckConstraints().Single(constraint => constraint.Name == "CK_DraftAttempts_Outcome").Sql);
 
         var drafts = context.Model.FindEntityType(typeof(DraftRow))!;
         Assert.Equal(["Id"], drafts.FindPrimaryKey()!.Properties.Select(property => property.Name));
