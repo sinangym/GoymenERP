@@ -275,11 +275,11 @@ test('S04-06 the preparer selects the real references and Product candidate, cre
     },
   ])
 
-  const productSelect = page.getByLabel('Ürün').first()
+  const productSelect = page.getByLabel('Ürün', { exact: true }).first()
   await expect(productSelect.locator(`option[value="${productId}"]`)).toHaveCount(1, { timeout: 15_000 })
   await productSelect.selectOption(productId)
-  await page.getByLabel('Miktar').first().fill('1')
-  const unitSelect = page.getByLabel('Sipariş birimi').first()
+  await page.getByLabel('Miktar', { exact: true }).first().fill('1')
+  const unitSelect = page.getByLabel('Sipariş birimi', { exact: true }).first()
   await expect(unitSelect.locator(`option[value="${productUnitId}"]`)).toHaveCount(1)
   await unitSelect.selectOption(productUnitId)
 
