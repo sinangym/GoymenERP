@@ -146,8 +146,8 @@ export async function fetchDraftDetail(
  * The Sales reference routes on main: `/sales/references/accounts` is a LIST (the Cari owner's
  * authorized party accounts, bound to `sales.drafts.create`); `/sales/references/currency` and
  * `/sales/references/product` VALIDATE one chosen id for a business date and offer no list. So only
- * the accounts options can be read from the real API in this slice; currencies and products have no
- * list source on main (see ./referenceSource.ts).
+ * the accounts options can be read from the real API. SALES-A2a adds the currency and contact lists;
+ * Product E1 adds the bounded product candidate search consumed by the create form.
  */
 export const SALES_REFERENCE_ACCOUNTS_PATH = '/sales/references/accounts'
 
@@ -210,6 +210,7 @@ export async function fetchAccountOptions(companyId: string, signal?: AbortSigna
  */
 export const SALES_REFERENCE_CURRENCIES_PATH = '/sales/references/currencies'
 export const SALES_REFERENCE_CONTACT_INFORMATION_PATH = '/sales/references/contact-information'
+export const SALES_REFERENCE_PRODUCTS_PATH = '/sales/references/products'
 
 /** One shape for every reference list read: the real answer, never a default. */
 export type ReferenceListOutcome<T> =
@@ -263,6 +264,90 @@ export function fetchContactInformationOptions(
     (body) => decodeContactInformationOptions(body, companyId, partyId, companyAccountId),
     signal,
   )
+}
+
+export type ProductOption = OrderDraftOptions['products'][number]
+
+export interface ProductOffer {
+  readonly items: readonly ProductOption[]
+  /** True means only the bounded search window was returned, not that more items are definitely usable. */
+  readonly searchWindowFull: boolean
+}
+
+export type ProductOptionsOutcome = ReferenceListOutcome<ProductOffer>
+
+const PRODUCT_CANDIDATE_LIMIT = 25
+const isOwnerVersion = (value: unknown): value is string =>
+  typeof value === 'string' && /^[1-9]\d*$/u.test(value)
+const isCandidateText = (value: unknown): value is string =>
+  typeof value === 'string' && value.trim() !== '' && value.length <= 400
+const hasExactMembers = (value: Record<string, unknown>, expected: readonly string[]) =>
+  Object.keys(value).length === expected.length && expected.every((name) => Object.hasOwn(value, name))
+
+function decodeProductOffer(value: unknown): ProductOffer | null {
+  if (typeof value !== 'object' || value === null) return null
+  const root = value as Record<string, unknown>
+  if (!hasExactMembers(root, ['items', 'searchWindowFull']) || !Array.isArray(root.items) || typeof root.searchWindowFull !== 'boolean') return null
+  const products: ProductOption[] = []
+  const productIds = new Set<string>()
+  for (const item of root.items) {
+    if (typeof item !== 'object' || item === null) return null
+    const product = item as Record<string, unknown>
+    if (!hasExactMembers(product, ['productId', 'productVersion', 'code', 'name', 'orderUnits'])) return null
+    if (!isReferenceId(product.productId) || productIds.has(product.productId) || !isOwnerVersion(product.productVersion)) return null
+    if (!isCandidateText(product.code) || !isCandidateText(product.name) || !Array.isArray(product.orderUnits)) return null
+    const units: ProductOption['orderUnits'][number][] = []
+    const unitIds = new Set<string>()
+    for (const itemUnit of product.orderUnits) {
+      if (typeof itemUnit !== 'object' || itemUnit === null) return null
+      const unit = itemUnit as Record<string, unknown>
+      if (!hasExactMembers(unit, ['unitId', 'code', 'profileId', 'profileVersion'])) return null
+      if (!isReferenceId(unit.unitId) || unitIds.has(unit.unitId) || !isCandidateText(unit.code)) return null
+      if (!isReferenceId(unit.profileId) || !isOwnerVersion(unit.profileVersion)) return null
+      unitIds.add(unit.unitId)
+      units.push({
+        unitId: unit.unitId,
+        code: unit.code,
+        label: unit.code,
+        profileId: unit.profileId,
+        profileVersion: unit.profileVersion,
+      })
+    }
+    productIds.add(product.productId)
+    products.push({
+      productId: product.productId,
+      productVersion: product.productVersion,
+      code: product.code,
+      name: product.name,
+      label: `${product.code} — ${product.name}`,
+      orderUnits: units,
+    })
+  }
+  return { items: products, searchWindowFull: root.searchWindowFull }
+}
+
+/** Product owner's bounded operational candidates for this company/date/search. Save-time exact validation remains separate. */
+export async function fetchProductOptions(
+  effectiveOn: string,
+  companyId: string,
+  signal?: AbortSignal,
+  q = '',
+): Promise<ProductOptionsOutcome> {
+  const params = new URLSearchParams({ effectiveOn, limit: String(PRODUCT_CANDIDATE_LIMIT) })
+  const search = q.trim()
+  if (search !== '') params.set('q', search)
+  const raw = await request(
+    `${SALES_REFERENCE_PRODUCTS_PATH}?${params.toString()}`,
+    { headers: headers(companyId), cache: 'no-store' },
+    signal,
+  )
+  if ('failure' in raw) return { type: 'network' }
+  if (raw.status !== 200) {
+    const problem = decodeProblem(raw.body, raw.status)
+    return { type: 'http', status: raw.status, code: problem?.code ?? null }
+  }
+  const data = decodeProductOffer(raw.body)
+  return data === null ? { type: 'malformed' } : { type: 'ready', data }
 }
 
 /* ── Create ───────────────────────────────────────────────────────────────── */

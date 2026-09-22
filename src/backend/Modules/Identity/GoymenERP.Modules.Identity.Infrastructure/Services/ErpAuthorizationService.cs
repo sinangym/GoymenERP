@@ -23,7 +23,7 @@ internal sealed class ErpAuthorizationService(
     ICurrentUser currentUser,
     IAuthorizationSnapshotReadObserver? snapshotReadObserver = null,
     IPermissionScopeReadObserver? permissionScopeReadObserver = null)
-    : IErpAuthorizationService, IErpAuthorityRevalidationService
+    : IErpAuthorizationService, IErpAuthorityRevalidationService, IActiveRoleCodeReader
 {
     private readonly Dictionary<(Guid UserId, Guid CompanyId, string Permission), PermissionScope>
         _requestCache = [];
@@ -268,6 +268,44 @@ internal sealed class ErpAuthorizationService(
         }
 
         return await ReadAndCachePermissionScopeAsync((userId, companyId, permission), cancellationToken);
+    }
+
+    /// <summary>
+    /// Reads active role membership without joining RolePermissions. This is deliberately not part
+    /// of the permission cache: persona fences need the assignment that stands now, including when
+    /// another role supplies the command permission or a persona role has lost one of its grants.
+    /// </summary>
+    public async Task<IReadOnlySet<string>> GetActiveRoleCodesAsync(
+        Guid companyId,
+        CancellationToken cancellationToken = default)
+    {
+        if (!currentUser.IsAuthenticated
+            || companyId == Guid.Empty
+            || !currentUser.CanAccessCompany(companyId)
+            || !Guid.TryParse(currentUser.UserId, out var userId))
+        {
+            return new HashSet<string>(StringComparer.Ordinal);
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var roleCodes = await dbContext.RoleAssignments
+            .AsNoTracking()
+            .Where(assignment => assignment.UserId == userId
+                && assignment.CompanyId == companyId
+                && assignment.Status == RoleAssignmentStatus.Active
+                && assignment.ValidFromUtc <= now
+                && (!assignment.ValidUntilUtc.HasValue || assignment.ValidUntilUtc > now)
+                && assignment.Scopes.Any(scope => scope.CompanyId == companyId)
+                && dbContext.Users.Any(user => user.Id == userId && user.IsActive))
+            .Join(
+                dbContext.Roles.AsNoTracking().Where(role => role.IsActive),
+                assignment => assignment.RoleId,
+                role => role.Id,
+                (_, role) => role.Code)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        return roleCodes.ToHashSet(StringComparer.Ordinal);
     }
 
     private async Task<PermissionScope> ReadAndCachePermissionScopeAsync(

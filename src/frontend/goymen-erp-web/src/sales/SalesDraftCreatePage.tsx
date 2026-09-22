@@ -24,7 +24,7 @@
 
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router'
-import { createDraft, type AccountOption } from './api'
+import { createDraft, type AccountOption, type ProductOffer, type ProductOption } from './api'
 import { SALES_DRAFT_PATH, SALES_PROBLEM_CODE } from './contract'
 import {
   abandon,
@@ -69,6 +69,7 @@ import {
   currencyOptionsOf,
   type CurrencyReadState,
   type MissingReference,
+  type ProductReadState,
   type ReferenceReadState,
 } from './referenceSource'
 import { SALES_CAPABILITY, SALES_ROUTE, salesDetailPath } from './capabilities'
@@ -143,11 +144,41 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
   const [accountSearchInput, setAccountSearchInput] = useState('')
   const [accountSearch, setAccountSearch] = useState('')
   const [chosenAccount, setChosenAccount] = useState<AccountOption | null>(null)
-  const source = useOptions(companyId, values.businessDate, accountSearch)
+  const [productSearchInput, setProductSearchInput] = useState('')
+  const [productSearch, setProductSearch] = useState('')
+  const [chosenProducts, setChosenProducts] = useState<readonly { readonly effectiveOn: string; readonly option: ProductOption }[]>([])
+  const source = useOptions(companyId, values.businessDate, accountSearch, productSearch)
   const useContactInformation = useContext(SalesContactInformationSourceContext)
   const delivery = useContactInformation(companyId, values.partyId, values.companyAccountId)
-  /** The full options (lines included) — only when every owner offers a list; never on main until E1. */
-  const options: OrderDraftOptions | null = source.status === 'ready' ? source.options : null
+  /** The full options (lines included) — only when every owner has answered for this company/date/search. */
+  const sourceOptions: OrderDraftOptions | null = source.status === 'ready' ? source.options : null
+  const productOffer: ProductOffer | null =
+    source.status === 'ready'
+      ? (source.productOffer ?? { items: source.options.products, searchWindowFull: false })
+      : source.header?.products?.status === 'ready'
+        ? source.header.products.data
+        : null
+  const productState: ProductReadState | null =
+    source.status === 'ready'
+      ? { status: 'ready', data: productOffer as ProductOffer }
+      : (source.header?.products ?? null)
+  const options = useMemo<OrderDraftOptions | null>(() => {
+    if (sourceOptions === null) return null
+    const retained = chosenProducts.filter(
+      (selected) =>
+        selected.effectiveOn === values.businessDate &&
+        values.lines.some((line) => line.productId === selected.option.productId),
+    )
+    // Prefer the explicit selection snapshot even when a fresh result window contains the same id at
+    // another version. The effect below then invalidates it; no intervening submit can silently send v8.
+    const products = sourceOptions.products.map(
+      (product) => retained.find((selected) => selected.option.productId === product.productId)?.option ?? product,
+    )
+    for (const selected of retained) {
+      if (!products.some((product) => product.productId === selected.option.productId)) products.push(selected.option)
+    }
+    return { ...sourceOptions, products }
+  }, [chosenProducts, sourceOptions, values.businessDate, values.lines])
   const pageAccounts = source.status === 'ready' ? source.options.accounts : (source.header?.accounts ?? null)
   const accounts = useMemo<readonly AccountOption[] | null>(() => {
     if (pageAccounts === null) return null
@@ -173,6 +204,48 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
   const currenciesListed = source.status === 'ready' || currencyState?.status === 'ready'
   const deliveryOptions: DeliveryReferenceOptions | null =
     delivery.status === 'ready' ? { addresses: delivery.data.addresses, contacts: delivery.data.contacts } : null
+
+  // Product candidates are effective-date facts. A date change clears the old product/unit selections rather than
+  // carrying a candidate into a date for which the owner never offered it.
+  const productDateRef = useRef(values.businessDate)
+  useEffect(() => {
+    if (productDateRef.current === values.businessDate) return
+    productDateRef.current = values.businessDate
+    setProductSearchInput('')
+    setProductSearch('')
+    setChosenProducts([])
+    setValues((current) => ({
+      ...current,
+      lines: current.lines.map((line) => ({ ...line, productId: '', orderUnitId: '' })),
+    }))
+  }, [values.businessDate])
+
+  // A later candidate answer may carry the same product identity at another owner version. Never
+  // rewrite the selected snapshot silently: clear product + unit and require an explicit reselect.
+  useEffect(() => {
+    if (sourceOptions === null) return
+    const stale = chosenProducts.filter((selected) => {
+      if (selected.effectiveOn !== values.businessDate) return false
+      const fresh = sourceOptions.products.find((product) => product.productId === selected.option.productId)
+      return fresh !== undefined && fresh.productVersion !== selected.option.productVersion
+    })
+    if (stale.length === 0) return
+    const staleIds = new Set(stale.map((selected) => selected.option.productId))
+    const staleLines = values.lines.filter((line) => staleIds.has(line.productId))
+    setChosenProducts((current) => current.filter((selected) => !staleIds.has(selected.option.productId)))
+    setValues((current) => ({
+      ...current,
+      lines: current.lines.map((line) =>
+        staleIds.has(line.productId) ? { ...line, productId: '', orderUnitId: '' } : line,
+      ),
+    }))
+    setErrors((current) => ({
+      ...current,
+      ...Object.fromEntries(
+        staleLines.map((line) => [lineFieldId(line.lineId, 'productId'), T.validation.productNotOffered]),
+      ),
+    }))
+  }, [chosenProducts, sourceOptions, values.businessDate, values.lines])
 
   // A chosen currency the real list (for this date) no longer offers is cleared and said so: the form
   // never sends a reference nobody offered, and never keeps one silently.
@@ -513,6 +586,57 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
                 />
               )}
 
+              <label htmlFor="sales-product-search">{T.references.productSearch}</label>
+              <div className={styles.actions}>
+                <input
+                  id="sales-product-search"
+                  type="search"
+                  maxLength={200}
+                  value={productSearchInput}
+                  disabled={values.businessDate === ''}
+                  onChange={(event) => setProductSearchInput(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault()
+                      setProductSearch(productSearchInput)
+                    }
+                  }}
+                  aria-describedby="sales-product-search-hint"
+                  data-testid="sales-product-search"
+                />
+                <button
+                  type="button"
+                  disabled={values.businessDate === ''}
+                  onClick={() => setProductSearch(productSearchInput)}
+                  data-testid="sales-product-search-button"
+                >
+                  {T.references.productSearchSubmit}
+                </button>
+                <span id="sales-product-search-hint" className={styles.muted}>
+                  {T.references.productSearchHint}
+                </span>
+              </div>
+              {productState === null ? null : (
+                <ReadStatus
+                  testId="sales-product-status"
+                  state={productState}
+                  idle={T.references.productIdle}
+                  loading={T.references.productLoading}
+                  empty={
+                    productState.status === 'ready' && productState.data.items.length === 0
+                      ? T.references.productEmpty
+                      : null
+                  }
+                  unavailable={T.references.productUnavailable}
+                  retryTestId="sales-product-retry"
+                />
+              )}
+              {productOffer?.searchWindowFull ? (
+                <p className={styles.muted} style={{ gridColumn: 2 }} data-testid="sales-product-window-full">
+                  {T.references.productWindowFull}
+                </p>
+              ) : null}
+
               <label htmlFor={ORDER_FIELD.requestedDeliveryDate}>{T.field.requestedDeliveryDate}</label>
               <input
                 type="date"
@@ -592,7 +716,7 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
           </fieldset>
 
           {options === null ? (
-            // E1: the header is real; the lines and the submit wait for the product list. Said plainly.
+            // The header remains usable; lines and submit wait for the current Product owner read. Said plainly.
             <div role="status" className={styles.notice} data-tone="unknown" data-testid="sales-lines-withheld">
               <p>{T.references.linesWithheld}</p>
               {missing !== null && missing.length > 0 ? (
@@ -612,6 +736,16 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
                   fieldProps={fieldProps}
                   fieldError={fieldError}
                   onChange={setValues}
+                  onProductChange={(productId) => {
+                    const candidate = options.products.find((product) => product.productId === productId)
+                    if (candidate !== undefined) {
+                      setChosenProducts((current) => [
+                        ...current.filter((entry) => entry.option.productId !== candidate.productId),
+                        { effectiveOn: values.businessDate, option: candidate },
+                      ])
+                    }
+                    setValues((current) => setLineProduct(current, line.lineId, productId))
+                  }}
                 />
               ))}
               <button
@@ -708,6 +842,7 @@ function LineEditor({
   fieldProps,
   fieldError,
   onChange,
+  onProductChange,
 }: {
   readonly line: LineValues
   readonly index: number
@@ -715,6 +850,7 @@ function LineEditor({
   readonly fieldProps: (id: string) => Record<string, unknown>
   readonly fieldError: (id: string) => React.ReactNode
   readonly onChange: React.Dispatch<React.SetStateAction<OrderDraftFormValues>>
+  readonly onProductChange: (productId: string) => void
 }) {
   const product = options.products.find((p) => p.productId === line.productId)
   const hint = linePlanHint(line)
@@ -727,7 +863,7 @@ function LineEditor({
         <select
           {...fieldProps(id('productId'))}
           value={line.productId}
-          onChange={(event) => onChange((v) => setLineProduct(v, line.lineId, event.target.value))}
+          onChange={(event) => onProductChange(event.target.value)}
         >
           <option value="">{T.choose}</option>
           {options.products.map((p) => (

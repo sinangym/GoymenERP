@@ -14,15 +14,15 @@
  *     the REAL address and contact ids with the owner's versions and the REAL approved currency — exactly what a
  *     real create would store. It is only REOPENED here, never mutated; the approval journey runs on draft 1.
  *
- * Scope, stated honestly: the create WITH references is NOT proven in the browser. The product picker (E1,
- * ÜRÜN's product list read + grant) does not exist yet, so the S-03 form withholds its lines and the save;
- * the browser proves the REAL options of the three header selects and the reopen of the stored references.
- * The create with references is proven on real SQL through the host
- * (SalesDraftApiSqlServerRelationalAcceptanceTests). Nothing here shows or sends a price.
+ * E1 adds one isolated Product-owned sales candidate behind the existing complete fixture gate. The browser
+ * searches it through the real Product-backed Sales reference endpoint and creates a draft through the real
+ * Sales command. The Product fixture is not normal-host data and grants no permission. Nothing here shows or
+ * sends a price.
  *
  * Runs after the journey (Playwright runs files alphabetically: `s04-approval-journey` < `s04-references`):
- *   S04-06 the preparer opens the new-draft screen, picks the REAL customer and sees the REAL currency, delivery
- *          address and contact options (the browser's own 200 answers of the real reference reads); no save
+ *   S04-06 the preparer opens the new-draft screen, picks the REAL customer, currency, delivery address and contact,
+ *          searches the isolated Product-owned candidate, creates one draft and reopens that exact draft; the same
+ *          otherwise-valid payload with the preceding Product version is a replayable 409 and creates no business row
  *   S04-07 the preparer reopens draft 2: the delivery block shows the REAL address text, contact name and
  *          currency code; the reader sees the same by URL and no command
  */
@@ -40,10 +40,16 @@ const {
   realCompanyAccountId,
   deliveryAddressId,
   deliveryContactId,
+  productId,
+  productVersion,
+  productUnitId,
+  productUnitProfileId,
+  productUnitProfileVersion,
+  productCode,
+  productName,
 } = env.seed
-// The seed exports GUIDs and actor ids only (validate_browser_acceptance.seed_export). The texts are the seed's
-// deterministic labels (S04BrowserSeed: the address line, the contact's display name, the approved TRY code), which
-// the seed verified the real Sales reference reads answer before the suite starts.
+// Address/contact/currency labels are deterministic seed facts. Product identity, owner versions and labels are
+// exported only after the seed has read the real Product-backed Sales endpoint and matched the exact fixture tuple.
 const deliveryAddressText = 'SENTETIK browser-suite:s04 Sanayi Cad. 1'
 const deliveryContactName = 'SENTETIK browser-suite:s04 Ayşe Yükleme'
 const currencyCode = 'TRY'
@@ -61,7 +67,9 @@ const DRAFTS_PATH = '/api/v1/sales/drafts'
 const CONTACT_INFORMATION_PATH = '/api/v1/sales/references/contact-information'
 const CURRENCIES_PATH = '/api/v1/sales/references/currencies'
 const ACCOUNTS_PATH = '/api/v1/sales/references/accounts'
+const PRODUCTS_PATH = '/api/v1/sales/references/products'
 const CREATE_ROUTE = '/satis/siparisler/yeni'
+const LIST_ROUTE = '/satis/siparisler'
 const DETAIL_ROUTE = `/satis/siparisler/${deliveryDraftId}`
 const DEVELOPMENT_USER_HEADER = 'X-Development-User'
 
@@ -73,6 +81,7 @@ interface OwnerReference {
 interface DeliveryDraftReading {
   readonly draft: {
     readonly id: string
+    readonly version: string
     readonly partyId: string
     readonly companyAccountId: string
     readonly currencyId: string
@@ -80,6 +89,54 @@ interface DeliveryDraftReading {
   }
   readonly deliveryAddress: OwnerReference | null
   readonly contact: OwnerReference | null
+}
+
+interface CreatedDraftReading extends DeliveryDraftReading {
+  readonly lines: readonly {
+    readonly productId: string
+    readonly productVersion: string
+    readonly productCode: string
+    readonly productName: string
+    readonly orderUnitId: string
+  }[]
+}
+
+interface DraftMutationReading {
+  readonly detail: CreatedDraftReading
+  readonly isReplay: boolean
+}
+
+interface ProductReferenceReading {
+  readonly items: readonly {
+    readonly productId: string
+    readonly productVersion: string
+    readonly code: string
+    readonly name: string
+    readonly orderUnits: readonly {
+      readonly unitId: string
+      readonly profileId: string
+      readonly profileVersion: string
+    }[]
+  }[]
+}
+
+interface SalesDraftCreateLinePayload {
+  readonly productId: string
+  readonly expectedProductVersion: string
+  readonly orderUnitId: string
+  readonly [key: string]: unknown
+}
+
+interface SalesDraftCreatePayload {
+  readonly lines: readonly SalesDraftCreateLinePayload[]
+  readonly [key: string]: unknown
+}
+
+interface ProblemReading {
+  readonly status: number
+  readonly code: string
+  readonly correlationId: string
+  readonly errors: readonly { readonly field: string; readonly code: string }[]
 }
 
 async function signInAs(page: Page, actor: string): Promise<void> {
@@ -95,6 +152,19 @@ async function readDeliveryDraft(page: Page, actor: string): Promise<DeliveryDra
   const reading = (await response.json()) as DeliveryDraftReading
   expect(reading.draft.id).toBe(deliveryDraftId)
   return reading
+}
+
+async function readPreparingDraftIds(page: Page): Promise<readonly string[]> {
+  const response = await page.request.get(`${env.apiBaseUrl}${DRAFTS_PATH}?approvalState=Preparing`, {
+    headers: { [DEVELOPMENT_USER_HEADER]: preparerActor, 'X-Company-Id': companyId },
+  })
+  expect(response.status(), 'the typed Sales list reads the business rows').toBe(200)
+  const reading = (await response.json()) as {
+    readonly items: readonly { readonly id: string }[]
+    readonly nextCursor?: string | null
+  }
+  expect(reading.nextCursor ?? null, 'the measured list is complete').toBeNull()
+  return reading.items.map((item) => item.id).sort()
 }
 
 /** Collects the browser's own answers on one GET reference route. */
@@ -146,10 +216,11 @@ async function expectDeliveryBlockAsReader(page: Page): Promise<void> {
   )
 }
 
-test('S04-06 the preparer sees the REAL currency, delivery address and contact options on the new-draft screen; no save (E1)', async ({ page }) => {
+test('S04-06 the preparer creates and reopens one real Product draft; a stale Product version is a replayed 409 without another business row', async ({ page }) => {
   await signInAs(page, preparerActor)
   const currencyReads = watchRead(page, CURRENCIES_PATH)
   const contactReads = watchRead(page, CONTACT_INFORMATION_PATH)
+  const productReads = watchRead(page, PRODUCTS_PATH)
 
   await page.goto(CREATE_ROUTE)
   await expect(page.getByRole('heading', { level: 1, name: 'Yeni satış siparişi taslağı' })).toBeVisible({ timeout: 30_000 })
@@ -209,15 +280,140 @@ test('S04-06 the preparer sees the REAL currency, delivery address and contact o
   expect(contactAnswer.addresses.find((address) => address.id === deliveryAddressId)?.text).toContain(deliveryAddressText)
   expect(contactAnswer.contacts.find((contact) => contact.id === deliveryContactId)?.displayName).toBe(deliveryContactName)
 
-  // E1: no product list on main — the lines and the save are withheld with the honest notice; nothing is sent.
-  await expect(page.getByTestId('sales-references-missing')).toBeVisible()
-  await expect(saveButton(page)).toHaveCount(0)
-  const drafts = await page.request.get(`${env.apiBaseUrl}${DRAFTS_PATH}?approvalState=Preparing`, {
+  // E1: search and select the Product-owned disposable candidate through the real bounded endpoint.
+  await page.getByLabel('Ürün ara').fill(productCode)
+  const searchedPromise = page.waitForResponse((response) => {
+    const url = new URL(response.url())
+    return response.request().method() === 'GET'
+      && url.pathname === PRODUCTS_PATH
+      && url.searchParams.get('q') === productCode
+      && url.searchParams.get('effectiveOn') === businessDate
+  })
+  await page.getByTestId('sales-product-search-button').click()
+  const searched = await searchedPromise
+  expect(searched.status()).toBe(200)
+  const productAnswer = (await searched.json()) as ProductReferenceReading
+  expect(productAnswer.items).toEqual([
+    {
+      productId,
+      productVersion,
+      code: productCode,
+      name: productName,
+      orderUnits: [
+        expect.objectContaining({
+          unitId: productUnitId,
+          profileId: productUnitProfileId,
+          profileVersion: productUnitProfileVersion,
+        }),
+      ],
+    },
+  ])
+
+  const productSelect = page.getByLabel('Ürün', { exact: true }).first()
+  await expect(productSelect.locator(`option[value="${productId}"]`)).toHaveCount(1, { timeout: 15_000 })
+  await productSelect.selectOption(productId)
+  await page.getByLabel('Miktar', { exact: true }).first().fill('1')
+  const unitSelect = page.getByLabel('Sipariş birimi', { exact: true }).first()
+  await expect(unitSelect.locator(`option[value="${productUnitId}"]`)).toHaveCount(1)
+  await unitSelect.selectOption(productUnitId)
+
+  expect(productReads).toContain(searched)
+
+  const createdResponsePromise = page.waitForResponse((response) =>
+    response.request().method() === 'POST' && new URL(response.url()).pathname === DRAFTS_PATH)
+  await saveButton(page).click()
+  const createdResponse = await createdResponsePromise
+  expect(createdResponse.status()).toBe(201)
+  const validPayload = createdResponse.request().postDataJSON() as SalesDraftCreatePayload
+  expect(validPayload.lines).toHaveLength(1)
+  expect(validPayload.lines[0]).toMatchObject({ productId, expectedProductVersion: productVersion, orderUnitId: productUnitId })
+  const created = (await createdResponse.json()) as DraftMutationReading
+  expect(created.isReplay).toBe(false)
+  expect(created.detail.lines).toHaveLength(1)
+  expect(created.detail.lines[0]).toMatchObject({
+    productId,
+    productVersion,
+    productCode,
+    productName,
+    orderUnitId: productUnitId,
+  })
+  const createdId = created.detail.draft.id
+  await expect(page.getByRole('heading', { level: 1, name: 'Sipariş taslağı kaydedildi.' })).toBeVisible()
+
+  // Close the terminal screen, then reopen the exact server-created record in the next operation.
+  await page.getByRole('link', { name: 'Sipariş taslakları', exact: true }).click()
+  await expect(page).toHaveURL(new RegExp(`${LIST_ROUTE}$`))
+  await page.goto(`${LIST_ROUTE}/${createdId}`)
+  await expect(page.getByRole('heading', { level: 3, name: `1. ${productCode} — ${productName}` })).toBeVisible({ timeout: 30_000 })
+
+  const storedResponse = await page.request.get(`${env.apiBaseUrl}${DRAFTS_PATH}/${createdId}`, {
     headers: { [DEVELOPMENT_USER_HEADER]: preparerActor, 'X-Company-Id': companyId },
   })
-  expect(drafts.status()).toBe(200)
-  const listed = (await drafts.json()) as { readonly items: readonly { readonly id: string }[] }
-  expect(listed.items.filter((item) => item.id !== deliveryDraftId).length, 'the screen created nothing').toBe(0)
+  expect(storedResponse.status()).toBe(200)
+  const stored = (await storedResponse.json()) as CreatedDraftReading
+  expect(stored.draft.id).toBe(createdId)
+  expect(stored.lines).toHaveLength(1)
+  expect(stored.lines[0]).toMatchObject({
+    productId,
+    productVersion,
+    productCode,
+    productName,
+    orderUnitId: productUnitId,
+  })
+
+  // The exact valid browser payload above reaches Product again with only its expected version moved back by one.
+  // A terminal refusal row is allowed and expected; the assertion is that no Sales draft or business line is added.
+  const currentProductVersion = BigInt(productVersion)
+  if (currentProductVersion <= 1n) throw new Error('the s04 Product fixture has no preceding positive version')
+  const staleProductVersion = (currentProductVersion - 1n).toString()
+  const stalePayload: SalesDraftCreatePayload = {
+    ...validPayload,
+    lines: validPayload.lines.map((line, index) => index === 0
+      ? { ...line, expectedProductVersion: staleProductVersion }
+      : line),
+  }
+  const businessIdsBefore = await readPreparingDraftIds(page)
+  const staleKey = `s04-e1-stale-${createdId}`
+  const firstCorrelation = `s04-e1-stale-first-${createdId}`
+  const staleHeaders = {
+    [DEVELOPMENT_USER_HEADER]: preparerActor,
+    'X-Company-Id': companyId,
+    'Content-Type': 'application/json',
+    'Idempotency-Key': staleKey,
+    'X-Correlation-Id': firstCorrelation,
+  }
+
+  const staleResponse = await page.request.post(`${env.apiBaseUrl}${DRAFTS_PATH}`, {
+    headers: staleHeaders,
+    data: stalePayload,
+  })
+  expect(staleResponse.status()).toBe(409)
+  const staleProblem = (await staleResponse.json()) as ProblemReading
+  expect(staleProblem.code).toBe('version_conflict')
+  expect(staleProblem.errors).toEqual(expect.arrayContaining([
+    expect.objectContaining({ field: 'lines[0].expectedProductVersion', code: 'version_conflict' }),
+  ]))
+
+  const retryCorrelation = `s04-e1-stale-retry-${createdId}`
+  const replayResponse = await page.request.post(`${env.apiBaseUrl}${DRAFTS_PATH}`, {
+    headers: { ...staleHeaders, 'X-Correlation-Id': retryCorrelation },
+    data: stalePayload,
+  })
+  expect(replayResponse.status()).toBe(409)
+  const replayProblem = (await replayResponse.json()) as ProblemReading
+  expect(replayProblem).toMatchObject({ status: staleProblem.status, code: staleProblem.code, errors: staleProblem.errors })
+  expect(replayProblem.correlationId).toBe(retryCorrelation)
+  expect(replayResponse.headers()['idempotency-replayed']).toBe('true')
+  expect(replayResponse.headers()['idempotency-original-correlation-id']).toBe(firstCorrelation)
+
+  expect(await readPreparingDraftIds(page), 'the stale request and its replay add no Sales draft').toEqual(businessIdsBefore)
+  const businessAfterResponse = await page.request.get(`${env.apiBaseUrl}${DRAFTS_PATH}/${createdId}`, {
+    headers: { [DEVELOPMENT_USER_HEADER]: preparerActor, 'X-Company-Id': companyId },
+  })
+  expect(businessAfterResponse.status()).toBe(200)
+  const businessAfter = (await businessAfterResponse.json()) as CreatedDraftReading
+  expect(businessAfter.draft).toEqual(stored.draft)
+  expect(businessAfter.lines, 'the accepted draft business line is unchanged').toEqual(stored.lines)
 })
 
 test('S04-07 the preparer reopens draft 2 and sees the REAL address, contact and currency; the reader sees the same and no command', async ({ page }) => {

@@ -22,6 +22,7 @@
     <Compile Include="../../tools/GoymenERP.CariAcceptance006/ProductSharedStateSnapshot.cs" Link="ProductAcceptance/ProductSharedStateSnapshot.cs" />
     <!-- #331: the browser-suite runner's host, compiled here so its real startup is tested (BrowserSuiteHostEnvelopeTests). -->
     <Compile Include="../GoymenERP.BrowserSuiteFixtureTool/BrowserSuiteHost.cs" Link="BrowserSuiteRunner/BrowserSuiteHost.cs" />
+    <Compile Include="../GoymenERP.BrowserSuiteFixtureTool/BrowserSuiteSeedOutputValidator.cs" Link="BrowserSuiteRunner/BrowserSuiteSeedOutputValidator.cs" />
   </ItemGroup>
 
   <ItemGroup>

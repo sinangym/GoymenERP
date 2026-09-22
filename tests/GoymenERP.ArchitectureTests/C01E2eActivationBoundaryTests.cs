@@ -85,6 +85,13 @@ public sealed class C01E2eActivationBoundaryTests
                 + "ProductCodeGroupFixtureStore.cs",
             ],
             BackendFilesContaining("AddProductCodeGroupFixtureStore"));
+        Assert.Equal(
+            [
+                "src/backend/GoymenERP.Api/Shell/C01E2eFixtureWriterActivation.cs",
+                "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/Fixtures/"
+                + "ProductSalesCandidateFixtureStore.cs",
+            ],
+            BackendFilesContaining("AddProductSalesCandidateFixtureStore"));
         // s04: Sales's draft port, the same shape. SalesDbContext has no second save path: the store saves
         // through the context's public SaveChangesAsync under its own write guards.
         Assert.Equal(
@@ -131,6 +138,24 @@ public sealed class C01E2eActivationBoundaryTests
             ["src/backend/GoymenERP.Api/Shell/C01E2eFixtureWriterActivation.cs"],
             BackendFilesContaining("AddProductCodeGroupFixtureStore(")
                 .Where(path => !path.EndsWith("ProductCodeGroupFixtureStore.cs", StringComparison.Ordinal))
+                .ToArray());
+    }
+
+    [Fact]
+    public void ProductSalesCandidateFixtureSave_HasOneCallerBehindTheGatedActivation()
+    {
+        Assert.Equal(
+            [
+                "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/Fixtures/"
+                + "ProductSalesCandidateFixtureStore.cs",
+                "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/Persistence/"
+                + "ProductDbContext.cs",
+            ],
+            BackendFilesContaining("AddSalesCandidateFixtureAsync"));
+        Assert.Equal(
+            ["src/backend/GoymenERP.Api/Shell/C01E2eFixtureWriterActivation.cs"],
+            BackendFilesContaining("AddProductSalesCandidateFixtureStore(")
+                .Where(path => !path.EndsWith("ProductSalesCandidateFixtureStore.cs", StringComparison.Ordinal))
                 .ToArray());
     }
 

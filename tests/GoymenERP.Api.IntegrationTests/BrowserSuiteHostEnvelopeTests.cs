@@ -39,6 +39,44 @@ public sealed class BrowserSuiteHostEnvelopeTests
     };
 
     [Fact]
+    public void S04_output_validation_accepts_only_its_closed_product_scalar_contract()
+    {
+        BrowserSuiteSeedOutputValidator.Validate(
+            "s04",
+            new Dictionary<string, string>
+            {
+                ["productVersion"] = "2",
+                ["productUnitProfileVersion"] = "1",
+                ["productCode"] = "SYNS04-1",
+                ["productName"] = "SENTETIK browser-suite:s04 sales candidate",
+            },
+            new HashSet<string>(StringComparer.Ordinal));
+
+        Assert.Throws<InvalidOperationException>(() => BrowserSuiteSeedOutputValidator.Validate(
+            "s03",
+            new Dictionary<string, string> { ["productVersion"] = "2" },
+            new HashSet<string>(StringComparer.Ordinal)));
+    }
+
+    [Theory]
+    [InlineData("productVersion", "0")]
+    [InlineData("productVersion", "02")]
+    [InlineData("productUnitProfileVersion", "1.5")]
+    [InlineData("productCode", "SYNS04-0")]
+    [InlineData("productCode", "OTHER-1")]
+    [InlineData("productName", "SENTETIK browser-suite:s04 sales candidate ")]
+    [InlineData("unexpected", "2")]
+    public void S04_output_validation_rejects_values_outside_its_closed_product_scalar_contract(
+        string key,
+        string value)
+    {
+        Assert.Throws<InvalidOperationException>(() => BrowserSuiteSeedOutputValidator.Validate(
+            "s04",
+            new Dictionary<string, string> { [key] = value },
+            new HashSet<string>(StringComparer.Ordinal)));
+    }
+
+    [Fact]
     public void A_normal_application_host_does_not_register_product_technical_fixture_services()
     {
         WithoutProcessEnvelope(() =>
@@ -52,6 +90,8 @@ public sealed class BrowserSuiteHostEnvelopeTests
             var registered = host.Services.GetRequiredService<IServiceProviderIsService>();
             Assert.False(registered.IsService(typeof(C01E2eProductTechnicalCardFixtureWriter)));
             Assert.False(registered.IsService(typeof(IProductTechnicalCardFixtureStore)));
+            Assert.False(registered.IsService(typeof(C01E2eProductSalesCandidateFixtureWriter)));
+            Assert.False(registered.IsService(typeof(IProductSalesCandidateFixtureStore)));
         });
     }
 
@@ -124,6 +164,8 @@ public sealed class BrowserSuiteHostEnvelopeTests
         var registered = host.Services.GetRequiredService<IServiceProviderIsService>();
         Assert.True(registered.IsService(typeof(C01E2eProductMasterAssignmentFixtureWriter)));
         Assert.True(registered.IsService(typeof(C01E2eProductCodeGroupFixtureWriter)));
+        Assert.True(registered.IsService(typeof(C01E2eProductSalesCandidateFixtureWriter)));
+        Assert.True(registered.IsService(typeof(IProductSalesCandidateFixtureStore)));
     }
 
     // The normal-profile container's identity keys (infra/docker-compose.browser-normal.yml); Testing

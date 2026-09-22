@@ -26,11 +26,13 @@ public sealed class IdentityAuthorizationCompositionTests
         using var request = provider.CreateScope();
         var cached = request.ServiceProvider.GetRequiredService<IErpAuthorizationService>();
         var fresh = request.ServiceProvider.GetRequiredService<IErpAuthorityRevalidationService>();
+        var activeRoles = request.ServiceProvider.GetRequiredService<IActiveRoleCodeReader>();
 
         Assert.Same(cached, fresh);
         // Resolving either port twice must not create a second view within the request.
         Assert.Same(cached, request.ServiceProvider.GetRequiredService<IErpAuthorizationService>());
         Assert.Same(fresh, request.ServiceProvider.GetRequiredService<IErpAuthorityRevalidationService>());
+        Assert.Same(cached, activeRoles);
     }
 
     [Fact]
@@ -48,6 +50,9 @@ public sealed class IdentityAuthorizationCompositionTests
         Assert.NotSame(
             first.ServiceProvider.GetRequiredService<IErpAuthorityRevalidationService>(),
             second.ServiceProvider.GetRequiredService<IErpAuthorityRevalidationService>());
+        Assert.NotSame(
+            first.ServiceProvider.GetRequiredService<IActiveRoleCodeReader>(),
+            second.ServiceProvider.GetRequiredService<IActiveRoleCodeReader>());
     }
 
     private static ServiceProvider BuildProvider()

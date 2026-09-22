@@ -41,7 +41,7 @@ internal sealed class DraftRow : ISalesTenantRow
     public long Version { get; set; }
     public byte[] RowVersion { get; set; } = [];
 
-    /// <summary>SALES-A1: 1 Preparing, 2 PendingApproval, 3 Approved, 4 Rejected (<c>InternalApprovalState</c>); the facts follow the state (check constraint).</summary>
+    /// <summary>SALES-A1: 1 Preparing, 2 PendingApproval, 3 Approved, 4 Rejected; D2: 5 Withdrawn (<c>InternalApprovalState</c>); the facts follow the state (check constraint).</summary>
     public int ApprovalState { get; set; }
     public string? SubmittedBy { get; set; }
     public DateTimeOffset? SubmittedAtUtc { get; set; }

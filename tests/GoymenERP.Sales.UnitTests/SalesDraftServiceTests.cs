@@ -44,7 +44,6 @@ public sealed class SalesDraftServiceTests
     private const string PricePermission = ErpPermissions.CounterpartyAccountsCreate;
     /// <summary>K3 P2: the separate price READ name — a known stand-in, distinct from every other binding.</summary>
     private const string PriceReadPermission = ErpPermissions.CounterpartyAccountsStatusUpdate;
-
     [Fact]
     public async Task A_valid_request_is_stored_once_and_answered_as_the_wire_detail()
     {
@@ -100,6 +99,7 @@ public sealed class SalesDraftServiceTests
         Assert.Equal((409, SalesDraftProblemCodesV1.VersionConflict, false), (refusal.Status, refusal.Code, refusal.IsReplay));
         Assert.Equal(("lines[0].productId", ProductApiV1.VersionConflict), (refusal.Errors[0].Field, refusal.Errors[0].Code));
         Assert.Single(world.Store.Refusals);
+        Assert.Null(world.Store.Refusals[0].DraftId);
         world.ResetOwnerCalls();
 
         var again = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CreateDraftAsync(request, Metadata("k-1", correlation: "retry")));
@@ -429,6 +429,205 @@ public sealed class SalesDraftServiceTests
 
         var gap = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().GetDraftDetailAsync(created.Draft.Id));
         Assert.Equal((503, SalesDraftProblemCodesV1.PermissionUnregistered), (gap.Status, gap.Code));
+    }
+
+    /// <summary>D2: a SalesSupport creator, including a dual-role creator, cannot approve or reject; another actor and a non-SalesSupport creator retain main behavior.</summary>
+    [Theory]
+    [InlineData("approve")]
+    [InlineData("reject")]
+    public async Task A_sales_support_creator_cannot_decide_and_other_personas_keep_main_behavior(string decision)
+    {
+        var world = new World();
+        world.ActiveRoleCodes.Codes.UnionWith([ErpPersonaRoleCodes.SalesSupport, "SALES_MANAGER"]);
+        var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-1"))).Detail;
+        await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("k-submit"));
+        var transitionsBefore = world.Store.Transitions.Count;
+
+        Task<SalesOrderDraftResponse> Decide() => decision == "approve"
+            ? world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("k-self"))
+            : world.Service().RejectDraftAsync(created.Draft.Id, Command("3", "SENTETIK"), Metadata("k-self"));
+
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(Decide);
+        Assert.Equal((403, "forbidden"), (refused.Status, refused.Code));
+        Assert.Equal((transitionsBefore, 0), (world.Store.Transitions.Count, world.Store.Refusals.Count));
+        var pending = await world.Service().GetDraftDetailAsync(created.Draft.Id);
+        Assert.Equal(("PendingApproval", true, true),
+            (pending.Draft.ApprovalState, pending.IsOwnDraft, pending.IsOwnDecisionRestricted));
+
+        world.User.Id = "synthetic-manager";
+        world.ActiveRoleCodes.Codes.Clear();
+        var decided = await Decide();
+        Assert.Equal(decision == "approve" ? "Approved" : "Rejected", decided.Detail.Draft.ApprovalState);
+        Assert.Equal("synthetic-manager", decided.Detail.Approval.DecidedBy);
+
+        world.User.Id = Actor;
+        var second = (await world.Service().CreateDraftAsync(Request(), Metadata("k-2"))).Detail;
+        await world.Service().SubmitDraftAsync(second.Draft.Id, Command("2"), Metadata("k-submit-2"));
+        var own = await world.Service().ApproveDraftAsync(second.Draft.Id, Command("3"), Metadata("k-own"));
+        Assert.Equal(("Approved", Actor, Actor, true, false),
+            (own.Detail.Draft.ApprovalState, own.Detail.Approval.SubmittedBy, own.Detail.Approval.DecidedBy,
+                own.Detail.IsOwnDraft, own.Detail.IsOwnDecisionRestricted));
+    }
+
+    /// <summary>
+    /// D2md1: creator identity alone is not an own-decision ban. With no active SalesSupport persona,
+    /// the creator keeps the existing approve/reject path under the ordinary approve authority.
+    /// </summary>
+    [Theory]
+    [InlineData("approve")]
+    [InlineData("reject")]
+    public async Task A_non_sales_support_creator_keeps_the_existing_decision_behavior(string decision)
+    {
+        var world = new World();
+        Assert.Empty(world.ActiveRoleCodes.Codes);
+        var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-md1-create"))).Detail;
+        Assert.True(created.IsOwnDraft);
+        await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("k-md1-submit"));
+        world.Authority.Measured.Clear();
+
+        var decided = decision == "approve"
+            ? await world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("k-md1-decide"))
+            : await world.Service().RejectDraftAsync(created.Draft.Id, Command("3", "SENTETIK md1"), Metadata("k-md1-decide"));
+
+        Assert.Equal((decision == "approve" ? "Approved" : "Rejected", Actor, Actor, true, false),
+            (decided.Detail.Draft.ApprovalState, decided.Detail.Approval.SubmittedBy, decided.Detail.Approval.DecidedBy,
+                decided.Detail.IsOwnDraft, decided.Detail.IsOwnDecisionRestricted));
+        Assert.Contains(ApprovePermission, world.Authority.Measured);
+        Assert.All(world.Authority.Measured, permission => Assert.Contains(permission, new[] { ApprovePermission, PriceReadPermission }));
+    }
+
+    /// <summary>
+    /// The persona read is not a gap after the authority fence: an actor swap or permission loss during
+    /// the late read is seen by the final permission/binding measurement before any state effect.
+    /// </summary>
+    [Theory]
+    [InlineData("actor")]
+    [InlineData("permission")]
+    public async Task A_change_during_the_late_persona_read_is_refused_before_the_state_write(string change)
+    {
+        var world = new World();
+        var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-persona-race-create"))).Detail;
+        await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("k-persona-race-submit"));
+        var transitions = world.Store.Transitions.Count;
+        var refusals = world.Store.Refusals.Count;
+        world.ActiveRoleCodes.Calls = 0;
+        world.ActiveRoleCodes.OnRead = call =>
+        {
+            if (call != 2) return;
+            if (change == "actor") world.User.Id = "synthetic-swapped-during-persona-read";
+            else world.Authority.Granted = false;
+        };
+
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("k-persona-race-decide")));
+
+        Assert.Equal((403, "forbidden"), (refused.Status, refused.Code));
+        Assert.Equal((transitions, refusals), (world.Store.Transitions.Count, world.Store.Refusals.Count));
+    }
+
+    /// <summary>
+    /// D2 (Sinan 5750987986 points 1–2): "own order" is the order the actor PREPARED (the stored creator), not the one
+    /// they submitted. A creates, an authorized B submits: A holding the general approve name is still fenced (the own
+    /// name is asked and refused); B — the submitter, not the preparer — decides it exactly as on main: only the approve
+    /// name and the disclosure name are asked, nothing new enters, the transition is recorded. No persona D2 did not name
+    /// gains a silent new self-approval policy.
+    /// </summary>
+    [Theory]
+    [InlineData("approve")]
+    [InlineData("reject")]
+    public async Task Ownership_is_the_preparer_not_the_submitter_and_an_authorized_non_preparer_behaves_as_on_main(string decision)
+    {
+        var world = new World();
+        world.ActiveRoleCodes.Codes.Add(ErpPersonaRoleCodes.SalesSupport);
+        var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-1"))).Detail;
+        world.User.Id = "synthetic-submitter";
+        world.ActiveRoleCodes.Codes.Clear();
+        await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("k-submit"));
+        Assert.Equal("synthetic-submitter", (await world.Service().GetDraftDetailAsync(created.Draft.Id)).Approval.SubmittedBy);
+
+        Task<SalesOrderDraftResponse> Decide() => decision == "approve"
+            ? world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("k-" + world.User.Id))
+            : world.Service().RejectDraftAsync(created.Draft.Id, Command("3", "SENTETIK"), Metadata("k-" + world.User.Id));
+
+        // The preparer, holding the approve name, deciding the order they prepared but did not submit: fenced.
+        world.User.Id = Actor;
+        world.ActiveRoleCodes.Codes.Add(ErpPersonaRoleCodes.SalesSupport);
+        var transitions = world.Store.Transitions.Count;
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(Decide);
+        Assert.Equal((403, "forbidden", transitions, 0), (refused.Status, refused.Code, world.Store.Transitions.Count, world.Store.Refusals.Count));
+
+        // The submitter — authorized, not the preparer — decides it as on main: the same names main's path asked, no other.
+        world.User.Id = "synthetic-submitter";
+        world.ActiveRoleCodes.Codes.Clear();
+        world.Authority.Measured.Clear();
+        var decided = await Decide();
+        Assert.Equal(decision == "approve" ? "Approved" : "Rejected", decided.Detail.Draft.ApprovalState);
+        Assert.Equal(("synthetic-submitter", "synthetic-submitter"), (decided.Detail.Approval.SubmittedBy, decided.Detail.Approval.DecidedBy));
+        Assert.Equal(transitions + 1, world.Store.Transitions.Count);
+        Assert.All(world.Authority.Measured, name => Assert.Contains(name, new[] { ApprovePermission, PriceReadPermission }));
+    }
+
+    /// <summary>
+    /// D2: the CREATOR withdraws their own not-yet-approved draft under the create name — its own command, its own audit event,
+    /// its own terminal state, nothing deleted; the same key replays. Anyone else is refused 403 with nothing recorded (no name
+    /// lifts it); an approved draft is the key's terminal 409; an overlong reason is 422.
+    /// </summary>
+    [Fact]
+    public async Task The_creator_withdraws_their_own_unapproved_draft_with_its_own_trail_and_nobody_else_can()
+    {
+        var world = new World();
+        var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-1"))).Detail;
+        await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("k-submit"));
+
+        // Someone else, even holding the create name: 403, nothing recorded.
+        world.User.Id = "synthetic-other";
+        var other = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().WithdrawDraftAsync(created.Draft.Id, Command("3"), Metadata("k-w-other")));
+        Assert.Equal((403, "forbidden", 1, 0), (other.Status, other.Code, world.Store.Transitions.Count, world.Store.Refusals.Count));
+        Assert.False((await world.Service().GetDraftDetailAsync(created.Draft.Id)).IsOwnDraft);
+
+        // The creator: Withdrawn, the trail is its own command and event under the CREATE name, the reason as stored.
+        world.User.Id = Actor;
+        var withdrawn = await world.Service().WithdrawDraftAsync(created.Draft.Id, Command("3", "  SENTETIK vazgeçildi  "), Metadata("k-w"));
+        Assert.Equal(("Withdrawn", "4", Actor, Actor, "SENTETIK vazgeçildi", "Rev.0"),
+            (withdrawn.Detail.Draft.ApprovalState, withdrawn.Detail.Draft.Version, withdrawn.Detail.Approval.SubmittedBy,
+                withdrawn.Detail.Approval.DecidedBy, withdrawn.Detail.Approval.RejectionReason, withdrawn.Detail.Draft.Revision));
+        var transition = world.Store.Transitions.Single(item => item.Command == SalesDraftCommands.WithdrawV1);
+        Assert.Equal((CreatePermission, "sales.order-draft.withdrawn.v1", "Withdraw", 3L, 4L),
+            (transition.Envelope.PermissionCode, transition.Audit.EventType, transition.Audit.Operation, transition.VersionBefore, transition.VersionAfter));
+        Assert.Equal(created.Lines.Count, withdrawn.Detail.Lines.Count);
+        // The relationship travels, not the identity: the creator's own answers say so, another actor's detail says not.
+        Assert.Equal((true, true), (created.IsOwnDraft, withdrawn.Detail.IsOwnDraft));
+
+        // The same key again: the replay, not a second withdrawal.
+        var replay = await world.Service().WithdrawDraftAsync(created.Draft.Id, Command("3", "  SENTETIK vazgeçildi  "), Metadata("k-w"));
+        Assert.True(replay.IsReplay);
+        Assert.Single(world.Store.Transitions, item => item.Command == SalesDraftCommands.WithdrawV1);
+
+        // Terminal: a submit after the withdrawal is the key's terminal 409.
+        var after = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().SubmitDraftAsync(created.Draft.Id, Command("4"), Metadata("k-submit-again")));
+        Assert.Equal((409, SalesDraftProblemCodesV1.StateConflict), (after.Status, after.Code));
+
+        // An APPROVED draft is not withdrawable — the key's terminal 409, recorded; an overlong reason is 422 before anything.
+        var approved = (await world.Service().CreateDraftAsync(Request(), Metadata("k-a"))).Detail;
+        await world.Service().SubmitDraftAsync(approved.Draft.Id, Command("2"), Metadata("k-a-submit"));
+        world.User.Id = "synthetic-manager";
+        await world.Service().ApproveDraftAsync(approved.Draft.Id, Command("3"), Metadata("k-a-approve"));
+        world.User.Id = Actor;
+        var refusals = world.Store.Refusals.Count;
+        var conflict = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().WithdrawDraftAsync(approved.Draft.Id, Command("4"), Metadata("k-a-w")));
+        Assert.Equal((409, SalesDraftProblemCodesV1.StateConflict, refusals + 1), (conflict.Status, conflict.Code, world.Store.Refusals.Count));
+        Assert.Equal(approved.Draft.Id, world.Store.Refusals[^1].DraftId);
+        // An APPROVED HISTORY (Sinan 5750987986 point 3a): a commercial revision brings the approved draft back to Preparing
+        // at Rev.1 — the easy path is still refused (the key's terminal 409, recorded); the archived snapshot stays.
+        // (The refused withdrawal above did not advance the version: still 4 here.)
+        var revised = await world.Service().ReviseCommercialAsync(approved.Draft.Id,
+            Revision("4", new SalesDraftLineCommercialV1(approved.Lines[0].LineId, "13.00", KgUnit, "5")), Metadata("k-a-revise"));
+        Assert.Equal(("Preparing", "Rev.1", "5"), (revised.Detail.Draft.ApprovalState, revised.Detail.Draft.Revision, revised.Detail.Draft.Version));
+        var history = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().WithdrawDraftAsync(approved.Draft.Id, Command("5"), Metadata("k-a-w2")));
+        Assert.Equal((409, SalesDraftProblemCodesV1.StateConflict, refusals + 2, 1), (history.Status, history.Code, world.Store.Refusals.Count, world.Store.Archived.Count));
+        Assert.Equal(("Preparing", "Rev.1"), ((await world.Service().GetDraftDetailAsync(approved.Draft.Id)).Draft.ApprovalState, revised.Detail.Draft.Revision));
+        var tooLong = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().WithdrawDraftAsync(created.Draft.Id, Command("4", new string('x', SalesOrderDraft.MaximumRejectionReasonLength + 1)), Metadata("k-w-long")));
+        Assert.Equal((422, SalesDraftProblemCodesV1.ApprovalReasonTooLong), (tooLong.Status, tooLong.Code));
     }
 
     [Fact]
@@ -920,13 +1119,14 @@ public sealed class SalesDraftServiceTests
         public FakeStore Store { get; init; } = new();
         public bool NoProducts { get; set; }
         public bool NoContactInformation { get; set; }
+        public FixedActiveRoleCodeReader ActiveRoleCodes { get; } = new();
         public SalesDraftServiceBindings Bindings { get; set; } = new(CreatePermission, ReadPermission, ApprovePermission, PricePermission, PriceReadPermission);
 
         public SalesDraftService Service()
         {
             var company = new CompanyContext();
             company.Set(Company);
-            return new SalesDraftService(company, User, Authority, new FixedCorrelation(), Accounts, Settings,
+            return new SalesDraftService(company, User, Authority, ActiveRoleCodes, new FixedCorrelation(), Accounts, Settings,
                 NoProducts ? null : Products, Store, Bindings, TimeProvider.System, NoContactInformation ? null : ContactInformation);
         }
 
@@ -943,10 +1143,27 @@ public sealed class SalesDraftServiceTests
     {
         public bool Authenticated { get; set; } = true;
         public Guid Company { get; set; } = SalesDraftServiceTests.Company;
+        /// <summary>D2: the acting identity; another actor in the same world is the same user fake with another id.</summary>
+        public string Id { get; set; } = Actor;
         public bool IsAuthenticated => Authenticated;
-        public string? UserId => Authenticated ? Actor : null;
+        public string? UserId => Authenticated ? Id : null;
         public IReadOnlySet<Guid> AllowedCompanyIds => new HashSet<Guid> { Company };
         public bool CanAccessCompany(Guid companyId) => companyId == Company;
+    }
+
+    private sealed class FixedActiveRoleCodeReader : IActiveRoleCodeReader
+    {
+        public HashSet<string> Codes { get; } = new(StringComparer.Ordinal);
+        public int Calls { get; set; }
+        public Action<int>? OnRead { get; set; }
+
+        public Task<IReadOnlySet<string>> GetActiveRoleCodesAsync(Guid companyId, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Calls++;
+            OnRead?.Invoke(Calls);
+            return Task.FromResult<IReadOnlySet<string>>(companyId == Company ? Codes : new HashSet<string>(StringComparer.Ordinal));
+        }
     }
 
     private sealed class FixedAuthority : IErpAuthorityRevalidationService
@@ -1099,7 +1316,7 @@ public sealed class SalesDraftServiceTests
         private readonly Dictionary<(string Command, string Key), (string Actor, string Hash, SalesOrderDraft? Draft, SalesDraftTerminalRefusal? Refusal, string Correlation)> _attempts = [];
         private readonly List<SalesOrderDraft> _drafts = [];
         public List<SalesDraftWriteEnvelope> Envelopes { get; } = [];
-        public List<(SalesDraftWriteEnvelope Envelope, SalesDraftTerminalRefusal Refusal)> Refusals { get; } = [];
+        public List<(SalesDraftWriteEnvelope Envelope, SalesDraftTerminalRefusal Refusal, Guid? DraftId)> Refusals { get; } = [];
         /// <summary>SALES-A1: every state transition the store committed, with its audit facts.</summary>
         public List<(string Command, Guid DraftId, SalesDraftWriteEnvelope Envelope, SalesDraftStateAudit Audit, long VersionBefore, long VersionAfter)> Transitions { get; } = [];
         public int Replays { get; private set; }
@@ -1168,6 +1385,7 @@ public sealed class SalesDraftServiceTests
                 {
                     Winner = build("SO-2026-000099");
                     Winner.RequireStorable();
+                    Winner.RestoreCreator(envelope.ActorId);
                     _drafts.Add(Winner);
                     _attempts[(SalesDraftCommands.CreateV1, envelope.IdempotencyKey)] = (envelope.ActorId, requestHash, Winner, null, "winner-correlation");
                 }
@@ -1177,6 +1395,9 @@ public sealed class SalesDraftServiceTests
 
             var draft = build($"SO-2026-{_drafts.Count + 1:D6}");
             draft.RequireStorable();
+            // D2: the real store restores the creator from the create envelope's actor on every read; the fake holds the
+            // live aggregate, so the creator is fixed here, once, at the create.
+            draft.RestoreCreator(envelope.ActorId);
             _drafts.Add(draft);
             _attempts[(SalesDraftCommands.CreateV1, envelope.IdempotencyKey)] = (envelope.ActorId, requestHash, draft, null, envelope.CorrelationId);
             Envelopes.Add(envelope);
@@ -1195,7 +1416,7 @@ public sealed class SalesDraftServiceTests
         }
 
         public Task RecordRefusalAsync(SalesDraftWriteEnvelope envelope, string requestHash, SalesDraftTerminalRefusal refusal,
-            CancellationToken cancellationToken = default, string commandName = SalesDraftCommands.CreateV1)
+            CancellationToken cancellationToken = default, string commandName = SalesDraftCommands.CreateV1, Guid? draftId = null)
         {
             if (Race == "refusal-at-record")
             {
@@ -1207,7 +1428,7 @@ public sealed class SalesDraftServiceTests
             if (_attempts.ContainsKey((commandName, envelope.IdempotencyKey)))
                 throw new SalesDraftStoreException(SalesDraftStoreCodes.ConcurrentChange, "synthetic: the key already holds an attempt");
             _attempts[(commandName, envelope.IdempotencyKey)] = (envelope.ActorId, requestHash, null, refusal, envelope.CorrelationId);
-            Refusals.Add((envelope, refusal));
+            Refusals.Add((envelope, refusal, draftId));
             return Task.CompletedTask;
         }
 

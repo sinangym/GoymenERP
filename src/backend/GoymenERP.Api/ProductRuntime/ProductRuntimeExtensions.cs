@@ -79,10 +79,24 @@ public static class ProductRuntimeExtensions
         // provider both ports answer 503.
         services.TryAddScoped<IProductFamilyDefinitionSourceV2, SqlProductFamilyDefinitionSource>();
         services.TryAddScoped<IProductFamilyRequirementPolicyV1, ProductFamilyRequirementPolicyV2>();
+        services.AddScoped<ProductUnitProfileAdapter>();
         services.AddScoped<IProductSalesEligibilityV1>(provider => CreateEligibility<IProductSalesEligibilityV1>(provider,
             (company, user, authority, records, policy, units) =>
                 new ProductSalesEligibilityService(company, user, authority, records, policy, units),
             () => new UnconfiguredProductEligibility()));
+        services.AddScoped<IProductSalesCandidateReader, SqlProductSalesCandidateReader>();
+        services.AddScoped<IProductSalesCandidatesV1>(provider =>
+        {
+            var settings = provider.GetService<ISettingsPrerequisiteProvider>();
+            if (!provider.GetRequiredService<ProductRuntimeOptions>().IsEnabled || settings is null)
+                return new UnconfiguredProductSalesCandidates();
+            var company = provider.GetRequiredService<ICompanyContext>();
+            return new ProductSalesCandidateService(company, provider.GetRequiredService<ICurrentUser>(),
+                provider.GetRequiredService<IErpAuthorityRevalidationService>(),
+                provider.GetRequiredService<IProductSalesCandidateReader>(),
+                provider.GetRequiredService<IProductSalesEligibilityV1>(),
+                provider.GetRequiredService<ProductUnitProfileAdapter>());
+        });
         services.AddScoped<IProductStockEligibilityV1>(provider => CreateEligibility<IProductStockEligibilityV1>(provider,
             (company, user, authority, records, policy, units) =>
                 new ProductStockEligibilityService(company, user, authority, records, policy, units),
@@ -103,7 +117,7 @@ public static class ProductRuntimeExtensions
             provider.GetRequiredService<IErpAuthorityRevalidationService>(),
             provider.GetRequiredService<ProductReadStore>(),
             provider.GetRequiredService<IProductFamilyRequirementPolicyV1>(),
-            new ProductUnitProfileAdapter(settings, company));
+            provider.GetRequiredService<ProductUnitProfileAdapter>());
     }
 
     private static SqlProductMasterAuthorizationService CreateIdentityAuthority(IServiceProvider provider) =>
@@ -140,6 +154,13 @@ internal sealed class UnconfiguredProductEligibility : IProductSalesEligibilityV
         cancellationToken.ThrowIfCancellationRequested();
         return Task.FromException<T>(new ProductOperationException(UnavailableCode, 503));
     }
+}
+
+internal sealed class UnconfiguredProductSalesCandidates : IProductSalesCandidatesV1
+{
+    public Task<ProductSalesCandidatesV1> SearchAsync(ProductSalesCandidateQueryV1 query,
+        CancellationToken cancellationToken) => Task.FromException<ProductSalesCandidatesV1>(
+            new ProductOperationException(UnconfiguredProductEligibility.UnavailableCode, 503));
 }
 
 internal sealed class UnconfiguredProductService : IProductService

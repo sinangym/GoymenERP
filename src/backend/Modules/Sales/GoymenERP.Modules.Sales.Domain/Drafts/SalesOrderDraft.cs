@@ -30,6 +30,14 @@ public enum InternalApprovalState
     PendingApproval = 2,
     Approved = 3,
     Rejected = 4,
+
+    /// <summary>
+    /// D2 (Sinan 5749046401): the preparer took back their own not-yet-approved draft — a terminal state of the axis
+    /// with its own command and audit trail; nothing is deleted, the lines and the revisions stay as they were.
+    /// The decision columns record who withdrew and when (and an optional reason): the STATE says it was a
+    /// withdrawal, not an approval or a rejection.
+    /// </summary>
+    Withdrawn = 5,
 }
 
 /// <summary>
@@ -169,7 +177,12 @@ public sealed class SalesOrderDraft
     /// <summary>Whether the lines may still change: only while the draft is being prepared or was rejected (DEC-SAL-002).</summary>
     public bool LinesAreOpen => ApprovalState is InternalApprovalState.Preparing or InternalApprovalState.Rejected;
 
-    /// <summary>Optimistic concurrency; starts at 1 and advances by one per recorded mutation.</summary>
+    /// <summary>
+    /// Optimistic concurrency; starts at 1 and advances by one per RECORDED mutation. A refused command (state conflict,
+    /// stale version, rule) records an attempt in the store and moves NOTHING here — the version after a refusal is the
+    /// version before it. Ladder authors: create = 1, + one per line added, + one per recorded transition/revision;
+    /// count refusals as zero (D2 lost one run to each direction of that mistake).
+    /// </summary>
     public long Version { get; private set; } = 1;
 
     public SalesDraftHeader Header { get; }
@@ -388,7 +401,10 @@ public sealed class SalesOrderDraft
     /// Approves a pending draft: <c>PendingApproval → Approved</c>. The approved draft's lines are then
     /// closed (DEC-SAL-002); nothing else changes — no allocation, loading, stock or money effect is
     /// produced here (those are the consumers' own records, read through the line reference port).
-    /// The submitter approving their own draft is not refused (Business 5737989917: no maker≠checker).
+    /// Whether the submitter may decide their own draft is NOT the domain's question: D2 (Sinan 5749046401)
+    /// makes it a persona-based authority rule measured by the service before this transition (the price-write
+    /// fence's shape) — the earlier "no maker≠checker" reading of 5737989917 item 22 is superseded for Satış
+    /// Destek by that decision and unchanged for every other persona. Here only the state is decided.
     /// </summary>
     public void Approve(long expectedVersion, string actorId, DateTimeOffset now)
     {
@@ -430,6 +446,45 @@ public sealed class SalesOrderDraft
         Touch(now);
     }
 
+    /// <summary>
+    /// D2 (Sinan 5749046401): the preparer withdraws their own NEVER-approved draft —
+    /// <c>Preparing | PendingApproval | Rejected → Withdrawn</c>, and only at <c>Revision 0</c> (a rejected draft is
+    /// still "not yet approved"; ASSUMPTION-SALESD2-2, reversible). Refused (<see cref="SalesRuleCodes.StateConflict"/>):
+    /// an APPROVED draft, and a draft with an APPROVED HISTORY — <see cref="ReviseCommercial"/> brings an approved draft
+    /// back to <c>Preparing</c> at <c>Rev.N+1</c>, so the current state alone cannot say "never approved"; while it was
+    /// approved its lines were answered to the consumers (the line reference port) and may have been linked by
+    /// allocation, loading or fulfilment records Sales neither holds nor can see. The easy path therefore stops at
+    /// <c>Revision != 0</c>: the archived snapshot and whatever the consumers hold stay untouched. Withdrawn is
+    /// terminal: EVERY mutation entry refuses it (pinned by the population test). Who may withdraw (the draft's own
+    /// preparer, the create name) is the service's fence; the reason is optional audit text, bounded like the
+    /// rejection reason. No money or stock effect exists to undo — a draft never produced one.
+    /// </summary>
+    public void Withdraw(long expectedVersion, string actorId, string? reason, DateTimeOffset now)
+    {
+        RequireVersion(expectedVersion);
+        var actor = RequireActor(actorId);
+        var trimmedReason = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
+        if (trimmedReason is not null && trimmedReason.Length > MaximumRejectionReasonLength)
+        {
+            throw new SalesRuleException(SalesRuleCodes.ApprovalReasonTooLong,
+                $"Geri çekme nedeni en fazla {MaximumRejectionReasonLength} karakterdir.");
+        }
+
+        if (ApprovalState is not (InternalApprovalState.Preparing or InternalApprovalState.PendingApproval or InternalApprovalState.Rejected))
+        {
+            throw StateConflict("Yalnız henüz onaylanmamış taslak geri çekilir.");
+        }
+
+        if (Revision != 0)
+        {
+            throw StateConflict("Onaylanmış geçmişi olan taslak geri çekilmez; bağlı kayıtlar sahiplerinde durur.");
+        }
+
+        ApprovalState = InternalApprovalState.Withdrawn;
+        Approval = Approval with { DecidedBy = actor, DecidedAtUtc = now.ToUniversalTime(), RejectionReason = trimmedReason };
+        Touch(now);
+    }
+
     // ---- commercial revision (K3 Head B, Sinan 5748258299) --------------------------------------
 
     /// <summary>
@@ -461,6 +516,12 @@ public sealed class SalesOrderDraft
         if (ApprovalState == InternalApprovalState.PendingApproval)
         {
             throw StateConflict("Onay bekleyen taslağın fiyatı değiştirilmez; önce karar verilir.");
+        }
+
+        // D2: Withdrawn is terminal at every mutation entry — this one refused only PendingApproval before D2.
+        if (ApprovalState == InternalApprovalState.Withdrawn)
+        {
+            throw StateConflict("Geri çekilmiş taslak değiştirilmez.");
         }
 
         // Every current line exactly once, nothing else: the revision is of the whole commercial surface.
@@ -519,6 +580,29 @@ public sealed class SalesOrderDraft
     }
 
     /// <summary>The store's rebuild of the stored revision number (no transition; a negative number is refused).</summary>
+    /// <summary>
+    /// D2: who created the draft, as stored — restored by the store (the envelope's actor at the create), never set by
+    /// a command; null on an aggregate that has not been stored yet. "One's own draft" is decided against this.
+    /// </summary>
+    public string? CreatedBy { get; private set; }
+
+    /// <summary>The store's rebuild of the creator: once, non-blank, before the approval axis.</summary>
+    public void RestoreCreator(string createdBy)
+    {
+        if (string.IsNullOrWhiteSpace(createdBy))
+        {
+            throw new ArgumentException("Kayıtlı oluşturan boş olamaz.", nameof(createdBy));
+        }
+
+        RequireApprovalNotRestored();
+        if (CreatedBy is not null)
+        {
+            throw new InvalidOperationException("Oluşturan yalnız bir kez geri yüklenir.");
+        }
+
+        CreatedBy = createdBy.Trim();
+    }
+
     public void RestoreRevision(int revision)
     {
         if (revision < 0)
@@ -594,6 +678,9 @@ public sealed class SalesOrderDraft
             InternalApprovalState.PendingApproval => submitted && facts.DecidedBy is null && facts.DecidedAtUtc is null && facts.RejectionReason is null,
             InternalApprovalState.Approved => submitted && decided && facts.RejectionReason is null,
             InternalApprovalState.Rejected => submitted && decided,
+            // D2: withdrawn from Preparing (never submitted) or from PendingApproval/Rejected (submitted); the
+            // decision columns carry the withdrawer; the reason is optional.
+            InternalApprovalState.Withdrawn => decided && (submitted || (facts.SubmittedBy is null && facts.SubmittedAtUtc is null)),
             _ => false,
         };
         if (!consistent || (facts.RejectionReason is { } reason && (reason.Length == 0 || reason.Length > MaximumRejectionReasonLength))
@@ -618,6 +705,8 @@ public sealed class SalesOrderDraft
         {
             InternalApprovalState.Preparing => 0,
             InternalApprovalState.PendingApproval => 1,
+            // D2: a withdrawal is one step from Preparing (no submission) — the floor is the WEAKER bound.
+            InternalApprovalState.Withdrawn => 1,
             _ => 2,
         };
         var archivedTransitions = checked(3L * archivedRevisions.Count);

@@ -42,22 +42,25 @@ export const DRAFT_STATE = 'Draft' as const
  * SALES-A1: the INTERNAL APPROVAL axis (`InternalApprovalState`), a fourth fact beside the lifecycle
  * `state`, the commercial `revision` and the concurrency `version` — never merged into one status.
  * Preparing → PendingApproval → Approved | Rejected (→ PendingApproval again, same Rev.0).
+ * D2 (Sinan 5749046401): Withdrawn — the creator took an unapproved draft back; terminal, nothing deleted.
  */
 export const APPROVAL_STATE = {
   preparing: 'Preparing',
   pendingApproval: 'PendingApproval',
   approved: 'Approved',
   rejected: 'Rejected',
+  withdrawn: 'Withdrawn',
 } as const
 export type ApprovalState = (typeof APPROVAL_STATE)[keyof typeof APPROVAL_STATE]
 const APPROVAL_STATES: readonly string[] = Object.values(APPROVAL_STATE)
 
 /**
- * SALES-A1: the three state commands. Each answers 200 with the draft after the transition (the
+ * SALES-A1: the state commands. Each answers 200 with the draft after the transition (the
  * command's result IS the detail view), and 200 + `Idempotency-Replayed` for the same key again.
+ * D2: `withdrawal` is the creator's own command (POST …/{id}/withdrawal, optional `reason`).
  */
 export const STATE_COMMAND_STATUS = 200
-export type DraftStateCommand = 'submission' | 'approval' | 'rejection'
+export type DraftStateCommand = 'submission' | 'approval' | 'rejection' | 'withdrawal'
 export const salesDraftCommandPath = (id: string, command: DraftStateCommand) => `${salesDraftDetailPath(id)}/${command}`
 
 /** `SalesDraftStateCommandRequest`: the expected version as text; `reason` only on a rejection. */
@@ -211,6 +214,13 @@ export interface DraftDetail {
   readonly package: OwnerReference | null
   /** SALES-A1: the approval facts; consistent with `draft.approvalState` or the detail is malformed. */
   readonly approval: ApprovalFacts
+  /**
+   * D2: the RELATIONSHIP "the signed-in caller is this draft's stored creator", computed on the server — never the
+   * creator's identity. The screen mirrors it (the withdrawal control); the server refuses regardless.
+   */
+  readonly isOwnDraft: boolean
+  /** D2: true only when this creator is currently in the SALES_SUPPORT persona. */
+  readonly isOwnDecisionRestricted: boolean
 }
 
 export interface DraftMutation {
@@ -351,6 +361,8 @@ const isActor = (v: unknown): v is string => isText(v, 128)
 /**
  * SALES-A1: the approval facts, read exactly and checked against the state the summary carries:
  * Preparing holds none; PendingApproval the submission only; Approved both, no reason; Rejected both.
+ * D2: Withdrawn carries the decision (the withdrawer, the time, an optional reason) and a submission
+ * that is either whole or absent — withdrawn from Preparing has none.
  * A body that says "approved" without a decision is not shown as approved.
  */
 function decodeApproval(value: unknown, state: ApprovalState): ApprovalFacts | null {
@@ -375,7 +387,9 @@ function decodeApproval(value: unknown, state: ApprovalState): ApprovalFacts | n
         ? submitted && noDecision
         : state === APPROVAL_STATE.approved
           ? submitted && decided && o.rejectionReason === null
-          : submitted && decided
+          : state === APPROVAL_STATE.rejected
+            ? submitted && decided
+            : decided && (submitted || (o.submittedBy === null && o.submittedAtUtc === null))
   if (!consistent) return null
   return {
     submittedBy: o.submittedBy,
@@ -485,7 +499,16 @@ function decodeLine(value: unknown): DraftLine | null {
   }
 }
 
-const DETAIL_KEYS = ['draft', 'requestedDeliveryDate', 'note', 'lines', ...OWNER_REFERENCE_FIELDS, 'approval'] as const
+const DETAIL_KEYS = [
+  'draft',
+  'requestedDeliveryDate',
+  'note',
+  'lines',
+  ...OWNER_REFERENCE_FIELDS,
+  'approval',
+  'isOwnDraft',
+  'isOwnDecisionRestricted',
+] as const
 
 /** `expectedId`: the record the caller asked for. A detail of another record is not an answer. */
 export function decodeDraftDetail(value: unknown, expectedId: string | null): DraftDetail | null {
@@ -512,7 +535,11 @@ export function decodeDraftDetail(value: unknown, expectedId: string | null): Dr
     references[field] = reference
   }
   const approval = decodeApproval(o.approval, draft.approvalState)
-  if (approval === null) return null
+  if (
+    approval === null ||
+    typeof o.isOwnDraft !== 'boolean' ||
+    typeof o.isOwnDecisionRestricted !== 'boolean'
+  ) return null
   return {
     draft,
     requestedDeliveryDate: o.requestedDeliveryDate,
@@ -525,6 +552,8 @@ export function decodeDraftDetail(value: unknown, expectedId: string | null): Dr
     sourceStrategy: references.sourceStrategy ?? null,
     package: references.package ?? null,
     approval,
+    isOwnDraft: o.isOwnDraft,
+    isOwnDecisionRestricted: o.isOwnDecisionRestricted,
   }
 }
 

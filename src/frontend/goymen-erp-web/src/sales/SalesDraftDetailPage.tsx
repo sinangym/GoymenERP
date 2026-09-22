@@ -148,6 +148,7 @@ export function DraftView({
   readonly delivery?: React.ReactNode
 }) {
   const { draft, approval } = detail
+  const withdrawn = draft.approvalState === APPROVAL_STATE.withdrawn
   return (
     <article className={styles.page} aria-labelledby="sales-detail-heading">
       {backLink}
@@ -222,16 +223,16 @@ export function DraftView({
             <dd>{approval.submittedAtUtc === null ? T.approval.notYet : formatInstant(approval.submittedAtUtc)}</dd>
           </div>
           <div>
-            <dt>{T.approval.decidedBy}</dt>
+            <dt>{withdrawn ? T.approval.withdrawnBy : T.approval.decidedBy}</dt>
             <dd data-testid="sales-approval-decided-by">{approval.decidedBy ?? T.approval.notYet}</dd>
           </div>
           <div>
-            <dt>{T.approval.decidedAt}</dt>
+            <dt>{withdrawn ? T.approval.withdrawnAt : T.approval.decidedAt}</dt>
             <dd>{approval.decidedAtUtc === null ? T.approval.notYet : formatInstant(approval.decidedAtUtc)}</dd>
           </div>
-          {draft.approvalState === APPROVAL_STATE.rejected ? (
+          {draft.approvalState === APPROVAL_STATE.rejected || withdrawn ? (
             <div>
-              <dt>{T.approval.rejectionReason}</dt>
+              <dt>{withdrawn ? T.approval.withdrawalReason : T.approval.rejectionReason}</dt>
               <dd data-testid="sales-approval-reason">{approval.rejectionReason ?? T.approval.noReason}</dd>
             </div>
           ) : null}
@@ -241,6 +242,7 @@ export function DraftView({
         </p>
         {draft.approvalState === APPROVAL_STATE.approved ? <p className={styles.muted}>{T.approval.approvedNote}</p> : null}
         {draft.approvalState === APPROVAL_STATE.rejected ? <p className={styles.muted}>{T.approval.rejectedNote}</p> : null}
+        {withdrawn ? <p className={styles.muted}>{T.approval.withdrawnNote}</p> : null}
         {commands}
       </section>
 
@@ -432,13 +434,28 @@ function ApprovalCommands({
   const [attempt, setAttempt] = useState<CommandAttempt>({ phase: 'idle' })
   const [command, setCommand] = useState<DraftStateCommand | null>(null)
   const [reason, setReason] = useState('')
+  const [withdrawReason, setWithdrawReason] = useState('')
   const attemptRef = useRef(attempt)
   attemptRef.current = attempt
 
+  // D2 (Sinan 5749046401, 5750987986): the persona fences are the SERVER's (403 at the API); both are measured against
+  // ONE server fact — the stored creator, the order this actor PREPARED (not the submitter). The server computes both
+  // the ownership relationship and the persona-specific decision restriction; the screen never infers a persona.
+  const ownDraft = detail.isOwnDraft
+  const ownDecisionRestricted = detail.isOwnDecisionRestricted
+  const unapproved =
+    draft.approvalState === APPROVAL_STATE.preparing ||
+    draft.approvalState === APPROVAL_STATE.pendingApproval ||
+    draft.approvalState === APPROVAL_STATE.rejected
   const offerSubmit =
     canSubmit && (draft.approvalState === APPROVAL_STATE.preparing || draft.approvalState === APPROVAL_STATE.rejected)
-  const offerDecision = canDecide && draft.approvalState === APPROVAL_STATE.pendingApproval
-  if (!offerSubmit && !offerDecision && attempt.phase === 'idle') return null
+  const pending = draft.approvalState === APPROVAL_STATE.pendingApproval
+  const offerDecision = canDecide && pending && !ownDecisionRestricted
+  const ownDecisionWithheld = canDecide && pending && ownDecisionRestricted
+  // A commercial revision can return an approved order to Preparing. D2's easy withdrawal
+  // must not be offered once approved history exists; the server remains the authority.
+  const offerWithdraw = canSubmit && ownDraft && unapproved && draft.revision === 'Rev.0'
+  if (!offerSubmit && !offerDecision && !offerWithdraw && !ownDecisionWithheld && attempt.phase === 'idle') return null
 
   async function send(kind: DraftStateCommand, snapshot: OrderAttemptSnapshot<DraftStateCommandRequest>) {
     const previous = attemptRef.current
@@ -460,10 +477,9 @@ function ApprovalCommands({
   function start(kind: DraftStateCommand) {
     const binding = orderAttemptBinding(shell, commandScope(draft.id, kind))
     if (binding === null) return
+    const typed = kind === 'rejection' ? reason.trim() : kind === 'withdrawal' ? withdrawReason.trim() : ''
     const payload: DraftStateCommandRequest =
-      kind === 'rejection' && reason.trim() !== ''
-        ? { expectedVersion: draft.version, reason: reason.trim() }
-        : { expectedVersion: draft.version }
+      typed !== '' ? { expectedVersion: draft.version, reason: typed } : { expectedVersion: draft.version }
     const decision = decideSubmit(
       attemptRef.current,
       { path: `${draft.id}/${kind}`, binding, companyId, payload },
@@ -525,6 +541,26 @@ function ApprovalCommands({
           />
           <button type="button" className={styles.secondaryButton} disabled={frozen} onClick={() => start('rejection')}>
             {T.approval.reject}
+          </button>
+        </>
+      ) : null}
+      {ownDecisionWithheld ? (
+        <p className={styles.muted} data-testid="sales-own-decision-note">
+          {T.approval.ownDecisionNote}
+        </p>
+      ) : null}
+      {offerWithdraw ? (
+        <>
+          <label htmlFor="sales-withdrawal-reason">{T.approval.withdrawReasonLabel}</label>
+          <textarea
+            id="sales-withdrawal-reason"
+            maxLength={4000}
+            value={withdrawReason}
+            disabled={frozen}
+            onChange={(event) => setWithdrawReason(event.target.value)}
+          />
+          <button type="button" className={styles.secondaryButton} disabled={frozen} onClick={() => start('withdrawal')}>
+            {T.approval.withdraw}
           </button>
         </>
       ) : null}

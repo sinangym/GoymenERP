@@ -41,6 +41,8 @@ public sealed class C01E2eFixtureWriterActivationTests
             || descriptor.ServiceType == typeof(IProductMasterAssignmentFixtureStore)
             || descriptor.ServiceType == typeof(C01E2eProductTechnicalCardFixtureWriter)
             || descriptor.ServiceType == typeof(IProductTechnicalCardFixtureStore)
+            || descriptor.ServiceType == typeof(C01E2eProductSalesCandidateFixtureWriter)
+            || descriptor.ServiceType == typeof(IProductSalesCandidateFixtureStore)
             || descriptor.ServiceType == typeof(C01E2eAccountingOpenPeriodFixtureWriter)
             || descriptor.ServiceType == typeof(IAccountingOpenPeriodFixtureStore));
     }
@@ -60,6 +62,10 @@ public sealed class C01E2eFixtureWriterActivationTests
             descriptor.ServiceType == typeof(C01E2eProductTechnicalCardFixtureWriter));
         Assert.Single(services, descriptor =>
             descriptor.ServiceType == typeof(IProductTechnicalCardFixtureStore));
+        Assert.Single(services, descriptor =>
+            descriptor.ServiceType == typeof(C01E2eProductSalesCandidateFixtureWriter));
+        Assert.Single(services, descriptor =>
+            descriptor.ServiceType == typeof(IProductSalesCandidateFixtureStore));
         Assert.Single(services, descriptor =>
             descriptor.ServiceType == typeof(C01E2eAccountingOpenPeriodFixtureWriter));
         Assert.Single(services, descriptor =>
@@ -107,6 +113,8 @@ public sealed class C01E2eFixtureWriterActivationTests
             descriptor.ServiceType == typeof(C01E2eProductMasterAssignmentFixtureWriter)
             || descriptor.ServiceType == typeof(C01E2eProductTechnicalCardFixtureWriter)
             || descriptor.ServiceType == typeof(IProductTechnicalCardFixtureStore)
+            || descriptor.ServiceType == typeof(C01E2eProductSalesCandidateFixtureWriter)
+            || descriptor.ServiceType == typeof(IProductSalesCandidateFixtureStore)
             || descriptor.ServiceType == typeof(C01E2eAccountingOpenPeriodFixtureWriter)
             || descriptor.ServiceType == typeof(IAccountingOpenPeriodFixtureStore));
         Assert.Throws<InvalidOperationException>(() =>
@@ -116,6 +124,11 @@ public sealed class C01E2eFixtureWriterActivationTests
                 environment,
                 configuration,
                 new RecordingTechnicalCardStore()));
+        Assert.Throws<InvalidOperationException>(() =>
+            new C01E2eProductSalesCandidateFixtureWriter(
+                environment,
+                configuration,
+                new RecordingSalesCandidateStore()));
         Assert.Throws<InvalidOperationException>(() =>
             new C01E2eAccountingOpenPeriodFixtureWriter(
                 environment,
@@ -194,6 +207,16 @@ public sealed class C01E2eFixtureWriterActivationTests
     private sealed class RecordingTechnicalCardStore : IProductTechnicalCardFixtureStore
     {
         public Task EnsureAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    private sealed class RecordingSalesCandidateStore : IProductSalesCandidateFixtureStore
+    {
+        public Task<ProductSalesCandidateFixtureOutput> EnsureAsync(CancellationToken cancellationToken) =>
+            Task.FromResult(new ProductSalesCandidateFixtureOutput(
+                Guid.Parse("b6300000-0000-4000-8000-000000000401"), "2",
+                Guid.Parse("c5ef643e-a6e8-51f3-89f2-8e68b00cb983"),
+                Guid.Parse("4a790fdc-2a6b-5126-835f-d3a13d28b71c"), "1", "SYNS04-1",
+                "SENTETIK browser-suite:s04 sales candidate"));
     }
 
     private sealed class RecordingAccountingOpenPeriodStore : IAccountingOpenPeriodFixtureStore

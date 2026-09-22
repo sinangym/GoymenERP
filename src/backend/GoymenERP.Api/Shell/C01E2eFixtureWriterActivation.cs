@@ -1,8 +1,13 @@
+using GoymenERP.Api.ProductRuntime;
+using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Accounting.Infrastructure.Fixtures;
 using GoymenERP.Modules.Identity.Infrastructure.Fixtures;
 using GoymenERP.Modules.Logistics.Infrastructure.Fixtures;
 using GoymenERP.Modules.Product.Infrastructure.Fixtures;
+using GoymenERP.Modules.Product.Infrastructure.Persistence;
 using GoymenERP.Modules.Sales.Infrastructure.Fixtures;
+using GoymenERP.Modules.Settings.Application;
 
 namespace GoymenERP.Api.Shell;
 
@@ -55,6 +60,9 @@ internal static class C01E2eFixtureWriterActivation
         // behind the same complete runner-bound gate. The port accepts no caller-selected values.
         services.AddProductTechnicalCardFixtureStore();
         services.AddScoped<C01E2eProductTechnicalCardFixtureWriter>();
+        // s04 E1: Product's fixed Active+Sellable candidate, after the technical registry prerequisite.
+        services.AddProductSalesCandidateFixtureStore(CreateS04ProductFixtureUnitProfiles);
+        services.AddScoped<C01E2eProductSalesCandidateFixtureWriter>();
         // s04 (SALES-A1 browser acceptance): Sales's draft port (SİPARİŞ's), behind the same gate.
         services.AddSalesDraftFixtureStore();
         services.AddScoped<C01E2eSalesDraftFixtureWriter>();
@@ -65,6 +73,14 @@ internal static class C01E2eFixtureWriterActivation
         services.AddAccountingOpenPeriodFixtureStore();
         services.AddScoped<C01E2eAccountingOpenPeriodFixtureWriter>();
         return true;
+    }
+
+    private static ProductUnitProfileAdapter CreateS04ProductFixtureUnitProfiles(IServiceProvider provider)
+    {
+        var issuer = provider.GetRequiredService<ProductRuntimeOptions>().Issuer
+            ?? throw new InvalidOperationException("The s04 Product fixture requires the bound disposable Product issuer.");
+        var identity = new S04ProductFixtureIdentity(issuer.LocalUserId);
+        return new ProductUnitProfileAdapter(new ApprovedSettingsPrerequisiteProvider(identity, identity), identity);
     }
 
     /// <summary>The gate itself; throws unless every condition holds.</summary>
@@ -106,6 +122,32 @@ internal static class C01E2eFixtureWriterActivation
         {
             throw new InvalidOperationException(
                 "Browser suite fixture writers require the runner-bound compose project.");
+        }
+    }
+
+    /// <summary>
+    /// Disposable fixture-only Settings identity. It reuses the bound Product issuer and can access only
+    /// Settings' approved GDC catalog; it creates no Identity assignment, permission or production grant.
+    /// </summary>
+    private sealed class S04ProductFixtureIdentity(Guid userId) : ICompanyContext, ICurrentUser
+    {
+        private static readonly IReadOnlySet<Guid> Companies =
+            new HashSet<Guid> { ApprovedUnitProfileCatalog.GdcCompanyId };
+
+        public bool IsResolved => true;
+        public Guid CompanyId { get; private set; } = ApprovedUnitProfileCatalog.GdcCompanyId;
+        public bool IsAuthenticated => true;
+        public string UserId => userId.ToString("D");
+        public IReadOnlySet<Guid> AllowedCompanyIds => Companies;
+        public bool CanAccessCompany(Guid companyId) => Companies.Contains(companyId);
+
+        public void Set(Guid companyId)
+        {
+            if (!CanAccessCompany(companyId))
+            {
+                throw new InvalidOperationException("The s04 Product fixture identity is bound only to GDC.");
+            }
+            CompanyId = companyId;
         }
     }
 }
@@ -201,6 +243,28 @@ public sealed class C01E2eProductTechnicalCardFixtureWriter
     }
 
     public Task EnsureAsync(CancellationToken cancellationToken) =>
+        _store.EnsureAsync(cancellationToken);
+}
+
+/// <summary>
+/// Exposes Product's fixed s04 sales candidate only inside the complete browser-runner gate. The
+/// Product-owned port accepts no caller-selected identity or business value and returns the exact
+/// persisted Product/Settings tuple for the suite binding.
+/// </summary>
+public sealed class C01E2eProductSalesCandidateFixtureWriter
+{
+    private readonly IProductSalesCandidateFixtureStore _store;
+
+    public C01E2eProductSalesCandidateFixtureWriter(
+        IHostEnvironment environment,
+        IConfiguration configuration,
+        IProductSalesCandidateFixtureStore store)
+    {
+        C01E2eFixtureWriterActivation.RequireGate(environment, configuration);
+        _store = store;
+    }
+
+    public Task<ProductSalesCandidateFixtureOutput> EnsureAsync(CancellationToken cancellationToken) =>
         _store.EnsureAsync(cancellationToken);
 }
 

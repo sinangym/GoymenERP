@@ -356,6 +356,9 @@ public static class SalesEndpoints
         MapStateCommand(drafts, "/{id:guid}/rejection", "RejectSalesOrderDraftV1", allowReason: true,
             (service, id, body, metadata, cancellationToken) => service.RejectDraftAsync(id, body, metadata, cancellationToken),
             unprocessableCodes: [SalesDraftProblemCodesV1.ApprovalReasonTooLong]);
+        MapStateCommand(drafts, "/{id:guid}/withdrawal", "WithdrawSalesOrderDraftV1", allowReason: true,
+            (service, id, body, metadata, cancellationToken) => service.WithdrawDraftAsync(id, body, metadata, cancellationToken),
+            unprocessableCodes: [SalesDraftProblemCodesV1.ApprovalReasonTooLong]);
     }
 
     private static void MapStateCommand(RouteGroupBuilder drafts, string pattern, string name, bool allowReason,

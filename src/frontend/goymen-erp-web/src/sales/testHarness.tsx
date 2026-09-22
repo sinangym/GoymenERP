@@ -38,6 +38,7 @@ export const KG = '44444444-4444-4444-4444-444444444444'
 export const ADDRESS = 'aaaaaaaa-1111-4111-8111-000000000401'
 export const CONTACT = 'bbbbbbbb-1111-4111-8111-000000000401'
 export const MONEY_PROFILE = 'cccccccc-1111-4111-8111-000000000401'
+export const UNIT_PROFILE = 'dddddddd-1111-4111-8111-000000000401'
 export const ADDRESS_TEXT = 'Sanayi Cad. 1, Kocaeli, TR'
 export const CONTACT_NAME = 'Ayşe Yükleme'
 
@@ -66,7 +67,14 @@ export const OPTIONS_A: OrderDraftOptions = {
     { partyId: PARTY, companyAccountId: OTHER_ACCOUNT, label: 'ABC Demir — B hesabı' },
   ],
   currencies: CURRENCIES_A.map((c) => ({ currencyId: c.currencyId, label: c.code })),
-  products: [{ productId: PRODUCT, productVersion: '7', label: '40x40 profil', orderUnits: [{ unitId: KG, label: 'kg' }] }],
+  products: [{
+    productId: PRODUCT,
+    productVersion: '7',
+    code: 'PRF-40X40',
+    name: '40x40 profil',
+    label: 'PRF-40X40 — 40x40 profil',
+    orderUnits: [{ unitId: KG, code: 'kg', label: 'kg', profileId: UNIT_PROFILE, profileVersion: '3' }],
+  }],
 }
 
 /** Offers choices for company A only; B has no source, like the running app everywhere. */
@@ -97,8 +105,11 @@ export const controlledContactInformation: UseContactInformation = (companyId, p
       ? { status: 'ready', data: CONTACT_INFORMATION_A }
       : { status: 'ready', data: { partyId, companyAccountId, accountVersion: '1', addresses: [], contacts: [] } }
 
+/** D2: the harness's signed-in actor — a draft "of one's own" is one whose stored creator / submitter is this id. */
+export const HARNESS_USER_ID = '77777777-7777-7777-7777-777777777777'
+
 const IDENTITY = {
-  userId: '77777777-7777-7777-7777-777777777777',
+  userId: HARNESS_USER_ID,
   displayName: 'Satış kullanıcısı',
   email: null,
   allowedCompanyIds: [COMPANY_A, COMPANY_B],
@@ -159,7 +170,7 @@ export function installFetch(config: HarnessConfig = {}) {
         })
       }
       if (url.includes('/sales/drafts')) {
-        const command = /\/sales\/drafts\/[^/?]+\/(submission|approval|rejection)$/.exec(url)?.[1]
+        const command = /\/sales\/drafts\/[^/?]+\/(submission|approval|rejection|withdrawal)$/.exec(url)?.[1]
         if (call.method === 'POST' && command !== undefined) {
           if (config.onCommand === undefined) throw new Error(`unexpected ${command}`)
           return config.onCommand(command, call)

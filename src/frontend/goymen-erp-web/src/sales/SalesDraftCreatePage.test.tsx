@@ -343,6 +343,52 @@ function answerWithReferences(raw: string, body: string | null): string {
 }
 
 describe('SALES-A2a — delivery address, contact and the currencies list', () => {
+  it('submits the server product search and keeps an already selected candidate visible across result windows', async () => {
+    const searches: string[] = []
+    const searching: UseReferenceOptions = (companyId, _businessDate, _accountSearch = '', productSearch = '') => {
+      searches.push(productSearch)
+      const products = productSearch === 'başka' ? [] : OPTIONS_A.products
+      return companyId === COMPANY_A
+        ? { status: 'ready', options: { ...OPTIONS_A, products }, productOffer: { items: products, searchWindowFull: productSearch === '' } }
+        : { status: 'unavailable' }
+    }
+    installFetch()
+    renderSalesApp(PATH, searching)
+    await formVisible()
+    fireEvent.change(screen.getByLabelText(T.field.businessDate), { target: { value: '2026-09-13' } })
+    await waitFor(() => expect(screen.getByTestId('sales-product-window-full')).toBeTruthy())
+    await userEvent.selectOptions(screen.getByLabelText(T.field.product), PRODUCT)
+
+    await userEvent.type(screen.getByTestId('sales-product-search'), 'başka')
+    await userEvent.click(screen.getByTestId('sales-product-search-button'))
+    await waitFor(() => expect(searches).toContain('başka'))
+    expect((screen.getByLabelText(T.field.product) as HTMLSelectElement).value).toBe(PRODUCT)
+    expect(Array.from((screen.getByLabelText(T.field.product) as HTMLSelectElement).options).map((option) => option.value)).toContain(PRODUCT)
+  })
+
+  it('never silently upgrades a selected owner version when the same product returns at a newer version', async () => {
+    const refreshed = { ...OPTIONS_A.products[0], productVersion: '8' }
+    const versioned: UseReferenceOptions = (companyId, _businessDate, _accountSearch = '', productSearch = '') => {
+      const products = productSearch === 'yenile' ? [refreshed] : OPTIONS_A.products
+      return companyId === COMPANY_A
+        ? { status: 'ready', options: { ...OPTIONS_A, products }, productOffer: { items: products, searchWindowFull: false } }
+        : { status: 'unavailable' }
+    }
+    installFetch()
+    renderSalesApp(PATH, versioned)
+    await formVisible()
+    fireEvent.change(screen.getByLabelText(T.field.businessDate), { target: { value: '2026-09-13' } })
+    await userEvent.selectOptions(screen.getByLabelText(T.field.product), PRODUCT)
+
+    await userEvent.type(screen.getByTestId('sales-product-search'), 'yenile')
+    await userEvent.click(screen.getByTestId('sales-product-search-button'))
+    const product = screen.getByLabelText(T.field.product) as HTMLSelectElement
+    await waitFor(() => expect(product.value).toBe(''))
+    const errorId = product.getAttribute('aria-describedby')
+    expect(errorId).not.toBeNull()
+    expect(document.getElementById(errorId as string)?.textContent).toBe(T.validation.productNotOffered)
+  })
+
   it('offers the chosen account’s addresses and contacts, and sends the chosen ones as id + owner version', async () => {
     const pending = deferred<Response>()
     const fetch = installFetch({ onCreate: () => pending.promise })
@@ -458,7 +504,7 @@ describe('SALES-A2a — delivery address, contact and the currencies list', () =
     expect(saveButton()).toBeTruthy()
   })
 
-  it('on main (header only): the header is real, the currencies follow the business date, the lines and submit are withheld', async () => {
+  it('with a deliberately partial source: the header is real and lines stay withheld with the measured reason', async () => {
     const asked: string[] = []
     const currencies: UseCurrencyOptions = (companyId, effectiveOn) => {
       asked.push(effectiveOn)

@@ -27,13 +27,26 @@ export interface S04Seed {
   readonly preparerActor: string
   readonly approverActor: string
   readonly readerActor: string
+  readonly supportCreatorActor: string
+  readonly ordinaryCreatorActor: string
   readonly companyId: string
   readonly draftId: string
+  readonly supportDraftId: string
+  readonly ordinaryApproveDraftId: string
+  readonly ordinaryRejectDraftId: string
+  readonly withdrawalDraftId: string
   readonly deliveryDraftId: string
   readonly realPartyId: string
   readonly realCompanyAccountId: string
   readonly deliveryAddressId: string
   readonly deliveryContactId: string
+  readonly productId: string
+  readonly productVersion: string
+  readonly productUnitId: string
+  readonly productUnitProfileId: string
+  readonly productUnitProfileVersion: string
+  readonly productCode: string
+  readonly productName: string
 }
 
 export interface S04Environment {
@@ -60,6 +73,30 @@ function text(raw: Record<string, unknown>, field: keyof S04Seed, guid = false):
   return value.trim()
 }
 
+function positiveVersion(raw: Record<string, unknown>, field: keyof S04Seed): string {
+  const value = text(raw, field)
+  if (!/^[1-9][0-9]*$/.test(value)) {
+    throw new Error(`BROWSER_E2E_S04_SEED field "${field}" is not a positive integer version`)
+  }
+  return value
+}
+
+function productCode(raw: Record<string, unknown>): string {
+  const value = text(raw, 'productCode')
+  if (!/^SYNS04-[1-9][0-9]*$/.test(value)) {
+    throw new Error('BROWSER_E2E_S04_SEED field "productCode" is not the isolated s04 product code')
+  }
+  return value
+}
+
+function productName(raw: Record<string, unknown>): string {
+  const value = text(raw, 'productName')
+  if (value !== 'SENTETIK browser-suite:s04 sales candidate') {
+    throw new Error('BROWSER_E2E_S04_SEED field "productName" is not the isolated s04 product name')
+  }
+  return value
+}
+
 export function readEnvironment(): S04Environment {
   const testedCommit = required('BROWSER_E2E_TESTED_COMMIT')
   if (!/^[0-9a-f]{40}$/.test(testedCommit)) {
@@ -74,19 +111,39 @@ export function readEnvironment(): S04Environment {
     preparerActor: text(raw, 'preparerActor'),
     approverActor: text(raw, 'approverActor'),
     readerActor: text(raw, 'readerActor'),
+    supportCreatorActor: text(raw, 'supportCreatorActor'),
+    ordinaryCreatorActor: text(raw, 'ordinaryCreatorActor'),
     companyId: text(raw, 'companyId', true),
     draftId: text(raw, 'draftId', true),
+    supportDraftId: text(raw, 'supportDraftId', true),
+    ordinaryApproveDraftId: text(raw, 'ordinaryApproveDraftId', true),
+    ordinaryRejectDraftId: text(raw, 'ordinaryRejectDraftId', true),
+    withdrawalDraftId: text(raw, 'withdrawalDraftId', true),
     deliveryDraftId: text(raw, 'deliveryDraftId', true),
     realPartyId: text(raw, 'realPartyId', true),
     realCompanyAccountId: text(raw, 'realCompanyAccountId', true),
     deliveryAddressId: text(raw, 'deliveryAddressId', true),
     deliveryContactId: text(raw, 'deliveryContactId', true),
+    productId: text(raw, 'productId', true),
+    productVersion: positiveVersion(raw, 'productVersion'),
+    productUnitId: text(raw, 'productUnitId', true),
+    productUnitProfileId: text(raw, 'productUnitProfileId', true),
+    productUnitProfileVersion: positiveVersion(raw, 'productUnitProfileVersion'),
+    productCode: productCode(raw),
+    productName: productName(raw),
   }
-  if (new Set([seed.preparerActor, seed.approverActor, seed.readerActor]).size !== 3) {
-    throw new Error('BROWSER_E2E_S04_SEED binds the same actor to two roles')
+  if (new Set([seed.preparerActor, seed.approverActor, seed.readerActor, seed.supportCreatorActor, seed.ordinaryCreatorActor]).size !== 5) {
+    throw new Error('BROWSER_E2E_S04_SEED binds the same actor to two personas')
   }
-  if (seed.draftId === seed.deliveryDraftId) {
-    throw new Error('BROWSER_E2E_S04_SEED names the same draft twice')
+  if (new Set([
+    seed.draftId,
+    seed.deliveryDraftId,
+    seed.supportDraftId,
+    seed.ordinaryApproveDraftId,
+    seed.ordinaryRejectDraftId,
+    seed.withdrawalDraftId,
+  ]).size !== 6) {
+    throw new Error('BROWSER_E2E_S04_SEED repeats a draft id')
   }
   return { apiBaseUrl, testedCommit, seed }
 }

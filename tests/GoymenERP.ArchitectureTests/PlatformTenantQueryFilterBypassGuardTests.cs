@@ -61,7 +61,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // opinion about whether a change is semantic. Any edit to a pinned file, comment included, is re-pinned in
     // the same push.
     private const string ReviewedOpenApiStartupFingerprint =
-        "cb6209be50595339550165d45c6fdcae8eb6eca6004dea53d18d26f807718f86";
+        "5a240a6ecabdf2e38df218044fcfed521e915b79ec7c0af0d92f3d66f395df7c";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedIdentityReconcilerPath =
@@ -93,11 +93,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         "0a5d40cdf5b24b687eb6acbf6f96d4b70d050a24e9268498aa6a12007bb9e525";
     private const string SqlServerRcsiIntegrationProjectPath =
         "tests/GoymenERP.Api.IntegrationTests/GoymenERP.Api.IntegrationTests.csproj";
-    // Re-fingerprinted for #331: one linked Compile item (the browser-suite runner's BrowserSuiteHost.cs,
-    // for BrowserSuiteHostEnvelopeTests), after the module SQL acceptance ProjectReferences. Publish
-    // target and discovery contract unchanged.
+    // Re-fingerprinted for #391: two linked Compile items (the browser-suite runner's BrowserSuiteHost.cs
+    // and its closed seed-output validator, both for BrowserSuiteHostEnvelopeTests), after the module SQL
+    // acceptance ProjectReferences. Publish target and discovery contract unchanged.
     private const string ReviewedSqlServerRcsiIntegrationProjectFingerprint =
-        "eed96a445bbedb5cea3f92bccc2dd0695b0dc5326defbbf7a05ce817bed852ad";
+        "75e674d2a4e3508decae12b1ca492acc18ea44ddd56f53265c3c684fa670d634";
     private const string SqlServerRcsiRelationalAcceptancePath =
         "tests/GoymenERP.Api.IntegrationTests/"
         + "SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests.cs";
@@ -169,7 +169,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // product
             ["tools/relational_inventory/product.txt"] =
-                "7994d6f4490ebbc0a5204e47afd28543050f90688a8a9d9e33f5542ed24a1223",
+                "ad3665a6974797af7cf87f6124a138c62e223cb9223908db1a9d8770a42e9a17",
 
             // purchasing
             ["tools/relational_inventory/purchasing.txt"] =
@@ -177,7 +177,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // sales
             ["tools/relational_inventory/sales.txt"] =
-                "515d8815193c6ee7275f93c9be97cde6a91d72d69eebc26238d206326bfa5d24",
+                "16fa5110756788cb8beae6556eff16e7015c6fbc42e4dbabcb7a7a9bd1bb94ff",
         };
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
@@ -209,7 +209,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/"
              + "Persistence/SalesDbContext.cs"] =
-                "715058a1d29fd45835d1bd4263c6423e26cbea71a487bf91968fd917b73d2018",
+                "2ce870a4b7ed0ee3f42d502e634b0dbd65e0965c7e5eef6c12bcb05a24290101",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
@@ -246,7 +246,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 "7c0c51016d4a47b6d9b5faf34a013d0eb76b4337899d1cf64601037aed44ce20",
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "Persistence/ProductDbContext.cs"] =
-                "ffc0ba53551ff8c07f56c48409e211d5eebe286965440391924258649670ee98",
+                "f597cb36bc0ce5c866182a71c9688b954a394c9f291b8919585a0d1ddd05d995",
             ["src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/"
              + "Persistence/GroupSharedCommandDbContext.cs"] =
                 "6fe01949b839e3005d33c3aa00c02982add6a1af63482005b43b277b95c5dfc3"
@@ -264,11 +264,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // here (no new database capability; MigrateAsync stays 2).
                 // Re-measured for #316 on top of C3: ProductShellCapabilityProvider is registered here (a
                 // singleton shell provider; no new database capability, MigrateAsync stays 2).
-                // Re-measured for PRD-FAM-1 (#334): the family definition source and policy are the V2
-                // registry pair (a scoped EF read over ProductDbContext; no new database capability,
-                // MigrateAsync stays 2).
+                // Re-measured for E1: the bounded sales-candidate reader/service are DI-only additions over the
+                // existing Product read store and eligibility ports; no new database capability, MigrateAsync stays 2.
                 ["src/backend/GoymenERP.Api/ProductRuntime/ProductRuntimeExtensions.cs"] =
-                    new("5c532feecc486eaeccde7db76beeb3d7ecdac7c6fe1650ad94311298c2616d2f",
+                    new("fca623ccede5aac80b7efe0252101e355f256f2ddea82dfa49619bfd369c69f3",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["MigrateAsync"] = 2 }),
                 // Re-measured for PRD-UNIT-1: the Product participant gets Settings' unit-identity catalog
@@ -323,13 +322,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 ["src/backend/Modules/Identity/"
                  + "GoymenERP.Modules.Identity.Infrastructure/IdentityModuleExtensions.cs"] =
-                    // Re-fingerprinted for the fresh-authority registration (Business #66
-                    // 5720113915): the scoped authorization service is now resolved by its
-                    // concrete type and bound to both the cached and the revalidation port, and
-                    // a null permission-scope read observer is registered. The database surface
-                    // below is unchanged, which is what the API counts hold.
+                    // Re-fingerprinted for the D2 active-role reader registration: the same scoped
+                    // authorization service now also exposes a permission-independent role view.
+                    // The database startup surface below is unchanged, which is what the API
+                    // counts hold.
                     new(
-                        "a657cd98242229d68661ed6c56fee726c98c719ea1c25c3437b2f823b8c3be46",
+                        "14f0123bd298e80e45e451de292aae24126655ac3ca2579abef69b5fddbec4fb",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -558,7 +556,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Sales.Infrastructure/"
                  + "SalesModuleExtensions.cs"] =
                     new(
-                        "55a8a02d96ec51db9c71ab29ed42e8105e68cc55960c9862560e176c4008108c",
+                        "2b706e85f34cfc7475dda51469c66d039996c79796b8452630cb0688c444b49e",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -571,7 +569,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Sales/"
                  + "GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.cs"] =
                     new(
-                        "c67497119ffd0bd57c62f575f02d7b6a5b6f73b17c0b09c0ef74c7496eed51db",
+                        "124e630defd39eeb7755baf3190c5963a725746febca87cbdd4636601a544cd6",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -675,6 +673,19 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // src/backend). Forward fix, the AddDraftApproval (51045) pattern.
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20260920073846_AddDraftRevisions.cs"] =
                     new("d2ec4a9b1f6fbe736ee18da1898ded863cfc3486c8bcb6b81923d6ec9ea893bf",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // SALES-D2: the Down's only raw SQL refuses rollback while any withdrawn draft exists;
+                // the refusal precedes the constraint replacement, so no withdrawal trail is discarded.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20260921090000_AddDraftWithdrawal.cs"] =
+                    new("df0b7eb737a3eeaeaed7ff3f9c9166ed3d0ad713486d0186e5eb8a8942e5117d",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // SALES-D2: the Down's only raw SQL refuses rollback while a terminal mutation refusal is linked
+                // to a draft. The refusal runs before replacing the outcome constraint, so no durable refusal
+                // identity is erased; environments containing one require a forward fix.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20260922120000_LinkMutationRefusalsToDrafts.cs"] =
+                    new("b34e318fa4e27a6f30b23a19d7370fd5783c7d7ece01204f36337b11cebbcc91",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // ACC-V0a: the Down's only raw SQL is Accounting's module refusal (51048, coordinator-assigned) while any

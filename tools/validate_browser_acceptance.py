@@ -135,8 +135,8 @@ SUITE_API_EXTENSIONS = {
     "mfg": {"issuer": False, "actors": True, "identity": True},
     # FIN-01 (FİNANS, #332): a proposer and an approver actor with their Identity users and grants.
     "fin01": {"issuer": False, "actors": True, "identity": True},
-    # S-04 (SİPARİŞ): a preparer, an approver and a reader actor with their Identity users and grants.
-    "s04": {"issuer": False, "actors": True, "identity": True},
+    # S-04 (SİPARİŞ): the existing Product issuer binding plus its Sales actors, Identity users and grants.
+    "s04": {"issuer": True, "actors": True, "identity": True},
     # ACC-01 (FİNANS, ACC-V0b): a preparer and an approver actor with their Identity users and grants.
     "acc01": {"issuer": False, "actors": True, "identity": True},
     # L-04 (SİPARİŞ): a preparer, a loader and a reader actor plus the two Sales seed actors, with their grants.
@@ -228,7 +228,8 @@ SUITE_IDENTITY_PERMISSIONS = {
     # SALES-A2a: the preparer reaches the Cari owner's contact information through its OWN party read
     # (the s03 precedent), so the suite's closed list gains that name and nothing else.
     "s04": ("sales.drafts.create", "sales.drafts.read", "sales.orders.approve",
-            "counterparty.parties.read", "counterparty.parties.update.basic"),
+            "counterparty.parties.read", "counterparty.parties.update.basic",
+            "product.operational-selection.read"),
     # The six Accounting names. The preparer holds .approve on purpose — Ö4 must refuse its OWN proposal
     # although the grant is there — and holds periods.read alone in the second company; the approver holds
     # no journal or queue name, so those routes stay closed to it.
@@ -347,7 +348,12 @@ def validate_suite_identity(suite: str, extra: dict, actor_ids: list[str]) -> No
         indices = sorted(int(key.rsplit("__", 1)[1]) for key in role if key.startswith("Permissions__"))
         require(indices == list(range(len(indices))), f"{label} permissions must be indexed contiguously from 0")
         role_id = unique(_synthetic_id(role["Id"], "Roles", f"{label} Id"))
-        require(re.fullmatch(rf"{role_prefix}[A-Z0-9_]{{1,40}}", role["Code"]) is not None,
+        role_code = role["Code"]
+        suite_role = re.fullmatch(rf"{role_prefix}[A-Z0-9_]{{1,40}}", role_code) is not None
+        # S-04 exercises the accepted Sales Support persona through the disposable Identity seed.
+        # Every other role remains synthetic and suite-prefixed; all existing name, system,
+        # permission, scope and assignment checks below still apply to this one exception.
+        require(suite_role or (suite == "s04" and role_code == "SALES_SUPPORT"),
                 f"{label} code must start {role_prefix}")
         require(role["Name"].startswith("SENTETIK "), f"{label} must be labelled SENTETIK")
         require(role["IsSystem"] == "false", f"{label} must not be a system role")
@@ -402,7 +408,10 @@ SUITE_FIXTURE_OUTPUTS: dict[str, frozenset[str]] = {
     # deterministic constants in the spec instead of travelling as seed outputs.
     "s04": frozenset({"preparerActor", "approverActor", "readerActor", "companyId", "draftId",
                       "deliveryDraftId", "realPartyId", "realCompanyAccountId", "deliveryAddressId",
-                      "deliveryContactId"}),
+                      "deliveryContactId", "supportCreatorActor", "ordinaryCreatorActor", "supportDraftId",
+                      "ordinaryApproveDraftId", "ordinaryRejectDraftId", "withdrawalDraftId",
+                      "productId", "productVersion", "productUnitId", "productUnitProfileId",
+                      "productUnitProfileVersion", "productCode", "productName"}),
     # FİNANS's Suites/ACC01 seed: the two actors and both companies. No Accounting row is seeded — the suite
     # proposes, approves and closes through the real API, and the second company exists only to show that
     # GDC's periods never appear there.
@@ -441,7 +450,14 @@ def seed_export(suite: str, seed: object) -> str:
         require(isinstance(value, str), f"seed output {key} must be a string")
         is_guid = _ANY_GUID.fullmatch(value) is not None and value != "00000000-0000-0000-0000-000000000000"
         is_actor = value in CANONICAL_ACTORS or re.fullmatch(rf"{suite}-[a-z0-9-]{{1,48}}", value) is not None
-        require(is_guid or is_actor, f"seed output {key} must be a GUID or an actor id")
+        is_s04_version = suite == "s04" and key in {"productVersion", "productUnitProfileVersion"} \
+            and re.fullmatch(r"[1-9][0-9]*", value) is not None
+        is_s04_code = suite == "s04" and key == "productCode" \
+            and re.fullmatch(r"SYNS04-[1-9][0-9]*", value) is not None
+        is_s04_name = suite == "s04" and key == "productName" \
+            and value == "SENTETIK browser-suite:s04 sales candidate"
+        require(is_guid or is_actor or is_s04_version or is_s04_code or is_s04_name,
+                f"seed output {key} must be a GUID or an actor id or an approved s04 Product value")
     compact = json.dumps(seed, sort_keys=True, separators=(",", ":"))
     return f"BROWSER_E2E_{suite.upper()}_SEED={compact}"
 

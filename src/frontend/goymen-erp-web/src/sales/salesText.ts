@@ -42,6 +42,14 @@ export const ORDER_DRAFT_TEXT = {
     currencyLoading: 'Para birimleri okunuyor…',
     currencyEmpty: 'Bu sipariş tarihinde onaylı para birimi yok.',
     currencyUnavailable: (reason: string) => `Para birimleri okunamadı (${reason}).`,
+    productSearch: 'Ürün ara',
+    productSearchHint: 'Ürün kodu ya da adına göre; eşleştirmeyi ürün servisi yapar.',
+    productSearchSubmit: 'Ürünleri getir',
+    productIdle: 'Satışa uygun ürünler sipariş tarihine göre listelenir; önce sipariş tarihini girin.',
+    productLoading: 'Satışa uygun ürünler okunuyor…',
+    productEmpty: 'Bu aramada uygun ürün adayı dönmedi; bu sonuç tüm katalogda uygun ürün olmadığı anlamına gelmez.',
+    productUnavailable: (reason: string) => `Satışa uygun ürünler okunamadı (${reason}).`,
+    productWindowFull: 'İlk 25 aday gösteriliyor; aradığınız ürün yoksa kod veya adla aramayı daraltın.',
     deliveryIdle: 'Teslimat adresi ve kişisi cari hesabı seçildikten sonra listelenir.',
     deliveryLoading: 'Yükleniyor…',
     noAddress: 'Kayıtlı adres yok',
@@ -50,8 +58,8 @@ export const ORDER_DRAFT_TEXT = {
     retry: 'Tekrar dene',
     /** 409 `version_conflict` on `deliveryAddress` / `contact`: the Cari owner's item moved after the list was read (not the product sentence). */
     versionConflict: 'Cari adres/kişi kaydı siz seçtikten sonra değişti; listeyi yenileyip yeniden seçin.',
-    /** E1: the product list is not published; the header is real, the lines and the submit are withheld. */
-    linesWithheld: 'Ürün listesi henüz sunulmuyor: satırlar ve gönderim kapalı.',
+    /** Product/date read is not ready; the header stays usable while lines and submit remain withheld. */
+    linesWithheld: 'Satışa uygun ürün adayları hazır olana kadar satırlar ve gönderim kapalı.',
   },
   addLine: 'Satır ekle',
   removeLine: 'Satırı kaldır',
@@ -175,6 +183,7 @@ export const APPROVAL_STATE_TEXT: Record<ApprovalState, string> = {
   [APPROVAL_STATE.pendingApproval]: 'Onay bekliyor',
   [APPROVAL_STATE.approved]: 'Onaylı',
   [APPROVAL_STATE.rejected]: 'Reddedildi',
+  [APPROVAL_STATE.withdrawn]: 'Geri çekildi',
 }
 
 export const ORDER_LIST_TEXT = {
@@ -218,6 +227,15 @@ export const ORDER_DETAIL_TEXT = {
     approve: 'Onayla',
     reject: 'Reddet',
     reasonLabel: 'Ret nedeni (isteğe bağlı)',
+    // D2 (Sinan 5749046401): the creator's own withdrawal — its own command and trail, nothing deleted.
+    withdraw: 'Geri çek',
+    withdrawReasonLabel: 'Geri çekme nedeni (isteğe bağlı)',
+    withdrawnBy: 'Geri çeken',
+    withdrawnAt: 'Geri çekme zamanı',
+    withdrawalReason: 'Geri çekme nedeni',
+    withdrawnNote: 'Geri çekilen taslak kapalıdır; kayıt ve satırlar silinmez. Yeni sipariş yeni bir taslakla açılır.',
+    // D2: the order one PREPARED is decided by someone else; the server refuses regardless of this screen.
+    ownDecisionNote: 'Kendi hazırladığınız taslağı onaylayamaz veya reddedemezsiniz; karar başka bir yetkiliye aittir.',
     submitting: 'İşlem gönderiliyor…',
     unknown:
       'İşlemin sonucu alınamadı; kaydedilmiş olabilir. Aynı işlemi tekrar göndermek ikinci bir geçiş oluşturmaz.',
