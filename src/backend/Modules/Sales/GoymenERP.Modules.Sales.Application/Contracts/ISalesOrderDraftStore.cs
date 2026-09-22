@@ -49,8 +49,11 @@ public static class SalesDraftCommands
     /// <summary>K3 Head B: POST /api/v1/sales/drafts/{id}/commercial-revision — the commercial fields of every line replaced; an approved draft is archived and advances a revision.</summary>
     public const string ReviseCommercialV1 = "sales.order-draft.revise-commercial.v1";
 
+    /// <summary>D2 (Sinan 5749046401): POST /api/v1/sales/drafts/{id}/withdrawal — Preparing/PendingApproval/Rejected → Withdrawn (terminal; nothing deleted).</summary>
+    public const string WithdrawV1 = "sales.order-draft.withdraw.v1";
+
     public static bool IsStateCommand(string commandName) =>
-        commandName is SubmitV1 or ApproveV1 or RejectV1;
+        commandName is SubmitV1 or ApproveV1 or RejectV1 or WithdrawV1;
 }
 
 /// <summary>The stable refusal codes of the Sales draft store, beside the domain's own rule codes.</summary>
@@ -163,9 +166,11 @@ public interface ISalesOrderDraftStore
     /// ADR-011 §7: records a terminal refusal under the attempt key, so a retry with the same key,
     /// content and actor answers the same refusal instead of asking the owners again. A key already
     /// holding an attempt is <see cref="SalesDraftStoreCodes.ConcurrentChange"/> (the retry replays it).
+    /// <paramref name="draftId"/> identifies the existing draft for a mutation refusal; create-time
+    /// refusals leave it null.
     /// </summary>
     Task RecordRefusalAsync(SalesDraftWriteEnvelope envelope, string requestHash, SalesDraftTerminalRefusal refusal,
-        CancellationToken cancellationToken = default, string commandName = SalesDraftCommands.CreateV1);
+        CancellationToken cancellationToken = default, string commandName = SalesDraftCommands.CreateV1, Guid? draftId = null);
 
     /// <summary>
     /// SALES-A1: one internal-approval transition of the company's stored draft in ONE save — the

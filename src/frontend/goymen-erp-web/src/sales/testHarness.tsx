@@ -97,8 +97,11 @@ export const controlledContactInformation: UseContactInformation = (companyId, p
       ? { status: 'ready', data: CONTACT_INFORMATION_A }
       : { status: 'ready', data: { partyId, companyAccountId, accountVersion: '1', addresses: [], contacts: [] } }
 
+/** D2: the harness's signed-in actor — a draft "of one's own" is one whose stored creator / submitter is this id. */
+export const HARNESS_USER_ID = '77777777-7777-7777-7777-777777777777'
+
 const IDENTITY = {
-  userId: '77777777-7777-7777-7777-777777777777',
+  userId: HARNESS_USER_ID,
   displayName: 'Satış kullanıcısı',
   email: null,
   allowedCompanyIds: [COMPANY_A, COMPANY_B],
@@ -159,7 +162,7 @@ export function installFetch(config: HarnessConfig = {}) {
         })
       }
       if (url.includes('/sales/drafts')) {
-        const command = /\/sales\/drafts\/[^/?]+\/(submission|approval|rejection)$/.exec(url)?.[1]
+        const command = /\/sales\/drafts\/[^/?]+\/(submission|approval|rejection|withdrawal)$/.exec(url)?.[1]
         if (call.method === 'POST' && command !== undefined) {
           if (config.onCommand === undefined) throw new Error(`unexpected ${command}`)
           return config.onCommand(command, call)

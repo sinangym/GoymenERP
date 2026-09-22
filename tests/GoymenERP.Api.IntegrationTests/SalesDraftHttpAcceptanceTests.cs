@@ -152,7 +152,7 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
     private static SalesOrderDraftDetailView Detail(Guid draftId, string approvalState = "Preparing") => new(
         new SalesOrderDraftSummaryView(draftId, CompanyA, "SO-2026-000001", "Order", "Draft", "1", "Rev.0", Guid.NewGuid(), Guid.NewGuid(),
             Guid.NewGuid(), new DateOnly(2026, 9, 18), new DateTimeOffset(2026, 9, 18, 14, 0, 0, TimeSpan.Zero), 0, approvalState),
-        null, null, [], null, null, null, null, null, null, new SalesDraftApprovalV1(null, null, null, null, null));
+        null, null, [], null, null, null, null, null, null, new SalesDraftApprovalV1(null, null, null, null, null), false, false);
 
     private WebApplicationFactory<Program> CreateHost(ISalesDraftService service) => factory.WithWebHostBuilder(builder =>
         builder.ConfigureTestServices(services =>
@@ -207,6 +207,9 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
         public Task<SalesOrderDraftResponse> ApproveDraftAsync(Guid draftId, SalesDraftStateCommandRequest request, SalesCommandMetadata metadata,
             CancellationToken cancellationToken = default) => StateAsync("approve", draftId, request, metadata);
 
+        public Task<SalesOrderDraftResponse> WithdrawDraftAsync(Guid draftId, SalesDraftStateCommandRequest request, SalesCommandMetadata metadata,
+            CancellationToken cancellationToken = default) => StateAsync("withdraw", draftId, request, metadata);
+
         public Task<SalesOrderDraftResponse> RejectDraftAsync(Guid draftId, SalesDraftStateCommandRequest request, SalesCommandMetadata metadata,
             CancellationToken cancellationToken = default) => StateAsync("reject", draftId, request, metadata);
 
@@ -223,6 +226,7 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
     [InlineData("submission", "submit")]
     [InlineData("approval", "approve")]
     [InlineData("rejection", "reject")]
+    [InlineData("withdrawal", "withdraw")]
     public async Task A_state_command_answers_200_with_the_draft_and_the_replay_headers_only_on_a_replay(string segment, string command)
     {
         var draftId = Guid.NewGuid();
@@ -284,7 +288,7 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
             Assert.Equal(HttpStatusCode.UnsupportedMediaType, (await client.SendAsync(text)).StatusCode);
         }
 
-        // A missing version, a non-positive or non-integer one, an unknown member, and a reason outside the rejection: 400.
+        // A missing version, a non-positive or non-integer one, an unknown member, and a reason outside rejection/withdrawal: 400.
         foreach (var (segment, json) in new[]
                  {
                      ("submission", "{}"), ("submission", "{\"expectedVersion\":\"0\"}"), ("approval", "{\"expectedVersion\":1}"),

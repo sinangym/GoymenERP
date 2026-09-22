@@ -35,6 +35,14 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
     public const string PreparerActor = "s04-preparer";
     public const string ApproverActor = "s04-approver";
     public const string ReaderActor = "s04-reader";
+    public const string SupportCreatorActor = "s04-support-creator";
+    public const string OrdinaryCreatorActor = "s04-ordinary-creator";
+
+    // Identity's authenticated actor is the canonical user id resolved from the development subject.
+    // Fixture CreatedBy must store that same identity, never the external subject/header value.
+    private static readonly Guid PreparerIdentityId = Guid.Parse("b2000000-0000-4000-8000-000000000401");
+    private static readonly Guid SupportCreatorIdentityId = Guid.Parse("b2000000-0000-4000-8000-000000000405");
+    private static readonly Guid OrdinaryCreatorIdentityId = Guid.Parse("b2000000-0000-4000-8000-000000000406");
 
     /// <summary>The canonical bootstrap administrator, whose seeded SYSTEM_ADMINISTRATOR role opens Cari parties (the fin01 way).</summary>
     public const string CariActor = "group-bootstrap-admin";
@@ -56,6 +64,13 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
     public static readonly Guid DeliveryDraftId = Guid.Parse("d1000000-0000-4000-8000-000000000402");
     public const string DeliveryDocumentNo = "SENTETIK browser-suite:s04 SO-0002";
 
+    // D2: separate records keep every persona and terminal-state assertion independent. Their creators are
+    // real disposable Identity actors; another actor submits, so creator and submitter cannot be confused.
+    public static readonly Guid SupportDraftId = Guid.Parse("d1000000-0000-4000-8000-000000000410");
+    public static readonly Guid OrdinaryApproveDraftId = Guid.Parse("d1000000-0000-4000-8000-000000000411");
+    public static readonly Guid OrdinaryRejectDraftId = Guid.Parse("d1000000-0000-4000-8000-000000000412");
+    public static readonly Guid WithdrawalDraftId = Guid.Parse("d1000000-0000-4000-8000-000000000413");
+
     // Synthetic owner identities: nothing in Cari, Settings or Product answers them; the draft stores snapshots.
     private static readonly Guid PartyId = Guid.Parse("d2000000-0000-4000-8000-000000000401");
     private static readonly Guid CompanyAccountId = Guid.Parse("d3000000-0000-4000-8000-000000000401");
@@ -74,6 +89,14 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
     // chooses (the contact-information command takes client-chosen ids), fixed so that a re-run is a no-op.
     private static readonly Guid DeliveryProductId = Guid.Parse("d8000000-0000-4000-8000-000000000403");
     private static readonly Guid DeliveryLineId = Guid.Parse("d9000000-0000-4000-8000-000000000403");
+    private static readonly Guid SupportProductId = Guid.Parse("d8000000-0000-4000-8000-000000000410");
+    private static readonly Guid SupportLineId = Guid.Parse("d9000000-0000-4000-8000-000000000410");
+    private static readonly Guid OrdinaryApproveProductId = Guid.Parse("d8000000-0000-4000-8000-000000000411");
+    private static readonly Guid OrdinaryApproveLineId = Guid.Parse("d9000000-0000-4000-8000-000000000411");
+    private static readonly Guid OrdinaryRejectProductId = Guid.Parse("d8000000-0000-4000-8000-000000000412");
+    private static readonly Guid OrdinaryRejectLineId = Guid.Parse("d9000000-0000-4000-8000-000000000412");
+    private static readonly Guid WithdrawalProductId = Guid.Parse("d8000000-0000-4000-8000-000000000413");
+    private static readonly Guid WithdrawalLineId = Guid.Parse("d9000000-0000-4000-8000-000000000413");
     private static readonly Guid DeliveryAddressId = Guid.Parse("da000000-0000-4000-8000-000000000401");
     private static readonly Guid DeliveryContactId = Guid.Parse("db000000-0000-4000-8000-000000000401");
 
@@ -128,7 +151,7 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
                         new SalesDraftFixtureLine(SheetLineId, SheetProductId, "S04-SHEET", context.Label("levha 2 × 1000 × 2000"),
                             PieceUnitId, PieceProfileId, "adet", "count", IsKilogram: false, Scale: 0, "3", 3m),
                     ],
-                    context.Label("seed"),
+                    PreparerIdentityId.ToString("D"),
                     context.IdempotencyKey("draft"),
                     At),
                 cancellationToken);
@@ -154,7 +177,7 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
                         new SalesDraftFixtureLine(DeliveryLineId, DeliveryProductId, "S04-COIL-2", context.Label("rulo 1,50 × 1000"),
                             KgUnitId, KgProfileId, "kg", "weight", IsKilogram: true, Scale: 3, "2.500", 2.500m),
                     ],
-                    context.Label("seed"),
+                    PreparerIdentityId.ToString("D"),
                     context.IdempotencyKey("delivery-draft"),
                     At),
                 cancellationToken);
@@ -162,6 +185,15 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
             {
                 throw new InvalidOperationException("The Sales fixture writer answered another id for the delivery draft.");
             }
+
+            await EnsureD2DraftAsync(writer, context, SupportDraftId, "SO-D2-SUPPORT", SupportCreatorIdentityId.ToString("D"),
+                SupportProductId, SupportLineId, "support-creator-draft", cancellationToken);
+            await EnsureD2DraftAsync(writer, context, OrdinaryApproveDraftId, "SO-D2-ORD-APPROVE", OrdinaryCreatorIdentityId.ToString("D"),
+                OrdinaryApproveProductId, OrdinaryApproveLineId, "ordinary-approve-draft", cancellationToken);
+            await EnsureD2DraftAsync(writer, context, OrdinaryRejectDraftId, "SO-D2-ORD-REJECT", OrdinaryCreatorIdentityId.ToString("D"),
+                OrdinaryRejectProductId, OrdinaryRejectLineId, "ordinary-reject-draft", cancellationToken);
+            await EnsureD2DraftAsync(writer, context, WithdrawalDraftId, "SO-D2-WITHDRAW", OrdinaryCreatorIdentityId.ToString("D"),
+                WithdrawalProductId, WithdrawalLineId, "withdrawal-draft", cancellationToken);
         }
 
         // Read back through the real host, as each actor: the fixture is only done when the product actually
@@ -193,6 +225,25 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
         if (Capabilities(reader).Contains(ApproveControl, StringComparer.Ordinal))
         {
             throw new InvalidOperationException("The approve control must not be published to the reader.");
+        }
+
+        // D2 persona preflight through the real API: both actors own their fixture record and hold the same
+        // ordinary command capabilities, but only the actor whose fresh Identity roles include SALES_SUPPORT
+        // carries the server-computed own-decision restriction. The browser never infers either relationship.
+        var support = await context.GetJsonAsync(SupportCreatorActor, CompanyGdc, $"{DraftsPath}/{SupportDraftId:D}", cancellationToken);
+        var ordinary = await context.GetJsonAsync(OrdinaryCreatorActor, CompanyGdc, $"{DraftsPath}/{OrdinaryApproveDraftId:D}", cancellationToken);
+        if (!support.GetProperty("isOwnDraft").GetBoolean() || !support.GetProperty("isOwnDecisionRestricted").GetBoolean()
+            || !ordinary.GetProperty("isOwnDraft").GetBoolean() || ordinary.GetProperty("isOwnDecisionRestricted").GetBoolean())
+        {
+            throw new InvalidOperationException("The real Sales detail did not preserve the D2 SalesSupport creator distinction.");
+        }
+        foreach (var actor in new[] { SupportCreatorActor, OrdinaryCreatorActor })
+        {
+            var capabilities = await context.GetJsonAsync(actor, CompanyGdc, "/api/v1/shell/capabilities", cancellationToken);
+            if (!Capabilities(capabilities).Contains(ApproveControl, StringComparer.Ordinal))
+            {
+                throw new InvalidOperationException($"The approve control is not published to D2 actor {actor}.");
+            }
         }
 
         // SALES-A2a read-backs, as the preparer (sales.drafts.create): the two reference LIST reads answer the REAL
@@ -251,14 +302,53 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
             ["preparerActor"] = PreparerActor,
             ["approverActor"] = ApproverActor,
             ["readerActor"] = ReaderActor,
+            ["supportCreatorActor"] = SupportCreatorActor,
+            ["ordinaryCreatorActor"] = OrdinaryCreatorActor,
             ["companyId"] = CompanyGdc.ToString("D"),
             ["draftId"] = DraftId.ToString("D"),
+            ["supportDraftId"] = SupportDraftId.ToString("D"),
+            ["ordinaryApproveDraftId"] = OrdinaryApproveDraftId.ToString("D"),
+            ["ordinaryRejectDraftId"] = OrdinaryRejectDraftId.ToString("D"),
+            ["withdrawalDraftId"] = WithdrawalDraftId.ToString("D"),
             ["realPartyId"] = customer.PartyId.ToString("D"),
             ["realCompanyAccountId"] = customer.AccountId.ToString("D"),
             ["deliveryAddressId"] = DeliveryAddressId.ToString("D"),
             ["deliveryContactId"] = DeliveryContactId.ToString("D"),
             ["deliveryDraftId"] = DeliveryDraftId.ToString("D"),
         };
+    }
+
+    private static async Task EnsureD2DraftAsync(
+        C01E2eSalesDraftFixtureWriter writer,
+        BrowserSuiteFixtureContext context,
+        Guid draftId,
+        string documentSuffix,
+        string creator,
+        Guid productId,
+        Guid lineId,
+        string step,
+        CancellationToken cancellationToken)
+    {
+        var outcome = await writer.EnsureAsync(
+            new SalesDraftFixtureRequest(
+                draftId,
+                CompanyGdc,
+                context.Label(documentSuffix),
+                context.Label(string.Empty).TrimEnd(),
+                BusinessDate,
+                new SalesDraftFixtureOwners(PartyId, CompanyAccountId, CurrencyId, MoneyProfileId, EffectiveFrom),
+                [
+                    new SalesDraftFixtureLine(lineId, productId, $"S04-{documentSuffix}", context.Label(documentSuffix),
+                        PieceUnitId, PieceProfileId, "adet", "count", IsKilogram: false, Scale: 0, "1", 1m),
+                ],
+                creator,
+                context.IdempotencyKey(step),
+                At),
+            cancellationToken);
+        if (outcome.DraftId != draftId)
+        {
+            throw new InvalidOperationException($"The Sales fixture writer answered another id for {step}.");
+        }
     }
 
     /// <summary>A Sales reference read as the preparer; a non-success answer names the read and its central row.</summary>

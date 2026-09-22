@@ -347,7 +347,12 @@ def validate_suite_identity(suite: str, extra: dict, actor_ids: list[str]) -> No
         indices = sorted(int(key.rsplit("__", 1)[1]) for key in role if key.startswith("Permissions__"))
         require(indices == list(range(len(indices))), f"{label} permissions must be indexed contiguously from 0")
         role_id = unique(_synthetic_id(role["Id"], "Roles", f"{label} Id"))
-        require(re.fullmatch(rf"{role_prefix}[A-Z0-9_]{{1,40}}", role["Code"]) is not None,
+        role_code = role["Code"]
+        suite_role = re.fullmatch(rf"{role_prefix}[A-Z0-9_]{{1,40}}", role_code) is not None
+        # S-04 exercises the accepted Sales Support persona through the disposable Identity seed.
+        # Every other role remains synthetic and suite-prefixed; all existing name, system,
+        # permission, scope and assignment checks below still apply to this one exception.
+        require(suite_role or (suite == "s04" and role_code == "SALES_SUPPORT"),
                 f"{label} code must start {role_prefix}")
         require(role["Name"].startswith("SENTETIK "), f"{label} must be labelled SENTETIK")
         require(role["IsSystem"] == "false", f"{label} must not be a system role")
@@ -402,7 +407,8 @@ SUITE_FIXTURE_OUTPUTS: dict[str, frozenset[str]] = {
     # deterministic constants in the spec instead of travelling as seed outputs.
     "s04": frozenset({"preparerActor", "approverActor", "readerActor", "companyId", "draftId",
                       "deliveryDraftId", "realPartyId", "realCompanyAccountId", "deliveryAddressId",
-                      "deliveryContactId"}),
+                      "deliveryContactId", "supportCreatorActor", "ordinaryCreatorActor", "supportDraftId",
+                      "ordinaryApproveDraftId", "ordinaryRejectDraftId", "withdrawalDraftId"}),
     # FİNANS's Suites/ACC01 seed: the two actors and both companies. No Accounting row is seeded — the suite
     # proposes, approves and closes through the real API, and the second company exists only to show that
     # GDC's periods never appear there.

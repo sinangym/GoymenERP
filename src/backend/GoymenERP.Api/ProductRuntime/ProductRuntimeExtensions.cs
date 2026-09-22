@@ -84,7 +84,18 @@ public static class ProductRuntimeExtensions
                 new ProductSalesEligibilityService(company, user, authority, records, policy, units),
             () => new UnconfiguredProductEligibility()));
         services.AddScoped<IProductSalesCandidateReader, SqlProductSalesCandidateReader>();
-        services.AddScoped<IProductSalesCandidatesV1, ProductSalesCandidateService>();
+        services.AddScoped<IProductSalesCandidatesV1>(provider =>
+        {
+            var settings = provider.GetService<ISettingsPrerequisiteProvider>();
+            if (!provider.GetRequiredService<ProductRuntimeOptions>().IsEnabled || settings is null)
+                return new UnconfiguredProductSalesCandidates();
+            var company = provider.GetRequiredService<ICompanyContext>();
+            return new ProductSalesCandidateService(company, provider.GetRequiredService<ICurrentUser>(),
+                provider.GetRequiredService<IErpAuthorityRevalidationService>(),
+                provider.GetRequiredService<IProductSalesCandidateReader>(),
+                provider.GetRequiredService<IProductSalesEligibilityV1>(),
+                new ProductUnitProfileAdapter(settings, company));
+        });
         services.AddScoped<IProductStockEligibilityV1>(provider => CreateEligibility<IProductStockEligibilityV1>(provider,
             (company, user, authority, records, policy, units) =>
                 new ProductStockEligibilityService(company, user, authority, records, policy, units),
@@ -142,6 +153,13 @@ internal sealed class UnconfiguredProductEligibility : IProductSalesEligibilityV
         cancellationToken.ThrowIfCancellationRequested();
         return Task.FromException<T>(new ProductOperationException(UnavailableCode, 503));
     }
+}
+
+internal sealed class UnconfiguredProductSalesCandidates : IProductSalesCandidatesV1
+{
+    public Task<ProductSalesCandidatesV1> SearchAsync(ProductSalesCandidateQueryV1 query,
+        CancellationToken cancellationToken) => Task.FromException<ProductSalesCandidatesV1>(
+            new ProductOperationException(UnconfiguredProductEligibility.UnavailableCode, 503));
 }
 
 internal sealed class UnconfiguredProductService : IProductService

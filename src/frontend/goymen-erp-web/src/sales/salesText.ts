@@ -175,6 +175,7 @@ export const APPROVAL_STATE_TEXT: Record<ApprovalState, string> = {
   [APPROVAL_STATE.pendingApproval]: 'Onay bekliyor',
   [APPROVAL_STATE.approved]: 'Onaylı',
   [APPROVAL_STATE.rejected]: 'Reddedildi',
+  [APPROVAL_STATE.withdrawn]: 'Geri çekildi',
 }
 
 export const ORDER_LIST_TEXT = {
@@ -218,6 +219,15 @@ export const ORDER_DETAIL_TEXT = {
     approve: 'Onayla',
     reject: 'Reddet',
     reasonLabel: 'Ret nedeni (isteğe bağlı)',
+    // D2 (Sinan 5749046401): the creator's own withdrawal — its own command and trail, nothing deleted.
+    withdraw: 'Geri çek',
+    withdrawReasonLabel: 'Geri çekme nedeni (isteğe bağlı)',
+    withdrawnBy: 'Geri çeken',
+    withdrawnAt: 'Geri çekme zamanı',
+    withdrawalReason: 'Geri çekme nedeni',
+    withdrawnNote: 'Geri çekilen taslak kapalıdır; kayıt ve satırlar silinmez. Yeni sipariş yeni bir taslakla açılır.',
+    // D2: the order one PREPARED is decided by someone else; the server refuses regardless of this screen.
+    ownDecisionNote: 'Kendi hazırladığınız taslağı onaylayamaz veya reddedemezsiniz; karar başka bir yetkiliye aittir.',
     submitting: 'İşlem gönderiliyor…',
     unknown:
       'İşlemin sonucu alınamadı; kaydedilmiş olabilir. Aynı işlemi tekrar göndermek ikinci bir geçiş oluşturmaz.',

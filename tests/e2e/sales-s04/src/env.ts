@@ -27,8 +27,14 @@ export interface S04Seed {
   readonly preparerActor: string
   readonly approverActor: string
   readonly readerActor: string
+  readonly supportCreatorActor: string
+  readonly ordinaryCreatorActor: string
   readonly companyId: string
   readonly draftId: string
+  readonly supportDraftId: string
+  readonly ordinaryApproveDraftId: string
+  readonly ordinaryRejectDraftId: string
+  readonly withdrawalDraftId: string
   readonly deliveryDraftId: string
   readonly realPartyId: string
   readonly realCompanyAccountId: string
@@ -74,19 +80,32 @@ export function readEnvironment(): S04Environment {
     preparerActor: text(raw, 'preparerActor'),
     approverActor: text(raw, 'approverActor'),
     readerActor: text(raw, 'readerActor'),
+    supportCreatorActor: text(raw, 'supportCreatorActor'),
+    ordinaryCreatorActor: text(raw, 'ordinaryCreatorActor'),
     companyId: text(raw, 'companyId', true),
     draftId: text(raw, 'draftId', true),
+    supportDraftId: text(raw, 'supportDraftId', true),
+    ordinaryApproveDraftId: text(raw, 'ordinaryApproveDraftId', true),
+    ordinaryRejectDraftId: text(raw, 'ordinaryRejectDraftId', true),
+    withdrawalDraftId: text(raw, 'withdrawalDraftId', true),
     deliveryDraftId: text(raw, 'deliveryDraftId', true),
     realPartyId: text(raw, 'realPartyId', true),
     realCompanyAccountId: text(raw, 'realCompanyAccountId', true),
     deliveryAddressId: text(raw, 'deliveryAddressId', true),
     deliveryContactId: text(raw, 'deliveryContactId', true),
   }
-  if (new Set([seed.preparerActor, seed.approverActor, seed.readerActor]).size !== 3) {
-    throw new Error('BROWSER_E2E_S04_SEED binds the same actor to two roles')
+  if (new Set([seed.preparerActor, seed.approverActor, seed.readerActor, seed.supportCreatorActor, seed.ordinaryCreatorActor]).size !== 5) {
+    throw new Error('BROWSER_E2E_S04_SEED binds the same actor to two personas')
   }
-  if (seed.draftId === seed.deliveryDraftId) {
-    throw new Error('BROWSER_E2E_S04_SEED names the same draft twice')
+  if (new Set([
+    seed.draftId,
+    seed.deliveryDraftId,
+    seed.supportDraftId,
+    seed.ordinaryApproveDraftId,
+    seed.ordinaryRejectDraftId,
+    seed.withdrawalDraftId,
+  ]).size !== 6) {
+    throw new Error('BROWSER_E2E_S04_SEED repeats a draft id')
   }
   return { apiBaseUrl, testedCommit, seed }
 }
