@@ -1158,6 +1158,10 @@ internal sealed class SqlServerRelationalApiFactory : WebApplicationFactory<Prog
     {
         builder.UseEnvironment("Testing");
         builder.UseSetting("DB_CONNECTION_STRING", _databaseConnectionString);
+        foreach (var (key, value) in _configurationOverrides)
+        {
+            builder.UseSetting(key, value);
+        }
         builder.ConfigureAppConfiguration((_, configuration) =>
         {
             var testConfiguration = new Dictionary<string, string?>
