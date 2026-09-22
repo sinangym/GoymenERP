@@ -225,8 +225,10 @@ public sealed class SalesDraftService(
         SalesOrderDraft? draft;
         try
         {
-            draft = await GuardedAsync(scope, bindings.ReadPermission,
+            var guarded = await GuardedWithScopeAsync(scope, bindings.ReadPermission,
                 () => store.FindDraftAsync(draftId, cancellationToken), cancellationToken);
+            draft = guarded.Result;
+            scope = guarded.Scope;
         }
         catch (SalesDraftStoreException exception)
         {
@@ -657,7 +659,11 @@ public sealed class SalesDraftService(
     }
 
     /// <summary>An awaited read is released only under the authority a success would need (the Product fence, #276).</summary>
-    private async Task<T> GuardedAsync<T>(Scope scope, string? permission, Func<Task<T>> read, CancellationToken cancellationToken)
+    private async Task<T> GuardedAsync<T>(Scope scope, string? permission, Func<Task<T>> read, CancellationToken cancellationToken) =>
+        (await GuardedWithScopeAsync(scope, permission, read, cancellationToken)).Result;
+
+    private async Task<(T Result, Scope Scope)> GuardedWithScopeAsync<T>(Scope scope, string? permission, Func<Task<T>> read,
+        CancellationToken cancellationToken)
     {
         T result;
         try
@@ -675,8 +681,8 @@ public sealed class SalesDraftService(
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        await RequireStillAsync(scope, permission, cancellationToken);
-        return result;
+        var current = await RequireStillAsync(scope, permission, cancellationToken);
+        return (result, current);
     }
 
     private bool Matches(Guid companyId, string actorId) =>
