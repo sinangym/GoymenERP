@@ -385,6 +385,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["SubmitSalesOrderDraftV1"] = "ref:SalesOrderDraftResponse",
             ["ApproveSalesOrderDraftV1"] = "ref:SalesOrderDraftResponse",
             ["RejectSalesOrderDraftV1"] = "ref:SalesOrderDraftResponse",
+            ["WithdrawSalesOrderDraftV1"] = "ref:SalesOrderDraftResponse",
             ["ProposeFinanceBankAccountV1"] = "ref:BankAccountCommandResult",
             ["ApproveFinanceBankAccountV1"] = "ref:BankAccountCommandResult",
             ["GetFinanceBankAccountMasterV1"] = "ref:BankAccountMasterPage",
