@@ -1,7 +1,8 @@
 # s04 (SİPARİŞ, SALES-A1 user-flow acceptance): the suite's closed-list API extensions on top of the
 # `normal` profile, validated by tools/validate_browser_acceptance.py with the merged model
-# (SUITE_API_EXTENSIONS["s04"]: actors + identity; no Product issuer binding). The gated fixture host
-# materializes one fixed synthetic Product candidate; the preparer receives the narrow Product read below.
+# (SUITE_API_EXTENSIONS["s04"]: Product issuer + actors + identity). The Product issuer is the existing
+# u02 synthetic identity, rebound to this disposable suite without a role, assignment or sign-in actor; it
+# enables Product's owned migrations/runtime before the gated host materializes one fixed candidate.
 #  - Six suite actors appended to the canonical two BootstrapIdentity users (indices 2..7). The browser
 #    suite signs in as each on the AUTHORIZED web (X-Development-User, the s03 way). The canonical users
 #    hold no Sales permission and are not used by the suite.
@@ -18,6 +19,8 @@
 services:
   api:
     environment:
+      ProductRuntime__IssuerLocalUserId: b2000000-0000-4000-8000-000000000201
+      ProductRuntime__IssuerExternalIdentityId: b2100000-0000-4000-8000-000000000201
       BootstrapIdentity__Users__2__UserId: s04-preparer
       BootstrapIdentity__Users__2__DisplayName: SENTETIK browser-suite:s04 Sales preparer
       BootstrapIdentity__Users__3__UserId: s04-approver
@@ -66,6 +69,12 @@ services:
       IdentitySeed__Users__10__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000406
       IdentitySeed__Users__10__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
       IdentitySeed__Users__10__ExternalIdentities__0__Subject: s04-ordinary-creator
+      # Existing u02 Product issuer identity: no BootstrapIdentity actor, role, assignment or permission.
+      IdentitySeed__Users__11__Id: b2000000-0000-4000-8000-000000000201
+      IdentitySeed__Users__11__DisplayName: SENTETIK browser-suite:s04 Product issuer
+      IdentitySeed__Users__11__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000201
+      IdentitySeed__Users__11__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
+      IdentitySeed__Users__11__ExternalIdentities__0__Subject: s04-issuer
       IdentitySeed__Roles__5__Id: b3000000-0000-4000-8000-000000000401
       IdentitySeed__Roles__5__Code: BROWSER_S04_PREPARER
       IdentitySeed__Roles__5__Name: SENTETIK browser-suite:s04 sipariş hazırlayan rolü

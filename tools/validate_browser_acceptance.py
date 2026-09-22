@@ -135,8 +135,8 @@ SUITE_API_EXTENSIONS = {
     "mfg": {"issuer": False, "actors": True, "identity": True},
     # FIN-01 (FİNANS, #332): a proposer and an approver actor with their Identity users and grants.
     "fin01": {"issuer": False, "actors": True, "identity": True},
-    # S-04 (SİPARİŞ): a preparer, an approver and a reader actor with their Identity users and grants.
-    "s04": {"issuer": False, "actors": True, "identity": True},
+    # S-04 (SİPARİŞ): the existing Product issuer binding plus its Sales actors, Identity users and grants.
+    "s04": {"issuer": True, "actors": True, "identity": True},
     # ACC-01 (FİNANS, ACC-V0b): a preparer and an approver actor with their Identity users and grants.
     "acc01": {"issuer": False, "actors": True, "identity": True},
     # L-04 (SİPARİŞ): a preparer, a loader and a reader actor plus the two Sales seed actors, with their grants.
