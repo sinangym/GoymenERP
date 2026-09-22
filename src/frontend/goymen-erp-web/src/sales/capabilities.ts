@@ -26,7 +26,12 @@ export const SALES_CAPABILITY = {
   ordersApprove: 'sales.orders.approve',
 } as const
 
-export type SalesCapabilityId = (typeof SALES_CAPABILITY)[keyof typeof SALES_CAPABILITY]
+/** K3: the commercial-revision CONTROL on S-04; separate from every routed Sales screen. */
+export const SALES_PRICE_WRITE_CAPABILITY = 'sales.orders.price.write' as const
+
+export type SalesCapabilityId =
+  | (typeof SALES_CAPABILITY)[keyof typeof SALES_CAPABILITY]
+  | typeof SALES_PRICE_WRITE_CAPABILITY
 
 export const SALES_ROUTE = {
   list: '/satis/siparisler',

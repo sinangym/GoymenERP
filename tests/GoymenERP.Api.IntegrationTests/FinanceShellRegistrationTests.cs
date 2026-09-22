@@ -31,7 +31,7 @@ public sealed class FinanceShellRegistrationTests
 
         var actual = ShellCapabilityRegistry.ComputeCandidateRevision(providers);
         Assert.True(
-            string.Equals(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV10AndPublishedFinanceV11, actual,
+            string.Equals(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11AndPublishedFinanceV11, actual,
                 StringComparison.Ordinal),
             $"Finance normal-host authority drifted. Actual: {actual}");
     }
@@ -49,7 +49,7 @@ public sealed class FinanceShellRegistrationTests
         var authority = C01E2eShellCapabilityActivation.Configure(services, new TestingEnvironment(),
             new ConfigurationBuilder().Build());
 
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV10AndPublishedFinanceV11,
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11AndPublishedFinanceV11,
             authority);
         using var container = services.BuildServiceProvider();
         var registry = new ShellCapabilityRegistry(container.GetServices<IShellCapabilityProvider>(),
@@ -61,8 +61,8 @@ public sealed class FinanceShellRegistrationTests
         // each route or control service measures its own Finance permission afresh.
         Assert.Equal(9, finance.Length);
         Assert.All(finance, item => Assert.True(item.Declaration.ImplementationAvailable));
-        // Three Sales screens plus the SALES-A1 approve control.
-        Assert.Equal(4, registry.Registrations.Count(item => item.Owner == SalesShellCapabilityProvider.OwnerId));
+        // Three Sales screens plus the SALES-A1 approve and SALES-P price-write controls.
+        Assert.Equal(5, registry.Registrations.Count(item => item.Owner == SalesShellCapabilityProvider.OwnerId));
     }
 
     [Fact]

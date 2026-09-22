@@ -577,7 +577,8 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
                 SalesDraftCommands.ApproveV1, draft.Id, (d, now) => d.Approve(3, "SENTETIK-approver", now), Approved);
             LineCommercialInput[] priced = [new(lineId, new CommercialDraftFields("13.00", KgUnit, "5"))];
             await a.Store.ReviseDraftCommercialAsync(run.Envelope("k-revise", actor: pricer), Hash("revise-4"),
-                SalesDraftCommands.ReviseCommercialV1, draft.Id, (d, now) => d.ReviseCommercial(4, priced, pricer, now), Revised);
+                SalesDraftCommands.ReviseCommercialV1, draft.Id, (d, now) => d.ReviseCommercial(4, priced, pricer, now), Revised,
+                static _ => Task.CompletedTask);
         }
 
         // Written: the values the reader below must NOT receive are really in the columns (versions 2 → 3 → 4 → 5; Rev.1).

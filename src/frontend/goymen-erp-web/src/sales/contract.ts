@@ -26,6 +26,7 @@ export const SALES_CONTRACT_STATUS = 'PINNED_SOURCE' as const
 
 export const SALES_DRAFT_PATH = '/sales/drafts'
 export const salesDraftDetailPath = (id: string) => `${SALES_DRAFT_PATH}/${encodeURIComponent(id)}`
+export const salesDraftCommercialRevisionPath = (id: string) => `${salesDraftDetailPath(id)}/commercial-revision`
 
 /**
  * `SalesDraftApiV1`: a first commit answers 201; the same accepted attempt answers 201 again with
@@ -67,6 +68,19 @@ export const salesDraftCommandPath = (id: string, command: DraftStateCommand) =>
 export interface DraftStateCommandRequest {
   readonly expectedVersion: string
   readonly reason?: string
+}
+
+/** K3: every line exactly once, with nullable commercial values retained as text. */
+export interface DraftLineCommercialRequest {
+  readonly lineId: string
+  readonly unitPrice: string | null
+  readonly priceUnitId: string | null
+  readonly discountPercent: string | null
+}
+
+export interface DraftCommercialRevisionRequest {
+  readonly expectedVersion: string
+  readonly lines: readonly DraftLineCommercialRequest[]
 }
 
 /** `SalesDraftApprovalV1`: who submitted / decided and when; null until it happened. Facts, never derived. */

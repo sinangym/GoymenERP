@@ -337,10 +337,11 @@ public sealed class SalesStore(
     /// </summary>
     public async Task<SalesDraftStateResult?> ReviseDraftCommercialAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
         Guid draftId, Func<SalesOrderDraft, DateTimeOffset, ApprovedRevisionSnapshot?> mutate, SalesDraftStateAudit audit,
-        CancellationToken cancellationToken = default)
+        Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(mutate);
         ArgumentNullException.ThrowIfNull(audit);
+        ArgumentNullException.ThrowIfNull(beforeWrite);
         RequireEnvelope(envelope);
         RequireHash(requestHash);
         RequireCommand(commandName);
@@ -392,6 +393,7 @@ public sealed class SalesStore(
         // The line rows are tracked here so their commercial columns can change in this save (the guard admits only those).
         var lineRows = await dbContext.DraftLines.Where(line => line.DraftId == draftId).OrderBy(line => line.LineNo).ToListAsync(cancellationToken);
         var draft = (await RestoreAsync([row], cancellationToken)).Single();
+        await beforeWrite(cancellationToken);
         var before = Commercial(draft);
         var versionBefore = draft.Version;
         var now = timeProvider.GetUtcNow();

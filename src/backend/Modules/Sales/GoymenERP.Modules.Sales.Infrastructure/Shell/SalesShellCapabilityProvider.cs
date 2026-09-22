@@ -22,7 +22,7 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Shell;
 public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "SALES";
-    public const string OwnerContractVersion = "1.0";
+    public const string OwnerContractVersion = "1.1";
 
     public const string ListCapabilityId = "sales.drafts.list";
     public const string ListRouteId = "sales.drafts.list";
@@ -44,6 +44,9 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
     /// control of its own: it follows the create capability the shell already publishes.
     /// </summary>
     public const string ApproveCapabilityId = "sales.orders.approve";
+
+    /// <summary>K3: the separate commercial-revision control on S-04; create and approve never confer it.</summary>
+    public const string PriceWriteCapabilityId = "sales.orders.price.write";
 
     public string Owner => OwnerId;
 
@@ -92,6 +95,12 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
             CapabilityId = ApproveCapabilityId,
             ParentCapabilityId = DetailCapabilityId,
             RequiredPermissions = [SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersApprove],
+        },
+        detail with
+        {
+            CapabilityId = PriceWriteCapabilityId,
+            ParentCapabilityId = DetailCapabilityId,
+            RequiredPermissions = [SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersPriceWrite],
         },
         ];
     }

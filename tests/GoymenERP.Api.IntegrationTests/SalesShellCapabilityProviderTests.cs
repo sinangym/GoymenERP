@@ -29,8 +29,9 @@ public sealed class SalesShellCapabilityProviderTests
             new ShellCapabilityAuthorityCatalog([ShellCapabilityRegistry.ComputeCandidateRevision([provider])]));
 
         Assert.Equal("SALES", provider.Owner);
-        // The three screens (one permission each, no parent) and the SALES-A1 approve CONTROL of the
-        // detail (the detail's route; read + approve; parent = the detail) — the Finance approval pattern.
+        // The three screens (one permission each, no parent), the SALES-A1 approve CONTROL, and the
+        // S05 commercial-price write CONTROL of the detail. Controls reuse the detail route, combine
+        // read with their command permission, and remain parented by the detail capability.
         Assert.Equal(
             [
                 ("sales.drafts.create", "/satis/siparisler/yeni", SalesPermissionManifestV1.DraftsCreate, (string?)null),
@@ -38,6 +39,8 @@ public sealed class SalesShellCapabilityProviderTests
                 ("sales.drafts.list", "/satis/siparisler", SalesPermissionManifestV1.DraftsRead, null),
                 ("sales.orders.approve", "/satis/siparisler/:draftId",
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersApprove}", "sales.drafts.detail"),
+                ("sales.orders.price.write", "/satis/siparisler/:draftId",
+                    $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersPriceWrite}", "sales.drafts.detail"),
             ],
             registry.Registrations.Select(registration => (registration.Declaration.CapabilityId,
                 registration.Declaration.RoutePath, string.Join('+', registration.Declaration.RequiredPermissions),

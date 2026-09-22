@@ -6,6 +6,7 @@ using GoymenERP.Modules.Counterparty.Application.Contracts;
 using GoymenERP.Modules.Counterparty.Domain.Accounts;
 using GoymenERP.Modules.Counterparty.Domain.Parties;
 using GoymenERP.Modules.Organization.Application.Contracts;
+using GoymenERP.Modules.Sales.Application.Contracts;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.OpenApi;
@@ -97,6 +98,14 @@ public static partial class ErpOpenApiContract
             options.AddSchemaTransformer((schema, context, _) =>
             {
                 ApplyContactInformationSchema(schema, context.JsonTypeInfo.Type);
+                if (context.JsonTypeInfo.Type == typeof(SalesDraftLineCommercialV1))
+                {
+                    schema.Required ??= new HashSet<string>();
+                    schema.Required.Add("unitPrice");
+                    schema.Required.Add("priceUnitId");
+                    schema.Required.Add("discountPercent");
+                }
+
                 if (context.JsonTypeInfo.Type == typeof(CreateCounterparty))
                 {
                     schema.Required?.Remove("tradeName");
