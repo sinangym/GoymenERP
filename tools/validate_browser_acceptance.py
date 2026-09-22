@@ -225,11 +225,11 @@ SUITE_IDENTITY_PERMISSIONS = {
         "finance.manual-receipt.reverse.approve",
     ),
     # SALES-A1's approval axis: the preparer creates and reads, the approver approves and reads, the reader reads.
-    # SALES-A2a: the preparer reaches the Cari owner's contact information through its OWN party read
-    # (the s03 precedent), so the suite's closed list gains that name and nothing else.
+    # SALES-A2a: the preparer reaches the Cari owner's contact information through its OWN party read.
+    # S05 adds the two separate price names to that same disposable preparer; no other actor gains them.
     "s04": ("sales.drafts.create", "sales.drafts.read", "sales.orders.approve",
             "counterparty.parties.read", "counterparty.parties.update.basic",
-            "product.operational-selection.read"),
+            "product.operational-selection.read", "sales.orders.price.read", "sales.orders.price.write"),
     # The six Accounting names. The preparer holds .approve on purpose — Ö4 must refuse its OWN proposal
     # although the grant is there — and holds periods.read alone in the second company; the approver holds
     # no journal or queue name, so those routes stay closed to it.

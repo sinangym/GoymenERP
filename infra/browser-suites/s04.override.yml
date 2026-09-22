@@ -10,8 +10,10 @@
 #    IdentityDataSeeder (decision 1), continuing the built-in seed's indices (Users 5, Roles 5,
 #    Assignments 7). The roles grant exactly the suite's closed list, split by persona (DEC-SAL-001, the
 #    SALES-A1 card): the preparer creates and reads drafts, the approver approves and reads, the reader
-#    only reads. The shell publishes the Sales list/detail to all three and the approve control (a control
-#    of the detail, no route) to the approver only. SALES-A2a: the preparer also holds counterparty.parties.read
+#    only reads. S05 adds only the separate price read/write names to that same disposable preparer so the
+#    approved draft can be revised and its archived prices can be read. The shell publishes the Sales
+#    list/detail to all three and the approve control (a control of the detail, no route) to the approver only.
+#    SALES-A2a: the preparer also holds counterparty.parties.read
 #    (the s03 precedent) so the create screen's customer picker and its delivery address / contact selects read
 #    the Cari owner as that actor. Nothing else is granted, no system role is touched.
 # Every value is synthetic (SENTETIK browser-suite:s04 …) and exists only in the run's disposable
@@ -87,6 +89,10 @@ services:
       # E1 acceptance only: this disposable preparer reads Product's one operational candidate. This is
       # an Identity role assignment in the run database, not a Product issuer or production grant.
       IdentitySeed__Roles__5__Permissions__3: product.operational-selection.read
+      # S05 acceptance only: the same disposable preparer changes the approved draft's commercial
+      # values and reads both the current and archived price fields. These remain separate permissions.
+      IdentitySeed__Roles__5__Permissions__4: sales.orders.price.read
+      IdentitySeed__Roles__5__Permissions__5: sales.orders.price.write
       IdentitySeed__Roles__6__Id: b3000000-0000-4000-8000-000000000402
       IdentitySeed__Roles__6__Code: BROWSER_S04_APPROVER
       IdentitySeed__Roles__6__Name: SENTETIK browser-suite:s04 sipariş onaylayan rolü
