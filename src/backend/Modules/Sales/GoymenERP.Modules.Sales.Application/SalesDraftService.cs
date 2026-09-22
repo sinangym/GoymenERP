@@ -397,12 +397,15 @@ public sealed class SalesDraftService(
         var audit = new SalesDraftStateAudit("sales.order-draft.commercial-revised.v1", "ReviseCommercial",
             "Satış sipariş taslağının fiyat ve iskontosu revize edildi");
 
-        await RequireStillAsync(scope, permission, cancellationToken);
         SalesDraftStateResult? result;
         try
         {
             result = await store.ReviseDraftCommercialAsync(envelope, requestHash, commandName, draftId,
-                (draft, now) => draft.ReviseCommercial(expectedVersion, inputs, scope.ActorId, now), audit, cancellationToken);
+                (draft, now) => draft.ReviseCommercial(expectedVersion, inputs, scope.ActorId, now), audit,
+                async writeCancellationToken =>
+                {
+                    scope = await RequireStillAsync(scope, permission, writeCancellationToken);
+                }, cancellationToken);
         }
         catch (SalesVersionConflictException exception)
         {

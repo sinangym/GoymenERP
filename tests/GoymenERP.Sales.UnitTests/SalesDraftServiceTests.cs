@@ -350,6 +350,29 @@ public sealed class SalesDraftServiceTests
         Assert.Single(world.Store.Archived);
     }
 
+    [Fact]
+    public async Task A_price_write_revoked_after_the_store_reads_is_refused_before_business_history_attempt_or_audit_changes()
+    {
+        var world = new World();
+        var created = (await world.Service().CreateDraftAsync(Priced(), Metadata("k-1"))).Detail;
+        var lineId = created.Lines[0].LineId;
+        await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("k-submit"));
+        var approved = await world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("k-approve"));
+        var attemptsBefore = world.Store.Attempts;
+        var transitionsBefore = world.Store.Transitions.Count;
+        world.Store.OnStore = () => world.Authority.Denied.Add(PricePermission);
+
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ReviseCommercialAsync(
+            created.Draft.Id, Revision("4", new SalesDraftLineCommercialV1(lineId, "13.00", KgUnit, "5")), Metadata("k-r1")));
+
+        Assert.Equal((403, "forbidden"), (refused.Status, refused.Code));
+        Assert.Equal(("Approved", SalesDraftApiV1.Rev0, "4"),
+            (approved.Detail.Draft.ApprovalState, approved.Detail.Draft.Revision, approved.Detail.Draft.Version));
+        Assert.Equal((attemptsBefore, transitionsBefore, 0),
+            (world.Store.Attempts, world.Store.Transitions.Count, world.Store.Archived.Count));
+        Assert.DoesNotContain(world.Store.Transitions, item => item.Command == SalesDraftCommands.ReviseCommercialV1);
+    }
+
     /// <summary>
     /// K3 P2 (Sinan 5748258299): the price READ is its own narrow name. A reader holding the draft read but not it gets
     /// the WITHHELD marker with the three commercial members null — never the texts, never a bare null that could read
@@ -1348,6 +1371,7 @@ public sealed class SalesDraftServiceTests
         private readonly Dictionary<(string Command, string Key), (string Actor, string Hash, SalesOrderDraft? Draft, SalesDraftTerminalRefusal? Refusal, string Correlation)> _attempts = [];
         private readonly List<SalesOrderDraft> _drafts = [];
         public List<SalesDraftWriteEnvelope> Envelopes { get; } = [];
+        public int Attempts => _attempts.Count;
         public List<(SalesDraftWriteEnvelope Envelope, SalesDraftTerminalRefusal Refusal, Guid? DraftId)> Refusals { get; } = [];
         /// <summary>SALES-A1: every state transition the store committed, with its audit facts.</summary>
         public List<(string Command, Guid DraftId, SalesDraftWriteEnvelope Envelope, SalesDraftStateAudit Audit, long VersionBefore, long VersionAfter)> Transitions { get; } = [];
@@ -1361,10 +1385,11 @@ public sealed class SalesDraftServiceTests
 
         public Task<SalesDraftStateResult?> UpdateDraftStateAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
             Guid draftId, Action<SalesOrderDraft, DateTimeOffset> mutate, SalesDraftStateAudit audit, CancellationToken cancellationToken = default) =>
-            UpdateDraftStateAsyncCore(envelope, requestHash, commandName, draftId, mutate, audit);
+            UpdateDraftStateAsyncCore(envelope, requestHash, commandName, draftId, mutate, audit, null, cancellationToken);
 
-        private Task<SalesDraftStateResult?> UpdateDraftStateAsyncCore(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
-            Guid draftId, Action<SalesOrderDraft, DateTimeOffset> mutate, SalesDraftStateAudit audit)
+        private async Task<SalesDraftStateResult?> UpdateDraftStateAsyncCore(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+            Guid draftId, Action<SalesOrderDraft, DateTimeOffset> mutate, SalesDraftStateAudit audit,
+            Func<CancellationToken, Task>? beforeWrite, CancellationToken cancellationToken)
         {
             if (Fault is not null) throw new SalesDraftStoreException(Fault, "synthetic");
             if (_attempts.TryGetValue((commandName, envelope.IdempotencyKey), out var attempt))
@@ -1372,12 +1397,13 @@ public sealed class SalesDraftServiceTests
                 if (attempt.Actor != envelope.ActorId || attempt.Hash != requestHash)
                     throw new SalesDraftStoreException(SalesDraftStoreCodes.SameKeyPayloadMismatch, "synthetic");
                 if (attempt.Draft is null) throw new SalesDraftStoreException(SalesDraftStoreCodes.ConcurrentChange, "synthetic refusal under the key");
-                return Task.FromResult<SalesDraftStateResult?>(new SalesDraftStateResult(attempt.Draft, SalesDraftWriteOutcome.Replayed, attempt.Correlation));
+                return new SalesDraftStateResult(attempt.Draft, SalesDraftWriteOutcome.Replayed, attempt.Correlation);
             }
 
             var draft = _drafts.SingleOrDefault(candidate => candidate.Id == draftId);
-            if (draft is null) return Task.FromResult<SalesDraftStateResult?>(null);
+            if (draft is null) return null;
             OnStore?.Invoke();
+            if (beforeWrite is not null) await beforeWrite(cancellationToken);
             if (Race == "version-at-store")
             {
                 Race = null;
@@ -1388,18 +1414,19 @@ public sealed class SalesDraftServiceTests
             mutate(draft, TimeProvider.System.GetUtcNow());
             _attempts[(commandName, envelope.IdempotencyKey)] = (envelope.ActorId, requestHash, draft, null, envelope.CorrelationId);
             Transitions.Add((commandName, draftId, envelope, audit, before, draft.Version));
-            return Task.FromResult<SalesDraftStateResult?>(new SalesDraftStateResult(draft, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId));
+            return new SalesDraftStateResult(draft, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId);
         }
 
         public List<ApprovedRevisionSnapshot> Archived { get; } = [];
 
-        public Task<SalesDraftStateResult?> ReviseDraftCommercialAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+        public async Task<SalesDraftStateResult?> ReviseDraftCommercialAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
             Guid draftId, Func<SalesOrderDraft, DateTimeOffset, ApprovedRevisionSnapshot?> mutate, SalesDraftStateAudit audit,
-            CancellationToken cancellationToken = default)
+            Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default)
         {
             if (commandName != SalesDraftCommands.ReviseCommercialV1) throw new ArgumentException("wrong command", nameof(commandName));
             ApprovedRevisionSnapshot? archived = null;
-            var result = UpdateDraftStateAsyncCore(envelope, requestHash, commandName, draftId, (draft, now) => archived = mutate(draft, now), audit);
+            var result = await UpdateDraftStateAsyncCore(envelope, requestHash, commandName, draftId,
+                (draft, now) => archived = mutate(draft, now), audit, beforeWrite, cancellationToken);
             if (archived is not null) Archived.Add(archived);
             return result;
         }
