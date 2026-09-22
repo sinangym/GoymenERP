@@ -311,8 +311,17 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
             Assert.Equal(CommandOutcome.Succeeded, pending.Outcome);
             Assert.Equal("3", pending.Resource!.Version);
 
+            // D4's single waiting slot keeps the newest proposal. Replacing its reason exercises the
+            // complete-pending -> complete-pending persistence transition without moving the approved
+            // IBAN that the money path still uses.
+            var replaced = await proposer.Accounts.ProposeIbanChangeAsync(proposer.Context, Key("iban-change-replace"),
+                new BankAccountIbanChangeProposeRequest(account.Id, "3", newIban, "SENTETIK guncel gerekce"),
+                CancellationToken.None);
+            Assert.Equal(CommandOutcome.Succeeded, replaced.Outcome);
+            Assert.Equal("4", replaced.Resource!.Version);
+
             var self = await proposer.Accounts.ApproveIbanChangeAsync(proposer.Context, Key("iban-change-self"),
-                new BankAccountIbanChangeApproveRequest(account.Id, "3"), CancellationToken.None);
+                new BankAccountIbanChangeApproveRequest(account.Id, "4"), CancellationToken.None);
             Assert.Equal(CommandOutcome.Denied, self.Outcome);
             Assert.Equal("finance_approver_is_proposer", Assert.Single(self.Issues).Code);
         }
@@ -321,15 +330,17 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
             "SELECT Iban FROM finance.BankAccounts WHERE Id = @id", ("@id", account.Id)));
         Assert.Equal(newIban, await run.ScalarAsync<string>(
             "SELECT PendingIban FROM finance.BankAccounts WHERE Id = @id", ("@id", account.Id)));
+        Assert.Equal("SENTETIK guncel gerekce", await run.ScalarAsync<string>(
+            "SELECT PendingIbanReason FROM finance.BankAccounts WHERE Id = @id", ("@id", account.Id)));
         Assert.Equal(account.Id, await run.ScalarAsync<Guid>(
             "SELECT TreasuryAccountId FROM finance.ReceiptDrafts WHERE Id = @id", ("@id", historicalDraftId)));
 
         await using (var approver = run.Open(CompanyA, Approver))
         {
             var approved = await approver.Accounts.ApproveIbanChangeAsync(approver.Context, Key("iban-change-approve"),
-                new BankAccountIbanChangeApproveRequest(account.Id, "3"), CancellationToken.None);
+                new BankAccountIbanChangeApproveRequest(account.Id, "4"), CancellationToken.None);
             Assert.Equal(CommandOutcome.Succeeded, approved.Outcome);
-            Assert.Equal("4", approved.Resource!.Version);
+            Assert.Equal("5", approved.Resource!.Version);
         }
 
         Assert.Equal(newIban, await run.ScalarAsync<string>(
@@ -342,6 +353,66 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityId = CONVERT(nvarchar(36), @id) AND EventType = N'finance.bank-account.iban-change-approved.v1' AND JSON_VALUE(ApprovalContextJson, '$.previousIban') = @old AND JSON_VALUE(ApprovalContextJson, '$.newIban') = @new AND JSON_VALUE(ApprovalContextJson, '$.proposedBy') = @proposer AND JSON_VALUE(ApprovalContextJson, '$.approvedBy') = @approver",
             ("@id", account.Id), ("@old", oldIban), ("@new", newIban), ("@proposer", Proposer), ("@approver", Approver)));
+    }
+
+    [SqlServerFact]
+    public async Task Permission_revoked_during_IBAN_reads_refuses_propose_and_approve_before_save()
+    {
+        await using var run = await Run.StartAsync();
+        const string oldIban = "TR330006100519786457841326";
+        const string newIban = "TR680006200119000006672315";
+        BankAccountView account;
+
+        await using (var proposer = run.Open(CompanyA, Proposer))
+        {
+            account = (await proposer.Accounts.ProposeAsync(proposer.Context, Key("iban-fence-card-propose"),
+                new BankAccountProposeRequest("SENTETIK IBAN FENCE", Currency, "SENTETIK Banka", "SENTETIK tur",
+                    MoneyMovementEligible: true, Iban: oldIban), CancellationToken.None)).Resource!;
+        }
+        await using (var approver = run.Open(CompanyA, Approver))
+        {
+            account = (await approver.Accounts.ApproveAsync(approver.Context, Key("iban-fence-card-approve"),
+                new BankAccountApproveRequest(account.Id, "1"), CancellationToken.None)).Resource!;
+        }
+
+        var commandsBeforePropose = await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.Commands");
+        var auditsBeforePropose = await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents");
+        await using (var proposer = run.OpenWithPermissions(CompanyA, Proposer, new AllowInitialDecisionOnlyPermissions()))
+        {
+            var refused = await proposer.Accounts.ProposeIbanChangeAsync(proposer.Context, Key("iban-fence-propose"),
+                new BankAccountIbanChangeProposeRequest(account.Id, "2", newIban, "SENTETIK revoke"),
+                CancellationToken.None);
+            Assert.Equal(CommandOutcome.Denied, refused.Outcome);
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.BankAccounts WHERE Id = @id AND Version = 2 AND Iban = @old AND PendingIban IS NULL",
+            ("@id", account.Id), ("@old", oldIban)));
+        Assert.Equal(commandsBeforePropose, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.Commands"));
+        Assert.Equal(auditsBeforePropose, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents"));
+
+        await using (var proposer = run.Open(CompanyA, Proposer))
+        {
+            var pending = await proposer.Accounts.ProposeIbanChangeAsync(proposer.Context, Key("iban-fence-pending"),
+                new BankAccountIbanChangeProposeRequest(account.Id, "2", newIban, "SENTETIK pending"),
+                CancellationToken.None);
+            Assert.Equal(CommandOutcome.Succeeded, pending.Outcome);
+        }
+
+        var commandsBeforeApprove = await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.Commands");
+        var auditsBeforeApprove = await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents");
+        await using (var approver = run.OpenWithPermissions(CompanyA, Approver, new AllowInitialDecisionOnlyPermissions()))
+        {
+            var refused = await approver.Accounts.ApproveIbanChangeAsync(approver.Context, Key("iban-fence-approve"),
+                new BankAccountIbanChangeApproveRequest(account.Id, "3"), CancellationToken.None);
+            Assert.Equal(CommandOutcome.Denied, refused.Outcome);
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.BankAccounts WHERE Id = @id AND Version = 3 AND Iban = @old AND PendingIban = @new",
+            ("@id", account.Id), ("@old", oldIban), ("@new", newIban)));
+        Assert.Equal(commandsBeforeApprove, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.Commands"));
+        Assert.Equal(auditsBeforeApprove, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents"));
     }
 
     [SqlServerFact]
@@ -545,6 +616,9 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
             params Microsoft.EntityFrameworkCore.Diagnostics.IInterceptor[] extra) =>
             Open(company, actor, realSettings, new SyntheticPermissions(), extra);
 
+        public Scope OpenWithPermissions(Guid company, string actor, IFinancePermissionPort permissions) =>
+            Open(company, actor, realSettings: false, permissions, []);
+
         private Scope Open(Guid company, string actor, bool realSettings, IFinancePermissionPort permissions,
             Microsoft.EntityFrameworkCore.Diagnostics.IInterceptor[] extra)
         {
@@ -643,6 +717,20 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
     {
         public Task<PermissionDecision> CheckAsync(FinanceContext context, FinanceAction action, Guid? sourceId,
             CancellationToken cancellationToken) => Task.FromResult(PermissionDecision.Allowed);
+    }
+
+    /// <summary>
+    /// SENTETIK: the command's initial authorization succeeds, then the permission is revoked while
+    /// owner rows are being read. The production service must measure the action again before save.
+    /// This is not a real grant-revocation acceptance test.
+    /// </summary>
+    private sealed class AllowInitialDecisionOnlyPermissions : IFinancePermissionPort
+    {
+        private int decisions;
+
+        public Task<PermissionDecision> CheckAsync(FinanceContext context, FinanceAction action, Guid? sourceId,
+            CancellationToken cancellationToken) => Task.FromResult(
+                Interlocked.Increment(ref decisions) == 1 ? PermissionDecision.Allowed : PermissionDecision.Denied);
     }
 
     /// <summary>

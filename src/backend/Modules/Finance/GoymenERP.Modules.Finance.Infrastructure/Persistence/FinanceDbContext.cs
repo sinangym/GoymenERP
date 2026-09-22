@@ -449,12 +449,26 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
             && string.Equals(current.ApprovedBy, originalApprovedBy, StringComparison.Ordinal)
             && current.ApprovedAtUtc == originalApprovedAt;
 
+        // D4 explicitly keeps one waiting slot whose newest proposal replaces the previous waiting
+        // proposal. Keep that approved service semantic without turning the pending columns into
+        // generally mutable fields: both sides must be complete, the approved value/approval stay
+        // untouched, and at least one pending-proposal fact must actually change.
+        var replacesPendingIban = originalStatus == approved && current.Status == approved
+            && originalPendingComplete && currentPendingComplete
+            && string.Equals(current.Iban, originalIban, StringComparison.Ordinal)
+            && string.Equals(current.ApprovedBy, originalApprovedBy, StringComparison.Ordinal)
+            && current.ApprovedAtUtc == originalApprovedAt
+            && (!string.Equals(current.PendingIban, originalPendingIban, StringComparison.Ordinal)
+                || !string.Equals(current.PendingIbanProposedBy, originalPendingBy, StringComparison.Ordinal)
+                || current.PendingIbanProposedAtUtc != originalPendingAt
+                || !string.Equals(current.PendingIbanReason, originalPendingReason, StringComparison.Ordinal));
+
         var approvesIban = originalStatus == approved && current.Status == approved
             && originalPendingComplete && currentPendingEmpty
             && string.Equals(current.Iban, originalPendingIban, StringComparison.Ordinal)
             && string.Equals(current.ApprovedBy, originalApprovedBy, StringComparison.Ordinal)
             && current.ApprovedAtUtc == originalApprovedAt;
 
-        return initialApproval || proposesIban || approvesIban;
+        return initialApproval || proposesIban || replacesPendingIban || approvesIban;
     }
 }
