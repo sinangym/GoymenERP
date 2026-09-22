@@ -45,6 +45,9 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
     /// </summary>
     public const string ApproveCapabilityId = "sales.orders.approve";
 
+    /// <summary>K3: the separate commercial-revision control on S-04; create and approve never confer it.</summary>
+    public const string PriceWriteCapabilityId = "sales.orders.price.write";
+
     public string Owner => OwnerId;
 
     public string ContractVersion => OwnerContractVersion;
@@ -92,6 +95,12 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
             CapabilityId = ApproveCapabilityId,
             ParentCapabilityId = DetailCapabilityId,
             RequiredPermissions = [SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersApprove],
+        },
+        detail with
+        {
+            CapabilityId = PriceWriteCapabilityId,
+            ParentCapabilityId = DetailCapabilityId,
+            RequiredPermissions = [SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersPriceWrite],
         },
         ];
     }

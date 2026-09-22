@@ -24,6 +24,8 @@ export const SALES_CAPABILITY = {
    * The submit button follows `draftsCreate`. The route of this control is the detail's own.
    */
   ordersApprove: 'sales.orders.approve',
+  /** K3: the commercial-revision CONTROL on S-04; separate from create, read and approval. */
+  ordersPriceWrite: 'sales.orders.price.write',
 } as const
 
 export type SalesCapabilityId = (typeof SALES_CAPABILITY)[keyof typeof SALES_CAPABILITY]

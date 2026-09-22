@@ -34,6 +34,7 @@ import {
   decodeDraftMutation,
   decodeDraftPage,
   decodeProblem,
+  salesDraftCommercialRevisionPath,
   salesDraftCommandPath,
   salesDraftDetailPath,
   type ApprovalState,
@@ -41,6 +42,7 @@ import {
   type CurrencyOption,
   type DeliverySlice,
   type DraftCreateRequest,
+  type DraftCommercialRevisionRequest,
   type DraftDetail,
   type DraftMutation,
   type DraftPage,
@@ -491,6 +493,46 @@ export async function sendDraftCommand(
 ): Promise<OrderCommandOutcome<DraftMutation>> {
   const raw = await request(
     salesDraftCommandPath(context.draftId, command),
+    {
+      method: 'POST',
+      headers: {
+        ...headers(context.companyId),
+        'Content-Type': 'application/json',
+        'Idempotency-Key': context.idempotencyKey,
+      },
+      body: JSON.stringify(payload),
+    },
+    signal,
+  )
+  if ('failure' in raw) {
+    if (raw.failure === 'aborted') return { type: 'aborted' }
+    if (raw.failure === 'offline') return { type: 'offline' }
+    return { type: 'network-error' }
+  }
+  if (raw.status !== STATE_COMMAND_STATUS) {
+    if (raw.status >= 200 && raw.status < 300) return { type: 'malformed' }
+    return { type: 'http', status: raw.status, problem: decodeProblem(raw.body, raw.status) }
+  }
+  const mutation = decodeDraftMutation(raw.body)
+  if (
+    mutation === null ||
+    mutation.isReplay !== raw.replayed ||
+    mutation.detail.draft.id !== context.draftId ||
+    mutation.detail.draft.companyId !== context.companyId
+  ) {
+    return { type: 'malformed' }
+  }
+  return { type: 'succeeded', data: mutation }
+}
+
+/** K3 commercial revision: the same keyed-attempt and strict response rules as every Sales mutation. */
+export async function sendDraftCommercialRevision(
+  payload: DraftCommercialRevisionRequest,
+  context: CommandContext,
+  signal?: AbortSignal,
+): Promise<OrderCommandOutcome<DraftMutation>> {
+  const raw = await request(
+    salesDraftCommercialRevisionPath(context.draftId),
     {
       method: 'POST',
       headers: {
