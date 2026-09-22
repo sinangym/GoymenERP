@@ -18,7 +18,7 @@ export function PurchaseOrderListPage() {
   const shell = useShellState()
   const key = contextKey(shell)
   const namespace = key === null ? null : contextKeyString(key)
-  return <PurchaseOrderList key={namespace ?? 'no-context'} namespace={namespace} />
+  return <PurchaseOrderList key={`${namespace ?? 'no-context'}::${shell.routeEntryGeneration}`} namespace={namespace} />
 }
 
 function PurchaseOrderList({ namespace }: { readonly namespace: string | null }) {

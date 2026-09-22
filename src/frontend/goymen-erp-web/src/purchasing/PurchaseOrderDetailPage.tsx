@@ -25,7 +25,7 @@ export function PurchaseOrderDetailPage() {
   const key = contextKey(shell)
   const namespace = key === null ? null : contextKeyString(key)
   const { orderId } = useParams()
-  return <PurchaseOrderDetail key={`${namespace ?? 'no-context'}::${orderId ?? ''}`} namespace={namespace} />
+  return <PurchaseOrderDetail key={`${namespace ?? 'no-context'}::${orderId ?? ''}::${shell.routeEntryGeneration}`} namespace={namespace} />
 }
 
 function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null }) {
