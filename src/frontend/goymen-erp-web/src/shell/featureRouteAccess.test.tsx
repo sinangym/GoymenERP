@@ -33,6 +33,7 @@ import { SHELL_CAPABILITY_CONTRACT_VERSION } from './api'
 import { CAPABILITY, CAPABILITY_ROUTE } from './capabilities'
 import { productRoutes } from '../product/productRoutes'
 import { organizationRoutes } from '../organization/organizationRoutes'
+import { purchasingRoutes } from '../purchasing/purchasingRoutes'
 import { PRODUCT_LIST_TEXT } from '../product/productText'
 import { productPage } from '../product/testHarness'
 
@@ -168,6 +169,7 @@ describe('shell router source shape (not a reachability check)', () => {
     for (const [lane, routes] of [
       ['Product', productRoutes],
       ['Organization', organizationRoutes],
+      ['Purchasing', purchasingRoutes],
     ] as const) {
       expect(routes.length, `${lane} declares no routes`).toBeGreaterThan(0)
       for (const route of routes) {

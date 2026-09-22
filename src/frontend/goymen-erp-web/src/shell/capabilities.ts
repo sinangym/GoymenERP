@@ -194,6 +194,12 @@ export const CAPABILITY = {
   logisticsInstructionsCreate: 'logistics.instructions.create',
   /** L-02-DETAIL one instruction. Route `/lojistik/yukleme-talimatlari/:instructionId`. A SEPARATE grant from the list. */
   logisticsInstructionsDetail: 'logistics.instructions.detail',
+  /** P-03 purchase-order list. Route `/satinalma/siparisler`, owner the Purchasing lane. */
+  purchasingOrdersList: 'purchasing.orders.list',
+  /** P-04 new purchase order. Route `/satinalma/siparisler/yeni`; staged until a real Product candidate source exists. */
+  purchasingOrdersCreate: 'purchasing.orders.create',
+  /** P-03-DETAIL one purchase order. Route `/satinalma/siparisler/:orderId`. */
+  purchasingOrdersDetail: 'purchasing.orders.detail',
 } as const
 
 export type CapabilityId = (typeof CAPABILITY)[keyof typeof CAPABILITY]
@@ -250,6 +256,11 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as an instruction id.
   [CAPABILITY.logisticsInstructionsCreate]: '/lojistik/yukleme-talimatlari/yeni',
   [CAPABILITY.logisticsInstructionsDetail]: '/lojistik/yukleme-talimatlari/:instructionId',
+  [CAPABILITY.purchasingOrdersList]: '/satinalma/siparisler',
+  // Static before the parameter route: `yeni` must never be read as an order id. The route remains
+  // mounted but unavailable while the owner declaration is staged.
+  [CAPABILITY.purchasingOrdersCreate]: '/satinalma/siparisler/yeni',
+  [CAPABILITY.purchasingOrdersDetail]: '/satinalma/siparisler/:orderId',
 }
 
 /** Nav label per capability. Only rendered when the server granted the capability. */
@@ -310,4 +321,8 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   // instruction is opened from a list row — never from the sidebar.
   [CAPABILITY.logisticsInstructionsCreate]: '',
   [CAPABILITY.logisticsInstructionsDetail]: '',
+  [CAPABILITY.purchasingOrdersList]: 'Satın alma siparişleri',
+  // P-04 is staged and, once published, is reached from the list. The detail is reached from a row.
+  [CAPABILITY.purchasingOrdersCreate]: '',
+  [CAPABILITY.purchasingOrdersDetail]: '',
 }

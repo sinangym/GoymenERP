@@ -123,15 +123,13 @@ internal static class ShellCapabilityRegistryAuthorities
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV10AndPublishedLogisticsV10 =
         "sha256:i4lDY7trJGOiY6rEWWZ99ZVEH0DXIe484_0JaizLGgs";
 
-    // PUR-4a: ... + Purchasing 1.0 STAGED (the purchase-order list P-03, new P-04 and detail P-03-DETAIL,
-    // master v3 §27.3): the normal host (C+O+P+S(pub)+F(pub)+M(pub)+L(published)+Pu(staged)). Computed by the
-    // ComputeRevision reproduction and, independently, by ORG (DATA ONLY); pinned by test.
-    // Re-measured for MFG-ORD (the MFG-02 order list route and the close control of the order screen:
-    // four Manufacturing declarations, the control keeping its parent's route, screen, precedence,
-    // context and scope): ComputeRevision reproduction, calibrated against the three constants this
-    // file already served, and independently re-checked (DATA ONLY); pinned by test.
-    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV10PublishedLogisticsV10AndPurchasingV10 =
-        "sha256:RmymKZiS0qEDYTOhJoQy64T2rxBSjZYn8xomSqeKKog";
+    // PUR-PUBLISH: ... + Purchasing 1.1, with P-03 list/detail and the approve child published while
+    // P-04 creation stays staged until Product supplies a real purchase-candidate source. The child
+    // inherits its detail parent's route, context and scope; the version moves because it is a new
+    // declaration, not merely an availability flip. Derived from owner exact head 9e4fabf4 and pinned
+    // by the registration test.
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV10PublishedLogisticsV10AndPublishedPurchasingV11 =
+        "sha256:gBlrZQd5kqr7Jtzc24u8Y2A_2u5jRi5o0tsGmQOOEaM";
 
     // ACC-V0b: ... + Accounting 1.0 STAGED (the period list M-07 and its propose screen, the approve and
     // close controls of that list, the journal list M-04 and its detail, the posting queues M-01): the normal
@@ -171,8 +169,8 @@ internal static class ShellCapabilityRegistryAuthorities
     // before the value was trusted: all eight of main's Organization 1.1 rows reproduce byte-for-byte
     // with Accounting staged (the old half), and the same ACC-V0c model placed back at Organization 1.0
     // reproduces this branch's own sha256:OOlEtnDx… (the new half, which no accepted constant covered).
-    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV10PublishedLogisticsV10PurchasingV10AndPublishedAccountingV10 =
-        "sha256:eHIZZccRKjtz_iBRzC0O-vAxw1Tl9d_Yz_QjeWwH1M8";
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV10PublishedLogisticsV10PublishedPurchasingV11AndPublishedAccountingV10 =
+        "sha256:z1JuaYeFV9tIOxSb-X3bhFCI90pyMbrs1m6-DUxULn0";
 
     internal const string CounterpartyV15PublishedListCreateAndDetail =
         "sha256:UBHnivzhe_dp5f7vU7dP5n7HG-P8XYBGhxvD_OjMSnw";
