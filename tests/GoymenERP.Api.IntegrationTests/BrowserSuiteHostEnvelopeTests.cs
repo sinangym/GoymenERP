@@ -52,6 +52,8 @@ public sealed class BrowserSuiteHostEnvelopeTests
             var registered = host.Services.GetRequiredService<IServiceProviderIsService>();
             Assert.False(registered.IsService(typeof(C01E2eProductTechnicalCardFixtureWriter)));
             Assert.False(registered.IsService(typeof(IProductTechnicalCardFixtureStore)));
+            Assert.False(registered.IsService(typeof(C01E2eProductSalesCandidateFixtureWriter)));
+            Assert.False(registered.IsService(typeof(IProductSalesCandidateFixtureStore)));
         });
     }
 
@@ -124,6 +126,8 @@ public sealed class BrowserSuiteHostEnvelopeTests
         var registered = host.Services.GetRequiredService<IServiceProviderIsService>();
         Assert.True(registered.IsService(typeof(C01E2eProductMasterAssignmentFixtureWriter)));
         Assert.True(registered.IsService(typeof(C01E2eProductCodeGroupFixtureWriter)));
+        Assert.True(registered.IsService(typeof(C01E2eProductSalesCandidateFixtureWriter)));
+        Assert.True(registered.IsService(typeof(IProductSalesCandidateFixtureStore)));
     }
 
     // The normal-profile container's identity keys (infra/docker-compose.browser-normal.yml); Testing

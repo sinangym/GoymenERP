@@ -228,7 +228,8 @@ SUITE_IDENTITY_PERMISSIONS = {
     # SALES-A2a: the preparer reaches the Cari owner's contact information through its OWN party read
     # (the s03 precedent), so the suite's closed list gains that name and nothing else.
     "s04": ("sales.drafts.create", "sales.drafts.read", "sales.orders.approve",
-            "counterparty.parties.read", "counterparty.parties.update.basic"),
+            "counterparty.parties.read", "counterparty.parties.update.basic",
+            "product.operational-selection.read"),
     # The six Accounting names. The preparer holds .approve on purpose — Ö4 must refuse its OWN proposal
     # although the grant is there — and holds periods.read alone in the second company; the approver holds
     # no journal or queue name, so those routes stay closed to it.
@@ -408,7 +409,9 @@ SUITE_FIXTURE_OUTPUTS: dict[str, frozenset[str]] = {
     "s04": frozenset({"preparerActor", "approverActor", "readerActor", "companyId", "draftId",
                       "deliveryDraftId", "realPartyId", "realCompanyAccountId", "deliveryAddressId",
                       "deliveryContactId", "supportCreatorActor", "ordinaryCreatorActor", "supportDraftId",
-                      "ordinaryApproveDraftId", "ordinaryRejectDraftId", "withdrawalDraftId"}),
+                      "ordinaryApproveDraftId", "ordinaryRejectDraftId", "withdrawalDraftId",
+                      "productId", "productVersion", "productUnitId", "productUnitProfileId",
+                      "productUnitProfileVersion", "productCode", "productName"}),
     # FİNANS's Suites/ACC01 seed: the two actors and both companies. No Accounting row is seeded — the suite
     # proposes, approves and closes through the real API, and the second company exists only to show that
     # GDC's periods never appear there.
@@ -447,7 +450,14 @@ def seed_export(suite: str, seed: object) -> str:
         require(isinstance(value, str), f"seed output {key} must be a string")
         is_guid = _ANY_GUID.fullmatch(value) is not None and value != "00000000-0000-0000-0000-000000000000"
         is_actor = value in CANONICAL_ACTORS or re.fullmatch(rf"{suite}-[a-z0-9-]{{1,48}}", value) is not None
-        require(is_guid or is_actor, f"seed output {key} must be a GUID or an actor id")
+        is_s04_version = suite == "s04" and key in {"productVersion", "productUnitProfileVersion"} \
+            and re.fullmatch(r"[1-9][0-9]*", value) is not None
+        is_s04_code = suite == "s04" and key == "productCode" \
+            and re.fullmatch(r"SYNS04-[1-9][0-9]*", value) is not None
+        is_s04_name = suite == "s04" and key == "productName" \
+            and value == "SENTETIK browser-suite:s04 sales candidate"
+        require(is_guid or is_actor or is_s04_version or is_s04_code or is_s04_name,
+                f"seed output {key} must be a GUID or an actor id or an approved s04 Product value")
     compact = json.dumps(seed, sort_keys=True, separators=(",", ":"))
     return f"BROWSER_E2E_{suite.upper()}_SEED={compact}"
 

@@ -246,7 +246,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 "7c0c51016d4a47b6d9b5faf34a013d0eb76b4337899d1cf64601037aed44ce20",
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "Persistence/ProductDbContext.cs"] =
-                "ffc0ba53551ff8c07f56c48409e211d5eebe286965440391924258649670ee98",
+                "f597cb36bc0ce5c866182a71c9688b954a394c9f291b8919585a0d1ddd05d995",
             ["src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/"
              + "Persistence/GroupSharedCommandDbContext.cs"] =
                 "6fe01949b839e3005d33c3aa00c02982add6a1af63482005b43b277b95c5dfc3"

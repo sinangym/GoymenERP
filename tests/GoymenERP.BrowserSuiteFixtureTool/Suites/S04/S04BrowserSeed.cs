@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using GoymenERP.Api.Shell;
 using GoymenERP.BrowserSuiteFixtureTool.Shared;
+using GoymenERP.Modules.Product.Infrastructure.Fixtures;
 using GoymenERP.Modules.Sales.Infrastructure.Fixtures;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -9,18 +10,17 @@ namespace GoymenERP.BrowserSuiteFixtureTool.Suites.S04;
 
 /// <summary>
 /// The `s04` seed (SİPARİŞ, SALES-A1 user-flow acceptance + SALES-A2a references): ONE Preparing sales order
-/// draft with two lines in GDC, written through the gated Sales fixture writer (W1) — the positive create path
-/// is still blocked (Product activation, GDC data), so the draft's owner snapshots are synthetic and no
-/// Product, GDC or Cari data is read or written for it. Every approval transition (submit / approve / reject)
-/// happens only through the real API + UI in the browser suite, never here.
+/// draft with two lines in GDC, written through the gated Sales fixture writer (W1). E1 also materializes one
+/// fixed Product-owned sales candidate through Product's gated fixture port; the browser searches that candidate
+/// through the real reference API and creates one separate draft through the real Sales command. Every approval
+/// transition (submit / approve / reject) happens only through the real API + UI in the browser suite, never here.
 /// <para>
 /// SALES-A2a (Business 5745076917 item 2): a SECOND draft names REAL Cari references. A real party and its
 /// GDC account are opened through the real counterparty endpoint (CARİ's shared seed) as the canonical
 /// <c>group-bootstrap-admin</c>, its contact information (one delivery address, one contact person) is
 /// written through the REAL contact-information command, and the second draft is written by the gated
-/// writer with those ids and the owner's versions — exactly what a real create would store once the E1
-/// product picker exists. The browser proves the selects (real options) and the reopen; the create WITH
-/// references is proven on real SQL through the host, not in the browser, until E1.
+/// writer with those ids and the owner's versions. The browser proves those real selects and their reopen;
+/// E1 proves a separate real create and reopen with the isolated Product-owned candidate.
 /// </para>
 /// <para>
 /// Decision C: the writer writes no DraftAttempt and no AuditEvent, and the fixture reads are not audited;
@@ -115,6 +115,7 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
     private const string DraftsPath = "/api/v1/sales/drafts";
     private const string ContactInformationReferencePath = "/api/v1/sales/references/contact-information";
     private const string CurrenciesReferencePath = "/api/v1/sales/references/currencies";
+    private const string ProductsReferencePath = "/api/v1/sales/references/products";
     private const string ApproveControl = "sales.orders.approve";
     private const int CustomerRole = 1;
     private const string DeliveryPurpose = "delivery";
@@ -129,6 +130,22 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
         BrowserSuiteFixtureContext context,
         CancellationToken cancellationToken)
     {
+        // Product's technical registry is a prerequisite and must finish in its own scope. The next
+        // scope owns fresh Product persistence services and materializes the one fixed Active+Sellable candidate.
+        await using (var registryScope = context.Services.CreateAsyncScope())
+        {
+            await registryScope.ServiceProvider.GetRequiredService<C01E2eProductTechnicalCardFixtureWriter>()
+                .EnsureAsync(cancellationToken);
+        }
+
+        ProductSalesCandidateFixtureOutput productCandidate;
+        await using (var productScope = context.Services.CreateAsyncScope())
+        {
+            productCandidate = await productScope.ServiceProvider
+                .GetRequiredService<C01E2eProductSalesCandidateFixtureWriter>()
+                .EnsureAsync(cancellationToken);
+        }
+
         // SALES-A2a: the REAL customer, opened and described through the real Cari API (audited commands).
         var customer = await CariBrowserSeed.OpenPartyWithAccountAsync(
             context, CariActor, CompanyGdc, "cari-party", "Teslimat müşterisi", CustomerRole, cancellationToken);
@@ -283,6 +300,27 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
             throw new InvalidOperationException("The Sales currencies reference does not list TRY for GDC on the business date.");
         }
 
+        var products = await ReferenceAsync(context,
+            $"{ProductsReferencePath}?effectiveOn={BusinessDate:yyyy-MM-dd}&q={Uri.EscapeDataString(productCandidate.Code)}",
+            "the Product E1 candidate read (central endpoint plus Product operational-selection owner)",
+            cancellationToken);
+        var product = products.GetProperty("items").EnumerateArray().SingleOrDefault(item =>
+            item.GetProperty("productId").GetGuid() == productCandidate.ProductId);
+        var unit = product.ValueKind == JsonValueKind.Object
+            ? product.GetProperty("orderUnits").EnumerateArray().SingleOrDefault(item =>
+                item.GetProperty("unitId").GetGuid() == productCandidate.UnitId)
+            : default;
+        if (product.ValueKind != JsonValueKind.Object
+            || product.GetProperty("productVersion").GetString() != productCandidate.ProductVersion
+            || product.GetProperty("code").GetString() != productCandidate.Code
+            || product.GetProperty("name").GetString() != productCandidate.Name
+            || unit.ValueKind != JsonValueKind.Object
+            || unit.GetProperty("profileId").GetGuid() != productCandidate.ProfileId
+            || unit.GetProperty("profileVersion").GetString() != productCandidate.ProfileVersion)
+        {
+            throw new InvalidOperationException("The Product E1 route did not return the exact persisted s04 candidate tuple.");
+        }
+
         var deliveryDetail = await context.GetJsonAsync(PreparerActor, CompanyGdc, $"{DraftsPath}/{DeliveryDraftId:D}", cancellationToken);
         var deliveryDraft = deliveryDetail.GetProperty("draft");
         if (deliveryDraft.GetProperty("id").GetGuid() != DeliveryDraftId
@@ -315,6 +353,13 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
             ["deliveryAddressId"] = DeliveryAddressId.ToString("D"),
             ["deliveryContactId"] = DeliveryContactId.ToString("D"),
             ["deliveryDraftId"] = DeliveryDraftId.ToString("D"),
+            ["productId"] = productCandidate.ProductId.ToString("D"),
+            ["productVersion"] = productCandidate.ProductVersion,
+            ["productUnitId"] = productCandidate.UnitId.ToString("D"),
+            ["productUnitProfileId"] = productCandidate.ProfileId.ToString("D"),
+            ["productUnitProfileVersion"] = productCandidate.ProfileVersion,
+            ["productCode"] = productCandidate.Code,
+            ["productName"] = productCandidate.Name,
         };
     }
 

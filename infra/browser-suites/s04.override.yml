@@ -1,7 +1,7 @@
 # s04 (SİPARİŞ, SALES-A1 user-flow acceptance): the suite's closed-list API extensions on top of the
 # `normal` profile, validated by tools/validate_browser_acceptance.py with the merged model
-# (SUITE_API_EXTENSIONS["s04"]: actors + identity; no Product issuer binding — the seed reads and writes
-# no Product data).
+# (SUITE_API_EXTENSIONS["s04"]: actors + identity; no Product issuer binding). The gated fixture host
+# materializes one fixed synthetic Product candidate; the preparer receives the narrow Product read below.
 #  - Six suite actors appended to the canonical two BootstrapIdentity users (indices 2..7). The browser
 #    suite signs in as each on the AUTHORIZED web (X-Development-User, the s03 way). The canonical users
 #    hold no Sales permission and are not used by the suite.
@@ -75,6 +75,9 @@ services:
       # SALES-A2a: the create screen's customer picker and its delivery address / contact selects reach the Cari
       # owner through the ACTOR's own grant (the s03 precedent): the preparer alone holds the authorized party read.
       IdentitySeed__Roles__5__Permissions__2: counterparty.parties.read
+      # E1 acceptance only: this disposable preparer reads Product's one operational candidate. This is
+      # an Identity role assignment in the run database, not a Product issuer or production grant.
+      IdentitySeed__Roles__5__Permissions__3: product.operational-selection.read
       IdentitySeed__Roles__6__Id: b3000000-0000-4000-8000-000000000402
       IdentitySeed__Roles__6__Code: BROWSER_S04_APPROVER
       IdentitySeed__Roles__6__Name: SENTETIK browser-suite:s04 sipariş onaylayan rolü

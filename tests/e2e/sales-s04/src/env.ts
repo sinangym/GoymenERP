@@ -40,6 +40,13 @@ export interface S04Seed {
   readonly realCompanyAccountId: string
   readonly deliveryAddressId: string
   readonly deliveryContactId: string
+  readonly productId: string
+  readonly productVersion: string
+  readonly productUnitId: string
+  readonly productUnitProfileId: string
+  readonly productUnitProfileVersion: string
+  readonly productCode: string
+  readonly productName: string
 }
 
 export interface S04Environment {
@@ -64,6 +71,30 @@ function text(raw: Record<string, unknown>, field: keyof S04Seed, guid = false):
     throw new Error(`BROWSER_E2E_S04_SEED field "${field}" is missing or malformed`)
   }
   return value.trim()
+}
+
+function positiveVersion(raw: Record<string, unknown>, field: keyof S04Seed): string {
+  const value = text(raw, field)
+  if (!/^[1-9][0-9]*$/.test(value)) {
+    throw new Error(`BROWSER_E2E_S04_SEED field "${field}" is not a positive integer version`)
+  }
+  return value
+}
+
+function productCode(raw: Record<string, unknown>): string {
+  const value = text(raw, 'productCode')
+  if (!/^SYNS04-[1-9][0-9]*$/.test(value)) {
+    throw new Error('BROWSER_E2E_S04_SEED field "productCode" is not the isolated s04 product code')
+  }
+  return value
+}
+
+function productName(raw: Record<string, unknown>): string {
+  const value = text(raw, 'productName')
+  if (value !== 'SENTETIK browser-suite:s04 sales candidate') {
+    throw new Error('BROWSER_E2E_S04_SEED field "productName" is not the isolated s04 product name')
+  }
+  return value
 }
 
 export function readEnvironment(): S04Environment {
@@ -93,6 +124,13 @@ export function readEnvironment(): S04Environment {
     realCompanyAccountId: text(raw, 'realCompanyAccountId', true),
     deliveryAddressId: text(raw, 'deliveryAddressId', true),
     deliveryContactId: text(raw, 'deliveryContactId', true),
+    productId: text(raw, 'productId', true),
+    productVersion: positiveVersion(raw, 'productVersion'),
+    productUnitId: text(raw, 'productUnitId', true),
+    productUnitProfileId: text(raw, 'productUnitProfileId', true),
+    productUnitProfileVersion: positiveVersion(raw, 'productUnitProfileVersion'),
+    productCode: productCode(raw),
+    productName: productName(raw),
   }
   if (new Set([seed.preparerActor, seed.approverActor, seed.readerActor, seed.supportCreatorActor, seed.ordinaryCreatorActor]).size !== 5) {
     throw new Error('BROWSER_E2E_S04_SEED binds the same actor to two personas')

@@ -55,6 +55,9 @@ internal static class C01E2eFixtureWriterActivation
         // behind the same complete runner-bound gate. The port accepts no caller-selected values.
         services.AddProductTechnicalCardFixtureStore();
         services.AddScoped<C01E2eProductTechnicalCardFixtureWriter>();
+        // s04 E1: Product's fixed Active+Sellable candidate, after the technical registry prerequisite.
+        services.AddProductSalesCandidateFixtureStore();
+        services.AddScoped<C01E2eProductSalesCandidateFixtureWriter>();
         // s04 (SALES-A1 browser acceptance): Sales's draft port (SİPARİŞ's), behind the same gate.
         services.AddSalesDraftFixtureStore();
         services.AddScoped<C01E2eSalesDraftFixtureWriter>();
@@ -201,6 +204,28 @@ public sealed class C01E2eProductTechnicalCardFixtureWriter
     }
 
     public Task EnsureAsync(CancellationToken cancellationToken) =>
+        _store.EnsureAsync(cancellationToken);
+}
+
+/// <summary>
+/// Exposes Product's fixed s04 sales candidate only inside the complete browser-runner gate. The
+/// Product-owned port accepts no caller-selected identity or business value and returns the exact
+/// persisted Product/Settings tuple for the suite binding.
+/// </summary>
+public sealed class C01E2eProductSalesCandidateFixtureWriter
+{
+    private readonly IProductSalesCandidateFixtureStore _store;
+
+    public C01E2eProductSalesCandidateFixtureWriter(
+        IHostEnvironment environment,
+        IConfiguration configuration,
+        IProductSalesCandidateFixtureStore store)
+    {
+        C01E2eFixtureWriterActivation.RequireGate(environment, configuration);
+        _store = store;
+    }
+
+    public Task<ProductSalesCandidateFixtureOutput> EnsureAsync(CancellationToken cancellationToken) =>
         _store.EnsureAsync(cancellationToken);
 }
 
