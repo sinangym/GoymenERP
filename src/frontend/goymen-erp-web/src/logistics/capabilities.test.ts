@@ -50,6 +50,7 @@ describe('Logistics lane ↔ backend shell provider', () => {
 
   it('the provider publishes all three declarations after the accepted staged-profile journey', () => {
     // The declaration form ends with `)`; the provider's doc comment mentions the same words inside `<c>…</c>`.
+    expect(constant('OwnerContractVersion')).toBe('1.0')
     expect((providerText.match(/ImplementationAvailable: true\)/g) ?? []).length).toBe(3)
     expect(providerText).not.toMatch(/ImplementationAvailable: false\)/)
   })

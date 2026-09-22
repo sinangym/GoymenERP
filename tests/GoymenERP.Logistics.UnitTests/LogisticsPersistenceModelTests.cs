@@ -102,7 +102,9 @@ public sealed class LogisticsPersistenceModelTests
     [Fact]
     public void The_shell_declarations_are_published_and_bound_to_the_manifest_names()
     {
-        var declarations = new LogisticsShellCapabilityProvider().GetDeclarations();
+        var provider = new LogisticsShellCapabilityProvider();
+        var declarations = provider.GetDeclarations();
+        Assert.Equal("1.0", provider.ContractVersion);
         Assert.Equal(3, declarations.Count);
         Assert.All(declarations, declaration => Assert.True(declaration.ImplementationAvailable));
         Assert.Equal(
