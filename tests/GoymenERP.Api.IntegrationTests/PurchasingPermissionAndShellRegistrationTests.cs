@@ -90,6 +90,8 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
         var create = Assert.Single(purchasing,
             item => item.Declaration.CapabilityId == PurchasingShellCapabilityProvider.CreateCapabilityId);
         Assert.False(create.Declaration.ImplementationAvailable);
+        Assert.All(purchasing, item =>
+            Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, item.Declaration.ContextRequirement));
 
         var detail = Assert.Single(purchasing,
             item => item.Declaration.CapabilityId == PurchasingShellCapabilityProvider.DetailCapabilityId).Declaration;
