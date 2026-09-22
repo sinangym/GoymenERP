@@ -304,7 +304,7 @@ test('S04-06 the preparer selects the real references and Product candidate, cre
   await expect(page.getByRole('heading', { level: 1, name: 'Sipariş taslağı kaydedildi.' })).toBeVisible()
 
   // Close the terminal screen, then reopen the exact server-created record in the next operation.
-  await page.getByRole('link', { name: 'Sipariş taslakları' }).click()
+  await page.getByRole('link', { name: 'Sipariş taslakları', exact: true }).click()
   await expect(page).toHaveURL(new RegExp(`${LIST_ROUTE}$`))
   await page.goto(`${LIST_ROUTE}/${createdId}`)
   await expect(page.getByRole('heading', { level: 3, name: `1. ${productCode} — ${productName}` })).toBeVisible({ timeout: 30_000 })
