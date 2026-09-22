@@ -36,6 +36,7 @@ const OTHER_ACCOUNT = '55555555-5555-5555-5555-555555555556'
 const DRAFT_PRODUCT = '22222222-2222-2222-2222-222222222223'
 const OTHER_PRODUCT = '22222222-2222-2222-2222-222222222224'
 const PIECE = '44444444-4444-4444-4444-444444444445'
+const UNIT_PROFILE = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
 // SALES-A2a: the Cari owner's contact information of the example account (synthetic).
 const ADDRESS = 'aaaaaaaa-1111-4111-8111-000000000401'
 const CONTACT = 'bbbbbbbb-1111-4111-8111-000000000401'
@@ -48,8 +49,8 @@ const OPTIONS: OrderDraftOptions = {
   accounts: [{ partyId: PARTY, companyAccountId: ACCOUNT, label: 'Cari A' }],
   currencies: [{ currencyId: CURRENCY, label: 'TRY' }],
   products: [
-    { productId: PRODUCT, productVersion: '7', label: 'P', orderUnits: [{ unitId: KG, label: 'kg' }] },
-    { productId: OTHER_PRODUCT, productVersion: '3', label: 'Q', orderUnits: [{ unitId: PIECE, label: 'adet' }] },
+    { productId: PRODUCT, productVersion: '7', code: 'P', name: 'Profil', label: 'P — Profil', orderUnits: [{ unitId: KG, code: 'kg', label: 'kg', profileId: UNIT_PROFILE, profileVersion: '3' }] },
+    { productId: OTHER_PRODUCT, productVersion: '3', code: 'Q', name: 'Parça', label: 'Q — Parça', orderUnits: [{ unitId: PIECE, code: 'adet', label: 'adet', profileId: UNIT_PROFILE, profileVersion: '3' }] },
   ],
 }
 

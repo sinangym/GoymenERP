@@ -3,7 +3,9 @@ import {
   fetchAccountOptions,
   fetchContactInformationOptions,
   fetchCurrencyOptions,
+  fetchProductOptions,
   type AccountOption,
+  type ProductOffer,
   type ReferenceListOutcome,
 } from './api'
 import type { ContactInformationOptions, CurrencyOption } from './contract'
@@ -39,6 +41,7 @@ export type ReferenceReadState<T> =
 
 export type CurrencyReadState = ReferenceReadState<readonly CurrencyOption[]>
 export type ContactInformationReadState = ReferenceReadState<ContactInformationOptions>
+export type ProductReadState = ReferenceReadState<ProductOffer>
 
 /** The currencies usable for a sales draft on the business date; idle until a real date is entered. */
 export type UseCurrencyOptions = (companyId: string, effectiveOn: string) => CurrencyReadState
@@ -62,27 +65,28 @@ export interface HeaderOptions {
   readonly accounts: readonly AccountOption[]
   readonly accountsOffer: AccountsOffer
   readonly currencies: CurrencyReadState
+  readonly products?: ProductReadState
 }
 
 export type ReferenceSourceState =
   | { readonly status: 'unavailable'; readonly missing?: readonly MissingReference[]; readonly header?: HeaderOptions }
-  | { readonly status: 'ready'; readonly options: OrderDraftOptions }
+  | { readonly status: 'ready'; readonly options: OrderDraftOptions; readonly productOffer?: ProductOffer }
 
-/** `accountSearch` is the server's `q` for the customer select ('' = no search); the source re-reads when it changes. */
-export type UseReferenceOptions = (companyId: string, businessDate: string, accountSearch?: string) => ReferenceSourceState
+/** Search values are the servers' own `q` parameters ('' = no search); the source re-reads when either changes. */
+export type UseReferenceOptions = (
+  companyId: string,
+  businessDate: string,
+  accountSearch?: string,
+  productSearch?: string,
+) => ReferenceSourceState
 
 export const unavailableReferenceSource: UseReferenceOptions = () => ({ status: 'unavailable' })
 
 /**
- * On main the Sales reference routes are: accounts = a LIST; currencies = a LIST for a business date
- * (SALES-A2a); contact-information = a LIST for a party account (SALES-A2a); product = a VALIDATOR
- * of one chosen id for a date. The form needs a product list too, so with the real API the source is
- * never `ready` yet: products stay `no-list-route` until their owner publishes a list (E1). The
- * accounts and currencies lists are read for real (their answers are measured and shown). Nothing
- * here invents an option.
+ * The Sales reference routes list accounts, currencies and Product E1's bounded operational
+ * candidates. Every read is company/date scoped and measured independently; the composed source is
+ * ready only when all three owners answered. Nothing here invents an option.
  */
-export const NO_LIST_ROUTE: readonly MissingReference[] = [{ source: 'products', reason: 'no-list-route' }]
-
 function failureReason<T>(outcome: ReferenceListOutcome<T>): string | null {
   switch (outcome.type) {
     case 'ready':
@@ -181,6 +185,25 @@ export const useHttpCurrencyOptions: UseCurrencyOptions = (companyId, effectiveO
   return state !== null && state.key === key ? state.value : { status: 'loading' }
 }
 
+/** Product E1: bounded owner candidates for the business date and the server's normalized search. */
+export const useHttpProductOptions = (companyId: string, effectiveOn: string, productSearch = ''): ProductReadState => {
+  const q = productSearch.trim()
+  const key = companyId !== '' && isDateOnly(effectiveOn) ? `${companyId}|${effectiveOn}|${q}` : null
+  const [state, setState] = useState<Held<ProductOffer> | null>(null)
+  const [attempt, setAttempt] = useState(0)
+  useEffect(() => {
+    if (key === null) return
+    const controller = new AbortController()
+    fetchProductOptions(effectiveOn, companyId, controller.signal, q).then((outcome) => {
+      if (controller.signal.aborted) return
+      setState({ key, value: readState(outcome, () => setAttempt((n) => n + 1)) })
+    })
+    return () => controller.abort()
+  }, [key, companyId, effectiveOn, q, attempt])
+  if (key === null) return { status: 'idle' }
+  return state !== null && state.key === key ? state.value : { status: 'loading' }
+}
+
 /** SALES-A2a: the real contact information of the chosen account, re-read whenever the account changes. */
 export const useHttpContactInformation: UseContactInformation = (companyId, partyId, companyAccountId) => {
   const key =
@@ -214,22 +237,42 @@ export const currencyOptionsOf = (currencies: readonly CurrencyOption[]): OrderD
   currencies.map((c) => ({ currencyId: c.currencyId, label: c.code }))
 
 /**
- * The real-API source: reads the accounts list once per company and the currencies list per business
- * date; `ready` only when nothing is missing (never on main: products), otherwise `unavailable` with the
- * measured reasons and the header the form can already offer.
+ * The real-API source: reads accounts, currencies and bounded product candidates; otherwise returns
+ * the measured reasons and the header the form can already offer.
  */
-export const useHttpReferenceOptions: UseReferenceOptions = (companyId, businessDate, accountSearch = '') => {
+export const useHttpReferenceOptions: UseReferenceOptions = (
+  companyId,
+  businessDate,
+  accountSearch = '',
+  productSearch = '',
+) => {
   const accounts = useHttpAccountOptions(companyId, accountSearch)
   const useCurrencies = useContext(SalesCurrencySourceContext)
   const currencies = useCurrencies(companyId, businessDate)
+  const products = useHttpProductOptions(companyId, businessDate, productSearch)
   // Until the real accounts answer arrives, or for another company, nothing is offered.
   if (accounts.status === 'idle' || accounts.status === 'loading') return { status: 'unavailable' }
   const missing: MissingReference[] = []
   if (accounts.status === 'unavailable') missing.push({ source: 'accounts', reason: accounts.reason })
   if (currencies.status === 'unavailable') missing.push({ source: 'currencies', reason: currencies.reason })
-  missing.push(...NO_LIST_ROUTE)
+  if (products.status === 'unavailable') missing.push({ source: 'products', reason: products.reason })
   if (accounts.status === 'unavailable') return { status: 'unavailable', missing }
-  return { status: 'unavailable', missing, header: { accounts: accounts.data.items, accountsOffer: accounts.data, currencies } }
+  if (currencies.status === 'ready' && products.status === 'ready') {
+    return {
+      status: 'ready',
+      options: {
+        accounts: accounts.data.items,
+        currencies: currencyOptionsOf(currencies.data),
+        products: products.data.items,
+      },
+      productOffer: products.data,
+    }
+  }
+  return {
+    status: 'unavailable',
+    missing,
+    header: { accounts: accounts.data.items, accountsOffer: accounts.data, currencies, products },
+  }
 }
 
 export const SalesReferenceSourceContext = createContext<UseReferenceOptions>(useHttpReferenceOptions)
