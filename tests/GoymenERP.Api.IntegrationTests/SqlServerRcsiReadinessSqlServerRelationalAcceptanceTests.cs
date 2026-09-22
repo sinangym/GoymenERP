@@ -36,6 +36,24 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
                 TestUsers.CompanyA,
                 TestCompanyIds.CompanyA);
 
+            var healthChecks = Microsoft.Extensions.DependencyInjection
+                .ServiceProviderServiceExtensions.GetRequiredService<
+                    Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckService>(
+                    factory.Services);
+            var healthReport = await healthChecks.CheckHealthAsync(
+                registration => registration.Tags.Contains("ready"));
+            var healthDetails = string.Join(
+                "; ",
+                healthReport.Entries.Select(entry =>
+                    $"{entry.Key}={entry.Value.Status}:"
+                    + $"{entry.Value.Description}:"
+                    + string.Join(",", entry.Value.Data.Select(value =>
+                        $"{value.Key}={value.Value}"))));
+            Assert.True(
+                healthReport.Status
+                    == Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Healthy,
+                healthDetails);
+
             using var ready = await client.GetAsync("/health/ready");
             Assert.Equal(HttpStatusCode.OK, ready.StatusCode);
             Assert.Equal("Healthy", await ready.Content.ReadAsStringAsync());

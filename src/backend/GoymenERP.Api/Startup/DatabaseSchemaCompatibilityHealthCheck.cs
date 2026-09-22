@@ -56,8 +56,9 @@ internal sealed class DatabaseSchemaCompatibilityHealthCheck(
                 if (!database.Database.IsRelational()
                     || !await database.Database.CanConnectAsync(cancellationToken))
                 {
-                    return HealthCheckResult.Unhealthy(
-                        "Veritabanı şeması kullanıma hazır değil.");
+                    return Unhealthy(
+                        "Veritabanı şeması kullanıma hazır değil.",
+                        name);
                 }
 
                 var sourceMigrations = database.Database
@@ -70,8 +71,9 @@ internal sealed class DatabaseSchemaCompatibilityHealthCheck(
                         appliedMigrations,
                         StringComparer.Ordinal))
                 {
-                    return HealthCheckResult.Unhealthy(
-                        "Veritabanı şeması uygulama kaynağıyla uyumlu değil.");
+                    return Unhealthy(
+                        "Veritabanı şeması uygulama kaynağıyla uyumlu değil.",
+                        name);
                 }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -83,8 +85,9 @@ internal sealed class DatabaseSchemaCompatibilityHealthCheck(
                 logger.LogWarning(
                     "Database schema compatibility check failed for {DatabaseContext}.",
                     name);
-                return HealthCheckResult.Unhealthy(
-                    "Veritabanı şeması doğrulanamadı.");
+                return Unhealthy(
+                    "Veritabanı şeması doğrulanamadı.",
+                    name);
             }
         }
 
@@ -99,10 +102,20 @@ internal sealed class DatabaseSchemaCompatibilityHealthCheck(
         catch (Exception)
         {
             logger.LogWarning("Identity authorization database readiness check failed.");
-            return HealthCheckResult.Unhealthy(
-                "Veritabanı okuma tutarlılığı kullanıma hazır değil.");
+            return Unhealthy(
+                "Veritabanı okuma tutarlılığı kullanıma hazır değil.",
+                "identity-rcsi");
         }
 
         return HealthCheckResult.Healthy();
     }
+
+    private static HealthCheckResult Unhealthy(string description, string context) =>
+        new(
+            HealthStatus.Unhealthy,
+            description,
+            data: new Dictionary<string, object>
+            {
+                ["context"] = context,
+            });
 }
