@@ -19,7 +19,10 @@ interface DraftDetail {
     readonly version: string
     readonly revision: string
     readonly approvalState: string
-    readonly createdBy: string
+  }
+  readonly approval: {
+    readonly submittedBy: string | null
+    readonly decidedBy: string | null
   }
   readonly lines: readonly DraftLine[]
 }
@@ -86,6 +89,12 @@ test('S04-08 one approved record is priced in the form, reopened as Rev.1, and i
   await expect(page.getByTestId('sales-draft-approval-state')).toHaveText('Onaylı')
   const approved = await readDetail(request)
   const selectedPriceUnitId = approved.lines[0].orderUnitId
+  const reviserIdentity = approved.approval.submittedBy
+  const approverIdentity = approved.approval.decidedBy
+  expect(reviserIdentity).not.toBeNull()
+  expect(reviserIdentity).not.toBe('')
+  expect(approverIdentity).not.toBeNull()
+  expect(approverIdentity).not.toBe('')
 
   const form = page.getByTestId('sales-price-revision-form')
   await expect(form).toBeVisible()
@@ -145,9 +154,9 @@ test('S04-08 one approved record is priced in the form, reopened as Rev.1, and i
   const history = await readHistory(request)
   expect(history.items).toHaveLength(1)
   expect(history.items[0].revision).toBe('Rev.0')
-  expect(history.items[0].submittedBy).toBeTruthy()
-  expect(history.items[0].approvedBy).toBeTruthy()
-  expect(history.items[0].archivedBy).toBe(approved.draft.createdBy)
+  expect(history.items[0].submittedBy).toBe(reviserIdentity)
+  expect(history.items[0].approvedBy).toBe(approverIdentity)
+  expect(history.items[0].archivedBy).toBe(reviserIdentity)
   expect(history.items[0].lines).toHaveLength(2)
   expect(history.items[0].lines.every((line) => line.priceDisclosure === 'Visible')).toBe(true)
   expect(history.items[0].lines.every((line) => line.unitPrice === null)).toBe(true)
