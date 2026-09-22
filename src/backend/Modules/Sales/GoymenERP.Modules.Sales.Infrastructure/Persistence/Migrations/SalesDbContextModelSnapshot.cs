@@ -225,7 +225,7 @@ partial class SalesDbContextModelSnapshot : ModelSnapshot
 
                 t.HasCheckConstraint(
                     "CK_DraftAttempts_Outcome",
-                    "([Outcome] = 1 AND [DraftId] IS NOT NULL AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [RefusalJson] IS NULL) OR ([Outcome] = 2 AND [DraftId] IS NULL AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)");
+                    "([Outcome] = 1 AND [DraftId] IS NOT NULL AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [RefusalJson] IS NULL) OR ([Outcome] = 2 AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1 AND (([CommandName] = N'sales.order-draft.create.v1' AND [DraftId] IS NULL) OR ([CommandName] <> N'sales.order-draft.create.v1' AND [DraftId] IS NOT NULL AND [DraftId] <> '00000000-0000-0000-0000-000000000000')))" );
             });
         });
 
