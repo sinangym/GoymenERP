@@ -9,7 +9,6 @@ which keeps the script directory off sys.path).
 Stage 2: each suite runs under one capability profile, each with its own compose file:
 - "c01-list-only": the canonical C-01 stack, validated by the canonical validator unchanged;
 - "cari-staged": the same disposable envelope plus C01E2e__Profile=cari-list-detail;
-- "log-staged": the same disposable envelope plus C01E2e__Profile=logistics-instructions;
 - "normal": the same stack without the envelope, so the API serves its normal shell authority.
 A suite compose model is mapped back to the canonical shape by exactly its profile's documented
 difference and then checked by the canonical validator, so every canonical rule (Testing,
@@ -40,7 +39,7 @@ SUITES = ("smoke", "c03", "org03", "u02", "s03", "mfg", "fin01", "s04", "acc01",
 READ_ONLY_SUITES = ("smoke", "c03")
 _SUITE_PATTERN = re.compile(r"^[a-z0-9]+$")
 
-PROFILES = ("c01-list-only", "cari-staged", "normal", "log-staged")
+PROFILES = ("c01-list-only", "cari-staged", "normal")
 SUITE_PROFILES = {
     "smoke": "c01-list-only",
     "c03": "cari-staged",
@@ -61,20 +60,17 @@ SUITE_PROFILES = {
     # CARI-NORMAL: the create/reopen journey runs on the NORMAL host, which is the whole point —
     # C-01's list-only envelope and the never-runnable c03 are not acceptance for it.
     "c02": "normal",
-    # L-04 (SİPARİŞ, LOG-4b): the loading-instruction screens opened only inside the disposable envelope, until the
-    # flip after this suite is green.
-    "l04": "log-staged",
+    # L-04 (SİPARİŞ): Logistics is published after LOG-4b acceptance; the final journey runs on the normal host.
+    "l04": "normal",
 }
 PROFILE_COMPOSE_FILES = {
     "c01-list-only": "infra/docker-compose.c01-e2e.yml",
     "cari-staged": "infra/docker-compose.browser-cari-staged.yml",
-    "log-staged": "infra/docker-compose.browser-log-staged.yml",
     "normal": "infra/docker-compose.browser-normal.yml",
 }
 PROFILE_SUITE_LABELS = {
     "c01-list-only": "C01-REAL-BROWSER-E2E-V1",
     "cari-staged": "BROWSER-SUITE-CARI-STAGED-V1",
-    "log-staged": "BROWSER-SUITE-LOG-STAGED-V1",
     "normal": "BROWSER-SUITE-NORMAL-V1",
 }
 CANONICAL_SUITE_LABEL = PROFILE_SUITE_LABELS["c01-list-only"]
@@ -83,7 +79,6 @@ CARI_STAGED_PROFILE_VALUE = "cari-list-detail"
 # Each envelope profile's exact C01E2e__Profile value (C01E2eShellCapabilityActivation's profiles).
 STAGED_PROFILE_VALUES = {
     "cari-staged": CARI_STAGED_PROFILE_VALUE,
-    "log-staged": "logistics-instructions",
 }
 # The disposable C-01 capability envelope, as the canonical compose file sets it on the API.
 ENVELOPE_KEYS = (

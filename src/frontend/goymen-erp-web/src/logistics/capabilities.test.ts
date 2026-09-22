@@ -4,8 +4,8 @@
  * leaving a screen silently unmounted. Read with Node's own `fs` (the test runner's process), as the
  * Manufacturing OpenAPI pin does: the file lives outside the web package.
  *
- * WHAT THIS IS NOT: availability. The provider declares the three STAGED; this test pins that too,
- * so the flip (a separate exact-head change) is visible here.
+ * Availability is pinned too: after #358's exact-head staged-profile browser acceptance, all three
+ * declarations are published. A future partial or accidental rollback turns this red.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -48,10 +48,11 @@ describe('Logistics lane ↔ backend shell provider', () => {
     expect(constant('DetailScreenId')).toBe(LOGISTICS_SCREEN_ID[LOGISTICS_CAPABILITY.instructionsDetail])
   })
 
-  it('the provider keeps every declaration STAGED until the flip', () => {
+  it('the provider publishes all three declarations after the accepted staged-profile journey', () => {
     // The declaration form ends with `)`; the provider's doc comment mentions the same words inside `<c>…</c>`.
-    expect((providerText.match(/ImplementationAvailable: false\)/g) ?? []).length).toBe(3)
-    expect(providerText).not.toMatch(/ImplementationAvailable: true/)
+    expect(constant('OwnerContractVersion')).toBe('1.0')
+    expect((providerText.match(/ImplementationAvailable: true\)/g) ?? []).length).toBe(3)
+    expect(providerText).not.toMatch(/ImplementationAvailable: false\)/)
   })
 
   it('the detail link helper matches the mounted pattern and the detail has no nav entry', () => {

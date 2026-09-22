@@ -11,7 +11,7 @@ namespace GoymenERP.Logistics.UnitTests;
 
 /// <summary>
 /// LOG-4a persistent model without a database: schema, tenant filters, the ADR-011 identities, the
-/// share-chain check, the write guard (refuses before any connection) and the staged shell declarations.
+/// share-chain check, the write guard (refuses before any connection) and the published shell declarations.
 /// What SQL Server enforces is proven by the relational acceptance tests. SENTETIK / NOT_ENV.
 /// </summary>
 public sealed class LogisticsPersistenceModelTests
@@ -100,11 +100,13 @@ public sealed class LogisticsPersistenceModelTests
     }
 
     [Fact]
-    public void The_shell_declarations_are_staged_and_bound_to_the_manifest_names()
+    public void The_shell_declarations_are_published_and_bound_to_the_manifest_names()
     {
-        var declarations = new LogisticsShellCapabilityProvider().GetDeclarations();
+        var provider = new LogisticsShellCapabilityProvider();
+        var declarations = provider.GetDeclarations();
+        Assert.Equal("1.0", provider.ContractVersion);
         Assert.Equal(3, declarations.Count);
-        Assert.All(declarations, declaration => Assert.False(declaration.ImplementationAvailable));
+        Assert.All(declarations, declaration => Assert.True(declaration.ImplementationAvailable));
         Assert.Equal(
             [
                 ("logistics.instructions.create", "/lojistik/yukleme-talimatlari/yeni", LogisticsPermissionManifestV1.InstructionsCreate),

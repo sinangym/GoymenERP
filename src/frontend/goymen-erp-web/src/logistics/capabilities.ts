@@ -3,10 +3,9 @@
  * card (D6; master v3 §27.8 screen ids), pinned to the backend's `LogisticsShellCapabilityProvider`
  * (LOG-4a, #350) by ./capabilities.test.ts.
  *
- * STATUS: DECLARED, STAGED. The provider declares all three with `ImplementationAvailable: false`
- * until the `l04` browser suite accepts the screens on the staged profile; a separate exact-head
- * change flips them (the S03-c / FIN-UI-1c / MFG-UI-F pattern). While staged, `hasCapability`
- * answers false and `CapabilityRoute` closes every Logistics route onto the neutral not-found block.
+ * STATUS: PUBLISHED. The `l04` browser suite accepted all three screens on the staged profile at
+ * exact `af2072ce1f5ca17b8124fadc81cd83ea7c32fd92` (run 35484271018, 5/5), so the owner provider now
+ * declares them with `ImplementationAvailable: true` (the S03-c / FIN-UI-1c / MFG-UI-F pattern).
  * The ids are mount keys, not permissions: every route's service measures its own Logistics
  * permission afresh (#276), and recording a load is a server-measured command on the detail
  * (`logistics.loads.record`), not a screen. The new-instruction picker reads the price-free Logistics

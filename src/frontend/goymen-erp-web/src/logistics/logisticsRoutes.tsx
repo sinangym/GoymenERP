@@ -3,8 +3,8 @@
  * `...logisticsRoutes` (see ./SHARED_MOUNT_HANDOFF.md) — never written into `src/shell/**` from here.
  *
  * Each route is behind the shared `CapabilityRoute` gate with the backend provider's id. The
- * declarations are STAGED (LOG-4a) until the `l04` browser acceptance on the staged profile and the
- * separate flip; while staged, every route closes onto the neutral not-found block and calls nothing.
+ * declarations are published after the exact-head `l04` staged-profile acceptance (#358); the shell
+ * still exposes each route only when the actor holds its required company-scoped permission.
  */
 
 import type { ReactNode } from 'react'
