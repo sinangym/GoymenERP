@@ -21,7 +21,8 @@
  *
  * Runs after the journey (Playwright runs files alphabetically: `s04-approval-journey` < `s04-references`):
  *   S04-06 the preparer opens the new-draft screen, picks the REAL customer, currency, delivery address and contact,
- *          searches the isolated Product-owned candidate, creates one draft and reopens that exact draft
+ *          searches the isolated Product-owned candidate, creates one draft and reopens that exact draft; the same
+ *          otherwise-valid payload with the preceding Product version is a replayable 409 and creates no business row
  *   S04-07 the preparer reopens draft 2: the delivery block shows the REAL address text, contact name and
  *          currency code; the reader sees the same by URL and no command
  */
@@ -80,6 +81,7 @@ interface OwnerReference {
 interface DeliveryDraftReading {
   readonly draft: {
     readonly id: string
+    readonly version: string
     readonly partyId: string
     readonly companyAccountId: string
     readonly currencyId: string
@@ -118,6 +120,23 @@ interface ProductReferenceReading {
   }[]
 }
 
+interface SalesDraftCreateLinePayload {
+  readonly productId: string
+  readonly expectedProductVersion: string
+  readonly orderUnitId: string
+  readonly [key: string]: unknown
+}
+
+interface SalesDraftCreatePayload {
+  readonly lines: readonly SalesDraftCreateLinePayload[]
+  readonly [key: string]: unknown
+}
+
+interface ProblemReading {
+  readonly code: string
+  readonly errors: readonly { readonly field: string; readonly code: string }[]
+}
+
 async function signInAs(page: Page, actor: string): Promise<void> {
   await page.setExtraHTTPHeaders({ [DEVELOPMENT_USER_HEADER]: actor })
 }
@@ -131,6 +150,19 @@ async function readDeliveryDraft(page: Page, actor: string): Promise<DeliveryDra
   const reading = (await response.json()) as DeliveryDraftReading
   expect(reading.draft.id).toBe(deliveryDraftId)
   return reading
+}
+
+async function readPreparingDraftIds(page: Page): Promise<readonly string[]> {
+  const response = await page.request.get(`${env.apiBaseUrl}${DRAFTS_PATH}?approvalState=Preparing`, {
+    headers: { [DEVELOPMENT_USER_HEADER]: preparerActor, 'X-Company-Id': companyId },
+  })
+  expect(response.status(), 'the typed Sales list reads the business rows').toBe(200)
+  const reading = (await response.json()) as {
+    readonly items: readonly { readonly id: string }[]
+    readonly nextCursor?: string | null
+  }
+  expect(reading.nextCursor ?? null, 'the measured list is complete').toBeNull()
+  return reading.items.map((item) => item.id).sort()
 }
 
 /** Collects the browser's own answers on one GET reference route. */
@@ -182,7 +214,7 @@ async function expectDeliveryBlockAsReader(page: Page): Promise<void> {
   )
 }
 
-test('S04-06 the preparer selects the real references and Product candidate, creates one draft and reopens the same record', async ({ page }) => {
+test('S04-06 the preparer creates and reopens one real Product draft; a stale Product version is a replayed 409 without another business row', async ({ page }) => {
   await signInAs(page, preparerActor)
   const currencyReads = watchRead(page, CURRENCIES_PATH)
   const contactReads = watchRead(page, CONTACT_INFORMATION_PATH)
@@ -290,6 +322,9 @@ test('S04-06 the preparer selects the real references and Product candidate, cre
   await saveButton(page).click()
   const createdResponse = await createdResponsePromise
   expect(createdResponse.status()).toBe(201)
+  const validPayload = createdResponse.request().postDataJSON() as SalesDraftCreatePayload
+  expect(validPayload.lines).toHaveLength(1)
+  expect(validPayload.lines[0]).toMatchObject({ productId, expectedProductVersion: productVersion, orderUnitId: productUnitId })
   const created = (await createdResponse.json()) as DraftMutationReading
   expect(created.isReplay).toBe(false)
   expect(created.detail.lines).toHaveLength(1)
@@ -323,6 +358,58 @@ test('S04-06 the preparer selects the real references and Product candidate, cre
     productName,
     orderUnitId: productUnitId,
   })
+
+  // The exact valid browser payload above reaches Product again with only its expected version moved back by one.
+  // A terminal refusal row is allowed and expected; the assertion is that no Sales draft or business line is added.
+  const currentProductVersion = BigInt(productVersion)
+  if (currentProductVersion <= 1n) throw new Error('the s04 Product fixture has no preceding positive version')
+  const staleProductVersion = (currentProductVersion - 1n).toString()
+  const stalePayload: SalesDraftCreatePayload = {
+    ...validPayload,
+    lines: validPayload.lines.map((line, index) => index === 0
+      ? { ...line, expectedProductVersion: staleProductVersion }
+      : line),
+  }
+  const businessIdsBefore = await readPreparingDraftIds(page)
+  const staleKey = `s04-e1-stale-${createdId}`
+  const firstCorrelation = `s04-e1-stale-first-${createdId}`
+  const staleHeaders = {
+    [DEVELOPMENT_USER_HEADER]: preparerActor,
+    'X-Company-Id': companyId,
+    'Content-Type': 'application/json',
+    'Idempotency-Key': staleKey,
+    'X-Correlation-Id': firstCorrelation,
+  }
+
+  const staleResponse = await page.request.post(`${env.apiBaseUrl}${DRAFTS_PATH}`, {
+    headers: staleHeaders,
+    data: stalePayload,
+  })
+  expect(staleResponse.status()).toBe(409)
+  const staleProblem = (await staleResponse.json()) as ProblemReading
+  expect(staleProblem.code).toBe('version_conflict')
+  expect(staleProblem.errors).toEqual(expect.arrayContaining([
+    expect.objectContaining({ field: 'lines[0].productId', code: 'version_conflict' }),
+  ]))
+
+  const replayResponse = await page.request.post(`${env.apiBaseUrl}${DRAFTS_PATH}`, {
+    headers: { ...staleHeaders, 'X-Correlation-Id': `s04-e1-stale-retry-${createdId}` },
+    data: stalePayload,
+  })
+  expect(replayResponse.status()).toBe(409)
+  const replayProblem = (await replayResponse.json()) as ProblemReading
+  expect(replayProblem).toEqual(staleProblem)
+  expect(replayResponse.headers()['idempotency-replayed']).toBe('true')
+  expect(replayResponse.headers()['idempotency-original-correlation-id']).toBe(firstCorrelation)
+
+  expect(await readPreparingDraftIds(page), 'the stale request and its replay add no Sales draft').toEqual(businessIdsBefore)
+  const businessAfterResponse = await page.request.get(`${env.apiBaseUrl}${DRAFTS_PATH}/${createdId}`, {
+    headers: { [DEVELOPMENT_USER_HEADER]: preparerActor, 'X-Company-Id': companyId },
+  })
+  expect(businessAfterResponse.status()).toBe(200)
+  const businessAfter = (await businessAfterResponse.json()) as CreatedDraftReading
+  expect(businessAfter.draft).toEqual(stored.draft)
+  expect(businessAfter.lines, 'the accepted draft business line is unchanged').toEqual(stored.lines)
 })
 
 test('S04-07 the preparer reopens draft 2 and sees the REAL address, contact and currency; the reader sees the same and no command', async ({ page }) => {
