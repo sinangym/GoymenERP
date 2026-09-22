@@ -32024,7 +32024,10 @@
       },
       "SalesDraftLineCommercialV1": {
         "required": [
-          "lineId"
+          "lineId",
+          "unitPrice",
+          "priceUnitId",
+          "discountPercent"
         ],
         "type": "object",
         "properties": {
