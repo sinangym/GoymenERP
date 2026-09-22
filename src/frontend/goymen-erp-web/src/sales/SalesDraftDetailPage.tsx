@@ -451,7 +451,9 @@ function ApprovalCommands({
   const pending = draft.approvalState === APPROVAL_STATE.pendingApproval
   const offerDecision = canDecide && pending && !ownDraft
   const ownDecisionWithheld = canDecide && pending && ownDraft
-  const offerWithdraw = canSubmit && ownDraft && unapproved
+  // A commercial revision can return an approved order to Preparing. D2's easy withdrawal
+  // must not be offered once approved history exists; the server remains the authority.
+  const offerWithdraw = canSubmit && ownDraft && unapproved && draft.revision === 'Rev.0'
   if (!offerSubmit && !offerDecision && !offerWithdraw && !ownDecisionWithheld && attempt.phase === 'idle') return null
 
   async function send(kind: DraftStateCommand, snapshot: OrderAttemptSnapshot<DraftStateCommandRequest>) {

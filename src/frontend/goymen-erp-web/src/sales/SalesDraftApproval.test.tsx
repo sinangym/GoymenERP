@@ -319,4 +319,14 @@ describe('D2 persona fences on S-04', () => {
     expect(screen.getByRole('button', { name: T.approval.submit })).toBeTruthy()
     expect(screen.queryByRole('button', { name: T.approval.withdraw })).toBeNull()
   })
+
+  it('offers no easy withdrawal after an approved revision returned the own draft to Preparing', async () => {
+    const revised = own(detail('Preparing'))
+    revised.draft.revision = 'Rev.1'
+    installFetch({ capabilities: ALL_SALES, onDetail: () => json(revised) })
+    renderSalesApp(`/satis/siparisler/${DRAFT}`)
+
+    await screen.findByRole('heading', { name: 'SO-2026-0001' })
+    expect(screen.queryByRole('button', { name: T.approval.withdraw })).toBeNull()
+  })
 })
