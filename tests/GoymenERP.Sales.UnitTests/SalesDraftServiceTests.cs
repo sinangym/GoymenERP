@@ -470,6 +470,33 @@ public sealed class SalesDraftServiceTests
     }
 
     /// <summary>
+    /// D2md1: creator identity alone is not an own-decision ban. With no active SalesSupport persona,
+    /// the creator keeps the existing approve/reject path under the ordinary approve authority.
+    /// </summary>
+    [Theory]
+    [InlineData("approve")]
+    [InlineData("reject")]
+    public async Task A_non_sales_support_creator_keeps_the_existing_decision_behavior(string decision)
+    {
+        var world = new World();
+        Assert.Empty(world.ActiveRoleCodes.Codes);
+        var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-md1-create"))).Detail;
+        Assert.True(created.IsOwnDraft);
+        await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("k-md1-submit"));
+        world.Authority.Measured.Clear();
+
+        var decided = decision == "approve"
+            ? await world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("k-md1-decide"))
+            : await world.Service().RejectDraftAsync(created.Draft.Id, Command("3", "SENTETIK md1"), Metadata("k-md1-decide"));
+
+        Assert.Equal((decision == "approve" ? "Approved" : "Rejected", Actor, Actor, true, false),
+            (decided.Detail.Draft.ApprovalState, decided.Detail.Approval.SubmittedBy, decided.Detail.Approval.DecidedBy,
+                decided.Detail.IsOwnDraft, decided.Detail.IsOwnDecisionRestricted));
+        Assert.Contains(ApprovePermission, world.Authority.Measured);
+        Assert.All(world.Authority.Measured, permission => Assert.Contains(permission, new[] { ApprovePermission, PriceReadPermission }));
+    }
+
+    /// <summary>
     /// D2 (Sinan 5750987986 points 1–2): "own order" is the order the actor PREPARED (the stored creator), not the one
     /// they submitted. A creates, an authorized B submits: A holding the general approve name is still fenced (the own
     /// name is asked and refused); B — the submitter, not the preparer — decides it exactly as on main: only the approve
