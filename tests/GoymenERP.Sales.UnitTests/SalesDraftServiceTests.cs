@@ -99,6 +99,7 @@ public sealed class SalesDraftServiceTests
         Assert.Equal((409, SalesDraftProblemCodesV1.VersionConflict, false), (refusal.Status, refusal.Code, refusal.IsReplay));
         Assert.Equal(("lines[0].productId", ProductApiV1.VersionConflict), (refusal.Errors[0].Field, refusal.Errors[0].Code));
         Assert.Single(world.Store.Refusals);
+        Assert.Null(world.Store.Refusals[0].DraftId);
         world.ResetOwnerCalls();
 
         var again = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CreateDraftAsync(request, Metadata("k-1", correlation: "retry")));

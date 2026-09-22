@@ -56,15 +56,14 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
     internal const string CreateAttemptFilter = "[DraftId] IS NOT NULL AND [CommandName] = N'" + SalesDraftCommands.CreateV1 + "'";
 
     /// <summary>
-    /// A successful attempt always identifies its draft and has no refusal. A create-time terminal
-    /// refusal has no draft yet; every mutation refusal identifies the existing draft it acted on.
+    /// A successful attempt always identifies its draft and has no refusal. New create-time terminal
+    /// refusals have no draft and new mutation refusals identify the existing draft; null remains valid
+    /// for legacy mutation refusals written before that identity was retained, so upgrades preserve replay.
     /// </summary>
     internal const string AttemptOutcomeConstraint =
         "([Outcome] = 1 AND [DraftId] IS NOT NULL AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [RefusalJson] IS NULL) "
-        + "OR ([Outcome] = 2 AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1 AND "
-        + "(([CommandName] = N'" + SalesDraftCommands.CreateV1 + "' AND [DraftId] IS NULL) "
-        + "OR ([CommandName] <> N'" + SalesDraftCommands.CreateV1 + "' AND [DraftId] IS NOT NULL "
-        + "AND [DraftId] <> '00000000-0000-0000-0000-000000000000')))";
+        + "OR ([Outcome] = 2 AND ([DraftId] IS NULL OR [DraftId] <> '00000000-0000-0000-0000-000000000000') "
+        + "AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)";
 
     internal DbSet<DraftNumberRow> DraftNumbers => Set<DraftNumberRow>();
 
@@ -261,7 +260,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                 "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND LEN([CommandName]) > 0 "
                 + "AND LEN([CorrelationId]) > 0 AND LEN([ActorId]) > 0");
             table.HasCheckConstraint("CK_DraftAttempts_Hashes", "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
-            // ADR-011 §7: create refusals precede a draft; mutation refusals bind to the draft they rejected.
+            // ADR-011 §7: new mutation refusals bind to their draft; legacy null refusals remain replayable.
             table.HasCheckConstraint("CK_DraftAttempts_Outcome", AttemptOutcomeConstraint);
         });
         entity.HasKey(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });

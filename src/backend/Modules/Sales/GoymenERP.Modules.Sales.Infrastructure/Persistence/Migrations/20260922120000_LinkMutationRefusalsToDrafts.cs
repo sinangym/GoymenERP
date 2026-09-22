@@ -18,6 +18,15 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations;
 [Migration("20260922120000_LinkMutationRefusalsToDrafts")]
 public sealed class LinkMutationRefusalsToDrafts : Migration
 {
+    private const string LinkedOutcomeConstraint =
+        "([Outcome] = 1 AND [DraftId] IS NOT NULL AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [RefusalJson] IS NULL) "
+        + "OR ([Outcome] = 2 AND ([DraftId] IS NULL OR [DraftId] <> '00000000-0000-0000-0000-000000000000') "
+        + "AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)";
+
+    private const string PreviousOutcomeConstraint =
+        "([Outcome] = 1 AND [DraftId] IS NOT NULL AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [RefusalJson] IS NULL) "
+        + "OR ([Outcome] = 2 AND [DraftId] IS NULL AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)";
+
     protected override void Up(MigrationBuilder migrationBuilder)
     {
         migrationBuilder.DropCheckConstraint(
@@ -29,7 +38,7 @@ public sealed class LinkMutationRefusalsToDrafts : Migration
             name: "CK_DraftAttempts_Outcome",
             schema: "sales",
             table: "DraftAttempts",
-            sql: SalesDbContext.AttemptOutcomeConstraint);
+            sql: LinkedOutcomeConstraint);
     }
 
     protected override void Down(MigrationBuilder migrationBuilder)
@@ -51,7 +60,6 @@ public sealed class LinkMutationRefusalsToDrafts : Migration
             name: "CK_DraftAttempts_Outcome",
             schema: "sales",
             table: "DraftAttempts",
-            sql: "([Outcome] = 1 AND [DraftId] IS NOT NULL AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [RefusalJson] IS NULL) "
-                + "OR ([Outcome] = 2 AND [DraftId] IS NULL AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)");
+            sql: PreviousOutcomeConstraint);
     }
 }

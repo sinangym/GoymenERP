@@ -638,16 +638,15 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
 
         await using var context = run.Context(CompanyA);
         var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
-        // K3 Head B and D2 sit on top of the approval migration: rolling back BELOW the approval migration runs D2's Down
-        // first (with no withdrawn row the fifth arm is dropped freely), then Head B's (with no archived revision its empty
-        // tables roll back freely), and the approval guard then refuses (51045) exactly as before — so the history ends at
-        // the approval migration and the approval facts stand.
-        Assert.EndsWith("_AddDraftWithdrawal", applied[^1], StringComparison.Ordinal);
-        Assert.EndsWith("_AddDraftRevisions", applied[^2], StringComparison.Ordinal);
-        Assert.EndsWith("_AddDraftApproval", applied[^3], StringComparison.Ordinal);
-        var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[^4]));
+        // The linked-refusal migration, D2 and K3 Head B sit on top of approval. With no linked refusal,
+        // rollback reaches approval; its guard then refuses (51045), leaving approval facts intact.
+        Assert.EndsWith("_LinkMutationRefusalsToDrafts", applied[^1], StringComparison.Ordinal);
+        Assert.EndsWith("_AddDraftWithdrawal", applied[^2], StringComparison.Ordinal);
+        Assert.EndsWith("_AddDraftRevisions", applied[^3], StringComparison.Ordinal);
+        Assert.EndsWith("_AddDraftApproval", applied[^4], StringComparison.Ordinal);
+        var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[^5]));
         Assert.Equal(51045, error.Number);
-        Assert.Equal(applied[..^2], await context.Database.GetAppliedMigrationsAsync());
+        Assert.Equal(applied[..^3], await context.Database.GetAppliedMigrationsAsync());
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'sales') AND name IN (N'DraftRevisions', N'DraftRevisionLines')"));
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM sys.check_constraints WHERE [name] = N'CK_Drafts_State' AND schema_id = SCHEMA_ID(N'sales') AND definition LIKE N'%[[]Revision]=(0)%'"));
@@ -878,6 +877,70 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
             await run.ScalarAsync<string>("SELECT [DecidedBy] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", third.Id))));
     }
 
+    /// <summary>
+    /// The D2 constraint upgrade preserves a legacy non-create refusal whose draft identity was not
+    /// retained, including its replay. New mutation refusals retain the draft identity under the
+    /// existing company-plus-draft foreign key, and downgrade refuses rather than discard that link.
+    /// </summary>
+    [SqlServerFact]
+    public async Task The_linked_refusal_migration_preserves_legacy_replay_and_new_refusals_use_the_company_scoped_draft()
+    {
+        await using var run = await Run.StartAsync();
+        string[] applied;
+        await using (var context = run.Context(CompanyA))
+        {
+            applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
+            Assert.EndsWith("_LinkMutationRefusalsToDrafts", applied[^1], StringComparison.Ordinal);
+            Assert.EndsWith("_AddDraftWithdrawal", applied[^2], StringComparison.Ordinal);
+            await context.GetService<IMigrator>().MigrateAsync(applied[^2]);
+        }
+
+        var owners = Owners.For(CompanyA);
+        SalesOrderDraft draft;
+        var refusal = new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.StateConflict,
+            [new("approvalState", SalesRuleCodes.StateConflict)]);
+        await using (var a = run.Store(CompanyA))
+        {
+            draft = (await a.Store.StoreDraftAsync(run.Envelope("k-create-legacy"), Hash("create-legacy"),
+                documentNo => Draft(owners, documentNo, T0))).Draft;
+            await a.Store.RecordRefusalAsync(run.Envelope("k-legacy-refusal"), Hash("legacy-refusal"), refusal,
+                default, SalesDraftCommands.WithdrawV1);
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [sales].[DraftAttempts] WHERE [CommandName] = @c AND [DraftId] IS NULL AND [Outcome] = 2",
+            ("@c", SalesDraftCommands.WithdrawV1)));
+
+        await using (var context = run.Context(CompanyA))
+        {
+            await context.GetService<IMigrator>().MigrateAsync();
+        }
+
+        await using (var a = run.Store(CompanyA))
+        {
+            var replay = await a.Store.FindReplayAsync(run.Envelope("k-legacy-refusal", correlation: "SENTETIK-retry"),
+                Hash("legacy-refusal"), default, SalesDraftCommands.WithdrawV1);
+            Assert.Equal((SalesDraftProblemCodesV1.StateConflict, run.Correlation),
+                (replay!.Refusal!.Code, replay.OriginalCorrelationId));
+
+            await a.Store.RecordRefusalAsync(run.Envelope("k-linked-refusal"), Hash("linked-refusal"), refusal,
+                default, SalesDraftCommands.ApproveV1, draft.Id);
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [sales].[DraftAttempts] WHERE [CompanyId] = @company AND [DraftId] = @draft AND [CommandName] = @command AND [Outcome] = 2",
+            ("@company", CompanyA), ("@draft", draft.Id), ("@command", SalesDraftCommands.ApproveV1)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM sys.foreign_keys WHERE [name] = N'FK_DraftAttempts_Drafts_CompanyId_DraftId' AND [parent_object_id] = OBJECT_ID(N'[sales].[DraftAttempts]')"));
+
+        await using (var context = run.Context(CompanyA))
+        {
+            var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[^2]));
+            Assert.Equal(51046, error.Number);
+            Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
+        }
+    }
+
     /// <summary>D2's Down is a forward fix: while any withdrawn draft exists the rollback is refused with 51050 and the five-arm constraint stands.</summary>
     [SqlServerFact]
     public async Task The_withdrawal_migration_refuses_to_roll_back_while_any_draft_is_withdrawn()
@@ -900,10 +963,11 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
 
         await using var context = run.Context(CompanyA);
         var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
-        Assert.EndsWith("_AddDraftWithdrawal", applied[^1], StringComparison.Ordinal);
-        var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[^2]));
+        Assert.EndsWith("_LinkMutationRefusalsToDrafts", applied[^1], StringComparison.Ordinal);
+        Assert.EndsWith("_AddDraftWithdrawal", applied[^2], StringComparison.Ordinal);
+        var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[^3]));
         Assert.Equal(51050, error.Number);
-        Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
+        Assert.Equal(applied[..^1], await context.Database.GetAppliedMigrationsAsync());
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM sys.check_constraints WHERE [name] = N'CK_Drafts_Approval' AND schema_id = SCHEMA_ID(N'sales') AND definition LIKE N'%[[]ApprovalState]=(5)%'"));
         Assert.Equal(5, await run.ScalarAsync<int>("SELECT [ApprovalState] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id)));
