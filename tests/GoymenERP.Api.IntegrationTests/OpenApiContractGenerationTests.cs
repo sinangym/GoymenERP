@@ -177,6 +177,10 @@ public sealed partial class OpenApiContractGenerationTests
         new("post", "/api/v1/manufacturing/plans", "SaveManufacturingPlanV1",
             AuthenticatedResponses("201:application/json", "400:application/problem+json", "415:", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
             "#/components/schemas/SavePlanRequestV1"),
+        new("get", "/api/v1/manufacturing/plans/{planId}", "GetManufacturingPlanV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json",
+                "503:application/problem+json"),
+            ParameterValues: ["path:planId:true:type:string;format:uuid"]),
         new("post", "/api/v1/manufacturing/plans/{planId}/approval", "ApproveManufacturingPlanV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json", "404:application/problem+json"),
             "#/components/schemas/ApprovePlanRequestV1", ["path:planId:true:type:string;format:uuid"]),
@@ -362,6 +366,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetSalesCurrencyReferenceV1"] = "ref:SalesCurrencyReferenceV1",
             ["GetSalesProductReferenceV1"] = "ref:SalesProductReferenceV1",
             ["SaveManufacturingPlanV1"] = "ref:PlanViewV1",
+            ["GetManufacturingPlanV1"] = "ref:PlanViewV1",
             ["ApproveManufacturingPlanV1"] = "ref:PlanViewV1",
             ["CreateManufacturingOrderV1"] = "ref:OrderViewV1",
             ["IssueManufacturingInputV1"] = "ref:OrderViewV1",
@@ -437,6 +442,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetSalesCurrencyReferenceV1",
         "GetSalesProductReferenceV1",
         "SaveManufacturingPlanV1",
+        "GetManufacturingPlanV1",
         "ApproveManufacturingPlanV1",
         "CreateManufacturingOrderV1",
         "IssueManufacturingInputV1",
@@ -659,6 +665,7 @@ public sealed partial class OpenApiContractGenerationTests
         "SetOrganizationLocationActiveStateV1:409",
         "GetFinanceManualReceiptDraftContextV1:404",
         "GetSalesProductReferenceV1:404",
+        "GetManufacturingPlanV1:404",
         "ApproveManufacturingPlanV1:404",
         "CreateManufacturingOrderV1:404",
         "IssueManufacturingInputV1:404",
@@ -2502,9 +2509,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(84, operations.Count);
+        Assert.Equal(86, operations.Count);
         Assert.Equal(
-            84,
+            86,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());
