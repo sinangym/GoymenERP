@@ -357,6 +357,14 @@ public sealed partial class OpenApiContractGenerationTests
         new("get", "/api/v1/sales/references/currencies", "GetSalesCurrencyReferencesV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["query:effectiveOn:true:type:string;format:date"]),
+        new("get", "/api/v1/sales/references/products", "GetSalesProductCandidatesV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
+            ParameterValues:
+            [
+                "query:q:false:type:string",
+                "query:effectiveOn:true:type:string;format:date",
+                "query:limit:false:type:integer|string;format:int32;pattern:^-?(?:0|[1-9]\\d*)$",
+            ]),
         .. ProductOperations,
     ];
 
@@ -391,6 +399,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetSalesAccountReferencesV1"] = "ref:SalesAccountOptionsV1",
             ["GetSalesCurrencyReferenceV1"] = "ref:SalesCurrencyReferenceV1",
             ["GetSalesProductReferenceV1"] = "ref:SalesProductReferenceV1",
+            ["GetSalesProductCandidatesV1"] = "ref:ProductSalesCandidatesV1",
             ["SaveManufacturingPlanV1"] = "ref:PlanViewV1",
             ["GetManufacturingPlanV1"] = "ref:PlanViewV1",
             ["ApproveManufacturingPlanV1"] = "ref:PlanViewV1",
@@ -474,6 +483,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetSalesAccountReferencesV1",
         "GetSalesCurrencyReferenceV1",
         "GetSalesProductReferenceV1",
+        "GetSalesProductCandidatesV1",
         "SaveManufacturingPlanV1",
         "GetManufacturingPlanV1",
         "ApproveManufacturingPlanV1",
@@ -673,6 +683,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetSalesAccountReferencesV1",
         "GetSalesCurrencyReferenceV1",
         "GetSalesProductReferenceV1",
+        "GetSalesProductCandidatesV1",
         "SaveManufacturingPlanV1",
         "ApproveManufacturingPlanV1",
         "CreateManufacturingOrderV1",
@@ -831,6 +842,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetSalesProductReferenceV1:400"] = ["validation_failed"],
             ["GetSalesProductReferenceV1:409"] = ["product_selection_changed"],
             ["GetSalesProductReferenceV1:422"] = ["unsupported_product", "unsupported_unit"],
+            ["GetSalesProductCandidatesV1:400"] = ["validation_failed"],
             ["GetCounterpartyCompanyAccountLinkCandidatesV1:409"] =
                 ["client_contract_required", "client_contract_unsupported"],
             ["GetCounterpartyCompanyAccountLinkCandidatesV1:400"] =
@@ -1559,6 +1571,19 @@ public sealed partial class OpenApiContractGenerationTests
                 ["SalesUnitReferenceV1"] = ObjectSchema(
                     ["unitId", "label", "profileId", "profileVersion"],
                     ("unitId", "type:string;format:uuid"), ("label", "type:string"),
+                    ("profileId", "type:string;format:uuid"), ("profileVersion", "type:string")),
+                ["ProductSalesCandidatesV1"] = ObjectSchema(
+                    ["items", "searchWindowFull"],
+                    ("items", "type:array;items:ref:ProductSalesCandidateV1"),
+                    ("searchWindowFull", "type:boolean")),
+                ["ProductSalesCandidateV1"] = ObjectSchema(
+                    ["productId", "productVersion", "code", "name", "orderUnits"],
+                    ("productId", "type:string;format:uuid"),
+                    ("productVersion", "type:string"), ("code", "type:string"), ("name", "type:string"),
+                    ("orderUnits", "type:array;items:ref:ProductSalesCandidateUnitV1")),
+                ["ProductSalesCandidateUnitV1"] = ObjectSchema(
+                    ["unitId", "code", "profileId", "profileVersion"],
+                    ("unitId", "type:string;format:uuid"), ("code", "type:string"),
                     ("profileId", "type:string;format:uuid"), ("profileVersion", "type:string")),
                 ["CounterpartyContactInformationView"] = ObjectSchema(
                     ["partyId", "accountId", "companyId", "version", "isActive", "information"],
@@ -2634,9 +2659,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(92, operations.Count);
+        Assert.Equal(93, operations.Count);
         Assert.Equal(
-            92,
+            93,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());

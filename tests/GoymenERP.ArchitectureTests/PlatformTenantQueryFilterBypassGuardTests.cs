@@ -169,7 +169,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // product
             ["tools/relational_inventory/product.txt"] =
-                "7994d6f4490ebbc0a5204e47afd28543050f90688a8a9d9e33f5542ed24a1223",
+                "ad3665a6974797af7cf87f6124a138c62e223cb9223908db1a9d8770a42e9a17",
 
             // purchasing
             ["tools/relational_inventory/purchasing.txt"] =
@@ -264,11 +264,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // here (no new database capability; MigrateAsync stays 2).
                 // Re-measured for #316 on top of C3: ProductShellCapabilityProvider is registered here (a
                 // singleton shell provider; no new database capability, MigrateAsync stays 2).
-                // Re-measured for PRD-FAM-1 (#334): the family definition source and policy are the V2
-                // registry pair (a scoped EF read over ProductDbContext; no new database capability,
-                // MigrateAsync stays 2).
+                // Re-measured for E1: the bounded sales-candidate reader/service are DI-only additions over the
+                // existing Product read store and eligibility ports; no new database capability, MigrateAsync stays 2.
                 ["src/backend/GoymenERP.Api/ProductRuntime/ProductRuntimeExtensions.cs"] =
-                    new("5c532feecc486eaeccde7db76beeb3d7ecdac7c6fe1650ad94311298c2616d2f",
+                    new("5420bd569b99f39a3f556a6be23cedecd7bfc03cf20606b2cfe3e7c3faf8d58f",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["MigrateAsync"] = 2 }),
                 // Re-measured for PRD-UNIT-1: the Product participant gets Settings' unit-identity catalog

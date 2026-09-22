@@ -83,6 +83,8 @@ public static class ProductRuntimeExtensions
             (company, user, authority, records, policy, units) =>
                 new ProductSalesEligibilityService(company, user, authority, records, policy, units),
             () => new UnconfiguredProductEligibility()));
+        services.AddScoped<IProductSalesCandidateReader, SqlProductSalesCandidateReader>();
+        services.AddScoped<IProductSalesCandidatesV1, ProductSalesCandidateService>();
         services.AddScoped<IProductStockEligibilityV1>(provider => CreateEligibility<IProductStockEligibilityV1>(provider,
             (company, user, authority, records, policy, units) =>
                 new ProductStockEligibilityService(company, user, authority, records, policy, units),

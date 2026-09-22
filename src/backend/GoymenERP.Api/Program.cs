@@ -277,6 +277,7 @@ app.MapCounterpartyEndpoints();
 app.MapProductEndpoints();
 app.MapFinanceEndpoints();
 app.MapSalesEndpoints();
+app.MapSalesProductCandidateEndpoints();
 app.MapInventoryEndpoints();
 app.MapManufacturingEndpoints();
 app.MapLogisticsEndpoints();
