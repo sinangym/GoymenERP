@@ -208,7 +208,7 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
             CancellationToken cancellationToken = default) => StateAsync("approve", draftId, request, metadata);
 
         public Task<SalesOrderDraftResponse> WithdrawDraftAsync(Guid draftId, SalesDraftStateCommandRequest request, SalesCommandMetadata metadata,
-            CancellationToken cancellationToken = default) => throw new NotSupportedException("D2: the withdrawal route waits on the central adapter.");
+            CancellationToken cancellationToken = default) => StateAsync("withdraw", draftId, request, metadata);
 
         public Task<SalesOrderDraftResponse> RejectDraftAsync(Guid draftId, SalesDraftStateCommandRequest request, SalesCommandMetadata metadata,
             CancellationToken cancellationToken = default) => StateAsync("reject", draftId, request, metadata);
@@ -226,6 +226,7 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
     [InlineData("submission", "submit")]
     [InlineData("approval", "approve")]
     [InlineData("rejection", "reject")]
+    [InlineData("withdrawal", "withdraw")]
     public async Task A_state_command_answers_200_with_the_draft_and_the_replay_headers_only_on_a_replay(string segment, string command)
     {
         var draftId = Guid.NewGuid();
@@ -287,7 +288,7 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
             Assert.Equal(HttpStatusCode.UnsupportedMediaType, (await client.SendAsync(text)).StatusCode);
         }
 
-        // A missing version, a non-positive or non-integer one, an unknown member, and a reason outside the rejection: 400.
+        // A missing version, a non-positive or non-integer one, an unknown member, and a reason outside rejection/withdrawal: 400.
         foreach (var (segment, json) in new[]
                  {
                      ("submission", "{}"), ("submission", "{\"expectedVersion\":\"0\"}"), ("approval", "{\"expectedVersion\":1}"),

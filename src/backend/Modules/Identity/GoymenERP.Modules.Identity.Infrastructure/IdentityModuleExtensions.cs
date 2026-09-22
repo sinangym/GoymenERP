@@ -52,12 +52,15 @@ public static class IdentityModuleExtensions
                 connectionString,
                 sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", "identity")));
         services.AddScoped<IExternalIdentityResolver, ExternalIdentityResolver>();
-        // One instance per scope behind both ports: a revalidation has to refresh the very cache
-        // the cached path reads, not a second copy of it.
+        // One instance per scope behind all three ports: a revalidation has to refresh the very
+        // cache the cached path reads, while active-role reads deliberately bypass permission
+        // membership and the cache.
         services.AddScoped<ErpAuthorizationService>();
         services.AddScoped<IErpAuthorizationService>(
             provider => provider.GetRequiredService<ErpAuthorizationService>());
         services.AddScoped<IErpAuthorityRevalidationService>(
+            provider => provider.GetRequiredService<ErpAuthorizationService>());
+        services.AddScoped<IActiveRoleCodeReader>(
             provider => provider.GetRequiredService<ErpAuthorizationService>());
         services.TryAddSingleton<IAuthorizationSnapshotReadObserver,
             NullAuthorizationSnapshotReadObserver>();
