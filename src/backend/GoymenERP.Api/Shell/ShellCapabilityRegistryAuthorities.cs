@@ -65,7 +65,7 @@ internal static class ShellCapabilityRegistryAuthorities
     // Re-measured for SALES-A1 (the Sales approve control on S-04): ComputeRevision reproduction, and
     // independently re-checked (ORG DATA ONLY); the control keeps its parent's context; pinned by test.
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10AndPublishedSalesV10 =
-        "sha256:hEHpUD3EpnU84YyXNW-z-s9tdeQe1USaCrUWNG6pa40";
+        "sha256:Y2tBQyAX8hXlJbjh8FIdyLTE7HsaNgSmpUvizmxHFtk";
 
     // ... + Finance 1.0 (#325, FIN-UI-1a) beside the STAGED Sales screens. Superseded when Sales was published
     // (#328, below); no host serves it now. Computed by the ComputeRevision reproduction and,
@@ -95,7 +95,7 @@ internal static class ShellCapabilityRegistryAuthorities
     // PUBLISHED. Finance 1.1 adds record, reversal-propose and reversal-approval declarations while preserving
     // their exact context, scope and parent relations. Derived from the integrated provider tuple and pinned by test.
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV10AndPublishedFinanceV11 =
-        "sha256:m8qKTZf7Qt6uYLkwcqnysd8k3V0akIKSf2l4gtv0jos";
+        "sha256:JbmzjTWVvPlglaYG9R5DAFVsyimX6xrjmBSyFO74fFI";
 
     // FIN-UI-1c: ... + Manufacturing 1.0 staged: the normal host (C+O+P+S(published)+F(published)+M(staged)).
     // Computed by the ComputeRevision reproduction and, independently, by ORG (DATA ONLY); pinned by test.
@@ -111,7 +111,7 @@ internal static class ShellCapabilityRegistryAuthorities
     // context and scope): ComputeRevision reproduction, calibrated against the three constants this
     // file already served, and independently re-checked (DATA ONLY); pinned by test.
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV10PublishedFinanceV11AndPublishedManufacturingV10 =
-        "sha256:JwGeGgJWcMy886q2dMVweXZPdD8Xvfxjqi3_K8lHU_g";
+        "sha256:R7PYGmEC4QwhaZIjmk780ZpL2_xMYOxzqAMfV5W8Ia4";
 
     // LOG-4a: ... + Logistics 1.0 STAGED (the loading-instruction list L-02, new L-03 and detail L-02-DETAIL,
     // master v3 §27.8): the normal host (C+O+P+S(published)+F(published)+M(published)+L(staged)). Computed by
@@ -121,7 +121,7 @@ internal static class ShellCapabilityRegistryAuthorities
     // context and scope): ComputeRevision reproduction, calibrated against the three constants this
     // file already served, and independently re-checked (DATA ONLY); pinned by test.
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV10PublishedFinanceV11PublishedManufacturingV10AndLogisticsV10 =
-        "sha256:YjNR-RyQTahbld6iqEziPSQuhID_GLP03xpQ6iigTN0";
+        "sha256:0Q-XeoPDdUBiMtk55ynwqY7EY5PqmWv6LXBhirW5No8";
 
     // PUR-4a: ... + Purchasing 1.0 STAGED (the purchase-order list P-03, new P-04 and detail P-03-DETAIL,
     // master v3 §27.3): the normal host (C+O+P+S(pub)+F(pub)+M(pub)+L(staged)+Pu(staged)). Computed by the
@@ -131,7 +131,7 @@ internal static class ShellCapabilityRegistryAuthorities
     // context and scope): ComputeRevision reproduction, calibrated against the three constants this
     // file already served, and independently re-checked (DATA ONLY); pinned by test.
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV10PublishedFinanceV11PublishedManufacturingV10LogisticsV10AndPurchasingV10 =
-        "sha256:ZRdHqPeQo1XHEP9AOQOM8lXOsRTMpdyTcO0edSQHTO4";
+        "sha256:wDu7lljQSb9ujOY2ha_JV3k-5Mvf70sodnoDMQXCFws";
 
     // ACC-V0b: ... + Accounting 1.0 STAGED (the period list M-07 and its propose screen, the approve and
     // close controls of that list, the journal list M-04 and its detail, the posting queues M-01): the normal
@@ -171,7 +171,7 @@ internal static class ShellCapabilityRegistryAuthorities
     // with Accounting staged (the old half), and the same ACC-V0c model placed back at Organization 1.0
     // reproduces this branch's own sha256:OOlEtnDx… (the new half, which no accepted constant covered).
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV10PublishedFinanceV11PublishedManufacturingV10LogisticsV10PurchasingV10AndPublishedAccountingV10 =
-        "sha256:azxgnc9kbcjv7JpIhIAOY-M3KKyNNHo-sGBNeUORdZ0";
+        "sha256:HeWMzEBVqXWChVycGojQ7uvp9PfvbZCM7DQz5j1u1qw";
 
     internal const string CounterpartyV15PublishedListCreateAndDetail =
         "sha256:UBHnivzhe_dp5f7vU7dP5n7HG-P8XYBGhxvD_OjMSnw";

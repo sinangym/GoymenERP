@@ -61,9 +61,15 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
             new ProductShellCapabilityProvider(), new SalesShellCapabilityProvider(),
         ];
 
-        // On failure xUnit prints the actual revision: the constant is never guessed.
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10AndPublishedSalesV10,
-            ShellCapabilityRegistry.ComputeCandidateRevision(providers));
+        // The complete value is part of the failure so the accepted revision is never guessed from a
+        // console-truncated Assert.Equal diagnostic.
+        var actual = ShellCapabilityRegistry.ComputeCandidateRevision(providers);
+        Assert.True(
+            string.Equals(
+                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10AndPublishedSalesV10,
+                actual,
+                StringComparison.Ordinal),
+            $"Sales normal-host authority drifted. Actual: {actual}");
     }
 
     [Fact]
@@ -83,10 +89,13 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
         var registry = new ShellCapabilityRegistry(container.GetServices<IShellCapabilityProvider>(),
             new ShellCapabilityAuthorityCatalog([authority]));
         var sales = registry.Registrations.Where(item => item.Owner == SalesShellCapabilityProvider.OwnerId).ToArray();
-        // Three screens plus the SALES-A1 approve control of the detail.
-        Assert.Equal(4, sales.Length);
+        // Three screens plus the SALES-A1 approve and SALES-P commercial-revision controls of the detail.
+        Assert.Equal(5, sales.Length);
         Assert.Equal(SalesShellCapabilityProvider.DetailCapabilityId,
             Assert.Single(sales, item => item.Declaration.CapabilityId == SalesShellCapabilityProvider.ApproveCapabilityId)
+                .Declaration.ParentCapabilityId);
+        Assert.Equal(SalesShellCapabilityProvider.DetailCapabilityId,
+            Assert.Single(sales, item => item.Declaration.CapabilityId == SalesShellCapabilityProvider.PriceWriteCapabilityId)
                 .Declaration.ParentCapabilityId);
         // Published (S03-c, #328): available; each still opens only for an actor holding its Sales permission
         // in the context company (SalesShellCapabilitySqlServerRelationalAcceptanceTests).

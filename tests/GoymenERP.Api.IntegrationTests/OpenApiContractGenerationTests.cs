@@ -264,6 +264,12 @@ public sealed partial class OpenApiContractGenerationTests
         new("post", "/api/v1/sales/drafts/{id}/withdrawal", "WithdrawSalesOrderDraftV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
             "#/components/schemas/SalesDraftStateCommandRequest", ["path:id:true:type:string;format:uuid"]),
+        new("post", "/api/v1/sales/drafts/{id}/commercial-revision", "ReviseSalesOrderDraftCommercialV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/SalesDraftCommercialRevisionRequest", ["path:id:true:type:string;format:uuid"]),
+        new("get", "/api/v1/sales/drafts/{id}/revisions", "GetSalesOrderDraftRevisionsV1",
+            AuthenticatedResponses("200:application/json", "404:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["path:id:true:type:string;format:uuid"]),
         new("post", "/api/v1/finance/bank-accounts", "ProposeFinanceBankAccountV1",
             AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json", "400:application/problem+json", "415:", "503:application/problem+json"),
             "#/components/schemas/BankAccountProposeRequest"),
@@ -429,6 +435,8 @@ public sealed partial class OpenApiContractGenerationTests
             ["ApproveSalesOrderDraftV1"] = "ref:SalesOrderDraftResponse",
             ["RejectSalesOrderDraftV1"] = "ref:SalesOrderDraftResponse",
             ["WithdrawSalesOrderDraftV1"] = "ref:SalesOrderDraftResponse",
+            ["ReviseSalesOrderDraftCommercialV1"] = "ref:SalesOrderDraftResponse",
+            ["GetSalesOrderDraftRevisionsV1"] = "ref:SalesOrderDraftRevisionsResponse",
             ["ProposeFinanceBankAccountV1"] = "ref:BankAccountCommandResult",
             ["ApproveFinanceBankAccountV1"] = "ref:BankAccountCommandResult",
             ["ProposeFinanceBankAccountIbanChangeV1"] = "ref:BankAccountCommandResult",
@@ -514,6 +522,8 @@ public sealed partial class OpenApiContractGenerationTests
         "ApproveSalesOrderDraftV1",
         "RejectSalesOrderDraftV1",
         "WithdrawSalesOrderDraftV1",
+        "ReviseSalesOrderDraftCommercialV1",
+        "GetSalesOrderDraftRevisionsV1",
         "ProposeFinanceBankAccountV1",
         "ApproveFinanceBankAccountV1",
         "ProposeFinanceBankAccountIbanChangeV1",
@@ -581,6 +591,7 @@ public sealed partial class OpenApiContractGenerationTests
         "ApproveSalesOrderDraftV1",
         "RejectSalesOrderDraftV1",
         "WithdrawSalesOrderDraftV1",
+        "ReviseSalesOrderDraftCommercialV1",
         "ProposeFinanceBankAccountV1",
         "ApproveFinanceBankAccountV1",
         "ProposeFinanceBankAccountIbanChangeV1",
@@ -658,6 +669,7 @@ public sealed partial class OpenApiContractGenerationTests
                 ["ApproveSalesOrderDraftV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["RejectSalesOrderDraftV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["WithdrawSalesOrderDraftV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
+                ["ReviseSalesOrderDraftCommercialV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["ProposeFinanceBankAccountV1"] = [StatusCodes.Status200OK],
                 ["ApproveFinanceBankAccountV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
                 ["ProposeFinanceBankAccountIbanChangeV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
@@ -714,6 +726,8 @@ public sealed partial class OpenApiContractGenerationTests
         "ApproveSalesOrderDraftV1",
         "RejectSalesOrderDraftV1",
         "WithdrawSalesOrderDraftV1",
+        "ReviseSalesOrderDraftCommercialV1",
+        "GetSalesOrderDraftRevisionsV1",
         "ProposeFinanceBankAccountV1",
         "ApproveFinanceBankAccountV1",
         "ProposeFinanceBankAccountIbanChangeV1",
@@ -765,6 +779,8 @@ public sealed partial class OpenApiContractGenerationTests
         "ApproveSalesOrderDraftV1:404",
         "RejectSalesOrderDraftV1:404",
         "WithdrawSalesOrderDraftV1:404",
+        "ReviseSalesOrderDraftCommercialV1:404",
+        "GetSalesOrderDraftRevisionsV1:404",
         "GetLoadingInstructionV1:404",
         "IssueLoadingInstructionV1:404",
         "RecordLoadingInstructionLoadV1:404",
@@ -914,6 +930,9 @@ public sealed partial class OpenApiContractGenerationTests
             ["SubmitSalesOrderDraftV1:422"] = ["validation_failed"],
             ["RejectSalesOrderDraftV1:422"] = ["sales_approval_reason_too_long"],
             ["WithdrawSalesOrderDraftV1:422"] = ["sales_approval_reason_too_long"],
+            ["ReviseSalesOrderDraftCommercialV1:400"] = ["command_metadata_invalid", "validation_failed"],
+            ["ReviseSalesOrderDraftCommercialV1:409"] = ["concurrent_change", "sales_state_conflict", "same_key_payload_mismatch", "version_conflict"],
+            ["ReviseSalesOrderDraftCommercialV1:422"] = ["validation_failed"],
             ["GetShellCapabilitiesV1:400"] = ["company_context_invalid"],
             ["GetLoadingInstructionsV1:400"] = ["invalid_cursor", "validation_failed"],
             ["CreateLoadingInstructionV1:400"] = ["command_metadata_invalid", "validation_failed"],
@@ -1325,6 +1344,34 @@ public sealed partial class OpenApiContractGenerationTests
                     ("decidedBy", "type:null|string"),
                     ("decidedAtUtc", "type:null|string;format:date-time"),
                     ("rejectionReason", "type:null|string")),
+                ["SalesDraftRevisionLineV1"] = ObjectSchema(
+                    ["lineId", "lineNo", "productId", "productVersion", "orderUnitId", "quantity", "unitPrice", "priceUnitId", "discountPercent", "priceDisclosure"],
+                    ("lineId", "type:string;format:uuid"),
+                    ("lineNo", "type:integer|string;format:int32"),
+                    ("productId", "type:string;format:uuid"),
+                    ("productVersion", "type:string"),
+                    ("orderUnitId", "type:string;format:uuid"),
+                    ("quantity", "type:string"),
+                    ("unitPrice", "type:null|string"),
+                    ("priceUnitId", "type:null|string;format:uuid"),
+                    ("discountPercent", "type:null|string"),
+                    ("priceDisclosure", "ref:SalesPriceDisclosure")),
+                ["SalesDraftRevisionV1"] = ObjectSchema(
+                    ["revision", "submittedBy", "submittedAtUtc", "approvedBy", "approvedAtUtc", "archivedAtUtc", "archivedBy", "moneyProfileId", "moneyProfileVersion", "moneyScale", "lines"],
+                    ("revision", "type:string"),
+                    ("submittedBy", "type:null|string"),
+                    ("submittedAtUtc", "type:null|string;format:date-time"),
+                    ("approvedBy", "type:null|string"),
+                    ("approvedAtUtc", "type:null|string;format:date-time"),
+                    ("archivedAtUtc", "type:string;format:date-time"),
+                    ("archivedBy", "type:string"),
+                    ("moneyProfileId", "type:string;format:uuid"),
+                    ("moneyProfileVersion", "type:string"),
+                    ("moneyScale", "type:integer|string;format:int32"),
+                    ("lines", "type:array;items:ref:SalesDraftRevisionLineV1")),
+                ["SalesOrderDraftRevisionsResponse"] = ObjectSchema(
+                    ["items"],
+                    ("items", "type:array;items:ref:SalesDraftRevisionV1")),
                 ["SalesOrderDraftDetailView"] = ObjectSchema(
                     ["draft", "requestedDeliveryDate", "note", "lines", "deliveryAddress", "contact", "responsible", "paymentTerms", "sourceStrategy", "package", "approval", "isOwnDraft", "isOwnDecisionRestricted"],
                     ("draft", "ref:SalesOrderDraftSummaryView"),
@@ -1992,6 +2039,16 @@ public sealed partial class OpenApiContractGenerationTests
                     ["expectedVersion"],
                     ("expectedVersion", "type:string"),
                     ("reason", "type:null|string")),
+                ["SalesDraftCommercialRevisionRequest"] = ObjectSchema(
+                    ["expectedVersion", "lines"],
+                    ("expectedVersion", "type:string"),
+                    ("lines", "type:array;items:ref:SalesDraftLineCommercialV1")),
+                ["SalesDraftLineCommercialV1"] = ObjectSchema(
+                    ["lineId"],
+                    ("lineId", "type:string;format:uuid"),
+                    ("unitPrice", "type:null|string"),
+                    ("priceUnitId", "type:null|string;format:uuid"),
+                    ("discountPercent", "type:null|string")),
                 ["SalesOrderDraftLineRequest"] = ObjectSchema(
                     ["lineId", "productId", "expectedProductVersion", "orderUnitId", "quantity"],
                     ("lineId", "type:string;format:uuid"),
@@ -2673,9 +2730,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(94, operations.Count);
+        Assert.Equal(96, operations.Count);
         Assert.Equal(
-            94,
+            96,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());

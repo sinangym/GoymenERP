@@ -347,6 +347,8 @@ public static class SalesEndpoints
         // the create permission, approve and reject the `sales.orders.approve` name — both measured by
         // the service; another company's draft is 404.
         MapDraftDetail(drafts);
+        MapDraftRevisions(drafts);
+        MapCommercialRevisionCommand(drafts);
         MapStateCommand(drafts, "/{id:guid}/submission", "SubmitSalesOrderDraftV1", allowReason: false,
             (service, id, body, metadata, cancellationToken) => service.SubmitDraftAsync(id, body, metadata, cancellationToken),
             unprocessableCodes: ["validation_failed"]);
@@ -359,6 +361,110 @@ public static class SalesEndpoints
         MapStateCommand(drafts, "/{id:guid}/withdrawal", "WithdrawSalesOrderDraftV1", allowReason: true,
             (service, id, body, metadata, cancellationToken) => service.WithdrawDraftAsync(id, body, metadata, cancellationToken),
             unprocessableCodes: [SalesDraftProblemCodesV1.ApprovalReasonTooLong]);
+    }
+
+    /// <summary>
+    /// K3 commercial revision: the source-owned service enforces <c>sales.orders.price.write</c>,
+    /// version/state/idempotency and the full line-set invariant. The route owns only the strict
+    /// HTTP envelope and never derives a price, discount, threshold or role.
+    /// </summary>
+    private static void MapCommercialRevisionCommand(RouteGroupBuilder drafts)
+    {
+        drafts.MapPost("/{id:guid}/commercial-revision", async (
+            Guid id,
+            HttpContext httpContext,
+            [FromServices] ISalesDraftService service,
+            ICorrelationContext correlation,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var idempotencyKey) || !correlation.IsResolved)
+            {
+                return DraftProblem(StatusCodes.Status400BadRequest, SalesDraftProblemCodesV1.CommandMetadataInvalid, correlation);
+            }
+
+            if (!httpContext.Request.HasJsonContentType())
+            {
+                return Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+            }
+
+            SalesDraftCommercialRevisionRequest body;
+            try
+            {
+                using var reader = new StreamReader(httpContext.Request.Body, Encoding.UTF8);
+                body = SalesDraftJson.ReadCommercialRevision(await reader.ReadToEndAsync(cancellationToken));
+            }
+            catch (JsonException)
+            {
+                return DraftProblem(StatusCodes.Status400BadRequest, "validation_failed", correlation);
+            }
+
+            try
+            {
+                var response = await service.ReviseCommercialAsync(id, body,
+                    new SalesCommandMetadata(idempotencyKey, correlation.CorrelationId, correlation.CausationId, DateTimeOffset.UtcNow),
+                    cancellationToken);
+                if (response.IsReplay)
+                {
+                    ApplyReplayHeaders(httpContext, response.OriginalCorrelationId);
+                }
+
+                return Results.Json(response, SalesDraftJson.Options, statusCode: SalesDraftApiV1.StateCommandStatus);
+            }
+            catch (SalesDraftServiceException exception)
+            {
+                if (exception.IsReplay)
+                {
+                    ApplyReplayHeaders(httpContext, exception.OriginalCorrelationId
+                        ?? throw new InvalidOperationException("Replayed refusal without its original correlation."));
+                }
+
+                return DraftProblem(exception, correlation);
+            }
+        })
+            .WithName("ReviseSalesOrderDraftCommercialV1")
+            .WithIdempotencyContract(SalesDraftApiV1.StateCommandStatus, StatusCodes.Status409Conflict)
+            .Accepts<SalesDraftCommercialRevisionRequest>("application/json")
+            .Produces<SalesOrderDraftResponse>(SalesDraftApiV1.StateCommandStatus)
+            .ProducesErpBadRequest("validation_failed", SalesDraftProblemCodesV1.CommandMetadataInvalid)
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(SalesDraftProblemCodesV1.VersionConflict, SalesDraftProblemCodesV1.StateConflict,
+                SalesDraftProblemCodesV1.SameKeyPayloadMismatch, SalesDraftProblemCodesV1.ConcurrentChange)
+            .ProducesErpUnprocessableEntity("validation_failed")
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+    }
+
+    /// <summary>
+    /// The approved commercial history under the draft read. Price disclosure remains the service's
+    /// independent <c>sales.orders.price.read</c> decision; this route never fills withheld values.
+    /// </summary>
+    private static void MapDraftRevisions(RouteGroupBuilder drafts)
+    {
+        drafts.MapGet("/{id:guid}/revisions", async (
+            Guid id,
+            HttpContext httpContext,
+            [FromServices] ISalesDraftService service,
+            ICorrelationContext correlation,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            try
+            {
+                return Results.Json(await service.GetDraftRevisionsAsync(id, cancellationToken), SalesDraftJson.Options);
+            }
+            catch (SalesDraftServiceException exception)
+            {
+                return DraftProblem(exception, correlation);
+            }
+        })
+            .WithName("GetSalesOrderDraftRevisionsV1")
+            .Produces<SalesOrderDraftRevisionsResponse>()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
     }
 
     private static void MapStateCommand(RouteGroupBuilder drafts, string pattern, string name, bool allowReason,

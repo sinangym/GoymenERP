@@ -195,11 +195,28 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
 
         public List<(string Command, Guid DraftId, string ExpectedVersion, string? Reason, string Key)> StateCalls { get; } = [];
 
-        public Task<SalesOrderDraftResponse> ReviseCommercialAsync(Guid draftId, SalesDraftCommercialRevisionRequest request, SalesCommandMetadata metadata,
-            CancellationToken cancellationToken = default) => throw new NotSupportedException("Not reached by these cases.");
+        public Func<Guid, SalesDraftCommercialRevisionRequest, Task<SalesOrderDraftResponse>> Commercial { get; set; } =
+            (id, _) => Task.FromResult(new SalesOrderDraftResponse(Detail(id), false, "SENTETIK-corr"));
 
-        public Task<SalesOrderDraftRevisionsResponse> GetDraftRevisionsAsync(Guid draftId, CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException("Not reached by these cases.");
+        public List<(Guid DraftId, SalesDraftCommercialRevisionRequest Request, string Key)> CommercialCalls { get; } = [];
+
+        public Task<SalesOrderDraftResponse> ReviseCommercialAsync(Guid draftId, SalesDraftCommercialRevisionRequest request, SalesCommandMetadata metadata,
+            CancellationToken cancellationToken = default)
+        {
+            CommercialCalls.Add((draftId, request, metadata.IdempotencyKey));
+            return Commercial(draftId, request);
+        }
+
+        public Func<Guid, Task<SalesOrderDraftRevisionsResponse>> Revisions { get; set; } =
+            _ => Task.FromResult(new SalesOrderDraftRevisionsResponse([]));
+
+        public List<Guid> RevisionReads { get; } = [];
+
+        public Task<SalesOrderDraftRevisionsResponse> GetDraftRevisionsAsync(Guid draftId, CancellationToken cancellationToken = default)
+        {
+            RevisionReads.Add(draftId);
+            return Revisions(draftId);
+        }
 
         public Task<SalesOrderDraftResponse> SubmitDraftAsync(Guid draftId, SalesDraftStateCommandRequest request, SalesCommandMetadata metadata,
             CancellationToken cancellationToken = default) => StateAsync("submit", draftId, request, metadata);
@@ -345,6 +362,111 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
         {
             Assert.Equal("SENTETIK-first-corr", Assert.Single(response.Headers.GetValues("Idempotency-Original-Correlation-Id")));
         }
+    }
+
+    [Fact]
+    public async Task Commercial_revision_and_history_use_the_strict_owner_contract_and_replay_headers()
+    {
+        var draftId = Guid.NewGuid();
+        var lineId = Guid.NewGuid();
+        var priceUnitId = Guid.NewGuid();
+        var moneyProfileId = Guid.NewGuid();
+        var archivedAt = new DateTimeOffset(2026, 9, 22, 10, 0, 0, TimeSpan.Zero);
+        var service = new StubDraftService
+        {
+            Commercial = (_, _) => Task.FromResult(new SalesOrderDraftResponse(Detail(draftId), true, "SENTETIK-commercial-first")),
+            Revisions = _ => Task.FromResult(new SalesOrderDraftRevisionsResponse([
+                new SalesDraftRevisionV1("Rev.0", "SENTETIK-submitter", archivedAt.AddMinutes(-2), "SENTETIK-approver",
+                    archivedAt.AddMinutes(-1), archivedAt, "SENTETIK-pricer", moneyProfileId, "7", 2,
+                    [new SalesDraftRevisionLineV1(lineId, 1, Guid.NewGuid(), "3", Guid.NewGuid(), "2.5", "13.00", priceUnitId, "5", SalesPriceDisclosure.Visible)])
+            ])),
+        };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+
+        var command = new SalesDraftCommercialRevisionRequest("4", [new SalesDraftLineCommercialV1(lineId, "13.00", priceUnitId, "5")]);
+        using (var request = new HttpRequestMessage(HttpMethod.Post, $"{SalesEndpoints.DraftsPath}/{draftId:D}/commercial-revision")
+               {
+                   Content = new StringContent(JsonSerializer.Serialize(command, SalesDraftJson.Options), Encoding.UTF8, "application/json"),
+               })
+        {
+            request.Headers.Add("Idempotency-Key", "SENTETIK-commercial-1");
+            using var response = await client.SendAsync(request);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.Equal("true", Assert.Single(response.Headers.GetValues("Idempotency-Replayed")));
+            Assert.Equal("SENTETIK-commercial-first", Assert.Single(response.Headers.GetValues("Idempotency-Original-Correlation-Id")));
+        }
+
+        var call = Assert.Single(service.CommercialCalls);
+        Assert.Equal((draftId, "4", "SENTETIK-commercial-1"), (call.DraftId, call.Request.ExpectedVersion, call.Key));
+        var sentLine = Assert.Single(call.Request.Lines);
+        Assert.Equal((lineId, "13.00", priceUnitId, "5"),
+            (sentLine.LineId, sentLine.UnitPrice, sentLine.PriceUnitId, sentLine.DiscountPercent));
+
+        using var history = await client.GetAsync($"{SalesEndpoints.DraftsPath}/{draftId:D}/revisions");
+        Assert.Equal(HttpStatusCode.OK, history.StatusCode);
+        var body = await history.Content.ReadFromJsonAsync<JsonElement>();
+        var item = Assert.Single(body.GetProperty("items").EnumerateArray());
+        Assert.Equal("Rev.0", item.GetProperty("revision").GetString());
+        Assert.Equal("Visible", item.GetProperty("lines")[0].GetProperty("priceDisclosure").GetString());
+        Assert.Equal("13.00", item.GetProperty("lines")[0].GetProperty("unitPrice").GetString());
+        Assert.Equal([draftId], service.RevisionReads);
+    }
+
+    [Fact]
+    public async Task Commercial_revision_refuses_invalid_envelopes_before_the_service_and_replays_a_terminal_conflict()
+    {
+        var draftId = Guid.NewGuid();
+        var lineId = Guid.NewGuid();
+        var priceUnitId = Guid.NewGuid();
+        var service = new StubDraftService();
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+        var path = $"{SalesEndpoints.DraftsPath}/{draftId:D}/commercial-revision";
+
+        using (var noKey = new HttpRequestMessage(HttpMethod.Post, path)
+               {
+                   Content = new StringContent("{\"expectedVersion\":\"1\",\"lines\":[]}", Encoding.UTF8, "application/json"),
+               })
+        using (var response = await client.SendAsync(noKey))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+
+        foreach (var json in new[]
+                 {
+                     "{}",
+                     "{\"expectedVersion\":1,\"lines\":[]}",
+                     $"{{\"expectedVersion\":\"1\",\"lines\":[{{\"lineId\":\"{lineId:D}\",\"unitPrice\":\"13.00\"}}]}}",
+                     $"{{\"expectedVersion\":\"1\",\"lines\":[{{\"lineId\":\"{lineId:D}\",\"unitPrice\":\"13.00\",\"priceUnitId\":\"{priceUnitId:D}\",\"discountPercent\":null,\"extra\":true}}]}}",
+                 })
+        {
+            using var invalid = new HttpRequestMessage(HttpMethod.Post, path)
+            {
+                Content = new StringContent(json, Encoding.UTF8, "application/json"),
+            };
+            invalid.Headers.Add("Idempotency-Key", "SENTETIK-invalid");
+            using var response = await client.SendAsync(invalid);
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Equal("validation_failed", (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
+        }
+        Assert.Empty(service.CommercialCalls);
+
+        service.Commercial = (_, _) => throw new SalesDraftServiceException(409, SalesDraftProblemCodesV1.VersionConflict,
+            [new("expectedVersion", SalesDraftProblemCodesV1.VersionConflict)], true, "SENTETIK-commercial-first");
+        var valid = new SalesDraftCommercialRevisionRequest("4", [new SalesDraftLineCommercialV1(lineId, "13.00", priceUnitId, null)]);
+        using var conflict = new HttpRequestMessage(HttpMethod.Post, path)
+        {
+            Content = new StringContent(JsonSerializer.Serialize(valid, SalesDraftJson.Options), Encoding.UTF8, "application/json"),
+        };
+        conflict.Headers.Add("Idempotency-Key", "SENTETIK-terminal");
+        using var refused = await client.SendAsync(conflict);
+        Assert.Equal(HttpStatusCode.Conflict, refused.StatusCode);
+        Assert.Equal("true", Assert.Single(refused.Headers.GetValues("Idempotency-Replayed")));
+        Assert.Equal("SENTETIK-commercial-first", Assert.Single(refused.Headers.GetValues("Idempotency-Original-Correlation-Id")));
+        var problem = await refused.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(SalesDraftProblemCodesV1.VersionConflict, problem.GetProperty("code").GetString());
+        Assert.Equal("expectedVersion", problem.GetProperty("errors")[0].GetProperty("field").GetString());
     }
 
     private static HttpRequestMessage StateCommand(Guid draftId, string segment, string idempotencyKey, string json)
