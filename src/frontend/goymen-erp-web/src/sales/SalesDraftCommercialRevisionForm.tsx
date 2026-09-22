@@ -14,7 +14,7 @@ import {
   type OrderAttemptSnapshot,
   type OrderAttemptState,
 } from './orderAttempt'
-import { SALES_CAPABILITY } from './capabilities'
+import { SALES_PRICE_WRITE_CAPABILITY } from './capabilities'
 import { ORDER_DETAIL_TEXT as T, problemCodeText } from './salesText'
 import { hasCapability, type ShellState } from '../shell/shellState'
 import styles from './SalesPages.module.css'
@@ -46,7 +46,7 @@ export function SalesDraftCommercialRevisionForm({
     }
   }, [detail])
 
-  if (!hasCapability(shell, SALES_CAPABILITY.ordersPriceWrite)) return null
+  if (!hasCapability(shell, SALES_PRICE_WRITE_CAPABILITY)) return null
 
   const text = T.priceRevision
   if (detail.lines.some((line) => line.priceDisclosure === 'Withheld')) {
