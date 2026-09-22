@@ -7,6 +7,7 @@ using GoymenERP.Api.OpenApi;
 using GoymenERP.Api.ProductRuntime;
 using GoymenERP.Api.Security;
 using GoymenERP.Api.Shell;
+using GoymenERP.Api.Startup;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.OpenApi;
 using GoymenERP.BuildingBlocks.Observability;
@@ -45,6 +46,9 @@ using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 var isOpenApiDocumentGeneration = OpenApiDocumentGenerationMode.IsActive;
+var databaseStartupMode = DatabaseStartupModeResolver.Resolve(
+    builder.Configuration,
+    builder.Environment.EnvironmentName);
 
 if (isOpenApiDocumentGeneration)
 {
@@ -86,7 +90,10 @@ builder.Configuration.AddJsonFile(
 builder.Services.AddErpProblemDetails();
 builder.Services.AddErpOpenApi();
 builder.Services.AddLocalization(options => options.ResourcesPath = "Resources");
-builder.Services.AddHealthChecks();
+builder.Services.AddHealthChecks()
+    .AddCheck<DatabaseSchemaCompatibilityHealthCheck>(
+        DatabaseSchemaCompatibilityHealthCheck.Name,
+        tags: [DatabaseSchemaCompatibilityHealthCheck.ReadinessTag]);
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICompanyContext, CompanyContext>();
 builder.Services.AddScoped<ICorrelationContext, CorrelationContext>();
@@ -174,7 +181,10 @@ builder.Services.AddOrganizationModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(
         services.GetRequiredService<AuditSaveChangesInterceptor>()));
-builder.Services.AddIdentityModule(builder.Configuration);
+builder.Services.AddIdentityModule(
+    builder.Configuration,
+    enableAuthorizationSnapshotDatabaseReadiness:
+        databaseStartupMode == DatabaseStartupMode.Initialize);
 builder.Services.AddProductRuntime(builder.Configuration, builder.Environment);
 builder.Services.AddCounterpartyModule(
     builder.Configuration,
@@ -286,6 +296,7 @@ app.MapAccountingEndpoints();
 app.MapShellEndpoints();
 
 if (!isOpenApiDocumentGeneration
+    && databaseStartupMode == DatabaseStartupMode.Initialize
     && (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Testing")))
 {
     await app.Services.InitializeOrganizationModuleAsync();

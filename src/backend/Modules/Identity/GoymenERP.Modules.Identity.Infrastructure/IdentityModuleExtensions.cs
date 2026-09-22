@@ -18,7 +18,8 @@ public static class IdentityModuleExtensions
 {
     public static IServiceCollection AddIdentityModule(
         this IServiceCollection services,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        bool enableAuthorizationSnapshotDatabaseReadiness = true)
     {
         var provider = configuration["DB_PROVIDER"] ?? "SqlServer";
         if (!string.Equals(provider, "SqlServer", StringComparison.OrdinalIgnoreCase))
@@ -71,9 +72,14 @@ public static class IdentityModuleExtensions
         services.AddScoped<IdentityDataSeeder>();
         services.AddSingleton(rcsiBinding);
         services.AddSingleton<SqlServerRcsiReadinessProbe>();
+        services.AddSingleton<IIdentityAuthorizationDatabaseReadiness,
+            IdentityAuthorizationDatabaseReadiness>();
         if (!OpenApiDocumentGenerationMode.IsActive)
         {
-            services.AddHostedService<AuthorizationSnapshotDatabaseReadinessService>();
+            if (enableAuthorizationSnapshotDatabaseReadiness)
+            {
+                services.AddHostedService<AuthorizationSnapshotDatabaseReadinessService>();
+            }
         }
 
         return services;
@@ -100,13 +106,18 @@ public static class IdentityModuleExtensions
     }
 }
 
-internal sealed class AuthorizationSnapshotDatabaseReadinessService(
+public interface IIdentityAuthorizationDatabaseReadiness
+{
+    Task EnsureReadyAsync(CancellationToken cancellationToken = default);
+}
+
+internal sealed class IdentityAuthorizationDatabaseReadiness(
     IServiceScopeFactory scopeFactory,
     SqlServerRcsiReadinessProbe readinessProbe,
     SqlServerRcsiReadinessBinding readinessBinding)
-    : IHostedService
+    : IIdentityAuthorizationDatabaseReadiness
 {
-    public async Task StartAsync(CancellationToken cancellationToken)
+    public async Task EnsureReadyAsync(CancellationToken cancellationToken = default)
     {
         await using var scope = scopeFactory.CreateAsyncScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
@@ -125,6 +136,14 @@ internal sealed class AuthorizationSnapshotDatabaseReadinessService(
                 SqlServerRcsiReadinessPolicy.GetStartupFailureMessage(evidence));
         }
     }
+}
+
+internal sealed class AuthorizationSnapshotDatabaseReadinessService(
+    IIdentityAuthorizationDatabaseReadiness readiness)
+    : IHostedService
+{
+    public Task StartAsync(CancellationToken cancellationToken) =>
+        readiness.EnsureReadyAsync(cancellationToken);
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }

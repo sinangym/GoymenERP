@@ -61,7 +61,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // opinion about whether a change is semantic. Any edit to a pinned file, comment included, is re-pinned in
     // the same push.
     private const string ReviewedOpenApiStartupFingerprint =
-        "5a240a6ecabdf2e38df218044fcfed521e915b79ec7c0af0d92f3d66f395df7c";
+        "f13a83ebc53b9f984d0cca13a96548b483938700dc0a6237ab6568b3da27ffc2";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedIdentityReconcilerPath =
@@ -327,7 +327,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // The database startup surface below is unchanged, which is what the API
                     // counts hold.
                     new(
-                        "14f0123bd298e80e45e451de292aae24126655ac3ca2579abef69b5fddbec4fb",
+                        "3d2b7ad072a7e98976c9dc0d1e51a732c848db35c12c7bde71ab09995cfd23b6",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -5985,6 +5985,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
         const string initializerGuard =
             "if (!isOpenApiDocumentGeneration\n"
+            + "    && databaseStartupMode == DatabaseStartupMode.Initialize\n"
             + "    && (app.Environment.IsDevelopment() || app.Environment.IsEnvironment(\"Testing\")))";
         var normalizedProgram = programSource.Replace("\r\n", "\n", StringComparison.Ordinal);
         var guardIndex = normalizedProgram.IndexOf(initializerGuard, StringComparison.Ordinal);

@@ -26,6 +26,8 @@ public sealed partial class OpenApiContractGenerationTests
     [
         new("get", "/health/live", "GetLivenessV1",
             ["200:text/plain", "400:application/problem+json", "500:application/problem+json", "503:application/problem+json"]),
+        new("get", "/health/ready", "GetReadinessV1",
+            ["200:text/plain", "400:application/problem+json", "500:application/problem+json", "503:application/problem+json"]),
         new("get", "/api/v1/audit/events", "GetAuditEventsV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json"),
             ParameterValues:
@@ -381,6 +383,7 @@ public sealed partial class OpenApiContractGenerationTests
         new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["GetLivenessV1"] = "type:string",
+            ["GetReadinessV1"] = "type:string",
             ["GetAuditEventsV1"] = "ref:AuditEventPage",
             ["GetAuthorizedCompaniesV1"] = "array:CompanySummary",
             ["GetOrganizationContextV1"] = "ref:CompanyContextResponse",
@@ -2730,9 +2733,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(96, operations.Count);
+        Assert.Equal(97, operations.Count);
         Assert.Equal(
-            96,
+            97,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());
@@ -2834,11 +2837,14 @@ public sealed partial class OpenApiContractGenerationTests
             }
         }
 
-        var anonymousOperation = Assert.Single(operations, operation =>
-            operation.Path == "/health/live" && operation.Method == "get");
-        Assert.False(anonymousOperation.Value.TryGetProperty("security", out _));
+        var anonymousOperations = operations.Where(operation =>
+                operation.OperationId is "GetLivenessV1" or "GetReadinessV1")
+            .ToArray();
+        Assert.Equal(2, anonymousOperations.Length);
+        Assert.All(anonymousOperations, operation =>
+            Assert.False(operation.Value.TryGetProperty("security", out _)));
 
-        foreach (var operation in operations.Where(operation => operation != anonymousOperation))
+        foreach (var operation in operations.Except(anonymousOperations))
         {
             var security = operation.Value.GetProperty("security");
             var requirement = Assert.Single(security.EnumerateArray());
