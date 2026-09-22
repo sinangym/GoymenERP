@@ -7,6 +7,8 @@ import { defineConfig, devices } from '@playwright/test'
  * workflow: the internal approval axis (S-04 submit / approve / reject, S-02 state filter) in a real
  * browser against the disposable stack built from the exact head — real API, real SQL, the `normal`
  * capability profile (the Sales screens are published to whoever holds the grant), the authorized web.
+ * S05 continues the same serial record with the price/discount revision form, reopen, archived approval
+ * history and terminal withdrawal replay in `specs/s04-commercial-revision.spec.ts`.
  *
  * It WRITES: every transition is a real command through the screens on the ONE draft the stage-2 seed
  * wrote (`BROWSER_E2E_S04_SEED`, sales-s04/src/env.ts), and every step is re-read through the real API.
@@ -35,8 +37,8 @@ const artifactsDir = required('BROWSER_E2E_ARTIFACTS_DIR')
 
 export default defineConfig({
   testDir: path.join(here, 'sales-s04', 'specs'),
-  // SALES-A2a: the references spec runs after the journey (alphabetical file order; draft 2 + the create screen only).
-  testMatch: /(^|[\\/])s04-(approval-journey|d2-persona-withdrawal|references)\.spec\.ts$/,
+  // SALES-A2a/S05: references and commercial revision remain in the one serial exact-head journey.
+  testMatch: /(^|[\\/])s04-(approval-journey|commercial-revision|d2-persona-withdrawal|references)\.spec\.ts$/,
   fullyParallel: false,
   workers: 1,
   retries: 0,
