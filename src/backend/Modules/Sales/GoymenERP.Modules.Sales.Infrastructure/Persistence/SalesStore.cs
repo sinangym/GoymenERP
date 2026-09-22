@@ -177,7 +177,7 @@ public sealed class SalesStore(
     }
 
     public async Task RecordRefusalAsync(SalesDraftWriteEnvelope envelope, string requestHash, SalesDraftTerminalRefusal refusal,
-        CancellationToken cancellationToken = default, string commandName = SalesDraftCommands.CreateV1)
+        CancellationToken cancellationToken = default, string commandName = SalesDraftCommands.CreateV1, Guid? draftId = null)
     {
         ArgumentNullException.ThrowIfNull(refusal);
         RequireEnvelope(envelope);
@@ -205,7 +205,7 @@ public sealed class SalesStore(
             RequestHash = requestHash,
             ActorId = envelope.ActorId.Trim(),
             Outcome = AttemptOutcomeRefused,
-            DraftId = null,
+            DraftId = draftId,
             RefusalJson = JsonSerializer.Serialize(refusal, Json),
             CorrelationId = envelope.CorrelationId.Trim(),
             RecordedAtUtc = timeProvider.GetUtcNow(),

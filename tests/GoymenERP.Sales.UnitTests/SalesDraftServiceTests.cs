@@ -559,6 +559,7 @@ public sealed class SalesDraftServiceTests
         var refusals = world.Store.Refusals.Count;
         var conflict = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().WithdrawDraftAsync(approved.Draft.Id, Command("4"), Metadata("k-a-w")));
         Assert.Equal((409, SalesDraftProblemCodesV1.StateConflict, refusals + 1), (conflict.Status, conflict.Code, world.Store.Refusals.Count));
+        Assert.Equal(approved.Draft.Id, world.Store.Refusals[^1].DraftId);
         // An APPROVED HISTORY (Sinan 5750987986 point 3a): a commercial revision brings the approved draft back to Preparing
         // at Rev.1 — the easy path is still refused (the key's terminal 409, recorded); the archived snapshot stays.
         // (The refused withdrawal above did not advance the version: still 4 here.)
@@ -1254,7 +1255,7 @@ public sealed class SalesDraftServiceTests
         private readonly Dictionary<(string Command, string Key), (string Actor, string Hash, SalesOrderDraft? Draft, SalesDraftTerminalRefusal? Refusal, string Correlation)> _attempts = [];
         private readonly List<SalesOrderDraft> _drafts = [];
         public List<SalesDraftWriteEnvelope> Envelopes { get; } = [];
-        public List<(SalesDraftWriteEnvelope Envelope, SalesDraftTerminalRefusal Refusal)> Refusals { get; } = [];
+        public List<(SalesDraftWriteEnvelope Envelope, SalesDraftTerminalRefusal Refusal, Guid? DraftId)> Refusals { get; } = [];
         /// <summary>SALES-A1: every state transition the store committed, with its audit facts.</summary>
         public List<(string Command, Guid DraftId, SalesDraftWriteEnvelope Envelope, SalesDraftStateAudit Audit, long VersionBefore, long VersionAfter)> Transitions { get; } = [];
         public int Replays { get; private set; }
@@ -1354,7 +1355,7 @@ public sealed class SalesDraftServiceTests
         }
 
         public Task RecordRefusalAsync(SalesDraftWriteEnvelope envelope, string requestHash, SalesDraftTerminalRefusal refusal,
-            CancellationToken cancellationToken = default, string commandName = SalesDraftCommands.CreateV1)
+            CancellationToken cancellationToken = default, string commandName = SalesDraftCommands.CreateV1, Guid? draftId = null)
         {
             if (Race == "refusal-at-record")
             {
@@ -1366,7 +1367,7 @@ public sealed class SalesDraftServiceTests
             if (_attempts.ContainsKey((commandName, envelope.IdempotencyKey)))
                 throw new SalesDraftStoreException(SalesDraftStoreCodes.ConcurrentChange, "synthetic: the key already holds an attempt");
             _attempts[(commandName, envelope.IdempotencyKey)] = (envelope.ActorId, requestHash, null, refusal, envelope.CorrelationId);
-            Refusals.Add((envelope, refusal));
+            Refusals.Add((envelope, refusal, draftId));
             return Task.CompletedTask;
         }
 

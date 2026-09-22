@@ -405,12 +405,12 @@ public sealed class SalesDraftService(
         catch (SalesVersionConflictException exception)
         {
             throw await TerminalAsync(scope, envelope, requestHash, new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.VersionConflict,
-                [new("expectedVersion", exception.Code)]), cancellationToken, commandName);
+                [new("expectedVersion", exception.Code)]), cancellationToken, commandName, draftId);
         }
         catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.StateConflict)
         {
             throw await TerminalAsync(scope, envelope, requestHash, new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.StateConflict,
-                [new("approvalState", exception.Code)]), cancellationToken, commandName);
+                [new("approvalState", exception.Code)]), cancellationToken, commandName, draftId);
         }
         catch (SalesRuleException exception)
         {
@@ -532,13 +532,13 @@ public sealed class SalesDraftService(
         {
             // §7: the caller's expected version is stale — recorded under the key, replayed on retry.
             throw await TerminalAsync(scope, envelope, requestHash, new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.VersionConflict,
-                [new("expectedVersion", exception.Code)]), cancellationToken, commandName);
+                [new("expectedVersion", exception.Code)]), cancellationToken, commandName, draftId);
         }
         catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.StateConflict)
         {
             // §7: the transition is not allowed from the draft's state — terminal for this key too.
             throw await TerminalAsync(scope, envelope, requestHash, new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.StateConflict,
-                [new("approvalState", exception.Code)]), cancellationToken, commandName);
+                [new("approvalState", exception.Code)]), cancellationToken, commandName, draftId);
         }
         catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.ApprovalReasonTooLong)
         {
@@ -1107,11 +1107,12 @@ public sealed class SalesDraftService(
     /// answers this refusal unrecorded (the retry records or replays).
     /// </summary>
     private async Task<SalesDraftServiceException> TerminalAsync(Scope scope, SalesDraftWriteEnvelope envelope, string requestHash,
-        SalesDraftTerminalRefusal refusal, CancellationToken cancellationToken, string commandName = SalesDraftCommands.CreateV1)
+        SalesDraftTerminalRefusal refusal, CancellationToken cancellationToken, string commandName = SalesDraftCommands.CreateV1,
+        Guid? draftId = null)
     {
         try
         {
-            await store.RecordRefusalAsync(envelope, requestHash, refusal, cancellationToken, commandName);
+            await store.RecordRefusalAsync(envelope, requestHash, refusal, cancellationToken, commandName, draftId);
         }
         catch (SalesDraftStoreException exception) when (exception.Code == SalesDraftStoreCodes.ConcurrentChange)
         {

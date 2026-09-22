@@ -166,9 +166,11 @@ public interface ISalesOrderDraftStore
     /// ADR-011 §7: records a terminal refusal under the attempt key, so a retry with the same key,
     /// content and actor answers the same refusal instead of asking the owners again. A key already
     /// holding an attempt is <see cref="SalesDraftStoreCodes.ConcurrentChange"/> (the retry replays it).
+    /// <paramref name="draftId"/> identifies the existing draft for a mutation refusal; create-time
+    /// refusals leave it null.
     /// </summary>
     Task RecordRefusalAsync(SalesDraftWriteEnvelope envelope, string requestHash, SalesDraftTerminalRefusal refusal,
-        CancellationToken cancellationToken = default, string commandName = SalesDraftCommands.CreateV1);
+        CancellationToken cancellationToken = default, string commandName = SalesDraftCommands.CreateV1, Guid? draftId = null);
 
     /// <summary>
     /// SALES-A1: one internal-approval transition of the company's stored draft in ONE save — the
