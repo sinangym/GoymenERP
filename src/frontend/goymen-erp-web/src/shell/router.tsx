@@ -24,6 +24,7 @@ import { manufacturingRoutes } from '../manufacturing/manufacturingRoutes'
 import { financeRoutes } from '../finance/financeRoutes'
 import { accountingRoutes } from '../accounting/accountingRoutes'
 import { logisticsRoutes } from '../logistics/logisticsRoutes'
+import { purchasingRoutes } from '../purchasing/purchasingRoutes'
 import { StateBlock } from './StateBlock'
 
 export const shellRoutes: RouteObject[] = [
@@ -172,8 +173,21 @@ export const shellRoutes: RouteObject[] = [
        * `:instructionId`) and mounted here by the shared-integration owner (LOG-4b handoff), before the
        * catch-all. Each is wrapped in `CapabilityRoute`: while the declarations are staged (until the l04
        * suite), every Logistics route closes onto the neutral not-found block and reads nothing.
-       */
+      */
       ...logisticsRoutes,
+      /**
+       * Purchasing owns the P-03 list and detail route table. The list and detail declarations are
+       * published. P-04 has no owner page while Product has no real purchase-candidate source, but
+       * its STATIC path must still close here before `:orderId`; otherwise `yeni` becomes an order id
+       * and the published detail issues a misleading GET. This neutral blocker publishes no screen,
+       * checks no business data and is replaced only when the owner supplies the real create route.
+       * The approve child is a control inside the detail and has no route entry here.
+       */
+      {
+        path: CAPABILITY_ROUTE[CAPABILITY.purchasingOrdersCreate].slice(1),
+        element: <StateBlock state={{ kind: 'not-found' }} subject="sayfa" />,
+      },
+      ...purchasingRoutes,
       {
         /**
          * Catch-all. Without it react-router renders its own error boundary —

@@ -101,6 +101,12 @@ class WorkflowTests(unittest.TestCase):
             validator.SUITE_IDENTITY_PERMISSIONS["fin01"],
         )
 
+    def test_pur01_identity_permissions_are_read_and_approve_only(self):
+        self.assertEqual(
+            ("purchasing.orders.read", "purchasing.orders.approve"),
+            validator.SUITE_IDENTITY_PERMISSIONS["pur01"],
+        )
+
     def _trigger_block(self) -> str:
         return self.workflow.split("\non:\n", 1)[1].split("\npermissions:\n", 1)[0]
 

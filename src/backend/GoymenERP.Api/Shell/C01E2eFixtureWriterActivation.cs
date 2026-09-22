@@ -6,6 +6,7 @@ using GoymenERP.Modules.Identity.Infrastructure.Fixtures;
 using GoymenERP.Modules.Logistics.Infrastructure.Fixtures;
 using GoymenERP.Modules.Product.Infrastructure.Fixtures;
 using GoymenERP.Modules.Product.Infrastructure.Persistence;
+using GoymenERP.Modules.Purchasing.Infrastructure.Fixtures;
 using GoymenERP.Modules.Sales.Infrastructure.Fixtures;
 using GoymenERP.Modules.Settings.Application;
 
@@ -72,6 +73,9 @@ internal static class C01E2eFixtureWriterActivation
         // fin01 FIN-T05/T06: one fixed synthetic Open Accounting period. No API grant or caller-selected row.
         services.AddAccountingOpenPeriodFixtureStore();
         services.AddScoped<C01E2eAccountingOpenPeriodFixtureWriter>();
+        // pur01: one synthetic Draft Purchasing order. Approval and replay remain real API commands.
+        services.AddPurchaseOrderFixtureStore();
+        services.AddScoped<C01E2ePurchaseOrderFixtureWriter>();
         return true;
     }
 
@@ -355,4 +359,38 @@ public sealed class C01E2eAccountingOpenPeriodFixtureWriter
 
     public Task EnsureAsync(CancellationToken cancellationToken) =>
         _store.EnsureAsync(cancellationToken);
+}
+
+/// <summary>
+/// Writes one explicit synthetic Draft purchase order through Purchasing's typed fixture port. The
+/// fixture is only the pur01 precondition; approval, the lost response and same-key replay use the real
+/// API. Construction and registration are both restricted to the complete browser-runner gate.
+/// </summary>
+public sealed class C01E2ePurchaseOrderFixtureWriter
+{
+    public const string LabelPrefix = "SENTETIK browser-suite:";
+
+    private readonly IPurchaseOrderFixtureStore _store;
+
+    public C01E2ePurchaseOrderFixtureWriter(
+        IHostEnvironment environment,
+        IConfiguration configuration,
+        IPurchaseOrderFixtureStore store)
+    {
+        C01E2eFixtureWriterActivation.RequireGate(environment, configuration);
+        _store = store;
+    }
+
+    public Task<PurchaseOrderFixtureOutcome> EnsureAsync(
+        PurchaseOrderFixtureRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (!request.Label.StartsWith(LabelPrefix, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"A fixture purchase order label must start '{LabelPrefix}'.");
+        }
+
+        return _store.EnsureAsync(request, cancellationToken);
+    }
 }

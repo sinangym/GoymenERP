@@ -20,7 +20,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// <summary>
 /// PUR-4a: the Purchasing owner's permission names are registered centrally with the same strings (company-wide
 /// only, not Critical, no grant; #66 5743488059), and nothing else is registered under <c>purchasing.</c>; the
-/// staged Purchasing shell provider joins the host set with its own reviewed normal-host authority.
+/// Purchasing 1.1 shell provider joins the host set with its own reviewed normal-host authority.
 /// </summary>
 public sealed class PurchasingPermissionAndShellRegistrationTests
 {
@@ -57,29 +57,50 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
 
         var actual = ShellCapabilityRegistry.ComputeCandidateRevision(providers);
         Assert.True(
-            string.Equals(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV10PublishedLogisticsV10AndPurchasingV10, actual,
+            string.Equals(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV10PublishedLogisticsV10AndPublishedPurchasingV11, actual,
                 StringComparison.Ordinal),
             $"Purchasing normal-host authority drifted. Actual: {actual}");
     }
 
     [Fact]
-    public void The_normal_host_with_Purchasing_gets_its_authority_and_the_staged_screens_grant_nothing()
+    public void The_normal_host_publishes_read_and_approve_while_creation_stays_staged()
     {
         var services = NormalHost();
 
         var authority = C01E2eShellCapabilityActivation.Configure(services, new TestingEnvironment(),
             new ConfigurationBuilder().Build());
 
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV10PublishedLogisticsV10AndPurchasingV10, authority);
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV10PublishedLogisticsV10AndPublishedPurchasingV11, authority);
         using var container = services.BuildServiceProvider();
         var registry = new ShellCapabilityRegistry(container.GetServices<IShellCapabilityProvider>(),
             new ShellCapabilityAuthorityCatalog([authority]));
         var purchasing = registry.Registrations
             .Where(item => item.Owner == PurchasingShellCapabilityProvider.OwnerId)
             .ToArray();
-        // The order list, the new-order form and the detail; staged until their frontend and its suite.
-        Assert.Equal(3, purchasing.Length);
-        Assert.All(purchasing, item => Assert.False(item.Declaration.ImplementationAvailable));
+        Assert.Equal(4, purchasing.Length);
+        string[] published =
+        [
+            PurchasingShellCapabilityProvider.ApproveCapabilityId,
+            PurchasingShellCapabilityProvider.DetailCapabilityId,
+            PurchasingShellCapabilityProvider.ListCapabilityId,
+        ];
+        Assert.Equal(published, purchasing.Where(item => item.Declaration.ImplementationAvailable)
+            .Select(item => item.Declaration.CapabilityId).Order(StringComparer.Ordinal).ToArray());
+
+        var create = Assert.Single(purchasing,
+            item => item.Declaration.CapabilityId == PurchasingShellCapabilityProvider.CreateCapabilityId);
+        Assert.False(create.Declaration.ImplementationAvailable);
+        Assert.All(purchasing, item =>
+            Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, item.Declaration.ContextRequirement));
+
+        var detail = Assert.Single(purchasing,
+            item => item.Declaration.CapabilityId == PurchasingShellCapabilityProvider.DetailCapabilityId).Declaration;
+        var approve = Assert.Single(purchasing,
+            item => item.Declaration.CapabilityId == PurchasingShellCapabilityProvider.ApproveCapabilityId).Declaration;
+        Assert.Equal(detail.CapabilityId, approve.ParentCapabilityId);
+        Assert.Equal(detail.RoutePath, approve.RoutePath);
+        Assert.Equal(detail.ContextRequirement, approve.ContextRequirement);
+        Assert.Equal(detail.ScopeRequirement, approve.ScopeRequirement);
     }
 
     [Fact]

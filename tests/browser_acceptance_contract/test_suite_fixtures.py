@@ -70,6 +70,11 @@ class FixtureListTests(unittest.TestCase):
             frozenset({"companyId", "codeGroupId", "technicalFamilyId", "authorizedActor", "unauthorizedActor"}),
             browser.SUITE_FIXTURE_OUTPUTS["u02"])
 
+    def test_pur01_exports_only_the_order_axis_and_company_fence(self):
+        self.assertEqual(
+            frozenset({"approverActor", "readerActor", "companyId", "otherCompanyId", "orderId", "lineId"}),
+            browser.SUITE_FIXTURE_OUTPUTS["pur01"])
+
     def test_a_read_only_suite_cannot_have_a_fixture(self):
         with mock.patch.dict(browser.SUITE_FIXTURE_OUTPUTS, {"c03": frozenset({"partyId"})}):
             with self.assertRaisesRegex(browser.ContractError, "read-only suite c03"):

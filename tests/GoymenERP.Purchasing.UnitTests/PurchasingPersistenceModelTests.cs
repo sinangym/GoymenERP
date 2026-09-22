@@ -1,4 +1,5 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.BuildingBlocks.Shell;
 using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
 using GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
@@ -137,23 +138,36 @@ public sealed class PurchasingPersistenceModelTests
     }
 
     [Fact]
-    public void The_shell_declarations_are_staged_and_bound_to_the_manifest_names()
+    public void The_read_screens_and_approval_control_are_published_while_creation_stays_staged()
     {
         var declarations = new PurchasingShellCapabilityProvider().GetDeclarations();
-        Assert.Equal(3, declarations.Count);
-        Assert.All(declarations, declaration => Assert.False(declaration.ImplementationAvailable));
-        Assert.Equal(
-            [
-                ("purchasing.orders.create", "/satinalma/siparisler/yeni", PurchasingPermissionManifestV1.OrdersCreate),
-                ("purchasing.orders.detail", "/satinalma/siparisler/:orderId", PurchasingPermissionManifestV1.OrdersRead),
-                ("purchasing.orders.list", "/satinalma/siparisler", PurchasingPermissionManifestV1.OrdersRead),
-            ],
-            declarations.Select(declaration => (declaration.CapabilityId, declaration.RoutePath, declaration.RequiredPermissions.Single()))
-                .OrderBy(item => item.CapabilityId, StringComparer.Ordinal).ToArray());
+        Assert.Equal("1.1", PurchasingShellCapabilityProvider.OwnerContractVersion);
+        Assert.Equal(4, declarations.Count);
+        Assert.False(declarations.Single(item => item.CapabilityId == PurchasingShellCapabilityProvider.CreateCapabilityId).ImplementationAvailable);
+        Assert.All(declarations.Where(item => item.CapabilityId != PurchasingShellCapabilityProvider.CreateCapabilityId),
+            declaration => Assert.True(declaration.ImplementationAvailable));
+        var byId = declarations.ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
+        Assert.Equal(PurchasingShellCapabilityProvider.CreateRoutePath, byId[PurchasingShellCapabilityProvider.CreateCapabilityId].RoutePath);
+        Assert.Equal([PurchasingPermissionManifestV1.OrdersCreate], byId[PurchasingShellCapabilityProvider.CreateCapabilityId].RequiredPermissions);
+        Assert.Equal(PurchasingShellCapabilityProvider.DetailRoutePath, byId[PurchasingShellCapabilityProvider.ApproveCapabilityId].RoutePath);
+        Assert.Equal([PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.OrdersApprove],
+            byId[PurchasingShellCapabilityProvider.ApproveCapabilityId].RequiredPermissions);
+        Assert.Equal(PurchasingShellCapabilityProvider.DetailRoutePath, byId[PurchasingShellCapabilityProvider.DetailCapabilityId].RoutePath);
+        Assert.Equal([PurchasingPermissionManifestV1.OrdersRead], byId[PurchasingShellCapabilityProvider.DetailCapabilityId].RequiredPermissions);
+        Assert.Equal(PurchasingShellCapabilityProvider.ListRoutePath, byId[PurchasingShellCapabilityProvider.ListCapabilityId].RoutePath);
+        Assert.Equal([PurchasingPermissionManifestV1.OrdersRead], byId[PurchasingShellCapabilityProvider.ListCapabilityId].RequiredPermissions);
+        Assert.Equal(PurchasingShellCapabilityProvider.DetailCapabilityId,
+            declarations.Single(item => item.CapabilityId == PurchasingShellCapabilityProvider.ApproveCapabilityId).ParentCapabilityId);
+        Assert.Equal(byId[PurchasingShellCapabilityProvider.DetailCapabilityId].ContextRequirement,
+            byId[PurchasingShellCapabilityProvider.ApproveCapabilityId].ContextRequirement);
+        Assert.All(declarations, declaration =>
+            Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, declaration.ContextRequirement));
         Assert.Equal(3, PurchasingPermissionManifestV1.Names.Count);
         // Master v3 §27.3: P-03 is the order list, P-04 the new/edit form; the detail is a view of one P-03 row (the F-02-DETAIL precedent).
-        Assert.Equal(["P-04", "P-03-DETAIL", "P-03"],
-            declarations.OrderBy(declaration => declaration.CapabilityId, StringComparer.Ordinal).Select(declaration => declaration.ScreenId).ToArray());
+        Assert.Equal(PurchasingShellCapabilityProvider.ListScreenId, byId[PurchasingShellCapabilityProvider.ListCapabilityId].ScreenId);
+        Assert.Equal(PurchasingShellCapabilityProvider.CreateScreenId, byId[PurchasingShellCapabilityProvider.CreateCapabilityId].ScreenId);
+        Assert.Equal(PurchasingShellCapabilityProvider.DetailScreenId, byId[PurchasingShellCapabilityProvider.DetailCapabilityId].ScreenId);
+        Assert.Equal(PurchasingShellCapabilityProvider.DetailScreenId, byId[PurchasingShellCapabilityProvider.ApproveCapabilityId].ScreenId);
     }
 
     private static PurchaseOrderRow Order(Guid company) => new PurchaseOrderRow

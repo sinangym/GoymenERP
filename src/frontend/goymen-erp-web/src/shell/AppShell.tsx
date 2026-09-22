@@ -104,6 +104,12 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
   // the same accessible name to one route is what l04's strict-mode violation found, and a screen
   // reader announces it twice.
   CAPABILITY.logisticsInstructionsList,
+  /**
+   * P-03 is Purchasing's only sidebar entry. P-04 remains staged until Product publishes a real
+   * purchase-candidate source, and the detail is reached from a list row. The approve capability is
+   * a control inside the detail, not a route or navigation item.
+   */
+  CAPABILITY.purchasingOrdersList,
 ]
 
 export function AppShell() {
