@@ -2,12 +2,11 @@
 
 **Kimden:** Sipariş Claude frontend (`src/logistics/**` tek yazarı)
 **Kime:** ortak `src/shell/**` + router tek yazarı (CARİ), koordinatör üzerinden
-**Durum:** `HAZIR — merkezi tur`. Backend shell provider'ı (`LogisticsShellCapabilityProvider`, LOG-4a #350, main) üç
-kimliği **STAGED** (`ImplementationAvailable: false`) ilan ediyor; `/api/v1/logistics/loading-instructions` rotaları
-main'de. Listelemek hiçbir yetki vermez: staged/yayımlanmamış kimlikte `CapabilityRoute` nötr not-found basar ve istek
-atmaz. Açma (`true` flip) `l04` browser suite'i **staged profilde** yeşil olduktan sonra ayrı bir exact-head
-değişikliğidir (S03-c / FIN-UI-1c / MFG-UI-F deseni); CARİ authority sabitini yeniden ölçer, sahip olmayan bir şerit
-DATA-ONLY çapraz kontrol eder.
+**Durum:** `MOUNT TAMAM — NORMAL HOST FLIP DONORU HAZIR`. Shell mount #358 ile birleşti; staged-profile `l04`
+exact `af2072ce1f5ca17b8124fadc81cd83ea7c32fd92` üzerinde run 35484271018 ile 5/5 geçti. Backend owner provider'ı
+üç kimliği artık **PUBLISHED** (`ImplementationAvailable: true`) ilan eder. Listelemek veya yayımlamak hiçbir yetki
+vermez: `CapabilityRoute` ve servisler aktörün mevcut şirket kapsamlı izinlerini ölçmeye devam eder. CARİ normal-host
+authority sabitini yeniden ölçer; sahip olmayan bir şerit DATA-ONLY çapraz kontrol eder.
 
 Delta tamamen **ekleyicidir**; mevcut Cari/Ürün/Organizasyon/Sipariş/Finans/Üretim satırları değişmez.
 
@@ -103,7 +102,7 @@ Bu test yalnız shell ↔ Lojistik şeridi eşleşmesidir; **backend registry pa
 
 ## Kalan bağımlılık (bu paketin dışında)
 
-- Mount + CI yeşili ENV_READY veya ERP kabulü değildir; `l04` suite'in staged profilde yeşili ve ardından flip gerekir.
+- Staged-profile kabulü ve owner flip'i tamamdır; normal-host authority/pin entegrasyonu ve exact-head normal kullanıcı browser kanıtı ayrıdır.
 - Kesin sevk/teslim (LOG-5, D3 seam), stok/tahsis etkisi yok.
 
 ## Doğrulama (Sipariş şeridi, mount olmadan; yuva ile)
