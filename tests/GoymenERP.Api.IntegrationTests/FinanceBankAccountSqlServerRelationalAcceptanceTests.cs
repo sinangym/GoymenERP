@@ -360,7 +360,7 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
     {
         await using var run = await Run.StartAsync();
         const string oldIban = "TR330006100519786457841326";
-        const string newIban = "TR680006200119000006672315";
+        const string newIban = "TR060006100519786457841327";
         BankAccountView account;
 
         await using (var proposer = run.Open(CompanyA, Proposer))
