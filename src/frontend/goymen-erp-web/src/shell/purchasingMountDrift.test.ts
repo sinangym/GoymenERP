@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { matchPath } from 'react-router'
+import { matchPath, matchRoutes } from 'react-router'
 import { CAPABILITY, CAPABILITY_NAV_LABEL, CAPABILITY_ROUTE } from './capabilities'
+import { shellRoutes } from './router'
 import {
   PURCHASING_CAPABILITY,
   PURCHASING_NAV_LABEL,
@@ -37,8 +38,13 @@ describe('shell ↔ Purchasing lane route catalogue', () => {
     const orderId = '7b1c0f2e-0000-4a00-8000-000000000003'
     expect(matchPath(CAPABILITY_ROUTE[CAPABILITY.purchasingOrdersDetail], purchaseOrderDetailPath(orderId))?.params.orderId)
       .toBe(orderId)
-    expect(matchPath(CAPABILITY_ROUTE[CAPABILITY.purchasingOrdersDetail], PURCHASING_ROUTE[PURCHASING_CAPABILITY.orderCreate]))
-      .toBeNull()
+    const createBranch = matchRoutes(shellRoutes, PURCHASING_ROUTE[PURCHASING_CAPABILITY.orderCreate])
+    expect(createBranch?.at(-1)?.route.path).toBe(
+      CAPABILITY_ROUTE[CAPABILITY.purchasingOrdersCreate].slice(1),
+    )
+    expect(createBranch?.at(-1)?.route.path).not.toBe(
+      CAPABILITY_ROUTE[CAPABILITY.purchasingOrdersDetail].slice(1),
+    )
   })
 
   it('gives only the list the lane navigation label', () => {
