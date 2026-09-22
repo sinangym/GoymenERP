@@ -171,7 +171,7 @@ test('S04-08 one approved record is priced in the form, reopened as Rev.1, and i
   expect(firstWithdrawal.status()).toBe(409)
   const firstProblem = (await firstWithdrawal.json()) as ProblemDetails
   expect(firstProblem.code).toBe('sales_state_conflict')
-  expect(firstProblem.errors).toContainEqual({ field: 'approvalState', code: 'state_conflict' })
+  expect(firstProblem.errors).toContainEqual({ field: 'approvalState', code: 'sales_state_conflict' })
   expect(firstWithdrawal.headers()['idempotency-replayed']).toBeUndefined()
 
   const replayWithdrawal = await request.post(`${apiBaseUrl}/api/v1/sales/drafts/${seed.draftId}/withdrawal`, {
