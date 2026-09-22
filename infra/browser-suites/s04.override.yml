@@ -2,7 +2,7 @@
 # `normal` profile, validated by tools/validate_browser_acceptance.py with the merged model
 # (SUITE_API_EXTENSIONS["s04"]: actors + identity; no Product issuer binding — the seed reads and writes
 # no Product data).
-#  - Three suite actors appended to the canonical two BootstrapIdentity users (indices 2, 3, 4). The browser
+#  - Six suite actors appended to the canonical two BootstrapIdentity users (indices 2..7). The browser
 #    suite signs in as each on the AUTHORIZED web (X-Development-User, the s03 way). The canonical users
 #    hold no Sales permission and are not used by the suite.
 #  - Each actor's Identity user, one role and one company-wide assignment in GDC through the real
@@ -32,6 +32,10 @@ services:
       # the real role composition stays the human grant gate.
       BootstrapIdentity__Users__5__UserId: s04-cari
       BootstrapIdentity__Users__5__DisplayName: SENTETIK browser-suite:s04 Cari fixture writer
+      BootstrapIdentity__Users__6__UserId: s04-support-creator
+      BootstrapIdentity__Users__6__DisplayName: SENTETIK browser-suite:s04 SalesSupport creator
+      BootstrapIdentity__Users__7__UserId: s04-ordinary-creator
+      BootstrapIdentity__Users__7__DisplayName: SENTETIK browser-suite:s04 ordinary creator
       IdentitySeed__Users__5__Id: b2000000-0000-4000-8000-000000000401
       IdentitySeed__Users__5__DisplayName: SENTETIK browser-suite:s04 Sales preparer
       IdentitySeed__Users__5__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000401
@@ -52,6 +56,16 @@ services:
       IdentitySeed__Users__8__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000404
       IdentitySeed__Users__8__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
       IdentitySeed__Users__8__ExternalIdentities__0__Subject: s04-cari
+      IdentitySeed__Users__9__Id: b2000000-0000-4000-8000-000000000405
+      IdentitySeed__Users__9__DisplayName: SENTETIK browser-suite:s04 SalesSupport creator
+      IdentitySeed__Users__9__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000405
+      IdentitySeed__Users__9__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
+      IdentitySeed__Users__9__ExternalIdentities__0__Subject: s04-support-creator
+      IdentitySeed__Users__10__Id: b2000000-0000-4000-8000-000000000406
+      IdentitySeed__Users__10__DisplayName: SENTETIK browser-suite:s04 ordinary creator
+      IdentitySeed__Users__10__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000406
+      IdentitySeed__Users__10__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
+      IdentitySeed__Users__10__ExternalIdentities__0__Subject: s04-ordinary-creator
       IdentitySeed__Roles__5__Id: b3000000-0000-4000-8000-000000000401
       IdentitySeed__Roles__5__Code: BROWSER_S04_PREPARER
       IdentitySeed__Roles__5__Name: SENTETIK browser-suite:s04 sipariş hazırlayan rolü
@@ -78,6 +92,28 @@ services:
       IdentitySeed__Roles__8__IsSystem: "false"
       IdentitySeed__Roles__8__Permissions__0: counterparty.parties.read
       IdentitySeed__Roles__8__Permissions__1: counterparty.parties.update.basic
+      # D2: the SalesSupport creator is intentionally dual-role. This ordinary role supplies exactly the
+      # same command permissions as the non-SalesSupport creator; the separate accepted persona role below
+      # is therefore the only behavioral difference and cannot be bypassed by the ordinary role.
+      IdentitySeed__Roles__9__Id: b3000000-0000-4000-8000-000000000405
+      IdentitySeed__Roles__9__Code: BROWSER_S04_DUAL_DECIDER
+      IdentitySeed__Roles__9__Name: SENTETIK browser-suite:s04 dual-role karar yetkisi
+      IdentitySeed__Roles__9__IsSystem: "false"
+      IdentitySeed__Roles__9__Permissions__0: sales.drafts.create
+      IdentitySeed__Roles__9__Permissions__1: sales.drafts.read
+      IdentitySeed__Roles__9__Permissions__2: sales.orders.approve
+      IdentitySeed__Roles__10__Id: b3000000-0000-4000-8000-000000000406
+      IdentitySeed__Roles__10__Code: SALES_SUPPORT
+      IdentitySeed__Roles__10__Name: SENTETIK browser-suite:s04 SalesSupport persona
+      IdentitySeed__Roles__10__IsSystem: "false"
+      IdentitySeed__Roles__10__Permissions__0: sales.drafts.read
+      IdentitySeed__Roles__11__Id: b3000000-0000-4000-8000-000000000407
+      IdentitySeed__Roles__11__Code: BROWSER_S04_ORDINARY_CREATOR
+      IdentitySeed__Roles__11__Name: SENTETIK browser-suite:s04 ordinary creator karar yetkisi
+      IdentitySeed__Roles__11__IsSystem: "false"
+      IdentitySeed__Roles__11__Permissions__0: sales.drafts.create
+      IdentitySeed__Roles__11__Permissions__1: sales.drafts.read
+      IdentitySeed__Roles__11__Permissions__2: sales.orders.approve
       IdentitySeed__Assignments__7__Id: b4000000-0000-4000-8000-000000000401
       IdentitySeed__Assignments__7__UserId: b2000000-0000-4000-8000-000000000401
       IdentitySeed__Assignments__7__RoleId: b3000000-0000-4000-8000-000000000401
@@ -110,3 +146,27 @@ services:
       IdentitySeed__Assignments__10__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
       IdentitySeed__Assignments__10__Scopes__0__Type: Company
       IdentitySeed__Assignments__10__Scopes__0__Id: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__11__Id: b4000000-0000-4000-8000-000000000405
+      IdentitySeed__Assignments__11__UserId: b2000000-0000-4000-8000-000000000405
+      IdentitySeed__Assignments__11__RoleId: b3000000-0000-4000-8000-000000000405
+      IdentitySeed__Assignments__11__CompanyId: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__11__ValidFromUtc: "2026-01-01T00:00:00+00:00"
+      IdentitySeed__Assignments__11__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
+      IdentitySeed__Assignments__11__Scopes__0__Type: Company
+      IdentitySeed__Assignments__11__Scopes__0__Id: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__12__Id: b4000000-0000-4000-8000-000000000406
+      IdentitySeed__Assignments__12__UserId: b2000000-0000-4000-8000-000000000405
+      IdentitySeed__Assignments__12__RoleId: b3000000-0000-4000-8000-000000000406
+      IdentitySeed__Assignments__12__CompanyId: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__12__ValidFromUtc: "2026-01-01T00:00:00+00:00"
+      IdentitySeed__Assignments__12__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
+      IdentitySeed__Assignments__12__Scopes__0__Type: Company
+      IdentitySeed__Assignments__12__Scopes__0__Id: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__13__Id: b4000000-0000-4000-8000-000000000407
+      IdentitySeed__Assignments__13__UserId: b2000000-0000-4000-8000-000000000406
+      IdentitySeed__Assignments__13__RoleId: b3000000-0000-4000-8000-000000000407
+      IdentitySeed__Assignments__13__CompanyId: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__13__ValidFromUtc: "2026-01-01T00:00:00+00:00"
+      IdentitySeed__Assignments__13__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
+      IdentitySeed__Assignments__13__Scopes__0__Type: Company
+      IdentitySeed__Assignments__13__Scopes__0__Id: 10000000-0000-0000-0000-000000000001

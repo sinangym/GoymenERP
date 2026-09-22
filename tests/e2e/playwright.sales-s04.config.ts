@@ -36,7 +36,7 @@ const artifactsDir = required('BROWSER_E2E_ARTIFACTS_DIR')
 export default defineConfig({
   testDir: path.join(here, 'sales-s04', 'specs'),
   // SALES-A2a: the references spec runs after the journey (alphabetical file order; draft 2 + the create screen only).
-  testMatch: /(^|[\\/])s04-(approval-journey|references)\.spec\.ts$/,
+  testMatch: /(^|[\\/])s04-(approval-journey|d2-persona-withdrawal|references)\.spec\.ts$/,
   fullyParallel: false,
   workers: 1,
   retries: 0,
