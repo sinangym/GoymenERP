@@ -267,7 +267,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-measured for E1: the bounded sales-candidate reader/service are DI-only additions over the
                 // existing Product read store and eligibility ports; no new database capability, MigrateAsync stays 2.
                 ["src/backend/GoymenERP.Api/ProductRuntime/ProductRuntimeExtensions.cs"] =
-                    new("c1ffa260d734f387d5ada3d5f580e9209d90cbd5ad1c45cdf0216522d6404a6f",
+                    new("fca623ccede5aac80b7efe0252101e355f256f2ddea82dfa49619bfd369c69f3",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["MigrateAsync"] = 2 }),
                 // Re-measured for PRD-UNIT-1: the Product participant gets Settings' unit-identity catalog
