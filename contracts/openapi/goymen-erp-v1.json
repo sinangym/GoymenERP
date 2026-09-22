@@ -28476,7 +28476,8 @@
           "sourceStrategy",
           "package",
           "approval",
-          "isOwnDraft"
+          "isOwnDraft",
+          "isOwnDecisionRestricted"
         ],
         "type": "object",
         "properties": {
@@ -28566,6 +28567,9 @@
             "$ref": "#/components/schemas/SalesDraftApprovalV1"
           },
           "isOwnDraft": {
+            "type": "boolean"
+          },
+          "isOwnDecisionRestricted": {
             "type": "boolean"
           }
         }
