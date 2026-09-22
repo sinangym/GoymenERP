@@ -1,10 +1,10 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fetchAccountOptions, fetchContactInformationOptions, fetchCurrencyOptions } from './api'
+import { fetchAccountOptions, fetchContactInformationOptions, fetchCurrencyOptions, fetchProductOptions } from './api'
 import {
-  NO_LIST_ROUTE,
   useHttpContactInformation,
   useHttpCurrencyOptions,
+  useHttpProductOptions,
   useHttpReferenceOptions,
 } from './referenceSource'
 
@@ -15,6 +15,8 @@ const CURRENCY = '33333333-3333-3333-3333-333333333333'
 const PROFILE = 'cccccccc-1111-4111-8111-000000000401'
 const ADDRESS = 'aaaaaaaa-1111-4111-8111-000000000401'
 const CONTACT = 'bbbbbbbb-1111-4111-8111-000000000401'
+const PRODUCT = '77777777-7777-4777-8777-777777777777'
+const UNIT = '88888888-8888-4888-8888-888888888888'
 const DATE = '2026-09-13'
 
 const ACCOUNTS_BODY = {
@@ -32,6 +34,16 @@ const currencyRow = (effectiveOn: string) => ({
   profileVersion: '3',
 })
 const CURRENCIES_BODY = { companyId: COMPANY, effectiveOn: DATE, currencies: [currencyRow(DATE)] }
+const PRODUCTS_BODY = {
+  items: [{
+    productId: PRODUCT,
+    productVersion: '7',
+    code: 'PRD-7',
+    name: 'Bant',
+    orderUnits: [{ unitId: UNIT, code: 'kg', profileId: PROFILE, profileVersion: '3' }],
+  }],
+  searchWindowFull: true,
+}
 const CONTACT_BODY = {
   companyId: COMPANY,
   partyId: PARTY,
@@ -133,6 +145,52 @@ describe('SALES-A2a: fetchCurrencyOptions — the real currencies list for a bus
     expect(await fetchCurrencyOptions(DATE, COMPANY)).toEqual({ type: 'http', status: 400, code: 'validation_failed' })
     vi.stubGlobal('fetch', vi.fn(async () => Promise.reject(new TypeError('lost'))))
     expect((await fetchCurrencyOptions(DATE, COMPANY)).type).toBe('network')
+  })
+})
+
+describe('Product E1: the bounded operational candidate read', () => {
+  it('sends the date, fixed limit and trimmed server search; strictly maps owner versions and unit profiles', async () => {
+    const calls = respond(200, PRODUCTS_BODY)
+    const outcome = await fetchProductOptions(DATE, COMPANY, undefined, '  BANT  ')
+    expect(outcome).toEqual({
+      type: 'ready',
+      data: {
+        items: [{
+          productId: PRODUCT,
+          productVersion: '7',
+          code: 'PRD-7',
+          name: 'Bant',
+          label: 'PRD-7 — Bant',
+          orderUnits: [{ unitId: UNIT, code: 'kg', label: 'kg', profileId: PROFILE, profileVersion: '3' }],
+        }],
+        searchWindowFull: true,
+      },
+    })
+    expect(calls[0].url).toBe('/api/v1/sales/references/products?effectiveOn=2026-09-13&limit=25&q=BANT')
+    expect(calls[0].init.cache).toBe('no-store')
+  })
+
+  it('rejects extra candidate members and exposes a public refusal without candidate data', async () => {
+    respond(200, { ...PRODUCTS_BODY, privateOwnerDetail: 'x' })
+    expect((await fetchProductOptions(DATE, COMPANY)).type).toBe('malformed')
+    respond(503, { code: 'service_unavailable', status: 503, title: 'x' })
+    expect(await fetchProductOptions(DATE, COMPANY)).toEqual({ type: 'http', status: 503, code: 'service_unavailable' })
+  })
+
+  it('retries the exact company/date/search after a network failure', async () => {
+    let attempts = 0
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      attempts += 1
+      if (attempts === 1) throw new TypeError('lost')
+      return new Response(JSON.stringify(PRODUCTS_BODY), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }))
+    const { result } = renderHook(() => useHttpProductOptions(COMPANY, DATE, 'Bant'))
+    await waitFor(() => expect(result.current.status).toBe('unavailable'))
+    act(() => {
+      if (result.current.status === 'unavailable') result.current.retry()
+    })
+    await waitFor(() => expect(result.current.status).toBe('ready'))
+    expect(attempts).toBe(2)
   })
 })
 
@@ -261,7 +319,7 @@ describe('useHttpReferenceOptions — the real source', () => {
     respond(200, ACCOUNTS_BODY)
     const { result } = renderHook(() => useHttpReferenceOptions(COMPANY, ''))
     expect(result.current).toEqual({ status: 'unavailable' })
-    await waitFor(() => expect(result.current.status === 'unavailable' && result.current.missing).toEqual([...NO_LIST_ROUTE]))
+    await waitFor(() => expect(result.current.status === 'unavailable' && result.current.missing).toEqual([]))
     expect(result.current.status === 'unavailable' && result.current.header?.accounts).toEqual([
       { partyId: PARTY, companyAccountId: ACCOUNT, label: 'ACME · Ana hesap' },
     ])
@@ -273,21 +331,22 @@ describe('useHttpReferenceOptions — the real source', () => {
     respondBy({
       '/api/v1/sales/references/accounts': { status: 200, body: ACCOUNTS_BODY },
       '/api/v1/sales/references/currencies': { status: 200, body: CURRENCIES_BODY },
+      '/api/v1/sales/references/products': { status: 200, body: PRODUCTS_BODY },
     })
     const { result } = renderHook(() => useHttpReferenceOptions(COMPANY, DATE))
-    await waitFor(() => expect(result.current.status === 'unavailable' && result.current.header?.currencies.status).toBe('ready'))
-    expect(result.current.status === 'unavailable' && result.current.missing).toEqual([...NO_LIST_ROUTE])
+    await waitFor(() => expect(result.current.status).toBe('ready'))
+    expect(result.current.status === 'ready' && result.current.options.products[0].productVersion).toBe('7')
     vi.unstubAllGlobals()
 
     respondBy({
       '/api/v1/sales/references/accounts': { status: 200, body: ACCOUNTS_BODY },
       '/api/v1/sales/references/currencies': { status: 503, body: { code: 'service_unavailable', status: 503, title: 'x' } },
+      '/api/v1/sales/references/products': { status: 200, body: PRODUCTS_BODY },
     })
     const failing = renderHook(() => useHttpReferenceOptions(COMPANY, DATE))
     await waitFor(() =>
       expect(failing.result.current.status === 'unavailable' && failing.result.current.missing).toEqual([
         { source: 'currencies', reason: 'http-503:service_unavailable' },
-        ...NO_LIST_ROUTE,
       ]),
     )
     // The header is still offered: the accounts are real, and the currency select says why it is empty.
@@ -300,17 +359,15 @@ describe('useHttpReferenceOptions — the real source', () => {
     await waitFor(() =>
       expect(result.current.status === 'unavailable' && result.current.missing).toEqual([
         { source: 'accounts', reason: 'http-503:service_unavailable' },
-        ...NO_LIST_ROUTE,
       ]),
     )
     expect(result.current.status === 'unavailable' && result.current.header).toBeUndefined()
   })
 
-  it('offers nothing for an empty company and never guesses products', () => {
+  it('offers nothing for an empty company and calls no reference owner', () => {
     const calls = respond(200, { companyId: COMPANY, accounts: [], nextCursor: null })
     const { result } = renderHook(() => useHttpReferenceOptions('', ''))
     expect(result.current).toEqual({ status: 'unavailable' })
     expect(calls).toHaveLength(0)
-    expect(NO_LIST_ROUTE.map((m) => m.source)).toEqual(['products'])
   })
 })

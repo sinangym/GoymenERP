@@ -38,6 +38,7 @@ export const KG = '44444444-4444-4444-4444-444444444444'
 export const ADDRESS = 'aaaaaaaa-1111-4111-8111-000000000401'
 export const CONTACT = 'bbbbbbbb-1111-4111-8111-000000000401'
 export const MONEY_PROFILE = 'cccccccc-1111-4111-8111-000000000401'
+export const UNIT_PROFILE = 'dddddddd-1111-4111-8111-000000000401'
 export const ADDRESS_TEXT = 'Sanayi Cad. 1, Kocaeli, TR'
 export const CONTACT_NAME = 'Ayşe Yükleme'
 
@@ -66,7 +67,14 @@ export const OPTIONS_A: OrderDraftOptions = {
     { partyId: PARTY, companyAccountId: OTHER_ACCOUNT, label: 'ABC Demir — B hesabı' },
   ],
   currencies: CURRENCIES_A.map((c) => ({ currencyId: c.currencyId, label: c.code })),
-  products: [{ productId: PRODUCT, productVersion: '7', label: '40x40 profil', orderUnits: [{ unitId: KG, label: 'kg' }] }],
+  products: [{
+    productId: PRODUCT,
+    productVersion: '7',
+    code: 'PRF-40X40',
+    name: '40x40 profil',
+    label: 'PRF-40X40 — 40x40 profil',
+    orderUnits: [{ unitId: KG, code: 'kg', label: 'kg', profileId: UNIT_PROFILE, profileVersion: '3' }],
+  }],
 }
 
 /** Offers choices for company A only; B has no source, like the running app everywhere. */

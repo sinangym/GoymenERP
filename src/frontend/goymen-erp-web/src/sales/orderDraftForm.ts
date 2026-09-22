@@ -51,9 +51,17 @@ export interface OrderDraftOptions {
   readonly products: readonly {
     readonly productId: string
     readonly productVersion: string
+    readonly code: string
+    readonly name: string
     readonly label: string
     /** Order units the owner offers for this product. Never assumed to be kg. */
-    readonly orderUnits: readonly { readonly unitId: string; readonly label: string }[]
+    readonly orderUnits: readonly {
+      readonly unitId: string
+      readonly code: string
+      readonly label: string
+      readonly profileId: string
+      readonly profileVersion: string
+    }[]
   }[]
 }
 
