@@ -36,7 +36,7 @@ public sealed class SalesProductCandidateHttpAcceptanceTests(GoymenErpApiFactory
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         AssertPrivateNoStore(response);
         Assert.Equal(new ProductSalesCandidateQueryV1(" BANT ", EffectiveOn, 12), Assert.Single(owner.Queries));
-        Assert.True(authority.Calls >= 2);
+        Assert.True(authority.FreshCalls >= 2);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.True(document.RootElement.GetProperty("searchWindowFull").GetBoolean());
         var item = Assert.Single(document.RootElement.GetProperty("items").EnumerateArray());
@@ -60,9 +60,12 @@ public sealed class SalesProductCandidateHttpAcceptanceTests(GoymenErpApiFactory
     }
 
     [Fact]
-    public async Task Consumer_revocation_after_owner_read_discards_the_response()
+    public async Task Cached_consumer_grant_revoked_after_owner_read_is_freshly_refused_without_items()
     {
         var authority = new ControlledAuthority();
+        Assert.True(await authority.HasPermissionAsync(
+            SalesPermissionManifestV1.DraftsCreate,
+            TestCompanyIds.CompanyA));
         var owner = new StubCandidates(new([
             new(ProductId, "7", "PRIVATE-CODE", "PRIVATE-NAME", [new(UnitId, "kg", ProfileId, "3")])
         ], false)) { During = () => authority.Granted = false };
@@ -73,6 +76,8 @@ public sealed class SalesProductCandidateHttpAcceptanceTests(GoymenErpApiFactory
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         AssertPrivateNoStore(response);
+        Assert.Equal(1, authority.CachedCalls);
+        Assert.True(authority.FreshCalls >= 2);
         Assert.DoesNotContain("PRIVATE-", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
     }
 
@@ -101,6 +106,8 @@ public sealed class SalesProductCandidateHttpAcceptanceTests(GoymenErpApiFactory
         {
             services.RemoveAll<IErpAuthorizationService>();
             services.AddSingleton<IErpAuthorizationService>(authority);
+            services.RemoveAll<IErpAuthorityRevalidationService>();
+            services.AddSingleton<IErpAuthorityRevalidationService>(authority);
             services.RemoveAll<IProductSalesCandidatesV1>();
             services.AddSingleton<IProductSalesCandidatesV1>(owner);
         }));
@@ -142,18 +149,35 @@ public sealed class SalesProductCandidateHttpAcceptanceTests(GoymenErpApiFactory
         }
     }
 
-    private sealed class ControlledAuthority : IErpAuthorizationService
+    private sealed class ControlledAuthority : IErpAuthorizationService, IErpAuthorityRevalidationService
     {
+        private bool? _cachedGrant;
         public bool Granted { get; set; } = true;
-        public int Calls { get; private set; }
+        public int CachedCalls { get; private set; }
+        public int FreshCalls { get; private set; }
 
         public Task<bool> HasPermissionAsync(string permission, Guid companyId,
             CancellationToken cancellationToken = default)
         {
-            Calls++;
-            return Task.FromResult(Granted && permission == SalesPermissionManifestV1.DraftsCreate
-                && companyId == TestCompanyIds.CompanyA);
+            CachedCalls++;
+            _cachedGrant ??= ReadGrant(permission, companyId);
+            return Task.FromResult(_cachedGrant.Value);
         }
+
+        public Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid companyId,
+            CancellationToken cancellationToken = default)
+        {
+            FreshCalls++;
+            _cachedGrant = ReadGrant(permission, companyId);
+            return Task.FromResult(_cachedGrant.Value
+                ? new PermissionScope(true, true, new HashSet<string>(StringComparer.Ordinal),
+                    new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>())
+                : PermissionScope.Denied);
+        }
+
+        private bool ReadGrant(string permission, Guid companyId) => Granted
+            && permission == SalesPermissionManifestV1.DraftsCreate
+            && companyId == TestCompanyIds.CompanyA;
 
         public Task<AuthorizationSnapshot> GetAuthorizationSnapshotAsync(Guid companyId,
             IReadOnlyCollection<string> permissions, CancellationToken cancellationToken = default) =>

@@ -26,12 +26,12 @@ public static class SalesProductCandidateEndpoints
             HttpContext context,
             ICompanyContext company,
             ICurrentUser user,
-            IErpAuthorizationService authorization,
+            IErpAuthorityRevalidationService authority,
             IProductSalesCandidatesV1 candidates,
             CancellationToken cancellationToken) =>
         {
             SetPrivateNoStore(context.Response);
-            var scope = await CaptureScopeAsync(company, user, authorization, cancellationToken);
+            var scope = await CaptureScopeAsync(company, user, authority, cancellationToken);
             if (scope.Status != StatusCodes.Status200OK) return Problem(scope.Status);
             if (!HasOnlySingleQuery(context.Request.Query) || !HasExactDate(context.Request.Query, "effectiveOn"))
                 return Problem(StatusCodes.Status400BadRequest, "validation_failed");
@@ -39,20 +39,20 @@ public static class SalesProductCandidateEndpoints
             try
             {
                 var result = await candidates.SearchAsync(new(q, effectiveOn, limit ?? 25), cancellationToken);
-                if (!await StillAuthorizedAsync(scope, company, user, authorization, cancellationToken))
+                if (!await StillAuthorizedAsync(scope, company, user, authority, cancellationToken))
                     return Problem(StatusCodes.Status403Forbidden);
                 return Results.Ok(result);
             }
             catch (ProductValidationException)
             {
-                if (!await StillAuthorizedAsync(scope, company, user, authorization, cancellationToken))
+                if (!await StillAuthorizedAsync(scope, company, user, authority, cancellationToken))
                     return Problem(StatusCodes.Status403Forbidden);
                 return Problem(StatusCodes.Status400BadRequest, "validation_failed");
             }
             catch (ProductOperationException exception)
             {
                 if (exception.StatusCode == StatusCodes.Status403Forbidden
-                    || !await StillAuthorizedAsync(scope, company, user, authorization, cancellationToken))
+                    || !await StillAuthorizedAsync(scope, company, user, authority, cancellationToken))
                     return Problem(StatusCodes.Status403Forbidden);
                 return Problem(StatusCodes.Status503ServiceUnavailable, "service_unavailable");
             }
@@ -62,7 +62,7 @@ public static class SalesProductCandidateEndpoints
             }
             catch (InvalidOperationException)
             {
-                if (!await StillAuthorizedAsync(scope, company, user, authorization, cancellationToken))
+                if (!await StillAuthorizedAsync(scope, company, user, authority, cancellationToken))
                     return Problem(StatusCodes.Status403Forbidden);
                 return Problem(StatusCodes.Status503ServiceUnavailable, "service_unavailable");
             }
@@ -80,24 +80,24 @@ public static class SalesProductCandidateEndpoints
     }
 
     private static async Task<ConsumerScope> CaptureScopeAsync(ICompanyContext company, ICurrentUser user,
-        IErpAuthorizationService authorization, CancellationToken cancellationToken)
+        IErpAuthorityRevalidationService authority, CancellationToken cancellationToken)
     {
         if (!user.IsAuthenticated || string.IsNullOrWhiteSpace(user.UserId))
             return new(StatusCodes.Status401Unauthorized, Guid.Empty, null);
         if (!company.IsResolved || company.CompanyId == Guid.Empty || !user.CanAccessCompany(company.CompanyId))
             return new(StatusCodes.Status403Forbidden, Guid.Empty, null);
         var scope = new ConsumerScope(StatusCodes.Status200OK, company.CompanyId, user.UserId);
-        return await StillAuthorizedAsync(scope, company, user, authorization, cancellationToken)
+        return await StillAuthorizedAsync(scope, company, user, authority, cancellationToken)
             ? scope : new(StatusCodes.Status403Forbidden, Guid.Empty, null);
     }
 
     private static async Task<bool> StillAuthorizedAsync(ConsumerScope scope, ICompanyContext company,
-        ICurrentUser user, IErpAuthorizationService authorization, CancellationToken cancellationToken)
+        ICurrentUser user, IErpAuthorityRevalidationService authority, CancellationToken cancellationToken)
     {
         if (!Matches(scope, company, user)) return false;
-        var allowed = await authorization.HasPermissionAsync(
+        var permissionScope = await authority.RevalidatePermissionScopeAsync(
             SalesPermissionManifestV1.DraftsCreate, scope.CompanyId, cancellationToken);
-        return allowed && Matches(scope, company, user);
+        return permissionScope.IsGranted && Matches(scope, company, user);
     }
 
     private static bool Matches(ConsumerScope scope, ICompanyContext company, ICurrentUser user) =>
