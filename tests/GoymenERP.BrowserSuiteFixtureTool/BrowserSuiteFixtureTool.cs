@@ -74,7 +74,7 @@ internal static partial class BrowserSuiteFixtureTool
                     actors,
                     handlers => host.CreateDefaultClient(handlers));
                 outputs = await fixture.SeedAsync(context, CancellationToken.None);
-                ValidateOutputs(outputs, actors);
+                BrowserSuiteSeedOutputValidator.Validate(suite, outputs, actors);
                 requests = context.Requests;
             }
 
@@ -109,28 +109,6 @@ internal static partial class BrowserSuiteFixtureTool
             Console.Error.WriteLine(
                 $"Browser suite fixture failed: {exception.GetType().Name}: {exception.Message}");
             return 1;
-        }
-    }
-
-    internal static void ValidateOutputs(
-        IReadOnlyDictionary<string, string> outputs,
-        IReadOnlySet<string> actors)
-    {
-        foreach (var (key, value) in outputs)
-        {
-            if (!OutputKeyPattern().IsMatch(key))
-            {
-                throw new InvalidOperationException($"Seed output key '{key}' is not a safe key.");
-            }
-
-            var isGuid = Guid.TryParseExact(value, "D", out var guid)
-                         && guid != Guid.Empty
-                         && string.Equals(value, guid.ToString("D"), StringComparison.Ordinal);
-            if (!isGuid && !actors.Contains(value))
-            {
-                throw new InvalidOperationException(
-                    $"Seed output '{key}' must be a lowercase GUID or an actor id of this run.");
-            }
         }
     }
 
