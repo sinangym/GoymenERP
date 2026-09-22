@@ -21,10 +21,13 @@ public sealed record ProductSalesCandidateFixtureOutput(Guid ProductId, string P
 
 public static class ProductSalesCandidateFixtureStoreRegistration
 {
-    public static IServiceCollection AddProductSalesCandidateFixtureStore(this IServiceCollection services)
+    public static IServiceCollection AddProductSalesCandidateFixtureStore(this IServiceCollection services,
+        Func<IServiceProvider, ProductUnitProfileAdapter>? fixtureUnitProfiles = null)
     {
         ArgumentNullException.ThrowIfNull(services);
-        services.AddScoped<IProductSalesCandidateFixtureStore, ProductSalesCandidateFixtureStore>();
+        services.AddScoped<IProductSalesCandidateFixtureStore>(provider => new ProductSalesCandidateFixtureStore(
+            provider.GetRequiredService<ProductDbContext>(),
+            fixtureUnitProfiles?.Invoke(provider) ?? provider.GetRequiredService<ProductUnitProfileAdapter>()));
         return services;
     }
 }
