@@ -32,7 +32,7 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
   const shell = useShellState()
   const boundary = useAuthBoundary()
   const { orderId } = useParams()
-  const companyId = shell.activeContext?.companyId ?? null
+  const companyId = shell.activeContext?.scopeMode === 'single' ? shell.activeContext.companyId : null
   const actorId = shell.activeContext?.userId ?? null
   const canApprove = hasCapability(shell, PURCHASING_CAPABILITY.orderApprove as never)
   const storeKey = pendingApprovalKey(shell.sessionEpoch, actorId, companyId, orderId ?? '')

@@ -1,4 +1,5 @@
 export type PurchaseOrderStatus = 'Draft' | 'Approved'
+export type PurchaseOrderLineKind = 'General' | 'Technical'
 
 export interface PurchaseOrderSummary {
   readonly id: string
@@ -17,7 +18,7 @@ export interface PurchaseOrderSummary {
 export interface PurchaseOrderLine {
   readonly lineId: string
   readonly lineNo: number
-  readonly kind: string
+  readonly kind: PurchaseOrderLineKind
   readonly parentLineId: string | null
   readonly sourceRequestLineId: string | null
   readonly productId: string
@@ -49,7 +50,10 @@ export interface PurchaseOrderCommandResponse {
 type JsonObject = Record<string, unknown>
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const DATE = /^\d{4}-\d{2}-\d{2}$/
+const INSTANT = /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,7})?(Z|([+-])(\d{2}):(\d{2}))$/
+const VERSION = /^[1-9]\d*$/
 const DECIMAL = /^(0|[1-9]\d*)(\.\d+)?$/
+const MAX_INT64 = 9223372036854775807n
 
 function record(value: unknown): JsonObject | null {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -79,6 +83,37 @@ function status(value: unknown): value is PurchaseOrderStatus {
   return value === 'Draft' || value === 'Approved'
 }
 
+function lineKind(value: unknown): value is PurchaseOrderLineKind {
+  return value === 'General' || value === 'Technical'
+}
+
+function canonicalVersion(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length > 19 || !VERSION.test(value)) return false
+  return BigInt(value) <= MAX_INT64
+}
+
+function dateOnly(value: unknown): value is string {
+  if (typeof value !== 'string' || !DATE.test(value)) return false
+  const [year, month, day] = value.split('-').map(Number)
+  if (year < 1 || month < 1 || month > 12 || day < 1) return false
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+  return day <= days[month - 1]
+}
+
+function instant(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length > 64) return false
+  const match = INSTANT.exec(value)
+  if (match === null || !dateOnly(match[1])) return false
+  const hour = Number(match[2])
+  const minute = Number(match[3])
+  const second = Number(match[4])
+  const offsetHour = match[5] === 'Z' ? 0 : Number(match[7])
+  const offsetMinute = match[5] === 'Z' ? 0 : Number(match[8])
+  return hour <= 23 && minute <= 59 && second <= 59 && offsetHour <= 14 && offsetMinute <= 59
+    && (offsetHour < 14 || offsetMinute === 0) && Number.isFinite(Date.parse(value))
+}
+
 function decodeSummary(value: unknown): PurchaseOrderSummary | null {
   const source = record(value)
   if (
@@ -87,10 +122,10 @@ function decodeSummary(value: unknown): PurchaseOrderSummary | null {
       'id', 'companyId', 'status', 'version', 'supplierPartyId', 'companyAccountId',
       'sourceRequestId', 'effectiveOn', 'createdAtUtc', 'updatedAtUtc', 'lineCount',
     ]) ||
-    !guid(source.id) || !guid(source.companyId) || !status(source.status) || !text(source.version) ||
+    !guid(source.id) || !guid(source.companyId) || !status(source.status) || !canonicalVersion(source.version) ||
     !guid(source.supplierPartyId) || !guid(source.companyAccountId) || !nullableGuid(source.sourceRequestId) ||
-    !text(source.effectiveOn) || !DATE.test(source.effectiveOn) || !text(source.createdAtUtc) ||
-    !text(source.updatedAtUtc) || !Number.isSafeInteger(source.lineCount) || (source.lineCount as number) < 0
+    !dateOnly(source.effectiveOn) || !instant(source.createdAtUtc) || !instant(source.updatedAtUtc) ||
+    !Number.isSafeInteger(source.lineCount) || (source.lineCount as number) < 0
   ) return null
   return source as unknown as PurchaseOrderSummary
 }
@@ -104,8 +139,8 @@ function decodeLine(value: unknown): PurchaseOrderLine | null {
       'productVersion', 'unitId', 'ordered', 'technical', 'committed', 'accepted', 'remaining',
     ]) ||
     !guid(source.lineId) || !Number.isSafeInteger(source.lineNo) || (source.lineNo as number) < 1 ||
-    !text(source.kind) || !nullableGuid(source.parentLineId) || !nullableGuid(source.sourceRequestLineId) ||
-    !guid(source.productId) || !text(source.productVersion) || !guid(source.unitId)
+    !lineKind(source.kind) || !nullableGuid(source.parentLineId) || !nullableGuid(source.sourceRequestLineId) ||
+    !guid(source.productId) || !canonicalVersion(source.productVersion) || !guid(source.unitId)
   ) return null
   for (const name of ['ordered', 'technical', 'committed', 'accepted', 'remaining'] as const) {
     if (!text(source[name]) || !DECIMAL.test(source[name] as string)) return null

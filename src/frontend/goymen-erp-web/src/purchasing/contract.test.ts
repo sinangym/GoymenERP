@@ -24,4 +24,12 @@ describe('purchasing read contract', () => {
     expect(decodePurchaseOrderDetail({ order: summary, lines: [{ ...line, remaining: '-1' }] })).toBeNull()
     expect(decodePurchaseOrderDetail({ order: { ...summary, lineCount: 2 }, lines: [line] })).toBeNull()
   })
+
+  it('fails closed on non-canonical versions, invalid instants, dates and line kinds', () => {
+    expect(decodePurchaseOrderList({ items: [{ ...summary, version: '02' }], nextCursor: null })).toBeNull()
+    expect(decodePurchaseOrderList({ items: [{ ...summary, updatedAtUtc: 'not-an-instant' }], nextCursor: null })).toBeNull()
+    expect(decodePurchaseOrderList({ items: [{ ...summary, effectiveOn: '2026-02-30' }], nextCursor: null })).toBeNull()
+    expect(decodePurchaseOrderDetail({ order: summary, lines: [{ ...line, kind: 'Unknown' }] })).toBeNull()
+    expect(decodePurchaseOrderDetail({ order: summary, lines: [{ ...line, productVersion: '9223372036854775808' }] })).toBeNull()
+  })
 })

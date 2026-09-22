@@ -50,6 +50,8 @@ Card: SİPARİŞ PUR card (coordinator-approved 2026-09-19; chain link "satış 
 
 **PUR-4a-FE owner slice:** P-03 list and P-03-DETAIL are implemented over the existing reads; the detail exposes the existing approve command only through its own `purchasing.orders.approve` child capability. The added declaration makes the owner contract `PURCHASING/1.1`; the child keeps the parent's route/context/scope and the backend still re-authorizes every company-bound mutation. It keeps an unresolved actor/company/order/key/expected-version snapshot for an explicit same-payload resend and re-reads the order after a definite success or conflict. P-04 creation remains staged: the Product-owned purchase eligibility/candidate source is still absent, and Sales E1 is not an alias for Purchasing. Central router/capability publication remains the Cari owner's single-writer handoff.
 
+The published P-03 reads and approval control are currently `SingleCompany`: the HTTP contract requires an explicit company context and has no authorized group-read endpoint. A future group view is a backend predecessor plus its own acceptance evidence; shell metadata alone must not imply that behavior.
+
 **Not in PUR-4a:** goods receipt, kantar/irsaliye kg, tolerance (OPEN-004 → profile/Unavailable), stock-in (PUR-4b + Inventory T09 + the D3 seam decision shared with LOG-5), price/tax/currency (T28), approval policy (§8), breakdown/acceptance commands over the API (domain only), P-04 creation publication, a Product purchase-eligibility implementation (ÜRÜN).
 
 **Central (CARİ):** Program.cs wiring, the three `ErpPermissions` names, the shell authority, OpenAPI, `INVENTORY_MODULES += purchasing`, Api csproj, guard pins, adoption of the party port proposal.

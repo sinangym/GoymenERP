@@ -24,7 +24,7 @@ export function PurchaseOrderListPage() {
 function PurchaseOrderList({ namespace }: { readonly namespace: string | null }) {
   const shell = useShellState()
   const boundary = useAuthBoundary()
-  const companyId = shell.activeContext?.companyId ?? null
+  const companyId = shell.activeContext?.scopeMode === 'single' ? shell.activeContext.companyId : null
   const canOpen = hasCapability(shell, PURCHASING_CAPABILITY.orderDetail as never)
   const [status, setStatus] = useState<PurchaseOrderStatus | null>(null)
   const [more, setMore] = useState<readonly PurchaseOrderSummary[]>([])

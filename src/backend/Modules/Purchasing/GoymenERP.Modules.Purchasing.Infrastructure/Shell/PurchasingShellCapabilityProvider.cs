@@ -12,7 +12,9 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Shell;
 /// The list and detail are published by PUR-4a-FE; creation stays staged until the Product owner publishes
 /// purchase eligibility and a real candidate source. Approval is a child control of the detail, measured with
 /// its own existing permission. A declaration grants nothing: the screens open only for an actor holding the
-/// permission, and the grant is a human gate. The list and the detail share
+/// permission, and the grant is a human gate. The current HTTP reads require an explicit company id; therefore the
+/// published list, detail and approval control are single-company capabilities. Authorized group reads need their
+/// own backend predecessor before this metadata can widen. The list and the detail share
 /// <see cref="PurchasingPermissionManifestV1.OrdersRead"/>; the new-order screen needs
 /// <see cref="PurchasingPermissionManifestV1.OrdersCreate"/>. The host registers this provider only after the
 /// central catalogue knows the names, together with its accepted revision.
@@ -40,13 +42,13 @@ public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider
     public IReadOnlyCollection<ShellCapabilityDeclaration> GetDeclarations()
     {
         var detail = new ShellCapabilityDeclaration(DetailCapabilityId, DetailCapabilityId, DetailRoutePath, DetailScreenId,
-            ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
+            ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleCompany,
             ShellCapabilityScopeRequirement.CompanyWide, [PurchasingPermissionManifestV1.OrdersRead], ImplementationAvailable: true);
 
         return
         [
             new ShellCapabilityDeclaration(ListCapabilityId, ListCapabilityId, ListRoutePath, ListScreenId,
-                ShellCapabilityRoutePrecedence.Static, ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
+                ShellCapabilityRoutePrecedence.Static, ShellCapabilityContextRequirement.SingleCompany,
                 ShellCapabilityScopeRequirement.CompanyWide, [PurchasingPermissionManifestV1.OrdersRead], ImplementationAvailable: true),
             new ShellCapabilityDeclaration(CreateCapabilityId, CreateCapabilityId, CreateRoutePath, CreateScreenId,
                 ShellCapabilityRoutePrecedence.Static, ShellCapabilityContextRequirement.SingleCompany,

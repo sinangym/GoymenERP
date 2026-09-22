@@ -159,10 +159,14 @@ public sealed class PurchasingPersistenceModelTests
             declarations.Single(item => item.CapabilityId == PurchasingShellCapabilityProvider.ApproveCapabilityId).ParentCapabilityId);
         Assert.Equal(byId[PurchasingShellCapabilityProvider.DetailCapabilityId].ContextRequirement,
             byId[PurchasingShellCapabilityProvider.ApproveCapabilityId].ContextRequirement);
+        Assert.All(declarations, declaration =>
+            Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, declaration.ContextRequirement));
         Assert.Equal(3, PurchasingPermissionManifestV1.Names.Count);
         // Master v3 §27.3: P-03 is the order list, P-04 the new/edit form; the detail is a view of one P-03 row (the F-02-DETAIL precedent).
-        Assert.Equal(["P-04", "P-03-DETAIL", "P-03-DETAIL", "P-03"],
-            declarations.OrderBy(declaration => declaration.CapabilityId, StringComparer.Ordinal).Select(declaration => declaration.ScreenId).ToArray());
+        Assert.Equal(PurchasingShellCapabilityProvider.ListScreenId, byId[PurchasingShellCapabilityProvider.ListCapabilityId].ScreenId);
+        Assert.Equal(PurchasingShellCapabilityProvider.CreateScreenId, byId[PurchasingShellCapabilityProvider.CreateCapabilityId].ScreenId);
+        Assert.Equal(PurchasingShellCapabilityProvider.DetailScreenId, byId[PurchasingShellCapabilityProvider.DetailCapabilityId].ScreenId);
+        Assert.Equal(PurchasingShellCapabilityProvider.DetailScreenId, byId[PurchasingShellCapabilityProvider.ApproveCapabilityId].ScreenId);
     }
 
     private static PurchaseOrderRow Order(Guid company) => new PurchaseOrderRow
