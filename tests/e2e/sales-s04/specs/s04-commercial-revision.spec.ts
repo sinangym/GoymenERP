@@ -6,6 +6,7 @@ const { apiBaseUrl, seed, testedCommit } = environment
 
 interface DraftLine {
   readonly lineId: string
+  readonly orderUnitId: string
   readonly unitPrice: string | null
   readonly priceUnitId: string | null
   readonly discountPercent: string | null
@@ -82,6 +83,8 @@ async function readHistory(request: APIRequestContext): Promise<RevisionHistory>
 test('S04-08 one approved record is priced in the form, reopened as Rev.1, and its past-approved withdrawal is a terminal replayed refusal', async ({ page, request }) => {
   await openDraft(page, seed.preparerActor)
   await expect(page.getByTestId('sales-draft-approval-state')).toHaveText('Onaylı')
+  const approved = await readDetail(request)
+  const selectedPriceUnitId = approved.lines[0].orderUnitId
 
   const form = page.getByTestId('sales-price-revision-form')
   await expect(form).toBeVisible()
@@ -97,7 +100,7 @@ test('S04-08 one approved record is priced in the form, reopened as Rev.1, and i
   await expect(prices.nth(1)).toHaveValue('')
 
   await prices.nth(0).fill('13.00')
-  await priceUnits.nth(0).selectOption(seed.productUnitId)
+  await priceUnits.nth(0).selectOption(selectedPriceUnitId)
   await discounts.nth(0).fill('5')
 
   const revisionResponsePromise = page.waitForResponse((response) =>
@@ -117,7 +120,7 @@ test('S04-08 one approved record is priced in the form, reopened as Rev.1, and i
   expect(revised.detail.lines).toHaveLength(2)
   expect(revised.detail.lines[0]).toMatchObject({
     unitPrice: '13.00',
-    priceUnitId: seed.productUnitId,
+    priceUnitId: selectedPriceUnitId,
     discountPercent: '5',
     priceDisclosure: 'Visible',
   })
