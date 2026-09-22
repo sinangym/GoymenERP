@@ -362,6 +362,37 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
         Assert.Equal((ReadOutcome.Found, (Guid?)null, draft.Id),
             (reversalDetail.Outcome, reversalDetail.Resource!.ReversalSourceId, reversalDetail.Resource.ReversesSourceId));
 
+        // B1 corrects a normal receipt once; the generated reversal source is not a new reversal root.
+        // Refusal is not terminal and produces no proposal, event, command or audit side effect.
+        var beforeReverseOfReverse = (
+            Proposals: await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.ReversalProposals"),
+            Events: await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.MoneyEvents"),
+            Commands: await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM finance.Commands WHERE CommandName = @c",
+                ("@c", ReversalProposalService.ProposeCommand)),
+            Audits: await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.receipt-reversal.proposed.v1'"));
+        await using (var reverseSourceMaker = run.ReversalService(CompanyA, Guid.NewGuid().ToString("D")))
+        {
+            var refused = await reverseSourceMaker.Service.ProposeAsync(reverseSourceMaker.Context,
+                Key("reverse-of-reversal"),
+                new ProposeReversalRequest(reversalSourceId, reversalDetail.Resource.Source.Version,
+                    reversalOccurredOn.AddDays(1), "SENTETIK-ters-kaynagi-yeniden-tersleme"),
+                CancellationToken.None);
+            Assert.Equal(CommandOutcome.ValidationFailed, refused.Outcome);
+            Assert.Equal(new ValidationIssue("sourceId", "finance_reversal_source_not_original_receipt"),
+                Assert.Single(refused.Issues));
+            Assert.Null(refused.Resource);
+        }
+        Assert.Equal(beforeReverseOfReverse, (
+            Proposals: await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.ReversalProposals"),
+            Events: await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.MoneyEvents"),
+            Commands: await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM finance.Commands WHERE CommandName = @c",
+                ("@c", ReversalProposalService.ProposeCommand)),
+            Audits: await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.receipt-reversal.proposed.v1'")));
+
         // The first definitive reversal does not prevent an auditor from seeing a later proposal attempt,
         // but the database and service together prevent that proposal from becoming a second money fact.
         var secondMaker = Guid.NewGuid().ToString("D");

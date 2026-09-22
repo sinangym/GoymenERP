@@ -359,6 +359,13 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
 
             if (entry.State == EntityState.Modified)
             {
+                if (entry.Entity is BankAccountRow bankAccount
+                    && !IsAllowedBankAccountTransition(entry, bankAccount))
+                {
+                    throw new InvalidOperationException(
+                        "Banka hesabı yalnız ilk onay veya bekleyen IBAN öneri/onay geçişiyle değişir.");
+                }
+
                 string[] allowed = entry.Entity switch
                 {
                     ReceiptDraftRow =>
@@ -372,14 +379,16 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                         nameof(ReceiptDraftRow.UpdatedBy), nameof(ReceiptDraftRow.Stage),
                         nameof(ReceiptDraftRow.RecordedAtUtc), nameof(ReceiptDraftRow.RecordedBy),
                     ],
-                    // Approval and the separate D4 IBAN-change lifecycle; name, currency and card metadata never change.
+                    // Initial approval and D4's two-step IBAN transition; the state-aware guard above
+                    // prevents these columns from becoming general-purpose mutable fields.
                     BankAccountRow =>
                     [
                         nameof(BankAccountRow.Status), nameof(BankAccountRow.ApprovedBy),
-                        nameof(BankAccountRow.ApprovedAtUtc), nameof(BankAccountRow.Iban),
-                        nameof(BankAccountRow.PendingIban), nameof(BankAccountRow.PendingIbanProposedBy),
-                        nameof(BankAccountRow.PendingIbanProposedAtUtc), nameof(BankAccountRow.PendingIbanReason),
-                        nameof(BankAccountRow.UpdatedAtUtc),
+                        nameof(BankAccountRow.ApprovedAtUtc), nameof(BankAccountRow.UpdatedAtUtc),
+                        nameof(BankAccountRow.Iban), nameof(BankAccountRow.PendingIban),
+                        nameof(BankAccountRow.PendingIbanProposedBy),
+                        nameof(BankAccountRow.PendingIbanProposedAtUtc),
+                        nameof(BankAccountRow.PendingIbanReason),
                     ],
                     ReversalProposalRow =>
                     [
@@ -401,5 +410,51 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                 }
             }
         }
+    }
+
+    private static bool IsAllowedBankAccountTransition(
+        Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<IFinanceTenantRow> entry,
+        BankAccountRow current)
+    {
+        const int proposed = 1;
+        const int approved = 2;
+        var originalStatus = (int)entry.OriginalValues[nameof(BankAccountRow.Status)]!;
+        var originalIban = (string?)entry.OriginalValues[nameof(BankAccountRow.Iban)];
+        var originalApprovedBy = (string?)entry.OriginalValues[nameof(BankAccountRow.ApprovedBy)];
+        var originalApprovedAt = (DateTimeOffset?)entry.OriginalValues[nameof(BankAccountRow.ApprovedAtUtc)];
+        var originalPendingIban = (string?)entry.OriginalValues[nameof(BankAccountRow.PendingIban)];
+        var originalPendingBy = (string?)entry.OriginalValues[nameof(BankAccountRow.PendingIbanProposedBy)];
+        var originalPendingAt = (DateTimeOffset?)entry.OriginalValues[nameof(BankAccountRow.PendingIbanProposedAtUtc)];
+        var originalPendingReason = (string?)entry.OriginalValues[nameof(BankAccountRow.PendingIbanReason)];
+
+        var originalPendingEmpty = originalPendingIban is null && originalPendingBy is null
+            && originalPendingAt is null && originalPendingReason is null;
+        var originalPendingComplete = originalPendingIban is not null && !string.IsNullOrWhiteSpace(originalPendingBy)
+            && originalPendingAt is not null && !string.IsNullOrWhiteSpace(originalPendingReason);
+        var currentPendingEmpty = current.PendingIban is null && current.PendingIbanProposedBy is null
+            && current.PendingIbanProposedAtUtc is null && current.PendingIbanReason is null;
+        var currentPendingComplete = current.PendingIban is not null
+            && !string.IsNullOrWhiteSpace(current.PendingIbanProposedBy)
+            && current.PendingIbanProposedAtUtc is not null && !string.IsNullOrWhiteSpace(current.PendingIbanReason);
+
+        var initialApproval = originalStatus == proposed && current.Status == approved
+            && originalPendingEmpty && currentPendingEmpty
+            && string.Equals(current.Iban, originalIban, StringComparison.Ordinal)
+            && originalApprovedBy is null && originalApprovedAt is null
+            && !string.IsNullOrWhiteSpace(current.ApprovedBy) && current.ApprovedAtUtc is not null;
+
+        var proposesIban = originalStatus == approved && current.Status == approved
+            && originalPendingEmpty && currentPendingComplete
+            && string.Equals(current.Iban, originalIban, StringComparison.Ordinal)
+            && string.Equals(current.ApprovedBy, originalApprovedBy, StringComparison.Ordinal)
+            && current.ApprovedAtUtc == originalApprovedAt;
+
+        var approvesIban = originalStatus == approved && current.Status == approved
+            && originalPendingComplete && currentPendingEmpty
+            && string.Equals(current.Iban, originalPendingIban, StringComparison.Ordinal)
+            && string.Equals(current.ApprovedBy, originalApprovedBy, StringComparison.Ordinal)
+            && current.ApprovedAtUtc == originalApprovedAt;
+
+        return initialApproval || proposesIban || approvesIban;
     }
 }
