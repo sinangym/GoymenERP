@@ -389,7 +389,7 @@ test('S04-06 the preparer creates and reopens one real Product draft; a stale Pr
   const staleProblem = (await staleResponse.json()) as ProblemReading
   expect(staleProblem.code).toBe('version_conflict')
   expect(staleProblem.errors).toEqual(expect.arrayContaining([
-    expect.objectContaining({ field: 'lines[0].productId', code: 'version_conflict' }),
+    expect.objectContaining({ field: 'lines[0].expectedProductVersion', code: 'version_conflict' }),
   ]))
 
   const replayResponse = await page.request.post(`${env.apiBaseUrl}${DRAFTS_PATH}`, {
