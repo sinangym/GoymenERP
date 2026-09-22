@@ -230,7 +230,7 @@ test('S04-05 the S-02 list filters by the server\'s approval state', async ({ pa
   await page.goto('/satis/siparisler')
   await expect(page.getByRole('heading', { level: 1, name: 'Satış siparişi taslakları' })).toBeVisible({ timeout: 30_000 })
   const filter = page.getByLabel('İç onay durumu')
-  await expect(filter.locator('option')).toHaveText(['Tümü', 'Hazırlanıyor', 'Onay bekliyor', 'Onaylı', 'Reddedildi'])
+  await expect(filter.locator('option')).toHaveText(['Tümü', 'Hazırlanıyor', 'Onay bekliyor', 'Onaylı', 'Reddedildi', 'Geri çekildi'])
 
   await filter.selectOption('Approved')
   await expect(page.getByTestId(`sales-row-approval-${draftId}`)).toHaveText('Taslak · Onaylı')

@@ -124,7 +124,7 @@ test('S04-D2-01 A creates, B submits, SalesSupport A is refused for both decisio
   await expectProblem(
     await command(page, supportCreatorActor, supportDraftId, 'withdrawal', approved.draft.version, 'support-approved-withdrawal'),
     409,
-    'state_conflict',
+    'sales_state_conflict',
   )
 })
 
@@ -184,7 +184,7 @@ test('S04-D2-03 the creator withdraws, closes and reopens the same record, whose
     await expectProblem(
       await command(page, ordinaryCreatorActor, withdrawalDraftId, kind, withdrawn.draft.version, `withdrawn-${kind}`),
       409,
-      'state_conflict',
+      'sales_state_conflict',
     )
   }
   const after = await readDraft(page, ordinaryCreatorActor, withdrawalDraftId)
