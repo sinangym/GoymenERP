@@ -15,7 +15,7 @@ namespace GoymenERP.Api.IntegrationTests;
 public sealed class CariNormalShellAuthorityPreregistrationTests
 {
     [Fact]
-    public void Three_flag_normal_authorities_move_while_disposable_envelopes_keep_their_accepted_revisions()
+    public void Published_normal_authorities_move_while_the_two_disposable_envelopes_keep_their_accepted_revisions()
     {
         IShellCapabilityProvider[] optionalProviders =
         [
@@ -53,13 +53,6 @@ public sealed class CariNormalShellAuthorityPreregistrationTests
         Assert.Equal(
             ShellCapabilityRegistryAuthorities.C01DisposableCariListDetailV1,
             ShellCapabilityRegistry.ComputeCandidateRevision([new C01E2eCariListDetailShellCapabilityProvider()]));
-        Assert.Equal(
-            ShellCapabilityRegistryAuthorities.C01DisposableLogisticsInstructionsV1,
-            ShellCapabilityRegistry.ComputeCandidateRevision(
-            [
-                new C01E2eShellCapabilityProvider(),
-                new C01E2eLogisticsInstructionsShellCapabilityProvider(),
-            ]));
     }
 
     private sealed class ListStagedCounterpartyProvider : IShellCapabilityProvider

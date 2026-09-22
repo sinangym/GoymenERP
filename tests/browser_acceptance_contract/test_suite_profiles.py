@@ -40,8 +40,7 @@ def model(profile):
     return result
 
 
-SUITE_FOR = {"c01-list-only": "smoke", "cari-staged": "c03", "normal": "org03",
-             "log-staged": "l04"}
+SUITE_FOR = {"c01-list-only": "smoke", "cari-staged": "c03", "normal": "org03"}
 
 
 class ProfileRegistryTests(unittest.TestCase):
@@ -97,14 +96,16 @@ class ComposeFileDerivationTests(unittest.TestCase):
         ).replace(browser.CANONICAL_SUITE_LABEL, browser.PROFILE_SUITE_LABELS["cari-staged"])
         self.assertEqual(expected, staged)
 
-    def test_log_staged_is_the_canonical_file_plus_its_profile_line(self):
-        # LOG-4b: the same two transforms, with the logistics-instructions profile.
-        staged = self._body((ROOT / browser.PROFILE_COMPOSE_FILES["log-staged"]).read_text(encoding="utf-8"))
-        anchor = '      C01E2e__EnableListCapability: "true"\n'
-        expected = self.canonical.replace(
-            anchor, anchor + f"      {browser.CARI_STAGED_PROFILE_KEY}: {browser.STAGED_PROFILE_VALUES['log-staged']}\n"
-        ).replace(browser.CANONICAL_SUITE_LABEL, browser.PROFILE_SUITE_LABELS["log-staged"])
-        self.assertEqual(expected, staged)
+    def test_the_log_staged_profile_is_retired(self):
+        # LOG-PUBLISH: Logistics is published on the normal host and l04 runs there.
+        self.assertEqual("normal", browser.profile_of("l04"))
+        self.assertNotIn("log-staged", browser.PROFILES)
+        for table in (browser.PROFILE_COMPOSE_FILES, browser.PROFILE_SUITE_LABELS, browser.STAGED_PROFILE_VALUES):
+            self.assertNotIn("log-staged", table)
+        self.assertFalse((ROOT / "infra/docker-compose.browser-log-staged.yml").exists())
+        activation = (ROOT / "src/backend/GoymenERP.Api/Shell/C01E2eShellCapabilityActivation.cs").read_text(
+            encoding="utf-8")
+        self.assertNotIn('Profile = "logistics-instructions";', activation)
 
     def test_the_acc_staged_profile_is_retired(self):
         # ACC-V0c: Accounting's screens are published on the normal host and acc01 runs there; the
@@ -152,8 +153,7 @@ class ComposeFileDerivationTests(unittest.TestCase):
                 self.assertIn(f'Profile = "{value}";', activation)
 
     def test_a_staged_profile_refuses_the_other_profile_value(self):
-        for profile, suite, wrong in (("log-staged", "l04", "cari-list-detail"),
-                                      ("cari-staged", "c03", "accounting-periods-and-journals"),
+        for profile, suite, wrong in (("cari-staged", "c03", "accounting-periods-and-journals"),
                                       ("cari-staged", "c03", "logistics-instructions"),
                                       ("cari-staged", "c03", "manufacturing-order-detail"),
                                       ("cari-staged", "c03", "finance-bank-accounts-and-drafts")):

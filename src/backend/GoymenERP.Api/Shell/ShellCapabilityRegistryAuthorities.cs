@@ -113,29 +113,29 @@ internal static class ShellCapabilityRegistryAuthorities
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11AndPublishedManufacturingV10 =
         "sha256:vM0Z496GFQJxj-Z99JaMN5uLC8SpZdgzf_8ZWh-CTYU";
 
-    // LOG-4a: ... + Logistics 1.0 STAGED (the loading-instruction list L-02, new L-03 and detail L-02-DETAIL,
-    // master v3 §27.8): the normal host (C+O+P+S(published)+F(published)+M(published)+L(staged)). Computed by
+    // LOG-PUBLISH: ... + Logistics 1.0 PUBLISHED (the loading-instruction list L-02, new L-03 and detail L-02-DETAIL,
+    // master v3 §27.8): the normal host (C+O+P+S(published)+F(published)+M(published)+L(published)). Computed by
     // the ComputeRevision reproduction and, independently, by ORG (DATA ONLY); pinned by test.
     // Re-measured for MFG-ORD (the MFG-02 order list route and the close control of the order screen:
     // four Manufacturing declarations, the control keeping its parent's route, screen, precedence,
     // context and scope): ComputeRevision reproduction, calibrated against the three constants this
     // file already served, and independently re-checked (DATA ONLY); pinned by test.
-    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV10AndLogisticsV10 =
-        "sha256:dQzuducD9DD8ml53cN08CPAIGbfddulh3yZ3dyOQ-lA";
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV10AndPublishedLogisticsV10 =
+        "sha256:i4lDY7trJGOiY6rEWWZ99ZVEH0DXIe484_0JaizLGgs";
 
     // PUR-4a: ... + Purchasing 1.0 STAGED (the purchase-order list P-03, new P-04 and detail P-03-DETAIL,
-    // master v3 §27.3): the normal host (C+O+P+S(pub)+F(pub)+M(pub)+L(staged)+Pu(staged)). Computed by the
+    // master v3 §27.3): the normal host (C+O+P+S(pub)+F(pub)+M(pub)+L(published)+Pu(staged)). Computed by the
     // ComputeRevision reproduction and, independently, by ORG (DATA ONLY); pinned by test.
     // Re-measured for MFG-ORD (the MFG-02 order list route and the close control of the order screen:
     // four Manufacturing declarations, the control keeping its parent's route, screen, precedence,
     // context and scope): ComputeRevision reproduction, calibrated against the three constants this
     // file already served, and independently re-checked (DATA ONLY); pinned by test.
-    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV10LogisticsV10AndPurchasingV10 =
-        "sha256:-dOMVCu9kPbi0kYMTk10FAhlTF1KWAhTIZxywlDz81U";
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV10PublishedLogisticsV10AndPurchasingV10 =
+        "sha256:RmymKZiS0qEDYTOhJoQy64T2rxBSjZYn8xomSqeKKog";
 
     // ACC-V0b: ... + Accounting 1.0 STAGED (the period list M-07 and its propose screen, the approve and
     // close controls of that list, the journal list M-04 and its detail, the posting queues M-01): the normal
-    // host (C+O+P+S(pub)+F(pub)+M(pub)+L(staged)+Pu(staged)+Acc(staged)). Computed by the ComputeRevision
+    // host (C+O+P+S(pub)+F(pub)+M(pub)+L(published)+Pu(staged)+Acc(staged)). Computed by the ComputeRevision
     // reproduction, independently re-checked (DATA ONLY); pinned by test.
     // RE-MEASURED for ACC-V0c: six of Accounting's seven declarations become available (the period
     // list and its propose screen, the journal list, the posting queues — and the approve and close
@@ -161,7 +161,8 @@ internal static class ShellCapabilityRegistryAuthorities
     // version, and the provider really still reports "1.0". But that argument is about the VERSION
     // NUMBER and says nothing about the `Published` prefix, which is this file's separate AVAILABILITY
     // axis: `…AndSalesV10` became `…AndPublishedSalesV10` at Sales's flip, Finance and Manufacturing
-    // likewise, while Logistics and Purchasing stay plain BECAUSE they are still staged. So Accounting
+    // likewise. Logistics gains `Published` at its availability flip; Purchasing stays plain because it is
+    // still staged. Accounting
     // gains `Published` at the flip this row performs. Applying the version rule to the prefix question
     // would have left the name asserting "Accounting staged" about a host serving six live screens.
     // The prefix marks the FLIP, not wholeness: the journal detail is still staged here, which the
@@ -170,8 +171,8 @@ internal static class ShellCapabilityRegistryAuthorities
     // before the value was trusted: all eight of main's Organization 1.1 rows reproduce byte-for-byte
     // with Accounting staged (the old half), and the same ACC-V0c model placed back at Organization 1.0
     // reproduces this branch's own sha256:OOlEtnDx… (the new half, which no accepted constant covered).
-    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV10LogisticsV10PurchasingV10AndPublishedAccountingV10 =
-        "sha256:oVisqZ8DHBIOYDVucbMm8shVVZWTj_amo9fFc5-cr2Q";
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV10PublishedLogisticsV10PurchasingV10AndPublishedAccountingV10 =
+        "sha256:eHIZZccRKjtz_iBRzC0O-vAxw1Tl9d_Yz_QjeWwH1M8";
 
     internal const string CounterpartyV15PublishedListCreateAndDetail =
         "sha256:UBHnivzhe_dp5f7vU7dP5n7HG-P8XYBGhxvD_OjMSnw";
@@ -185,11 +186,8 @@ internal static class ShellCapabilityRegistryAuthorities
     internal const string C01DisposableCariListDetailV1 =
         "sha256:LM81M4d4tKOqR9OaKvZM_uT5HQIcoffoTMEzMFH4atg";
 
-    // The disposable "logistics-instructions" profile (BROWSER-CI log-staged, LOG-4b): the C-01 list-only Counterparty
-    // provider plus Logistics's own three declarations with only their availability opened (L-02 list, L-03 new,
-    // L-02-DETAIL). Computed by the ComputeRevision reproduction; pinned by a test against ComputeCandidateRevision.
-    internal const string C01DisposableLogisticsInstructionsV1 =
-        "sha256:G6ic5Cbh7NH1-kw430fr2eeOFViX0QGiv7w1qosZpbI";
+    // The disposable "logistics-instructions" profile (log-staged, LOG-4b, sha256:G6ic5Cbh...) is
+    // retired: Logistics is published on the normal host and l04 runs there.
 
     // The disposable "manufacturing-order-detail" profile (mfg-staged, MFG-UI D4 #323, sha256:eZi6K5tQ…) is
     // retired: Manufacturing is published on the normal host (MFG-UI-F) and the mfg suite runs there.

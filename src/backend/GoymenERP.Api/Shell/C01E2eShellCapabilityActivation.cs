@@ -38,11 +38,6 @@ internal static class C01E2eShellCapabilityActivation
     // ACC-V0b's acc-staged profile ("accounting-periods-and-journals") is retired: Accounting is
     // published on the normal host (ACC-V0c), so its screens need no disposable envelope any more —
     // the retirement its own comment promised at the flip after the acc01 suite.
-    // LOG-4b (log-staged): Logistics's three loading-instruction screens opened inside this envelope only, beside the
-    // list-only C-01 Counterparty set, before any normal-runtime availability (the FIN-UI-1b / MFG-UI D4 precedent;
-    // retired again at the flip after the l04 suite).
-    internal const string LogisticsInstructionsProfile = "logistics-instructions";
-
     internal static string Configure(
         IServiceCollection services,
         IHostEnvironment environment,
@@ -66,10 +61,6 @@ internal static class C01E2eShellCapabilityActivation
             case CariListDetailProfile:
                 ReplaceExactCounterpartyProvider<C01E2eCariListDetailShellCapabilityProvider>(services);
                 return ShellCapabilityRegistryAuthorities.C01DisposableCariListDetailV1;
-            case LogisticsInstructionsProfile:
-                ReplaceExactCounterpartyProvider<C01E2eShellCapabilityProvider>(services);
-                services.AddSingleton<IShellCapabilityProvider, C01E2eLogisticsInstructionsShellCapabilityProvider>();
-                return ShellCapabilityRegistryAuthorities.C01DisposableLogisticsInstructionsV1;
             default:
                 throw new InvalidOperationException(
                     "C-01 disposable capability profili tanınmıyor.");
@@ -120,14 +111,14 @@ internal static class C01E2eShellCapabilityActivation
                 typeof(ManufacturingShellCapabilityProvider),
             },
                 ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11AndPublishedManufacturingV10),
-        // LOG-4a: Logistics's (staged) loading-instruction screens join the host set.
+        // LOG-PUBLISH: Logistics's loading-instruction screens are published on the normal host.
         (new[]
             {
                 typeof(OrganizationShellCapabilityProvider), typeof(ProductShellCapabilityProvider),
                 typeof(SalesShellCapabilityProvider), typeof(FinanceShellCapabilityProvider),
                 typeof(ManufacturingShellCapabilityProvider), typeof(LogisticsShellCapabilityProvider),
             },
-                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV10AndLogisticsV10),
+                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV10AndPublishedLogisticsV10),
         // PUR-4a: Purchasing's (staged) order screens join the host set.
         (new[]
             {
@@ -136,7 +127,7 @@ internal static class C01E2eShellCapabilityActivation
                 typeof(ManufacturingShellCapabilityProvider), typeof(LogisticsShellCapabilityProvider),
                 typeof(PurchasingShellCapabilityProvider),
             },
-                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV10LogisticsV10AndPurchasingV10),
+                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV10PublishedLogisticsV10AndPurchasingV10),
         // ACC-V0b: Accounting's (staged) period, journal and posting-queue screens join the host set.
         (new[]
             {
@@ -145,7 +136,7 @@ internal static class C01E2eShellCapabilityActivation
                 typeof(ManufacturingShellCapabilityProvider), typeof(LogisticsShellCapabilityProvider),
                 typeof(PurchasingShellCapabilityProvider), typeof(AccountingShellCapabilityProvider),
             },
-                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV10LogisticsV10PurchasingV10AndPublishedAccountingV10),
+                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV10PublishedLogisticsV10PurchasingV10AndPublishedAccountingV10),
     ];
 
     private static string NormalAuthority(IServiceCollection services)
@@ -303,22 +294,6 @@ internal sealed class C01E2eCariListDetailShellCapabilityProvider : IShellCapabi
 
     public IReadOnlyCollection<ShellCapabilityDeclaration> GetDeclarations() =>
         C01E2eStagedDeclarations.Open(_source, detail: true);
-}
-
-// log-staged (LOG-4b): Logistics's own declarations, only their availability opened; ids, routes, context, scope and
-// permissions stay the owner's.
-internal sealed class C01E2eLogisticsInstructionsShellCapabilityProvider : IShellCapabilityProvider
-{
-    private readonly LogisticsShellCapabilityProvider _source = new();
-
-    public string Owner => _source.Owner;
-
-    public string ContractVersion => _source.ContractVersion;
-
-    public IReadOnlyCollection<ShellCapabilityDeclaration> GetDeclarations() =>
-        Array.AsReadOnly(_source.GetDeclarations()
-            .Select(declaration => declaration with { ImplementationAvailable = true })
-            .ToArray());
 }
 
 internal static class C01E2eStagedDeclarations
