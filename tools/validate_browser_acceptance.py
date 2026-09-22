@@ -34,7 +34,7 @@ _spec.loader.exec_module(c01)
 ContractError = c01.ContractError
 require = c01.require
 
-SUITES = ("smoke", "c03", "org03", "u02", "s03", "mfg", "fin01", "s04", "acc01", "l04", "c02")
+SUITES = ("smoke", "c03", "org03", "u02", "s03", "mfg", "fin01", "s04", "acc01", "l04", "pur01", "c02")
 # s03 writes since S03 (#327): V2A-02 attempts a POST (nothing is stored, but it is no read-only run).
 READ_ONLY_SUITES = ("smoke", "c03")
 _SUITE_PATTERN = re.compile(r"^[a-z0-9]+$")
@@ -62,6 +62,8 @@ SUITE_PROFILES = {
     "c02": "normal",
     # L-04 (SİPARİŞ): Logistics is published after LOG-4b acceptance; the final journey runs on the normal host.
     "l04": "normal",
+    # PUR-01 (SATINALMA): the published order list/detail and approval control run on the normal host.
+    "pur01": "normal",
 }
 PROFILE_COMPOSE_FILES = {
     "c01-list-only": "infra/docker-compose.c01-e2e.yml",
@@ -136,6 +138,8 @@ SUITE_API_EXTENSIONS = {
     "acc01": {"issuer": False, "actors": True, "identity": True},
     # L-04 (SİPARİŞ): a preparer, a loader and a reader actor plus the two Sales seed actors, with their grants.
     "l04": {"issuer": False, "actors": True, "identity": True},
+    # PUR-01 (SATINALMA): an approver and a read-only actor with disposable Identity users and grants.
+    "pur01": {"issuer": False, "actors": True, "identity": True},
     # CARI-NORMAL: two actors holding the SAME two names in DIFFERENT companies, with their Identity
     # users and grants — the difference is the company, because that is the fence being measured.
     "c02": {"issuer": False, "actors": True, "identity": True},
@@ -237,6 +241,8 @@ SUITE_IDENTITY_PERMISSIONS = {
     # the owner answers nothing and the picker is silently empty (ASSUMPTION-LOG4B-3).
     "l04": ("logistics.loading-instructions.create", "logistics.loading-instructions.read", "logistics.loads.record",
             "sales.drafts.create", "sales.drafts.read", "sales.orders.approve", "counterparty.parties.read"),
+    # PUR-01: the complete union of the disposable approver and reader grants. Create stays unavailable.
+    "pur01": ("purchasing.orders.read", "purchasing.orders.approve"),
 }
 
 
@@ -418,6 +424,8 @@ SUITE_FIXTURE_OUTPUTS: dict[str, frozenset[str]] = {
     "l04": frozenset({"preparerActor", "loaderActor", "readerActor", "companyId", "otherCompanyId", "customerPartyId",
                       "companyAccountId", "draftId", "approvedLineId", "instructionId", "blockedLineId",
                       "openLineId"}),
+    # SATINALMA's Suites/PUR01 seed: one synthetic Draft order and line plus the two actors and company fence.
+    "pur01": frozenset({"approverActor", "readerActor", "companyId", "otherCompanyId", "orderId", "lineId"}),
 }
 _OUTPUT_KEY = re.compile(r"^[a-z][A-Za-z0-9]{0,39}$")
 # Any non-nil lowercase GUID: seeded reference ids (companies, work centres) need not be RFC 4122.

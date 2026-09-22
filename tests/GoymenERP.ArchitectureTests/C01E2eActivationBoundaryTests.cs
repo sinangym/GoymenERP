@@ -110,6 +110,14 @@ public sealed class C01E2eActivationBoundaryTests
                 + "LogisticsLineBlockFixtureStore.cs",
             ],
             BackendFilesContaining("AddLogisticsLineBlockFixtureStore"));
+        // pur01: Purchasing's synthetic Draft order port, registered only behind the same complete gate.
+        Assert.Equal(
+            [
+                "src/backend/GoymenERP.Api/Shell/C01E2eFixtureWriterActivation.cs",
+                "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Fixtures/"
+                + "PurchaseOrderFixtureStore.cs",
+            ],
+            BackendFilesContaining("AddPurchaseOrderFixtureStore"));
     }
 
     // u02 (#331): ProductDbContext refuses every public save; AddFixtureCodeGroupAsync is a second write path
