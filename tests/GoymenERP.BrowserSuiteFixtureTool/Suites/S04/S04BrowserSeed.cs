@@ -313,7 +313,7 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
     }
 
     private static async Task EnsureD2DraftAsync(
-        ISalesDraftFixtureStore writer,
+        C01E2eSalesDraftFixtureWriter writer,
         BrowserSuiteFixtureContext context,
         Guid draftId,
         string documentSuffix,
