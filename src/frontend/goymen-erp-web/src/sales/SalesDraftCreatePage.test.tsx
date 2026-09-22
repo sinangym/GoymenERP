@@ -366,6 +366,29 @@ describe('SALES-A2a — delivery address, contact and the currencies list', () =
     expect(Array.from((screen.getByLabelText(T.field.product) as HTMLSelectElement).options).map((option) => option.value)).toContain(PRODUCT)
   })
 
+  it('never silently upgrades a selected owner version when the same product returns at a newer version', async () => {
+    const refreshed = { ...OPTIONS_A.products[0], productVersion: '8' }
+    const versioned: UseReferenceOptions = (companyId, _businessDate, _accountSearch = '', productSearch = '') => {
+      const products = productSearch === 'yenile' ? [refreshed] : OPTIONS_A.products
+      return companyId === COMPANY_A
+        ? { status: 'ready', options: { ...OPTIONS_A, products }, productOffer: { items: products, searchWindowFull: false } }
+        : { status: 'unavailable' }
+    }
+    installFetch()
+    renderSalesApp(PATH, versioned)
+    await formVisible()
+    fireEvent.change(screen.getByLabelText(T.field.businessDate), { target: { value: '2026-09-13' } })
+    await userEvent.selectOptions(screen.getByLabelText(T.field.product), PRODUCT)
+
+    await userEvent.type(screen.getByTestId('sales-product-search'), 'yenile')
+    await userEvent.click(screen.getByTestId('sales-product-search-button'))
+    const product = screen.getByLabelText(T.field.product) as HTMLSelectElement
+    await waitFor(() => expect(product.value).toBe(''))
+    const errorId = product.getAttribute('aria-describedby')
+    expect(errorId).not.toBeNull()
+    expect(document.getElementById(errorId as string)?.textContent).toBe(T.validation.productNotOffered)
+  })
+
   it('offers the chosen account’s addresses and contacts, and sends the chosen ones as id + owner version', async () => {
     const pending = deferred<Response>()
     const fetch = installFetch({ onCreate: () => pending.promise })

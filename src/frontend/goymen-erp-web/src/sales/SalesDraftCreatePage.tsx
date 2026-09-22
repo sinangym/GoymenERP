@@ -164,10 +164,17 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
       : (source.header?.products ?? null)
   const options = useMemo<OrderDraftOptions | null>(() => {
     if (sourceOptions === null) return null
-    const products = [...sourceOptions.products]
-    for (const selected of chosenProducts) {
-      if (selected.effectiveOn !== values.businessDate) continue
-      if (!values.lines.some((line) => line.productId === selected.option.productId)) continue
+    const retained = chosenProducts.filter(
+      (selected) =>
+        selected.effectiveOn === values.businessDate &&
+        values.lines.some((line) => line.productId === selected.option.productId),
+    )
+    // Prefer the explicit selection snapshot even when a fresh result window contains the same id at
+    // another version. The effect below then invalidates it; no intervening submit can silently send v8.
+    const products = sourceOptions.products.map(
+      (product) => retained.find((selected) => selected.option.productId === product.productId)?.option ?? product,
+    )
+    for (const selected of retained) {
       if (!products.some((product) => product.productId === selected.option.productId)) products.push(selected.option)
     }
     return { ...sourceOptions, products }
@@ -212,6 +219,33 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
       lines: current.lines.map((line) => ({ ...line, productId: '', orderUnitId: '' })),
     }))
   }, [values.businessDate])
+
+  // A later candidate answer may carry the same product identity at another owner version. Never
+  // rewrite the selected snapshot silently: clear product + unit and require an explicit reselect.
+  useEffect(() => {
+    if (sourceOptions === null) return
+    const stale = chosenProducts.filter((selected) => {
+      if (selected.effectiveOn !== values.businessDate) return false
+      const fresh = sourceOptions.products.find((product) => product.productId === selected.option.productId)
+      return fresh !== undefined && fresh.productVersion !== selected.option.productVersion
+    })
+    if (stale.length === 0) return
+    const staleIds = new Set(stale.map((selected) => selected.option.productId))
+    const staleLines = values.lines.filter((line) => staleIds.has(line.productId))
+    setChosenProducts((current) => current.filter((selected) => !staleIds.has(selected.option.productId)))
+    setValues((current) => ({
+      ...current,
+      lines: current.lines.map((line) =>
+        staleIds.has(line.productId) ? { ...line, productId: '', orderUnitId: '' } : line,
+      ),
+    }))
+    setErrors((current) => ({
+      ...current,
+      ...Object.fromEntries(
+        staleLines.map((line) => [lineFieldId(line.lineId, 'productId'), T.validation.productNotOffered]),
+      ),
+    }))
+  }, [chosenProducts, sourceOptions, values.businessDate, values.lines])
 
   // A chosen currency the real list (for this date) no longer offers is cleared and said so: the form
   // never sends a reference nobody offered, and never keeps one silently.
