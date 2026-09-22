@@ -439,9 +439,10 @@ function ApprovalCommands({
   attemptRef.current = attempt
 
   // D2 (Sinan 5749046401, 5750987986): the persona fences are the SERVER's (403 at the API); both are measured against
-  // ONE server fact — the stored creator, the order this actor PREPARED (not the submitter) — which travels only as the
-  // server-computed `isOwnDraft` relationship. The screen mirrors it and never decides on its own.
+  // ONE server fact — the stored creator, the order this actor PREPARED (not the submitter). The server computes both
+  // the ownership relationship and the persona-specific decision restriction; the screen never infers a persona.
   const ownDraft = detail.isOwnDraft
+  const ownDecisionRestricted = detail.isOwnDecisionRestricted
   const unapproved =
     draft.approvalState === APPROVAL_STATE.preparing ||
     draft.approvalState === APPROVAL_STATE.pendingApproval ||
@@ -449,8 +450,8 @@ function ApprovalCommands({
   const offerSubmit =
     canSubmit && (draft.approvalState === APPROVAL_STATE.preparing || draft.approvalState === APPROVAL_STATE.rejected)
   const pending = draft.approvalState === APPROVAL_STATE.pendingApproval
-  const offerDecision = canDecide && pending && !ownDraft
-  const ownDecisionWithheld = canDecide && pending && ownDraft
+  const offerDecision = canDecide && pending && !ownDecisionRestricted
+  const ownDecisionWithheld = canDecide && pending && ownDecisionRestricted
   // A commercial revision can return an approved order to Preparing. D2's easy withdrawal
   // must not be offered once approved history exists; the server remains the authority.
   const offerWithdraw = canSubmit && ownDraft && unapproved && draft.revision === 'Rev.0'

@@ -238,9 +238,15 @@ describe('D2 persona fences on S-04', () => {
     return body
   }
 
-  it('hides approve/reject for the pending draft one PREPARED (isOwnDraft), whoever submitted it; shows them for another\'s', async () => {
-    // Own draft, submitted by a colleague (satis-1): the preparer still cannot decide it; the preparer may withdraw it.
-    installFetch({ capabilities: ALL_SALES_WITH_APPROVE, onDetail: () => json(own(detail('PendingApproval', PENDING))) })
+  const restricted = (body: Body) => {
+    body.isOwnDraft = true
+    body.isOwnDecisionRestricted = true
+    return body
+  }
+
+  it('hides approve/reject only for a SalesSupport creator; other creators and actors keep main behavior', async () => {
+    // SalesSupport-created draft, submitted by a colleague: the server says decision-restricted; withdrawal ownership remains.
+    installFetch({ capabilities: ALL_SALES_WITH_APPROVE, onDetail: () => json(restricted(detail('PendingApproval', PENDING))) })
     renderSalesApp(`/satis/siparisler/${DRAFT}`)
     await screen.findByRole('heading', { name: 'SO-2026-0001' })
     expect(screen.queryByRole('button', { name: T.approval.approve })).toBeNull()
@@ -252,6 +258,16 @@ describe('D2 persona fences on S-04', () => {
 
     // Another's draft that THIS actor submitted (isOwnDraft false, submittedBy = me): decided as on main — offered.
     installFetch({ capabilities: ALL_SALES_WITH_APPROVE, onDetail: () => json(detail('PendingApproval', OWN_SUBMISSION)) })
+    renderSalesApp(`/satis/siparisler/${DRAFT}`)
+    await screen.findByRole('heading', { name: 'SO-2026-0001' })
+    expect(screen.getByRole('button', { name: T.approval.approve })).toBeTruthy()
+    expect(screen.getByRole('button', { name: T.approval.reject })).toBeTruthy()
+    expect(screen.queryByTestId('sales-own-decision-note')).toBeNull()
+    cleanup()
+    vi.unstubAllGlobals()
+
+    // A non-SalesSupport creator keeps the main approve/reject behavior.
+    installFetch({ capabilities: ALL_SALES_WITH_APPROVE, onDetail: () => json(own(detail('PendingApproval', OWN_SUBMISSION))) })
     renderSalesApp(`/satis/siparisler/${DRAFT}`)
     await screen.findByRole('heading', { name: 'SO-2026-0001' })
     expect(screen.getByRole('button', { name: T.approval.approve })).toBeTruthy()

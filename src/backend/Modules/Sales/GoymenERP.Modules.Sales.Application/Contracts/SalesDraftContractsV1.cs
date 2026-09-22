@@ -116,7 +116,8 @@ public sealed record SalesOrderDraftDetailView(
     SalesDraftOwnerReferenceV1? SourceStrategy,
     SalesDraftOwnerReferenceV1? Package,
     SalesDraftApprovalV1 Approval,
-    bool IsOwnDraft);
+    bool IsOwnDraft,
+    bool IsOwnDecisionRestricted);
 
 public sealed record SalesOrderDraftResponse(
     SalesOrderDraftDetailView Detail, bool IsReplay, string OriginalCorrelationId);

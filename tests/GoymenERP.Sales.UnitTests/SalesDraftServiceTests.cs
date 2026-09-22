@@ -44,9 +44,6 @@ public sealed class SalesDraftServiceTests
     private const string PricePermission = ErpPermissions.CounterpartyAccountsCreate;
     /// <summary>K3 P2: the separate price READ name — a known stand-in, distinct from every other binding.</summary>
     private const string PriceReadPermission = ErpPermissions.CounterpartyAccountsStatusUpdate;
-    /// <summary>D2: the separate own-decision name — a known stand-in, distinct from every other binding.</summary>
-    private const string ApproveOwnPermission = ErpPermissions.CounterpartyPartiesUpdateBasic;
-
     [Fact]
     public async Task A_valid_request_is_stored_once_and_answered_as_the_wire_detail()
     {
@@ -187,8 +184,8 @@ public sealed class SalesDraftServiceTests
             case "not-granted": world.Authority.Granted = false; break;
             case "site-scoped": world.Authority.CompanyWide = false; break;
             // A name outside the central catalogue (the Sales names themselves are registered since #321's central commit).
-            case "unregistered-name": world.Bindings = new SalesDraftServiceBindings("sales.synthetic.unregistered", ReadPermission, ApprovePermission, PriceReadPermission: PriceReadPermission, ApproveOwnPermission: ApproveOwnPermission); break;
-            default: world.Bindings = new SalesDraftServiceBindings(null, ReadPermission, ApprovePermission, PriceReadPermission: PriceReadPermission, ApproveOwnPermission: ApproveOwnPermission); break;
+            case "unregistered-name": world.Bindings = new SalesDraftServiceBindings("sales.synthetic.unregistered", ReadPermission, ApprovePermission, PriceReadPermission: PriceReadPermission); break;
+            default: world.Bindings = new SalesDraftServiceBindings(null, ReadPermission, ApprovePermission, PriceReadPermission: PriceReadPermission); break;
         }
 
         var error = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CreateDraftAsync(Request(), Metadata("k-1")));
@@ -433,25 +430,17 @@ public sealed class SalesDraftServiceTests
         Assert.Equal((503, SalesDraftProblemCodesV1.PermissionUnregistered), (gap.Status, gap.Code));
     }
 
-    /// <summary>
-    /// D2 (Sinan 5749046401): the SUBMITTER deciding their own submission — approve OR reject — needs the separate own-decision
-    /// name; without it the refusal is an AUTHORITY refusal: 403 forbidden, nothing recorded (no transition, no terminal refusal),
-    /// the draft untouched — measured on the server, after the draft was read and before the transition. A DIFFERENT actor
-    /// holding the approve name decides it without the own name being asked at all. With the own name granted (a grant, not
-    /// a redeploy: ASSUMPTION-SALESD2-1) the same submitter's decision goes through.
-    /// </summary>
+    /// <summary>D2: a SalesSupport creator, including a dual-role creator, cannot approve or reject; another actor and a non-SalesSupport creator retain main behavior.</summary>
     [Theory]
     [InlineData("approve")]
     [InlineData("reject")]
-    public async Task The_submitter_cannot_decide_their_own_submission_without_the_own_name_and_a_different_approver_can(string decision)
+    public async Task A_sales_support_creator_cannot_decide_and_other_personas_keep_main_behavior(string decision)
     {
         var world = new World();
-        // Deny-first: the own-decision name is registered to nobody today; the world says so explicitly.
-        world.Authority.Denied.Add(ApproveOwnPermission);
+        world.ActiveRoleCodes.Codes.UnionWith([ErpPersonaRoleCodes.SalesSupport, "SALES_MANAGER"]);
         var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-1"))).Detail;
         await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("k-submit"));
         var transitionsBefore = world.Store.Transitions.Count;
-        world.Authority.Measured.Clear();
 
         Task<SalesOrderDraftResponse> Decide() => decision == "approve"
             ? world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("k-self"))
@@ -459,28 +448,24 @@ public sealed class SalesDraftServiceTests
 
         var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(Decide);
         Assert.Equal((403, "forbidden"), (refused.Status, refused.Code));
-        // Authority first (ADR-011 §5): nothing recorded — no transition, no terminal refusal under the key.
         Assert.Equal((transitionsBefore, 0), (world.Store.Transitions.Count, world.Store.Refusals.Count));
-        // The own name WAS asked, after the approve name (the draft had to be read to know whose submission it is).
-        Assert.Contains(ApproveOwnPermission, world.Authority.Measured);
-        Assert.True(world.Authority.Measured.IndexOf(ApproveOwnPermission) > world.Authority.Measured.IndexOf(ApprovePermission));
-        Assert.Equal("PendingApproval", (await world.Service().GetDraftDetailAsync(created.Draft.Id)).Draft.ApprovalState);
+        var pending = await world.Service().GetDraftDetailAsync(created.Draft.Id);
+        Assert.Equal(("PendingApproval", true, true),
+            (pending.Draft.ApprovalState, pending.IsOwnDraft, pending.IsOwnDecisionRestricted));
 
-        // A different actor holding the approve name decides it; the own name is never asked for another's submission.
         world.User.Id = "synthetic-manager";
-        world.Authority.Measured.Clear();
+        world.ActiveRoleCodes.Codes.Clear();
         var decided = await Decide();
         Assert.Equal(decision == "approve" ? "Approved" : "Rejected", decided.Detail.Draft.ApprovalState);
         Assert.Equal("synthetic-manager", decided.Detail.Approval.DecidedBy);
-        Assert.DoesNotContain(ApproveOwnPermission, world.Authority.Measured);
 
-        // The grant path: the own name held → the submitter's own decision on another submission goes through.
         world.User.Id = Actor;
-        world.Authority.Denied.Remove(ApproveOwnPermission);
         var second = (await world.Service().CreateDraftAsync(Request(), Metadata("k-2"))).Detail;
         await world.Service().SubmitDraftAsync(second.Draft.Id, Command("2"), Metadata("k-submit-2"));
         var own = await world.Service().ApproveDraftAsync(second.Draft.Id, Command("3"), Metadata("k-own"));
-        Assert.Equal(("Approved", Actor, Actor), (own.Detail.Draft.ApprovalState, own.Detail.Approval.SubmittedBy, own.Detail.Approval.DecidedBy));
+        Assert.Equal(("Approved", Actor, Actor, true, false),
+            (own.Detail.Draft.ApprovalState, own.Detail.Approval.SubmittedBy, own.Detail.Approval.DecidedBy,
+                own.Detail.IsOwnDraft, own.Detail.IsOwnDecisionRestricted));
     }
 
     /// <summary>
@@ -496,9 +481,10 @@ public sealed class SalesDraftServiceTests
     public async Task Ownership_is_the_preparer_not_the_submitter_and_an_authorized_non_preparer_behaves_as_on_main(string decision)
     {
         var world = new World();
-        world.Authority.Denied.Add(ApproveOwnPermission);
+        world.ActiveRoleCodes.Codes.Add(ErpPersonaRoleCodes.SalesSupport);
         var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-1"))).Detail;
         world.User.Id = "synthetic-submitter";
+        world.ActiveRoleCodes.Codes.Clear();
         await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("k-submit"));
         Assert.Equal("synthetic-submitter", (await world.Service().GetDraftDetailAsync(created.Draft.Id)).Approval.SubmittedBy);
 
@@ -508,44 +494,20 @@ public sealed class SalesDraftServiceTests
 
         // The preparer, holding the approve name, deciding the order they prepared but did not submit: fenced.
         world.User.Id = Actor;
+        world.ActiveRoleCodes.Codes.Add(ErpPersonaRoleCodes.SalesSupport);
         var transitions = world.Store.Transitions.Count;
-        world.Authority.Measured.Clear();
         var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(Decide);
         Assert.Equal((403, "forbidden", transitions, 0), (refused.Status, refused.Code, world.Store.Transitions.Count, world.Store.Refusals.Count));
-        Assert.Contains(ApproveOwnPermission, world.Authority.Measured);
 
         // The submitter — authorized, not the preparer — decides it as on main: the same names main's path asked, no other.
         world.User.Id = "synthetic-submitter";
+        world.ActiveRoleCodes.Codes.Clear();
         world.Authority.Measured.Clear();
         var decided = await Decide();
         Assert.Equal(decision == "approve" ? "Approved" : "Rejected", decided.Detail.Draft.ApprovalState);
         Assert.Equal(("synthetic-submitter", "synthetic-submitter"), (decided.Detail.Approval.SubmittedBy, decided.Detail.Approval.DecidedBy));
         Assert.Equal(transitions + 1, world.Store.Transitions.Count);
         Assert.All(world.Authority.Measured, name => Assert.Contains(name, new[] { ApprovePermission, PriceReadPermission }));
-        Assert.DoesNotContain(ApproveOwnPermission, world.Authority.Measured);
-    }
-
-    /// <summary>
-    /// D2: an own-decision name the platform does not register is the module's 503 (PermissionUnregistered) — asked only when
-    /// it matters (the submitter's own submission), never recorded, the draft untouched; another's submission never asks it.
-    /// </summary>
-    [Fact]
-    public async Task An_unregistered_own_decision_name_is_503_only_for_the_submitters_own_submission()
-    {
-        var world = new World();
-        world.Bindings = new SalesDraftServiceBindings(CreatePermission, ReadPermission, ApprovePermission, PriceReadPermission: PriceReadPermission,
-            ApproveOwnPermission: "sales.synthetic.unregistered");
-        var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-1"))).Detail;
-        await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("k-submit"));
-        world.Authority.Measured.Clear();
-
-        var error = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("k-self")));
-
-        Assert.Equal((503, SalesDraftProblemCodesV1.PermissionUnregistered, 1, 0), (error.Status, error.Code, world.Store.Transitions.Count, world.Store.Refusals.Count));
-        Assert.DoesNotContain("sales.synthetic.unregistered", world.Authority.Measured);
-        world.User.Id = "synthetic-manager";
-        var decided = await world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("k-manager"));
-        Assert.Equal("Approved", decided.Detail.Draft.ApprovalState);
     }
 
     /// <summary>
@@ -1005,7 +967,7 @@ public sealed class SalesDraftServiceTests
         {
             case "not-granted": world.Authority.Granted = false; break;
             case "site-scoped": world.Authority.CompanyWide = false; break;
-            case "unbound-approve": world.Bindings = new SalesDraftServiceBindings(CreatePermission, ReadPermission, null, PriceReadPermission: PriceReadPermission, ApproveOwnPermission: ApproveOwnPermission); break;
+            case "unbound-approve": world.Bindings = new SalesDraftServiceBindings(CreatePermission, ReadPermission, null, PriceReadPermission: PriceReadPermission); break;
             default: world.User.Authenticated = false; break;
         }
 
@@ -1099,13 +1061,14 @@ public sealed class SalesDraftServiceTests
         public FakeStore Store { get; init; } = new();
         public bool NoProducts { get; set; }
         public bool NoContactInformation { get; set; }
-        public SalesDraftServiceBindings Bindings { get; set; } = new(CreatePermission, ReadPermission, ApprovePermission, PricePermission, PriceReadPermission, ApproveOwnPermission);
+        public FixedActiveRoleCodeReader ActiveRoleCodes { get; } = new();
+        public SalesDraftServiceBindings Bindings { get; set; } = new(CreatePermission, ReadPermission, ApprovePermission, PricePermission, PriceReadPermission);
 
         public SalesDraftService Service()
         {
             var company = new CompanyContext();
             company.Set(Company);
-            return new SalesDraftService(company, User, Authority, new FixedCorrelation(), Accounts, Settings,
+            return new SalesDraftService(company, User, Authority, ActiveRoleCodes, new FixedCorrelation(), Accounts, Settings,
                 NoProducts ? null : Products, Store, Bindings, TimeProvider.System, NoContactInformation ? null : ContactInformation);
         }
 
@@ -1128,6 +1091,17 @@ public sealed class SalesDraftServiceTests
         public string? UserId => Authenticated ? Id : null;
         public IReadOnlySet<Guid> AllowedCompanyIds => new HashSet<Guid> { Company };
         public bool CanAccessCompany(Guid companyId) => companyId == Company;
+    }
+
+    private sealed class FixedActiveRoleCodeReader : IActiveRoleCodeReader
+    {
+        public HashSet<string> Codes { get; } = new(StringComparer.Ordinal);
+
+        public Task<IReadOnlySet<string>> GetActiveRoleCodesAsync(Guid companyId, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult<IReadOnlySet<string>>(companyId == Company ? Codes : new HashSet<string>(StringComparer.Ordinal));
+        }
     }
 
     private sealed class FixedAuthority : IErpAuthorityRevalidationService

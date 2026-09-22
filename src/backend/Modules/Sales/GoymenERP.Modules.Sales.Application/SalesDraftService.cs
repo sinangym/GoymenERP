@@ -42,6 +42,7 @@ public sealed class SalesDraftService(
     ICompanyContext companyContext,
     ICurrentUser currentUser,
     IErpAuthorityRevalidationService authority,
+    IActiveRoleCodeReader activeRoleCodes,
     ICorrelationContext correlation,
     ISalesPartyAccountPortV1 accounts,
     ISettingsPrerequisiteProvider settings,
@@ -233,7 +234,13 @@ public sealed class SalesDraftService(
         }
 
         // Another company's draft is null under the tenant filter: 404, never 403 (#257).
-        return draft is null ? throw new SalesDraftServiceException(404, "not_found") : Detail(draft, await DiscloseAsync(scope, cancellationToken), IsOwn(scope, draft));
+        return draft is null
+            ? throw new SalesDraftServiceException(404, "not_found")
+            : Detail(
+                draft,
+                await DiscloseAsync(scope, cancellationToken),
+                IsOwn(scope, draft),
+                IsOwn(scope, draft) && scope.IsSalesSupport);
     }
 
     /// <summary>K3 Head B: the archived approved revisions of a draft, oldest first, under the draft read; another company's draft is 404.</summary>
@@ -512,10 +519,9 @@ public sealed class SalesDraftService(
             throw new SalesDraftServiceException(404, "not_found");
         }
 
-        await RequirePersonaFenceAsync(scope, commandName, current, cancellationToken);
-
         // The last fence that can still prevent the write; none after the commit (ORG #321 P3-1).
-        await RequireStillAsync(scope, permission, cancellationToken);
+        scope = await RequireStillAsync(scope, permission, cancellationToken);
+        await RequirePersonaFenceAsync(scope, commandName, current, cancellationToken);
         SalesDraftStateResult? result;
         try
         {
@@ -572,47 +578,33 @@ public sealed class SalesDraftService(
     }
 
     /// <summary>
-    /// D2's two persona fences, both measured against ONE server fact: the stored creator (<c>CreatedBy</c>, the order the
-    /// Satış Destek PREPARED — not the submitter; a colleague submitting it does not erase the preparer's ownership).
-    /// Approve/Reject: if the actor is the draft's CREATOR, the SEPARATE own-decision name is asked (ASSUMPTION-SALESD2-1;
-    /// nobody holds it today) — refused → 403 forbidden, unrecorded (ADR-011 §5). Any OTHER authorized actor — including
-    /// the one who submitted it — is asked nothing new: their approval behaves exactly as on main (no silent new
-    /// self-approval policy for personas D2 did not name). Withdraw: the actor must be the CREATOR — anyone else → 403
-    /// forbidden, unrecorded; no name lifts it. Other commands: no persona fence. Measured on the server; hiding a
-    /// button is not this.
+    /// D2's two persona fences use the stored creator (<c>CreatedBy</c>), never the submitter. Approve/Reject is refused
+    /// only when that creator's fresh Identity role set contains <c>SALES_SUPPORT</c>; a dual role does not bypass it and
+    /// personas D2 did not name retain main behavior. Withdraw remains creator-only. Both are server fences; the screen
+    /// only mirrors the resulting relationship flags.
     /// </summary>
-    private async Task RequirePersonaFenceAsync(Scope scope, string commandName, SalesOrderDraft current, CancellationToken cancellationToken)
+    private static Task RequirePersonaFenceAsync(Scope scope, string commandName, SalesOrderDraft current, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         switch (commandName)
         {
-            case SalesDraftCommands.ApproveV1 or SalesDraftCommands.RejectV1 when IsOwn(scope, current):
-                await RequireOwnDecisionAsync(scope, cancellationToken);
-                return;
+            case SalesDraftCommands.ApproveV1 or SalesDraftCommands.RejectV1
+                when IsOwn(scope, current) && scope.IsSalesSupport:
+                throw new SalesDraftServiceException(403, "forbidden");
             case SalesDraftCommands.WithdrawV1 when !IsOwn(scope, current):
                 throw new SalesDraftServiceException(403, "forbidden");
             default:
-                return;
-        }
-    }
-
-    private async Task RequireOwnDecisionAsync(Scope scope, CancellationToken cancellationToken)
-    {
-        var permission = bindings.ApproveOwnPermission;
-        if (string.IsNullOrWhiteSpace(permission) || !ErpPermissions.IsKnown(permission))
-        {
-            throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.PermissionUnregistered);
-        }
-
-        var own = await authority.RevalidatePermissionScopeAsync(permission, scope.CompanyId, cancellationToken);
-        if (!own.IsGranted || !own.IsCompanyWide || !Matches(scope.CompanyId, scope.ActorId))
-        {
-            throw new SalesDraftServiceException(403, "forbidden");
+                return Task.CompletedTask;
         }
     }
 
     // ---- authority ------------------------------------------------------------------------------
 
-    private sealed record Scope(Guid CompanyId, string ActorId, IReadOnlyCollection<string> RoleCodes);
+    private sealed record Scope(
+        Guid CompanyId,
+        string ActorId,
+        IReadOnlyCollection<string> RoleCodes,
+        bool IsSalesSupport);
 
     /// <summary>The fence: server identity and company, then a fresh central measurement of the name.</summary>
     private async Task<Scope> RequireAsync(string? permission, CancellationToken cancellationToken)
@@ -642,16 +634,23 @@ public sealed class SalesDraftService(
             throw new SalesDraftServiceException(403, "forbidden");
         }
 
-        return new Scope(companyId, actorId, [.. scope.RoleCodes.Order(StringComparer.Ordinal)]);
+        var currentRoleCodes = await activeRoleCodes.GetActiveRoleCodesAsync(companyId, cancellationToken);
+        return new Scope(
+            companyId,
+            actorId,
+            [.. scope.RoleCodes.Order(StringComparer.Ordinal)],
+            currentRoleCodes.Contains(ErpPersonaRoleCodes.SalesSupport));
     }
 
-    private async Task RequireStillAsync(Scope scope, string? permission, CancellationToken cancellationToken)
+    private async Task<Scope> RequireStillAsync(Scope scope, string? permission, CancellationToken cancellationToken)
     {
         var current = await RequireAsync(permission, cancellationToken);
         if (current.CompanyId != scope.CompanyId || !string.Equals(current.ActorId, scope.ActorId, StringComparison.Ordinal))
         {
             throw new SalesDraftServiceException(403, "forbidden");
         }
+
+        return current;
     }
 
     /// <summary>An awaited read is released only under the authority a success would need (the Product fence, #276).</summary>
@@ -1162,7 +1161,7 @@ public sealed class SalesDraftService(
     // ---- mapping --------------------------------------------------------------------------------
 
     private static SalesOrderDraftResponse Response(Scope scope, SalesOrderDraft draft, bool isReplay, string originalCorrelationId, SalesPriceDisclosure disclosure) =>
-        new(Detail(draft, disclosure, IsOwn(scope, draft)), isReplay, originalCorrelationId);
+        new(Detail(draft, disclosure, IsOwn(scope, draft), IsOwn(scope, draft) && scope.IsSalesSupport), isReplay, originalCorrelationId);
 
     /// <summary>D2: the caller is the draft's stored creator — the one relationship the withdrawal fence and the screen's mirror share.</summary>
     private static bool IsOwn(Scope scope, SalesOrderDraft draft) =>
@@ -1196,7 +1195,11 @@ public sealed class SalesDraftService(
             draft.ApprovalState.ToString());
 
     /// <summary>Withheld ⇒ the three commercial fields are null BECAUSE of the marker; Visible ⇒ the texts as stored (null = unpriced).</summary>
-    private static SalesOrderDraftDetailView Detail(SalesOrderDraft draft, SalesPriceDisclosure disclosure, bool isOwnDraft) =>
+    private static SalesOrderDraftDetailView Detail(
+        SalesOrderDraft draft,
+        SalesPriceDisclosure disclosure,
+        bool isOwnDraft,
+        bool isOwnDecisionRestricted) =>
         new(Summary(draft), draft.Header.RequestedDeliveryDate, draft.Header.Note,
             [.. draft.Lines.Select(line => new SalesOrderDraftLineDetail(line.Id, line.LineNo, line.Product.ProductId,
                 line.Product.ProductVersion, line.Product.Code, line.Product.Name, line.OrderUnit.UnitId, line.QuantityText,
@@ -1209,7 +1212,7 @@ public sealed class SalesDraftService(
             Reference(draft.Header.DeliveryAddress), Reference(draft.Header.Contact), Reference(draft.Header.Responsible),
             Reference(draft.Header.PaymentTerms), Reference(draft.Header.SourceStrategy), Reference(draft.Header.Package),
             new SalesDraftApprovalV1(draft.Approval.SubmittedBy, draft.Approval.SubmittedAtUtc, draft.Approval.DecidedBy,
-                draft.Approval.DecidedAtUtc, draft.Approval.RejectionReason), isOwnDraft);
+                draft.Approval.DecidedAtUtc, draft.Approval.RejectionReason), isOwnDraft, isOwnDecisionRestricted);
 
     private static SalesDraftRevisionV1 Revision(ApprovedRevisionSnapshot archived, SalesPriceDisclosure disclosure) =>
         new(SalesDraftApiV1.RevisionText(archived.Revision), archived.Approval.SubmittedBy, archived.Approval.SubmittedAtUtc,

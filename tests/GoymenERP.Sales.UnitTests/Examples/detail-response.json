@@ -62,5 +62,6 @@
     "decidedAtUtc": null,
     "rejectionReason": null
   },
-  "isOwnDraft": false
+  "isOwnDraft": false,
+  "isOwnDecisionRestricted": false
 }

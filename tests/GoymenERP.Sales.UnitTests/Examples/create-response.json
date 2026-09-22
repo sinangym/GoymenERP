@@ -63,7 +63,8 @@
       "decidedAtUtc": null,
       "rejectionReason": null
     },
-    "isOwnDraft": false
+  "isOwnDraft": false,
+  "isOwnDecisionRestricted": false
   },
   "isReplay": false,
   "originalCorrelationId": "example-attempt-1"

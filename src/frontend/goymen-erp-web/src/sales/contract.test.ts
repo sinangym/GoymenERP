@@ -137,6 +137,8 @@ describe('decodeDraftMutation', () => {
     // D2: the own-draft relationship is a boolean of every detail; a withdrawn draft carries its decision and a whole-or-absent submission.
     ['a detail without isOwnDraft', (b: any) => delete b.detail.isOwnDraft],
     ['a detail whose isOwnDraft is not a boolean', (b: any) => (b.detail.isOwnDraft = 'true')],
+    ['a detail without isOwnDecisionRestricted', (b: any) => delete b.detail.isOwnDecisionRestricted],
+    ['a detail whose isOwnDecisionRestricted is not a boolean', (b: any) => (b.detail.isOwnDecisionRestricted = 'true')],
     ['a withdrawn draft without a decision', (b: any) => (b.detail.draft.approvalState = 'Withdrawn')],
     ['a withdrawn draft with half a submission', (b: any) => {
       b.detail.draft.approvalState = 'Withdrawn'
