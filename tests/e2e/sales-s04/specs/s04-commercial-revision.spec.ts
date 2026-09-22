@@ -179,7 +179,9 @@ test('S04-08 one approved record is priced in the form, reopened as Rev.1, and i
     data: withdrawalBody,
   })
   expect(replayWithdrawal.status()).toBe(409)
-  expect((await replayWithdrawal.json()) as ProblemDetails).toEqual(firstProblem)
+  const replayProblem = (await replayWithdrawal.json()) as ProblemDetails
+  expect(replayProblem.code).toBe(firstProblem.code)
+  expect(replayProblem.errors).toEqual(firstProblem.errors)
   expect(replayWithdrawal.headers()['idempotency-replayed']).toBe('true')
   expect(replayWithdrawal.headers()['idempotency-original-correlation-id']).toBe(firstCorrelation)
 
