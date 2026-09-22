@@ -5,7 +5,7 @@ using GoymenERP.Modules.Sales.Infrastructure.Shell;
 namespace GoymenERP.Sales.UnitTests;
 
 /// <summary>
-/// The published Sales shell provider: three screens plus the SALES-A1 approve control, the frontend
+/// The published Sales shell provider: three screens plus the approve and commercial-revision controls, the frontend
 /// lane's ids and routes (<c>src/sales/capabilities.ts</c> read from the repository, so a drift is red
 /// here), the Sales permission names, and <c>ImplementationAvailable: true</c> (S03-c; the registry
 /// never publishes a staged declaration, so the browser suite s03 accepts the flip rather than
@@ -16,14 +16,14 @@ public sealed class SalesShellCapabilityProviderContractTests
     private const string FrontendCapabilities = "src/frontend/goymen-erp-web/src/sales/capabilities.ts";
 
     [Fact]
-    public void The_three_screens_and_the_approve_control_are_declared_with_the_frontends_ids_and_routes()
+    public void The_three_screens_and_the_two_controls_are_declared_with_the_frontends_ids_and_routes()
     {
         var source = File.ReadAllText(Path.Combine(FindRepositoryRoot(), FrontendCapabilities));
         var provider = new SalesShellCapabilityProvider();
         var declarations = provider.GetDeclarations();
 
         Assert.Equal(("SALES", "1.0"), (provider.Owner, provider.ContractVersion));
-        Assert.Equal(4, declarations.Count);
+        Assert.Equal(5, declarations.Count);
         foreach (var declaration in declarations)
         {
             Assert.Contains($"'{declaration.CapabilityId}'", source);
@@ -60,6 +60,13 @@ public sealed class SalesShellCapabilityProviderContractTests
             (approve.RouteId, approve.RoutePath, approve.ScreenId, approve.RoutePrecedence, approve.ContextRequirement, approve.ScopeRequirement));
         Assert.Equal(SalesShellCapabilityProvider.DetailCapabilityId, approve.ParentCapabilityId);
         Assert.Equal([SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersApprove], approve.RequiredPermissions);
+
+        var price = Assert.Single(declarations, item => item.CapabilityId == SalesShellCapabilityProvider.PriceWriteCapabilityId);
+        Assert.Equal("sales.orders.price.write", price.CapabilityId);
+        Assert.Equal((detail.RouteId, detail.RoutePath, detail.ScreenId, detail.RoutePrecedence, detail.ContextRequirement, detail.ScopeRequirement),
+            (price.RouteId, price.RoutePath, price.ScreenId, price.RoutePrecedence, price.ContextRequirement, price.ScopeRequirement));
+        Assert.Equal(SalesShellCapabilityProvider.DetailCapabilityId, price.ParentCapabilityId);
+        Assert.Equal([SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersPriceWrite], price.RequiredPermissions);
     }
 
     [Fact]

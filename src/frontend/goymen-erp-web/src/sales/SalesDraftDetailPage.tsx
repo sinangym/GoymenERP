@@ -71,6 +71,7 @@ import { useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString, hasCapability, type ShellState } from '../shell/shellState'
 import { StateBlock } from '../shell/StateBlock'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
+import { SalesDraftCommercialRevisionForm } from './SalesDraftCommercialRevisionForm'
 import styles from './SalesPages.module.css'
 
 const orUnknown = (value: string | null) => value ?? T.unknown
@@ -131,6 +132,17 @@ export function SalesDraftDetailPage() {
           />
         )
       }
+      commercialActions={
+        companyId === null ? null : (
+          <SalesDraftCommercialRevisionForm
+            key={`price:${namespace ?? ''}:${outcome.data.draft.id}`}
+            shell={shell}
+            detail={outcome.data}
+            companyId={companyId}
+            onRecorded={() => void queryClient.invalidateQueries({ queryKey })}
+          />
+        )
+      }
     />
   )
 }
@@ -140,12 +152,14 @@ export function DraftView({
   backLink,
   commands = null,
   delivery = null,
+  commercialActions = null,
 }: {
   readonly detail: DraftDetail
   readonly backLink: React.ReactNode
   readonly commands?: React.ReactNode
   /** SALES-A2a: the "Teslimat" block (the owner's texts for the stored references); null when no company is bound. */
   readonly delivery?: React.ReactNode
+  readonly commercialActions?: React.ReactNode
 }) {
   const { draft, approval } = detail
   const withdrawn = draft.approvalState === APPROVAL_STATE.withdrawn
@@ -261,6 +275,7 @@ export function DraftView({
             )
           })}
         </dl>
+        {commercialActions}
       </section>
 
       <section className={styles.section} aria-labelledby="sales-lines-heading">
