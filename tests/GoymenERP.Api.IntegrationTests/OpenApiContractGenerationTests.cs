@@ -749,6 +749,7 @@ public sealed partial class OpenApiContractGenerationTests
         "SubmitSalesOrderDraftV1:404",
         "ApproveSalesOrderDraftV1:404",
         "RejectSalesOrderDraftV1:404",
+        "WithdrawSalesOrderDraftV1:404",
         "GetLoadingInstructionV1:404",
         "IssueLoadingInstructionV1:404",
         "RecordLoadingInstructionLoadV1:404",
