@@ -631,6 +631,38 @@ public sealed class SalesDraftServiceTests
     }
 
     [Fact]
+    public async Task Detail_uses_the_post_read_persona_when_sales_support_is_added_during_the_read()
+    {
+        var world = new World();
+        var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-detail-add"))).Detail;
+        world.ActiveRoleCodes.Codes.Remove(ErpPersonaRoleCodes.SalesSupport);
+        world.ActiveRoleCodes.Calls = 0;
+        world.ActiveRoleCodes.OnRead = null;
+        world.Store.OnFindDraft = () => world.ActiveRoleCodes.Codes.Add(ErpPersonaRoleCodes.SalesSupport);
+
+        var detail = await world.Service().GetDraftDetailAsync(created.Draft.Id);
+
+        Assert.True(detail.IsOwnDraft);
+        Assert.True(detail.IsOwnDecisionRestricted);
+    }
+
+    [Fact]
+    public async Task Detail_uses_the_post_read_persona_when_sales_support_is_removed_during_the_read()
+    {
+        var world = new World();
+        var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-detail-remove"))).Detail;
+        world.ActiveRoleCodes.Codes.Add(ErpPersonaRoleCodes.SalesSupport);
+        world.ActiveRoleCodes.Calls = 0;
+        world.ActiveRoleCodes.OnRead = null;
+        world.Store.OnFindDraft = () => world.ActiveRoleCodes.Codes.Remove(ErpPersonaRoleCodes.SalesSupport);
+
+        var detail = await world.Service().GetDraftDetailAsync(created.Draft.Id);
+
+        Assert.True(detail.IsOwnDraft);
+        Assert.False(detail.IsOwnDecisionRestricted);
+    }
+
+    [Fact]
     public async Task A_revision_without_the_price_permission_is_403_before_the_draft_is_read_and_a_pending_draft_is_the_keys_terminal_409()
     {
         var world = new World();
@@ -1432,8 +1464,13 @@ public sealed class SalesDraftServiceTests
             return Task.CompletedTask;
         }
 
-        public Task<SalesOrderDraft?> FindDraftAsync(Guid draftId, CancellationToken cancellationToken = default) =>
-            Task.FromResult(_drafts.SingleOrDefault(draft => draft.Id == draftId));
+        public Action? OnFindDraft { get; set; }
+
+        public Task<SalesOrderDraft?> FindDraftAsync(Guid draftId, CancellationToken cancellationToken = default)
+        {
+            OnFindDraft?.Invoke();
+            return Task.FromResult(_drafts.SingleOrDefault(draft => draft.Id == draftId));
+        }
 
         public Task<SalesDraftPage> ListDraftsAsync(int pageSize, string? cursor, CancellationToken cancellationToken = default,
             InternalApprovalState? approvalState = null)
