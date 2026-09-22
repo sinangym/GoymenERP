@@ -1314,7 +1314,7 @@ public sealed partial class OpenApiContractGenerationTests
                     ("decidedAtUtc", "type:null|string;format:date-time"),
                     ("rejectionReason", "type:null|string")),
                 ["SalesOrderDraftDetailView"] = ObjectSchema(
-                    ["draft", "requestedDeliveryDate", "note", "lines", "deliveryAddress", "contact", "responsible", "paymentTerms", "sourceStrategy", "package", "approval"],
+                    ["draft", "requestedDeliveryDate", "note", "lines", "deliveryAddress", "contact", "responsible", "paymentTerms", "sourceStrategy", "package", "approval", "isOwnDraft", "isOwnDecisionRestricted"],
                     ("draft", "ref:SalesOrderDraftSummaryView"),
                     ("requestedDeliveryDate", "type:null|string;format:date"),
                     ("note", "type:null|string"),
@@ -1325,7 +1325,9 @@ public sealed partial class OpenApiContractGenerationTests
                     ("paymentTerms", "oneOf:ref:SalesDraftOwnerReferenceV1|type:null"),
                     ("sourceStrategy", "oneOf:ref:SalesDraftOwnerReferenceV1|type:null"),
                     ("package", "oneOf:ref:SalesDraftOwnerReferenceV1|type:null"),
-                    ("approval", "ref:SalesDraftApprovalV1")),
+                    ("approval", "ref:SalesDraftApprovalV1"),
+                    ("isOwnDraft", "type:boolean"),
+                    ("isOwnDecisionRestricted", "type:boolean")),
                 ["SalesOrderDraftLineDetail"] = ObjectSchema(
                     ["lineId", "lineNo", "productId", "productVersion", "productCode", "productName", "orderUnitId", "quantity", "unitPrice", "priceUnitId", "requestedDeliveryDate", "note", "requestedDeliverySlices", "discountPercent", "priceDisclosure"],
                     ("lineId", "type:string;format:uuid"),
