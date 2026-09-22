@@ -209,7 +209,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/"
              + "Persistence/SalesDbContext.cs"] =
-                "715058a1d29fd45835d1bd4263c6423e26cbea71a487bf91968fd917b73d2018",
+                "2ce870a4b7ed0ee3f42d502e634b0dbd65e0965c7e5eef6c12bcb05a24290101",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
@@ -546,7 +546,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Sales.Infrastructure/"
                  + "SalesModuleExtensions.cs"] =
                     new(
-                        "55a8a02d96ec51db9c71ab29ed42e8105e68cc55960c9862560e176c4008108c",
+                        "2b706e85f34cfc7475dda51469c66d039996c79796b8452630cb0688c444b49e",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -559,7 +559,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Sales/"
                  + "GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.cs"] =
                     new(
-                        "c67497119ffd0bd57c62f575f02d7b6a5b6f73b17c0b09c0ef74c7496eed51db",
+                        "124e630defd39eeb7755baf3190c5963a725746febca87cbdd4636601a544cd6",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -663,6 +663,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // src/backend). Forward fix, the AddDraftApproval (51045) pattern.
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20260920073846_AddDraftRevisions.cs"] =
                     new("d2ec4a9b1f6fbe736ee18da1898ded863cfc3486c8bcb6b81923d6ec9ea893bf",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // SALES-D2: the Down's only raw SQL refuses rollback while any withdrawn draft exists;
+                // the refusal precedes the constraint replacement, so no withdrawal trail is discarded.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20260921090000_AddDraftWithdrawal.cs"] =
+                    new("df0b7eb737a3eeaeaed7ff3f9c9166ed3d0ad713486d0186e5eb8a8942e5117d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // ACC-V0a: the Down's only raw SQL is Accounting's module refusal (51048, coordinator-assigned) while any
