@@ -33,12 +33,25 @@
  * action carries none, which is why so many here are empty.
  *
  * Careful with the rule this explains, because an earlier version of these lines was STRICTER than
- * it (#372 review, CARİ): the rule is EXACTLY ONE entry point per creation route — the sidebar entry
- * when the list does not link to it, or the list's own link when it does, never both
- * (`docs/delivery/TEKNIK_TUZAKLAR.md` §8). It is NOT "create screens belong in the list". `/cari/yeni`
- * is in the sidebar with no list link and is compliant; a reader who took the stricter sentence
- * literally would delete Cari's only entry point and produce the very MFG-02 condition this file
- * exists to catch. An explanation of a guard must never be stricter than the guard.
+ * it (#372 review, CARİ): the rule is EXACTLY ONE entry point per creation route
+ * (`docs/delivery/TEKNIK_TUZAKLAR.md` §8). A reader who takes a stricter sentence literally would
+ * delete a screen's only entry point and produce the very MFG-02 condition this file exists to
+ * catch. An explanation of a guard must never be stricter than the guard.
+ *
+ * UPDATED (CARI-NORMAL): those lines used to add "…the sidebar entry when the list does not link to
+ * it, or the list's own link when it does" and cited `/cari/yeni` in the sidebar as COMPLIANT. The
+ * invariant is unchanged, but that CHOICE — and therefore the example — is superseded for creation
+ * routes by K5 (Sinan, 20 Eylül 2026, #66 5748258299): the single authorised "Yeni …" belongs
+ * INSIDE the relevant list, and cari/ürün/sipariş are named. Cari now complies the other way: the
+ * sidebar entry is gone and C-01 carries the action. The sentence is corrected rather than left
+ * standing because a stale explanation that declares a violation "compliant" is not merely wrong —
+ * it is a citable licence to restore the violation.
+ *
+ * MEASURED, and NOT this file's to enforce: no list page in the repo links to its own create route
+ * (`urun/yeni` and `siparisler/yeni` appear in zero list pages), so Product and Sales still use
+ * sidebar-create. A rule here forbidding that would redden two other lanes' screens today and leave
+ * only an exemption list — a guard cannot land while the instances it would catch still stand, and
+ * those instances are not this lane's to repair. The mechanism belongs after those modules move.
  *
  * What the file cannot do is confirm the link that makes an empty label correct, so the orphan rule's
  * message states that obligation and points at the lane's own test rather than implying a guarantee

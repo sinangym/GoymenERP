@@ -122,7 +122,8 @@ describe('mergeServerErrors', () => {
     expect(merged.groupId).toBe('istemci grup')
   })
 
-  it('ignores a server field the form does not render', () => {
-    expect(mergeServerErrors({}, { references: 'x' })).toEqual({})
+  it('binds the reference error to the technical fields now rendered', () => {
+    expect(mergeServerErrors({}, { references: 'x' })).toEqual({ references: 'x' })
+    expect(mergeServerErrors({}, { notAField: 'x' })).toEqual({})
   })
 })

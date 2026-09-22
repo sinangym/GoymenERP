@@ -59,6 +59,12 @@ public sealed class U02BrowserSeed : IBrowserSuiteFixture
         BrowserSuiteFixtureContext context,
         CancellationToken cancellationToken)
     {
+        await using (var technicalScope = context.Services.CreateAsyncScope())
+        {
+            await technicalScope.ServiceProvider.GetRequiredService<C01E2eProductTechnicalCardFixtureWriter>()
+                .EnsureAsync(cancellationToken);
+        }
+
         await using (var scope = context.Services.CreateAsyncScope())
         {
             var assignments = scope.ServiceProvider.GetRequiredService<C01E2eProductMasterAssignmentFixtureWriter>();
@@ -108,6 +114,7 @@ public sealed class U02BrowserSeed : IBrowserSuiteFixture
         {
             ["companyId"] = CompanyId.ToString("D"),
             ["codeGroupId"] = CodeGroupId.ToString("D"),
+            ["technicalFamilyId"] = ProductTechnicalCardFixture.FamilyId.ToString("D"),
             ["authorizedActor"] = AuthorizedActor,
             ["unauthorizedActor"] = UnauthorizedActor,
         };

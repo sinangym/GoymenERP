@@ -10,15 +10,16 @@
  *  - `classId` / `familyId` come from `GET /products/reference-options`, scoped to
  *    the chosen group. They are CHOSEN, never typed: §19.3 forbids the client
  *    producing a reference;
- *  - `references` (template, attributes, units, trackingPolicyId) are NOT offered.
- *    §19.6 and the coordinator keep attribute/unit completeness in the next slice,
- *    so opening them here would pull an unfinished decision forward;
+ *  - technical references come only from the released template and Settings unit
+ *    identities (PRD-CARD-1); tracking policy remains closed;
  *  - roles ARE offered, because their vocabulary is fully defined by the contract.
  */
 
 import { PRODUCT_ROLE, type ProductRoleName } from './contract'
 import type { CreateProductDraftPayload, ProductRoleWrites } from './api'
 import { PRODUCT_CREATE_TEXT } from './productText'
+import { technicalDirty, technicalWrite, type TechnicalDraft } from './technicalForm'
+import type { ProductReferenceOptions } from './contract'
 
 /** `Product.MaximumNameLength`. */
 export const NAME_MAX = 250
@@ -40,6 +41,7 @@ export type RoleChoice = 'yes' | 'no' | 'unset'
 export type CreateFormRoles = Readonly<Record<ProductRoleName, RoleChoice>>
 
 export interface CreateFormValues {
+  readonly technical?: TechnicalDraft
   readonly name: string
   /** A code-group id from `GET /products/code-groups`. `''` means nothing chosen. */
   readonly groupId: string
@@ -58,6 +60,7 @@ export interface CreateFormValues {
  * field the form does not render is one the user can neither see nor clear.
  */
 export const CREATE_FIELD = {
+  references: 'references',
   name: 'name',
   groupId: 'groupId',
   classId: 'classId',
@@ -73,10 +76,12 @@ export const CREATE_FIELD_ORDER: readonly CreateFieldId[] = [
   CREATE_FIELD.groupId,
   CREATE_FIELD.classId,
   CREATE_FIELD.familyId,
+  CREATE_FIELD.references,
   CREATE_FIELD.roles,
 ]
 
 export const CREATE_FIELD_LABEL: Record<CreateFieldId, string> = {
+  references: 'Teknik özellikler',
   [CREATE_FIELD.name]: PRODUCT_CREATE_TEXT.nameLabel,
   [CREATE_FIELD.groupId]: PRODUCT_CREATE_TEXT.groupLabel,
   [CREATE_FIELD.classId]: PRODUCT_CREATE_TEXT.classLabel,
@@ -112,6 +117,7 @@ export function isCreateFormPristine(values: CreateFormValues): boolean {
     values.groupId === '' &&
     values.classId === '' &&
     values.familyId === '' &&
+    (!values.technical || !technicalDirty(values.technical)) &&
     PRODUCT_ROLE.every((role) => values.roles[role] === 'unset')
   )
 }
@@ -129,8 +135,11 @@ export function validateCreateForm(
   availableGroupIds: readonly string[],
   availableClassIds: readonly string[] = [],
   availableFamilyIds: readonly string[] = [],
+  options: ProductReferenceOptions | null = null,
 ): CreateFormValidation {
   const errors: CreateFormErrors = {}
+  const technical = values.technical ? technicalWrite(values.technical, options, values.familyId) : null
+  if (technical && !technical.ok) errors.references = Object.values(technical.errors).join(' ')
 
   const name = values.name.trim()
   if (name.length === 0) errors.name = PRODUCT_CREATE_TEXT.validation.nameRequired
@@ -174,6 +183,7 @@ export function validateCreateForm(
     ok: true,
     payload: {
       name,
+      ...(technical?.ok && Object.keys(technical.references).length ? { references: technical.references } : {}),
       groupId: values.groupId,
       // ABSENT rather than null when nothing was chosen: both are optional in the
       // request, and omitting claims less than sending an explicit null.
