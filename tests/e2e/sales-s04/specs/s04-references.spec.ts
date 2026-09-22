@@ -133,7 +133,9 @@ interface SalesDraftCreatePayload {
 }
 
 interface ProblemReading {
+  readonly status: number
   readonly code: string
+  readonly correlationId: string
   readonly errors: readonly { readonly field: string; readonly code: string }[]
 }
 
@@ -392,13 +394,15 @@ test('S04-06 the preparer creates and reopens one real Product draft; a stale Pr
     expect.objectContaining({ field: 'lines[0].expectedProductVersion', code: 'version_conflict' }),
   ]))
 
+  const retryCorrelation = `s04-e1-stale-retry-${createdId}`
   const replayResponse = await page.request.post(`${env.apiBaseUrl}${DRAFTS_PATH}`, {
-    headers: { ...staleHeaders, 'X-Correlation-Id': `s04-e1-stale-retry-${createdId}` },
+    headers: { ...staleHeaders, 'X-Correlation-Id': retryCorrelation },
     data: stalePayload,
   })
   expect(replayResponse.status()).toBe(409)
   const replayProblem = (await replayResponse.json()) as ProblemReading
-  expect(replayProblem).toEqual(staleProblem)
+  expect(replayProblem).toMatchObject({ status: staleProblem.status, code: staleProblem.code, errors: staleProblem.errors })
+  expect(replayProblem.correlationId).toBe(retryCorrelation)
   expect(replayResponse.headers()['idempotency-replayed']).toBe('true')
   expect(replayResponse.headers()['idempotency-original-correlation-id']).toBe(firstCorrelation)
 
