@@ -209,6 +209,29 @@ public sealed partial class OpenApiContractGenerationTests
         new("post", "/api/v1/finance/manual-receipts/{sourceId}/record", "RecordFinanceManualReceiptV1",
             AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json", "400:application/problem+json", "415:", "503:application/problem+json"),
             "#/components/schemas/RecordRequest", ["path:sourceId:true:type:string;format:uuid"]),
+        new("post", "/api/v1/finance/manual-receipts/{sourceId}/reversal-proposals",
+            "ProposeFinanceManualReceiptReversalV1",
+            AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json",
+                "400:application/problem+json", "415:", "503:application/problem+json"),
+            "#/components/schemas/ProposeReversalRequest", ["path:sourceId:true:type:string;format:uuid"]),
+        new("post", "/api/v1/finance/manual-receipts/reversal-proposals/{proposalId}/approval",
+            "ApproveFinanceManualReceiptReversalV1",
+            AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json",
+                "400:application/problem+json", "415:", "503:application/problem+json"),
+            "#/components/schemas/ApproveReversalRequest", ["path:proposalId:true:type:string;format:uuid"]),
+        new("post", "/api/v1/finance/manual-receipts/reversal-proposals/{proposalId}/rejection",
+            "RejectFinanceManualReceiptReversalV1",
+            AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json",
+                "400:application/problem+json", "415:", "503:application/problem+json"),
+            "#/components/schemas/RejectReversalRequest", ["path:proposalId:true:type:string;format:uuid"]),
+        new("get", "/api/v1/finance/manual-receipts/reversal-proposals/pending",
+            "GetPendingFinanceManualReceiptReversalsV1",
+            AuthenticatedResponses("200:application/json", "503:application/problem+json")),
+        new("get", "/api/v1/finance/manual-receipts/reversal-proposals/{proposalId}",
+            "GetFinanceManualReceiptReversalV1",
+            AuthenticatedResponses("200:application/json", "404:application/problem+json",
+                "503:application/problem+json"),
+            ParameterValues: ["path:proposalId:true:type:string;format:uuid"]),
         new("get", "/api/v1/finance/manual-receipts", "GetFinanceManualReceiptsV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["query:cursor:false:type:string"]),
@@ -245,6 +268,12 @@ public sealed partial class OpenApiContractGenerationTests
             AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json", "400:application/problem+json", "415:", "503:application/problem+json"),
             "#/components/schemas/BankAccountProposeRequest"),
         new("post", "/api/v1/finance/bank-accounts/{accountId}/approval", "ApproveFinanceBankAccountV1",
+            AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json", "400:application/problem+json", "415:", "503:application/problem+json"),
+            "#/components/schemas/BankAccountApprovalBody", ["path:accountId:true:type:string;format:uuid"]),
+        new("post", "/api/v1/finance/bank-accounts/{accountId}/iban-change", "ProposeFinanceBankAccountIbanChangeV1",
+            AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json", "400:application/problem+json", "415:", "503:application/problem+json"),
+            "#/components/schemas/BankAccountIbanChangeBody", ["path:accountId:true:type:string;format:uuid"]),
+        new("post", "/api/v1/finance/bank-accounts/{accountId}/iban-change/approval", "ApproveFinanceBankAccountIbanChangeV1",
             AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json", "400:application/problem+json", "415:", "503:application/problem+json"),
             "#/components/schemas/BankAccountApprovalBody", ["path:accountId:true:type:string;format:uuid"]),
         new("get", "/api/v1/finance/bank-accounts/master", "GetFinanceBankAccountMasterV1",
@@ -376,6 +405,11 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetManufacturingOrderV1"] = "ref:OrderViewV1",
             ["SaveFinanceManualReceiptDraftV1"] = "ref:CommandResult",
             ["RecordFinanceManualReceiptV1"] = "ref:CommandResult",
+            ["ProposeFinanceManualReceiptReversalV1"] = "ref:ReversalProposalCommandResult",
+            ["ApproveFinanceManualReceiptReversalV1"] = "ref:ReversalProposalCommandResult",
+            ["RejectFinanceManualReceiptReversalV1"] = "ref:ReversalProposalCommandResult",
+            ["GetPendingFinanceManualReceiptReversalsV1"] = "ref:ReversalProposalPage",
+            ["GetFinanceManualReceiptReversalV1"] = "ref:ReversalProposalView",
             ["GetFinanceManualReceiptsV1"] = "ref:SourcePage",
             ["GetFinanceManualReceiptV1"] = "ref:SourceDetail",
             ["GetFinanceBankAccountsV1"] = "ref:BankAccountPage",
@@ -388,6 +422,8 @@ public sealed partial class OpenApiContractGenerationTests
             ["WithdrawSalesOrderDraftV1"] = "ref:SalesOrderDraftResponse",
             ["ProposeFinanceBankAccountV1"] = "ref:BankAccountCommandResult",
             ["ApproveFinanceBankAccountV1"] = "ref:BankAccountCommandResult",
+            ["ProposeFinanceBankAccountIbanChangeV1"] = "ref:BankAccountCommandResult",
+            ["ApproveFinanceBankAccountIbanChangeV1"] = "ref:BankAccountCommandResult",
             ["GetFinanceBankAccountMasterV1"] = "ref:BankAccountMasterPage",
             ["GetFinanceBankAccountCurrencyCandidatesV1"] = "ref:BankAccountCurrencyCandidates",
             ["GetLoadingInstructionsV1"] = "ref:LoadingInstructionListResponse",
@@ -453,6 +489,11 @@ public sealed partial class OpenApiContractGenerationTests
         "GetManufacturingOrderV1",
         "SaveFinanceManualReceiptDraftV1",
         "RecordFinanceManualReceiptV1",
+        "ProposeFinanceManualReceiptReversalV1",
+        "ApproveFinanceManualReceiptReversalV1",
+        "RejectFinanceManualReceiptReversalV1",
+        "GetPendingFinanceManualReceiptReversalsV1",
+        "GetFinanceManualReceiptReversalV1",
         "GetFinanceManualReceiptsV1",
         "GetFinanceManualReceiptV1",
         "GetFinanceBankAccountsV1",
@@ -464,6 +505,8 @@ public sealed partial class OpenApiContractGenerationTests
         "RejectSalesOrderDraftV1",
         "ProposeFinanceBankAccountV1",
         "ApproveFinanceBankAccountV1",
+        "ProposeFinanceBankAccountIbanChangeV1",
+        "ApproveFinanceBankAccountIbanChangeV1",
         "GetFinanceBankAccountMasterV1",
         "GetFinanceBankAccountCurrencyCandidatesV1",
         "GetLoadingInstructionsV1",
@@ -519,12 +562,17 @@ public sealed partial class OpenApiContractGenerationTests
         "DeclareManufacturingOutputV1",
         "SaveFinanceManualReceiptDraftV1",
         "RecordFinanceManualReceiptV1",
+        "ProposeFinanceManualReceiptReversalV1",
+        "ApproveFinanceManualReceiptReversalV1",
+        "RejectFinanceManualReceiptReversalV1",
         "CreateSalesOrderDraftV1",
         "SubmitSalesOrderDraftV1",
         "ApproveSalesOrderDraftV1",
         "RejectSalesOrderDraftV1",
         "ProposeFinanceBankAccountV1",
         "ApproveFinanceBankAccountV1",
+        "ProposeFinanceBankAccountIbanChangeV1",
+        "ApproveFinanceBankAccountIbanChangeV1",
         "CreateLoadingInstructionV1",
         "IssueLoadingInstructionV1",
         "RecordLoadingInstructionLoadV1",
@@ -581,12 +629,26 @@ public sealed partial class OpenApiContractGenerationTests
                 [
                     StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity,
                 ],
+                ["ProposeFinanceManualReceiptReversalV1"] =
+                [
+                    StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity,
+                ],
+                ["ApproveFinanceManualReceiptReversalV1"] =
+                [
+                    StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity,
+                ],
+                ["RejectFinanceManualReceiptReversalV1"] =
+                [
+                    StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity,
+                ],
                 ["CreateSalesOrderDraftV1"] = [StatusCodes.Status201Created, StatusCodes.Status409Conflict],
                 ["SubmitSalesOrderDraftV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["ApproveSalesOrderDraftV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["RejectSalesOrderDraftV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["ProposeFinanceBankAccountV1"] = [StatusCodes.Status200OK],
                 ["ApproveFinanceBankAccountV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
+                ["ProposeFinanceBankAccountIbanChangeV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
+                ["ApproveFinanceBankAccountIbanChangeV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
                 // INV-OPEN-1 part 2: the count (200 on a replay) and the recorded terminal refusals (§7).
                 ["RecordInventoryOpeningCountV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
                 ["CreateLoadingInstructionV1"] = [StatusCodes.Status201Created, StatusCodes.Status409Conflict],
@@ -624,6 +686,11 @@ public sealed partial class OpenApiContractGenerationTests
         "DeclareManufacturingOutputV1",
         "SaveFinanceManualReceiptDraftV1",
         "RecordFinanceManualReceiptV1",
+        "ProposeFinanceManualReceiptReversalV1",
+        "ApproveFinanceManualReceiptReversalV1",
+        "RejectFinanceManualReceiptReversalV1",
+        "GetPendingFinanceManualReceiptReversalsV1",
+        "GetFinanceManualReceiptReversalV1",
         "GetFinanceManualReceiptsV1",
         "GetFinanceManualReceiptV1",
         "GetFinanceBankAccountsV1",
@@ -634,6 +701,8 @@ public sealed partial class OpenApiContractGenerationTests
         "RejectSalesOrderDraftV1",
         "ProposeFinanceBankAccountV1",
         "ApproveFinanceBankAccountV1",
+        "ProposeFinanceBankAccountIbanChangeV1",
+        "ApproveFinanceBankAccountIbanChangeV1",
         "GetFinanceBankAccountMasterV1",
         "GetFinanceBankAccountCurrencyCandidatesV1",
         "RecordInventoryOpeningCountV1",
@@ -675,6 +744,7 @@ public sealed partial class OpenApiContractGenerationTests
         "DeclareManufacturingOutputV1:404",
         "GetManufacturingOrderV1:404",
         "GetFinanceManualReceiptV1:404",
+        "GetFinanceManualReceiptReversalV1:404",
         "GetSalesOrderDraftV1:404",
         "SubmitSalesOrderDraftV1:404",
         "ApproveSalesOrderDraftV1:404",
@@ -714,6 +784,8 @@ public sealed partial class OpenApiContractGenerationTests
         "GetFinanceBankAccountsV1:400",
         "ProposeFinanceBankAccountV1:400",
         "ApproveFinanceBankAccountV1:400",
+        "ProposeFinanceBankAccountIbanChangeV1:400",
+        "ApproveFinanceBankAccountIbanChangeV1:400",
         "GetFinanceBankAccountMasterV1:400",
         "GetFinanceBankAccountCurrencyCandidatesV1:400",
         "ProposeAccountingPeriodV1:400",
@@ -1186,22 +1258,32 @@ public sealed partial class OpenApiContractGenerationTests
                 // flat view failed to compile (CS1061). A field that travels unnecessarily is a field
                 // that leaks, so its absence there is the design, not an omission.
                 ["BankAccountMasterItem"] = ObjectSchema(
-                    ["account", "isOwnProposal", "card"],
+                    ["account", "isOwnProposal", "card", "isOwnPendingIbanProposal"],
                     ("account", "ref:BankAccountView"),
                     ("isOwnProposal", "type:boolean"),
-                    ("card", "ref:BankAccountCard")),
-                // All six are REQUIRED on the wire while four are nullable, and the pair is the point:
+                    ("card", "ref:BankAccountCard"),
+                    ("isOwnPendingIbanProposal", "type:boolean")),
+                // All eight are REQUIRED on the wire while the card values that can be absent stay nullable:
                 // required means the property is always present, nullable means its value may be absent.
                 // A pre-K2 account has no branch, IBAN or account number, and the schema says so in
                 // types instead of leaving the client to infer it from a missing key.
                 ["BankAccountCard"] = ObjectSchema(
-                    ["bankName", "accountType", "branchName", "branchCode", "iban", "accountNumber"],
+                    ["bankName", "accountType", "branchName", "branchCode", "iban", "accountNumber", "moneyEligibility", "pendingIbanChange"],
                     ("bankName", "type:string"),
                     ("accountType", "type:string"),
                     ("branchName", "type:null|string"),
                     ("branchCode", "type:null|string"),
                     ("iban", "type:null|string"),
-                    ("accountNumber", "type:null|string")),
+                    ("accountNumber", "type:null|string"),
+                    ("moneyEligibility", "ref:BankAccountMoneyEligibility"),
+                    ("pendingIbanChange", "oneOf:ref:BankAccountPendingIbanChange|type:null")),
+                ["BankAccountMoneyEligibility"] = ScalarSchema("enum:Eligible|NotEligible|Undeclared"),
+                ["BankAccountPendingIbanChange"] = ObjectSchema(
+                    ["iban", "proposedBy", "proposedAtUtc", "reason"],
+                    ("iban", "type:string"),
+                    ("proposedBy", "type:string"),
+                    ("proposedAtUtc", "type:string;format:date-time"),
+                    ("reason", "type:string")),
                 ["BankAccountMasterPage"] = ObjectSchema(
                     ["companyId", "items"],
                     ("companyId", "type:string;format:uuid"),
@@ -1302,6 +1384,32 @@ public sealed partial class OpenApiContractGenerationTests
                     ["outcome", "resource", "isReplay", "originalCorrelationId", "issues"],
                     ("outcome", "ref:CommandOutcome"),
                     ("resource", "oneOf:ref:SourceDetail|type:null"),
+                    ("isReplay", "type:boolean"),
+                    ("originalCorrelationId", "type:string"),
+                    ("issues", "type:array;items:ref:ValidationIssue")),
+                ["ReversalProposalStatus"] = ScalarSchema("enum:Pending|Approved|Rejected"),
+                ["ReversalProposalView"] = ObjectSchema(
+                    ["id", "originalSourceId", "occurredOn", "reason", "status", "proposedBy", "proposedAtUtc",
+                        "decidedBy", "decidedAtUtc", "decisionReason", "reversalSourceId", "version"],
+                    ("id", "type:string;format:uuid"),
+                    ("originalSourceId", "type:string;format:uuid"),
+                    ("occurredOn", "type:string;format:date"),
+                    ("reason", "type:string"),
+                    ("status", "ref:ReversalProposalStatus"),
+                    ("proposedBy", "type:string"),
+                    ("proposedAtUtc", "type:string;format:date-time"),
+                    ("decidedBy", "type:null|string"),
+                    ("decidedAtUtc", "type:null|string;format:date-time"),
+                    ("decisionReason", "type:null|string"),
+                    ("reversalSourceId", "type:null|string;format:uuid"),
+                    ("version", "type:string")),
+                ["ReversalProposalPage"] = ObjectSchema(
+                    ["items"],
+                    ("items", "type:array;items:ref:ReversalProposalView")),
+                ["ReversalProposalCommandResult"] = ObjectSchema(
+                    ["outcome", "resource", "isReplay", "originalCorrelationId", "issues"],
+                    ("outcome", "ref:CommandOutcome"),
+                    ("resource", "oneOf:ref:ReversalProposalView|type:null"),
                     ("isReplay", "type:boolean"),
                     ("originalCorrelationId", "type:string"),
                     ("issues", "type:array;items:ref:ValidationIssue")),
@@ -1810,16 +1918,21 @@ public sealed partial class OpenApiContractGenerationTests
                 ["BankAccountApprovalBody"] = ObjectSchema(
                     ["expectedVersion"],
                     ("expectedVersion", "type:string")),
-                // K2: bankName and accountType join displayName and currencyId as REQUIRED on the
-                // proposal, which is where the mandatory pair is enforced — the columns are nullable
-                // because pre-K2 rows have no value, so the rule binds new cards rather than assigning
-                // a meaning to old NULLs (#66 5748390243 is still open).
+                ["BankAccountIbanChangeBody"] = ObjectSchema(
+                    ["expectedVersion", "iban", "reason"],
+                    ("expectedVersion", "type:string"),
+                    ("iban", "type:string"),
+                    ("reason", "type:string")),
+                // K2 requires bankName and accountType; B3 additionally requires the explicit money
+                // movement declaration. Legacy database NULL remains Undeclared and fail-closed, but a
+                // new proposal cannot omit or null this wire-level boolean.
                 ["BankAccountProposeRequest"] = ObjectSchema(
-                    ["displayName", "currencyId", "bankName", "accountType"],
+                    ["displayName", "currencyId", "bankName", "accountType", "moneyMovementEligible"],
                     ("displayName", "type:string"),
                     ("currencyId", "type:string;format:uuid"),
                     ("bankName", "type:string"),
                     ("accountType", "type:string"),
+                    ("moneyMovementEligible", "type:boolean"),
                     ("branchName", "type:null|string"),
                     ("branchCode", "type:null|string"),
                     ("iban", "type:null|string"),
@@ -1880,6 +1993,21 @@ public sealed partial class OpenApiContractGenerationTests
                     ["draftId", "expectedVersion"],
                     ("draftId", "type:string;format:uuid"),
                     ("expectedVersion", "type:string")),
+                ["ProposeReversalRequest"] = ObjectSchema(
+                    ["sourceId", "expectedVersion", "occurredOn", "reason"],
+                    ("sourceId", "type:string;format:uuid"),
+                    ("expectedVersion", "type:string"),
+                    ("occurredOn", "type:string;format:date"),
+                    ("reason", "type:string")),
+                ["ApproveReversalRequest"] = ObjectSchema(
+                    ["proposalId", "expectedVersion"],
+                    ("proposalId", "type:string;format:uuid"),
+                    ("expectedVersion", "type:string")),
+                ["RejectReversalRequest"] = ObjectSchema(
+                    ["proposalId", "expectedVersion", "reason"],
+                    ("proposalId", "type:string;format:uuid"),
+                    ("expectedVersion", "type:string"),
+                    ("reason", "type:string")),
                 ["ApprovePlanRequestV1"] = ObjectSchema(
                     ["expectedVersion"],
                     ("expectedVersion", "type:integer|string;format:int64")),
@@ -2510,9 +2638,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(86, operations.Count);
+        Assert.Equal(92, operations.Count);
         Assert.Equal(
-            86,
+            92,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());
@@ -2532,9 +2660,11 @@ public sealed partial class OpenApiContractGenerationTests
             }
             Assert.Equal(expected.Method, actual.Method);
             Assert.Equal(expected.Path, actual.Path);
-            Assert.Equal(
-                expected.Responses.Order(StringComparer.Ordinal),
-                SnapshotResponses(actual.Value).Order(StringComparer.Ordinal));
+            var expectedResponses = expected.Responses.Order(StringComparer.Ordinal).ToArray();
+            var actualResponses = SnapshotResponses(actual.Value).Order(StringComparer.Ordinal).ToArray();
+            Assert.True(
+                expectedResponses.SequenceEqual(actualResponses, StringComparer.Ordinal),
+                $"{expected.OperationId} response drift. Expected: {string.Join(", ", expectedResponses)}; Actual: {string.Join(", ", actualResponses)}");
             Assert.Equal(
                 ExpectedSuccessSchemas[expected.OperationId],
                 SnapshotSuccessSchema(actual.Value));

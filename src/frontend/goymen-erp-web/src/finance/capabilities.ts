@@ -26,11 +26,15 @@ export const FINANCE_CAPABILITY = {
   /** F-04 — the approval control of the list (not a route). */
   bankAccountsApprove: 'finance.bank-accounts.approve',
   /**
-   * F-02 — the Record control of the detail (not a route; FIN-T05a). No provider declares it yet: the declaration and
-   * its authority revision are central, so `hasCapability` answers false and the control is never offered before that
-   * round — which is a separate slice from K1, the decision that gave the server its period rule.
+   * F-02 — the Record control of the detail (not a route; FIN-T05a). Provider contract 1.1 declares it; the shared
+   * shell only serves it after the central owner binds the reviewed 1.1 authority revision. Until then startup stays
+   * fail-closed rather than offering an unreviewed control.
    */
   receiptsRecord: 'finance.receipts.record',
+  /** FIN-T06/B1: proposal control on a recorded receipt detail. */
+  receiptsReversePropose: 'finance.receipts.reverse.propose',
+  /** FIN-T06/B1: pending reversal checker route. */
+  receiptsReverseApprove: 'finance.receipts.reverse.approve',
 } as const
 
 export type FinanceCapabilityId = (typeof FINANCE_CAPABILITY)[keyof typeof FINANCE_CAPABILITY]
@@ -40,6 +44,7 @@ export const FINANCE_ROUTE = {
   // Static before the parameter route: `yeni` must never be read as a source id.
   receiptsDraft: '/finans/tahsilatlar/yeni',
   receiptsDetail: '/finans/tahsilatlar/:sourceId',
+  reversalApprovals: '/finans/ters-kayit-onaylari',
   bankAccountsList: '/finans/banka-hesaplari',
   bankAccountsPropose: '/finans/banka-hesaplari/yeni',
 } as const

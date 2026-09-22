@@ -31,8 +31,8 @@ namespace GoymenERP.Finance.UnitTests;
 ///
 /// <para>
 /// NO EXEMPTION LIST, DELIBERATELY. The rule is "nameless OR registered", so <c>Reverse</c> passes
-/// because it genuinely has no name yet (FIN-T06; its authority is the half of OPEN-009 nobody has
-/// answered) — not because someone listed it. The day Reverse gets a name, this test demands its
+/// because the legacy direct command is deliberately unpublished — FIN-T06 uses separate persistent
+/// propose/approve actions — not because someone listed it. The day Reverse gets a name, this test demands its
 /// registration with nobody having edited anything here. An exemption list would be a guard carrying
 /// its own silencer: the next person meeting a red adds their action to the list and the guard stops
 /// guarding.
@@ -43,13 +43,14 @@ namespace GoymenERP.Finance.UnitTests;
 /// <c>_ => null</c>, so namelessness is the DEFAULT: a new <see cref="FinanceAction"/> whose author
 /// forgot to add a mapping arm is indistinguishable, to the rule above, from one that deliberately has
 /// no name — and it would pass while being a command that answers Unavailable forever. So the set of
-/// nameless actions is pinned to exactly the actions whose authority is an OPEN DECISION (today:
-/// <c>Reverse</c>). That is not the exemption list refused above: an exemption list excuses an action
+/// nameless actions is pinned to exactly the deliberately unpublished legacy actions (today: <c>Reverse</c>).
+/// That is not the exemption list refused above: an exemption list excuses an action
 /// from the registration rule, whereas this converts silence into a signal — a new nameless action
 /// turns this red, and the only honest repairs are to give it a registered name or to record why its
 /// authority is still undecided. The tension is real and stated plainly: someone could satisfy the red
 /// by adding a member instead of thinking. What makes that visible is that membership here carries a
-/// REASON (FIN-T06 / OPEN-009), so a member without one is a review finding, not a passing test.
+/// REASON (legacy direct Reverse is replaced by FIN-T06 propose/approve), so a member without one is a
+/// review finding, not a passing test.
 /// </para>
 ///
 /// <para>
@@ -141,16 +142,16 @@ public sealed class FinanceActionPermissionNameRegistrationTests
     /// Closes the left branch's hole. Because <c>NameOf</c> ends in <c>_ => null</c>, an action added
     /// without a mapping arm is silently "nameless" and the rule above waves it through — while the
     /// product answers Unavailable for it forever. So the nameless set is pinned, and the reason each
-    /// member is nameless is named here rather than left as bare membership: <c>Reverse</c> is FIN-T06,
-    /// whose authority is the unanswered half of OPEN-009.
+    /// member is nameless is named here rather than left as bare membership: legacy direct
+    /// <c>Reverse</c> stays unpublished because FIN-T06 uses distinct propose/approve actions.
     /// <para>
     /// A new action arriving here turns this red. The honest repairs are to give it a name that the
-    /// central registry knows, or to state why its authority is still an open human decision. Adding a
+    /// central registry knows, or to state why it must remain deliberately unpublished. Adding a
     /// member without that reason satisfies the compiler and not the review.
     /// </para>
     /// </summary>
     [Fact]
-    public void The_only_nameless_action_is_the_one_whose_authority_is_still_an_open_decision()
+    public void The_only_nameless_action_is_the_deliberately_unpublished_legacy_direct_command()
     {
         var nameless = Enum.GetValues<FinanceAction>()
             .Where(action => FinancePermissionPort.NameOf(action) is null)

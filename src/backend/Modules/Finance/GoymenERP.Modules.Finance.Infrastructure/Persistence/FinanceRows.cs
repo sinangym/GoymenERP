@@ -76,10 +76,16 @@ internal sealed class MoneyEventRow : IFinanceTenantRow
     public string CorrelationId { get; set; } = string.Empty;
 }
 
-/// <summary>The kinds of money event; only a recorded manual bank receipt exists (reversal is FIN-T06).</summary>
+/// <summary>The distinct recorded and reversing manual bank receipt money-event kinds.</summary>
 internal static class MoneyEventKinds
 {
     public const int ManualBankReceiptRecorded = 1;
+
+    /// <summary>
+    /// FIN-T06: an immutable counter-event. Amount stays exact-positive text;
+    /// the kind, source link and proposal establish reversal semantics.
+    /// </summary>
+    public const int ManualBankReceiptReversed = 2;
 }
 
 /// <summary>
@@ -97,8 +103,8 @@ internal sealed class BankAccountRow : IFinanceTenantRow
 
     // K2 (Sinan #66 5748258299): the card. BankName and AccountType are MANDATORY for a card written
     // from now on — enforced where the card is written, not by the column, because the column also has
-    // to hold the rows that already exist. Those predate K2 and carry NULL; what they mean is the open
-    // question #66 5748390243, so nothing here backfills, defaults or reinterprets them.
+    // to hold the rows that already exist. Those predate K2 and carry NULL, and B3 (#66 5750700247)
+    // now says what they mean: nothing here backfills, defaults or reinterprets them.
     public string? BankName { get; set; }
     public string? AccountType { get; set; }
     public string? BranchName { get; set; }
@@ -107,6 +113,25 @@ internal sealed class BankAccountRow : IFinanceTenantRow
     // Normalised (no spaces, upper case) when present, so the stored value is the validated value.
     public string? Iban { get; set; }
     public string? AccountNumber { get; set; }
+
+    /// <summary>
+    /// B3: the card's own statement that it may move money. NULL is the LEGACY row and means UNDECLARED,
+    /// which is refused on the money path — "Banka adı+tür+IBAN'ın dolu olması bu açık beyanın yerine
+    /// geçmez". The column is nullable for exactly one reason: to carry rows written before the
+    /// declaration existed, without inventing a value for them. It is required of every card written
+    /// from now on, enforced where the card is written.
+    /// </summary>
+    public bool? MoneyMovementEligible { get; set; }
+
+    /// <summary>
+    /// D4: an IBAN change proposed on an APPROVED account, waiting for its own Ö4 approval. It lives
+    /// beside the row and never in <see cref="Iban"/> until approved, so the approved value the money
+    /// path reads does not move while a change is pending. All four are NULL together or set together.
+    /// </summary>
+    public string? PendingIban { get; set; }
+    public string? PendingIbanProposedBy { get; set; }
+    public DateTimeOffset? PendingIbanProposedAtUtc { get; set; }
+    public string? PendingIbanReason { get; set; }
 
     public int Status { get; set; }
     public long Version { get; set; }
@@ -133,6 +158,7 @@ internal sealed class FinanceCommandRow : IFinanceTenantRow
     public string PayloadHash { get; set; } = string.Empty;
     public Guid? DraftId { get; set; }
     public Guid? BankAccountId { get; set; }
+    public Guid? ReversalProposalId { get; set; }
     public string ResultJson { get; set; } = string.Empty;
     public string CorrelationId { get; set; } = string.Empty;
     public DateTimeOffset RecordedAtUtc { get; set; }

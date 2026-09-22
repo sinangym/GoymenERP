@@ -74,6 +74,17 @@ public sealed class FinanceShellCapabilitySqlServerRelationalAcceptanceTests
                 "finance.bank-accounts.approve", "finance.bank-accounts.list", "finance.bank-accounts.propose",
                 "finance.receipts.detail", "finance.receipts.draft", "finance.receipts.list");
 
+            // D1: Record stays hidden until the same persona has both its money command and the
+            // caller-scoped Accounting period read. Neither is inferred from draft access.
+            await GrantAsync(factory, TestUsers.CompanyA, CompanyA, FinancePermissionNames.Record, AccessScopeType.Company, CompanyA);
+            await AssertFinanceAsync(factory, CompanyA,
+                "finance.bank-accounts.approve", "finance.bank-accounts.list", "finance.bank-accounts.propose",
+                "finance.receipts.detail", "finance.receipts.draft", "finance.receipts.list");
+            await GrantAsync(factory, TestUsers.CompanyA, CompanyA, ErpPermissions.AccountingPeriodsRead, AccessScopeType.Company, CompanyA);
+            await AssertFinanceAsync(factory, CompanyA,
+                "finance.bank-accounts.approve", "finance.bank-accounts.list", "finance.bank-accounts.propose",
+                "finance.receipts.detail", "finance.receipts.draft", "finance.receipts.list", "finance.receipts.record");
+
             // ---- ORG #348 P3-1: every side of an AND, alone ------------------------------------------
             // Each case is ONE actor with exactly the grants it names. The context company differs between a
             // user's two cases, so an earlier grant of that user can never carry into the next case.

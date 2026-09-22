@@ -55,9 +55,11 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
             new LogisticsShellCapabilityProvider(), new PurchasingShellCapabilityProvider(),
         ];
 
-        // On failure xUnit prints the actual revision: the constant is never guessed.
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV10PublishedFinanceV10PublishedManufacturingV10LogisticsV10AndPurchasingV10,
-            ShellCapabilityRegistry.ComputeCandidateRevision(providers));
+        var actual = ShellCapabilityRegistry.ComputeCandidateRevision(providers);
+        Assert.True(
+            string.Equals(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV10PublishedFinanceV11PublishedManufacturingV10LogisticsV10AndPurchasingV10, actual,
+                StringComparison.Ordinal),
+            $"Purchasing normal-host authority drifted. Actual: {actual}");
     }
 
     [Fact]
@@ -68,7 +70,7 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
         var authority = C01E2eShellCapabilityActivation.Configure(services, new TestingEnvironment(),
             new ConfigurationBuilder().Build());
 
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV10PublishedFinanceV10PublishedManufacturingV10LogisticsV10AndPurchasingV10, authority);
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV10PublishedFinanceV11PublishedManufacturingV10LogisticsV10AndPurchasingV10, authority);
         using var container = services.BuildServiceProvider();
         var registry = new ShellCapabilityRegistry(container.GetServices<IShellCapabilityProvider>(),
             new ShellCapabilityAuthorityCatalog([authority]));

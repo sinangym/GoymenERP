@@ -19,6 +19,11 @@ const ROUTED = [
   [CAPABILITY.financeReceiptsList, FINANCE_CAPABILITY.receiptsList, FINANCE_ROUTE.receiptsList],
   [CAPABILITY.financeReceiptsDraft, FINANCE_CAPABILITY.receiptsDraft, FINANCE_ROUTE.receiptsDraft],
   [CAPABILITY.financeReceiptsDetail, FINANCE_CAPABILITY.receiptsDetail, FINANCE_ROUTE.receiptsDetail],
+  [
+    CAPABILITY.financeReceiptsReverseApprove,
+    FINANCE_CAPABILITY.receiptsReverseApprove,
+    FINANCE_ROUTE.reversalApprovals,
+  ],
   [CAPABILITY.financeBankAccountsList, FINANCE_CAPABILITY.bankAccountsList, FINANCE_ROUTE.bankAccountsList],
   [CAPABILITY.financeBankAccountsPropose, FINANCE_CAPABILITY.bankAccountsPropose, FINANCE_ROUTE.bankAccountsPropose],
 ] as const
@@ -26,7 +31,8 @@ const ROUTED = [
 /**
  * CONTROLS are capabilities the lane offers INSIDE a screen, never as a screen of their own: the
  * bank-account approval on F-04's list, and the Record of a definitive receipt on F-02's detail
- * (FIN-T05a). Each is deliberately absent from the shell's table, from `CAPABILITY_ROUTE` and from
+ * (FIN-T05a), and reversal proposal on that recorded receipt (FIN-T06). Each is deliberately absent
+ * from the shell's table, from `CAPABILITY_ROUTE` and from
  * `CAPABILITY_NAV_LABEL` — a control with a route would be a second entry point to an action that
  * belongs inside its list, and a control with a nav label would be a sidebar link to something that
  * is not a screen. They are listed here rather than excused one by one, so the next control fails
@@ -35,6 +41,7 @@ const ROUTED = [
 const CONTROLS: readonly string[] = [
   FINANCE_CAPABILITY.bankAccountsApprove,
   FINANCE_CAPABILITY.receiptsRecord,
+  FINANCE_CAPABILITY.receiptsReversePropose,
 ]
 
 describe('shell ↔ Finance lane capability ids', () => {
@@ -50,7 +57,7 @@ describe('shell ↔ Finance lane capability ids', () => {
     ).toEqual([...classified].sort())
   })
 
-  it('declares the lane’s five route ids with the lane’s values and routes', () => {
+  it('declares the lane’s six route ids with the lane’s values and routes', () => {
     for (const [shellId, laneId, route] of ROUTED) {
       expect(shellId).toBe(laneId)
       expect(CAPABILITY_ROUTE[shellId]).toBe(route)
@@ -85,13 +92,14 @@ describe('shell ↔ Finance lane capability ids', () => {
     expect(matchPath(CAPABILITY_ROUTE[CAPABILITY.financeBankAccountsList], FINANCE_ROUTE.bankAccountsPropose)).toBeNull()
   })
 
-  it('gives the two lists nav entries and the other three none', () => {
+  it('gives the two lists and reversal queue nav entries and the other three none', () => {
     const labels: Record<string, string> = {}
     for (const [shellId] of ROUTED) labels[shellId] = CAPABILITY_NAV_LABEL[shellId as CapabilityId]
     expect(labels).toEqual({
       'finance.receipts.list': 'Tahsilat Taslakları',
       'finance.receipts.draft': '',
       'finance.receipts.detail': '',
+      'finance.receipts.reverse.approve': 'Ters Kayıt Onayları',
       'finance.bank-accounts.list': 'Banka Hesapları',
       'finance.bank-accounts.propose': '',
     })

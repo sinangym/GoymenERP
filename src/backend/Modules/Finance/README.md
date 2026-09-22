@@ -113,8 +113,9 @@ contract `GoymenERP.Modules.Finance.Contracts` (#258, #261). The contract's own 
   | `ReadAmount` | `finance.manual-receipt.amount.read` |
   | `ReadBankAccounts` | `finance.bank-account.read` (FS0) |
 
-  Record's name is `finance.manual-receipt.record` since FIN-T05a (Ö4; registered centrally in FIN-T05's round). Reverse has
-  no name (FIN-T06).
+  Record's name is `finance.manual-receipt.record` since FIN-T05a. FIN-T06 uses the separate
+  `finance.manual-receipt.reverse.propose` and `finance.manual-receipt.reverse.approve` names; legacy direct Reverse
+  remains unavailable. Names are declarations, not grants.
 
   Registering it was **not behaviour-neutral**, and the change is visible to the caller: Record moved from the port's
   "name unknown → `Unavailable`" branch, which asks the authority nothing and answers 503, to "name known → measured",
@@ -138,7 +139,7 @@ contract `GoymenERP.Modules.Finance.Contracts` (#258, #261). The contract's own 
 - **Audit (ADR-009):** a proposal is audited with the roles that granted `finance.bank-account.propose`, an approval with those of `finance.bank-account.approve` (`FinanceBankAccountEnvelopes`).
 - **ADR-011 §7:** an authorized terminal refusal is the key's result for good: for the save, `draft_not_found` (422) and a stale `expectedVersion` (409); for the approval, `bank_account_not_found` (422) and a stale version (409). It is recorded alone (no business change, no audit event) and replayed with its first correlation even after the target moved on. A refusal whose target does not exist has none: `CK_Commands_Target` admits a target-less record only when its stored outcome is `ValidationFailed` (migration `RecordTerminalCommandResults`, whose `Down` restores the stricter rule and fails visibly if such a row exists). Refusals on the merits (an owner's answer, a currency outside the candidates) are not terminal and are not recorded.
 - **ADR-011 §8:** a save that loses a race (a unique key or the row version) keeps nothing tracked and reads the key afresh: if another caller of the same key won, its record is this answer too, as a replay; only a race that left the key empty is `concurrent_change` (409).
-- **Shell (published, FIN-UI-1c):** `Shell/FinanceShellCapabilityProvider` declares F-02's list, draft and detail routes, F-04's list and propose routes and the approval as a control of the list, all `ImplementationAvailable: true` since the flip after the FIN-01 browser acceptance (#332). A screen reaches an actor only with its own narrow Finance permission (real-SQL grant matrix: `FinanceShellCapabilitySqlServerRelationalAcceptanceTests`); no grant is seeded. One screen id per route, as the registry requires: F-02 and F-04 (the catalog's ids) for the lists, F-02-NEW, F-02-DETAIL and F-04-NEW for the others; the approval keeps F-04. `FinanceShellCapabilityRegistryTests` runs it through the real registry. The host registers it with its shell authority (central).
+- **Shell (provider 1.1, central authority pending):** `Shell/FinanceShellCapabilityProvider` declares nine published capabilities: six routes plus the F-04 approval, F-02 Record and F-02 reversal-proposal controls. Reversal approval has its own checker route. A declaration grants nothing; each action measures its narrow Finance permission, and Record additionally requires Accounting period read. The shared-shell owner binds the reviewed authority revision and its hashes centrally before the normal host can serve this provider set.
 
 ## FIN-T05: Record of a realized manual bank receipt (card #66 5743678389)
 
@@ -159,9 +160,9 @@ contract `GoymenERP.Modules.Finance.Contracts` (#258, #261). The contract's own 
 > Both are definite refusals, not an outage 503 that a screen would treat as an unknown outcome to resend, and neither
 > is the idempotency key's answer.
 >
-> **Still open:** the Record control's capability (`finance.receipts.record`) is declared by no provider yet, because
-> its authority revision is central; until that round the screen never offers Record. FIN-T05's number format is also
-> unanswered, so the source keeps showing its own labelled reference.
+> **Integration boundary:** provider contract 1.1 declares the Record and FIN-T06 controls, but the authority revision
+> is central. Until the shared-shell owner binds the reviewed 1.1 revision, startup remains fail-closed. FIN-T05's
+> number format is still unanswered, so the source keeps showing its own labelled reference.
 
 - **Command:** `POST /api/v1/finance/manual-receipts/{sourceId}/record`, body the #258 `RecordRequest` (`draftId` must be
   the route's `sourceId`, else 400), `Idempotency-Key`; answered like the save (200 / 422 / 409; 403 / 503 code-less).
@@ -184,10 +185,11 @@ contract `GoymenERP.Modules.Finance.Contracts` (#258, #261). The contract's own 
 - **Migration** `20260920090000_AddMoneyEvents`: the stage and record trace on `ReceiptDrafts` (`CK_ReceiptDrafts_Stage`)
   and `MoneyEvents`. Down refuses with `THROW 51051` (Finance's module number, coordinator-assigned) while any money event
   or recorded source exists: a forward fix.
-- **Screen:** the F-02 detail offers Record only to the holder of the `finance.receipts.record` control; no provider
-  declares it until FIN-T05's central round, so it is not offered.
+- **Screen:** the F-02 detail offers Record only when the shell returns `finance.receipts.record`; provider 1.1 declares
+  it, while the shared authority binding and grants remain separate gates.
 - **Not here:** no allocation, no journal (ACC-V1 takes the recorded source later), no official document (Ö8), no balance
-  or statement read (FIN-T05b), no reversal (FIN-T06), no number series (Q2: the source shows its id).
+  or statement read (FIN-T05b), no legacy direct reversal, no number series (Q2: the source shows its id). FIN-T06's
+  governed proposal/checker flow is separate from direct reversal.
 
 ## Validation
 

@@ -160,6 +160,8 @@ export const CAPABILITY = {
   financeReceiptsDraft: 'finance.receipts.draft',
   /** F-02 one draft. Route `/finans/tahsilatlar/:sourceId`. A SEPARATE grant from the list. */
   financeReceiptsDetail: 'finance.receipts.detail',
+  /** FIN-T06 pending reversal checker queue. Route `/finans/ters-kayit-onaylari`. */
+  financeReceiptsReverseApprove: 'finance.receipts.reverse.approve',
   /** F-04 bank-account master. Route `/finans/banka-hesaplari`. */
   financeBankAccountsList: 'finance.bank-accounts.list',
   /**
@@ -235,6 +237,7 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as a source id.
   [CAPABILITY.financeReceiptsDraft]: '/finans/tahsilatlar/yeni',
   [CAPABILITY.financeReceiptsDetail]: '/finans/tahsilatlar/:sourceId',
+  [CAPABILITY.financeReceiptsReverseApprove]: '/finans/ters-kayit-onaylari',
   [CAPABILITY.financeBankAccountsList]: '/finans/banka-hesaplari',
   [CAPABILITY.financeBankAccountsPropose]: '/finans/banka-hesaplari/yeni',
   [CAPABILITY.accountingPeriodsList]: '/muhasebe/donemler',
@@ -288,6 +291,7 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   // `NAV_CAPABILITIES` gains exactly ONE Manufacturing entry.
   [CAPABILITY.manufacturingOrdersDetail]: '',
   [CAPABILITY.financeReceiptsList]: 'Tahsilat Taslakları',
+  [CAPABILITY.financeReceiptsReverseApprove]: 'Ters Kayıt Onayları',
   [CAPABILITY.financeBankAccountsList]: 'Banka Hesapları',
   // None of these three: the new draft is entered from a Cari account, the detail from a list row and
   // the propose screen from the F-04 list, never from the sidebar.

@@ -210,6 +210,25 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
                 .HasMaxLength(34)
                 .HasColumnType("nvarchar(34)");
 
+            b.Property<bool?>("MoneyMovementEligible")
+                .HasColumnType("bit");
+
+            b.Property<string>("PendingIban")
+                .HasMaxLength(34)
+                .HasColumnType("nvarchar(34)");
+
+            b.Property<DateTimeOffset?>("PendingIbanProposedAtUtc")
+                .HasColumnType("datetimeoffset");
+
+            b.Property<string>("PendingIbanProposedBy")
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)")
+                .UseCollation("Latin1_General_100_BIN2");
+
+            b.Property<string>("PendingIbanReason")
+                .HasMaxLength(500)
+                .HasColumnType("nvarchar(500)");
+
             b.Property<DateTimeOffset>("ProposedAtUtc")
                 .HasColumnType("datetimeoffset");
 
@@ -244,6 +263,10 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
                 t.HasCheckConstraint(
                     "CK_BankAccounts_Identity",
                     "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000'");
+
+                t.HasCheckConstraint(
+                    "CK_BankAccounts_PendingIbanChange",
+                    "([PendingIban] IS NULL AND [PendingIbanProposedBy] IS NULL AND [PendingIbanProposedAtUtc] IS NULL AND [PendingIbanReason] IS NULL) OR ([PendingIban] IS NOT NULL AND [PendingIbanProposedBy] IS NOT NULL AND LEN([PendingIbanProposedBy]) > 0 AND [PendingIbanProposedAtUtc] IS NOT NULL AND [PendingIbanReason] IS NOT NULL AND LEN([PendingIbanReason]) > 0)");
 
                 t.HasCheckConstraint(
                     "CK_BankAccounts_Text",
@@ -286,6 +309,9 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
             b.Property<Guid?>("DraftId")
                 .HasColumnType("uniqueidentifier");
 
+            b.Property<Guid?>("ReversalProposalId")
+                .HasColumnType("uniqueidentifier");
+
             b.Property<string>("PayloadHash")
                 .IsRequired()
                 .HasMaxLength(64)
@@ -304,6 +330,8 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
             b.HasIndex("CompanyId", "BankAccountId");
 
             b.HasIndex("CompanyId", "DraftId");
+
+            b.HasIndex("CompanyId", "ReversalProposalId");
 
             b.ToTable("Commands", "finance", t =>
             {
@@ -325,7 +353,7 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
 
                 t.HasCheckConstraint(
                     "CK_Commands_Target",
-                    "([DraftId] IS NOT NULL AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [BankAccountId] IS NULL) OR ([BankAccountId] IS NOT NULL AND [BankAccountId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL) OR ([DraftId] IS NULL AND [BankAccountId] IS NULL AND JSON_VALUE([ResultJson], '$.outcome') = 'ValidationFailed')");
+                    "([DraftId] IS NOT NULL AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [BankAccountId] IS NULL AND [ReversalProposalId] IS NULL) OR ([BankAccountId] IS NOT NULL AND [BankAccountId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL AND [ReversalProposalId] IS NULL) OR ([ReversalProposalId] IS NOT NULL AND [ReversalProposalId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL AND [BankAccountId] IS NULL) OR ([DraftId] IS NULL AND [BankAccountId] IS NULL AND [ReversalProposalId] IS NULL AND JSON_VALUE([ResultJson], '$.outcome') = 'ValidationFailed')");
             });
         });
 
@@ -404,11 +432,40 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
 
                 t.HasCheckConstraint(
                     "CK_MoneyEvents_Kind",
-                    "[Kind] = 1");
+                    "[Kind] IN (1, 2)");
 
                 t.HasCheckConstraint(
                     "CK_MoneyEvents_Text",
                     "LEN([AmountText]) > 0 AND LEN([ProfileId]) > 0 AND LEN([ProfileVersion]) > 0 AND LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
+            });
+        });
+
+        modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.ReversalProposalRow", b =>
+        {
+            b.Property<Guid>("Id").ValueGeneratedNever().HasColumnType("uniqueidentifier");
+            b.Property<Guid>("CompanyId").HasColumnType("uniqueidentifier");
+            b.Property<Guid>("OriginalSourceId").HasColumnType("uniqueidentifier");
+            b.Property<DateOnly>("OccurredOn").HasColumnType("date");
+            b.Property<string>("Reason").IsRequired().HasMaxLength(1000).HasColumnType("nvarchar(1000)");
+            b.Property<int>("Status").HasColumnType("int");
+            b.Property<string>("ProposedBy").IsRequired().HasMaxLength(128).HasColumnType("nvarchar(128)").UseCollation("Latin1_General_100_BIN2");
+            b.Property<DateTimeOffset>("ProposedAtUtc").HasColumnType("datetimeoffset");
+            b.Property<string>("DecidedBy").HasMaxLength(128).HasColumnType("nvarchar(128)").UseCollation("Latin1_General_100_BIN2");
+            b.Property<DateTimeOffset?>("DecidedAtUtc").HasColumnType("datetimeoffset");
+            b.Property<string>("DecisionReason").HasMaxLength(1000).HasColumnType("nvarchar(1000)");
+            b.Property<Guid?>("ReversalSourceId").HasColumnType("uniqueidentifier");
+            b.Property<long>("Version").IsConcurrencyToken().HasColumnType("bigint");
+            b.HasKey("Id");
+            b.HasAlternateKey("CompanyId", "Id");
+            b.HasIndex(new[] { "CompanyId", "OriginalSourceId" }, "UX_ReversalProposals_PendingOriginal").IsUnique().HasFilter("[Status] = 0");
+            b.HasIndex(new[] { "CompanyId", "OriginalSourceId" }, "UX_ReversalProposals_ApprovedOriginal").IsUnique().HasFilter("[Status] = 1");
+            b.HasIndex("CompanyId", "ReversalSourceId");
+            b.ToTable("ReversalProposals", "finance", t =>
+            {
+                t.HasCheckConstraint("CK_ReversalProposals_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [OriginalSourceId] <> '00000000-0000-0000-0000-000000000000'");
+                t.HasCheckConstraint("CK_ReversalProposals_Text", "LEN([Reason]) > 0 AND LEN([ProposedBy]) > 0");
+                t.HasCheckConstraint("CK_ReversalProposals_Version", "[Version] >= 1");
+                t.HasCheckConstraint("CK_ReversalProposals_Decision", "([Status] = 0 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [DecisionReason] IS NULL AND [ReversalSourceId] IS NULL) OR ([Status] = 1 AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL AND [DecisionReason] IS NULL AND [ReversalSourceId] IS NOT NULL AND [ReversalSourceId] <> [OriginalSourceId] AND [ProposedBy] <> [DecidedBy]) OR ([Status] = 2 AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL AND [DecisionReason] IS NOT NULL AND LEN([DecisionReason]) > 0 AND [ReversalSourceId] IS NULL AND [ProposedBy] <> [DecidedBy])");
             });
         });
 
@@ -558,6 +615,12 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
                 .HasPrincipalKey("CompanyId", "Id")
                 .OnDelete(DeleteBehavior.Restrict);
 
+            b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.ReversalProposalRow", null)
+                .WithMany()
+                .HasForeignKey("CompanyId", "ReversalProposalId")
+                .HasPrincipalKey("CompanyId", "Id")
+                .OnDelete(DeleteBehavior.Restrict);
+
             b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.ReceiptDraftRow", null)
                 .WithMany()
                 .HasForeignKey("CompanyId", "DraftId")
@@ -579,6 +642,18 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
                 .HasPrincipalKey("CompanyId", "Id")
                 .OnDelete(DeleteBehavior.Restrict)
                 .IsRequired();
+        });
+
+        modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.ReversalProposalRow", b =>
+        {
+            b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                .WithMany().HasForeignKey("CompanyId").OnDelete(DeleteBehavior.Restrict).IsRequired();
+            b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.ReceiptDraftRow", null)
+                .WithMany().HasForeignKey("CompanyId", "OriginalSourceId")
+                .HasPrincipalKey("CompanyId", "Id").OnDelete(DeleteBehavior.Restrict).IsRequired();
+            b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.ReceiptDraftRow", null)
+                .WithMany().HasForeignKey("CompanyId", "ReversalSourceId")
+                .HasPrincipalKey("CompanyId", "Id").OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.ReceiptDraftRow", b =>

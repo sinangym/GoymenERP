@@ -29,9 +29,11 @@ public sealed class FinanceShellRegistrationTests
             new FinanceShellCapabilityProvider(),
         ];
 
-        // On failure xUnit prints the actual revision: the constant is never guessed.
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV10AndPublishedFinanceV10,
-            ShellCapabilityRegistry.ComputeCandidateRevision(providers));
+        var actual = ShellCapabilityRegistry.ComputeCandidateRevision(providers);
+        Assert.True(
+            string.Equals(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV10AndPublishedFinanceV11, actual,
+                StringComparison.Ordinal),
+            $"Finance normal-host authority drifted. Actual: {actual}");
     }
 
     [Fact]
@@ -47,7 +49,7 @@ public sealed class FinanceShellRegistrationTests
         var authority = C01E2eShellCapabilityActivation.Configure(services, new TestingEnvironment(),
             new ConfigurationBuilder().Build());
 
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV10AndPublishedFinanceV10,
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV10AndPublishedFinanceV11,
             authority);
         using var container = services.BuildServiceProvider();
         var registry = new ShellCapabilityRegistry(container.GetServices<IShellCapabilityProvider>(),
@@ -55,9 +57,9 @@ public sealed class FinanceShellRegistrationTests
         var finance = registry.Registrations
             .Where(item => item.Owner == FinanceShellCapabilityProvider.OwnerId)
             .ToArray();
-        // Five routes and the approval control, published after the FIN-01 acceptance (#332, FIN-UI-1c). A
-        // declaration still grants nothing: each route's service measures its own Finance permission afresh.
-        Assert.Equal(6, finance.Length);
+        // Seven routes plus record and reversal-propose controls. A declaration still grants nothing:
+        // each route or control service measures its own Finance permission afresh.
+        Assert.Equal(9, finance.Length);
         Assert.All(finance, item => Assert.True(item.Declaration.ImplementationAvailable));
         // Three Sales screens plus the SALES-A1 approve control.
         Assert.Equal(4, registry.Registrations.Count(item => item.Owner == SalesShellCapabilityProvider.OwnerId));

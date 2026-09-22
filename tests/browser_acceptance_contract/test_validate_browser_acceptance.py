@@ -83,6 +83,24 @@ class PrivacyTests(unittest.TestCase):
 class WorkflowTests(unittest.TestCase):
     workflow = WORKFLOW.read_text(encoding="utf-8")
 
+    def test_fin01_identity_permissions_match_the_owner_fixture_closed_list(self):
+        self.assertEqual(
+            (
+                "finance.bank-account.read",
+                "finance.bank-account.propose",
+                "finance.bank-account.approve",
+                "finance.manual-receipt.draft.save",
+                "finance.manual-receipt.draft.read",
+                "finance.manual-receipt.amount.read",
+                "counterparty.parties.read",
+                "finance.manual-receipt.record",
+                "accounting.periods.read",
+                "finance.manual-receipt.reverse.propose",
+                "finance.manual-receipt.reverse.approve",
+            ),
+            validator.SUITE_IDENTITY_PERMISSIONS["fin01"],
+        )
+
     def _trigger_block(self) -> str:
         return self.workflow.split("\non:\n", 1)[1].split("\npermissions:\n", 1)[0]
 

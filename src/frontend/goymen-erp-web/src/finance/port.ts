@@ -16,8 +16,15 @@
  *    never put into a request body (company is server-bound, #258 README).
  */
 
-import type { BankAccountApprovalBody, BankAccountProposeRequest } from './bankAccountContract'
-import type { DraftSaveRequest, RecordRequest, ReverseRequest } from './contract'
+import type { BankAccountApprovalBody, BankAccountIbanChangeBody, BankAccountProposeRequest } from './bankAccountContract'
+import type {
+  ApproveReversalRequest,
+  DraftSaveRequest,
+  ProposeReversalRequest,
+  RecordRequest,
+  RejectReversalRequest,
+  ReverseRequest,
+} from './contract'
 import type { DraftContextRequest } from './draftContext'
 import type { HttpReadReply } from './http'
 
@@ -45,6 +52,11 @@ export interface FinanceReceiptPort {
   record(scope: FinanceScope, idempotencyKey: string, request: RecordRequest): Promise<PortReply>
   /** → `CommandResult`. Original amount/currency/account are resolved server-side. */
   reverse(scope: FinanceScope, idempotencyKey: string, request: ReverseRequest): Promise<PortReply>
+  proposeReversal(scope: FinanceScope, idempotencyKey: string, request: ProposeReversalRequest): Promise<PortReply>
+  approveReversal(scope: FinanceScope, idempotencyKey: string, request: ApproveReversalRequest): Promise<PortReply>
+  rejectReversal(scope: FinanceScope, idempotencyKey: string, request: RejectReversalRequest): Promise<PortReply>
+  pendingReversals(scope: FinanceScope, signal: AbortSignal): Promise<PortReply>
+  reversalProposal(scope: FinanceScope, proposalId: string, signal: AbortSignal): Promise<PortReply>
 
   /** FIN-UI-1a: `GET /finance/bank-accounts/master` → `ReadResult<BankAccountMasterPage>` (F-04's list). */
   listBankAccountMaster(scope: FinanceScope, signal: AbortSignal): Promise<PortReply>
@@ -54,6 +66,21 @@ export interface FinanceReceiptPort {
   proposeBankAccount(scope: FinanceScope, idempotencyKey: string, request: BankAccountProposeRequest): Promise<PortReply>
   /** FIN-UI-1a: `POST /finance/bank-accounts/{accountId}/approval` → `BankAccountCommandResult` (Ö4 server-side). */
   approveBankAccount(
+    scope: FinanceScope,
+    idempotencyKey: string,
+    accountId: string,
+    body: BankAccountApprovalBody,
+  ): Promise<PortReply>
+
+  /** D4: `POST /finance/bank-accounts/{accountId}/iban-change` → `BankAccountCommandResult`. The value waits. */
+  proposeBankAccountIbanChange(
+    scope: FinanceScope,
+    idempotencyKey: string,
+    accountId: string,
+    body: BankAccountIbanChangeBody,
+  ): Promise<PortReply>
+  /** D4: `POST …/iban-change/approval` → `BankAccountCommandResult`. Ö4 against the CHANGE's proposer. */
+  approveBankAccountIbanChange(
     scope: FinanceScope,
     idempotencyKey: string,
     accountId: string,

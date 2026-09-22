@@ -1272,6 +1272,1348 @@
         ]
       }
     },
+    "/api/v1/finance/manual-receipts/{sourceId}/reversal-proposals": {
+      "post": {
+        "tags": [
+          "Finance"
+        ],
+        "operationId": "ProposeFinanceManualReceiptReversalV1",
+        "parameters": [
+          {
+            "name": "sourceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "X-Correlation-Id",
+            "in": "header",
+            "description": "Optional client correlation identifier; the server creates one when absent.",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Causation-Id",
+            "in": "header",
+            "description": "Optional identifier of the command or event that caused this request.",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Company-Id",
+            "in": "header",
+            "description": "Selected company identifier for this company-scoped request.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "x-erp-non-empty-uuid": true
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Unique command key; one non-empty value with at most 128 canonical characters.",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "pattern": "^(?!.*[,])(?=.*\\S).+$",
+              "type": "string",
+              "x-erp-canonicalization": "trim",
+              "x-erp-canonical-max-length": 128
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProposeReversalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              },
+              "Idempotency-Replayed": {
+                "description": "True only when the response safely replays an earlier command result.",
+                "schema": {
+                  "type": "boolean"
+                }
+              },
+              "Idempotency-Original-Correlation-Id": {
+                "description": "Original command correlation identifier when the response is a replay.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReversalProposalCommandResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              },
+              "Idempotency-Replayed": {
+                "description": "True only when the response safely replays an earlier command result.",
+                "schema": {
+                  "type": "boolean"
+                }
+              },
+              "Idempotency-Original-Correlation-Id": {
+                "description": "Original command correlation identifier when the response is a replay.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReversalProposalCommandResult"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              },
+              "Idempotency-Replayed": {
+                "description": "True only when the response safely replays an earlier command result.",
+                "schema": {
+                  "type": "boolean"
+                }
+              },
+              "Idempotency-Original-Correlation-Id": {
+                "description": "Original command correlation identifier when the response is a replay.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReversalProposalCommandResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "authentication_required"
+            ]
+          },
+          "403": {
+            "description": "Forbidden",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "forbidden"
+            ]
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "internal_error"
+            ]
+          },
+          "400": {
+            "description": "Bad Request",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "company_context_invalid",
+              "correlation_metadata_invalid"
+            ],
+            "x-erp-empty-body-possible": true
+          },
+          "415": {
+            "description": "Unsupported Media Type",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "service_unavailable"
+            ]
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/api/v1/finance/manual-receipts/reversal-proposals/{proposalId}/approval": {
+      "post": {
+        "tags": [
+          "Finance"
+        ],
+        "operationId": "ApproveFinanceManualReceiptReversalV1",
+        "parameters": [
+          {
+            "name": "proposalId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "X-Correlation-Id",
+            "in": "header",
+            "description": "Optional client correlation identifier; the server creates one when absent.",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Causation-Id",
+            "in": "header",
+            "description": "Optional identifier of the command or event that caused this request.",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Company-Id",
+            "in": "header",
+            "description": "Selected company identifier for this company-scoped request.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "x-erp-non-empty-uuid": true
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Unique command key; one non-empty value with at most 128 canonical characters.",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "pattern": "^(?!.*[,])(?=.*\\S).+$",
+              "type": "string",
+              "x-erp-canonicalization": "trim",
+              "x-erp-canonical-max-length": 128
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApproveReversalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              },
+              "Idempotency-Replayed": {
+                "description": "True only when the response safely replays an earlier command result.",
+                "schema": {
+                  "type": "boolean"
+                }
+              },
+              "Idempotency-Original-Correlation-Id": {
+                "description": "Original command correlation identifier when the response is a replay.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReversalProposalCommandResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              },
+              "Idempotency-Replayed": {
+                "description": "True only when the response safely replays an earlier command result.",
+                "schema": {
+                  "type": "boolean"
+                }
+              },
+              "Idempotency-Original-Correlation-Id": {
+                "description": "Original command correlation identifier when the response is a replay.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReversalProposalCommandResult"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              },
+              "Idempotency-Replayed": {
+                "description": "True only when the response safely replays an earlier command result.",
+                "schema": {
+                  "type": "boolean"
+                }
+              },
+              "Idempotency-Original-Correlation-Id": {
+                "description": "Original command correlation identifier when the response is a replay.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReversalProposalCommandResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "authentication_required"
+            ]
+          },
+          "403": {
+            "description": "Forbidden",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "forbidden"
+            ]
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "internal_error"
+            ]
+          },
+          "400": {
+            "description": "Bad Request",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "company_context_invalid",
+              "correlation_metadata_invalid"
+            ],
+            "x-erp-empty-body-possible": true
+          },
+          "415": {
+            "description": "Unsupported Media Type",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "service_unavailable"
+            ]
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/api/v1/finance/manual-receipts/reversal-proposals/{proposalId}/rejection": {
+      "post": {
+        "tags": [
+          "Finance"
+        ],
+        "operationId": "RejectFinanceManualReceiptReversalV1",
+        "parameters": [
+          {
+            "name": "proposalId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "X-Correlation-Id",
+            "in": "header",
+            "description": "Optional client correlation identifier; the server creates one when absent.",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Causation-Id",
+            "in": "header",
+            "description": "Optional identifier of the command or event that caused this request.",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Company-Id",
+            "in": "header",
+            "description": "Selected company identifier for this company-scoped request.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "x-erp-non-empty-uuid": true
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Unique command key; one non-empty value with at most 128 canonical characters.",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "pattern": "^(?!.*[,])(?=.*\\S).+$",
+              "type": "string",
+              "x-erp-canonicalization": "trim",
+              "x-erp-canonical-max-length": 128
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectReversalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              },
+              "Idempotency-Replayed": {
+                "description": "True only when the response safely replays an earlier command result.",
+                "schema": {
+                  "type": "boolean"
+                }
+              },
+              "Idempotency-Original-Correlation-Id": {
+                "description": "Original command correlation identifier when the response is a replay.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReversalProposalCommandResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              },
+              "Idempotency-Replayed": {
+                "description": "True only when the response safely replays an earlier command result.",
+                "schema": {
+                  "type": "boolean"
+                }
+              },
+              "Idempotency-Original-Correlation-Id": {
+                "description": "Original command correlation identifier when the response is a replay.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReversalProposalCommandResult"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              },
+              "Idempotency-Replayed": {
+                "description": "True only when the response safely replays an earlier command result.",
+                "schema": {
+                  "type": "boolean"
+                }
+              },
+              "Idempotency-Original-Correlation-Id": {
+                "description": "Original command correlation identifier when the response is a replay.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReversalProposalCommandResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "authentication_required"
+            ]
+          },
+          "403": {
+            "description": "Forbidden",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "forbidden"
+            ]
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "internal_error"
+            ]
+          },
+          "400": {
+            "description": "Bad Request",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "company_context_invalid",
+              "correlation_metadata_invalid"
+            ],
+            "x-erp-empty-body-possible": true
+          },
+          "415": {
+            "description": "Unsupported Media Type",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "service_unavailable"
+            ]
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/api/v1/finance/manual-receipts/reversal-proposals/pending": {
+      "get": {
+        "tags": [
+          "Finance"
+        ],
+        "operationId": "GetPendingFinanceManualReceiptReversalsV1",
+        "parameters": [
+          {
+            "name": "X-Correlation-Id",
+            "in": "header",
+            "description": "Optional client correlation identifier; the server creates one when absent.",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Causation-Id",
+            "in": "header",
+            "description": "Optional identifier of the command or event that caused this request.",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Company-Id",
+            "in": "header",
+            "description": "Selected company identifier for this company-scoped request.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "x-erp-non-empty-uuid": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReversalProposalPage"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "authentication_required"
+            ]
+          },
+          "403": {
+            "description": "Forbidden",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "forbidden"
+            ]
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "internal_error"
+            ]
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "service_unavailable"
+            ]
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/api/v1/finance/manual-receipts/reversal-proposals/{proposalId}": {
+      "get": {
+        "tags": [
+          "Finance"
+        ],
+        "operationId": "GetFinanceManualReceiptReversalV1",
+        "parameters": [
+          {
+            "name": "proposalId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "X-Correlation-Id",
+            "in": "header",
+            "description": "Optional client correlation identifier; the server creates one when absent.",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Causation-Id",
+            "in": "header",
+            "description": "Optional identifier of the command or event that caused this request.",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Company-Id",
+            "in": "header",
+            "description": "Selected company identifier for this company-scoped request.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "x-erp-non-empty-uuid": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReversalProposalView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "authentication_required"
+            ]
+          },
+          "403": {
+            "description": "Forbidden",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "forbidden"
+            ]
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "internal_error"
+            ]
+          },
+          "404": {
+            "description": "Not Found",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpCodeLessProblemDetailsContract"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "service_unavailable"
+            ]
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
     "/api/v1/finance/manual-receipts": {
       "get": {
         "tags": [
@@ -2207,6 +3549,672 @@
           "Finance"
         ],
         "operationId": "ApproveFinanceBankAccountV1",
+        "parameters": [
+          {
+            "name": "accountId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "X-Correlation-Id",
+            "in": "header",
+            "description": "Optional client correlation identifier; the server creates one when absent.",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Causation-Id",
+            "in": "header",
+            "description": "Optional identifier of the command or event that caused this request.",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Company-Id",
+            "in": "header",
+            "description": "Selected company identifier for this company-scoped request.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "x-erp-non-empty-uuid": true
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Unique command key; one non-empty value with at most 128 canonical characters.",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "pattern": "^(?!.*[,])(?=.*\\S).+$",
+              "type": "string",
+              "x-erp-canonicalization": "trim",
+              "x-erp-canonical-max-length": 128
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BankAccountApprovalBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              },
+              "Idempotency-Replayed": {
+                "description": "True only when the response safely replays an earlier command result.",
+                "schema": {
+                  "type": "boolean"
+                }
+              },
+              "Idempotency-Original-Correlation-Id": {
+                "description": "Original command correlation identifier when the response is a replay.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BankAccountCommandResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              },
+              "Idempotency-Replayed": {
+                "description": "True only when the response safely replays an earlier command result.",
+                "schema": {
+                  "type": "boolean"
+                }
+              },
+              "Idempotency-Original-Correlation-Id": {
+                "description": "Original command correlation identifier when the response is a replay.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BankAccountCommandResult"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              },
+              "Idempotency-Replayed": {
+                "description": "True only when the response safely replays an earlier command result.",
+                "schema": {
+                  "type": "boolean"
+                }
+              },
+              "Idempotency-Original-Correlation-Id": {
+                "description": "Original command correlation identifier when the response is a replay.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BankAccountCommandResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "authentication_required"
+            ]
+          },
+          "403": {
+            "description": "Forbidden",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "forbidden"
+            ]
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "internal_error"
+            ]
+          },
+          "400": {
+            "description": "Bad Request",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErpCodeLessProblemDetailsContract"
+                    }
+                  ]
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "company_context_invalid",
+              "correlation_metadata_invalid"
+            ],
+            "x-erp-empty-body-possible": true
+          },
+          "415": {
+            "description": "Unsupported Media Type",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "service_unavailable"
+            ]
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/api/v1/finance/bank-accounts/{accountId}/iban-change": {
+      "post": {
+        "tags": [
+          "Finance"
+        ],
+        "operationId": "ProposeFinanceBankAccountIbanChangeV1",
+        "parameters": [
+          {
+            "name": "accountId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "X-Correlation-Id",
+            "in": "header",
+            "description": "Optional client correlation identifier; the server creates one when absent.",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Causation-Id",
+            "in": "header",
+            "description": "Optional identifier of the command or event that caused this request.",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Company-Id",
+            "in": "header",
+            "description": "Selected company identifier for this company-scoped request.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "x-erp-non-empty-uuid": true
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Unique command key; one non-empty value with at most 128 canonical characters.",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "pattern": "^(?!.*[,])(?=.*\\S).+$",
+              "type": "string",
+              "x-erp-canonicalization": "trim",
+              "x-erp-canonical-max-length": 128
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BankAccountIbanChangeBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              },
+              "Idempotency-Replayed": {
+                "description": "True only when the response safely replays an earlier command result.",
+                "schema": {
+                  "type": "boolean"
+                }
+              },
+              "Idempotency-Original-Correlation-Id": {
+                "description": "Original command correlation identifier when the response is a replay.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BankAccountCommandResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              },
+              "Idempotency-Replayed": {
+                "description": "True only when the response safely replays an earlier command result.",
+                "schema": {
+                  "type": "boolean"
+                }
+              },
+              "Idempotency-Original-Correlation-Id": {
+                "description": "Original command correlation identifier when the response is a replay.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BankAccountCommandResult"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              },
+              "Idempotency-Replayed": {
+                "description": "True only when the response safely replays an earlier command result.",
+                "schema": {
+                  "type": "boolean"
+                }
+              },
+              "Idempotency-Original-Correlation-Id": {
+                "description": "Original command correlation identifier when the response is a replay.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BankAccountCommandResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "authentication_required"
+            ]
+          },
+          "403": {
+            "description": "Forbidden",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "forbidden"
+            ]
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "internal_error"
+            ]
+          },
+          "400": {
+            "description": "Bad Request",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErpCodeLessProblemDetailsContract"
+                    }
+                  ]
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "company_context_invalid",
+              "correlation_metadata_invalid"
+            ],
+            "x-erp-empty-body-possible": true
+          },
+          "415": {
+            "description": "Unsupported Media Type",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "service_unavailable"
+            ]
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/api/v1/finance/bank-accounts/{accountId}/iban-change/approval": {
+      "post": {
+        "tags": [
+          "Finance"
+        ],
+        "operationId": "ApproveFinanceBankAccountIbanChangeV1",
         "parameters": [
           {
             "name": "accountId",
@@ -23215,6 +25223,22 @@
           }
         }
       },
+      "ApproveReversalRequest": {
+        "required": [
+          "proposalId",
+          "expectedVersion"
+        ],
+        "type": "object",
+        "properties": {
+          "proposalId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expectedVersion": {
+            "type": "string"
+          }
+        }
+      },
       "AuditEventItem": {
         "required": [
           "id",
@@ -23404,7 +25428,9 @@
           "branchName",
           "branchCode",
           "iban",
-          "accountNumber"
+          "accountNumber",
+          "moneyEligibility",
+          "pendingIbanChange"
         ],
         "type": "object",
         "properties": {
@@ -23436,6 +25462,19 @@
             "type": [
               "null",
               "string"
+            ]
+          },
+          "moneyEligibility": {
+            "$ref": "#/components/schemas/BankAccountMoneyEligibility"
+          },
+          "pendingIbanChange": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BankAccountPendingIbanChange"
+              }
             ]
           }
         }
@@ -23516,11 +25555,31 @@
           }
         }
       },
+      "BankAccountIbanChangeBody": {
+        "required": [
+          "expectedVersion",
+          "iban",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "string"
+          },
+          "iban": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
       "BankAccountMasterItem": {
         "required": [
           "account",
           "isOwnProposal",
-          "card"
+          "card",
+          "isOwnPendingIbanProposal"
         ],
         "type": "object",
         "properties": {
@@ -23532,6 +25591,9 @@
           },
           "card": {
             "$ref": "#/components/schemas/BankAccountCard"
+          },
+          "isOwnPendingIbanProposal": {
+            "type": "boolean"
           }
         }
       },
@@ -23554,6 +25616,13 @@
           }
         }
       },
+      "BankAccountMoneyEligibility": {
+        "enum": [
+          "Eligible",
+          "NotEligible",
+          "Undeclared"
+        ]
+      },
       "BankAccountPage": {
         "required": [
           "companyId",
@@ -23573,12 +25642,37 @@
           }
         }
       },
+      "BankAccountPendingIbanChange": {
+        "required": [
+          "iban",
+          "proposedBy",
+          "proposedAtUtc",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "iban": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "proposedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
       "BankAccountProposeRequest": {
         "required": [
           "displayName",
           "currencyId",
           "bankName",
-          "accountType"
+          "accountType",
+          "moneyMovementEligible"
         ],
         "type": "object",
         "properties": {
@@ -23594,6 +25688,9 @@
           },
           "accountType": {
             "type": "string"
+          },
+          "moneyMovementEligible": {
+            "type": "boolean"
           },
           "branchName": {
             "type": [
@@ -27918,6 +30015,31 @@
           }
         }
       },
+      "ProposeReversalRequest": {
+        "required": [
+          "sourceId",
+          "expectedVersion",
+          "occurredOn",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "sourceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expectedVersion": {
+            "type": "string"
+          },
+          "occurredOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
       "PurchaseOrderDetailView": {
         "required": [
           "order",
@@ -28470,6 +30592,26 @@
           }
         }
       },
+      "RejectReversalRequest": {
+        "required": [
+          "proposalId",
+          "expectedVersion",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "proposalId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expectedVersion": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
       "RemainingTargetViewV1": {
         "required": [
           "basis",
@@ -28502,6 +30644,137 @@
               "null",
               "string"
             ]
+          }
+        }
+      },
+      "ReversalProposalCommandResult": {
+        "required": [
+          "outcome",
+          "resource",
+          "isReplay",
+          "originalCorrelationId",
+          "issues"
+        ],
+        "type": "object",
+        "properties": {
+          "outcome": {
+            "$ref": "#/components/schemas/CommandOutcome"
+          },
+          "resource": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ReversalProposalView"
+              }
+            ]
+          },
+          "isReplay": {
+            "type": "boolean"
+          },
+          "originalCorrelationId": {
+            "type": "string"
+          },
+          "issues": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ValidationIssue"
+            }
+          }
+        }
+      },
+      "ReversalProposalPage": {
+        "required": [
+          "items"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReversalProposalView"
+            }
+          }
+        }
+      },
+      "ReversalProposalStatus": {
+        "enum": [
+          "Pending",
+          "Approved",
+          "Rejected"
+        ]
+      },
+      "ReversalProposalView": {
+        "required": [
+          "id",
+          "originalSourceId",
+          "occurredOn",
+          "reason",
+          "status",
+          "proposedBy",
+          "proposedAtUtc",
+          "decidedBy",
+          "decidedAtUtc",
+          "decisionReason",
+          "reversalSourceId",
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "originalSourceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "occurredOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ReversalProposalStatus"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "proposedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "decidedBy": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "decidedAtUtc": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "decisionReason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "reversalSourceId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "version": {
+            "type": "string"
           }
         }
       },

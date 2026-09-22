@@ -42,7 +42,12 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
         BankAccountView proposed;
         await using (var a = run.Open(CompanyA, Proposer))
         {
-            var result = await a.Accounts.ProposeAsync(a.Context, Key("p-1"), new BankAccountProposeRequest("SENTETIK hesap", Currency, "SENTETIK Banka", "SENTETIK tür"),
+            var result = await a.Accounts.ProposeAsync(a.Context, Key("p-1"), new BankAccountProposeRequest("SENTETIK hesap", Currency, "SENTETIK Banka", "SENTETIK tür",
+                    // B3: this case is about APPROVAL making a card usable, so the card must be one that
+                    // approval CAN make usable — it declares itself for money movement and therefore
+                    // carries an IBAN (K2). A card declaring false stays unusable however it is approved,
+                    // and that is the separate case below.
+                    MoneyMovementEligible: true, Iban: "TR33 0006 1005 1978 6457 8413 26"),
                 CancellationToken.None);
             Assert.Equal(CommandOutcome.Succeeded, result.Outcome);
             proposed = result.Resource!;
@@ -98,7 +103,7 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
         // "no money was moved" by itself — the table now exists whether or not anything is in it. The inventory
         // is kept (a new Finance table must be a deliberate edit here) and the claim it used to carry is stated
         // directly underneath: approving a bank account writes NO money event.
-        Assert.Equal("BankAccounts,Commands,MoneyEvents,ReceiptDrafts,__EFMigrationsHistory", await run.ScalarAsync<string>(
+        Assert.Equal("BankAccounts,Commands,MoneyEvents,ReceiptDrafts,ReversalProposals,__EFMigrationsHistory", await run.ScalarAsync<string>(
             "SELECT STRING_AGG(name, ',') WITHIN GROUP (ORDER BY name COLLATE Latin1_General_BIN2) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'finance')"));
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.MoneyEvents"));
     }
@@ -128,6 +133,7 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
         {
             var typed = await a.Accounts.ProposeAsync(a.Context, Key("p-iban"),
                 new BankAccountProposeRequest("SENTETIK hesap", Currency, "SENTETIK Banka", "SENTETIK tür",
+                    MoneyMovementEligible: true,
                     BranchName: "SENTETIK şube", BranchCode: "0001",
                     Iban: "TR33 0006 1005 1978 6457 8413 26", AccountNumber: "123456"),
                 CancellationToken.None);
@@ -136,7 +142,7 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
 
             // K2: a special credit or term account with no IBAN is definable. It must not be refused.
             var special = await a.Accounts.ProposeAsync(a.Context, Key("p-no-iban"),
-                new BankAccountProposeRequest("SENTETIK vadeli", Currency, "SENTETIK Banka", "SENTETIK özel tür"),
+                new BankAccountProposeRequest("SENTETIK vadeli", Currency, "SENTETIK Banka", "SENTETIK özel tür", false),
                 CancellationToken.None);
             Assert.Equal(CommandOutcome.Succeeded, special.Outcome);
             withoutIban = special.Resource!;
@@ -194,7 +200,7 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
         {
             account = (await a.Accounts.ProposeAsync(a.Context, Key("p-1"),
                 new BankAccountProposeRequest("SENTETIK hesap", Currency, "SENTETIK Banka", "SENTETIK tür",
-                    Iban: "TR330006100519786457841326"),
+                    MoneyMovementEligible: true, Iban: "TR330006100519786457841326"),
                 CancellationToken.None)).Resource!;
         }
 
@@ -234,13 +240,189 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
+    public async Task A_legacy_NULL_money_declaration_is_visible_as_undeclared_and_is_refused_on_the_money_path()
+    {
+        await using var run = await Run.StartAsync();
+        BankAccountView account;
+        await using (var proposer = run.Open(CompanyA, Proposer))
+        {
+            account = (await proposer.Accounts.ProposeAsync(proposer.Context, Key("legacy-null-propose"),
+                new BankAccountProposeRequest("SENTETIK legacy", Currency, "SENTETIK Banka", "SENTETIK tur",
+                    MoneyMovementEligible: true, Iban: "TR330006100519786457841326"), CancellationToken.None)).Resource!;
+        }
+
+        await using (var approver = run.Open(CompanyA, Approver))
+        {
+            account = (await approver.Accounts.ApproveAsync(approver.Context, Key("legacy-null-approve"),
+                new BankAccountApproveRequest(account.Id, "1"), CancellationToken.None)).Resource!;
+        }
+
+        // Represents a row written before B3. No invented true/false backfill is allowed.
+        await run.ExecuteAsync("UPDATE finance.BankAccounts SET MoneyMovementEligible = NULL WHERE Id = @id", ("@id", account.Id));
+
+        await using (var reader = run.Open(CompanyA, Proposer))
+        {
+            var item = Assert.Single((await reader.Accounts.ListMasterAsync(reader.Context, CancellationToken.None)).Resource!.Items);
+            Assert.Equal(BankAccountMoneyEligibility.Undeclared, item.Card.MoneyEligibility);
+            Assert.False(item.Account.IsUsableForReceipt);
+
+            var draft = await reader.Drafts.DraftSaveAsync(reader.Context, Key("legacy-null-draft"), Draft(account.Id),
+                CancellationToken.None);
+            Assert.Equal(CommandOutcome.ValidationFailed, draft.Outcome);
+            Assert.Equal("bank_account_ineligible", Assert.Single(draft.Issues).Code);
+        }
+
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.ReceiptDrafts"));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.BankAccounts WHERE Id = @id AND MoneyMovementEligible IS NULL", ("@id", account.Id)));
+    }
+
+    [SqlServerFact]
+    public async Task A_pending_IBAN_never_replaces_the_approved_value_and_only_another_actor_can_approve_it()
+    {
+        await using var run = await Run.StartAsync();
+        const string oldIban = "TR330006100519786457841326";
+        const string newIban = "TR060006100519786457841327";
+        BankAccountView account;
+
+        await using (var proposer = run.Open(CompanyA, Proposer))
+        {
+            account = (await proposer.Accounts.ProposeAsync(proposer.Context, Key("iban-card-propose"),
+                new BankAccountProposeRequest("SENTETIK IBAN", Currency, "SENTETIK Banka", "SENTETIK tur",
+                    MoneyMovementEligible: true, Iban: oldIban), CancellationToken.None)).Resource!;
+        }
+        await using (var approver = run.Open(CompanyA, Approver))
+        {
+            account = (await approver.Accounts.ApproveAsync(approver.Context, Key("iban-card-approve"),
+                new BankAccountApproveRequest(account.Id, "1"), CancellationToken.None)).Resource!;
+        }
+
+        Guid historicalDraftId;
+        await using (var proposer = run.Open(CompanyA, Proposer))
+        {
+            var draft = await proposer.Drafts.DraftSaveAsync(proposer.Context, Key("iban-historical-draft"), Draft(account.Id),
+                CancellationToken.None);
+            Assert.Equal(CommandOutcome.Succeeded, draft.Outcome);
+            historicalDraftId = draft.Resource!.Source.Id;
+
+            var pending = await proposer.Accounts.ProposeIbanChangeAsync(proposer.Context, Key("iban-change-propose"),
+                new BankAccountIbanChangeProposeRequest(account.Id, "2", newIban, "SENTETIK banka degisikligi"),
+                CancellationToken.None);
+            Assert.Equal(CommandOutcome.Succeeded, pending.Outcome);
+            Assert.Equal("3", pending.Resource!.Version);
+
+            // D4's single waiting slot keeps the newest proposal. Replacing its reason exercises the
+            // complete-pending -> complete-pending persistence transition without moving the approved
+            // IBAN that the money path still uses.
+            var replaced = await proposer.Accounts.ProposeIbanChangeAsync(proposer.Context, Key("iban-change-replace"),
+                new BankAccountIbanChangeProposeRequest(account.Id, "3", newIban, "SENTETIK guncel gerekce"),
+                CancellationToken.None);
+            Assert.Equal(CommandOutcome.Succeeded, replaced.Outcome);
+            Assert.Equal("4", replaced.Resource!.Version);
+
+            var self = await proposer.Accounts.ApproveIbanChangeAsync(proposer.Context, Key("iban-change-self"),
+                new BankAccountIbanChangeApproveRequest(account.Id, "4"), CancellationToken.None);
+            Assert.Equal(CommandOutcome.Denied, self.Outcome);
+            Assert.Equal("finance_approver_is_proposer", Assert.Single(self.Issues).Code);
+        }
+
+        Assert.Equal(oldIban, await run.ScalarAsync<string>(
+            "SELECT Iban FROM finance.BankAccounts WHERE Id = @id", ("@id", account.Id)));
+        Assert.Equal(newIban, await run.ScalarAsync<string>(
+            "SELECT PendingIban FROM finance.BankAccounts WHERE Id = @id", ("@id", account.Id)));
+        Assert.Equal("SENTETIK guncel gerekce", await run.ScalarAsync<string>(
+            "SELECT PendingIbanReason FROM finance.BankAccounts WHERE Id = @id", ("@id", account.Id)));
+        Assert.Equal(account.Id, await run.ScalarAsync<Guid>(
+            "SELECT TreasuryAccountId FROM finance.ReceiptDrafts WHERE Id = @id", ("@id", historicalDraftId)));
+
+        await using (var approver = run.Open(CompanyA, Approver))
+        {
+            var approved = await approver.Accounts.ApproveIbanChangeAsync(approver.Context, Key("iban-change-approve"),
+                new BankAccountIbanChangeApproveRequest(account.Id, "4"), CancellationToken.None);
+            Assert.Equal(CommandOutcome.Succeeded, approved.Outcome);
+            Assert.Equal("5", approved.Resource!.Version);
+        }
+
+        Assert.Equal(newIban, await run.ScalarAsync<string>(
+            "SELECT Iban FROM finance.BankAccounts WHERE Id = @id", ("@id", account.Id)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.BankAccounts WHERE Id = @id AND PendingIban IS NULL AND PendingIbanProposedBy IS NULL AND PendingIbanProposedAtUtc IS NULL AND PendingIbanReason IS NULL",
+            ("@id", account.Id)));
+        Assert.Equal(account.Id, await run.ScalarAsync<Guid>(
+            "SELECT TreasuryAccountId FROM finance.ReceiptDrafts WHERE Id = @id", ("@id", historicalDraftId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityId = CONVERT(nvarchar(36), @id) AND EventType = N'finance.bank-account.iban-change-approved.v1' AND JSON_VALUE(ApprovalContextJson, '$.previousIban') = @old AND JSON_VALUE(ApprovalContextJson, '$.newIban') = @new AND JSON_VALUE(ApprovalContextJson, '$.proposedBy') = @proposer AND JSON_VALUE(ApprovalContextJson, '$.approvedBy') = @approver",
+            ("@id", account.Id), ("@old", oldIban), ("@new", newIban), ("@proposer", Proposer), ("@approver", Approver)));
+    }
+
+    [SqlServerFact]
+    public async Task Permission_revoked_during_IBAN_reads_refuses_propose_and_approve_before_save()
+    {
+        await using var run = await Run.StartAsync();
+        const string oldIban = "TR330006100519786457841326";
+        const string newIban = "TR060006100519786457841327";
+        BankAccountView account;
+
+        await using (var proposer = run.Open(CompanyA, Proposer))
+        {
+            account = (await proposer.Accounts.ProposeAsync(proposer.Context, Key("iban-fence-card-propose"),
+                new BankAccountProposeRequest("SENTETIK IBAN FENCE", Currency, "SENTETIK Banka", "SENTETIK tur",
+                    MoneyMovementEligible: true, Iban: oldIban), CancellationToken.None)).Resource!;
+        }
+        await using (var approver = run.Open(CompanyA, Approver))
+        {
+            account = (await approver.Accounts.ApproveAsync(approver.Context, Key("iban-fence-card-approve"),
+                new BankAccountApproveRequest(account.Id, "1"), CancellationToken.None)).Resource!;
+        }
+
+        var commandsBeforePropose = await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.Commands");
+        var auditsBeforePropose = await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents");
+        await using (var proposer = run.OpenWithPermissions(CompanyA, Proposer, new AllowInitialDecisionOnlyPermissions()))
+        {
+            var refused = await proposer.Accounts.ProposeIbanChangeAsync(proposer.Context, Key("iban-fence-propose"),
+                new BankAccountIbanChangeProposeRequest(account.Id, "2", newIban, "SENTETIK revoke"),
+                CancellationToken.None);
+            Assert.Equal(CommandOutcome.Denied, refused.Outcome);
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.BankAccounts WHERE Id = @id AND Version = 2 AND Iban = @old AND PendingIban IS NULL",
+            ("@id", account.Id), ("@old", oldIban)));
+        Assert.Equal(commandsBeforePropose, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.Commands"));
+        Assert.Equal(auditsBeforePropose, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents"));
+
+        await using (var proposer = run.Open(CompanyA, Proposer))
+        {
+            var pending = await proposer.Accounts.ProposeIbanChangeAsync(proposer.Context, Key("iban-fence-pending"),
+                new BankAccountIbanChangeProposeRequest(account.Id, "2", newIban, "SENTETIK pending"),
+                CancellationToken.None);
+            Assert.Equal(CommandOutcome.Succeeded, pending.Outcome);
+        }
+
+        var commandsBeforeApprove = await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.Commands");
+        var auditsBeforeApprove = await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents");
+        await using (var approver = run.OpenWithPermissions(CompanyA, Approver, new AllowInitialDecisionOnlyPermissions()))
+        {
+            var refused = await approver.Accounts.ApproveIbanChangeAsync(approver.Context, Key("iban-fence-approve"),
+                new BankAccountIbanChangeApproveRequest(account.Id, "3"), CancellationToken.None);
+            Assert.Equal(CommandOutcome.Denied, refused.Outcome);
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.BankAccounts WHERE Id = @id AND Version = 3 AND Iban = @old AND PendingIban = @new",
+            ("@id", account.Id), ("@old", oldIban), ("@new", newIban)));
+        Assert.Equal(commandsBeforeApprove, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.Commands"));
+        Assert.Equal(auditsBeforeApprove, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents"));
+    }
+
+    [SqlServerFact]
     public async Task Company_B_can_neither_see_nor_approve_company_A_account()
     {
         await using var run = await Run.StartAsync();
         BankAccountView accountA;
         await using (var a = run.Open(CompanyA, Proposer))
         {
-            accountA = (await a.Accounts.ProposeAsync(a.Context, Key("p-1"), new BankAccountProposeRequest("SENTETIK A", Currency, "SENTETIK Banka", "SENTETIK tür"),
+            accountA = (await a.Accounts.ProposeAsync(a.Context, Key("p-1"), new BankAccountProposeRequest("SENTETIK A", Currency, "SENTETIK Banka", "SENTETIK tür", false),
                 CancellationToken.None)).Resource!;
         }
 
@@ -267,7 +449,7 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
         BankAccountView first;
         await using (var a = run.Open(CompanyA, Proposer))
         {
-            var request = new BankAccountProposeRequest("SENTETIK hesap", Currency, "SENTETIK Banka", "SENTETIK tür");
+            var request = new BankAccountProposeRequest("SENTETIK hesap", Currency, "SENTETIK Banka", "SENTETIK tür", false);
             first = (await a.Accounts.ProposeAsync(a.Context, Key("k-1"), request, CancellationToken.None)).Resource!;
             var replay = await a.Accounts.ProposeAsync(a.Context, Key("k-1"), request, CancellationToken.None);
             Assert.True(replay.IsReplay);
@@ -285,7 +467,7 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
         {
             // ADR-011 §3: the same key and payload by ANOTHER actor is a conflict that discloses nothing.
             var conflict = await other.Accounts.ProposeAsync(other.Context, Key("k-1"),
-                new BankAccountProposeRequest("SENTETIK hesap", Currency, "SENTETIK Banka", "SENTETIK tür"), CancellationToken.None);
+                new BankAccountProposeRequest("SENTETIK hesap", Currency, "SENTETIK Banka", "SENTETIK tür", false), CancellationToken.None);
             Assert.Equal(CommandOutcome.IdempotencyConflict, conflict.Outcome);
             Assert.Null(conflict.Resource);
         }
@@ -301,7 +483,7 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
         await using var run = await Run.StartAsync();
         await using (var a = run.Open(CompanyA, Proposer))
         {
-            var outside = await a.Accounts.ProposeAsync(a.Context, Key("k-1"), new BankAccountProposeRequest("SENTETIK", Guid.NewGuid(), "SENTETIK Banka", "SENTETIK tür"),
+            var outside = await a.Accounts.ProposeAsync(a.Context, Key("k-1"), new BankAccountProposeRequest("SENTETIK", Guid.NewGuid(), "SENTETIK Banka", "SENTETIK tür", false),
                 CancellationToken.None);
             Assert.Equal("currency_not_a_candidate", Assert.Single(outside.Issues).Code);
         }
@@ -309,7 +491,7 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
         // The real adapter on main: no Settings currency source exists, so every proposal is refused.
         await using (var a = run.Open(CompanyA, Proposer, realSettings: true))
         {
-            var unavailable = await a.Accounts.ProposeAsync(a.Context, Key("k-2"), new BankAccountProposeRequest("SENTETIK", Currency, "SENTETIK Banka", "SENTETIK tür"),
+            var unavailable = await a.Accounts.ProposeAsync(a.Context, Key("k-2"), new BankAccountProposeRequest("SENTETIK", Currency, "SENTETIK Banka", "SENTETIK tür", false),
                 CancellationToken.None);
             Assert.Equal(CommandOutcome.Unavailable, unavailable.Outcome);
             Assert.Equal("settings_provider_unavailable", Assert.Single(unavailable.Issues).Code);
@@ -327,7 +509,7 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
         BankAccountView proposed;
         await using (var a = run.Open(CompanyA, Proposer))
         {
-            proposed = (await a.Accounts.ProposeAsync(a.Context, Key("p-1"), new BankAccountProposeRequest("SENTETIK", Currency, "SENTETIK Banka", "SENTETIK tür"),
+            proposed = (await a.Accounts.ProposeAsync(a.Context, Key("p-1"), new BankAccountProposeRequest("SENTETIK", Currency, "SENTETIK Banka", "SENTETIK tür", false),
                 CancellationToken.None)).Resource!;
         }
 
@@ -366,7 +548,7 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
         await using (var scope = run.Open(unknownCompany, Proposer))
         {
             var error = await Assert.ThrowsAsync<DbUpdateException>(() => scope.Accounts.ProposeAsync(scope.Context, Key("k-1"),
-                new BankAccountProposeRequest("SENTETIK", Currency, "SENTETIK Banka", "SENTETIK tür"), CancellationToken.None));
+                new BankAccountProposeRequest("SENTETIK", Currency, "SENTETIK Banka", "SENTETIK tür", false), CancellationToken.None));
             Assert.Equal(547, Assert.IsType<SqlException>(error.InnerException).Number);
         }
 
@@ -433,6 +615,9 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
         public Scope Open(Guid company, string actor, bool realSettings,
             params Microsoft.EntityFrameworkCore.Diagnostics.IInterceptor[] extra) =>
             Open(company, actor, realSettings, new SyntheticPermissions(), extra);
+
+        public Scope OpenWithPermissions(Guid company, string actor, IFinancePermissionPort permissions) =>
+            Open(company, actor, realSettings: false, permissions, []);
 
         private Scope Open(Guid company, string actor, bool realSettings, IFinancePermissionPort permissions,
             Microsoft.EntityFrameworkCore.Diagnostics.IInterceptor[] extra)
@@ -532,6 +717,20 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
     {
         public Task<PermissionDecision> CheckAsync(FinanceContext context, FinanceAction action, Guid? sourceId,
             CancellationToken cancellationToken) => Task.FromResult(PermissionDecision.Allowed);
+    }
+
+    /// <summary>
+    /// SENTETIK: the command's initial authorization succeeds, then the permission is revoked while
+    /// owner rows are being read. The production service must measure the action again before save.
+    /// This is not a real grant-revocation acceptance test.
+    /// </summary>
+    private sealed class AllowInitialDecisionOnlyPermissions : IFinancePermissionPort
+    {
+        private int decisions;
+
+        public Task<PermissionDecision> CheckAsync(FinanceContext context, FinanceAction action, Guid? sourceId,
+            CancellationToken cancellationToken) => Task.FromResult(
+                Interlocked.Increment(ref decisions) == 1 ? PermissionDecision.Allowed : PermissionDecision.Denied);
     }
 
     /// <summary>
