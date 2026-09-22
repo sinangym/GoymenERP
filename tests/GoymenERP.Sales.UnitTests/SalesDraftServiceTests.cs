@@ -497,6 +497,35 @@ public sealed class SalesDraftServiceTests
     }
 
     /// <summary>
+    /// The persona read is not a gap after the authority fence: an actor swap or permission loss during
+    /// the late read is seen by the final permission/binding measurement before any state effect.
+    /// </summary>
+    [Theory]
+    [InlineData("actor")]
+    [InlineData("permission")]
+    public async Task A_change_during_the_late_persona_read_is_refused_before_the_state_write(string change)
+    {
+        var world = new World();
+        var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-persona-race-create"))).Detail;
+        await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("k-persona-race-submit"));
+        var transitions = world.Store.Transitions.Count;
+        var refusals = world.Store.Refusals.Count;
+        world.ActiveRoleCodes.Calls = 0;
+        world.ActiveRoleCodes.OnRead = call =>
+        {
+            if (call != 2) return;
+            if (change == "actor") world.User.Id = "synthetic-swapped-during-persona-read";
+            else world.Authority.Granted = false;
+        };
+
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("k-persona-race-decide")));
+
+        Assert.Equal((403, "forbidden"), (refused.Status, refused.Code));
+        Assert.Equal((transitions, refusals), (world.Store.Transitions.Count, world.Store.Refusals.Count));
+    }
+
+    /// <summary>
     /// D2 (Sinan 5750987986 points 1–2): "own order" is the order the actor PREPARED (the stored creator), not the one
     /// they submitted. A creates, an authorized B submits: A holding the general approve name is still fenced (the own
     /// name is asked and refused); B — the submitter, not the preparer — decides it exactly as on main: only the approve
@@ -1125,10 +1154,14 @@ public sealed class SalesDraftServiceTests
     private sealed class FixedActiveRoleCodeReader : IActiveRoleCodeReader
     {
         public HashSet<string> Codes { get; } = new(StringComparer.Ordinal);
+        public int Calls { get; set; }
+        public Action<int>? OnRead { get; set; }
 
         public Task<IReadOnlySet<string>> GetActiveRoleCodesAsync(Guid companyId, CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            Calls++;
+            OnRead?.Invoke(Calls);
             return Task.FromResult<IReadOnlySet<string>>(companyId == Company ? Codes : new HashSet<string>(StringComparer.Ordinal));
         }
     }

@@ -606,7 +606,10 @@ public sealed class SalesDraftService(
         IReadOnlyCollection<string> RoleCodes,
         bool IsSalesSupport);
 
-    /// <summary>The fence: server identity and company, then a fresh central measurement of the name.</summary>
+    /// <summary>
+    /// The fence: capture server identity/company, read the active persona, then make the permission
+    /// measurement the final await and re-check the live binding before releasing a scope.
+    /// </summary>
     private async Task<Scope> RequireAsync(string? permission, CancellationToken cancellationToken)
     {
         if (!currentUser.IsAuthenticated || string.IsNullOrWhiteSpace(currentUser.UserId))
@@ -628,13 +631,13 @@ public sealed class SalesDraftService(
 
         var companyId = companyContext.CompanyId;
         var actorId = currentUser.UserId;
+        var currentRoleCodes = await activeRoleCodes.GetActiveRoleCodesAsync(companyId, cancellationToken);
         var scope = await authority.RevalidatePermissionScopeAsync(permission, companyId, cancellationToken);
         if (!scope.IsGranted || !scope.IsCompanyWide || !Matches(companyId, actorId))
         {
             throw new SalesDraftServiceException(403, "forbidden");
         }
 
-        var currentRoleCodes = await activeRoleCodes.GetActiveRoleCodesAsync(companyId, cancellationToken);
         return new Scope(
             companyId,
             actorId,
