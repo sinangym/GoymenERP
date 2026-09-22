@@ -10,9 +10,9 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Shell;
 /// separate detail id). L-01 (Sevk Edilebilir Siparişler) and L-04 (Araç / Sürücü / Kapı) are other screens
 /// and are not declared here; recording a load is L-05's act (Fiilî Yükleme) and will be declared with that
 /// screen, in LOG-4a it is a server-measured command on the detail.
-/// STAGED (<c>ImplementationAvailable: false</c>): LOG-4b brings the frontend, and the flip to published
-/// precedes its browser suite (the S03-c lesson: a staged declaration is never published, so nothing opens
-/// before the screens exist). A declaration grants nothing: the screens open only for an actor holding the
+/// PUBLISHED (<c>ImplementationAvailable: true</c>) after LOG-4b's exact-head staged-profile browser acceptance
+/// on PR #358 (<c>af2072ce1f5ca17b8124fadc81cd83ea7c32fd92</c>, run 35484271018, 5/5). A declaration grants
+/// nothing: the screens open only for an actor holding the
 /// permission (D6), and the grant is a human gate. The list and the detail share
 /// <see cref="LogisticsPermissionManifestV1.InstructionsRead"/>; the new-instruction screen needs
 /// <see cref="LogisticsPermissionManifestV1.InstructionsCreate"/>; recording a load is a server-measured
@@ -42,12 +42,12 @@ public sealed class LogisticsShellCapabilityProvider : IShellCapabilityProvider
     [
         new ShellCapabilityDeclaration(ListCapabilityId, ListCapabilityId, ListRoutePath, ListScreenId,
             ShellCapabilityRoutePrecedence.Static, ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
-            ShellCapabilityScopeRequirement.CompanyWide, [LogisticsPermissionManifestV1.InstructionsRead], ImplementationAvailable: false),
+            ShellCapabilityScopeRequirement.CompanyWide, [LogisticsPermissionManifestV1.InstructionsRead], ImplementationAvailable: true),
         new ShellCapabilityDeclaration(CreateCapabilityId, CreateCapabilityId, CreateRoutePath, CreateScreenId,
             ShellCapabilityRoutePrecedence.Static, ShellCapabilityContextRequirement.SingleCompany,
-            ShellCapabilityScopeRequirement.CompanyWide, [LogisticsPermissionManifestV1.InstructionsCreate], ImplementationAvailable: false),
+            ShellCapabilityScopeRequirement.CompanyWide, [LogisticsPermissionManifestV1.InstructionsCreate], ImplementationAvailable: true),
         new ShellCapabilityDeclaration(DetailCapabilityId, DetailCapabilityId, DetailRoutePath, DetailScreenId,
             ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
-            ShellCapabilityScopeRequirement.CompanyWide, [LogisticsPermissionManifestV1.InstructionsRead], ImplementationAvailable: false),
+            ShellCapabilityScopeRequirement.CompanyWide, [LogisticsPermissionManifestV1.InstructionsRead], ImplementationAvailable: true),
     ];
 }
