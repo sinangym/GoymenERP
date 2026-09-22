@@ -19,6 +19,7 @@ interface DraftDetail {
     readonly version: string
     readonly revision: string
     readonly approvalState: string
+    readonly createdBy: string
   }
   readonly lines: readonly DraftLine[]
 }
@@ -146,7 +147,7 @@ test('S04-08 one approved record is priced in the form, reopened as Rev.1, and i
   expect(history.items[0].revision).toBe('Rev.0')
   expect(history.items[0].submittedBy).toBeTruthy()
   expect(history.items[0].approvedBy).toBeTruthy()
-  expect(history.items[0].archivedBy).toBe(seed.preparerActor)
+  expect(history.items[0].archivedBy).toBe(approved.draft.createdBy)
   expect(history.items[0].lines).toHaveLength(2)
   expect(history.items[0].lines.every((line) => line.priceDisclosure === 'Visible')).toBe(true)
   expect(history.items[0].lines.every((line) => line.unitPrice === null)).toBe(true)
