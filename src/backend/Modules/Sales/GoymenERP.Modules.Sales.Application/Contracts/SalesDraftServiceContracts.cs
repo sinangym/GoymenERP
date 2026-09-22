@@ -101,5 +101,4 @@ public sealed record SalesDraftServiceBindings(
     string? ReadPermission = SalesPermissionManifestV1.DraftsRead,
     string? ApprovePermission = SalesPermissionManifestV1.OrdersApprove,
     string? PricePermission = SalesPermissionManifestV1.OrdersPriceWrite,
-    string? PriceReadPermission = SalesPermissionManifestV1.OrdersPriceRead,
-    string? ApproveOwnPermission = SalesPermissionManifestV1.OrdersApproveOwn);
+    string? PriceReadPermission = SalesPermissionManifestV1.OrdersPriceRead);

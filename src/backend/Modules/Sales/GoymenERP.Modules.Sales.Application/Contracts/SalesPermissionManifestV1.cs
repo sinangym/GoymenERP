@@ -12,7 +12,7 @@ namespace GoymenERP.Modules.Sales.Application.Contracts;
 /// </summary>
 public static class SalesPermissionManifestV1
 {
-    public const int Version = 5;
+    public const int Version = 6;
     public const string Subject = "Sales";
 
     /// <summary>POST /api/v1/sales/drafts, the reference reads of the draft form, and POST …/{id}/submission (SALES-A1: whoever may create a draft may send it for approval).</summary>
@@ -46,17 +46,6 @@ public static class SalesPermissionManifestV1
     /// </summary>
     public const string OrdersPriceRead = "sales.orders.price.read";
 
-    /// <summary>
-    /// D2 (Sinan 5749046401): deciding — approving OR rejecting — one's OWN submitted order. The approve name alone
-    /// never confers it: an actor whose own submission is before them is refused unless they hold this SEPARATE name
-    /// (ASSUMPTION-SALESD2-1: the persona rule "Satış Destek cannot approve its own order" encoded the way this module
-    /// encodes every persona — as a name; registered to nobody, deny-first, so today no self-decision is possible
-    /// anywhere, which is stricter than D2 requires and grants nobody an exception; the Müdür's own submission is
-    /// undecided in policy and closed in practice — a GRANT, never a redeploy, is what would open it).
-    /// Company-wide; the grant is a human gate.
-    /// </summary>
-    public const string OrdersApproveOwn = "sales.orders.approve.own";
-
     public static IReadOnlySet<string> Names { get; } =
-        new[] { DraftsCreate, DraftsRead, OrdersApprove, OrdersPriceWrite, OrdersPriceRead, OrdersApproveOwn }.ToFrozenSet(StringComparer.Ordinal);
+        new[] { DraftsCreate, DraftsRead, OrdersApprove, OrdersPriceWrite, OrdersPriceRead }.ToFrozenSet(StringComparer.Ordinal);
 }

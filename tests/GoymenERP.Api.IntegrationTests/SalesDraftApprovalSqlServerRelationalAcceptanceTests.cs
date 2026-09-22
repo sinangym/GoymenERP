@@ -724,7 +724,7 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
         var self = new RecordingAuthority(SalesPermissionManifestV1.DraftsCreate, SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersApprove);
         await using (var a = run.Store(CompanyA))
         {
-            var preparer = run.Service(a, run.Actor, self);
+            var preparer = run.Service(a, run.Actor, self, ErpPersonaRoleCodes.SalesSupport, "SALES_MANAGER");
             var approveOwn = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
                 preparer.ApproveDraftAsync(priced.Id, new SalesDraftStateCommandRequest("3"), run.Metadata("k-self-approve")));
             var rejectOwn = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
@@ -732,12 +732,7 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
             Assert.Equal(((403, "forbidden"), (403, "forbidden")), ((approveOwn.Status, approveOwn.Code), (rejectOwn.Status, rejectOwn.Code)));
         }
 
-        // The separate own-decision name WAS asked, for this company, after the approve name — the refusal is the authority's
-        // answer to THAT name (registered to nobody: ASSUMPTION-SALESD2-1), not a rule hidden in the screen.
-        Assert.Contains((SalesPermissionManifestV1.OrdersApproveOwn, CompanyA), self.Measured);
         Assert.Contains((SalesPermissionManifestV1.OrdersApprove, CompanyA), self.Measured);
-        Assert.True(self.Measured.FindIndex(ask => ask.Permission == SalesPermissionManifestV1.OrdersApproveOwn)
-            > self.Measured.FindIndex(ask => ask.Permission == SalesPermissionManifestV1.OrdersApprove));
         Assert.All(self.Measured, ask => Assert.Equal(CompanyA, ask.Company));
         Assert.Equal((attempts, events, quiet), (await AttemptsAsync(), (await EventsAsync(priced.Id), await EventsAsync(unpriced.Id)), await QuietCountsAsync()));
         foreach (var draft in new[] { priced, unpriced })
@@ -758,7 +753,6 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
                 (rejected.Detail.Draft.ApprovalState, rejected.Detail.Approval.DecidedBy, rejected.Detail.Approval.RejectionReason, rejected.Detail.Draft.Version));
         }
 
-        Assert.DoesNotContain(manager.Measured, ask => ask.Permission == SalesPermissionManifestV1.OrdersApproveOwn);
         Assert.Equal((attempts + 2, (events.Item1 + 1, events.Item2 + 1), quiet),
             (await AttemptsAsync(), (await EventsAsync(priced.Id), await EventsAsync(unpriced.Id)), await QuietCountsAsync()));
         attempts += 2;
@@ -870,14 +864,15 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
         await using (var a = run.Store(CompanyA))
         {
             var fenced = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
-                run.Service(a, run.Actor, preparerAsks).ApproveDraftAsync(third.Id, new SalesDraftStateCommandRequest("3"), run.Metadata("k-third-self")));
+                run.Service(a, run.Actor, preparerAsks, ErpPersonaRoleCodes.SalesSupport).ApproveDraftAsync(
+                    third.Id,
+                    new SalesDraftStateCommandRequest("3"),
+                    run.Metadata("k-third-self")));
             Assert.Equal((403, "forbidden"), (fenced.Status, fenced.Code));
             var decided = await run.Service(a, submitter, submitterAsks).ApproveDraftAsync(third.Id, new SalesDraftStateCommandRequest("3"), run.Metadata("k-third-submitter"));
             Assert.Equal(("Approved", submitter, submitter, false), (decided.Detail.Draft.ApprovalState, decided.Detail.Approval.SubmittedBy, decided.Detail.Approval.DecidedBy, decided.Detail.IsOwnDraft));
         }
 
-        Assert.Contains((SalesPermissionManifestV1.OrdersApproveOwn, CompanyA), preparerAsks.Measured);
-        Assert.DoesNotContain(submitterAsks.Measured, ask => ask.Permission == SalesPermissionManifestV1.OrdersApproveOwn);
         Assert.All(submitterAsks.Measured, ask => Assert.Contains(ask.Permission, new[] { SalesPermissionManifestV1.OrdersApprove, SalesPermissionManifestV1.OrdersPriceRead }));
         Assert.Equal((3, submitter), (await run.ScalarAsync<int>("SELECT [ApprovalState] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", third.Id)),
             await run.ScalarAsync<string>("SELECT [DecidedBy] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", third.Id))));
@@ -994,6 +989,19 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
         public bool CanAccessCompany(Guid companyId) => companyId == company;
     }
 
+    private sealed class FixedActiveRoleCodeReader(params string[] roles) : IActiveRoleCodeReader
+    {
+        private readonly IReadOnlySet<string> roleCodes = new HashSet<string>(roles, StringComparer.Ordinal);
+
+        public Task<IReadOnlySet<string>> GetActiveRoleCodesAsync(Guid companyId, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(companyId == CompanyA
+                ? roleCodes
+                : (IReadOnlySet<string>)new HashSet<string>(StringComparer.Ordinal));
+        }
+    }
+
     private sealed class FixedCorrelation(string correlationId) : ICorrelationContext
     {
         public bool IsResolved => true;
@@ -1060,12 +1068,17 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
             new(actor ?? Actor, "SENTETIK-sales-permission", ["SENTETIK-SALES"], correlation ?? Correlation, null, key, "Web", "127.0.0.1", "SENTETIK-agent");
 
         /// <summary>The REAL draft service over this scope's real store, for `actor` in the company, under `authority` (K3 Head B).</summary>
-        public SalesDraftService Service(StoreScope scope, string actor, IErpAuthorityRevalidationService authority)
+        public SalesDraftService Service(
+            StoreScope scope,
+            string actor,
+            IErpAuthorityRevalidationService authority,
+            params string[] activeRoleCodes)
         {
             var companyContext = new CompanyContext();
             companyContext.Set(CompanyA);
             var owners = new NoOwners();
-            return new SalesDraftService(companyContext, new FixedUser(actor, CompanyA), authority, new FixedCorrelation(Correlation), owners, owners, null,
+            return new SalesDraftService(companyContext, new FixedUser(actor, CompanyA), authority,
+                new FixedActiveRoleCodeReader(activeRoleCodes), new FixedCorrelation(Correlation), owners, owners, null,
                 scope.Store, new SalesDraftServiceBindings(), TimeProvider.System);
         }
 

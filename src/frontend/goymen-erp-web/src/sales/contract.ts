@@ -219,6 +219,8 @@ export interface DraftDetail {
    * creator's identity. The screen mirrors it (the withdrawal control); the server refuses regardless.
    */
   readonly isOwnDraft: boolean
+  /** D2: true only when this creator is currently in the SALES_SUPPORT persona. */
+  readonly isOwnDecisionRestricted: boolean
 }
 
 export interface DraftMutation {
@@ -497,7 +499,16 @@ function decodeLine(value: unknown): DraftLine | null {
   }
 }
 
-const DETAIL_KEYS = ['draft', 'requestedDeliveryDate', 'note', 'lines', ...OWNER_REFERENCE_FIELDS, 'approval', 'isOwnDraft'] as const
+const DETAIL_KEYS = [
+  'draft',
+  'requestedDeliveryDate',
+  'note',
+  'lines',
+  ...OWNER_REFERENCE_FIELDS,
+  'approval',
+  'isOwnDraft',
+  'isOwnDecisionRestricted',
+] as const
 
 /** `expectedId`: the record the caller asked for. A detail of another record is not an answer. */
 export function decodeDraftDetail(value: unknown, expectedId: string | null): DraftDetail | null {
@@ -524,7 +535,11 @@ export function decodeDraftDetail(value: unknown, expectedId: string | null): Dr
     references[field] = reference
   }
   const approval = decodeApproval(o.approval, draft.approvalState)
-  if (approval === null || typeof o.isOwnDraft !== 'boolean') return null
+  if (
+    approval === null ||
+    typeof o.isOwnDraft !== 'boolean' ||
+    typeof o.isOwnDecisionRestricted !== 'boolean'
+  ) return null
   return {
     draft,
     requestedDeliveryDate: o.requestedDeliveryDate,
@@ -538,6 +553,7 @@ export function decodeDraftDetail(value: unknown, expectedId: string | null): Dr
     package: references.package ?? null,
     approval,
     isOwnDraft: o.isOwnDraft,
+    isOwnDecisionRestricted: o.isOwnDecisionRestricted,
   }
 }
 
