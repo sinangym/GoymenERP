@@ -25,7 +25,7 @@ interface ApprovalResponse {
 }
 
 async function signInAs(page: Page, actor: string): Promise<void> {
-  await page.context().setExtraHTTPHeaders({ [DEVELOPMENT_USER_HEADER]: actor })
+  await page.setExtraHTTPHeaders({ [DEVELOPMENT_USER_HEADER]: actor })
 }
 
 async function readOrder(page: Page, actor: string, company = companyId): Promise<OrderDetail> {
@@ -37,8 +37,7 @@ async function readOrder(page: Page, actor: string, company = companyId): Promis
 }
 
 function seededRow(page: Page) {
-  const linkName = `…${orderId.slice(-8)}`
-  return page.getByRole('row').filter({ has: page.getByRole('link', { name: linkName }) })
+  return page.getByRole('row').filter({ hasText: `…${orderId.slice(-8)}` })
 }
 
 test('PUR01 approves through the real API, reopens the same record and replays the same command; reader and company fences hold', async ({ page }) => {

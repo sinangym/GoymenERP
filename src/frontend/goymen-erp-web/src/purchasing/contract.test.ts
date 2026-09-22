@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { decodePurchaseOrderDetail, decodePurchaseOrderList } from './contract'
 
+const COMPANY_GDC = '10000000-0000-0000-0000-000000000001'
 const summary = {
-  id: '11111111-1111-4111-8111-111111111111', companyId: '22222222-2222-4222-8222-222222222222',
+  id: '11111111-1111-4111-8111-111111111111', companyId: COMPANY_GDC,
   status: 'Draft', version: '1', supplierPartyId: '33333333-3333-4333-8333-333333333333',
   companyAccountId: '44444444-4444-4444-8444-444444444444', sourceRequestId: null,
   effectiveOn: '2026-09-22', createdAtUtc: '2026-09-22T10:00:00Z', updatedAtUtc: '2026-09-22T10:00:00Z', lineCount: 1,
@@ -15,12 +16,16 @@ const line = {
 
 describe('purchasing read contract', () => {
   it('decodes exact list and detail shapes', () => {
-    expect(decodePurchaseOrderList({ items: [summary], nextCursor: null })?.items).toHaveLength(1)
-    expect(decodePurchaseOrderDetail({ order: summary, lines: [line] })?.lines[0].remaining).toBe('10')
+    expect(decodePurchaseOrderList({ items: [summary], nextCursor: null })?.items[0].companyId).toBe(COMPANY_GDC)
+    const detail = decodePurchaseOrderDetail({ order: summary, lines: [line] })
+    expect(detail?.order.companyId).toBe(COMPANY_GDC)
+    expect(detail?.lines[0].remaining).toBe('10')
   })
 
   it('fails closed on loose fields, bad quantities and a line-count mismatch', () => {
     expect(decodePurchaseOrderList({ items: [{ ...summary, extra: true }], nextCursor: null })).toBeNull()
+    expect(decodePurchaseOrderList({ items: [{ ...summary, companyId: 'not-a-guid' }], nextCursor: null })).toBeNull()
+    expect(decodePurchaseOrderList({ items: [{ ...summary, companyId: '00000000-0000-0000-0000-000000000000' }], nextCursor: null })).toBeNull()
     expect(decodePurchaseOrderDetail({ order: summary, lines: [{ ...line, remaining: '-1' }] })).toBeNull()
     expect(decodePurchaseOrderDetail({ order: { ...summary, lineCount: 2 }, lines: [line] })).toBeNull()
   })

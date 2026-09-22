@@ -48,7 +48,8 @@ export interface PurchaseOrderCommandResponse {
 }
 
 type JsonObject = Record<string, unknown>
-const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const NIL_GUID = '00000000-0000-0000-0000-000000000000'
 const DATE = /^\d{4}-\d{2}-\d{2}$/
 const INSTANT = /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,7})?(Z|([+-])(\d{2}):(\d{2}))$/
 const VERSION = /^[1-9]\d*$/
@@ -72,7 +73,7 @@ function text(value: unknown): value is string {
 }
 
 function guid(value: unknown): value is string {
-  return text(value) && GUID.test(value)
+  return text(value) && GUID.test(value) && value.toLowerCase() !== NIL_GUID
 }
 
 function nullableGuid(value: unknown): value is string | null {
