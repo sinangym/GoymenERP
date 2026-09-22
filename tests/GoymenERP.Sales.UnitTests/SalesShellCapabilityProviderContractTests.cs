@@ -22,7 +22,7 @@ public sealed class SalesShellCapabilityProviderContractTests
         var provider = new SalesShellCapabilityProvider();
         var declarations = provider.GetDeclarations();
 
-        Assert.Equal(("SALES", "1.0"), (provider.Owner, provider.ContractVersion));
+        Assert.Equal(("SALES", "1.1"), (provider.Owner, provider.ContractVersion));
         Assert.Equal(5, declarations.Count);
         foreach (var declaration in declarations)
         {

@@ -22,7 +22,7 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Shell;
 public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "SALES";
-    public const string OwnerContractVersion = "1.0";
+    public const string OwnerContractVersion = "1.1";
 
     public const string ListCapabilityId = "sales.drafts.list";
     public const string ListRouteId = "sales.drafts.list";

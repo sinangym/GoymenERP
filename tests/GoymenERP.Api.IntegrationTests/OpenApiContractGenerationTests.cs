@@ -2044,7 +2044,7 @@ public sealed partial class OpenApiContractGenerationTests
                     ("expectedVersion", "type:string"),
                     ("lines", "type:array;items:ref:SalesDraftLineCommercialV1")),
                 ["SalesDraftLineCommercialV1"] = ObjectSchema(
-                    ["lineId"],
+                    ["lineId", "unitPrice", "priceUnitId", "discountPercent"],
                     ("lineId", "type:string;format:uuid"),
                     ("unitPrice", "type:null|string"),
                     ("priceUnitId", "type:null|string;format:uuid"),
