@@ -20,7 +20,7 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Shell;
 public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "PURCHASING";
-    public const string OwnerContractVersion = "1.0";
+    public const string OwnerContractVersion = "1.1";
 
     public const string ListCapabilityId = "purchasing.orders.list";
     public const string ListRoutePath = "/satinalma/siparisler";
@@ -56,7 +56,6 @@ public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider
             {
                 CapabilityId = ApproveCapabilityId,
                 ParentCapabilityId = DetailCapabilityId,
-                ContextRequirement = ShellCapabilityContextRequirement.SingleCompany,
                 RequiredPermissions = [PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.OrdersApprove],
             },
         ];

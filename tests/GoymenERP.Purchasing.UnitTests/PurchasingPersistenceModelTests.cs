@@ -140,6 +140,7 @@ public sealed class PurchasingPersistenceModelTests
     public void The_read_screens_and_approval_control_are_published_while_creation_stays_staged()
     {
         var declarations = new PurchasingShellCapabilityProvider().GetDeclarations();
+        Assert.Equal("1.1", PurchasingShellCapabilityProvider.OwnerContractVersion);
         Assert.Equal(4, declarations.Count);
         Assert.False(declarations.Single(item => item.CapabilityId == PurchasingShellCapabilityProvider.CreateCapabilityId).ImplementationAvailable);
         Assert.All(declarations.Where(item => item.CapabilityId != PurchasingShellCapabilityProvider.CreateCapabilityId),
@@ -156,6 +157,8 @@ public sealed class PurchasingPersistenceModelTests
         Assert.Equal([PurchasingPermissionManifestV1.OrdersRead], byId[PurchasingShellCapabilityProvider.ListCapabilityId].RequiredPermissions);
         Assert.Equal(PurchasingShellCapabilityProvider.DetailCapabilityId,
             declarations.Single(item => item.CapabilityId == PurchasingShellCapabilityProvider.ApproveCapabilityId).ParentCapabilityId);
+        Assert.Equal(byId[PurchasingShellCapabilityProvider.DetailCapabilityId].ContextRequirement,
+            byId[PurchasingShellCapabilityProvider.ApproveCapabilityId].ContextRequirement);
         Assert.Equal(3, PurchasingPermissionManifestV1.Names.Count);
         // Master v3 §27.3: P-03 is the order list, P-04 the new/edit form; the detail is a view of one P-03 row (the F-02-DETAIL precedent).
         Assert.Equal(["P-04", "P-03-DETAIL", "P-03-DETAIL", "P-03"],

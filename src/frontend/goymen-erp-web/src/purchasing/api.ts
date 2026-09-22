@@ -34,7 +34,9 @@ export async function fetchPurchaseOrders(
     const body = await bodyOf(response)
     if (response.status !== 200) return { type: 'http', status: response.status, body }
     const page = decodePurchaseOrderList(body)
-    return page === null ? { type: 'malformed' } : { type: 'ok-single', data: page }
+    return page === null || page.items.some((item) => item.companyId !== companyId)
+      ? { type: 'malformed' }
+      : { type: 'ok-single', data: page }
   } catch {
     if (signal?.aborted) return { type: 'fence-stale' }
     return navigator.onLine ? { type: 'network-error' } : { type: 'offline' }
@@ -53,7 +55,9 @@ export async function fetchPurchaseOrder(
     const body = await bodyOf(response)
     if (response.status !== 200) return { type: 'http', status: response.status, body }
     const detail = decodePurchaseOrderDetail(body)
-    return detail === null ? { type: 'malformed' } : { type: 'ok-single', data: detail }
+    return detail === null || detail.order.companyId !== companyId || detail.order.id !== orderId
+      ? { type: 'malformed' }
+      : { type: 'ok-single', data: detail }
   } catch {
     if (signal?.aborted) return { type: 'fence-stale' }
     return navigator.onLine ? { type: 'network-error' } : { type: 'offline' }

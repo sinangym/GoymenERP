@@ -36,9 +36,16 @@ export async function approvePurchaseOrder(
   try { body = await response.json() } catch { body = null }
   if (response.status === 200) {
     const decoded = decodePurchaseOrderCommandResponse(body)
-    return decoded === null
+    const replayHeader = response.headers.get('Idempotency-Replayed')
+    const originalHeader = response.headers.get('Idempotency-Original-Correlation-Id')
+    const replayHeadersMatch = decoded !== null && (
+      decoded.isReplay
+        ? replayHeader?.trim().toLowerCase() === 'true' && originalHeader === decoded.originalCorrelationId
+        : replayHeader === null && originalHeader === null
+    )
+    return decoded === null || decoded.detail.order.companyId !== companyId || decoded.detail.order.id !== orderId || !replayHeadersMatch
       ? { type: 'unknown', reason: 'undecodable' }
-      : { type: 'applied', response: decoded, replayed: response.headers.get('Idempotency-Replayed') === 'true' }
+      : { type: 'applied', response: decoded, replayed: decoded.isReplay }
   }
   if ([400, 401, 403, 404, 409, 415, 422].includes(response.status)) {
     return { type: 'failed', status: response.status, code: codeOf(body), replayed: response.headers.get('Idempotency-Replayed') === 'true' }

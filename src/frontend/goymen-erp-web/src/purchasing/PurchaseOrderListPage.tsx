@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router'
 import { fetchPurchaseOrders } from './api'
@@ -9,6 +9,7 @@ import { useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
 import { StateBlock } from '../shell/StateBlock'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
+import { createRequestFence } from './requestFence'
 import styles from './purchasing.module.css'
 
 const STATUS: Record<PurchaseOrderStatus, string> = { Draft: 'Taslak', Approved: 'Onaylandı' }
@@ -30,6 +31,11 @@ function PurchaseOrderList({ namespace }: { readonly namespace: string | null })
   const [cursor, setCursor] = useState<string | null | undefined>(undefined)
   const [continuation, setContinuation] = useState<'idle' | 'loading' | RemoteViewState<unknown>>('idle')
   const loading = useRef(false)
+  const pageFence = useRef(createRequestFence())
+  useEffect(() => {
+    const fence = pageFence.current
+    return () => fence.invalidate()
+  }, [namespace, shell.routeEntryGeneration])
   const first = useQuery({
     queryKey: [namespace ?? 'no-context', shell.routeEntryGeneration, 'purchasing-orders', status ?? 'all'],
     enabled: namespace !== null && companyId !== null,
@@ -46,8 +52,10 @@ function PurchaseOrderList({ namespace }: { readonly namespace: string | null })
     if (loading.current || companyId === null || nextCursor === null) return
     loading.current = true
     setContinuation('loading')
+    const token = pageFence.current.capture()
     const snapshot = boundary.capture()
-    const outcome = await fetchPurchaseOrders(companyId, { cursor: nextCursor, status })
+    const outcome = await fetchPurchaseOrders(companyId, { cursor: nextCursor, status }, token.signal)
+    if (!pageFence.current.isCurrent(token)) return
     loading.current = false
     if (outcome.type === 'http' && (outcome.status === 401 || outcome.status === 403)) boundary.report(outcome.status, snapshot)
     if (outcome.type === 'ok-single') {
@@ -60,7 +68,7 @@ function PurchaseOrderList({ namespace }: { readonly namespace: string | null })
     } else setContinuation(classifyOutcome(outcome) as RemoteViewState<unknown>)
   }, [boundary, companyId, nextCursor, page, status])
 
-  const header = <header className={styles.header}><div><p className={styles.eyebrow}>P-03</p><h1>Satın alma siparişleri</h1></div><label>Durum <select value={status ?? ''} onChange={(event) => { setStatus(event.target.value === '' ? null : event.target.value as PurchaseOrderStatus); setMore([]); setCursor(undefined); setContinuation('idle') }}><option value="">Tümü</option><option value="Draft">Taslak</option><option value="Approved">Onaylandı</option></select></label></header>
+  const header = <header className={styles.header}><div><p className={styles.eyebrow}>P-03</p><h1>Satın alma siparişleri</h1></div><label>Durum <select value={status ?? ''} onChange={(event) => { pageFence.current.invalidate(); loading.current = false; setStatus(event.target.value === '' ? null : event.target.value as PurchaseOrderStatus); setMore([]); setCursor(undefined); setContinuation('idle') }}><option value="">Tümü</option><option value="Draft">Taslak</option><option value="Approved">Onaylandı</option></select></label></header>
   if (companyId === null) return <main className={styles.page}>{header}<StateBlock state={{ kind: 'no-authorized-company' }} subject="satın alma siparişleri" /></main>
   if (page === null) {
     const state = first.data === undefined ? { kind: 'initial-loading' } : classifyOutcome(first.data)
