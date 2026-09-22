@@ -214,6 +214,22 @@ public sealed class ProductDbContext(DbContextOptions<ProductDbContext> options)
         return base.SaveChangesAsync(acceptAllChangesOnSuccess: true, cancellationToken);
     }
 
+    internal Task<int> AddSalesCandidateFixtureAsync(CancellationToken cancellationToken)
+    {
+        // Fixed test-only card, group, counter and registration; no arbitrary input or public writer enrollment.
+        if (ChangeTracker.Entries().Any())
+            throw new InvalidOperationException("A sales fixture requires a clean Product context.");
+        var group = Fixtures.ProductSalesCandidateFixture.Group();
+        var counter = ProductCodeCounter.ForGroup(group);
+        var row = ProductRow.FromRecord(Fixtures.ProductSalesCandidateFixture.Record());
+        if (counter.Advance().Value != row.Code) throw new InvalidOperationException("Invalid fixture code.");
+        CodeGroups.Add(group);
+        CodeCounters.Add(counter);
+        Products.Add(row);
+        CodeRegistrations.Add(ProductCodeRegistration.Current(row));
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess: true, cancellationToken);
+    }
+
     internal Task<int> AddFixtureCodeGroupAsync(ProductCodeGroupRow group, CancellationToken cancellationToken)
     {
         // The gated browser-suite code-group port (Fixtures/ProductCodeGroupFixtureStore) only: the change
