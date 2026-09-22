@@ -69,5 +69,11 @@ public sealed class DatabaseStartupModeTests
             DatabaseSchemaCompatibilityHealthCheck.Name,
             body,
             StringComparison.Ordinal);
+
+        using var business = await client.GetAsync("/api/v1/organization/companies");
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, business.StatusCode);
+        var businessBody = await business.Content.ReadAsStringAsync();
+        Assert.DoesNotContain(secret, businessBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("missing", businessBody, StringComparison.OrdinalIgnoreCase);
     }
 }

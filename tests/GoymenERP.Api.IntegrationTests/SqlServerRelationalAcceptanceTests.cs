@@ -1119,15 +1119,19 @@ internal sealed class SqlServerRelationalApiFactory : WebApplicationFactory<Prog
     private readonly string _databaseConnectionString;
     private readonly Action<IServiceCollection>? _configureServices;
     private readonly bool _applyTestCompanyBTopologyTemplates;
+    private readonly IReadOnlyDictionary<string, string?> _configurationOverrides;
 
     public SqlServerRelationalApiFactory(
         string baseConnectionString,
         Action<IServiceCollection>? configureServices = null,
         bool applyTestCompanyBTopologyTemplates = true,
-        string? databaseName = null)
+        string? databaseName = null,
+        IReadOnlyDictionary<string, string?>? configurationOverrides = null)
     {
         _configureServices = configureServices;
         _applyTestCompanyBTopologyTemplates = applyTestCompanyBTopologyTemplates;
+        _configurationOverrides = configurationOverrides
+            ?? new Dictionary<string, string?>();
         DatabaseName = databaseName ?? $"goymen_erp_ci_{Guid.NewGuid():N}";
         var builder = new SqlConnectionStringBuilder(baseConnectionString)
         {
@@ -1181,6 +1185,11 @@ internal sealed class SqlServerRelationalApiFactory : WebApplicationFactory<Prog
                 // Production runtime seed keeps GSP/GIN company-only.
                 testConfiguration["OrganizationSeed:Companies:1:ApplyTopologyTemplates"] =
                     "true";
+            }
+
+            foreach (var (key, value) in _configurationOverrides)
+            {
+                testConfiguration[key] = value;
             }
 
             configuration.AddInMemoryCollection(testConfiguration);

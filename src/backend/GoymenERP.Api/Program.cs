@@ -275,6 +275,10 @@ app.UseExceptionHandler();
 app.UseMiddleware<ShellCapabilityTransportMiddleware>();
 app.UseMiddleware<CorrelationContextMiddleware>();
 app.UseCors();
+if (databaseStartupMode == DatabaseStartupMode.ValidateOnly)
+{
+    app.UseMiddleware<DatabaseReadinessGateMiddleware>();
+}
 app.UseAuthentication();
 app.UseMiddleware<CompanyContextMiddleware>();
 app.UseAuthorization();

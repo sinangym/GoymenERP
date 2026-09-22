@@ -61,7 +61,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // opinion about whether a change is semantic. Any edit to a pinned file, comment included, is re-pinned in
     // the same push.
     private const string ReviewedOpenApiStartupFingerprint =
-        "f13a83ebc53b9f984d0cca13a96548b483938700dc0a6237ab6568b3da27ffc2";
+        "7233766997c0d83a9f2a1acd60696c066c9193fee700c8db9c267c800171d136";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedIdentityReconcilerPath =
@@ -165,7 +165,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // platform
             ["tools/relational_inventory/platform.txt"] =
-                "8d107cb289f91aa97a6c84889d51dcc31c5826cc12f1fe136a13d35e4ce4ec26",
+                "5bc60202f358f060e50b8453d1e6077d608c110f7b9e2cd061da061aec61f344",
 
             // product
             ["tools/relational_inventory/product.txt"] =
@@ -5182,10 +5182,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             || Regex.Matches(
                 relationalAcceptanceSource,
                 Regex.Escape("[SqlServerFact]"),
-                RegexOptions.CultureInvariant).Count != 10)
+                RegexOptions.CultureInvariant).Count != 14)
         {
             errors.Add(
-                "RCSI relational discovery must retain the reviewed class name and ten tests.");
+                "RCSI relational discovery must retain the reviewed class name and fourteen tests.");
         }
 
         if (Regex.Matches(

@@ -14,6 +14,161 @@ namespace GoymenERP.Api.IntegrationTests;
 public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
 {
     [SqlServerFact]
+    public async Task ValidateOnly_CompatibleDatabaseIsReady_AndWriteGuardsProveNoInitializationAttempt()
+    {
+        var baseConnectionString = GetBaseConnectionString();
+        var databaseName = NewDatabaseName("goymen_erp_validate_only_ready");
+
+        try
+        {
+            await CreateDatabaseAsync(baseConnectionString, databaseName, rcsiEnabled: true);
+            await InitializeDatabaseAsync(baseConnectionString, databaseName);
+            var databaseConnectionString = BuildDatabaseConnectionString(
+                baseConnectionString,
+                databaseName);
+            await InstallWriteBlockingGuardsAsync(databaseConnectionString);
+            await AssertWriteBlockingGuardsAreActiveAsync(databaseConnectionString);
+
+            await using var factory = CreateValidateOnlyFactory(
+                baseConnectionString,
+                databaseName);
+            using var client = factory.CreateClientFor(
+                TestUsers.CompanyA,
+                TestCompanyIds.CompanyA);
+
+            using var ready = await client.GetAsync("/health/ready");
+            Assert.Equal(HttpStatusCode.OK, ready.StatusCode);
+            Assert.Equal("Healthy", await ready.Content.ReadAsStringAsync());
+
+            using var business = await client.GetAsync("/api/v1/organization/companies");
+            Assert.NotEqual(HttpStatusCode.ServiceUnavailable, business.StatusCode);
+        }
+        finally
+        {
+            await DropDatabaseAsync(baseConnectionString, databaseName);
+        }
+    }
+
+    [SqlServerFact]
+    public async Task ValidateOnly_MissingDatabaseReturnsRedacted503WithoutCreatingIt()
+    {
+        var baseConnectionString = GetBaseConnectionString();
+        var databaseName = NewDatabaseName("goymen_erp_validate_only_missing");
+        var secret = new SqlConnectionStringBuilder(baseConnectionString).Password;
+
+        Assert.False(await DatabaseExistsAsync(baseConnectionString, databaseName));
+
+        await using var factory = CreateValidateOnlyFactory(
+            baseConnectionString,
+            databaseName);
+        using var client = factory.CreateClient();
+
+        using var live = await client.GetAsync("/health/live");
+        Assert.Equal(HttpStatusCode.OK, live.StatusCode);
+
+        using var ready = await client.GetAsync("/health/ready");
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, ready.StatusCode);
+        var body = await ready.Content.ReadAsStringAsync();
+        Assert.DoesNotContain(databaseName, body, StringComparison.OrdinalIgnoreCase);
+        if (!string.IsNullOrWhiteSpace(secret))
+        {
+            Assert.DoesNotContain(secret, body, StringComparison.Ordinal);
+        }
+
+        Assert.False(await DatabaseExistsAsync(baseConnectionString, databaseName));
+    }
+
+    [SqlServerFact]
+    public async Task ValidateOnly_BehindAndForwardMigrationHistoriesFailClosedWithoutRepair()
+    {
+        var baseConnectionString = GetBaseConnectionString();
+        var behindDatabase = NewDatabaseName("goymen_erp_validate_only_behind");
+        var forwardDatabase = NewDatabaseName("goymen_erp_validate_only_forward");
+        const string futureMigration = "99999999999999_ValidateOnlyFuture";
+
+        try
+        {
+            await CreateDatabaseAsync(baseConnectionString, behindDatabase, rcsiEnabled: true);
+            await InitializeDatabaseAsync(baseConnectionString, behindDatabase);
+            var behindConnection = BuildDatabaseConnectionString(
+                baseConnectionString,
+                behindDatabase);
+            var removedMigration = await RemoveLatestOrganizationMigrationAsync(behindConnection);
+            await InstallWriteBlockingGuardsAsync(behindConnection);
+
+            await CreateDatabaseAsync(baseConnectionString, forwardDatabase, rcsiEnabled: true);
+            await InitializeDatabaseAsync(baseConnectionString, forwardDatabase);
+            var forwardConnection = BuildDatabaseConnectionString(
+                baseConnectionString,
+                forwardDatabase);
+            await InsertOrganizationMigrationAsync(forwardConnection, futureMigration, "10.0.0");
+            await InstallWriteBlockingGuardsAsync(forwardConnection);
+
+            await using (var behindFactory = CreateValidateOnlyFactory(
+                             baseConnectionString,
+                             behindDatabase))
+            using (var behindClient = behindFactory.CreateClient())
+            using (var behindReady = await behindClient.GetAsync("/health/ready"))
+            {
+                Assert.Equal(HttpStatusCode.ServiceUnavailable, behindReady.StatusCode);
+            }
+
+            await using (var forwardFactory = CreateValidateOnlyFactory(
+                             baseConnectionString,
+                             forwardDatabase))
+            using (var forwardClient = forwardFactory.CreateClient())
+            using (var forwardReady = await forwardClient.GetAsync("/health/ready"))
+            {
+                Assert.Equal(HttpStatusCode.ServiceUnavailable, forwardReady.StatusCode);
+            }
+
+            Assert.False(await OrganizationMigrationExistsAsync(
+                behindConnection,
+                removedMigration.MigrationId));
+            Assert.True(await OrganizationMigrationExistsAsync(
+                forwardConnection,
+                futureMigration));
+        }
+        finally
+        {
+            await DropDatabaseAsync(baseConnectionString, behindDatabase);
+            await DropDatabaseAsync(baseConnectionString, forwardDatabase);
+        }
+    }
+
+    [SqlServerFact]
+    public async Task ValidateOnly_RcsiOffRefusesReadinessAndBusinessWithoutChangingTheDatabase()
+    {
+        var baseConnectionString = GetBaseConnectionString();
+        var databaseName = NewDatabaseName("goymen_erp_validate_only_rcsi_off");
+
+        try
+        {
+            await CreateDatabaseAsync(baseConnectionString, databaseName, rcsiEnabled: true);
+            await InitializeDatabaseAsync(baseConnectionString, databaseName);
+            await SetRcsiForTestAsync(baseConnectionString, databaseName, enabled: false);
+
+            await using var factory = CreateValidateOnlyFactory(
+                baseConnectionString,
+                databaseName);
+            using var client = factory.CreateClientFor(
+                TestUsers.CompanyA,
+                TestCompanyIds.CompanyA);
+
+            using var ready = await client.GetAsync("/health/ready");
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, ready.StatusCode);
+
+            using var business = await client.GetAsync("/api/v1/organization/companies");
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, business.StatusCode);
+            Assert.Equal(0, await ReadRcsiSettingAsync(baseConnectionString, databaseName));
+        }
+        finally
+        {
+            await DropDatabaseAsync(baseConnectionString, databaseName);
+        }
+    }
+
+    [SqlServerFact]
     public async Task RcsiOn_ProbeAndIdentityStartupUseTheSameReadyPolicy()
     {
         var baseConnectionString = GetBaseConnectionString();
@@ -1203,6 +1358,177 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
     private static string GetBaseConnectionString() =>
         Environment.GetEnvironmentVariable(
             SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
+
+    private static SqlServerRelationalApiFactory CreateValidateOnlyFactory(
+        string baseConnectionString,
+        string databaseName) =>
+        new(
+            baseConnectionString,
+            databaseName: databaseName,
+            configurationOverrides: new Dictionary<string, string?>
+            {
+                ["DatabaseStartup:Mode"] = "ValidateOnly",
+            });
+
+    private static async Task InitializeDatabaseAsync(
+        string baseConnectionString,
+        string databaseName)
+    {
+        await using var factory = new SqlServerRelationalApiFactory(
+            baseConnectionString,
+            databaseName: databaseName);
+        using var client = factory.CreateClient();
+        using var live = await client.GetAsync("/health/live");
+        Assert.Equal(HttpStatusCode.OK, live.StatusCode);
+    }
+
+    private static async Task InstallWriteBlockingGuardsAsync(string connectionString)
+    {
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+
+        var tables = new List<(string Schema, string Table, int ObjectId)>();
+        await using (var listCommand = connection.CreateCommand())
+        {
+            listCommand.CommandText = """
+                SELECT [schema].[name], [table].[name], [table].[object_id]
+                FROM [sys].[tables] AS [table]
+                INNER JOIN [sys].[schemas] AS [schema]
+                    ON [schema].[schema_id] = [table].[schema_id]
+                WHERE [table].[is_ms_shipped] = 0;
+                """;
+            await using var reader = await listCommand.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                tables.Add((reader.GetString(0), reader.GetString(1), reader.GetInt32(2)));
+            }
+        }
+
+        foreach (var table in tables)
+        {
+            await using var triggerCommand = connection.CreateCommand();
+            triggerCommand.CommandText = $"""
+                CREATE TRIGGER {QuoteIdentifier(table.Schema)}.{QuoteIdentifier($"__ValidateOnlyNoDml_{table.ObjectId}")}
+                ON {QuoteIdentifier(table.Schema)}.{QuoteIdentifier(table.Table)}
+                AFTER INSERT, UPDATE, DELETE
+                AS
+                BEGIN
+                    SET NOCOUNT ON;
+                    THROW 51070, 'ValidateOnly acceptance guard blocked a DML write.', 1;
+                END;
+                """;
+            await triggerCommand.ExecuteNonQueryAsync();
+        }
+
+        await using var ddlCommand = connection.CreateCommand();
+        ddlCommand.CommandText = """
+            CREATE TRIGGER [__ValidateOnlyNoDdl]
+            ON DATABASE
+            FOR DDL_TABLE_EVENTS, DDL_INDEX_EVENTS, DDL_SEQUENCE_EVENTS, DDL_SCHEMA_EVENTS
+            AS
+            BEGIN
+                SET NOCOUNT ON;
+                THROW 51071, 'ValidateOnly acceptance guard blocked a DDL write.', 1;
+            END;
+            """;
+        await ddlCommand.ExecuteNonQueryAsync();
+    }
+
+    private static async Task AssertWriteBlockingGuardsAreActiveAsync(string connectionString)
+    {
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+
+        await using var dmlCommand = connection.CreateCommand();
+        dmlCommand.CommandText = """
+            UPDATE [organization].[__EFMigrationsHistory]
+            SET [ProductVersion] = [ProductVersion];
+            """;
+        var dmlException = await Assert.ThrowsAsync<SqlException>(
+            () => dmlCommand.ExecuteNonQueryAsync());
+        Assert.Equal(51070, dmlException.Number);
+
+        await using var ddlCommand = connection.CreateCommand();
+        ddlCommand.CommandText = "CREATE TABLE [dbo].[__ValidateOnlyWriteProbe] ([Id] int NOT NULL);";
+        var ddlException = await Assert.ThrowsAsync<SqlException>(
+            () => ddlCommand.ExecuteNonQueryAsync());
+        Assert.Equal(51071, ddlException.Number);
+    }
+
+    private static async Task<MigrationHistoryRow> RemoveLatestOrganizationMigrationAsync(
+        string connectionString)
+    {
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var selectCommand = connection.CreateCommand();
+        selectCommand.CommandText = """
+            SELECT TOP (1) [MigrationId], [ProductVersion]
+            FROM [organization].[__EFMigrationsHistory]
+            ORDER BY [MigrationId] DESC;
+            """;
+        await using var reader = await selectCommand.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        var row = new MigrationHistoryRow(reader.GetString(0), reader.GetString(1));
+        await reader.CloseAsync();
+
+        await using var deleteCommand = connection.CreateCommand();
+        deleteCommand.CommandText = """
+            DELETE FROM [organization].[__EFMigrationsHistory]
+            WHERE [MigrationId] = @MigrationId;
+            """;
+        deleteCommand.Parameters.Add(new SqlParameter("@MigrationId", row.MigrationId));
+        Assert.Equal(1, await deleteCommand.ExecuteNonQueryAsync());
+        return row;
+    }
+
+    private static async Task InsertOrganizationMigrationAsync(
+        string connectionString,
+        string migrationId,
+        string productVersion)
+    {
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO [organization].[__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+            VALUES (@MigrationId, @ProductVersion);
+            """;
+        command.Parameters.Add(new SqlParameter("@MigrationId", migrationId));
+        command.Parameters.Add(new SqlParameter("@ProductVersion", productVersion));
+        Assert.Equal(1, await command.ExecuteNonQueryAsync());
+    }
+
+    private static async Task<bool> OrganizationMigrationExistsAsync(
+        string connectionString,
+        string migrationId)
+    {
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT_BIG(*)
+            FROM [organization].[__EFMigrationsHistory]
+            WHERE [MigrationId] = @MigrationId;
+            """;
+        command.Parameters.Add(new SqlParameter("@MigrationId", migrationId));
+        return Assert.IsType<long>(await command.ExecuteScalarAsync()) == 1L;
+    }
+
+    private static async Task<bool> DatabaseExistsAsync(
+        string baseConnectionString,
+        string databaseName)
+    {
+        await using var connection = await OpenMasterConnectionAsync(baseConnectionString);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT_BIG(*) FROM [sys].[databases] WHERE [name] = @Name;";
+        command.Parameters.Add(new SqlParameter("@Name", databaseName));
+        return Assert.IsType<long>(await command.ExecuteScalarAsync()) == 1L;
+    }
+
+    private static string QuoteIdentifier(string identifier) =>
+        $"[{identifier.Replace("]", "]]", StringComparison.Ordinal)}]";
+
+    private sealed record MigrationHistoryRow(string MigrationId, string ProductVersion);
 
     private static string NewDatabaseName(string prefix = "goymen_erp_rcsi") =>
         $"{prefix}_{Guid.NewGuid():N}";
