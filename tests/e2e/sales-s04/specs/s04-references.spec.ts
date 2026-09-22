@@ -248,22 +248,17 @@ test('S04-06 the preparer selects the real references and Product candidate, cre
 
   // E1: search and select the Product-owned disposable candidate through the real bounded endpoint.
   await page.getByLabel('Ürün ara').fill(productCode)
-  await page.getByTestId('sales-product-search-button').click()
-  const productSelect = page.getByLabel('Ürün').first()
-  await expect(productSelect.locator(`option[value="${productId}"]`)).toHaveCount(1, { timeout: 15_000 })
-  await productSelect.selectOption(productId)
-  await page.getByLabel('Miktar').first().fill('1')
-  const unitSelect = page.getByLabel('Sipariş birimi').first()
-  await expect(unitSelect.locator(`option[value="${productUnitId}"]`)).toHaveCount(1)
-  await unitSelect.selectOption(productUnitId)
-
-  const searched = productReads.find((answer) => {
-    const url = new URL(answer.url())
-    return url.searchParams.get('q') === productCode && url.searchParams.get('effectiveOn') === businessDate
+  const searchedPromise = page.waitForResponse((response) => {
+    const url = new URL(response.url())
+    return response.request().method() === 'GET'
+      && url.pathname === PRODUCTS_PATH
+      && url.searchParams.get('q') === productCode
+      && url.searchParams.get('effectiveOn') === businessDate
   })
-  expect(searched, 'the browser searched the Product candidate for the business date').toBeDefined()
-  expect(searched!.status()).toBe(200)
-  const productAnswer = (await searched!.json()) as ProductReferenceReading
+  await page.getByTestId('sales-product-search-button').click()
+  const searched = await searchedPromise
+  expect(searched.status()).toBe(200)
+  const productAnswer = (await searched.json()) as ProductReferenceReading
   expect(productAnswer.items).toEqual([
     {
       productId,
@@ -279,6 +274,16 @@ test('S04-06 the preparer selects the real references and Product candidate, cre
       ],
     },
   ])
+
+  const productSelect = page.getByLabel('Ürün').first()
+  await expect(productSelect.locator(`option[value="${productId}"]`)).toHaveCount(1, { timeout: 15_000 })
+  await productSelect.selectOption(productId)
+  await page.getByLabel('Miktar').first().fill('1')
+  const unitSelect = page.getByLabel('Sipariş birimi').first()
+  await expect(unitSelect.locator(`option[value="${productUnitId}"]`)).toHaveCount(1)
+  await unitSelect.selectOption(productUnitId)
+
+  expect(productReads).toContain(searched)
 
   const createdResponsePromise = page.waitForResponse((response) =>
     response.request().method() === 'POST' && new URL(response.url()).pathname === DRAFTS_PATH)
