@@ -81,7 +81,7 @@ async function readHistory(request: APIRequestContext): Promise<RevisionHistory>
 
 test('S04-08 one approved record is priced in the form, reopened as Rev.1, and its past-approved withdrawal is a terminal replayed refusal', async ({ page, request }) => {
   await openDraft(page, seed.preparerActor)
-  await expect(page.getByTestId('sales-draft-approval-state')).toHaveText('Approved')
+  await expect(page.getByTestId('sales-draft-approval-state')).toHaveText('Onaylı')
 
   const form = page.getByTestId('sales-price-revision-form')
   await expect(form).toBeVisible()
@@ -132,7 +132,7 @@ test('S04-08 one approved record is priced in the form, reopened as Rev.1, and i
   await page.goto('/satis/siparisler')
   await expect(page).toHaveURL(/\/satis\/siparisler$/)
   await page.goto(`/satis/siparisler/${seed.draftId}`)
-  await expect(page.getByTestId('sales-draft-approval-state')).toHaveText('Preparing')
+  await expect(page.getByTestId('sales-draft-approval-state')).toHaveText('Hazırlanıyor')
   await expect(page.getByTestId('sales-price-revision-form')).toBeVisible()
   await expect(page.getByTestId('sales-price-revision-form').getByLabel('Birim fiyat').nth(0)).toHaveValue('13.00')
   await expect(page.getByTestId('sales-price-revision-form').getByLabel('İskonto %').nth(0)).toHaveValue('5')
