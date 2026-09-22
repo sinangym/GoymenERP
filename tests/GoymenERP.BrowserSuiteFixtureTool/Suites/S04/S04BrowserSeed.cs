@@ -38,6 +38,12 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
     public const string SupportCreatorActor = "s04-support-creator";
     public const string OrdinaryCreatorActor = "s04-ordinary-creator";
 
+    // Identity's authenticated actor is the canonical user id resolved from the development subject.
+    // Fixture CreatedBy must store that same identity, never the external subject/header value.
+    private static readonly Guid PreparerIdentityId = Guid.Parse("b2000000-0000-4000-8000-000000000401");
+    private static readonly Guid SupportCreatorIdentityId = Guid.Parse("b2000000-0000-4000-8000-000000000405");
+    private static readonly Guid OrdinaryCreatorIdentityId = Guid.Parse("b2000000-0000-4000-8000-000000000406");
+
     /// <summary>The canonical bootstrap administrator, whose seeded SYSTEM_ADMINISTRATOR role opens Cari parties (the fin01 way).</summary>
     public const string CariActor = "group-bootstrap-admin";
 
@@ -145,7 +151,7 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
                         new SalesDraftFixtureLine(SheetLineId, SheetProductId, "S04-SHEET", context.Label("levha 2 × 1000 × 2000"),
                             PieceUnitId, PieceProfileId, "adet", "count", IsKilogram: false, Scale: 0, "3", 3m),
                     ],
-                    PreparerActor,
+                    PreparerIdentityId.ToString("D"),
                     context.IdempotencyKey("draft"),
                     At),
                 cancellationToken);
@@ -171,7 +177,7 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
                         new SalesDraftFixtureLine(DeliveryLineId, DeliveryProductId, "S04-COIL-2", context.Label("rulo 1,50 × 1000"),
                             KgUnitId, KgProfileId, "kg", "weight", IsKilogram: true, Scale: 3, "2.500", 2.500m),
                     ],
-                    PreparerActor,
+                    PreparerIdentityId.ToString("D"),
                     context.IdempotencyKey("delivery-draft"),
                     At),
                 cancellationToken);
@@ -180,13 +186,13 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
                 throw new InvalidOperationException("The Sales fixture writer answered another id for the delivery draft.");
             }
 
-            await EnsureD2DraftAsync(writer, context, SupportDraftId, "SO-D2-SUPPORT", SupportCreatorActor,
+            await EnsureD2DraftAsync(writer, context, SupportDraftId, "SO-D2-SUPPORT", SupportCreatorIdentityId.ToString("D"),
                 SupportProductId, SupportLineId, "support-creator-draft", cancellationToken);
-            await EnsureD2DraftAsync(writer, context, OrdinaryApproveDraftId, "SO-D2-ORD-APPROVE", OrdinaryCreatorActor,
+            await EnsureD2DraftAsync(writer, context, OrdinaryApproveDraftId, "SO-D2-ORD-APPROVE", OrdinaryCreatorIdentityId.ToString("D"),
                 OrdinaryApproveProductId, OrdinaryApproveLineId, "ordinary-approve-draft", cancellationToken);
-            await EnsureD2DraftAsync(writer, context, OrdinaryRejectDraftId, "SO-D2-ORD-REJECT", OrdinaryCreatorActor,
+            await EnsureD2DraftAsync(writer, context, OrdinaryRejectDraftId, "SO-D2-ORD-REJECT", OrdinaryCreatorIdentityId.ToString("D"),
                 OrdinaryRejectProductId, OrdinaryRejectLineId, "ordinary-reject-draft", cancellationToken);
-            await EnsureD2DraftAsync(writer, context, WithdrawalDraftId, "SO-D2-WITHDRAW", OrdinaryCreatorActor,
+            await EnsureD2DraftAsync(writer, context, WithdrawalDraftId, "SO-D2-WITHDRAW", OrdinaryCreatorIdentityId.ToString("D"),
                 WithdrawalProductId, WithdrawalLineId, "withdrawal-draft", cancellationToken);
         }
 
