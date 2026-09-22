@@ -23,10 +23,24 @@ import { readEnvironment } from '../src/env.js'
 
 const env = readEnvironment()
 const ACCOUNT_NAME = `SENTETIK FIN01 Ana TL ${Date.now()}`
+const NULL_INTENT_NAME = `SENTETIK FIN01 NULL intent ${Date.now()}`
+const BANK_NAME = 'SENTETIK FIN01 Banka'
+const ACCOUNT_TYPE = 'SENTETIK Vadesiz TL'
+const IBAN = 'TR330006100519786457841326'
+const CHANGED_IBAN = 'TR060006100519786457841327'
+const IBAN_CHANGE_REASON = 'SENTETIK FIN01 banka değişikliği'
 const FINANCE_API = /\/api\/v1\/finance\//
 const PROPOSE_RE = /\/api\/v1\/finance\/bank-accounts$/
 const APPROVAL_RE = /\/api\/v1\/finance\/bank-accounts\/[^/]+\/approval$/
+const IBAN_CHANGE_RE = /\/api\/v1\/finance\/bank-accounts\/[^/]+\/iban-change$/
+const IBAN_CHANGE_APPROVAL_RE = /\/api\/v1\/finance\/bank-accounts\/[^/]+\/iban-change\/approval$/
 const DRAFT_RE = /\/api\/v1\/finance\/manual-receipts\/drafts$/
+const RECORD_RE = /\/api\/v1\/finance\/manual-receipts\/[^/]+\/record$/
+const REVERSAL_PROPOSAL_RE = /\/api\/v1\/finance\/manual-receipts\/[^/]+\/reversal-proposals$/
+const REVERSAL_APPROVAL_RE = /\/api\/v1\/finance\/manual-receipts\/reversal-proposals\/[^/]+\/approval$/
+
+let recordedSourceId = ''
+let reversalSourceId = ''
 
 /** Binds `actor` to every API request of this context and records which requests it rewrote. */
 async function asActor(context: BrowserContext, actor: string): Promise<Set<Request>> {
@@ -56,6 +70,47 @@ function accountRow(page: Page) {
 }
 
 test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () => {
+  test('FIN01-00 the real host refuses a null money intent and stores no account', async ({ page, context }) => {
+    const rewritten = await asActor(context, env.seed.proposerActor)
+    const answered = watchAnswers(page)
+
+    // Supplementary negative transport evidence, not a substitute for the normal-screen cases below.
+    // The candidate identity still comes from the real F-04 form/Settings read; no fixture invents it.
+    await page.goto('/finans/banka-hesaplari/yeni')
+    const currency = page.getByLabel('Para birimi', { exact: true })
+    const tryOption = currency.locator('option').filter({ hasText: /TRY/ })
+    const currencyId = await tryOption.getAttribute('value')
+    expect(currencyId).toMatch(/^[0-9a-f-]{36}$/)
+
+    const result = await page.evaluate(async ({ name, selectedCurrency }) => {
+      const response = await fetch('/api/v1/finance/bank-accounts', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': crypto.randomUUID(),
+          'X-Correlation-Id': crypto.randomUUID(),
+        },
+        body: JSON.stringify({
+          displayName: name,
+          currencyId: selectedCurrency,
+          bankName: 'SENTETIK FIN01 Banka',
+          accountType: 'SENTETIK Vadesiz',
+          moneyMovementEligible: null,
+          branchName: null,
+          branchCode: null,
+          iban: null,
+          accountNumber: null,
+        }),
+      })
+      return { status: response.status, body: await response.text() }
+    }, { name: NULL_INTENT_NAME, selectedCurrency: currencyId! })
+
+    expect(result.status).toBe(400)
+    await page.goto('/finans/banka-hesaplari')
+    await expect(page.getByText(NULL_INTENT_NAME, { exact: true })).toHaveCount(0)
+    expectEveryAnswerRewritten(answered, rewritten)
+  })
+
   test('FIN01-01 the proposer proposes an account with a currency from Settings, pending and not self-approvable', async ({ page, context }) => {
     const rewritten = await asActor(context, env.seed.proposerActor)
     const answered = watchAnswers(page)
@@ -65,6 +120,10 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
     const currency = page.getByLabel('Para birimi', { exact: true })
     await expect(currency).toHaveValue('')
     await page.getByLabel('Hesap adı', { exact: true }).fill(ACCOUNT_NAME)
+    await page.getByLabel('Banka adı', { exact: true }).fill(BANK_NAME)
+    await page.getByLabel('Hesap türü', { exact: true }).fill(ACCOUNT_TYPE)
+    await page.getByLabel('Bu hesap ödeme/tahsilatta kullanılacak', { exact: true }).check()
+    await page.getByLabel('IBAN', { exact: true }).fill(IBAN)
     // selectOption takes a string label only; the display label is Settings' own text, so the TRY
     // candidate is found by its code prefix and chosen by its server-given value (the currency id).
     const tryOption = currency.locator('option', { hasText: /^TRY — / })
@@ -78,14 +137,27 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
     await page.getByRole('button', { name: 'Öner', exact: true }).click()
     const sent = await post
     expect(sent.headers()['idempotency-key']).toMatch(/^[0-9a-f]{32}$/)
-    expect(Object.keys(sent.postDataJSON()).sort()).toEqual(['currencyId', 'displayName'])
-    expect(sent.postDataJSON().currencyId).toBe(tryCurrencyId)
+    expect(sent.postDataJSON()).toEqual({
+      displayName: ACCOUNT_NAME,
+      currencyId: tryCurrencyId,
+      bankName: BANK_NAME,
+      accountType: ACCOUNT_TYPE,
+      moneyMovementEligible: true,
+      branchName: null,
+      branchCode: null,
+      iban: IBAN,
+      accountNumber: null,
+    })
     expect((await answer).status()).toBe(200)
     await expect(page.getByText('Hesap önerildi; onay bekliyor.', { exact: false })).toBeVisible()
 
     await page.goto('/finans/banka-hesaplari')
     await expect(accountRow(page)).toContainText('Onay bekliyor')
     await expect(accountRow(page)).toContainText('Sizin öneriniz')
+    await expect(accountRow(page)).toContainText(BANK_NAME)
+    await expect(accountRow(page)).toContainText(ACCOUNT_TYPE)
+    await expect(accountRow(page)).toContainText(IBAN)
+    await expect(accountRow(page)).toContainText('Para hareketine uygun')
     await expect(accountRow(page).getByRole('button', { name: /Onayla/ })).toHaveCount(0)
     expectEveryAnswerRewritten(answered, rewritten)
   })
@@ -108,7 +180,50 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
     expectEveryAnswerRewritten(answered, rewritten)
   })
 
-  test('FIN01-03 the proposer saves a draft against it from the customer and reopens it from the list', async ({ page, context }) => {
+  test('FIN01-02B the proposer creates a pending IBAN change but cannot approve it', async ({ page, context }) => {
+    const rewritten = await asActor(context, env.seed.proposerActor)
+    const answered = watchAnswers(page)
+
+    await page.goto('/finans/banka-hesaplari')
+    await expect(accountRow(page)).toContainText('Onaylı', { timeout: 30_000 })
+    await accountRow(page).getByRole('button', { name: 'IBAN değişikliği öner', exact: true }).click()
+    await accountRow(page).getByLabel('Yeni IBAN', { exact: true }).fill(CHANGED_IBAN)
+    await accountRow(page).getByLabel('Gerekçe', { exact: true }).fill(IBAN_CHANGE_REASON)
+
+    const post = page.waitForRequest((request) => IBAN_CHANGE_RE.test(request.url()) && request.method() === 'POST')
+    const answer = page.waitForResponse((response) => IBAN_CHANGE_RE.test(response.url()) && response.request().method() === 'POST')
+    await accountRow(page).getByRole('button', { name: 'Değişikliği öner', exact: true }).click()
+    expect((await post).postDataJSON()).toEqual({ expectedVersion: '2', iban: CHANGED_IBAN, reason: IBAN_CHANGE_REASON })
+    expect((await answer).status()).toBe(200)
+
+    await expect(accountRow(page)).toContainText('IBAN değişikliği onay bekliyor', { timeout: 30_000 })
+    await expect(accountRow(page)).toContainText(CHANGED_IBAN)
+    await expect(accountRow(page)).toContainText(IBAN)
+    await expect(accountRow(page)).toContainText(/Onaylanana kadar.*mevcut onayl.*IBAN.*kullan.*devam eder/)
+    await expect(accountRow(page)).toContainText('Bu değişikliği siz önerdiniz')
+    await expect(accountRow(page).getByRole('button', { name: 'IBAN değişikliğini onayla', exact: true })).toHaveCount(0)
+    expectEveryAnswerRewritten(answered, rewritten)
+  })
+
+  test('FIN01-02C another user approves the pending IBAN and the same account reopens with it', async ({ page, context }) => {
+    const rewritten = await asActor(context, env.seed.approverActor)
+    const answered = watchAnswers(page)
+
+    await page.goto('/finans/banka-hesaplari')
+    await expect(accountRow(page)).toContainText('IBAN değişikliği onay bekliyor', { timeout: 30_000 })
+    const post = page.waitForRequest((request) => IBAN_CHANGE_APPROVAL_RE.test(request.url()) && request.method() === 'POST')
+    const answer = page.waitForResponse((response) => IBAN_CHANGE_APPROVAL_RE.test(response.url()) && response.request().method() === 'POST')
+    await accountRow(page).getByRole('button', { name: 'IBAN değişikliğini onayla', exact: true }).click()
+    expect((await post).postDataJSON()).toEqual({ expectedVersion: '3' })
+    expect((await answer).status()).toBe(200)
+
+    await expect(accountRow(page)).toContainText(CHANGED_IBAN, { timeout: 30_000 })
+    await expect(accountRow(page)).not.toContainText('IBAN değişikliği onay bekliyor')
+    await expect(accountRow(page)).not.toContainText(IBAN)
+    expectEveryAnswerRewritten(answered, rewritten)
+  })
+
+  test('FIN01-03 the proposer saves, reopens and records the draft, then reopens the same source', async ({ page, context }) => {
     const rewritten = await asActor(context, env.seed.proposerActor)
     const answered = watchAnswers(page)
 
@@ -139,8 +254,93 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
     await rows.first().getByRole('button', { name: /^Aç/ }).click()
     await expect(page.getByRole('heading', { level: 1, name: 'Tahsilat taslağı', exact: true })).toBeVisible()
     await expect(page.getByText('Taslak — para etkisi yok.', { exact: false })).toBeVisible()
-    // Record and Reverse have no route (T05, OPEN-009): not offered.
+
+    const sourceId = new URL(page.url()).pathname.split('/').at(-1)!
+    expect(sourceId).toMatch(/^[0-9a-f-]{36}$/)
+    recordedSourceId = sourceId
+    await page.getByRole('button', { name: 'Kesin kayda al', exact: true }).click()
+    const recordPost = page.waitForRequest((request) => RECORD_RE.test(request.url()) && request.method() === 'POST')
+    const recordAnswer = page.waitForResponse((response) => RECORD_RE.test(response.url()) && response.request().method() === 'POST')
+    await page.getByRole('button', { name: 'Kesin kaydı onayla', exact: true }).click()
+    const recordSent = await recordPost
+    expect(recordSent.postDataJSON()).toEqual({ draftId: sourceId, expectedVersion: '1' })
+    expect((await recordAnswer).status()).toBe(200)
+    await expect(page.getByText('Kesin kaynak kaydı.', { exact: false })).toBeVisible({ timeout: 30_000 })
     await expect(page.getByRole('button', { name: 'Kesin kayda al' })).toHaveCount(0)
+
+    await page.goto('/finans/tahsilatlar')
+    // Reopen by the persisted source identity, not by locale-sensitive amount formatting.
+    const recordedRow = page.getByRole('row').filter({ has: page.getByRole('button', { name: new RegExp(`^Aç:.*${sourceId.slice(-8)}$`) }) })
+    await expect(recordedRow).toHaveCount(1, { timeout: 30_000 })
+    await recordedRow.getByRole('button', { name: /^Aç/ }).click()
+    await expect(page).toHaveURL(new RegExp(`/finans/tahsilatlar/${sourceId}$`))
+    await expect(page.getByText('Kesin kaynak kaydı.', { exact: false })).toBeVisible()
+    expectEveryAnswerRewritten(answered, rewritten)
+  })
+
+  test('FIN01-03B the maker proposes a reversal from the recorded source and cannot open checker actions', async ({ page, context }) => {
+    const rewritten = await asActor(context, env.seed.proposerActor)
+    const answered = watchAnswers(page)
+    expect(recordedSourceId).toMatch(/^[0-9a-f-]{36}$/)
+
+    await page.goto(`/finans/tahsilatlar/${recordedSourceId}`)
+    await expect(page.getByText('Kesin kaynak kaydı.', { exact: false })).toBeVisible({ timeout: 30_000 })
+    await page.getByRole('button', { name: 'Ters kayıt öner', exact: true }).click()
+    await page.getByLabel('Ters kayıt işlem tarihi', { exact: true }).fill('2026-09-13')
+    await page.getByLabel('Gerekçe', { exact: true }).fill('SENTETIK FIN-T06 correction')
+    const post = page.waitForRequest((request) => REVERSAL_PROPOSAL_RE.test(request.url()) && request.method() === 'POST')
+    const answer = page.waitForResponse((response) => REVERSAL_PROPOSAL_RE.test(response.url()) && response.request().method() === 'POST')
+    await page.getByRole('button', { name: 'Onaya gönder', exact: true }).click()
+    const sent = await post
+    expect(sent.postDataJSON()).toEqual({
+      sourceId: recordedSourceId,
+      expectedVersion: '2',
+      occurredOn: '2026-09-13',
+      reason: 'SENTETIK FIN-T06 correction',
+    })
+    expect((await answer).status()).toBe(200)
+    await expect(page.getByText('başka bir yetkilinin onayı bekleniyor', { exact: false })).toBeVisible()
+
+    await page.goto('/finans/ters-kayit-onaylari')
+    await expect(page.locator('[data-state="not-found"]')).toBeVisible({ timeout: 30_000 })
+    expectEveryAnswerRewritten(answered, rewritten)
+  })
+
+  test('FIN01-03C the checker approves in the reversal queue and creates a separate source', async ({ page, context }) => {
+    const rewritten = await asActor(context, env.seed.approverActor)
+    const answered = watchAnswers(page)
+
+    await page.goto('/finans/ters-kayit-onaylari')
+    await expect(page.getByRole('heading', { level: 1, name: 'Ters kayıt onayları', exact: true })).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByText('SENTETIK FIN-T06 correction', { exact: true })).toBeVisible()
+    const post = page.waitForRequest((request) => REVERSAL_APPROVAL_RE.test(request.url()) && request.method() === 'POST')
+    const answer = page.waitForResponse((response) => REVERSAL_APPROVAL_RE.test(response.url()) && response.request().method() === 'POST')
+    await page.getByRole('button', { name: 'Onayla ve ters kaydı oluştur', exact: true }).click()
+    expect((await post).postDataJSON()).toEqual({ proposalId: expect.any(String), expectedVersion: '1' })
+    expect((await answer).status()).toBe(200)
+    const link = page
+      .getByLabel('Sonuçlanan ters kayıt önerisi')
+      .getByRole('link', { name: 'Oluşturulan ters kaydı aç', exact: true })
+    await expect(link).toBeVisible({ timeout: 30_000 })
+    reversalSourceId = (await link.getAttribute('href'))!.split('/').at(-1)!
+    expect(reversalSourceId).toMatch(/^[0-9a-f-]{36}$/)
+    expect(reversalSourceId).not.toBe(recordedSourceId)
+    expectEveryAnswerRewritten(answered, rewritten)
+  })
+
+  test('FIN01-03D the maker reopens both immutable sources through their historical links', async ({ page, context }) => {
+    const rewritten = await asActor(context, env.seed.proposerActor)
+    const answered = watchAnswers(page)
+
+    await page.goto(`/finans/tahsilatlar/${recordedSourceId}`)
+    await expect(page.getByText('Ters kayıtla düzeltildi', { exact: true })).toBeVisible({ timeout: 30_000 })
+    await page.getByRole('link', { name: new RegExp(reversalSourceId.slice(-8)) }).click()
+    await expect(page).toHaveURL(new RegExp(`/finans/tahsilatlar/${reversalSourceId}$`))
+    await expect(page.getByText('Kesin kaynak kaydı.', { exact: false })).toBeVisible({ timeout: 30_000 })
+
+    await page.getByRole('link', { name: new RegExp(recordedSourceId.slice(-8)) }).click()
+    await expect(page).toHaveURL(new RegExp(`/finans/tahsilatlar/${recordedSourceId}$`))
+    await expect(page.getByText('Ters kayıtla düzeltildi', { exact: true })).toBeVisible()
     expectEveryAnswerRewritten(answered, rewritten)
   })
 

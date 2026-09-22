@@ -24,7 +24,11 @@ public sealed class FinanceDraftPersistenceModelTests
     public void Every_finance_table_is_in_its_schema_and_filtered_by_the_active_company()
     {
         using var context = Context();
-        foreach (var type in new[] { typeof(ReceiptDraftRow), typeof(FinanceCommandRow), typeof(MoneyEventRow) })
+        foreach (var type in new[]
+                 {
+                     typeof(ReceiptDraftRow), typeof(FinanceCommandRow), typeof(MoneyEventRow),
+                     typeof(ReversalProposalRow),
+                 })
         {
             var entity = context.Model.FindEntityType(type)!;
             Assert.Equal(FinanceDbContext.Schema, entity.GetSchema());
@@ -50,6 +54,11 @@ public sealed class FinanceDraftPersistenceModelTests
         Assert.Equal(FinanceDbContext.IdentityCollation, design.FindProperty(nameof(FinanceCommandRow.ActorId))!.GetCollation());
         Assert.False(design.FindProperty(nameof(FinanceCommandRow.ActorId))!.IsNullable);
         Assert.Contains(design.GetCheckConstraints(), check => check.Name == "CK_Commands_KeyHash");
+        Assert.NotNull(design.FindProperty(nameof(FinanceCommandRow.ReversalProposalId)));
+        Assert.Contains(design.GetForeignKeys(), key =>
+            key.PrincipalEntityType.ClrType == typeof(ReversalProposalRow)
+            && key.Properties.Select(property => property.Name)
+                .SequenceEqual([nameof(FinanceCommandRow.CompanyId), nameof(FinanceCommandRow.ReversalProposalId)]));
         // The key hash is the trimmed key's upper-case SHA-256 (ADR-011 §2).
         Assert.Equal(64, FinanceCommandKeys.Hash("k-1").Length);
         Assert.Equal(FinanceCommandKeys.Hash("k-1"), FinanceCommandKeys.Hash("k-1").ToUpperInvariant());
@@ -69,6 +78,7 @@ public sealed class FinanceDraftPersistenceModelTests
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_InitialFinanceDrafts", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AlignCommandsWithAdr011", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddMoneyEvents", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddReversalProposals", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -93,6 +103,7 @@ public sealed class FinanceDraftPersistenceModelTests
     [InlineData("edit-money-event")]
     [InlineData("delete-money-event")]
     [InlineData("edit-recorded-source")]
+    [InlineData("edit-reversal-proposal-origin")]
     public void Drafts_are_never_deleted_and_command_records_never_change(string fault)
     {
         using var context = Context();
@@ -117,6 +128,9 @@ public sealed class FinanceDraftPersistenceModelTests
                 recorded.RecordedAtUtc = At;
                 recorded.RecordedBy = "synthetic-actor";
                 Attach(context, recorded).Description = "changed";
+                break;
+            case "edit-reversal-proposal-origin":
+                Attach(context, ReversalProposal()).OriginalSourceId = Guid.NewGuid();
                 break;
             default:
                 Attach(context, Command()).PayloadHash = new string('1', 64);
@@ -143,6 +157,27 @@ public sealed class FinanceDraftPersistenceModelTests
         Assert.NotNull(design.FindProperty(nameof(MoneyEventRow.RecordedAtUtc)));
         Assert.Contains(context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(ReceiptDraftRow))!.GetCheckConstraints(),
             check => check.Name == "CK_ReceiptDrafts_Stage");
+        Assert.NotEqual(MoneyEventKinds.ManualBankReceiptRecorded, MoneyEventKinds.ManualBankReceiptReversed);
+        Assert.Contains(design.GetCheckConstraints(), check =>
+            check.Name == "CK_MoneyEvents_Kind" && check.Sql.Contains("2", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void A_reversal_proposal_has_separate_pending_and_approved_uniqueness_and_immutable_links()
+    {
+        using var context = Context();
+        var design = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(ReversalProposalRow))!;
+        var indexes = design.GetIndexes().Where(index => index.IsUnique).ToArray();
+
+        Assert.Contains(indexes, index =>
+            index.GetDatabaseName() == "UX_ReversalProposals_PendingOriginal"
+            && index.GetFilter() == "[Status] = 0");
+        Assert.Contains(indexes, index =>
+            index.GetDatabaseName() == "UX_ReversalProposals_ApprovedOriginal"
+            && index.GetFilter() == "[Status] = 1");
+        Assert.Equal(2, design.GetForeignKeys().Count(key => key.PrincipalEntityType.ClrType == typeof(ReceiptDraftRow)));
+        Assert.True(design.FindProperty(nameof(ReversalProposalRow.Version))!.IsConcurrencyToken);
+        Assert.Contains(design.GetCheckConstraints(), check => check.Name == "CK_ReversalProposals_Decision");
     }
 
     [Fact]
@@ -204,6 +239,14 @@ public sealed class FinanceDraftPersistenceModelTests
         PartyId = Guid.NewGuid(), CompanyAccountId = Guid.NewGuid(), TreasuryAccountId = Guid.NewGuid(), CurrencyId = Guid.NewGuid(),
         AmountText = "1000", ProfileId = Guid.NewGuid().ToString("D"), ProfileVersion = "1", OccurredOn = new DateOnly(2026, 9, 21),
         RecordedAtUtc = At, RecordedBy = "synthetic-actor", CorrelationId = "synthetic-correlation",
+    };
+
+    private static ReversalProposalRow ReversalProposal() => new ReversalProposalRow
+    {
+        Id = Guid.NewGuid(), CompanyId = CompanyA, OriginalSourceId = Guid.NewGuid(),
+        OccurredOn = new DateOnly(2026, 9, 21), Reason = "Hatalı tahsilat",
+        Status = ReversalProposalStatuses.Pending, ProposedBy = "synthetic-maker",
+        ProposedAtUtc = At, Version = 1,
     };
 
     private static FinanceCommandRow Command() => new FinanceCommandRow

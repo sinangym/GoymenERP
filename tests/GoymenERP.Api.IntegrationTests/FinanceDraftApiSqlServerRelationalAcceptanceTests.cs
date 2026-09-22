@@ -208,8 +208,9 @@ public sealed class FinanceDraftApiSqlServerRelationalAcceptanceTests
         {
             var id = Guid.NewGuid();
             await ExecuteAsync(
-                "INSERT INTO finance.BankAccounts (Id, CompanyId, CurrencyId, DisplayName, Status, Version, ProposedBy, "
-                + "ProposedAtUtc, ApprovedBy, ApprovedAtUtc, UpdatedAtUtc) VALUES (@id, @c, @cur, @n, 2, 2, N'SENTETIK-proposer', "
+                "INSERT INTO finance.BankAccounts (Id, CompanyId, CurrencyId, DisplayName, MoneyMovementEligible, Iban, "
+                + "Status, Version, ProposedBy, ProposedAtUtc, ApprovedBy, ApprovedAtUtc, UpdatedAtUtc) VALUES "
+                + "(@id, @c, @cur, @n, 1, N'TR330006100519786457841326', 2, 2, N'SENTETIK-proposer', "
                 + "SYSDATETIMEOFFSET(), N'SENTETIK-approver', SYSDATETIMEOFFSET(), SYSDATETIMEOFFSET())",
                 ("@id", id), ("@c", company), ("@cur", Currency), ("@n", name));
             return id;

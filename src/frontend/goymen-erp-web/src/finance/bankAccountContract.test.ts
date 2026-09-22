@@ -13,31 +13,90 @@ import {
   type BankAccountRequest,
 } from './bankAccountCommand'
 import { classifyReply } from './receiptCommand'
-import { COMPANY_A, COMPANY_B, bankAccount } from './testHarness'
+import { COMPANY_A, COMPANY_B, bankAccount, bankAccountCard } from './testHarness'
 
 const ACCOUNT = 'aaaaaaaa-0000-4000-8000-0000000000b1'
 const TRY = 'cccccccc-0000-4000-8000-0000000000c1'
 const USD = 'cccccccc-0000-4000-8000-0000000000c2'
+const PENDING_IBAN = {
+  iban: 'TR120006200519786457841327',
+  proposedBy: 'SENTETIK-proposer',
+  proposedAtUtc: '2026-09-21T10:00:00Z',
+  reason: 'SENTETIK banka gecisi',
+}
 
 const pending = (overrides: Record<string, unknown> = {}) =>
   bankAccount(COMPANY_A, { id: ACCOUNT, currencyId: TRY, displayName: 'SENTETIK Ana', isActive: false, isUsableForReceipt: false, version: '1', ...overrides })
+const masterItem = (overrides: Record<string, unknown> = {}) => ({
+  account: pending(),
+  isOwnProposal: true,
+  card: bankAccountCard({ moneyEligibility: 'Undeclared' }),
+  isOwnPendingIbanProposal: false,
+  ...overrides,
+})
 
 describe('decodeBankAccountMasterPage', () => {
   it('accepts the exact page with the caller flag', () => {
-    const decoded = decodeBankAccountMasterPage({ companyId: COMPANY_A, items: [{ account: pending(), isOwnProposal: true }] }, COMPANY_A)
+    const decoded = decodeBankAccountMasterPage({ companyId: COMPANY_A, items: [masterItem()] }, COMPANY_A)
     expect(decoded).toEqual({
       ok: true,
-      value: { companyId: COMPANY_A, items: [{ account: expect.objectContaining({ id: ACCOUNT, isActive: false }), isOwnProposal: true }] },
+      value: { companyId: COMPANY_A, items: [{
+        account: expect.objectContaining({ id: ACCOUNT, isActive: false }),
+        isOwnProposal: true,
+        card: bankAccountCard({ moneyEligibility: 'Undeclared' }),
+        isOwnPendingIbanProposal: false,
+      }] },
+    })
+  })
+
+  it('keeps an exact pending IBAN change separate from the currently approved card IBAN', () => {
+    const card = bankAccountCard({
+      iban: 'TR330006100519786457841326',
+      pendingIbanChange: PENDING_IBAN,
+    })
+    const decoded = decodeBankAccountMasterPage({
+      companyId: COMPANY_A,
+      items: [masterItem({ card })],
+    }, COMPANY_A)
+
+    expect(decoded).toEqual({
+      ok: true,
+      value: {
+        companyId: COMPANY_A,
+        items: [expect.objectContaining({
+          card: expect.objectContaining({
+            iban: 'TR330006100519786457841326',
+            pendingIbanChange: PENDING_IBAN,
+          }),
+        })],
+      },
     })
   })
 
   it.each([
     ['another company', { companyId: COMPANY_B, items: [] }],
     ['an extra member', { companyId: COMPANY_A, items: [], nextCursor: null }],
-    ['a missing flag', { companyId: COMPANY_A, items: [{ account: pending() }] }],
-    ['a non-boolean flag', { companyId: COMPANY_A, items: [{ account: pending(), isOwnProposal: 'yes' }] }],
-    ['an account of another company', { companyId: COMPANY_A, items: [{ account: pending({ companyId: COMPANY_B }), isOwnProposal: false }] }],
-    ['the same account twice', { companyId: COMPANY_A, items: [{ account: pending(), isOwnProposal: false }, { account: pending(), isOwnProposal: false }] }],
+    ['a missing card', { companyId: COMPANY_A, items: [{ account: pending(), isOwnProposal: true, isOwnPendingIbanProposal: false }] }],
+    ['a non-boolean flag', { companyId: COMPANY_A, items: [masterItem({ isOwnProposal: 'yes' })] }],
+    ['a malformed card', { companyId: COMPANY_A, items: [masterItem({ card: bankAccountCard({ moneyEligibility: null }) })] }],
+    ['a pending IBAN with an extra member', {
+      companyId: COMPANY_A,
+      items: [masterItem({ card: bankAccountCard({ pendingIbanChange: { ...PENDING_IBAN, approved: false } }) })],
+    }],
+    ['a pending IBAN with a non-instant proposal time', {
+      companyId: COMPANY_A,
+      items: [masterItem({ card: bankAccountCard({ pendingIbanChange: { ...PENDING_IBAN, proposedAtUtc: 'yesterday' } }) })],
+    }],
+    ['a pending IBAN with surrounding spaces', {
+      companyId: COMPANY_A,
+      items: [masterItem({ card: bankAccountCard({ pendingIbanChange: { ...PENDING_IBAN, iban: ` ${PENDING_IBAN.iban}` } }) })],
+    }],
+    ['a pending IBAN with a blank reason', {
+      companyId: COMPANY_A,
+      items: [masterItem({ card: bankAccountCard({ pendingIbanChange: { ...PENDING_IBAN, reason: ' ' } }) })],
+    }],
+    ['an account of another company', { companyId: COMPANY_A, items: [masterItem({ account: pending({ companyId: COMPANY_B }) })] }],
+    ['the same account twice', { companyId: COMPANY_A, items: [masterItem(), masterItem()] }],
   ])('refuses %s', (_label, value) => {
     expect(decodeBankAccountMasterPage(value, COMPANY_A).ok).toBe(false)
   })
@@ -100,7 +159,20 @@ describe('the draft save regression: a status-only 403 is a refusal, not an unkn
 })
 
 describe('bank-account command rules', () => {
-  const propose: BankAccountRequest = { operation: 'bank-account-propose', body: { displayName: 'SENTETIK Ana', currencyId: TRY } }
+  const propose: BankAccountRequest = {
+    operation: 'bank-account-propose',
+    body: {
+      displayName: 'SENTETIK Ana',
+      currencyId: TRY,
+      bankName: 'SENTETIK Banka',
+      accountType: 'SENTETIK Vadesiz',
+      moneyMovementEligible: false,
+      branchName: null,
+      branchCode: null,
+      iban: null,
+      accountNumber: null,
+    },
+  }
   const approve: BankAccountRequest = { operation: 'bank-account-approve', accountId: ACCOUNT, body: { expectedVersion: '1' } }
   const snapshot = (request: BankAccountRequest): BankAccountSnapshot => ({
     key: 'k-1',

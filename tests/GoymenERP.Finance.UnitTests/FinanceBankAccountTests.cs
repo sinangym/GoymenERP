@@ -46,7 +46,7 @@ public sealed class FinanceBankAccountTests
         var commands = design.FindEntityType(typeof(FinanceCommandRow))!;
         var target = Assert.Single(commands.GetCheckConstraints(), check => check.Name == "CK_Commands_Target");
         Assert.Equal(FinanceDbContext.TargetCheck, target.Sql);
-        Assert.EndsWith("OR ([DraftId] IS NULL AND [BankAccountId] IS NULL AND JSON_VALUE([ResultJson], '$.outcome') = 'ValidationFailed')",
+        Assert.EndsWith("OR ([DraftId] IS NULL AND [BankAccountId] IS NULL AND [ReversalProposalId] IS NULL AND JSON_VALUE([ResultJson], '$.outcome') = 'ValidationFailed')",
             target.Sql, StringComparison.Ordinal);
         Assert.All(commands.GetForeignKeys().Where(key => key.PrincipalEntityType.ClrType != typeof(OrganizationCompanyReference)),
             key => Assert.False(key.IsRequired));
@@ -57,12 +57,9 @@ public sealed class FinanceBankAccountTests
     {
         using var context = Context();
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddBankAccounts", StringComparison.Ordinal));
-        // The NEWEST migration is pinned by name on purpose: adding one to this module must be a deliberate
-        // edit here, not a silent append. It has moved twice — RecordTerminalCommandResults → AddMoneyEvents
-        // (FIN-T05a's money event table) → AddBankAccountCardFields (K2's card columns). Each move was made by
-        // reading the new migration first, which is what this pin is for. The card migration's own shape — six
-        // NULLABLE columns, no backfill, nothing else touched — is measured in `The_card_columns_are_nullable…`.
-        Assert.Equal("20260920120000_AddBankAccountCardFields", context.Database.GetMigrations().Last());
+        // The NEWEST migration is pinned by name on purpose: FIN-T06's persistent proposal lifecycle must be
+        // a deliberate append after D4/B3, never an unreviewed migration that silently becomes authoritative.
+        Assert.Equal("20260921120000_AddReversalProposals", context.Database.GetMigrations().Last());
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -102,11 +99,11 @@ public sealed class FinanceBankAccountTests
     [Fact]
     public void The_payload_hash_names_the_command_and_every_field()
     {
-        var propose = new BankAccountProposeRequest("SENTETIK hesap", Currency, "SENTETIK Banka", "SENTETIK tür");
+        var propose = new BankAccountProposeRequest("SENTETIK hesap", Currency, "SENTETIK Banka", "SENTETIK tür", false);
         var hash = FinanceBankAccountService.PayloadHash(FinanceBankAccountService.ProposeCommand, propose);
         Assert.Equal(64, hash.Length);
         Assert.Equal(hash, FinanceBankAccountService.PayloadHash(FinanceBankAccountService.ProposeCommand,
-            new BankAccountProposeRequest("SENTETIK hesap", Currency, "SENTETIK Banka", "SENTETIK tür")));
+            new BankAccountProposeRequest("SENTETIK hesap", Currency, "SENTETIK Banka", "SENTETIK tür", false)));
         Assert.NotEqual(hash, FinanceBankAccountService.PayloadHash(FinanceBankAccountService.ProposeCommand,
             propose with { DisplayName = "SENTETIK hesap 2" }));
         Assert.NotEqual(hash, FinanceBankAccountService.PayloadHash(FinanceBankAccountService.ProposeCommand,
@@ -129,6 +126,10 @@ public sealed class FinanceBankAccountTests
     [InlineData("blank-bank-name", CommandOutcome.ValidationFailed, "bank_name_required")]
     [InlineData("no-account-type", CommandOutcome.ValidationFailed, "account_type_required")]
     [InlineData("bad-iban", CommandOutcome.ValidationFailed, "iban_invalid")]
+    // B3 + K2: the IBAN requirement attaches to the DECLARATION, not to the other fields. A card that
+    // says it is for payment or collection and carries no IBAN is refused; the very same card
+    // declaring false is accepted, which is K2's IBAN-less special credit or term account.
+    [InlineData("eligible-without-iban", CommandOutcome.ValidationFailed, "iban_required_for_money_movement")]
     public async Task A_proposal_is_refused_before_anything_is_read(string fault, CommandOutcome outcome, string? code)
     {
         var permission = fault switch
@@ -147,6 +148,9 @@ public sealed class FinanceBankAccountTests
             Currency,
             fault switch { "no-bank-name" => null!, "blank-bank-name" => "   ", _ => "SENTETIK Banka" },
             fault == "no-account-type" ? null! : "SENTETIK tür",
+            // B3: only the money-eligible fault declares itself for money movement. Every other case
+            // declares false, so the IBAN rule cannot be what refuses them.
+            MoneyMovementEligible: fault == "eligible-without-iban",
             // A structurally invalid IBAN: the published TR example with one character altered, so the
             // refusal is the checksum and not the length or the shape.
             Iban: fault == "bad-iban" ? "TR330006100519786457841327" : null);

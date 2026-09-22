@@ -54,9 +54,11 @@ public sealed class LogisticsPermissionAndShellRegistrationTests
             new LogisticsShellCapabilityProvider(),
         ];
 
-        // On failure xUnit prints the actual revision: the constant is never guessed.
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV10PublishedFinanceV10PublishedManufacturingV10AndLogisticsV10,
-            ShellCapabilityRegistry.ComputeCandidateRevision(providers));
+        var actual = ShellCapabilityRegistry.ComputeCandidateRevision(providers);
+        Assert.True(
+            string.Equals(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV10PublishedFinanceV11PublishedManufacturingV10AndLogisticsV10, actual,
+                StringComparison.Ordinal),
+            $"Logistics normal-host authority drifted. Actual: {actual}");
     }
 
     [Fact]
@@ -67,7 +69,7 @@ public sealed class LogisticsPermissionAndShellRegistrationTests
         var authority = C01E2eShellCapabilityActivation.Configure(services, new TestingEnvironment(),
             new ConfigurationBuilder().Build());
 
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV10PublishedFinanceV10PublishedManufacturingV10AndLogisticsV10, authority);
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV10PublishedFinanceV11PublishedManufacturingV10AndLogisticsV10, authority);
         using var container = services.BuildServiceProvider();
         var registry = new ShellCapabilityRegistry(container.GetServices<IShellCapabilityProvider>(),
             new ShellCapabilityAuthorityCatalog([authority]));

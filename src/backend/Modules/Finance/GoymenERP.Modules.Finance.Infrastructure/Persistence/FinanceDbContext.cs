@@ -38,6 +38,8 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
 
     internal DbSet<MoneyEventRow> MoneyEvents => Set<MoneyEventRow>();
 
+    internal DbSet<ReversalProposalRow> ReversalProposals => Set<ReversalProposalRow>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -50,6 +52,7 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         ConfigureBankAccounts(modelBuilder);
         ConfigureCommands(modelBuilder);
         ConfigureMoneyEvents(modelBuilder);
+        ConfigureReversalProposals(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -133,8 +136,10 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
 
         // K2's card. Every column is NULLABLE, including the two K2 calls mandatory: the rows that
         // existed before K2 have no value for them, and making the column required would force this
-        // slice to decide what those rows mean — which is the open question #66 5748390243. The
-        // mandatory pair is enforced where a card is WRITTEN, so new cards cannot omit it.
+        // slice to decide what those rows mean. B3 (#66 5750700247) has now decided it — UNDECLARED,
+        // refused on the money path — and the answer does NOT change these columns: it adds a
+        // declaration beside them rather than reinterpreting them. The mandatory pair is still
+        // enforced where a card is WRITTEN, so new cards cannot omit it.
         entity.Property(x => x.BankName).HasMaxLength(200);
         entity.Property(x => x.AccountType).HasMaxLength(64);
         entity.Property(x => x.BranchName).HasMaxLength(200);
@@ -143,6 +148,17 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         entity.Property(x => x.Iban).HasMaxLength(34);
         entity.Property(x => x.AccountNumber).HasMaxLength(64);
 
+        // B3's declaration. Nullable ONLY to carry the pre-declaration rows; NULL is read as UNDECLARED
+        // and never as false, so the two can be told apart and shown apart.
+        entity.Property(x => x.MoneyMovementEligible);
+
+        // D4's pending IBAN change, beside the row and never in [Iban] until approved. The check keeps
+        // the four members all-null or all-set, so a half-written pending change cannot exist.
+        entity.Property(x => x.PendingIban).HasMaxLength(34);
+        entity.Property(x => x.PendingIbanProposedBy).HasMaxLength(128).UseCollation(IdentityCollation);
+        entity.Property(x => x.PendingIbanReason).HasMaxLength(500);
+        entity.ToTable(table => table.HasCheckConstraint("CK_BankAccounts_PendingIbanChange", PendingIbanCheck));
+
         entity.Property(x => x.ProposedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
         entity.Property(x => x.ApprovedBy).HasMaxLength(128).UseCollation(IdentityCollation);
         entity.HasIndex(x => new { x.CompanyId, x.Status });
@@ -150,6 +166,18 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
             .OnDelete(DeleteBehavior.Restrict);
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
+
+    /// <summary>
+    /// D4: a pending IBAN change is all four members or none of them (the migration that introduced it
+    /// uses the same text). A half-written pending change would be a value nobody proposed — the
+    /// approver would see an IBAN with no proposer to be different from, and Ö4 would have nothing to
+    /// compare against.
+    /// </summary>
+    internal const string PendingIbanCheck =
+        "([PendingIban] IS NULL AND [PendingIbanProposedBy] IS NULL AND [PendingIbanProposedAtUtc] IS NULL "
+        + "AND [PendingIbanReason] IS NULL) OR "
+        + "([PendingIban] IS NOT NULL AND [PendingIbanProposedBy] IS NOT NULL AND LEN([PendingIbanProposedBy]) > 0 "
+        + "AND [PendingIbanProposedAtUtc] IS NOT NULL AND [PendingIbanReason] IS NOT NULL AND LEN([PendingIbanReason]) > 0)";
 
     /// <summary>The stage rule of a receipt source (FIN-T05a); the migration that introduced it uses the same text.</summary>
     internal const string StageCheck =
@@ -172,7 +200,7 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                 + "AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [TreasuryAccountId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000'");
-            table.HasCheckConstraint("CK_MoneyEvents_Kind", "[Kind] = 1");
+            table.HasCheckConstraint("CK_MoneyEvents_Kind", "[Kind] IN (1, 2)");
             table.HasCheckConstraint("CK_MoneyEvents_Text",
                 "LEN([AmountText]) > 0 AND LEN([ProfileId]) > 0 AND LEN([ProfileVersion]) > 0 "
                 + "AND LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
@@ -197,11 +225,61 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    private void ConfigureReversalProposals(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<ReversalProposalRow>();
+        entity.ToTable("ReversalProposals", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_ReversalProposals_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[OriginalSourceId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_ReversalProposals_Text",
+                "LEN([Reason]) > 0 AND LEN([ProposedBy]) > 0");
+            table.HasCheckConstraint("CK_ReversalProposals_Version", "[Version] >= 1");
+            table.HasCheckConstraint("CK_ReversalProposals_Decision", ReversalProposalDecisionCheck);
+        });
+        entity.HasKey(x => x.Id);
+        entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.OccurredOn).HasColumnType("date");
+        entity.Property(x => x.Reason).HasMaxLength(1000).IsRequired();
+        entity.Property(x => x.ProposedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        entity.Property(x => x.DecidedBy).HasMaxLength(128).UseCollation(IdentityCollation);
+        entity.Property(x => x.DecisionReason).HasMaxLength(1000);
+        entity.Property(x => x.Version).IsConcurrencyToken();
+        entity.HasIndex(x => new { x.CompanyId, x.OriginalSourceId }, "UX_ReversalProposals_PendingOriginal")
+            .HasFilter("[Status] = 0").IsUnique();
+        entity.HasIndex(x => new { x.CompanyId, x.OriginalSourceId }, "UX_ReversalProposals_ApprovedOriginal")
+            .HasFilter("[Status] = 1").IsUnique();
+        entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<ReceiptDraftRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.OriginalSourceId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<ReceiptDraftRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.ReversalSourceId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    internal const string ReversalProposalDecisionCheck =
+        "([Status] = 0 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [DecisionReason] IS NULL AND [ReversalSourceId] IS NULL) OR "
+        + "([Status] = 1 AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL "
+        + "AND [DecisionReason] IS NULL AND [ReversalSourceId] IS NOT NULL AND [ReversalSourceId] <> [OriginalSourceId] "
+        + "AND [ProposedBy] <> [DecidedBy]) OR "
+        + "([Status] = 2 AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL "
+        + "AND [DecisionReason] IS NOT NULL AND LEN([DecisionReason]) > 0 AND [ReversalSourceId] IS NULL "
+        + "AND [ProposedBy] <> [DecidedBy])";
+
     /// <summary>The command record's target rule; the migration that introduced it uses the same text.</summary>
     internal const string TargetCheck =
-        "([DraftId] IS NOT NULL AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [BankAccountId] IS NULL) OR "
-        + "([BankAccountId] IS NOT NULL AND [BankAccountId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL) OR "
-        + "([DraftId] IS NULL AND [BankAccountId] IS NULL AND JSON_VALUE([ResultJson], '$.outcome') = 'ValidationFailed')";
+        "([DraftId] IS NOT NULL AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [BankAccountId] IS NULL AND [ReversalProposalId] IS NULL) OR "
+        + "([BankAccountId] IS NOT NULL AND [BankAccountId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL AND [ReversalProposalId] IS NULL) OR "
+        + "([ReversalProposalId] IS NOT NULL AND [ReversalProposalId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL AND [BankAccountId] IS NULL) OR "
+        + "([DraftId] IS NULL AND [BankAccountId] IS NULL AND [ReversalProposalId] IS NULL AND JSON_VALUE([ResultJson], '$.outcome') = 'ValidationFailed')";
 
     private void ConfigureCommands(ModelBuilder modelBuilder)
     {
@@ -227,6 +305,7 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
         entity.HasIndex(x => new { x.CompanyId, x.DraftId });
         entity.HasIndex(x => new { x.CompanyId, x.BankAccountId });
+        entity.HasIndex(x => new { x.CompanyId, x.ReversalProposalId });
         entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
             .OnDelete(DeleteBehavior.Restrict);
         entity.HasOne<ReceiptDraftRow>().WithMany()
@@ -235,6 +314,10 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
             .OnDelete(DeleteBehavior.Restrict);
         entity.HasOne<BankAccountRow>().WithMany()
             .HasForeignKey(x => new { x.CompanyId, x.BankAccountId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<ReversalProposalRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.ReversalProposalId })
             .HasPrincipalKey(x => new { x.CompanyId, x.Id })
             .OnDelete(DeleteBehavior.Restrict);
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -276,6 +359,13 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
 
             if (entry.State == EntityState.Modified)
             {
+                if (entry.Entity is BankAccountRow bankAccount
+                    && !IsAllowedBankAccountTransition(entry, bankAccount))
+                {
+                    throw new InvalidOperationException(
+                        "Banka hesabı yalnız ilk onay veya bekleyen IBAN öneri/onay geçişiyle değişir.");
+                }
+
                 string[] allowed = entry.Entity switch
                 {
                     ReceiptDraftRow =>
@@ -289,11 +379,22 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                         nameof(ReceiptDraftRow.UpdatedBy), nameof(ReceiptDraftRow.Stage),
                         nameof(ReceiptDraftRow.RecordedAtUtc), nameof(ReceiptDraftRow.RecordedBy),
                     ],
-                    // The one approval; name and currency never change.
+                    // Initial approval and D4's two-step IBAN transition; the state-aware guard above
+                    // prevents these columns from becoming general-purpose mutable fields.
                     BankAccountRow =>
                     [
                         nameof(BankAccountRow.Status), nameof(BankAccountRow.ApprovedBy),
                         nameof(BankAccountRow.ApprovedAtUtc), nameof(BankAccountRow.UpdatedAtUtc),
+                        nameof(BankAccountRow.Iban), nameof(BankAccountRow.PendingIban),
+                        nameof(BankAccountRow.PendingIbanProposedBy),
+                        nameof(BankAccountRow.PendingIbanProposedAtUtc),
+                        nameof(BankAccountRow.PendingIbanReason),
+                    ],
+                    ReversalProposalRow =>
+                    [
+                        nameof(ReversalProposalRow.Status), nameof(ReversalProposalRow.DecidedBy),
+                        nameof(ReversalProposalRow.DecidedAtUtc), nameof(ReversalProposalRow.DecisionReason),
+                        nameof(ReversalProposalRow.ReversalSourceId),
                     ],
                     _ => [],
                 };
@@ -309,5 +410,65 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                 }
             }
         }
+    }
+
+    private static bool IsAllowedBankAccountTransition(
+        Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<IFinanceTenantRow> entry,
+        BankAccountRow current)
+    {
+        const int proposed = 1;
+        const int approved = 2;
+        var originalStatus = (int)entry.OriginalValues[nameof(BankAccountRow.Status)]!;
+        var originalIban = (string?)entry.OriginalValues[nameof(BankAccountRow.Iban)];
+        var originalApprovedBy = (string?)entry.OriginalValues[nameof(BankAccountRow.ApprovedBy)];
+        var originalApprovedAt = (DateTimeOffset?)entry.OriginalValues[nameof(BankAccountRow.ApprovedAtUtc)];
+        var originalPendingIban = (string?)entry.OriginalValues[nameof(BankAccountRow.PendingIban)];
+        var originalPendingBy = (string?)entry.OriginalValues[nameof(BankAccountRow.PendingIbanProposedBy)];
+        var originalPendingAt = (DateTimeOffset?)entry.OriginalValues[nameof(BankAccountRow.PendingIbanProposedAtUtc)];
+        var originalPendingReason = (string?)entry.OriginalValues[nameof(BankAccountRow.PendingIbanReason)];
+
+        var originalPendingEmpty = originalPendingIban is null && originalPendingBy is null
+            && originalPendingAt is null && originalPendingReason is null;
+        var originalPendingComplete = originalPendingIban is not null && !string.IsNullOrWhiteSpace(originalPendingBy)
+            && originalPendingAt is not null && !string.IsNullOrWhiteSpace(originalPendingReason);
+        var currentPendingEmpty = current.PendingIban is null && current.PendingIbanProposedBy is null
+            && current.PendingIbanProposedAtUtc is null && current.PendingIbanReason is null;
+        var currentPendingComplete = current.PendingIban is not null
+            && !string.IsNullOrWhiteSpace(current.PendingIbanProposedBy)
+            && current.PendingIbanProposedAtUtc is not null && !string.IsNullOrWhiteSpace(current.PendingIbanReason);
+
+        var initialApproval = originalStatus == proposed && current.Status == approved
+            && originalPendingEmpty && currentPendingEmpty
+            && string.Equals(current.Iban, originalIban, StringComparison.Ordinal)
+            && originalApprovedBy is null && originalApprovedAt is null
+            && !string.IsNullOrWhiteSpace(current.ApprovedBy) && current.ApprovedAtUtc is not null;
+
+        var proposesIban = originalStatus == approved && current.Status == approved
+            && originalPendingEmpty && currentPendingComplete
+            && string.Equals(current.Iban, originalIban, StringComparison.Ordinal)
+            && string.Equals(current.ApprovedBy, originalApprovedBy, StringComparison.Ordinal)
+            && current.ApprovedAtUtc == originalApprovedAt;
+
+        // D4 explicitly keeps one waiting slot whose newest proposal replaces the previous waiting
+        // proposal. Keep that approved service semantic without turning the pending columns into
+        // generally mutable fields: both sides must be complete, the approved value/approval stay
+        // untouched, and at least one pending-proposal fact must actually change.
+        var replacesPendingIban = originalStatus == approved && current.Status == approved
+            && originalPendingComplete && currentPendingComplete
+            && string.Equals(current.Iban, originalIban, StringComparison.Ordinal)
+            && string.Equals(current.ApprovedBy, originalApprovedBy, StringComparison.Ordinal)
+            && current.ApprovedAtUtc == originalApprovedAt
+            && (!string.Equals(current.PendingIban, originalPendingIban, StringComparison.Ordinal)
+                || !string.Equals(current.PendingIbanProposedBy, originalPendingBy, StringComparison.Ordinal)
+                || current.PendingIbanProposedAtUtc != originalPendingAt
+                || !string.Equals(current.PendingIbanReason, originalPendingReason, StringComparison.Ordinal));
+
+        var approvesIban = originalStatus == approved && current.Status == approved
+            && originalPendingComplete && currentPendingEmpty
+            && string.Equals(current.Iban, originalPendingIban, StringComparison.Ordinal)
+            && string.Equals(current.ApprovedBy, originalApprovedBy, StringComparison.Ordinal)
+            && current.ApprovedAtUtc == originalApprovedAt;
+
+        return initialApproval || proposesIban || replacesPendingIban || approvesIban;
     }
 }

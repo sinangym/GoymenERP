@@ -80,10 +80,12 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
    */
   CAPABILITY.manufacturingOrdersList,
   /**
-   * Listed together with the routes that serve them (FIN-UI-1b). Each renders only where the server's
-   * snapshot carries the capability; the new draft, the detail and the propose screen have none.
+   * Listed together with the routes that serve them (FIN-UI-1b / FIN-T06). Each renders only where
+   * the server's snapshot carries the capability; the new draft, the detail and the propose screen
+   * have none. The reversal checker queue is a separate work list and therefore has its own entry.
    */
   CAPABILITY.financeReceiptsList,
+  CAPABILITY.financeReceiptsReverseApprove,
   CAPABILITY.financeBankAccountsList,
   /**
    * Listed together with the routes that serve them (ACC-V0b). Each renders only where the server's

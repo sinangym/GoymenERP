@@ -18,6 +18,7 @@ import { FINANCE_CAPABILITY, FINANCE_ROUTE, type FinanceCapabilityId } from './c
 import { FinancePortProvider } from './financePort'
 import { createHttpFinancePort } from './httpPort'
 import { ReceiptDetailPage, ReceiptDraftPage, ReceiptListPage } from './ReceiptPages'
+import { ReversalApprovalsPage } from './ReversalApprovalsPage'
 
 const port = createHttpFinancePort()
 
@@ -39,6 +40,10 @@ export const financeRoutes: RouteObject[] = [
   // Static `yeni` before `:sourceId`, so it is never read as a source id.
   { path: FINANCE_ROUTE.receiptsDraft.slice(1), element: gate(FINANCE_CAPABILITY.receiptsDraft, <ReceiptDraftPage />) },
   { path: FINANCE_ROUTE.receiptsDetail.slice(1), element: gate(FINANCE_CAPABILITY.receiptsDetail, <ReceiptDetailPage />) },
+  {
+    path: FINANCE_ROUTE.reversalApprovals.slice(1),
+    element: gate(FINANCE_CAPABILITY.receiptsReverseApprove, <ReversalApprovalsPage />),
+  },
   { path: FINANCE_ROUTE.bankAccountsList.slice(1), element: gate(FINANCE_CAPABILITY.bankAccountsList, <BankAccountsPage />) },
   {
     path: FINANCE_ROUTE.bankAccountsPropose.slice(1),

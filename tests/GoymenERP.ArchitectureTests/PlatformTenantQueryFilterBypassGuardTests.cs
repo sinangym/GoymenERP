@@ -123,7 +123,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // Re-fingerprinted for LOG-4a: a Logistics class maps to its own module.
     // Re-fingerprinted for PUR-4a: a Purchasing class maps to its own module.
     private const string ReviewedSqlServerRcsiVerifierTestsFingerprint =
-        "e181223c2db5e16c69685a3bae8aaa4031ef18d0035223059f1b827189a56cfe";
+        "ac04c5cb4628fa32bb00728db6cbf52c7bebb694e9622b2d2e6d1781d024c038";
     // The broad relational inventory, one file per module (see RelationalInventoryDirectory). Each
     // pin is its own paragraph so that two modules re-pinning their own files change lines that are
     // not adjacent and combine cleanly; a file's owner is its module, the pin line is central.
@@ -141,7 +141,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // finance
             ["tools/relational_inventory/finance.txt"] =
-                "3c0677942d9fc2d4a85aa284c5cf61e2e7943779ac2049c60f92e5b8a2be0fa2",
+                "ea9da6397e8f92e9c5eff8a3486aad14d640e535bc93dd4f7344b3bbcf432042",
 
             // identity
             ["tools/relational_inventory/identity.txt"] =
@@ -231,7 +231,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
              + "Persistence/FinanceDbContext.cs"] =
-                "c32db0d914cb00489cb13a193c0f87ba8d0163f408193344c5524907e384a981",
+            "9d686e0ccc5c4d2e191dd37f456081928a28266c72d1e56db5244906e237b234",
             // ACC-3 (#298): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for ACC-V0a: the ADR-011 command log (Commands) is mapped here, company-scoped with the
@@ -442,7 +442,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Finance.Infrastructure/"
                  + "FinanceModuleExtensions.cs"] =
                     new(
-                        "203feaaa0e0fbb8a945877fd75ebd59cb950a229304d231cc9f8201d7b55ada2",
+                        "4d850c0223be71a735a471d0bd5de829a203b27b12902029c6ec668aec158b38",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -455,7 +455,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Finance/"
                  + "GoymenERP.Modules.Finance.Infrastructure/ReceiptDraftService.cs"] =
                     new(
-                        "aa38d29c817ac645014ed2fc1d05c32f00f76f0d4eedd94e585e4a5c72ea87d2",
+                        "cbfe6e681ed27f97e02bb421d9a7bae8ede57206544ae1a5ac38fb9a84314f72",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -466,7 +466,18 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Finance/"
                  + "GoymenERP.Modules.Finance.Infrastructure/FinanceBankAccountService.cs"] =
                     new(
-                        "32dfae23381309cabda53be9f43ba0fa89f7698e39d602713133c42b6cf8ad2e",
+                        "dfa5d4d6015d24d6fe1095c4b61e05b4ada96de0d900ecb2068855384d821ac8",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1
+                        }),
+                // FIN-T06: the reversal workflow is the module's third writer. SqlClient is used only
+                // to recognise unique-key violations (2601/2627) after SaveChanges; there is no
+                // connection, command, raw SQL or query-filter bypass.
+                ["src/backend/Modules/Finance/"
+                 + "GoymenERP.Modules.Finance.Infrastructure/ReversalProposalService.cs"] =
+                    new(
+                        "d0431aac31f3ca6bca820879e063302f5045a96feba36399b746c312fed405e0",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1

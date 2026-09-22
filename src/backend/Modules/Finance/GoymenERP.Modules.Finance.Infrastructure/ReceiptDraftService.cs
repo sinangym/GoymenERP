@@ -303,6 +303,21 @@ public sealed class ReceiptDraftService(
         var row = await dbContext.ReceiptDrafts.AsNoTracking()
             .SingleOrDefaultAsync(candidate => candidate.Id == request.SourceId, cancellationToken);
         var amount = await permissions.CheckAsync(context, FinanceAction.ReadAmount, request.SourceId, cancellationToken);
+        Guid? reversalSourceId = null;
+        Guid? reversesSourceId = null;
+        if (row is not null)
+        {
+            reversalSourceId = await dbContext.ReversalProposals.AsNoTracking()
+                .Where(proposal => proposal.Status == ReversalProposalStatuses.Approved
+                    && proposal.OriginalSourceId == row.Id)
+                .Select(proposal => proposal.ReversalSourceId)
+                .SingleOrDefaultAsync(cancellationToken);
+            reversesSourceId = await dbContext.ReversalProposals.AsNoTracking()
+                .Where(proposal => proposal.Status == ReversalProposalStatuses.Approved
+                    && proposal.ReversalSourceId == row.Id)
+                .Select(proposal => (Guid?)proposal.OriginalSourceId)
+                .SingleOrDefaultAsync(cancellationToken);
+        }
         var again = await permissions.CheckAsync(context, FinanceAction.ReadSources, request.SourceId, cancellationToken);
         if (again != PermissionDecision.Allowed || !SameContext(context))
         {
@@ -311,7 +326,8 @@ public sealed class ReceiptDraftService(
 
         return row is null
             ? new ReadResult<SourceDetail>(ReadOutcome.NotFound, null)
-            : new ReadResult<SourceDetail>(ReadOutcome.Found, Detail(row, Disclosure(amount)));
+            : new ReadResult<SourceDetail>(ReadOutcome.Found,
+                Detail(row, Disclosure(amount), reversalSourceId, reversesSourceId));
     }
 
     /// <summary>
@@ -776,14 +792,15 @@ public sealed class ReceiptDraftService(
         return issues;
     }
 
-    private static SourceDetail Detail(ReceiptDraftRow row, AmountDisclosure disclosure)
+    private static SourceDetail Detail(ReceiptDraftRow row, AmountDisclosure disclosure,
+        Guid? reversalSourceId = null, Guid? reversesSourceId = null)
     {
         var amount = disclosure == AmountDisclosure.Visible
             ? new AmountView(AmountDisclosure.Visible, new MoneyText(row.AmountText, row.CurrencyId))
             : new AmountView(disclosure, null);
         var recorded = row.Stage == ReceiptStages.Recorded;
         var summary = new SourceSummary(row.Id, row.CompanyId, row.Id.ToString("D"), VersionText(row.Version),
-            recorded ? SourceStage.Recorded : SourceStage.Draft,
+            reversalSourceId is not null ? SourceStage.Reversed : recorded ? SourceStage.Recorded : SourceStage.Draft,
             row.PartyId, row.CompanyAccountId, row.TreasuryAccountId, row.CurrencyId, row.OccurredOn, row.ValueOn, amount);
         // A draft has no allocation fact: unknown, never 0. A recorded source has no allocation relation yet (FS3), so
         // what is known is exact: unallocated = the source amount - 0 active allocations (card #66 5743678389 §2).
@@ -791,7 +808,8 @@ public sealed class ReceiptDraftService(
             ? new UnallocatedView(AllocationKnowledge.Known, amount)
             : new UnallocatedView(AllocationKnowledge.Unavailable, new AmountView(AmountDisclosure.Unavailable, null));
         return new SourceDetail(summary, new ProfileReference(row.ProfileId, row.ProfileVersion), row.BankReference,
-            row.Description, RecordedAtUtc: row.RecordedAtUtc, ReversalSourceId: null, ReversesSourceId: null, unallocated);
+            row.Description, RecordedAtUtc: row.RecordedAtUtc, ReversalSourceId: reversalSourceId,
+            ReversesSourceId: reversesSourceId, unallocated);
     }
 
     /// <summary>Applies a FRESH amount decision to a result, so a replay never discloses more than now allowed.</summary>

@@ -26,7 +26,7 @@ import {
   UNKNOWN_TITLE,
   financeRef,
 } from './financeText'
-import { FINANCE_CAPABILITY } from './capabilities'
+import { FINANCE_CAPABILITY, receiptDetailPath } from './capabilities'
 import { EXAMPLE_CURRENCY, EXAMPLE_SOURCE, NEGATIVE_EXAMPLE, NORMAL_EXAMPLE } from './contractExamples'
 import {
   COMPANY_A,
@@ -167,10 +167,9 @@ describe('FinanceSourceDetail — Record', () => {
     expect(screen.queryByText(RECORD_DONE)).toBeNull()
   })
 
-  it('Record then Reverse successes each re-read exactly once — no read loop', async () => {
+  it('Record re-reads once, while a reversal proposal leaves the original source untouched', async () => {
     const recorded = found(RECORDED)
-    const reversed = found(sourceDetail(COMPANY_A, { source: { stage: 'Reversed', version: '9007199254740995' }, unallocated: NEGATIVE_EXAMPLE.unavailableAllocation }))
-    const { port, commands, reads } = recordingPort(detailSequence(found(sourceDetail(COMPANY_A)), recorded, reversed))
+    const { port, commands, reads } = recordingPort(detailSequence(found(sourceDetail(COMPANY_A)), recorded))
     renderFinance(<FinanceSourceDetail sourceId={EXAMPLE_SOURCE} offerRecordReverse />, { port })
 
     fireEvent.click(await screen.findByRole('button', { name: RECORD_ACTION }))
@@ -180,13 +179,26 @@ describe('FinanceSourceDetail — Record', () => {
     fireEvent.change(screen.getByLabelText(REVERSE_DATE), { target: { value: '2026-09-13' } })
     fireEvent.change(screen.getByLabelText(REVERSE_REASON), { target: { value: 'SENTETIK correction' } })
     fireEvent.click(screen.getByRole('button', { name: REVERSE_CONFIRM }))
-    await commands[1].resolve(succeeded(sourceDetail(COMPANY_A, { source: { stage: 'Reversed' }, unallocated: NEGATIVE_EXAMPLE.unavailableAllocation })))
+    await commands[1].resolve(succeeded({
+      id: '11111111-1111-4111-8111-111111111111',
+      originalSourceId: EXAMPLE_SOURCE,
+      occurredOn: '2026-09-13',
+      reason: 'SENTETIK correction',
+      status: 'Pending',
+      proposedBy: 'maker',
+      proposedAtUtc: '2026-09-21T12:00:00+00:00',
+      decidedBy: null,
+      decidedAtUtc: null,
+      decisionReason: null,
+      reversalSourceId: null,
+      version: '1',
+    }))
 
-    await waitFor(() => expect(detailReads(reads)).toBe(3))
+    await waitFor(() => expect(detailReads(reads)).toBe(2))
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 100))
     })
-    expect(detailReads(reads)).toBe(3)
+    expect(detailReads(reads)).toBe(2)
   })
 })
 
@@ -214,8 +226,8 @@ describe('FinanceSourceDetail — dirty work reaches the shell gate', () => {
   })
 })
 
-describe('FinanceSourceDetail — Reverse', () => {
-  it('requires a reason and date, sends only identity/version/date/reason', async () => {
+describe('FinanceSourceDetail — reversal proposal', () => {
+  it('requires a reason and date, then sends the exact proposal body', async () => {
     const { port, commands } = recordingPort(detailSequence(found(RECORDED)))
     renderFinance(<FinanceSourceDetail sourceId={EXAMPLE_SOURCE} offerRecordReverse />, { port })
     expect(screen.queryByRole('button', { name: RECORD_ACTION })).toBeNull()
@@ -229,7 +241,7 @@ describe('FinanceSourceDetail — Reverse', () => {
     fireEvent.change(screen.getByLabelText(REVERSE_REASON), { target: { value: '  SENTETIK correction ' } })
     fireEvent.click(screen.getByRole('button', { name: REVERSE_CONFIRM }))
     expect(commands).toHaveLength(1)
-    expect(commands[0].method).toBe('reverse')
+    expect(commands[0].method).toBe('proposeReversal')
     expect(commands[0].request).toEqual(NORMAL_EXAMPLE.reverse)
     expect((screen.getByLabelText(REVERSE_REASON) as HTMLTextAreaElement).disabled).toBe(true)
   })
@@ -294,6 +306,7 @@ describe('FinanceSourceDetail — references and the currency code', () => {
     const { container } = renderFinance(<FinanceSourceDetail sourceId={EXAMPLE_SOURCE} offerRecordReverse />, {
       port,
       shell: shellFor(COMPANY_A, 1, [FINANCE_CAPABILITY.bankAccountsPropose]),
+      router: true,
     })
 
     await waitFor(() => expect(factValue(DETAIL.currency)).toBe('TRY'))
@@ -301,6 +314,12 @@ describe('FinanceSourceDetail — references and the currency code', () => {
     expect(factValue(DETAIL.sourceNumber)).toBe(`${NO_SOURCE_NUMBER} · ${financeRef(EXAMPLE_SOURCE)}`)
     expect(factValue(DETAIL.reversedBy)).toBe(financeRef(REVERSAL_SOURCE))
     expect(factValue(DETAIL.reverses)).toBe(financeRef(REVERSED_SOURCE))
+    expect(screen.getByRole('link', { name: financeRef(REVERSAL_SOURCE) }).getAttribute('href')).toBe(
+      receiptDetailPath(REVERSAL_SOURCE),
+    )
+    expect(screen.getByRole('link', { name: financeRef(REVERSED_SOURCE) }).getAttribute('href')).toBe(
+      receiptDetailPath(REVERSED_SOURCE),
+    )
     for (const id of [EXAMPLE_SOURCE, EXAMPLE_CURRENCY, REVERSAL_SOURCE, REVERSED_SOURCE]) {
       expect(container.textContent).not.toContain(id)
     }
@@ -308,7 +327,7 @@ describe('FinanceSourceDetail — references and the currency code', () => {
 
   it('shows the labelled currency reference — never a guessed code — without that permission, and reads no candidates', async () => {
     const { port, reads } = recordingPort(responder)
-    const { container } = renderFinance(<FinanceSourceDetail sourceId={EXAMPLE_SOURCE} offerRecordReverse />, { port })
+    const { container } = renderFinance(<FinanceSourceDetail sourceId={EXAMPLE_SOURCE} offerRecordReverse />, { port, router: true })
 
     await waitFor(() => expect(factValue(DETAIL.currency)).toBe(`Para birimi ${financeRef(EXAMPLE_CURRENCY)}`))
     expect(reads.map((read) => read.method)).not.toContain('bankAccountCurrencyCandidates')

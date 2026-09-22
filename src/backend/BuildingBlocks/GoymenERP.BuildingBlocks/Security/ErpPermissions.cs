@@ -169,6 +169,8 @@ public static class ErpPermissions
     /// one is the second, because the capability now exists and the actor simply does not hold it.
     /// </summary>
     public const string FinanceManualReceiptRecord = "finance.manual-receipt.record";
+    public const string FinanceManualReceiptReversePropose = "finance.manual-receipt.reverse.propose";
+    public const string FinanceManualReceiptReverseApprove = "finance.manual-receipt.reverse.approve";
 
     /// <summary>
     /// Sales order drafts (SALES-API, #321): the Sales owner's names (SalesPermissionManifestV1, same
@@ -354,7 +356,9 @@ public static class ErpPermissions
             FinanceManualReceiptDraftSave,
             FinanceManualReceiptDraftRead,
             FinanceManualReceiptAmountRead,
-            FinanceManualReceiptRecord,
+        FinanceManualReceiptRecord,
+        FinanceManualReceiptReversePropose,
+        FinanceManualReceiptReverseApprove,
             IdentityProfileRead,
             IdentityAccessRequest,
             IdentityAccessApprove,
@@ -414,7 +418,9 @@ public static class ErpPermissions
             FinanceManualReceiptDraftSave,
             FinanceManualReceiptDraftRead,
             FinanceManualReceiptAmountRead,
-            FinanceManualReceiptRecord,
+        FinanceManualReceiptRecord,
+        FinanceManualReceiptReversePropose,
+        FinanceManualReceiptReverseApprove,
             IdentityAuditRead,
         ],
         StringComparer.Ordinal);

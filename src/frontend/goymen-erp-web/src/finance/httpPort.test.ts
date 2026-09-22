@@ -186,8 +186,19 @@ describe('bank-account master (FIN-UI-1a)', () => {
   it('proposes with the key, the company header and exactly the proposal body', async () => {
     const result = { outcome: 'ValidationFailed', resource: null, isReplay: false, originalCorrelationId: 'c', issues: [] }
     const fetchMock = stubFetch(new Response(JSON.stringify(result), { status: 422 }))
+    const proposal = {
+      displayName: 'SENTETIK',
+      currencyId: 'cur',
+      bankName: 'SENTETIK Banka',
+      accountType: 'SENTETIK Vadesiz',
+      moneyMovementEligible: false,
+      branchName: null,
+      branchCode: null,
+      iban: null,
+      accountNumber: null,
+    }
 
-    const reply = await createHttpFinancePort().proposeBankAccount(SCOPE, 'key-p', { displayName: 'SENTETIK', currencyId: 'cur' })
+    const reply = await createHttpFinancePort().proposeBankAccount(SCOPE, 'key-p', proposal)
 
     expect(reply).toEqual({ kind: 'body', body: result })
     const [url, init] = fetchMock.mock.calls[0]
@@ -195,7 +206,7 @@ describe('bank-account master (FIN-UI-1a)', () => {
     expect(init?.method).toBe('POST')
     expect(headersOf(init)['Idempotency-Key']).toBe('key-p')
     expect(headersOf(init)['X-Company-Id']).toBe(SCOPE.companyId)
-    expect(init?.body).toBe(JSON.stringify({ displayName: 'SENTETIK', currencyId: 'cur' }))
+    expect(init?.body).toBe(JSON.stringify(proposal))
   })
 
   it('approves on the account\'s route with only the expected version in the body', async () => {
