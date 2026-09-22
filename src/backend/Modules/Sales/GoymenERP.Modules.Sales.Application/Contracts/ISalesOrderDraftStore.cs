@@ -194,11 +194,13 @@ public interface ISalesOrderDraftStore
     /// <paramref name="mutate"/> is the domain's <c>ReviseCommercial</c> and returns the archived approved
     /// snapshot when one was made. The store writes that snapshot's rows, the header (revision, approval
     /// axis, version) and every line's commercial columns together with the attempt record and the audit
-    /// event, or nothing at all. The command name must be <see cref="SalesDraftCommands.ReviseCommercialV1"/>.
+    /// event, or nothing at all. <paramref name="beforeWrite"/> revalidates the caller's narrow
+    /// authority after every awaited store read and before any domain, attempt or audit mutation.
+    /// The command name must be <see cref="SalesDraftCommands.ReviseCommercialV1"/>.
     /// </summary>
     Task<SalesDraftStateResult?> ReviseDraftCommercialAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
         Guid draftId, Func<SalesOrderDraft, DateTimeOffset, ApprovedRevisionSnapshot?> mutate, SalesDraftStateAudit audit,
-        CancellationToken cancellationToken = default);
+        Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default);
 
     Task<SalesOrderDraft?> FindDraftAsync(Guid draftId, CancellationToken cancellationToken = default);
 
