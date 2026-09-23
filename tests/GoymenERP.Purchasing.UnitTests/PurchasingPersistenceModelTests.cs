@@ -138,14 +138,12 @@ public sealed class PurchasingPersistenceModelTests
     }
 
     [Fact]
-    public void The_read_screens_and_approval_control_are_published_while_creation_stays_staged()
+    public void The_order_screens_and_approval_control_are_published()
     {
         var declarations = new PurchasingShellCapabilityProvider().GetDeclarations();
-        Assert.Equal("1.1", PurchasingShellCapabilityProvider.OwnerContractVersion);
+        Assert.Equal("1.2", PurchasingShellCapabilityProvider.OwnerContractVersion);
         Assert.Equal(4, declarations.Count);
-        Assert.False(declarations.Single(item => item.CapabilityId == PurchasingShellCapabilityProvider.CreateCapabilityId).ImplementationAvailable);
-        Assert.All(declarations.Where(item => item.CapabilityId != PurchasingShellCapabilityProvider.CreateCapabilityId),
-            declaration => Assert.True(declaration.ImplementationAvailable));
+        Assert.All(declarations, declaration => Assert.True(declaration.ImplementationAvailable));
         var byId = declarations.ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
         Assert.Equal(PurchasingShellCapabilityProvider.CreateRoutePath, byId[PurchasingShellCapabilityProvider.CreateCapabilityId].RoutePath);
         Assert.Equal([PurchasingPermissionManifestV1.OrdersCreate], byId[PurchasingShellCapabilityProvider.CreateCapabilityId].RequiredPermissions);

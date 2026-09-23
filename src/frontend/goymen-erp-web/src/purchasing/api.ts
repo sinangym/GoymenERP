@@ -1,9 +1,15 @@
 import type { ViewOutcome } from '../shell/uiState'
+import { fetchCounterparties } from '../cari/api'
+import { PARTY_ROLE_FLAG } from '../cari/contract'
 import {
   decodeProductPurchaseCandidates,
+  decodePurchaseOrderCommandResponse,
   decodePurchaseOrderDetail,
   decodePurchaseOrderList,
+  type CreatePurchaseOrderRequest,
   type ProductPurchaseCandidates,
+  type PurchaseOrderCommandResponse,
+  type PurchasingSupplierOffer,
   type PurchaseOrderDetail,
   type PurchaseOrderList,
   type PurchaseOrderStatus,
@@ -23,6 +29,11 @@ export function purchasingHeaders(companyId: string): Record<string, string> {
 export const PURCHASING_ORDERS_BASE = `${API_BASE}/purchasing/orders`
 export const PURCHASING_PRODUCT_CANDIDATES_PATH = `${API_BASE}/purchasing/references/products`
 const PRODUCT_CANDIDATE_LIMIT = 25
+
+export type CreatePurchaseOrderOutcome =
+  | { readonly type: 'applied'; readonly response: PurchaseOrderCommandResponse; readonly replayed: boolean }
+  | { readonly type: 'failed'; readonly status: number; readonly code: string | null; readonly replayed: boolean }
+  | { readonly type: 'unknown'; readonly reason: 'offline' | 'network-error' | 'service-unavailable' | 'undecodable' | 'unexpected-status' }
 
 async function bodyOf(response: Response): Promise<unknown> {
   try { return await response.json() } catch { return null }
@@ -101,4 +112,114 @@ export async function fetchPurchasingProductCandidates(
     if (signal?.aborted) return { type: 'fence-stale' }
     return navigator.onLine ? { type: 'network-error' } : { type: 'offline' }
   }
+}
+
+/**
+ * Reads the existing Cari owner list with the exact Purchasing selector filters. The list's numeric
+ * versions are intentionally not projected: create revalidates current party/account state and does
+ * not accept a new party-version concurrency policy.
+ */
+export async function fetchPurchasingSupplierOptions(
+  companyId: string,
+  query: { readonly q?: string; readonly cursor?: string } = {},
+  signal?: AbortSignal,
+): Promise<ViewOutcome<PurchasingSupplierOffer>> {
+  const outcome = await fetchCounterparties(
+    { mode: 'single', companyId },
+    {
+      q: query.q,
+      role: ['Supplier'],
+      partyState: 'active',
+      accountState: 'active',
+      pageSize: 50,
+      cursor: query.cursor,
+    },
+    signal,
+  )
+  if (outcome.type === 'ok') return { type: 'malformed' }
+  if (outcome.type !== 'ok-single') return outcome
+
+  const items: PurchasingSupplierOffer['items'][number][] = []
+  const seen = new Set<string>()
+  for (const party of outcome.data.items) {
+    const accounts = party.companyAccounts.filter((account) =>
+      account.companyId === companyId && account.isActive && (account.roles & PARTY_ROLE_FLAG.Supplier) !== 0)
+    if (!party.isActive || accounts.length !== 1) return { type: 'malformed' }
+    const account = accounts[0]
+    const key = `${party.id}|${account.id}`
+    if (seen.has(key)) return { type: 'malformed' }
+    seen.add(key)
+    items.push({
+      supplierPartyId: party.id,
+      companyAccountId: account.id,
+      label: `${party.code} — ${party.legalName}`,
+    })
+  }
+  return { type: 'ok-single', data: { items, nextCursor: outcome.data.nextCursor } }
+}
+
+function problemCode(body: unknown): string | null {
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) return null
+  const code = (body as Record<string, unknown>).code
+  return typeof code === 'string' && code.length > 0 ? code : null
+}
+
+function describesCreate(response: PurchaseOrderCommandResponse, request: CreatePurchaseOrderRequest, companyId: string): boolean {
+  const { order, lines } = response.detail
+  return order.companyId === companyId && order.status === 'Draft' && order.supplierPartyId === request.supplierPartyId &&
+    order.companyAccountId === request.companyAccountId && order.sourceRequestId === request.sourceRequestId &&
+    order.effectiveOn === request.effectiveOn && lines.length === request.lines.length &&
+    request.lines.every((line) => {
+      const answered = lines.find((candidate) => candidate.lineId === line.lineId)
+      return answered !== undefined && answered.productId === line.productId &&
+        answered.productVersion === line.expectedProductVersion && answered.unitId === line.unitId &&
+        answered.ordered === line.quantity && answered.sourceRequestLineId === line.sourceRequestLineId
+    })
+}
+
+/** One immutable create attempt. Unknown outcomes are retried with the same payload and key. */
+export async function createPurchaseOrder(
+  request: CreatePurchaseOrderRequest,
+  context: { readonly companyId: string; readonly idempotencyKey: string },
+  signal?: AbortSignal,
+): Promise<CreatePurchaseOrderOutcome> {
+  let response: Response
+  try {
+    response = await fetch(PURCHASING_ORDERS_BASE, {
+      method: 'POST',
+      headers: {
+        ...purchasingHeaders(context.companyId),
+        'Content-Type': 'application/json',
+        'Idempotency-Key': context.idempotencyKey,
+      },
+      body: JSON.stringify(request),
+      signal,
+    })
+  } catch {
+    return { type: 'unknown', reason: navigator.onLine ? 'network-error' : 'offline' }
+  }
+  let body: unknown = null
+  try { body = await response.json() } catch { body = null }
+  if (response.status === 201) {
+    const decoded = decodePurchaseOrderCommandResponse(body)
+    const replayHeader = response.headers.get('Idempotency-Replayed')
+    const originalHeader = response.headers.get('Idempotency-Original-Correlation-Id')
+    const replayHeadersMatch = decoded !== null && (decoded.isReplay
+      ? replayHeader?.trim().toLowerCase() === 'true' && originalHeader === decoded.originalCorrelationId
+      : replayHeader === null && originalHeader === null)
+    const location = response.headers.get('Location')
+    return decoded === null || !replayHeadersMatch || !describesCreate(decoded, request, context.companyId) ||
+      location === null || !location.endsWith(`/api/v1/purchasing/orders/${decoded.detail.order.id}`)
+      ? { type: 'unknown', reason: 'undecodable' }
+      : { type: 'applied', response: decoded, replayed: decoded.isReplay }
+  }
+  if ([400, 401, 403, 409, 415, 422].includes(response.status)) {
+    return {
+      type: 'failed', status: response.status, code: problemCode(body),
+      replayed: response.headers.get('Idempotency-Replayed')?.trim().toLowerCase() === 'true',
+    }
+  }
+  return response.status >= 500
+    ? { type: 'unknown', reason: 'service-unavailable' }
+    : { type: 'unknown', reason: 'unexpected-status' }
 }
