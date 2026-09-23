@@ -7,11 +7,9 @@ import { defineConfig, devices } from '@playwright/test'
  * BROWSER-CI workflow: a real browser against the disposable stack built from the exact head — real
  * API, real SQL, the `normal` capability profile, the authorized web.
  *
- * WHY A NEW IDENTITY RATHER THAN `c03`. Suite ids name the journey's PRIMARY screen (`s04`, `acc01`,
- * `org03`), and this journey's primary is C-02; `c03` names the detail screen. More importantly,
- * `c03` is registered in six places with no runner at all, so every dispatch of it dies at
- * SUITE_NOT_READY — and re-purposing it here would have settled that parked question by
- * implementation, in the "keep it" direction, inside a diff that looks like suite work.
+ * WHY A SEPARATE IDENTITY FROM `c03`. Suite ids name the journey's PRIMARY screen (`s04`, `acc01`,
+ * `org03`), and this journey's primary is C-02; `c03` is the read-only, multi-company detail journey.
+ * C-02 writes a new Party/account and therefore cannot share c03's read-only SQL invariant.
  *
  * IT WRITES, and that is the point: C-02 creates a counterparty through the real API, so the journey
  * is screen → API → persisted row → reopen. It therefore resolves on the workflow's writing arm and
