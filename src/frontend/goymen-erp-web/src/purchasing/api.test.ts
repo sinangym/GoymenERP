@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fetchPurchaseOrder, fetchPurchaseOrders } from './api'
+import { fetchPurchaseOrder, fetchPurchaseOrders, fetchPurchasingProductCandidates } from './api'
 import { approvePurchaseOrder } from './approvalApi'
 
 const company = '22222222-2222-4222-8222-222222222222'
@@ -24,5 +24,29 @@ describe('purchasing response binding', () => {
       isReplay: true, originalCorrelationId: 'corr-1',
     }), { status: 200 })))
     expect(await approvePurchaseOrder(company, order, '1', 'key-1')).toEqual({ type: 'unknown', reason: 'undecodable' })
+  })
+
+  it('binds only the flat Product purchase candidate contract', async () => {
+    const candidate = {
+      productId: '55555555-5555-4555-8555-555555555555', productVersion: '7', code: 'SAC-01', name: 'Sac',
+      unitId: '66666666-6666-4666-8666-666666666666', unitCode: 'kg',
+      profileId: '77777777-7777-4777-8777-777777777777', profileVersion: '4',
+    }
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ items: [candidate], searchWindowFull: false }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        items: [{ productId: candidate.productId, productVersion: '7', code: 'SAC-01', name: 'Sac', orderUnits: [] }],
+        searchWindowFull: false,
+      }), { status: 200 }))
+    vi.stubGlobal('fetch', fetch)
+
+    expect(await fetchPurchasingProductCandidates(company, '2026-09-23', ' sac ')).toEqual({
+      type: 'ok-single', data: { items: [candidate], searchWindowFull: false },
+    })
+    expect(fetch).toHaveBeenNthCalledWith(1,
+      '/api/v1/purchasing/references/products?effectiveOn=2026-09-23&limit=25&q=sac',
+      expect.objectContaining({ cache: 'no-store' }),
+    )
+    expect((await fetchPurchasingProductCandidates(company, '2026-09-23')).type).toBe('malformed')
   })
 })
