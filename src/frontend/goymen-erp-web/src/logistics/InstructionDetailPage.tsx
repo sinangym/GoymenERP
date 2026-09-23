@@ -49,6 +49,7 @@ import {
   type AttemptState,
 } from './instructionAttempt'
 import { commandNotice, refusalMovesRecord } from './instructionAttemptNotice'
+import { recallInstructionAttempt, rememberInstructionAttempt } from './pendingInstructionAttempts'
 import { LOGISTICS_CAPABILITY, LOGISTICS_ROUTE } from './capabilities'
 import { INSTRUCTION_DETAIL_TEXT as T, INSTRUCTION_CREATE_TEXT, INSTRUCTION_STATUS_TEXT, MEASUREMENT_TEXT, SHARE_KIND_TEXT } from './logisticsText'
 import { classifyOutcome } from '../shell/uiState'
@@ -269,6 +270,7 @@ export function InstructionView({
 
 const issueScope = (instructionId: string) => `logistics.instruction.issue:${instructionId}`
 const loadScope = (instructionId: string, lineId: string) => `logistics.instruction.load:${instructionId}:${lineId}`
+const loadPendingScope = (instructionId: string) => `logistics.instruction.load:${instructionId}`
 
 function NoticeBlock({
   attempt,
@@ -313,7 +315,8 @@ function IssueCommand({
 }) {
   const { instruction } = detail
   const canIssue = hasCapability(shell, LOGISTICS_CAPABILITY.instructionsCreate)
-  const [attempt, setAttempt] = useState<AttemptState<IssueRequest, InstructionMutation>>({ phase: 'idle' })
+  const [initial] = useState(() => recallInstructionAttempt<IssueRequest, null>(attemptBinding(shell, issueScope(instruction.id))))
+  const [attempt, setAttempt] = useState<AttemptState<IssueRequest, InstructionMutation>>(() => initial?.attempt ?? { phase: 'idle' })
   const attemptRef = useRef(attempt)
   attemptRef.current = attempt
 
@@ -325,6 +328,7 @@ function IssueCommand({
     const inFlight = beginSend<IssueRequest, InstructionMutation>(snapshot)
     attemptRef.current = inFlight
     setAttempt(inFlight)
+    rememberInstructionAttempt(snapshot.binding, inFlight, null)
     const outcome = await issueInstruction(snapshot.payload, {
       idempotencyKey: snapshot.key,
       companyId: snapshot.companyId,
@@ -333,6 +337,7 @@ function IssueCommand({
     const next = applyOutcome(inFlight, snapshot, attemptBinding(shell, issueScope(instruction.id)), outcome, previous)
     attemptRef.current = next
     setAttempt(next)
+    rememberInstructionAttempt(snapshot.binding, next, null)
     if (next.phase === 'completed' || refusalMovesRecord(next)) onRecorded()
   }
 
@@ -358,6 +363,7 @@ function IssueCommand({
     const next = abandon(attemptRef.current)
     attemptRef.current = next
     setAttempt(next)
+    if (next.phase !== 'idle') rememberInstructionAttempt(next.snapshot.binding, next, null)
   }
 
   const frozen = attempt.phase === 'submitting' || isOutcomeStillUnknown(attempt)
@@ -379,6 +385,12 @@ function IssueCommand({
 
 type LoadPayload = RecordLoadRequest
 
+interface LoadFormSnapshot {
+  readonly lineId: string
+  readonly quantityText: string
+  readonly measurement: Measurement
+}
+
 function LoadForm({
   shell,
   detail,
@@ -392,12 +404,15 @@ function LoadForm({
 }) {
   const { instruction, lines } = detail
   const openLines = lines.filter((line) => !line.isBlocked)
-  const [lineId, setLineId] = useState<string>(openLines[0]?.lineId ?? '')
-  const [quantityText, setQuantityText] = useState('')
-  const [measurement, setMeasurement] = useState<Measurement>(MEASUREMENT.measured)
+  const pendingSlot = attemptBinding(shell, loadPendingScope(instruction.id))
+  const [initial] = useState(() => recallInstructionAttempt<LoadPayload, LoadFormSnapshot>(pendingSlot))
+  const [lineId, setLineId] = useState<string>(() => initial?.values.lineId ?? openLines[0]?.lineId ?? '')
+  const [quantityText, setQuantityText] = useState(() => initial?.values.quantityText ?? '')
+  const [measurement, setMeasurement] = useState<Measurement>(() => initial?.values.measurement ?? MEASUREMENT.measured)
   const [error, setError] = useState<string | null>(null)
-  const [attempt, setAttempt] = useState<AttemptState<LoadPayload, InstructionMutation>>({ phase: 'idle' })
+  const [attempt, setAttempt] = useState<AttemptState<LoadPayload, InstructionMutation>>(() => initial?.attempt ?? { phase: 'idle' })
   const attemptRef = useRef(attempt)
+  const pendingSlotRef = useRef(pendingSlot)
   attemptRef.current = attempt
 
   if (instruction.status !== INSTRUCTION_STATUS.issued) {
@@ -413,11 +428,13 @@ function LoadForm({
 
   const chosen: InstructionLine | undefined = lines.find((line) => line.lineId === lineId)
 
-  async function send(snapshot: AttemptSnapshot<LoadPayload>, forLine: string) {
+  async function send(snapshot: AttemptSnapshot<LoadPayload>, forLine: string, slot: string | null) {
     const previous = attemptRef.current
     const inFlight = beginSend<LoadPayload, InstructionMutation>(snapshot)
     attemptRef.current = inFlight
     setAttempt(inFlight)
+    const values: LoadFormSnapshot = { lineId: forLine, quantityText: snapshot.payload.quantity, measurement: snapshot.payload.measurement }
+    if (slot !== null) rememberInstructionAttempt(slot, inFlight, values)
     const outcome = await recordLoad(forLine, snapshot.payload, {
       idempotencyKey: snapshot.key,
       companyId: snapshot.companyId,
@@ -426,6 +443,7 @@ function LoadForm({
     const next = applyOutcome(inFlight, snapshot, attemptBinding(shell, loadScope(instruction.id, forLine)), outcome, previous)
     attemptRef.current = next
     setAttempt(next)
+    if (slot !== null) rememberInstructionAttempt(slot, next, values)
     if (next.phase === 'completed' || refusalMovesRecord(next)) onRecorded()
   }
 
@@ -460,19 +478,23 @@ function LoadForm({
       generateAttemptKey,
     )
     if (decision.type !== 'send') return
-    void send(decision.snapshot, chosen.lineId)
+    pendingSlotRef.current = pendingSlot
+    void send(decision.snapshot, chosen.lineId, pendingSlot)
   }
 
   function retry() {
     const live = liveSnapshot(attemptRef.current)
-    if (live === null || chosen === undefined || attemptRef.current.phase === 'submitting') return
-    void send(live, chosen.lineId)
+    if (live === null || lineId === '' || attemptRef.current.phase === 'submitting') return
+    void send(live, lineId, pendingSlotRef.current)
   }
 
   function leave() {
     const next = abandon(attemptRef.current)
     attemptRef.current = next
     setAttempt(next)
+    if (next.phase !== 'idle' && pendingSlotRef.current !== null) {
+      rememberInstructionAttempt(pendingSlotRef.current, next, { lineId, quantityText, measurement })
+    }
   }
 
   const frozen = attempt.phase === 'submitting' || isOutcomeStillUnknown(attempt)
