@@ -9,6 +9,7 @@ const ACTOR = '33333333-3333-4333-8333-333333333333'
 const PARTY = '44444444-4444-4444-8444-444444444444'
 const ACCOUNT = '55555555-5555-4555-8555-555555555555'
 const PRODUCT = '66666666-6666-4666-8666-666666666666'
+const PRODUCT_B = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const UNIT = '77777777-7777-4777-8777-777777777777'
 const ORDER = '88888888-8888-4888-8888-888888888888'
 
@@ -47,6 +48,27 @@ beforeEach(() => {
 })
 
 describe('P-04 purchase order create form', () => {
+  it('discards a late product response after the effective date changes', async () => {
+    let resolveOld!: (value: unknown) => void
+    const oldResponse = new Promise((resolve) => { resolveOld = resolve })
+    api.products.mockReset()
+      .mockReturnValueOnce(oldResponse)
+      .mockResolvedValueOnce({ type: 'ok-single', data: { items: [{ productId: PRODUCT_B, productVersion: '8', code: 'PRD-8', name: 'Yeni Bant', unitId: UNIT, unitCode: 'kg', profileId: '99999999-9999-4999-8999-999999999999', profileVersion: '4' }], searchWindowFull: false } })
+    const user = userEvent.setup()
+    render(<MemoryRouter><PurchaseOrderCreatePage /></MemoryRouter>)
+    await screen.findByRole('option', { name: 'CAR-42 — Tedarikçi AŞ' })
+    const effectiveOn = screen.getByLabelText('İş tarihi')
+    await user.type(effectiveOn, '2026-09-23')
+    await user.click(screen.getAllByRole('button', { name: 'Ara' })[1])
+    await user.clear(effectiveOn)
+    await user.type(effectiveOn, '2026-09-24')
+    await user.click(screen.getAllByRole('button', { name: 'Ara' })[1])
+    await screen.findByRole('option', { name: 'PRD-8 — Yeni Bant · kg' })
+    resolveOld({ type: 'ok-single', data: { items: [{ productId: PRODUCT, productVersion: '7', code: 'PRD-7', name: 'Eski Bant', unitId: UNIT, unitCode: 'kg', profileId: '99999999-9999-4999-8999-999999999999', profileVersion: '3' }], searchWindowFull: false } })
+    await waitFor(() => expect(screen.queryByRole('option', { name: 'PRD-7 — Eski Bant · kg' })).toBeNull())
+    expect(screen.getByRole('option', { name: 'PRD-8 — Yeni Bant · kg' })).toBeTruthy()
+  })
+
   it('selects owner references, saves one line and exposes the same record reopen link', async () => {
     api.create.mockResolvedValue(applied())
     const user = userEvent.setup()
@@ -68,5 +90,34 @@ describe('P-04 purchase order create form', () => {
     await waitFor(() => expect(api.create).toHaveBeenCalledTimes(2))
     expect(api.create.mock.calls[1][0]).toEqual(api.create.mock.calls[0][0])
     expect(api.create.mock.calls[1][1].idempotencyKey).toBe(api.create.mock.calls[0][1].idempotencyKey)
+  })
+
+  it('keeps the original pending key through a refused retry, close and reopen', async () => {
+    api.create.mockResolvedValueOnce({ type: 'unknown', reason: 'network-error' })
+      .mockResolvedValueOnce({ type: 'failed', status: 403, code: 'forbidden' })
+      .mockResolvedValueOnce(applied())
+    const user = userEvent.setup()
+    const first = render(<MemoryRouter><PurchaseOrderCreatePage /></MemoryRouter>)
+    await fillAndSubmit(user)
+    await user.click(await screen.findByRole('button', { name: 'Aynı anahtarla yeniden gönder' }))
+    await screen.findByText(/Önceki gönderimin sonucu hâlâ bilinmiyor/)
+    expect(screen.getByRole('link', { name: 'Formu kapat' })).toBeTruthy()
+    first.unmount()
+    render(<MemoryRouter><PurchaseOrderCreatePage /></MemoryRouter>)
+    await user.click(await screen.findByRole('button', { name: 'Aynı anahtarla yeniden gönder' }))
+    await waitFor(() => expect(api.create).toHaveBeenCalledTimes(3))
+    expect(api.create.mock.calls[2][0]).toEqual(api.create.mock.calls[0][0])
+    expect(api.create.mock.calls[2][1].idempotencyKey).toBe(api.create.mock.calls[0][1].idempotencyKey)
+  })
+
+  it('does not expose abandon or allow a new-key save while the first result is unknown', async () => {
+    api.create.mockResolvedValueOnce({ type: 'unknown', reason: 'network-error' })
+    const user = userEvent.setup()
+    render(<MemoryRouter><PurchaseOrderCreatePage /></MemoryRouter>)
+    await fillAndSubmit(user)
+    await screen.findByRole('button', { name: 'Aynı anahtarla yeniden gönder' })
+    expect(screen.queryByRole('button', { name: 'Bu denemeyi bırak' })).toBeNull()
+    expect((screen.getByRole('button', { name: 'Taslak siparişi kaydet' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(api.create).toHaveBeenCalledTimes(1)
   })
 })
