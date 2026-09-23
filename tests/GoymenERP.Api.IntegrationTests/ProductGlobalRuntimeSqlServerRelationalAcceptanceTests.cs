@@ -71,6 +71,38 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
         });
 
     [SqlServerFact]
+    public Task ProductStockCandidateWindow_FiltersActiveCardsWithoutInventingARole() =>
+        WithDatabaseAsync(async (factory, _) =>
+        {
+            using var client = factory.CreateClientFor("group-bootstrap-admin", CompanyA);
+            var ids = new List<Guid>();
+            foreach (var name in new[] { "Stock Alpha", "Stock Beta", "Stock Draft", "Other Stock" })
+            {
+                using var created = await CreateAsync(client, Guid.NewGuid().ToString("N"), name);
+                Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+                ids.Add((await created.Content.ReadFromJsonAsync<ProductMutationResponse>())!.Card.Product.Id);
+            }
+
+            await using var scope = factory.Services.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<ProductDbContext>();
+            // Only lifecycle is changed: a stock operation has no commercial-role precondition.
+            await db.Products.Where(row => row.Id == ids[0] || row.Id == ids[1] || row.Id == ids[3])
+                .ExecuteUpdateAsync(update => update.SetProperty(row => row.Lifecycle, 1));
+            var before = await SnapshotAsync(factory.DatabaseConnectionString);
+            var reader = new SqlProductStockCandidateReader(new ProductReadStore(db));
+            var authority = new ProductStockReadScope(CompanyA, ActorId.ToString("D"));
+
+            var first = await reader.ReadAsync(authority, new("Stock", new(2026, 9, 23), 1), default);
+            Assert.Equal(ids[0], Assert.Single(first.Items).Id);
+            Assert.True(first.HasMore);
+
+            var all = await reader.ReadAsync(authority, new("Stock", new(2026, 9, 23), 10), default);
+            Assert.Equal(new[] { ids[0], ids[1], ids[3] }, all.Items.Select(item => item.Id));
+            Assert.False(all.HasMore);
+            Assert.Equal(before, await SnapshotAsync(factory.DatabaseConnectionString));
+        });
+
+    [SqlServerFact]
     public Task ProductGlobalRuntime_SharedSnapshotEmitsEmptyAndPopulatedJsonArrays() =>
         WithDatabaseAsync(async (factory, _) =>
         {
