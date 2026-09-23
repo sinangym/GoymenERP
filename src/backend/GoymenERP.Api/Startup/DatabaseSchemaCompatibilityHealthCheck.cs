@@ -1,3 +1,4 @@
+using GoymenERP.Api.ProductRuntime;
 using GoymenERP.Modules.Accounting.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
@@ -20,6 +21,7 @@ namespace GoymenERP.Api.Startup;
 internal sealed class DatabaseSchemaCompatibilityHealthCheck(
     IServiceScopeFactory scopeFactory,
     IIdentityAuthorizationDatabaseReadiness identityDatabaseReadiness,
+    ProductRuntimeOptions productRuntimeOptions,
     ILogger<DatabaseSchemaCompatibilityHealthCheck> logger) : IHealthCheck
 {
     internal const string Name = "database-schema-compatibility";
@@ -50,6 +52,13 @@ internal sealed class DatabaseSchemaCompatibilityHealthCheck(
         await using var scope = scopeFactory.CreateAsyncScope();
         foreach (var (name, contextType) in Contexts)
         {
+            if (!productRuntimeOptions.IsEnabled
+                && (contextType == typeof(ProductDbContext)
+                    || contextType == typeof(GroupSharedCommandDbContext)))
+            {
+                continue;
+            }
+
             try
             {
                 var database = (DbContext)scope.ServiceProvider.GetRequiredService(contextType);
@@ -111,8 +120,7 @@ internal sealed class DatabaseSchemaCompatibilityHealthCheck(
     }
 
     private static HealthCheckResult Unhealthy(string description, string context) =>
-        new(
-            HealthStatus.Unhealthy,
+        HealthCheckResult.Unhealthy(
             description,
             data: new Dictionary<string, object>
             {
