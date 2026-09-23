@@ -30038,7 +30038,8 @@
       "PlannedInputRequestV1": {
         "required": [
           "parentRollId",
-          "plannedKg"
+          "plannedKg",
+          "expectedLabelVersion"
         ],
         "type": "object",
         "properties": {
@@ -30051,6 +30052,9 @@
               "null",
               "string"
             ]
+          },
+          "expectedLabelVersion": {
+            "type": "string"
           }
         }
       },
