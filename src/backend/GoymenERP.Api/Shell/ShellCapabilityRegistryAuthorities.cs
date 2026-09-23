@@ -123,12 +123,12 @@ internal static class ShellCapabilityRegistryAuthorities
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV10AndPublishedLogisticsV10 =
         "sha256:i4lDY7trJGOiY6rEWWZ99ZVEH0DXIe484_0JaizLGgs";
 
-    // P-04: ... + Purchasing 1.2, with P-03 list/detail/approve and P-04 creation published. The
-    // HTTP contract requires an explicit CompanyId, so all four declarations are single-company; the
-    // approve child inherits its detail parent's route, context and scope. Derived from the integrated
-    // provider tuple through ShellCapabilityRegistry.ComputeCandidateRevision and pinned by test.
-    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV10PublishedLogisticsV10AndPublishedPurchasingV12 =
-        "sha256:p68P10RIdaxC5SQbv_WQNUcyyEqB-EFq22srfW98S6A";
+    // P01: ... + Purchasing 1.3, with the request list/create/detail/submit declarations published
+    // beside the existing order list/create/detail/approve declarations. Every declaration remains
+    // single-company; each child keeps its detail parent's route, context and scope. Derived from the
+    // integrated provider tuple through ShellCapabilityRegistry.ComputeCandidateRevision and pinned by test.
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV10PublishedLogisticsV10AndPublishedPurchasingV13 =
+        "sha256:-GxSeAXbeN0_7sfLOpJPVO-Cc62HD-BHorWs9uSq5-E";
 
     // ACC-V0b: ... + Accounting 1.0 STAGED (the period list M-07 and its propose screen, the approve and
     // close controls of that list, the journal list M-04 and its detail, the posting queues M-01): the normal
@@ -158,8 +158,8 @@ internal static class ShellCapabilityRegistryAuthorities
     // version, and the provider really still reports "1.0". But that argument is about the VERSION
     // NUMBER and says nothing about the `Published` prefix, which is this file's separate AVAILABILITY
     // axis: `…AndSalesV10` became `…AndPublishedSalesV10` at Sales's flip, Finance and Manufacturing
-    // likewise. Logistics gains `Published` at its availability flip; Purchasing stays plain because it is
-    // still staged. Accounting
+    // likewise. Logistics gains `Published` at its availability flip; Purchasing carries `Published`
+    // because P01 publishes all eight of its 1.3 declarations. Accounting
     // gains `Published` at the flip this row performs. Applying the version rule to the prefix question
     // would have left the name asserting "Accounting staged" about a host serving six live screens.
     // The prefix marks the FLIP, not wholeness: the journal detail is still staged here, which the
@@ -168,8 +168,8 @@ internal static class ShellCapabilityRegistryAuthorities
     // before the value was trusted: all eight of main's Organization 1.1 rows reproduce byte-for-byte
     // with Accounting staged (the old half), and the same ACC-V0c model placed back at Organization 1.0
     // reproduces this branch's own sha256:OOlEtnDx… (the new half, which no accepted constant covered).
-    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV10PublishedLogisticsV10PublishedPurchasingV12AndPublishedAccountingV10 =
-        "sha256:es7QqQKGMGHMKKUFcr0y_ZSnm1bHGCZw1i0zhOoOLKo";
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV10PublishedLogisticsV10PublishedPurchasingV13AndPublishedAccountingV10 =
+        "sha256:vIwTcHexdvhOAHfp-UKuDkEBpneWkZOTwuI59i0KdiM";
 
     internal const string CounterpartyV15PublishedListCreateAndDetail =
         "sha256:UBHnivzhe_dp5f7vU7dP5n7HG-P8XYBGhxvD_OjMSnw";

@@ -105,10 +105,11 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
   // reader announces it twice.
   CAPABILITY.logisticsInstructionsList,
   /**
-   * P-03 is Purchasing's only sidebar entry. P-04 remains staged until Product publishes a real
-   * purchase-candidate source, and the detail is reached from a list row. The approve capability is
-   * a control inside the detail, not a route or navigation item.
+   * P-01 and P-03 are Purchasing's two list entries. Their create actions live inside their lists
+   * under K5, and each detail is reached from a row. Submit and approve are controls inside their
+   * respective details, never routes or navigation items.
    */
+  CAPABILITY.purchasingRequestsList,
   CAPABILITY.purchasingOrdersList,
 ]
 

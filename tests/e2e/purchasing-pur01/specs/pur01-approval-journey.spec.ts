@@ -8,8 +8,11 @@ const {
   productUnitProfileId, productUnitProfileVersion, productCode, productName,
 } = env.seed
 const ORDERS_PATH = '/api/v1/purchasing/orders'
+const REQUESTS_PATH = '/api/v1/purchasing/requests'
 const LIST_ROUTE = '/satinalma/siparisler'
 const CREATE_ROUTE = `${LIST_ROUTE}/yeni`
+const REQUEST_LIST_ROUTE = '/satinalma/talepler'
+const REQUEST_CREATE_ROUTE = `${REQUEST_LIST_ROUTE}/yeni`
 const DEVELOPMENT_USER_HEADER = 'X-Development-User'
 
 interface OrderSummary {
@@ -39,6 +42,31 @@ interface ApprovalResponse {
   readonly originalCorrelationId: string
 }
 
+interface RequestSummary {
+  readonly id: string
+  readonly companyId: string
+  readonly status: 'Draft' | 'Submitted'
+  readonly version: string
+  readonly effectiveOn: string
+}
+
+interface RequestDetail {
+  readonly request: RequestSummary
+  readonly lines: ReadonlyArray<{
+    readonly lineId: string
+    readonly productId: string
+    readonly productVersion: string
+    readonly unitId: string
+    readonly quantity: string
+  }>
+}
+
+interface RequestResponse {
+  readonly detail: RequestDetail
+  readonly isReplay: boolean
+  readonly originalCorrelationId: string
+}
+
 async function signInAs(page: Page, actor: string): Promise<void> {
   await page.setExtraHTTPHeaders({ [DEVELOPMENT_USER_HEADER]: actor })
 }
@@ -61,9 +89,143 @@ async function readOrders(page: Page, actor: string): Promise<readonly OrderSumm
   return body.items
 }
 
+async function readRequest(page: Page, actor: string, requestId: string, company = companyId): Promise<RequestDetail> {
+  const response = await page.request.get(`${env.apiBaseUrl}${REQUESTS_PATH}/${requestId}`, {
+    headers: { [DEVELOPMENT_USER_HEADER]: actor, 'X-Company-Id': company },
+  })
+  expect(response.status()).toBe(200)
+  return (await response.json()) as RequestDetail
+}
+
+async function readRequests(page: Page, actor: string): Promise<readonly RequestSummary[]> {
+  const response = await page.request.get(`${env.apiBaseUrl}${REQUESTS_PATH}`, {
+    headers: { [DEVELOPMENT_USER_HEADER]: actor, 'X-Company-Id': companyId },
+  })
+  expect(response.status()).toBe(200)
+  const body = (await response.json()) as { readonly items: readonly RequestSummary[]; readonly nextCursor: string | null }
+  expect(body.nextCursor).toBeNull()
+  return body.items
+}
+
 function seededRow(page: Page) {
   return page.getByRole('row').filter({ hasText: `…${orderId.slice(-8)}` })
 }
+
+
+test('P01 saves one real Product-backed request, closes the form, reopens the same record and submits it; fences hold', async ({ page }) => {
+  await signInAs(page, creatorActor)
+  const before = await readRequests(page, creatorActor)
+
+  await page.goto(REQUEST_LIST_ROUTE)
+  await expect(page.getByRole('heading', { level: 1, name: 'Satın alma talepleri' })).toBeVisible({ timeout: 30_000 })
+  await page.getByRole('link', { name: 'Yeni talep', exact: true }).click()
+  await expect(page.getByRole('heading', { level: 1, name: 'Yeni satın alma talebi' })).toBeVisible()
+
+  await page.getByLabel('İş tarihi').fill('2026-09-18')
+  await page.getByLabel('Ürün ara').fill(productCode)
+  const candidateAnswer = page.waitForResponse((response) => {
+    const url = new URL(response.url())
+    return response.request().method() === 'GET' && url.pathname === '/api/v1/purchasing/references/products'
+  })
+  await page.getByRole('button', { name: 'Ara', exact: true }).click()
+  const candidates = await candidateAnswer
+  expect(candidates.status()).toBe(200)
+  expect(await candidates.json()).toMatchObject({
+    items: [{
+      productId, productVersion, code: productCode, name: productName, unitId: productUnitId,
+      profileId: productUnitProfileId, profileVersion: productUnitProfileVersion,
+    }],
+  })
+  await page.getByLabel('Ürün 1').selectOption(productId)
+  await page.getByLabel('Miktar').fill('7')
+
+  const createAnswer = page.waitForResponse((response) =>
+    response.request().method() === 'POST' && new URL(response.url()).pathname === REQUESTS_PATH)
+  await page.getByRole('button', { name: 'Taslak talebi kaydet' }).click()
+  const createResponse = await createAnswer
+  expect(createResponse.status()).toBe(201)
+  const created = (await createResponse.json()) as RequestResponse
+  const requestId = created.detail.request.id
+  const draftVersion = created.detail.request.version
+  expect(createResponse.headers()['location']).toContain(`${REQUESTS_PATH}/${requestId}`)
+  expect(created.isReplay).toBe(false)
+  expect(/^[1-9]\d*$/.test(draftVersion)).toBe(true)
+  expect(created.detail.request).toMatchObject({
+    id: requestId, companyId, status: 'Draft', version: draftVersion, effectiveOn: '2026-09-18',
+  })
+  expect(created.detail.lines).toHaveLength(1)
+  expect(created.detail.lines[0]).toMatchObject({
+    productId, productVersion, unitId: productUnitId, quantity: '7',
+  })
+  await expect(page.getByRole('heading', { level: 1, name: 'Satın alma talebi kaydedildi' })).toBeVisible()
+
+  await page.getByRole('link', { name: 'Listeye dön ve formu kapat' }).click()
+  const createdRow = page.getByRole('row').filter({ hasText: `…${requestId.slice(-8)}` })
+  await expect(createdRow).toContainText('Taslak')
+  const afterCreate = await readRequests(page, creatorActor)
+  expect(afterCreate).toHaveLength(before.length + 1)
+  expect(afterCreate.filter((item) => item.id === requestId)).toHaveLength(1)
+
+  await createdRow.getByRole('link', { name: `…${requestId.slice(-8)}` }).click()
+  await expect(page.getByRole('heading', { level: 1, name: 'Satın alma talebi' })).toBeVisible()
+  await expect(page.getByText(requestId, { exact: true })).toBeVisible()
+  const reopened = await readRequest(page, creatorActor, requestId)
+  expect(reopened.request).toMatchObject({ id: requestId, status: 'Draft', version: draftVersion })
+  expect(reopened.lines[0]).toMatchObject({ productId, productVersion, unitId: productUnitId, quantity: '7' })
+
+  const submissionPath = `${REQUESTS_PATH}/${requestId}/submission`
+  const submitAnswer = page.waitForResponse((response) =>
+    response.request().method() === 'POST' && new URL(response.url()).pathname === submissionPath)
+  await page.getByRole('button', { name: 'Gönder', exact: true }).click()
+  const submitResponse = await submitAnswer
+  expect(submitResponse.status()).toBe(200)
+  const submitted = (await submitResponse.json()) as RequestResponse
+  const submittedVersion = (BigInt(draftVersion) + 1n).toString()
+  expect([submitted.detail.request.id, submitted.detail.request.status, submitted.detail.request.version])
+    .toEqual([requestId, 'Submitted', submittedVersion])
+  await expect(page.getByText('Talep gönderildi ve yeniden okundu.')).toBeVisible()
+  await expect(page.getByText('Gönderildi', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Gönder', exact: true })).toHaveCount(0)
+  const afterSubmit = await readRequest(page, creatorActor, requestId)
+  expect([afterSubmit.request.id, afterSubmit.request.status, afterSubmit.request.version])
+    .toEqual([requestId, 'Submitted', submittedVersion])
+
+  await signInAs(page, readerActor)
+  const readerCapabilities = await page.request.get(`${env.apiBaseUrl}/api/v1/shell/capabilities`, {
+    headers: { [DEVELOPMENT_USER_HEADER]: readerActor, 'X-Company-Id': companyId },
+  })
+  expect(readerCapabilities.status()).toBe(200)
+  const snapshot = (await readerCapabilities.json()) as { readonly capabilities?: unknown }
+  const published = Array.isArray(snapshot.capabilities) ? snapshot.capabilities as string[] : []
+  expect(published).toContain('purchasing.requests.list')
+  expect(published).toContain('purchasing.requests.detail')
+  expect(published).not.toContain('purchasing.requests.create')
+  expect(published).not.toContain('purchasing.requests.submit')
+
+  await page.goto(REQUEST_LIST_ROUTE)
+  const readerRow = page.getByRole('row').filter({ hasText: `…${requestId.slice(-8)}` })
+  await expect(readerRow).toContainText('Gönderildi')
+  await expect(page.getByRole('link', { name: 'Yeni talep', exact: true })).toHaveCount(0)
+  await readerRow.getByRole('link', { name: `…${requestId.slice(-8)}` }).click()
+  await expect(page.getByText(requestId, { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Gönder', exact: true })).toHaveCount(0)
+
+  const denied = await page.request.post(`${env.apiBaseUrl}${submissionPath}`, {
+    headers: {
+      [DEVELOPMENT_USER_HEADER]: readerActor, 'X-Company-Id': companyId,
+      'Idempotency-Key': 'browser-suite:pur01:reader-submit-denied', 'Content-Type': 'application/json',
+    },
+    data: { expectedVersion: submittedVersion },
+  })
+  expect(denied.status()).toBe(403)
+  const afterDenied = await readRequest(page, readerActor, requestId)
+  expect([afterDenied.request.status, afterDenied.request.version]).toEqual(['Submitted', submittedVersion])
+
+  const elsewhere = await page.request.get(`${env.apiBaseUrl}${REQUESTS_PATH}/${requestId}`, {
+    headers: { [DEVELOPMENT_USER_HEADER]: creatorActor, 'X-Company-Id': otherCompanyId },
+  })
+  expect([403, 404]).toContain(elsewhere.status())
+})
 
 
 test('P04 creates one real order, closes the form, reopens that record and uses it in approval; create fences hold', async ({ page }) => {
