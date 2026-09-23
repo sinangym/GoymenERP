@@ -62,4 +62,31 @@ describe('pending commercial revision', () => {
 
     expect(recallCommercialRevisionAttempt(snapshot.binding)).toBeNull()
   })
+
+  it('does not let a late old callback overwrite a different-payload replacement key', () => {
+    const oldAttempt: CommercialRevisionAttempt = { phase: 'unknown', snapshot, reason: 'network-error' }
+    const replacementSnapshot: OrderAttemptSnapshot<DraftCommercialRevisionRequest> = {
+      ...snapshot,
+      key: 'fedcba9876543210fedcba9876543210',
+      payload: {
+        ...payload,
+        lines: payload.lines.map((line) => ({ ...line, unitPrice: '13.00' })),
+      },
+    }
+    const replacementAttempt: CommercialRevisionAttempt = {
+      phase: 'unknown',
+      snapshot: replacementSnapshot,
+      reason: 'network-error',
+    }
+    const replacementRows = rows.map((row) => ({ ...row, unitPrice: '13.00' }))
+
+    rememberCommercialRevisionAttempt(snapshot.binding, oldAttempt, rows)
+    rememberCommercialRevisionAttempt(snapshot.binding, replacementAttempt, replacementRows)
+    rememberCommercialRevisionAttempt(snapshot.binding, oldAttempt, rows)
+
+    expect(recallCommercialRevisionAttempt(snapshot.binding)).toEqual({
+      attempt: replacementAttempt,
+      rows: replacementRows,
+    })
+  })
 })

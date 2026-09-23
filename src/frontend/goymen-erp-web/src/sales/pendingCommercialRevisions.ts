@@ -27,6 +27,10 @@ export function rememberCommercialRevisionAttempt(
   if (settled.has(token)) return
 
   if (isOutcomeStillUnknown(attempt)) {
+    const current = slots.get(binding)
+    if (current !== undefined && current.attempt.snapshot.key !== attempt.snapshot.key) {
+      settled.add(`${binding}|${current.attempt.snapshot.key}`)
+    }
     slots.set(binding, { attempt, rows: rows.map((row) => ({ ...row })) })
     return
   }
