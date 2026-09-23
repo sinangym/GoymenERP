@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using GoymenERP.Api.Errors;
 using GoymenERP.Api.Multitenancy;
 using GoymenERP.Api.OpenApi;
 using GoymenERP.BuildingBlocks.Observability;
@@ -117,6 +118,10 @@ public static class InventoryEndpoints
                         _ => ParentRollProblem(StatusCodes.Status503ServiceUnavailable),
                     };
                 }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
                 catch (Exception)
                 {
                     return ParentRollProblem(StatusCodes.Status503ServiceUnavailable);
@@ -124,6 +129,7 @@ public static class InventoryEndpoints
             })
             .WithName(InventoryParentRollApiV1.GetCandidatesOperationId)
             .WithTags("Inventory")
+            .WithMetadata(new PrivateNoStoreOnAuthorizationFailureMetadata())
             .RequireCompanyContext()
             .RequireAuthorization(ErpPermissions.InventoryLabelsRead, ErpPermissions.InventoryBalancesRead)
             .Produces<InventoryParentRollCandidatesV1>(StatusCodes.Status200OK)

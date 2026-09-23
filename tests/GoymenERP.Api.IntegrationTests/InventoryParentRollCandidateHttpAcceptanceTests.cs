@@ -55,12 +55,31 @@ public sealed class InventoryParentRollCandidateHttpAcceptanceTests(GoymenErpApi
             using var response = await client.GetAsync(InventoryParentRollApiV1.CandidatesPath);
 
             Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+            AssertPrivateNoStore(response);
             Assert.Empty(owner.Queries);
             var body = await response.Content.ReadAsStringAsync();
             using var document = JsonDocument.Parse(body);
             Assert.Equal("forbidden", document.RootElement.GetProperty("code").GetString());
             Assert.DoesNotContain("ROLL-1", body, StringComparison.Ordinal);
         }
+    }
+
+    [Fact]
+    public async Task Unauthenticated_request_is_private_no_store_and_never_reaches_the_owner()
+    {
+        var authority = new ControlledAuthority();
+        var owner = new StubCandidates(Candidates());
+        using var host = CreateHost(authority, owner);
+        using var client = host.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Company-Id", TestCompanyIds.CompanyA.ToString("D"));
+
+        using var response = await client.GetAsync(InventoryParentRollApiV1.CandidatesPath);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        AssertPrivateNoStore(response);
+        Assert.Empty(owner.Queries);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("authentication_required", document.RootElement.GetProperty("code").GetString());
     }
 
     [Fact]
@@ -131,6 +150,22 @@ public sealed class InventoryParentRollCandidateHttpAcceptanceTests(GoymenErpApi
         Assert.DoesNotContain("ROLL-1", body, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Request_cancellation_is_not_translated_to_service_unavailable()
+    {
+        var authority = new ControlledAuthority();
+        var owner = new StubCandidates(Candidates()) { WaitForCancellation = true };
+        using var host = CreateHost(authority, owner);
+        using var client = CreateClient(host);
+        using var cancellation = new CancellationTokenSource();
+
+        var request = client.GetAsync(InventoryParentRollApiV1.CandidatesPath, cancellation.Token);
+        await owner.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => request);
+    }
+
     private WebApplicationFactory<Program> CreateHost(ControlledAuthority authority, StubCandidates owner) =>
         factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
         {
@@ -185,15 +220,27 @@ public sealed class InventoryParentRollCandidateHttpAcceptanceTests(GoymenErpApi
     {
         public List<InventoryParentRollQueryV1> Queries { get; } = [];
         public Exception? Failure { get; init; }
+        public bool WaitForCancellation { get; init; }
+        public TaskCompletionSource Entered { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        public Task<InventoryParentRollCandidatesV1> SearchAsync(
+        public async Task<InventoryParentRollCandidatesV1> SearchAsync(
             InventoryParentRollQueryV1 query,
             CancellationToken cancellationToken = default)
         {
             Queries.Add(query);
-            return Failure is null
-                ? Task.FromResult(answer)
-                : Task.FromException<InventoryParentRollCandidatesV1>(Failure);
+            Entered.TrySetResult();
+            if (WaitForCancellation)
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            }
+
+            if (Failure is not null)
+            {
+                throw Failure;
+            }
+
+            return answer;
         }
     }
 
