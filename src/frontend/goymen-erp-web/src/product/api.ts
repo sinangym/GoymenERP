@@ -319,7 +319,7 @@ export interface ProductReferenceWrite {
   readonly templateId?: string | null
   readonly templateVersion?: string | null
   readonly attributes?: Readonly<Record<string, unknown>>
-  readonly units?: { readonly stock?: string | null; readonly sales?: string | null }
+  readonly units?: { readonly stock?: string | null; readonly purchase?: string | null; readonly sales?: string | null }
 }
 
 /**

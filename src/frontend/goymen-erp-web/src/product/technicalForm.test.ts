@@ -77,9 +77,9 @@ describe('released technical fields', () => {
   it('writes explicit none, measured attributes and independently selected units into the POST payload', () => {
     const result = validateCreateForm({ ...EMPTY_CREATE_FORM, name: 'Sentetik ürün', groupId: GROUP_SAC, familyId: FAMILY_FLAT,
       technical: { ...technicalDraft(), attributes: { thickness: '1,250', coating: 'NONE' }, attributesChanged: true,
-        stock: KG, stockChanged: true, sales: PIECE, salesChanged: true } }, [GROUP_SAC], [], [FAMILY_FLAT], options)
+        stock: KG, stockChanged: true, purchase: PIECE, purchaseChanged: true, sales: PIECE, salesChanged: true } }, [GROUP_SAC], [], [FAMILY_FLAT], options)
     expect(result.ok && result.payload.references).toEqual({ templateId: TEMPLATE, templateVersion: '1',
-      attributes: { thickness: 1.25, coating: 'NONE' }, units: { stock: KG, sales: PIECE } })
+      attributes: { thickness: 1.25, coating: 'NONE' }, units: { stock: KG, purchase: PIECE, sales: PIECE } })
   })
   it('refuses a candidate in a required field and a non-kg stock unit', () => {
     const result = technicalWrite({ ...technicalDraft(), attributes: { coating: 'NEW' }, attributesChanged: true,
@@ -90,6 +90,17 @@ describe('released technical fields', () => {
   it('preserves untouched references when only a unit is changed', () => {
     const result = technicalWrite({ ...technicalDraft(), attributes: { historicUnknown: 'old' }, sales: PIECE, salesChanged: true }, options, FAMILY_FLAT)
     expect(result).toEqual({ ok: true, references: { units: { sales: PIECE } } })
+  })
+  it('keeps purchase omission, explicit clearing and non-kg selection independent of stock and sales', () => {
+    const loaded = technicalDraft({ ...references(), units: { ...references().units, purchase: PIECE } })
+    expect(loaded.purchase).toBe(PIECE)
+    expect(technicalWrite(loaded, options, FAMILY_FLAT)).toEqual({ ok: true, references: {} })
+    expect(technicalWrite({ ...loaded, purchase: '', purchaseChanged: true }, options, FAMILY_FLAT))
+      .toEqual({ ok: true, references: { units: { purchase: null } } })
+    expect(technicalWrite({ ...loaded, purchaseChanged: true }, options, FAMILY_FLAT))
+      .toEqual({ ok: true, references: { units: { purchase: PIECE } } })
+    expect(technicalWrite({ ...loaded, purchase: TEMPLATE, purchaseChanged: true }, options, FAMILY_FLAT).ok).toBe(false)
+    expect(technicalWrite({ ...loaded, purchaseChanged: true }, null, FAMILY_FLAT).ok).toBe(false)
   })
   it('never erases unknown attributes while editing another attribute', () => {
     expect(technicalWrite({ ...technicalDraft(), attributes: { historicUnknown: 'old', thickness: '2' }, attributesChanged: true }, options, FAMILY_FLAT).ok).toBe(false)
@@ -120,12 +131,13 @@ it('renders the released fields on the normal create screen and sends them in PO
   expect((screen.getByRole('option', { name: 'Yeni kaplama (Aday)' }) as HTMLOptionElement).disabled).toBe(true)
   await userEvent.selectOptions(screen.getByLabelText('Stok birimi (kg)'), KG)
   await userEvent.selectOptions(screen.getByLabelText('Satış birimi'), PIECE)
+  await userEvent.selectOptions(screen.getByLabelText('Alış birimi'), PIECE)
   await userEvent.click(screen.getByRole('button', { name: 'Taslak olarak kaydet' }))
   await screen.findByRole('heading', { name: 'Taslak kaydedildi' })
   const post = calls.find(c => c.method === 'POST')!
   expect(post.idempotencyKey).toBeTruthy()
   expect(JSON.parse(post.body!).references).toEqual({ templateId: TEMPLATE, templateVersion: '1',
-    attributes: { thickness: 1.25, coating: 'NONE' }, units: { stock: KG, sales: PIECE } })
+    attributes: { thickness: 1.25, coating: 'NONE' }, units: { stock: KG, purchase: PIECE, sales: PIECE } })
 })
 
 it('edits the loaded technical value with the read version, then reopens server-resolved names', async () => {

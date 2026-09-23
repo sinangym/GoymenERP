@@ -18,8 +18,8 @@ namespace GoymenERP.Api.IntegrationTests;
 /// <summary>
 /// PRD-UNIT-1 against a REAL SQL Server and the real host: a global Product card's unit reference is the
 /// Settings unit IDENTITY (company-independent; kg is <see cref="SettingsUnitIdentitiesV1.Kilogram"/>).
-/// The card saves and reads back kg for stock and sales; the stock role must be the kilogram identity; an
-/// unknown identity and a role not opened yet (purchase) are refused and nothing is stored. Whether a
+/// The card saves and reads back kg for stock, purchase and sales; the stock role must be the kilogram identity; an
+/// unknown identity and a role not opened yet (price) are refused and nothing is stored. Whether a
 /// company may use kg is its profile, checked at eligibility, not here.
 /// </summary>
 public sealed class ProductUnitReferenceSqlServerRelationalAcceptanceTests
@@ -46,7 +46,7 @@ public sealed class ProductUnitReferenceSqlServerRelationalAcceptanceTests
             Assert.DoesNotContain("units", options.UnavailableCatalogs);
 
             using var created = await CreateAsync(client, "unit-reference-kg",
-                new ProductUnitReferences(Stock: SettingsUnitIdentitiesV1.Kilogram, Sales: SettingsUnitIdentitiesV1.Kilogram));
+                new ProductUnitReferences(Stock: SettingsUnitIdentitiesV1.Kilogram, Purchase: SettingsUnitIdentitiesV1.Kilogram, Sales: SettingsUnitIdentitiesV1.Kilogram));
             Assert.Equal(HttpStatusCode.Created, created.StatusCode);
             var id = (await created.Content.ReadFromJsonAsync<ProductMutationResponse>())!.Card.Product.Id;
 
@@ -54,7 +54,25 @@ public sealed class ProductUnitReferenceSqlServerRelationalAcceptanceTests
             Assert.Equal((SettingsUnitIdentitiesV1.Kilogram, SettingsUnitIdentitiesV1.Kilogram),
                 (stored.References.Units!.Stock, stored.References.Units.Sales));
             Assert.Equal("kg", stored.Product.Labels.PrimaryStockUnit);
-            Assert.Equal(new Dictionary<string, string> { ["stock"] = "kg", ["sales"] = "kg" }, stored.Product.Labels.Units);
+            Assert.Equal(new Dictionary<string, string> { ["stock"] = "kg", ["purchase"] = "kg", ["sales"] = "kg" }, stored.Product.Labels.Units);
+            Assert.Equal(SettingsUnitIdentitiesV1.Kilogram, stored.References.Units.Purchase);
+
+            using var cleared = await ChangePurchaseAsync(client, id, stored.Product.Version, null, "clear-purchase");
+            Assert.Equal(HttpStatusCode.OK, cleared.StatusCode);
+            var afterClear = (await client.GetFromJsonAsync<ProductCardView>($"/api/v1/products/{id:D}"))!;
+            Assert.Null(afterClear.References.Units!.Purchase);
+            Assert.Equal(stored.References.Units.Stock, afterClear.References.Units.Stock);
+            Assert.Equal(stored.References.Units.Sales, afterClear.References.Units.Sales);
+            Assert.NotEqual(stored.Product.Version, afterClear.Product.Version);
+
+            using var changed = await ChangePurchaseAsync(client, id, afterClear.Product.Version,
+                SettingsUnitIdentitiesV1.Kilogram, "select-purchase");
+            Assert.Equal(HttpStatusCode.OK, changed.StatusCode);
+            var reopened = (await client.GetFromJsonAsync<ProductCardView>($"/api/v1/products/{id:D}"))!;
+            Assert.Equal(id, reopened.Product.Id);
+            Assert.NotEqual(afterClear.Product.Version, reopened.Product.Version);
+            Assert.Equal(SettingsUnitIdentitiesV1.Kilogram, reopened.References.Units!.Purchase);
+            Assert.Equal("kg", reopened.Product.Labels.Units!["purchase"]);
         });
 
     [SqlServerFact]
@@ -69,9 +87,14 @@ public sealed class ProductUnitReferenceSqlServerRelationalAcceptanceTests
             Assert.Equal([("references.units.stock", "invalid_reference")], await FieldErrorsAsync(unknown));
 
             using var purchase = await CreateAsync(client, "unit-reference-purchase",
-                new ProductUnitReferences(Purchase: SettingsUnitIdentitiesV1.Kilogram));
+                new ProductUnitReferences(Purchase: Guid.Parse("82000000-0000-4000-8000-0000000000ee")));
             Assert.Equal(HttpStatusCode.BadRequest, purchase.StatusCode);
             Assert.Equal([("references.units.purchase", "invalid_reference")], await FieldErrorsAsync(purchase));
+
+            using var price = await CreateAsync(client, "unit-reference-price",
+                new ProductUnitReferences(Price: SettingsUnitIdentitiesV1.Kilogram));
+            Assert.Equal(HttpStatusCode.BadRequest, price.StatusCode);
+            Assert.Equal([("references.units.price", "invalid_reference")], await FieldErrorsAsync(price));
 
             await using var sql = new SqlConnection(factory.DatabaseConnectionString);
             await sql.OpenAsync();
@@ -79,6 +102,19 @@ public sealed class ProductUnitReferenceSqlServerRelationalAcceptanceTests
             count.CommandText = "SELECT COUNT(*) FROM [product].[Products]";
             Assert.Equal(0, (int)(await count.ExecuteScalarAsync())!);
         });
+
+    private static Task<HttpResponseMessage> ChangePurchaseAsync(HttpClient client, Guid id,
+        string expectedVersion, Guid? purchase, string key)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Patch, $"/api/v1/products/{id:D}/draft")
+        {
+            Content = JsonContent.Create(new { expectedVersion,
+                changes = new { references = new { units = new { purchase } } },
+                reason = "Synthetic purchase unit authoring acceptance" }),
+        };
+        request.Headers.Add("Idempotency-Key", key);
+        return client.SendAsync(request);
+    }
 
     private static Task<HttpResponseMessage> CreateAsync(HttpClient client, string key, ProductUnitReferences units)
     {

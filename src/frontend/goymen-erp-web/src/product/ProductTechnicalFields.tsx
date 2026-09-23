@@ -50,7 +50,7 @@ export function ProductTechnicalFields({ familyId, options, value, frozen, onCha
         {errors[id] ? <p role="alert">{errors[id]}</p> : null}
       </div>
     })}
-    {(['stock', 'sales'] as const).map(role => <div className={styles.field} key={role}>
+    {(['stock', 'purchase', 'sales'] as const).map(role => <div className={styles.field} key={role}>
       <label htmlFor={`references.units.${role}`}>{TECHNICAL_TEXT[role]}</label>
       <select id={`references.units.${role}`} value={draft[role]}
         disabled={!options?.technical || options.unavailableCatalogs.includes('units')}

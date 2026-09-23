@@ -4,7 +4,7 @@ import type { TemplateField } from './technicalContract'
 
 export const TECHNICAL_TEXT = {
   heading: 'Teknik özellikler', unavailable: 'Bu aile için yayımlanmış teknik şablon okunamıyor.',
-  choose: 'Seçiniz', candidate: 'Aday', stock: 'Stok birimi (kg)', sales: 'Satış birimi',
+  choose: 'Seçiniz', candidate: 'Aday', stock: 'Stok birimi (kg)', purchase: 'Alış birimi', sales: 'Satış birimi',
   unitUnavailable: 'Birim kataloğu okunamıyor.', invalidMeasure: 'Sıfırdan büyük, en fazla üç ondalıklı mm değeri giriniz.',
   invalidChoice: 'Yayımlanmış listeden geçerli bir değer seçiniz.', candidateRequired: 'Aday değer zorunlu alanı karşılamaz.',
   kilogram: 'Stok birimi kilogram olmalıdır.',
@@ -15,17 +15,20 @@ export interface TechnicalDraft {
   readonly sourceTemplateVersion: string | null
   readonly attributes: Readonly<Record<string, unknown>>
   readonly stock: string
+  readonly purchase: string
   readonly sales: string
   readonly attributesChanged: boolean
   readonly stockChanged: boolean
+  readonly purchaseChanged: boolean
   readonly salesChanged: boolean
 }
 export function technicalDraft(references?: ProductReferences): TechnicalDraft {
   return { attributes: references?.attributes ?? {}, stock: references?.units.stock ?? '',
     sourceTemplateId: references?.templateId ?? null, sourceTemplateVersion: references?.templateVersion ?? null,
-    sales: references?.units.sales ?? '', attributesChanged: false, stockChanged: false, salesChanged: false }
+    purchase: references?.units.purchase ?? '', sales: references?.units.sales ?? '',
+    attributesChanged: false, stockChanged: false, purchaseChanged: false, salesChanged: false }
 }
-export const technicalDirty = (draft: TechnicalDraft) => draft.attributesChanged || draft.stockChanged || draft.salesChanged
+export const technicalDirty = (draft: TechnicalDraft) => draft.attributesChanged || draft.stockChanged || draft.purchaseChanged || draft.salesChanged
 export function familyTemplate(options: ProductReferenceOptions | null, familyId: string) {
   if (options?.unavailableCatalogs.includes('templates') || options?.unavailableCatalogs.includes('families')) return undefined
   const family = options?.technical?.familyFacts.find(f => f.id === familyId)
@@ -45,7 +48,7 @@ export function technicalWrite(draft: TechnicalDraft, options: ProductReferenceO
   { readonly ok: true; readonly references: ProductReferenceWrite } | { readonly ok: false; readonly errors: Readonly<Record<string, string>> } {
   const errors: Record<string, string> = {}
   const references: { templateId?: string | null; templateVersion?: string | null;
-    attributes?: Record<string, unknown>; units?: { stock?: string | null; sales?: string | null } } = {}
+    attributes?: Record<string, unknown>; units?: { stock?: string | null; purchase?: string | null; sales?: string | null } } = {}
   if (draft.attributesChanged) {
     const template = editableTemplate(options, familyId, draft)
     if (familyId === '' && Object.keys(draft.attributes).length === 0) {
@@ -79,7 +82,7 @@ export function technicalWrite(draft: TechnicalDraft, options: ProductReferenceO
       }
     }
   }
-  for (const role of ['stock', 'sales'] as const) {
+  for (const role of ['stock', 'purchase', 'sales'] as const) {
     if (!draft[`${role}Changed`]) continue
     const value = draft[role]
     const unit = options?.technical?.units.find(u => u.id === value)
