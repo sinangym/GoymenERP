@@ -47,6 +47,24 @@ export interface PurchaseOrderCommandResponse {
   readonly originalCorrelationId: string
 }
 
+/** Product-owned, save-time-bound purchase candidate. No Sales unit or conversion is implied. */
+export interface ProductPurchaseCandidate {
+  readonly productId: string
+  readonly productVersion: string
+  readonly code: string
+  readonly name: string
+  readonly unitId: string
+  readonly unitCode: string
+  readonly profileId: string
+  readonly profileVersion: string
+}
+
+export interface ProductPurchaseCandidates {
+  readonly items: readonly ProductPurchaseCandidate[]
+  /** The bounded source window filled; this does not claim that more eligible rows exist. */
+  readonly searchWindowFull: boolean
+}
+
 type JsonObject = Record<string, unknown>
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const NIL_GUID = '00000000-0000-0000-0000-000000000000'
@@ -149,6 +167,22 @@ function decodeLine(value: unknown): PurchaseOrderLine | null {
   return source as unknown as PurchaseOrderLine
 }
 
+function decodeProductPurchaseCandidate(value: unknown): ProductPurchaseCandidate | null {
+  const source = record(value)
+  if (
+    source === null ||
+    !exact(source, [
+      'productId', 'productVersion', 'code', 'name', 'unitId', 'unitCode', 'profileId', 'profileVersion',
+    ]) ||
+    !guid(source.productId) || !canonicalVersion(source.productVersion) ||
+    !text(source.code) || !(source.code as string).trim() ||
+    !text(source.name) || !(source.name as string).trim() ||
+    !guid(source.unitId) || !text(source.unitCode) || !(source.unitCode as string).trim() ||
+    !guid(source.profileId) || !canonicalVersion(source.profileVersion)
+  ) return null
+  return source as unknown as ProductPurchaseCandidate
+}
+
 export function decodePurchaseOrderList(value: unknown): PurchaseOrderList | null {
   const source = record(value)
   if (source === null || !exact(source, ['items', 'nextCursor']) || !Array.isArray(source.items)) return null
@@ -174,4 +208,17 @@ export function decodePurchaseOrderCommandResponse(value: unknown): PurchaseOrde
   const detail = decodePurchaseOrderDetail(source.detail)
   if (detail === null || typeof source.isReplay !== 'boolean' || !text(source.originalCorrelationId)) return null
   return { detail, isReplay: source.isReplay, originalCorrelationId: source.originalCorrelationId }
+}
+
+export function decodeProductPurchaseCandidates(value: unknown): ProductPurchaseCandidates | null {
+  const source = record(value)
+  if (
+    source === null || !exact(source, ['items', 'searchWindowFull']) ||
+    !Array.isArray(source.items) || typeof source.searchWindowFull !== 'boolean'
+  ) return null
+  const items = source.items.map(decodeProductPurchaseCandidate)
+  if (items.some((item) => item === null)) return null
+  const candidates = items as ProductPurchaseCandidate[]
+  if (new Set(candidates.map((item) => item.productId)).size !== candidates.length) return null
+  return { items: candidates, searchWindowFull: source.searchWindowFull }
 }
