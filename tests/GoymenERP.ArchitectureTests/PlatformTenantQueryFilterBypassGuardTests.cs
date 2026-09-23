@@ -61,7 +61,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // opinion about whether a change is semantic. Any edit to a pinned file, comment included, is re-pinned in
     // the same push.
     private const string ReviewedOpenApiStartupFingerprint =
-        "5a240a6ecabdf2e38df218044fcfed521e915b79ec7c0af0d92f3d66f395df7c";
+        "7233766997c0d83a9f2a1acd60696c066c9193fee700c8db9c267c800171d136";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedIdentityReconcilerPath =
@@ -113,7 +113,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // Re-fingerprinted for PUR-4a: the Purchasing module joins INVENTORY_MODULES and the class prefixes
     // (tools/relational_inventory/purchasing.txt, pinned below).
     private const string ReviewedSqlServerRcsiVerifierFingerprint =
-        "db654d119aa40ae16ce1e3727e4c234f89df90145e92a00aea987a394184dd57";
+        "184a6093519b2a79b1eb59cdead7d5b821e995c8216300de499457bad8bcbc66";
     private const string SqlServerRcsiVerifierTestsPath =
         "tests/rcsi_relational_acceptance_verifier/"
         + "test_verify_rcsi_relational_acceptance.py";
@@ -123,7 +123,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // Re-fingerprinted for LOG-4a: a Logistics class maps to its own module.
     // Re-fingerprinted for PUR-4a: a Purchasing class maps to its own module.
     private const string ReviewedSqlServerRcsiVerifierTestsFingerprint =
-        "ac04c5cb4628fa32bb00728db6cbf52c7bebb694e9622b2d2e6d1781d024c038";
+        "49fdbe2e1fcaf14f3d61524cce652d0b70a92b93a0c3aa9a28a4456b676ca9bc";
     // The broad relational inventory, one file per module (see RelationalInventoryDirectory). Each
     // pin is its own paragraph so that two modules re-pinning their own files change lines that are
     // not adjacent and combine cleanly; a file's owner is its module, the pin line is central.
@@ -165,7 +165,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // platform
             ["tools/relational_inventory/platform.txt"] =
-                "8d107cb289f91aa97a6c84889d51dcc31c5826cc12f1fe136a13d35e4ce4ec26",
+                "5bc60202f358f060e50b8453d1e6077d608c110f7b9e2cd061da061aec61f344",
 
             // product
             ["tools/relational_inventory/product.txt"] =
@@ -327,7 +327,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // The database startup surface below is unchanged, which is what the API
                     // counts hold.
                     new(
-                        "14f0123bd298e80e45e451de292aae24126655ac3ca2579abef69b5fddbec4fb",
+                        "3d2b7ad072a7e98976c9dc0d1e51a732c848db35c12c7bde71ab09995cfd23b6",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -5182,10 +5182,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             || Regex.Matches(
                 relationalAcceptanceSource,
                 Regex.Escape("[SqlServerFact]"),
-                RegexOptions.CultureInvariant).Count != 10)
+                RegexOptions.CultureInvariant).Count != 14)
         {
             errors.Add(
-                "RCSI relational discovery must retain the reviewed class name and ten tests.");
+                "RCSI relational discovery must retain the reviewed class name and fourteen tests.");
         }
 
         if (Regex.Matches(
@@ -5985,6 +5985,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
         const string initializerGuard =
             "if (!isOpenApiDocumentGeneration\n"
+            + "    && databaseStartupMode == DatabaseStartupMode.Initialize\n"
             + "    && (app.Environment.IsDevelopment() || app.Environment.IsEnvironment(\"Testing\")))";
         var normalizedProgram = programSource.Replace("\r\n", "\n", StringComparison.Ordinal);
         var guardIndex = normalizedProgram.IndexOf(initializerGuard, StringComparison.Ordinal);

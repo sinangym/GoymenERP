@@ -37,6 +37,10 @@ EXPECTED_TESTS = tuple(
             "RcsiOff_ProbeFailsClosedAndDoesNotChangeTheDatabase",
             "RcsiOn_ProbeAndIdentityStartupUseTheSameReadyPolicy",
             "UnapprovedLogicalEndpoint_IsRejectedWithoutChangingDatabase",
+            "ValidateOnly_BehindAndForwardMigrationHistoriesFailClosedWithoutRepair",
+            "ValidateOnly_CompatibleDatabaseIsReady_AndWriteGuardsProveNoInitializationAttempt",
+            "ValidateOnly_MissingDatabaseReturnsRedacted503WithoutCreatingIt",
+            "ValidateOnly_RcsiOffRefusesReadinessAndBusinessWithoutChangingTheDatabase",
         )
     )
 )
@@ -192,7 +196,7 @@ def verify_discovery(standard_output: str) -> None:
     )
     if discovered != EXPECTED_TESTS:
         raise RuntimeError(
-            "RCSI discovery must contain exactly the ten reviewed tests. "
+            "RCSI discovery must contain exactly the fourteen reviewed tests. "
             f"Expected {EXPECTED_TESTS!r}, found {discovered!r}."
         )
 
