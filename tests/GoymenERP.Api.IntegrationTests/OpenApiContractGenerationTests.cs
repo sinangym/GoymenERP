@@ -60,6 +60,13 @@ public sealed partial class OpenApiContractGenerationTests
         new("get", "/api/v1/inventory/labels/{labelId}/balances", "GetInventoryLabelBalancesV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json"),
             ParameterValues: ["path:labelId:true:type:string;format:uuid"]),
+        new("get", "/api/v1/inventory/references/parent-rolls", "GetInventoryParentRollCandidatesV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "409:application/problem+json", "503:application/problem+json"),
+            ParameterValues:
+            [
+                "query:q:false:type:string;canonicalization:trim;canonical-max-length:64",
+                "query:limit:false:type:integer;format:int32",
+            ]),
         // INV-OPEN-1 part 2 (T07 = A): record an opening count (ADR-011) and read one back.
         new("post", "/api/v1/inventory/opening-counts", "RecordInventoryOpeningCountV1",
             AuthenticatedResponses("201:application/json", "200:application/json", "400:application/problem+json", "415:", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
@@ -400,6 +407,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetOrganizationLocationV1"] = "ref:LocationSummary",
             ["GetInventoryLabelV1"] = "ref:InventoryLabelViewV1",
             ["GetInventoryLabelBalancesV1"] = "ref:InventoryLabelBalancesV1",
+            ["GetInventoryParentRollCandidatesV1"] = "ref:InventoryParentRollCandidatesV1",
             ["RecordInventoryOpeningCountV1"] = "ref:OpeningCountViewV1",
             ["GetInventoryOpeningCountV1"] = "ref:OpeningCountViewV1",
             ["SetOrganizationLocationActiveStateV1"] = "none",
@@ -497,6 +505,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetOrganizationWorkCentersV1",
         "GetInventoryLabelV1",
         "GetInventoryLabelBalancesV1",
+        "GetInventoryParentRollCandidatesV1",
         "RecordInventoryOpeningCountV1",
         "GetInventoryOpeningCountV1",
         "GetCounterpartyCompanyAccountLinkCandidatesV1",
@@ -874,6 +883,8 @@ public sealed partial class OpenApiContractGenerationTests
             ["RecordInventoryOpeningCountV1:400"] = [.. InventoryOpeningCodesV1.Status400Codes.Order(StringComparer.Ordinal)],
             ["RecordInventoryOpeningCountV1:409"] = [.. InventoryOpeningCodesV1.Status409Codes.Order(StringComparer.Ordinal)],
             ["RecordInventoryOpeningCountV1:422"] = [.. InventoryOpeningCodesV1.Status422Codes.Order(StringComparer.Ordinal)],
+            ["GetInventoryParentRollCandidatesV1:400"] = [InventoryParentRollCodesV1.InvalidQuery],
+            ["GetInventoryParentRollCandidatesV1:409"] = [InventoryParentRollCodesV1.ReadConflict],
             ["GetCounterpartiesV1:400"] = ["invalid_cursor", "validation_failed"],
             ["GetCounterpartiesV1:409"] = ["client_contract_required", "client_contract_unsupported"],
             ["GetCounterpartyV1:409"] = ["client_contract_required", "client_contract_unsupported"],
@@ -1884,6 +1895,33 @@ public sealed partial class OpenApiContractGenerationTests
                     ("labelId", "type:string;format:uuid"), ("physicalKg", "type:string"),
                     ("freeKg", "type:string"), ("blockedKg", "type:string"),
                     ("positions", "type:array;items:ref:InventoryPositionV1")),
+                ["InventoryParentRollCandidatesV1"] = ObjectSchema(
+                    ["items", "searchWindowFull"],
+                    ("items", "type:array;items:ref:InventoryParentRollReferenceV1"),
+                    ("searchWindowFull", "type:boolean")),
+                ["InventoryParentRollReferenceV1"] = ObjectSchema(
+                    ["companyId", "labelId", "labelVersion", "labelCode", "productId", "lot",
+                        "heatNumber", "coilNumber", "documentStatus", "requiredDocuments", "attachedDocuments",
+                        "physicalKg", "unblockedPhysicalKg", "blockedPhysicalKg", "positions", "draftSelectable",
+                        "draftRefusalCode", "productionUseRequiresRevalidation"],
+                    ("companyId", "type:string;format:uuid"),
+                    ("labelId", "type:string;format:uuid"),
+                    ("labelVersion", "type:string"),
+                    ("labelCode", "type:string"),
+                    ("productId", "type:string;format:uuid"),
+                    ("lot", "ref:InventoryLotV1"),
+                    ("heatNumber", "type:null|string"),
+                    ("coilNumber", "type:null|string"),
+                    ("documentStatus", "type:string"),
+                    ("requiredDocuments", "type:array;items:type:string"),
+                    ("attachedDocuments", "type:array;items:type:string"),
+                    ("physicalKg", "type:string"),
+                    ("unblockedPhysicalKg", "type:string"),
+                    ("blockedPhysicalKg", "type:string"),
+                    ("positions", "type:array;items:ref:InventoryPositionV1"),
+                    ("draftSelectable", "type:boolean"),
+                    ("draftRefusalCode", "type:null|string"),
+                    ("productionUseRequiresRevalidation", "type:boolean")),
                 ["OpeningCountViewV1"] = ObjectSchema(
                     ["countId", "companyId", "locationId", "countedOn", "sheetReference", "lines"],
                     ("countId", "type:string;format:uuid"), ("companyId", "type:string;format:uuid"),
@@ -2760,9 +2798,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(98, operations.Count);
+        Assert.Equal(99, operations.Count);
         Assert.Equal(
-            98,
+            99,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());
@@ -2861,6 +2899,11 @@ public sealed partial class OpenApiContractGenerationTests
             if (expected.OperationId == "GetSalesProductReferenceV1")
             {
                 AssertSalesProductQueryContract(actual.Value);
+            }
+
+            if (expected.OperationId == "GetInventoryParentRollCandidatesV1")
+            {
+                AssertInventoryParentRollQueryContract(actual.Value);
             }
         }
 
@@ -3338,6 +3381,18 @@ public sealed partial class OpenApiContractGenerationTests
         var version = ReadQuerySchemas(operation)["expectedProductVersion"];
         Assert.Equal(1, version.GetProperty("minLength").GetInt32());
         Assert.Equal(128, version.GetProperty("maxLength").GetInt32());
+    }
+
+    private static void AssertInventoryParentRollQueryContract(JsonElement operation)
+    {
+        var parameters = ReadQuerySchemas(operation);
+        Assert.Equal(2, parameters.Count);
+        var q = parameters["q"];
+        Assert.Equal("trim", q.GetProperty(ErpOpenApiContract.CanonicalizationExtensionName).GetString());
+        Assert.Equal(64, q.GetProperty(ErpOpenApiContract.CanonicalMaximumLengthExtensionName).GetInt32());
+        var limit = parameters["limit"];
+        Assert.Equal(1, limit.GetProperty("minimum").GetInt32());
+        Assert.Equal(100, limit.GetProperty("maximum").GetInt32());
     }
 
     private static Dictionary<string, JsonElement> ReadQuerySchemas(JsonElement operation) =>
