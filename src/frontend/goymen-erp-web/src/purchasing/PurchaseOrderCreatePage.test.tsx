@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -62,10 +62,14 @@ describe('P-04 purchase order create form', () => {
     await user.click(screen.getAllByRole('button', { name: 'Ara' })[1])
     await user.clear(effectiveOn)
     await user.type(effectiveOn, '2026-09-24')
+    await act(async () => {
+      resolveOld({ type: 'ok-single', data: { items: [{ productId: PRODUCT, productVersion: '7', code: 'PRD-7', name: 'Eski Bant', unitId: UNIT, unitCode: 'kg', profileId: '99999999-9999-4999-8999-999999999999', profileVersion: '3' }], searchWindowFull: false } })
+      await oldResponse
+    })
+    expect(screen.queryByRole('option', { name: 'PRD-7 — Eski Bant · kg' })).toBeNull()
+    expect((screen.getByLabelText('Ürün ve alış birimi') as HTMLSelectElement).value).toBe('')
     await user.click(screen.getAllByRole('button', { name: 'Ara' })[1])
     await screen.findByRole('option', { name: 'PRD-8 — Yeni Bant · kg' })
-    resolveOld({ type: 'ok-single', data: { items: [{ productId: PRODUCT, productVersion: '7', code: 'PRD-7', name: 'Eski Bant', unitId: UNIT, unitCode: 'kg', profileId: '99999999-9999-4999-8999-999999999999', profileVersion: '3' }], searchWindowFull: false } })
-    await waitFor(() => expect(screen.queryByRole('option', { name: 'PRD-7 — Eski Bant · kg' })).toBeNull())
     expect(screen.getByRole('option', { name: 'PRD-8 — Yeni Bant · kg' })).toBeTruthy()
   })
 
