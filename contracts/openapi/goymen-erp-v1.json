@@ -30051,6 +30051,12 @@
               "null",
               "string"
             ]
+          },
+          "expectedLabelVersion": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },

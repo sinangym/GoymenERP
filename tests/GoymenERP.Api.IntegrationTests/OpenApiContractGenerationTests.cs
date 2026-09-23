@@ -2147,7 +2147,8 @@ public sealed partial class OpenApiContractGenerationTests
                 ["PlannedInputRequestV1"] = ObjectSchema(
                     ["parentRollId", "plannedKg"],
                     ("parentRollId", "type:string;format:uuid"),
-                    ("plannedKg", "type:null|string")),
+                    ("plannedKg", "type:null|string"),
+                    ("expectedLabelVersion", "type:null|string")),
                 ["RecordFactRequestV1"] = ObjectSchema(
                     ["factId", "expectedVersion", "parentRollId", "kg", "occurredAtUtc"],
                     ("factId", "type:string;format:uuid"),
