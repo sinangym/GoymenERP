@@ -13,7 +13,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { matchPath } from 'react-router'
+import { matchPath, matchRoutes } from 'react-router'
 import { CAPABILITY, CAPABILITY_ROUTE, CAPABILITY_NAV_LABEL } from './capabilities'
 import {
   MANUFACTURING_CAPABILITY,
@@ -75,12 +75,16 @@ describe('shell ↔ Manufacturing lane capability ids', () => {
   })
 
   it('never reads the static plan-create path as a plan id', () => {
-    expect(
-      matchPath(
-        CAPABILITY_ROUTE[CAPABILITY.manufacturingPlansDetail],
-        CAPABILITY_ROUTE[CAPABILITY.manufacturingPlansCreate],
-      ),
-    ).toBeNull()
+    const matches = matchRoutes(
+      [
+        { path: CAPABILITY_ROUTE[CAPABILITY.manufacturingPlansCreate] },
+        { path: CAPABILITY_ROUTE[CAPABILITY.manufacturingPlansDetail] },
+      ],
+      CAPABILITY_ROUTE[CAPABILITY.manufacturingPlansCreate],
+    )
+    const selected = matches?.at(-1)
+    expect(selected?.route.path).toBe(CAPABILITY_ROUTE[CAPABILITY.manufacturingPlansCreate])
+    expect(selected?.params.planId).toBeUndefined()
     const planId = '7b1c0f2e-0000-4a00-8000-000000000003'
     expect(matchPath(CAPABILITY_ROUTE[CAPABILITY.manufacturingPlansDetail], planDetailPath(planId))?.params.planId)
       .toBe(planId)
