@@ -176,17 +176,10 @@ export const shellRoutes: RouteObject[] = [
       */
       ...logisticsRoutes,
       /**
-       * Purchasing owns the P-03 list and detail route table. The list and detail declarations are
-       * published. P-04 has no owner page while Product has no real purchase-candidate source, but
-       * its STATIC path must still close here before `:orderId`; otherwise `yeni` becomes an order id
-       * and the published detail issues a misleading GET. This neutral blocker publishes no screen,
-       * checks no business data and is replaced only when the owner supplies the real create route.
-       * The approve child is a control inside the detail and has no route entry here.
+       * Purchasing owns the P-03 list/detail and P-04 create route table. Its static `yeni` entry
+       * precedes `:orderId` inside the owner table, and every entry keeps its own capability gate.
+       * The approve child remains a control inside detail and has no route entry here.
        */
-      {
-        path: CAPABILITY_ROUTE[CAPABILITY.purchasingOrdersCreate].slice(1),
-        element: <StateBlock state={{ kind: 'not-found' }} subject="sayfa" />,
-      },
       ...purchasingRoutes,
       {
         /**

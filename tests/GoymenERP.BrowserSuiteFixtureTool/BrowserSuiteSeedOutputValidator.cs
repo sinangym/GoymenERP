@@ -48,7 +48,22 @@ internal static class BrowserSuiteSeedOutputValidator
 
     private static bool IsSuiteSpecificScalar(string suite, string key, string value)
     {
-        if (!string.Equals(suite, "s04", StringComparison.Ordinal))
+        if (string.Equals(suite, "s04", StringComparison.Ordinal))
+        {
+            return key switch
+            {
+                "productVersion" or "productUnitProfileVersion" => IsPositiveDecimal(value),
+                "productCode" => value.StartsWith("SYNS04-", StringComparison.Ordinal)
+                                 && IsPositiveDecimal(value[7..]),
+                "productName" => string.Equals(
+                    value,
+                    "SENTETIK browser-suite:s04 sales candidate",
+                    StringComparison.Ordinal),
+                _ => false,
+            };
+        }
+
+        if (!string.Equals(suite, "pur01", StringComparison.Ordinal))
         {
             return false;
         }
@@ -56,11 +71,11 @@ internal static class BrowserSuiteSeedOutputValidator
         return key switch
         {
             "productVersion" or "productUnitProfileVersion" => IsPositiveDecimal(value),
-            "productCode" => value.StartsWith("SYNS04-", StringComparison.Ordinal)
-                             && IsPositiveDecimal(value[7..]),
+            "productCode" => value.StartsWith("SYNPUR01-", StringComparison.Ordinal)
+                             && IsPositiveDecimal(value[9..]),
             "productName" => string.Equals(
                 value,
-                "SENTETIK browser-suite:s04 sales candidate",
+                "SENTETIK browser-suite:pur01 purchase candidate",
                 StringComparison.Ordinal),
             _ => false,
         };

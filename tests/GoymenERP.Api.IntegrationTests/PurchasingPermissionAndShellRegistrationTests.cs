@@ -20,7 +20,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// <summary>
 /// PUR-4a: the Purchasing owner's permission names are registered centrally with the same strings (company-wide
 /// only, not Critical, no grant; #66 5743488059), and nothing else is registered under <c>purchasing.</c>; the
-/// Purchasing 1.1 shell provider joins the host set with its own reviewed normal-host authority.
+/// Purchasing 1.2 shell provider joins the host set with its own reviewed normal-host authority.
 /// </summary>
 public sealed class PurchasingPermissionAndShellRegistrationTests
 {
@@ -57,20 +57,20 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
 
         var actual = ShellCapabilityRegistry.ComputeCandidateRevision(providers);
         Assert.True(
-            string.Equals(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV10PublishedLogisticsV10AndPublishedPurchasingV11, actual,
+            string.Equals(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV10PublishedLogisticsV10AndPublishedPurchasingV12, actual,
                 StringComparison.Ordinal),
             $"Purchasing normal-host authority drifted. Actual: {actual}");
     }
 
     [Fact]
-    public void The_normal_host_publishes_read_and_approve_while_creation_stays_staged()
+    public void The_normal_host_publishes_list_create_detail_and_approve()
     {
         var services = NormalHost();
 
         var authority = C01E2eShellCapabilityActivation.Configure(services, new TestingEnvironment(),
             new ConfigurationBuilder().Build());
 
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV10PublishedLogisticsV10AndPublishedPurchasingV11, authority);
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV10PublishedLogisticsV10AndPublishedPurchasingV12, authority);
         using var container = services.BuildServiceProvider();
         var registry = new ShellCapabilityRegistry(container.GetServices<IShellCapabilityProvider>(),
             new ShellCapabilityAuthorityCatalog([authority]));
@@ -81,6 +81,7 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
         string[] published =
         [
             PurchasingShellCapabilityProvider.ApproveCapabilityId,
+            PurchasingShellCapabilityProvider.CreateCapabilityId,
             PurchasingShellCapabilityProvider.DetailCapabilityId,
             PurchasingShellCapabilityProvider.ListCapabilityId,
         ];
@@ -89,7 +90,7 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
 
         var create = Assert.Single(purchasing,
             item => item.Declaration.CapabilityId == PurchasingShellCapabilityProvider.CreateCapabilityId);
-        Assert.False(create.Declaration.ImplementationAvailable);
+        Assert.True(create.Declaration.ImplementationAvailable);
         Assert.All(purchasing, item =>
             Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, item.Declaration.ContextRequirement));
 
