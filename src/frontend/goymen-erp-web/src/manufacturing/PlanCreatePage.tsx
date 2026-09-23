@@ -215,7 +215,15 @@ function PlanCreate({ namespace }: { readonly namespace: string | null }) {
 
   function submit(event: FormEvent) {
     event.preventDefault()
-    if (companyId === null || actorId === null || attempt.phase !== 'idle') return
+    if (
+      companyId === null ||
+      actorId === null ||
+      attempt.phase === 'submitting' ||
+      attempt.phase === 'unknown' ||
+      (attempt.phase === 'failed' && attempt.unresolvedSince !== undefined)
+    ) {
+      return
+    }
     if (workCenterId === '' || inputs.length === 0 || inputs.some((input) => !positiveKilograms(input.plannedKg))) {
       setFormError('İş merkezi, en az bir ana rulo ve her rulo için sıfırdan büyük planlanan kg zorunludur.')
       return

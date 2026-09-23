@@ -10,6 +10,7 @@ import {
   installFetch,
   json,
   plan,
+  problem,
   renderAt,
   requestsFor,
 } from './testHarness'
@@ -61,7 +62,7 @@ function canonicalDecimal(value: string): string {
   return value.includes('.') ? value.replace(/0+$/, '').replace(/\.$/, '') : value
 }
 
-function installPlanApi(options: { readonly failFirstSave?: boolean } = {}) {
+function installPlanApi(options: { readonly failFirstSave?: boolean; readonly refuseFirstSave?: boolean } = {}) {
   let saves = 0
   let stored: Record<string, unknown> | null = null
   const recorded = installFetch({
@@ -84,6 +85,9 @@ function installPlanApi(options: { readonly failFirstSave?: boolean } = {}) {
       if (url.endsWith('/manufacturing/plans') && init?.method === 'POST') {
         saves += 1
         if (options.failFirstSave && saves === 1) throw new TypeError('connection lost')
+        if (options.refuseFirstSave && saves === 1) {
+          return problem(409, { code: 'inventory_label_version_conflict' })
+        }
         const request = JSON.parse(init.body as string) as {
           planId: string
           workCenterId: string
@@ -168,6 +172,22 @@ describe('plan create and reopen', () => {
     const [first, second] = requestsFor(recorded, '/manufacturing/plans', 'POST')
     expect(second.body).toEqual(first.body)
     expect(second.headers['Idempotency-Key']).toBe(first.headers['Idempotency-Key'])
+  })
+
+  it('allows a new attempt with a new key after a definitive refusal', async () => {
+    const user = userEvent.setup()
+    const recorded = installPlanApi({ refuseFirstSave: true })
+    renderAt('/uretim/plan/yeni')
+    await fillPlan(user)
+    await user.click(screen.getByRole('button', { name: 'Taslak planı kaydet' }))
+    expect(await screen.findByText(/sürümü veya yazma durumu değişti/)).toBeTruthy()
+
+    await user.click(screen.getByRole('button', { name: 'Taslak planı kaydet' }))
+    await screen.findByText('Taslak plan kaydedildi')
+
+    const [first, second] = requestsFor(recorded, '/manufacturing/plans', 'POST')
+    expect(second.headers['Idempotency-Key']).not.toBe(first.headers['Idempotency-Key'])
+    expect((second.body as { planId: string }).planId).not.toBe((first.body as { planId: string }).planId)
   })
 
   it('keeps the create route closed when its server capability is absent', async () => {
