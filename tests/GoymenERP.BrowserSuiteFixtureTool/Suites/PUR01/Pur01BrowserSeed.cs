@@ -1,6 +1,7 @@
 using System.Text.Json;
 using GoymenERP.Api.Shell;
 using GoymenERP.BrowserSuiteFixtureTool.Shared;
+using GoymenERP.Modules.Product.Infrastructure.Fixtures;
 using GoymenERP.Modules.Purchasing.Infrastructure.Fixtures;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.Extensions.DependencyInjection;

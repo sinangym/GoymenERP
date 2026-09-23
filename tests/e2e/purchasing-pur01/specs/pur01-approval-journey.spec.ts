@@ -140,13 +140,29 @@ test('P04 creates one real order, closes the form, reopens that record and uses 
   expect(await readOrders(page, approverActor)).toHaveLength(before.length + 1)
 
   await signInAs(page, readerActor)
+  const readerCapabilities = await page.request.get(`${env.apiBaseUrl}/api/v1/shell/capabilities`, {
+    headers: { [DEVELOPMENT_USER_HEADER]: readerActor, 'X-Company-Id': companyId },
+  })
+  expect(readerCapabilities.status()).toBe(200)
+  const readerSnapshot = (await readerCapabilities.json()) as { readonly capabilities?: unknown }
+  const readerPublished = Array.isArray(readerSnapshot.capabilities)
+    ? readerSnapshot.capabilities as string[]
+    : []
+  expect(readerPublished).toContain('purchasing.orders.list')
+  expect(readerPublished).toContain('purchasing.orders.detail')
+  expect(readerPublished).not.toContain('purchasing.orders.create')
+
   await page.goto(LIST_ROUTE)
+  await expect(page.getByRole('heading', { level: 1, name: 'Satın alma siparişleri' })).toBeVisible({ timeout: 30_000 })
   await expect(page.getByRole('link', { name: 'Yeni', exact: true })).toHaveCount(0)
   let deniedUiPosts = 0
   page.on('request', (request) => {
     if (request.method() === 'POST' && new URL(request.url()).pathname === ORDERS_PATH) deniedUiPosts += 1
   })
   await page.goto(CREATE_ROUTE)
+  const refusedCreate = page.locator('[data-state="not-found"]')
+  await expect(refusedCreate).toBeVisible({ timeout: 30_000 })
+  await expect(refusedCreate).toContainText('Bulunamadı')
   await expect(page.getByRole('heading', { level: 1, name: 'Yeni satın alma siparişi' })).toHaveCount(0)
   expect(deniedUiPosts).toBe(0)
 
