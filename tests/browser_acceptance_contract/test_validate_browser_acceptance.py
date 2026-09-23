@@ -101,9 +101,15 @@ class WorkflowTests(unittest.TestCase):
             validator.SUITE_IDENTITY_PERMISSIONS["fin01"],
         )
 
-    def test_pur01_identity_permissions_are_read_and_approve_only(self):
+    def test_pur01_identity_permissions_are_the_creator_owner_reads_and_existing_approval_axis(self):
         self.assertEqual(
-            ("purchasing.orders.read", "purchasing.orders.approve"),
+            (
+                "purchasing.orders.read",
+                "purchasing.orders.approve",
+                "purchasing.orders.create",
+                "counterparty.parties.read",
+                "product.operational-selection.read",
+            ),
             validator.SUITE_IDENTITY_PERMISSIONS["pur01"],
         )
 

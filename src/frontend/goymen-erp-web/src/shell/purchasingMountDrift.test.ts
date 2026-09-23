@@ -8,6 +8,7 @@ import {
   PURCHASING_ROUTE,
   purchaseOrderDetailPath,
 } from '../purchasing/capabilities'
+import { purchasingRoutes } from '../purchasing/purchasingRoutes'
 
 describe('shell ↔ Purchasing lane route catalogue', () => {
   it('mounts exactly the three route ids and keeps the approve child out of the route catalogue', () => {
@@ -45,6 +46,12 @@ describe('shell ↔ Purchasing lane route catalogue', () => {
     expect(createBranch?.at(-1)?.route.path).not.toBe(
       CAPABILITY_ROUTE[CAPABILITY.purchasingOrdersDetail].slice(1),
     )
+
+    const shellChildren = shellRoutes[0]?.children ?? []
+    const ownerCreate = purchasingRoutes.find((route) =>
+      route.path === PURCHASING_ROUTE[PURCHASING_CAPABILITY.orderCreate].slice(1))
+    expect(ownerCreate).toBeDefined()
+    expect(shellChildren.filter((route) => route.path === ownerCreate?.path)).toEqual([ownerCreate])
   })
 
   it('gives only the list the lane navigation label', () => {

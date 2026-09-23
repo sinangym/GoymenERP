@@ -64,6 +64,10 @@ internal static class C01E2eFixtureWriterActivation
         // s04 E1: Product's fixed Active+Sellable candidate, after the technical registry prerequisite.
         services.AddProductSalesCandidateFixtureStore(CreateS04ProductFixtureUnitProfiles);
         services.AddScoped<C01E2eProductSalesCandidateFixtureWriter>();
+        // pur01 P-04: Product's separate fixed Active+Purchasable candidate. It shares only the
+        // approved Settings adapter and complete runner gate; the s04 record is never upgraded.
+        services.AddProductPurchaseCandidateFixtureStore(CreateS04ProductFixtureUnitProfiles);
+        services.AddScoped<C01E2eProductPurchaseCandidateFixtureWriter>();
         // s04 (SALES-A1 browser acceptance): Sales's draft port (SİPARİŞ's), behind the same gate.
         services.AddSalesDraftFixtureStore();
         services.AddScoped<C01E2eSalesDraftFixtureWriter>();
@@ -269,6 +273,27 @@ public sealed class C01E2eProductSalesCandidateFixtureWriter
     }
 
     public Task<ProductSalesCandidateFixtureOutput> EnsureAsync(CancellationToken cancellationToken) =>
+        _store.EnsureAsync(cancellationToken);
+}
+
+/// <summary>
+/// Exposes Product's fixed pur01 purchase candidate only inside the complete browser-runner gate.
+/// The Product-owned port accepts no caller-selected identity or business value.
+/// </summary>
+public sealed class C01E2eProductPurchaseCandidateFixtureWriter
+{
+    private readonly IProductPurchaseCandidateFixtureStore _store;
+
+    public C01E2eProductPurchaseCandidateFixtureWriter(
+        IHostEnvironment environment,
+        IConfiguration configuration,
+        IProductPurchaseCandidateFixtureStore store)
+    {
+        C01E2eFixtureWriterActivation.RequireGate(environment, configuration);
+        _store = store;
+    }
+
+    public Task<ProductPurchaseCandidateFixtureOutput> EnsureAsync(CancellationToken cancellationToken) =>
         _store.EnsureAsync(cancellationToken);
 }
 

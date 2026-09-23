@@ -3,7 +3,8 @@ import { defineConfig, devices } from '@playwright/test'
 /**
  * Purchasing suite `pur01` (`browser:pur01:ci`) on the disposable normal-profile stack.
  * Every runtime value is supplied by browser-acceptance.yml; there is no local fallback.
- * Serial and retry-free because one test owns one seeded order and its idempotent approval attempt.
+ * Serial and retry-free because the suite writes one UI order and separately owns one seeded order's
+ * idempotent approval attempt; the two records must never be conflated in evidence.
  */
 function required(name: string): string {
   const value = process.env[name]?.trim()
