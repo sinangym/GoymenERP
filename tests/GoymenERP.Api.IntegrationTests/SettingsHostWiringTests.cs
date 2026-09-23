@@ -2,6 +2,7 @@ using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Accounting.Application;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Finance.Contracts;
+using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Sales.Application;
 using GoymenERP.Modules.Sales.Application.Contracts;
@@ -25,6 +26,16 @@ public sealed class SettingsHostWiringTests
     private static readonly Guid Gsp = Guid.Parse("10000000-0000-0000-0000-000000000002");
     private static readonly Guid Gin = Guid.Parse("10000000-0000-0000-0000-000000000003");
     private static readonly DateOnly Approval = new(2026, 9, 18);
+
+    [Fact]
+    public void The_host_registers_the_inventory_parent_roll_validation_port_once()
+    {
+        using var factory = Host(Gdc);
+        using var scope = factory.Services.CreateScope();
+
+        Assert.NotNull(scope.ServiceProvider.GetRequiredService<IInventoryParentRollValidationV1>());
+        Assert.Single(scope.ServiceProvider.GetServices<IInventoryParentRollValidationV1>());
+    }
 
     [Fact]
     public void The_host_registers_the_approved_provider_as_the_one_Settings_port()
