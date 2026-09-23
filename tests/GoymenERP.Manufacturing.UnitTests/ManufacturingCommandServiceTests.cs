@@ -1,3 +1,4 @@
+using System.Reflection;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
@@ -380,15 +381,33 @@ public sealed class ManufacturingCommandServiceTests
         Assert.Empty(fixture.Store.Writes);
     }
 
+    [Fact]
+    public void A_plan_input_publishes_label_version_as_required_and_non_nullable()
+    {
+        var constructor = Assert.Single(typeof(PlannedInputRequestV1).GetConstructors());
+        var parameter = Assert.Single(constructor.GetParameters(), candidate =>
+            candidate.Name == nameof(PlannedInputRequestV1.ExpectedLabelVersion));
+        var property = typeof(PlannedInputRequestV1).GetProperty(
+            nameof(PlannedInputRequestV1.ExpectedLabelVersion))!;
+        var nullability = new NullabilityInfoContext();
+
+        Assert.Equal(typeof(string), parameter.ParameterType);
+        Assert.False(parameter.HasDefaultValue);
+        Assert.Equal(NullabilityState.NotNull, nullability.Create(parameter).ReadState);
+        Assert.Equal(NullabilityState.NotNull, nullability.Create(property).ReadState);
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]
+    [InlineData(" ")]
     [InlineData("0")]
     [InlineData("01")]
     [InlineData("+1")]
     [InlineData(" 1")]
+    [InlineData("not-a-version")]
     [InlineData("9223372036854775808")]
-    public async Task A_plan_input_requires_a_positive_canonical_int64_label_version(string? version)
+    public async Task A_missing_null_blank_or_invalid_plan_input_label_version_is_rejected(string? version)
     {
         var fixture = new Fixture();
         var request = Plan(version);
@@ -944,7 +963,9 @@ public sealed class ManufacturingCommandServiceTests
     private static RecordFactRequestV1 Fact(long version, string kg) => new(Guid.NewGuid(), version, Roll, kg, At);
 
     private static SavePlanRequestV1 Plan(string? version, Guid? planId = null) =>
-        new(planId ?? Guid.NewGuid(), WorkCenter, [new PlannedInputRequestV1(Roll, "10", version)], null);
+        // JSON missing and explicit null are both null at this service boundary; the public-contract
+        // test above separately pins that conforming clients must provide the non-null constructor value.
+        new(planId ?? Guid.NewGuid(), WorkCenter, [new PlannedInputRequestV1(Roll, "10", version!)], null);
 
     private static PermissionScope Scope(bool companyWide, params string[] roles) => new(true, companyWide,
         new HashSet<string>(roles, StringComparer.Ordinal), new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>());

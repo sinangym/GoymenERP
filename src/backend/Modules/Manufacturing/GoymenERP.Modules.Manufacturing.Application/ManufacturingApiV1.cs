@@ -23,7 +23,7 @@ namespace GoymenERP.Modules.Manufacturing.Application;
 public sealed record SavePlanRequestV1(
     Guid PlanId, Guid WorkCenterId, IReadOnlyList<PlannedInputRequestV1>? Inputs, TargetRequestV1? Target);
 
-public sealed record PlannedInputRequestV1(Guid ParentRollId, string? PlannedKg, string? ExpectedLabelVersion = null);
+public sealed record PlannedInputRequestV1(Guid ParentRollId, string? PlannedKg, string ExpectedLabelVersion);
 
 /// <summary><see cref="Basis"/> is <c>InputMass</c> or <c>GoodOutputMass</c>, the plan's declared basis.</summary>
 public sealed record TargetRequestV1(string? Basis, string? Kg);
