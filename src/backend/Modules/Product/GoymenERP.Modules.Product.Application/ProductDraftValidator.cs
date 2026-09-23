@@ -142,7 +142,7 @@ public sealed class ProductDraftValidator(IProductReferenceCatalog catalog)
     {
         foreach (var (field, id) in Units(references.Units))
         {
-            // U-08 minimal (PRD-UNIT-1): only the stock and sales roles are open; the others are refused
+            // U-08 minimal (PRD-UNIT-1): stock, purchase and sales roles are open; the others are refused
             // without asking the catalogue until their own decision.
             if (id.HasValue && (!OpenUnitRoles.Contains(field)
                 || !await catalog.IsUnitValidAsync(id.Value, field == "references.units.stock", cancellationToken)))
@@ -163,7 +163,7 @@ public sealed class ProductDraftValidator(IProductReferenceCatalog catalog)
         }
     }
 
-    private static readonly string[] OpenUnitRoles = ["references.units.stock", "references.units.sales"];
+    private static readonly string[] OpenUnitRoles = ["references.units.stock", "references.units.purchase", "references.units.sales"];
 
     private static IEnumerable<(string Field, Guid? Id)> Units(ProductUnitReferences? units)
     {

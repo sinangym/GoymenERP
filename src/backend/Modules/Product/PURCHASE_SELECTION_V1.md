@@ -71,7 +71,9 @@ SQL tests use the existing SqlServerRelationalApiFactory, actual Product/family/
 ApprovedSettingsPrerequisiteProvider; synthetic setup only, no real release/grant. Real SQL runs in CI,
 not a local DB lifecycle. Product inventory adds three exact facts; central writer owns its reviewed-source pin.
 
-Purchase unit authoring is still closed by the existing draft-reference resolver. This owner source does
-not silently open that policy or treat synthetic SQL shaping as normal create/browser acceptance.
-P-04 end-to-end acceptance still needs the central adapter/endpoint/UI and an explicitly valid Product
-purchase binding. Q6 remains undecided; no new real master or purchase unit is invented.
+DEC-PRD-006 purchase identity authoring is available in the existing draft POST/PATCH and technical
+form. It uses the Settings-owned identity catalogue independently of stock and sales, preserves omitted
+values and supports explicit null clearing. Company-effective profile validation still belongs to purchase
+eligibility at EffectiveOn; authoring does not activate a draft or grant operational eligibility.
+P-04 end-to-end acceptance still needs the central adapter/endpoint/UI and an eligible Active Product.
+Synthetic SQL/browser fixtures are not real master acceptance. Q6 real release/UAT remains open.
