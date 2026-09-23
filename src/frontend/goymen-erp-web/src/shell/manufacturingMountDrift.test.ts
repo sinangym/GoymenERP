@@ -20,12 +20,15 @@ import {
   MANUFACTURING_ROUTE,
   MANUFACTURING_NAV_LABEL,
   orderDetailPath,
+  planDetailPath,
 } from '../manufacturing/capabilities'
 
 describe('shell ↔ Manufacturing lane capability ids', () => {
   it('declares the same route ids the lane does', () => {
     expect(CAPABILITY.manufacturingOrdersDetail).toBe(MANUFACTURING_CAPABILITY.orderDetail)
     expect(CAPABILITY.manufacturingOrdersList).toBe(MANUFACTURING_CAPABILITY.orderList)
+    expect(CAPABILITY.manufacturingPlansCreate).toBe(MANUFACTURING_CAPABILITY.planCreate)
+    expect(CAPABILITY.manufacturingPlansDetail).toBe(MANUFACTURING_CAPABILITY.planDetail)
   })
 
   it('mounts every ROUTE the lane declares, and neither control', () => {
@@ -60,6 +63,27 @@ describe('shell ↔ Manufacturing lane capability ids', () => {
     )
     // The list is the module's one sidebar entry.
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.manufacturingOrdersList]).toBe('Üretim emirleri')
+
+    expect(CAPABILITY_ROUTE[CAPABILITY.manufacturingPlansCreate]).toBe(
+      MANUFACTURING_ROUTE[MANUFACTURING_CAPABILITY.planCreate],
+    )
+    expect(CAPABILITY_NAV_LABEL[CAPABILITY.manufacturingPlansCreate]).toBe('')
+    expect(CAPABILITY_ROUTE[CAPABILITY.manufacturingPlansDetail]).toBe(
+      MANUFACTURING_ROUTE[MANUFACTURING_CAPABILITY.planDetail],
+    )
+    expect(CAPABILITY_NAV_LABEL[CAPABILITY.manufacturingPlansDetail]).toBe('')
+  })
+
+  it('never reads the static plan-create path as a plan id', () => {
+    expect(
+      matchPath(
+        CAPABILITY_ROUTE[CAPABILITY.manufacturingPlansDetail],
+        CAPABILITY_ROUTE[CAPABILITY.manufacturingPlansCreate],
+      ),
+    ).toBeNull()
+    const planId = '7b1c0f2e-0000-4a00-8000-000000000003'
+    expect(matchPath(CAPABILITY_ROUTE[CAPABILITY.manufacturingPlansDetail], planDetailPath(planId))?.params.planId)
+      .toBe(planId)
   })
 
   it('never reads the static list path as an order id', () => {

@@ -154,6 +154,10 @@ export const CAPABILITY = {
    * neither is in this table.
    */
   manufacturingOrdersDetail: 'manufacturing.orders.detail',
+  /** Create a Draft plan. Route `/uretim/plan/yeni`; reached from the order list under K5. */
+  manufacturingPlansCreate: 'manufacturing.plans.create',
+  /** Reopen one stored plan. Route `/uretim/plan/:planId`; reached after create or by record link. */
+  manufacturingPlansDetail: 'manufacturing.plans.detail',
   /** F-02 manual-receipt draft list. Route `/finans/tahsilatlar`, owner the Finance lane (FİNANS). */
   financeReceiptsList: 'finance.receipts.list',
   /** F-02 new draft, entered from a Cari account (`?partyId&companyAccountId`). Route `/finans/tahsilatlar/yeni`. */
@@ -245,6 +249,9 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   // order id. The lane orders its own route table the same way.
   [CAPABILITY.manufacturingOrdersList]: '/uretim/emirler',
   [CAPABILITY.manufacturingOrdersDetail]: '/uretim/emir/:orderId',
+  // Static before the parameter route: `yeni` must never be read as a plan id.
+  [CAPABILITY.manufacturingPlansCreate]: '/uretim/plan/yeni',
+  [CAPABILITY.manufacturingPlansDetail]: '/uretim/plan/:planId',
   [CAPABILITY.financeReceiptsList]: '/finans/tahsilatlar',
   // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as a source id.
   [CAPABILITY.financeReceiptsDraft]: '/finans/tahsilatlar/yeni',
@@ -311,6 +318,9 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   // Nor this one: an order is opened from the list or by its id, never from the sidebar. So
   // `NAV_CAPABILITIES` gains exactly ONE Manufacturing entry.
   [CAPABILITY.manufacturingOrdersDetail]: '',
+  // K5: creation is reached from the order list; detail is reached from the saved plan result.
+  [CAPABILITY.manufacturingPlansCreate]: '',
+  [CAPABILITY.manufacturingPlansDetail]: '',
   [CAPABILITY.financeReceiptsList]: 'Tahsilat Taslakları',
   [CAPABILITY.financeReceiptsReverseApprove]: 'Ters Kayıt Onayları',
   [CAPABILITY.financeBankAccountsList]: 'Banka Hesapları',
