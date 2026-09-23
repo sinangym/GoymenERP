@@ -390,7 +390,8 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
         await using var run = await Run.StartAsync();
         var user = await run.GrantAsync(TestUsers.CompanyA, CompanyA, ErpPermissions.ManufacturingPlansWrite,
             ErpPermissions.ManufacturingPlansApprove, ErpPermissions.ManufacturingOrdersCreate,
-            ErpPermissions.ManufacturingOrdersRead);
+            ErpPermissions.ManufacturingOrdersRead, ErpPermissions.InventoryLabelsRead,
+            ErpPermissions.InventoryBalancesRead);
         var (orderId, _) = await run.OpenOrderAsync(user);
         await using var host = run.Factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
         {
