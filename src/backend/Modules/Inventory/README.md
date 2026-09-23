@@ -14,6 +14,9 @@ and returns `Items/SearchWindowFull`. `IInventoryParentRollValidationV1.Validate
 `InventoryParentRollSelectionV1(LabelId, ExpectedLabelVersion)`. There is deliberately no PlannedKg:
 this read does not choose equality, partial-coil, upper-bound, reservation or availability policy.
 `AddInventoryParentRollReferences()` registers only these owner ports. Central owns HTTP/host publication.
+`InventoryParentRollApiV1` fixes that publication's owner contract at
+`GET /api/v1/inventory/references/parent-rolls` / `GetInventoryParentRollCandidatesV1`; central maps and
+documents it without changing the DTO or its stock semantics.
 
 Each result preserves company, label ID/code/version, ProductId, actual lot and separate label/lot heat/coil,
 document status/kinds, positions' owner/custodian/location, and lossless physical kg totals.
