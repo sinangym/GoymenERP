@@ -34,6 +34,8 @@ import {
   hasPriceLikeKey,
 } from './contract'
 import { PROBLEM_CODE_TEXT } from './salesText'
+import revisionsResponse from './examples/revisions-response.json?raw'
+import { decodeDraftRevisions } from './contract'
 
 const EXAMPLES: Record<string, { raw: string; blob: string }> = {
   'create-request.json': { raw: createRequest, blob: 'a78328681578e18627a25a0cd200177d309a534b' },
@@ -320,5 +322,101 @@ describe('SALES-A2a reference lists', () => {
         ACCOUNT,
       ),
     ).toEqual({ partyId: PARTY, companyAccountId: ACCOUNT, accountVersion: '2', addresses: [], contacts: [] })
+  })
+})
+
+
+/** ChatGPT-authored synthetic example of the existing archived-history wire; not production master data. */
+describe('decodeDraftRevisions', () => {
+  const body = () => JSON.parse(revisionsResponse) as {
+    items: Array<Record<string, any> & { lines: Array<Record<string, any>> }>
+  }
+
+  it('preserves every archived snapshot and decimal/version text without rounding', () => {
+    const input = body()
+    expect(decodeDraftRevisions(input)).toEqual(input)
+    expect(decodeDraftRevisions(input)?.items[0].lines[0]).toMatchObject({
+      quantity: '1000.000', unitPrice: '12.500000', productVersion: '9007199254740993', discountPercent: '0',
+    })
+  })
+
+  it('keeps empty history empty and nullable historical facts null', () => {
+    expect(decodeDraftRevisions({ items: [] })).toEqual({ items: [] })
+    const input = body()
+    Object.assign(input.items[0], { submittedBy: null, submittedAtUtc: null, approvedBy: null, approvedAtUtc: null, moneyScale: 0 })
+    expect(decodeDraftRevisions(input)).toEqual(input)
+  })
+
+  it('distinguishes Visible zero, Visible unpriced and Withheld without inventing money', () => {
+    const input = body()
+    input.items[0].lines[0].unitPrice = '0'
+    expect(decodeDraftRevisions(input)?.items[0].lines[0].unitPrice).toBe('0')
+    Object.assign(input.items[0].lines[0], { unitPrice: null, priceUnitId: null, discountPercent: null })
+    expect(decodeDraftRevisions(input)?.items[0].lines[0].priceDisclosure).toBe('Visible')
+    input.items[0].lines[0].priceDisclosure = 'Withheld'
+    expect(decodeDraftRevisions(input)?.items[0].lines[0].priceDisclosure).toBe('Withheld')
+  })
+
+  it('accepts numeric revision order through Rev.10, allowing the same line in different snapshots', () => {
+    const input = body()
+    input.items = ['Rev.0', 'Rev.2', 'Rev.10'].map((revision) => ({ ...clone(input.items[0]), revision }))
+    expect(decodeDraftRevisions(input)).toEqual(input)
+  })
+
+  it.each([null, [], {}, { items: null }, { items: [], nextCursor: null }])('rejects a malformed history envelope %j', (input) => {
+    expect(decodeDraftRevisions(input)).toBeNull()
+  })
+
+  it.each([
+    ['unknown revision member', (r: any) => { r.total = '0' }],
+    ['missing nullable member', (r: any) => { delete r.approvedBy }],
+    ['numeric revision', (r: any) => { r.revision = 1 }],
+    ['noncanonical revision', (r: any) => { r.revision = 'Rev.01' }],
+    ['line-terminated revision', (r: any) => { r.revision = 'Rev.0\n' }],
+    ['out-of-range revision', (r: any) => { r.revision = 'Rev.2147483648' }],
+    ['invalid instant', (r: any) => { r.archivedAtUtc = 'yesterday' }],
+    ['nonexistent calendar date', (r: any) => { r.approvedAtUtc = '2026-02-30T09:00:00Z' }],
+    ['impossible time', (r: any) => { r.archivedAtUtc = '2026-09-23T24:00:00Z' }],
+    ['null archiver', (r: any) => { r.archivedBy = null }],
+    ['blank archiver', (r: any) => { r.archivedBy = '  ' }],
+    ['empty money id', (r: any) => { r.moneyProfileId = '00000000-0000-0000-0000-000000000000' }],
+    ['malformed money id', (r: any) => { r.moneyProfileId = 'not-an-id' }],
+    ['blank profile version', (r: any) => { r.moneyProfileVersion = ' ' }],
+    ['negative scale', (r: any) => { r.moneyScale = -1 }],
+    ['fractional scale', (r: any) => { r.moneyScale = 1.5 }],
+    ['string scale', (r: any) => { r.moneyScale = '2' }],
+    ['empty lines', (r: any) => { r.lines = [] }],
+    ['unknown line member', (r: any) => { r.lines[0].productName = 'current, not archived' }],
+    ['missing disclosure', (r: any) => { delete r.lines[0].priceDisclosure }],
+    ['unknown disclosure', (r: any) => { r.lines[0].priceDisclosure = 'Hidden' }],
+    ['missing nullable price', (r: any) => { delete r.lines[0].unitPrice }],
+    ['numeric price', (r: any) => { r.lines[0].unitPrice = 12.5 }],
+    ['exponent price', (r: any) => { r.lines[0].unitPrice = '1e3' }],
+    ['signed discount', (r: any) => { r.lines[0].discountPercent = '-1' }],
+    ['zero quantity', (r: any) => { r.lines[0].quantity = '0.000' }],
+    ['newline quantity', (r: any) => { r.lines[0].quantity = '1\n' }],
+    ['unpaired price', (r: any) => { r.lines[0].priceUnitId = null }],
+    ['blank product version', (r: any) => { r.lines[0].productVersion = '' }],
+    ['numeric product version', (r: any) => { r.lines[0].productVersion = 3 }],
+    ['invalid product id', (r: any) => { r.lines[0].productId = 'bad' }],
+    ['newline id', (r: any) => { r.lines[0].lineId += '\n' }],
+    ['zero line number', (r: any) => { r.lines[0].lineNo = 0 }],
+    ['duplicate line id', (r: any) => { r.lines.push({ ...r.lines[0], lineNo: 2 }) }],
+    ['duplicate line number', (r: any) => { r.lines.push({ ...r.lines[0], lineId: 'ffffffff-ffff-4fff-8fff-ffffffffffff' }) }],
+    ['withheld price', (r: any) => { r.lines[0].priceDisclosure = 'Withheld' }],
+    ['withheld discount only', (r: any) => { Object.assign(r.lines[0], { priceDisclosure: 'Withheld', unitPrice: null, priceUnitId: null }) }],
+  ])('refuses %s', (_, mutate) => {
+    const input = body()
+    mutate(input.items[0])
+    expect(decodeDraftRevisions(input)).toBeNull()
+  })
+
+  it('rejects duplicate revisions and out-of-order revisions', () => {
+    const input = body()
+    input.items.push(clone(input.items[0]))
+    expect(decodeDraftRevisions(input)).toBeNull()
+    input.items[0].revision = 'Rev.10'
+    input.items[1].revision = 'Rev.2'
+    expect(decodeDraftRevisions(input)).toBeNull()
   })
 })

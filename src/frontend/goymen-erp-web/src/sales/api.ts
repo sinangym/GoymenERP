@@ -33,10 +33,12 @@ import {
   decodeDraftDetail,
   decodeDraftMutation,
   decodeDraftPage,
+  decodeDraftRevisions,
   decodeProblem,
   salesDraftCommercialRevisionPath,
   salesDraftCommandPath,
   salesDraftDetailPath,
+  salesDraftRevisionsPath,
   type ApprovalState,
   type ContactInformationOptions,
   type CurrencyOption,
@@ -46,6 +48,7 @@ import {
   type DraftDetail,
   type DraftMutation,
   type DraftPage,
+  type DraftRevisions,
   type DraftStateCommand,
   type DraftStateCommandRequest,
   type OwnerReference,
@@ -140,6 +143,21 @@ export async function fetchDraftDetail(
   const detail = decodeDraftDetail(raw.body, draftId)
   if (detail === null || detail.draft.companyId !== companyId) return { type: 'malformed' }
   return { type: 'ok-single', data: detail }
+}
+
+/** Read-only history: authority and company filtering remain on the existing server endpoint. */
+export async function fetchDraftRevisions(
+  draftId: string,
+  companyId: string,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<DraftRevisions>> {
+  const raw = await request(salesDraftRevisionsPath(draftId), { headers: headers(companyId) }, signal)
+  if ('failure' in raw) return readFailure(raw.failure)
+  if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
+  // Unlike detail, this wire has no company/id member to compare. Keep the read
+  // tied to its request and context namespace; never fabricate a response binding.
+  const history = decodeDraftRevisions(raw.body)
+  return history === null ? { type: 'malformed' } : { type: 'ok-single', data: history }
 }
 
 /* ── Reference options (S03) ─────────────────────────────────────────────── */

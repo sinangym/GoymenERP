@@ -72,6 +72,7 @@ import { contextKey, contextKeyString, hasCapability, type ShellState } from '..
 import { StateBlock } from '../shell/StateBlock'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { SalesDraftCommercialRevisionForm } from './SalesDraftCommercialRevisionForm'
+import { SalesDraftRevisionHistory } from './SalesDraftRevisionHistory'
 import styles from './SalesPages.module.css'
 
 const orUnknown = (value: string | null) => value ?? T.unknown
@@ -121,6 +122,15 @@ export function SalesDraftDetailPage() {
       detail={outcome.data}
       backLink={backLink}
       delivery={companyId === null ? null : <DeliveryBlock shell={shell} detail={outcome.data} companyId={companyId} />}
+      revisionHistory={
+        namespace !== null && companyId !== null && outcome.data.draft.companyId === companyId ? (
+          <SalesDraftRevisionHistory
+            key={`history:${namespace}:${shell.routeEntryGeneration}:${outcome.data.draft.id}`}
+            draftId={outcome.data.draft.id}
+            draftVersion={outcome.data.draft.version}
+          />
+        ) : null
+      }
       commands={
         companyId === null ? null : (
           <ApprovalCommands
@@ -153,6 +163,7 @@ export function DraftView({
   commands = null,
   delivery = null,
   commercialActions = null,
+  revisionHistory = null,
 }: {
   readonly detail: DraftDetail
   readonly backLink: React.ReactNode
@@ -160,6 +171,7 @@ export function DraftView({
   /** SALES-A2a: the "Teslimat" block (the owner's texts for the stored references); null when no company is bound. */
   readonly delivery?: React.ReactNode
   readonly commercialActions?: React.ReactNode
+  readonly revisionHistory?: React.ReactNode
 }) {
   const { draft, approval } = detail
   const withdrawn = draft.approvalState === APPROVAL_STATE.withdrawn
@@ -284,6 +296,7 @@ export function DraftView({
           <LineView key={line.lineId} line={line} />
         ))}
       </section>
+      {revisionHistory}
     </article>
   )
 }
