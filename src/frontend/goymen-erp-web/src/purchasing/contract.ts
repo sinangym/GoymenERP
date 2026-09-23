@@ -270,7 +270,7 @@ function decodeRequestLine(value: unknown): PurchaseRequestLine | null {
     !exact(source, ['lineId', 'lineNo', 'productId', 'productVersion', 'unitId', 'quantity']) ||
     !guid(source.lineId) || !Number.isSafeInteger(source.lineNo) || (source.lineNo as number) < 1 ||
     !guid(source.productId) || !canonicalVersion(source.productVersion) || !guid(source.unitId) ||
-    !text(source.quantity) || !DECIMAL.test(source.quantity as string)
+    !text(source.quantity) || !DECIMAL.test(source.quantity as string) || !/[1-9]/.test(source.quantity as string)
   ) return null
   return source as unknown as PurchaseRequestLine
 }

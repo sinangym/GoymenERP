@@ -35,4 +35,9 @@ describe('purchase request wire contract', () => {
     expect(decodePurchaseRequestDetail({ request: { ...summary, lineCount: 2 }, lines: [line] })).toBeNull()
     expect(decodePurchaseRequestDetail({ request: summary, lines: [{ ...line, productVersion: '07' }] })).toBeNull()
   })
+
+  it('rejects zero request quantities', () => {
+    expect(decodePurchaseRequestDetail({ request: summary, lines: [{ ...line, quantity: '0' }] })).toBeNull()
+    expect(decodePurchaseRequestDetail({ request: summary, lines: [{ ...line, quantity: '0.0' }] })).toBeNull()
+  })
 })
