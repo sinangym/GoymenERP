@@ -21,7 +21,9 @@ internal sealed class SqlInventoryParentRollReader(InventoryDbContext db) : IInv
         var query = db.Labels.AsNoTracking().Where(x => x.CompanyId == companyId);
         if (q.Length > 0) query = query.Where(x => x.Code.Contains(q));
         var rows = await query.OrderBy(x => x.Code).ThenBy(x => x.Id).Take(limit + 1).ToListAsync(ct);
-        return new(await CaptureAsync(companyId, rows.Take(limit).ToArray(), ct), rows.Count > limit);
+        return new InventoryParentRollWindow(
+            await CaptureAsync(companyId, rows.Take(limit).ToArray(), ct),
+            rows.Count > limit);
     }
 
     public async Task<InventoryParentRollRecord?> ReadAsync(Guid companyId, Guid labelId, CancellationToken ct)
@@ -61,8 +63,10 @@ internal sealed class SqlInventoryParentRollReader(InventoryDbContext db) : IInv
             {
                 if (x.ProductId != row.ProductId)
                     throw new InventoryParentRollException(503, InventoryParentRollCodesV1.Unavailable);
-                return new StockBalance(new StockPosition(companyId, new((StockPartyKind)x.OwnerKind, x.OwnerId),
-                    new((StockPartyKind)x.CustodianKind, x.CustodianId), x.LocationId, label, (BlockState)x.Block),
+                return new StockBalance(new StockPosition(companyId,
+                    new StockOwner((StockPartyKind)x.OwnerKind, x.OwnerId),
+                    new StockCustodian((StockPartyKind)x.CustodianKind, x.CustodianId),
+                    x.LocationId, label, (BlockState)x.Block),
                     Kilograms.Of(x.QuantityKg));
             }).ToArray();
             return new InventoryParentRollRecord(row.Version, label,
