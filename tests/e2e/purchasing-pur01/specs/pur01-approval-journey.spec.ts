@@ -102,10 +102,12 @@ test('P04 creates one real order, closes the form, reopens that record and uses 
   expect(createResponse.status()).toBe(201)
   const created = (await createResponse.json()) as ApprovalResponse
   const createdId = created.detail.order.id
+  const createdVersion = created.detail.order.version
   expect(createResponse.headers()['location']).toContain(`${ORDERS_PATH}/${createdId}`)
   expect(created.isReplay).toBe(false)
+  expect(/^[1-9]\d*$/.test(createdVersion)).toBe(true)
   expect(created.detail.order).toMatchObject({
-    id: createdId, companyId, status: 'Draft', version: '1', supplierPartyId, companyAccountId,
+    id: createdId, companyId, status: 'Draft', version: createdVersion, supplierPartyId, companyAccountId,
     effectiveOn: '2026-09-18',
   })
   expect(created.detail.lines).toHaveLength(1)
@@ -125,7 +127,7 @@ test('P04 creates one real order, closes the form, reopens that record and uses 
   await createdRow.getByRole('link', { name: `…${createdId.slice(-8)}` }).click()
   await expect(page.getByText(createdId, { exact: true })).toBeVisible()
   const reopened = await readOrder(page, creatorActor, createdId)
-  expect(reopened.order).toMatchObject({ id: createdId, status: 'Draft', supplierPartyId, companyAccountId })
+  expect(reopened.order).toMatchObject({ id: createdId, status: 'Draft', version: createdVersion, supplierPartyId, companyAccountId })
   expect(reopened.lines[0]).toMatchObject({ productId, productVersion, unitId: productUnitId, ordered: '5' })
 
   await signInAs(page, approverActor)
@@ -136,7 +138,8 @@ test('P04 creates one real order, closes the form, reopens that record and uses 
   await page.getByRole('button', { name: 'Onayla' }).click()
   expect((await approvalAnswer).status()).toBe(200)
   const approved = await readOrder(page, approverActor, createdId)
-  expect([approved.order.id, approved.order.status, approved.order.version]).toEqual([createdId, 'Approved', '2'])
+  expect([approved.order.id, approved.order.status, approved.order.version])
+    .toEqual([createdId, 'Approved', (BigInt(createdVersion) + 1n).toString()])
   expect(await readOrders(page, approverActor)).toHaveLength(before.length + 1)
 
   await signInAs(page, readerActor)
