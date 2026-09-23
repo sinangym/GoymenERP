@@ -83,6 +83,26 @@ class PrivacyTests(unittest.TestCase):
 class WorkflowTests(unittest.TestCase):
     workflow = WORKFLOW.read_text(encoding="utf-8")
 
+    def test_mfg_identity_is_the_real_plan_and_opening_stock_closed_list(self):
+        self.assertTrue(validator.SUITE_API_EXTENSIONS["mfg"]["issuer"])
+        self.assertEqual(
+            (
+                "manufacturing.plans.write",
+                "manufacturing.plans.read",
+                "manufacturing.plans.approve",
+                "manufacturing.orders.create",
+                "manufacturing.facts.record",
+                "manufacturing.orders.read",
+                "manufacturing.orders.close",
+                "organization.work-centers.read",
+                "inventory.labels.read",
+                "inventory.balances.read",
+                "inventory.opening-stock.record",
+                "product.operational-selection.read",
+            ),
+            validator.SUITE_IDENTITY_PERMISSIONS["mfg"],
+        )
+
     def test_fin01_identity_permissions_match_the_owner_fixture_closed_list(self):
         self.assertEqual(
             (

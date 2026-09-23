@@ -7,8 +7,9 @@
  * together with its synthetic test-database grants. This suite adds no actor, role or grant; it
  * only names what it needs:
  *
- *   recorderActor — Development user holding, company-wide in `companyId`, the five Manufacturing
- *                   permissions (plans.write, plans.approve, orders.create, facts.record, orders.read)
+ *   recorderActor — Development user holding, company-wide in `companyId`, the Manufacturing plan/order
+ *                   permissions and the existing owner permissions needed by the real plan form and its
+ *                   opening-stock fixture
  *   readerActor   — Development user holding only manufacturing.orders.read there
  *   closerActor   — Development user holding manufacturing.orders.read + manufacturing.orders.close,
  *                   and no fact permission (MFG-ORD: closing is its own authority)
@@ -16,7 +17,7 @@
  *   workCenterId  — one of that company's work centers
  *   orderId       — an open order the fixture (tests/GoymenERP.BrowserSuiteFixtureTool/Suites/MFG)
  *                   arranged through the real API; the reader case reads it
- *   rollId        — that order's parent roll
+ *   rollId        — that order's real Inventory parent-roll label, recorded by the fixture command
  *
  * The screen's capabilities (`manufacturing.orders.detail` / `.facts` / `.list` / `.close`) are published by the normal
  * runtime (MFG-UI-F; first accepted on the disposable `mfg-staged` profile, card D4) and opened to the
