@@ -1,21 +1,33 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Globalization;
 using System.Text.Json;
 using GoymenERP.Api.Security;
+using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Audit.Infrastructure.Persistence;
+using GoymenERP.Modules.Audit.Infrastructure.Services;
 using GoymenERP.Modules.Identity.Domain.Assignments;
 using GoymenERP.Modules.Identity.Domain.Roles;
 using GoymenERP.Modules.Identity.Domain.Users;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
+using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.Modules.Inventory.Domain.Labels;
+using GoymenERP.Modules.Inventory.Domain.Lots;
+using GoymenERP.Modules.Inventory.Domain.Movements;
+using GoymenERP.Modules.Inventory.Domain.Stock;
+using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Manufacturing.Domain.Common;
 using GoymenERP.Modules.Manufacturing.Domain.Orders;
 using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence;
+using GoymenERP.Modules.Settings.Application;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using InventoryKilograms = GoymenERP.Modules.Inventory.Domain.Quantities.Kilograms;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -36,7 +48,8 @@ internal static class ManufacturingHttpClientExtensions
 /// (company A = GDC) and Manufacturing's store. The callers are the factory's configured development
 /// users, linked to an ERP account in this test's own database when they have none; grants are
 /// synthetic test roles on the registered names, created there and never seeded. Parent rolls are
-/// synthetic label identities (no Inventory link in this slice). A positive answer here is API
+/// synthetic test data stored as real company-scoped Inventory labels at company-owned physical
+/// positions; each request carries the exact current label version. A positive answer here is API
 /// evidence, not a production outcome.
 /// </summary>
 public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
@@ -53,6 +66,8 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
         ErpPermissions.ManufacturingOrdersCreate,
         ErpPermissions.ManufacturingFactsRecord,
         ErpPermissions.ManufacturingOrdersRead,
+        ErpPermissions.InventoryLabelsRead,
+        ErpPermissions.InventoryBalancesRead,
     ];
 
     [SqlServerFact]
@@ -63,11 +78,11 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
         var user = await run.GrantAsync(TestUsers.CompanyA, CompanyA, AllWrites);
         using var client = run.ClientFor(user, CompanyA);
         var correlation = client.DefaultRequestHeaders.GetValues("X-Correlation-Id").Single();
-        var roll = Guid.NewGuid();
+        var (roll, rollVersion) = await run.ParentRollAsync(CompanyA);
 
         // Plan: created, and the same key + body again is its replay with no second plan.
         var planRequest = new SavePlanRequestV1(Guid.NewGuid(), workCenter,
-            [new PlannedInputRequestV1(roll, "1000.125")], new TargetRequestV1("GoodOutputMass", "900"));
+            [new PlannedInputRequestV1(roll, "1000.125", rollVersion)], new TargetRequestV1("GoodOutputMass", "900"));
         var created = await client.PostWithKeyAsync($"{Base}/plans", planRequest, "plan-key-1");
         Assert.Equal(HttpStatusCode.Created, created.StatusCode);
         // The typed header re-orders its text; the directives are what matter.
@@ -127,8 +142,12 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
         await using var run = await Run.StartAsync();
         var workCenter = await run.WorkCenterOfAsync(CompanyA);
         var readerOnly = await run.GrantAsync(TestUsers.NoAssignment, CompanyA, ErpPermissions.ManufacturingOrdersRead);
-        var plannerOnly = await run.GrantAsync(TestUsers.Unprovisioned, CompanyA, ErpPermissions.ManufacturingPlansWrite);
-        var request = new SavePlanRequestV1(Guid.NewGuid(), workCenter, [new PlannedInputRequestV1(Guid.NewGuid(), "10")], null);
+        var plannerOnly = await run.GrantAsync(TestUsers.Unprovisioned, CompanyA,
+            ErpPermissions.ManufacturingPlansWrite, ErpPermissions.InventoryLabelsRead,
+            ErpPermissions.InventoryBalancesRead);
+        var (roll, rollVersion) = await run.ParentRollAsync(CompanyA);
+        var request = new SavePlanRequestV1(Guid.NewGuid(), workCenter,
+            [new PlannedInputRequestV1(roll, "10", rollVersion)], null);
 
         using (var client = run.ClientFor(readerOnly, CompanyA))
         {
@@ -175,8 +194,9 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
         var userB = await run.GrantAsync(TestUsers.CompanyB, CompanyB,
             [.. AllWrites, ErpPermissions.ManufacturingPlansRead]);
 
+        var (roll, rollVersion) = await run.ParentRollAsync(CompanyA);
         var request = new SavePlanRequestV1(Guid.NewGuid(), workCenter,
-            [new PlannedInputRequestV1(Guid.NewGuid(), "1000.250")], new TargetRequestV1("GoodOutputMass", "900"));
+            [new PlannedInputRequestV1(roll, "1000.250", rollVersion)], new TargetRequestV1("GoodOutputMass", "900"));
         PlanViewV1 created;
         using (var client = run.ClientFor(reader, CompanyA))
         {
@@ -437,8 +457,10 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
             (scale.StatusCode, (await Problem(scale)).Code));
 
         // A plan at company B's work center under company A: the composite key refuses it, named.
+        var (foreignRoll, foreignRollVersion) = await run.ParentRollAsync(CompanyA);
         var foreign = await client.PostWithKeyAsync($"{Base}/plans", new SavePlanRequestV1(Guid.NewGuid(),
-            await run.WorkCenterOfAsync(CompanyB), [new PlannedInputRequestV1(Guid.NewGuid(), "10")], null));
+            await run.WorkCenterOfAsync(CompanyB),
+            [new PlannedInputRequestV1(foreignRoll, "10", foreignRollVersion)], null));
         Assert.Equal((HttpStatusCode.UnprocessableEntity, ManufacturingStoreCodes.WorkCenterNotFound),
             (foreign.StatusCode, (await Problem(foreign)).Code));
 
@@ -457,8 +479,9 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
         var otherA = await run.GrantAsync(TestUsers.NoAssignment, CompanyA, AllWrites);
         using var client = run.ClientFor(userA, CompanyA);
         var correlation = client.DefaultRequestHeaders.GetValues("X-Correlation-Id").Single();
+        var (roll, rollVersion) = await run.ParentRollAsync(CompanyA);
         var plan = new SavePlanRequestV1(Guid.NewGuid(), await run.WorkCenterOfAsync(CompanyA),
-            [new PlannedInputRequestV1(Guid.NewGuid(), "1000")], null);
+            [new PlannedInputRequestV1(roll, "1000", rollVersion)], null);
         Assert.Equal(HttpStatusCode.Created, (await client.PostWithKeyAsync($"{Base}/plans", plan, "save-1")).StatusCode);
 
         // The same key with another body: 409, and nothing of the first answer.
@@ -804,13 +827,40 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
         public Task<Guid> WorkCenterOfAsync(Guid company) =>
             ScalarAsync<Guid>("SELECT TOP (1) Id FROM organization.WorkCenters WHERE CompanyId = @c ORDER BY Id", ("@c", company));
 
+        public async Task<(Guid LabelId, string Version)> ParentRollAsync(Guid company)
+        {
+            var productId = Guid.NewGuid();
+            var lot = new MaterialLot(Guid.NewGuid(), company, productId);
+            var label = new MaterialLabel(Guid.NewGuid(), company, $"SYN-MFG-{Guid.NewGuid():N}", productId, lot.Id);
+            var locationId = await ScalarAsync<Guid>(
+                "SELECT TOP (1) Id FROM organization.Locations WHERE CompanyId = @c ORDER BY Id", ("@c", company));
+            await using var inventory = InventoryStore(company);
+            Assert.Equal(InventoryWriteOutcome.Recorded,
+                await inventory.Store.SaveLotAsync(lot, [], InventoryMetadata()));
+            Assert.Equal(InventoryWriteOutcome.Recorded,
+                await inventory.Store.SaveLabelAsync(label, InventoryMetadata()));
+            var position = new StockPosition(company,
+                new StockOwner(StockPartyKind.Company, company),
+                new StockCustodian(StockPartyKind.Company, company),
+                locationId, label, BlockState.Free);
+            var movement = new StockMovement(Guid.NewGuid(), company, StockMovementKind.Receipt, At,
+                new StockSourceReference("synthetic.manufacturing.fixture", label.Id),
+                [new StockMovementLine(position, StockDirection.In, InventoryKilograms.Positive(1m))]);
+            Assert.Equal(InventoryWriteOutcome.Recorded,
+                await inventory.Store.RecordMovementAsync(movement, InventoryMetadata()));
+            var version = await ScalarAsync<long>(
+                "SELECT Version FROM inventory.Labels WHERE CompanyId = @c AND Id = @id",
+                ("@c", company), ("@id", label.Id));
+            return (label.Id, version.ToString(CultureInfo.InvariantCulture));
+        }
+
         /// <summary>An approved plan of one roll and its open order in company A, through the API.</summary>
         public async Task<(Guid OrderId, Guid Roll)> OpenOrderAsync(string user)
         {
             using var client = ClientFor(user, CompanyA);
-            var roll = Guid.NewGuid();
+            var (roll, rollVersion) = await ParentRollAsync(CompanyA);
             var plan = new SavePlanRequestV1(Guid.NewGuid(), await WorkCenterOfAsync(CompanyA),
-                [new PlannedInputRequestV1(roll, "1000")], null);
+                [new PlannedInputRequestV1(roll, "1000", rollVersion)], null);
             Assert.Equal(HttpStatusCode.Created, (await client.PostWithKeyAsync($"{Base}/plans", plan)).StatusCode);
             Assert.Equal(HttpStatusCode.OK, (await client.PostWithKeyAsync($"{Base}/plans/{plan.PlanId}/approval",
                 new ApprovePlanRequestV1(1))).StatusCode);
@@ -866,6 +916,29 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
             return developmentUser;
         }
 
+        private InventoryCommandMetadata InventoryMetadata() => new(
+            Guid.NewGuid().ToString("D"), "synthetic.manufacturing.parent-roll.fixture",
+            ["SYNTHETIC-MANUFACTURING-TEST"], $"mfg-inventory-{Guid.NewGuid():N}",
+            CausationId: null, IdempotencyKey: Guid.NewGuid().ToString("N"), SourceChannel: "Web");
+
+        private InventoryStoreScope InventoryStore(Guid company)
+        {
+            var companyContext = new CompanyContext();
+            companyContext.Set(company);
+            var collector = new AuditEventCollector();
+            var options = new DbContextOptionsBuilder<InventoryDbContext>()
+                .UseSqlServer(Factory.DatabaseConnectionString,
+                    sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", InventoryDbContext.Schema))
+                .AddInterceptors(new AuditSaveChangesInterceptor(collector, companyContext))
+                .Options;
+            var dbContext = new InventoryDbContext(options, companyContext);
+            var settings = new ApprovedSettingsPrerequisiteProvider(companyContext,
+                new FixedCurrentUser(Guid.NewGuid(), company));
+            var store = new InventoryStore(dbContext, companyContext, collector,
+                new InventoryKilogramScale(settings), TimeProvider.System);
+            return new InventoryStoreScope(dbContext, store);
+        }
+
         public async Task<T> ScalarAsync<T>(string sql, params (string Name, object Value)[] parameters)
         {
             await using var connection = new SqlConnection(Factory.DatabaseConnectionString);
@@ -895,5 +968,19 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
                 """;
             await command.ExecuteNonQueryAsync();
         }
+    }
+
+    private sealed class InventoryStoreScope(InventoryDbContext dbContext, InventoryStore store) : IAsyncDisposable
+    {
+        public InventoryStore Store => store;
+        public ValueTask DisposeAsync() => dbContext.DisposeAsync();
+    }
+
+    private sealed class FixedCurrentUser(Guid userId, Guid company) : ICurrentUser
+    {
+        public bool IsAuthenticated => true;
+        public string? UserId => userId.ToString("D");
+        public IReadOnlySet<Guid> AllowedCompanyIds { get; } = new HashSet<Guid> { company };
+        public bool CanAccessCompany(Guid companyId) => AllowedCompanyIds.Contains(companyId);
     }
 }
