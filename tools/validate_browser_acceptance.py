@@ -34,7 +34,7 @@ _spec.loader.exec_module(c01)
 ContractError = c01.ContractError
 require = c01.require
 
-SUITES = ("smoke", "c03", "org03", "u02", "s03", "mfg", "fin01", "s04", "acc01", "l04", "pur01", "c02")
+SUITES = ("smoke", "c03", "org03", "u02", "s03", "mfg", "fin01", "s04", "acc01", "l04", "pur01", "r14", "c02")
 # s03 writes since S03 (#327): V2A-02 attempts a POST (nothing is stored, but it is no read-only run).
 READ_ONLY_SUITES = ("smoke", "c03")
 _SUITE_PATTERN = re.compile(r"^[a-z0-9]+$")
@@ -64,6 +64,8 @@ SUITE_PROFILES = {
     "l04": "normal",
     # PUR-01 (SATINALMA): the published order list/detail and approval control run on the normal host.
     "pur01": "normal",
+    # R14 (STOK): real opening-stock create/reopen against Product and Organization owner reads.
+    "r14": "normal",
 }
 PROFILE_COMPOSE_FILES = {
     "c01-list-only": "infra/docker-compose.c01-e2e.yml",
@@ -141,6 +143,8 @@ SUITE_API_EXTENSIONS = {
     # PUR-01 (SATINALMA): the existing Product issuer plus creator, approver and read-only actors with
     # disposable Identity users and grants. The issuer itself has no actor, role, assignment or grant.
     "pur01": {"issuer": True, "actors": True, "identity": True},
+    # R14: Product issuer plus recorder, denied and Organization arranger actors in the disposable DB.
+    "r14": {"issuer": True, "actors": True, "identity": True},
     # CARI-NORMAL: two actors holding the SAME two names in DIFFERENT companies, with their Identity
     # users and grants — the difference is the company, because that is the fence being measured.
     "c02": {"issuer": False, "actors": True, "identity": True},
@@ -247,6 +251,9 @@ SUITE_IDENTITY_PERMISSIONS = {
     # this closed list grants nothing outside the disposable normal profile.
     "pur01": ("purchasing.orders.read", "purchasing.orders.approve", "purchasing.orders.create",
               "counterparty.parties.read", "product.operational-selection.read"),
+    # R14: one Inventory recorder, one owner-read-only denied actor, and one Organization location reader.
+    "r14": ("inventory.opening-stock.record", "product.operational-selection.read",
+            "organization.locations.read"),
 }
 
 
@@ -434,6 +441,11 @@ SUITE_FIXTURE_OUTPUTS: dict[str, frozenset[str]] = {
                         "orderId", "lineId", "supplierPartyId", "companyAccountId", "productId",
                         "productVersion", "productUnitId", "productUnitProfileId",
                         "productUnitProfileVersion", "productCode", "productName"}),
+    # STOK's Suites/R14 seed: three actors, company fence, active Organization location and Product's
+    # exact gated stock-candidate tuple. The browser creates the Inventory record itself.
+    "r14": frozenset({"recorderActor", "deniedActor", "arrangerActor", "companyId", "otherCompanyId",
+                      "locationId", "productId", "productVersion", "productUnitId",
+                      "productUnitProfileId", "productUnitProfileVersion", "productCode", "productName"}),
 }
 _OUTPUT_KEY = re.compile(r"^[a-z][A-Za-z0-9]{0,39}$")
 # Any non-nil lowercase GUID: seeded reference ids (companies, work centres) need not be RFC 4122.
@@ -473,8 +485,15 @@ def seed_export(suite: str, seed: object) -> str:
             and re.fullmatch(r"SYNPUR01-[1-9][0-9]*", value) is not None
         is_pur01_name = suite == "pur01" and key == "productName" \
             and value == "SENTETIK browser-suite:pur01 purchase candidate"
+        is_r14_version = suite == "r14" and key in {"productVersion", "productUnitProfileVersion"} \
+            and re.fullmatch(r"[1-9][0-9]*", value) is not None
+        is_r14_code = suite == "r14" and key == "productCode" \
+            and re.fullmatch(r"SYNR14-[1-9][0-9]*", value) is not None
+        is_r14_name = suite == "r14" and key == "productName" \
+            and value == "SENTETIK browser-suite:r14 stock candidate"
         require(is_guid or is_actor or is_s04_version or is_s04_code or is_s04_name
-                or is_pur01_version or is_pur01_code or is_pur01_name,
+                or is_pur01_version or is_pur01_code or is_pur01_name
+                or is_r14_version or is_r14_code or is_r14_name,
                 f"seed output {key} must be a GUID or an actor id or an approved suite Product value")
     compact = json.dumps(seed, sort_keys=True, separators=(",", ":"))
     return f"BROWSER_E2E_{suite.upper()}_SEED={compact}"

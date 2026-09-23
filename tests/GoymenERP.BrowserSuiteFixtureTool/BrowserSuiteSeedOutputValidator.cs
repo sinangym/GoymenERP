@@ -63,6 +63,21 @@ internal static class BrowserSuiteSeedOutputValidator
             };
         }
 
+        if (string.Equals(suite, "r14", StringComparison.Ordinal))
+        {
+            return key switch
+            {
+                "productVersion" or "productUnitProfileVersion" => IsPositiveDecimal(value),
+                "productCode" => value.StartsWith("SYNR14-", StringComparison.Ordinal)
+                                 && IsPositiveDecimal(value[7..]),
+                "productName" => string.Equals(
+                    value,
+                    "SENTETIK browser-suite:r14 stock candidate",
+                    StringComparison.Ordinal),
+                _ => false,
+            };
+        }
+
         if (!string.Equals(suite, "pur01", StringComparison.Ordinal))
         {
             return false;

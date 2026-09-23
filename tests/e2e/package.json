@@ -21,6 +21,7 @@
     "browser:acc01:ci": "playwright test --config playwright.accounting-acc01.config.ts",
     "browser:l04:ci": "playwright test --config playwright.logistics-l04.config.ts",
     "browser:pur01:ci": "playwright test --config playwright.purchasing-pur01.config.ts",
+    "browser:r14:ci": "playwright test --config playwright.inventory-r14.config.ts",
     "browser:org03:ci": "playwright test --config playwright.organization-org03.config.ts",
     "browser:c02:ci": "playwright test --config playwright.cari-c02.config.ts"
   },

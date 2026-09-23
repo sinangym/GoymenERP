@@ -53,6 +53,7 @@ class ProfileRegistryTests(unittest.TestCase):
         self.assertEqual("normal", browser.profile_of("org03"))
         self.assertEqual("normal", browser.profile_of("u02"))
         self.assertEqual("normal", browser.profile_of("pur01"))
+        self.assertEqual("normal", browser.profile_of("r14"))
 
     def test_unknown_or_unsafe_suite_fails_closed(self):
         for suite in ("unknown", "C03", "c03;rm", "", "../x"):
