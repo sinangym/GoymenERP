@@ -25,6 +25,13 @@ public sealed class ErpAuthorizationMiddlewareResultHandler(
             ? StatusCodes.Status401Unauthorized
             : StatusCodes.Status403Forbidden;
 
+        if (context.GetEndpoint()?.Metadata
+                .GetMetadata<PrivateNoStoreOnAuthorizationFailureMetadata>() is not null)
+        {
+            context.Response.Headers.CacheControl = "private, no-store";
+            context.Response.Headers.Pragma = "no-cache";
+        }
+
         if (authorizeResult.Challenged)
         {
             await context.ChallengeAsync();
@@ -50,3 +57,9 @@ public sealed class ErpAuthorizationMiddlewareResultHandler(
         });
     }
 }
+
+/// <summary>
+/// Marks a sensitive read whose authorization challenge/forbid response must not be cached.
+/// The marker changes response headers only; it does not alter authentication or authorization.
+/// </summary>
+public sealed class PrivateNoStoreOnAuthorizationFailureMetadata;
