@@ -15,7 +15,7 @@ Central writer adds, after existing `AddProductRuntime`, exactly:
 builder.Services.AddProductPurchaseSelection(p => p.GetRequiredService<ProductRuntimeOptions>().IsEnabled);
 ```
 
-Existing Product DbContext/ReadStore, family policy, ProductUnitProfileAdapter, company/current-user and
+Existing Product DbContext/ReadStore, released family source, ProductUnitProfileAdapter, company/current-user and
 fresh authority services are reused. Disabled runtime or missing Settings/family provider gives
 `ProductOperationException("product_runtime_unconfigured", 503)` on both ports. The new registration
 is not invoked by this owner PR; final host publication remains central-owned.
@@ -38,8 +38,9 @@ Map ProductId/ExpectedProductVersion/UnitId/EffectiveOn unchanged.
 Selection errors: productId invalid_reference/lifecycle_conflict/not_purchasable;
 expectedProductVersion invalid_version/version_conflict; unitId invalid_reference/unsupported_purchase_unit;
 references.units.purchase invalid_reference (missing or inactive/out-of-window Settings profile).
-Accepted family-policy field errors are unchanged. Its existing stock/sales path validation remains intact;
-no purchase conversion or alternative family rules have been inferred.
+Accepted family/template/attribute checks are shared by both paths through ProductFamilyRequiredReferencesV2.
+Purchase uses IProductPurchaseFamilyRequirementPolicyV1; Sales/Stock retain their existing policy and unit
+conditions unchanged. Purchase requires no Sales binding and infers no conversion or alternative family rule.
 
 ## Candidate endpoint (central-owned)
 

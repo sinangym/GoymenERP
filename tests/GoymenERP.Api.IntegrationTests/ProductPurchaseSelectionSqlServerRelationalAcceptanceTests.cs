@@ -47,6 +47,7 @@ public sealed class ProductPurchaseSelectionSqlServerRelationalAcceptanceTests
         var stored = (await db.Products.AsNoTracking().SingleAsync()).ToRecord();
         Assert.Equal(2, stored.Version);
         Assert.True(stored.Purchasable.Value);
+        Assert.Null(stored.RestoreReferences().Units!.Sales);
         Assert.False(stored.Sellable.Value); // A real purchase-only row; not Sales E1 under an alias.
         Assert.Empty(db.ChangeTracker.Entries());
         Assert.Empty((await candidates.SearchAsync(new("does-not-match", On), default)).Items);
@@ -128,7 +129,7 @@ public sealed class ProductPurchaseSelectionSqlServerRelationalAcceptanceTests
         var reader = new AfterRead(p.GetRequiredService<IProductPurchaseRecordReader>(), run.RevokeAsync);
         var service = new ProductPurchaseEligibilityService(p.GetRequiredService<ICompanyContext>(), run.User,
             p.GetRequiredService<IErpAuthorityRevalidationService>(), reader,
-            p.GetRequiredService<IProductFamilyRequirementPolicyV1>(), p.GetRequiredService<ProductUnitProfileAdapter>());
+            p.GetRequiredService<IProductPurchaseFamilyRequirementPolicyV1>(), p.GetRequiredService<ProductUnitProfileAdapter>());
         var denied = await Assert.ThrowsAsync<ProductOperationException>(() => service.EvaluateAsync(Selection, default));
         Assert.Equal((403, "product_access_denied"), (denied.StatusCode, denied.Code));
         Assert.True(reader.ObservedRealRecord);
@@ -188,7 +189,7 @@ public sealed class ProductPurchaseSelectionSqlServerRelationalAcceptanceTests
                 {
                     var db = setup.ServiceProvider.GetRequiredService<ProductDbContext>();
                     var references = (await db.Products.AsNoTracking().SingleAsync()).ToRecord().RestoreReferences();
-                    var purchase = JsonSerializer.Serialize(references with { Units = references.Units! with { Purchase = UnitId } }, JsonOptions);
+                    var purchase = JsonSerializer.Serialize(references with { Units = references.Units! with { Purchase = UnitId, Sales = null } }, JsonOptions);
                     // Test-only SQL row shaping; production save/activation policy is not changed.
                     await db.Products.ExecuteUpdateAsync(u => u.SetProperty(p => p.PurchasableValue, true)
                         .SetProperty(p => p.PurchasableProvenance, 1).SetProperty(p => p.SellableValue, false)

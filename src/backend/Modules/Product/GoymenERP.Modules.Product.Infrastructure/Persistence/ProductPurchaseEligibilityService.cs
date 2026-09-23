@@ -8,7 +8,7 @@ namespace GoymenERP.Modules.Product.Infrastructure.Persistence;
 
 public sealed class ProductPurchaseEligibilityService(ICompanyContext company, ICurrentUser user,
     IErpAuthorityRevalidationService authority, IProductPurchaseRecordReader records,
-    IProductFamilyRequirementPolicyV1 familyPolicy, ProductUnitProfileAdapter units) : IProductPurchaseEligibilityV1
+    IProductPurchaseFamilyRequirementPolicyV1 familyPolicy, ProductUnitProfileAdapter units) : IProductPurchaseEligibilityV1
 {
     private readonly ProductPurchaseReadFence fence = new(company, user, authority);
 

@@ -1,4 +1,5 @@
 using GoymenERP.Modules.Product.Application.Contracts;
+using GoymenERP.Modules.Product.Application;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -12,6 +13,7 @@ public static class ProductPurchaseRuntimeRegistration
         Func<IServiceProvider, bool> runtimeEnabled)
     {
         ArgumentNullException.ThrowIfNull(runtimeEnabled);
+        services.AddScoped<IProductPurchaseFamilyRequirementPolicyV1, ProductPurchaseFamilyRequirementPolicyV1>();
         services.AddScoped<SqlProductPurchaseReader>();
         services.AddScoped<IProductPurchaseRecordReader>(p => p.GetRequiredService<SqlProductPurchaseReader>());
         services.AddScoped<IProductPurchaseCandidateReader>(p => p.GetRequiredService<SqlProductPurchaseReader>());
@@ -24,7 +26,7 @@ public static class ProductPurchaseRuntimeRegistration
         return services;
 
         bool Available(IServiceProvider p) => runtimeEnabled(p) && p.GetService<ISettingsPrerequisiteProvider>() is not null
-            && p.GetService<IProductFamilyRequirementPolicyV1>() is not null;
+            && p.GetService<IProductFamilyDefinitionSourceV2>() is not null;
     }
 }
 

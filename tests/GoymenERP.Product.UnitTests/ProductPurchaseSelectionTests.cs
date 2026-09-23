@@ -1,6 +1,8 @@
 using System.Text.Json;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Product.Application.Contracts;
+using GoymenERP.Modules.Product.Application;
+using GoymenERP.Modules.Product.Infrastructure.Fixtures;
 using GoymenERP.Modules.Product.Infrastructure.Persistence;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.Extensions.DependencyInjection;
@@ -13,6 +15,39 @@ public sealed class ProductPurchaseSelectionTests
     private const string Version = ProductSalesEligibilityServiceTests.Version;
     private static readonly Guid PurchaseUnit = Guid.Parse("7a1d3b8e-2b7c-4c55-9d61-0a6f2f3b1c03");
     private static ProductPurchaseSelectionV1 Selection => new(ProductId, Version, PurchaseUnit, On);
+
+    [Fact]
+    public async Task Actual_family_policy_accepts_purchase_only_without_sales_and_keeps_sales_policy_closed()
+    {
+        var w = new PurchaseWorld();
+        var references = new ProductReferences(ProductTechnicalCardFixture.TemplateId, "1",
+            new Dictionary<string, JsonElement>
+            {
+                ["syn-thickness-mm"] = JsonSerializer.SerializeToElement(1.000m),
+                ["syn-width-mm"] = JsonSerializer.SerializeToElement(1000.000m),
+                ["syn-grade"] = JsonSerializer.SerializeToElement("SYN-A"),
+                ["syn-coating"] = JsonSerializer.SerializeToElement("syn-none"),
+            }, new ProductUnitReferences(Stock: StockUnitId, Purchase: PurchaseUnit));
+        w.Reader.Record = Record() with { FamilyId = ProductTechnicalCardFixture.FamilyId,
+            ReferencesJson = JsonSerializer.Serialize(references, new JsonSerializerOptions(JsonSerializerDefaults.Web)) };
+        var policy = new ProductPurchaseFamilyRequirementPolicyV1(new Definition());
+        var service = new ProductPurchaseEligibilityService(w.Common.Company, w.Common.User, w.Common.Authorization,
+            w.Reader, policy, new(w.Common.Settings, w.Common.Company));
+        var answer = await service.EvaluateAsync(Selection, default);
+        Assert.NotNull(answer.Snapshot);
+        Assert.Empty(answer.Errors);
+        var card = new ProductCardView(ProductDraftView.FromProduct(w.Reader.Record.RestoreProduct()), references);
+        var salesErrors = await new ProductFamilyRequirementPolicyV2(new Definition()).ValidateAsync(card, default);
+        Assert.Contains(new ProductFieldError("references.units.sales", ProductFamilyPolicyCodesV1.Required), salesErrors);
+        var malformed = card with { References = references with { TemplateVersion = "99" } };
+        Assert.NotEmpty(await policy.ValidateAsync(malformed, default));
+    }
+
+    private sealed class Definition : IProductFamilyDefinitionSourceV2
+    {
+        public Task<ProductFamilyDefinitionV2> GetAsync(CancellationToken cancellationToken) =>
+            Task.FromResult(ProductTechnicalCardFixture.Definition());
+    }
 
     [Fact]
     public void Candidate_contract_keeps_exact_versions_as_strings_and_only_purchase_projection()
@@ -219,8 +254,12 @@ public sealed class ProductPurchaseSelectionTests
         public World Common { get; } = new();
         public Reader Reader { get; } = new();
         public ProductPurchaseEligibilityService Service() => new(Common.Company, Common.User, Common.Authorization,
-            Reader, Common.Family, new(Common.Settings, Common.Company));
+            Reader, new FamilyAdapter(Common.Family), new(Common.Settings, Common.Company));
         public ProductPurchaseCandidateService Candidates() => new(Common.Company, Common.User, Common.Authorization, Reader, Service());
+    }
+    private sealed class FamilyAdapter(Family family) : IProductPurchaseFamilyRequirementPolicyV1
+    {
+        public Task<IReadOnlyList<ProductFieldError>> ValidateAsync(ProductCardView card, CancellationToken ct) => family.ValidateAsync(card, ct);
     }
     private sealed class Reader : IProductPurchaseRecordReader, IProductPurchaseCandidateReader
     {
