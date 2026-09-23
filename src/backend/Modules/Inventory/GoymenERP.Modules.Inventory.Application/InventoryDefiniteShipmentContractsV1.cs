@@ -1,4 +1,3 @@
-using System.Data.Common;
 using System.Globalization;
 using GoymenERP.Modules.Inventory.Domain;
 using GoymenERP.Modules.Inventory.Domain.Quantities;
@@ -6,24 +5,10 @@ using GoymenERP.Modules.Inventory.Domain.Quantities;
 namespace GoymenERP.Modules.Inventory.Application;
 
 /// <summary>
-/// Inventory's owner contract for the stock side of one definite shipment (LOG-5 / T11 / T12).
-/// The Logistics host owns the outer transaction and the shipped share. An implementation must
-/// enlist in that already-open transaction and stage, in one attempt, the allocation consumption,
-/// the label's one physical stock exit, Inventory audit and the Inventory outbox message. It must
-/// never commit or roll back the host transaction itself.
-/// </summary>
-public interface IInventoryDefiniteShipmentParticipantFactoryV1
-{
-    Task<IInventoryDefiniteShipmentParticipantV1> EnlistAsync(
-        DbConnection connection,
-        DbTransaction transaction,
-        Guid companyId,
-        CancellationToken cancellationToken = default);
-}
-
-/// <summary>
-/// A single-use Inventory participant borrowed by the host's definite-shipment attempt. Disposal
-/// releases only Inventory-owned state; it does not complete the host transaction.
+/// A single-use Inventory participant borrowed by the central host's already-open definite-shipment
+/// transaction. The eventual Inventory runtime implementation owns enlistment; this application
+/// contract exposes no database handle and cannot create an independent transaction. It stages the
+/// allocation consumption, one stock exit, audit and outbox, and never commits the host attempt.
 /// </summary>
 public interface IInventoryDefiniteShipmentParticipantV1 : IAsyncDisposable
 {
@@ -86,12 +71,41 @@ public static class InventoryDefiniteShipmentCodesV1
     public const string IdempotencyConflict = "inventory_definite_shipment_idempotency_conflict";
     public const string ConcurrentChange = "inventory_definite_shipment_concurrent_change";
     public const string Unavailable = "inventory_definite_shipment_unavailable";
+
+    public static IReadOnlySet<string> Status400Codes { get; } = Set(InvalidRequest, InvalidVersion, InvalidQuantity);
+    public static IReadOnlySet<string> Status404Codes { get; } = Set(InvalidReference);
+    public static IReadOnlySet<string> Status409Codes { get; } = Set(AllocationVersionConflict, LabelVersionConflict,
+        AllocationState, AllocationLabelMismatch, AllocationInsufficient, LabelNotReleasable,
+        PhysicalStockInsufficient, IdempotencyConflict, ConcurrentChange);
+    public static IReadOnlySet<string> Status503Codes { get; } = Set(Unavailable);
+
+    public static bool IsDefined(int status, string code) => status switch
+    {
+        400 => Status400Codes.Contains(code),
+        404 => Status404Codes.Contains(code),
+        409 => Status409Codes.Contains(code),
+        503 => Status503Codes.Contains(code),
+        _ => false,
+    };
+
+    private static IReadOnlySet<string> Set(params string[] codes) => codes.ToHashSet(StringComparer.Ordinal);
 }
 
-public sealed class InventoryDefiniteShipmentException(int status, string code) : Exception(code)
+public sealed class InventoryDefiniteShipmentException : Exception
 {
-    public int Status { get; } = status;
-    public string Code { get; } = code;
+    private InventoryDefiniteShipmentException(int status, string code) : base(code)
+    {
+        Status = status;
+        Code = code;
+    }
+
+    public int Status { get; }
+    public string Code { get; }
+
+    public static InventoryDefiniteShipmentException Refused(int status, string code) =>
+        InventoryDefiniteShipmentCodesV1.IsDefined(status, code)
+            ? new(status, code)
+            : throw new InvalidOperationException("Inventory definite-shipment refusal is outside its closed contract.");
 }
 
 /// <summary>
@@ -181,5 +195,6 @@ public static class InventoryDefiniteShipmentContractV1
         && value.Length <= IdentityMaximumLength
         && !value.Any(char.IsControl);
 
-    private static InventoryDefiniteShipmentException Refused(int status, string code) => new(status, code);
+    private static InventoryDefiniteShipmentException Refused(int status, string code) =>
+        InventoryDefiniteShipmentException.Refused(status, code);
 }

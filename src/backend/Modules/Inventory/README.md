@@ -8,10 +8,11 @@ are on the #275 branch at `a5b8143b`, **not on main**; the decision text is Busi
 
 ## LOG-5 — definite-shipment Inventory boundary (contract predecessor)
 
-`IInventoryDefiniteShipmentParticipantFactoryV1` and its single-use enlisted participant fix the
-Inventory-owned boundary for one definite shipment. The Logistics host supplies its already-open SQL
-connection/transaction; Inventory stages allocation consumption, one label stock exit, audit and outbox,
-and never commits or rolls back the host transaction. The request carries CompanyId, shipment/instruction/
+`GoymenERP.Modules.Inventory.Application.IInventoryDefiniteShipmentParticipantV1` fixes the single-use,
+Inventory-owned boundary for one definite shipment. The central host supplies an Inventory runtime participant
+already enlisted in its open transaction; the participant stages allocation consumption, one label stock exit,
+audit and outbox, and never commits or rolls back the host transaction. The application contract deliberately
+exposes no database handle or independent transaction factory. The request carries CompanyId, shipment/instruction/
 line/allocation/label/movement identities, exact allocation and label versions, lossless kg text and UTC time.
 The stored allocation supplies the physical owner/custodian/location; Logistics cannot choose them.
 

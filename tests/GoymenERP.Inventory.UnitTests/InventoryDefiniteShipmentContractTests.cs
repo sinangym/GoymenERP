@@ -1,4 +1,3 @@
-using System.Data.Common;
 using GoymenERP.Modules.Inventory.Application;
 
 namespace GoymenERP.Inventory.UnitTests;
@@ -18,12 +17,11 @@ public sealed class InventoryDefiniteShipmentContractTests
         Assert.NotEqual(request.ShipmentId, request.MovementId);
         Assert.NotEqual(request.LoadingInstructionId, request.LoadingInstructionLineId);
         Assert.NotEqual(request.AllocationId, request.LabelId);
-        Assert.Contains(typeof(DbConnection), typeof(IInventoryDefiniteShipmentParticipantFactoryV1)
-            .GetMethod(nameof(IInventoryDefiniteShipmentParticipantFactoryV1.EnlistAsync))!
-            .GetParameters().Select(parameter => parameter.ParameterType));
-        Assert.Contains(typeof(DbTransaction), typeof(IInventoryDefiniteShipmentParticipantFactoryV1)
-            .GetMethod(nameof(IInventoryDefiniteShipmentParticipantFactoryV1.EnlistAsync))!
-            .GetParameters().Select(parameter => parameter.ParameterType));
+        Assert.Contains(typeof(IAsyncDisposable), typeof(IInventoryDefiniteShipmentParticipantV1).GetInterfaces());
+        var stage = typeof(IInventoryDefiniteShipmentParticipantV1)
+            .GetMethod(nameof(IInventoryDefiniteShipmentParticipantV1.StageAsync))!;
+        Assert.Equal(typeof(InventoryDefiniteShipmentRequestV1), stage.GetParameters()[0].ParameterType);
+        Assert.Equal(typeof(InventoryCommandMetadata), stage.GetParameters()[1].ParameterType);
     }
 
     [Theory]
@@ -109,6 +107,12 @@ public sealed class InventoryDefiniteShipmentContractTests
         Assert.Equal("inventory_definite_shipment_unavailable", InventoryDefiniteShipmentCodesV1.Unavailable);
         Assert.NotEqual(InventoryDefiniteShipmentCodesV1.AllocationInsufficient,
             InventoryDefiniteShipmentCodesV1.PhysicalStockInsufficient);
+        Assert.Throws<InvalidOperationException>(() =>
+            InventoryDefiniteShipmentException.Refused(409, "inventory_arbitrary_internal_detail"));
+        Assert.Throws<InvalidOperationException>(() =>
+            InventoryDefiniteShipmentException.Refused(404, InventoryDefiniteShipmentCodesV1.Unavailable));
+        Assert.Equal(InventoryDefiniteShipmentCodesV1.InvalidReference,
+            InventoryDefiniteShipmentException.Refused(404, InventoryDefiniteShipmentCodesV1.InvalidReference).Code);
     }
 
     private static void Refused(InventoryDefiniteShipmentRequestV1 request, string code)
