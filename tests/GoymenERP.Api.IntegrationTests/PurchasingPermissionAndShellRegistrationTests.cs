@@ -20,7 +20,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// <summary>
 /// PUR-4a: the Purchasing owner's permission names are registered centrally with the same strings (company-wide
 /// only, not Critical, no grant; #66 5743488059), and nothing else is registered under <c>purchasing.</c>; the
-/// Purchasing 1.2 shell provider joins the host set with its own reviewed normal-host authority.
+/// Purchasing 1.3 shell provider joins the host set with its own reviewed normal-host authority.
 /// </summary>
 public sealed class PurchasingPermissionAndShellRegistrationTests
 {
@@ -63,7 +63,7 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
     }
 
     [Fact]
-    public void The_normal_host_publishes_list_create_detail_and_approve()
+    public void The_normal_host_publishes_request_and_order_routes_with_their_detail_controls()
     {
         var services = NormalHost();
 
@@ -77,13 +77,17 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
         var purchasing = registry.Registrations
             .Where(item => item.Owner == PurchasingShellCapabilityProvider.OwnerId)
             .ToArray();
-        Assert.Equal(4, purchasing.Length);
+        Assert.Equal(8, purchasing.Length);
         string[] published =
         [
             PurchasingShellCapabilityProvider.ApproveCapabilityId,
             PurchasingShellCapabilityProvider.CreateCapabilityId,
             PurchasingShellCapabilityProvider.DetailCapabilityId,
             PurchasingShellCapabilityProvider.ListCapabilityId,
+            PurchasingShellCapabilityProvider.RequestCreateCapabilityId,
+            PurchasingShellCapabilityProvider.RequestDetailCapabilityId,
+            PurchasingShellCapabilityProvider.RequestListCapabilityId,
+            PurchasingShellCapabilityProvider.RequestSubmitCapabilityId,
         ];
         Assert.Equal(published, purchasing.Where(item => item.Declaration.ImplementationAvailable)
             .Select(item => item.Declaration.CapabilityId).Order(StringComparer.Ordinal).ToArray());
@@ -102,6 +106,15 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
         Assert.Equal(detail.RoutePath, approve.RoutePath);
         Assert.Equal(detail.ContextRequirement, approve.ContextRequirement);
         Assert.Equal(detail.ScopeRequirement, approve.ScopeRequirement);
+
+        var requestDetail = Assert.Single(purchasing,
+            item => item.Declaration.CapabilityId == PurchasingShellCapabilityProvider.RequestDetailCapabilityId).Declaration;
+        var requestSubmit = Assert.Single(purchasing,
+            item => item.Declaration.CapabilityId == PurchasingShellCapabilityProvider.RequestSubmitCapabilityId).Declaration;
+        Assert.Equal(requestDetail.CapabilityId, requestSubmit.ParentCapabilityId);
+        Assert.Equal(requestDetail.RoutePath, requestSubmit.RoutePath);
+        Assert.Equal(requestDetail.ContextRequirement, requestSubmit.ContextRequirement);
+        Assert.Equal(requestDetail.ScopeRequirement, requestSubmit.ScopeRequirement);
     }
 
     [Fact]

@@ -194,6 +194,12 @@ export const CAPABILITY = {
   logisticsInstructionsCreate: 'logistics.instructions.create',
   /** L-02-DETAIL one instruction. Route `/lojistik/yukleme-talimatlari/:instructionId`. A SEPARATE grant from the list. */
   logisticsInstructionsDetail: 'logistics.instructions.detail',
+  /** P-01 purchase-request list. Route `/satinalma/talepler`, owner the Purchasing lane. */
+  purchasingRequestsList: 'purchasing.requests.list',
+  /** P-01 new request. Route `/satinalma/talepler/yeni`; reached from the list under K5. */
+  purchasingRequestsCreate: 'purchasing.requests.create',
+  /** P-01-DETAIL one purchase request. Route `/satinalma/talepler/:requestId`. */
+  purchasingRequestsDetail: 'purchasing.requests.detail',
   /** P-03 purchase-order list. Route `/satinalma/siparisler`, owner the Purchasing lane. */
   purchasingOrdersList: 'purchasing.orders.list',
   /** P-04 new purchase order. Route `/satinalma/siparisler/yeni`; staged until a real Product candidate source exists. */
@@ -256,6 +262,10 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as an instruction id.
   [CAPABILITY.logisticsInstructionsCreate]: '/lojistik/yukleme-talimatlari/yeni',
   [CAPABILITY.logisticsInstructionsDetail]: '/lojistik/yukleme-talimatlari/:instructionId',
+  [CAPABILITY.purchasingRequestsList]: '/satinalma/talepler',
+  // K5 keeps creation inside the P-01 list. Static `yeni` must never be read as a request id.
+  [CAPABILITY.purchasingRequestsCreate]: '/satinalma/talepler/yeni',
+  [CAPABILITY.purchasingRequestsDetail]: '/satinalma/talepler/:requestId',
   [CAPABILITY.purchasingOrdersList]: '/satinalma/siparisler',
   // Static before the parameter route: `yeni` must never be read as an order id. The route remains
   // mounted but unavailable while the owner declaration is staged.
@@ -321,6 +331,10 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   // instruction is opened from a list row — never from the sidebar.
   [CAPABILITY.logisticsInstructionsCreate]: '',
   [CAPABILITY.logisticsInstructionsDetail]: '',
+  [CAPABILITY.purchasingRequestsList]: 'Satın alma talepleri',
+  // K5: create is reached through the list's single action; detail is reached from a row.
+  [CAPABILITY.purchasingRequestsCreate]: '',
+  [CAPABILITY.purchasingRequestsDetail]: '',
   [CAPABILITY.purchasingOrdersList]: 'Satın alma siparişleri',
   // P-04 is staged and, once published, is reached from the list. The detail is reached from a row.
   [CAPABILITY.purchasingOrdersCreate]: '',
