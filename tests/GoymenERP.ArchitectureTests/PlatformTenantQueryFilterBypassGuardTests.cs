@@ -149,7 +149,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // inventory
             ["tools/relational_inventory/inventory.txt"] =
-                "be288874fa79b0b79727d618d88fd7d98d0e63b36136dac27b577ff67864e0c3",
+                "2e8f207afc077b7b1c9e567c182f03ebe3a816f0f85420b7b81e9ed385e66d2b",
 
             // logistics
             ["tools/relational_inventory/logistics.txt"] =
