@@ -1,4 +1,6 @@
+using System.Globalization;
 using System.Text.Json;
+using GoymenERP.Api.Errors;
 using GoymenERP.Api.Multitenancy;
 using GoymenERP.Api.OpenApi;
 using GoymenERP.BuildingBlocks.Observability;
@@ -75,9 +77,101 @@ public static class InventoryEndpoints
             .ProducesErpCodeLessNotFound()
             .ProducesErpAuthenticatedProblems();
 
+        MapParentRollCandidateEndpoint(endpoints);
         MapOpeningCountEndpoints(group);
         return endpoints;
     }
+
+    private static void MapParentRollCandidateEndpoint(IEndpointRouteBuilder endpoints)
+    {
+        endpoints.MapGet(InventoryParentRollApiV1.CandidatesPath, async (
+                HttpContext httpContext,
+                IInventoryParentRollCandidatesV1 candidates,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response);
+                if (!TryReadParentRollQuery(httpContext.Request.Query, out var query))
+                {
+                    return ParentRollProblem(StatusCodes.Status400BadRequest,
+                        InventoryParentRollCodesV1.InvalidQuery);
+                }
+
+                try
+                {
+                    return Results.Ok(await candidates.SearchAsync(query, cancellationToken));
+                }
+                catch (InventoryParentRollException exception)
+                {
+                    return exception.StatusCode switch
+                    {
+                        StatusCodes.Status400BadRequest
+                            when exception.Code == InventoryParentRollCodesV1.InvalidQuery =>
+                            ParentRollProblem(exception.StatusCode, exception.Code),
+                        StatusCodes.Status409Conflict
+                            when exception.Code == InventoryParentRollCodesV1.ReadConflict =>
+                            ParentRollProblem(exception.StatusCode, exception.Code),
+                        StatusCodes.Status503ServiceUnavailable
+                            when exception.Code == InventoryParentRollCodesV1.Unavailable =>
+                            ParentRollProblem(exception.StatusCode, exception.Code),
+                        StatusCodes.Status401Unauthorized or StatusCodes.Status403Forbidden =>
+                            ParentRollProblem(exception.StatusCode),
+                        _ => ParentRollProblem(StatusCodes.Status503ServiceUnavailable),
+                    };
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception)
+                {
+                    return ParentRollProblem(StatusCodes.Status503ServiceUnavailable);
+                }
+            })
+            .WithName(InventoryParentRollApiV1.GetCandidatesOperationId)
+            .WithTags("Inventory")
+            .WithMetadata(new PrivateNoStoreOnAuthorizationFailureMetadata())
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.InventoryLabelsRead, ErpPermissions.InventoryBalancesRead)
+            .Produces<InventoryParentRollCandidatesV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest(InventoryParentRollCodesV1.InvalidQuery)
+            .ProducesErpConflict(InventoryParentRollCodesV1.ReadConflict)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+    }
+
+    private static bool TryReadParentRollQuery(
+        IQueryCollection query,
+        out InventoryParentRollQueryV1 parsed)
+    {
+        parsed = new();
+        if (query.Keys.Any(name => name is not "q" and not "limit")
+            || query.Any(parameter => parameter.Value.Count != 1))
+        {
+            return false;
+        }
+
+        string? q = null;
+        if (query.TryGetValue("q", out var qValues))
+        {
+            q = qValues[0];
+        }
+
+        var limit = 25;
+        if (query.TryGetValue("limit", out var limitValues)
+            && (!int.TryParse(limitValues[0], NumberStyles.None, CultureInfo.InvariantCulture, out limit)
+                || limit is < 1 or > 100))
+        {
+            return false;
+        }
+
+        parsed = new InventoryParentRollQueryV1(q, limit);
+        return true;
+    }
+
+    private static IResult ParentRollProblem(int statusCode, string? code = null) => code is null
+        ? Results.Problem(statusCode: statusCode)
+        : Results.Problem(statusCode: statusCode,
+            extensions: new Dictionary<string, object?> { ["code"] = code });
 
     /// <summary>
     /// INV-OPEN-1 part 2 (T07 = A, #66 5738113623 §2): record an opening count and read one back. The

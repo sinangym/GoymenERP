@@ -616,6 +616,14 @@ public static partial class ErpOpenApiContract
                 operation, ParameterLocation.Query, "expectedProductVersion", 1, 128);
         }
 
+        if (string.Equals(
+                operation.OperationId,
+                GoymenERP.Modules.Inventory.Application.InventoryParentRollApiV1.GetCandidatesOperationId,
+                StringComparison.Ordinal))
+        {
+            AddInventoryParentRollCandidateParameters(operation);
+        }
+
 
         foreach (var metadata in endpointMetadata
                      .OfType<NonEmptyGuidPathParameterMetadata>())
@@ -938,6 +946,27 @@ public static partial class ErpOpenApiContract
             querySchema,
             CanonicalizationExtensionName,
             JsonValue.Create("unicode-trim+nfc")!);
+    }
+
+    private static void AddInventoryParentRollCandidateParameters(OpenApiOperation operation)
+    {
+        AddQueryParameter(
+            operation,
+            "q",
+            new OpenApiSchema { Type = JsonSchemaType.String },
+            "Optional label-code search; trimmed by the Inventory owner, at most 64 characters.");
+        SetCanonicalStringParameter(operation, ParameterLocation.Query, "q", maximumLength: 64);
+        AddQueryParameter(
+            operation,
+            "limit",
+            new OpenApiSchema
+            {
+                Type = JsonSchemaType.Integer,
+                Format = "int32",
+                Minimum = "1",
+                Maximum = "100",
+            },
+            "Maximum candidate rows; default 25, range 1..100.");
     }
 
     private static OpenApiSchema StringChoiceSchema(string pattern)
