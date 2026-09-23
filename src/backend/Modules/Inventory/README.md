@@ -22,6 +22,9 @@ loading holds are not deducted. `ProductionUseRequiresRevalidation` is always tr
 a type discriminator. Blocked/pending-document own-company stock can be a draft reference without being
 released for consumption. Other-owner stock remains visible with `DraftSelectable=false` and context-required;
 no stock means no invented owner/location and a nonselectable no-physical-position result.
+Existing INV-1 `StockLedger.FromStoredBalances` validates the stored state: a label's nonzero buckets
+share one physical place (owner/custodian/location/product), while Free/Blocked buckets remain separate.
+A corrupt multi-place label is unavailable; this does not redefine or collapse legitimate positions.
 
 Both existing company-wide `inventory.labels.read` and `inventory.balances.read` are freshly measured before
 and after the awaited owner read, together with actor/company/membership fences. SQL retains tenant filters

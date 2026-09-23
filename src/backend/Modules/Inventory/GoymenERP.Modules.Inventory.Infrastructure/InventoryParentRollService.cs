@@ -2,6 +2,7 @@ using System.Globalization;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.Modules.Inventory.Domain;
 using GoymenERP.Modules.Inventory.Domain.Balances;
 using GoymenERP.Modules.Inventory.Domain.Labels;
 using GoymenERP.Modules.Inventory.Domain.Lots;
@@ -62,9 +63,11 @@ internal sealed class InventoryParentRollService(ICompanyContext company, ICurre
             || record.Lot.Id != label.LotId || record.Lot.ProductId != label.ProductId
             || record.Balances.Any(b => b.Position.CompanyId != companyId || b.Position.LabelId != label.Id
                 || b.Position.ProductId != label.ProductId)) throw Error(503, InventoryParentRollCodesV1.Unavailable);
+        // Reuse INV-1's existing stored-state invariant; never silently reinterpret a corrupt label
+        // spanning physical places. Multiple Free/Blocked buckets at its actual place remain intact.
+        try { _ = StockLedger.FromStoredBalances(record.Balances); }
+        catch (InventoryRuleException) { throw Error(503, InventoryParentRollCodesV1.Unavailable); }
         var balances = InventoryReadModelsV1.Balances(label.Id, record.Balances);
-        if (balances.Positions.Select(p => (p.OwnerKind, p.OwnerId, p.CustodianKind, p.CustodianId, p.LocationId))
-            .Distinct().Take(2).Count() > 1) throw Error(503, InventoryParentRollCodesV1.Unavailable);
         var refusal = balances.Positions.Count == 0 ? InventoryParentRollCodesV1.NoPhysicalPosition
             : balances.Positions.Any(p => p.OwnerKind != nameof(StockPartyKind.Company) || p.OwnerId != companyId)
                 ? InventoryParentRollCodesV1.ContextRequired : null;

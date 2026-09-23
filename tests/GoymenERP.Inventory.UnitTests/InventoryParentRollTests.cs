@@ -15,6 +15,40 @@ public sealed class InventoryParentRollTests
     private static readonly Guid Company = Guid.Parse("10000000-0000-0000-0000-000000000001");
 
     [Theory]
+    [InlineData("owner")]
+    [InlineData("custodian")]
+    [InlineData("location")]
+    public async Task Existing_ledger_invariant_refuses_one_label_spread_across_physical_places(string change)
+    {
+        var world = new World();
+        var record = world.Reader.Record!;
+        var first = Assert.Single(record.Balances);
+        var position = first.Position;
+        var other = new StockPosition(Company,
+            change == "owner" ? new(StockPartyKind.Counterparty, Guid.NewGuid()) : position.Owner,
+            change == "custodian" ? new(StockPartyKind.Counterparty, Guid.NewGuid()) : position.Custodian,
+            change == "location" ? Guid.NewGuid() : position.LocationId, record.Label, BlockState.Blocked);
+        world.Reader.Record = record with { Balances = [first, new(other, Kilograms.Positive(2))] };
+        await Refused(world.Service().SearchAsync(new()), 503, InventoryParentRollCodesV1.Unavailable);
+    }
+
+    [Fact]
+    public async Task Multiple_block_buckets_at_the_same_physical_place_remain_lossless()
+    {
+        var world = new World();
+        var record = world.Reader.Record!;
+        var first = Assert.Single(record.Balances);
+        world.Reader.Record = record with
+        {
+            Balances = [first, new(first.Position.WithBlock(BlockState.Blocked), Kilograms.Positive(2.001m))],
+        };
+        var item = Assert.Single((await world.Service().SearchAsync(new())).Items);
+        Assert.Equal(2, item.Positions.Count);
+        Assert.Equal(("12.126", "10.125", "2.001"), (item.PhysicalKg, item.UnblockedPhysicalKg, item.BlockedPhysicalKg));
+        Assert.True(item.DraftSelectable);
+    }
+
+    [Theory]
     [InlineData(false, false)]
     [InlineData(true, false)]
     [InlineData(false, true)]
