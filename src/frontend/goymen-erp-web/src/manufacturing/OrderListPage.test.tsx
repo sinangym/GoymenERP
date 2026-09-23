@@ -100,6 +100,22 @@ describe('order list', () => {
     expect(screen.queryByRole('link', { name: new RegExp(ORDER.slice(-8)) })).toBeNull()
   })
 
+  it('shows exactly one in-list create action only for the plan-create capability', async () => {
+    stub({ capabilities: [...LIST_CAPABILITIES, MANUFACTURING_CAPABILITY.planCreate] })
+    renderAt(PATH)
+    await screen.findByRole('row', { name: new RegExp(ORDER.slice(-8)) })
+    const actions = screen.getAllByRole('link', { name: 'Yeni üretim planı' })
+    expect(actions).toHaveLength(1)
+    expect(actions[0].getAttribute('href')).toBe('/uretim/plan/yeni')
+  })
+
+  it('draws no create action when the plan-create capability is absent', async () => {
+    stub()
+    renderAt(PATH)
+    await screen.findByRole('row', { name: new RegExp(ORDER.slice(-8)) })
+    expect(screen.queryByRole('link', { name: 'Yeni üretim planı' })).toBeNull()
+  })
+
   it('sends the server’s own cursor back unchanged and appends the next page once', async () => {
     const user = userEvent.setup()
     const { recorded } = stub({

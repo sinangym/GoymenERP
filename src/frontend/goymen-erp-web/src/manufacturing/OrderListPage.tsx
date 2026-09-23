@@ -20,7 +20,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router'
 import { fetchOrders } from './api'
 import type { OrderStatus, OrderSummary } from './contract'
-import { MANUFACTURING_CAPABILITY, orderDetailPath } from './capabilities'
+import { MANUFACTURING_CAPABILITY, orderDetailPath, planCreatePath } from './capabilities'
 import { ORDER_LIST_TEXT, ORDER_STATUS_LABEL, TARGET_BASIS_LABEL } from './manufacturingText'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { useShellState } from '../shell/shellContext'
@@ -58,6 +58,7 @@ function OrderList({ namespace }: { readonly namespace: string | null }) {
   const companyId = shell.activeContext?.companyId ?? null
   const singleCompanyContext = (shell.activeContext?.scopeMode ?? 'single') === 'single' && companyId !== null
   const canOpen = hasCapability(shell, MANUFACTURING_CAPABILITY.orderDetail)
+  const canCreatePlan = hasCapability(shell, MANUFACTURING_CAPABILITY.planCreate)
   const [statusFilter, setStatusFilter] = useState<OrderStatus | null>(null)
   const [more, setMore] = useState<readonly OrderSummary[]>([])
   const [cursor, setCursor] = useState<string | null | undefined>(undefined)
@@ -114,27 +115,34 @@ function OrderList({ namespace }: { readonly namespace: string | null }) {
       <h1 id="mfg-order-list-heading" className={styles.title}>
         {ORDER_LIST_TEXT.heading}
       </h1>
-      <label className={styles.filter} htmlFor="mfg-status-filter">
-        {ORDER_LIST_TEXT.filter}
-        <select
-          id="mfg-status-filter"
-          value={statusFilter ?? ''}
-          onChange={(event) => {
-            const value = event.target.value
-            setMore([])
-            setCursor(undefined)
-            setContinuation('idle')
-            setStatusFilter(value === '' ? null : (value as OrderStatus))
-          }}
-        >
-          <option value="">{ORDER_LIST_TEXT.filterAll}</option>
-          {ORDER_STATUSES.map((status) => (
-            <option key={status} value={status}>
-              {ORDER_STATUS_LABEL[status]}
-            </option>
-          ))}
-        </select>
-      </label>
+      <div className={styles.headerActions}>
+        <label className={styles.filter} htmlFor="mfg-status-filter">
+          {ORDER_LIST_TEXT.filter}
+          <select
+            id="mfg-status-filter"
+            value={statusFilter ?? ''}
+            onChange={(event) => {
+              const value = event.target.value
+              setMore([])
+              setCursor(undefined)
+              setContinuation('idle')
+              setStatusFilter(value === '' ? null : (value as OrderStatus))
+            }}
+          >
+            <option value="">{ORDER_LIST_TEXT.filterAll}</option>
+            {ORDER_STATUSES.map((status) => (
+              <option key={status} value={status}>
+                {ORDER_STATUS_LABEL[status]}
+              </option>
+            ))}
+          </select>
+        </label>
+        {canCreatePlan ? (
+          <Link className={styles.primaryLink} to={planCreatePath()}>
+            Yeni üretim planı
+          </Link>
+        ) : null}
+      </div>
     </header>
   )
 
