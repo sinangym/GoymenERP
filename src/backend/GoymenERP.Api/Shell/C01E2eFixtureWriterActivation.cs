@@ -62,12 +62,15 @@ internal static class C01E2eFixtureWriterActivation
         services.AddProductTechnicalCardFixtureStore();
         services.AddScoped<C01E2eProductTechnicalCardFixtureWriter>();
         // s04 E1: Product's fixed Active+Sellable candidate, after the technical registry prerequisite.
-        services.AddProductSalesCandidateFixtureStore(CreateS04ProductFixtureUnitProfiles);
+        services.AddProductSalesCandidateFixtureStore(CreateProductFixtureUnitProfiles);
         services.AddScoped<C01E2eProductSalesCandidateFixtureWriter>();
         // pur01 P-04: Product's separate fixed Active+Purchasable candidate. It shares only the
         // approved Settings adapter and complete runner gate; the s04 record is never upgraded.
-        services.AddProductPurchaseCandidateFixtureStore(CreateS04ProductFixtureUnitProfiles);
+        services.AddProductPurchaseCandidateFixtureStore(CreateProductFixtureUnitProfiles);
         services.AddScoped<C01E2eProductPurchaseCandidateFixtureWriter>();
+        // r14: Product's fixed Active stock candidate. It is not made Sellable or Purchasable.
+        services.AddProductStockCandidateFixtureStore(CreateProductFixtureUnitProfiles);
+        services.AddScoped<C01E2eProductStockCandidateFixtureWriter>();
         // s04 (SALES-A1 browser acceptance): Sales's draft port (SİPARİŞ's), behind the same gate.
         services.AddSalesDraftFixtureStore();
         services.AddScoped<C01E2eSalesDraftFixtureWriter>();
@@ -83,7 +86,7 @@ internal static class C01E2eFixtureWriterActivation
         return true;
     }
 
-    private static ProductUnitProfileAdapter CreateS04ProductFixtureUnitProfiles(IServiceProvider provider)
+    private static ProductUnitProfileAdapter CreateProductFixtureUnitProfiles(IServiceProvider provider)
     {
         var issuer = provider.GetRequiredService<ProductRuntimeOptions>().Issuer
             ?? throw new InvalidOperationException("The s04 Product fixture requires the bound disposable Product issuer.");
@@ -294,6 +297,27 @@ public sealed class C01E2eProductPurchaseCandidateFixtureWriter
     }
 
     public Task<ProductPurchaseCandidateFixtureOutput> EnsureAsync(CancellationToken cancellationToken) =>
+        _store.EnsureAsync(cancellationToken);
+}
+
+/// <summary>
+/// Exposes Product's fixed r14 stock candidate only inside the complete browser-runner gate. The
+/// Product-owned port accepts no caller-selected identity, product, role or business value.
+/// </summary>
+public sealed class C01E2eProductStockCandidateFixtureWriter
+{
+    private readonly IProductStockCandidateFixtureStore _store;
+
+    public C01E2eProductStockCandidateFixtureWriter(
+        IHostEnvironment environment,
+        IConfiguration configuration,
+        IProductStockCandidateFixtureStore store)
+    {
+        C01E2eFixtureWriterActivation.RequireGate(environment, configuration);
+        _store = store;
+    }
+
+    public Task<ProductStockCandidateFixtureOutput> EnsureAsync(CancellationToken cancellationToken) =>
         _store.EnsureAsync(cancellationToken);
 }
 

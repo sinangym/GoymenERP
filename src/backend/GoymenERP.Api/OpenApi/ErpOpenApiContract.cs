@@ -624,6 +624,16 @@ public static partial class ErpOpenApiContract
             AddInventoryParentRollCandidateParameters(operation);
         }
 
+        if (string.Equals(operation.OperationId, "GetInventoryProductCandidatesV1", StringComparison.Ordinal))
+        {
+            AddInventoryProductCandidateParameters(operation);
+        }
+
+        if (string.Equals(operation.OperationId, "GetInventoryLocationCandidatesV1", StringComparison.Ordinal))
+        {
+            AddInventoryLocationCandidateParameters(operation);
+        }
+
 
         foreach (var metadata in endpointMetadata
                      .OfType<NonEmptyGuidPathParameterMetadata>())
@@ -969,6 +979,34 @@ public static partial class ErpOpenApiContract
             "Maximum candidate rows; default 25, range 1..100.");
     }
 
+    private static void AddInventoryProductCandidateParameters(OpenApiOperation operation)
+    {
+        AddQueryParameter(operation, "q", new OpenApiSchema { Type = JsonSchemaType.String },
+            "Optional Product code or name search.");
+        AddQueryParameter(operation, "effectiveOn",
+            new OpenApiSchema { Type = JsonSchemaType.String, Format = "date" },
+            "Required effective date in yyyy-MM-dd form.", required: true);
+        AddBoundedCandidateLimit(operation);
+    }
+
+    private static void AddInventoryLocationCandidateParameters(OpenApiOperation operation)
+    {
+        AddQueryParameter(operation, "q", new OpenApiSchema { Type = JsonSchemaType.String },
+            "Optional active location, site code or name search.");
+        AddBoundedCandidateLimit(operation);
+    }
+
+    private static void AddBoundedCandidateLimit(OpenApiOperation operation) =>
+        AddQueryParameter(operation, "limit",
+            new OpenApiSchema
+            {
+                Type = JsonSchemaType.Integer,
+                Format = "int32",
+                Minimum = "1",
+                Maximum = "100",
+            },
+            "Maximum candidate rows; default 25, range 1..100.");
+
     private static OpenApiSchema StringChoiceSchema(string pattern)
     {
         return new OpenApiSchema
@@ -983,7 +1021,8 @@ public static partial class ErpOpenApiContract
         string name,
         OpenApiSchema schema,
         string description,
-        bool explode = false)
+        bool explode = false,
+        bool required = false)
     {
         operation.Parameters ??= [];
         if (operation.Parameters.Any(parameter =>
@@ -998,7 +1037,7 @@ public static partial class ErpOpenApiContract
         {
             Name = name,
             In = ParameterLocation.Query,
-            Required = false,
+            Required = required,
             Description = description,
             Schema = schema,
             Style = ParameterStyle.Form,

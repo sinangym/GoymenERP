@@ -80,6 +80,15 @@ class FixtureListTests(unittest.TestCase):
             }),
             browser.SUITE_FIXTURE_OUTPUTS["pur01"])
 
+    def test_r14_exports_the_recorder_fence_location_and_product_tuple(self):
+        self.assertEqual(
+            frozenset({
+                "recorderActor", "deniedActor", "arrangerActor", "companyId", "otherCompanyId",
+                "locationId", "productId", "productVersion", "productUnitId",
+                "productUnitProfileId", "productUnitProfileVersion", "productCode", "productName",
+            }),
+            browser.SUITE_FIXTURE_OUTPUTS["r14"])
+
     def test_a_read_only_suite_cannot_have_a_fixture(self):
         with mock.patch.dict(browser.SUITE_FIXTURE_OUTPUTS, {"c03": frozenset({"partyId"})}):
             with self.assertRaisesRegex(browser.ContractError, "read-only suite c03"):
@@ -94,6 +103,11 @@ class FixtureListTests(unittest.TestCase):
 
 
 class SeedSourceTests(unittest.TestCase):
+    def test_r14_browser_environment_uses_the_canonical_disposable_database_shape(self):
+        source = (ROOT / "tests/e2e/inventory-r14/src/env.ts").read_text(encoding="utf-8")
+        self.assertIn("/^GoymenErpC01_[0-9]+_[0-9]+$/", source)
+        self.assertNotIn("GoymenERP_C01_E2E_", source)
+
     def test_owner_seeds_use_no_sql(self):
         self.assertTrue(seed_sources(), "the shared seeds are scanned too")
         for path in seed_sources():
@@ -237,6 +251,25 @@ class SeedExportTests(unittest.TestCase):
             ):
                 with self.subTest(key=key, value=value), self.assertRaises(browser.ContractError):
                     browser.seed_export("pur01", {**good, key: value})
+
+    def test_r14_accepts_only_its_exact_product_scalars(self):
+        keys = frozenset({"productVersion", "productUnitProfileVersion", "productCode", "productName"})
+        good = {
+            "productVersion": "2",
+            "productUnitProfileVersion": "1",
+            "productCode": "SYNR14-1",
+            "productName": "SENTETIK browser-suite:r14 stock candidate",
+        }
+        with mock.patch.dict(browser.SUITE_FIXTURE_OUTPUTS, {"r14": keys}):
+            self.assertIn('"productCode":"SYNR14-1"', browser.seed_export("r14", good))
+            for key, value in (
+                ("productVersion", "02"),
+                ("productUnitProfileVersion", "0"),
+                ("productCode", "SYNR14-0"),
+                ("productName", "SENTETIK browser-suite:r14 stock candidate "),
+            ):
+                with self.subTest(key=key, value=value), self.assertRaises(browser.ContractError):
+                    browser.seed_export("r14", {**good, key: value})
 
     def test_a_suite_without_a_fixture_exports_nothing(self):
         with self.assertRaisesRegex(browser.ContractError, "has no fixture"):

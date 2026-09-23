@@ -192,6 +192,8 @@ export const CAPABILITY = {
   accountingJournalsDetail: 'accounting.journals.detail',
   /** M-01 Muhasebe Kontrol Merkezi — the posting queues, read-only. Route `/muhasebe/kontrol`. */
   accountingPostingQueues: 'accounting.posting-queues',
+  /** INV-OPEN-2 opening-stock workspace. Home, create and detail share this existing permission. */
+  inventoryOpeningStockRecord: 'inventory.opening-stock.record',
   /** L-02 loading-instruction list. Route `/lojistik/yukleme-talimatlari`, owner the Sales/Logistics lane (SİPARİŞ). */
   logisticsInstructionsList: 'logistics.instructions.list',
   /** L-03 new loading instruction. Route `/lojistik/yukleme-talimatlari/yeni`. A SEPARATE grant from reading. */
@@ -265,6 +267,7 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.accountingJournalsList]: '/muhasebe/fisler',
   [CAPABILITY.accountingJournalsDetail]: '/muhasebe/fisler/:journalId',
   [CAPABILITY.accountingPostingQueues]: '/muhasebe/kontrol',
+  [CAPABILITY.inventoryOpeningStockRecord]: '/stok/acilis',
   [CAPABILITY.logisticsInstructionsList]: '/lojistik/yukleme-talimatlari',
   // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as an instruction id.
   [CAPABILITY.logisticsInstructionsCreate]: '/lojistik/yukleme-talimatlari/yeni',
@@ -332,6 +335,7 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   [CAPABILITY.accountingPeriodsList]: 'Muhasebe Dönemleri',
   [CAPABILITY.accountingJournalsList]: 'Muhasebe Fişleri',
   [CAPABILITY.accountingPostingQueues]: 'Muhasebe Kontrol',
+  [CAPABILITY.inventoryOpeningStockRecord]: 'Stok Açılışı',
   // Not these two: a period is proposed from the M-07 list and a journal opened from a row.
   [CAPABILITY.accountingPeriodsPropose]: '',
   [CAPABILITY.accountingJournalsDetail]: '',
