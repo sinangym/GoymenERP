@@ -51,7 +51,7 @@ Result: Items[{ProductId,ProductVersion,Code,Name,UnitId,UnitCode,ProfileId,Prof
 Example shape (synthetic only):
 
 ```json
-{"items":[{"productId":"b6300000-0000-4000-8000-000000000401","productVersion":"2","code":"SYNS04-1","name":"SENTETIK purchase","unitId":"<actual Settings UUID>","unitCode":"kg","profileId":"4a790fdc-2a6b-5126-835f-d3a13d28b71c","profileVersion":"1"}],"searchWindowFull":false}
+{"items":[{"productId":"b6300000-0000-4000-8000-000000000401","productVersion":"2","code":"SYNS04-1","name":"SENTETIK purchase","unitId":"c5ef643e-a6e8-51f3-89f2-8e68b00cb983","unitCode":"kg","profileId":"4a790fdc-2a6b-5126-835f-d3a13d28b71c","profileVersion":"1"}],"searchWindowFull":false}
 ```
 
 Limit bounds examined active+purchasable SQL rows, not promised eligible item count. Stable Product
