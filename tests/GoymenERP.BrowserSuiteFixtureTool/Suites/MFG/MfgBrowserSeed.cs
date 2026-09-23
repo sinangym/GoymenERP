@@ -106,7 +106,7 @@ public sealed class MfgBrowserSeed : IBrowserSuiteFixture
             },
             "opening-count",
             cancellationToken);
-        var openedLine = opening.GetProperty("count").GetProperty("lines")[0];
+        var openedLine = opening.GetProperty("lines")[0];
         if (openedLine.GetProperty("labelId").GetGuid() != ParentRollId
             || openedLine.GetProperty("labelCode").GetString() != ParentRollCode
             || openedLine.GetProperty("productId").GetGuid() != product.ProductId
