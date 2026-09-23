@@ -36,6 +36,7 @@ using GoymenERP.Modules.Manufacturing.Infrastructure.Shell;
 using GoymenERP.Modules.Organization.Infrastructure;
 using GoymenERP.Modules.Identity.Infrastructure;
 using GoymenERP.Modules.Product.Application.Contracts;
+using GoymenERP.Modules.Product.Infrastructure.Persistence;
 using GoymenERP.Modules.Sales.Application;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Sales.Infrastructure;
@@ -186,6 +187,7 @@ builder.Services.AddIdentityModule(
     enableAuthorizationSnapshotDatabaseReadiness:
         databaseStartupMode == DatabaseStartupMode.Initialize);
 builder.Services.AddProductRuntime(builder.Configuration, builder.Environment);
+builder.Services.AddProductPurchaseSelection(p => p.GetRequiredService<ProductRuntimeOptions>().IsEnabled);
 builder.Services.AddCounterpartyModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(
@@ -221,6 +223,7 @@ builder.Services.AddLogisticsModule(
 // Supplier role flag). No purchase-eligibility port is registered: Product has not published one (ÜRÜN #288 P3-3),
 // so the service answers 503 product_eligibility_unavailable fail-closed until the owner registers it.
 builder.Services.AddScoped<IPurchasingPartyAccountPortV1, CounterpartyPurchasingPartyAccountPortV1>();
+builder.Services.AddScoped<IProductPurchaseEligibilityPortV1, ProductPurchaseEligibilityPort>();
 builder.Services.AddPurchasingModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(
@@ -296,6 +299,7 @@ app.MapInventoryEndpoints();
 app.MapManufacturingEndpoints();
 app.MapLogisticsEndpoints();
 app.MapPurchasingEndpoints();
+app.MapPurchasingProductCandidateEndpoints();
 app.MapAccountingEndpoints();
 app.MapShellEndpoints();
 
