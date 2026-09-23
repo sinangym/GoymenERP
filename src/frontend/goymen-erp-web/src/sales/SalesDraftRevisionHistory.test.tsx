@@ -132,7 +132,11 @@ describe('SalesDraftRevisionHistory in the detail', () => {
   it.each([401, 403])('routes history %s through the real auth boundary and closes the detail', async (status) => {
     installFetch({ onDetail: () => json(detail()), onRevisions: () => json({ status }, status) })
     renderSalesApp(path)
-    expect(await screen.findByText('Bulunamadı — sayfa')).toBeTruthy()
+    if (status === 401) {
+      expect(await screen.findByText('Oturum sonlandı — oturum')).toBeTruthy()
+    } else {
+      expect(await screen.findByText('Bulunamadı — sayfa')).toBeTruthy()
+    }
     expect(screen.queryByTestId('sales-revision-Rev.0')).toBeNull()
     expect(screen.queryByTestId('sales-draft-version')).toBeNull()
   })
