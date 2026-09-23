@@ -115,6 +115,24 @@ public sealed class InventoryDefiniteShipmentContractTests
             InventoryDefiniteShipmentException.Refused(404, InventoryDefiniteShipmentCodesV1.InvalidReference).Code);
     }
 
+    [Fact]
+    public void Every_declared_refusal_code_belongs_to_exactly_one_status()
+    {
+        var declared = typeof(InventoryDefiniteShipmentCodesV1).GetFields()
+            .Where(field => field.IsLiteral && !field.IsInitOnly && field.FieldType == typeof(string))
+            .Select(field => Assert.IsType<string>(field.GetRawConstantValue()))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        var mapped = InventoryDefiniteShipmentCodesV1.Status400Codes
+            .Concat(InventoryDefiniteShipmentCodesV1.Status404Codes)
+            .Concat(InventoryDefiniteShipmentCodesV1.Status409Codes)
+            .Concat(InventoryDefiniteShipmentCodesV1.Status503Codes)
+            .ToArray();
+
+        Assert.Equal(mapped.Length, mapped.Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(declared, mapped.Order(StringComparer.Ordinal));
+    }
+
     private static void Refused(InventoryDefiniteShipmentRequestV1 request, string code)
     {
         var error = Assert.Throws<InventoryDefiniteShipmentException>(() =>
