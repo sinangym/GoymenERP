@@ -45,7 +45,7 @@ export function readEnvironment(): R14Environment {
   const apiBaseUrl = required('BROWSER_E2E_API_BASE_URL')
   if (new URL(apiBaseUrl).hostname !== '127.0.0.1') throw new Error('R14 API must use loopback')
   const database = required('BROWSER_E2E_DATABASE')
-  if (!/^GoymenERP_C01_E2E_[0-9]+_[0-9]+$/.test(database)) throw new Error('R14 database is not disposable')
+  if (!/^GoymenErpC01_[0-9]+_[0-9]+$/.test(database)) throw new Error('R14 database is not disposable')
   const sqlConnection = required('BROWSER_E2E_SQL_CONNECTION')
   if (!sqlConnection.toLowerCase().includes(`database=${database.toLowerCase()}`)) {
     throw new Error('R14 SQL connection is not bound to the disposable database')

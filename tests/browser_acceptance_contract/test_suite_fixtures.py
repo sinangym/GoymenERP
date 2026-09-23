@@ -103,6 +103,11 @@ class FixtureListTests(unittest.TestCase):
 
 
 class SeedSourceTests(unittest.TestCase):
+    def test_r14_browser_environment_uses_the_canonical_disposable_database_shape(self):
+        source = (ROOT / "tests/e2e/inventory-r14/src/env.ts").read_text(encoding="utf-8")
+        self.assertIn("/^GoymenErpC01_[0-9]+_[0-9]+$/", source)
+        self.assertNotIn("GoymenERP_C01_E2E_", source)
+
     def test_owner_seeds_use_no_sql(self):
         self.assertTrue(seed_sources(), "the shared seeds are scanned too")
         for path in seed_sources():
