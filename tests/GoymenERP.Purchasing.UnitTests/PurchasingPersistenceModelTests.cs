@@ -138,13 +138,29 @@ public sealed class PurchasingPersistenceModelTests
     }
 
     [Fact]
-    public void The_order_screens_and_approval_control_are_published()
+    public void The_request_and_order_screens_and_their_controls_are_published()
     {
         var declarations = new PurchasingShellCapabilityProvider().GetDeclarations();
-        Assert.Equal("1.2", PurchasingShellCapabilityProvider.OwnerContractVersion);
-        Assert.Equal(4, declarations.Count);
+        Assert.Equal("1.3", PurchasingShellCapabilityProvider.OwnerContractVersion);
+        Assert.Equal(8, declarations.Count);
         Assert.All(declarations, declaration => Assert.True(declaration.ImplementationAvailable));
         var byId = declarations.ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
+        Assert.Equal(PurchasingShellCapabilityProvider.RequestListRoutePath,
+            byId[PurchasingShellCapabilityProvider.RequestListCapabilityId].RoutePath);
+        Assert.Equal([PurchasingPermissionManifestV1.OrdersRead],
+            byId[PurchasingShellCapabilityProvider.RequestListCapabilityId].RequiredPermissions);
+        Assert.Equal(PurchasingShellCapabilityProvider.RequestCreateRoutePath,
+            byId[PurchasingShellCapabilityProvider.RequestCreateCapabilityId].RoutePath);
+        Assert.Equal([PurchasingPermissionManifestV1.OrdersCreate],
+            byId[PurchasingShellCapabilityProvider.RequestCreateCapabilityId].RequiredPermissions);
+        Assert.Equal(PurchasingShellCapabilityProvider.RequestDetailRoutePath,
+            byId[PurchasingShellCapabilityProvider.RequestDetailCapabilityId].RoutePath);
+        Assert.Equal([PurchasingPermissionManifestV1.OrdersRead],
+            byId[PurchasingShellCapabilityProvider.RequestDetailCapabilityId].RequiredPermissions);
+        Assert.Equal([PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.OrdersCreate],
+            byId[PurchasingShellCapabilityProvider.RequestSubmitCapabilityId].RequiredPermissions);
+        Assert.Equal(PurchasingShellCapabilityProvider.RequestDetailCapabilityId,
+            byId[PurchasingShellCapabilityProvider.RequestSubmitCapabilityId].ParentCapabilityId);
         Assert.Equal(PurchasingShellCapabilityProvider.CreateRoutePath, byId[PurchasingShellCapabilityProvider.CreateCapabilityId].RoutePath);
         Assert.Equal([PurchasingPermissionManifestV1.OrdersCreate], byId[PurchasingShellCapabilityProvider.CreateCapabilityId].RequiredPermissions);
         Assert.Equal(PurchasingShellCapabilityProvider.DetailRoutePath, byId[PurchasingShellCapabilityProvider.ApproveCapabilityId].RoutePath);
@@ -166,6 +182,14 @@ public sealed class PurchasingPersistenceModelTests
         Assert.Equal(PurchasingShellCapabilityProvider.CreateScreenId, byId[PurchasingShellCapabilityProvider.CreateCapabilityId].ScreenId);
         Assert.Equal(PurchasingShellCapabilityProvider.DetailScreenId, byId[PurchasingShellCapabilityProvider.DetailCapabilityId].ScreenId);
         Assert.Equal(PurchasingShellCapabilityProvider.DetailScreenId, byId[PurchasingShellCapabilityProvider.ApproveCapabilityId].ScreenId);
+        Assert.Equal(PurchasingShellCapabilityProvider.RequestListScreenId,
+            byId[PurchasingShellCapabilityProvider.RequestListCapabilityId].ScreenId);
+        Assert.Equal(PurchasingShellCapabilityProvider.RequestCreateScreenId,
+            byId[PurchasingShellCapabilityProvider.RequestCreateCapabilityId].ScreenId);
+        Assert.Equal(PurchasingShellCapabilityProvider.RequestDetailScreenId,
+            byId[PurchasingShellCapabilityProvider.RequestDetailCapabilityId].ScreenId);
+        Assert.Equal(PurchasingShellCapabilityProvider.RequestDetailScreenId,
+            byId[PurchasingShellCapabilityProvider.RequestSubmitCapabilityId].ScreenId);
     }
 
     private static PurchaseOrderRow Order(Guid company) => new PurchaseOrderRow
