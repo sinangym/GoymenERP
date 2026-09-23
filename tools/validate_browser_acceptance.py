@@ -138,8 +138,9 @@ SUITE_API_EXTENSIONS = {
     "acc01": {"issuer": False, "actors": True, "identity": True},
     # L-04 (SİPARİŞ): a preparer, a loader and a reader actor plus the two Sales seed actors, with their grants.
     "l04": {"issuer": False, "actors": True, "identity": True},
-    # PUR-01 (SATINALMA): an approver and a read-only actor with disposable Identity users and grants.
-    "pur01": {"issuer": False, "actors": True, "identity": True},
+    # PUR-01 (SATINALMA): the existing Product issuer plus creator, approver and read-only actors with
+    # disposable Identity users and grants. The issuer itself has no actor, role, assignment or grant.
+    "pur01": {"issuer": True, "actors": True, "identity": True},
     # CARI-NORMAL: two actors holding the SAME two names in DIFFERENT companies, with their Identity
     # users and grants — the difference is the company, because that is the fence being measured.
     "c02": {"issuer": False, "actors": True, "identity": True},

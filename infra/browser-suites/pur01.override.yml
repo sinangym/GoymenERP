@@ -1,11 +1,15 @@
 # PUR-01 Purchasing order acceptance. Three disposable actors are appended to the canonical development
 # identities and exist only in the per-run SQL database. The creator can create/read and carries the two
 # owner-read permissions the real Purchasing command already requires; the approver can read/approve and
-# the reader can only read. Every assignment is company-wide in GDC. No production role, permission or
-# user is changed.
+# the reader can only read. The existing Product runtime's synthetic issuer binding enables its owned
+# migrations before the gated fixture runs; its Identity user is not a Bootstrap actor and has no role,
+# assignment or permission. Every actor assignment is company-wide in GDC. No production role,
+# permission or user is changed.
 services:
   api:
     environment:
+      ProductRuntime__IssuerLocalUserId: b2000000-0000-4000-8000-000000000201
+      ProductRuntime__IssuerExternalIdentityId: b2100000-0000-4000-8000-000000000201
       BootstrapIdentity__Users__2__UserId: pur01-approver
       BootstrapIdentity__Users__2__DisplayName: SENTETIK browser-suite:pur01 Purchasing approver
       BootstrapIdentity__Users__3__UserId: pur01-reader
@@ -27,6 +31,11 @@ services:
       IdentitySeed__Users__7__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000603
       IdentitySeed__Users__7__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
       IdentitySeed__Users__7__ExternalIdentities__0__Subject: pur01-creator
+      IdentitySeed__Users__8__Id: b2000000-0000-4000-8000-000000000201
+      IdentitySeed__Users__8__DisplayName: SENTETIK browser-suite:pur01 Product issuer
+      IdentitySeed__Users__8__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000201
+      IdentitySeed__Users__8__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
+      IdentitySeed__Users__8__ExternalIdentities__0__Subject: pur01-issuer
       IdentitySeed__Roles__5__Id: b3000000-0000-4000-8000-000000000601
       IdentitySeed__Roles__5__Code: BROWSER_PUR01_APPROVER
       IdentitySeed__Roles__5__Name: SENTETIK browser-suite:pur01 Purchasing approver

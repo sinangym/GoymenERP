@@ -487,6 +487,25 @@ class IssuerUserRuleTests(unittest.TestCase):
                 self.assertTrue(environment)
                 self._validate(environment, suite)
 
+    def test_pur01_binds_the_existing_product_issuer_as_one_ungranted_non_actor(self):
+        path = ROOT / browser.SUITE_OVERRIDE_DIRECTORY / "pur01.override.yml"
+        environment = {}
+        for line in path.read_text(encoding="utf-8").splitlines():
+            match = re.fullmatch(r"      ([A-Za-z0-9_]+): (.+)", line)
+            if match:
+                environment[match.group(1)] = match.group(2).strip('"')
+
+        user = "IdentitySeed__Users__8__"
+        self.assertEqual(self.LOCAL, environment["ProductRuntime__IssuerLocalUserId"])
+        self.assertEqual(self.EXTERNAL, environment["ProductRuntime__IssuerExternalIdentityId"])
+        self.assertEqual(self.LOCAL, environment[user + "Id"])
+        self.assertEqual(self.EXTERNAL, environment[user + "ExternalIdentities__0__Id"])
+        self.assertEqual("pur01-issuer", environment[user + "ExternalIdentities__0__Subject"])
+        self.assertFalse(any(key.startswith("IdentitySeed__Roles__8__") for key in environment))
+        self.assertFalse(any(value == self.LOCAL for key, value in environment.items()
+                             if key.startswith("IdentitySeed__Assignments__")))
+        self._validate(environment, suite="pur01")
+
     def test_every_rule_refuses_its_violation(self):
         user = "IdentitySeed__Users__5__"
         cases = {
