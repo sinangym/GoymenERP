@@ -45,6 +45,7 @@ import {
   type AttemptState,
 } from './instructionAttempt'
 import { createNotice } from './instructionAttemptNotice'
+import { recallInstructionAttempt, rememberInstructionAttempt } from './pendingInstructionAttempts'
 import { LOGISTICS_CAPABILITY, LOGISTICS_ROUTE, instructionDetailRoute } from './capabilities'
 import { INSTRUCTION_CREATE_TEXT as T, problemCodeText } from './logisticsText'
 import { formatBusinessDate, todayDateOnly } from './format'
@@ -84,6 +85,26 @@ interface PickedLine {
   readonly sourceOrderLineId: string
   readonly unitId: string
   readonly quantityText: string
+}
+
+interface CreateFormSnapshot {
+  readonly effectiveOn: string
+  readonly customerKey: string
+  readonly picked: readonly PickedLine[]
+}
+
+function createFormSnapshot(payload: CreateInstructionRequest): CreateFormSnapshot {
+  return {
+    effectiveOn: payload.effectiveOn,
+    customerKey: `${payload.customerPartyId}|${payload.companyAccountId}`,
+    picked: payload.lines.map((line) => ({
+      lineId: line.lineId,
+      sourceOrderId: line.sourceOrderId,
+      sourceOrderLineId: line.sourceOrderLineId,
+      unitId: line.unitId,
+      quantityText: line.quantity,
+    })),
+  }
 }
 
 interface CustomerOption {
@@ -147,10 +168,11 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
   const directory = useCompanyDirectory()
   const company = directory.find((entry) => entry.id === companyId)
 
-  const [effectiveOn, setEffectiveOn] = useState(() => todayDateOnly())
-  const [customerKey, setCustomerKey] = useState('')
-  const [picked, setPicked] = useState<readonly PickedLine[]>([])
-  const [attempt, setAttempt] = useState<CreateAttempt>({ phase: 'idle' })
+  const [initial] = useState(() => recallInstructionAttempt<CreateInstructionRequest, CreateFormSnapshot>(binding))
+  const [effectiveOn, setEffectiveOn] = useState(() => initial?.values.effectiveOn ?? todayDateOnly())
+  const [customerKey, setCustomerKey] = useState(() => initial?.values.customerKey ?? '')
+  const [picked, setPicked] = useState<readonly PickedLine[]>(() => initial?.values.picked ?? [])
+  const [attempt, setAttempt] = useState<CreateAttempt>(() => initial?.attempt ?? { phase: 'idle' })
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [serverMessages, setServerMessages] = useState<readonly string[]>([])
   const [blockedChange, setBlockedChange] = useState(false)
@@ -232,11 +254,14 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
       const inFlight: CreateAttempt = beginSend<CreateInstructionRequest, InstructionMutation>(snapshot)
       attemptRef.current = inFlight
       setAttempt(inFlight)
+      const submitted = createFormSnapshot(snapshot.payload)
+      rememberInstructionAttempt(snapshot.binding, inFlight, submitted)
       setServerMessages([])
       const security = boundary.capture()
       // Company and key travel FROM THE SNAPSHOT, never from the shell's current state.
       const outcome = await createInstruction(snapshot.payload, { idempotencyKey: snapshot.key, companyId: snapshot.companyId })
       const next = applyOutcome(inFlight, snapshot, snapshot.binding, outcome, previous)
+      rememberInstructionAttempt(snapshot.binding, next, submitted)
       if (outcome.type === 'http') boundary.report(outcome.status, security)
       // Departed: another company, actor or session, or no screen at all. Nothing is painted or navigated.
       if (!mountedRef.current || currentBindingRef.current !== snapshot.binding) return
@@ -321,6 +346,7 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
     attemptRef.current = next
     setBlockedChange(false)
     setAttempt(next)
+    if (next.phase !== 'idle') rememberInstructionAttempt(next.snapshot.binding, next, createFormSnapshot(next.snapshot.payload))
   }
 
   function togglePick(source: ApprovedOrderLine, on: boolean) {

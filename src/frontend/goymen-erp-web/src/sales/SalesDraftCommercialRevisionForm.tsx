@@ -16,6 +16,7 @@ import {
 } from './orderAttempt'
 import { SALES_PRICE_WRITE_CAPABILITY } from './capabilities'
 import { ORDER_DETAIL_TEXT as T, problemCodeText } from './salesText'
+import { recallCommercialRevisionAttempt, rememberCommercialRevisionAttempt } from './pendingCommercialRevisions'
 import { hasCapability, type ShellState } from '../shell/shellState'
 import styles from './SalesPages.module.css'
 
@@ -34,8 +35,9 @@ export function SalesDraftCommercialRevisionForm({
   readonly companyId: string
   readonly onRecorded: () => void
 }) {
-  const [rows, setRows] = useState<readonly CommercialRevisionRow[]>(() => commercialRowsFromDetail(detail))
-  const [attempt, setAttempt] = useState<RevisionAttempt>({ phase: 'idle' })
+  const [initial] = useState(() => recallCommercialRevisionAttempt(orderAttemptBinding(shell, scopeOf(detail.draft.id))))
+  const [rows, setRows] = useState<readonly CommercialRevisionRow[]>(() => initial?.rows ?? commercialRowsFromDetail(detail))
+  const [attempt, setAttempt] = useState<RevisionAttempt>(() => initial?.attempt ?? { phase: 'idle' })
   const [localError, setLocalError] = useState<string | null>(null)
   const attemptRef = useRef(attempt)
   attemptRef.current = attempt
@@ -58,11 +60,15 @@ export function SalesDraftCommercialRevisionForm({
     detail.draft.approvalState === APPROVAL_STATE.rejected ||
     detail.draft.approvalState === APPROVAL_STATE.approved
 
-  async function send(snapshot: OrderAttemptSnapshot<DraftCommercialRevisionRequest>) {
+  async function send(
+    snapshot: OrderAttemptSnapshot<DraftCommercialRevisionRequest>,
+    submittedRows: readonly CommercialRevisionRow[],
+  ) {
     const previous = attemptRef.current
     const inFlight = beginSend<DraftCommercialRevisionRequest, DraftMutation>(snapshot)
     attemptRef.current = inFlight
     setAttempt(inFlight)
+    rememberCommercialRevisionAttempt(snapshot.binding, inFlight, submittedRows)
     const outcome = await sendDraftCommercialRevision(snapshot.payload, {
       idempotencyKey: snapshot.key,
       companyId: snapshot.companyId,
@@ -71,6 +77,7 @@ export function SalesDraftCommercialRevisionForm({
     const next = applyOutcome(inFlight, snapshot, orderAttemptBinding(shell, scopeOf(detail.draft.id)), outcome, previous)
     attemptRef.current = next
     setAttempt(next)
+    rememberCommercialRevisionAttempt(snapshot.binding, next, submittedRows)
     if (next.phase === 'completed') {
       setRows(commercialRowsFromDetail(next.result.detail))
       onRecorded()
@@ -93,18 +100,19 @@ export function SalesDraftCommercialRevisionForm({
       { path: `${detail.draft.id}/commercial-revision`, binding, companyId, payload: built.payload },
       generateOrderAttemptKey,
     )
-    if (decision.type === 'send') void send(decision.snapshot)
+    if (decision.type === 'send') void send(decision.snapshot, rows)
   }
 
   function retry() {
     const snapshot = liveSnapshot(attemptRef.current)
-    if (snapshot !== null && attemptRef.current.phase !== 'submitting') void send(snapshot)
+    if (snapshot !== null && attemptRef.current.phase !== 'submitting') void send(snapshot, rows)
   }
 
   function leave() {
     const next = abandon(attemptRef.current)
     attemptRef.current = next
     setAttempt(next)
+    if (next.phase !== 'idle') rememberCommercialRevisionAttempt(next.snapshot.binding, next, rows)
   }
 
   function change(lineId: string, patch: Partial<CommercialRevisionRow>) {

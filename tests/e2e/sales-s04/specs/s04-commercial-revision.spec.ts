@@ -7,6 +7,7 @@ const { apiBaseUrl, seed, testedCommit } = environment
 interface DraftLine {
   readonly lineId: string
   readonly orderUnitId: string
+  readonly quantity: string
   readonly unitPrice: string | null
   readonly priceUnitId: string | null
   readonly discountPercent: string | null
@@ -160,6 +161,24 @@ test('S04-08 one approved record is priced in the form, reopened as Rev.1, and i
   expect(history.items[0].lines).toHaveLength(2)
   expect(history.items[0].lines.every((line) => line.priceDisclosure === 'Visible')).toBe(true)
   expect(history.items[0].lines.every((line) => line.unitPrice === null)).toBe(true)
+
+  // HYBRID-PILOT: the user sees the same archived snapshot after close/reopen,
+  // rather than history being available only through a separate API assertion.
+  const historyPanel = page.getByTestId('sales-revision-history')
+  await expect(historyPanel.getByRole('heading', { name: 'Onaylı ticari revizyon geçmişi' })).toBeVisible()
+  const archived = historyPanel.getByTestId('sales-revision-Rev.0')
+  await expect(archived.getByRole('heading', { name: 'Rev.0', exact: true })).toBeVisible()
+  await expect(archived.locator('dd').filter({ hasText: reviserIdentity! })).toHaveCount(2)
+  await expect(archived.locator('dd').filter({ hasText: approverIdentity! })).toHaveCount(1)
+  const archivedTable = archived.getByRole('table', { name: 'Rev.0 — arşivlenmiş sipariş satırları', exact: true })
+  await expect(archivedTable.locator('tbody tr')).toHaveCount(history.items[0].lines.length)
+  for (const [index, line] of history.items[0].lines.entries()) {
+    const row = archivedTable.locator('tbody tr').nth(index)
+    await expect(row.locator('td').nth(0)).toHaveText(line.lineId)
+    await expect(row.locator('td').nth(4)).toHaveText(line.quantity)
+    await expect(row.locator('td').nth(5)).toHaveText('Fiyat girilmemiş')
+  }
+  await expect(archived.getByRole('button')).toHaveCount(0)
 
   const withdrawalKey = `s04-price-withdraw-${testedCommit.slice(0, 12)}`
   const firstCorrelation = `s04-price-withdraw-first-${testedCommit.slice(0, 12)}`

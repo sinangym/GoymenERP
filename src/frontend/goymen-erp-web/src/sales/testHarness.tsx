@@ -139,6 +139,7 @@ export interface HarnessConfig {
   readonly capabilities?: readonly string[]
   readonly onList?: (url: string, companyId: string | null) => Response | Promise<Response>
   readonly onDetail?: (url: string, companyId: string | null) => Response | Promise<Response>
+  readonly onRevisions?: (url: string, companyId: string | null) => Response | Promise<Response>
   readonly onCreate?: (attempt: number, call: RecordedCall) => Response | Promise<Response>
   /** SALES-A1: a POST on `/sales/drafts/{id}/(submission|approval|rejection)`. */
   readonly onCommand?: (command: string, call: RecordedCall) => Response | Promise<Response>
@@ -179,6 +180,9 @@ export function installFetch(config: HarnessConfig = {}) {
           creates += 1
           if (config.onCreate === undefined) throw new Error('unexpected create')
           return config.onCreate(creates, call)
+        }
+        if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/revisions$/.test(url)) {
+          return config.onRevisions?.(url, call.companyId) ?? json({ items: [] })
         }
         if (/\/sales\/drafts\/[^?]+/.test(url)) {
           if (config.onDetail === undefined) throw new Error('unexpected detail read')
@@ -222,6 +226,7 @@ export function renderSalesApp(
       </SalesReferenceSourceContext.Provider>,
     ),
     router,
+    queryClient,
   }
 }
 

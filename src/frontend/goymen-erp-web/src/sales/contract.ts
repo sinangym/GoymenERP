@@ -27,6 +27,7 @@ export const SALES_CONTRACT_STATUS = 'PINNED_SOURCE' as const
 export const SALES_DRAFT_PATH = '/sales/drafts'
 export const salesDraftDetailPath = (id: string) => `${SALES_DRAFT_PATH}/${encodeURIComponent(id)}`
 export const salesDraftCommercialRevisionPath = (id: string) => `${salesDraftDetailPath(id)}/commercial-revision`
+export const salesDraftRevisionsPath = (id: string) => `${salesDraftDetailPath(id)}/revisions`
 
 /**
  * `SalesDraftApiV1`: a first commit answers 201; the same accepted attempt answers 201 again with
@@ -214,6 +215,39 @@ export interface DraftLine {
 export type PriceDisclosure = 'Visible' | 'Withheld'
 const PRICE_DISCLOSURES: readonly PriceDisclosure[] = ['Visible', 'Withheld']
 const isPriceDisclosure = (v: unknown): v is PriceDisclosure => typeof v === 'string' && (PRICE_DISCLOSURES as readonly string[]).includes(v)
+
+/** The archived wire snapshot has no current product name, delivery plan or mutable fields. */
+export interface DraftRevisionLine {
+  readonly lineId: string
+  readonly lineNo: number
+  readonly productId: string
+  readonly productVersion: string
+  readonly orderUnitId: string
+  readonly quantity: string
+  readonly unitPrice: string | null
+  readonly priceUnitId: string | null
+  readonly discountPercent: string | null
+  readonly priceDisclosure: PriceDisclosure
+}
+
+export interface DraftRevision {
+  readonly revision: string
+  readonly submittedBy: string | null
+  readonly submittedAtUtc: string | null
+  readonly approvedBy: string | null
+  readonly approvedAtUtc: string | null
+  readonly archivedAtUtc: string
+  readonly archivedBy: string
+  readonly moneyProfileId: string
+  readonly moneyProfileVersion: string
+  readonly moneyScale: number
+  readonly lines: readonly DraftRevisionLine[]
+}
+
+export interface DraftRevisions {
+  /** Archived approved snapshots, oldest first; not the current draft. */
+  readonly items: readonly DraftRevision[]
+}
 
 export interface DraftDetail {
   readonly draft: DraftSummary
@@ -593,6 +627,103 @@ export function decodeDraftPage(value: unknown): DraftPage | null {
     items.push(item)
   }
   return { items, nextCursor: o.nextCursor }
+}
+
+/* ── S-04 approved commercial revision history ───────────────────────────── */
+
+const REVISION_KEYS = [
+  'revision', 'submittedBy', 'submittedAtUtc', 'approvedBy', 'approvedAtUtc',
+  'archivedAtUtc', 'archivedBy', 'moneyProfileId', 'moneyProfileVersion', 'moneyScale', 'lines',
+] as const
+const REVISION_LINE_KEYS = [
+  'lineId', 'lineNo', 'productId', 'productVersion', 'orderUnitId', 'quantity',
+  'unitPrice', 'priceUnitId', 'discountPercent', 'priceDisclosure',
+] as const
+
+// Reuse the Sales primitive shapes; additionally reject trailing line terminators
+// ($ in a JavaScript regexp otherwise also matches before a final newline).
+const isRevisionId = (v: unknown): v is string => isReferenceId(v) && v.length === 36
+const isRevisionDecimal = (v: unknown, positive: boolean): v is string =>
+  isDecimal(v, positive) && v.trim() === v
+const isRevisionActor = (v: unknown): v is string => isActor(v) && v.trim().length > 0
+const isRevisionInstant = (v: unknown): v is string =>
+  isInstant(v) && v.trim() === v && isDateOnly(v.slice(0, 10)) &&
+  Number(v.slice(11, 13)) < 24 && Number(v.slice(14, 16)) < 60 && Number(v.slice(17, 19)) < 60
+
+function decodeDraftRevisionLine(value: unknown): DraftRevisionLine | null {
+  const o = exact(value, REVISION_LINE_KEYS)
+  if (
+    o === null || !isRevisionId(o.lineId) || !isPositiveInt(o.lineNo, LIMITS.lines) ||
+    !isRevisionId(o.productId) || !isOwnerVersion(o.productVersion) ||
+    !isRevisionId(o.orderUnitId) || !isRevisionDecimal(o.quantity, true) ||
+    !isNullable(o.unitPrice, (v): v is string => isRevisionDecimal(v, false)) ||
+    !isNullable(o.priceUnitId, isRevisionId) ||
+    (o.unitPrice === null) !== (o.priceUnitId === null) ||
+    !isNullable(o.discountPercent, (v): v is string => isRevisionDecimal(v, false)) ||
+    !isPriceDisclosure(o.priceDisclosure) ||
+    (o.priceDisclosure === 'Withheld' &&
+      (o.unitPrice !== null || o.priceUnitId !== null || o.discountPercent !== null))
+  ) return null
+  return {
+    lineId: o.lineId, lineNo: o.lineNo, productId: o.productId,
+    productVersion: o.productVersion, orderUnitId: o.orderUnitId, quantity: o.quantity,
+    unitPrice: o.unitPrice, priceUnitId: o.priceUnitId,
+    discountPercent: o.discountPercent, priceDisclosure: o.priceDisclosure,
+  }
+}
+
+/**
+ * SalesOrderDraftRevisionsResponse at the reserved source: every member is
+ * required, even when nullable. The server owns disclosure and archival facts;
+ * this decoder neither fills in an approval nor calculates money.
+ */
+export function decodeDraftRevisions(value: unknown): DraftRevisions | null {
+  const response = exact(value, ['items'])
+  if (response === null || !Array.isArray(response.items)) return null
+  const items: DraftRevision[] = []
+  let previousDigits: string | null = null
+  for (const entry of response.items) {
+    const o = exact(entry, REVISION_KEYS)
+    if (
+      o === null || typeof o.revision !== 'string' ||
+      !REVISION_RE.test(o.revision) || o.revision.trim() !== o.revision ||
+      !isNullable(o.submittedBy, isRevisionActor) ||
+      !isNullable(o.submittedAtUtc, isRevisionInstant) ||
+      !isNullable(o.approvedBy, isRevisionActor) ||
+      !isNullable(o.approvedAtUtc, isRevisionInstant) ||
+      !isRevisionInstant(o.archivedAtUtc) || !isRevisionActor(o.archivedBy) ||
+      !isRevisionId(o.moneyProfileId) || !isOwnerVersion(o.moneyProfileVersion) ||
+      typeof o.moneyScale !== 'number' || !Number.isInteger(o.moneyScale) ||
+      o.moneyScale < 0 || o.moneyScale > 2147483647 ||
+      !Array.isArray(o.lines) || o.lines.length < 1 || o.lines.length > LIMITS.lines
+    ) return null
+    // Revision is a .NET Int32 on the server. Compare its canonical digits as
+    // text: do not lexically sort Rev.10 ahead of Rev.2 or accept duplicate rows.
+    const digits = o.revision.slice(4)
+    if (digits.length > 10 || (digits.length === 10 && digits > '2147483647')) return null
+    if (previousDigits !== null &&
+      (digits.length < previousDigits.length ||
+        (digits.length === previousDigits.length && digits <= previousDigits))) return null
+    previousDigits = digits
+    const lines: DraftRevisionLine[] = []
+    const ids = new Set<string>()
+    const numbers = new Set<number>()
+    for (const rawLine of o.lines) {
+      const line = decodeDraftRevisionLine(rawLine)
+      if (line === null || ids.has(line.lineId.toLowerCase()) || numbers.has(line.lineNo)) return null
+      ids.add(line.lineId.toLowerCase())
+      numbers.add(line.lineNo)
+      lines.push(line)
+    }
+    items.push({
+      revision: o.revision, submittedBy: o.submittedBy, submittedAtUtc: o.submittedAtUtc,
+      approvedBy: o.approvedBy, approvedAtUtc: o.approvedAtUtc,
+      archivedAtUtc: o.archivedAtUtc, archivedBy: o.archivedBy,
+      moneyProfileId: o.moneyProfileId, moneyProfileVersion: o.moneyProfileVersion,
+      moneyScale: o.moneyScale, lines,
+    })
+  }
+  return { items }
 }
 
 /**
