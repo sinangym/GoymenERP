@@ -264,10 +264,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // here (no new database capability; MigrateAsync stays 2).
                 // Re-measured for #316 on top of C3: ProductShellCapabilityProvider is registered here (a
                 // singleton shell provider; no new database capability, MigrateAsync stays 2).
-                // Re-measured for E1: the bounded sales-candidate reader/service are DI-only additions over the
-                // existing Product read store and eligibility ports; no new database capability, MigrateAsync stays 2.
+                // Re-measured for Inventory opening stock: the bounded Product stock-candidate reader/service are
+                // DI-only additions over the existing Product read store; no new database capability, MigrateAsync stays 2.
                 ["src/backend/GoymenERP.Api/ProductRuntime/ProductRuntimeExtensions.cs"] =
-                    new("fca623ccede5aac80b7efe0252101e355f256f2ddea82dfa49619bfd369c69f3",
+                    new("eb34fc4dd25443bcf5c9c0380157443ea2c848d75c89d5b89063fe691b68a689",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["MigrateAsync"] = 2 }),
                 // Re-measured for PRD-UNIT-1: the Product participant gets Settings' unit-identity catalog
@@ -376,7 +376,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Inventory.Infrastructure/"
                  + "InventoryModuleExtensions.cs"] =
                     new(
-                        "504b6cefb77e200e444765d719dac6fd79e7078552b92e401c4aa6250b754e57",
+                        "8c173c07b765a42116381f67fdec9508e9245a15b88ac5efb0b71a79f76e51a0",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
