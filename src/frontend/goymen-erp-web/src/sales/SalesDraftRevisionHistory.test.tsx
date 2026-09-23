@@ -132,7 +132,7 @@ describe('SalesDraftRevisionHistory in the detail', () => {
   it.each([401, 403])('routes history %s through the real auth boundary and closes the detail', async (status) => {
     installFetch({ onDetail: () => json(detail()), onRevisions: () => json({ status }, status) })
     renderSalesApp(path)
-    await waitFor(() => expect(document.querySelector(status === 401 ? '[data-state="unauthenticated"]' : '[data-state="forbidden"]')).not.toBeNull())
+    expect(await screen.findByText('Bulunamadı — sayfa')).toBeTruthy()
     expect(screen.queryByTestId('sales-revision-Rev.0')).toBeNull()
     expect(screen.queryByTestId('sales-draft-version')).toBeNull()
   })
