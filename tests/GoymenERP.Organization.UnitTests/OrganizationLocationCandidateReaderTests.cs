@@ -66,6 +66,18 @@ public sealed class OrganizationLocationCandidateReaderTests
         Assert.Equal(OrganizationLocationCandidateQueryException.ErrorCode, error.Code);
     }
 
+    [Fact]
+    public async Task A_context_that_unresolves_during_the_read_releases_no_candidates()
+    {
+        var database = await SeedAsync();
+        var drifting = new UnresolvingCompanyContext(CompanyA);
+
+        await Assert.ThrowsAsync<OrganizationCompanyContextMismatchException>(
+            () => Reader(database, drifting).SearchAsync(CompanyA, new()));
+
+        Assert.Equal(2, drifting.ResolutionChecks);
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(101)]
@@ -133,4 +145,20 @@ public sealed class OrganizationLocationCandidateReaderTests
         new DbContextOptionsBuilder<OrganizationDbContext>().UseInMemoryDatabase(database).Options,
         company,
         new OrganizationBootstrapWriteScope());
+
+    /// <summary>
+    /// The first boundary check sees the captured request company; the release check sees that the
+    /// request context is no longer resolved. EF's query filter still uses the original CompanyId,
+    /// so only the post-read fence can stop the already captured rows from being returned.
+    /// </summary>
+    private sealed class UnresolvingCompanyContext(Guid companyId) : ICompanyContext
+    {
+        public int ResolutionChecks { get; private set; }
+
+        public bool IsResolved => ++ResolutionChecks == 1;
+
+        public Guid CompanyId => companyId;
+
+        public void Set(Guid value) => throw new NotSupportedException();
+    }
 }

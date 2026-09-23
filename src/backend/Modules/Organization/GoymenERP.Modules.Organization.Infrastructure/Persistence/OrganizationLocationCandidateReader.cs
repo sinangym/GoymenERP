@@ -68,6 +68,9 @@ internal sealed class OrganizationLocationCandidateReader(
             .ThenBy(item => item.Id)
             .Take(query.Limit + 1)
             .ToListAsync(cancellationToken);
+        // A result captured for one request company is private until the same live context is
+        // measured again. Query filters protect the SQL read; this fence protects its release.
+        RequireCompany(companyId);
         var searchWindowFull = rows.Count > query.Limit;
 
         return new OrganizationLocationCandidatesV1(
