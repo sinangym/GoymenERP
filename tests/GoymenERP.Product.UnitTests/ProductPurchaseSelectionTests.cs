@@ -15,6 +15,23 @@ public sealed class ProductPurchaseSelectionTests
     private static ProductPurchaseSelectionV1 Selection => new(ProductId, Version, PurchaseUnit, On);
 
     [Fact]
+    public void Candidate_contract_keeps_exact_versions_as_strings_and_only_purchase_projection()
+    {
+        var candidate = new ProductPurchaseCandidatesV1([new(ProductId, Version, "PSQL-1", "Purchase",
+            PurchaseUnit, "kg", Guid.Parse("4a790fdc-2a6b-5126-835f-d3a13d28b71c"), Version)], true);
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        using var json = JsonDocument.Parse(JsonSerializer.Serialize(candidate, options));
+        var item = json.RootElement.GetProperty("items")[0];
+        Assert.Equal(new[] { "productId", "productVersion", "code", "name", "unitId", "unitCode", "profileId", "profileVersion" },
+            item.EnumerateObject().Select(p => p.Name));
+        Assert.Equal(JsonValueKind.String, item.GetProperty("productVersion").ValueKind);
+        Assert.Equal(Version, item.GetProperty("profileVersion").GetString());
+        var roundTrip = JsonSerializer.Deserialize<ProductPurchaseCandidatesV1>(json.RootElement.GetRawText(), options)!;
+        Assert.Equal(candidate.Items.Single(), roundTrip.Items.Single());
+        Assert.True(roundTrip.SearchWindowFull);
+    }
+
+    [Fact]
     public async Task Purchase_uses_own_role_and_unit_not_sales_alias()
     {
         var w = new PurchaseWorld();

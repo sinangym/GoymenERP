@@ -50,6 +50,30 @@ public sealed class ProductPurchaseSelectionSqlServerRelationalAcceptanceTests
         Assert.False(stored.Sellable.Value); // A real purchase-only row; not Sales E1 under an alias.
         Assert.Empty(db.ChangeTracker.Entries());
         Assert.Empty((await candidates.SearchAsync(new("does-not-match", On), default)).Items);
+        // More real rows than the examined window: ordering is stable and only purchase roles qualify.
+        foreach (var purchasable in new[] { true, false })
+        {
+            var id = Guid.NewGuid();
+            var code = purchasable ? "SYNS04-2" : "SYNS04-3";
+            await db.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO [product].[Products]
+                ([Id],[Code],[Name],[GroupId],[ClassId],[FamilyId],[PurchasableValue],[PurchasableProvenance],
+                 [SellableValue],[SellableProvenance],[ProductionInputValue],[ProductionInputProvenance],
+                 [ProductionOutputValue],[ProductionOutputProvenance],[Lifecycle],[Version],
+                 [CreatedAtUtc],[UpdatedAtUtc],[ReferencesJson])
+                SELECT {id},{code},[Name],[GroupId],[ClassId],[FamilyId],{purchasable},[PurchasableProvenance],
+                 [SellableValue],[SellableProvenance],[ProductionInputValue],[ProductionInputProvenance],
+                 [ProductionOutputValue],[ProductionOutputProvenance],[Lifecycle],[Version],
+                 [CreatedAtUtc],[UpdatedAtUtc],[ReferencesJson]
+                FROM [product].[Products] WHERE [Id]={ProductId}
+                """);
+        }
+        var bounded = await candidates.SearchAsync(new("SYNS04", On, 1), default);
+        Assert.Equal(ProductId, Assert.Single(bounded.Items).ProductId);
+        Assert.True(bounded.SearchWindowFull);
+        var full = await candidates.SearchAsync(new("SYNS04", On, 10), default);
+        Assert.Equal(new[] { "SYNS04-1", "SYNS04-2" }, full.Items.Select(x => x.Code));
+        Assert.False(full.SearchWindowFull);
     }
 
     [SqlServerFact]
