@@ -3,18 +3,26 @@
  * routes, authority fence, idempotency record and audit a user's commands take — as the seed's
  * recorder. Nothing is written to SQL directly and nothing is fulfilled locally.
  *
- * Every id is new per case, and the parent roll is a synthetic label identity (MFG-API has no
- * Inventory link in this slice), so cases never share state.
+ * Every plan and order id is new per case. The parent roll is the fixture's real Inventory label;
+ * each plan re-reads its current candidate/version before saving, so no stale or invented version is used.
  */
 
 import { randomUUID } from 'node:crypto'
 import { expect, request, type APIRequestContext } from '@playwright/test'
 import type { MfgEnvironment } from './env.js'
 
+export const PARENT_ROLL_CODE = 'SYN-MFG-ROLL-1'
+
 export interface ArrangedOrder {
   readonly orderId: string
   readonly rollId: string
   readonly version: number
+}
+
+interface ParentRollCandidate {
+  readonly labelId: string
+  readonly labelVersion: string
+  readonly draftSelectable: boolean
 }
 
 export async function apiAs(env: MfgEnvironment, actor: string): Promise<APIRequestContext> {
@@ -37,16 +45,39 @@ async function post(api: APIRequestContext, path: string, body: unknown, status:
   return (await response.json()) as Record<string, unknown>
 }
 
+export async function readParentRollCandidate(
+  env: MfgEnvironment,
+  actor = env.seed.recorderActor,
+): Promise<ParentRollCandidate> {
+  const api = await apiAs(env, actor)
+  try {
+    const response = await api.get('/api/v1/inventory/references/parent-rolls', {
+      params: { q: PARENT_ROLL_CODE, limit: 25 },
+    })
+    const text = await response.text()
+    expect(response.status(), text).toBe(200)
+    const body = JSON.parse(text) as { items?: ParentRollCandidate[] }
+    const candidate = body.items?.find((item) => item.labelId === env.seed.rollId)
+    expect(candidate, 'fixture parent roll must be returned by the real Inventory candidate API').toBeDefined()
+    expect(candidate?.draftSelectable).toBe(true)
+    expect(candidate?.labelVersion).toMatch(/^[1-9][0-9]*$/)
+    return candidate as ParentRollCandidate
+  } finally {
+    await api.dispose()
+  }
+}
+
 /** An approved slitting plan of one 1000 kg parent roll and its open order. */
 export async function arrangeOpenOrder(env: MfgEnvironment): Promise<ArrangedOrder> {
   const api = await apiAs(env, env.seed.recorderActor)
   try {
-    const rollId = randomUUID()
+    const candidate = await readParentRollCandidate(env)
+    const rollId = candidate.labelId
     const planId = randomUUID()
     await post(api, '/plans', {
       planId,
       workCenterId: env.seed.workCenterId,
-      inputs: [{ parentRollId: rollId, plannedKg: '1000' }],
+      inputs: [{ parentRollId: rollId, plannedKg: '1000', expectedLabelVersion: candidate.labelVersion }],
       target: null,
     }, 201)
     await post(api, `/plans/${planId}/approval`, { expectedVersion: 1 }, 200)

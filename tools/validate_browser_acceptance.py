@@ -127,9 +127,9 @@ SUITE_API_EXTENSIONS = {
     # S-03 (SİPARİŞ): the deployment's Product issuer binding (shared with u02, ÜRÜN's values), the
     # suite's actors and their Identity users and grants (coordinator decisions 1 and 3, a2 part 2).
     "s03": {"issuer": True, "actors": True, "identity": True},
-    # MFG (ORG, #323 5735635840): a recorder, a reader and (MFG-ORD) a closer actor with their Identity
-    # users and grants.
-    "mfg": {"issuer": False, "actors": True, "identity": True},
+    # MFG (ORG, #323 5735635840): Product's disposable issuer plus a recorder, a reader and (MFG-ORD)
+    # a closer actor with their Identity users and grants. The issuer is not an actor and holds no grant.
+    "mfg": {"issuer": True, "actors": True, "identity": True},
     # FIN-01 (FİNANS, #332): a proposer and an approver actor with their Identity users and grants.
     "fin01": {"issuer": False, "actors": True, "identity": True},
     # S-04 (SİPARİŞ): the existing Product issuer binding plus its Sales actors, Identity users and grants.
@@ -199,15 +199,22 @@ SUITE_IDENTITY_PERMISSIONS = {
     # SALES-A1 (coordinator): the approval and the draft's party read, for the v2b positive path.
     "s03": ("sales.drafts.create", "sales.drafts.read", "product.operational-selection.read",
             "counterparty.parties.read", "sales.orders.approve"),
-    # The five Manufacturing names the recorder holds, plus the close (MFG-ORD): the reader holds only
+    # The recorder's Manufacturing plan/order permissions plus the existing owner permissions required
+    # by its real plan-create screen and opening-stock fixture. The reader still holds only
     # manufacturing.orders.read and the closer only that plus manufacturing.orders.close.
     "mfg": (
         "manufacturing.plans.write",
+        "manufacturing.plans.read",
         "manufacturing.plans.approve",
         "manufacturing.orders.create",
         "manufacturing.facts.record",
         "manufacturing.orders.read",
         "manufacturing.orders.close",
+        "organization.work-centers.read",
+        "inventory.labels.read",
+        "inventory.balances.read",
+        "inventory.opening-stock.record",
+        "product.operational-selection.read",
     ),
     # The ten Finance names and the Cari owner's authorized party read. The list is the complete
     # union of the disposable proposer and approver grants in fin01.override.yml.
