@@ -6,6 +6,23 @@ Source: integrated plan v2 (#275 `a5b8143b`) §5, §7.1, §13, R3 and R6; Sinan'
 are on the #275 branch at `a5b8143b`, **not on main**; the decision text is Business's record on
 #66 (5722637822).
 
+## LOG-5 — definite-shipment Inventory boundary (contract predecessor)
+
+`GoymenERP.Modules.Inventory.Application.IInventoryDefiniteShipmentParticipantV1` fixes the single-use,
+Inventory-owned boundary for one definite shipment. The central host supplies an Inventory runtime participant
+already enlisted in its open transaction; the participant stages allocation consumption, one label stock exit,
+audit and outbox, and never commits or rolls back the host transaction. The application contract deliberately
+exposes no database handle or independent transaction factory. The request carries CompanyId, shipment/instruction/
+line/allocation/label/movement identities, exact allocation and label versions, lossless kg text and UTC time.
+The stored allocation supplies the physical owner/custodian/location; Logistics cannot choose them.
+
+This commit is deliberately **NOT READY for runtime DI**. Main has no Inventory allocation aggregate/store/
+version or Inventory outbox persistence yet. Registering a positive implementation would therefore invent
+success and violate DEC-STK-004 plus LOG-5 atomicity. `InventoryDefiniteShipmentContractV1.Validate` and its
+tests close only the policy-free wire/participant shape. The next Inventory owner predecessor is the real
+allocation persistence and transactional outbox implementation with SQL concurrency/replay evidence; only
+then may central bind this factory into the Logistics host. No new permission or grant is introduced.
+
 ## R13 — draft parent-roll reference predecessor (Business #66/5778472429 A)
 
 `GoymenERP.Modules.Inventory.Application.IInventoryParentRollCandidatesV1.SearchAsync` accepts
