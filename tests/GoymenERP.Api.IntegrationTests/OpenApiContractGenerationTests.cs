@@ -327,6 +327,14 @@ public sealed partial class OpenApiContractGenerationTests
         new("post", "/api/v1/purchasing/orders/{id}/approval", "ApprovePurchaseOrderV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
             "#/components/schemas/ApprovePurchaseOrderRequest", ["path:id:true:type:string;format:uuid"]),
+        new("get", "/api/v1/purchasing/references/products", "GetPurchasingProductCandidatesV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
+            ParameterValues:
+            [
+                "query:q:false:type:string",
+                "query:effectiveOn:true:type:string;format:date",
+                "query:limit:false:type:integer|string;format:int32;pattern:^-?(?:0|[1-9]\\d*)$",
+            ]),
         new("get", "/api/v1/accounting/periods", "GetAccountingPeriodsV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["query:pageSize:false:type:integer|string;format:int32;pattern:^-?(?:0|[1-9]\\d*)$", "query:cursor:false:type:string"]),
@@ -459,6 +467,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["CreatePurchaseOrderV1"] = "ref:PurchaseOrderResponse",
             ["GetPurchaseOrderV1"] = "ref:PurchaseOrderDetailView",
             ["ApprovePurchaseOrderV1"] = "ref:PurchaseOrderResponse",
+            ["GetPurchasingProductCandidatesV1"] = "ref:ProductPurchaseCandidatesV1",
             ["GetAccountingPeriodsV1"] = "ref:PeriodPageV1",
             ["ProposeAccountingPeriodV1"] = "ref:PeriodViewV1",
             ["GetAccountingPeriodV1"] = "ref:PeriodViewV1",
@@ -546,6 +555,7 @@ public sealed partial class OpenApiContractGenerationTests
         "CreatePurchaseOrderV1",
         "GetPurchaseOrderV1",
         "ApprovePurchaseOrderV1",
+        "GetPurchasingProductCandidatesV1",
         "GetAccountingPeriodsV1",
         "ProposeAccountingPeriodV1",
         "GetAccountingPeriodV1",
@@ -748,6 +758,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetPurchaseOrdersV1",
         "CreatePurchaseOrderV1",
         "ApprovePurchaseOrderV1",
+        "GetPurchasingProductCandidatesV1",
         "ProposeAccountingPeriodV1",
         "ApproveAccountingPeriodV1",
         "CloseAccountingPeriodV1",
@@ -871,6 +882,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetSalesProductReferenceV1:409"] = ["product_selection_changed"],
             ["GetSalesProductReferenceV1:422"] = ["unsupported_product", "unsupported_unit"],
             ["GetSalesProductCandidatesV1:400"] = ["validation_failed"],
+            ["GetPurchasingProductCandidatesV1:400"] = ["validation_failed"],
             ["GetCounterpartyCompanyAccountLinkCandidatesV1:409"] =
                 ["client_contract_required", "client_contract_unsupported"],
             ["GetCounterpartyCompanyAccountLinkCandidatesV1:400"] =
@@ -1648,6 +1660,16 @@ public sealed partial class OpenApiContractGenerationTests
                 ["ProductSalesCandidateUnitV1"] = ObjectSchema(
                     ["unitId", "code", "profileId", "profileVersion"],
                     ("unitId", "type:string;format:uuid"), ("code", "type:string"),
+                    ("profileId", "type:string;format:uuid"), ("profileVersion", "type:string")),
+                ["ProductPurchaseCandidatesV1"] = ObjectSchema(
+                    ["items", "searchWindowFull"],
+                    ("items", "type:array;items:ref:ProductPurchaseCandidateV1"),
+                    ("searchWindowFull", "type:boolean")),
+                ["ProductPurchaseCandidateV1"] = ObjectSchema(
+                    ["productId", "productVersion", "code", "name", "unitId", "unitCode", "profileId", "profileVersion"],
+                    ("productId", "type:string;format:uuid"),
+                    ("productVersion", "type:string"), ("code", "type:string"), ("name", "type:string"),
+                    ("unitId", "type:string;format:uuid"), ("unitCode", "type:string"),
                     ("profileId", "type:string;format:uuid"), ("profileVersion", "type:string")),
                 ["CounterpartyContactInformationView"] = ObjectSchema(
                     ["partyId", "accountId", "companyId", "version", "isActive", "information"],
@@ -2733,9 +2755,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(97, operations.Count);
+        Assert.Equal(98, operations.Count);
         Assert.Equal(
-            97,
+            98,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());
