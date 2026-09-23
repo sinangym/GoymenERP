@@ -86,7 +86,7 @@ test('R14 records one real opening count, closes and reopens it, and preserves p
     await page.getByRole('link', { name: 'Son kaydı yeniden aç', exact: true }).click()
     await expect(page.getByRole('heading', { level: 1, name: 'Açılış sayımı' })).toBeVisible()
     await expect(page.getByText(created.countId, { exact: true })).toBeVisible()
-    await expect(page.getByText(LABEL, { exact: true })).toBeVisible()
+    await expect(page.getByRole('cell', { name: new RegExp(`^${LABEL}(?:\\s|$)`) })).toBeVisible()
 
     const read = await page.request.get(`${env.apiBaseUrl}${OPENINGS}/${created.countId}`, {
       headers: apiHeaders(recorderActor),
