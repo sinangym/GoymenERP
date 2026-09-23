@@ -177,7 +177,7 @@ public sealed partial class OpenApiContractGenerationTests
                 "query:effectiveOn:true:type:string;format:date",
             ]),
         new("post", "/api/v1/manufacturing/plans", "SaveManufacturingPlanV1",
-            AuthenticatedResponses("201:application/json", "400:application/problem+json", "415:", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            AuthenticatedResponses("201:application/json", "400:application/problem+json", "404:application/problem+json", "415:", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
             "#/components/schemas/SavePlanRequestV1"),
         new("get", "/api/v1/manufacturing/plans/{planId}", "GetManufacturingPlanV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json",
@@ -647,7 +647,8 @@ public sealed partial class OpenApiContractGenerationTests
                     StatusCodes.Status404NotFound,
                     StatusCodes.Status409Conflict,
                 ],
-                ["SaveManufacturingPlanV1"] = [StatusCodes.Status201Created],
+                ["SaveManufacturingPlanV1"] =
+                    [StatusCodes.Status201Created, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
                 ["ApproveManufacturingPlanV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
                 ["CreateManufacturingOrderV1"] = [StatusCodes.Status201Created, StatusCodes.Status404NotFound],
                 ["IssueManufacturingInputV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
@@ -778,6 +779,7 @@ public sealed partial class OpenApiContractGenerationTests
         "SetOrganizationLocationActiveStateV1:409",
         "GetFinanceManualReceiptDraftContextV1:404",
         "GetSalesProductReferenceV1:404",
+        "SaveManufacturingPlanV1:404",
         "GetManufacturingPlanV1:404",
         "ApproveManufacturingPlanV1:404",
         "CreateManufacturingOrderV1:404",
@@ -910,8 +912,10 @@ public sealed partial class OpenApiContractGenerationTests
             ["UpdateCounterpartyContactInformationV1:409"] =
                 ["client_contract_required", "client_contract_unsupported", "idempotency_conflict", "version_conflict"],
             ["SaveManufacturingPlanV1:400"] = ["manufacturing_request_invalid"],
-            ["SaveManufacturingPlanV1:409"] = ManufacturingConflictCodes,
-            ["SaveManufacturingPlanV1:422"] = ManufacturingUnprocessableCodes,
+            ["SaveManufacturingPlanV1:409"] =
+                [.. ManufacturingConflictCodes, "inventory_label_version_conflict", "inventory_parent_roll_read_conflict"],
+            ["SaveManufacturingPlanV1:422"] =
+                [.. ManufacturingUnprocessableCodes, "inventory_parent_roll_context_required", "inventory_parent_roll_no_physical_position"],
             ["ApproveManufacturingPlanV1:400"] = ["manufacturing_request_invalid"],
             ["ApproveManufacturingPlanV1:409"] = ManufacturingConflictCodes,
             ["ApproveManufacturingPlanV1:422"] = ManufacturingUnprocessableCodes,

@@ -3,6 +3,7 @@ using GoymenERP.Api.Errors;
 using GoymenERP.Api.Multitenancy;
 using GoymenERP.Api.OpenApi;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Manufacturing.Domain.Common;
 using Microsoft.Net.Http.Headers;
@@ -36,6 +37,20 @@ public static class ManufacturingEndpoints
         ManufacturingStoreCodes.ConcurrentChange,
     ];
 
+    private static readonly string[] SavePlanConflictCodes =
+    [
+        .. ConflictCodes,
+        InventoryParentRollCodesV1.VersionConflict,
+        InventoryParentRollCodesV1.ReadConflict,
+    ];
+
+    private static readonly string[] SavePlanUnprocessableCodes =
+    [
+        .. ManufacturingProblemCodes.Unprocessable,
+        InventoryParentRollCodesV1.ContextRequired,
+        InventoryParentRollCodesV1.NoPhysicalPosition,
+    ];
+
     public static IEndpointRouteBuilder MapManufacturingEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v1/manufacturing")
@@ -52,11 +67,14 @@ public static class ManufacturingEndpoints
                 plan => $"/api/v1/manufacturing/plans/{plan.PlanId:D}"))
             .RequireCompanyContext()
             .RequireAuthorization(ErpPermissions.ManufacturingPlansWrite)
-            .WithIdempotencyContract(StatusCodes.Status201Created)
+            .WithIdempotencyContract(
+                StatusCodes.Status201Created,
+                StatusCodes.Status404NotFound,
+                StatusCodes.Status409Conflict)
             .WithName("SaveManufacturingPlanV1")
             .Accepts<SavePlanRequestV1>("application/json")
             .Produces<PlanViewV1>(StatusCodes.Status201Created)
-            .WithWriteProblems(notFound: false);
+            .WithSavePlanProblems();
 
         group.MapPost("/plans/{planId:guid}/approval", async (
                 Guid planId,
@@ -257,6 +275,17 @@ public static class ManufacturingEndpoints
             .ProducesErpAuthenticatedProblems();
         return notFound ? builder.ProducesErpCodeLessNotFound() : builder;
     }
+
+    private static RouteHandlerBuilder WithSavePlanProblems(this RouteHandlerBuilder builder) =>
+        builder
+            .ProducesErpBadRequest(BadRequestCodes)
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(SavePlanConflictCodes)
+            .ProducesErpUnprocessableEntity(SavePlanUnprocessableCodes)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
 
     private static async Task<IResult> WriteAsync<T>(HttpContext httpContext,
         Func<string, Task<ManufacturingApiResult<T>>> write, Func<T, string>? location = null)

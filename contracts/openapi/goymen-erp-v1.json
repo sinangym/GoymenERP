@@ -16386,11 +16386,62 @@
               }
             }
           },
+          "404": {
+            "description": "Not Found",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              },
+              "Idempotency-Replayed": {
+                "description": "True only when the response safely replays an earlier command result.",
+                "schema": {
+                  "type": "boolean"
+                }
+              },
+              "Idempotency-Original-Correlation-Id": {
+                "description": "Original command correlation identifier when the response is a replay.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpCodeLessProblemDetailsContract"
+                }
+              }
+            }
+          },
           "409": {
             "description": "Conflict",
             "headers": {
               "X-Correlation-Id": {
                 "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              },
+              "Idempotency-Replayed": {
+                "description": "True only when the response safely replays an earlier command result.",
+                "schema": {
+                  "type": "boolean"
+                }
+              },
+              "Idempotency-Original-Correlation-Id": {
+                "description": "Original command correlation identifier when the response is a replay.",
                 "schema": {
                   "maxLength": 128,
                   "minLength": 1,
@@ -16408,6 +16459,8 @@
             },
             "x-erp-problem-codes": [
               "idempotency_conflict",
+              "inventory_label_version_conflict",
+              "inventory_parent_roll_read_conflict",
               "manufacturing_concurrent_change",
               "manufacturing_fact_id_conflict",
               "manufacturing_order_id_conflict",
@@ -16436,6 +16489,8 @@
               }
             },
             "x-erp-problem-codes": [
+              "inventory_parent_roll_context_required",
+              "inventory_parent_roll_no_physical_position",
               "manufacturing_duplicate_roll_in_plan",
               "manufacturing_input_already_issued",
               "manufacturing_kilogram_precision_exceeded",
