@@ -18,6 +18,8 @@ import {
 } from './capabilities'
 import { OrderDetailPage } from './OrderDetailPage'
 import { OrderListPage } from './OrderListPage'
+import { PlanCreatePage } from './PlanCreatePage'
+import { PlanDetailPage } from './PlanDetailPage'
 
 /**
  * `CapabilityRoute` types its prop as the shell's `CapabilityId` union, which does not
@@ -32,6 +34,14 @@ function gate(capability: ManufacturingCapabilityId, children: ReactNode) {
 }
 
 export const manufacturingRoutes: RouteObject[] = [
+  {
+    path: MANUFACTURING_ROUTE[MANUFACTURING_CAPABILITY.planCreate].slice(1),
+    element: gate(MANUFACTURING_CAPABILITY.planCreate, <PlanCreatePage />),
+  },
+  {
+    path: MANUFACTURING_ROUTE[MANUFACTURING_CAPABILITY.planDetail].slice(1),
+    element: gate(MANUFACTURING_CAPABILITY.planDetail, <PlanDetailPage />),
+  },
   {
     // Static before parameterized: `/uretim/emirler` is not an order id.
     path: MANUFACTURING_ROUTE[MANUFACTURING_CAPABILITY.orderList].slice(1),

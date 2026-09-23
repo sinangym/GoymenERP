@@ -4,8 +4,8 @@ using GoymenERP.BuildingBlocks.Shell;
 namespace GoymenERP.Modules.Manufacturing.Infrastructure.Shell;
 
 /// <summary>
-/// Publishes the Manufacturing order screen to the shell (MFG-UI card, coordinator-approved) —
-/// PUBLISHED (MFG-UI-F): both declarations are <c>ImplementationAvailable: true</c>, after the <c>mfg</c>
+/// Publishes the Manufacturing order and plan screens to the shell (MFG-UI card, coordinator-approved) —
+/// PUBLISHED: every declaration is <c>ImplementationAvailable: true</c>, after the corresponding
 /// browser suite accepted the staged screen (the S03-c / FIN-UI-1c pattern). The screen opens to whoever
 /// holds the permission in the context company; publishing grants nothing (every grant is a human gate).
 /// <list type="bullet">
@@ -14,6 +14,10 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Shell;
 /// <item><c>manufacturing.orders.facts</c>: the fact forms inside that screen, a control on the same
 /// route (<c>ParentCapabilityId</c>), adding <see cref="ErpPermissions.ManufacturingFactsRecord"/>.
 /// Without it the forms are not drawn (card D3); the endpoints enforce either way.</item>
+/// <item><c>manufacturing.plans.create</c> → <c>/uretim/plan/yeni</c> on
+/// <see cref="ErpPermissions.ManufacturingPlansWrite"/>.</item>
+/// <item><c>manufacturing.plans.detail</c> → <c>/uretim/plan/:planId</c> on
+/// <see cref="ErpPermissions.ManufacturingPlansRead"/>.</item>
 /// </list>
 /// Company-wide scope only, as the API requires (K-1): the routes do not filter by work center.
 /// <c>MFG-01</c> is a technical sub-view id, like ORG-01/02; the canonical production screens
@@ -25,7 +29,7 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Shell;
 public sealed class ManufacturingShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "MANUFACTURING";
-    public const string OwnerContractVersion = "1.0";
+    public const string OwnerContractVersion = "1.1";
 
     public const string DetailCapabilityId = "manufacturing.orders.detail";
     public const string FactsCapabilityId = "manufacturing.orders.facts";
@@ -37,6 +41,14 @@ public sealed class ManufacturingShellCapabilityProvider : IShellCapabilityProvi
     public const string ListRouteId = "manufacturing.order-list";
     public const string ListRoutePath = "/uretim/emirler";
     public const string ListScreenId = "MFG-02";
+    public const string PlanCreateCapabilityId = "manufacturing.plans.create";
+    public const string PlanCreateRouteId = "manufacturing.plan-create";
+    public const string PlanCreateRoutePath = "/uretim/plan/yeni";
+    public const string PlanCreateScreenId = "MFG-PLAN-CREATE";
+    public const string PlanDetailCapabilityId = "manufacturing.plans.detail";
+    public const string PlanDetailRouteId = "manufacturing.plan-detail";
+    public const string PlanDetailRoutePath = "/uretim/plan/:planId";
+    public const string PlanDetailScreenId = "MFG-PLAN-DETAIL";
 
     public string Owner => OwnerId;
 
@@ -66,6 +78,28 @@ public sealed class ManufacturingShellCapabilityProvider : IShellCapabilityProvi
             [ErpPermissions.ManufacturingOrdersRead],
             ImplementationAvailable: true);
 
+        var planCreate = new ShellCapabilityDeclaration(
+            PlanCreateCapabilityId,
+            PlanCreateRouteId,
+            PlanCreateRoutePath,
+            PlanCreateScreenId,
+            ShellCapabilityRoutePrecedence.Static,
+            ShellCapabilityContextRequirement.SingleCompany,
+            ShellCapabilityScopeRequirement.CompanyWide,
+            [ErpPermissions.ManufacturingPlansWrite],
+            ImplementationAvailable: true);
+
+        var planDetail = new ShellCapabilityDeclaration(
+            PlanDetailCapabilityId,
+            PlanDetailRouteId,
+            PlanDetailRoutePath,
+            PlanDetailScreenId,
+            ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
+            ShellCapabilityContextRequirement.SingleCompany,
+            ShellCapabilityScopeRequirement.CompanyWide,
+            [ErpPermissions.ManufacturingPlansRead],
+            ImplementationAvailable: true);
+
         return
         [
             detail,
@@ -84,6 +118,8 @@ public sealed class ManufacturingShellCapabilityProvider : IShellCapabilityProvi
                 RequiredPermissions = [ErpPermissions.ManufacturingOrdersRead, ErpPermissions.ManufacturingOrdersClose],
             },
             list,
+            planCreate,
+            planDetail,
         ];
     }
 }

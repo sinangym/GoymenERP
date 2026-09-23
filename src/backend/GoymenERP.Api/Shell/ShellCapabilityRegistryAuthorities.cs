@@ -110,8 +110,8 @@ internal static class ShellCapabilityRegistryAuthorities
     // four Manufacturing declarations, the control keeping its parent's route, screen, precedence,
     // context and scope): ComputeRevision reproduction, calibrated against the three constants this
     // file already served, and independently re-checked (DATA ONLY); pinned by test.
-    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11AndPublishedManufacturingV10 =
-        "sha256:vM0Z496GFQJxj-Z99JaMN5uLC8SpZdgzf_8ZWh-CTYU";
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11AndPublishedManufacturingV11 =
+        "sha256:nK9tb0LooMGzvfzCN71BpYbd74WfdsBcXvJx--e8J-g";
 
     // LOG-PUBLISH: ... + Logistics 1.0 PUBLISHED (the loading-instruction list L-02, new L-03 and detail L-02-DETAIL,
     // master v3 §27.8): the normal host (C+O+P+S(published)+F(published)+M(published)+L(published)). Computed by
@@ -120,15 +120,15 @@ internal static class ShellCapabilityRegistryAuthorities
     // four Manufacturing declarations, the control keeping its parent's route, screen, precedence,
     // context and scope): ComputeRevision reproduction, calibrated against the three constants this
     // file already served, and independently re-checked (DATA ONLY); pinned by test.
-    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV10AndPublishedLogisticsV10 =
-        "sha256:i4lDY7trJGOiY6rEWWZ99ZVEH0DXIe484_0JaizLGgs";
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV11AndPublishedLogisticsV10 =
+        "sha256:k05tx5UFnfdoluG5q6fgeieMWFvi2nVeBY3DaWClU-o";
 
     // P01: ... + Purchasing 1.3, with the request list/create/detail/submit declarations published
     // beside the existing order list/create/detail/approve declarations. Every declaration remains
     // single-company; each child keeps its detail parent's route, context and scope. Derived from the
     // integrated provider tuple through ShellCapabilityRegistry.ComputeCandidateRevision and pinned by test.
-    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV10PublishedLogisticsV10AndPublishedPurchasingV13 =
-        "sha256:-GxSeAXbeN0_7sfLOpJPVO-Cc62HD-BHorWs9uSq5-E";
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV11PublishedLogisticsV10AndPublishedPurchasingV13 =
+        "sha256:4OLg6SPPWq_LG7DGMDTxyaf5FYLQVwqOrZz1VPLVFmQ";
 
     // ACC-V0b: ... + Accounting 1.0 STAGED (the period list M-07 and its propose screen, the approve and
     // close controls of that list, the journal list M-04 and its detail, the posting queues M-01): the normal
@@ -168,8 +168,8 @@ internal static class ShellCapabilityRegistryAuthorities
     // before the value was trusted: all eight of main's Organization 1.1 rows reproduce byte-for-byte
     // with Accounting staged (the old half), and the same ACC-V0c model placed back at Organization 1.0
     // reproduces this branch's own sha256:OOlEtnDx… (the new half, which no accepted constant covered).
-    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV10PublishedLogisticsV10PublishedPurchasingV13AndPublishedAccountingV10 =
-        "sha256:vIwTcHexdvhOAHfp-UKuDkEBpneWkZOTwuI59i0KdiM";
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV11PublishedLogisticsV10PublishedPurchasingV13AndPublishedAccountingV10 =
+        "sha256:ao-MSvVrBObNc5FOewXbDZ1AQfHySNZ3RGplajE96y4";
 
     internal const string CounterpartyV15PublishedListCreateAndDetail =
         "sha256:UBHnivzhe_dp5f7vU7dP5n7HG-P8XYBGhxvD_OjMSnw";

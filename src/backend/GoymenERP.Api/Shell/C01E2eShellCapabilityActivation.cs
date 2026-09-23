@@ -110,7 +110,7 @@ internal static class C01E2eShellCapabilityActivation
                 typeof(SalesShellCapabilityProvider), typeof(FinanceShellCapabilityProvider),
                 typeof(ManufacturingShellCapabilityProvider),
             },
-                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11AndPublishedManufacturingV10),
+                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11AndPublishedManufacturingV11),
         // LOG-PUBLISH: Logistics's loading-instruction screens are published on the normal host.
         (new[]
             {
@@ -118,7 +118,7 @@ internal static class C01E2eShellCapabilityActivation
                 typeof(SalesShellCapabilityProvider), typeof(FinanceShellCapabilityProvider),
                 typeof(ManufacturingShellCapabilityProvider), typeof(LogisticsShellCapabilityProvider),
             },
-                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV10AndPublishedLogisticsV10),
+                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV11AndPublishedLogisticsV10),
         // P01: Purchasing 1.3 publishes request list/create/detail/submit beside order list/create/detail/approve.
         (new[]
             {
@@ -127,7 +127,7 @@ internal static class C01E2eShellCapabilityActivation
                 typeof(ManufacturingShellCapabilityProvider), typeof(LogisticsShellCapabilityProvider),
                 typeof(PurchasingShellCapabilityProvider),
             },
-                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV10PublishedLogisticsV10AndPublishedPurchasingV13),
+                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV11PublishedLogisticsV10AndPublishedPurchasingV13),
         // ACC-V0b: Accounting's (staged) period, journal and posting-queue screens join the host set.
         (new[]
             {
@@ -136,7 +136,7 @@ internal static class C01E2eShellCapabilityActivation
                 typeof(ManufacturingShellCapabilityProvider), typeof(LogisticsShellCapabilityProvider),
                 typeof(PurchasingShellCapabilityProvider), typeof(AccountingShellCapabilityProvider),
             },
-                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV10PublishedLogisticsV10PublishedPurchasingV13AndPublishedAccountingV10),
+                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV11PublishedLogisticsV10PublishedPurchasingV13AndPublishedAccountingV10),
     ];
 
     private static string NormalAuthority(IServiceCollection services)

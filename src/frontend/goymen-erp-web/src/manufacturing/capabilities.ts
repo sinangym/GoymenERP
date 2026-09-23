@@ -37,6 +37,10 @@ export const MANUFACTURING_CAPABILITY = {
   orderList: 'manufacturing.orders.list',
   /** The close action INSIDE the order screen. Not a route — a control, like the fact forms. */
   orderClose: 'manufacturing.orders.close',
+  /** Create a Draft plan from authorized work-center and Inventory candidate reads. */
+  planCreate: 'manufacturing.plans.create',
+  /** Reopen one stored plan through `manufacturing.plans.read`. */
+  planDetail: 'manufacturing.plans.detail',
 } as const
 
 export type ManufacturingCapabilityId =
@@ -44,6 +48,8 @@ export type ManufacturingCapabilityId =
 
 /** Route path per routed capability, as handed to the shell owner. */
 export const MANUFACTURING_ROUTE: Record<string, string> = {
+  [MANUFACTURING_CAPABILITY.planCreate]: '/uretim/plan/yeni',
+  [MANUFACTURING_CAPABILITY.planDetail]: '/uretim/plan/:planId',
   [MANUFACTURING_CAPABILITY.orderDetail]: '/uretim/emir/:orderId',
   [MANUFACTURING_CAPABILITY.orderList]: '/uretim/emirler',
 }
@@ -55,6 +61,16 @@ export const MANUFACTURING_ROUTE: Record<string, string> = {
 export const MANUFACTURING_NAV_LABEL: Record<string, string> = {
   [MANUFACTURING_CAPABILITY.orderDetail]: '',
   [MANUFACTURING_CAPABILITY.orderList]: 'Üretim emirleri',
+  [MANUFACTURING_CAPABILITY.planCreate]: '',
+  [MANUFACTURING_CAPABILITY.planDetail]: '',
+}
+
+export function planCreatePath(): string {
+  return MANUFACTURING_ROUTE[MANUFACTURING_CAPABILITY.planCreate]
+}
+
+export function planDetailPath(planId: string): string {
+  return `/uretim/plan/${encodeURIComponent(planId)}`
 }
 
 /** Concrete path to one order. */

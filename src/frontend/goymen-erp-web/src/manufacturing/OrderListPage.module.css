@@ -17,6 +17,23 @@
   gap: 1rem;
 }
 
+.headerActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-left: auto;
+}
+
+.primaryLink {
+  padding: 0.45rem 0.9rem;
+  border-radius: 0.25rem;
+  background: #236442;
+  color: #fff;
+  font-weight: 700;
+  text-decoration: none;
+}
+
 .title {
   margin: 0;
   font-size: 1.5rem;
