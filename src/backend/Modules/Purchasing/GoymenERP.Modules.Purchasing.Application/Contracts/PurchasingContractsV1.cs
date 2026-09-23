@@ -156,6 +156,7 @@ public static class PurchasingApiV1
     public const string OrdersPath = "/api/v1/purchasing/orders";
     public const string OrderDetailPath = "/api/v1/purchasing/orders/{id}";
     public const string OrderApprovalPath = "/api/v1/purchasing/orders/{id}/approval";
+    public const string ProductCandidatesPath = "/api/v1/purchasing/references/products";
     public const string IdempotencyHeader = "Idempotency-Key";
 
     /// <summary>The first commit and its replay both answer 201 (ADR-011 §4; the Sales #321 decision), told apart by the replay headers.</summary>
