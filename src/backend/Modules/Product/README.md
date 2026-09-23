@@ -355,6 +355,12 @@ family policy its only honest answer would be 503.
 
 `ProductStockEligibilityService` implements `IProductStockEligibilityV1`, the owner's answer to "may this Product at this version be stocked on this date, and under which stock-unit profile?" It follows the sales port's pattern and channels. Only the stock rules are asked:
 
+`IProductStockCandidatesV1` is the bounded selector source for the same operation. It searches only
+Active stored cards, then releases only exact `IProductStockEligibilityV1` positives together with
+the Settings-owned stock unit code/profile identity. It adds no commercial role, conversion,
+availability, reservation or allocation rule; `SearchWindowFull` describes the examined stored
+window rather than an exhaustive availability claim.
+
 | Rule | Source | Answer |
 |---|---|---|
 | Only an Active card | DEC-PRD-010 ("a draft card cannot be used in a definitive transaction") | `productId` `lifecycle_conflict` |
