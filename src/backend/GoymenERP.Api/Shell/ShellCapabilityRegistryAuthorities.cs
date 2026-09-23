@@ -158,8 +158,8 @@ internal static class ShellCapabilityRegistryAuthorities
     // version, and the provider really still reports "1.0". But that argument is about the VERSION
     // NUMBER and says nothing about the `Published` prefix, which is this file's separate AVAILABILITY
     // axis: `…AndSalesV10` became `…AndPublishedSalesV10` at Sales's flip, Finance and Manufacturing
-    // likewise. Logistics gains `Published` at its availability flip; Purchasing stays plain because it is
-    // still staged. Accounting
+    // likewise. Logistics gains `Published` at its availability flip; Purchasing carries `Published`
+    // because P01 publishes all eight of its 1.3 declarations. Accounting
     // gains `Published` at the flip this row performs. Applying the version rule to the prefix question
     // would have left the name asserting "Accounting staged" about a host serving six live screens.
     // The prefix marks the FLIP, not wholeness: the journal detail is still staged here, which the
