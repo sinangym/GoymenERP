@@ -92,6 +92,13 @@ public sealed class C01E2eActivationBoundaryTests
                 + "ProductSalesCandidateFixtureStore.cs",
             ],
             BackendFilesContaining("AddProductSalesCandidateFixtureStore"));
+        Assert.Equal(
+            [
+                "src/backend/GoymenERP.Api/Shell/C01E2eFixtureWriterActivation.cs",
+                "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/Fixtures/"
+                + "ProductPurchaseCandidateFixtureStore.cs",
+            ],
+            BackendFilesContaining("AddProductPurchaseCandidateFixtureStore"));
         // s04: Sales's draft port, the same shape. SalesDbContext has no second save path: the store saves
         // through the context's public SaveChangesAsync under its own write guards.
         Assert.Equal(
@@ -164,6 +171,24 @@ public sealed class C01E2eActivationBoundaryTests
             ["src/backend/GoymenERP.Api/Shell/C01E2eFixtureWriterActivation.cs"],
             BackendFilesContaining("AddProductSalesCandidateFixtureStore(")
                 .Where(path => !path.EndsWith("ProductSalesCandidateFixtureStore.cs", StringComparison.Ordinal))
+                .ToArray());
+    }
+
+    [Fact]
+    public void ProductPurchaseCandidateFixtureSave_HasOneCallerBehindTheGatedActivation()
+    {
+        Assert.Equal(
+            [
+                "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/Fixtures/"
+                + "ProductPurchaseCandidateFixtureStore.cs",
+                "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/Persistence/"
+                + "ProductDbContext.cs",
+            ],
+            BackendFilesContaining("AddPurchaseCandidateFixtureAsync"));
+        Assert.Equal(
+            ["src/backend/GoymenERP.Api/Shell/C01E2eFixtureWriterActivation.cs"],
+            BackendFilesContaining("AddProductPurchaseCandidateFixtureStore(")
+                .Where(path => !path.EndsWith("ProductPurchaseCandidateFixtureStore.cs", StringComparison.Ordinal))
                 .ToArray());
     }
 

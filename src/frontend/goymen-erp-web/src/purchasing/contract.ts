@@ -65,6 +65,35 @@ export interface ProductPurchaseCandidates {
   readonly searchWindowFull: boolean
 }
 
+/** Cari-owned active Supplier account offered for a Purchasing order. */
+export interface PurchasingSupplierOption {
+  readonly supplierPartyId: string
+  readonly companyAccountId: string
+  readonly label: string
+}
+
+export interface PurchasingSupplierOffer {
+  readonly items: readonly PurchasingSupplierOption[]
+  readonly nextCursor: string | null
+}
+
+export interface CreatePurchaseOrderLineRequest {
+  readonly lineId: string
+  readonly productId: string
+  readonly expectedProductVersion: string
+  readonly unitId: string
+  readonly quantity: string
+  readonly sourceRequestLineId: string | null
+}
+
+export interface CreatePurchaseOrderRequest {
+  readonly supplierPartyId: string
+  readonly companyAccountId: string
+  readonly sourceRequestId: string | null
+  readonly effectiveOn: string
+  readonly lines: readonly CreatePurchaseOrderLineRequest[]
+}
+
 type JsonObject = Record<string, unknown>
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const NIL_GUID = '00000000-0000-0000-0000-000000000000'

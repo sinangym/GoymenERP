@@ -70,9 +70,14 @@ class FixtureListTests(unittest.TestCase):
             frozenset({"companyId", "codeGroupId", "technicalFamilyId", "authorizedActor", "unauthorizedActor"}),
             browser.SUITE_FIXTURE_OUTPUTS["u02"])
 
-    def test_pur01_exports_only_the_order_axis_and_company_fence(self):
+    def test_pur01_exports_the_separate_creator_supplier_and_existing_approval_axis(self):
         self.assertEqual(
-            frozenset({"approverActor", "readerActor", "companyId", "otherCompanyId", "orderId", "lineId"}),
+            frozenset({
+                "creatorActor", "approverActor", "readerActor", "companyId", "otherCompanyId",
+                "orderId", "lineId", "supplierPartyId", "companyAccountId", "productId",
+                "productVersion", "productUnitId", "productUnitProfileId",
+                "productUnitProfileVersion", "productCode", "productName",
+            }),
             browser.SUITE_FIXTURE_OUTPUTS["pur01"])
 
     def test_a_read_only_suite_cannot_have_a_fixture(self):
@@ -213,6 +218,25 @@ class SeedExportTests(unittest.TestCase):
             for seed, pattern in cases:
                 with self.subTest(seed=seed), self.assertRaisesRegex(browser.ContractError, pattern):
                     browser.seed_export("org03", seed)
+
+    def test_pur01_accepts_only_its_exact_product_scalars(self):
+        keys = frozenset({"productVersion", "productUnitProfileVersion", "productCode", "productName"})
+        good = {
+            "productVersion": "2",
+            "productUnitProfileVersion": "1",
+            "productCode": "SYNPUR01-1",
+            "productName": "SENTETIK browser-suite:pur01 purchase candidate",
+        }
+        with mock.patch.dict(browser.SUITE_FIXTURE_OUTPUTS, {"pur01": keys}):
+            self.assertIn('"productCode":"SYNPUR01-1"', browser.seed_export("pur01", good))
+            for key, value in (
+                ("productVersion", "02"),
+                ("productUnitProfileVersion", "0"),
+                ("productCode", "SYNPUR01-0"),
+                ("productName", "SENTETIK browser-suite:pur01 purchase candidate "),
+            ):
+                with self.subTest(key=key, value=value), self.assertRaises(browser.ContractError):
+                    browser.seed_export("pur01", {**good, key: value})
 
     def test_a_suite_without_a_fixture_exports_nothing(self):
         with self.assertRaisesRegex(browser.ContractError, "has no fixture"):
@@ -462,6 +486,25 @@ class IssuerUserRuleTests(unittest.TestCase):
             with self.subTest(suite=suite):
                 self.assertTrue(environment)
                 self._validate(environment, suite)
+
+    def test_pur01_binds_the_existing_product_issuer_as_one_ungranted_non_actor(self):
+        path = ROOT / browser.SUITE_OVERRIDE_DIRECTORY / "pur01.override.yml"
+        environment = {}
+        for line in path.read_text(encoding="utf-8").splitlines():
+            match = re.fullmatch(r"      ([A-Za-z0-9_]+): (.+)", line)
+            if match:
+                environment[match.group(1)] = match.group(2).strip('"')
+
+        user = "IdentitySeed__Users__8__"
+        self.assertEqual(self.LOCAL, environment["ProductRuntime__IssuerLocalUserId"])
+        self.assertEqual(self.EXTERNAL, environment["ProductRuntime__IssuerExternalIdentityId"])
+        self.assertEqual(self.LOCAL, environment[user + "Id"])
+        self.assertEqual(self.EXTERNAL, environment[user + "ExternalIdentities__0__Id"])
+        self.assertEqual("pur01-issuer", environment[user + "ExternalIdentities__0__Subject"])
+        self.assertFalse(any(key.startswith("IdentitySeed__Roles__8__") for key in environment))
+        self.assertFalse(any(value == self.LOCAL for key, value in environment.items()
+                             if key.startswith("IdentitySeed__Assignments__")))
+        self._validate(environment, suite="pur01")
 
     def test_every_rule_refuses_its_violation(self):
         user = "IdentitySeed__Users__5__"

@@ -9,8 +9,9 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Shell;
 /// is the read view of one P-03 row ("P-03-DETAIL", the F-02-DETAIL precedent; the master has no separate
 /// detail id). P-01 (Talep Havuzu) is not declared: requests have no screen in PUR-4a. Approving an order is a
 /// server-measured command on the detail, not a screen; its control is declared with the frontend slice.
-/// The list and detail are published by PUR-4a-FE; creation stays staged until the Product owner publishes
-/// purchase eligibility and a real candidate source. Approval is a child control of the detail, measured with
+/// The list and detail are published by PUR-4a-FE; creation is published with P-04 after the Product owner
+/// supplied the purchase-eligibility candidate source and the form bound the existing Cari supplier read.
+/// Approval is a child control of the detail, measured with
 /// its own existing permission. A declaration grants nothing: the screens open only for an actor holding the
 /// permission, and the grant is a human gate. The current HTTP reads require an explicit company id; therefore the
 /// published list, detail and approval control are single-company capabilities. Authorized group reads need their
@@ -22,7 +23,7 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Shell;
 public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "PURCHASING";
-    public const string OwnerContractVersion = "1.1";
+    public const string OwnerContractVersion = "1.2";
 
     public const string ListCapabilityId = "purchasing.orders.list";
     public const string ListRoutePath = "/satinalma/siparisler";
@@ -52,7 +53,7 @@ public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider
                 ShellCapabilityScopeRequirement.CompanyWide, [PurchasingPermissionManifestV1.OrdersRead], ImplementationAvailable: true),
             new ShellCapabilityDeclaration(CreateCapabilityId, CreateCapabilityId, CreateRoutePath, CreateScreenId,
                 ShellCapabilityRoutePrecedence.Static, ShellCapabilityContextRequirement.SingleCompany,
-                ShellCapabilityScopeRequirement.CompanyWide, [PurchasingPermissionManifestV1.OrdersCreate], ImplementationAvailable: false),
+                ShellCapabilityScopeRequirement.CompanyWide, [PurchasingPermissionManifestV1.OrdersCreate], ImplementationAvailable: true),
             detail,
             detail with
             {

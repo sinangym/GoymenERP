@@ -77,6 +77,35 @@ public sealed class BrowserSuiteHostEnvelopeTests
     }
 
     [Fact]
+    public void Pur01_output_validation_accepts_only_its_closed_product_scalar_contract()
+    {
+        BrowserSuiteSeedOutputValidator.Validate(
+            "pur01",
+            new Dictionary<string, string>
+            {
+                ["productVersion"] = "2",
+                ["productUnitProfileVersion"] = "1",
+                ["productCode"] = "SYNPUR01-1",
+                ["productName"] = "SENTETIK browser-suite:pur01 purchase candidate",
+            },
+            new HashSet<string>(StringComparer.Ordinal));
+
+        foreach (var (key, value) in new[]
+                 {
+                     ("productVersion", "02"),
+                     ("productUnitProfileVersion", "0"),
+                     ("productCode", "SYNPUR01-0"),
+                     ("productName", "SENTETIK browser-suite:pur01 purchase candidate "),
+                 })
+        {
+            Assert.Throws<InvalidOperationException>(() => BrowserSuiteSeedOutputValidator.Validate(
+                "pur01",
+                new Dictionary<string, string> { [key] = value },
+                new HashSet<string>(StringComparer.Ordinal)));
+        }
+    }
+
+    [Fact]
     public void A_normal_application_host_does_not_register_product_technical_fixture_services()
     {
         WithoutProcessEnvelope(() =>
@@ -92,6 +121,8 @@ public sealed class BrowserSuiteHostEnvelopeTests
             Assert.False(registered.IsService(typeof(IProductTechnicalCardFixtureStore)));
             Assert.False(registered.IsService(typeof(C01E2eProductSalesCandidateFixtureWriter)));
             Assert.False(registered.IsService(typeof(IProductSalesCandidateFixtureStore)));
+            Assert.False(registered.IsService(typeof(C01E2eProductPurchaseCandidateFixtureWriter)));
+            Assert.False(registered.IsService(typeof(IProductPurchaseCandidateFixtureStore)));
         });
     }
 
@@ -166,6 +197,8 @@ public sealed class BrowserSuiteHostEnvelopeTests
         Assert.True(registered.IsService(typeof(C01E2eProductCodeGroupFixtureWriter)));
         Assert.True(registered.IsService(typeof(C01E2eProductSalesCandidateFixtureWriter)));
         Assert.True(registered.IsService(typeof(IProductSalesCandidateFixtureStore)));
+        Assert.True(registered.IsService(typeof(C01E2eProductPurchaseCandidateFixtureWriter)));
+        Assert.True(registered.IsService(typeof(IProductPurchaseCandidateFixtureStore)));
     }
 
     // The normal-profile container's identity keys (infra/docker-compose.browser-normal.yml); Testing

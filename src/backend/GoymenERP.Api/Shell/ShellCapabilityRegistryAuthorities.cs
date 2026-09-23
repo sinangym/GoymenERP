@@ -123,13 +123,12 @@ internal static class ShellCapabilityRegistryAuthorities
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV10AndPublishedLogisticsV10 =
         "sha256:i4lDY7trJGOiY6rEWWZ99ZVEH0DXIe484_0JaizLGgs";
 
-    // PUR-PUBLISH: ... + Purchasing 1.1, with P-03 list/detail and the approve child published while
-    // P-04 creation stays staged until Product supplies a real purchase-candidate source. The current
+    // P-04: ... + Purchasing 1.2, with P-03 list/detail/approve and P-04 creation published. The
     // HTTP contract requires an explicit CompanyId, so all four declarations are single-company; the
-    // child inherits its detail parent's route, context and scope. Derived from owner exact head
-    // 6d6fb18a and pinned by the registration test.
-    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV10PublishedLogisticsV10AndPublishedPurchasingV11 =
-        "sha256:Xjirjkt6_LuSXiJH-cZZ37TK4dc7xVDc81ND_LUjm10";
+    // approve child inherits its detail parent's route, context and scope. Derived from the integrated
+    // provider tuple through ShellCapabilityRegistry.ComputeCandidateRevision and pinned by test.
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV10PublishedLogisticsV10AndPublishedPurchasingV12 =
+        "sha256:p68P10RIdaxC5SQbv_WQNUcyyEqB-EFq22srfW98S6A";
 
     // ACC-V0b: ... + Accounting 1.0 STAGED (the period list M-07 and its propose screen, the approve and
     // close controls of that list, the journal list M-04 and its detail, the posting queues M-01): the normal
@@ -169,8 +168,8 @@ internal static class ShellCapabilityRegistryAuthorities
     // before the value was trusted: all eight of main's Organization 1.1 rows reproduce byte-for-byte
     // with Accounting staged (the old half), and the same ACC-V0c model placed back at Organization 1.0
     // reproduces this branch's own sha256:OOlEtnDx… (the new half, which no accepted constant covered).
-    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV10PublishedLogisticsV10PublishedPurchasingV11AndPublishedAccountingV10 =
-        "sha256:Hh2Ijt6MyDio05IWnFA4RivYq0O3FcliyyaFsQGDbug";
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV10PublishedLogisticsV10PublishedPurchasingV12AndPublishedAccountingV10 =
+        "sha256:es7QqQKGMGHMKKUFcr0y_ZSnm1bHGCZw1i0zhOoOLKo";
 
     internal const string CounterpartyV15PublishedListCreateAndDetail =
         "sha256:UBHnivzhe_dp5f7vU7dP5n7HG-P8XYBGhxvD_OjMSnw";

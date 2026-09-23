@@ -138,8 +138,9 @@ SUITE_API_EXTENSIONS = {
     "acc01": {"issuer": False, "actors": True, "identity": True},
     # L-04 (SİPARİŞ): a preparer, a loader and a reader actor plus the two Sales seed actors, with their grants.
     "l04": {"issuer": False, "actors": True, "identity": True},
-    # PUR-01 (SATINALMA): an approver and a read-only actor with disposable Identity users and grants.
-    "pur01": {"issuer": False, "actors": True, "identity": True},
+    # PUR-01 (SATINALMA): the existing Product issuer plus creator, approver and read-only actors with
+    # disposable Identity users and grants. The issuer itself has no actor, role, assignment or grant.
+    "pur01": {"issuer": True, "actors": True, "identity": True},
     # CARI-NORMAL: two actors holding the SAME two names in DIFFERENT companies, with their Identity
     # users and grants — the difference is the company, because that is the fence being measured.
     "c02": {"issuer": False, "actors": True, "identity": True},
@@ -241,8 +242,11 @@ SUITE_IDENTITY_PERMISSIONS = {
     # the owner answers nothing and the picker is silently empty (ASSUMPTION-LOG4B-3).
     "l04": ("logistics.loading-instructions.create", "logistics.loading-instructions.read", "logistics.loads.record",
             "sales.drafts.create", "sales.drafts.read", "sales.orders.approve", "counterparty.parties.read"),
-    # PUR-01: the complete union of the disposable approver and reader grants. Create stays unavailable.
-    "pur01": ("purchasing.orders.read", "purchasing.orders.approve"),
+    # PUR-01: the complete union of the disposable creator, approver and reader grants. The creator's
+    # two owner-read names are the same intersection the real Purchasing create command already uses;
+    # this closed list grants nothing outside the disposable normal profile.
+    "pur01": ("purchasing.orders.read", "purchasing.orders.approve", "purchasing.orders.create",
+              "counterparty.parties.read", "product.operational-selection.read"),
 }
 
 
@@ -424,8 +428,12 @@ SUITE_FIXTURE_OUTPUTS: dict[str, frozenset[str]] = {
     "l04": frozenset({"preparerActor", "loaderActor", "readerActor", "companyId", "otherCompanyId", "customerPartyId",
                       "companyAccountId", "draftId", "approvedLineId", "instructionId", "blockedLineId",
                       "openLineId"}),
-    # SATINALMA's Suites/PUR01 seed: one synthetic Draft order and line plus the two actors and company fence.
-    "pur01": frozenset({"approverActor", "readerActor", "companyId", "otherCompanyId", "orderId", "lineId"}),
+    # SATINALMA's Suites/PUR01 seed: the existing synthetic Draft approval axis plus the separate creator,
+    # the real Cari-owned active Supplier account and Product's exact gated purchase-candidate tuple.
+    "pur01": frozenset({"creatorActor", "approverActor", "readerActor", "companyId", "otherCompanyId",
+                        "orderId", "lineId", "supplierPartyId", "companyAccountId", "productId",
+                        "productVersion", "productUnitId", "productUnitProfileId",
+                        "productUnitProfileVersion", "productCode", "productName"}),
 }
 _OUTPUT_KEY = re.compile(r"^[a-z][A-Za-z0-9]{0,39}$")
 # Any non-nil lowercase GUID: seeded reference ids (companies, work centres) need not be RFC 4122.
@@ -459,8 +467,15 @@ def seed_export(suite: str, seed: object) -> str:
             and re.fullmatch(r"SYNS04-[1-9][0-9]*", value) is not None
         is_s04_name = suite == "s04" and key == "productName" \
             and value == "SENTETIK browser-suite:s04 sales candidate"
-        require(is_guid or is_actor or is_s04_version or is_s04_code or is_s04_name,
-                f"seed output {key} must be a GUID or an actor id or an approved s04 Product value")
+        is_pur01_version = suite == "pur01" and key in {"productVersion", "productUnitProfileVersion"} \
+            and re.fullmatch(r"[1-9][0-9]*", value) is not None
+        is_pur01_code = suite == "pur01" and key == "productCode" \
+            and re.fullmatch(r"SYNPUR01-[1-9][0-9]*", value) is not None
+        is_pur01_name = suite == "pur01" and key == "productName" \
+            and value == "SENTETIK browser-suite:pur01 purchase candidate"
+        require(is_guid or is_actor or is_s04_version or is_s04_code or is_s04_name
+                or is_pur01_version or is_pur01_code or is_pur01_name,
+                f"seed output {key} must be a GUID or an actor id or an approved suite Product value")
     compact = json.dumps(seed, sort_keys=True, separators=(",", ":"))
     return f"BROWSER_E2E_{suite.upper()}_SEED={compact}"
 
