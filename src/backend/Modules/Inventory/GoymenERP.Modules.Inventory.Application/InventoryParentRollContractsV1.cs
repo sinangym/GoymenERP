@@ -1,5 +1,15 @@
 namespace GoymenERP.Modules.Inventory.Application;
 
+/// <summary>
+/// Stable owner declaration for the central host's parent-roll candidate publication.
+/// The host owns endpoint mapping and OpenAPI; this module owns the route and wire contract identity.
+/// </summary>
+public static class InventoryParentRollApiV1
+{
+    public const string CandidatesPath = "/api/v1/inventory/references/parent-rolls";
+    public const string GetCandidatesOperationId = "GetInventoryParentRollCandidatesV1";
+}
+
 /// <summary>Company-scoped physical label discovery for draft references, not stock availability.</summary>
 public interface IInventoryParentRollCandidatesV1
 {

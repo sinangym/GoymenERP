@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Manufacturing.Domain.Common;
 using GoymenERP.Modules.Manufacturing.Domain.Engines;
 using GoymenERP.Modules.Manufacturing.Domain.Engines.Balance;
@@ -22,7 +23,7 @@ namespace GoymenERP.Modules.Manufacturing.Application;
 public sealed record SavePlanRequestV1(
     Guid PlanId, Guid WorkCenterId, IReadOnlyList<PlannedInputRequestV1>? Inputs, TargetRequestV1? Target);
 
-public sealed record PlannedInputRequestV1(Guid ParentRollId, string? PlannedKg);
+public sealed record PlannedInputRequestV1(Guid ParentRollId, string? PlannedKg, string ExpectedLabelVersion);
 
 /// <summary><see cref="Basis"/> is <c>InputMass</c> or <c>GoodOutputMass</c>, the plan's declared basis.</summary>
 public sealed record TargetRequestV1(string? Basis, string? Kg);
@@ -193,7 +194,8 @@ public sealed partial class ManufacturingCommandService(
     ICompanyContext companyContext,
     ICurrentUser currentUser,
     ICorrelationContext correlation,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    IInventoryParentRollValidationV1? parentRolls = null)
 {
     /// <summary>Any integer mantissa of this many digits fits a decimal's 96 bits, so such a text converts exactly.</summary>
     private const int ExactDecimalDigits = 28;
@@ -223,15 +225,21 @@ public sealed partial class ManufacturingCommandService(
             return Task.FromResult(Invalid<PlanViewV1>("target.basis"));
         }
 
-        var inputs = new List<(Guid ParentRollId, decimal Kg)>();
-        foreach (var input in request.Inputs)
+        var inputs = new List<(Guid ParentRollId, string ExpectedLabelVersion, decimal Kg)>();
+        for (var index = 0; index < request.Inputs.Count; index++)
         {
+            var input = request.Inputs[index];
             if (ParseKg(input.PlannedKg) is not { } kg)
             {
                 return Task.FromResult(Invalid<PlanViewV1>("inputs.plannedKg"));
             }
 
-            inputs.Add((input.ParentRollId, kg));
+            if (!IsPositiveCanonicalInt64(input.ExpectedLabelVersion))
+            {
+                return Task.FromResult(Invalid<PlanViewV1>($"inputs[{index}].expectedLabelVersion"));
+            }
+
+            inputs.Add((input.ParentRollId, input.ExpectedLabelVersion!, kg));
         }
 
         decimal? targetKg = null;
@@ -249,7 +257,12 @@ public sealed partial class ManufacturingCommandService(
         {
             planId = request.PlanId,
             workCenterId = request.WorkCenterId,
-            inputs = inputs.Select(input => new { rollId = input.ParentRollId, kg = Text(input.Kg) }),
+            inputs = inputs.Select(input => new
+            {
+                rollId = input.ParentRollId,
+                expectedLabelVersion = input.ExpectedLabelVersion,
+                kg = Text(input.Kg),
+            }),
             target = request.Target is null ? null : new { basis = request.Target.Basis, kg = Text(targetKg!.Value) },
         };
 
@@ -258,12 +271,20 @@ public sealed partial class ManufacturingCommandService(
             {
                 var today = DateOnly.FromDateTime(timeProvider.GetUtcNow().UtcDateTime);
                 var planned = new List<(Guid ParentRollId, Kilograms Mass)>();
-                foreach (var input in inputs)
+                for (var index = 0; index < inputs.Count; index++)
                 {
+                    var input = inputs[index];
                     var mass = await VerifyAsync(input.Kg, today, "inputs.plannedKg", cancellationToken);
                     if (mass.Refusal is not null)
                     {
                         return Refusal<PlanViewV1>(mass.Refusal);
+                    }
+
+                    var reference = await ValidateParentRollAsync(input.ParentRollId, input.ExpectedLabelVersion,
+                        $"inputs[{index}].expectedLabelVersion", cancellationToken);
+                    if (reference is not null)
+                    {
+                        return Refusal<PlanViewV1>(reference);
                     }
 
                     planned.Add((input.ParentRollId, mass.Value));
@@ -707,6 +728,8 @@ public sealed partial class ManufacturingCommandService(
         // (validation, Settings, rules, a lost race without a winner) is not recorded.
         var terminal = result.Status == ManufacturingApiStatus.NotFound
             || (result.Status == ManufacturingApiStatus.Conflict && result.Code == ManufacturingRuleCodes.VersionConflict)
+            || (result.Status == ManufacturingApiStatus.Conflict
+                && result.Code == InventoryParentRollCodesV1.VersionConflict)
             || result.Status == successStatus;
         if (!terminal)
         {
@@ -797,6 +820,65 @@ public sealed partial class ManufacturingCommandService(
         return (default, new ManufacturingApiResult<object>(status, null, false, verification.Code, field));
     }
 
+    /// <summary>
+    /// Revalidates Inventory's exact label/version after this command's stored-answer lookup. The owner
+    /// decides draft selectability; Manufacturing only closes the cross-module result into its existing
+    /// status channel and verifies the successful answer still names this company and selection.
+    /// </summary>
+    private async Task<ManufacturingApiResult<object>?> ValidateParentRollAsync(Guid labelId,
+        string expectedLabelVersion, string expectedVersionField, CancellationToken cancellationToken)
+    {
+        if (parentRolls is null)
+        {
+            return new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false,
+                InventoryParentRollCodesV1.Unavailable);
+        }
+
+        try
+        {
+            var reference = await parentRolls.ValidateAsync(
+                new InventoryParentRollSelectionV1(labelId, expectedLabelVersion), cancellationToken);
+            return reference.CompanyId == companyContext.CompanyId
+                   && reference.LabelId == labelId
+                   && string.Equals(reference.LabelVersion, expectedLabelVersion, StringComparison.Ordinal)
+                   && reference.DraftSelectable
+                   && reference.DraftRefusalCode is null
+                   && reference.ProductionUseRequiresRevalidation
+                ? null
+                : new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false,
+                    InventoryParentRollCodesV1.Unavailable);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (InventoryParentRollException exception)
+        {
+            return exception switch
+            {
+                { StatusCode: 400, Code: InventoryParentRollCodesV1.InvalidVersion } =>
+                    Invalid<object>(expectedVersionField),
+                { StatusCode: 401 or 403 } => Denied<object>(),
+                { StatusCode: 404 } => NotFoundResult<object>(),
+                { StatusCode: 409, Code: InventoryParentRollCodesV1.VersionConflict
+                    or InventoryParentRollCodesV1.ReadConflict } =>
+                    new ManufacturingApiResult<object>(ManufacturingApiStatus.Conflict, null, false, exception.Code),
+                { StatusCode: 422, Code: InventoryParentRollCodesV1.ContextRequired
+                    or InventoryParentRollCodesV1.NoPhysicalPosition } =>
+                    new ManufacturingApiResult<object>(ManufacturingApiStatus.Unprocessable, null, false, exception.Code),
+                { StatusCode: 503, Code: InventoryParentRollCodesV1.Unavailable } =>
+                    new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false, exception.Code),
+                _ => new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false,
+                    InventoryParentRollCodesV1.Unavailable),
+            };
+        }
+        catch (Exception)
+        {
+            return new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false,
+                InventoryParentRollCodesV1.Unavailable);
+        }
+    }
+
     private async Task<ManufacturingApiResult<OrderViewV1>> OrderResultAsync(Guid orderId, ManufacturingApiStatus status,
         bool isReplay, CancellationToken cancellationToken)
     {
@@ -828,6 +910,12 @@ public sealed partial class ManufacturingCommandService(
         && decimal.TryParse(text, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var value)
             ? value
             : null;
+
+    private static bool IsPositiveCanonicalInt64(string? text) =>
+        text is not null
+        && long.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out var value)
+        && value > 0
+        && string.Equals(value.ToString(CultureInfo.InvariantCulture), text, StringComparison.Ordinal);
 
     /// <summary>The integer part's digits (none for "0") plus the fraction's without its trailing zeros; the grammar is already checked.</summary>
     private static int SignificantDigits(string text)
