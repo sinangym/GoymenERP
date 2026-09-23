@@ -113,7 +113,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // Re-fingerprinted for PUR-4a: the Purchasing module joins INVENTORY_MODULES and the class prefixes
     // (tools/relational_inventory/purchasing.txt, pinned below).
     private const string ReviewedSqlServerRcsiVerifierFingerprint =
-        "db654d119aa40ae16ce1e3727e4c234f89df90145e92a00aea987a394184dd57";
+        "184a6093519b2a79b1eb59cdead7d5b821e995c8216300de499457bad8bcbc66";
     private const string SqlServerRcsiVerifierTestsPath =
         "tests/rcsi_relational_acceptance_verifier/"
         + "test_verify_rcsi_relational_acceptance.py";
@@ -123,7 +123,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // Re-fingerprinted for LOG-4a: a Logistics class maps to its own module.
     // Re-fingerprinted for PUR-4a: a Purchasing class maps to its own module.
     private const string ReviewedSqlServerRcsiVerifierTestsFingerprint =
-        "ac04c5cb4628fa32bb00728db6cbf52c7bebb694e9622b2d2e6d1781d024c038";
+        "49fdbe2e1fcaf14f3d61524cce652d0b70a92b93a0c3aa9a28a4456b676ca9bc";
     // The broad relational inventory, one file per module (see RelationalInventoryDirectory). Each
     // pin is its own paragraph so that two modules re-pinning their own files change lines that are
     // not adjacent and combine cleanly; a file's owner is its module, the pin line is central.

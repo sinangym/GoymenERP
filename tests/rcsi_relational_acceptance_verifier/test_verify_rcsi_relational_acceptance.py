@@ -43,16 +43,16 @@ class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
 
     def test_missing_discovery_is_rejected(self) -> None:
         output = "\n".join(VERIFIER.EXPECTED_TESTS[:-1])
-        with self.assertRaisesRegex(RuntimeError, "exactly the ten"):
+        with self.assertRaisesRegex(RuntimeError, "exactly the fourteen"):
             VERIFIER.verify_discovery(output)
 
     def test_exact_trx_counters_are_accepted(self) -> None:
         self._verify_trx(
-            '<TestRun xmlns="urn:test"><ResultSummary><Counters total="10" '
-            'executed="10" passed="10" failed="0" error="0" timeout="0" '
+            '<TestRun xmlns="urn:test"><ResultSummary><Counters total="14" '
+            'executed="14" passed="14" failed="0" error="0" timeout="0" '
             'aborted="0" inconclusive="0" notExecuted="0" />'
             "</ResultSummary></TestRun>",
-            10,
+            14,
         )
 
     def test_skipped_or_missing_counter_is_rejected(self) -> None:
