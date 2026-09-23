@@ -1,4 +1,5 @@
 using System.Net;
+using System.Data.Common;
 using System.Net.Http.Json;
 using GoymenERP.Api.Security;
 using GoymenERP.BuildingBlocks.Multitenancy;
@@ -9,6 +10,7 @@ using GoymenERP.Modules.Identity.Domain.Assignments;
 using GoymenERP.Modules.Identity.Domain.Roles;
 using GoymenERP.Modules.Identity.Domain.Users;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
+using GoymenERP.Modules.Identity.Infrastructure.Services;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Domain.Labels;
 using GoymenERP.Modules.Inventory.Domain.Lots;
@@ -16,9 +18,11 @@ using GoymenERP.Modules.Inventory.Domain.Movements;
 using GoymenERP.Modules.Inventory.Domain.Quantities;
 using GoymenERP.Modules.Inventory.Domain.Stock;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
+using GoymenERP.Modules.Inventory.Infrastructure;
 using GoymenERP.Modules.Settings.Application;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.Api.IntegrationTests;
@@ -132,6 +136,133 @@ public sealed class InventoryReadApiSqlServerRelationalAcceptanceTests
         }
     }
 
+    [SqlServerFact]
+    public async Task Parent_roll_reference_keeps_real_physical_block_document_ownership_facts_without_availability()
+    {
+        await using var run = await Run.StartAsync();
+        var own = await run.StockedLabelAsync("SYN-R13-A", pending: true);
+        var customer = await run.StockedLabelAsync("SYN-R13-B", customer: true);
+        var actor = await run.GrantAsync(TestUsers.CompanyA, CompanyA,
+            ErpPermissions.InventoryLabelsRead, ErpPermissions.InventoryBalancesRead);
+        var before = await run.EffectsAsync();
+        await run.WithParentRollAsync(actor, CompanyA, async (service, _) =>
+        {
+            var window = await service.SearchAsync(new("SYN-R13", 1));
+            Assert.True(window.SearchWindowFull);
+            var item = Assert.Single(window.Items);
+            Assert.Equal(own.Id, item.LabelId);
+            Assert.Equal("3", item.LabelVersion);
+            Assert.Equal(("1000.125", "899.625", "100.5"),
+                (item.PhysicalKg, item.UnblockedPhysicalKg, item.BlockedPhysicalKg));
+            Assert.Equal("PendingDocuments", item.DocumentStatus);
+            Assert.Equal(["MTC"], item.RequiredDocuments);
+            Assert.Empty(item.AttachedDocuments);
+            Assert.True(item.DraftSelectable);
+            Assert.Null(item.DraftRefusalCode);
+            Assert.True(item.ProductionUseRequiresRevalidation);
+            Assert.Equal(new InventoryLotV1(Lot, "SYN-LOT-HEAT", null), item.Lot);
+            Assert.Null(item.CoilNumber);
+            Assert.All(item.Positions, p => Assert.Equal(("Company", CompanyA, "Company", CompanyA),
+                (p.OwnerKind, p.OwnerId, p.CustodianKind, p.CustodianId)));
+            var validated = await service.ValidateAsync(new(own.Id, "3"));
+            Assert.Equal((CompanyA, own.Id, "3", true, (string?)null, true),
+                (validated.CompanyId, validated.LabelId, validated.LabelVersion, validated.DraftSelectable,
+                    validated.DraftRefusalCode, validated.ProductionUseRequiresRevalidation));
+            var all = await service.SearchAsync(new("SYN-R13", 100));
+            Assert.False(all.SearchWindowFull);
+            var foreignOwner = Assert.Single(all.Items, i => i.LabelId == customer.Id);
+            Assert.False(foreignOwner.DraftSelectable);
+            Assert.All(foreignOwner.Positions, p => Assert.Equal("Counterparty", p.OwnerKind));
+            await ParentRollRefused(service.ValidateAsync(new(customer.Id, "3")), 422, InventoryParentRollCodesV1.ContextRequired);
+            await ParentRollRefused(service.ValidateAsync(new(own.Id, "2")), 409, InventoryParentRollCodesV1.VersionConflict);
+        });
+        Assert.Equal(before, await run.EffectsAsync());
+    }
+
+    [SqlServerFact]
+    public async Task Parent_roll_real_company_grants_and_post_read_revocation_do_not_disclose_foreign_or_revoked_stock()
+    {
+        await using var run = await Run.StartAsync();
+        var label = await run.StockedLabelAsync("SYN-R13-FENCE");
+        var actorA = await run.GrantAsync(TestUsers.CompanyA, CompanyA,
+            ErpPermissions.InventoryLabelsRead, ErpPermissions.InventoryBalancesRead);
+        var actorB = await run.GrantAsync(TestUsers.CompanyB, CompanyB,
+            ErpPermissions.InventoryLabelsRead, ErpPermissions.InventoryBalancesRead);
+        await run.WithParentRollAsync(actorB, CompanyB, async (service, _) =>
+        {
+            Assert.Empty((await service.SearchAsync(new())).Items);
+            await ParentRollRefused(service.ValidateAsync(new(label.Id, "3")), 404, InventoryParentRollCodesV1.InvalidReference);
+            await ParentRollRefused(service.ValidateAsync(new(Guid.NewGuid(), "3")), 404, InventoryParentRollCodesV1.InvalidReference);
+        });
+        var onlyLabel = await run.GrantAsync(TestUsers.NoAssignment, CompanyA, ErpPermissions.InventoryLabelsRead);
+        await run.WithParentRollAsync(onlyLabel, CompanyA, async (service, _) =>
+            await ParentRollRefused(service.SearchAsync(new()), 403, InventoryParentRollCodesV1.Forbidden));
+        await run.WithParentRollAsync(actorA, CompanyA, async (service, reader) =>
+        {
+            await ParentRollRefused(service.ValidateAsync(new(label.Id, "3")), 403, InventoryParentRollCodesV1.Forbidden);
+            Assert.True(reader.ObservedRealRecord);
+        }, afterRead: () => run.RevokeAsync(actorA));
+    }
+
+    [SqlServerFact]
+    public async Task Parent_roll_capture_rejects_a_real_label_version_change_between_physical_reads()
+    {
+        await using var run = await Run.StartAsync();
+        var label = await run.StockedLabelAsync("SYN-R13-TORN");
+        var actor = await run.GrantAsync(TestUsers.CompanyA, CompanyA,
+            ErpPermissions.InventoryLabelsRead, ErpPermissions.InventoryBalancesRead);
+        var interceptor = new AfterBalanceRead(() => run.TouchAsync(label.Id));
+        await run.WithParentRollAsync(actor, CompanyA, async (service, _) =>
+            await ParentRollRefused(service.ValidateAsync(new(label.Id, "3")), 409, InventoryParentRollCodesV1.ReadConflict),
+            interceptor: interceptor);
+        Assert.True(interceptor.Triggered);
+        await run.WithParentRollAsync(actor, CompanyA, async (service, _) =>
+        {
+            await ParentRollRefused(service.ValidateAsync(new(label.Id, "3")), 409, InventoryParentRollCodesV1.VersionConflict);
+            Assert.Equal("4", (await service.ValidateAsync(new(label.Id, "4"))).LabelVersion);
+        });
+    }
+
+    private static async Task ParentRollRefused(Task task, int status, string code)
+    {
+        var error = await Assert.ThrowsAsync<InventoryParentRollException>(() => task);
+        Assert.Equal((status, code), (error.StatusCode, error.Code));
+    }
+
+    private sealed class AfterBalanceRead(Func<Task> action) : DbCommandInterceptor
+    {
+        public bool Triggered { get; private set; }
+        public override async ValueTask<DbDataReader> ReaderExecutedAsync(DbCommand command,
+            CommandExecutedEventData eventData, DbDataReader result, CancellationToken cancellationToken = default)
+        {
+            if (!Triggered && command.CommandText.Contains("[inventory].[Balances]", StringComparison.Ordinal))
+            {
+                Triggered = true;
+                await action();
+            }
+            return result;
+        }
+    }
+
+    private sealed class AfterParentRollRead(IInventoryParentRollReader source, Func<Task>? after) : IInventoryParentRollReader
+    {
+        public bool ObservedRealRecord { get; private set; }
+        public async Task<InventoryParentRollRecord?> ReadAsync(Guid company, Guid id, CancellationToken ct)
+        {
+            var result = await source.ReadAsync(company, id, ct);
+            ObservedRealRecord = result is not null;
+            if (after is not null) await after();
+            return result;
+        }
+        public async Task<InventoryParentRollWindow> SearchAsync(Guid company, string q, int limit, CancellationToken ct)
+        {
+            var result = await source.SearchAsync(company, q, limit, ct);
+            ObservedRealRecord = result.Records.Count > 0;
+            if (after is not null) await after();
+            return result;
+        }
+    }
+
     private sealed class Run : IAsyncDisposable
     {
         private readonly string baseConnectionString;
@@ -162,12 +293,12 @@ public sealed class InventoryReadApiSqlServerRelationalAcceptanceTests
         }
 
         /// <summary>A synthetic label of company A with 1000.125 kg received and 100.5 kg blocked, through the store.</summary>
-        public async Task<MaterialLabel> StockedLabelAsync(string code)
+        public async Task<MaterialLabel> StockedLabelAsync(string code, bool pending = false, bool customer = false)
         {
             var location = await ScalarAsync<Guid>(
                 "SELECT TOP (1) Id FROM organization.Locations WHERE CompanyId = @c ORDER BY Id", ("@c", CompanyA));
-            var label = new MaterialLabel(Guid.NewGuid(), CompanyA, code, Product, Lot);
-            var owner = new StockOwner(StockPartyKind.Company, CompanyA);
+            var label = new MaterialLabel(Guid.NewGuid(), CompanyA, code, Product, Lot, requiredDocuments: pending ? ["MTC"] : []);
+            var owner = new StockOwner(customer ? StockPartyKind.Counterparty : StockPartyKind.Company, customer ? Guid.NewGuid() : CompanyA);
             var custodian = new StockCustodian(StockPartyKind.Company, CompanyA);
             var free = new StockPosition(CompanyA, owner, custodian, location, label, BlockState.Free);
             var blocked = free.WithBlock(BlockState.Blocked);
@@ -222,6 +353,46 @@ public sealed class InventoryReadApiSqlServerRelationalAcceptanceTests
             await dbContext.SaveChangesAsync();
             return developmentUser;
         }
+
+        public async Task WithParentRollAsync(string developmentUser, Guid company,
+            Func<InventoryParentRollService, AfterParentRollRead, Task> test, Func<Task>? afterRead = null,
+            IInterceptor? interceptor = null)
+        {
+            await using var scope = Factory.Services.CreateAsyncScope();
+            var identity = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
+            var link = await identity.ExternalIdentities.SingleAsync(x => x.Issuer == BootstrapIdentityOptions.Issuer
+                && x.Subject == developmentUser);
+            var user = new FixedCurrentUser(link.UserId, company);
+            var context = new CompanyContext();
+            context.Set(company);
+            await using var inventory = Context(company, interceptor is null ? [] : [interceptor]);
+            var reader = new AfterParentRollRead(new SqlInventoryParentRollReader(inventory), afterRead);
+            await test(new InventoryParentRollService(context, user, new ErpAuthorizationService(identity, user), reader), reader);
+        }
+
+        public async Task RevokeAsync(string developmentUser)
+        {
+            await using var scope = Factory.Services.CreateAsyncScope();
+            var identity = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
+            var actor = await identity.ExternalIdentities.Where(x => x.Issuer == BootstrapIdentityOptions.Issuer
+                && x.Subject == developmentUser).Select(x => x.UserId).SingleAsync();
+            var assignments = await identity.RoleAssignments.Include(x => x.Scopes)
+                .Where(x => x.UserId == actor && x.CompanyId == CompanyA).ToListAsync();
+            identity.RoleAssignments.RemoveRange(assignments);
+            await identity.SaveChangesAsync();
+        }
+
+        public async Task TouchAsync(Guid labelId)
+        {
+            var writer = Guid.NewGuid();
+            await using var scope = Store(writer);
+            var label = (await scope.Store.FindLabelAsync(labelId))!;
+            label.Print(At.AddMinutes(1), writer.ToString());
+            await scope.Store.SaveLabelAsync(label, Metadata(writer));
+        }
+
+        public Task<string> EffectsAsync() => ScalarAsync<string>(
+            "SELECT CONCAT((SELECT COUNT(*) FROM inventory.Movements), ':', (SELECT COUNT(*) FROM audit.AuditEvents), ':', (SELECT SUM(Version) FROM inventory.Labels))");
 
         public async ValueTask DisposeAsync()
         {
