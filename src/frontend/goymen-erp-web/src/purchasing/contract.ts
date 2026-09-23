@@ -94,6 +94,57 @@ export interface CreatePurchaseOrderRequest {
   readonly lines: readonly CreatePurchaseOrderLineRequest[]
 }
 
+export type PurchaseRequestStatus = 'Draft' | 'Submitted'
+
+export interface PurchaseRequestSummary {
+  readonly id: string
+  readonly companyId: string
+  readonly status: PurchaseRequestStatus
+  readonly version: string
+  readonly effectiveOn: string
+  readonly createdAtUtc: string
+  readonly updatedAtUtc: string
+  readonly lineCount: number
+}
+
+export interface PurchaseRequestLine {
+  readonly lineId: string
+  readonly lineNo: number
+  readonly productId: string
+  readonly productVersion: string
+  readonly unitId: string
+  readonly quantity: string
+}
+
+export interface PurchaseRequestDetail {
+  readonly request: PurchaseRequestSummary
+  readonly lines: readonly PurchaseRequestLine[]
+}
+
+export interface PurchaseRequestList {
+  readonly items: readonly PurchaseRequestSummary[]
+  readonly nextCursor: string | null
+}
+
+export interface PurchaseRequestCommandResponse {
+  readonly detail: PurchaseRequestDetail
+  readonly isReplay: boolean
+  readonly originalCorrelationId: string
+}
+
+export interface CreatePurchaseRequestLineRequest {
+  readonly lineId: string
+  readonly productId: string
+  readonly expectedProductVersion: string
+  readonly unitId: string
+  readonly quantity: string
+}
+
+export interface CreatePurchaseRequestRequest {
+  readonly effectiveOn: string
+  readonly lines: readonly CreatePurchaseRequestLineRequest[]
+}
+
 type JsonObject = Record<string, unknown>
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const NIL_GUID = '00000000-0000-0000-0000-000000000000'
@@ -129,6 +180,10 @@ function nullableGuid(value: unknown): value is string | null {
 
 function status(value: unknown): value is PurchaseOrderStatus {
   return value === 'Draft' || value === 'Approved'
+}
+
+function requestStatus(value: unknown): value is PurchaseRequestStatus {
+  return value === 'Draft' || value === 'Submitted'
 }
 
 function lineKind(value: unknown): value is PurchaseOrderLineKind {
@@ -196,6 +251,30 @@ function decodeLine(value: unknown): PurchaseOrderLine | null {
   return source as unknown as PurchaseOrderLine
 }
 
+function decodeRequestSummary(value: unknown): PurchaseRequestSummary | null {
+  const source = record(value)
+  if (
+    source === null ||
+    !exact(source, ['id', 'companyId', 'status', 'version', 'effectiveOn', 'createdAtUtc', 'updatedAtUtc', 'lineCount']) ||
+    !guid(source.id) || !guid(source.companyId) || !requestStatus(source.status) || !canonicalVersion(source.version) ||
+    !dateOnly(source.effectiveOn) || !instant(source.createdAtUtc) || !instant(source.updatedAtUtc) ||
+    !Number.isSafeInteger(source.lineCount) || (source.lineCount as number) < 0
+  ) return null
+  return source as unknown as PurchaseRequestSummary
+}
+
+function decodeRequestLine(value: unknown): PurchaseRequestLine | null {
+  const source = record(value)
+  if (
+    source === null ||
+    !exact(source, ['lineId', 'lineNo', 'productId', 'productVersion', 'unitId', 'quantity']) ||
+    !guid(source.lineId) || !Number.isSafeInteger(source.lineNo) || (source.lineNo as number) < 1 ||
+    !guid(source.productId) || !canonicalVersion(source.productVersion) || !guid(source.unitId) ||
+    !text(source.quantity) || !DECIMAL.test(source.quantity as string)
+  ) return null
+  return source as unknown as PurchaseRequestLine
+}
+
 function decodeProductPurchaseCandidate(value: unknown): ProductPurchaseCandidate | null {
   const source = record(value)
   if (
@@ -235,6 +314,33 @@ export function decodePurchaseOrderCommandResponse(value: unknown): PurchaseOrde
   const source = record(value)
   if (source === null || !exact(source, ['detail', 'isReplay', 'originalCorrelationId'])) return null
   const detail = decodePurchaseOrderDetail(source.detail)
+  if (detail === null || typeof source.isReplay !== 'boolean' || !text(source.originalCorrelationId)) return null
+  return { detail, isReplay: source.isReplay, originalCorrelationId: source.originalCorrelationId }
+}
+
+export function decodePurchaseRequestList(value: unknown): PurchaseRequestList | null {
+  const source = record(value)
+  if (source === null || !exact(source, ['items', 'nextCursor']) || !Array.isArray(source.items)) return null
+  if (source.nextCursor !== null && !text(source.nextCursor)) return null
+  const items = source.items.map(decodeRequestSummary)
+  return items.some((item) => item === null)
+    ? null
+    : { items: items as PurchaseRequestSummary[], nextCursor: source.nextCursor as string | null }
+}
+
+export function decodePurchaseRequestDetail(value: unknown): PurchaseRequestDetail | null {
+  const source = record(value)
+  if (source === null || !exact(source, ['request', 'lines']) || !Array.isArray(source.lines)) return null
+  const request = decodeRequestSummary(source.request)
+  const lines = source.lines.map(decodeRequestLine)
+  if (request === null || lines.some((line) => line === null) || request.lineCount !== lines.length) return null
+  return { request, lines: lines as PurchaseRequestLine[] }
+}
+
+export function decodePurchaseRequestCommandResponse(value: unknown): PurchaseRequestCommandResponse | null {
+  const source = record(value)
+  if (source === null || !exact(source, ['detail', 'isReplay', 'originalCorrelationId'])) return null
+  const detail = decodePurchaseRequestDetail(source.detail)
   if (detail === null || typeof source.isReplay !== 'boolean' || !text(source.originalCorrelationId)) return null
   return { detail, isReplay: source.isReplay, originalCorrelationId: source.originalCorrelationId }
 }
