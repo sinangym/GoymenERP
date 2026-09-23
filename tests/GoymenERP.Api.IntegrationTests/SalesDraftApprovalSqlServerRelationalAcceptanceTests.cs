@@ -845,9 +845,10 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
             await AttemptsAsync()));
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'sales.order-draft.withdrawn.v1' AND EntityId = @id", ("@id", priced.Id.ToString())));
 
-        // (5) Ownership is the PREPARER, not the submitter (Sinan 5750987986 point 2): A prepares, B submits, A (holding the
-        //     approve name) is fenced on their own order; B — authorized, not the preparer — decides it as on main, the
-        //     own name never asked.
+        // (5) Ownership is the PREPARER, not the submitter (Sinan 5750987986 point 2): A prepares, B submits, A as
+        //     SALES_SUPPORT (holding the approve name too) is fenced on their own order; B — authorized, not the preparer —
+        //     decides it as on main. This is not a universal creator ban: a non-SALES_SUPPORT creator keeps the pre-D2
+        //     behavior under the existing approve name, proved separately below without a role/grant/admin exception.
         const string submitter = "SENTETIK-submitter";
         SalesOrderDraft third;
         await using (var a = run.Store(CompanyA))
@@ -876,6 +877,40 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
         Assert.All(submitterAsks.Measured, ask => Assert.Contains(ask.Permission, new[] { SalesPermissionManifestV1.OrdersApprove, SalesPermissionManifestV1.OrdersPriceRead }));
         Assert.Equal((3, submitter), (await run.ScalarAsync<int>("SELECT [ApprovalState] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", third.Id)),
             await run.ScalarAsync<string>("SELECT [DecidedBy] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", third.Id))));
+
+        // (6) D2md1 source conformance: CreatedBy still defines `own`, but only the accepted SALES_SUPPORT persona turns
+        //     that relationship into the own-decision refusal. A creator with no SALES_SUPPORT role and the already-existing
+        //     approve permission may decide their own submitted draft exactly as before D2. No new permission, role code,
+        //     grant or admin bypass participates in this case.
+        const string nonSalesSupportCreator = "SENTETIK-non-sales-support-creator";
+        SalesOrderDraft fourth;
+        await using (var a = run.Store(CompanyA))
+        {
+            fourth = (await a.Store.StoreDraftAsync(run.Envelope("k-create-4", actor: nonSalesSupportCreator), Hash("payload-4"),
+                documentNo => Draft(owners, documentNo, T0))).Draft;
+            await a.Store.UpdateDraftStateAsync(run.Envelope("k-submit-4", actor: submitter), Hash("submit-4"), SalesDraftCommands.SubmitV1,
+                fourth.Id, (d, now) => d.Submit(2, submitter, now), Submitted);
+        }
+
+        Assert.Equal((nonSalesSupportCreator, submitter), (
+            await run.ScalarAsync<string>("SELECT [CreatedBy] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", fourth.Id)),
+            await run.ScalarAsync<string>("SELECT [SubmittedBy] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", fourth.Id))));
+        var creatorAsks = new RecordingAuthority(SalesPermissionManifestV1.OrdersApprove);
+        await using (var a = run.Store(CompanyA))
+        {
+            var decidedByCreator = await run.Service(a, nonSalesSupportCreator, creatorAsks).ApproveDraftAsync(
+                fourth.Id,
+                new SalesDraftStateCommandRequest("3"),
+                run.Metadata("k-fourth-creator-approves"));
+            Assert.Equal(("Approved", nonSalesSupportCreator, true),
+                (decidedByCreator.Detail.Draft.ApprovalState, decidedByCreator.Detail.Approval.DecidedBy, decidedByCreator.Detail.IsOwnDraft));
+        }
+
+        Assert.All(creatorAsks.Measured, ask => Assert.Contains(ask.Permission,
+            new[] { SalesPermissionManifestV1.OrdersApprove, SalesPermissionManifestV1.OrdersPriceRead }));
+        Assert.Equal((3, nonSalesSupportCreator), (
+            await run.ScalarAsync<int>("SELECT [ApprovalState] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", fourth.Id)),
+            await run.ScalarAsync<string>("SELECT [DecidedBy] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", fourth.Id))));
     }
 
     /// <summary>
