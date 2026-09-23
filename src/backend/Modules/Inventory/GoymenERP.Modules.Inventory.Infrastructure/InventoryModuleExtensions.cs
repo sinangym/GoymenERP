@@ -1,5 +1,7 @@
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
+using GoymenERP.Modules.Inventory.Infrastructure.Shell;
+using GoymenERP.BuildingBlocks.Shell;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -50,6 +52,7 @@ public static class InventoryModuleExtensions
         services.AddScoped<IInventoryOpeningStore>(serviceProvider => serviceProvider.GetRequiredService<InventoryStore>());
         // INV-OPEN-1 part 2: the opening-count command; its location and product ports are the host's adapters.
         services.AddScoped<IInventoryOpeningCommandService, InventoryOpeningCommandService>();
+        services.AddSingleton<IShellCapabilityProvider, InventoryShellCapabilityProvider>();
         return services;
     }
 

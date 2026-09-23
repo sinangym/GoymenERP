@@ -101,6 +101,20 @@ public static class ProductRuntimeExtensions
             (company, user, authority, records, policy, units) =>
                 new ProductStockEligibilityService(company, user, authority, records, policy, units),
             () => new UnconfiguredProductEligibility()));
+        services.AddScoped<IProductStockCandidateReader, SqlProductStockCandidateReader>();
+        services.AddScoped<IProductStockCandidatesV1>(provider =>
+        {
+            var settings = provider.GetService<ISettingsPrerequisiteProvider>();
+            if (!provider.GetRequiredService<ProductRuntimeOptions>().IsEnabled || settings is null)
+                return new UnconfiguredProductStockCandidates();
+            return new ProductStockCandidateService(
+                provider.GetRequiredService<ICompanyContext>(),
+                provider.GetRequiredService<ICurrentUser>(),
+                provider.GetRequiredService<IErpAuthorityRevalidationService>(),
+                provider.GetRequiredService<IProductStockCandidateReader>(),
+                provider.GetRequiredService<IProductStockEligibilityV1>(),
+                provider.GetRequiredService<ProductUnitProfileAdapter>());
+        });
         return services;
     }
 
@@ -160,6 +174,13 @@ internal sealed class UnconfiguredProductSalesCandidates : IProductSalesCandidat
 {
     public Task<ProductSalesCandidatesV1> SearchAsync(ProductSalesCandidateQueryV1 query,
         CancellationToken cancellationToken) => Task.FromException<ProductSalesCandidatesV1>(
+            new ProductOperationException(UnconfiguredProductEligibility.UnavailableCode, 503));
+}
+
+internal sealed class UnconfiguredProductStockCandidates : IProductStockCandidatesV1
+{
+    public Task<ProductStockCandidatesV1> SearchAsync(ProductStockCandidateQueryV1 query,
+        CancellationToken cancellationToken) => Task.FromException<ProductStockCandidatesV1>(
             new ProductOperationException(UnconfiguredProductEligibility.UnavailableCode, 503));
 }
 

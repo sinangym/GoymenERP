@@ -171,6 +171,11 @@ internal static class ShellCapabilityRegistryAuthorities
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV11PublishedLogisticsV10PublishedPurchasingV13AndPublishedAccountingV10 =
         "sha256:ao-MSvVrBObNc5FOewXbDZ1AQfHySNZ3RGplajE96y4";
 
+    // R14: Inventory 1.0 publishes one opening-stock workspace after the existing normal tuple.
+    // The capability reuses the accepted company-wide permission; publication grants nothing.
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV11PublishedLogisticsV10PublishedPurchasingV13PublishedAccountingV10AndPublishedInventoryV10 =
+        "sha256:FiFWJTXP6jwa16t-FDj5jJgTxYrm1q3nVK6CRwWW9js";
+
     internal const string CounterpartyV15PublishedListCreateAndDetail =
         "sha256:UBHnivzhe_dp5f7vU7dP5n7HG-P8XYBGhxvD_OjMSnw";
 

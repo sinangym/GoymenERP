@@ -2,6 +2,7 @@ using GoymenERP.BuildingBlocks.Shell;
 using GoymenERP.Modules.Accounting.Infrastructure.Shell;
 using GoymenERP.Modules.Counterparty.Infrastructure.Shell;
 using GoymenERP.Modules.Finance.Infrastructure.Shell;
+using GoymenERP.Modules.Inventory.Infrastructure.Shell;
 using GoymenERP.Modules.Logistics.Infrastructure.Shell;
 using GoymenERP.Modules.Manufacturing.Infrastructure.Shell;
 using GoymenERP.Modules.Organization.Infrastructure.Shell;
@@ -80,6 +81,7 @@ internal static class C01E2eShellCapabilityActivation
         typeof(LogisticsShellCapabilityProvider),
         typeof(PurchasingShellCapabilityProvider),
         typeof(AccountingShellCapabilityProvider),
+        typeof(InventoryShellCapabilityProvider),
     ];
 
     // The accepted normal-host authority for each set of optional module providers present (in the
@@ -137,6 +139,15 @@ internal static class C01E2eShellCapabilityActivation
                 typeof(PurchasingShellCapabilityProvider), typeof(AccountingShellCapabilityProvider),
             },
                 ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV11PublishedLogisticsV10PublishedPurchasingV13AndPublishedAccountingV10),
+        (new[]
+            {
+                typeof(OrganizationShellCapabilityProvider), typeof(ProductShellCapabilityProvider),
+                typeof(SalesShellCapabilityProvider), typeof(FinanceShellCapabilityProvider),
+                typeof(ManufacturingShellCapabilityProvider), typeof(LogisticsShellCapabilityProvider),
+                typeof(PurchasingShellCapabilityProvider), typeof(AccountingShellCapabilityProvider),
+                typeof(InventoryShellCapabilityProvider),
+            },
+                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11PublishedManufacturingV11PublishedLogisticsV10PublishedPurchasingV13PublishedAccountingV10AndPublishedInventoryV10),
     ];
 
     private static string NormalAuthority(IServiceCollection services)

@@ -25,6 +25,7 @@ import { financeRoutes } from '../finance/financeRoutes'
 import { accountingRoutes } from '../accounting/accountingRoutes'
 import { logisticsRoutes } from '../logistics/logisticsRoutes'
 import { purchasingRoutes } from '../purchasing/purchasingRoutes'
+import { inventoryRoutes } from '../inventory/inventoryRoutes'
 import { StateBlock } from './StateBlock'
 
 export const shellRoutes: RouteObject[] = [
@@ -181,6 +182,7 @@ export const shellRoutes: RouteObject[] = [
        * The approve child remains a control inside detail and has no route entry here.
        */
       ...purchasingRoutes,
+      ...inventoryRoutes,
       {
         /**
          * Catch-all. Without it react-router renders its own error boundary —

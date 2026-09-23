@@ -6,6 +6,7 @@ using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using GoymenERP.Api.Endpoints;
 using GoymenERP.Api.OpenApi;
 using GoymenERP.Api.Contracts;
 using GoymenERP.BuildingBlocks.OpenApi;
@@ -65,6 +66,21 @@ public sealed partial class OpenApiContractGenerationTests
             ParameterValues:
             [
                 "query:q:false:type:string;canonicalization:trim;canonical-max-length:64",
+                "query:limit:false:type:integer;format:int32",
+            ]),
+        new("get", "/api/v1/inventory/references/products", "GetInventoryProductCandidatesV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "409:application/problem+json", "503:application/problem+json"),
+            ParameterValues:
+            [
+                "query:q:false:type:string",
+                "query:effectiveOn:true:type:string;format:date",
+                "query:limit:false:type:integer;format:int32",
+            ]),
+        new("get", "/api/v1/inventory/references/locations", "GetInventoryLocationCandidatesV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "409:application/problem+json", "503:application/problem+json"),
+            ParameterValues:
+            [
+                "query:q:false:type:string",
                 "query:limit:false:type:integer;format:int32",
             ]),
         // INV-OPEN-1 part 2 (T07 = A): record an opening count (ADR-011) and read one back.
@@ -408,6 +424,8 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetInventoryLabelV1"] = "ref:InventoryLabelViewV1",
             ["GetInventoryLabelBalancesV1"] = "ref:InventoryLabelBalancesV1",
             ["GetInventoryParentRollCandidatesV1"] = "ref:InventoryParentRollCandidatesV1",
+            ["GetInventoryProductCandidatesV1"] = "ref:ProductStockCandidatesV1",
+            ["GetInventoryLocationCandidatesV1"] = "ref:OrganizationLocationCandidatesV1",
             ["RecordInventoryOpeningCountV1"] = "ref:OpeningCountViewV1",
             ["GetInventoryOpeningCountV1"] = "ref:OpeningCountViewV1",
             ["SetOrganizationLocationActiveStateV1"] = "none",
@@ -506,6 +524,8 @@ public sealed partial class OpenApiContractGenerationTests
         "GetInventoryLabelV1",
         "GetInventoryLabelBalancesV1",
         "GetInventoryParentRollCandidatesV1",
+        "GetInventoryProductCandidatesV1",
+        "GetInventoryLocationCandidatesV1",
         "RecordInventoryOpeningCountV1",
         "GetInventoryOpeningCountV1",
         "GetCounterpartyCompanyAccountLinkCandidatesV1",
@@ -885,6 +905,10 @@ public sealed partial class OpenApiContractGenerationTests
             ["RecordInventoryOpeningCountV1:422"] = [.. InventoryOpeningCodesV1.Status422Codes.Order(StringComparer.Ordinal)],
             ["GetInventoryParentRollCandidatesV1:400"] = [InventoryParentRollCodesV1.InvalidQuery],
             ["GetInventoryParentRollCandidatesV1:409"] = [InventoryParentRollCodesV1.ReadConflict],
+            ["GetInventoryProductCandidatesV1:400"] = [InventoryReferenceCodesV1.ProductInvalidQuery],
+            ["GetInventoryProductCandidatesV1:409"] = [InventoryReferenceCodesV1.ProductReadConflict],
+            ["GetInventoryLocationCandidatesV1:400"] = [InventoryReferenceCodesV1.LocationInvalidQuery],
+            ["GetInventoryLocationCandidatesV1:409"] = [InventoryReferenceCodesV1.LocationReadConflict],
             ["GetCounterpartiesV1:400"] = ["invalid_cursor", "validation_failed"],
             ["GetCounterpartiesV1:409"] = ["client_contract_required", "client_contract_unsupported"],
             ["GetCounterpartyV1:409"] = ["client_contract_required", "client_contract_unsupported"],
@@ -1686,6 +1710,25 @@ public sealed partial class OpenApiContractGenerationTests
                     ("productVersion", "type:string"), ("code", "type:string"), ("name", "type:string"),
                     ("unitId", "type:string;format:uuid"), ("unitCode", "type:string"),
                     ("profileId", "type:string;format:uuid"), ("profileVersion", "type:string")),
+                ["ProductStockCandidatesV1"] = ObjectSchema(
+                    ["items", "searchWindowFull"],
+                    ("items", "type:array;items:ref:ProductStockCandidateV1"),
+                    ("searchWindowFull", "type:boolean")),
+                ["ProductStockCandidateV1"] = ObjectSchema(
+                    ["productId", "productVersion", "code", "name", "stockUnitId", "stockUnitCode", "profileId", "profileVersion"],
+                    ("productId", "type:string;format:uuid"),
+                    ("productVersion", "type:string"), ("code", "type:string"), ("name", "type:string"),
+                    ("stockUnitId", "type:string;format:uuid"), ("stockUnitCode", "type:string"),
+                    ("profileId", "type:string;format:uuid"), ("profileVersion", "type:string")),
+                ["OrganizationLocationCandidatesV1"] = ObjectSchema(
+                    ["items", "searchWindowFull"],
+                    ("items", "type:array;items:ref:OrganizationLocationCandidateV1"),
+                    ("searchWindowFull", "type:boolean")),
+                ["OrganizationLocationCandidateV1"] = ObjectSchema(
+                    ["locationId", "locationCode", "locationName", "siteId", "siteCode", "siteName"],
+                    ("locationId", "type:string;format:uuid"), ("locationCode", "type:string"),
+                    ("locationName", "type:string"), ("siteId", "type:string;format:uuid"),
+                    ("siteCode", "type:string"), ("siteName", "type:string")),
                 ["CounterpartyContactInformationView"] = ObjectSchema(
                     ["partyId", "accountId", "companyId", "version", "isActive", "information"],
                     ("partyId", "type:string;format:uuid"),
@@ -2798,9 +2841,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(99, operations.Count);
+        Assert.Equal(101, operations.Count);
         Assert.Equal(
-            99,
+            101,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());

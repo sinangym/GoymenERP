@@ -78,6 +78,7 @@ public static class InventoryEndpoints
             .ProducesErpAuthenticatedProblems();
 
         MapParentRollCandidateEndpoint(endpoints);
+        endpoints.MapInventoryReferenceEndpoints();
         MapOpeningCountEndpoints(group);
         return endpoints;
     }
