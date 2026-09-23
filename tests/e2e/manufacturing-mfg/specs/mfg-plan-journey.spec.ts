@@ -161,7 +161,7 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
     )
     await page.getByRole('button', { name: 'Aynı anahtarla yeniden gönder', exact: true }).click()
     const replay = await replayed
-    expect(replay.status()).toBe(200)
+    expect(replay.status()).toBe(201)
     expect(replay.headers()['idempotency-replayed']).toBe('true')
     expect(replay.request().headers()['idempotency-key']).toBe(firstKey)
     expect(replay.request().postDataJSON()).toEqual(first!.postDataJSON())
