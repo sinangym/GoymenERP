@@ -6,6 +6,50 @@ Source: integrated plan v2 (#275 `a5b8143b`) §5, §7.1, §13, R3 and R6; Sinan'
 are on the #275 branch at `a5b8143b`, **not on main**; the decision text is Business's record on
 #66 (5722637822).
 
+## R13 — draft parent-roll reference predecessor (Business #66/5778472429 A)
+
+`GoymenERP.Modules.Inventory.Application.IInventoryParentRollCandidatesV1.SearchAsync` accepts
+`InventoryParentRollQueryV1(Q, Limit=25)` (label-code search, max64 characters, examined window1..100)
+and returns `Items/SearchWindowFull`. `IInventoryParentRollValidationV1.ValidateAsync` accepts
+`InventoryParentRollSelectionV1(LabelId, ExpectedLabelVersion)`. There is deliberately no PlannedKg:
+this read does not choose equality, partial-coil, upper-bound, reservation or availability policy.
+`AddInventoryParentRollReferences()` registers only these owner ports. Central owns HTTP/host publication.
+
+Each result preserves company, label ID/code/version, ProductId, actual lot and separate label/lot heat/coil,
+document status/kinds, positions' owner/custodian/location, and lossless physical kg totals.
+`UnblockedPhysicalKg` means the stored `BlockState.Free` buckets, **not available stock**: allocations and
+loading holds are not deducted. `ProductionUseRequiresRevalidation` is always true. Missing coil is not
+a type discriminator. Blocked/pending-document own-company stock can be a draft reference without being
+released for consumption. Other-owner stock remains visible with `DraftSelectable=false` and context-required;
+no stock means no invented owner/location and a nonselectable no-physical-position result.
+Existing INV-1 `StockLedger.FromStoredBalances` validates the stored state: a label's nonzero buckets
+share one physical place (owner/custodian/location/product), while Free/Blocked buckets remain separate.
+A corrupt multi-place label is unavailable; this does not redefine or collapse legitimate positions.
+
+Both existing company-wide `inventory.labels.read` and `inventory.balances.read` are freshly measured before
+and after the awaited owner read, together with actor/company/membership fences. SQL retains tenant filters
+and explicit captured-company predicates. Label version is compared before/after document/balance reads;
+any concurrent version change rejects the observation. No tracking, save, migration, grant or initializer.
+
+`InventoryParentRollException.StatusCode/Code` is the owner error channel:
+
+| Status | Code suffix (full constants in InventoryParentRollCodesV1) | Consumer treatment |
+|---|---|---|
+|401/403|unauthenticated / forbidden|No facts; never persist a business refusal for lost authority|
+|400|invalid_query / inventory_label_version_invalid|Canonical positive Int64 text, no leading zeros|
+|404|invalid_reference|Unknown and foreign label are indistinguishable|
+|409|inventory_label_version_conflict|Stale requested version; authorized terminal refusal after replay lookup|
+|409|read_conflict|Concurrent capture; retryable/unrecorded, not terminal|
+|422|context_required / no_physical_position|Nonselectable draft reference; no fabricated ownership or allocation|
+|503|unavailable|Provider/store/setup failure; no empty/positive fallback|
+
+Successful validation guarantees exact server CompanyId, requested LabelId and ExpectedLabelVersion,
+`DraftSelectable=true`, `DraftRefusalCode=null`, `ProductionUseRequiresRevalidation=true`. A nonselectable
+candidate throws422 on validation. Manufacturing owns the canonical input hash (including label version),
+recorded replay lookup before fresh validation, its post-read write fence and terminal replay. Replaying a
+recorded command must not re-check subsequently changed Inventory. This predecessor writes no command,
+reservation or movement and does not bypass Manufacturing's approval/start/issue revalidation.
+
 ## INV-1 — first independent slice of T07 (domain + tests only)
 
 What this slice holds, as real behaviour with tests:
