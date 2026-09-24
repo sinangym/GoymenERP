@@ -95,5 +95,5 @@ internal sealed class SqlInventoryLabelDetailReader(InventoryDbContext db) : IIn
     }
 
     private static InventoryLabelDetailException Error(int statusCode, string code, Exception? exception = null) =>
-        new(statusCode, code, exception);
+        new InventoryLabelDetailException(statusCode, code, exception);
 }

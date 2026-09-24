@@ -18,7 +18,7 @@ public static class InventoryLabelDetailRegistration
     }
 
     private static InventoryLabelDetailService CreateService(IServiceProvider services) =>
-        new(
+        new InventoryLabelDetailService(
             services.GetRequiredService<ICompanyContext>(),
             services.GetRequiredService<ICurrentUser>(),
             services.GetRequiredService<IErpAuthorityRevalidationService>(),
