@@ -54,7 +54,7 @@ export interface CompanyRelationships {
  * Returns null (fail closed) unless ALL of:
  *  - the response is the requested Party (`id === partyId`);
  *  - `companyAccounts` is a non-empty array of structurally valid accounts;
- *  - no company appears twice;
+ *  - no company or company-account identity appears twice;
  *  - every company is one the shell directory lists for this actor;
  *  - the ACTIVE company's account is among them. The page this panel sits on has just
  *    read that account company-bound; a group answer without it disagrees with the
@@ -73,15 +73,17 @@ export function decodeCompanyRelationships(
   if (!Array.isArray(p.companyAccounts) || p.companyAccounts.length === 0) return null
   if (p.companyAccounts.length > knownCompanyIds.size) return null
 
-  const seen = new Set<string>()
+  const seenCompanyIds = new Set<string>()
+  const seenAccountIds = new Set<string>()
   const accounts: CompanyRelationship[] = []
   for (const rawAccount of p.companyAccounts as unknown[]) {
     if (typeof rawAccount !== 'object' || rawAccount === null) return null
     const a = rawAccount as Record<string, unknown>
     if (!isBoundUuid(a.id) || !isBoundUuid(a.companyId)) return null
     if (!knownCompanyIds.has(a.companyId)) return null
-    if (seen.has(a.companyId)) return null
-    seen.add(a.companyId)
+    if (seenCompanyIds.has(a.companyId) || seenAccountIds.has(a.id)) return null
+    seenCompanyIds.add(a.companyId)
+    seenAccountIds.add(a.id)
     if (typeof a.roles !== 'number' || !Number.isSafeInteger(a.roles)) return null
     if (a.roles < 0 || a.roles > ALL_ROLE_FLAGS || (a.roles & ~ALL_ROLE_FLAGS) !== 0) return null
     if (typeof a.isActive !== 'boolean') return null
@@ -90,6 +92,6 @@ export function decodeCompanyRelationships(
     accounts.push({ accountId: a.id, companyId: a.companyId, roles: a.roles, isActive: a.isActive })
   }
 
-  if (!seen.has(activeCompanyId)) return null
+  if (!seenCompanyIds.has(activeCompanyId)) return null
   return { partyId, accounts }
 }

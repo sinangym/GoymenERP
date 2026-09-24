@@ -66,6 +66,7 @@ describe('decodeCompanyRelationships', () => {
   it.each([
     ['a company the shell directory does not list', body([account(A), account(C)])],
     ['the same company twice', body([account(A), account(A)])],
+    ['the same account id under different companies', body([account(A), account(B, { id: account(A).id })])],
     ['no account for the active company', body([account(B)])],
     ['an empty account list', body([])],
     ['a different Party', body([account(A)], { id: '22222222-2222-2222-2222-222222222222' })],

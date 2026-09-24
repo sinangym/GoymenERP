@@ -26,7 +26,9 @@ class C03BrowserSuiteContractTests(unittest.TestCase):
         self.assertIn("/^GoymenErpC01_[0-9]+_[0-9]+$/", environment)
         self.assertIn("new sql.ConnectionPool(env.sqlConnection)", spec)
         self.assertIn("expect(await snapshot(pool)).toEqual(before)", spec)
-        self.assertIn("expect(denied.status()).toBe(403)", spec)
+        self.assertIn("expect(denied.status()).toBe(404)", spec)
+        self.assertIn("deniedPanel.locator('[data-state=\"not-found\"]')", spec)
+        self.assertIn("expect(deniedBody).not.toMatch(/\"code\"\\s*:/)", spec)
         self.assertIn("request.headers()['x-company-id'] === undefined", spec)
         for method in (".post(", ".put(", ".patch(", ".delete("):
             self.assertNotIn(method, spec.lower())

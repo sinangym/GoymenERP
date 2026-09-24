@@ -70,7 +70,7 @@ async function body(response: APIResponse): Promise<string> {
   return response.text()
 }
 
-test('C03 reads both authorized company relationships, switches company, discloses nothing when denied, and writes nothing', async ({ page }) => {
+test('C03 reads both authorized company relationships, switches company, discloses nothing when denied, and writes nothing', async ({ page, browser }) => {
   const pool = await new sql.ConnectionPool(env.sqlConnection).connect()
   try {
     const before = await snapshot(pool)
@@ -130,12 +130,34 @@ test('C03 reads both authorized company relationships, switches company, disclos
     expect(fresh.status()).toBe(200)
     expect(await fresh.json()).toEqual(groupBody)
 
-    const denied = await page.request.get(`${env.apiBaseUrl}${DETAIL_API}`, { headers: apiHeaders(DENIED_ACTOR) })
-    expect(denied.status()).toBe(403)
-    const deniedBody = await body(denied)
-    expect(deniedBody).not.toContain(PARTY_ID)
-    expect(deniedBody).not.toContain('Ayşe Örnek')
-    expect(deniedBody).not.toContain(COMPANY_B)
+    const deniedContext = await browser.newContext({
+      extraHTTPHeaders: { [DEVELOPMENT_USER_HEADER]: DENIED_ACTOR },
+    })
+    try {
+      const deniedPage = await deniedContext.newPage()
+      await deniedPage.goto(new URL(DETAIL_ROUTE, page.url()).toString())
+      await expect(deniedPage.getByRole('heading', { level: 1, name: 'Ayşe Örnek' })).toBeVisible({ timeout: 30_000 })
+
+      const deniedPanel = deniedPage.locator('[data-section="company-relationships"]')
+      const deniedAnswer = deniedPage.waitForResponse(isHeaderlessGroupRead)
+      await deniedPanel.getByRole('button', { name: 'Diğer şirketlerdeki hesapları göster', exact: true }).click()
+      const denied = await deniedAnswer
+      expect(denied.status()).toBe(404)
+      const deniedBody = await denied.text()
+      expect(deniedBody).not.toMatch(/"code"\s*:/)
+      expect(deniedBody).not.toContain(PARTY_ID)
+      expect(deniedBody).not.toContain('Ayşe Örnek')
+      expect(deniedBody).not.toContain(COMPANY_B)
+
+      const terminal = deniedPanel.locator('[data-state="not-found"]')
+      await expect(terminal).toBeVisible()
+      await expect(terminal).toContainText('Bulunamadı — şirket ilişkileri')
+      await expect(terminal).toContainText('İstenen kayıt bulunamadı.')
+      await expect(deniedPanel.locator('tbody tr')).toHaveCount(0)
+      await expect(deniedPanel).not.toContainText(GSP_LABEL)
+    } finally {
+      await deniedContext.close()
+    }
 
     expect(await snapshot(pool)).toEqual(before)
   } finally {
