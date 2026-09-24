@@ -21,7 +21,12 @@ public sealed class R14BrowserSeed : IBrowserSuiteFixture
     public static readonly Guid CompanyGdc = Guid.Parse("10000000-0000-0000-0000-000000000001");
     public static readonly Guid CompanyOther = Guid.Parse("10000000-0000-0000-0000-000000000002");
     public static readonly Guid RecorderUserId = Guid.Parse("b2000000-0000-4000-8000-000000000701");
-    public static readonly Guid RecorderRoleId = Guid.Parse("b3000000-0000-4000-8000-000000000701");
+
+    /// <summary>
+    /// Product master assignments bind the canonical SYSTEM_ADMINISTRATOR role. The recorder's normal
+    /// company role remains the source of its Inventory permissions and is not replaced by this fixture.
+    /// </summary>
+    public static readonly Guid ProductReadRoleId = Guid.Parse("30000000-0000-0000-0000-000000000003");
     public static readonly Guid ProductIssuerUserId = Guid.Parse("b2000000-0000-4000-8000-000000000204");
     public static readonly Guid ProductIssuerExternalIdentityId = Guid.Parse("b2100000-0000-4000-8000-000000000204");
 
@@ -56,7 +61,7 @@ public sealed class R14BrowserSeed : IBrowserSuiteFixture
                 .EnsureAsync(new ProductMasterAssignmentFixtureRow(
                     ProductReadAssignmentId,
                     RecorderUserId,
-                    RecorderRoleId,
+                    ProductReadRoleId,
                     ProductMasterOperation.Read,
                     ProductIssuerUserId,
                     ProductIssuerExternalIdentityId,
