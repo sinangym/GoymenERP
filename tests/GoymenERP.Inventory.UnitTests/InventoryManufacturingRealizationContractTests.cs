@@ -86,6 +86,24 @@ public sealed class InventoryManufacturingRealizationContractTests
     }
 
     [Fact]
+    public void Return_and_output_require_a_movement_identity_distinct_from_the_fact()
+    {
+        var returned = Return();
+        var returnError = Assert.Throws<InventoryManufacturingRealizationException>(() =>
+            InventoryManufacturingRealizationContractV1.Validate(
+                returned with { MovementId = returned.ReturnId }, Metadata(), Company));
+        Assert.Equal((400, InventoryManufacturingRealizationCodesV1.InvalidRequest),
+            (returnError.Status, returnError.Code));
+
+        var output = Output();
+        var outputError = Assert.Throws<InventoryManufacturingRealizationException>(() =>
+            InventoryManufacturingRealizationContractV1.Validate(
+                output with { MovementId = output.OutputId }, Metadata(), Company));
+        Assert.Equal((400, InventoryManufacturingRealizationCodesV1.InvalidRequest),
+            (outputError.Status, outputError.Code));
+    }
+
+    [Fact]
     public void Output_requires_explicit_identity_position_block_documents_and_product_version()
     {
         InventoryManufacturingOutputRequestV1[] examples =
