@@ -111,6 +111,19 @@ public sealed class NormalJournalAuthorityDeniedException()
 {
 }
 
+public interface INormalJournalDraftLifecycleV1
+{
+    Task<AccountingApiResult<NormalJournalDraftViewV1>> CreateAsync(
+        NormalJournalDraftV1? draft, string idempotencyKey, CancellationToken cancellationToken = default);
+
+    Task<AccountingApiResult<NormalJournalDraftViewV1>> ReadAsync(
+        Guid draftId, CancellationToken cancellationToken = default);
+
+    Task<AccountingApiResult<NormalJournalDraftViewV1>> ApproveAsync(
+        Guid draftId, long expectedVersion, Guid periodId, string idempotencyKey,
+        CancellationToken cancellationToken = default);
+}
+
 /// <summary>
 /// The non-HTTP owner handler. A trusted adapter supplies a previously prepared draft; this service
 /// binds actor, exact permission, ADR-011 replay, approval eligibility and the store's final fence.
@@ -124,7 +137,7 @@ public sealed class NormalJournalDraftServiceV1(
     IErpAuthorityRevalidationService authority,
     ICompanyContext companyContext,
     ICurrentUser currentUser,
-    ICorrelationContext correlation)
+    ICorrelationContext correlation) : INormalJournalDraftLifecycleV1
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
@@ -206,6 +219,35 @@ public sealed class NormalJournalDraftServiceV1(
             },
             stored => View((NormalJournalDraftRecordV1)stored),
             cancellationToken);
+    }
+
+    public async Task<AccountingApiResult<NormalJournalDraftViewV1>> ReadAsync(
+        Guid draftId,
+        CancellationToken cancellationToken = default)
+    {
+        if (draftId == Guid.Empty)
+        {
+            return Invalid("draftId");
+        }
+
+        if (!HasContext() || ActorGuid() is not { } actor)
+        {
+            return Denied();
+        }
+
+        var record = await drafts.FindNormalDraftAsync(draftId, cancellationToken);
+        if (record is null || record.CompanyId != companyContext.CompanyId)
+        {
+            return new AccountingApiResult<NormalJournalDraftViewV1>(
+                AccountingApiStatus.NotFound, null, false, null);
+        }
+
+        var mayReadOwn = record.PreparedByUserId == actor
+            && await HasPermissionAsync(permissions.CreatePermission, actor, cancellationToken);
+        var mayApprove = await HasPermissionAsync(permissions.ApprovePermission, actor, cancellationToken);
+        return mayReadOwn || mayApprove
+            ? new AccountingApiResult<NormalJournalDraftViewV1>(AccountingApiStatus.Ok, View(record), false, null)
+            : Denied();
     }
 
     private async Task<AccountingApiResult<T>> RunAsync<T>(
@@ -349,6 +391,14 @@ public sealed class NormalJournalDraftServiceV1(
         {
             throw new NormalJournalAuthorityDeniedException();
         }
+    }
+
+    private async Task<bool> HasPermissionAsync(string permission, Guid actor, CancellationToken cancellationToken)
+    {
+        var company = companyContext.CompanyId;
+        var scope = await authority.RevalidatePermissionScopeAsync(permission, company, cancellationToken);
+        return scope.IsGranted && scope.IsCompanyWide && HasContext()
+            && Guid.TryParse(currentUser.UserId, out var currentActor) && currentActor == actor;
     }
 
     private static object Canonical(NormalJournalDraftV1 draft) => new

@@ -17,6 +17,10 @@ import { PeriodsPage } from './PeriodsPage'
 import { PeriodProposePage } from './PeriodProposePage'
 import { JournalDetailPage, JournalsPage } from './JournalPages'
 import { PostingQueuesPage } from './PostingQueuesPage'
+import {
+  NormalJournalDraftCreatePage,
+  NormalJournalDraftPage,
+} from './NormalJournalDraftPages'
 
 /**
  * `CapabilityRoute` types its prop as the shell's `CapabilityId` union, which does not yet contain the
@@ -30,6 +34,18 @@ function gate(capability: AccountingCapabilityId, children: ReactNode) {
 }
 
 export const accountingRoutes: RouteObject[] = [
+  {
+    path: ACCOUNTING_ROUTE.normalDraftCreate.slice(1),
+    element: gate(ACCOUNTING_CAPABILITY.normalDraftCreate, <NormalJournalDraftCreatePage />),
+  },
+  {
+    path: ACCOUNTING_ROUTE.normalDraftDetail.slice(1),
+    element: gate(ACCOUNTING_CAPABILITY.normalDraftDetail, <NormalJournalDraftPage mode="own" />),
+  },
+  {
+    path: ACCOUNTING_ROUTE.normalDraftApprove.slice(1),
+    element: gate(ACCOUNTING_CAPABILITY.normalDraftApprove, <NormalJournalDraftPage mode="approve" />),
+  },
   { path: ACCOUNTING_ROUTE.periodsPropose.slice(1), element: gate(ACCOUNTING_CAPABILITY.periodsPropose, <PeriodProposePage />) },
   { path: ACCOUNTING_ROUTE.periodsList.slice(1), element: gate(ACCOUNTING_CAPABILITY.periodsList, <PeriodsPage />) },
   { path: ACCOUNTING_ROUTE.journalsList.slice(1), element: gate(ACCOUNTING_CAPABILITY.journalsList, <JournalsPage />) },
