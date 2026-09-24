@@ -94,10 +94,12 @@ services:
       IdentitySeed__Roles__5__Permissions__4: sales.orders.price.read
       IdentitySeed__Roles__5__Permissions__5: sales.orders.price.write
       # Allocation acceptance reuses Inventory's registered permissions in this disposable suite only.
-      # The opening command creates the prerequisite label; the browser creates/releases the allocation.
+      # The opening command creates the prerequisite label; the two reads publish and authorize stock
+      # positions; the browser creates/releases the allocation.
       IdentitySeed__Roles__5__Permissions__6: inventory.opening-stock.record
-      IdentitySeed__Roles__5__Permissions__7: inventory.stock-positions.list
-      IdentitySeed__Roles__5__Permissions__8: inventory.physical-allocation.write
+      IdentitySeed__Roles__5__Permissions__7: inventory.labels.read
+      IdentitySeed__Roles__5__Permissions__8: inventory.balances.read
+      IdentitySeed__Roles__5__Permissions__9: inventory.physical-allocation.write
       IdentitySeed__Roles__6__Id: b3000000-0000-4000-8000-000000000402
       IdentitySeed__Roles__6__Code: BROWSER_S04_APPROVER
       IdentitySeed__Roles__6__Name: SENTETIK browser-suite:s04 sipariş onaylayan rolü

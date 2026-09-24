@@ -137,8 +137,9 @@ class WorkflowTests(unittest.TestCase):
                 "sales.orders.price.read",
                 "sales.orders.price.write",
                 "inventory.opening-stock.record",
+                "inventory.labels.read",
+                "inventory.balances.read",
                 "inventory.physical-allocation.write",
-                "inventory.stock-positions.list",
             ),
             validator.SUITE_IDENTITY_PERMISSIONS["s04"],
         )
