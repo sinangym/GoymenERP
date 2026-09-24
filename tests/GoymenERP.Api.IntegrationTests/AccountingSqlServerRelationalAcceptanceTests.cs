@@ -7,6 +7,9 @@ using GoymenERP.Modules.Accounting.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -31,6 +34,98 @@ public sealed class AccountingSqlServerRelationalAcceptanceTests
     private static readonly DateTimeOffset RecordedAt = new DateTimeOffset(2026, 9, 18, 10, 0, 0, TimeSpan.Zero);
     private static readonly PostingDates InSeptember =
         new PostingDates(new DateOnly(2026, 9, 14), new DateOnly(2026, 9, 15), null, RecordedAt);
+
+    [SqlServerFact]
+    public async Task A_normal_draft_is_reopened_posted_once_and_a_late_fence_refusal_rolls_everything_back()
+    {
+        await using var run = await Run.StartAsync();
+        var period = await run.OpenSeptemberAsync(CompanyA);
+        var draft = NormalDraft(run, "normal-draft-1");
+        await using (var scope = run.Store(CompanyA))
+        {
+            var created = await scope.Drafts.CreateNormalDraftAsync(draft,
+                static _ => Task.CompletedTask,
+                Metadata(run, Completion(run, NormalJournalCommandNamesV1.CreateDraft, "create-1")));
+            Assert.Equal(AccountingWriteOutcome.Recorded, created.Outcome);
+            Assert.Equal(NormalJournalDraftStatusV1.Draft, created.Record.Status);
+        }
+
+        var reordered = NormalDraft(run, "normal-draft-1", draft, reverseLines: true);
+        await using (var scope = run.Store(CompanyA))
+        {
+            var conflict = await Assert.ThrowsAsync<AccountingStoreException>(() =>
+                scope.Drafts.CreateNormalDraftAsync(
+                    reordered,
+                    static _ => Task.CompletedTask,
+                    Metadata(run)));
+            Assert.Equal(NormalJournalDraftStoreCodesV1.ContentConflict, conflict.Code);
+            var preserved = (await scope.Drafts.FindNormalDraftAsync(draft.Id))!;
+            Assert.Collection(preserved.Request.Lines,
+                line => Assert.Equal("synthetic-debit-key", line.MappingKey),
+                line => Assert.Equal("synthetic-credit-key", line.MappingKey));
+        }
+
+        await using (var reopened = run.Store(CompanyA))
+        {
+            Assert.Equal(draft.Id, (await reopened.Drafts.FindNormalDraftAsync(draft.Id))!.Id);
+        }
+
+        await using (var scope = run.Store(CompanyA))
+        {
+            var approved = await scope.Drafts.ApproveAndPostNormalDraftAsync(
+                draft.Id,
+                1,
+                period,
+                run.Actor,
+                _ => Task.CompletedTask,
+                Metadata(run, Completion(run, NormalJournalCommandNamesV1.ApproveDraft, "approve-1")));
+            Assert.Equal(NormalJournalDraftStatusV1.Approved, approved.Status);
+            Assert.Equal(draft.Id, approved.PostedJournalId);
+        }
+
+        await using (var reopened = run.Store(CompanyA))
+        {
+            var stored = (await reopened.Drafts.FindNormalDraftAsync(draft.Id))!;
+            Assert.Equal(2, stored.Version);
+            Assert.Equal(NormalJournalDraftStatusV1.Approved, stored.Status);
+            Assert.Equal(run.Actor, stored.ApprovedByUserId);
+            Assert.Equal(draft.Id, stored.PostedJournalId);
+            Assert.Equal(draft.Id, (await reopened.Postings.FindJournalAsync(draft.Id))!.Id);
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM accounting.Journals WHERE Id = @id", ("@id", draft.Id)));
+        Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM accounting.JournalLines WHERE JournalId = @id", ("@id", draft.Id)));
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM accounting.Commands WHERE CommandName LIKE N'accounting.normal-journal-draft.%'"));
+
+        var refused = NormalDraft(run, "normal-draft-refused");
+        await using (var scope = run.Store(CompanyA))
+        {
+            await scope.Drafts.CreateNormalDraftAsync(refused, static _ => Task.CompletedTask, Metadata(run));
+        }
+
+        await using (var scope = run.Store(CompanyA))
+        {
+            var calls = 0;
+            await Assert.ThrowsAsync<InvalidOperationException>(() => scope.Drafts.ApproveAndPostNormalDraftAsync(
+                refused.Id,
+                1,
+                period,
+                run.Actor,
+                _ => ++calls == 2 ? throw new InvalidOperationException("synthetic authority revoked") : Task.CompletedTask,
+                Metadata(run, Completion(run, NormalJournalCommandNamesV1.ApproveDraft, "approve-refused"))));
+            Assert.Equal(2, calls);
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT Status FROM accounting.NormalJournalDrafts WHERE Id = @id",
+            ("@id", refused.Id)));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM accounting.Journals WHERE Id = @id", ("@id", refused.Id)));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM accounting.Deliveries WHERE MessageId = @m",
+            ("@m", refused.Request.MessageId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM accounting.Commands WHERE CommandName = @n AND CorrelationId = @c",
+            ("@n", NormalJournalCommandNamesV1.ApproveDraft), ("@c", run.Correlation)));
+    }
 
     [SqlServerFact]
     public async Task Queue_posting_and_replay_are_durable_audited_and_answer_from_stored_facts()
@@ -455,19 +550,72 @@ public sealed class AccountingSqlServerRelationalAcceptanceTests
         [new JournalLine(accounts.Debit, amount, 0m), new JournalLine(accounts.Credit, 0m, amount)];
 
     private static PostingRequest Request(Guid company, string messageId, Guid source, (AccountRef Debit, AccountRef Credit) accounts,
-        decimal? amount = 100m, string ruleVersion = "synthetic-rule-1", bool mapCredit = true) =>
-        new PostingRequest(
+        decimal? amount = 100m, string ruleVersion = "synthetic-rule-1", bool mapCredit = true,
+        Guid? journalId = null, bool reverseLines = false)
+    {
+        ProposedLine[] lines =
+        [
+            new ProposedLine("synthetic-debit-key", accounts.Debit, PostingSide.Debit, amount),
+            new ProposedLine("synthetic-credit-key", mapCredit ? accounts.Credit : null, PostingSide.Credit, amount),
+        ];
+        if (reverseLines) Array.Reverse(lines);
+
+        return new PostingRequest(
             Consumer,
             messageId,
-            Guid.NewGuid(),
+            journalId ?? Guid.NewGuid(),
             new SourceReference(company, source, Purpose),
             ruleVersion,
             Currency,
             InSeptember,
+            lines);
+    }
+
+    private static NormalJournalDraftV1 NormalDraft(
+        Run run,
+        string messageId,
+        NormalJournalDraftV1? snapshot = null,
+        bool reverseLines = false)
+    {
+        var accounts = snapshot is null
+            ? Accounts(CompanyA)
+            : (
+                Debit: snapshot.Request.Lines.Single(line => line.MappingKey == "synthetic-debit-key").Account!.Value,
+                Credit: snapshot.Request.Lines.Single(line => line.MappingKey == "synthetic-credit-key").Account!.Value);
+        var mirror = new AccountPlanMirrorV1(
+            CompanyA,
+            "synthetic-mikro-plan-v1",
+            new string('a', 64),
+            run.Actor,
+            RecordedAt,
             [
-                new ProposedLine("synthetic-debit-key", accounts.Debit, PostingSide.Debit, amount),
-                new ProposedLine("synthetic-credit-key", mapCredit ? accounts.Credit : null, PostingSide.Credit, amount),
+                new AccountPlanMirrorRowV1(accounts.Debit, "100", "Synthetic debit"),
+                new AccountPlanMirrorRowV1(accounts.Credit, "200", "Synthetic credit"),
             ]);
+        var rule = new NormalJournalPostingRuleV1(
+            mirror,
+            Purpose,
+            "synthetic-rule-1",
+            run.Actor,
+            RecordedAt,
+            [
+                new NormalJournalMappingV1("synthetic-debit-key", PostingSide.Debit, accounts.Debit),
+                new NormalJournalMappingV1("synthetic-credit-key", PostingSide.Credit, accounts.Credit),
+            ]);
+        return NormalJournalDraftV1.Prepare(
+            JournalKind.Original,
+            Request(
+                CompanyA,
+                messageId,
+                snapshot?.Request.Source.SourceId ?? Guid.NewGuid(),
+                accounts,
+                journalId: snapshot?.Id,
+                reverseLines: reverseLines),
+            1,
+            run.Actor,
+            mirror,
+            rule).Draft!;
+    }
 
     private static JournalRow RawJournal(Guid id, int kind, Guid? linkedJournalId, Guid? correctionId, Guid source, Guid period) =>
         new JournalRow
@@ -490,9 +638,22 @@ public sealed class AccountingSqlServerRelationalAcceptanceTests
             CorrelationId = "synthetic-raw-writer",
         };
 
-    private static AccountingCommandMetadata Metadata(Run run) => new AccountingCommandMetadata(
+    private static AccountingCommandMetadata Metadata(Run run, Func<object, AccountingCommandRecord>? completion = null) =>
+        new AccountingCommandMetadata(
         run.Actor.ToString("D"), "synthetic.accounting.test-write", ["SYNTHETIC-ACCOUNTING-TEST"], run.Correlation,
-        CausationId: null, IdempotencyKey: Guid.NewGuid().ToString("N"), SourceChannel: "Web");
+        CausationId: null, IdempotencyKey: Guid.NewGuid().ToString("N"), SourceChannel: "Web", Completion: completion);
+
+    private static Func<object, AccountingCommandRecord> Completion(Run run, string command, string key) => result =>
+        new AccountingCommandRecord(
+            command,
+            Hex(key),
+            run.Actor.ToString("D"),
+            Hex(command + "|" + key),
+            JsonSerializer.Serialize(result),
+            run.Correlation);
+
+    private static string Hex(string value) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
 
     private sealed class Run : IAsyncDisposable
     {
@@ -603,6 +764,7 @@ public sealed class AccountingSqlServerRelationalAcceptanceTests
     {
         public IAccountingPeriodStore Periods => store;
         public IAccountingPostingStore Postings => store;
+        public IAccountingNormalJournalDraftStore Drafts => store;
 
         public ValueTask DisposeAsync() => dbContext.DisposeAsync();
     }

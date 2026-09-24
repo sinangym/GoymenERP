@@ -153,6 +153,56 @@ internal sealed class AccountingCommandRow : IAccountingTenantRow
     public DateTimeOffset RecordedAtUtc { get; set; }
 }
 
+/// <summary>
+/// A prepared normal-journal draft. Its source, plan/rule provenance and lines are immutable; only
+/// the one approval/posting transition appends approval facts and advances the concurrency version.
+/// </summary>
+internal sealed class NormalJournalDraftRow : IAccountingTenantRow
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public int Status { get; set; }
+    public long Version { get; set; }
+    public byte[] RowVersion { get; set; } = [];
+    public string ContentHash { get; set; } = string.Empty;
+    public Guid PreparedByUserId { get; set; }
+    public DateTimeOffset PreparedAtUtc { get; set; }
+    public Guid? ApprovedByUserId { get; set; }
+    public DateTimeOffset? ApprovedAtUtc { get; set; }
+    public Guid? PeriodId { get; set; }
+    public Guid? PostedJournalId { get; set; }
+    public string Consumer { get; set; } = string.Empty;
+    public string MessageId { get; set; } = string.Empty;
+    public Guid SourceId { get; set; }
+    public string PostingPurpose { get; set; } = string.Empty;
+    public string PostingRuleVersion { get; set; } = string.Empty;
+    public Guid CurrencyId { get; set; }
+    public DateOnly TransactionDate { get; set; }
+    public DateOnly AccountingDate { get; set; }
+    public DateOnly? ValueDate { get; set; }
+    public DateTimeOffset RecordedAtUtc { get; set; }
+    public string AccountPlanSourceVersion { get; set; } = string.Empty;
+    public string AccountPlanSourceSha256 { get; set; } = string.Empty;
+    public Guid AccountPlanApprovedByUserId { get; set; }
+    public DateTimeOffset AccountPlanApprovedAtUtc { get; set; }
+    public Guid PostingRuleApprovedByUserId { get; set; }
+    public DateTimeOffset PostingRuleApprovedAtUtc { get; set; }
+    public DateTimeOffset CreatedAtUtc { get; set; }
+    public DateTimeOffset UpdatedAtUtc { get; set; }
+}
+
+/// <summary>An immutable proposed line of a durable normal-journal draft.</summary>
+internal sealed class NormalJournalDraftLineRow : IAccountingTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid DraftId { get; set; }
+    public int LineNumber { get; set; }
+    public string MappingKey { get; set; } = string.Empty;
+    public int Side { get; set; }
+    public Guid AccountId { get; set; }
+    public decimal Amount { get; set; }
+}
+
 /// <summary>Organization's company, referenced by identity only (the table is Organization's, not migrated here).</summary>
 internal sealed class OrganizationCompanyReference
 {
