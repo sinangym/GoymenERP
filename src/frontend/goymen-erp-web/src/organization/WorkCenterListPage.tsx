@@ -12,18 +12,22 @@
  * so the array in hand IS the caller's whole authorized set. A pager here would have one
  * page forever, and a search box would be honest — which is precisely why adding one is
  * a decision for whoever measures that the list has grown too long to scan, not a
- * default. Until then the screen shows what the server returned, in full.
+ * default. HYBRID-05 now adds only an exact location filter over that complete
+ * authorized array. It is not a server query, a new permission, or a pager.
  *
  * Passive work centres STAY in the list: the server does not hide them and neither does
  * this screen. Deactivation is a state, not a delete.
  */
 
 import { useQuery } from '@tanstack/react-query'
-import { Link } from 'react-router'
+import { Link, useLocation } from 'react-router'
 import { fetchWorkCenters } from './api'
 import type { WorkCenterSummary } from './contract'
-import { locationDetailPath } from './capabilities'
-import { workCenterDetailReturn } from './detailReturn'
+import { locationDetailPath, ORGANIZATION_CAPABILITY, workCenterListPath } from './capabilities'
+import {
+  filterWorkCenters, filteredWorkCenterDetailReturn, readWorkCenterLocationFilter,
+  WORK_CENTER_LOCATION_TEXT,
+} from './workCenterLocationFilter'
 import {
   LOCATION_NOT_OPENABLE,
   WORK_CENTERS_HEADING,
@@ -33,7 +37,7 @@ import {
 } from './organizationText'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { useShellState } from '../shell/shellContext'
-import { contextKey, contextKeyString } from '../shell/shellState'
+import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { StateBlock } from '../shell/StateBlock'
 import styles from './WorkCenterListPage.module.css'
@@ -48,7 +52,7 @@ export function WorkCenterListPage() {
   const shell = useShellState()
   const key = contextKey(shell)
   const namespace = key === null ? null : contextKeyString(key)
-  return <WorkCenterList key={namespace ?? 'no-context'} namespace={namespace} />
+  return <WorkCenterList key={`${namespace ?? 'no-context'}::${shell.routeEntryGeneration}`} namespace={namespace} />
 }
 
 function WorkCenterList({ namespace }: { readonly namespace: string | null }) {
@@ -58,7 +62,9 @@ function WorkCenterList({ namespace }: { readonly namespace: string | null }) {
   const activeCompanyId = shell.activeContext?.companyId ?? null
   const scopeMode = shell.activeContext?.scopeMode ?? 'single'
   const singleCompanyContext = scopeMode === 'single' && activeCompanyId !== null
-  const enabled = namespace !== null && singleCompanyContext
+  const filter = readWorkCenterLocationFilter(useLocation().search)
+  const canRead = hasCapability(shell, ORGANIZATION_CAPABILITY.workCentersList)
+  const enabled = namespace !== null && singleCompanyContext && canRead && filter.kind !== 'invalid'
 
   const workCentersQuery = useQuery({
     queryKey: [namespace ?? 'no-context', entryGeneration, 'organization-work-centers'],
@@ -91,6 +97,11 @@ function WorkCenterList({ namespace }: { readonly namespace: string | null }) {
     )
   }
 
+  if (namespace === null || !canRead) {
+    return <StateBlock state={{ kind: 'not-found' }} subject="iş merkezleri" />
+  }
+
+  const rows = state.kind === 'ready' ? filterWorkCenters(state.data, filter) : []
   return (
     <section aria-labelledby="org-wc-heading" className={styles.page}>
       <header className={styles.header}>
@@ -98,19 +109,26 @@ function WorkCenterList({ namespace }: { readonly namespace: string | null }) {
         <p className={styles.lead}>{WORK_CENTERS_LEAD}</p>
       </header>
 
-      {state.kind !== 'ready' ? (
+      {filter.kind !== 'all' ? <nav aria-label={WORK_CENTER_LOCATION_TEXT.label}>
+        {filter.kind === 'location' ? <p>{WORK_CENTER_LOCATION_TEXT.label}: {filter.locationId}</p> : null}
+        <Link to={workCenterListPath()}>{WORK_CENTER_LOCATION_TEXT.clear}</Link>
+      </nav> : null}
+
+      {filter.kind === 'invalid' ? (
+        <StateBlock state={{ kind: 'malformed-response' }} subject={WORK_CENTER_LOCATION_TEXT.invalidSubject} />
+      ) : state.kind !== 'ready' ? (
         <StateBlock
           state={state}
           subject="iş merkezleri"
           onRetry={() => void workCentersQuery.refetch()}
         />
-      ) : state.data.length === 0 ? (
-        // Unpaged, so an empty array really is "none" — there is no page past the end
-        // to distinguish it from, which is why this screen needs only ONE empty state
-        // where ORG-01 needs two.
-        <StateBlock state={{ kind: 'empty-no-data' }} subject="iş merkezleri" />
+      ) : rows.length === 0 ? (
+        <StateBlock
+          state={{ kind: filter.kind === 'location' ? 'empty-filtered' : 'empty-no-data' }}
+          subject={filter.kind === 'location' ? WORK_CENTER_LOCATION_TEXT.filteredSubject : 'iş merkezleri'}
+        />
       ) : (
-        <WorkCenterTable rows={state.data} namespace={namespace} />
+        <WorkCenterTable rows={rows} namespace={namespace} filterLocationId={filter.kind === 'location' ? filter.locationId : null} />
       )}
     </section>
   )
@@ -119,9 +137,11 @@ function WorkCenterList({ namespace }: { readonly namespace: string | null }) {
 function WorkCenterTable({
   rows,
   namespace,
+  filterLocationId,
 }: {
   readonly rows: readonly WorkCenterSummary[]
   readonly namespace: string | null
+  readonly filterLocationId: string | null
 }) {
   return (
     <div className={styles.tableScroll}>
@@ -156,7 +176,7 @@ function WorkCenterTable({
                 </span>
               </td>
               <td>
-                <LocationCell row={row} namespace={namespace} />
+                <LocationCell row={row} namespace={namespace} filterLocationId={filterLocationId} />
               </td>
             </tr>
           ))}
@@ -188,9 +208,11 @@ function WorkCenterTable({
 function LocationCell({
   row,
   namespace,
+  filterLocationId,
 }: {
   readonly row: WorkCenterSummary
   readonly namespace: string | null
+  readonly filterLocationId: string | null
 }) {
   if (!row.canOpenLocationDetail) {
     return <span className={styles.locationClosed}>{LOCATION_NOT_OPENABLE}</span>
@@ -199,7 +221,7 @@ function LocationCell({
     <Link
       className={styles.rowLink}
       to={locationDetailPath(row.locationId)}
-      state={workCenterDetailReturn(namespace)}
+      state={filteredWorkCenterDetailReturn(namespace, filterLocationId)}
     >
       {/* The location NAME is not in this response, so the id is shown rather than a
           guessed label. Inventing one, or fetching the card just to title a link, would

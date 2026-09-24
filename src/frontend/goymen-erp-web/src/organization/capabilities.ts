@@ -126,3 +126,9 @@ export const ORGANIZATION_NAV_LABEL: Record<string, string> = {
 export function locationDetailPath(locationId: string): string {
   return `/ayarlar/organizasyon/lokasyon/${encodeURIComponent(locationId)}`
 }
+
+/** Existing unpaged work-center route; this query only narrows its authorized result in the UI. */
+export function workCenterListPath(locationId?: string): string {
+  const path = ORGANIZATION_ROUTE[ORGANIZATION_CAPABILITY.workCentersList]
+  return locationId === undefined ? path : `${path}?locationId=${encodeURIComponent(locationId)}`
+}
