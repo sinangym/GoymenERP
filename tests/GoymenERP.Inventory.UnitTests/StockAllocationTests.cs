@@ -12,6 +12,15 @@ public sealed class StockAllocationTests
     private static readonly Guid LabelId = Guid.Parse("89000000-0000-0000-0000-000000000003");
 
     [Fact]
+    public void Create_starts_active_at_version_one_without_a_stock_movement()
+    {
+        var allocation = StockAllocation.Create(AllocationId, Position(), Kilograms.Positive(25.125m));
+
+        Assert.Equal((25.125m, 25.125m, 1, StockAllocationStatus.Active),
+            (allocation.Allocated.Value, allocation.Remaining.Value, allocation.Version, allocation.Status));
+    }
+
+    [Fact]
     public void Partial_consumption_advances_version_and_stays_active()
     {
         var allocation = Restore(remaining: 100m, version: 7);
@@ -77,10 +86,39 @@ public sealed class StockAllocationTests
         Assert.Equal(StockAllocationStatus.Consumed, allocation.Status);
     }
 
+    [Fact]
+    public void Release_returns_every_remaining_kilogram_and_closes_without_consuming_stock()
+    {
+        var allocation = Restore(remaining: 60m, version: 8);
+
+        var released = allocation.Release(8);
+
+        Assert.Equal(60m, released.Value);
+        Assert.Equal(0m, allocation.Remaining.Value);
+        Assert.Equal(9, allocation.Version);
+        Assert.Equal(StockAllocationStatus.Released, allocation.Status);
+    }
+
+    [Theory]
+    [InlineData(7, StockAllocationStatus.Consumed, StockAllocationFailure.VersionConflict)]
+    [InlineData(8, StockAllocationStatus.Consumed, StockAllocationFailure.StateConflict)]
+    [InlineData(8, StockAllocationStatus.Released, StockAllocationFailure.StateConflict)]
+    public void Release_rejects_stale_or_closed_state_without_effect(
+        long expectedVersion,
+        StockAllocationStatus status,
+        StockAllocationFailure failure)
+    {
+        var allocation = Restore(remaining: 0m, version: 8, status);
+
+        AssertFailure(failure, () => allocation.Release(expectedVersion));
+        Assert.Equal((0m, 8, status), (allocation.Remaining.Value, allocation.Version, allocation.Status));
+    }
+
     [Theory]
     [InlineData(101, 1, StockAllocationStatus.Active)]
     [InlineData(0, 1, StockAllocationStatus.Active)]
     [InlineData(1, 1, StockAllocationStatus.Consumed)]
+    [InlineData(1, 1, StockAllocationStatus.Released)]
     [InlineData(0, 0, StockAllocationStatus.Consumed)]
     public void Inconsistent_stored_state_is_rejected(decimal remaining, long version, StockAllocationStatus status)
     {

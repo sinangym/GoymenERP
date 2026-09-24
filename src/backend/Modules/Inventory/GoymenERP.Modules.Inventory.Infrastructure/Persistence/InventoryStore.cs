@@ -55,7 +55,8 @@ public sealed partial class InventoryStore(
     ICompanyContext companyContext,
     IAuditEventCollector auditEvents,
     InventoryKilogramScale kilogramScale,
-    TimeProvider timeProvider) : IInventoryLotStore, IInventoryLabelStore, IInventoryMovementStore, IInventoryOpeningStore
+    TimeProvider timeProvider) : IInventoryLotStore, IInventoryLabelStore, IInventoryMovementStore, IInventoryOpeningStore,
+    IInventoryPhysicalAllocationWriterV1
 {
     private const string LotEntityType = "Inventory.MaterialLot";
     private const string LabelEntityType = "Inventory.MaterialLabel";
