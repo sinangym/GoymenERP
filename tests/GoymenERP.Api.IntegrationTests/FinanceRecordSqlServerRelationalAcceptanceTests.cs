@@ -320,6 +320,13 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
         ReversalProposalCommandResult approved;
         await using (var approval = run.ReversalService(CompanyA, checker))
         {
+            var staleVersion = await approval.Service.ApproveAsync(approval.Context,
+                Key("reverse-stale-proposal-version"),
+                new ApproveReversalRequest(proposed.Resource.Id, "999999"), CancellationToken.None);
+            Assert.Equal(CommandOutcome.VersionConflict, staleVersion.Outcome);
+            Assert.Equal(new ValidationIssue("expectedVersion", "version_conflict"),
+                Assert.Single(staleVersion.Issues));
+
             approved = await approval.Service.ApproveAsync(approval.Context, Key("reverse-approve"),
                 new ApproveReversalRequest(proposed.Resource.Id, proposed.Resource.Version), CancellationToken.None);
             Assert.Equal(CommandOutcome.Succeeded, approved.Outcome);
@@ -411,8 +418,9 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
                 Key("second-reversal-approve"),
                 new ApproveReversalRequest(secondProposal.Resource!.Id, secondProposal.Resource.Version),
                 CancellationToken.None);
-            Assert.Equal(CommandOutcome.VersionConflict, refused.Outcome);
-            Assert.Equal(new ValidationIssue("request", "concurrent_change"), Assert.Single(refused.Issues));
+            Assert.Equal(CommandOutcome.ValidationFailed, refused.Outcome);
+            Assert.Equal(new ValidationIssue("sourceId", "finance_allocation_state_invalid"),
+                Assert.Single(refused.Issues));
             Assert.Null(refused.Resource);
         }
 
@@ -614,7 +622,14 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
                 new RecordRequest(draft.Id, draft.Version), CancellationToken.None);
         }
         Assert.Equal(CommandOutcome.Succeeded, recorded.Outcome);
-        var openItem = await run.SeedOpenItemAsync(CompanyA, owners.Account, Currency, "100.00");
+        var openItem = await run.SeedOpenItemAsync(CompanyA, owners.Account, Currency, "500.00");
+        await using (var context = run.Context(CompanyA))
+        {
+            Assert.Equal(1, await context.Database.ExecuteSqlInterpolatedAsync($"""
+                UPDATE finance.OpenItems SET OutstandingAmountText = {"100.00"}
+                WHERE CompanyId = {CompanyA} AND Id = {openItem.Id}
+                """));
+        }
         var allocationId = Guid.NewGuid();
         var actor = Guid.NewGuid().ToString("D");
         var request = new CreateFinanceAllocationRequest(
@@ -1281,7 +1296,7 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
                 parties ?? new ActiveSyntheticParty(owners),
                 collector,
                 new FinanceAuditEnvelope(
-                    "synthetic.finance.open-item-source.admit", ["SYNTHETIC-FINANCE"], "Test"),
+                    "synthetic.finance.open-item-source.admit", ["SYNTHETIC-FINANCE"], "Web"),
                 TimeProvider.System);
             return new OpenItemSourceServiceScope(
                 dbContext, service, new FinanceContext(company, Actor, $"f03-{Guid.NewGuid():N}", null));

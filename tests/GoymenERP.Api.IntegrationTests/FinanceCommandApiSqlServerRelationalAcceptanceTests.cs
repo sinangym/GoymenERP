@@ -661,7 +661,7 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
             Assert.Equal(1, await run.ScalarAsync<int>(
                 "SELECT COUNT(*) FROM sys.columns WHERE object_id = OBJECT_ID(N'finance.Commands') "
                 + "AND name = N'ManualBankPaymentId'"));
-            Assert.EndsWith("_AddManualBankPayments",
+            Assert.EndsWith("_AddFinanceAllocations",
                 (await context.Database.GetAppliedMigrationsAsync()).Last(), StringComparison.Ordinal);
         }
         var account = await run.ApprovedBankAccountAsync(CompanyA);
