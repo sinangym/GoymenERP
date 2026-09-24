@@ -144,7 +144,6 @@ class WorkflowTests(unittest.TestCase):
                 "product.operational-selection.read",
                 "inventory.labels.read",
                 "inventory.balances.read",
-                "product.items.detail",
                 "organization.locations.read",
             ),
             validator.SUITE_IDENTITY_PERMISSIONS["r14"],

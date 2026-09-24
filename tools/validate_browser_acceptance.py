@@ -265,7 +265,7 @@ SUITE_IDENTITY_PERMISSIONS = {
     # R14: one Inventory recorder with opening and detail reads, one owner-read-only denied actor,
     # and one Organization location reader.
     "r14": ("inventory.opening-stock.record", "product.operational-selection.read",
-            "inventory.labels.read", "inventory.balances.read", "product.items.detail",
+            "inventory.labels.read", "inventory.balances.read",
             "organization.locations.read"),
 }
 
