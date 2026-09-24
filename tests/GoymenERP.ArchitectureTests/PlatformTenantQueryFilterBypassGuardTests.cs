@@ -231,7 +231,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
              + "Persistence/FinanceDbContext.cs"] =
-            "b9146e1d00c97ec2077f4cc75b4221a039e8b8eb4ba2037356be77773222ba89",
+            "4bd806094224b2369c80a9a5cb62ce2d5c3085f307d2990cb2119e5fc9aae5bd",
             // ACC-3 (#298): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for ACC-V0a: the ADR-011 command log (Commands) is mapped here, company-scoped with the
@@ -265,13 +265,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string ReviewedPurchaseAcceptanceParticipantPath =
         "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
         + "Persistence/PurchaseAcceptanceParticipant.cs";
+    private const string ReviewedFinanceOpenItemSourceAdmissionServicePath =
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
+        + "FinanceOpenItemSourceAdmissionService.cs";
     private static readonly IReadOnlyDictionary<string, (string ContextTypeName, int ExpectedCount)>
         ReviewedRuntimeContextConstructions =
             new Dictionary<string, (string ContextTypeName, int ExpectedCount)>(StringComparer.Ordinal)
             {
                 [ReviewedInventoryDefiniteShipmentParticipantPath] = ("InventoryDbContext", 1),
                 [ReviewedInventoryGoodsReceiptParticipantPath] = ("InventoryDbContext", 1),
-                [ReviewedPurchaseAcceptanceParticipantPath] = ("PurchasingDbContext", 3)
+                [ReviewedPurchaseAcceptanceParticipantPath] = ("PurchasingDbContext", 3),
+                [ReviewedFinanceOpenItemSourceAdmissionServicePath] = ("FinanceDbContext", 1)
             };
     private const string ReviewedManualBankPaymentServicePath =
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
@@ -526,8 +530,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // F-03 source admission uses the tenant-filtered FinanceDbContext. SqlClient is
                 // referenced only to classify 2601/2627 races after SaveChanges; there is no direct
                 // connection, command, raw SQL or query-filter bypass surface.
-                ["src/backend/Modules/Finance/"
-                 + "GoymenERP.Modules.Finance.Infrastructure/FinanceOpenItemSourceAdmissionService.cs"] =
+                [ReviewedFinanceOpenItemSourceAdmissionServicePath] =
                     new(
                         "6811c3396e99bf54f0a686c11b1f6436df8df46bf004eacdc4e29e421b7b5250",
                         new Dictionary<string, int>(StringComparer.Ordinal)
@@ -827,7 +830,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // source-allocation state exists. Empty schemas can still roll back; populated ones
                 // require an explicit forward fix.
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20260924113000_AddFinanceAllocations.cs"] =
-                    new("0c199318f8fce577cf6b59eb0d7fe4b66520c3da46b467f571614c557995ae58",
+                    new("431c95117e3a0216d30a3341ffd72b58e6274be9b938ecd671f6a725d9f2cc67",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // MFG-6 slice 2: the Down's only raw SQL is Manufacturing's module refusal (51047) while any plan
