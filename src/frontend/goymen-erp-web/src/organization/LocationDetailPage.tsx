@@ -41,6 +41,7 @@ import {
   type AttemptState,
 } from './activeStateAttempt'
 import { ORGANIZATION_CAPABILITY } from './capabilities'
+import { detailBackTarget } from './detailReturn'
 import {
   attemptStoreKey,
   recallAttempt,
@@ -178,7 +179,7 @@ function LocationDetail({ namespace }: { readonly namespace: string | null }) {
 
   if (!singleCompanyContext) {
     return (
-      <Frame>
+      <Frame namespace={namespace}>
         <StateBlock
           state={{ kind: 'no-authorized-company' }}
           subject="lokasyon kartı için tek şirket bağlamı"
@@ -194,7 +195,7 @@ function LocationDetail({ namespace }: { readonly namespace: string | null }) {
      * change never happened.
      */
     return (
-      <Frame>
+      <Frame namespace={namespace}>
         <StateBlock state={state} subject="lokasyon" onRetry={() => void query.refetch()} />
         <OutstandingCommandBanner storeKey={storeKey} />
       </Frame>
@@ -202,7 +203,7 @@ function LocationDetail({ namespace }: { readonly namespace: string | null }) {
   }
 
   return (
-    <Frame>
+    <Frame namespace={namespace}>
       <LocationCard location={state.data} />
       {canChangeStatus ? (
         <ActiveStateSection
@@ -226,13 +227,20 @@ function LocationDetail({ namespace }: { readonly namespace: string | null }) {
  * land on page 2; the list re-checks the namespace, so the same state after a company
  * switch is ignored and resets to page 1. Neither screen has to know the other's rule.
  */
-function Frame({ children }: { readonly children: React.ReactNode }) {
+function Frame({
+  namespace,
+  children,
+}: {
+  readonly namespace: string | null
+  readonly children: React.ReactNode
+}) {
   const routerLocation = useLocation()
+  const back = detailBackTarget(routerLocation.state, namespace)
   return (
     <section aria-labelledby="org-location-heading" className={styles.page}>
       <nav aria-label="Geri" className={styles.breadcrumb}>
-        <Link to="/ayarlar/organizasyon" state={routerLocation.state}>
-          ← Organizasyon
+        <Link to={back.path} state={routerLocation.state}>
+          ← {back.label}
         </Link>
       </nav>
       <h1 id="org-location-heading">Lokasyon</h1>
