@@ -22,6 +22,7 @@ public sealed class AccountingPersistenceModelTests
     [
         typeof(PeriodCalendarRow), typeof(PeriodRow), typeof(JournalRow), typeof(JournalLineRow), typeof(DeliveryRow),
         typeof(PostingExceptionRow), typeof(PendingValuationRow), typeof(AccountingCommandRow),
+        typeof(NormalJournalDraftRow), typeof(NormalJournalDraftLineRow),
     ];
 
     [Fact]
@@ -78,6 +79,10 @@ public sealed class AccountingPersistenceModelTests
                      (typeof(DeliveryRow), nameof(DeliveryRow.MessageId)),
                      (typeof(PostingExceptionRow), nameof(PostingExceptionRow.PostingPurpose)),
                      (typeof(PendingValuationRow), nameof(PendingValuationRow.PostingPurpose)),
+                     (typeof(NormalJournalDraftRow), nameof(NormalJournalDraftRow.Consumer)),
+                     (typeof(NormalJournalDraftRow), nameof(NormalJournalDraftRow.MessageId)),
+                     (typeof(NormalJournalDraftRow), nameof(NormalJournalDraftRow.PostingPurpose)),
+                     (typeof(NormalJournalDraftLineRow), nameof(NormalJournalDraftLineRow.MappingKey)),
                  })
         {
             Assert.Equal(AccountingDbContext.IdentityCollation,
@@ -89,6 +94,9 @@ public sealed class AccountingPersistenceModelTests
         Assert.True(periods.FindProperty(nameof(PeriodRow.RowVersion))!.IsConcurrencyToken);
         Assert.True(context.Model.FindEntityType(typeof(PeriodCalendarRow))!.FindProperty(nameof(PeriodCalendarRow.Version))!
             .IsConcurrencyToken);
+        var drafts = context.Model.FindEntityType(typeof(NormalJournalDraftRow))!;
+        Assert.True(drafts.FindProperty(nameof(NormalJournalDraftRow.Version))!.IsConcurrencyToken);
+        Assert.True(drafts.FindProperty(nameof(NormalJournalDraftRow.RowVersion))!.IsConcurrencyToken);
     }
 
     [Fact]
@@ -103,6 +111,12 @@ public sealed class AccountingPersistenceModelTests
         var lines = context.Model.FindEntityType(typeof(JournalLineRow))!;
         Assert.Contains(lines.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(JournalRow)
             && key.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "JournalId"]));
+        var drafts = context.Model.FindEntityType(typeof(NormalJournalDraftRow))!;
+        Assert.Contains(drafts.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(JournalRow)
+            && key.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "PostedJournalId"]));
+        var draftLines = context.Model.FindEntityType(typeof(NormalJournalDraftLineRow))!;
+        Assert.Contains(draftLines.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(NormalJournalDraftRow)
+            && key.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "DraftId"]));
     }
 
     [Fact]
@@ -112,6 +126,7 @@ public sealed class AccountingPersistenceModelTests
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_InitialAccounting", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddDeliveryRequestHash", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddPeriodApproval", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddNormalJournalDrafts", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -160,6 +175,9 @@ public sealed class AccountingPersistenceModelTests
     [InlineData("edit-period-preparer")]
     [InlineData("edit-command")]
     [InlineData("delete-command")]
+    [InlineData("edit-normal-draft-source")]
+    [InlineData("edit-normal-draft-line")]
+    [InlineData("delete-normal-draft")]
     [InlineData("move-exception-to-another-company")]
     public void Stored_accounting_is_never_deleted_and_only_its_allowed_fields_change(string fault)
     {
@@ -190,6 +208,15 @@ public sealed class AccountingPersistenceModelTests
                 break;
             case "delete-command":
                 context.Commands.Remove(Attach(context, Command()));
+                break;
+            case "edit-normal-draft-source":
+                Attach(context, NormalDraft()).SourceId = Guid.NewGuid();
+                break;
+            case "edit-normal-draft-line":
+                Attach(context, NormalDraftLine()).Amount = 2m;
+                break;
+            case "delete-normal-draft":
+                context.NormalJournalDrafts.Remove(Attach(context, NormalDraft()));
                 break;
             default:
                 Attach(context, QueueEntry()).CompanyId = CompanyB;
@@ -243,6 +270,23 @@ public sealed class AccountingPersistenceModelTests
         CompanyId = CompanyA, SourceId = Guid.NewGuid(), PostingPurpose = "synthetic-purpose", Status = 1,
         PostingRuleVersion = "synthetic-rule-1", MissingMappingKeysJson = "[\"k\"]", FirstMessageId = "m-1", Version = 1,
         UpdatedAtUtc = At,
+    };
+
+    private static NormalJournalDraftRow NormalDraft() => new NormalJournalDraftRow
+    {
+        Id = Guid.NewGuid(), CompanyId = CompanyA, Status = 1, Version = 1, ContentHash = new string('a', 64),
+        PreparedByUserId = Guid.NewGuid(), PreparedAtUtc = At, Consumer = "synthetic-consumer", MessageId = "draft-1",
+        SourceId = Guid.NewGuid(), PostingPurpose = "synthetic-purpose", PostingRuleVersion = "synthetic-rule-1",
+        CurrencyId = Guid.NewGuid(), TransactionDate = new DateOnly(2026, 9, 14), AccountingDate = new DateOnly(2026, 9, 15),
+        RecordedAtUtc = At, AccountPlanSourceVersion = "synthetic-plan-1", AccountPlanSourceSha256 = new string('b', 64),
+        AccountPlanApprovedByUserId = Guid.NewGuid(), AccountPlanApprovedAtUtc = At,
+        PostingRuleApprovedByUserId = Guid.NewGuid(), PostingRuleApprovedAtUtc = At, CreatedAtUtc = At, UpdatedAtUtc = At,
+    };
+
+    private static NormalJournalDraftLineRow NormalDraftLine() => new NormalJournalDraftLineRow
+    {
+        CompanyId = CompanyA, DraftId = Guid.NewGuid(), LineNumber = 1, MappingKey = "synthetic-debit",
+        Side = 1, AccountId = Guid.NewGuid(), Amount = 1m,
     };
 
     /// <summary>A context of company A, or of no resolved company at all.</summary>

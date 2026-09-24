@@ -42,7 +42,8 @@ public sealed class AccountingStore(
     ICompanyContext companyContext,
     IAuditEventCollector auditEvents,
     TimeProvider timeProvider,
-    AccountingAmountScaleVerifier amounts) : IAccountingPeriodStore, IAccountingPostingStore, IAccountingCommandLog
+    AccountingAmountScaleVerifier amounts) : IAccountingPeriodStore, IAccountingPostingStore, IAccountingCommandLog,
+    IAccountingNormalJournalDraftStore
 {
     private const int Open = 1;
     private const int Resolved = 2;
@@ -53,6 +54,7 @@ public sealed class AccountingStore(
     private const string JournalEntityType = "Accounting.Journal";
     private const string ExceptionEntityType = "Accounting.PostingException";
     private const string PendingEntityType = "Accounting.PendingValuation";
+    private const string NormalDraftEntityType = "Accounting.NormalJournalDraft";
     private const int MaximumPageSize = 100;
 
     private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
@@ -276,6 +278,180 @@ public sealed class AccountingStore(
         AddDelivery(request.Consumer, request.MessageId, requestHash, outcome, metadata);
         await SaveAsync(cancellationToken);
         return outcome;
+    }
+
+    public async Task<(NormalJournalDraftRecordV1 Record, AccountingWriteOutcome Outcome)> CreateNormalDraftAsync(
+        NormalJournalDraftV1 draft,
+        AccountingCommandMetadata metadata,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(draft);
+        RequireMetadata(metadata);
+        RequireCompany(draft.CompanyId);
+        RequireNormalDraft(draft);
+        var hash = NormalDraftHash(draft);
+        var existing = await dbContext.NormalJournalDrafts.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.Id == draft.Id, cancellationToken);
+        if (existing is not null)
+        {
+            if (!string.Equals(existing.ContentHash, hash, StringComparison.Ordinal))
+            {
+                throw Refused(NormalJournalDraftStoreCodesV1.ContentConflict,
+                    "Aynı taslak kimliği başka değişmez içerikle kaydedilmiş.");
+            }
+
+            return (await RestoreNormalDraftAsync(existing, cancellationToken), AccountingWriteOutcome.Replayed);
+        }
+
+        var now = timeProvider.GetUtcNow();
+        var row = new NormalJournalDraftRow
+        {
+            Id = draft.Id,
+            CompanyId = draft.CompanyId,
+            Status = (int)NormalJournalDraftStatusV1.Draft,
+            Version = draft.Version,
+            ContentHash = hash,
+            PreparedByUserId = draft.PreparedByUserId,
+            PreparedAtUtc = now,
+            Consumer = draft.Request.Consumer,
+            MessageId = draft.Request.MessageId,
+            SourceId = draft.Request.Source.SourceId,
+            PostingPurpose = draft.Request.Source.PostingPurpose,
+            PostingRuleVersion = draft.Request.PostingRuleVersion,
+            CurrencyId = draft.Request.CurrencyId,
+            TransactionDate = draft.Request.Dates.TransactionDate,
+            AccountingDate = draft.Request.Dates.AccountingDate,
+            ValueDate = draft.Request.Dates.ValueDate,
+            RecordedAtUtc = draft.Request.Dates.RecordedAtUtc,
+            AccountPlanSourceVersion = draft.Rule.Mirror.SourceVersion,
+            AccountPlanSourceSha256 = draft.Rule.Mirror.SourceSha256.ToUpperInvariant(),
+            AccountPlanApprovedByUserId = draft.Rule.Mirror.ApprovedByUserId,
+            AccountPlanApprovedAtUtc = draft.Rule.Mirror.ApprovedAtUtc,
+            PostingRuleApprovedByUserId = draft.Rule.ApprovedByUserId,
+            PostingRuleApprovedAtUtc = draft.Rule.ApprovedAtUtc,
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now,
+        };
+        dbContext.NormalJournalDrafts.Add(row);
+        var lineRows = draft.Request.Lines.Select((line, index) => new NormalJournalDraftLineRow
+        {
+            CompanyId = draft.CompanyId,
+            DraftId = draft.Id,
+            LineNumber = index + 1,
+            MappingKey = line.MappingKey,
+            Side = (int)line.Side,
+            AccountId = line.Account!.Value.AccountId,
+            Amount = line.Amount!.Value,
+        }).ToArray();
+        dbContext.NormalJournalDraftLines.AddRange(lineRows);
+
+        var record = RestoreNormalDraft(row, lineRows);
+        Audit(metadata, draft.CompanyId, NormalDraftEntityType, draft.Id.ToString("D"),
+            "accounting.normal-journal-draft.created.v1", "Create", null, draft.Version, "{}",
+            NormalDraftAudit(record), "Normal fiş taslağı onaylı plan ve kural snapshot'ına bağlı hazırlandı");
+        Complete(metadata, draft.CompanyId, record);
+        await SaveAsync(cancellationToken);
+        return (record, AccountingWriteOutcome.Recorded);
+    }
+
+    public async Task<NormalJournalDraftRecordV1?> FindNormalDraftAsync(
+        Guid draftId,
+        CancellationToken cancellationToken = default)
+    {
+        RequireResolvedCompany();
+        var row = await dbContext.NormalJournalDrafts.AsNoTracking()
+            .SingleOrDefaultAsync(candidate => candidate.Id == draftId, cancellationToken);
+        return row is null ? null : await RestoreNormalDraftAsync(row, cancellationToken);
+    }
+
+    public async Task<NormalJournalDraftRecordV1> ApproveAndPostNormalDraftAsync(
+        Guid draftId,
+        long expectedVersion,
+        Guid periodId,
+        Guid approvedByUserId,
+        Func<CancellationToken, Task> freshAuthorityFence,
+        AccountingCommandMetadata metadata,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(freshAuthorityFence);
+        RequireMetadata(metadata);
+        var companyId = RequireResolvedCompany();
+        if (draftId == Guid.Empty || periodId == Guid.Empty || expectedVersion <= 0 || approvedByUserId == Guid.Empty)
+        {
+            throw new ArgumentException("Taslak, sürüm, dönem ve onaylayan kimliği zorunludur.", nameof(draftId));
+        }
+
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            var row = await dbContext.NormalJournalDrafts
+                .SingleOrDefaultAsync(candidate => candidate.Id == draftId, cancellationToken)
+                ?? throw Refused(NormalJournalDraftStoreCodesV1.NotFound, "Bu şirketin böyle bir normal fiş taslağı yok.");
+            if (row.Version != expectedVersion)
+            {
+                throw new AccountingVersionConflictException(expectedVersion, row.Version);
+            }
+
+            if (row.Status != (int)NormalJournalDraftStatusV1.Draft)
+            {
+                throw Refused(NormalJournalDraftStoreCodesV1.NotPending, "Normal fiş taslağı artık onay beklemiyor.");
+            }
+
+            var lineRows = await dbContext.NormalJournalDraftLines
+                .Where(line => line.DraftId == draftId)
+                .OrderBy(line => line.LineNumber)
+                .ToListAsync(cancellationToken);
+            var before = RestoreNormalDraft(row, lineRows);
+
+            // This follows the draft/version reads. ReceiveAsync then performs the real scale,
+            // period and ledger reads while every write remains inside this transaction.
+            await freshAuthorityFence(cancellationToken);
+            var postingMetadata = metadata with { Completion = null };
+            var outcome = await ReceiveAsync(before.Request, periodId, postingMetadata, cancellationToken);
+            if (outcome.Kind != PostingOutcomeKind.Posted || outcome.Journal is null || outcome.Journal.Id != draftId)
+            {
+                throw Refused(NormalJournalDraftStoreCodesV1.PostingConflict,
+                    "Taslak mevcut defter gerçeklerinden yeni ve tek bir fiş olarak kaydedilemedi.");
+            }
+
+            // ReceiveAsync's save is still uncommitted. This second fence is after every awaited
+            // scale/period/ledger read and immediately before approval, command and final commit.
+            await freshAuthorityFence(cancellationToken);
+            var now = timeProvider.GetUtcNow();
+            var versionBefore = row.Version;
+            row.Status = (int)NormalJournalDraftStatusV1.Approved;
+            row.ApprovedByUserId = approvedByUserId;
+            row.ApprovedAtUtc = now;
+            row.PeriodId = periodId;
+            row.PostedJournalId = outcome.Journal.Id;
+            row.Version = checked(versionBefore + 1);
+            row.UpdatedAtUtc = now;
+
+            var record = RestoreNormalDraft(row, lineRows);
+            var approvalContext = JsonSerializer.Serialize(new
+            {
+                policy = "ACC-V1-normal-self-approval-with-narrow-authority",
+                preparedBy = row.PreparedByUserId,
+                approvedBy = approvedByUserId,
+                selfApproval = row.PreparedByUserId == approvedByUserId,
+                periodId,
+                journalId = outcome.Journal.Id,
+            }, Json);
+            Audit(metadata, companyId, NormalDraftEntityType, draftId.ToString("D"),
+                "accounting.normal-journal-draft.approved.v1", "Approve", versionBefore, row.Version,
+                NormalDraftAudit(before), NormalDraftAudit(record), "Normal fiş taslağı onaylandı ve mevcut defter yolunda kaydedildi",
+                approvalContext);
+            Complete(metadata, companyId, record);
+            await SaveAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return record;
+        }
+        catch
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+            dbContext.ChangeTracker.Clear();
+            throw;
+        }
     }
 
     public async Task<PostingOutcome> ReverseAsync(string consumer, string messageId, Guid reversedJournalId,
@@ -870,6 +1046,54 @@ public sealed class AccountingStore(
             .ThenBy(line => line.credit, StringComparer.Ordinal),
     });
 
+    private static string NormalDraftHash(NormalJournalDraftV1 draft) => Hash(new
+    {
+        operation = "normal-journal-draft",
+        draft.Id,
+        draft.CompanyId,
+        draft.Version,
+        draft.PreparedByUserId,
+        mirror = new
+        {
+            draft.Rule.Mirror.SourceVersion,
+            sha256 = draft.Rule.Mirror.SourceSha256.ToUpperInvariant(),
+            draft.Rule.Mirror.ApprovedByUserId,
+            approvedAt = draft.Rule.Mirror.ApprovedAtUtc.UtcDateTime.ToString("O", CultureInfo.InvariantCulture),
+        },
+        rule = new
+        {
+            draft.Rule.Version,
+            draft.Rule.ApprovedByUserId,
+            approvedAt = draft.Rule.ApprovedAtUtc.UtcDateTime.ToString("O", CultureInfo.InvariantCulture),
+        },
+        request = new
+        {
+            draft.Request.Consumer,
+            draft.Request.MessageId,
+            draft.Request.JournalId,
+            draft.Request.Source.SourceId,
+            draft.Request.Source.PostingPurpose,
+            draft.Request.PostingRuleVersion,
+            draft.Request.CurrencyId,
+            dates = new
+            {
+                business = BusinessDates(draft.Request.Dates),
+                recordedAt = draft.Request.Dates.RecordedAtUtc.UtcDateTime.ToString("O", CultureInfo.InvariantCulture),
+            },
+            lines = draft.Request.Lines.Select(line => new
+                {
+                    line.MappingKey,
+                    accountId = line.Account!.Value.AccountId,
+                    side = (int)line.Side,
+                    amount = Canonical(line.Amount!.Value),
+                })
+                .OrderBy(line => line.MappingKey, StringComparer.Ordinal)
+                .ThenBy(line => line.accountId)
+                .ThenBy(line => line.side)
+                .ThenBy(line => line.amount, StringComparer.Ordinal),
+        },
+    });
+
     private static object BusinessDates(PostingDates dates) => new
     {
         transaction = dates.TransactionDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
@@ -1015,6 +1239,98 @@ public sealed class AccountingStore(
         row.LinesAwaitingAmount,
         row.FirstMessageId,
     }, Json);
+
+    private static string NormalDraftAudit(NormalJournalDraftRecordV1 record) => JsonSerializer.Serialize(new
+    {
+        record.Id,
+        status = record.Status.ToString(),
+        record.Version,
+        record.PreparedByUserId,
+        record.PreparedAtUtc,
+        record.ApprovedByUserId,
+        record.ApprovedAtUtc,
+        record.PeriodId,
+        record.PostedJournalId,
+        source = new { record.Request.Source.SourceId, record.Request.Source.PostingPurpose },
+        record.Request.PostingRuleVersion,
+        record.AccountPlanSourceVersion,
+        accountPlanSha256 = record.AccountPlanSourceSha256,
+        lines = record.Request.Lines.Count,
+    }, Json);
+
+    private void RequireNormalDraft(NormalJournalDraftV1 draft)
+    {
+        RequireDelivery(draft.Request.Consumer, draft.Request.MessageId);
+        RequireFits(draft.Request.Source.PostingPurpose, draft.Request.PostingRuleVersion,
+            draft.Request.Lines.Select(line => line.Amount!.Value));
+        if (draft.Version != 1 || draft.Rule.Mirror.CompanyId != draft.CompanyId
+            || !string.Equals(draft.Rule.PostingPurpose, draft.Request.Source.PostingPurpose, StringComparison.Ordinal)
+            || !string.Equals(draft.Rule.Version, draft.Request.PostingRuleVersion, StringComparison.Ordinal)
+            || draft.Request.Lines.Count < 2
+            || draft.Request.Lines.Any(line => line.MappingKey.Length > IdentityMaximumLength))
+        {
+            throw Refused(NormalJournalDraftStoreCodesV1.ContentConflict,
+                "Normal fiş taslağı onaylı plan/kural snapshot'ı ve kaynak içeriğiyle tutarlı değil.");
+        }
+
+        if (draft.Rule.Mirror.SourceVersion.Length > IdentityMaximumLength)
+        {
+            throw Refused(AccountingStoreCodes.ValueDoesNotFit, "Hesap planı sürümü kayıt alanına sığmıyor.");
+        }
+    }
+
+    private async Task<NormalJournalDraftRecordV1> RestoreNormalDraftAsync(
+        NormalJournalDraftRow row,
+        CancellationToken cancellationToken)
+    {
+        var lines = await dbContext.NormalJournalDraftLines.AsNoTracking()
+            .Where(line => line.DraftId == row.Id)
+            .OrderBy(line => line.LineNumber)
+            .ToListAsync(cancellationToken);
+        return RestoreNormalDraft(row, lines);
+    }
+
+    private static NormalJournalDraftRecordV1 RestoreNormalDraft(
+        NormalJournalDraftRow row,
+        IReadOnlyList<NormalJournalDraftLineRow> lines)
+    {
+        if (lines.Count < 2 || lines.Select(line => line.LineNumber).Where((number, index) => number != index + 1).Any())
+        {
+            throw new InvalidOperationException("Kayıtlı normal fiş taslağının satır sırası geçersiz.");
+        }
+
+        var request = new PostingRequest(
+            row.Consumer,
+            row.MessageId,
+            row.Id,
+            new SourceReference(row.CompanyId, row.SourceId, row.PostingPurpose),
+            row.PostingRuleVersion,
+            row.CurrencyId,
+            new PostingDates(row.TransactionDate, row.AccountingDate, row.ValueDate, row.RecordedAtUtc),
+            Array.AsReadOnly(lines.Select(line => new ProposedLine(
+                line.MappingKey,
+                new AccountRef(row.CompanyId, line.AccountId),
+                (PostingSide)line.Side,
+                line.Amount)).ToArray()));
+        return new NormalJournalDraftRecordV1(
+            row.Id,
+            row.CompanyId,
+            row.Version,
+            (NormalJournalDraftStatusV1)row.Status,
+            row.PreparedByUserId,
+            row.PreparedAtUtc,
+            row.ApprovedByUserId,
+            row.ApprovedAtUtc,
+            row.PeriodId,
+            row.PostedJournalId,
+            row.AccountPlanSourceVersion,
+            row.AccountPlanSourceSha256,
+            row.AccountPlanApprovedByUserId,
+            row.AccountPlanApprovedAtUtc,
+            row.PostingRuleApprovedByUserId,
+            row.PostingRuleApprovedAtUtc,
+            request);
+    }
 
     private static AccountingStoreException Refused(string code, string message, Exception? inner = null) =>
         new AccountingStoreException(code, message, inner);
