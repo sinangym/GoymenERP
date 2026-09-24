@@ -79,8 +79,7 @@ function TrialBalance({ namespace }: { readonly namespace: string | null }) {
 
   const state = submitted === null
     ? null
-    : (query.isPending ? { kind: 'initial-loading' } : classifyOutcome(query.data ?? { type: 'malformed' }))
-      as RemoteViewState<TrialBalanceReport>
+    : (query.isPending ? { kind: 'initial-loading' } : classifyOutcome(query.data ?? { type: 'malformed' })) as RemoteViewState<TrialBalanceReport>
 
   return (
     <Frame>
