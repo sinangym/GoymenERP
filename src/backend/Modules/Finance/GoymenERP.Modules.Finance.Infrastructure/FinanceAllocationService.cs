@@ -53,15 +53,19 @@ public sealed class FinanceAllocationService(
             row => row.SourceId == request.SourceId, cancellationToken);
         if (source is null || openItem is null)
         {
-            return Refused(context, CommandOutcome.ValidationFailed,
+            var refusal = Refused(context, CommandOutcome.ValidationFailed,
                 Issue(source is null ? "sourceId" : "openItemId", "finance_allocation_reference_not_found"));
+            return await TerminalAsync(context, metadata, CreateCommandName, payloadHash,
+                source?.Id, null, request.AllocationId, refusal, cancellationToken);
         }
         if (await dbContext.ReversalProposals.AsNoTracking().AnyAsync(
                 row => row.OriginalSourceId == source.Id && row.Status == ReversalProposalStatuses.Approved,
                 cancellationToken))
         {
-            return Refused(context, CommandOutcome.ValidationFailed,
+            var refusal = Refused(context, CommandOutcome.ValidationFailed,
                 Issue("sourceId", "finance_source_already_reversed"));
+            return await TerminalAsync(context, metadata, CreateCommandName, payloadHash,
+                source.Id, null, request.AllocationId, refusal, cancellationToken);
         }
 
         FinanceAllocationMutation mutation;
@@ -71,7 +75,8 @@ public sealed class FinanceAllocationService(
         }
         catch (FinanceAllocationPolicyException exception)
         {
-            return PolicyRefusal(context, exception);
+            return await TerminalAsync(context, metadata, CreateCommandName, payloadHash,
+                source.Id, null, request.AllocationId, PolicyRefusal(context, exception), cancellationToken);
         }
 
         var now = timeProvider.GetUtcNow();
@@ -119,10 +124,11 @@ public sealed class FinanceAllocationService(
         };
         dbContext.Allocations.Add(allocation);
         var result = Succeeded(context, allocation);
-        AddCommand(context, metadata, CreateCommandName, payloadHash, allocation.Id, result, now);
+        AddCommand(context, metadata, CreateCommandName, payloadHash, null, allocation.Id, result, now);
         Audit(context, metadata, allocation, "finance.allocation.created.v1", "Create", null, 1,
             "{}", AuditJson(allocation), "Existing Finance source allocated; no money event created");
-        return await SaveAsync(context, metadata, CreateCommandName, payloadHash, result, cancellationToken);
+        return await SaveAsync(context, metadata, CreateCommandName, payloadHash,
+            allocation.Id, result, cancellationToken);
     }
 
     public async Task<FinanceAllocationCommandResult> ReleaseAsync(
@@ -146,8 +152,10 @@ public sealed class FinanceAllocationService(
             cancellationToken);
         if (allocation is null)
         {
-            return Refused(context, CommandOutcome.ValidationFailed,
+            var refusal = Refused(context, CommandOutcome.ValidationFailed,
                 Issue("allocationId", "finance_allocation_not_found"));
+            return await TerminalAsync(context, metadata, ReleaseCommandName, payloadHash,
+                null, null, request.AllocationId, refusal, cancellationToken);
         }
         var openItem = await dbContext.OpenItems.SingleOrDefaultAsync(row => row.Id == allocation.OpenItemId,
             cancellationToken) ?? throw new InvalidOperationException("Stored allocation open item is missing.");
@@ -162,7 +170,8 @@ public sealed class FinanceAllocationService(
         }
         catch (FinanceAllocationPolicyException exception)
         {
-            return PolicyRefusal(context, exception);
+            return await TerminalAsync(context, metadata, ReleaseCommandName, payloadHash,
+                null, allocation.Id, allocation.Id, PolicyRefusal(context, exception), cancellationToken);
         }
 
         var now = timeProvider.GetUtcNow();
@@ -183,10 +192,11 @@ public sealed class FinanceAllocationService(
         openItem.UpdatedAtUtc = now;
 
         var result = Succeeded(context, allocation);
-        AddCommand(context, metadata, ReleaseCommandName, payloadHash, allocation.Id, result, now);
+        AddCommand(context, metadata, ReleaseCommandName, payloadHash, null, allocation.Id, result, now);
         Audit(context, metadata, allocation, "finance.allocation.released.v1", "Release", 1, allocation.Version,
             before, AuditJson(allocation), request.Reason);
-        return await SaveAsync(context, metadata, ReleaseCommandName, payloadHash, result, cancellationToken);
+        return await SaveAsync(context, metadata, ReleaseCommandName, payloadHash,
+            allocation.Id, result, cancellationToken);
     }
 
     private async Task<FinanceAllocationCommandResult?> StartAsync(
@@ -224,7 +234,7 @@ public sealed class FinanceAllocationService(
         {
             return Refused(context, CommandOutcome.IdempotencyConflict);
         }
-        if (await FenceAsync(context, prior.FinanceAllocationId, cancellationToken) is { } fenced)
+        if (await FenceAsync(context, prior.FinanceAllocationId ?? prior.DraftId, cancellationToken) is { } fenced)
         {
             return fenced;
         }
@@ -253,9 +263,9 @@ public sealed class FinanceAllocationService(
 
     private async Task<FinanceAllocationCommandResult> SaveAsync(
         FinanceContext context, CommandMetadata metadata, string command, string payloadHash,
-        FinanceAllocationCommandResult result, CancellationToken cancellationToken)
+        Guid? permissionTargetId, FinanceAllocationCommandResult result, CancellationToken cancellationToken)
     {
-        if (await FenceAsync(context, result.Resource?.Id, cancellationToken) is { } fenced)
+        if (await FenceAsync(context, permissionTargetId, cancellationToken) is { } fenced)
         {
             dbContext.ChangeTracker.Clear();
             return fenced;
@@ -276,7 +286,7 @@ public sealed class FinanceAllocationService(
 
     private void AddCommand(
         FinanceContext context, CommandMetadata metadata, string command, string payloadHash,
-        Guid allocationId, FinanceAllocationCommandResult result, DateTimeOffset now) =>
+        Guid? sourceId, Guid? allocationId, FinanceAllocationCommandResult result, DateTimeOffset now) =>
         dbContext.Commands.Add(new FinanceCommandRow
         {
             CompanyId = context.CompanyId,
@@ -284,11 +294,22 @@ public sealed class FinanceAllocationService(
             IdempotencyKeyHash = FinanceCommandKeys.Hash(metadata.IdempotencyKey),
             ActorId = context.ActorId,
             PayloadHash = payloadHash,
+            DraftId = sourceId,
             FinanceAllocationId = allocationId,
             ResultJson = JsonSerializer.Serialize(result, Json),
             CorrelationId = context.CorrelationId,
             RecordedAtUtc = now,
         });
+
+    private Task<FinanceAllocationCommandResult> TerminalAsync(
+        FinanceContext context, CommandMetadata metadata, string command, string payloadHash,
+        Guid? sourceId, Guid? allocationId, Guid? permissionTargetId,
+        FinanceAllocationCommandResult refusal, CancellationToken cancellationToken)
+    {
+        AddCommand(context, metadata, command, payloadHash, sourceId, allocationId, refusal, timeProvider.GetUtcNow());
+        return SaveAsync(context, metadata, command, payloadHash,
+            permissionTargetId, refusal, cancellationToken);
+    }
 
     private void Audit(
         FinanceContext context, CommandMetadata metadata, FinanceAllocationRow allocation,

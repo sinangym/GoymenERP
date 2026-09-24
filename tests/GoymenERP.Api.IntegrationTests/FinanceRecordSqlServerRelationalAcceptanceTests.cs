@@ -602,6 +602,148 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
+    public async Task Allocation_terminal_refusal_is_stable_after_state_mutation_and_a_new_key_can_succeed()
+    {
+        await using var run = await Run.StartAsync();
+        var owners = Owners.For(CompanyA);
+        var draft = await run.SaveDraftAsync(owners, "1250.50");
+        CommandResult recorded;
+        await using (var recording = run.Service(CompanyA, owners))
+        {
+            recorded = await recording.Service.RecordAsync(recording.Context, Key("allocation-replay-record"),
+                new RecordRequest(draft.Id, draft.Version), CancellationToken.None);
+        }
+        Assert.Equal(CommandOutcome.Succeeded, recorded.Outcome);
+        var openItem = await run.SeedOpenItemAsync(CompanyA, owners.Account, Currency, "100.00");
+        var allocationId = Guid.NewGuid();
+        var actor = Guid.NewGuid().ToString("D");
+        var request = new CreateFinanceAllocationRequest(
+            allocationId, draft.Id, recorded.Resource!.Source.Version,
+            openItem.Id, openItem.Version, "250.10", "SENTETIK terminal refusal replay");
+
+        var noncanonicalCreate = request with { AllocationId = Guid.NewGuid(), Amount = "01.0" };
+        FinanceAllocationCommandResult noncanonicalCreateRefusal;
+        await using (var allocation = run.AllocationService(CompanyA, actor, new SyntheticPermissions()))
+        {
+            noncanonicalCreateRefusal = await allocation.Service.CreateAsync(
+                allocation.Context, Key("allocation-noncanonical-create"), noncanonicalCreate, CancellationToken.None);
+        }
+        Assert.Equal(CommandOutcome.ValidationFailed, noncanonicalCreateRefusal.Outcome);
+        Assert.Equal(new ValidationIssue("amount", "finance_allocation_amount_invalid"),
+            Assert.Single(noncanonicalCreateRefusal.Issues));
+        await using (var allocation = run.AllocationService(CompanyA, actor, new SyntheticPermissions()))
+        {
+            var replayed = await allocation.Service.CreateAsync(
+                allocation.Context, Key("allocation-noncanonical-create"), noncanonicalCreate, CancellationToken.None);
+            Assert.Equal(CommandOutcome.ValidationFailed, replayed.Outcome);
+            Assert.True(replayed.IsReplay);
+            Assert.Equal(noncanonicalCreateRefusal.OriginalCorrelationId, replayed.OriginalCorrelationId);
+        }
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.Allocations WHERE Id = @id", ("@id", noncanonicalCreate.AllocationId)));
+
+        FinanceAllocationCommandResult refused;
+        await using (var allocation = run.AllocationService(CompanyA, actor, new SyntheticPermissions()))
+        {
+            refused = await allocation.Service.CreateAsync(allocation.Context, Key("allocation-terminal-refusal"),
+                request, CancellationToken.None);
+        }
+        Assert.Equal(CommandOutcome.ValidationFailed, refused.Outcome);
+        Assert.False(refused.IsReplay);
+        Assert.Equal(new ValidationIssue("amount", "finance_allocation_exceeds_open_item"), Assert.Single(refused.Issues));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.Commands WHERE CommandName = @command AND DraftId = @source "
+            + "AND FinanceAllocationId IS NULL",
+            ("@command", FinanceAllocationService.CreateCommandName), ("@source", draft.Id)));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.Allocations WHERE Id = @id", ("@id", allocationId)));
+
+        await using (var context = run.Context(CompanyA))
+        {
+            Assert.Equal(1, await context.Database.ExecuteSqlInterpolatedAsync($"""
+                UPDATE finance.OpenItems SET OutstandingAmountText = {"500.00"}
+                WHERE CompanyId = {CompanyA} AND Id = {openItem.Id}
+                """));
+        }
+
+        FinanceAllocationCommandResult replay;
+        await using (var allocation = run.AllocationService(CompanyA, actor, new SyntheticPermissions()))
+        {
+            replay = await allocation.Service.CreateAsync(allocation.Context, Key("allocation-terminal-refusal"),
+                request, CancellationToken.None);
+        }
+        Assert.Equal(CommandOutcome.ValidationFailed, replay.Outcome);
+        Assert.True(replay.IsReplay);
+        Assert.Equal(refused.OriginalCorrelationId, replay.OriginalCorrelationId);
+        Assert.Equal(refused.Issues.ToArray(), replay.Issues.ToArray());
+
+        FinanceAllocationCommandResult succeeded;
+        await using (var allocation = run.AllocationService(CompanyA, actor, new SyntheticPermissions()))
+        {
+            succeeded = await allocation.Service.CreateAsync(allocation.Context, Key("allocation-after-mutation"),
+                request, CancellationToken.None);
+        }
+        Assert.Equal(CommandOutcome.Succeeded, succeeded.Outcome);
+        Assert.False(succeeded.IsReplay);
+        Assert.Equal(allocationId, succeeded.Resource!.Id);
+        Assert.Equal("250.10", succeeded.Resource.Amount);
+        Assert.Equal("SENTETIK terminal refusal replay", succeeded.Resource.Reason);
+
+        var openItemVersion = (await run.ScalarAsync<long>(
+            "SELECT Version FROM finance.OpenItems WHERE Id = @id", ("@id", openItem.Id)))
+            .ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var noncanonicalRelease = new ReleaseFinanceAllocationRequest(
+            allocationId, succeeded.Resource.Version, openItemVersion, " SENTETIK release ");
+        FinanceAllocationCommandResult noncanonicalReleaseRefusal;
+        await using (var allocation = run.AllocationService(CompanyA, actor, new SyntheticPermissions()))
+        {
+            noncanonicalReleaseRefusal = await allocation.Service.ReleaseAsync(
+                allocation.Context, Key("allocation-noncanonical-release"), noncanonicalRelease, CancellationToken.None);
+        }
+        Assert.Equal(CommandOutcome.ValidationFailed, noncanonicalReleaseRefusal.Outcome);
+        Assert.Equal(new ValidationIssue("reason", "validation_failed"),
+            Assert.Single(noncanonicalReleaseRefusal.Issues));
+        await using (var allocation = run.AllocationService(CompanyA, actor, new SyntheticPermissions()))
+        {
+            var replayed = await allocation.Service.ReleaseAsync(
+                allocation.Context, Key("allocation-noncanonical-release"), noncanonicalRelease, CancellationToken.None);
+            Assert.Equal(CommandOutcome.ValidationFailed, replayed.Outcome);
+            Assert.True(replayed.IsReplay);
+            Assert.Equal(noncanonicalReleaseRefusal.OriginalCorrelationId, replayed.OriginalCorrelationId);
+        }
+
+        FinanceAllocationCommandResult released;
+        await using (var allocation = run.AllocationService(CompanyA, actor, new SyntheticPermissions()))
+        {
+            released = await allocation.Service.ReleaseAsync(allocation.Context, Key("allocation-release-canonical"),
+                noncanonicalRelease with { Reason = "SENTETIK release" }, CancellationToken.None);
+        }
+        Assert.Equal(CommandOutcome.Succeeded, released.Outcome);
+        Assert.Equal(FinanceAllocationStatus.Released, released.Resource!.Status);
+        Assert.Equal("SENTETIK release", released.Resource.ReleaseReason);
+
+        await using (var allocation = run.AllocationService(CompanyA, actor, new SyntheticPermissions()))
+        {
+            replay = await allocation.Service.CreateAsync(allocation.Context, Key("allocation-terminal-refusal"),
+                request, CancellationToken.None);
+        }
+        Assert.Equal(CommandOutcome.ValidationFailed, replay.Outcome);
+        Assert.True(replay.IsReplay);
+        Assert.Equal(refused.Issues.ToArray(), replay.Issues.ToArray());
+        Assert.Equal((1, 3, 2, 2), (
+            await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM finance.Allocations WHERE Id = @id AND Status = 2", ("@id", allocationId)),
+            await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM finance.Commands WHERE CommandName = @command",
+                ("@command", FinanceAllocationService.CreateCommandName)),
+            await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM finance.Commands WHERE CommandName = @command",
+                ("@command", FinanceAllocationService.ReleaseCommandName)),
+            await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Finance.Allocation'")));
+    }
+
+    [SqlServerFact]
     public async Task Concurrent_allocation_create_and_reversal_approval_commit_exactly_one_complete_outcome()
     {
         await using var run = await Run.StartAsync();
