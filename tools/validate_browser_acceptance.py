@@ -58,7 +58,7 @@ SUITE_PROFILES = {
     # acceptance on the staged profile), so the suite runs there and the acc-staged envelope is retired.
     "acc01": "normal",
     # CARI-NORMAL: the create/reopen journey runs on the NORMAL host, which is the whole point —
-    # C-01's list-only envelope and the never-runnable c03 are not acceptance for it.
+    # C-01's list-only envelope and c03's read-only multi-company detail journey are not acceptance for it.
     "c02": "normal",
     # L-04 (SİPARİŞ): Logistics is published after LOG-4b acceptance; the final journey runs on the normal host.
     "l04": "normal",
