@@ -8,6 +8,7 @@ public enum StockAllocationStatus
 {
     Active = 1,
     Consumed = 2,
+    Released = 3,
 }
 
 /// <summary>
@@ -27,7 +28,7 @@ public sealed class StockAllocation
         if (id == Guid.Empty || version < 1 || !Enum.IsDefined(status)
             || allocated.Value <= 0m || remaining.Value < 0m || remaining.Value > allocated.Value
             || status == StockAllocationStatus.Active && remaining.Value == 0m
-            || status == StockAllocationStatus.Consumed && remaining.Value != 0m)
+            || status is StockAllocationStatus.Consumed or StockAllocationStatus.Released && remaining.Value != 0m)
         {
             throw new ArgumentException("Stored stock allocation is inconsistent.");
         }
@@ -60,6 +61,10 @@ public sealed class StockAllocation
         Kilograms remaining, long version, StockAllocationStatus status) =>
         new(id, position, allocated, remaining, version, status);
 
+    /// <summary>Creates one allocation over an exact free physical position.</summary>
+    public static StockAllocation Create(Guid id, StockPosition position, Kilograms quantity) =>
+        new(id, position, quantity, quantity, 1, StockAllocationStatus.Active);
+
     /// <summary>Consumes exactly the supplied kg; partiality is chosen by the owner request, not here.</summary>
     public void Consume(long expectedVersion, Guid labelId, Kilograms quantity)
     {
@@ -89,6 +94,29 @@ public sealed class StockAllocation
         {
             Status = StockAllocationStatus.Consumed;
         }
+    }
+
+    /// <summary>
+    /// Releases every unconsumed kilogram. Releasing is not a stock movement: the physical balance stays
+    /// unchanged and the released quantity becomes free again when active allocations are deducted.
+    /// </summary>
+    public Kilograms Release(long expectedVersion)
+    {
+        if (expectedVersion != Version)
+        {
+            throw new StockAllocationException(StockAllocationFailure.VersionConflict);
+        }
+
+        if (Status != StockAllocationStatus.Active)
+        {
+            throw new StockAllocationException(StockAllocationFailure.StateConflict);
+        }
+
+        var released = Remaining;
+        Remaining = Kilograms.Zero;
+        Version = checked(Version + 1);
+        Status = StockAllocationStatus.Released;
+        return released;
     }
 }
 

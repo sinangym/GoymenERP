@@ -16,17 +16,28 @@ exposes no database handle or independent transaction factory. The request carri
 line/allocation/label/movement identities, exact allocation and label versions, lossless kg text and UTC time.
 The stored allocation supplies the physical owner/custodian/location; Logistics cannot choose them.
 
-Runtime DI remains deliberately **NOT READY**. `StockAllocation` plus `inventory.Allocations` now provide the
-company-filtered physical position, remaining kg, exact business version, SQL rowversion and fail-closed
-state/quantity constraints needed by the participant. This predecessor has no public allocation-create,
-expiry, release or partial-allocation policy and writes no rows by itself. Its real-SQL acceptance proves the
-tenant filter, constraints and a losing concurrent update; the host route and Logistics consumer remain off.
+PR #422 added the enlisted runtime, durable Inventory outbox row and real-SQL atomicity/replay coverage. Central
+DI/route/dispatcher publication remains deliberately off; the outbox row is not proof of publication. No new
+permission or grant was introduced.
 
-The remaining blocker is the transactional outbox contract. Repository governance still marks ERP-000F
-`SPEC_ONLY` and requires an approved event owner, event type/schema version and payload before feature code.
-No such LOG-5 event schema is present in the locked decisions, master, #418 contract or Issue #66 record.
-Until that contract is supplied, Inventory does not invent an event envelope, positive participant runtime or
-central binding. No new permission or grant is introduced.
+## INV-AL-1 — physical sales allocation lifecycle predecessor
+
+`IInventoryPhysicalAllocationWriterV1` persists one physical-label allocation bound to the exact approved Sales
+order/line/product/version facts supplied by the future host adapter. Creation deducts existing active allocation
+remainders from the label's single unblocked physical balance and bumps the label version in the same save. Two
+writers that observed the same label version cannot both over-allocate it. Creation and explicit full release are
+idempotent, audited and versioned; neither writes a stock movement. Release preserves the row and its immutable
+demand/source facts, sets the remaining kg to zero and makes that remainder free again.
+
+`ReservedUntilUtc` is optional input only. This predecessor neither invents the Settings default nor auto-releases
+expired allocations. It supports only the locked `sales.order-line` demand kind; future purchase/production/manual
+sources and source conversion are separate accepted slices. Rows created before this lifecycle remain readable with
+null demand facts, so the LOG-5 runtime is not relabelled.
+
+Host publication is **NOT READY**: no approved allocation write permission exists. Issue #66 comment 5805818345 asks
+for the exact existing permission/action mapping. Until that is answered, there is no endpoint, grant, shell route or
+OpenAPI operation. The central host must also read `ISalesOrderLineReferencePortV1`, compare the approved line's
+company/product/version, then revalidate authority/company/actor immediately before this single owner save.
 
 ## R13 — draft parent-roll reference predecessor (Business #66/5778472429 A)
 

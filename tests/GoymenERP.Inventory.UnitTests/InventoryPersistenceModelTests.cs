@@ -108,6 +108,8 @@ public sealed class InventoryPersistenceModelTests
         Assert.True(allocations.FindProperty(nameof(AllocationRow.RowVersion))!.IsConcurrencyToken);
         Assert.Equal(["CompanyId", "Id"], allocations.GetKeys().Single(key => !key.IsPrimaryKey())
             .Properties.Select(property => property.Name));
+        Assert.Contains(allocations.GetIndexes(), index => index.GetDatabaseName() == "IX_Allocations_ActivePosition");
+        Assert.Contains(allocations.GetIndexes(), index => index.GetDatabaseName() == "IX_Allocations_Demand");
     }
 
     [Fact]
@@ -125,6 +127,8 @@ public sealed class InventoryPersistenceModelTests
             migration => migration.EndsWith("_AddInventoryCommands", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("_AddInventoryDefiniteShipmentRuntime", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AddInventoryPhysicalAllocationLifecycle", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -184,6 +188,7 @@ public sealed class InventoryPersistenceModelTests
     [InlineData("edit-opening-line")]
     [InlineData("edit-command")]
     [InlineData("edit-allocation-position")]
+    [InlineData("edit-allocation-demand")]
     [InlineData("edit-outbox")]
     public void Stored_stock_is_never_deleted_and_only_its_allowed_field_changes(string fault)
     {
@@ -237,6 +242,9 @@ public sealed class InventoryPersistenceModelTests
                 break;
             case "edit-allocation-position":
                 Attach(context, Allocation()).LocationId = Guid.NewGuid();
+                break;
+            case "edit-allocation-demand":
+                Attach(context, Allocation()).Reason = "SYN-CHANGED";
                 break;
             case "edit-outbox":
                 Attach(context, Outbox()).PayloadJson = "{\"changed\":true}";

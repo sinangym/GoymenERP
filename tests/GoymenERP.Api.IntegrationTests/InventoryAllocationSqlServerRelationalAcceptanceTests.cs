@@ -15,6 +15,161 @@ namespace GoymenERP.Api.IntegrationTests;
 public sealed partial class InventorySqlServerRelationalAcceptanceTests
 {
     [SqlServerFact]
+    public async Task Physical_sales_allocation_reduces_free_capacity_without_a_movement_and_release_restores_it()
+    {
+        await using var run = await Run.StartAsync();
+        var source = await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-ALLOC-CREATE", 100m);
+        var movementCount = await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Movements");
+        var createMetadata = Metadata(run) with
+        {
+            IdempotencyKey = $"allocate-{Guid.NewGuid():N}",
+            CorrelationId = $"allocate-{Guid.NewGuid():N}",
+        };
+        var create = AllocationRequest(source, "60");
+
+        InventoryPhysicalAllocationResultV1 first;
+        await using (var scope = run.Store(CompanyA))
+        {
+            first = await scope.Store.CreateAsync(create, createMetadata);
+        }
+
+        Assert.False(first.IsReplay);
+        Assert.Equal(("1", "Active", "60", "60"),
+            (first.Allocation.Version, first.Allocation.Status, first.Allocation.AllocatedKg, first.Allocation.RemainingKg));
+        Assert.Equal(movementCount, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Movements"));
+        Assert.Equal(40m, await FreeAfterAllocationsAsync(run, source.LabelId));
+
+        await using (var replayScope = run.Store(CompanyA))
+        {
+            var replay = await replayScope.Store.CreateAsync(create, createMetadata with
+            {
+                CorrelationId = $"replay-{Guid.NewGuid():N}",
+            });
+            Assert.True(replay.IsReplay);
+            Assert.Equal(first.OriginalCorrelationId, replay.OriginalCorrelationId);
+        }
+
+        await using (var conflictScope = run.Store(CompanyA))
+        {
+            var conflict = await Assert.ThrowsAsync<InventoryAllocationException>(() =>
+                conflictScope.Store.CreateAsync(create with { QuantityKg = "59" }, createMetadata));
+            Assert.Equal((409, InventoryAllocationCodesV1.IdempotencyConflict), (conflict.Status, conflict.Code));
+        }
+
+        var releaseMetadata = Metadata(run) with
+        {
+            IdempotencyKey = $"release-{Guid.NewGuid():N}",
+            CorrelationId = $"release-{Guid.NewGuid():N}",
+        };
+        await using (var scope = run.Store(CompanyA))
+        {
+            var released = await scope.Store.ReleaseAsync(create.AllocationId,
+                new ReleasePhysicalAllocationV1("1", "Sipariş ihtiyacı kaldırıldı."), releaseMetadata);
+            Assert.Equal(("2", "Released", "0"),
+                (released.Allocation.Version, released.Allocation.Status, released.Allocation.RemainingKg));
+        }
+
+        await using (var replayScope = run.Store(CompanyA))
+        {
+            var replay = await replayScope.Store.ReleaseAsync(create.AllocationId,
+                new ReleasePhysicalAllocationV1("1", "Sipariş ihtiyacı kaldırıldı."), releaseMetadata);
+            Assert.True(replay.IsReplay);
+        }
+
+        Assert.Equal(100m, await FreeAfterAllocationsAsync(run, source.LabelId));
+        Assert.Equal(movementCount, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Movements"));
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Commands WHERE TargetId = @id", ("@id", create.AllocationId)));
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Inventory.StockAllocation' AND EntityId = @id",
+            ("@id", create.AllocationId.ToString("D"))));
+    }
+
+    [SqlServerFact]
+    public async Task Physical_sales_allocation_refuses_over_allocation_stale_and_foreign_sources_without_effect()
+    {
+        await using var run = await Run.StartAsync();
+        var own = await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-ALLOC-BOUND", 100m);
+        var foreign = await SeedFreePhysicalSourceAsync(run, CompanyB, "SYN-ALLOC-FOREIGN", 100m);
+
+        await using (var scope = run.Store(CompanyA))
+        {
+            await scope.Store.CreateAsync(AllocationRequest(own, "80"), Metadata(run));
+        }
+
+        var before = await AllocationEffectCountsAsync(run);
+        await using (var scope = run.Store(CompanyA))
+        {
+            var insufficient = await Assert.ThrowsAsync<InventoryAllocationException>(() =>
+                scope.Store.CreateAsync(AllocationRequest(own, "20.001") with { AllocationId = Guid.NewGuid() }, Metadata(run)));
+            Assert.Equal((409, InventoryAllocationCodesV1.InsufficientFreeStock),
+                (insufficient.Status, insufficient.Code));
+        }
+
+        await using (var scope = run.Store(CompanyA))
+        {
+            var stale = await Assert.ThrowsAsync<InventoryAllocationException>(() =>
+                scope.Store.CreateAsync(AllocationRequest(own, "1") with
+                {
+                    AllocationId = Guid.NewGuid(), ExpectedLabelVersion = own.LabelVersion.ToString(),
+                }, Metadata(run)));
+            Assert.Equal((409, InventoryAllocationCodesV1.LabelVersionConflict), (stale.Status, stale.Code));
+        }
+
+        var activeAllocationId = await run.ScalarAsync<Guid>(
+            "SELECT TOP (1) Id FROM inventory.Allocations WHERE LabelId = @id", ("@id", own.LabelId));
+        await using (var scope = run.Store(CompanyA))
+        {
+            var staleRelease = await Assert.ThrowsAsync<InventoryAllocationException>(() =>
+                scope.Store.ReleaseAsync(activeAllocationId,
+                    new ReleasePhysicalAllocationV1("2", "Stale sürüm reddi."), Metadata(run)));
+            Assert.Equal((409, InventoryAllocationCodesV1.AllocationVersionConflict),
+                (staleRelease.Status, staleRelease.Code));
+        }
+
+        await using (var scope = run.Store(CompanyA))
+        {
+            var hidden = await Assert.ThrowsAsync<InventoryAllocationException>(() =>
+                scope.Store.CreateAsync(AllocationRequest(foreign, "1") with { AllocationId = Guid.NewGuid() }, Metadata(run)));
+            Assert.Equal((404, InventoryAllocationCodesV1.InvalidReference), (hidden.Status, hidden.Code));
+        }
+
+        Assert.Equal(before, await AllocationEffectCountsAsync(run));
+        Assert.Equal(20m, await FreeAfterAllocationsAsync(run, own.LabelId));
+        Assert.Equal(100m, await FreeAfterAllocationsAsync(run, foreign.LabelId));
+    }
+
+    [SqlServerFact]
+    public async Task Concurrent_physical_allocations_cannot_both_consume_the_same_free_capacity()
+    {
+        await using var run = await Run.StartAsync();
+        var source = await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-ALLOC-RACE", 100m);
+        var barrier = new Barrier(2);
+
+        async Task<object> AllocateAsync()
+        {
+            await using var scope = run.Store(CompanyA, new BarrierInterceptor(barrier));
+            try
+            {
+                return await scope.Store.CreateAsync(
+                    AllocationRequest(source, "60") with { AllocationId = Guid.NewGuid() }, Metadata(run));
+            }
+            catch (InventoryAllocationException exception)
+            {
+                return exception.Code;
+            }
+        }
+
+        var results = await Task.WhenAll(Task.Run(AllocateAsync), Task.Run(AllocateAsync));
+
+        Assert.Single(results, result => result is InventoryPhysicalAllocationResultV1);
+        Assert.Single(results, result => result is string code && code == InventoryAllocationCodesV1.ConcurrentChange);
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Allocations WHERE LabelId = @id AND Status = 1", ("@id", source.LabelId)));
+        Assert.Equal(40m, await FreeAfterAllocationsAsync(run, source.LabelId));
+    }
+
+    [SqlServerFact]
     public async Task Definite_shipment_flushes_one_atomic_effect_replays_and_host_rollback_removes_every_effect()
     {
         await using var run = await Run.StartAsync();
@@ -276,6 +431,45 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         return new(allocationId, label.Id, labelVersion);
     }
 
+    private static async Task<PhysicalSource> SeedFreePhysicalSourceAsync(
+        Run run,
+        Guid company,
+        string code,
+        decimal quantity)
+    {
+        var location = await run.LocationOfAsync(company);
+        var label = NewLabel(company, code);
+        var position = Position(company, location, label, BlockState.Free);
+        await using (var scope = run.Store(company))
+        {
+            await scope.Labels.SaveLabelAsync(label, Metadata(run) with { CorrelationId = $"seed-{Guid.NewGuid():N}" });
+            await scope.Movements.RecordMovementAsync(
+                Movement(company, StockMovementKind.Receipt, In(position, quantity)),
+                Metadata(run) with { CorrelationId = $"seed-{Guid.NewGuid():N}" });
+        }
+
+        await using var context = run.Context(company);
+        var version = await context.Labels.Where(row => row.Id == label.Id).Select(row => row.Version).SingleAsync();
+        return new(label.Id, label.ProductId, version);
+    }
+
+    private static CreatePhysicalSalesAllocationV1 AllocationRequest(PhysicalSource source, string quantityKg) => new(
+        Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), source.ProductId, "7", source.LabelId,
+        source.LabelVersion.ToString(), quantityKg, "Onaylı satış satırı için fiziksel kaynak.", null);
+
+    private static async Task<decimal> FreeAfterAllocationsAsync(Run run, Guid labelId) =>
+        await run.ScalarAsync<decimal>(
+            "SELECT (SELECT COALESCE(SUM(QuantityKg), 0) FROM inventory.Balances WHERE LabelId = @id AND Block = 1) "
+            + "- (SELECT COALESCE(SUM(RemainingKg), 0) FROM inventory.Allocations WHERE LabelId = @id AND Status = 1)",
+            ("@id", labelId));
+
+    private static async Task<(int Allocations, int Commands, int Audits)> AllocationEffectCountsAsync(Run run) =>
+        (
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Allocations"),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Commands WHERE CommandName LIKE N'inventory.physical-allocation.%'"),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Inventory.StockAllocation'")
+        );
+
     private static async Task<ShipmentState> SeedForeignAllocationAsync(Run run, string code)
     {
         var location = await run.LocationOfAsync(CompanyB);
@@ -355,6 +549,8 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     }
 
     private sealed record ShipmentState(Guid AllocationId, Guid LabelId, long LabelVersion);
+
+    private sealed record PhysicalSource(Guid LabelId, Guid ProductId, long LabelVersion);
 
     private sealed record ShipmentEffectSnapshot(
         decimal OwnAllocationRemainingKg,

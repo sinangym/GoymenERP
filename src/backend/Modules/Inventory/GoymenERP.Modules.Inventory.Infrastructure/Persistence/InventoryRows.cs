@@ -161,6 +161,13 @@ internal sealed class AllocationRow : IInventoryTenantRow
     public Guid LocationId { get; set; }
     public Guid LabelId { get; set; }
     public int Block { get; set; }
+    public string? DemandKind { get; set; }
+    public Guid? DemandId { get; set; }
+    public Guid? DemandLineId { get; set; }
+    public Guid? DemandProductId { get; set; }
+    public string? DemandProductVersion { get; set; }
+    public string? Reason { get; set; }
+    public DateTimeOffset? ReservedUntilUtc { get; set; }
     public decimal AllocatedKg { get; set; }
     public decimal RemainingKg { get; set; }
     public int Status { get; set; }
@@ -168,6 +175,8 @@ internal sealed class AllocationRow : IInventoryTenantRow
     public byte[] RowVersion { get; set; } = [];
     public DateTimeOffset CreatedAtUtc { get; set; }
     public DateTimeOffset UpdatedAtUtc { get; set; }
+    public DateTimeOffset? ReleasedAtUtc { get; set; }
+    public string? ReleaseReason { get; set; }
 }
 
 /// <summary>
