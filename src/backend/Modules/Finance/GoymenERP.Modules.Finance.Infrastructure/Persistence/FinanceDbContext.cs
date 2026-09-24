@@ -300,7 +300,10 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                 + "AND [PartyId] <> '00000000-0000-0000-0000-000000000000' AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [TreasuryAccountId] <> '00000000-0000-0000-0000-000000000000' AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000'");
             table.HasCheckConstraint("CK_ManualBankPayments_Text",
-                "LEN([AmountText]) > 0 AND LEN([ProfileId]) > 0 AND LEN([ProfileVersion]) > 0 AND LEN([PreparedBy]) > 0");
+                "LEN([AmountText]) > 0 AND LEN([ProfileId]) > 0 AND LEN([ProfileVersion]) > 0 AND LEN([PreparedBy]) > 0 "
+                + "AND (([LinkedDocumentId] IS NULL AND [LinkedDocumentVersion] IS NULL) OR "
+                + "([LinkedDocumentId] IS NOT NULL AND [LinkedDocumentId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [LinkedDocumentVersion] IS NOT NULL AND LEN([LinkedDocumentVersion]) > 0))");
             table.HasCheckConstraint("CK_ManualBankPayments_Version", "[Version] >= 1");
             table.HasCheckConstraint("CK_ManualBankPayments_Status", ManualBankPaymentStatusCheck);
         });
@@ -315,6 +318,7 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         entity.Property(x => x.ValueOn).HasColumnType("date");
         entity.Property(x => x.BankReference).HasMaxLength(128);
         entity.Property(x => x.Description).HasMaxLength(1000);
+        entity.Property(x => x.LinkedDocumentVersion).HasMaxLength(128).UseCollation(IdentityCollation);
         entity.Property(x => x.PreparedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
         entity.Property(x => x.ApprovedBy).HasMaxLength(128).UseCollation(IdentityCollation);
         entity.Property(x => x.RecordedBy).HasMaxLength(128).UseCollation(IdentityCollation);
@@ -538,7 +542,8 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                 nameof(ManualBankPaymentRow.AmountText), nameof(ManualBankPaymentRow.ProfileId),
                 nameof(ManualBankPaymentRow.ProfileVersion), nameof(ManualBankPaymentRow.OccurredOn),
                 nameof(ManualBankPaymentRow.ValueOn), nameof(ManualBankPaymentRow.BankReference),
-                nameof(ManualBankPaymentRow.Description), nameof(ManualBankPaymentRow.PreparedBy),
+                nameof(ManualBankPaymentRow.Description), nameof(ManualBankPaymentRow.LinkedDocumentId),
+                nameof(ManualBankPaymentRow.LinkedDocumentVersion), nameof(ManualBankPaymentRow.PreparedBy),
                 nameof(ManualBankPaymentRow.PreparedAtUtc));
         }
 

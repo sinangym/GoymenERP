@@ -30,6 +30,17 @@ export interface ManualBankPaymentDraftSaveRequest {
   readonly paymentId: string | null
   readonly expectedVersion: string | null
   readonly preparation: ManualBankPaymentPreparation
+  readonly linkedDocument: ManualBankPaymentLinkedDocumentRequest | null
+}
+
+export interface ManualBankPaymentLinkedDocumentRequest {
+  readonly documentId: string
+  readonly expectedVersion: string
+}
+
+export interface ManualBankPaymentLinkedDocument {
+  readonly documentId: string
+  readonly version: string
 }
 
 export interface ApproveManualBankPaymentRequest {
@@ -46,6 +57,7 @@ export interface ManualBankPaymentView {
   readonly companyId: string
   readonly status: ManualBankPaymentStatus
   readonly preparation: ManualBankPaymentPreparation
+  readonly linkedDocument: ManualBankPaymentLinkedDocument | null
   readonly preparedBy: string
   readonly preparedAtUtc: string
   readonly approvedBy: string | null
@@ -155,11 +167,19 @@ function decodePreparation(value: unknown): ManualBankPaymentPreparation | null 
   }
 }
 
+function decodeLinkedDocument(value: unknown): ManualBankPaymentLinkedDocument | null | undefined {
+  if (value === null) return null
+  if (!isRecord(value) || !hasExactKeys(value, ['documentId', 'version'])) return undefined
+  if (!isBoundUuid(value.documentId) || !isOpaqueVersion(value.version)) return undefined
+  return { documentId: value.documentId, version: value.version }
+}
+
 const VIEW_KEYS = [
   'id',
   'companyId',
   'status',
   'preparation',
+  'linkedDocument',
   'preparedBy',
   'preparedAtUtc',
   'approvedBy',
@@ -173,11 +193,13 @@ const VIEW_KEYS = [
 export function decodeManualBankPaymentView(value: unknown, companyId: string): Decoded<ManualBankPaymentView> {
   if (!isRecord(value) || !hasExactKeys(value, VIEW_KEYS)) return FAIL
   const preparation = decodePreparation(value.preparation)
+  const linkedDocument = decodeLinkedDocument(value.linkedDocument)
   if (
     !isBoundUuid(value.id)
     || value.companyId !== companyId
     || !['Draft', 'Approved', 'Recorded'].includes(value.status as string)
     || preparation === null
+    || linkedDocument === undefined
     || !isActor(value.preparedBy)
     || !isInstant(value.preparedAtUtc)
     || !(value.approvedBy === null || isActor(value.approvedBy))
@@ -206,6 +228,7 @@ export function decodeManualBankPaymentView(value: unknown, companyId: string): 
     companyId,
     status,
     preparation,
+    linkedDocument,
     preparedBy: value.preparedBy,
     preparedAtUtc: value.preparedAtUtc,
     approvedBy: value.approvedBy,

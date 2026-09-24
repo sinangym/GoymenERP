@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { isDateOnly } from './dateOnly'
 import { parseAmountInput } from './decimalText'
-import { decodeReadResult, type ProfileReference } from './contract'
+import { decodeReadResult, isBoundUuid, isOpaqueVersion, type ProfileReference } from './contract'
 import { useFinancePort } from './financePort'
 import {
   decodeManualBankPaymentCommandResult,
@@ -35,6 +35,7 @@ function PaymentFacts({ payment }: { readonly payment: ManualBankPaymentView }) 
       <dt>Tutar</dt><dd>{payment.preparation.money.amount}</dd>
       <dt>İşlem tarihi</dt><dd>{payment.preparation.occurredOn}</dd>
       <dt>Banka referansı</dt><dd>{payment.preparation.bankReference ?? 'Yok'}</dd>
+      <dt>Bağlı belge</dt><dd>{payment.linkedDocument?.documentId ?? 'Yok'}</dd>
       <dt>Hazırlayan</dt><dd>{payment.preparedBy}</dd>
       <dt>Onaylayan</dt><dd>{payment.approvedBy ?? 'Bekliyor'}</dd>
       <dt>Kesin kaydeden</dt><dd>{payment.recordedBy ?? 'Bekliyor'}</dd>
@@ -53,6 +54,8 @@ export function ManualBankPaymentCreatePage({
   const [valueOn, setValueOn] = useState('')
   const [bankReference, setBankReference] = useState('')
   const [description, setDescription] = useState('')
+  const [documentId, setDocumentId] = useState('')
+  const [documentVersion, setDocumentVersion] = useState('')
   const [message, setMessage] = useState<string | null>(null)
   const [saved, setSaved] = useState<ManualBankPaymentView | null>(null)
   const [busy, setBusy] = useState(false)
@@ -62,7 +65,11 @@ export function ManualBankPaymentCreatePage({
     event.preventDefault()
     if (port === null || busy) return
     const parsed = parseAmountInput(amount)
-    if (!parsed.ok || !isDateOnly(occurredOn) || (valueOn !== '' && !isDateOnly(valueOn))) {
+    const hasDocumentId = documentId.trim() !== ''
+    const hasDocumentVersion = documentVersion.trim() !== ''
+    if (!parsed.ok || !isDateOnly(occurredOn) || (valueOn !== '' && !isDateOnly(valueOn))
+      || hasDocumentId !== hasDocumentVersion
+      || (hasDocumentId && (!isBoundUuid(documentId.trim()) || !isOpaqueVersion(documentVersion.trim())))) {
       setMessage('Tutar ve tarih alanlarını kontrol edin.')
       return
     }
@@ -80,6 +87,9 @@ export function ManualBankPaymentCreatePage({
         bankReference: bankReference.trim() === '' ? null : bankReference.trim(),
         description: description.trim() === '' ? null : description.trim(),
       },
+      linkedDocument: hasDocumentId
+        ? { documentId: documentId.trim(), expectedVersion: documentVersion.trim() }
+        : null,
     }
     setBusy(true)
     const reply = await port.saveManualBankPaymentDraft({ companyId }, attemptKey.current, request)
@@ -118,6 +128,8 @@ export function ManualBankPaymentCreatePage({
         <label>Valör<input aria-label="Valör" value={valueOn} onChange={(event) => setValueOn(event.target.value)} /></label>
         <label>Banka referansı (opsiyonel)<input aria-label="Banka referansı (opsiyonel)" value={bankReference} onChange={(event) => setBankReference(event.target.value)} /></label>
         <label>Açıklama<textarea aria-label="Açıklama" value={description} onChange={(event) => setDescription(event.target.value)} /></label>
+        <label>Belge kimliği (opsiyonel)<input aria-label="Belge kimliği (opsiyonel)" value={documentId} onChange={(event) => setDocumentId(event.target.value)} /></label>
+        <label>Belge sürümü (opsiyonel)<input aria-label="Belge sürümü (opsiyonel)" value={documentVersion} onChange={(event) => setDocumentVersion(event.target.value)} /></label>
         <button type="submit" disabled={busy}>{busy ? 'Kaydediliyor' : 'Taslağı kaydet'}</button>
       </form>
       {message === null ? null : <p role="status">{message}</p>}

@@ -21,6 +21,7 @@ public sealed class ManualBankPaymentServiceTests
     private static readonly Guid Party = Guid.Parse("44444444-4444-4444-8444-444444444444");
     private static readonly Guid Account = Guid.Parse("55555555-5555-4555-8555-555555555555");
     private static readonly Guid Profile = Guid.Parse("66666666-6666-4666-8666-666666666666");
+    private static readonly Guid Document = Guid.Parse("77777777-7777-4777-8777-777777777777");
     private static readonly DateOnly OccurredOn = new(2026, 9, 23);
 
     [Fact]
@@ -165,11 +166,68 @@ public sealed class ManualBankPaymentServiceTests
         Assert.Empty(await verify.ManualBankPayments.ToListAsync());
     }
 
+    [Fact]
+    public async Task Linked_document_is_validated_and_canonical_identity_version_are_reopened()
+    {
+        await using var run = await Run.StartAsync();
+        await using var maker = run.Scope("maker", new AllowAll(), new DocumentPort(
+            ManualBankPaymentDocumentValidationOutcome.Found, "owner-v7"));
+
+        var saved = await maker.Service.DraftSaveAsync(maker.Context, Key("linked"),
+            Draft(new ManualBankPaymentLinkedDocumentRequest(Document, "owner-v7")), CancellationToken.None);
+
+        Assert.Equal(CommandOutcome.Succeeded, saved.Outcome);
+        Assert.Equal(new ManualBankPaymentLinkedDocument(Document, "owner-v7"), saved.Resource!.LinkedDocument);
+        var reopened = await maker.Service.DetailAuthorizedAsync(maker.Context, saved.Resource.Id,
+            CancellationToken.None);
+        Assert.Equal(new ManualBankPaymentLinkedDocument(Document, "owner-v7"), reopened.Resource!.LinkedDocument);
+        await using var verify = run.Context();
+        var row = await verify.ManualBankPayments.SingleAsync();
+        Assert.Equal(Document, row.LinkedDocumentId);
+        Assert.Equal("owner-v7", row.LinkedDocumentVersion);
+    }
+
+    [Theory]
+    [InlineData(ManualBankPaymentDocumentValidationOutcome.Invalid, CommandOutcome.ValidationFailed,
+        "finance_manual_bank_payment_document_invalid")]
+    [InlineData(ManualBankPaymentDocumentValidationOutcome.Denied, CommandOutcome.Denied, null)]
+    [InlineData(ManualBankPaymentDocumentValidationOutcome.NotFound, CommandOutcome.ValidationFailed,
+        "finance_manual_bank_payment_document_not_found")]
+    [InlineData(ManualBankPaymentDocumentValidationOutcome.VersionConflict, CommandOutcome.VersionConflict,
+        "finance_manual_bank_payment_document_version_conflict")]
+    [InlineData(ManualBankPaymentDocumentValidationOutcome.Unavailable, CommandOutcome.Unavailable,
+        "finance_manual_bank_payment_document_unavailable")]
+    public async Task Linked_document_failures_and_retries_write_nothing(
+        ManualBankPaymentDocumentValidationOutcome ownerOutcome,
+        CommandOutcome expectedOutcome,
+        string? expectedCode)
+    {
+        await using var run = await Run.StartAsync();
+        await using var maker = run.Scope("maker", new AllowAll(), new DocumentPort(ownerOutcome));
+        var request = Draft(new ManualBankPaymentLinkedDocumentRequest(Document, "expected-v7"));
+
+        foreach (var attempt in new[] { "same-key", "same-key" })
+        {
+            var result = await maker.Service.DraftSaveAsync(maker.Context, Key(attempt), request,
+                CancellationToken.None);
+            Assert.Equal(expectedOutcome, result.Outcome);
+            if (expectedCode is not null) Assert.Contains(result.Issues, issue => issue.Code == expectedCode);
+        }
+
+        await using var verify = run.Context();
+        Assert.Empty(await verify.ManualBankPayments.ToListAsync());
+        Assert.Empty(await verify.Commands.ToListAsync());
+        Assert.Empty(await verify.OutgoingMoneyEvents.ToListAsync());
+        Assert.Empty(await verify.Set<AuditEvent>().ToListAsync());
+    }
+
     private static CommandMetadata Key(string value) => new(value);
 
-    private static ManualBankPaymentDraftSaveRequest Draft() => new(null, null,
+    private static ManualBankPaymentDraftSaveRequest Draft(
+        ManualBankPaymentLinkedDocumentRequest? linkedDocument = null) => new(null, null,
         new ManualBankPaymentPreparation(Party, Account, Bank, new MoneyText("1250.50", Currency),
-            new ProfileReference(Profile.ToString("D"), "1"), OccurredOn, null, null, "SENTETIK odeme"));
+            new ProfileReference(Profile.ToString("D"), "1"), OccurredOn, null, null, "SENTETIK odeme"),
+        linkedDocument);
 
     private sealed class Run(string databaseName) : IAsyncDisposable
     {
@@ -211,7 +269,8 @@ public sealed class ManualBankPaymentServiceTests
                 .UseInMemoryDatabase(databaseName).Options, company);
         }
 
-        public Scope Scope(string actor, IFinancePermissionPort permission)
+        public Scope Scope(string actor, IFinancePermissionPort permission,
+            IManualBankPaymentDocumentValidationPort? documentPort = null)
         {
             var company = new CompanyContext();
             company.Set(Company);
@@ -220,7 +279,8 @@ public sealed class ManualBankPaymentServiceTests
                 .UseInMemoryDatabase(databaseName)
                 .AddInterceptors(new AuditSaveChangesInterceptor(collector, company)).Options, company);
             var service = new ManualBankPaymentService(context, company, new User(actor), permission,
-                new PartyPort(), new SettingsPort(), new OpenPeriod(), collector,
+                new PartyPort(), documentPort ?? new DocumentPort(ManualBankPaymentDocumentValidationOutcome.Found),
+                new SettingsPort(), new OpenPeriod(), collector,
                 new ManualBankPaymentBinding(FinanceMoneyOperations.ManualBankPaymentV1),
                 new ManualBankPaymentAuditEnvelopes(
                     Envelope(FinancePermissionNames.ManualBankPaymentDraftSave),
@@ -278,6 +338,18 @@ public sealed class ManualBankPaymentServiceTests
                 ? new ReadResult<PartyAccountEligibility>(ReadOutcome.Found,
                     new PartyAccountEligibility(Party, Account, Company, true, IsPartyActive: true))
                 : new ReadResult<PartyAccountEligibility>(ReadOutcome.NotFound, null));
+    }
+
+    private sealed class DocumentPort(
+        ManualBankPaymentDocumentValidationOutcome outcome,
+        string resolvedVersion = "expected-v7") : IManualBankPaymentDocumentValidationPort
+    {
+        public Task<ManualBankPaymentDocumentValidationResult> ValidateAsync(FinanceContext context,
+            Guid documentId, string expectedVersion, CancellationToken cancellationToken) => Task.FromResult(
+            new ManualBankPaymentDocumentValidationResult(outcome,
+                outcome == ManualBankPaymentDocumentValidationOutcome.Found
+                    ? new ManualBankPaymentLinkedDocument(documentId, resolvedVersion)
+                    : null));
     }
 
     private sealed class SettingsPort : ISettingsPrerequisiteProvider
