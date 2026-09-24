@@ -23,6 +23,9 @@ public sealed partial class OpenApiContractGenerationTests
         new("get", "/api/v1/products/{id}", "GetProductV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json"),
             ParameterValues: ["path:id:true:type:string;format:uuid"]),
+        new("get", "/api/v1/products/{id}/history", "GetProductHistoryV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json"),
+            ParameterValues: ["path:id:true:type:string;format:uuid"]),
         new("post", "/api/v1/products", "CreateProductDraftV1",
             AuthenticatedResponses("201:application/json", "400:application/problem+json", "409:application/problem+json", "415:", "503:application/problem+json"),
             "#/components/schemas/CreateProductDraftRequest"),
@@ -41,6 +44,7 @@ public sealed partial class OpenApiContractGenerationTests
         ["GetProductCodeGroupsV1"] = "array:ProductCodeGroup",
         ["GetProductReferenceOptionsV1"] = "ref:ProductReferenceOptions",
         ["GetProductV1"] = "ref:ProductCardView",
+        ["GetProductHistoryV1"] = "ref:ProductHistoryView",
         ["CreateProductDraftV1"] = "ref:ProductMutationResponse",
         ["EditProductDraftV1"] = "ref:ProductMutationResponse",
         ["ActivateProductV1"] = "ref:ProductMutationResponse",
@@ -119,6 +123,14 @@ public sealed partial class OpenApiContractGenerationTests
             ["ProductPage"] = ObjectSchema(["items", "nextCursor"], ("items", "type:array;items:ref:ProductDraftView"), ("nextCursor", "type:null|string")),
             ["ProductCodeGroup"] = ObjectSchema(["id", "name", "prefix"], ("id", "type:string;format:uuid"), ("name", "type:string"), ("prefix", "type:string")),
             ["ProductMutationResponse"] = ObjectSchema(["card", "isReplay"], ("card", "ref:ProductCardView"), ("isReplay", "type:boolean")),
+            ["ProductHistoryView"] = ObjectSchema(["productId", "entries", "truncated"],
+                ("productId", "type:string;format:uuid"), ("entries", "type:array;items:ref:ProductHistoryEntryView"),
+                ("truncated", "type:boolean")),
+            ["ProductHistoryEntryView"] = ObjectSchema(["eventId", "operation", "occurredAtUtc", "versionBefore", "versionAfter", "reason", "changedFields"],
+                ("eventId", "type:string;format:uuid"), ("operation", "type:string"),
+                ("occurredAtUtc", "type:string;format:date-time"), ("versionBefore", "type:null|string"),
+                ("versionAfter", "type:string"), ("reason", "type:string"),
+                ("changedFields", "type:array;items:type:string")),
             ["ProductCardView"] = ObjectSchema(["product", "references"], ("product", "ref:ProductDraftView"), ("references", "ref:ProductReferences"), ("completeness", "ref:ProductCompletenessView")),
             ["ProductDraftView"] = ObjectSchema(["id", "code", "name", "groupId", "classId", "familyId", "roles", "lifecycle", "version", "createdAtUtc", "updatedAtUtc", "labels", "completeness"],
                 ("id", "type:string;format:uuid"), ("code", "type:string"), ("name", "type:string"), ("groupId", "type:string;format:uuid"),
@@ -172,6 +184,14 @@ public sealed partial class OpenApiContractGenerationTests
         }
         Assert.Equal(expected.Keys.Order(StringComparer.Ordinal), reachable.Order(StringComparer.Ordinal));
         AssertPositiveIntegerStringVersion(schemas, "ProductDraftView");
+        var historyEntry = schemas.GetProperty("ProductHistoryEntryView").GetProperty("properties");
+        foreach (var field in new[] { "versionBefore", "versionAfter" })
+        {
+            var version = historyEntry.GetProperty(field);
+            Assert.Equal(1, version.GetProperty("minLength").GetInt32());
+            Assert.Equal(19, version.GetProperty("maxLength").GetInt32());
+            Assert.Equal(ErpOpenApiContract.PositiveIntegerStringPattern, version.GetProperty("pattern").GetString());
+        }
         AssertRequestSchema(schemas.GetProperty("CreateProductDraftRequest"), ["name", "groupId"], ["classId", "familyId", "roles", "references"],
             ["name", "groupId", "classId", "familyId", "roles", "references"]);
         AssertRequestSchema(schemas.GetProperty("EditProductDraftRequest"), ["expectedVersion", "changes", "reason"], [], ["expectedVersion", "changes", "reason"]);
