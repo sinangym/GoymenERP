@@ -173,7 +173,17 @@ public sealed class PurchaseAcceptanceParticipant : IPurchaseAcceptanceParticipa
 
         var versionBefore = order.Version;
         var acceptedBefore = line.AcceptedQuantity.Value;
-        var quantity = Quantity.Of(validated.AcceptedQuantity, line.Quantity.Unit);
+        Quantity quantity;
+        try
+        {
+            quantity = Quantity.Of(validated.AcceptedQuantity, line.Quantity.Unit);
+        }
+        catch (ArgumentException exception)
+        {
+            throw Refused(PurchaseAcceptanceParticipantCodes.InvalidQuantity, 400,
+                "Kabul miktarı sipariş satırının birim ölçeğine uygun değil.", exception);
+        }
+
         order.RecordAcceptance(order.Version, request.AcceptanceId, request.PurchaseOrderLineId, quantity, request.OccurredAtUtc);
         var changedLine = order.Lines.Single(candidate => candidate.Id == request.PurchaseOrderLineId);
         orderRow.Version = order.Version;

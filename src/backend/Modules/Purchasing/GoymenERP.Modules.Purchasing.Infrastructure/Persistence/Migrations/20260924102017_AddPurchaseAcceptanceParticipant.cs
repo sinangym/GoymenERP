@@ -11,6 +11,12 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.AddUniqueConstraint(
+                name: "AK_PurchaseOrderLines_CompanyId_OrderId_LineId",
+                schema: "purchasing",
+                table: "PurchaseOrderLines",
+                columns: new[] { "CompanyId", "OrderId", "LineId" });
+
             migrationBuilder.CreateTable(
                 name: "PurchaseAcceptanceShares",
                 schema: "purchasing",
@@ -45,6 +51,13 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                         principalTable: "PurchaseOrders",
                         principalColumns: new[] { "CompanyId", "Id" },
                         onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_PurchaseAcceptanceShares_PurchaseOrderLines_CompanyId_OrderId_LineId",
+                        columns: x => new { x.CompanyId, x.OrderId, x.LineId },
+                        principalSchema: "purchasing",
+                        principalTable: "PurchaseOrderLines",
+                        principalColumns: new[] { "CompanyId", "OrderId", "LineId" },
+                        onDelete: ReferentialAction.Restrict);
                 });
 
             migrationBuilder.CreateIndex(
@@ -64,9 +77,22 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.Sql(
+                """
+                IF EXISTS (SELECT 1 FROM [purchasing].[PurchaseAcceptanceShares])
+                BEGIN
+                    THROW 51042, 'PurchaseAcceptanceShares contains durable acceptance history; downgrade is refused.', 1;
+                END;
+                """);
+
             migrationBuilder.DropTable(
                 name: "PurchaseAcceptanceShares",
                 schema: "purchasing");
+
+            migrationBuilder.DropUniqueConstraint(
+                name: "AK_PurchaseOrderLines_CompanyId_OrderId_LineId",
+                schema: "purchasing",
+                table: "PurchaseOrderLines");
         }
     }
 }

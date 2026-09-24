@@ -28,5 +28,12 @@ public sealed class PurchaseAcceptancePersistenceModelContractTests
                 [nameof(PurchaseAcceptanceRow.CompanyId), nameof(PurchaseAcceptanceRow.IdempotencyKeyHash)]));
         Assert.Contains(entity.GetCheckConstraints(), constraint => constraint.Name == "CK_PurchaseAcceptanceShares_Quantity");
         Assert.Contains(entity.GetCheckConstraints(), constraint => constraint.Name == "CK_PurchaseAcceptanceShares_Hashes");
+        var orderLine = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(PurchaseOrderLineRow));
+        Assert.NotNull(orderLine);
+        Assert.Contains(orderLine!.GetKeys(), key => key.Properties.Select(property => property.Name).SequenceEqual(
+            [nameof(PurchaseOrderLineRow.CompanyId), nameof(PurchaseOrderLineRow.OrderId), nameof(PurchaseOrderLineRow.LineId)]));
+        Assert.Contains(entity.GetForeignKeys(), foreignKey => foreignKey.PrincipalEntityType == orderLine
+            && foreignKey.Properties.Select(property => property.Name).SequenceEqual(
+                [nameof(PurchaseAcceptanceRow.CompanyId), nameof(PurchaseAcceptanceRow.OrderId), nameof(PurchaseAcceptanceRow.LineId)]));
     }
 }

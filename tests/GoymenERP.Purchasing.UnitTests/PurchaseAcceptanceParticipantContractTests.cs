@@ -17,6 +17,15 @@ public sealed class PurchaseAcceptanceParticipantContractTests
     }
 
     [Fact]
+    public void Result_exposes_the_post_stage_purchase_order_version_for_the_atomic_host()
+    {
+        var result = new PurchaseAcceptanceStageResultV1(
+            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "5", "2", "4", false, "correlation");
+
+        Assert.Equal("5", result.PurchaseOrderVersion);
+    }
+
+    [Fact]
     public void Validator_accepts_canonical_positive_share_and_exact_versions()
     {
         var validated = PurchaseAcceptanceParticipantContractV1.Validate(ValidRequest());

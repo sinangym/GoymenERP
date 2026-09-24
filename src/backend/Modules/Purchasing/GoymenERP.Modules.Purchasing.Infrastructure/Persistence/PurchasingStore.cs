@@ -358,7 +358,7 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
 
         var lineRows = await dbContext.OrderLines.Where(line => line.OrderId == orderId).OrderBy(line => line.LineNo).ToListAsync(cancellationToken);
         var acceptanceRows = await dbContext.Acceptances.AsNoTracking().Where(acceptance => acceptance.OrderId == orderId)
-            .OrderBy(acceptance => acceptance.RecordedAtUtc).ThenBy(acceptance => acceptance.AcceptanceId).ToListAsync(cancellationToken);
+            .OrderBy(acceptance => acceptance.OrderVersionAfter).ThenBy(acceptance => acceptance.AcceptanceId).ToListAsync(cancellationToken);
         var order = RestoreOrder(row, lineRows, acceptanceRows);
         var versionBefore = order.Version;
         var before = Snapshot(order);
@@ -602,7 +602,7 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         {
             var own = lines.Where(line => line.OrderId == row.Id).OrderBy(line => line.LineNo).ToList();
             var ownAcceptances = acceptances.Where(acceptance => acceptance.OrderId == row.Id)
-                .OrderBy(acceptance => acceptance.RecordedAtUtc).ThenBy(acceptance => acceptance.AcceptanceId).ToList();
+                .OrderBy(acceptance => acceptance.OrderVersionAfter).ThenBy(acceptance => acceptance.AcceptanceId).ToList();
             return new StoredPurchaseOrder(RestoreOrder(row, own, ownAcceptances), row.CompanyAccountId, row.EffectiveOn, VersionsOf(own));
         })];
     }
@@ -640,8 +640,19 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
             order.Approve(order.Version, row.UpdatedAtUtc);
         }
 
-        foreach (var acceptance in acceptances ?? [])
+        var orderedAcceptances = (acceptances ?? [])
+            .OrderBy(acceptance => acceptance.OrderVersionAfter)
+            .ThenBy(acceptance => acceptance.AcceptanceId)
+            .ToArray();
+        var expectedVersionAfter = checked(order.Version + 1);
+        foreach (var acceptance in orderedAcceptances)
         {
+            if (acceptance.CompanyId != row.CompanyId || acceptance.OrderId != row.Id
+                || acceptance.OrderVersionAfter != expectedVersionAfter)
+            {
+                throw new InvalidOperationException("Kayıtlı kabul payı sipariş sürümünde ardışık değil.");
+            }
+
             var sourceLine = lines.SingleOrDefault(line => line.LineId == acceptance.LineId)
                 ?? throw new InvalidOperationException("Kayıtlı kabul payının sipariş satırı bulunamadı.");
             order.RecordAcceptance(
@@ -650,6 +661,12 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
                 acceptance.LineId,
                 Quantity.Of(acceptance.Quantity, UnitOf(sourceLine.UnitIsKilogram)),
                 acceptance.RecordedAtUtc);
+            if (order.Version != acceptance.OrderVersionAfter)
+            {
+                throw new InvalidOperationException("Kayıtlı kabul payının sürümü domain sürümüyle uyuşmuyor.");
+            }
+
+            expectedVersionAfter = checked(expectedVersionAfter + 1);
         }
 
         if (order.Version != row.Version || order.Status != (PurchaseOrderStatus)row.Status)
