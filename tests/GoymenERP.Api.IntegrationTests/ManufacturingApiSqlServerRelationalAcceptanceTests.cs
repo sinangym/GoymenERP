@@ -76,7 +76,8 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
         await using var run = await Run.StartAsync();
         var paint = await run.WorkCenterOfKindAsync(CompanyA, "Paint");
         var slitting = await run.WorkCenterOfKindAsync(CompanyA, "Slitting");
-        var user = await run.GrantAsync(TestUsers.CompanyA, CompanyA, AllWrites);
+        var user = await run.GrantAsync(TestUsers.CompanyA, CompanyA,
+            [.. AllWrites, ErpPermissions.ManufacturingPlansRead]);
         using var client = run.ClientFor(user, CompanyA);
         var roll = await run.StockedLabelAsync("SYN-MFG-WORK-CENTER-PLAN");
 
