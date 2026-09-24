@@ -51,7 +51,7 @@ function startPort(contextStatusCode?: number): FinanceReceiptPort {
     draftContext: async (_scope, request) => contextStatusCode === undefined
       ? contextOk(draftContextBody(COMPANY_A, request, { bankAccount: bankAccount(COMPANY_A, { id: BANK }) }))
       : contextStatus(contextStatusCode),
-  } as FinanceReceiptPort
+  } as unknown as FinanceReceiptPort
 }
 
 function chooseContext() {
@@ -75,7 +75,7 @@ describe('manual bank payment start page', () => {
     expect(screen.queryByText(PARTY)).toBeNull()
     chooseContext()
     const next = screen.getByRole('button', { name: 'Ödeme formuna devam et' })
-    await waitFor(() => expect(next).toBeEnabled())
+    await waitFor(() => expect((next as HTMLButtonElement).disabled).toBe(false))
     fireEvent.click(next)
 
     expect(onContinue).toHaveBeenCalledWith(expect.objectContaining({
@@ -99,7 +99,7 @@ describe('manual bank payment start page', () => {
     await screen.findByRole('option', { name: 'C-100 - SENTETIK Alici' })
     chooseContext()
     await screen.findByRole('alert')
-    expect(screen.getByRole('button', { name: 'Ödeme formuna devam et' })).toBeDisabled()
+    expect((screen.getByRole('button', { name: 'Ödeme formuna devam et' }) as HTMLButtonElement).disabled).toBe(true)
     expect(onContinue).not.toHaveBeenCalled()
   })
 })
