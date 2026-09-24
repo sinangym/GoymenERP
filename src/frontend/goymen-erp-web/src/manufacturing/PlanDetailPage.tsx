@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router'
 import { fetchPlan } from './api'
 import { MANUFACTURING_CAPABILITY, orderDetailPath, orderListPath } from './capabilities'
@@ -28,8 +28,12 @@ type Attempt =
   | { readonly phase: 'sending'; readonly pending: PendingPlanLifecycle }
   | { readonly phase: 'unknown'; readonly pending: PendingPlanLifecycle; readonly message: string }
   | { readonly phase: 'failed'; readonly message: string }
-  | { readonly phase: 'refresh-needed'; readonly approved: ProductionPlanView; readonly message: string }
+  | { readonly phase: 'refresh-needed'; readonly refresh: RefreshExpectation; readonly message: string }
   | { readonly phase: 'applied'; readonly message: string; readonly orderId?: string }
+
+type RefreshExpectation =
+  | { readonly kind: 'approved'; readonly approved: ProductionPlanView }
+  | { readonly kind: 'conflict'; readonly failure: string }
 
 function newId(): string {
   const bytes = new Uint8Array(16)
@@ -47,7 +51,7 @@ function failureText(
   const subject = kind === 'approve' ? 'Plan onayı' : 'Üretim emri'
   if (outcome.status === 401 || outcome.status === 403) return `${subject} yetkiniz artık geçerli değil.`
   if (outcome.status === 404) return `${subject} için kayıt bu şirket bağlamında bulunamadı.`
-  if (outcome.status === 409) return `${subject} uygulanmadı (${outcome.code ?? 'conflict'}). Güncel plan yeniden okundu.`
+  if (outcome.status === 409) return `${subject} uygulanmadı (${outcome.code ?? 'conflict'}).`
   if (outcome.status === 422) return `${subject} iş kuralı tarafından reddedildi (${outcome.code ?? 'rule_refusal'}).`
   return `${subject} uygulanmadı (${outcome.code ?? outcome.status}).`
 }
@@ -67,6 +71,7 @@ export function PlanDetailPage() {
 function PlanDetail({ namespace, planId }: { readonly namespace: string | null; readonly planId: string }) {
   const shell = useShellState()
   const boundary = useAuthBoundary()
+  const queryClient = useQueryClient()
   const navigate = useNavigate()
   const companyId = shell.activeContext?.scopeMode === 'single' ? shell.activeContext.companyId : null
   const actorId = shell.activeContext?.userId ?? null
@@ -80,8 +85,12 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
     : { phase: 'unknown', pending: recalled, message: unknownText(recalled.snapshot.kind) })
   const generation = useRef(0)
   const inFlight = useRef(false)
+  const queryKey = useMemo(
+    () => [namespace ?? 'no-context', shell.routeEntryGeneration, 'manufacturing-plan', planId] as const,
+    [namespace, planId, shell.routeEntryGeneration],
+  )
   const query = useQuery({
-    queryKey: [namespace ?? 'no-context', shell.routeEntryGeneration, 'manufacturing-plan', planId],
+    queryKey,
     enabled: namespace !== null && companyId !== null && planId !== '',
     queryFn: async ({ signal }) => {
       const snapshot = boundary.capture()
@@ -98,19 +107,32 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
     generation.current += 1
   }, [])
 
-  const refreshApproved = useCallback(async (approved: ProductionPlanView) => {
-    const refreshed = await query.refetch()
-    const fresh = refreshed.data?.type === 'ok-single' ? refreshed.data.data : null
-    if (fresh?.status === 'Approved' && fresh.version === approved.version) {
-      setAttempt({ phase: 'applied', message: 'Plan onaylandı ve güncel kayıt yeniden okundu.' })
-    } else {
-      setAttempt({
-        phase: 'refresh-needed',
-        approved,
-        message: 'Plan onaylandı; güncel kayıt henüz yeniden okunamadı.',
-      })
+  const refreshPlan = useCallback(async (expectation: RefreshExpectation) => {
+    const security = boundary.capture()
+    const refreshed = await fetchPlan(companyId ?? '', planId)
+    if (refreshed.type === 'http' && (refreshed.status === 401 || refreshed.status === 403)) {
+      boundary.report(refreshed.status, security)
     }
-  }, [query])
+    const fresh = refreshed.type === 'ok-single' ? refreshed.data : null
+    const isCurrent = fresh?.planId === planId && fresh.companyId === companyId
+    if (isCurrent && expectation.kind === 'approved' && fresh.status === 'Approved' && fresh.version === expectation.approved.version) {
+      queryClient.setQueryData(queryKey, refreshed)
+      setAttempt({ phase: 'applied', message: 'Plan onaylandı ve güncel kayıt yeniden okundu.' })
+      return
+    }
+    if (isCurrent && expectation.kind === 'conflict') {
+      queryClient.setQueryData(queryKey, refreshed)
+      setAttempt({ phase: 'failed', message: `${expectation.failure} Güncel plan yeniden okundu.` })
+      return
+    }
+    setAttempt({
+      phase: 'refresh-needed',
+      refresh: expectation,
+      message: expectation.kind === 'approved'
+        ? 'Plan onaylandı; güncel kayıt henüz yeniden okunamadı.'
+        : `${expectation.failure} Güncel plan henüz yeniden okunamadı.`,
+    })
+  }, [boundary, companyId, planId, queryClient, queryKey])
 
   const send = useCallback(async (pending: PendingPlanLifecycle) => {
     if (companyId === null || actorId === null || inFlight.current) return
@@ -134,12 +156,16 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
     }
     releasePendingPlanLifecycle(storeKey, pending.snapshot.idempotencyKey)
     if (outcome.type === 'failed') {
-      setAttempt({ phase: 'failed', message: failureText(pending.snapshot.kind, outcome) })
-      if (outcome.status === 409) await query.refetch()
+      const message = failureText(pending.snapshot.kind, outcome)
+      if (outcome.status === 409) {
+        await refreshPlan({ kind: 'conflict', failure: message })
+        return
+      }
+      setAttempt({ phase: 'failed', message })
       return
     }
     if (pending.snapshot.kind === 'approve') {
-      await refreshApproved(outcome.resource as ProductionPlanView)
+      await refreshPlan({ kind: 'approved', approved: outcome.resource as ProductionPlanView })
       return
     }
     const orderId = pending.snapshot.orderId
@@ -154,7 +180,7 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
         ? 'Önceki emir oluşturma sonucu yeniden gösterildi.'
         : 'Üretim emri oluşturuldu.',
     })
-  }, [actorId, boundary, canOpenOrder, companyId, navigate, planId, query, refreshApproved, storeKey])
+  }, [actorId, boundary, canOpenOrder, companyId, navigate, planId, refreshPlan, storeKey])
 
   const start = (snapshot: PlanLifecycleSnapshot) => {
     if (companyId === null || actorId === null) return
@@ -239,7 +265,7 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
           <>
             <p role="alert" className={styles.error}>{attempt.message}</p>
             <div className={styles.actions}>
-              <button type="button" onClick={() => void refreshApproved(attempt.approved)}>
+              <button type="button" onClick={() => void refreshPlan(attempt.refresh)}>
                 Güncel planı yeniden oku
               </button>
             </div>

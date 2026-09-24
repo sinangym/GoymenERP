@@ -5,12 +5,14 @@ import { MANUFACTURING_CAPABILITY, orderDetailPath } from './capabilities'
 import {
   APPROVER,
   COMPANY_A,
+  COMPANY_B,
   PLAN,
   installFetch,
   json,
   massBalance,
   order,
   plan,
+  problem,
   renderAt,
   requestsFor,
 } from './testHarness'
@@ -153,6 +155,69 @@ describe('plan approval and order creation', () => {
     const [first, second] = requestsFor(recorded, '/manufacturing/orders', 'POST')
     expect(second.body).toEqual(first.body)
     expect(second.headers['Idempotency-Key']).toBe(first.headers['Idempotency-Key'])
+  })
+
+  it('keeps stale plan actions closed when the conflict refresh cannot be read', async () => {
+    const user = userEvent.setup()
+    let planReads = 0
+    const recorded = installFetch({
+      capabilities: [MANUFACTURING_CAPABILITY.planDetail, MANUFACTURING_CAPABILITY.planApprove],
+      respond: (url, init) => {
+        if (url.endsWith(`/manufacturing/plans/${PLAN}`) && init?.method !== 'POST') {
+          planReads += 1
+          if (planReads === 1) return json(plan())
+          throw new TypeError('connection lost')
+        }
+        if (url.endsWith(`/manufacturing/plans/${PLAN}/approval`) && init?.method === 'POST') {
+          return problem(409, { code: 'manufacturing_plan_version_conflict' })
+        }
+        return undefined
+      },
+    })
+    renderAt(`/uretim/plan/${PLAN}`)
+
+    await user.click(await screen.findByRole('button', { name: 'Planı onayla' }))
+
+    expect(await screen.findByText(
+      'Plan onayı uygulanmadı (manufacturing_plan_version_conflict). Güncel plan henüz yeniden okunamadı.',
+    )).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Güncel planı yeniden oku' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Planı onayla' })).toBeNull()
+    expect(requestsFor(recorded, `/manufacturing/plans/${PLAN}/approval`, 'POST')).toHaveLength(1)
+  })
+
+  it('unlocks a conflict only after the refresh returns the current company and plan', async () => {
+    const user = userEvent.setup()
+    let planReads = 0
+    const recorded = installFetch({
+      capabilities: [MANUFACTURING_CAPABILITY.planDetail, MANUFACTURING_CAPABILITY.planApprove],
+      respond: (url, init) => {
+        if (url.endsWith(`/manufacturing/plans/${PLAN}`) && init?.method !== 'POST') {
+          planReads += 1
+          if (planReads === 1) return json(plan())
+          if (planReads === 2) return json(plan({ companyId: COMPANY_B, version: 2 }))
+          return json(plan({ version: 2 }))
+        }
+        if (url.endsWith(`/manufacturing/plans/${PLAN}/approval`) && init?.method === 'POST') {
+          return problem(409, { code: 'manufacturing_plan_version_conflict' })
+        }
+        return undefined
+      },
+    })
+    renderAt(`/uretim/plan/${PLAN}`)
+
+    await user.click(await screen.findByRole('button', { name: 'Planı onayla' }))
+    expect(await screen.findByRole('button', { name: 'Güncel planı yeniden oku' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Planı onayla' })).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: 'Güncel planı yeniden oku' }))
+
+    expect(await screen.findByText(
+      'Plan onayı uygulanmadı (manufacturing_plan_version_conflict). Güncel plan yeniden okundu.',
+    )).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Planı onayla' })).toBeTruthy()
+    expect(requestsFor(recorded, `/manufacturing/plans/${PLAN}`, 'GET')).toHaveLength(3)
+    expect(requestsFor(recorded, `/manufacturing/plans/${PLAN}/approval`, 'POST')).toHaveLength(1)
   })
 
   it('draws neither command when the server publishes only plan read', async () => {
