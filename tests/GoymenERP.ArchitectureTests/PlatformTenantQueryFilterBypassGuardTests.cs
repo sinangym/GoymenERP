@@ -173,7 +173,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // purchasing
             ["tools/relational_inventory/purchasing.txt"] =
-                "cec5272404aa2fc954e5f425276b96e41c5aac068fdd2bafe9421f62e49da510",
+                "cc672732f572babb9161403ca6eea3181b7996bc8346df1b1813edcaadd1d161",
 
             // sales
             ["tools/relational_inventory/sales.txt"] =
@@ -219,7 +219,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // lines, attempts) and AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
              + "Persistence/PurchasingDbContext.cs"] =
-                "a5a2acdf37eb037d00d09d3d2a529a9185f0e8dcb7ae30fac1385bf89860bea6",
+                "95abb41f658aca490334bfedd7b8829bf9b22007b99d6c59a4feb357ddff1d30",
             // Re-measured for MFG-API (#313): the ADR-011 command log (CommandRecords) is mapped here, company-
             // scoped with the CompanyId filter like every other tenant row.
             // MFG-5 (#303): company-scoped like Organization; every tenant row and AuditEvent carries the
@@ -259,6 +259,20 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string ReviewedInventoryDefiniteShipmentParticipantPath =
         "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
         + "Persistence/InventoryDefiniteShipmentParticipant.cs";
+    private const string ReviewedInventoryGoodsReceiptParticipantPath =
+        "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
+        + "Persistence/InventoryGoodsReceiptParticipant.cs";
+    private const string ReviewedPurchaseAcceptanceParticipantPath =
+        "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
+        + "Persistence/PurchaseAcceptanceParticipant.cs";
+    private static readonly IReadOnlyDictionary<string, (string ContextTypeName, int ExpectedCount)>
+        ReviewedRuntimeContextConstructions =
+            new Dictionary<string, (string ContextTypeName, int ExpectedCount)>(StringComparer.Ordinal)
+            {
+                [ReviewedInventoryDefiniteShipmentParticipantPath] = ("InventoryDbContext", 1),
+                [ReviewedInventoryGoodsReceiptParticipantPath] = ("InventoryDbContext", 1),
+                [ReviewedPurchaseAcceptanceParticipantPath] = ("PurchasingDbContext", 3)
+            };
     private const string ReviewedManualBankPaymentServicePath =
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
         + "ManualBankPaymentService.cs";
@@ -583,20 +597,18 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 // R16/P04: reviewed provider participants. Exact source and provider-boundary token counts are
                 // pinned; changes require a fresh source review rather than broadening this allowlist.
-                ["src/backend/Modules/Inventory/"
-                 + "GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryGoodsReceiptParticipant.cs"] =
+                [ReviewedInventoryGoodsReceiptParticipantPath] =
                     new(
-                        "7d226f744116a2dc8049d5155c4a668bc8746a94a5aa358a8ba1989c0d5c55a0",
+                        "b736dfb2da68a30e43383bbd00f35713de283aff446770ae30383356eaceea02",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,
                             ["Microsoft.Data.SqlClient"] = 1,
                             ["DbConnection"] = 3
                         }),
-                ["src/backend/Modules/Purchasing/"
-                 + "GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchaseAcceptanceParticipant.cs"] =
+                [ReviewedPurchaseAcceptanceParticipantPath] =
                     new(
-                        "6451cab8315ccecb3167abc36a9d5629bb7b641f5687bc3bade8240cac40fd3e",
+                        "c1932860818df6628368bee24a17a3e48d892c6f513313d953e94adf0e39358d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,
@@ -608,7 +620,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Purchasing/"
                  + "GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.cs"] =
                     new(
-                        "96cdc61a31589ed2b6df6e1cdc8ef32c61f52dbe07b2b68f7a50f91e5c54de5c",
+                        "36aea9f4b51ff348de16e93b30d424172e8fa829c7ca09ee06f7d6c721a8ee2d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -721,6 +733,16 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         ReviewedMigrationMutationSources =
             new Dictionary<string, ReviewedMigrationMutationSource>(StringComparer.Ordinal)
             {
+                // Purchasing acceptance history is durable; Down uses one reviewed statement to refuse
+                // downgrade while any acceptance share exists.
+                ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
+                 + "Persistence/Migrations/20260924102017_AddPurchaseAcceptanceParticipant.cs"] =
+                    new(
+                        "8d1988632ec1be7042cfd1eda10677b468be20cdb060677bfaca508a3b09ad19",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
                 // SALES-A1: the Down's only raw SQL is the refusal (51045) while any draft left Preparing or any
                 // state-command attempt carries a DraftId (the pre-A1 unique index could not be restored);
                 // forward fix, no approval fact or attempt is dropped.
@@ -5893,15 +5915,6 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             }
         }
 
-        var reviewedRuntimeSourceMatches =
-            sources.TryGetValue(ReviewedInventoryDefiniteShipmentParticipantPath, out var runtimeSource)
-            && ReviewedRuntimeDatabaseBypassSources.TryGetValue(
-                ReviewedInventoryDefiniteShipmentParticipantPath,
-                out var reviewedRuntimeSource)
-            && string.Equals(
-                ComputeReviewedSourceFingerprint(runtimeSource),
-                reviewedRuntimeSource.ReviewedFingerprint,
-                StringComparison.Ordinal);
         foreach (var construction in constructions)
         {
             var authorizedByDesignTimeFactory = ReviewedPlatformContextFactories.TryGetValue(
@@ -5911,14 +5924,21 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                                   construction.ContextTypeName,
                                   factory.ContextTypeName,
                                   StringComparison.Ordinal);
-            var authorizedByReviewedRuntimeParticipant = reviewedRuntimeSourceMatches
-                && string.Equals(
+            var authorizedByReviewedRuntimeParticipant =
+                ReviewedRuntimeContextConstructions.TryGetValue(
                     construction.RepositoryPath,
-                    ReviewedInventoryDefiniteShipmentParticipantPath,
-                    StringComparison.Ordinal)
+                    out var runtimeConstruction)
                 && string.Equals(
                     construction.ContextTypeName,
-                    "InventoryDbContext",
+                    runtimeConstruction.ContextTypeName,
+                    StringComparison.Ordinal)
+                && sources.TryGetValue(construction.RepositoryPath, out var runtimeSource)
+                && ReviewedRuntimeDatabaseBypassSources.TryGetValue(
+                    construction.RepositoryPath,
+                    out var reviewedRuntimeSource)
+                && string.Equals(
+                    ComputeReviewedSourceFingerprint(runtimeSource),
+                    reviewedRuntimeSource.ReviewedFingerprint,
                     StringComparison.Ordinal);
             var authorized = authorizedByDesignTimeFactory || authorizedByReviewedRuntimeParticipant;
             if (!authorized)
@@ -5930,22 +5950,26 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             }
         }
 
-        if (sources.ContainsKey(ReviewedInventoryDefiniteShipmentParticipantPath))
+        foreach (var (participantPath, reviewedConstruction) in ReviewedRuntimeContextConstructions)
         {
+            if (!sources.ContainsKey(participantPath))
+                continue;
+
             var participantConstructions = constructions.Count(construction =>
                 string.Equals(
                     construction.RepositoryPath,
-                    ReviewedInventoryDefiniteShipmentParticipantPath,
+                    participantPath,
                     StringComparison.Ordinal)
                 && string.Equals(
                     construction.ContextTypeName,
-                    "InventoryDbContext",
+                    reviewedConstruction.ContextTypeName,
                     StringComparison.Ordinal));
-            if (participantConstructions != 1)
+            if (participantConstructions != reviewedConstruction.ExpectedCount)
             {
                 errors.Add(
-                    "Expected exactly one 'InventoryDbContext' construction in reviewed "
-                    + $"runtime participant {ReviewedInventoryDefiniteShipmentParticipantPath}, "
+                    $"Expected exactly {reviewedConstruction.ExpectedCount} "
+                    + $"'{reviewedConstruction.ContextTypeName}' construction(s) in reviewed "
+                    + $"runtime participant {participantPath}, "
                     + $"but found {participantConstructions}.");
             }
         }
