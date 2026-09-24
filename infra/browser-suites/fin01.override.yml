@@ -3,7 +3,7 @@
 # Owner: FİNANS (Finance owner; suite owner). Validated with the merged model by
 # tools/validate_browser_acceptance.py once the central writer registers the `fin01` suite
 # (SUITES / its staged Finance profile, SUITE_API_EXTENSIONS["fin01"] = actors + identity,
-# SUITE_IDENTITY_PERMISSIONS["fin01"] = the eleven names below).
+# SUITE_IDENTITY_PERMISSIONS["fin01"] = the fifteen distinct names below).
 #
 # Two synthetic actors after the canonical two, each with its Identity user, a synthetic role and a
 # company-wide assignment in GDC (the company whose approved TRY money profile Settings answers).
@@ -14,9 +14,11 @@
 #                   finance.manual-receipt.amount.read, counterparty.parties.read, and FIN-T05's
 #                   finance.manual-receipt.record + accounting.periods.read pair (the latter is D1's
 #                   caller-scoped period lookup; both exist only in this disposable test role), plus
-#                   finance.manual-receipt.reverse.propose.
+#                   finance.manual-receipt.reverse.propose, plus manual outgoing-payment draft save/read.
 #   fin01-approver: approves another person's proposal (Ö4) — finance.bank-account.read / .approve,
-#                   finance.manual-receipt.reverse.approve and accounting.periods.read.
+#                   finance.manual-receipt.reverse.approve, accounting.periods.read, and manual outgoing-payment
+#                   draft read / approve / record. Its final record revalidates the selected party/account through
+#                   the Cari owner, so this disposable actor also holds counterparty.parties.read.
 services:
   api:
     environment:
@@ -47,6 +49,8 @@ services:
       IdentitySeed__Roles__5__Permissions__6: finance.manual-receipt.record
       IdentitySeed__Roles__5__Permissions__7: accounting.periods.read
       IdentitySeed__Roles__5__Permissions__8: finance.manual-receipt.reverse.propose
+      IdentitySeed__Roles__5__Permissions__9: finance.manual-bank-payment.draft.save
+      IdentitySeed__Roles__5__Permissions__10: finance.manual-bank-payment.draft.read
       IdentitySeed__Roles__6__Id: b3000000-0000-4000-8000-00000000f102
       IdentitySeed__Roles__6__Code: BROWSER_FIN01_APPROVER
       IdentitySeed__Roles__6__Name: SENTETIK FIN01 Approver
@@ -55,6 +59,10 @@ services:
       IdentitySeed__Roles__6__Permissions__1: finance.bank-account.approve
       IdentitySeed__Roles__6__Permissions__2: finance.manual-receipt.reverse.approve
       IdentitySeed__Roles__6__Permissions__3: accounting.periods.read
+      IdentitySeed__Roles__6__Permissions__4: finance.manual-bank-payment.draft.read
+      IdentitySeed__Roles__6__Permissions__5: finance.manual-bank-payment.approve
+      IdentitySeed__Roles__6__Permissions__6: finance.manual-bank-payment.record
+      IdentitySeed__Roles__6__Permissions__7: counterparty.parties.read
       IdentitySeed__Assignments__7__Id: b4000000-0000-4000-8000-00000000f101
       IdentitySeed__Assignments__7__UserId: b2000000-0000-4000-8000-00000000f101
       IdentitySeed__Assignments__7__RoleId: b3000000-0000-4000-8000-00000000f101

@@ -30,7 +30,7 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Shell;
 public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "CHATGPT-BUSINESS/FINANCE";
-    public const string OwnerContractVersion = "1.1";
+    public const string OwnerContractVersion = "1.2";
     public const string ReceiptListScreenId = "F-02";
     public const string ReceiptDraftScreenId = "F-02-NEW";
     public const string ReceiptDetailScreenId = "F-02-DETAIL";
@@ -61,6 +61,21 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
     public const string BankAccountProposeRoutePath = "/finans/banka-hesaplari/yeni";
     public const string BankAccountApproveCapabilityId = "finance.bank-accounts.approve";
 
+    public const string ManualBankPaymentListScreenId = "F-02-PAYMENTS";
+    public const string ManualBankPaymentCreateScreenId = "F-02-PAYMENT-NEW";
+    public const string ManualBankPaymentDetailScreenId = "F-02-PAYMENT-DETAIL";
+    public const string ManualBankPaymentListCapabilityId = "finance.manual-bank-payments.list";
+    public const string ManualBankPaymentListRouteId = "finance.manual-bank-payments.list";
+    public const string ManualBankPaymentListRoutePath = "/finans/odemeler";
+    public const string ManualBankPaymentCreateCapabilityId = "finance.manual-bank-payments.create";
+    public const string ManualBankPaymentCreateRouteId = "finance.manual-bank-payments.create";
+    public const string ManualBankPaymentCreateRoutePath = "/finans/odemeler/yeni";
+    public const string ManualBankPaymentDetailCapabilityId = "finance.manual-bank-payments.detail";
+    public const string ManualBankPaymentDetailRouteId = "finance.manual-bank-payments.detail";
+    public const string ManualBankPaymentDetailRoutePath = "/finans/odemeler/:paymentId";
+    public const string ManualBankPaymentApproveCapabilityId = "finance.manual-bank-payments.approve";
+    public const string ManualBankPaymentRecordCapabilityId = "finance.manual-bank-payments.record";
+
     public string Owner => OwnerId;
 
     public string ContractVersion => OwnerContractVersion;
@@ -71,6 +86,10 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
             ReceiptDetailScreenId, ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [FinancePermissionNames.DraftRead]);
         var bankAccounts = Declaration(BankAccountListCapabilityId, BankAccountListRouteId, BankAccountListRoutePath,
             BankAccountListScreenId, ShellCapabilityRoutePrecedence.Static, [ErpPermissions.FinanceBankAccountRead]);
+        var manualBankPaymentDetail = Declaration(ManualBankPaymentDetailCapabilityId,
+            ManualBankPaymentDetailRouteId, ManualBankPaymentDetailRoutePath, ManualBankPaymentDetailScreenId,
+            ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
+            [FinancePermissionNames.ManualBankPaymentDraftRead]);
         return
         [
             Declaration(ReceiptListCapabilityId, ReceiptListRouteId, ReceiptListRoutePath, ReceiptListScreenId,
@@ -106,6 +125,31 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
                 CapabilityId = BankAccountApproveCapabilityId,
                 ParentCapabilityId = BankAccountListCapabilityId,
                 RequiredPermissions = [ErpPermissions.FinanceBankAccountRead, ErpPermissions.FinanceBankAccountApprove],
+            },
+            Declaration(ManualBankPaymentListCapabilityId, ManualBankPaymentListRouteId,
+                ManualBankPaymentListRoutePath, ManualBankPaymentListScreenId,
+                ShellCapabilityRoutePrecedence.Static, [FinancePermissionNames.ManualBankPaymentDraftRead]),
+            Declaration(ManualBankPaymentCreateCapabilityId, ManualBankPaymentCreateRouteId,
+                ManualBankPaymentCreateRoutePath, ManualBankPaymentCreateScreenId,
+                ShellCapabilityRoutePrecedence.Static, [FinancePermissionNames.ManualBankPaymentDraftSave]),
+            manualBankPaymentDetail,
+            manualBankPaymentDetail with
+            {
+                CapabilityId = ManualBankPaymentApproveCapabilityId,
+                ParentCapabilityId = ManualBankPaymentDetailCapabilityId,
+                RequiredPermissions =
+                    [FinancePermissionNames.ManualBankPaymentDraftRead, FinancePermissionNames.ManualBankPaymentApprove],
+            },
+            manualBankPaymentDetail with
+            {
+                CapabilityId = ManualBankPaymentRecordCapabilityId,
+                ParentCapabilityId = ManualBankPaymentDetailCapabilityId,
+                RequiredPermissions =
+                [
+                    FinancePermissionNames.ManualBankPaymentDraftRead,
+                    FinancePermissionNames.ManualBankPaymentRecord,
+                    ErpPermissions.AccountingPeriodsRead,
+                ],
             },
         ];
     }
