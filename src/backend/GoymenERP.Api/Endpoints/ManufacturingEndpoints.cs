@@ -133,13 +133,37 @@ public static class ManufacturingEndpoints
             .Produces<OrderViewV1>(StatusCodes.Status201Created)
             .WithWriteProblems(notFound: true);
 
-        MapFact(group, "/orders/{orderId:guid}/input-issues", "IssueManufacturingInputV1",
-            (service, orderId, request, key, cancellationToken) =>
-                service.IssueInputAsync(orderId, request, key, ErpPermissions.ManufacturingFactsRecord, cancellationToken));
-        MapFact(group, "/orders/{orderId:guid}/input-returns", "ReturnManufacturingInputV1",
-            (service, orderId, request, key, cancellationToken) =>
-                service.ReturnUnusedInputAsync(orderId, request, key, ErpPermissions.ManufacturingFactsRecord,
-                    cancellationToken));
+        group.MapPost("/orders/{orderId:guid}/input-issues", async (
+                Guid orderId,
+                IssueInventoryInputRequestV1 request,
+                ManufacturingCommandService service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            await WriteAsync(httpContext, key => service.IssueInventoryInputAsync(orderId, request, key,
+                ErpPermissions.ManufacturingFactsRecord, cancellationToken)))
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.ManufacturingFactsRecord)
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict)
+            .WithName("IssueManufacturingInputV1")
+            .Accepts<IssueInventoryInputRequestV1>("application/json")
+            .Produces<OrderViewV1>(StatusCodes.Status200OK)
+            .WithWriteProblems(notFound: true);
+
+        group.MapPost("/orders/{orderId:guid}/input-returns", async (
+                Guid orderId,
+                ReturnInventoryInputRequestV1 request,
+                ManufacturingCommandService service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            await WriteAsync(httpContext, key => service.ReturnInventoryInputAsync(orderId, request, key,
+                ErpPermissions.ManufacturingFactsRecord, cancellationToken)))
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.ManufacturingFactsRecord)
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict)
+            .WithName("ReturnManufacturingInputV1")
+            .Accepts<ReturnInventoryInputRequestV1>("application/json")
+            .Produces<OrderViewV1>(StatusCodes.Status200OK)
+            .WithWriteProblems(notFound: true);
         MapFact(group, "/orders/{orderId:guid}/wip-measurements", "RecordManufacturingWorkInProgressV1",
             (service, orderId, request, key, cancellationToken) =>
                 service.RecordWorkInProgressAsync(orderId, request, key, ErpPermissions.ManufacturingFactsRecord,
@@ -147,17 +171,17 @@ public static class ManufacturingEndpoints
 
         group.MapPost("/orders/{orderId:guid}/outputs", async (
                 Guid orderId,
-                DeclareOutputRequestV1 request,
+                DeclareInventoryOutputRequestV1 request,
                 ManufacturingCommandService service,
                 HttpContext httpContext,
                 CancellationToken cancellationToken) =>
-            await WriteAsync(httpContext, key => service.DeclareOutputAsync(orderId, request, key,
+            await WriteAsync(httpContext, key => service.DeclareInventoryOutputAsync(orderId, request, key,
                 ErpPermissions.ManufacturingFactsRecord, cancellationToken)))
             .RequireCompanyContext()
             .RequireAuthorization(ErpPermissions.ManufacturingFactsRecord)
             .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict)
             .WithName("DeclareManufacturingOutputV1")
-            .Accepts<DeclareOutputRequestV1>("application/json")
+            .Accepts<DeclareInventoryOutputRequestV1>("application/json")
             .Produces<OrderViewV1>(StatusCodes.Status200OK)
             .WithWriteProblems(notFound: true);
 
