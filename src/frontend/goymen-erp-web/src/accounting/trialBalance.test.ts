@@ -22,10 +22,26 @@ afterEach(() => vi.unstubAllGlobals())
 describe('M-06 trial-balance public consumer', () => {
   it('decodes the exact date, currency, account and lossless money contract', () => {
     expect(decodeTrialBalanceReport(report(), query)).toEqual(report())
+    const differentlyScaled = {
+      ...report(),
+      lines: [{ ...report().lines[0], debit: '125.00', credit: '100.0', balance: '25.000' }],
+      currencyTotals: [{ ...report().currencyTotals[0], debit: '125.0000', credit: '100' }],
+    }
+    expect(decodeTrialBalanceReport(differentlyScaled, query)).toEqual(differentlyScaled)
     expect(decodeTrialBalanceReport({ ...report(), throughAccountingDate: '2026-10-01' }, query)).toBeNull()
     expect(decodeTrialBalanceReport({ ...report(), lines: [{ ...report().lines[0], debit: 125 }] }, query)).toBeNull()
     expect(decodeTrialBalanceReport({ ...report(), lines: [...report().lines, ...report().lines] }, query)).toBeNull()
     expect(decodeTrialBalanceReport({ ...report(), currencyTotals: [] }, query)).toBeNull()
+  })
+
+  it('rejects inconsistent line equations and currency aggregates', () => {
+    const line = report().lines[0]
+    const total = report().currencyTotals[0]
+    expect(decodeTrialBalanceReport({ ...report(), lines: [{ ...line, balanceSide: 'Credit' }] }, query)).toBeNull()
+    expect(decodeTrialBalanceReport({ ...report(), lines: [{ ...line, balance: '24.99' }] }, query)).toBeNull()
+    expect(decodeTrialBalanceReport({ ...report(), currencyTotals: [{ ...total, debit: '124.99' }] }, query)).toBeNull()
+    expect(decodeTrialBalanceReport({ ...report(), currencyTotals: [{ ...total, credit: '99.99' }] }, query)).toBeNull()
+    expect(decodeTrialBalanceReport({ ...report(), currencyTotals: [{ ...total, isBalanced: true }] }, query)).toBeNull()
   })
 
   it('sends the exact inclusive query and company header, accepting only exact 200', async () => {

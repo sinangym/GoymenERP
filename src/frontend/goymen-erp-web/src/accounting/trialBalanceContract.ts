@@ -36,6 +36,35 @@ const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const NIL_GUID = '00000000-0000-0000-0000-000000000000'
 const SIDES = new Set<TrialBalanceSide>(['Debit', 'Credit', 'Balanced'])
 
+type DecimalValue = readonly [coefficient: bigint, scale: number]
+
+const decimalValue = (value: string): DecimalValue => {
+  const [whole, fraction = ''] = value.split('.')
+  return [BigInt(`${whole}${fraction}`), fraction.length]
+}
+
+const scaledCoefficient = ([coefficient, scale]: DecimalValue, targetScale: number): bigint =>
+  coefficient * (10n ** BigInt(targetScale - scale))
+
+const compareDecimal = (left: DecimalValue, right: DecimalValue): -1 | 0 | 1 => {
+  const scale = Math.max(left[1], right[1])
+  const difference = scaledCoefficient(left, scale) - scaledCoefficient(right, scale)
+  return difference < 0n ? -1 : difference > 0n ? 1 : 0
+}
+
+const addDecimal = (left: DecimalValue, right: DecimalValue): DecimalValue => {
+  const scale = Math.max(left[1], right[1])
+  return [scaledCoefficient(left, scale) + scaledCoefficient(right, scale), scale]
+}
+
+const differenceMagnitude = (left: DecimalValue, right: DecimalValue): DecimalValue => {
+  const scale = Math.max(left[1], right[1])
+  const difference = scaledCoefficient(left, scale) - scaledCoefficient(right, scale)
+  return [difference < 0n ? -difference : difference, scale]
+}
+
+const ZERO: DecimalValue = [0n, 0]
+
 const record = (value: unknown): Json | null =>
   typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Json) : null
 
@@ -77,7 +106,14 @@ export function decodeTrialBalanceReport(value: unknown, expected: TrialBalanceQ
       || !isNonNegativeDecimalText(line.debit) || !isNonNegativeDecimalText(line.credit)
       || typeof line.balanceSide !== 'string' || !SIDES.has(line.balanceSide as TrialBalanceSide)
       || !isNonNegativeDecimalText(line.balance)) return null
-    if ((line.balanceSide === 'Balanced') !== (line.balance === '0')) return null
+    const debit = decimalValue(line.debit)
+    const credit = decimalValue(line.credit)
+    const balance = decimalValue(line.balance)
+    const direction = compareDecimal(debit, credit)
+    const expectedSide: TrialBalanceSide = direction > 0 ? 'Debit' : direction < 0 ? 'Credit' : 'Balanced'
+    if (line.balanceSide !== expectedSide || compareDecimal(balance, differenceMagnitude(debit, credit)) !== 0) {
+      return null
+    }
     const key = `${line.currencyId}:${line.accountId}`
     if (lineKeys.has(key)) return null
     lineKeys.add(key)
@@ -100,6 +136,23 @@ export function decodeTrialBalanceReport(value: unknown, expected: TrialBalanceQ
   const lineCurrencies = new Set(lines.map((line) => line.currencyId))
   if (lineCurrencies.size !== totalCurrencies.size
     || [...lineCurrencies].some((currencyId) => !totalCurrencies.has(currencyId))) return null
+
+  for (const total of currencyTotals) {
+    const sums = lines
+      .filter((line) => line.currencyId === total.currencyId)
+      .reduce(
+        (current, line) => ({
+          debit: addDecimal(current.debit, decimalValue(line.debit)),
+          credit: addDecimal(current.credit, decimalValue(line.credit)),
+        }),
+        { debit: ZERO, credit: ZERO },
+      )
+    const totalDebit = decimalValue(total.debit)
+    const totalCredit = decimalValue(total.credit)
+    if (compareDecimal(totalDebit, sums.debit) !== 0
+      || compareDecimal(totalCredit, sums.credit) !== 0
+      || total.isBalanced !== (compareDecimal(totalDebit, totalCredit) === 0)) return null
+  }
 
   return {
     fromAccountingDate: expected.fromAccountingDate,
