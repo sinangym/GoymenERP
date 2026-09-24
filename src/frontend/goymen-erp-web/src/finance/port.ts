@@ -27,6 +27,11 @@ import type {
 } from './contract'
 import type { DraftContextRequest } from './draftContext'
 import type { HttpReadReply } from './http'
+import type {
+  ApproveManualBankPaymentRequest,
+  ManualBankPaymentDraftSaveRequest,
+  RecordManualBankPaymentRequest,
+} from './manualBankPaymentContract'
 
 export type PortReply = { readonly kind: 'body'; readonly body: unknown } | { readonly kind: 'no-reply' }
 
@@ -35,6 +40,28 @@ export interface FinanceScope {
 }
 
 export interface FinanceReceiptPort {
+  listManualBankPayments(
+    scope: FinanceScope,
+    request: { readonly cursor: string | null },
+    signal: AbortSignal,
+  ): Promise<PortReply>
+  manualBankPaymentDetail(scope: FinanceScope, paymentId: string, signal: AbortSignal): Promise<PortReply>
+  saveManualBankPaymentDraft(
+    scope: FinanceScope,
+    idempotencyKey: string,
+    request: ManualBankPaymentDraftSaveRequest,
+  ): Promise<PortReply>
+  approveManualBankPayment(
+    scope: FinanceScope,
+    idempotencyKey: string,
+    request: ApproveManualBankPaymentRequest,
+  ): Promise<PortReply>
+  recordManualBankPayment(
+    scope: FinanceScope,
+    idempotencyKey: string,
+    request: RecordManualBankPaymentRequest,
+  ): Promise<PortReply>
+
   /** FS0 — `IFinanceBankAccountReader.ListAuthorizedAsync` → `ReadResult<BankAccountPage>`. */
   listBankAccounts(scope: FinanceScope, signal: AbortSignal): Promise<PortReply>
   /** `ListAuthorizedAsync(SourceListRequest)` → `ReadResult<SourcePage>`. */

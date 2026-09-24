@@ -106,7 +106,8 @@ public sealed class SettingsHostWiringTests
     }
 
     [Theory]
-    [InlineData("finance")]
+    [InlineData("finance-receipt")]
+    [InlineData("finance-payment")]
     [InlineData("sales")]
     // ACC-V0a: a journal amount is a final TRY amount (Ö2 "nihai tutar 2"), the same approved profile.
     [InlineData("accounting")]
@@ -114,7 +115,8 @@ public sealed class SettingsHostWiringTests
     {
         var operation = owner switch
         {
-            "finance" => FinanceMoneyOperations.ManualBankReceiptV1,
+            "finance-receipt" => FinanceMoneyOperations.ManualBankReceiptV1,
+            "finance-payment" => FinanceMoneyOperations.ManualBankPaymentV1,
             "sales" => SalesMoneyOperations.OrderDraftV1,
             _ => AccountingMoneyOperations.JournalAmountV1,
         };
@@ -140,7 +142,8 @@ public sealed class SettingsHostWiringTests
         Assert.Equal(
             new[]
             {
-                FinanceMoneyOperations.ManualBankReceiptV1, SalesMoneyOperations.OrderDraftV1,
+                FinanceMoneyOperations.ManualBankPaymentV1, FinanceMoneyOperations.ManualBankReceiptV1,
+                SalesMoneyOperations.OrderDraftV1,
                 AccountingMoneyOperations.JournalAmountV1,
             }.Order(StringComparer.Ordinal),
             ApprovedMoneyProfileCatalog.GdcTurkishLiraV1.Operations.Order(StringComparer.Ordinal));

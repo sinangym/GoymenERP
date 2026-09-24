@@ -6,8 +6,8 @@ namespace GoymenERP.Manufacturing.UnitTests;
 
 /// <summary>
 /// The published Manufacturing shell provider (MFG-UI card D1–D3; MFG-UI-F; MFG-ORD): four routes — the
-/// order screen/list and plan create/detail — two controls on the order screen and two on plan detail, the frontend's ids and routes
-/// (<c>src/manufacturing/capabilities.ts</c> read from the repository, so a drift is red here),
+/// order screen/list and plan create/detail — two controls on the order screen and two on plan detail. All eight
+/// consumed ids and all routes stay pinned to <c>src/manufacturing/capabilities.ts</c>, so frontend drift is red here.
 /// company-wide scope, and <c>ImplementationAvailable: true</c> on all of them. Each control is its
 /// parent with only its id, parent and permissions changed, so the registry's control rule (same route,
 /// context and scope; the parent's permissions kept; never available under a staged parent) holds by
@@ -18,7 +18,7 @@ public sealed class ManufacturingShellCapabilityProviderContractTests
     private const string FrontendCapabilities = "src/frontend/goymen-erp-web/src/manufacturing/capabilities.ts";
 
     [Fact]
-    public void The_order_routes_and_their_controls_are_published_with_the_frontends_ids()
+    public void The_routes_and_controls_are_published_with_the_existing_frontend_boundary()
     {
         var source = File.ReadAllText(Path.Combine(FindRepositoryRoot(), FrontendCapabilities));
         var provider = new ManufacturingShellCapabilityProvider();

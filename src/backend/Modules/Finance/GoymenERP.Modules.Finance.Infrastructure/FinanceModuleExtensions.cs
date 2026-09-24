@@ -75,6 +75,9 @@ public static class FinanceModuleExtensions
         services.AddScoped<IFinanceBankAccountReader>(provider => provider.GetRequiredService<FinanceBankAccountService>());
         services.AddScoped<IFinanceBankAccountMaster>(provider => provider.GetRequiredService<FinanceBankAccountService>());
         services.AddScoped<IManualReceiptService>(CreateReceiptDraftService);
+        services.TryAddScoped<IManualBankPaymentDocumentValidationPort,
+            UnavailableManualBankPaymentDocumentValidationPort>();
+        services.AddScoped<IManualBankPaymentService>(CreateManualBankPaymentService);
         services.AddScoped(CreateReversalProposalService);
         services.AddScoped<IReversalProposalService>(provider =>
             provider.GetRequiredService<ReversalProposalService>());
@@ -143,6 +146,30 @@ public static class FinanceModuleExtensions
                     FinanceAction.ProposeReversal),
                 Envelope(provider, FinancePermissionNames.ReverseApprove, permissions,
                     FinanceAction.ApproveReversal)),
+            provider.GetRequiredService<TimeProvider>());
+    }
+
+    private static ManualBankPaymentService CreateManualBankPaymentService(IServiceProvider provider)
+    {
+        var permissions = provider.GetRequiredService<FinancePermissionPort>();
+        return new ManualBankPaymentService(
+            provider.GetRequiredService<FinanceDbContext>(),
+            provider.GetRequiredService<ICompanyContext>(),
+            provider.GetRequiredService<ICurrentUser>(),
+            permissions,
+            provider.GetRequiredService<IFinancePartyAccountPort>(),
+            provider.GetRequiredService<IManualBankPaymentDocumentValidationPort>(),
+            provider.GetRequiredService<ISettingsPrerequisiteProvider>(),
+            provider.GetRequiredService<IFinanceRecordPeriodRule>(),
+            provider.GetRequiredService<IAuditEventCollector>(),
+            new ManualBankPaymentBinding(FinanceMoneyOperations.ManualBankPaymentV1),
+            new ManualBankPaymentAuditEnvelopes(
+                Envelope(provider, FinancePermissionNames.ManualBankPaymentDraftSave, permissions,
+                    FinanceAction.SaveManualBankPaymentDraft),
+                Envelope(provider, FinancePermissionNames.ManualBankPaymentApprove, permissions,
+                    FinanceAction.ApproveManualBankPayment),
+                Envelope(provider, FinancePermissionNames.ManualBankPaymentRecord, permissions,
+                    FinanceAction.RecordManualBankPayment)),
             provider.GetRequiredService<TimeProvider>());
     }
 

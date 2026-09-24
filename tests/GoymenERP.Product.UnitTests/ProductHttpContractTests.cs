@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
 using GoymenERP.Api.Endpoints;
+using GoymenERP.Modules.Product.Application;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Product.Domain.Products;
 using Microsoft.AspNetCore.Authentication;
@@ -155,6 +156,79 @@ public sealed class ProductHttpContractTests
         Assert.DoesNotContain("private-storage-detail", await response.Content.ReadAsStringAsync());
     }
 
+    [Fact]
+    public async Task History_is_exact_private_no_store_and_exposes_no_audit_identity_metadata()
+    {
+        var service = new Service();
+        var audit = new AuditSource(service.Card.Product.Id);
+        await using var app = await StartAsync(service, audit);
+        using var client = Client(app);
+
+        var response = await client.GetAsync($"/api/v1/products/{service.Card.Product.Id:D}/history");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.True(response.Headers.CacheControl!.Private);
+        Assert.True(response.Headers.CacheControl.NoStore);
+        var body = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        Assert.Equal(service.Card.Product.Id, body.GetProperty("productId").GetGuid());
+        Assert.False(body.GetProperty("truncated").GetBoolean());
+        var entry = Assert.Single(body.GetProperty("entries").EnumerateArray());
+        Assert.Equal(ProductHistoryApiV1.DraftCreate, entry.GetProperty("operation").GetString());
+        Assert.Equal("1", entry.GetProperty("versionAfter").GetString());
+        Assert.Equal(System.Text.Json.JsonValueKind.Null, entry.GetProperty("versionBefore").ValueKind);
+        Assert.Empty(entry.GetProperty("changedFields").EnumerateArray());
+        var json = body.GetRawText();
+        Assert.DoesNotContain("actor", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("correlation", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("idempotency", json, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(1, audit.Reads);
+    }
+
+    [Fact]
+    public async Task Missing_or_denied_product_never_reads_audit()
+    {
+        var service = new Service();
+        var audit = new AuditSource(service.Card.Product.Id);
+        await using var app = await StartAsync(service, audit);
+        using var client = Client(app);
+
+        Assert.Equal(HttpStatusCode.NotFound,
+            (await client.GetAsync($"/api/v1/products/{Guid.NewGuid():D}/history")).StatusCode);
+        service.Denied = true;
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await client.GetAsync($"/api/v1/products/{service.Card.Product.Id:D}/history")).StatusCode);
+        Assert.Equal(0, audit.Reads);
+    }
+
+    [Fact]
+    public async Task Anonymous_history_request_never_reaches_product_or_audit()
+    {
+        var service = new Service();
+        var audit = new AuditSource(service.Card.Product.Id);
+        await using var app = await StartAsync(service, audit);
+        using var client = app.GetTestClient();
+
+        Assert.Equal(HttpStatusCode.Unauthorized,
+            (await client.GetAsync($"/api/v1/products/{service.Card.Product.Id:D}/history")).StatusCode);
+        Assert.Equal(0, service.Reads);
+        Assert.Equal(0, audit.Reads);
+    }
+
+    [Fact]
+    public async Task History_integrity_fault_is_redacted_by_the_host()
+    {
+        var service = new Service();
+        var audit = new AuditSource(service.Card.Product.Id) { Failure = new InvalidOperationException("private-audit-secret") };
+        await using var app = await StartAsync(service, audit);
+        using var client = Client(app);
+
+        var response = await client.GetAsync($"/api/v1/products/{service.Card.Product.Id:D}/history");
+
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal("application/problem+json", response.Content.Headers.ContentType!.MediaType);
+        Assert.DoesNotContain("private-audit-secret", await response.Content.ReadAsStringAsync());
+    }
+
     private static HttpClient Client(WebApplication app)
     {
         var client = app.GetTestClient();
@@ -163,7 +237,7 @@ public sealed class ProductHttpContractTests
         return client;
     }
 
-    private static async Task<WebApplication> StartAsync(Service service)
+    private static async Task<WebApplication> StartAsync(Service service, AuditSource? audit = null)
     {
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = "Testing" });
         builder.WebHost.UseTestServer();
@@ -171,6 +245,8 @@ public sealed class ProductHttpContractTests
         builder.Services.AddAuthentication("fixture").AddScheme<AuthenticationSchemeOptions, FixtureAuthentication>("fixture", _ => { });
         builder.Services.AddAuthorization();
         builder.Services.AddSingleton<IProductService>(service);
+        builder.Services.AddSingleton<IProductAuditHistorySourceV1>(audit ?? new AuditSource(service.Card.Product.Id));
+        builder.Services.AddScoped<ProductHistoryReader>();
         var app = builder.Build();
         app.UseExceptionHandler();
         app.UseAuthentication();
@@ -198,6 +274,7 @@ public sealed class ProductHttpContractTests
         public int Activations { get; private set; }
         public int Reads { get; private set; }
         public bool ProjectionFailure { get; init; }
+        public bool Denied { get; set; }
         public Service()
         {
             var product = ProductCard.CreateDraft(Guid.NewGuid(), ProductCode.FromSequence("SAC", 1), "Sac",
@@ -210,8 +287,9 @@ public sealed class ProductHttpContractTests
         public Task<ProductCardView?> GetAsync(Guid id, CancellationToken cancellationToken)
         {
             Reads++;
+            if (Denied) throw new UnauthorizedAccessException("synthetic Product read refusal");
             if (ProjectionFailure) { throw new InvalidOperationException("private-storage-detail"); }
-            return Task.FromResult<ProductCardView?>(Card);
+            return Task.FromResult<ProductCardView?>(id == Card.Product.Id ? Card : null);
         }
         public Task<IReadOnlyList<ProductCodeGroup>> GetCodeGroupsAsync(CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<ProductCodeGroup>>([Group]);
@@ -227,5 +305,29 @@ public sealed class ProductHttpContractTests
         public Task<ProductMutationResponse> ActivateAsync(Guid id, ActivateProductRequest request,
             string idempotencyKey, CancellationToken cancellationToken)
         { Activations++; throw new ProductOperationException(ProductApiV1.LifecycleConflict, 409); }
+    }
+
+    private sealed class AuditSource(Guid productId) : IProductAuditHistorySourceV1
+    {
+        public int Reads { get; private set; }
+        public Exception? Failure { get; init; }
+
+        public Task<IReadOnlyList<ProductAuditRecordV1>> ReadNewestAsync(Guid requestedProductId, int limit,
+            CancellationToken cancellationToken)
+        {
+            Reads++;
+            if (Failure is not null) throw Failure;
+            Assert.Equal(productId, requestedProductId);
+            Assert.Equal(ProductHistoryApiV1.PageSize + 1, limit);
+            var after = System.Text.Json.JsonSerializer.Serialize(new
+            {
+                product = new { id = productId.ToString("D"), version = "1" },
+                references = new { },
+            });
+            return Task.FromResult<IReadOnlyList<ProductAuditRecordV1>>
+            ([new(Guid.Parse("91559482-d93c-46f0-abbb-beb3c07f0136"), productId,
+                ProductHistoryApiV1.DraftCreate, new DateTimeOffset(2026, 9, 24, 9, 0, 0, TimeSpan.Zero),
+                null, 1, "Sentetik oluşturma", "{}", after)]);
+        }
     }
 }

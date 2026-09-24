@@ -141,7 +141,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // finance
             ["tools/relational_inventory/finance.txt"] =
-                "ea9da6397e8f92e9c5eff8a3486aad14d640e535bc93dd4f7344b3bbcf432042",
+                "f40a376505b7ad2126ae716d2ffd9e312ed4e7c246c0ce506cae3f871883acdf",
 
             // identity
             ["tools/relational_inventory/identity.txt"] =
@@ -149,7 +149,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // inventory
             ["tools/relational_inventory/inventory.txt"] =
-                "d6251e74c986b73aae1f18251972b50b773c6d3a4a7b4b9747777cbe0c28c522",
+                "824a2e81fb274020c6cad01efa56a0846df14bd5f0234a9685fe5cd087268be1",
 
             // logistics
             ["tools/relational_inventory/logistics.txt"] =
@@ -169,7 +169,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // product
             ["tools/relational_inventory/product.txt"] =
-                "8c5ebea9f3344f3ec137e5251f5e0e5eec837065899a0916df206d83edbe9d5b",
+                "d7dbec7ff39d9a487be2ecfae3ee3188a1e7b16dc8d695fb8e9a98952b0c991e",
 
             // purchasing
             ["tools/relational_inventory/purchasing.txt"] =
@@ -231,7 +231,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
              + "Persistence/FinanceDbContext.cs"] =
-            "9d686e0ccc5c4d2e191dd37f456081928a28266c72d1e56db5244906e237b234",
+            "a4c6ef66ba30477dd403940596c76c32869f1b43585595d45ba759b77b01dd93",
             // ACC-3 (#298): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for ACC-V0a: the ADR-011 command log (Commands) is mapped here, company-scoped with the
@@ -243,7 +243,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // row and AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
              + "Persistence/InventoryDbContext.cs"] =
-                "74b07e86ddca6617ea33a80eb36f16c74eb249c0cf2f0c75b395792c6a558763",
+                "9dee97ca9ca55ae7befcbb3a06b8b3e18de5c584d9ae5dbad737766971bdb192",
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "Persistence/ProductDbContext.cs"] =
                 "0ba53cfdf07084818f737c9f21b2ce4a04a44f5fe89603a89f31791c5b4871da",
@@ -259,6 +259,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string ReviewedInventoryDefiniteShipmentParticipantPath =
         "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
         + "Persistence/InventoryDefiniteShipmentParticipant.cs";
+    private const string ReviewedManualBankPaymentServicePath =
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
+        + "ManualBankPaymentService.cs";
 
     private static readonly IReadOnlyDictionary<string, ReviewedRuntimeDatabaseBypassSource>
         ReviewedRuntimeDatabaseBypassSources =
@@ -270,8 +273,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // singleton shell provider; no new database capability, MigrateAsync stays 2).
                 // Re-measured for Inventory opening stock: the bounded Product stock-candidate reader/service are
                 // DI-only additions over the existing Product read store; no new database capability, MigrateAsync stays 2.
+                // Re-measured for Product history: the scoped Audit-owner adapter and Product history reader are
+                // read-only DI additions; no new database capability, MigrateAsync stays 2.
                 ["src/backend/GoymenERP.Api/ProductRuntime/ProductRuntimeExtensions.cs"] =
-                    new("eb34fc4dd25443bcf5c9c0380157443ea2c848d75c89d5b89063fe691b68a689",
+                    new("b43d6443ee83f27694f9a9f1adbdf555b869f20a96da657d01b3d571367fca86",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["MigrateAsync"] = 2 }),
                 // Re-measured for PRD-UNIT-1: the Product participant gets Settings' unit-identity catalog
@@ -380,7 +385,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Inventory.Infrastructure/"
                  + "InventoryModuleExtensions.cs"] =
                     new(
-                        "8c173c07b765a42116381f67fdec9508e9245a15b88ac5efb0b71a79f76e51a0",
+                        "c7138bf89440ce2f96b5bf4a08bd303f3481da30df9a914ee840f3e824f36f44",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -423,7 +428,15 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Inventory/"
                  + "GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryStore.cs"] =
                     new(
-                        "586aa3d44d43aebe8ade89c4585af7ca816a2789165df709bfa86c7b8a3bbd0b",
+                        "be1fca0ac208cd17f8358fba1e16aadc4492647b98c39f9a5b6a0d044070ad4e",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1
+                        }),
+                ["src/backend/Modules/Inventory/"
+                 + "GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryStore.Allocations.cs"] =
+                    new(
+                        "dbf561ee8660c90cd6374799598eb159338884032871cb8f496360745111589a",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -457,7 +470,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Finance.Infrastructure/"
                  + "FinanceModuleExtensions.cs"] =
                     new(
-                        "4d850c0223be71a735a471d0bd5de829a203b27b12902029c6ec668aec158b38",
+                        "feeb2edad1d1298a1530503aae28a2438902f4c1aefbcc10c474e87486de9477",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -471,6 +484,16 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Finance.Infrastructure/ReceiptDraftService.cs"] =
                     new(
                         "cbfe6e681ed27f97e02bb421d9a7bae8ede57206544ae1a5ac38fb9a84314f72",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1
+                        }),
+                // R47: the manual-payment writer references SqlException only to classify SQL
+                // unique-key races after SaveChanges. Exact fingerprint/API count keeps this from
+                // authorizing a connection, command, raw SQL or a DbContext construction.
+                [ReviewedManualBankPaymentServicePath] =
+                    new(
+                        "b9b6ee9afb8083ccbbe5098ac020481f20df7a9a515d2f2dbf4a892a8ff3c1ff",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -719,6 +742,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new("5af1d703aca150af6ca748c57b42e9f088cec37aaa3841116e31016a35a72eed",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
+                // R47: Down refuses before its first destructive operation while a manual payment,
+                // outgoing money fact or command target exists. Empty schemas can still roll back.
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20260923213000_AddManualBankPayments.cs"] =
+                    new("f4ed1a10a57688ae1b92376b222ad3c3e0bc73f4b43c3df5db4607e3a4152223",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
                 // MFG-6 slice 2: the Down's only raw SQL is Manufacturing's module refusal (51047) while any plan
                 // slitting spec is stored; forward fix, no spec is dropped.
                 ["src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/Migrations/20260919130000_AddPlanSlittingSpecs.cs"] =
@@ -739,6 +768,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // shipment effect exists; the refusal precedes every destructive rollback step.
                 ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20260924001222_AddInventoryDefiniteShipmentRuntime.cs"] =
                     new("3b696ed5dff4a414c00e939b5921b2d2d5f30d865627d4ce7b1c0019a6f3835d",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20260924013338_AddInventoryPhysicalAllocationLifecycle.cs"] =
+                    new("5452302167c69f77c89c1cd44e3c4d90639df7bb4020e15f54a01309bd18e3a0",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/Persistence/Migrations/20260912175128_InitialProductDrafts.cs"] =
@@ -5847,7 +5880,6 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ComputeReviewedSourceFingerprint(runtimeSource),
                 reviewedRuntimeSource.ReviewedFingerprint,
                 StringComparison.Ordinal);
-
         foreach (var construction in constructions)
         {
             var authorizedByDesignTimeFactory = ReviewedPlatformContextFactories.TryGetValue(
