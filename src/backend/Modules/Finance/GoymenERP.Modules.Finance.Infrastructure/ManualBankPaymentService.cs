@@ -299,14 +299,14 @@ public sealed class ManualBankPaymentService(
         string? cursor,
         CancellationToken cancellationToken)
     {
-        if (!SameContext(context)) return new(ReadOutcome.Denied, null);
+        if (!SameContext(context)) return new ReadResult<ManualBankPaymentPage>(ReadOutcome.Denied, null);
         var decision = await permissions.CheckAsync(context, FinanceAction.ReadManualBankPayments, null, cancellationToken);
         if (decision != PermissionDecision.Allowed || !SameContext(context)) return ReadFailure<ManualBankPaymentPage>(decision);
         var query = dbContext.ManualBankPayments.AsNoTracking();
         if (cursor is not null)
         {
             if (DraftListCursor.Decode(cursor, context.CompanyId) is not { } after)
-                return new(ReadOutcome.NotFound, null);
+                return new ReadResult<ManualBankPaymentPage>(ReadOutcome.NotFound, null);
             query = query.Where(row => row.PreparedAtUtc < after.CreatedAtUtc
                 || (row.PreparedAtUtc == after.CreatedAtUtc && row.Id.CompareTo(after.Id) < 0));
         }
@@ -318,7 +318,9 @@ public sealed class ManualBankPaymentService(
         var next = rows.Count > PageSize
             ? DraftListCursor.Encode(context.CompanyId, page[^1].PreparedAtUtc, page[^1].Id)
             : null;
-        return new(ReadOutcome.Found, new ManualBankPaymentPage(context.CompanyId, page.Select(View).ToArray(), next));
+        return new ReadResult<ManualBankPaymentPage>(
+            ReadOutcome.Found,
+            new ManualBankPaymentPage(context.CompanyId, page.Select(View).ToArray(), next));
     }
 
     public async Task<ReadResult<ManualBankPaymentView>> DetailAuthorizedAsync(
@@ -326,14 +328,16 @@ public sealed class ManualBankPaymentService(
         Guid paymentId,
         CancellationToken cancellationToken)
     {
-        if (!SameContext(context)) return new(ReadOutcome.Denied, null);
+        if (!SameContext(context)) return new ReadResult<ManualBankPaymentView>(ReadOutcome.Denied, null);
         var decision = await permissions.CheckAsync(context, FinanceAction.ReadManualBankPayments, paymentId, cancellationToken);
         if (decision != PermissionDecision.Allowed || !SameContext(context)) return ReadFailure<ManualBankPaymentView>(decision);
         var row = await dbContext.ManualBankPayments.AsNoTracking()
             .SingleOrDefaultAsync(candidate => candidate.Id == paymentId, cancellationToken);
         var again = await permissions.CheckAsync(context, FinanceAction.ReadManualBankPayments, paymentId, cancellationToken);
         if (again != PermissionDecision.Allowed || !SameContext(context)) return ReadFailure<ManualBankPaymentView>(again);
-        return row is null ? new(ReadOutcome.NotFound, null) : new(ReadOutcome.Found, View(row));
+        return row is null
+            ? new ReadResult<ManualBankPaymentView>(ReadOutcome.NotFound, null)
+            : new ReadResult<ManualBankPaymentView>(ReadOutcome.Found, View(row));
     }
 
     internal static string Hash<T>(T request) =>
@@ -610,12 +614,12 @@ public sealed class ManualBankPaymentService(
         row.LinkedDocumentVersion = linkedDocument?.Version;
     }
 
-    private static ManualBankPaymentPreparation Preparation(ManualBankPaymentRow row) => new(
+    private static ManualBankPaymentPreparation Preparation(ManualBankPaymentRow row) => new ManualBankPaymentPreparation(
         row.PartyId, row.CompanyAccountId, row.TreasuryAccountId,
         new MoneyText(row.AmountText, row.CurrencyId), new ProfileReference(row.ProfileId, row.ProfileVersion),
         row.OccurredOn, row.ValueOn, row.BankReference, row.Description);
 
-    private static ManualBankPaymentView View(ManualBankPaymentRow row) => new(
+    private static ManualBankPaymentView View(ManualBankPaymentRow row) => new ManualBankPaymentView(
         row.Id, row.CompanyId, ToStatus(row.Status), Preparation(row),
         row.LinkedDocumentId is { } documentId
             ? new ManualBankPaymentLinkedDocument(documentId, row.LinkedDocumentVersion!)
@@ -625,15 +629,19 @@ public sealed class ManualBankPaymentService(
         VersionText(row.Version));
 
     private static ManualBankPaymentCommandResult Succeeded(FinanceContext context, ManualBankPaymentRow row) =>
-        new(CommandOutcome.Succeeded, View(row), IsReplay: false, context.CorrelationId, []);
+        new ManualBankPaymentCommandResult(
+            CommandOutcome.Succeeded, View(row), IsReplay: false, context.CorrelationId, []);
 
     private static ManualBankPaymentCommandResult Refused(
         FinanceContext context,
         CommandOutcome outcome,
-        params ValidationIssue[] issues) => new(outcome, null, IsReplay: false, context.CorrelationId, issues);
+        params ValidationIssue[] issues) => new ManualBankPaymentCommandResult(
+            outcome, null, IsReplay: false, context.CorrelationId, issues);
 
     private static ReadResult<T> ReadFailure<T>(PermissionDecision decision) where T : class =>
-        new(decision == PermissionDecision.Unavailable ? ReadOutcome.Unavailable : ReadOutcome.Denied, null);
+        new ReadResult<T>(
+            decision == PermissionDecision.Unavailable ? ReadOutcome.Unavailable : ReadOutcome.Denied,
+            null);
 
     private static ManualBankPaymentCommandResult OwnerFailure(
         FinanceContext context,
@@ -648,7 +656,7 @@ public sealed class ManualBankPaymentService(
         };
 
     private static string VersionText(long version) => version.ToString(CultureInfo.InvariantCulture);
-    private static ValidationIssue Issue(string field, string code) => new(field, code);
+    private static ValidationIssue Issue(string field, string code) => new ValidationIssue(field, code);
 
     private static string AuditJson(ManualBankPaymentRow row) => JsonSerializer.Serialize(new
     {
