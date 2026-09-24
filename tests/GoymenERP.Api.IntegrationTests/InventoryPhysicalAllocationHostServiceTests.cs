@@ -18,7 +18,7 @@ public sealed class InventoryPhysicalAllocationHostServiceTests
     [Fact]
     public async Task Approved_line_is_derived_and_fresh_company_wide_authority_reaches_the_writer()
     {
-        var fixture = Fixture();
+        var fixture = Fixture(Granted("ROLE-OLD"), Granted("ROLE-FINAL-B", "ROLE-FINAL-A"));
         var result = await fixture.Service.CreateAsync(CreateRequest(), Metadata(), CancellationToken.None);
 
         Assert.False(result.IsReplay);
@@ -30,7 +30,7 @@ public sealed class InventoryPhysicalAllocationHostServiceTests
                 fixture.Writer.CreateRequest.SalesOrderId, fixture.Writer.CreateRequest.SalesOrderLineId));
         Assert.Equal((fixture.User.UserId, InventoryPermissionManifestV1.PhysicalAllocationWrite),
             (fixture.Writer.Metadata!.ActorId, fixture.Writer.Metadata.PermissionCode));
-        Assert.Equal(["ROLE-A", "ROLE-Z"], fixture.Writer.Metadata.RoleCodes);
+        Assert.Equal(["ROLE-FINAL-A", "ROLE-FINAL-B"], fixture.Writer.Metadata.RoleCodes);
     }
 
     [Fact]
@@ -104,6 +104,20 @@ public sealed class InventoryPhysicalAllocationHostServiceTests
         Assert.Null(fixture.Writer.CreateRequest);
     }
 
+    [Fact]
+    public async Task Unknown_sales_outcome_is_a_provider_failure_and_never_calls_the_writer()
+    {
+        var fixture = Fixture();
+        fixture.OrderLines.Answer = new((SalesOrderLineReferenceOutcomeV1)int.MaxValue, null, null);
+
+        var exception = await Assert.ThrowsAsync<InventoryPhysicalAllocationHostException>(() =>
+            fixture.Service.CreateAsync(CreateRequest(), Metadata(), CancellationToken.None));
+
+        Assert.Equal((StatusCodes.Status503ServiceUnavailable, null), (exception.Status, exception.Code));
+        Assert.Equal(2, fixture.Authority.Calls.Count);
+        Assert.Null(fixture.Writer.CreateRequest);
+    }
+
     [Theory]
     [InlineData(SalesOrderLineReferenceOutcomeV1.NotFound, StatusCodes.Status404NotFound, null)]
     [InlineData(SalesOrderLineReferenceOutcomeV1.NotApproved, StatusCodes.Status422UnprocessableEntity,
@@ -128,7 +142,7 @@ public sealed class InventoryPhysicalAllocationHostServiceTests
     [Fact]
     public async Task Release_uses_the_same_exact_permission_and_fresh_fence()
     {
-        var fixture = Fixture();
+        var fixture = Fixture(Granted("ROLE-OLD"), Granted("ROLE-RELEASE-FINAL"));
         var allocationId = Guid.NewGuid();
 
         await fixture.Service.ReleaseAsync(allocationId,
@@ -138,6 +152,7 @@ public sealed class InventoryPhysicalAllocationHostServiceTests
         Assert.Equal(allocationId, fixture.Writer.ReleaseId);
         Assert.Equal(InventoryPermissionManifestV1.PhysicalAllocationWrite,
             fixture.Writer.Metadata!.PermissionCode);
+        Assert.Equal(["ROLE-RELEASE-FINAL"], fixture.Writer.Metadata.RoleCodes);
     }
 
     [Fact]
@@ -183,8 +198,8 @@ public sealed class InventoryPhysicalAllocationHostServiceTests
         return new(new(company, user, authority, orderLines, writer), company, user, authority, orderLines, writer);
     }
 
-    private static PermissionScope Granted() => new(true, true,
-        new HashSet<string>(["ROLE-Z", "ROLE-A"], StringComparer.Ordinal),
+    private static PermissionScope Granted(params string[] roles) => new(true, true,
+        new HashSet<string>(roles.Length == 0 ? ["ROLE-Z", "ROLE-A"] : roles, StringComparer.Ordinal),
         new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>());
 
     private static CreateInventoryPhysicalAllocationRequestV1 CreateRequest() => new(

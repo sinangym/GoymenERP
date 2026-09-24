@@ -66,7 +66,7 @@ public sealed class InventoryPhysicalAllocationHostService(
                 StatusCodes.Status503ServiceUnavailable, innerException: exception);
         }
 
-        await RequireStillAsync(scope, cancellationToken);
+        var finalScope = await RequireStillAsync(scope, cancellationToken);
         if (answer.Outcome == SalesOrderLineReferenceOutcomeV1.NotFound)
         {
             throw new InventoryPhysicalAllocationHostException(StatusCodes.Status404NotFound);
@@ -82,10 +82,7 @@ public sealed class InventoryPhysicalAllocationHostService(
         if (answer.Outcome != SalesOrderLineReferenceOutcomeV1.Approved || line is null
             || line.CompanyId != scope.CompanyId)
         {
-            throw new InventoryPhysicalAllocationHostException(
-                answer.Outcome == SalesOrderLineReferenceOutcomeV1.Approved
-                    ? StatusCodes.Status503ServiceUnavailable
-                    : StatusCodes.Status404NotFound);
+            throw new InventoryPhysicalAllocationHostException(StatusCodes.Status503ServiceUnavailable);
         }
 
         if (line.OrderId != request.SalesOrderId || line.LineId != request.SalesOrderLineId
@@ -105,7 +102,7 @@ public sealed class InventoryPhysicalAllocationHostService(
             request.QuantityKg,
             request.Reason,
             request.ReservedUntilUtc);
-        return await writer.CreateAsync(command, Metadata(scope, transport), cancellationToken);
+        return await writer.CreateAsync(command, Metadata(finalScope, transport), cancellationToken);
     }
 
     public async Task<InventoryPhysicalAllocationResultV1> ReleaseAsync(
@@ -116,8 +113,8 @@ public sealed class InventoryPhysicalAllocationHostService(
     {
         ArgumentNullException.ThrowIfNull(request);
         var scope = await RequireAsync(cancellationToken);
-        await RequireStillAsync(scope, cancellationToken);
-        return await writer.ReleaseAsync(allocationId, request, Metadata(scope, transport), cancellationToken);
+        var finalScope = await RequireStillAsync(scope, cancellationToken);
+        return await writer.ReleaseAsync(allocationId, request, Metadata(finalScope, transport), cancellationToken);
     }
 
     private async Task<Scope> RequireAsync(CancellationToken cancellationToken)
@@ -149,7 +146,7 @@ public sealed class InventoryPhysicalAllocationHostService(
         return scope with { RoleCodes = [.. measured.RoleCodes.Order(StringComparer.Ordinal)] };
     }
 
-    private async Task RequireStillAsync(Scope scope, CancellationToken cancellationToken)
+    private async Task<Scope> RequireStillAsync(Scope scope, CancellationToken cancellationToken)
     {
         if (!Matches(scope))
         {
@@ -162,6 +159,8 @@ public sealed class InventoryPhysicalAllocationHostService(
         {
             throw new InventoryPhysicalAllocationHostException(StatusCodes.Status403Forbidden);
         }
+
+        return scope with { RoleCodes = [.. measured.RoleCodes.Order(StringComparer.Ordinal)] };
     }
 
     private bool Matches(Scope scope) => currentUser.IsAuthenticated
