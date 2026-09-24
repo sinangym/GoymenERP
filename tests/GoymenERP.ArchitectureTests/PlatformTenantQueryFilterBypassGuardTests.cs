@@ -157,7 +157,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // manufacturing
             ["tools/relational_inventory/manufacturing.txt"] =
-                "1cfabeacd569580cde528e792df6340c2c450fac8379e84b5c8928df04c2843b",
+                "55d648d35c15af18fe93bc777ab096319faba8175d420dace0c2d791b53c9898",
 
             // organization
             ["tools/relational_inventory/organization.txt"] =
@@ -435,7 +435,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // API counts keep this reviewed bridge narrower than a general direct-database exemption.
                 [ReviewedManufacturingInventoryInputIssueHostPath] =
                     new(
-                        "d157cc7d1f02743e25b19545d40b1b7d01da372c68f9b7dd62a840d6394fb206",
+                        "a57effbe5e99d90659e785cbb5ae601f78ca592cd65db6986d9a1a7d8a07419b",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1,
