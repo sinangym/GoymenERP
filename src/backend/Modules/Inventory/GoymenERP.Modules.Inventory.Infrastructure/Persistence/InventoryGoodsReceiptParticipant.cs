@@ -170,10 +170,14 @@ public sealed class InventoryGoodsReceiptParticipant : IInventoryGoodsReceiptPar
             throw Refused(503, InventoryGoodsReceiptCodesV1.Unavailable);
         }
 
+        var labelVersion = await context.Labels.AsNoTracking()
+            .Where(row => row.Id == label.Id)
+            .Select(row => row.Version)
+            .SingleAsync(cancellationToken);
         var result = new InventoryGoodsReceiptResultV1(companyId, request.AcceptanceId,
             request.PurchaseOrderId, request.PurchaseOrderLineId, request.ExpectedPurchaseOrderVersion,
             request.ProductId, request.ExpectedProductVersion, request.PurchaseUnitId, lot.Id, label.Id,
-            "1", movement.Id, quantity.ToString(), IsReplay: false,
+            labelVersion.ToString(CultureInfo.InvariantCulture), movement.Id, quantity.ToString(), IsReplay: false,
             OriginalCorrelationId: metadata.CorrelationId);
         context.Commands.Add(new InventoryCommandRow
         {
