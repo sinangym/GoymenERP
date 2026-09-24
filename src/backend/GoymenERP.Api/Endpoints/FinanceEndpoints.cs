@@ -20,6 +20,7 @@ public static class FinanceEndpoints
     public const string BankAccountMasterPath = "/api/v1/finance/bank-accounts/master";
     public const string BankAccountCurrencyCandidatesPath = "/api/v1/finance/bank-accounts/currency-candidates";
     public const string ManualBankPaymentsPath = "/api/v1/finance/manual-bank-payments";
+    public const string AllocationsPath = "/api/v1/finance/allocations";
     private const string IdempotencyHeaderName = "Idempotency-Key";
     private const int MaximumIdempotencyKeyLength = 128;
     private static readonly JsonSerializerOptions ContractJson = FinanceJson.CreateOptions();
@@ -78,8 +79,89 @@ public static class FinanceEndpoints
 
         MapManualReceiptEndpoints(endpoints);
         MapManualBankPaymentEndpoints(endpoints);
+        MapFinanceAllocationEndpoints(endpoints);
         MapBankAccountEndpoints(endpoints);
         return endpoints;
+    }
+
+    private static void MapFinanceAllocationEndpoints(IEndpointRouteBuilder endpoints)
+    {
+        endpoints.MapPost(AllocationsPath, async (
+                HttpContext httpContext,
+                IFinanceAllocationService service,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key))
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                if (await ReadBodyAsync<CreateFinanceAllocationRequest>(httpContext, cancellationToken)
+                    is not { } request)
+                    return httpContext.Request.HasJsonContentType()
+                        ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                        : Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+
+                var result = await service.CreateAsync(Context(companyContext, currentUser, correlation),
+                    new CommandMetadata(key), request, cancellationToken);
+                return Command(httpContext, result, result.Outcome, result.IsReplay, result.OriginalCorrelationId);
+            })
+            .WithName("CreateFinanceAllocationV1")
+            .WithTags("Finance")
+            .RequireAuthorization(ErpPermissions.FinanceAllocationWrite)
+            .RequireCompanyContext()
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
+            .Accepts<CreateFinanceAllocationRequest>("application/json")
+            .Produces<FinanceAllocationCommandResult>(StatusCodes.Status200OK)
+            .Produces<FinanceAllocationCommandResult>(StatusCodes.Status409Conflict)
+            .Produces<FinanceAllocationCommandResult>(StatusCodes.Status422UnprocessableEntity)
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapPost(AllocationsPath + "/{allocationId:guid}/release", async (
+                Guid allocationId,
+                HttpContext httpContext,
+                IFinanceAllocationService service,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key))
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                if (await ReadBodyAsync<ReleaseFinanceAllocationRequest>(httpContext, cancellationToken)
+                    is not { } request || request.AllocationId != allocationId)
+                    return httpContext.Request.HasJsonContentType()
+                        ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                        : Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+
+                var result = await service.ReleaseAsync(Context(companyContext, currentUser, correlation),
+                    new CommandMetadata(key), request, cancellationToken);
+                return Command(httpContext, result, result.Outcome, result.IsReplay, result.OriginalCorrelationId);
+            })
+            .WithName("ReleaseFinanceAllocationV1")
+            .WithTags("Finance")
+            .RequireAuthorization(ErpPermissions.FinanceAllocationWrite)
+            .RequireCompanyContext()
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
+            .Accepts<ReleaseFinanceAllocationRequest>("application/json")
+            .Produces<FinanceAllocationCommandResult>(StatusCodes.Status200OK)
+            .Produces<FinanceAllocationCommandResult>(StatusCodes.Status409Conflict)
+            .Produces<FinanceAllocationCommandResult>(StatusCodes.Status422UnprocessableEntity)
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpServiceUnavailable();
     }
 
     private static void MapManualBankPaymentEndpoints(IEndpointRouteBuilder endpoints)

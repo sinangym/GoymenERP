@@ -141,7 +141,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // finance
             ["tools/relational_inventory/finance.txt"] =
-                "f40a376505b7ad2126ae716d2ffd9e312ed4e7c246c0ce506cae3f871883acdf",
+                "093bc8251f883c1c4cb407ee00b2498301b8a8ed0d2911de8a204fca8f8ec98a",
 
             // identity
             ["tools/relational_inventory/identity.txt"] =
@@ -231,7 +231,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
              + "Persistence/FinanceDbContext.cs"] =
-            "a4c6ef66ba30477dd403940596c76c32869f1b43585595d45ba759b77b01dd93",
+            "b9146e1d00c97ec2077f4cc75b4221a039e8b8eb4ba2037356be77773222ba89",
             // ACC-3 (#298): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for ACC-V0a: the ADR-011 command log (Commands) is mapped here, company-scoped with the
@@ -470,7 +470,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Finance.Infrastructure/"
                  + "FinanceModuleExtensions.cs"] =
                     new(
-                        "feeb2edad1d1298a1530503aae28a2438902f4c1aefbcc10c474e87486de9477",
+                        "dd3869e1245925031441e77b0f77c3a2897a119e9d8062a388cf8776ce08a41a",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -494,6 +494,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 [ReviewedManualBankPaymentServicePath] =
                     new(
                         "b9b6ee9afb8083ccbbe5098ac020481f20df7a9a515d2f2dbf4a892a8ff3c1ff",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1
+                        }),
+                // F-03: allocation writes stay on the tenant-filtered FinanceDbContext. SqlClient is
+                // referenced only to classify 2601/2627 races after SaveChanges; there is no direct
+                // connection, command or raw SQL surface.
+                ["src/backend/Modules/Finance/"
+                 + "GoymenERP.Modules.Finance.Infrastructure/FinanceAllocationService.cs"] =
+                    new(
+                        "d01e5fed6a48ac4da91566b8550c501425763bc0199329166e8fc6c5b74b9971",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -746,6 +757,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // outgoing money fact or command target exists. Empty schemas can still roll back.
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20260923213000_AddManualBankPayments.cs"] =
                     new("f4ed1a10a57688ae1b92376b222ad3c3e0bc73f4b43c3df5db4607e3a4152223",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // F-03: Down refuses before destructive rollback while an allocation, open item or
+                // source-allocation state exists. Empty schemas can still roll back; populated ones
+                // require an explicit forward fix.
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20260924113000_AddFinanceAllocations.cs"] =
+                    new("0c199318f8fce577cf6b59eb0d7fe4b66520c3da46b467f571614c557995ae58",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // MFG-6 slice 2: the Down's only raw SQL is Manufacturing's module refusal (51047) while any plan

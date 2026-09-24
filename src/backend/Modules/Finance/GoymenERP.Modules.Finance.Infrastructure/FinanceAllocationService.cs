@@ -22,8 +22,8 @@ public sealed class FinanceAllocationService(
     FinanceAuditEnvelope envelope,
     TimeProvider timeProvider) : IFinanceAllocationService
 {
-    internal const string CreateCommand = "finance.allocation.create.v1";
-    internal const string ReleaseCommand = "finance.allocation.release.v1";
+    internal const string CreateCommandName = "finance.allocation.create.v1";
+    internal const string ReleaseCommandName = "finance.allocation.release.v1";
     private const int IdentityMaximumLength = 128;
     private const string EntityType = "Finance.Allocation";
     private static readonly JsonSerializerOptions Json = FinanceJson.CreateOptions();
@@ -39,8 +39,8 @@ public sealed class FinanceAllocationService(
         {
             return refused;
         }
-        var payloadHash = PayloadHash(CreateCommand, request);
-        if (await PriorAsync(context, metadata, CreateCommand, payloadHash, cancellationToken) is { } prior)
+        var payloadHash = PayloadHash(CreateCommandName, request);
+        if (await PriorAsync(context, metadata, CreateCommandName, payloadHash, cancellationToken) is { } prior)
         {
             return prior;
         }
@@ -119,10 +119,10 @@ public sealed class FinanceAllocationService(
         };
         dbContext.Allocations.Add(allocation);
         var result = Succeeded(context, allocation);
-        AddCommand(context, metadata, CreateCommand, payloadHash, allocation.Id, result, now);
+        AddCommand(context, metadata, CreateCommandName, payloadHash, allocation.Id, result, now);
         Audit(context, metadata, allocation, "finance.allocation.created.v1", "Create", null, 1,
             "{}", AuditJson(allocation), "Existing Finance source allocated; no money event created");
-        return await SaveAsync(context, metadata, CreateCommand, payloadHash, result, cancellationToken);
+        return await SaveAsync(context, metadata, CreateCommandName, payloadHash, result, cancellationToken);
     }
 
     public async Task<FinanceAllocationCommandResult> ReleaseAsync(
@@ -136,8 +136,8 @@ public sealed class FinanceAllocationService(
         {
             return refused;
         }
-        var payloadHash = PayloadHash(ReleaseCommand, request);
-        if (await PriorAsync(context, metadata, ReleaseCommand, payloadHash, cancellationToken) is { } prior)
+        var payloadHash = PayloadHash(ReleaseCommandName, request);
+        if (await PriorAsync(context, metadata, ReleaseCommandName, payloadHash, cancellationToken) is { } prior)
         {
             return prior;
         }
@@ -183,10 +183,10 @@ public sealed class FinanceAllocationService(
         openItem.UpdatedAtUtc = now;
 
         var result = Succeeded(context, allocation);
-        AddCommand(context, metadata, ReleaseCommand, payloadHash, allocation.Id, result, now);
+        AddCommand(context, metadata, ReleaseCommandName, payloadHash, allocation.Id, result, now);
         Audit(context, metadata, allocation, "finance.allocation.released.v1", "Release", 1, allocation.Version,
             before, AuditJson(allocation), request.Reason);
-        return await SaveAsync(context, metadata, ReleaseCommand, payloadHash, result, cancellationToken);
+        return await SaveAsync(context, metadata, ReleaseCommandName, payloadHash, result, cancellationToken);
     }
 
     private async Task<FinanceAllocationCommandResult?> StartAsync(
@@ -319,18 +319,18 @@ public sealed class FinanceAllocationService(
             Issue(exception.Field, exception.Code));
 
     private static FinanceAllocationCommandResult Succeeded(FinanceContext context, FinanceAllocationRow row) =>
-        new(CommandOutcome.Succeeded, View(row), false, context.CorrelationId, []);
+        new FinanceAllocationCommandResult(CommandOutcome.Succeeded, View(row), false, context.CorrelationId, []);
 
-    private static FinanceAllocationView View(FinanceAllocationRow row) => new(
+    private static FinanceAllocationView View(FinanceAllocationRow row) => new FinanceAllocationView(
         row.Id, row.CompanyId, row.SourceId, row.OpenItemId, row.CurrencyId, row.AmountText,
         (FinanceAllocationStatus)row.Status, row.Version.ToString(System.Globalization.CultureInfo.InvariantCulture),
         row.Reason, row.CreatedBy, row.CreatedAtUtc, row.ReleasedBy, row.ReleasedAtUtc, row.ReleaseReason);
 
     private static string AuditJson(FinanceAllocationRow row) => JsonSerializer.Serialize(View(row), Json);
 
-    private static ValidationIssue Issue(string field, string code) => new(field, code);
+    private static ValidationIssue Issue(string field, string code) => new ValidationIssue(field, code);
 
     private static FinanceAllocationCommandResult Refused(
         FinanceContext context, CommandOutcome outcome, params ValidationIssue[] issues) =>
-        new(outcome, null, false, context.CorrelationId, issues);
+        new FinanceAllocationCommandResult(outcome, null, false, context.CorrelationId, issues);
 }
