@@ -37,7 +37,7 @@ public sealed class NormalJournalPostingRuleV1
         _accounts = new Dictionary<(string Key, PostingSide Side), AccountRef>();
         foreach (var entry in copy)
         {
-            if (entry is null || !Enum.IsDefined(entry.Side) || mirror.Find(entry.Account) is null)
+            if (entry is null || !Enum.IsDefined(entry.Side) || mirror.Lookup(entry.Account) is null)
             {
                 throw new AccountingDomainException(AccountingErrorCodes.InvalidReference,
                     "Each rule entry needs a known side and an exact account from the approved mirror.");
@@ -66,7 +66,7 @@ public sealed class NormalJournalPostingRuleV1
     public DateTimeOffset ApprovedAtUtc { get; }
     public IReadOnlyList<NormalJournalMappingV1> Mappings => _mappings;
 
-    public AccountRef? Find(string mappingKey, PostingSide side) =>
+    public AccountRef? Lookup(string mappingKey, PostingSide side) =>
         _accounts.TryGetValue((mappingKey, side), out var account) ? account : null;
 }
 
@@ -186,12 +186,12 @@ public sealed class NormalJournalDraftV1
         var missing = new List<string>();
         foreach (var line in proposed)
         {
-            var mapped = rule?.Find(line.MappingKey, line.Side);
+            var mapped = rule?.Lookup(line.MappingKey, line.Side);
             if (mapped is null || line.Account is null)
             {
                 missing.Add(line.MappingKey);
             }
-            else if (line.Account.Value != mapped.Value || mirror.Find(mapped.Value) is null)
+            else if (line.Account.Value != mapped.Value || mirror.Lookup(mapped.Value) is null)
             {
                 throw new AccountingDomainException(AccountingErrorCodes.InvalidReference,
                     "A caller-selected account cannot replace the approved mapping.");

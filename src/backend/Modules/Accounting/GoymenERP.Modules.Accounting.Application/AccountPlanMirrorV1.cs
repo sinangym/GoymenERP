@@ -98,7 +98,7 @@ public sealed class AccountPlanMirrorV1
     public AccountPlanMirrorRowV1? FindByCode(string? code) =>
         code is not null && _byCode.TryGetValue(code, out var row) ? row : null;
 
-    public AccountPlanMirrorRowV1? Find(AccountRef account) =>
+    public AccountPlanMirrorRowV1? Lookup(AccountRef account) =>
         account.CompanyId == CompanyId && _byId.TryGetValue(account.AccountId, out var row) ? row : null;
 
     // Compare values rather than object identity, so independently rehydrated snapshots work.
@@ -107,7 +107,7 @@ public sealed class AccountPlanMirrorV1
         && string.Equals(SourceSha256, other.SourceSha256, StringComparison.OrdinalIgnoreCase)
         && ApprovedByUserId == other.ApprovedByUserId && ApprovedAtUtc == other.ApprovedAtUtc
         && Rows.Count == other.Rows.Count
-        && Rows.All(row => other.Find(row.Account) is { } match
+        && Rows.All(row => other.Lookup(row.Account) is { } match
             && string.Equals(row.Code, match.Code, StringComparison.Ordinal)
             && string.Equals(row.Name, match.Name, StringComparison.Ordinal));
 

@@ -23,7 +23,7 @@ public sealed class AccountPlanMirrorV1Tests
         Assert.Equal(At, mirror.ApprovedAtUtc);
         Assert.Same(row, Assert.Single(mirror.Rows));
         Assert.Same(row, mirror.FindByCode("SENTETIK-001"));
-        Assert.Same(row, mirror.Find(row.Account));
+        Assert.Same(row, mirror.Lookup(row.Account));
         Assert.Equal("Örnek hesap / €", row.Name);
     }
 
@@ -132,8 +132,8 @@ public sealed class AccountPlanMirrorV1Tests
         Assert.Null(mirror.FindByCode(null));
         Assert.Null(mirror.FindByCode("SENTETIK-999"));
         Assert.Null(mirror.FindByCode(" SENTETIK-1"));
-        Assert.Null(mirror.Find(new AccountRef(Guid.NewGuid(), mirror.Rows[0].Account.AccountId)));
-        Assert.Null(mirror.Find(default));
+        Assert.Null(mirror.Lookup(new AccountRef(Guid.NewGuid(), mirror.Rows[0].Account.AccountId)));
+        Assert.Null(mirror.Lookup(default));
         Assert.Single(mirror.Rows);
     }
 
