@@ -26,7 +26,7 @@ public static class AccountingEndpoints
 
     private static readonly string[] BadRequestCodes = [AccountingApiCodes.RequestInvalid];
 
-    private static readonly string[] ConflictCodes =
+    private static readonly string[] PeriodConflictCodes =
     [
         AccountingApiCodes.IdempotencyConflict,
         AccountingApiCodes.VersionConflict,
@@ -34,12 +34,17 @@ public static class AccountingEndpoints
         AccountingStoreCodes.PeriodPreparerConflict,
         AccountingStoreCodes.PeriodOverlap,
         AccountingStoreCodes.ConcurrentChange,
+    ];
+
+    private static readonly string[] NormalJournalConflictCodes =
+    [
+        .. PeriodConflictCodes,
         NormalJournalDraftStoreCodesV1.ContentConflict,
         NormalJournalDraftStoreCodesV1.NotPending,
         NormalJournalDraftStoreCodesV1.PostingConflict,
     ];
 
-    private static readonly string[] UnprocessableCodes =
+    private static readonly string[] PeriodUnprocessableCodes =
     [
         AccountingErrorCodes.PeriodNotProposed,
         AccountingErrorCodes.PeriodNotOpen,
@@ -47,6 +52,11 @@ public static class AccountingEndpoints
         AccountingErrorCodes.PeriodInvalid,
         AccountingErrorCodes.InvalidReference,
         AccountingStoreCodes.ValueDoesNotFit,
+    ];
+
+    private static readonly string[] NormalJournalUnprocessableCodes =
+    [
+        .. PeriodUnprocessableCodes,
         AccountingErrorCodes.CompanyMismatch,
         AccountingErrorCodes.JournalTooFewLines,
         AccountingErrorCodes.JournalLineInvalid,
@@ -187,7 +197,7 @@ public static class AccountingEndpoints
             .WithName("CreateAccountingNormalJournalDraftV1")
             .Accepts<CreateNormalJournalDraftRequestV1>("application/json")
             .Produces<NormalJournalDraftViewV1>(StatusCodes.Status201Created)
-            .WithWriteProblems(notFound: false);
+            .WithWriteProblems(notFound: false, normalJournal: true);
 
         group.MapGet("/normal-journal-drafts/{draftId:guid}", async (
                 Guid draftId,
@@ -218,7 +228,7 @@ public static class AccountingEndpoints
             .WithName("ApproveAccountingNormalJournalDraftV1")
             .Accepts<ApproveNormalJournalDraftRequestV1>("application/json")
             .Produces<NormalJournalDraftViewV1>(StatusCodes.Status200OK)
-            .WithWriteProblems(notFound: true);
+            .WithWriteProblems(notFound: true, normalJournal: true);
 
         group.MapGet("/posting-queues", async (
                 AccountingApiService service,
@@ -246,14 +256,17 @@ public static class AccountingEndpoints
         return notFound ? builder.ProducesErpCodeLessNotFound() : builder;
     }
 
-    private static RouteHandlerBuilder WithWriteProblems(this RouteHandlerBuilder builder, bool notFound)
+    private static RouteHandlerBuilder WithWriteProblems(this RouteHandlerBuilder builder, bool notFound,
+        bool normalJournal = false)
     {
+        var conflictCodes = normalJournal ? NormalJournalConflictCodes : PeriodConflictCodes;
+        var unprocessableCodes = normalJournal ? NormalJournalUnprocessableCodes : PeriodUnprocessableCodes;
         builder
             .ProducesErpBadRequest(BadRequestCodes)
             .AllowsCodeLessErpBadRequestBody()
             .ProducesErpUnsupportedMediaType()
-            .ProducesErpConflict(ConflictCodes)
-            .ProducesErpUnprocessableEntity(UnprocessableCodes)
+            .ProducesErpConflict(conflictCodes)
+            .ProducesErpUnprocessableEntity(unprocessableCodes)
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
         return notFound ? builder.ProducesErpCodeLessNotFound() : builder;

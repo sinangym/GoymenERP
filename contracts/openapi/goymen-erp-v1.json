@@ -28729,9 +28729,6 @@
             },
             "x-erp-problem-codes": [
               "accounting_concurrent_change",
-              "accounting_normal_journal_draft_content_conflict",
-              "accounting_normal_journal_draft_not_pending",
-              "accounting_normal_journal_draft_posting_conflict",
               "accounting_period_conflict",
               "accounting_period_overlap",
               "accounting_period_preparer_conflict",
@@ -28760,14 +28757,8 @@
               }
             },
             "x-erp-problem-codes": [
-              "accounting_company_mismatch",
               "accounting_invalid_reference",
-              "accounting_journal_line_invalid",
-              "accounting_journal_too_few_lines",
-              "accounting_journal_unbalanced",
               "accounting_period_already_closed",
-              "accounting_period_closed",
-              "accounting_period_does_not_cover_date",
               "accounting_period_invalid",
               "accounting_period_not_open",
               "accounting_period_not_proposed",
@@ -29296,9 +29287,6 @@
             },
             "x-erp-problem-codes": [
               "accounting_concurrent_change",
-              "accounting_normal_journal_draft_content_conflict",
-              "accounting_normal_journal_draft_not_pending",
-              "accounting_normal_journal_draft_posting_conflict",
               "accounting_period_conflict",
               "accounting_period_overlap",
               "accounting_period_preparer_conflict",
@@ -29327,14 +29315,8 @@
               }
             },
             "x-erp-problem-codes": [
-              "accounting_company_mismatch",
               "accounting_invalid_reference",
-              "accounting_journal_line_invalid",
-              "accounting_journal_too_few_lines",
-              "accounting_journal_unbalanced",
               "accounting_period_already_closed",
-              "accounting_period_closed",
-              "accounting_period_does_not_cover_date",
               "accounting_period_invalid",
               "accounting_period_not_open",
               "accounting_period_not_proposed",
@@ -29676,9 +29658,6 @@
             },
             "x-erp-problem-codes": [
               "accounting_concurrent_change",
-              "accounting_normal_journal_draft_content_conflict",
-              "accounting_normal_journal_draft_not_pending",
-              "accounting_normal_journal_draft_posting_conflict",
               "accounting_period_conflict",
               "accounting_period_overlap",
               "accounting_period_preparer_conflict",
@@ -29707,14 +29686,8 @@
               }
             },
             "x-erp-problem-codes": [
-              "accounting_company_mismatch",
               "accounting_invalid_reference",
-              "accounting_journal_line_invalid",
-              "accounting_journal_too_few_lines",
-              "accounting_journal_unbalanced",
               "accounting_period_already_closed",
-              "accounting_period_closed",
-              "accounting_period_does_not_cover_date",
               "accounting_period_invalid",
               "accounting_period_not_open",
               "accounting_period_not_proposed",
