@@ -762,9 +762,11 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
                    "SENTETIK-payment-document", Guid.NewGuid().ToString("N"), documentRequest)))
         {
             Assert.Equal(HttpStatusCode.ServiceUnavailable, unavailable.StatusCode);
-            var result = await Json(unavailable);
-            Assert.Equal("Unavailable", result.GetProperty("outcome").GetString());
-            Assert.Equal("finance_manual_bank_payment_document_unavailable", Issue(result));
+            Assert.Equal("application/problem+json", unavailable.Content.Headers.ContentType?.MediaType);
+            var problem = await Json(unavailable);
+            Assert.Equal(503, problem.GetProperty("status").GetInt32());
+            Assert.False(problem.TryGetProperty("outcome", out _));
+            Assert.False(problem.TryGetProperty("issues", out _));
         }
 
         await using (var context = run.Context(CompanyA))
