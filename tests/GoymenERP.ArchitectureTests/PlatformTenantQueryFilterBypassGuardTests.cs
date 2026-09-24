@@ -149,7 +149,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // inventory
             ["tools/relational_inventory/inventory.txt"] =
-                "8af0ea5b42c1794797eef0d53e91184618f0e0a9c6cb38c659b3ac20fd955c1b",
+                "21a366cf962207e6ad2ab0397d4bf17d7d51fd4d124a2266cee06752cea7bc93",
 
             // logistics
             ["tools/relational_inventory/logistics.txt"] =
@@ -244,7 +244,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // row and AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
              + "Persistence/InventoryDbContext.cs"] =
-                "9dee97ca9ca55ae7befcbb3a06b8b3e18de5c584d9ae5dbad737766971bdb192",
+                "e0817ec13105281deb66f8a2234d3fa47dc56eca2352713af63287e35f2682ae",
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "Persistence/ProductDbContext.cs"] =
                 "0ba53cfdf07084818f737c9f21b2ce4a04a44f5fe89603a89f31791c5b4871da",
@@ -263,6 +263,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string ReviewedInventoryGoodsReceiptParticipantPath =
         "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
         + "Persistence/InventoryGoodsReceiptParticipant.cs";
+    private const string ReviewedInventoryManufacturingRealizationParticipantPath =
+        "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
+        + "Persistence/InventoryManufacturingRealizationParticipant.cs";
     private const string ReviewedPurchaseAcceptanceParticipantPath =
         "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
         + "Persistence/PurchaseAcceptanceParticipant.cs";
@@ -272,6 +275,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             {
                 [ReviewedInventoryDefiniteShipmentParticipantPath] = ("InventoryDbContext", 1),
                 [ReviewedInventoryGoodsReceiptParticipantPath] = ("InventoryDbContext", 1),
+                [ReviewedInventoryManufacturingRealizationParticipantPath] = ("InventoryDbContext", 1),
                 [ReviewedPurchaseAcceptanceParticipantPath] = ("PurchasingDbContext", 3)
             };
     private const string ReviewedManualBankPaymentServicePath =
@@ -609,6 +613,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                             ["Microsoft.Data.SqlClient"] = 1,
                             ["DbConnection"] = 3
                         }),
+                // R17: the Manufacturing realization participant owns one Inventory transaction and
+                // one reviewed provider connection; exact source/count drift remains fail-closed.
+                [ReviewedInventoryManufacturingRealizationParticipantPath] =
+                    new(
+                        "12f01ded4665766d47dfd3a88711a439fc3055ce8784bfe317d55aa58e91fae1",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["System.Data.Common"] = 1,
+                            ["Microsoft.Data.SqlClient"] = 1,
+                            ["DbConnection"] = 3
+                        }),
                 [ReviewedPurchaseAcceptanceParticipantPath] =
                     new(
                         "c1932860818df6628368bee24a17a3e48d892c6f513313d953e94adf0e39358d",
@@ -834,6 +849,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         { ["Sql"] = 1 }),
                 ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20260924013338_AddInventoryPhysicalAllocationLifecycle.cs"] =
                     new("5452302167c69f77c89c1cd44e3c4d90639df7bb4020e15f54a01309bd18e3a0",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // R17: Down refuses before dropping manufacturing-return state while durable facts exist.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20260924193000_AddInventoryManufacturingReturn.cs"] =
+                    new("a75260a68cb041c3c3f1bb63141e6ef719a4a556391bfa43b0c1f1aef4fd7c34",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/Persistence/Migrations/20260912175128_InitialProductDrafts.cs"] =

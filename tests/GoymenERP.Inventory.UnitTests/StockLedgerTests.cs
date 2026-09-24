@@ -21,6 +21,35 @@ public sealed class StockLedgerTests
     }
 
     [Fact]
+    public void A_production_return_adds_to_the_existing_label_without_reinterpreting_it_as_a_receipt()
+    {
+        var ledger = new StockLedger();
+        ledger.Apply(Receipt(Position(), 100m));
+        ledger.Apply(Issue(Position(), 40m));
+
+        ledger.Apply(Movement(StockMovementKind.Return, In(Position(), 15m)));
+
+        Assert.Equal(75m, ledger.QuantityAt(Position()).Value);
+        Assert.Equal(75m, ledger.PhysicalTotal(CompanyA, OwnedByA, BandProduct).Value);
+        Assert.Equal(InventoryRuleCodes.LabelAlreadyInStock,
+            Assert.Throws<InventoryRuleException>(() => ledger.Apply(Receipt(Position(), 1m))).Code);
+    }
+
+    [Fact]
+    public void A_production_return_cannot_make_one_label_exist_in_two_physical_places()
+    {
+        var ledger = new StockLedger();
+        ledger.Apply(Receipt(Position(), 100m));
+        ledger.Apply(Issue(Position(), 40m));
+
+        var error = Assert.Throws<InventoryRuleException>(() => ledger.Apply(
+            Movement(StockMovementKind.Return, In(Position(location: Warehouse2), 15m))));
+
+        Assert.Equal(InventoryRuleCodes.LabelInTwoPositions, error.Code);
+        Assert.Equal(60m, ledger.QuantityAt(Position()).Value);
+    }
+
+    [Fact]
     public void Physical_stock_never_goes_below_zero()
     {
         var ledger = new StockLedger();
