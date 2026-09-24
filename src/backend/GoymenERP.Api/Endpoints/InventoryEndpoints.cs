@@ -77,6 +77,7 @@ public static class InventoryEndpoints
             .ProducesErpCodeLessNotFound()
             .ProducesErpAuthenticatedProblems();
 
+        MapLabelDetailEndpoint(endpoints);
         MapParentRollCandidateEndpoint(endpoints);
         MapStockPositionEndpoint(endpoints);
         endpoints.MapInventoryReferenceEndpoints();
@@ -84,6 +85,66 @@ public static class InventoryEndpoints
         MapOpeningCountEndpoints(group);
         return endpoints;
     }
+
+    private static void MapLabelDetailEndpoint(IEndpointRouteBuilder endpoints)
+    {
+        endpoints.MapGet(InventoryLabelDetailApiV1.DetailPath, async (
+                Guid labelId,
+                HttpContext httpContext,
+                IInventoryLabelDetailsV1 details,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response);
+                try
+                {
+                    return Results.Ok(await details.GetAsync(labelId, cancellationToken));
+                }
+                catch (InventoryLabelDetailException exception)
+                {
+                    return exception.StatusCode switch
+                    {
+                        StatusCodes.Status404NotFound =>
+                            LabelDetailProblem(StatusCodes.Status404NotFound),
+                        StatusCodes.Status409Conflict
+                            when exception.Code == InventoryLabelDetailCodesV1.ReadConflict =>
+                            LabelDetailProblem(exception.StatusCode, exception.Code),
+                        StatusCodes.Status503ServiceUnavailable
+                            when exception.Code == InventoryLabelDetailCodesV1.Unavailable =>
+                            LabelDetailProblem(exception.StatusCode, exception.Code),
+                        StatusCodes.Status401Unauthorized or StatusCodes.Status403Forbidden =>
+                            LabelDetailProblem(exception.StatusCode),
+                        _ => LabelDetailProblem(
+                            StatusCodes.Status503ServiceUnavailable,
+                            InventoryLabelDetailCodesV1.Unavailable),
+                    };
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception)
+                {
+                    return LabelDetailProblem(
+                        StatusCodes.Status503ServiceUnavailable,
+                        InventoryLabelDetailCodesV1.Unavailable);
+                }
+            })
+            .WithName(InventoryLabelDetailApiV1.GetDetailOperationId)
+            .WithTags("Inventory")
+            .WithMetadata(new PrivateNoStoreOnAuthorizationFailureMetadata())
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.InventoryLabelsRead, ErpPermissions.InventoryBalancesRead)
+            .Produces<InventoryLabelDetailV1>(StatusCodes.Status200OK)
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(InventoryLabelDetailCodesV1.ReadConflict)
+            .ProducesErpServiceUnavailable(InventoryLabelDetailCodesV1.Unavailable)
+            .ProducesErpAuthenticatedProblems();
+    }
+
+    private static IResult LabelDetailProblem(int statusCode, string? code = null) => code is null
+        ? Results.Problem(statusCode: statusCode)
+        : Results.Problem(statusCode: statusCode,
+            extensions: new Dictionary<string, object?> { ["code"] = code });
 
     private static void MapParentRollCandidateEndpoint(IEndpointRouteBuilder endpoints)
     {

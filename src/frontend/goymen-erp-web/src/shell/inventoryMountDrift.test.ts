@@ -7,6 +7,7 @@ import {
   INVENTORY_STOCK_POSITIONS_ROUTE,
 } from '../inventory/capabilities'
 import { inventoryRoutes } from '../inventory/inventoryRoutes'
+import { INVENTORY_LABEL_DETAIL_ROUTE } from '../inventory/labelDetailRoute'
 import { NAV_CAPABILITIES } from './AppShell'
 import { CAPABILITY, CAPABILITY_NAV_LABEL, CAPABILITY_ROUTE } from './capabilities'
 
@@ -20,9 +21,12 @@ describe('shell ↔ Inventory opening-stock contract', () => {
     expect(CAPABILITY_ROUTE[CAPABILITY.inventoryStockPositionsList]).toBe(INVENTORY_STOCK_POSITIONS_ROUTE)
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.inventoryStockPositionsList]).toBe('Stok / Malzeme Pozisyonu')
     expect(NAV_CAPABILITIES.filter((item) => item === INVENTORY_STOCK_POSITIONS_CAPABILITY)).toHaveLength(1)
-    expect(inventoryRoutes).toHaveLength(4)
+    expect(inventoryRoutes).toHaveLength(5)
     expect(matchRoutes(inventoryRoutes, INVENTORY_STOCK_POSITIONS_ROUTE)?.at(-1)?.route.path).toBe(
       INVENTORY_STOCK_POSITIONS_ROUTE.slice(1),
+    )
+    expect(matchRoutes(inventoryRoutes, '/stok/etiket/label-1')?.at(-1)?.route.path).toBe(
+      INVENTORY_LABEL_DETAIL_ROUTE.slice(1),
     )
   })
 
