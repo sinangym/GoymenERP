@@ -1,3 +1,5 @@
+using System.Data.Common;
+using System.Globalization;
 using GoymenERP.Api.ManufacturingRuntime;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
@@ -16,6 +18,7 @@ using GoymenERP.Modules.Manufacturing.Domain.Plans;
 using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence;
 using GoymenERP.Modules.Settings.Application;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using InventoryKilograms = GoymenERP.Modules.Inventory.Domain.Quantities.Kilograms;
 
@@ -42,19 +45,25 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         var firstMetadata = ManufacturingHostMetadata(run, "commit-first");
 
         var recorded = await scope.Host.IssueAsync(command, firstMetadata);
-        var sameKeyReplay = await scope.Host.IssueAsync(command,
-            firstMetadata with { CorrelationId = $"mfg-host-same-key-{Guid.NewGuid():N}" });
-        var differentKeyReplay = await scope.Host.IssueAsync(command,
-            ManufacturingHostMetadata(run, "commit-different-key"));
+        Assert.Equal(ManufacturingWriteOutcome.Recorded, await scope.Store.RecordWorkInProgressAsync(
+            command.OrderId, recorded.OrderVersion, Guid.NewGuid(), command.ParentLabelId,
+            new Kilograms(5m), command.OccurredAtUtc.AddMinutes(1),
+            ManufacturingHostMetadata(run, "advance-order")));
+        var sameKeyMetadata = firstMetadata with { CorrelationId = $"mfg-host-same-key-{Guid.NewGuid():N}" };
+        var differentKeyMetadata = ManufacturingHostMetadata(run, "commit-different-key");
+        var sameKeyReplay = await scope.Host.IssueAsync(command, sameKeyMetadata);
+        var differentKeyReplay = await scope.Host.IssueAsync(command, differentKeyMetadata);
 
         Assert.False(recorded.IsReplay);
         Assert.True(sameKeyReplay.IsReplay);
         Assert.True(differentKeyReplay.IsReplay);
         Assert.Equal(2, recorded.OrderVersion);
+        Assert.Equal(recorded.OrderVersion, sameKeyReplay.OrderVersion);
+        Assert.Equal(recorded.OrderVersion, differentKeyReplay.OrderVersion);
         Assert.Equal(3, recorded.ParentLabelVersion);
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM manufacturing.Facts WHERE Id = @id", ("@id", command.IssueId)));
-        Assert.Equal(2L, await run.ScalarAsync<long>(
+        Assert.Equal(3L, await run.ScalarAsync<long>(
             "SELECT Version FROM manufacturing.Orders WHERE Id = @id", ("@id", command.OrderId)));
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM inventory.Movements WHERE Id = @id", ("@id", command.MovementId)));
@@ -68,6 +77,10 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         Assert.Equal(2, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @correlation",
             ("@correlation", firstMetadata.CorrelationId)));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId IN (@sameKey, @differentKey)",
+            ("@sameKey", sameKeyMetadata.CorrelationId),
+            ("@differentKey", differentKeyMetadata.CorrelationId)));
 
         // A fact written before this host existed must not be silently completed later. The
         // participant reaches its staged callback, the host rejects the incomplete pair, and the
@@ -86,6 +99,44 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
             "SELECT COUNT(*) FROM inventory.Movements WHERE Id = @id", ("@id", legacy.MovementId)));
         Assert.Equal(0, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM inventory.Commands WHERE TargetId = @id", ("@id", legacy.IssueId)));
+    }
+
+    [SqlServerFact]
+    public async Task Manufacturing_input_issue_refuses_inventory_orphan_without_backfilling_manufacturing()
+    {
+        await using var run = await StartManufacturingInventoryRunAsync();
+        var parent = await SeedManufacturingParentAsync(run, "SYN-MFG-HOST-INVENTORY-ORPHAN", 100m);
+        var authority = new ManufacturingHostAuthority(GrantedManufacturingScope());
+        await using var scope = ManufacturingHostScope.Create(run, CompanyA, authority);
+        var command = await SeedManufacturingOrderAsync(run, scope.Store, parent.Label.Id, 2, 25m);
+        var metadata = ManufacturingHostMetadata(run, "inventory-orphan");
+
+        var orphan = await CommitInventoryOrphanAsync(run, command, metadata, expectedLabelVersion: 2);
+        Assert.False(orphan.IsReplay);
+        var auditCount = await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @correlation",
+            ("@correlation", metadata.CorrelationId));
+
+        var error = await Assert.ThrowsAsync<ManufacturingInventoryInputIssueHostException>(() =>
+            scope.Host.IssueAsync(command, metadata));
+
+        Assert.Equal(ManufacturingInventoryInputIssueHostCodes.IncompleteRealization, error.Code);
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM manufacturing.Facts WHERE Id = @id", ("@id", command.IssueId)));
+        Assert.Equal(1L, await run.ScalarAsync<long>(
+            "SELECT Version FROM manufacturing.Orders WHERE Id = @id", ("@id", command.OrderId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Movements WHERE Id = @id", ("@id", command.MovementId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Commands WHERE TargetId = @id", ("@id", command.IssueId)));
+        Assert.Equal(75m, await run.ScalarAsync<decimal>(
+            "SELECT QuantityKg FROM inventory.Balances WHERE LabelId = @label AND Block = 1",
+            ("@label", command.ParentLabelId)));
+        Assert.Equal(3L, await run.ScalarAsync<long>(
+            "SELECT Version FROM inventory.Labels WHERE Id = @label", ("@label", command.ParentLabelId)));
+        Assert.Equal(auditCount, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @correlation",
+            ("@correlation", metadata.CorrelationId)));
     }
 
     [SqlServerFact]
@@ -267,6 +318,43 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         await run.ScalarAsync<Guid>(
             "SELECT TOP (1) Id FROM organization.Locations WHERE CompanyId = @company ORDER BY Id",
             ("@company", companyId));
+
+    private static async Task<InventoryManufacturingInputIssueResultV1> CommitInventoryOrphanAsync(
+        Run run,
+        ManufacturingInventoryInputIssueCommand command,
+        ManufacturingCommandMetadata metadata,
+        long expectedLabelVersion)
+    {
+        var request = new InventoryManufacturingInputIssueRequestV1(
+            CompanyA,
+            command.OrderId,
+            command.IssueId,
+            checked(command.ExpectedOrderVersion + 1).ToString(CultureInfo.InvariantCulture),
+            command.ParentLabelId,
+            expectedLabelVersion.ToString(CultureInfo.InvariantCulture),
+            command.MovementId,
+            command.Quantity.Value.ToString("0.###", CultureInfo.InvariantCulture),
+            command.OccurredAtUtc);
+        var inventoryMetadata = new InventoryCommandMetadata(
+            metadata.ActorId,
+            metadata.PermissionCode,
+            metadata.RoleCodes,
+            metadata.CorrelationId,
+            metadata.CausationId,
+            $"manufacturing-input-issue:{CompanyA:N}:{command.OrderId:N}:{command.IssueId:N}",
+            metadata.SourceChannel,
+            metadata.ClientIpAddress,
+            metadata.UserAgent);
+
+        await using var connection = new SqlConnection(run.Factory.DatabaseConnectionString);
+        await connection.OpenAsync();
+        await using var transaction = (DbTransaction)await connection.BeginTransactionAsync();
+        await using var participant = await InventoryManufacturingRealizationParticipant.EnlistAsync(
+            connection, transaction, CompanyA, ManufacturingSettings(run));
+        var result = await participant.StageInputIssueAsync(request, inventoryMetadata);
+        await transaction.CommitAsync();
+        return result;
+    }
 
     private static InventoryDbContext InventoryHostContext(Run run, Guid companyId)
     {

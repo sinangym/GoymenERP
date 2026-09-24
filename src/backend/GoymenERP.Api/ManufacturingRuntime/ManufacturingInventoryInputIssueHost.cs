@@ -56,12 +56,20 @@ internal sealed class ManufacturingInventoryInputIssueHost(
                     ManufacturingInventoryInputIssueHostCodes.MissingParentLabelVersion);
             }
 
+            var realizationOrderVersion = checked(command.ExpectedOrderVersion + 1);
+            if (manufacturingOutcome == ManufacturingWriteOutcome.Recorded
+                && stored.Version != realizationOrderVersion)
+            {
+                throw new ManufacturingInventoryInputIssueHostException(
+                    ManufacturingInventoryInputIssueHostCodes.IncompleteRealization);
+            }
+
             var inventoryMetadata = InventoryMetadata(metadata, companyId, command);
             var request = new InventoryManufacturingInputIssueRequestV1(
                 companyId,
                 command.OrderId,
                 command.IssueId,
-                stored.Version.ToString(CultureInfo.InvariantCulture),
+                realizationOrderVersion.ToString(CultureInfo.InvariantCulture),
                 command.ParentLabelId,
                 expectedLabelVersion.ToString(CultureInfo.InvariantCulture),
                 command.MovementId,
@@ -88,8 +96,10 @@ internal sealed class ManufacturingInventoryInputIssueHost(
                     }
                 });
             var inventoryResult = await inventory.StageInputIssueAsync(request, inventoryMetadata, cancellationToken);
-            if (manufacturingOutcome == ManufacturingWriteOutcome.Replayed && !inventoryResult.IsReplay)
+            if ((manufacturingOutcome == ManufacturingWriteOutcome.Replayed) != inventoryResult.IsReplay)
             {
+                // Both module effects must have been born in the same owner transaction. Neither
+                // a legacy Manufacturing fact nor an orphan Inventory movement is repaired here.
                 throw new ManufacturingInventoryInputIssueHostException(
                     ManufacturingInventoryInputIssueHostCodes.IncompleteRealization);
             }
@@ -116,7 +126,7 @@ internal sealed class ManufacturingInventoryInputIssueHost(
             return new ManufacturingInventoryInputIssueResult(
                 command.OrderId,
                 command.IssueId,
-                stored.Version,
+                realizationOrderVersion,
                 command.ParentLabelId,
                 parentLabelVersion,
                 command.MovementId,
