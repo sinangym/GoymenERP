@@ -81,7 +81,8 @@ describe('manual bank payment pages', () => {
     const record = vi.fn(async () => success(view('Recorded')))
     const open = vi.fn()
     render(<FinancePortProvider port={provider({ manualBankPaymentDetail: detail, recordManualBankPayment: record })}>
-      <ManualBankPaymentDetailPage companyId={COMPANY} actorId="checker" paymentId={PAYMENT} onOpen={open} />
+      <ManualBankPaymentDetailPage companyId={COMPANY} actorId="checker" paymentId={PAYMENT}
+        canApprove={false} canRecord onOpen={open} />
     </FinancePortProvider>)
     const recordButton = await screen.findByRole('button', { name: 'Kesin kaydet' })
     expect((recordButton as HTMLButtonElement).disabled).toBe(true)
@@ -99,12 +100,33 @@ describe('manual bank payment pages', () => {
     const detail = vi.fn(async () => ({ kind: 'body' as const, body: { outcome: 'Found', resource: view('Draft') } }))
     const approve = vi.fn(async () => success(view('Approved')))
     render(<FinancePortProvider port={provider({ manualBankPaymentDetail: detail, approveManualBankPayment: approve })}>
-      <ManualBankPaymentDetailPage companyId={COMPANY} actorId="checker" paymentId={PAYMENT} onOpen={() => undefined} />
+      <ManualBankPaymentDetailPage companyId={COMPANY} actorId="checker" paymentId={PAYMENT}
+        canApprove canRecord onOpen={() => undefined} />
     </FinancePortProvider>)
     fireEvent.click(await screen.findByRole('button', { name: 'Onayla' }))
     await waitFor(() => expect(approve).toHaveBeenCalledWith(
       { companyId: COMPANY }, expect.any(String), { paymentId: PAYMENT, expectedVersion: '1' },
     ))
     await screen.findByRole('button', { name: 'Kesin kaydet' })
+  })
+
+  it('hides approval and record controls without their capabilities', async () => {
+    const draftDetail = vi.fn(async () => ({ kind: 'body' as const, body: { outcome: 'Found', resource: view('Draft') } }))
+    const draft = render(<FinancePortProvider port={provider({ manualBankPaymentDetail: draftDetail })}>
+      <ManualBankPaymentDetailPage companyId={COMPANY} actorId="checker" paymentId={PAYMENT}
+        canApprove={false} canRecord={false} onOpen={() => undefined} />
+    </FinancePortProvider>)
+    await screen.findByText('1250.50')
+    expect(screen.queryByRole('button', { name: 'Onayla' })).toBeNull()
+    draft.unmount()
+
+    const approvedDetail = vi.fn(async () => ({ kind: 'body' as const, body: { outcome: 'Found', resource: view('Approved') } }))
+    render(<FinancePortProvider port={provider({ manualBankPaymentDetail: approvedDetail })}>
+      <ManualBankPaymentDetailPage companyId={COMPANY} actorId="checker" paymentId={PAYMENT}
+        canApprove={false} canRecord={false} onOpen={() => undefined} />
+    </FinancePortProvider>)
+    await screen.findByText('Approved')
+    expect(screen.queryByLabelText('Banka sonucu gerçekleşti')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Kesin kaydet' })).toBeNull()
   })
 })

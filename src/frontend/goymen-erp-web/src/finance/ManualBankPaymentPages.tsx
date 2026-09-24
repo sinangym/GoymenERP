@@ -181,8 +181,15 @@ export function ManualBankPaymentDetailPage({
   companyId,
   actorId,
   paymentId,
+  canApprove,
+  canRecord,
   onOpen,
-}: CommonProps & { readonly actorId: string; readonly paymentId: string }) {
+}: CommonProps & {
+  readonly actorId: string
+  readonly paymentId: string
+  readonly canApprove: boolean
+  readonly canRecord: boolean
+}) {
   const port = useFinancePort()
   const [payment, setPayment] = useState<ManualBankPaymentView | null>(null)
   const [message, setMessage] = useState('Yükleniyor')
@@ -206,7 +213,9 @@ export function ManualBankPaymentDetailPage({
   }, [companyId, paymentId, port])
 
   const settle = async (operation: 'approve' | 'record') => {
-    if (port === null || payment === null || busy) return
+    if (port === null || payment === null || busy
+      || (operation === 'approve' && !canApprove)
+      || (operation === 'record' && !canRecord)) return
     setBusy(true)
     const reply = operation === 'approve'
       ? await port.approveManualBankPayment({ companyId }, key(), { paymentId, expectedVersion: payment.version })
@@ -234,9 +243,9 @@ export function ManualBankPaymentDetailPage({
     <section>
       <h1>Giden banka ödemesi</h1>
       <PaymentFacts payment={payment} />
-      {payment.status === 'Draft' && payment.preparedBy !== actorId
+      {canApprove && payment.status === 'Draft' && payment.preparedBy !== actorId
         ? <button type="button" disabled={busy} onClick={() => void settle('approve')}>Onayla</button> : null}
-      {payment.status === 'Approved' ? <>
+      {canRecord && payment.status === 'Approved' ? <>
         <label><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} />Banka sonucu gerçekleşti</label>
         <button type="button" disabled={busy || !confirmed} onClick={() => void settle('record')}>Kesin kaydet</button>
       </> : null}
