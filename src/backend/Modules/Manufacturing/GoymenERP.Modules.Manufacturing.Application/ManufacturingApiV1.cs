@@ -40,6 +40,21 @@ public sealed record CloseOrderRequestV1(long ExpectedVersion);
 public sealed record RecordFactRequestV1(
     Guid FactId, long ExpectedVersion, Guid ParentRollId, string? Kg, DateTimeOffset? OccurredAtUtc);
 
+public sealed record IssueInventoryInputRequestV1(
+    Guid IssueId, long ExpectedVersion, Guid ParentRollId, Guid MovementId, string? Kg,
+    DateTimeOffset? OccurredAtUtc);
+
+public sealed record ReturnInventoryInputRequestV1(
+    Guid ReturnId, long ExpectedVersion, Guid ParentRollId, string? ExpectedParentLabelVersion,
+    Guid MovementId, string? Kg, DateTimeOffset? OccurredAtUtc);
+
+public sealed record DeclareInventoryOutputRequestV1(
+    Guid OutputId, long ExpectedVersion, Guid ParentRollId, string? ExpectedParentLabelVersion,
+    string? OutputClass, Guid ProductId, string? ExpectedProductVersion, Guid LotId, Guid LabelId,
+    string? LabelCode, string? HeatNumber, string? CoilNumber, IReadOnlyList<string>? RequiredDocuments,
+    string? OwnerKind, Guid OwnerId, string? CustodianKind, Guid CustodianId, Guid LocationId,
+    string? InitialBlock, Guid MovementId, string? Kg, DateTimeOffset? OccurredAtUtc);
+
 /// <summary><see cref="OutputClass"/> is one of the five <c>OutputClass</c> names.</summary>
 public sealed record DeclareOutputRequestV1(
     Guid FactId, long ExpectedVersion, Guid ParentRollId, string? OutputClass, string? Kg, DateTimeOffset? OccurredAtUtc);
@@ -197,7 +212,9 @@ public sealed partial class ManufacturingCommandService(
     ICorrelationContext correlation,
     TimeProvider timeProvider,
     IInventoryParentRollValidationV1? parentRolls = null,
-    IOrganizationWorkCenterPlanningReferenceV1? workCenters = null)
+    IOrganizationWorkCenterPlanningReferenceV1? workCenters = null,
+    IManufacturingInventoryInputIssuePortV1? inventoryInputIssues = null,
+    IManufacturingInventoryReturnOutputPortV1? inventoryReturnsAndOutputs = null)
 {
     /// <summary>Any integer mantissa of this many digits fits a decimal's 96 bits, so such a text converts exactly.</summary>
     private const int ExactDecimalDigits = 28;
@@ -367,6 +384,142 @@ public sealed partial class ManufacturingCommandService(
             }, stored => OrderView((ProductionOrder)stored), cancellationToken);
     }
 
+    public Task<ManufacturingApiResult<OrderViewV1>> IssueInventoryInputAsync(
+        Guid orderId,
+        IssueInventoryInputRequestV1? request,
+        string idempotencyKey,
+        string permission,
+        CancellationToken cancellationToken)
+    {
+        if (orderId == Guid.Empty || request is null || request.IssueId == Guid.Empty
+            || request.ParentRollId == Guid.Empty || request.MovementId == Guid.Empty
+            || request.MovementId == request.IssueId || request.ExpectedVersion <= 0)
+        {
+            return Task.FromResult(Invalid<OrderViewV1>("fact"));
+        }
+
+        if (ParseKg(request.Kg) is not { } kg)
+        {
+            return Task.FromResult(Invalid<OrderViewV1>("kg"));
+        }
+
+        if (request.OccurredAtUtc is not { } occurredAt || occurredAt.Offset != TimeSpan.Zero)
+        {
+            return Task.FromResult(Invalid<OrderViewV1>("occurredAtUtc"));
+        }
+
+        var canonical = new
+        {
+            orderId,
+            issueId = request.IssueId,
+            expectedVersion = request.ExpectedVersion,
+            parentLabelId = request.ParentRollId,
+            movementId = request.MovementId,
+            kg = Text(kg),
+            occurredAtUtc = occurredAt.UtcDateTime.ToString("O", CultureInfo.InvariantCulture),
+        };
+
+        return RunAsync<OrderViewV1>(permission, idempotencyKey, ManufacturingCommandNames.IssueInput,
+            canonical, ManufacturingApiStatus.Ok, async (metadata, _) =>
+            {
+                if (inventoryInputIssues is null)
+                {
+                    return new ManufacturingApiResult<OrderViewV1>(ManufacturingApiStatus.Unavailable, null, false,
+                        InventoryManufacturingRealizationCodesV1.Unavailable);
+                }
+
+                var mass = await VerifyAsync(kg, DateOnly.FromDateTime(occurredAt.UtcDateTime), "kg", cancellationToken);
+                if (mass.Refusal is not null)
+                {
+                    return Refusal<OrderViewV1>(mass.Refusal);
+                }
+
+                if (await FenceAsync<OrderViewV1>(permission, cancellationToken) is { } fenced)
+                {
+                    return fenced;
+                }
+
+                var outcome = await inventoryInputIssues.IssueAsync(
+                    new ManufacturingInventoryInputIssuePortCommandV1(
+                        orderId, request.ExpectedVersion, request.IssueId, request.ParentRollId,
+                        request.MovementId, mass.Value, occurredAt),
+                    metadata, cancellationToken);
+                return await OrderResultAsync(orderId, ManufacturingApiStatus.Ok, outcome.IsReplay, cancellationToken);
+            }, stored => OrderView((ProductionOrder)stored), cancellationToken);
+    }
+
+    public Task<ManufacturingApiResult<OrderViewV1>> ReturnInventoryInputAsync(
+        Guid orderId,
+        ReturnInventoryInputRequestV1? request,
+        string idempotencyKey,
+        string permission,
+        CancellationToken cancellationToken)
+    {
+        if (orderId == Guid.Empty || request is null || request.ReturnId == Guid.Empty
+            || request.ParentRollId == Guid.Empty || request.MovementId == Guid.Empty
+            || request.MovementId == request.ReturnId || request.ExpectedVersion <= 0)
+        {
+            return Task.FromResult(Invalid<OrderViewV1>("fact"));
+        }
+
+        if (!IsPositiveCanonicalInt64(request.ExpectedParentLabelVersion))
+        {
+            return Task.FromResult(Invalid<OrderViewV1>("expectedParentLabelVersion"));
+        }
+
+        if (ParseKg(request.Kg) is not { } kg)
+        {
+            return Task.FromResult(Invalid<OrderViewV1>("kg"));
+        }
+
+        if (request.OccurredAtUtc is not { } occurredAt || occurredAt.Offset != TimeSpan.Zero)
+        {
+            return Task.FromResult(Invalid<OrderViewV1>("occurredAtUtc"));
+        }
+
+        var expectedParentLabelVersion = long.Parse(
+            request.ExpectedParentLabelVersion!, CultureInfo.InvariantCulture);
+        var canonical = new
+        {
+            orderId,
+            returnId = request.ReturnId,
+            expectedVersion = request.ExpectedVersion,
+            parentLabelId = request.ParentRollId,
+            expectedParentLabelVersion,
+            movementId = request.MovementId,
+            kg = Text(kg),
+            occurredAtUtc = occurredAt.UtcDateTime.ToString("O", CultureInfo.InvariantCulture),
+        };
+
+        return RunAsync<OrderViewV1>(permission, idempotencyKey, ManufacturingCommandNames.ReturnInput,
+            canonical, ManufacturingApiStatus.Ok, async (metadata, _) =>
+            {
+                if (inventoryReturnsAndOutputs is null)
+                {
+                    return new ManufacturingApiResult<OrderViewV1>(ManufacturingApiStatus.Unavailable, null, false,
+                        InventoryManufacturingRealizationCodesV1.Unavailable);
+                }
+
+                var mass = await VerifyAsync(kg, DateOnly.FromDateTime(occurredAt.UtcDateTime), "kg", cancellationToken);
+                if (mass.Refusal is not null)
+                {
+                    return Refusal<OrderViewV1>(mass.Refusal);
+                }
+
+                if (await FenceAsync<OrderViewV1>(permission, cancellationToken) is { } fenced)
+                {
+                    return fenced;
+                }
+
+                var outcome = await inventoryReturnsAndOutputs.ReturnAsync(
+                    new ManufacturingInventoryInputReturnPortCommandV1(
+                        orderId, request.ExpectedVersion, request.ReturnId, request.ParentRollId,
+                        expectedParentLabelVersion, request.MovementId, mass.Value, occurredAt),
+                    metadata, cancellationToken);
+                return await OrderResultAsync(orderId, ManufacturingApiStatus.Ok, outcome.IsReplay, cancellationToken);
+            }, stored => OrderView((ProductionOrder)stored), cancellationToken);
+    }
+
     public Task<ManufacturingApiResult<OrderViewV1>> IssueInputAsync(Guid orderId, RecordFactRequestV1? request,
         string idempotencyKey, string permission, CancellationToken cancellationToken) =>
         RecordAsync(orderId, request, outputClass: null, idempotencyKey, permission, ManufacturingCommandNames.IssueInput,
@@ -385,6 +538,137 @@ public sealed partial class ManufacturingCommandService(
             ManufacturingCommandNames.RecordWorkInProgress,
             (fact, mass, at, metadata) => orders.RecordWorkInProgressAsync(orderId, fact.ExpectedVersion, fact.FactId,
                 fact.ParentRollId, mass, at, metadata, cancellationToken), cancellationToken);
+
+    public Task<ManufacturingApiResult<OrderViewV1>> DeclareInventoryOutputAsync(
+        Guid orderId,
+        DeclareInventoryOutputRequestV1? request,
+        string idempotencyKey,
+        string permission,
+        CancellationToken cancellationToken)
+    {
+        if (orderId == Guid.Empty || request is null || request.OutputId == Guid.Empty
+            || request.ParentRollId == Guid.Empty || request.ProductId == Guid.Empty
+            || request.LotId == Guid.Empty || request.LabelId == Guid.Empty
+            || request.OwnerId == Guid.Empty || request.CustodianId == Guid.Empty
+            || request.LocationId == Guid.Empty || request.MovementId == Guid.Empty
+            || request.MovementId == request.OutputId || request.ExpectedVersion <= 0)
+        {
+            return Task.FromResult(Invalid<OrderViewV1>("output"));
+        }
+
+        if (!IsPositiveCanonicalInt64(request.ExpectedParentLabelVersion))
+        {
+            return Task.FromResult(Invalid<OrderViewV1>("expectedParentLabelVersion"));
+        }
+
+        if (!IsPositiveCanonicalInt64(request.ExpectedProductVersion))
+        {
+            return Task.FromResult(Invalid<OrderViewV1>("expectedProductVersion"));
+        }
+
+        if (!Enum.TryParse<OutputClass>(request.OutputClass, ignoreCase: false, out var outputClass)
+            || !Enum.IsDefined(outputClass) || !IsName(request.OutputClass))
+        {
+            return Task.FromResult(Invalid<OrderViewV1>("outputClass"));
+        }
+
+        if (string.IsNullOrWhiteSpace(request.LabelCode))
+        {
+            return Task.FromResult(Invalid<OrderViewV1>("labelCode"));
+        }
+
+        if (request.RequiredDocuments is null
+            || request.RequiredDocuments.Any(document => string.IsNullOrWhiteSpace(document)))
+        {
+            return Task.FromResult(Invalid<OrderViewV1>("requiredDocuments"));
+        }
+
+        if (request.OwnerKind is not ("Company" or "Counterparty"))
+        {
+            return Task.FromResult(Invalid<OrderViewV1>("ownerKind"));
+        }
+
+        if (request.CustodianKind is not ("Company" or "Counterparty"))
+        {
+            return Task.FromResult(Invalid<OrderViewV1>("custodianKind"));
+        }
+
+        if (request.InitialBlock is not ("Free" or "Blocked"))
+        {
+            return Task.FromResult(Invalid<OrderViewV1>("initialBlock"));
+        }
+
+        if (ParseKg(request.Kg) is not { } kg)
+        {
+            return Task.FromResult(Invalid<OrderViewV1>("kg"));
+        }
+
+        if (request.OccurredAtUtc is not { } occurredAt || occurredAt.Offset != TimeSpan.Zero)
+        {
+            return Task.FromResult(Invalid<OrderViewV1>("occurredAtUtc"));
+        }
+
+        var expectedParentLabelVersion = long.Parse(
+            request.ExpectedParentLabelVersion!, CultureInfo.InvariantCulture);
+        var canonical = new
+        {
+            orderId,
+            outputId = request.OutputId,
+            expectedVersion = request.ExpectedVersion,
+            parentLabelId = request.ParentRollId,
+            expectedParentLabelVersion,
+            outputClass = outputClass.ToString(),
+            productId = request.ProductId,
+            expectedProductVersion = request.ExpectedProductVersion,
+            lotId = request.LotId,
+            labelId = request.LabelId,
+            labelCode = request.LabelCode.Trim(),
+            request.HeatNumber,
+            request.CoilNumber,
+            requiredDocuments = request.RequiredDocuments,
+            request.OwnerKind,
+            request.OwnerId,
+            request.CustodianKind,
+            request.CustodianId,
+            request.LocationId,
+            request.InitialBlock,
+            request.MovementId,
+            kg = Text(kg),
+            occurredAtUtc = occurredAt.UtcDateTime.ToString("O", CultureInfo.InvariantCulture),
+        };
+
+        return RunAsync<OrderViewV1>(permission, idempotencyKey, ManufacturingCommandNames.DeclareOutput,
+            canonical, ManufacturingApiStatus.Ok, async (metadata, _) =>
+            {
+                if (inventoryReturnsAndOutputs is null)
+                {
+                    return new ManufacturingApiResult<OrderViewV1>(ManufacturingApiStatus.Unavailable, null, false,
+                        InventoryManufacturingRealizationCodesV1.Unavailable);
+                }
+
+                var mass = await VerifyAsync(kg, DateOnly.FromDateTime(occurredAt.UtcDateTime), "kg", cancellationToken);
+                if (mass.Refusal is not null)
+                {
+                    return Refusal<OrderViewV1>(mass.Refusal);
+                }
+
+                if (await FenceAsync<OrderViewV1>(permission, cancellationToken) is { } fenced)
+                {
+                    return fenced;
+                }
+
+                var outcome = await inventoryReturnsAndOutputs.DeclareOutputAsync(
+                    new ManufacturingInventoryOutputPortCommandV1(
+                        orderId, request.ExpectedVersion, request.OutputId, request.ParentRollId,
+                        expectedParentLabelVersion, outputClass, request.ProductId, request.ExpectedProductVersion!,
+                        request.LotId, request.LabelId, request.LabelCode.Trim(), request.HeatNumber,
+                        request.CoilNumber, request.RequiredDocuments, request.OwnerKind, request.OwnerId,
+                        request.CustodianKind, request.CustodianId, request.LocationId, request.InitialBlock,
+                        request.MovementId, mass.Value, occurredAt),
+                    metadata, cancellationToken);
+                return await OrderResultAsync(orderId, ManufacturingApiStatus.Ok, outcome.IsReplay, cancellationToken);
+            }, stored => OrderView((ProductionOrder)stored), cancellationToken);
+    }
 
     public Task<ManufacturingApiResult<OrderViewV1>> DeclareOutputAsync(Guid orderId, DeclareOutputRequestV1? request,
         string idempotencyKey, string permission, CancellationToken cancellationToken)
@@ -687,6 +971,13 @@ public sealed partial class ManufacturingCommandService(
         try
         {
             result = await write(metadata, actor);
+        }
+        catch (ManufacturingInventoryRealizationPortException exception)
+        {
+            result = exception.Status == ManufacturingApiStatus.NotFound
+                ? NotFoundResult<T>()
+                : new ManufacturingApiResult<T>(exception.Status, null, false, exception.Code,
+                    exception.Field, exception.ExpectedVersion, exception.CurrentVersion);
         }
         catch (ManufacturingVersionConflictException exception)
         {
