@@ -1,7 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
-import { useParams } from 'react-router'
+import { Link, useParams } from 'react-router'
+import { productDetailPath } from '../product/capabilities'
+import { CAPABILITY } from '../shell/capabilities'
+import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { useShellState } from '../shell/shellContext'
-import { contextKey, contextKeyString } from '../shell/shellState'
+import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
 import { StateBlock } from '../shell/StateBlock'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { fetchInventoryLabelDetail } from './labelDetailApi'
@@ -25,18 +28,25 @@ function InventoryLabelDetailView({ namespace, labelId }: {
   readonly labelId: string | undefined
 }) {
   const shell = useShellState()
+  const boundary = useAuthBoundary()
+  const canReadProduct = hasCapability(shell, CAPABILITY.productItemsDetail)
   const companyId = shell.activeContext?.scopeMode === 'single' ? shell.activeContext.companyId : null
   const query = useQuery({
-    queryKey: ['inventory-label-detail', namespace, labelId],
-    enabled: companyId !== null && labelId !== undefined,
+    queryKey: ['inventory-label-detail', namespace, labelId, shell.routeEntryGeneration],
+    enabled: namespace !== null && companyId !== null && labelId !== undefined,
     retry: false,
-    queryFn: ({ signal }) => fetchInventoryLabelDetail(companyId!, labelId!, signal),
+    queryFn: async ({ signal }) => {
+      const snapshot = boundary.capture()
+      const result = await fetchInventoryLabelDetail(companyId!, labelId!, signal)
+      if (result.type === 'http' && (result.status === 401 || result.status === 403)) boundary.report(result.status, snapshot)
+      return result
+    },
   })
   const state = (query.isPending
     ? { kind: 'initial-loading' }
     : classifyOutcome(query.data ?? { type: 'malformed' })) as RemoteViewState<InventoryLabelDetail>
 
-  if (companyId === null) {
+  if (companyId === null || namespace === null) {
     return <main className={styles.page}><StateBlock state={{ kind: 'no-authorized-company' }} subject="etiket" /></main>
   }
   if (state.kind !== 'ready') {
@@ -44,6 +54,9 @@ function InventoryLabelDetailView({ namespace, labelId }: {
   }
 
   const { labelVersion, identity, balances } = state.data
+  if (identity.companyId !== companyId || identity.labelId !== labelId || balances.labelId !== labelId) {
+    return <main className={styles.page}><StateBlock state={{ kind: 'malformed-response' }} subject="etiket" onRetry={() => void query.refetch()} /></main>
+  }
   return <main className={styles.page}>
     <header className={styles.header}>
       <div><p className={styles.eyebrow}>ST-02</p><h1>{identity.code}</h1></div>
@@ -55,7 +68,9 @@ function InventoryLabelDetailView({ namespace, labelId }: {
       <dl className={styles.facts}>
         <div><dt>Etiket kimliği</dt><dd className={styles.mono}>{identity.labelId}</dd></div>
         <div><dt>Etiket sürümü</dt><dd>{labelVersion}</dd></div>
-        <div><dt>Ürün</dt><dd className={styles.mono}>{identity.productId}</dd></div>
+        <div><dt>Ürün</dt><dd className={styles.mono}>{identity.productId}<br />{canReadProduct
+          ? <Link to={productDetailPath(identity.productId)}>Ürün kartı</Link>
+          : <span>Ürün kartı</span>}</dd></div>
         <div><dt>Lot</dt><dd className={styles.mono}>{identity.lotId}</dd></div>
         <div><dt>Döküm</dt><dd>{identity.heatNumber ?? identity.lot.heatNumber ?? '—'}</dd></div>
         <div><dt>Rulo</dt><dd>{identity.coilNumber ?? identity.lot.coilNumber ?? '—'}</dd></div>

@@ -94,6 +94,49 @@ test('R14 records one real opening count, closes and reopens it, and preserves p
     expect(read.status()).toBe(200)
     expect(await read.json()).toEqual(created)
 
+    // Follow the actual stored label, not a synthetic id or a substituted route response.
+    const actualLabelId = created.lines[0].labelId
+    const labelPath = `/api/v1/inventory/labels/${actualLabelId}/detail`
+    const labelLink = page.getByRole('link', { name: LABEL, exact: true })
+    await expect(labelLink).toHaveAttribute('href', `/stok/etiket/${actualLabelId}`)
+    const labelAnswer = page.waitForResponse((response) => response.request().method() === 'GET'
+      && new URL(response.url()).pathname === labelPath)
+    await labelLink.click()
+    const labelResponse = await labelAnswer
+    expect(labelResponse.status()).toBe(200)
+    const labelDetail = await labelResponse.json() as {
+      readonly labelVersion: string
+      readonly identity: { readonly labelId: string; readonly companyId: string; readonly productId: string; readonly code: string }
+      readonly balances: { readonly labelId: string; readonly physicalKg: string }
+    }
+    expect(labelDetail.identity).toMatchObject({ labelId: actualLabelId, companyId, productId, code: LABEL })
+    expect(labelDetail.balances).toMatchObject({ labelId: actualLabelId, physicalKg: '12.5' })
+    await expect(page.getByRole('heading', { level: 1, name: LABEL, exact: true })).toBeVisible()
+    await expect(page.getByText(actualLabelId, { exact: true })).toBeVisible()
+
+    const productLink = page.getByRole('link', { name: 'Ürün kartı', exact: true })
+    await expect(productLink).toHaveAttribute('href', `/urun/${productId}`)
+    const productCardAnswer = page.waitForResponse((response) => response.request().method() === 'GET'
+      && new URL(response.url()).pathname === `/api/v1/products/${productId}`)
+    await productLink.click()
+    const productCardResponse = await productCardAnswer
+    expect(productCardResponse.status()).toBe(200)
+    expect(await productCardResponse.json()).toMatchObject({ product: { id: productId, code: productCode, name: productName } })
+    await expect(page.getByRole('heading', { level: 1, name: productName, exact: true })).toBeVisible()
+
+    const returnedLabelAnswer = page.waitForResponse((response) => response.request().method() === 'GET'
+      && new URL(response.url()).pathname === labelPath)
+    await page.goBack()
+    const returnedLabelResponse = await returnedLabelAnswer
+    expect(returnedLabelResponse.status()).toBe(200)
+    expect(await returnedLabelResponse.json()).toMatchObject({
+      labelVersion: labelDetail.labelVersion,
+      identity: { labelId: actualLabelId, companyId, productId, code: LABEL },
+      balances: { labelId: actualLabelId, physicalKg: '12.5' },
+    })
+    await expect(page.getByRole('heading', { level: 1, name: LABEL, exact: true })).toBeVisible()
+    await expect(page.getByText(actualLabelId, { exact: true })).toBeVisible()
+
     const stored = await pool.request()
       .input('companyId', sql.UniqueIdentifier, companyId)
       .input('countId', sql.UniqueIdentifier, created.countId)
@@ -113,6 +156,23 @@ test('R14 records one real opening count, closes and reopens it, and preserves p
     })
     expect([403, 404]).toContain(elsewhere.status())
     expect(await elsewhere.text()).not.toContain(LABEL)
+
+    // The denied actor did not gain either detail permission from the recorder's new test grants.
+    for (const path of [labelPath, `/api/v1/products/${productId}`]) {
+      const deniedDetail = await page.request.get(`${env.apiBaseUrl}${path}`, { headers: apiHeaders(deniedActor) })
+      expect(deniedDetail.status()).toBe(403)
+      const body = await deniedDetail.text()
+      expect(body).not.toContain(LABEL)
+      expect(body).not.toContain(productName)
+      expect(body).not.toContain(actualLabelId)
+    }
+    const foreignLabel = await page.request.get(`${env.apiBaseUrl}${labelPath}`, {
+      headers: apiHeaders(recorderActor, otherCompanyId),
+    })
+    expect([403, 404]).toContain(foreignLabel.status())
+    const foreignBody = await foreignLabel.text()
+    expect(foreignBody).not.toContain(LABEL)
+    expect(foreignBody).not.toContain(actualLabelId)
 
     const afterNegatives = await pool.request()
       .input('companyId', sql.UniqueIdentifier, companyId)
