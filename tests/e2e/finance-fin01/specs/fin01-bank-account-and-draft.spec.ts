@@ -38,9 +38,23 @@ const DRAFT_RE = /\/api\/v1\/finance\/manual-receipts\/drafts$/
 const RECORD_RE = /\/api\/v1\/finance\/manual-receipts\/[^/]+\/record$/
 const REVERSAL_PROPOSAL_RE = /\/api\/v1\/finance\/manual-receipts\/[^/]+\/reversal-proposals$/
 const REVERSAL_APPROVAL_RE = /\/api\/v1\/finance\/manual-receipts\/reversal-proposals\/[^/]+\/approval$/
+const MANUAL_PAYMENT_RE = /\/api\/v1\/finance\/manual-bank-payments$/
+const MANUAL_PAYMENT_APPROVAL_RE = /\/api\/v1\/finance\/manual-bank-payments\/[^/]+\/approval$/
+const MANUAL_PAYMENT_RECORD_RE = /\/api\/v1\/finance\/manual-bank-payments\/[^/]+\/record$/
 
 let recordedSourceId = ''
 let reversalSourceId = ''
+let bankAccountId = ''
+let manualPaymentId = ''
+
+interface ManualPaymentEntry {
+  readonly partyId: string
+  readonly companyAccountId: string
+  readonly treasuryAccountId: string
+  readonly currencyId: string
+  readonly profileId: string
+  readonly profileVersion: string
+}
 
 /** Binds `actor` to every API request of this context and records which requests it rewrote. */
 async function asActor(context: BrowserContext, actor: string): Promise<Set<Request>> {
@@ -67,6 +81,41 @@ function expectEveryAnswerRewritten(answered: readonly Request[], rewritten: Rea
 
 function accountRow(page: Page) {
   return page.getByRole('row', { name: new RegExp(ACCOUNT_NAME) })
+}
+
+async function readManualPaymentEntry(page: Page): Promise<ManualPaymentEntry> {
+  expect(bankAccountId).toMatch(/^[0-9a-f-]{36}$/)
+  const query = new URLSearchParams({
+    treasuryAccountId: bankAccountId,
+    partyId: env.seed.partyId,
+    companyAccountId: env.seed.companyAccountId,
+    occurredOn: '2026-09-18',
+  })
+  const answer = await page.evaluate(async (path) => {
+    const response = await fetch(path)
+    return { status: response.status, body: await response.json() as unknown }
+  }, `/api/v1/finance/manual-receipts/draft-context?${query.toString()}`)
+  expect(answer.status).toBe(200)
+  const body = answer.body as {
+    readonly bankAccount?: { readonly id?: unknown; readonly currencyId?: unknown }
+    readonly currency?: {
+      readonly currencyId?: unknown
+      readonly profile?: { readonly reference?: { readonly profileId?: unknown; readonly version?: unknown } }
+    }
+  }
+  expect(body.bankAccount?.id).toBe(bankAccountId)
+  expect(body.bankAccount?.currencyId).toBe(body.currency?.currencyId)
+  expect(body.currency?.currencyId).toEqual(expect.stringMatching(/^[0-9a-f-]{36}$/))
+  expect(body.currency?.profile?.reference?.profileId).toEqual(expect.stringMatching(/^[0-9a-f-]{36}$/))
+  expect(body.currency?.profile?.reference?.version).toEqual(expect.stringMatching(/^[1-9][0-9]*$/))
+  return {
+    partyId: env.seed.partyId,
+    companyAccountId: env.seed.companyAccountId,
+    treasuryAccountId: bankAccountId,
+    currencyId: body.currency!.currencyId as string,
+    profileId: body.currency!.profile!.reference!.profileId as string,
+    profileVersion: body.currency!.profile!.reference!.version as string,
+  }
 }
 
 test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () => {
@@ -148,7 +197,11 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
       iban: IBAN,
       accountNumber: null,
     })
-    expect((await answer).status()).toBe(200)
+    const proposedAnswer = await answer
+    expect(proposedAnswer.status()).toBe(200)
+    const proposed = await proposedAnswer.json() as { readonly resource?: { readonly id?: unknown } }
+    expect(proposed.resource?.id).toEqual(expect.stringMatching(/^[0-9a-f-]{36}$/))
+    bankAccountId = proposed.resource!.id as string
     await expect(page.getByText('Hesap önerildi; onay bekliyor.', { exact: false })).toBeVisible()
 
     await page.goto('/finans/banka-hesaplari')
@@ -220,6 +273,121 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
     await expect(accountRow(page)).toContainText(CHANGED_IBAN, { timeout: 30_000 })
     await expect(accountRow(page)).not.toContainText('IBAN değişikliği onay bekliyor')
     await expect(accountRow(page)).not.toContainText(IBAN)
+    expectEveryAnswerRewritten(answered, rewritten)
+  })
+
+  test('FIN01-02D the maker creates, lists and reopens one real outgoing bank payment draft', async ({ page, context }) => {
+    const rewritten = await asActor(context, env.seed.proposerActor)
+    const answered = watchAnswers(page)
+    const entry = await readManualPaymentEntry(page)
+    const query = new URLSearchParams(entry)
+
+    await page.goto(`/finans/odemeler/yeni?${query.toString()}`)
+    await expect(page.getByRole('heading', { level: 1, name: 'Yeni giden banka ödemesi', exact: true }))
+      .toBeVisible({ timeout: 30_000 })
+    await page.getByLabel('Tutar', { exact: true }).fill('875,25')
+    await page.getByLabel('İşlem tarihi', { exact: true }).fill('2026-09-18')
+    await page.getByLabel('Açıklama', { exact: true }).fill('SENTETIK FIN01 giden ödeme')
+
+    const post = page.waitForRequest((request) => MANUAL_PAYMENT_RE.test(request.url()) && request.method() === 'POST')
+    const response = page.waitForResponse((answer) => MANUAL_PAYMENT_RE.test(answer.url()) && answer.request().method() === 'POST')
+    await page.getByRole('button', { name: 'Taslağı kaydet', exact: true }).click()
+    const sent = await post
+    expect(sent.headers()['idempotency-key']).toMatch(/^[0-9a-f-]{36}$/)
+    expect(sent.postDataJSON()).toMatchObject({
+      paymentId: null,
+      expectedVersion: null,
+      preparation: {
+        partyId: entry.partyId,
+        companyAccountId: entry.companyAccountId,
+        treasuryAccountId: entry.treasuryAccountId,
+        money: { amount: '875.25', currencyId: entry.currencyId },
+        profile: { profileId: entry.profileId, version: entry.profileVersion },
+        occurredOn: '2026-09-18',
+        bankReference: null,
+      },
+      linkedDocument: null,
+    })
+    const createdAnswer = await response
+    expect(createdAnswer.status()).toBe(200)
+    const created = await createdAnswer.json() as {
+      readonly resource?: { readonly id?: unknown; readonly status?: unknown; readonly version?: unknown }
+    }
+    expect(created.resource).toMatchObject({ status: 'Draft', version: '1' })
+    expect(created.resource?.id).toEqual(expect.stringMatching(/^[0-9a-f-]{36}$/))
+    manualPaymentId = created.resource!.id as string
+
+    await page.getByRole('button', { name: 'Kaydı aç', exact: true }).click()
+    await expect(page).toHaveURL(new RegExp(`/finans/odemeler/${manualPaymentId}$`))
+    await expect(page.getByText('Draft', { exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Onayla', exact: true })).toHaveCount(0)
+
+    await page.goto('/finans/odemeler')
+    const row = page.getByRole('row').filter({ hasText: '875.25' })
+    await expect(row).toHaveCount(1, { timeout: 30_000 })
+    await row.getByRole('button', { name: 'Aç', exact: true }).click()
+    await expect(page).toHaveURL(new RegExp(`/finans/odemeler/${manualPaymentId}$`))
+    await expect(page.getByText('Draft', { exact: true })).toBeVisible()
+    expectEveryAnswerRewritten(answered, rewritten)
+  })
+
+  test('FIN01-02E another actor approves, confirms, records, replays and reopens the same payment', async ({ page, context }) => {
+    const rewritten = await asActor(context, env.seed.approverActor)
+    const answered = watchAnswers(page)
+    expect(manualPaymentId).toMatch(/^[0-9a-f-]{36}$/)
+
+    await page.goto('/finans/odemeler')
+    await expect(page.getByRole('button', { name: 'Yeni', exact: true })).toHaveCount(0)
+    await page.goto(`/finans/odemeler/${manualPaymentId}`)
+    const approvalPost = page.waitForRequest((request) => MANUAL_PAYMENT_APPROVAL_RE.test(request.url()) && request.method() === 'POST')
+    const approvalAnswer = page.waitForResponse((answer) => MANUAL_PAYMENT_APPROVAL_RE.test(answer.url()) && answer.request().method() === 'POST')
+    await page.getByRole('button', { name: 'Onayla', exact: true }).click()
+    expect((await approvalPost).postDataJSON()).toEqual({ paymentId: manualPaymentId, expectedVersion: '1' })
+    expect((await approvalAnswer).status()).toBe(200)
+    await expect(page.getByText('Ödeme onaylandı.', { exact: true })).toBeVisible()
+
+    const recordButton = page.getByRole('button', { name: 'Kesin kaydet', exact: true })
+    await expect(recordButton).toBeDisabled()
+    await page.getByLabel('Banka sonucu gerçekleşti', { exact: true }).check()
+    const recordPost = page.waitForRequest((request) => MANUAL_PAYMENT_RECORD_RE.test(request.url()) && request.method() === 'POST')
+    const recordAnswer = page.waitForResponse((answer) => MANUAL_PAYMENT_RECORD_RE.test(answer.url()) && answer.request().method() === 'POST')
+    await recordButton.click()
+    const recordedRequest = await recordPost
+    const recordedBody = recordedRequest.postDataJSON()
+    expect(recordedBody).toEqual({ paymentId: manualPaymentId, expectedVersion: '2', bankResultConfirmed: true })
+    const recordedResponse = await recordAnswer
+    expect(recordedResponse.status()).toBe(200)
+    const first = await recordedResponse.json() as {
+      readonly isReplay?: unknown
+      readonly originalCorrelationId?: unknown
+      readonly resource?: { readonly id?: unknown; readonly status?: unknown; readonly version?: unknown }
+    }
+    expect(first).toMatchObject({ isReplay: false, resource: { id: manualPaymentId, status: 'Recorded', version: '3' } })
+    await expect(page.getByText('Giden ödeme kesin kaydedildi.', { exact: true })).toBeVisible()
+
+    const replay = await page.evaluate(async ({ paymentId, key, body, companyId }) => {
+      const response = await fetch(`/api/v1/finance/manual-bank-payments/${paymentId}/record`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key, 'X-Company-Id': companyId },
+        body: JSON.stringify(body),
+      })
+      return { status: response.status, body: await response.json() as unknown }
+    }, {
+      paymentId: manualPaymentId,
+      key: recordedRequest.headers()['idempotency-key'],
+      body: recordedBody,
+      companyId: env.seed.companyId,
+    })
+    expect(replay.status).toBe(200)
+    expect(replay.body).toMatchObject({
+      isReplay: true,
+      originalCorrelationId: first.originalCorrelationId,
+      resource: { id: manualPaymentId, status: 'Recorded', version: '3' },
+    })
+
+    await page.getByRole('button', { name: 'Kesin kaydı yeniden aç', exact: true }).click()
+    await expect(page).toHaveURL(new RegExp(`/finans/odemeler/${manualPaymentId}$`))
+    await expect(page.getByText('Recorded', { exact: true })).toBeVisible()
     expectEveryAnswerRewritten(answered, rewritten)
   })
 
@@ -361,7 +529,7 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
       other.on('request', (request) => {
         if (FINANCE_API.test(request.url())) anyFinance += 1
       })
-      for (const route of ['/finans/banka-hesaplari', '/finans/tahsilatlar']) {
+      for (const route of ['/finans/banka-hesaplari', '/finans/tahsilatlar', '/finans/odemeler']) {
         await other.goto(new URL(route, env.unauthorizedBaseUrl).toString())
         await expect(other.locator('[data-state="not-found"]')).toBeVisible({ timeout: 30_000 })
       }
