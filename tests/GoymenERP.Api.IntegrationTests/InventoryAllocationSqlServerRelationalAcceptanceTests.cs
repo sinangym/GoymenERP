@@ -37,10 +37,19 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             first = await participant.StageAsync(request, metadata);
             Assert.False(first.IsReplay);
             Assert.Equal("2", first.AllocationVersion);
-            Assert.Equal("60", first.RemainingAllocatedKg);
+            Assert.Equal("40", first.RemainingAllocatedKg);
             Assert.Equal((state.LabelVersion + 1).ToString(), first.LabelVersion);
             await transaction.CommitAsync();
         }
+
+        Assert.Equal(40m, await run.ScalarAsync<decimal>(
+            "SELECT RemainingKg FROM inventory.Allocations WHERE Id = @id", ("@id", state.AllocationId)));
+        Assert.Equal(2L, await run.ScalarAsync<long>(
+            "SELECT Version FROM inventory.Allocations WHERE Id = @id", ("@id", state.AllocationId)));
+        Assert.Equal(60m, await run.ScalarAsync<decimal>(
+            "SELECT QuantityKg FROM inventory.Balances WHERE LabelId = @id", ("@id", state.LabelId)));
+        Assert.Equal(state.LabelVersion + 1, await run.ScalarAsync<long>(
+            "SELECT Version FROM inventory.Labels WHERE Id = @id", ("@id", state.LabelId)));
 
         InventoryDefiniteShipmentResultV1 replay;
         await using (var connection = new SqlConnection(run.Factory.DatabaseConnectionString))
