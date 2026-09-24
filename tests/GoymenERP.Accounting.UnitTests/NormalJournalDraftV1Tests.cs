@@ -230,6 +230,28 @@ public sealed class NormalJournalDraftV1Tests
     }
 
     [Fact]
+    public void Missing_mapping_and_unknown_amount_preserve_both_existing_queue_payloads()
+    {
+        var f = new Fixture();
+        var request = f.Request() with
+        {
+            Lines = [f.Lines()[0] with { Account = null, Amount = null }, f.Lines()[1]],
+        };
+
+        var result = f.Prepare(request: request);
+
+        Assert.Null(result.Draft);
+        Assert.Equal(["SENTETIK-bank"], result.Exception!.MissingMappingKeys);
+        Assert.Equal(1, result.Pending!.LinesAwaitingAmount);
+        Assert.Equal(request.Source, result.Exception.Source);
+        Assert.Equal(request.Source, result.Pending.Source);
+        Assert.Equal(request.PostingRuleVersion, result.Exception.PostingRuleVersion);
+        Assert.Equal(request.PostingRuleVersion, result.Pending.PostingRuleVersion);
+        Assert.Equal(request.MessageId, result.Exception.FirstMessageId);
+        Assert.Equal(request.MessageId, result.Pending.FirstMessageId);
+    }
+
+    [Fact]
     public void Mapping_and_draft_snapshots_do_not_retain_mutable_caller_arrays()
     {
         var f = new Fixture();

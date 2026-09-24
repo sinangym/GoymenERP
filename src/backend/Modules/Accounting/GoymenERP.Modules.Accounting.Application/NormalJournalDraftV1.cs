@@ -73,16 +73,19 @@ public sealed class NormalJournalPostingRuleV1
 /// <summary>
 /// The result of pure preparation, not of a posted command. Exception/Pending are existing ledger
 /// payloads for the future atomic handler to queue; this class does NOT claim a durable queue write.
-/// Exactly one of Draft, Exception or Pending is populated by Prepare.
+/// Draft is exclusive, while one delivery may expose both existing gap payloads just as the
+/// authoritative ledger does for missing mapping plus unknown valuation.
 /// </summary>
 public sealed class NormalJournalPreparationV1
 {
     internal NormalJournalPreparationV1(NormalJournalDraftV1? draft = null, PostingException? exception = null,
         PendingValuation? pending = null)
     {
-        if ((draft is null ? 0 : 1) + (exception is null ? 0 : 1) + (pending is null ? 0 : 1) != 1)
+        var hasDraft = draft is not null;
+        var hasGap = exception is not null || pending is not null;
+        if (hasDraft == hasGap)
         {
-            throw new ArgumentException("Preparation has exactly one outcome.");
+            throw new ArgumentException("Preparation has either one draft or one-or-more gap payloads.");
         }
 
         Draft = draft;
@@ -195,15 +198,17 @@ public sealed class NormalJournalDraftV1
             }
         }
 
+        var awaitingAmount = proposed.Count(line => line.Amount is null);
         if (missing.Count > 0)
         {
-            return new NormalJournalPreparationV1(exception: new PostingException(request.Source,
-                request.PostingRuleVersion,
+            var exception = new PostingException(request.Source, request.PostingRuleVersion,
                 Array.AsReadOnly(missing.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray()),
-                request.MessageId));
+                request.MessageId);
+            var pending = awaitingAmount == 0 ? null : new PendingValuation(request.Source,
+                request.PostingRuleVersion, awaitingAmount, request.MessageId);
+            return new NormalJournalPreparationV1(exception: exception, pending: pending);
         }
 
-        var awaitingAmount = proposed.Count(line => line.Amount is null);
         if (awaitingAmount > 0)
         {
             return new NormalJournalPreparationV1(pending: new PendingValuation(request.Source,
