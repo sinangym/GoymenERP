@@ -147,7 +147,7 @@ internal static class C01E2eShellCapabilityActivation
                 typeof(PurchasingShellCapabilityProvider), typeof(AccountingShellCapabilityProvider),
                 typeof(InventoryShellCapabilityProvider),
             },
-                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV12PublishedManufacturingV12PublishedLogisticsV10PublishedPurchasingV13PublishedAccountingV10AndPublishedInventoryV10),
+                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV12PublishedManufacturingV12PublishedLogisticsV10PublishedPurchasingV13PublishedAccountingV10AndPublishedInventoryV11),
     ];
 
     private static string NormalAuthority(IServiceCollection services)

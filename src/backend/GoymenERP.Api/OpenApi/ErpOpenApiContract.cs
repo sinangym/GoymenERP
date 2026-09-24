@@ -624,6 +624,14 @@ public static partial class ErpOpenApiContract
             AddInventoryParentRollCandidateParameters(operation);
         }
 
+        if (string.Equals(
+                operation.OperationId,
+                GoymenERP.Modules.Inventory.Application.InventoryStockPositionApiV1.GetPositionsOperationId,
+                StringComparison.Ordinal))
+        {
+            AddInventoryParentRollCandidateParameters(operation);
+        }
+
         if (string.Equals(operation.OperationId, "GetInventoryProductCandidatesV1", StringComparison.Ordinal))
         {
             AddInventoryProductCandidateParameters(operation);

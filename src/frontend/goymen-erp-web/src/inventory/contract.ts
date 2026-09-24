@@ -28,6 +28,33 @@ export interface OrganizationLocationCandidates {
   readonly searchWindowFull: boolean
 }
 
+export interface InventoryStockPosition {
+  readonly companyId: string
+  readonly labelId: string
+  readonly labelVersion: string
+  readonly labelCode: string
+  readonly productId: string
+  readonly lot: { readonly id: string; readonly heatNumber: string | null; readonly coilNumber: string | null }
+  readonly heatNumber: string | null
+  readonly coilNumber: string | null
+  readonly documentStatus: string
+  readonly ownerKind: string
+  readonly ownerId: string
+  readonly custodianKind: string
+  readonly custodianId: string
+  readonly locationId: string
+  readonly physicalKg: string
+  readonly freePhysicalKg: string
+  readonly blockedPhysicalKg: string
+  readonly activeAllocationKg: string
+  readonly availableKg: string
+}
+
+export interface InventoryStockPositions {
+  readonly items: readonly InventoryStockPosition[]
+  readonly searchWindowFull: boolean
+}
+
 export interface OpeningCountLineRequest {
   readonly lineId: string
   readonly labelId: string
@@ -112,6 +139,15 @@ function quantity(value: unknown): value is string {
   return typeof value === 'string' && DECIMAL.test(value) && /[1-9]/.test(value)
 }
 
+function nonnegativeQuantity(value: unknown): value is string {
+  return typeof value === 'string' && DECIMAL.test(value) && (value.split('.')[1]?.length ?? 0) <= 3
+}
+
+function thousandths(value: string): bigint {
+  const [whole, fraction = ''] = value.split('.')
+  return BigInt(whole) * 1000n + BigInt(fraction.padEnd(3, '0'))
+}
+
 function nullableText(value: unknown): value is string | null {
   return value === null || (typeof value === 'string' && value.trim().length > 0)
 }
@@ -133,6 +169,27 @@ function locationCandidate(value: unknown): OrganizationLocationCandidate | null
   ]) || !guid(source.locationId) || !text(source.locationCode) || !text(source.locationName) ||
     !guid(source.siteId) || !text(source.siteCode) || !text(source.siteName)) return null
   return source as unknown as OrganizationLocationCandidate
+}
+
+function stockPosition(value: unknown): InventoryStockPosition | null {
+  const source = record(value)
+  if (source === null || !exact(source, [
+    'companyId', 'labelId', 'labelVersion', 'labelCode', 'productId', 'lot', 'heatNumber', 'coilNumber',
+    'documentStatus', 'ownerKind', 'ownerId', 'custodianKind', 'custodianId', 'locationId',
+    'physicalKg', 'freePhysicalKg', 'blockedPhysicalKg', 'activeAllocationKg', 'availableKg',
+  ]) || !guid(source.companyId) || !guid(source.labelId) || !canonicalVersion(source.labelVersion) ||
+    !text(source.labelCode) || !guid(source.productId) || !nullableText(source.heatNumber) ||
+    !nullableText(source.coilNumber) || !text(source.documentStatus) || !text(source.ownerKind) ||
+    !guid(source.ownerId) || !text(source.custodianKind) || !guid(source.custodianId) ||
+    !guid(source.locationId) || !nonnegativeQuantity(source.physicalKg) ||
+    !nonnegativeQuantity(source.freePhysicalKg) || !nonnegativeQuantity(source.blockedPhysicalKg) ||
+    !nonnegativeQuantity(source.activeAllocationKg) || !nonnegativeQuantity(source.availableKg)) return null
+  const lot = record(source.lot)
+  if (lot === null || !exact(lot, ['id', 'heatNumber', 'coilNumber']) || !guid(lot.id) ||
+    !nullableText(lot.heatNumber) || !nullableText(lot.coilNumber)) return null
+  if (thousandths(source.physicalKg) !== thousandths(source.freePhysicalKg) + thousandths(source.blockedPhysicalKg) ||
+    thousandths(source.freePhysicalKg) !== thousandths(source.activeAllocationKg) + thousandths(source.availableKg)) return null
+  return source as unknown as InventoryStockPosition
 }
 
 function openingLine(value: unknown): OpeningCountLineView | null {
@@ -174,6 +231,17 @@ export function decodeOrganizationLocationCandidates(value: unknown): Organizati
   if (items.some((item) => item === null)) return null
   const decoded = items as OrganizationLocationCandidate[]
   if (new Set(decoded.map((item) => item.locationId)).size !== decoded.length) return null
+  return { items: decoded, searchWindowFull: source.searchWindowFull }
+}
+
+export function decodeInventoryStockPositions(value: unknown): InventoryStockPositions | null {
+  const source = record(value)
+  if (source === null || !exact(source, ['items', 'searchWindowFull']) || !Array.isArray(source.items) ||
+    typeof source.searchWindowFull !== 'boolean') return null
+  const items = source.items.map(stockPosition)
+  if (items.some((item) => item === null)) return null
+  const decoded = items as InventoryStockPosition[]
+  if (new Set(decoded.map((item) => item.labelId)).size !== decoded.length) return null
   return { items: decoded, searchWindowFull: source.searchWindowFull }
 }
 

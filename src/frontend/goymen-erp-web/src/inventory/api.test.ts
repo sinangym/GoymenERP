@@ -3,6 +3,7 @@ import {
   fetchOpeningCount,
   fetchOpeningLocations,
   fetchOpeningProducts,
+  fetchStockPositions,
   recordOpeningCount,
 } from './api'
 
@@ -62,5 +63,26 @@ describe('Inventory opening API', () => {
     expect((await fetchOpeningCount(COMPANY, COUNT)).type).toBe('malformed')
     expect((await fetchOpeningProducts(COMPANY, '2026-09-23')).type).toBe('malformed')
     expect((await fetchOpeningLocations(COMPANY)).type).toBe('malformed')
+  })
+
+  it('binds stock position search to the selected company and rejects foreign rows', async () => {
+    const position = {
+      companyId: COMPANY, labelId: LABEL, labelVersion: '3', labelCode: 'LBL-1', productId: PRODUCT,
+      lot: { id: LOT, heatNumber: null, coilNumber: null }, heatNumber: null, coilNumber: null,
+      documentStatus: 'Complete', ownerKind: 'Company', ownerId: COMPANY,
+      custodianKind: 'Company', custodianId: COMPANY, locationId: LOCATION,
+      physicalKg: '10', freePhysicalKg: '10', blockedPhysicalKg: '0',
+      activeAllocationKg: '2', availableKg: '8',
+    }
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ items: [position], searchWindowFull: false }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        items: [{ ...position, companyId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }], searchWindowFull: false,
+      }), { status: 200 }))
+    vi.stubGlobal('fetch', fetch)
+    expect((await fetchStockPositions(COMPANY, ' LBL ')).type).toBe('ok-single')
+    expect(fetch.mock.calls[0][0]).toContain('q=LBL')
+    expect(fetch.mock.calls[0][1].headers['X-Company-Id']).toBe(COMPANY)
+    expect((await fetchStockPositions(COMPANY)).type).toBe('malformed')
   })
 })
