@@ -8,7 +8,6 @@ using GoymenERP.Modules.Inventory.Domain.Allocations;
 using GoymenERP.Modules.Inventory.Domain.Labels;
 using GoymenERP.Modules.Inventory.Domain.Quantities;
 using GoymenERP.Modules.Inventory.Domain.Stock;
-using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence;
@@ -224,7 +223,7 @@ public sealed partial class InventoryStore
             await dbContext.SaveChangesAsync(cancellationToken);
         }
         catch (DbUpdateException exception) when (exception is DbUpdateConcurrencyException
-            || exception.InnerException is SqlException { Number: 2601 or 2627 })
+            || IsUniqueConstraintViolation(exception))
         {
             dbContext.ChangeTracker.Clear();
             if (await FindGenealogyReplayAsync(keyHash, payloadHash, metadata.ActorId, cancellationToken) is { } winner)
