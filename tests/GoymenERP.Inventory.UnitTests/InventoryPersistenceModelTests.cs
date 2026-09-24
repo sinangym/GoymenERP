@@ -21,7 +21,7 @@ public sealed class InventoryPersistenceModelTests
         [
             typeof(LotRow), typeof(LabelRow), typeof(LabelPrintRow), typeof(LabelDocumentRow), typeof(MovementRow), typeof(MovementLineRow),
             typeof(BalanceRow), typeof(SourceGrainRow), typeof(OpeningCountRow), typeof(OpeningCountLineRow),
-            typeof(InventoryCommandRow),
+            typeof(InventoryCommandRow), typeof(AllocationRow), typeof(InventoryOutboxRow),
         ];
 
     [Fact]
@@ -88,7 +88,7 @@ public sealed class InventoryPersistenceModelTests
     public void Locations_and_labels_are_referenced_by_company_and_id()
     {
         using var context = Context();
-        foreach (var type in new[] { typeof(MovementLineRow), typeof(BalanceRow) })
+        foreach (var type in new[] { typeof(MovementLineRow), typeof(BalanceRow), typeof(AllocationRow) })
         {
             var entity = context.Model.FindEntityType(type)!;
             Assert.Contains(entity.GetForeignKeys(), key => key.PrincipalEntityType.GetTableName() == "Locations"
@@ -104,6 +104,10 @@ public sealed class InventoryPersistenceModelTests
         var labels = context.Model.FindEntityType(typeof(LabelRow))!;
         Assert.True(labels.FindProperty(nameof(LabelRow.Version))!.IsConcurrencyToken);
         Assert.True(labels.FindProperty(nameof(LabelRow.RowVersion))!.IsConcurrencyToken);
+        var allocations = context.Model.FindEntityType(typeof(AllocationRow))!;
+        Assert.True(allocations.FindProperty(nameof(AllocationRow.RowVersion))!.IsConcurrencyToken);
+        Assert.Equal(["CompanyId", "Id"], allocations.GetKeys().Single(key => !key.IsPrimaryKey())
+            .Properties.Select(property => property.Name));
     }
 
     [Fact]
@@ -119,6 +123,8 @@ public sealed class InventoryPersistenceModelTests
             migration => migration.EndsWith("_AddOpeningCounts", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("_AddInventoryCommands", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AddInventoryDefiniteShipmentRuntime", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -177,6 +183,8 @@ public sealed class InventoryPersistenceModelTests
     [InlineData("edit-opening-count")]
     [InlineData("edit-opening-line")]
     [InlineData("edit-command")]
+    [InlineData("edit-allocation-position")]
+    [InlineData("edit-outbox")]
     public void Stored_stock_is_never_deleted_and_only_its_allowed_field_changes(string fault)
     {
         using var context = Context();
@@ -226,6 +234,12 @@ public sealed class InventoryPersistenceModelTests
                 {
                     CompanyId = CompanyA, Kind = 1, SourceKind = "test.source", SourceId = Guid.NewGuid(), Grain = 1,
                 }).Grain = 2;
+                break;
+            case "edit-allocation-position":
+                Attach(context, Allocation()).LocationId = Guid.NewGuid();
+                break;
+            case "edit-outbox":
+                Attach(context, Outbox()).PayloadJson = "{\"changed\":true}";
                 break;
             default:
                 Attach(context, Balance()).CompanyId = CompanyB;
@@ -289,6 +303,24 @@ public sealed class InventoryPersistenceModelTests
     {
         Id = Guid.NewGuid(), CompanyId = CompanyA, OwnerKind = 1, OwnerId = CompanyA, CustodianKind = 1, CustodianId = CompanyA,
         LocationId = Warehouse1, LabelId = Label1, ProductId = BandProduct, Block = 1, QuantityKg = 1m,
+    };
+
+    private static AllocationRow Allocation() => new()
+    {
+        Id = Guid.NewGuid(), CompanyId = CompanyA, OwnerKind = 1, OwnerId = CompanyA,
+        CustodianKind = 1, CustodianId = CompanyA, LocationId = Warehouse1, LabelId = Label1,
+        Block = 1, AllocatedKg = 10m, RemainingKg = 10m, Status = 1, Version = 1,
+        CreatedAtUtc = At, UpdatedAtUtc = At,
+    };
+
+    private static InventoryOutboxRow Outbox() => new()
+    {
+        Id = Guid.NewGuid(), CompanyId = CompanyA,
+        EventType = "inventory.definite-shipment.recorded.v1", SchemaVersion = 1,
+        SourceOperation = "inventory.definite-shipment.record.v1",
+        AggregateType = "Inventory.StockAllocation", AggregateId = Guid.NewGuid(),
+        AggregateVersion = 2, Sequence = 2, PayloadJson = "{}", OccurredAtUtc = At,
+        CorrelationId = "synthetic", RecordedAtUtc = At,
     };
 
     private static MovementRow Movement() => new()

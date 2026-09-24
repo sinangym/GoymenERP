@@ -16,12 +16,17 @@ exposes no database handle or independent transaction factory. The request carri
 line/allocation/label/movement identities, exact allocation and label versions, lossless kg text and UTC time.
 The stored allocation supplies the physical owner/custodian/location; Logistics cannot choose them.
 
-This commit is deliberately **NOT READY for runtime DI**. Main has no Inventory allocation aggregate/store/
-version or Inventory outbox persistence yet. Registering a positive implementation would therefore invent
-success and violate DEC-STK-004 plus LOG-5 atomicity. `InventoryDefiniteShipmentContractV1.Validate` and its
-tests close only the policy-free wire/participant shape. The next Inventory owner predecessor is the real
-allocation persistence and transactional outbox implementation with SQL concurrency/replay evidence; only
-then may central bind this factory into the Logistics host. No new permission or grant is introduced.
+Runtime DI remains deliberately **NOT READY**. `StockAllocation` plus `inventory.Allocations` now provide the
+company-filtered physical position, remaining kg, exact business version, SQL rowversion and fail-closed
+state/quantity constraints needed by the participant. This predecessor has no public allocation-create,
+expiry, release or partial-allocation policy and writes no rows by itself. Its real-SQL acceptance proves the
+tenant filter, constraints and a losing concurrent update; the host route and Logistics consumer remain off.
+
+The remaining blocker is the transactional outbox contract. Repository governance still marks ERP-000F
+`SPEC_ONLY` and requires an approved event owner, event type/schema version and payload before feature code.
+No such LOG-5 event schema is present in the locked decisions, master, #418 contract or Issue #66 record.
+Until that contract is supplied, Inventory does not invent an event envelope, positive participant runtime or
+central binding. No new permission or grant is introduced.
 
 ## R13 — draft parent-roll reference predecessor (Business #66/5778472429 A)
 

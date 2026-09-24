@@ -251,6 +251,22 @@ public sealed partial class InventoryStore(
     public async Task<InventoryWriteOutcome> RecordMovementAsync(StockMovement movement, InventoryCommandMetadata metadata,
         CancellationToken cancellationToken = default)
     {
+        var outcome = await StageMovementAsync(movement, metadata, recordAudit: true, cancellationToken);
+        if (outcome == InventoryWriteOutcome.Recorded)
+        {
+            await SaveAsync(cancellationToken);
+        }
+
+        return outcome;
+    }
+
+    /// <summary>
+    /// Stages one movement into this context without saving it. Only an enlisted owner participant
+    /// may use this to flush the movement with its allocation, command and outbox rows.
+    /// </summary>
+    internal async Task<InventoryWriteOutcome> StageMovementAsync(StockMovement movement,
+        InventoryCommandMetadata metadata, bool recordAudit, CancellationToken cancellationToken)
+    {
         ArgumentNullException.ThrowIfNull(movement);
         RequireMetadata(metadata);
         RequireCompany(movement.CompanyId);
@@ -393,11 +409,22 @@ public sealed partial class InventoryStore(
             });
         }
 
-        Audit(metadata, movement.CompanyId, MovementEntityType, movement.Id, "inventory.movement.recorded.v1", "Record",
-            versionBefore: null, versionAfter: 1, before: "{}", after: MovementAudit(movement, payloadHash),
-            $"Stok hareketi ({movement.Kind})");
-        await SaveAsync(cancellationToken);
+        if (recordAudit)
+        {
+            Audit(metadata, movement.CompanyId, MovementEntityType, movement.Id, "inventory.movement.recorded.v1", "Record",
+                versionBefore: null, versionAfter: 1, before: "{}", after: MovementAudit(movement, payloadHash),
+                $"Stok hareketi ({movement.Kind})");
+        }
+
         return InventoryWriteOutcome.Recorded;
+    }
+
+    internal void AuditDefiniteShipment(InventoryCommandMetadata metadata, Guid companyId, Guid allocationId,
+        long versionBefore, long versionAfter, string before, string after)
+    {
+        Audit(metadata, companyId, "Inventory.StockAllocation", allocationId,
+            InventoryDefiniteShipmentOutboxV1.EventType, "ConsumeForDefiniteShipment",
+            versionBefore, versionAfter, before, after, "Kesin sevk stok çıkışı ve tahsis tüketimi");
     }
 
     /// <summary>

@@ -149,7 +149,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // inventory
             ["tools/relational_inventory/inventory.txt"] =
-                "2e8f207afc077b7b1c9e567c182f03ebe3a816f0f85420b7b81e9ed385e66d2b",
+                "d6251e74c986b73aae1f18251972b50b773c6d3a4a7b4b9747777cbe0c28c522",
 
             // logistics
             ["tools/relational_inventory/logistics.txt"] =
@@ -243,7 +243,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // row and AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
              + "Persistence/InventoryDbContext.cs"] =
-                "7c0c51016d4a47b6d9b5faf34a013d0eb76b4337899d1cf64601037aed44ce20",
+                "74b07e86ddca6617ea33a80eb36f16c74eb249c0cf2f0c75b395792c6a558763",
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "Persistence/ProductDbContext.cs"] =
                 "0ba53cfdf07084818f737c9f21b2ce4a04a44f5fe89603a89f31791c5b4871da",
@@ -256,6 +256,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // The Identity reconciler owns one parameterized row/range-lock query. The shared RCSI
     // readiness probe owns one reviewed read-only command. Exact source fingerprints and API
     // counts keep these from becoming general database bypass exemptions.
+    private const string ReviewedInventoryDefiniteShipmentParticipantPath =
+        "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
+        + "Persistence/InventoryDefiniteShipmentParticipant.cs";
+
     private static readonly IReadOnlyDictionary<string, ReviewedRuntimeDatabaseBypassSource>
         ReviewedRuntimeDatabaseBypassSources =
             new Dictionary<string, ReviewedRuntimeDatabaseBypassSource>(StringComparer.Ordinal)
@@ -382,6 +386,19 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                             ["EnsureCreatedAsync"] = 1,
                             ["MigrateAsync"] = 1
                         }),
+                // LOG-5: the enlisted participant uses the host transaction's connection and
+                // explicitly constructs one InventoryDbContext over that exact connection. The
+                // source fingerprint and API counts keep this narrower than a general runtime
+                // context-construction or direct-database exemption.
+                [ReviewedInventoryDefiniteShipmentParticipantPath] =
+                    new(
+                        "fff2ff64a35fe04824e76aaa89d0c05afe3850cfce8cd4461fb7bfa1afe0e3b9",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["System.Data.Common"] = 1,
+                            ["Microsoft.Data.SqlClient"] = 1,
+                            ["DbConnection"] = 3
+                        }),
                 // INV-2 (#293): the SqlClient namespace only to recognise a unique-key violation
                 // (SqlException 2601/2627) after SaveChanges, as the Idempotency terminal store does.
                 // No connection, command or raw SQL. Re-fingerprinted for #333 (#324 P3-1): a lot/label
@@ -406,7 +423,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Inventory/"
                  + "GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryStore.cs"] =
                     new(
-                        "319000a3ba576f1bdd9ba83fb6472fc50ceb23ce5bc022aa3494d8312312a5f8",
+                        "586aa3d44d43aebe8ade89c4585af7ca816a2789165df709bfa86c7b8a3bbd0b",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -716,6 +733,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         { ["Sql"] = 1 }),
                 ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20260919140000_AddInventoryCommands.cs"] =
                     new("450f545cc1ce2e303794dbf0a80566f18bef41cba222366603e3e35288dbe69d",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // LOG-5: Down refuses with Inventory's 51047 forward-fix signal while a definite
+                // shipment effect exists; the refusal precedes every destructive rollback step.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20260924001222_AddInventoryDefiniteShipmentRuntime.cs"] =
+                    new("3b696ed5dff4a414c00e939b5921b2d2d5f30d865627d4ce7b1c0019a6f3835d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/Persistence/Migrations/20260912175128_InitialProductDrafts.cs"] =
@@ -5790,7 +5813,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         GetLineNumber(searchableSource, construction.Index)));
             }
 
-            if (!ReviewedPlatformContextFactories.ContainsKey(normalizedPath))
+            if (!ReviewedPlatformContextFactories.ContainsKey(normalizedPath)
+                && !string.Equals(
+                    normalizedPath,
+                    ReviewedInventoryDefiniteShipmentParticipantPath,
+                    StringComparison.Ordinal))
             {
                 var reviewedTypes = ReviewedContextTypeIdentifierRegex()
                     .Matches(searchableSource)
@@ -5811,21 +5838,61 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             }
         }
 
+        var reviewedRuntimeSourceMatches =
+            sources.TryGetValue(ReviewedInventoryDefiniteShipmentParticipantPath, out var runtimeSource)
+            && ReviewedRuntimeDatabaseBypassSources.TryGetValue(
+                ReviewedInventoryDefiniteShipmentParticipantPath,
+                out var reviewedRuntimeSource)
+            && string.Equals(
+                ComputeReviewedSourceFingerprint(runtimeSource),
+                reviewedRuntimeSource.ReviewedFingerprint,
+                StringComparison.Ordinal);
+
         foreach (var construction in constructions)
         {
-            var authorized = ReviewedPlatformContextFactories.TryGetValue(
-                                 construction.RepositoryPath,
-                                 out var factory)
-                             && string.Equals(
-                                 construction.ContextTypeName,
-                                 factory.ContextTypeName,
-                                 StringComparison.Ordinal);
+            var authorizedByDesignTimeFactory = ReviewedPlatformContextFactories.TryGetValue(
+                                  construction.RepositoryPath,
+                                  out var factory)
+                              && string.Equals(
+                                  construction.ContextTypeName,
+                                  factory.ContextTypeName,
+                                  StringComparison.Ordinal);
+            var authorizedByReviewedRuntimeParticipant = reviewedRuntimeSourceMatches
+                && string.Equals(
+                    construction.RepositoryPath,
+                    ReviewedInventoryDefiniteShipmentParticipantPath,
+                    StringComparison.Ordinal)
+                && string.Equals(
+                    construction.ContextTypeName,
+                    "InventoryDbContext",
+                    StringComparison.Ordinal);
+            var authorized = authorizedByDesignTimeFactory || authorizedByReviewedRuntimeParticipant;
             if (!authorized)
             {
                 errors.Add(
                     "Unauthorized reviewed platform DbContext construction "
                     + $"'{construction.ContextTypeName}' at "
                     + $"{construction.RepositoryPath}:{construction.LineNumber}");
+            }
+        }
+
+        if (sources.ContainsKey(ReviewedInventoryDefiniteShipmentParticipantPath))
+        {
+            var participantConstructions = constructions.Count(construction =>
+                string.Equals(
+                    construction.RepositoryPath,
+                    ReviewedInventoryDefiniteShipmentParticipantPath,
+                    StringComparison.Ordinal)
+                && string.Equals(
+                    construction.ContextTypeName,
+                    "InventoryDbContext",
+                    StringComparison.Ordinal));
+            if (participantConstructions != 1)
+            {
+                errors.Add(
+                    "Expected exactly one 'InventoryDbContext' construction in reviewed "
+                    + $"runtime participant {ReviewedInventoryDefiniteShipmentParticipantPath}, "
+                    + $"but found {participantConstructions}.");
             }
         }
 
