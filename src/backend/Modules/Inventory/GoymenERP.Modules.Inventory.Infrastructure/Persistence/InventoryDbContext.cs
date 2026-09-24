@@ -315,8 +315,8 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
 
     /// <summary>
     /// Physical allocations are separate from stock movements (DEC-STK-003). This table stores the
-    /// exact free position and optimistic version required by LOG-5; no creation, expiry, release or
-    /// partial-allocation policy is introduced by this predecessor.
+    /// exact free position and optimistic version required by LOG-5. New physical-sales allocations
+    /// carry their immutable demand facts; rows predating that command remain readable with null demand.
     /// </summary>
     private void ConfigureAllocations(ModelBuilder modelBuilder)
     {
@@ -331,17 +331,41 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
                 + "AND [LabelId] <> '00000000-0000-0000-0000-000000000000'");
             table.HasCheckConstraint("CK_Allocations_State",
                 "[OwnerKind] IN (1, 2) AND [CustodianKind] IN (1, 2) AND [Block] = 1 "
-                + "AND [Status] IN (1, 2) AND [Version] >= 1");
+                + "AND [Status] IN (1, 2, 3) AND [Version] >= 1");
             table.HasCheckConstraint("CK_Allocations_Quantity",
                 "[AllocatedKg] > 0 AND [RemainingKg] >= 0 AND [RemainingKg] <= [AllocatedKg] "
-                + "AND (([Status] = 1 AND [RemainingKg] > 0) OR ([Status] = 2 AND [RemainingKg] = 0))");
+                + "AND (([Status] = 1 AND [RemainingKg] > 0) OR ([Status] IN (2, 3) AND [RemainingKg] = 0))");
+            table.HasCheckConstraint("CK_Allocations_Demand",
+                "([DemandKind] IS NULL AND [DemandId] IS NULL AND [DemandLineId] IS NULL "
+                + "AND [DemandProductId] IS NULL AND [DemandProductVersion] IS NULL AND [Reason] IS NULL "
+                + "AND [ReservedUntilUtc] IS NULL) "
+                + "OR ([DemandKind] IS NOT NULL AND [DemandKind] = 'sales.order-line' "
+                + "AND [DemandId] IS NOT NULL AND [DemandId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [DemandLineId] IS NOT NULL AND [DemandLineId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [DemandProductId] IS NOT NULL AND [DemandProductId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [DemandProductVersion] IS NOT NULL AND LEN([DemandProductVersion]) > 0 "
+                + "AND [Reason] IS NOT NULL AND LEN(LTRIM(RTRIM([Reason]))) > 0)");
+            table.HasCheckConstraint("CK_Allocations_Release",
+                "([Status] = 3 AND [ReleasedAtUtc] IS NOT NULL AND [ReleaseReason] IS NOT NULL "
+                + "AND LEN(LTRIM(RTRIM([ReleaseReason]))) > 0) "
+                + "OR ([Status] <> 3 AND [ReleasedAtUtc] IS NULL AND [ReleaseReason] IS NULL)");
         });
         entity.HasKey(x => x.Id);
         entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
         entity.Property(x => x.Id).ValueGeneratedNever();
         entity.Property(x => x.AllocatedKg).HasPrecision(18, 3);
         entity.Property(x => x.RemainingKg).HasPrecision(18, 3);
+        entity.Property(x => x.DemandKind).HasMaxLength(64).IsUnicode(false);
+        entity.Property(x => x.DemandProductVersion).HasMaxLength(128).IsUnicode(false);
+        entity.Property(x => x.Reason).HasMaxLength(1000);
+        entity.Property(x => x.ReleaseReason).HasMaxLength(1000);
         entity.Property(x => x.RowVersion).IsRowVersion();
+        entity.HasIndex(x => new
+        {
+            x.CompanyId, x.LabelId, x.OwnerKind, x.OwnerId, x.CustodianKind, x.CustodianId, x.LocationId, x.Block, x.Status,
+        }).HasDatabaseName("IX_Allocations_ActivePosition");
+        entity.HasIndex(x => new { x.CompanyId, x.DemandKind, x.DemandId, x.DemandLineId, x.Status })
+            .HasDatabaseName("IX_Allocations_Demand");
         entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
             .OnDelete(DeleteBehavior.Restrict);
         LabelOf(entity);
@@ -508,6 +532,7 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
                     [
                         nameof(AllocationRow.RemainingKg), nameof(AllocationRow.Status),
                         nameof(AllocationRow.Version), nameof(AllocationRow.UpdatedAtUtc),
+                        nameof(AllocationRow.ReleasedAtUtc), nameof(AllocationRow.ReleaseReason),
                     ],
                     _ => [],
                 };
