@@ -43,6 +43,9 @@ public static class InventoryRuleCodes
     /// <summary>A label document requirement or reprint request is not valid.</summary>
     public const string InvalidLabelOperation = "inventory_invalid_label_operation";
 
+    /// <summary>A split or merge contradicts its same-company, whole-piece or mass-conservation rules.</summary>
+    public const string InvalidLabelTransformation = "inventory_invalid_label_transformation";
+
     /// <summary>
     /// A position names a label of another company. A label is a tenant record of the company
     /// that holds its stock (ADR-INV-001 A); it never appears under another company.
