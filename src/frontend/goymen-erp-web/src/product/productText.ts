@@ -464,7 +464,8 @@ export const PRODUCT_HISTORY_TEXT = {
 
 export function historyOperationLabel(operation: HistoryOperationValue): string {
   if (!operation.known) return `${PRODUCT_HISTORY_TEXT.unknownOperation} (${operation.raw})`
-  return operation.value === 'DraftCreate' ? 'Taslak oluşturuldu' : 'Temel bilgiler düzenlendi'
+  if (operation.value === 'DraftCreate') return 'Taslak oluşturuldu'
+  return operation.value === 'Activate' ? 'Ürün aktifleştirildi' : 'Temel bilgiler düzenlendi'
 }
 
 export function historyVersionText(before: string | null, after: string): string {
@@ -475,6 +476,7 @@ const HISTORY_FIELD_LABEL: Record<HistoryField, string> = {
   name: 'Ürün adı',
   classId: 'Sınıf',
   familyId: 'Aile',
+  lifecycle: 'Durum',
   'roles.purchasable': `Rol: ${ROLE_LABEL.purchasable}`,
   'roles.sellable': `Rol: ${ROLE_LABEL.sellable}`,
   'roles.productionInput': `Rol: ${ROLE_LABEL.productionInput}`,

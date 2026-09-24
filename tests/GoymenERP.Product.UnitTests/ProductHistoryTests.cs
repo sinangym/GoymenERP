@@ -46,6 +46,20 @@ public sealed class ProductHistoryTests
     }
 
     [Fact]
+    public void Activation_is_a_versioned_lifecycle_change_in_the_same_canonical_chain()
+    {
+        var draft = Card(1);
+        var active = Card(2, lifecycle: "Active");
+        var history = ProductHistoryProjector.Project(ProductId,
+            [Activate(draft, active, T0.AddMinutes(1)), Create(draft, T0)]);
+
+        var activation = history.Entries[0];
+        Assert.Equal((ProductHistoryApiV1.Activate, "1", "2", "Ürün kartı onayı"),
+            (activation.Operation, activation.VersionBefore, activation.VersionAfter, activation.Reason));
+        Assert.Equal(["lifecycle"], activation.ChangedFields);
+    }
+
+    [Fact]
     public void Missing_unit_container_and_explicit_null_unit_are_the_same_value()
     {
         var before = Card(1, units: null);
@@ -137,7 +151,7 @@ public sealed class ProductHistoryTests
         IReadOnlyList<ProductAuditRecordV1> records = fault switch
         {
             "other-product" => [edit with { ProductId = Guid.NewGuid() }, create],
-            "unknown-operation" => [edit with { Operation = "Activate" }, create],
+            "unknown-operation" => [edit with { Operation = "Retire" }, create],
             "create-with-before-version" => [create with { VersionBefore = 0 }],
             "create-not-version-1" => [Create(Card(2), T0) with { VersionAfter = 2 }],
             "create-with-before-snapshot" => [create with { BeforeJson = Json(Card(1)) }],
@@ -274,13 +288,17 @@ public sealed class ProductHistoryTests
         new(Guid.NewGuid(), ProductId, ProductHistoryApiV1.DraftBasicEdit, at, long.Parse(before.Product.Version),
             long.Parse(after.Product.Version), reason, Json(before), Json(after));
 
+    private static ProductAuditRecordV1 Activate(ProductCardView before, ProductCardView after, DateTimeOffset at) =>
+        new(Guid.NewGuid(), ProductId, ProductHistoryApiV1.Activate, at, long.Parse(before.Product.Version),
+            long.Parse(after.Product.Version), "Ürün kartı onayı", Json(before), Json(after));
+
     private static string Json(ProductCardView card) => JsonSerializer.Serialize(card, Web);
 
     private static ProductCardView Card(long version, string name = "Galvaniz bant", Guid? familyId = null,
-        ProductRoleView? sellable = null, ProductUnitReferences? units = null) =>
+        ProductRoleView? sellable = null, ProductUnitReferences? units = null, string lifecycle = "Draft") =>
         new(new ProductDraftView(ProductId, "PSQL-1", name, GroupId, null, familyId,
                 new(new(null, "not-evaluated"), sellable ?? new(null, "not-evaluated"), new(null, "not-evaluated"), new(null, "not-evaluated")),
-                "Draft", version.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                lifecycle, version.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 T0, T0.AddMinutes(version % 1000), new("Sac", null, null, null), new("NotEvaluated", [])),
             new ProductReferences(Units: units));
 

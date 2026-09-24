@@ -8,7 +8,7 @@ namespace GoymenERP.Modules.Product.Application.Contracts;
 /// </summary>
 public sealed record ProductHistoryView(Guid ProductId, IReadOnlyList<ProductHistoryEntryView> Entries, bool Truncated);
 
-/// <param name="Operation">Exactly <c>DraftCreate</c> or <c>DraftBasicEdit</c> at this base.</param>
+/// <param name="Operation">Exactly <c>DraftCreate</c>, <c>DraftBasicEdit</c> or <c>Activate</c>.</param>
 /// <param name="VersionBefore">Lossless decimal string; null only for <c>DraftCreate</c>.</param>
 /// <param name="ChangedFields">
 /// Stable keys from <see cref="ProductHistoryFields"/>, in that order. Empty for
@@ -39,6 +39,7 @@ public static class ProductHistoryApiV1
     public const int PageSize = 50;
     public const string DraftCreate = "DraftCreate";
     public const string DraftBasicEdit = "DraftBasicEdit";
+    public const string Activate = "Activate";
 }
 
 /// <summary>The only change keys a history entry may carry, in display order.</summary>
@@ -46,7 +47,7 @@ public static class ProductHistoryFields
 {
     public static readonly IReadOnlyList<string> All =
     [
-        "name", "classId", "familyId",
+        "name", "classId", "familyId", "lifecycle",
         "roles.purchasable", "roles.sellable", "roles.productionInput", "roles.productionOutput",
         "references.templateId", "references.templateVersion", "references.attributes",
         "references.units.stock", "references.units.purchase", "references.units.sales",

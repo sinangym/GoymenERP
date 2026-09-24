@@ -38,6 +38,14 @@ describe('decodeProductHistory', () => {
     expect(history?.truncated).toBe(false)
   })
 
+  it('accepts activation as the exact next version and lifecycle change', () => {
+    const history = decode({
+      entries: [edit({ operation: 'Activate', changedFields: ['lifecycle'] }), historyEntry()],
+    })
+    expect(history?.entries[0].operation).toEqual({ known: true, value: 'Activate' })
+    expect(history?.entries[0].changedFields).toEqual(['lifecycle'])
+  })
+
   it('keeps versions past 2^53 as exact strings and checks the step as integers', () => {
     const history = decode({ entries: cutPage(9007199254740993n), truncated: true })
     expect(history?.entries[0].versionAfter).toBe('9007199254740993')
@@ -114,8 +122,8 @@ describe('decodeProductHistory', () => {
   })
 
   it('keeps an unknown operation and field key visible instead of rejecting the history', () => {
-    const history = decode({ entries: [edit({ operation: 'Activate', changedFields: ['lifecycle'] }), historyEntry()] })
-    expect(history?.entries[0].operation).toEqual({ known: false, raw: 'Activate' })
-    expect(history?.entries[0].changedFields).toEqual(['lifecycle'])
+    const history = decode({ entries: [edit({ operation: 'Retire', changedFields: ['tracking.mode'] }), historyEntry()] })
+    expect(history?.entries[0].operation).toEqual({ known: false, raw: 'Retire' })
+    expect(history?.entries[0].changedFields).toEqual(['tracking.mode'])
   })
 })

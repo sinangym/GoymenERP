@@ -120,6 +120,21 @@ describe('change history', () => {
     expect(items[0].textContent).toContain('İzlenen alanlarda değişiklik görünmüyor.')
   })
 
+  it('shows activation as the lifecycle change recorded by Product', async () => {
+    installFetch({
+      capabilities: DETAIL_ONLY,
+      onHistory: () =>
+        json(productHistory({
+          entries: [editEntry({ operation: 'Activate', changedFields: ['lifecycle'], reason: 'Ürün kartı onayı' }), historyEntry()],
+        })),
+    })
+    renderProductApp(PATH)
+
+    const items = within(await historyList()).getAllByRole('listitem')
+    expect(items[0].textContent).toContain('Ürün aktifleştirildi')
+    expect(items[0].textContent).toContain('Değişen alanlar: Durum')
+  })
+
   it('names a field key or operation it does not know instead of dropping it', async () => {
     installFetch({
       capabilities: DETAIL_ONLY,
@@ -127,7 +142,7 @@ describe('change history', () => {
         json(
           productHistory({
             entries: [
-              editEntry({ operation: 'Activate', changedFields: ['lifecycle'] }),
+              editEntry({ operation: 'Retire', changedFields: ['tracking.mode'] }),
               historyEntry(),
             ],
           }),
@@ -136,8 +151,8 @@ describe('change history', () => {
     renderProductApp(PATH)
 
     const items = within(await historyList()).getAllByRole('listitem')
-    expect(items[0].textContent).toContain('Tanınmayan değişiklik türü (Activate)')
-    expect(items[0].textContent).toContain('Tanınmayan alan (lifecycle)')
+    expect(items[0].textContent).toContain('Tanınmayan değişiklik türü (Retire)')
+    expect(items[0].textContent).toContain('Tanınmayan alan (tracking.mode)')
   })
 
   it('marks a cut list as the latest 50 only', async () => {

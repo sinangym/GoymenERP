@@ -79,6 +79,7 @@ public static class ProductHistoryProjector
                     record.Reason, []);
             }
             case ProductHistoryApiV1.DraftBasicEdit:
+            case ProductHistoryApiV1.Activate:
             {
                 if (record.VersionBefore is not (>= 1 and < long.MaxValue) || record.VersionAfter != record.VersionBefore + 1)
                     throw Invalid();
