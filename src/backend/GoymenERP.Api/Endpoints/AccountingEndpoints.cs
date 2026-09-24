@@ -34,6 +34,9 @@ public static class AccountingEndpoints
         AccountingStoreCodes.PeriodPreparerConflict,
         AccountingStoreCodes.PeriodOverlap,
         AccountingStoreCodes.ConcurrentChange,
+        NormalJournalDraftStoreCodesV1.ContentConflict,
+        NormalJournalDraftStoreCodesV1.NotPending,
+        NormalJournalDraftStoreCodesV1.PostingConflict,
     ];
 
     private static readonly string[] UnprocessableCodes =
@@ -44,6 +47,12 @@ public static class AccountingEndpoints
         AccountingErrorCodes.PeriodInvalid,
         AccountingErrorCodes.InvalidReference,
         AccountingStoreCodes.ValueDoesNotFit,
+        AccountingErrorCodes.CompanyMismatch,
+        AccountingErrorCodes.JournalTooFewLines,
+        AccountingErrorCodes.JournalLineInvalid,
+        AccountingErrorCodes.JournalUnbalanced,
+        AccountingErrorCodes.PeriodClosed,
+        AccountingErrorCodes.PeriodDoesNotCover,
     ];
 
     public static IEndpointRouteBuilder MapAccountingEndpoints(this IEndpointRouteBuilder endpoints)
@@ -163,6 +172,53 @@ public static class AccountingEndpoints
             .WithName("GetAccountingJournalV1")
             .Produces<JournalDetailV1>(StatusCodes.Status200OK)
             .WithReadProblems(notFound: true);
+
+        group.MapPost("/normal-journal-drafts", async (
+                CreateNormalJournalDraftRequestV1 request,
+                NormalJournalDraftPublicServiceV1 service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            await WriteAsync(httpContext,
+                key => service.CreateAsync(request, key, cancellationToken),
+                draft => $"/api/v1/accounting/normal-journal-drafts/{draft.DraftId:D}"))
+            .RequireCompanyContext()
+            .RequireAuthorization(NormalJournalPermissionNamesV1.DraftCreate)
+            .WithIdempotencyContract(StatusCodes.Status201Created)
+            .WithName("CreateAccountingNormalJournalDraftV1")
+            .Accepts<CreateNormalJournalDraftRequestV1>("application/json")
+            .Produces<NormalJournalDraftViewV1>(StatusCodes.Status201Created)
+            .WithWriteProblems(notFound: false);
+
+        group.MapGet("/normal-journal-drafts/{draftId:guid}", async (
+                Guid draftId,
+                NormalJournalDraftPublicServiceV1 service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response.Headers);
+                return ToHttpResult(httpContext, await service.ReadAsync(draftId, cancellationToken), null);
+            })
+            .RequireCompanyContext()
+            .WithName("GetAccountingNormalJournalDraftV1")
+            .Produces<NormalJournalDraftViewV1>(StatusCodes.Status200OK)
+            .WithReadProblems(notFound: true);
+
+        group.MapPost("/normal-journal-drafts/{draftId:guid}/approval", async (
+                Guid draftId,
+                ApproveNormalJournalDraftRequestV1 request,
+                NormalJournalDraftPublicServiceV1 service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            await WriteAsync(httpContext,
+                key => service.ApproveAsync(draftId, request, key, cancellationToken)))
+            .RequireCompanyContext()
+            .RequireAuthorization(NormalJournalPermissionNamesV1.DraftApprove)
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status404NotFound,
+                StatusCodes.Status409Conflict)
+            .WithName("ApproveAccountingNormalJournalDraftV1")
+            .Accepts<ApproveNormalJournalDraftRequestV1>("application/json")
+            .Produces<NormalJournalDraftViewV1>(StatusCodes.Status200OK)
+            .WithWriteProblems(notFound: true);
 
         group.MapGet("/posting-queues", async (
                 AccountingApiService service,
