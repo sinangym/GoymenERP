@@ -32,10 +32,10 @@ public sealed class InventoryGoodsReceiptContractTests
     [InlineData("01")]
     [InlineData(" 1")]
     [InlineData("1 ")]
-    public void Purchase_order_version_is_exact_and_canonical(string version)
+    public void Post_acceptance_purchase_order_version_is_exact_and_canonical(string version)
     {
         var error = Assert.Throws<InventoryGoodsReceiptException>(() =>
-            InventoryGoodsReceiptContractV1.Validate(Request() with { ExpectedPurchaseOrderVersion = version },
+            InventoryGoodsReceiptContractV1.Validate(Request() with { PurchaseOrderVersionAfter = version },
                 Metadata(), Company));
         Assert.Equal(400, error.Status);
         Assert.Equal(InventoryGoodsReceiptCodesV1.InvalidVersion, error.Code);

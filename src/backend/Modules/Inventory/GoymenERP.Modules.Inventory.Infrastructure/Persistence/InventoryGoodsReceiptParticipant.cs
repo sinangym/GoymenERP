@@ -27,7 +27,7 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 /// </summary>
 public sealed class InventoryGoodsReceiptParticipant : IInventoryGoodsReceiptParticipantV1
 {
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
     private readonly InventoryDbContext context;
     private readonly InventoryStore store;
     private readonly DbConnection connection;
@@ -79,7 +79,8 @@ public sealed class InventoryGoodsReceiptParticipant : IInventoryGoodsReceiptPar
             var effectiveClock = clock ?? TimeProvider.System;
             var store = new InventoryStore(context, company, audit,
                 new InventoryKilogramScale(settings), effectiveClock);
-            return new(context, store, connection, transaction, companyId, effectiveClock, onStaged);
+            return new InventoryGoodsReceiptParticipant(
+                context, store, connection, transaction, companyId, effectiveClock, onStaged);
         }
         catch
         {
@@ -121,6 +122,17 @@ public sealed class InventoryGoodsReceiptParticipant : IInventoryGoodsReceiptPar
             throw Refused(409, InventoryGoodsReceiptCodesV1.LabelAlreadyRegistered);
         }
 
+        // One Purchasing acceptance is one Inventory receipt source. The whole-source identity is
+        // backed by UX_Movements_Source; the read gives a stable refusal before staging new lot/label
+        // facts, while the unique index remains the concurrent-writer fence.
+        if (await context.Movements.AsNoTracking().AnyAsync(row =>
+                row.Kind == (int)StockMovementKind.Receipt
+                && row.SourceKind == InventoryGoodsReceiptContractV1.SourceKind
+                && row.SourceId == request.AcceptanceId, cancellationToken))
+        {
+            throw Refused(409, InventoryGoodsReceiptCodesV1.IdempotencyConflict);
+        }
+
         MaterialLot lot;
         MaterialLabel label;
         StockPosition position;
@@ -136,8 +148,7 @@ public sealed class InventoryGoodsReceiptParticipant : IInventoryGoodsReceiptPar
                 label, request.InitialBlock);
             movement = new StockMovement(request.MovementId, companyId, StockMovementKind.Receipt,
                 request.OccurredAtUtc,
-                new StockSourceReference(InventoryGoodsReceiptContractV1.SourceKind,
-                    request.AcceptanceId, request.PurchaseOrderLineId),
+                new StockSourceReference(InventoryGoodsReceiptContractV1.SourceKind, request.AcceptanceId),
                 [new StockMovementLine(position, StockDirection.In, quantity)], CostResult.NotCalculated);
         }
         catch (Exception exception) when (exception is InventoryRuleException or ArgumentException)
@@ -175,7 +186,7 @@ public sealed class InventoryGoodsReceiptParticipant : IInventoryGoodsReceiptPar
             .Select(row => row.Version)
             .SingleAsync(cancellationToken);
         var result = new InventoryGoodsReceiptResultV1(companyId, request.AcceptanceId,
-            request.PurchaseOrderId, request.PurchaseOrderLineId, request.ExpectedPurchaseOrderVersion,
+            request.PurchaseOrderId, request.PurchaseOrderLineId, request.PurchaseOrderVersionAfter,
             request.ProductId, request.ExpectedProductVersion, request.PurchaseUnitId, lot.Id, label.Id,
             labelVersion.ToString(CultureInfo.InvariantCulture), movement.Id, quantity.ToString(), IsReplay: false,
             OriginalCorrelationId: metadata.CorrelationId);
@@ -250,7 +261,7 @@ public sealed class InventoryGoodsReceiptParticipant : IInventoryGoodsReceiptPar
             request.AcceptanceId,
             request.PurchaseOrderId,
             request.PurchaseOrderLineId,
-            request.ExpectedPurchaseOrderVersion,
+            request.PurchaseOrderVersionAfter,
             request.ProductId,
             request.ExpectedProductVersion,
             request.PurchaseUnitId,

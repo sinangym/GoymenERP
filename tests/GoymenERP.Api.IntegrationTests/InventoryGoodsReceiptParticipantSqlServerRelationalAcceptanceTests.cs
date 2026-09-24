@@ -50,16 +50,21 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             await using var inventoryParticipant = await InventoryGoodsReceiptParticipant.EnlistAsync(
                 connection, transaction, CompanyA, GoodsReceiptSettings(run));
             purchasingResult = await purchasingParticipant.StageAsync(purchasing, GoodsReceiptPurchaseEnvelope(run, key, correlation));
+            receipt = receipt with { PurchaseOrderVersionAfter = purchasingResult.PurchaseOrderVersion };
             inventoryResult = await inventoryParticipant.StageAsync(receipt, ReceiptMetadata(run, key, correlation));
             await transaction.CommitAsync();
         }
 
         Assert.False(purchasingResult.IsReplay);
         Assert.False(inventoryResult.IsReplay);
+        Assert.Equal("4", purchasingResult.PurchaseOrderVersion);
+        Assert.Equal(purchasingResult.PurchaseOrderVersion, inventoryResult.PurchaseOrderVersion);
         Assert.Equal("2", inventoryResult.LabelVersion);
         Assert.Equal(correlation, inventoryResult.OriginalCorrelationId);
         var committed = await ReceiptEffectsAsync(run, seed, receipt, correlation);
-        Assert.Equal(new ReceiptEffects(1, 4L, 1, 1, 1, 1, 1, 1, 3), committed);
+        Assert.Equal(new ReceiptEffects(1, 4L, 1, 1, 1, 1, 1, 1, 3, 1), committed);
+        await AssertCommittedReceiptFactsAsync(
+            run, seed, receipt, key, correlation, purchasingResult.PurchaseOrderVersion);
 
         await using (var connection = new SqlConnection(run.Factory.DatabaseConnectionString))
         {
@@ -77,6 +82,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             Assert.True(inventoryReplay.IsReplay);
             Assert.Equal(correlation, purchasingReplay.OriginalCorrelationId);
             Assert.Equal(correlation, inventoryReplay.OriginalCorrelationId);
+            Assert.Equal(purchasingReplay.PurchaseOrderVersion, inventoryReplay.PurchaseOrderVersion);
             Assert.Equal(inventoryResult.LabelVersion, inventoryReplay.LabelVersion);
             await transaction.CommitAsync();
         }
@@ -103,14 +109,15 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
                 connection, transaction, CompanyA);
             await using var inventoryParticipant = await InventoryGoodsReceiptParticipant.EnlistAsync(
                 connection, transaction, CompanyA, GoodsReceiptSettings(run));
-            await purchasingParticipant.StageAsync(GoodsReceiptPurchaseRequest(seed, acceptanceId, "3"),
+            var purchasingResult = await purchasingParticipant.StageAsync(GoodsReceiptPurchaseRequest(seed, acceptanceId, "3"),
                 GoodsReceiptPurchaseEnvelope(run, key, correlation));
+            receipt = receipt with { PurchaseOrderVersionAfter = purchasingResult.PurchaseOrderVersion };
             await inventoryParticipant.StageAsync(receipt, ReceiptMetadata(run, key, correlation));
             Assert.NotNull(transaction.Connection);
             await transaction.RollbackAsync();
         }
 
-        Assert.Equal(new ReceiptEffects(0, 3L, 0, 0, 0, 0, 0, 0, 0),
+        Assert.Equal(new ReceiptEffects(0, 3L, 0, 0, 0, 0, 0, 0, 0, 0),
             await ReceiptEffectsAsync(run, seed, receipt, correlation));
     }
 
@@ -125,7 +132,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         var correlation = $"goods-receipt-conflict-{Guid.NewGuid():N}";
         var key = $"goods-receipt-conflict-{Guid.NewGuid():N}";
 
-        await StageGoodsReceiptAndCommitAsync(run, seed, receipt, "2", key, correlation);
+        receipt = await StageGoodsReceiptAndCommitAsync(run, seed, receipt, "2", key, correlation);
         var committed = await ReceiptEffectsAsync(run, seed, receipt, correlation);
 
         await using (var connection = new SqlConnection(run.Factory.DatabaseConnectionString))
@@ -151,6 +158,31 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
 
         Assert.Equal(committed, await ReceiptEffectsAsync(run, seed, receipt, correlation));
 
+        var duplicateReceipt = Receipt(seed, acceptanceId, "2", location) with
+        {
+            PurchaseOrderVersionAfter = receipt.PurchaseOrderVersionAfter,
+        };
+        await using (var connection = new SqlConnection(run.Factory.DatabaseConnectionString))
+        {
+            await connection.OpenAsync();
+            await using var transaction = (DbTransaction)await connection.BeginTransactionAsync();
+            await using var inventoryParticipant = await InventoryGoodsReceiptParticipant.EnlistAsync(
+                connection, transaction, CompanyA, GoodsReceiptSettings(run));
+            var duplicate = await Assert.ThrowsAsync<InventoryGoodsReceiptException>(() =>
+                inventoryParticipant.StageAsync(
+                    duplicateReceipt,
+                    ReceiptMetadata(run, $"goods-receipt-fresh-{Guid.NewGuid():N}", "goods-receipt-fresh-duplicate")));
+            Assert.Equal((409, InventoryGoodsReceiptCodesV1.IdempotencyConflict),
+                (duplicate.Status, duplicate.Code));
+            await transaction.RollbackAsync();
+        }
+
+        Assert.Equal(committed, await ReceiptEffectsAsync(run, seed, receipt, correlation));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Lots WHERE Id = @id", ("@id", duplicateReceipt.LotId)));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Labels WHERE Id = @id", ("@id", duplicateReceipt.LabelId)));
+
         var foreignSeed = await SeedGoodsReceiptPurchaseOrderAsync(run);
         var foreignReceipt = Receipt(foreignSeed, Guid.NewGuid(), "1", location);
         var foreignCorrelation = $"goods-receipt-foreign-{Guid.NewGuid():N}";
@@ -162,9 +194,13 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
                 connection, transaction, CompanyA);
             await using var inventoryParticipant = await InventoryGoodsReceiptParticipant.EnlistAsync(
                 connection, transaction, CompanyB, GoodsReceiptSettings(run, CompanyB));
-            await purchasingParticipant.StageAsync(
+            var purchasingResult = await purchasingParticipant.StageAsync(
                 GoodsReceiptPurchaseRequest(foreignSeed, foreignReceipt.AcceptanceId, "1"),
                 GoodsReceiptPurchaseEnvelope(run, "goods-receipt-foreign-purchase", foreignCorrelation));
+            foreignReceipt = foreignReceipt with
+            {
+                PurchaseOrderVersionAfter = purchasingResult.PurchaseOrderVersion,
+            };
             var hidden = await Assert.ThrowsAsync<InventoryGoodsReceiptException>(() =>
                 inventoryParticipant.StageAsync(
                     foreignReceipt,
@@ -173,7 +209,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             await transaction.RollbackAsync();
         }
 
-        Assert.Equal(new ReceiptEffects(0, 3L, 0, 0, 0, 0, 0, 0, 0),
+        Assert.Equal(new ReceiptEffects(0, 3L, 0, 0, 0, 0, 0, 0, 0, 0),
             await ReceiptEffectsAsync(run, foreignSeed, foreignReceipt, foreignCorrelation));
     }
 
@@ -244,7 +280,8 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     private static string GoodsReceiptHash(string value) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
 
-    private static async Task StageGoodsReceiptAndCommitAsync(Run run, GoodsReceiptAcceptanceSeed seed,
+    private static async Task<InventoryGoodsReceiptRequestV1> StageGoodsReceiptAndCommitAsync(
+        Run run, GoodsReceiptAcceptanceSeed seed,
         InventoryGoodsReceiptRequestV1 receipt, string quantity, string key, string correlation)
     {
         await using var connection = new SqlConnection(run.Factory.DatabaseConnectionString);
@@ -254,11 +291,13 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             connection, transaction, CompanyA);
         await using var inventoryParticipant = await InventoryGoodsReceiptParticipant.EnlistAsync(
             connection, transaction, CompanyA, GoodsReceiptSettings(run));
-        await purchasingParticipant.StageAsync(
+        var purchasingResult = await purchasingParticipant.StageAsync(
             GoodsReceiptPurchaseRequest(seed, receipt.AcceptanceId, quantity),
             GoodsReceiptPurchaseEnvelope(run, key, correlation));
+        receipt = receipt with { PurchaseOrderVersionAfter = purchasingResult.PurchaseOrderVersion };
         await inventoryParticipant.StageAsync(receipt, ReceiptMetadata(run, key, correlation));
         await transaction.CommitAsync();
+        return receipt;
     }
 
     private static InventoryGoodsReceiptRequestV1 Receipt(
@@ -305,6 +344,179 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         return new ApprovedSettingsPrerequisiteProvider(context, new FixedCurrentUser(run.Actor, resolvedCompany));
     }
 
+    private static async Task AssertCommittedReceiptFactsAsync(
+        Run run,
+        GoodsReceiptAcceptanceSeed seed,
+        InventoryGoodsReceiptRequestV1 receipt,
+        string idempotencyKey,
+        string correlation,
+        string purchaseOrderVersion)
+    {
+        var actor = run.Actor.ToString("D");
+        var idempotencyKeyHash = GoodsReceiptHash(idempotencyKey);
+        var orderVersionAfter = long.Parse(
+            purchaseOrderVersion,
+            System.Globalization.CultureInfo.InvariantCulture);
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM purchasing.PurchaseAcceptanceShares "
+            + "WHERE CompanyId = @company AND AcceptanceId = @acceptance AND OrderId = @order "
+            + "AND LineId = @line AND Quantity = @quantity AND OrderVersionAfter = @version "
+            + "AND CorrelationId = @correlation",
+            ("@company", CompanyA), ("@acceptance", receipt.AcceptanceId), ("@order", seed.OrderId),
+            ("@line", seed.LineId), ("@quantity", decimal.Parse(receipt.QuantityKg,
+                System.Globalization.CultureInfo.InvariantCulture)), ("@version", orderVersionAfter),
+            ("@correlation", correlation)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Movements "
+            + "WHERE CompanyId = @company AND Id = @movement AND Kind = @kind "
+            + "AND OccurredAtUtc = @occurred AND SourceKind = @sourceKind AND SourceId = @acceptance "
+            + "AND SourceLineId IS NULL AND SourceGrain = @grain AND CorrelationId = @correlation",
+            ("@company", CompanyA), ("@movement", receipt.MovementId),
+            ("@kind", (int)GoymenERP.Modules.Inventory.Domain.Movements.StockMovementKind.Receipt),
+            ("@occurred", receipt.OccurredAtUtc), ("@sourceKind", InventoryGoodsReceiptContractV1.SourceKind),
+            ("@acceptance", receipt.AcceptanceId),
+            ("@grain", (int)GoymenERP.Modules.Inventory.Domain.Movements.StockSourceGrain.Whole),
+            ("@correlation", correlation)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.SourceGrains "
+            + "WHERE CompanyId = @company AND Kind = @kind AND SourceKind = @sourceKind "
+            + "AND SourceId = @acceptance AND Grain = @grain",
+            ("@company", CompanyA),
+            ("@kind", (int)GoymenERP.Modules.Inventory.Domain.Movements.StockMovementKind.Receipt),
+            ("@sourceKind", InventoryGoodsReceiptContractV1.SourceKind),
+            ("@acceptance", receipt.AcceptanceId),
+            ("@grain", (int)GoymenERP.Modules.Inventory.Domain.Movements.StockSourceGrain.Whole)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.MovementLines "
+            + "WHERE CompanyId = @company AND MovementId = @movement AND LineNumber = 1 "
+            + "AND Direction = @direction AND OwnerKind = @ownerKind AND OwnerId = @owner "
+            + "AND CustodianKind = @custodianKind AND CustodianId = @custodian "
+            + "AND LocationId = @location AND LabelId = @label AND ProductId = @product "
+            + "AND Block = @block AND QuantityKg = @quantity",
+            ("@company", CompanyA), ("@movement", receipt.MovementId),
+            ("@direction", (int)GoymenERP.Modules.Inventory.Domain.Movements.StockDirection.In),
+            ("@ownerKind", (int)receipt.OwnerKind), ("@owner", receipt.OwnerId),
+            ("@custodianKind", (int)receipt.CustodianKind), ("@custodian", receipt.CustodianId),
+            ("@location", receipt.LocationId), ("@label", receipt.LabelId),
+            ("@product", receipt.ProductId), ("@block", (int)receipt.InitialBlock),
+            ("@quantity", decimal.Parse(receipt.QuantityKg,
+                System.Globalization.CultureInfo.InvariantCulture))));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Balances "
+            + "WHERE CompanyId = @company AND OwnerKind = @ownerKind AND OwnerId = @owner "
+            + "AND CustodianKind = @custodianKind AND CustodianId = @custodian "
+            + "AND LocationId = @location AND LabelId = @label AND ProductId = @product "
+            + "AND Block = @block AND QuantityKg = @quantity",
+            ("@company", CompanyA), ("@ownerKind", (int)receipt.OwnerKind), ("@owner", receipt.OwnerId),
+            ("@custodianKind", (int)receipt.CustodianKind), ("@custodian", receipt.CustodianId),
+            ("@location", receipt.LocationId), ("@label", receipt.LabelId),
+            ("@product", receipt.ProductId), ("@block", (int)receipt.InitialBlock),
+            ("@quantity", decimal.Parse(receipt.QuantityKg,
+                System.Globalization.CultureInfo.InvariantCulture))));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Commands "
+            + "WHERE CompanyId = @company AND CommandName = @command AND TargetId = @acceptance "
+            + "AND ActorId = @actor AND CorrelationId = @correlation "
+            + "AND JSON_VALUE(ResultJson, '$.purchaseOrderVersion') = @purchaseVersion "
+            + "AND JSON_VALUE(ResultJson, '$.labelVersion') = N'2' "
+            + "AND JSON_VALUE(ResultJson, '$.movementId') = @movement "
+            + "AND JSON_VALUE(ResultJson, '$.quantityKg') = @quantity",
+            ("@company", CompanyA), ("@command", InventoryGoodsReceiptContractV1.CommandName),
+            ("@acceptance", receipt.AcceptanceId), ("@actor", actor), ("@correlation", correlation),
+            ("@purchaseVersion", purchaseOrderVersion), ("@movement", receipt.MovementId.ToString("D")),
+            ("@quantity", receipt.QuantityKg)));
+
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents "
+            + "WHERE CompanyId = @company AND CorrelationId = @correlation "
+            + "AND EventType = N'inventory.lot.registered.v1' AND EntityType = N'Inventory.MaterialLot' "
+            + "AND EntityId = @entity AND Operation = N'Register' "
+            + "AND EntityVersionBefore IS NULL AND EntityVersionAfter = 1 "
+            + "AND ActorType = N'User' AND ActorId = @actor AND PermissionCode = @permission "
+            + "AND JSON_VALUE(RoleCodesJson, '$[0]') = N'SENTETIK-PURCHASING' "
+            + "AND JSON_VALUE(RoleCodesJson, '$[1]') IS NULL "
+            + "AND SourceChannel = N'Integration' AND CausationId IS NULL "
+            + "AND IdempotencyKeyHash = @keyHash AND Outcome = N'Succeeded' AND SchemaVersion = 1 "
+            + "AND BeforeJson = N'{}' "
+            + "AND JSON_VALUE(AfterJson, '$.id') = @entity "
+            + "AND JSON_VALUE(AfterJson, '$.productId') = @product",
+            ("@company", CompanyA), ("@correlation", correlation),
+            ("@entity", receipt.LotId.ToString("D")), ("@actor", actor),
+            ("@permission", "purchasing.goods-receipt.record"),
+            ("@keyHash", idempotencyKeyHash),
+            ("@product", receipt.ProductId.ToString("D"))));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents "
+            + "WHERE CompanyId = @company AND CorrelationId = @correlation "
+            + "AND EventType = N'inventory.label.registered.v1' AND EntityType = N'Inventory.MaterialLabel' "
+            + "AND EntityId = @entity AND Operation = N'Register' "
+            + "AND EntityVersionBefore IS NULL AND EntityVersionAfter = 1 "
+            + "AND ActorType = N'User' AND ActorId = @actor AND PermissionCode = @permission "
+            + "AND JSON_VALUE(RoleCodesJson, '$[0]') = N'SENTETIK-PURCHASING' "
+            + "AND JSON_VALUE(RoleCodesJson, '$[1]') IS NULL "
+            + "AND SourceChannel = N'Integration' AND CausationId IS NULL "
+            + "AND IdempotencyKeyHash = @keyHash AND Outcome = N'Succeeded' AND SchemaVersion = 1 "
+            + "AND BeforeJson = N'{}' "
+            + "AND JSON_VALUE(AfterJson, '$.id') = @entity AND JSON_VALUE(AfterJson, '$.code') = @code "
+            + "AND JSON_VALUE(AfterJson, '$.productId') = @product "
+            + "AND JSON_VALUE(AfterJson, '$.lotId') = @lot",
+            ("@company", CompanyA), ("@correlation", correlation),
+            ("@entity", receipt.LabelId.ToString("D")), ("@actor", actor),
+            ("@permission", "purchasing.goods-receipt.record"), ("@code", receipt.LabelCode),
+            ("@keyHash", idempotencyKeyHash),
+            ("@product", receipt.ProductId.ToString("D")), ("@lot", receipt.LotId.ToString("D"))));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents "
+            + "WHERE CompanyId = @company AND CorrelationId = @correlation "
+            + "AND EventType = N'inventory.movement.recorded.v1' AND EntityType = N'Inventory.StockMovement' "
+            + "AND EntityId = @entity AND Operation = N'Record' "
+            + "AND EntityVersionBefore IS NULL AND EntityVersionAfter = 1 "
+            + "AND ActorType = N'User' AND ActorId = @actor AND PermissionCode = @permission "
+            + "AND JSON_VALUE(RoleCodesJson, '$[0]') = N'SENTETIK-PURCHASING' "
+            + "AND JSON_VALUE(RoleCodesJson, '$[1]') IS NULL "
+            + "AND SourceChannel = N'Integration' AND CausationId IS NULL "
+            + "AND IdempotencyKeyHash = @keyHash AND Outcome = N'Succeeded' AND SchemaVersion = 1 "
+            + "AND BeforeJson = N'{}' "
+            + "AND JSON_VALUE(AfterJson, '$.id') = @entity "
+            + "AND JSON_VALUE(AfterJson, '$.kind') = N'Receipt' "
+            + "AND JSON_VALUE(AfterJson, '$.source.kind') = @sourceKind "
+            + "AND JSON_VALUE(AfterJson, '$.source.id') = @acceptance "
+            + "AND JSON_VALUE(AfterJson, '$.source.lineId') IS NULL "
+            + "AND JSON_VALUE(AfterJson, '$.lines') = N'1'",
+            ("@company", CompanyA), ("@correlation", correlation),
+            ("@entity", receipt.MovementId.ToString("D")), ("@actor", actor),
+            ("@permission", "purchasing.goods-receipt.record"),
+            ("@keyHash", idempotencyKeyHash),
+            ("@sourceKind", InventoryGoodsReceiptContractV1.SourceKind),
+            ("@acceptance", receipt.AcceptanceId.ToString("D"))));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents "
+            + "WHERE CompanyId = @company AND CorrelationId = @correlation "
+            + "AND EventType = N'purchasing.purchase-order.acceptance-recorded.v1' "
+            + "AND EntityType = N'Purchasing.PurchaseOrder' AND EntityId = @entity "
+            + "AND Operation = N'RecordAcceptance' AND EntityVersionBefore = @before "
+            + "AND EntityVersionAfter = @after AND ActorType = N'User' AND ActorId = @actor "
+            + "AND PermissionCode = @permission "
+            + "AND JSON_VALUE(RoleCodesJson, '$[0]') = N'SENTETIK-PURCHASING' "
+            + "AND JSON_VALUE(RoleCodesJson, '$[1]') IS NULL "
+            + "AND SourceChannel = N'Integration' AND CausationId IS NULL "
+            + "AND IdempotencyKeyHash = @keyHash AND Outcome = N'Succeeded' AND SchemaVersion = 1 "
+            + "AND JSON_VALUE(BeforeJson, '$.version') = @beforeText "
+            + "AND JSON_VALUE(BeforeJson, '$.accepted') = N'0' "
+            + "AND JSON_VALUE(AfterJson, '$.version') = @afterText "
+            + "AND JSON_VALUE(AfterJson, '$.accepted') = @quantity "
+            + "AND JSON_VALUE(AfterJson, '$.remaining') = @remaining",
+            ("@company", CompanyA), ("@correlation", correlation),
+            ("@entity", seed.OrderId.ToString("D")), ("@before", seed.Version),
+            ("@after", orderVersionAfter), ("@actor", actor),
+            ("@permission", "purchasing.orders.acceptance.write"),
+            ("@keyHash", idempotencyKeyHash),
+            ("@beforeText", seed.Version.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+            ("@afterText", purchaseOrderVersion), ("@quantity", receipt.QuantityKg),
+            ("@remaining", (10m - decimal.Parse(receipt.QuantityKg,
+                System.Globalization.CultureInfo.InvariantCulture)).ToString(System.Globalization.CultureInfo.InvariantCulture))));
+    }
+
     private static async Task<ReceiptEffects> ReceiptEffectsAsync(
         Run run, GoodsReceiptAcceptanceSeed seed, InventoryGoodsReceiptRequestV1 receipt, string correlation) => new(
         await run.ScalarAsync<int>(
@@ -321,6 +533,10 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             ("@id", receipt.AcceptanceId), ("@name", InventoryGoodsReceiptContractV1.CommandName)),
         await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @correlation AND EntityType LIKE 'Inventory.%'",
+            ("@correlation", correlation)),
+        await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @correlation "
+            + "AND EventType = N'purchasing.purchase-order.acceptance-recorded.v1'",
             ("@correlation", correlation)));
 
     private sealed record ReceiptEffects(
@@ -332,7 +548,8 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         int MovementLines,
         int Balances,
         int Commands,
-        int InventoryAuditEvents);
+        int InventoryAuditEvents,
+        int PurchasingAuditEvents);
 
     private sealed record GoodsReceiptAcceptanceSeed(Guid OrderId, Guid LineId, long Version);
 }

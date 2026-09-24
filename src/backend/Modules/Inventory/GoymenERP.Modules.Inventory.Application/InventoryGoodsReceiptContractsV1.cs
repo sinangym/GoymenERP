@@ -23,14 +23,15 @@ public interface IInventoryGoodsReceiptParticipantV1 : IAsyncDisposable
 /// Explicit physical facts for one accepted Purchasing line. Purchase quantity remains Purchasing's
 /// fact; <paramref name="QuantityKg"/> is the separately measured Inventory quantity. No conversion,
 /// tolerance, quality or initial block policy is inferred here. Owner, custodian, location and block
-/// must be supplied from already-authorized server-side facts.
+/// must be supplied from already-authorized server-side facts. <paramref name="PurchaseOrderVersionAfter"/>
+/// is Purchasing's returned post-stage version, never the host request's pre-stage expected version.
 /// </summary>
 public sealed record InventoryGoodsReceiptRequestV1(
     Guid CompanyId,
     Guid AcceptanceId,
     Guid PurchaseOrderId,
     Guid PurchaseOrderLineId,
-    string ExpectedPurchaseOrderVersion,
+    string PurchaseOrderVersionAfter,
     Guid ProductId,
     string ExpectedProductVersion,
     Guid PurchaseUnitId,
@@ -135,7 +136,7 @@ public static class InventoryGoodsReceiptContractV1
             throw Refused(404, InventoryGoodsReceiptCodesV1.InvalidReference);
         }
 
-        RequireVersion(request.ExpectedPurchaseOrderVersion);
+        RequireVersion(request.PurchaseOrderVersionAfter);
         RequireToken(request.ExpectedProductVersion, 64);
         RequireToken(request.LabelCode, 64);
         RequireOptional(request.HeatNumber, 64);
