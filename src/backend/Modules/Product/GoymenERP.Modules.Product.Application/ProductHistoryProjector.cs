@@ -23,34 +23,40 @@ public static class ProductHistoryProjector
         if (productId == Guid.Empty) throw new ArgumentException("A Product id is required.", nameof(productId));
 
         var truncated = newestFirst.Count > ProductHistoryApiV1.PageSize;
-        var records = newestFirst.Take(ProductHistoryApiV1.PageSize).ToArray();
-        var entries = new List<ProductHistoryEntryView>(records.Length);
+        // Validate the one extra row requested by ProductHistoryReader before discarding it.
+        // Otherwise a missing event exactly across the 50/51 boundary would be hidden by
+        // truncation even though the Audit owner supplied the sentinel that proves the gap.
+        var verified = newestFirst.Take(ProductHistoryApiV1.PageSize + 1).ToArray();
+        var publishedCount = Math.Min(verified.Length, ProductHistoryApiV1.PageSize);
+        var entries = new List<ProductHistoryEntryView>(publishedCount);
         var seen = new HashSet<Guid>();
         DateTimeOffset? previous = null;
-        foreach (var record in records)
+        for (var index = 0; index < verified.Length; index++)
         {
+            var record = verified[index];
             if (record is null || record.EventId == Guid.Empty || !seen.Add(record.EventId))
                 throw Invalid();
             if (record.OccurredAtUtc.Offset != TimeSpan.Zero || (previous is { } newer && record.OccurredAtUtc > newer))
                 throw Invalid();
             previous = record.OccurredAtUtc;
-            entries.Add(Entry(productId, record));
+            var entry = Entry(productId, record);
+            if (index < publishedCount) entries.Add(entry);
         }
 
         // ONE CHAIN, newest first: every record's predecessor is the next older record.
         // A gap (a missing 2 -> 3), a creation event that is not the oldest, and equal-time
         // records in the wrong order all break this equality; each of them would otherwise
         // read as a complete history. No per-record rule can see any of the three.
-        for (var i = 0; i + 1 < records.Length; i++)
+        for (var i = 0; i + 1 < verified.Length; i++)
         {
-            if (records[i].VersionBefore != records[i + 1].VersionAfter) throw Invalid();
+            if (verified[i].VersionBefore != verified[i + 1].VersionAfter) throw Invalid();
         }
 
         // An UNCUT list reaches back to the creation event. Only the page cut may hide it,
         // and that case is reported separately as Truncated. A creation is version 1 by the
         // per-record rule above, so the operation is the whole test here.
-        if (!truncated && records.Length > 0
-            && records[^1].Operation != ProductHistoryApiV1.DraftCreate)
+        if (!truncated && verified.Length > 0
+            && verified[^1].Operation != ProductHistoryApiV1.DraftCreate)
         {
             throw Invalid();
         }

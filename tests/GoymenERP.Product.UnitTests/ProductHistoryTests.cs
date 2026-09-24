@@ -112,6 +112,17 @@ public sealed class ProductHistoryTests
     }
 
     [Fact]
+    public void A_gap_across_the_published_page_and_discarded_sentinel_fails_closed()
+    {
+        var records = Descending(101, ProductHistoryApiV1.PageSize + 1);
+        // The published 50th row is 51 -> 52. This sentinel is internally valid but
+        // ends at 50, so version 51 is missing exactly where the response is cut.
+        records[^1] = Edit(Card(49), Card(50), T0.AddMinutes(-ProductHistoryApiV1.PageSize), "Sınır boşluğu");
+
+        Assert.Throws<InvalidOperationException>(() => ProductHistoryProjector.Project(ProductId, records));
+    }
+
+    [Fact]
     public void Exactly_one_page_is_the_whole_history_and_one_more_is_cut()
     {
         var full = ProductHistoryProjector.Project(ProductId, Complete(ProductHistoryApiV1.PageSize - 1));
