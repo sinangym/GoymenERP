@@ -54,6 +54,7 @@ public static class InventoryModuleExtensions
             serviceProvider.GetRequiredService<InventoryStore>());
         // INV-OPEN-1 part 2: the opening-count command; its location and product ports are the host's adapters.
         services.AddScoped<IInventoryOpeningCommandService, InventoryOpeningCommandService>();
+        services.AddInventoryStockPositions();
         services.AddSingleton<IShellCapabilityProvider, InventoryShellCapabilityProvider>();
         return services;
     }
