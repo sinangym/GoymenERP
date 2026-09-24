@@ -9,6 +9,13 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations;
 [Migration("20260923213000_AddManualBankPayments")]
 public sealed class AddManualBankPayments : Migration
 {
+    private const string TargetCheckBeforeFinanceAllocations =
+        "([DraftId] IS NOT NULL AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [BankAccountId] IS NULL AND [ReversalProposalId] IS NULL AND [ManualBankPaymentId] IS NULL) OR "
+        + "([BankAccountId] IS NOT NULL AND [BankAccountId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL AND [ReversalProposalId] IS NULL AND [ManualBankPaymentId] IS NULL) OR "
+        + "([ReversalProposalId] IS NOT NULL AND [ReversalProposalId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL AND [BankAccountId] IS NULL AND [ManualBankPaymentId] IS NULL) OR "
+        + "([ManualBankPaymentId] IS NOT NULL AND [ManualBankPaymentId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL AND [BankAccountId] IS NULL AND [ReversalProposalId] IS NULL) OR "
+        + "([DraftId] IS NULL AND [BankAccountId] IS NULL AND [ReversalProposalId] IS NULL AND [ManualBankPaymentId] IS NULL AND JSON_VALUE([ResultJson], '$.outcome') = 'ValidationFailed')";
+
     protected override void Up(MigrationBuilder migrationBuilder)
     {
         migrationBuilder.CreateTable(
@@ -96,7 +103,7 @@ public sealed class AddManualBankPayments : Migration
         migrationBuilder.AddColumn<Guid>(name: "ManualBankPaymentId", schema: "finance", table: "Commands",
             type: "uniqueidentifier", nullable: true);
         migrationBuilder.AddCheckConstraint(name: "CK_Commands_Target", schema: "finance", table: "Commands",
-            sql: FinanceDbContext.TargetCheck);
+            sql: TargetCheckBeforeFinanceAllocations);
         migrationBuilder.CreateIndex("IX_Commands_CompanyId_ManualBankPaymentId", "Commands",
             new[] { "CompanyId", "ManualBankPaymentId" }, schema: "finance");
         migrationBuilder.AddForeignKey(

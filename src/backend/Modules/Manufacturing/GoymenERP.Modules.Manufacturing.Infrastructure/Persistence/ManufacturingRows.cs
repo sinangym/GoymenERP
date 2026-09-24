@@ -41,6 +41,7 @@ internal sealed class PlanInputRow : IManufacturingTenantRow
     public Guid ParentRollId { get; set; }
     public int Sequence { get; set; }
     public decimal PlannedKg { get; set; }
+    public long? ExpectedLabelVersion { get; set; }
 }
 
 /// <summary>
@@ -86,6 +87,7 @@ internal sealed class OrderInputRow : IManufacturingTenantRow
     public Guid ParentRollId { get; set; }
     public int Sequence { get; set; }
     public decimal PlannedKg { get; set; }
+    public long? ExpectedLabelVersion { get; set; }
 }
 
 /// <summary>The kind of a stored realization fact.</summary>
