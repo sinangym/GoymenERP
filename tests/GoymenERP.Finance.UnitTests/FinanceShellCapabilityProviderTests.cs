@@ -17,7 +17,7 @@ public sealed class FinanceShellCapabilityProviderTests
     {
         var declarations = new FinanceShellCapabilityProvider().GetDeclarations();
 
-        Assert.Equal(9, declarations.Count);
+        Assert.Equal(14, declarations.Count);
         Assert.All(declarations, declaration => Assert.True(declaration.ImplementationAvailable));
     }
 
@@ -28,7 +28,7 @@ public sealed class FinanceShellCapabilityProviderTests
         var byId = provider.GetDeclarations().ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
 
         Assert.Equal("CHATGPT-BUSINESS/FINANCE", provider.Owner);
-        Assert.Equal("1.1", provider.ContractVersion);
+        Assert.Equal("1.2", provider.ContractVersion);
         (string Capability, string Route, string Path, string Screen, ShellCapabilityRoutePrecedence Precedence, string[] Permissions)[] expected =
         [
             ("finance.receipts.list", "finance.receipts", "/finans/tahsilatlar", "F-02", ShellCapabilityRoutePrecedence.Static,
@@ -53,6 +53,22 @@ public sealed class FinanceShellCapabilityProviderTests
             ("finance.bank-accounts.approve", "finance.bank-accounts", "/finans/banka-hesaplari", "F-04",
                 ShellCapabilityRoutePrecedence.Static,
                 [ErpPermissions.FinanceBankAccountRead, ErpPermissions.FinanceBankAccountApprove]),
+            ("finance.manual-bank-payments.list", "finance.manual-bank-payments.list", "/finans/odemeler",
+                "F-02-PAYMENTS", ShellCapabilityRoutePrecedence.Static,
+                [FinancePermissionNames.ManualBankPaymentDraftRead]),
+            ("finance.manual-bank-payments.create", "finance.manual-bank-payments.create", "/finans/odemeler/yeni",
+                "F-02-PAYMENT-NEW", ShellCapabilityRoutePrecedence.Static,
+                [FinancePermissionNames.ManualBankPaymentDraftSave]),
+            ("finance.manual-bank-payments.detail", "finance.manual-bank-payments.detail", "/finans/odemeler/:paymentId",
+                "F-02-PAYMENT-DETAIL", ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
+                [FinancePermissionNames.ManualBankPaymentDraftRead]),
+            ("finance.manual-bank-payments.approve", "finance.manual-bank-payments.detail", "/finans/odemeler/:paymentId",
+                "F-02-PAYMENT-DETAIL", ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
+                [FinancePermissionNames.ManualBankPaymentDraftRead, FinancePermissionNames.ManualBankPaymentApprove]),
+            ("finance.manual-bank-payments.record", "finance.manual-bank-payments.detail", "/finans/odemeler/:paymentId",
+                "F-02-PAYMENT-DETAIL", ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
+                [FinancePermissionNames.ManualBankPaymentDraftRead, FinancePermissionNames.ManualBankPaymentRecord,
+                    ErpPermissions.AccountingPeriodsRead]),
         ];
 
         Assert.Equal(expected.Select(item => item.Capability).Order(StringComparer.Ordinal), byId.Keys.Order(StringComparer.Ordinal));
@@ -80,6 +96,12 @@ public sealed class FinanceShellCapabilityProviderTests
         var record = Assert.Single(declarations, item => item.CapabilityId == FinanceShellCapabilityProvider.ReceiptRecordCapabilityId);
         var reversePropose = Assert.Single(declarations,
             item => item.CapabilityId == FinanceShellCapabilityProvider.ReceiptReverseProposeCapabilityId);
+        var paymentDetail = Assert.Single(declarations,
+            item => item.CapabilityId == FinanceShellCapabilityProvider.ManualBankPaymentDetailCapabilityId);
+        var paymentApprove = Assert.Single(declarations,
+            item => item.CapabilityId == FinanceShellCapabilityProvider.ManualBankPaymentApproveCapabilityId);
+        var paymentRecord = Assert.Single(declarations,
+            item => item.CapabilityId == FinanceShellCapabilityProvider.ManualBankPaymentRecordCapabilityId);
 
         Assert.Equal(list.CapabilityId, approve.ParentCapabilityId);
         Assert.Equal(approve with { CapabilityId = list.CapabilityId, ParentCapabilityId = null, RequiredPermissions = list.RequiredPermissions },
@@ -92,7 +114,13 @@ public sealed class FinanceShellCapabilityProviderTests
         Assert.Equal(detail.CapabilityId, reversePropose.ParentCapabilityId);
         Assert.Superset(detail.RequiredPermissions.ToHashSet(StringComparer.Ordinal),
             reversePropose.RequiredPermissions.ToHashSet(StringComparer.Ordinal));
-        Assert.Equal(3, declarations.Count(item => item.ParentCapabilityId is not null));
+        Assert.Equal(paymentDetail.CapabilityId, paymentApprove.ParentCapabilityId);
+        Assert.Superset(paymentDetail.RequiredPermissions.ToHashSet(StringComparer.Ordinal),
+            paymentApprove.RequiredPermissions.ToHashSet(StringComparer.Ordinal));
+        Assert.Equal(paymentDetail.CapabilityId, paymentRecord.ParentCapabilityId);
+        Assert.Superset(paymentDetail.RequiredPermissions.ToHashSet(StringComparer.Ordinal),
+            paymentRecord.RequiredPermissions.ToHashSet(StringComparer.Ordinal));
+        Assert.Equal(5, declarations.Count(item => item.ParentCapabilityId is not null));
     }
 
     [Fact]
@@ -127,7 +155,8 @@ public sealed class FinanceShellCapabilityProviderTests
 
         // The registry refuses a screen id shared by two routes (ValidateUnique on ScreenId).
         Assert.Equal(routes.Length, routes.Select(item => item.ScreenId).Distinct(StringComparer.Ordinal).Count());
-        Assert.Equal(["F-02", "F-02-DETAIL", "F-02-NEW", "F-02-REVERSAL-APPROVAL", "F-04", "F-04-NEW"],
+        Assert.Equal(["F-02", "F-02-DETAIL", "F-02-NEW", "F-02-PAYMENT-DETAIL", "F-02-PAYMENT-NEW",
+                "F-02-PAYMENTS", "F-02-REVERSAL-APPROVAL", "F-04", "F-04-NEW"],
             routes.Select(item => item.ScreenId).Order(StringComparer.Ordinal));
     }
 }
