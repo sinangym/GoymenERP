@@ -67,6 +67,7 @@ afterEach(() => {
 describe('Sales physical allocation consumer', () => {
   it('saves, closes, reopens, releases and reopens the same server record', async () => {
     let stored: ReturnType<typeof allocation> | null = null
+    let hideRecordedOnNextGet = false
     const calls: { readonly method: string; readonly url: string; readonly body: any; readonly headers: Headers }[] = []
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
@@ -74,7 +75,11 @@ describe('Sales physical allocation consumer', () => {
       const body = init?.body === undefined ? null : JSON.parse(String(init.body))
       const headers = new Headers(init?.headers)
       calls.push({ method, url, body, headers })
-      if (method === 'GET') return answer({ items: stored === null ? [] : [{ allocation: stored, labelVersion: stored.status === 'Active' ? '12' : '13' }], searchWindowFull: false })
+      if (method === 'GET') {
+        const visible = stored !== null && !hideRecordedOnNextGet
+        hideRecordedOnNextGet = false
+        return answer({ items: visible ? [{ allocation: stored, labelVersion: stored.status === 'Active' ? '12' : '13' }] : [], searchWindowFull: false })
+      }
       if (url.endsWith('/release')) {
         expect(body).toEqual({ expectedAllocationVersion: '1', reason: 'Sipariş değişti.' })
         stored = { ...allocation('Released', '2'), allocationId: stored!.allocationId }
@@ -84,6 +89,7 @@ describe('Sales physical allocation consumer', () => {
         expectedLabelVersion: '11', quantityKg: '5', reason: 'Sipariş için ayırıldı.', reservedUntilUtc: null })
       expect(body.allocationId).toMatch(/^[0-9a-f-]{36}$/)
       stored = { ...allocation('Active', '1'), allocationId: body.allocationId }
+      hideRecordedOnNextGet = true
       return answer(stored, 201)
     }))
 

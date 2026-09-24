@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { classifyOutcome } from '../shell/uiState'
 import type { DraftLine } from './contract'
@@ -51,6 +51,7 @@ function AllocationLine({ companyId, namespace, routeEntryGeneration, salesOrder
   readonly line: DraftLine
 }) {
   const boundary = useAuthBoundary()
+  const queryClient = useQueryClient()
   const scope: AllocationScope = {
     companyId,
     salesOrderId,
@@ -58,8 +59,9 @@ function AllocationLine({ companyId, namespace, routeEntryGeneration, salesOrder
     productId: line.productId,
     productVersion: line.productVersion,
   }
+  const queryKey = [namespace, routeEntryGeneration, 'physical-allocations', salesOrderId, line.lineId] as const
   const query = useQuery({
-    queryKey: [namespace, routeEntryGeneration, 'physical-allocations', salesOrderId, line.lineId],
+    queryKey,
     queryFn: async ({ signal }) => {
       const snapshot = boundary.capture()
       const outcome = await fetchPhysicalAllocations(scope, signal)
@@ -82,13 +84,25 @@ function AllocationLine({ companyId, namespace, routeEntryGeneration, salesOrder
     await query.refetch()
   }
 
+  const showRecordedAllocation = (allocation: PhysicalAllocation, labelVersion: string) => {
+    queryClient.setQueryData(queryKey, (current: typeof query.data) => {
+      if (current?.type !== 'ok-single') return current
+      const item = { allocation, labelVersion }
+      const items = current.data.items.some((candidate) => candidate.allocation.allocationId === allocation.allocationId)
+        ? current.data.items.map((candidate) => candidate.allocation.allocationId === allocation.allocationId ? item : candidate)
+        : [...current.data.items, item]
+      return { ...current, data: { ...current.data, items } }
+    })
+  }
+
   const settle = async (outcome: AllocationMutationOutcome, attemptScope: AllocationAttemptScope, key: string,
-    authSnapshot: ReturnType<typeof boundary.capture>, success: string) => {
+    authSnapshot: ReturnType<typeof boundary.capture>, success: string, labelVersion?: string) => {
     if (outcome.type === 'recorded') {
       finishAllocationAttempt(attemptScope, key)
       setAttemptRevision((value) => value + 1)
       setNotice({ tone: 'success', text: outcome.replayed ? T.replayed : success })
       await refresh()
+      if (labelVersion !== undefined) showRecordedAllocation(outcome.allocation, labelVersion)
       return
     }
     if (outcome.type === 'http') {
@@ -127,7 +141,8 @@ function AllocationLine({ companyId, namespace, routeEntryGeneration, salesOrder
     const authSnapshot = boundary.capture()
     setBusy(true)
     try {
-      await settle(await createPhysicalAllocation(scope, attempt), createScope, attempt.idempotencyKey, authSnapshot, T.saved)
+      await settle(await createPhysicalAllocation(scope, attempt), createScope, attempt.idempotencyKey, authSnapshot,
+        T.saved, candidate.expectedLabelVersion)
     } finally {
       setBusy(false)
     }
