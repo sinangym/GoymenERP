@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { useParams } from 'react-router'
+import { Link, useLocation, useParams } from 'react-router'
 import { fetchPurchaseRequest } from './api'
-import { PURCHASING_CAPABILITY } from './capabilities'
+import { purchaseOrderDetailPath, PURCHASING_CAPABILITY } from './capabilities'
 import { submitPurchaseRequest, type RequestSubmissionOutcome } from './requestSubmissionApi'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { useShellState } from '../shell/shellContext'
@@ -12,12 +12,41 @@ import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { pendingPurchaseRequestSubmissionKey, recallPendingPurchaseRequestSubmission, releasePendingPurchaseRequestSubmission, reservePendingPurchaseRequestSubmission, type PendingPurchaseRequestSubmission } from './pendingRequestStore'
 import styles from './purchasing.module.css'
 
-export function PurchaseRequestDetailPage() {
-  const shell = useShellState(); const key = contextKey(shell); const namespace = key === null ? null : contextKeyString(key); const { requestId } = useParams()
-  return <PurchaseRequestDetail key={`${namespace ?? 'no-context'}::${requestId ?? ''}::${shell.routeEntryGeneration}`} namespace={namespace} />
+/** Navigation hint only: backend authorization still owns both detail reads. */
+function sourceOrderId(value: unknown, namespace: string | null, requestId: string | undefined): string | null {
+  if (namespace === null || requestId === undefined || value === null || typeof value !== 'object' || Array.isArray(value)) return null
+  const fields = Object.keys(value)
+  if (fields.length !== 3 || !['ns', 'requestId', 'orderId'].every((field) => Object.prototype.hasOwnProperty.call(value, field))) return null
+  const origin = value as Record<string, unknown>
+  if (origin.ns !== namespace || origin.requestId !== requestId || typeof origin.orderId !== 'string') return null
+  // Only a canonical non-empty Guid, never an arbitrary URL, query or returnTo.
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(origin.orderId)
+    || origin.orderId === '00000000-0000-0000-0000-000000000000') return null
+  return origin.orderId
 }
 
-function PurchaseRequestDetail({ namespace }: { readonly namespace: string | null }) {
+export function PurchaseRequestDetailPage() {
+  const shell = useShellState()
+  const key = contextKey(shell)
+  const namespace = key === null ? null : contextKeyString(key)
+  const { requestId } = useParams()
+  const location = useLocation()
+  // Keep the entry generation outside the keyed detail. A stale detail remount
+  // must not re-authorize a return hint left behind by an earlier entry.
+  const [entry, setEntry] = useState(() => ({
+    key: location.key, state: location.state as unknown, requestId, generation: shell.routeEntryGeneration,
+  }))
+  const sameEntry = entry.key === location.key && entry.state === location.state && entry.requestId === requestId
+  if (!sameEntry) {
+    setEntry({ key: location.key, state: location.state as unknown, requestId, generation: shell.routeEntryGeneration })
+  }
+  const returnOrderId = sameEntry && entry.generation === shell.routeEntryGeneration
+    ? sourceOrderId(location.state as unknown, namespace, requestId)
+    : null
+  return <PurchaseRequestDetail key={`${namespace ?? 'no-context'}::${requestId ?? ''}::${shell.routeEntryGeneration}`} namespace={namespace} returnOrderId={returnOrderId} />
+}
+
+function PurchaseRequestDetail({ namespace, returnOrderId }: { readonly namespace: string | null; readonly returnOrderId: string | null }) {
   const shell = useShellState(); const boundary = useAuthBoundary(); const { requestId } = useParams()
   const companyId = shell.activeContext?.scopeMode === 'single' ? shell.activeContext.companyId : null
   const actorId = shell.activeContext?.userId ?? null
@@ -63,5 +92,7 @@ function PurchaseRequestDetail({ namespace }: { readonly namespace: string | nul
   if (state.kind !== 'ready') return frame(<StateBlock state={state} subject="satın alma talebi" onRetry={() => void query.refetch()} />)
   const { request, lines } = state.data; const unresolved = attempt.phase === 'unknown' || attempt.phase === 'submitting'
   const notice = attempt.phase === 'applied' ? <p role="status" className={styles.success}>{attempt.replayed ? 'Önceki gönderim yanıtı yeniden gösterildi.' : 'Talep gönderildi ve yeniden okundu.'}</p> : attempt.phase === 'failed' ? <p role="alert" className={styles.error}>Talep gönderilmedi ({attempt.code ?? attempt.status}). Kayıt yeniden okundu.</p> : null
-  return frame(<><dl className={styles.facts}><div><dt>Talep</dt><dd className={styles.mono}>{request.id}</dd></div><div><dt>Durum</dt><dd><span className={request.status === 'Submitted' ? styles.approved : styles.draft}>{request.status === 'Submitted' ? 'Gönderildi' : 'Taslak'}</span></dd></div><div><dt>Sürüm</dt><dd>{request.version}</dd></div><div><dt>İş tarihi</dt><dd>{request.effectiveOn}</dd></div></dl><section><h2>İhtiyaç satırları</h2><div className={styles.tableWrap}><table><thead><tr><th>No</th><th>Ürün</th><th>Birim</th><th>Miktar</th></tr></thead><tbody>{lines.map((line) => <tr key={line.lineId}><td>{line.lineNo}</td><td className={styles.mono}>…{line.productId.slice(-8)}</td><td className={styles.mono}>…{line.unitId.slice(-8)}</td><td>{line.quantity}</td></tr>)}</tbody></table></div></section>{canSubmit ? notice : null}{canSubmit && (request.status === 'Draft' || unresolved) ? <section className={styles.actionCard}><h2>Talebi ihtiyaç havuzuna gönder</h2><p>Gönderim yalnız talep durumunu değiştirir; sipariş, fiyat veya stok hareketi üretmez.</p>{attempt.phase === 'unknown' ? <p role="alert" className={styles.warning}>Sonuç bilinmiyor. Yeni işlem başlatmadan aynı anahtar ve sürümle yeniden gönderin.</p> : null}<button type="button" disabled={attempt.phase === 'submitting'} onClick={() => void send(attempt.phase === 'unknown' ? attempt.snapshot : undefined)}>{attempt.phase === 'submitting' ? 'Gönderiliyor…' : attempt.phase === 'unknown' ? 'Aynı gönderimi yeniden dene' : 'Gönder'}</button></section> : null}</>)
+  const showOrderReturn = returnOrderId !== null && namespace !== null && request.id === requestId && request.companyId === companyId
+    && hasCapability(shell, PURCHASING_CAPABILITY.requestDetail) && hasCapability(shell, PURCHASING_CAPABILITY.orderDetail)
+  return frame(<>{showOrderReturn && returnOrderId !== null ? <nav aria-label="Siparişe geri dönüş"><Link to={purchaseOrderDetailPath(returnOrderId)} state={null}>Kaynak siparişe dön</Link></nav> : null}<dl className={styles.facts}><div><dt>Talep</dt><dd className={styles.mono}>{request.id}</dd></div><div><dt>Durum</dt><dd><span className={request.status === 'Submitted' ? styles.approved : styles.draft}>{request.status === 'Submitted' ? 'Gönderildi' : 'Taslak'}</span></dd></div><div><dt>Sürüm</dt><dd>{request.version}</dd></div><div><dt>İş tarihi</dt><dd>{request.effectiveOn}</dd></div></dl><section><h2>İhtiyaç satırları</h2><div className={styles.tableWrap}><table><thead><tr><th>No</th><th>Ürün</th><th>Birim</th><th>Miktar</th></tr></thead><tbody>{lines.map((line) => <tr key={line.lineId}><td>{line.lineNo}</td><td className={styles.mono}>…{line.productId.slice(-8)}</td><td className={styles.mono}>…{line.unitId.slice(-8)}</td><td>{line.quantity}</td></tr>)}</tbody></table></div></section>{canSubmit ? notice : null}{canSubmit && (request.status === 'Draft' || unresolved) ? <section className={styles.actionCard}><h2>Talebi ihtiyaç havuzuna gönder</h2><p>Gönderim yalnız talep durumunu değiştirir; sipariş, fiyat veya stok hareketi üretmez.</p>{attempt.phase === 'unknown' ? <p role="alert" className={styles.warning}>Sonuç bilinmiyor. Yeni işlem başlatmadan aynı anahtar ve sürümle yeniden gönderin.</p> : null}<button type="button" disabled={attempt.phase === 'submitting'} onClick={() => void send(attempt.phase === 'unknown' ? attempt.snapshot : undefined)}>{attempt.phase === 'submitting' ? 'Gönderiliyor…' : attempt.phase === 'unknown' ? 'Aynı gönderimi yeniden dene' : 'Gönder'}</button></section> : null}</>)
 }

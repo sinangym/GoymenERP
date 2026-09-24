@@ -49,6 +49,10 @@ public static class AccountingModuleExtensions
         services.AddScoped<IAccountingPeriodStore>(serviceProvider => serviceProvider.GetRequiredService<AccountingStore>());
         services.AddScoped<IAccountingPostingStore>(serviceProvider => serviceProvider.GetRequiredService<AccountingStore>());
         services.AddScoped<IAccountingCommandLog>(serviceProvider => serviceProvider.GetRequiredService<AccountingStore>());
+        services.AddScoped<IAccountingNormalJournalDraftStore>(serviceProvider => serviceProvider.GetRequiredService<AccountingStore>());
+        services.TryAddSingleton<NormalJournalPermissionBindingV1>();
+        services.AddScoped<NormalJournalDraftApprovalPolicyV1>();
+        services.AddScoped<NormalJournalDraftServiceV1>();
         services.AddScoped<AccountingApiService>();
         return services;
     }

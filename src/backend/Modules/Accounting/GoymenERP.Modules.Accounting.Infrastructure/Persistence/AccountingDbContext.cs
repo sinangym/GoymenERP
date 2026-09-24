@@ -45,6 +45,10 @@ public sealed class AccountingDbContext(DbContextOptions<AccountingDbContext> op
 
     internal DbSet<AccountingCommandRow> Commands => Set<AccountingCommandRow>();
 
+    internal DbSet<NormalJournalDraftRow> NormalJournalDrafts => Set<NormalJournalDraftRow>();
+
+    internal DbSet<NormalJournalDraftLineRow> NormalJournalDraftLines => Set<NormalJournalDraftLineRow>();
+
     /// <summary>
     /// ACC-V0 (Ö4): the facts follow the status exactly. Proposed (3): the preparer only; Open (1): the
     /// preparer and an approval by SOMEONE ELSE; Closed (2): both plus the close.
@@ -73,6 +77,8 @@ public sealed class AccountingDbContext(DbContextOptions<AccountingDbContext> op
         ConfigurePostingExceptions(modelBuilder);
         ConfigurePendingValuations(modelBuilder);
         ConfigureCommands(modelBuilder);
+        ConfigureNormalJournalDrafts(modelBuilder);
+        ConfigureNormalJournalDraftLines(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -303,6 +309,75 @@ public sealed class AccountingDbContext(DbContextOptions<AccountingDbContext> op
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    private void ConfigureNormalJournalDrafts(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<NormalJournalDraftRow>();
+        entity.ToTable("NormalJournalDrafts", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_NormalJournalDrafts_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [SourceId] <> '00000000-0000-0000-0000-000000000000' AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [PreparedByUserId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [AccountPlanApprovedByUserId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [PostingRuleApprovedByUserId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_NormalJournalDrafts_Text",
+                "LEN([Consumer]) > 0 AND LEN([MessageId]) > 0 AND LEN([PostingPurpose]) > 0 "
+                + "AND LEN([PostingRuleVersion]) > 0 AND LEN([AccountPlanSourceVersion]) > 0");
+            table.HasCheckConstraint("CK_NormalJournalDrafts_Hashes",
+                "LEN([ContentHash]) = 64 AND LEN([AccountPlanSourceSha256]) = 64");
+            table.HasCheckConstraint("CK_NormalJournalDrafts_Version", "[Version] >= 1");
+            table.HasCheckConstraint("CK_NormalJournalDrafts_Status",
+                "([Status] = 1 AND [ApprovedByUserId] IS NULL AND [ApprovedAtUtc] IS NULL AND [PeriodId] IS NULL AND [PostedJournalId] IS NULL) OR "
+                + "([Status] = 2 AND [ApprovedByUserId] IS NOT NULL AND [ApprovedByUserId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [ApprovedAtUtc] IS NOT NULL AND [PeriodId] IS NOT NULL AND [PeriodId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [PostedJournalId] = [Id])");
+        });
+        entity.HasKey(x => x.Id);
+        entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.Version).IsConcurrencyToken();
+        entity.Property(x => x.RowVersion).IsRowVersion();
+        entity.Property(x => x.ContentHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        entity.Property(x => x.Consumer).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        entity.Property(x => x.MessageId).HasMaxLength(200).UseCollation(IdentityCollation).IsRequired();
+        entity.Property(x => x.PostingPurpose).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        entity.Property(x => x.PostingRuleVersion).HasMaxLength(128).IsRequired();
+        entity.Property(x => x.AccountPlanSourceVersion).HasMaxLength(128).IsRequired();
+        entity.Property(x => x.AccountPlanSourceSha256).HasMaxLength(64).IsUnicode(false).IsRequired();
+        entity.Property(x => x.TransactionDate).HasColumnType("date");
+        entity.Property(x => x.AccountingDate).HasColumnType("date");
+        entity.Property(x => x.ValueDate).HasColumnType("date");
+        entity.HasIndex(x => new { x.CompanyId, x.Status, x.AccountingDate });
+        entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<JournalRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.PostedJournalId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    private void ConfigureNormalJournalDraftLines(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<NormalJournalDraftLineRow>();
+        entity.ToTable("NormalJournalDraftLines", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_NormalJournalDraftLines_Identity",
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [AccountId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_NormalJournalDraftLines_Line", "[LineNumber] >= 1 AND LEN([MappingKey]) > 0");
+            table.HasCheckConstraint("CK_NormalJournalDraftLines_Value", "[Side] IN (1, 2) AND [Amount] > 0");
+        });
+        entity.HasKey(x => new { x.CompanyId, x.DraftId, x.LineNumber });
+        entity.Property(x => x.MappingKey).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        entity.Property(x => x.Amount).HasPrecision(38, 18);
+        entity.HasOne<NormalJournalDraftRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.DraftId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     private void ApplyWriteGuards()
     {
         AccountingAuditEventTenantGuard.Validate(this, companyContext);
@@ -343,6 +418,9 @@ public sealed class AccountingDbContext(DbContextOptions<AccountingDbContext> op
                     PendingValuationRow => [nameof(PendingValuationRow.Status), nameof(PendingValuationRow.PostingRuleVersion),
                         nameof(PendingValuationRow.LinesAwaitingAmount), nameof(PendingValuationRow.FirstMessageId),
                         nameof(PendingValuationRow.UpdatedAtUtc)],
+                    NormalJournalDraftRow => [nameof(NormalJournalDraftRow.Status), nameof(NormalJournalDraftRow.ApprovedByUserId),
+                        nameof(NormalJournalDraftRow.ApprovedAtUtc), nameof(NormalJournalDraftRow.PeriodId),
+                        nameof(NormalJournalDraftRow.PostedJournalId), nameof(NormalJournalDraftRow.UpdatedAtUtc)],
                     _ => [],
                 };
                 var changed = entry.Properties

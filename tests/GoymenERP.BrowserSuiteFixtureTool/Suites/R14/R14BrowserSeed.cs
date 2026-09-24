@@ -1,5 +1,7 @@
 using System.Text.Json;
 using GoymenERP.Api.Shell;
+using GoymenERP.Modules.Identity.Domain.Assignments;
+using GoymenERP.Modules.Identity.Infrastructure.Fixtures;
 using GoymenERP.Modules.Product.Infrastructure.Fixtures;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -18,12 +20,28 @@ public sealed class R14BrowserSeed : IBrowserSuiteFixture
 
     public static readonly Guid CompanyGdc = Guid.Parse("10000000-0000-0000-0000-000000000001");
     public static readonly Guid CompanyOther = Guid.Parse("10000000-0000-0000-0000-000000000002");
+    public static readonly Guid RecorderUserId = Guid.Parse("b2000000-0000-4000-8000-000000000701");
+
+    /// <summary>
+    /// Product master assignments bind the canonical SYSTEM_ADMINISTRATOR role. The recorder's normal
+    /// company role remains the source of its Inventory permissions and is not replaced by this fixture.
+    /// </summary>
+    public static readonly Guid ProductReadRoleId = Guid.Parse("30000000-0000-0000-0000-000000000003");
+    public static readonly Guid ProductIssuerUserId = Guid.Parse("b2000000-0000-4000-8000-000000000204");
+    public static readonly Guid ProductIssuerExternalIdentityId = Guid.Parse("b2100000-0000-4000-8000-000000000204");
+
+    private static readonly Guid ProductReadAssignmentId = Guid.Parse("b5000000-0000-4000-8000-000000000701");
+    private static readonly Guid ProductReadDecisionId = Guid.Parse("b5100000-0000-4000-8000-000000000701");
+    private static readonly DateTimeOffset ProductReadValidFromUtc =
+        new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
     private const string LocationsPath = "/api/v1/organization/locations?page=1&pageSize=100";
     private const string ProductCandidatesPath = "/api/v1/inventory/references/products";
     private const string LocationCandidatesPath = "/api/v1/inventory/references/locations";
     private const string CapabilitiesPath = "/api/v1/shell/capabilities";
     private const string OpeningCapability = "inventory.opening-stock.record";
+    private const string LabelDetailCapability = "inventory.stock-positions.list";
+    private const string ProductDetailCapability = "product.items.detail";
 
     public string Suite => "r14";
 
@@ -35,6 +53,21 @@ public sealed class R14BrowserSeed : IBrowserSuiteFixture
         {
             await registryScope.ServiceProvider.GetRequiredService<C01E2eProductTechnicalCardFixtureWriter>()
                 .EnsureAsync(cancellationToken);
+        }
+
+        await using (var authorityScope = context.Services.CreateAsyncScope())
+        {
+            await authorityScope.ServiceProvider.GetRequiredService<C01E2eProductMasterAssignmentFixtureWriter>()
+                .EnsureAsync(new ProductMasterAssignmentFixtureRow(
+                    ProductReadAssignmentId,
+                    RecorderUserId,
+                    ProductReadRoleId,
+                    ProductMasterOperation.Read,
+                    ProductIssuerUserId,
+                    ProductIssuerExternalIdentityId,
+                    ProductReadDecisionId,
+                    context.Label($"Product master Read for {RecorderActor}"),
+                    ProductReadValidFromUtc), cancellationToken);
         }
 
         ProductStockCandidateFixtureOutput product;
@@ -95,8 +128,10 @@ public sealed class R14BrowserSeed : IBrowserSuiteFixture
 
         string[] recorderCapabilities = await CapabilitiesAsync(context, RecorderActor, cancellationToken);
         string[] deniedCapabilities = await CapabilitiesAsync(context, DeniedActor, cancellationToken);
-        if (!recorderCapabilities.Contains(OpeningCapability, StringComparer.Ordinal)
-            || deniedCapabilities.Contains(OpeningCapability, StringComparer.Ordinal))
+        string[] requiredCapabilities = [OpeningCapability, LabelDetailCapability, ProductDetailCapability];
+        if (requiredCapabilities.Any(capability =>
+                !recorderCapabilities.Contains(capability, StringComparer.Ordinal)
+                || deniedCapabilities.Contains(capability, StringComparer.Ordinal)))
         {
             throw new InvalidOperationException("The R14 capability split does not match recorder and denied actors.");
         }
