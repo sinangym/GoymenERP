@@ -99,6 +99,10 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
     private static readonly Guid WithdrawalLineId = Guid.Parse("d9000000-0000-4000-8000-000000000413");
     private static readonly Guid DeliveryAddressId = Guid.Parse("da000000-0000-4000-8000-000000000401");
     private static readonly Guid DeliveryContactId = Guid.Parse("db000000-0000-4000-8000-000000000401");
+    private static readonly Guid AllocationOpeningId = Guid.Parse("dc000000-0000-4000-8000-000000000401");
+    private static readonly Guid AllocationOpeningLineId = Guid.Parse("dd000000-0000-4000-8000-000000000401");
+    private static readonly Guid AllocationLabelId = Guid.Parse("de000000-0000-4000-8000-000000000401");
+    private static readonly Guid AllocationLotId = Guid.Parse("df000000-0000-4000-8000-000000000401");
 
     // The GDC TRY money profile Settings actually answers for sales.order-draft.v1 on the business date
     // (ApprovedMoneyProfileCatalog.GdcTurkishLiraV1 / SettingsCurrencyIdentitiesV1.TurkishLira, Sinan Ö2 2026-09-18):
@@ -116,6 +120,10 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
     private const string ContactInformationReferencePath = "/api/v1/sales/references/contact-information";
     private const string CurrenciesReferencePath = "/api/v1/sales/references/currencies";
     private const string ProductsReferencePath = "/api/v1/sales/references/products";
+    private const string OpeningCountsPath = "/api/v1/inventory/opening-counts";
+    private const string OrganizationLocationsPath = "/api/v1/organization/locations?page=1&pageSize=100";
+    private const string PhysicalAllocationControl = "inventory.physical-allocation.write";
+    private const string AllocationLabelCode = "SYNS04-ALLOC-LABEL-1";
     private const string ApproveControl = "sales.orders.approve";
     private const int CustomerRole = 1;
     private const string DeliveryPurpose = "delivery";
@@ -146,6 +154,31 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
                 .EnsureAsync(cancellationToken);
         }
 
+        ProductStockCandidateFixtureOutput stockCandidate;
+        await using (var stockScope = context.Services.CreateAsyncScope())
+        {
+            stockCandidate = await stockScope.ServiceProvider
+                .GetRequiredService<C01E2eProductStockCandidateFixtureWriter>()
+                .EnsureAsync(cancellationToken);
+        }
+        if (stockCandidate.ProductVersion != "1" || stockCandidate.ProfileVersion != "1")
+        {
+            throw new InvalidOperationException("The Sales fixture writer's V1 snapshot no longer matches the stock candidate versions.");
+        }
+
+        var locations = await context.GetJsonAsync(CariActor, CompanyGdc, OrganizationLocationsPath, cancellationToken);
+        var allocationLocationId = locations.GetProperty("items").EnumerateArray()
+            .Where(item => item.GetProperty("isActive").GetBoolean() && !item.GetProperty("isExternal").GetBoolean())
+            .OrderBy(item => item.GetProperty("code").GetString(), StringComparer.Ordinal)
+            .Select(item => item.GetProperty("id").GetGuid())
+            .FirstOrDefault();
+        if (allocationLocationId == Guid.Empty)
+        {
+            throw new InvalidOperationException("The s04 allocation prerequisite has no active non-external GDC location.");
+        }
+        var allocationLabelVersion = await EnsureAllocationLabelAsync(
+            context, stockCandidate, allocationLocationId, cancellationToken);
+
         // SALES-A2a: the REAL customer, opened and described through the real Cari API (audited commands).
         var customer = await CariBrowserSeed.OpenPartyWithAccountAsync(
             context, CariActor, CompanyGdc, "cari-party", "Teslimat müşterisi", CustomerRole, cancellationToken);
@@ -163,8 +196,8 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
                     BusinessDate,
                     new SalesDraftFixtureOwners(PartyId, CompanyAccountId, CurrencyId, MoneyProfileId, EffectiveFrom),
                     [
-                        new SalesDraftFixtureLine(CoilLineId, CoilProductId, "S04-COIL", context.Label("rulo 1,25 × 1240"),
-                            KgUnitId, KgProfileId, "kg", "weight", IsKilogram: true, Scale: 3, "1.250", 1.250m),
+                        new SalesDraftFixtureLine(CoilLineId, stockCandidate.ProductId, "S04-ALLOC", context.Label("tahsis rulosu"),
+                            stockCandidate.UnitId, stockCandidate.ProfileId, "kg", "weight", IsKilogram: true, Scale: 3, "1.250", 1.250m),
                         new SalesDraftFixtureLine(SheetLineId, SheetProductId, "S04-SHEET", context.Label("levha 2 × 1000 × 2000"),
                             PieceUnitId, PieceProfileId, "adet", "count", IsKilogram: false, Scale: 0, "3", 3m),
                     ],
@@ -242,6 +275,12 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
         if (Capabilities(reader).Contains(ApproveControl, StringComparer.Ordinal))
         {
             throw new InvalidOperationException("The approve control must not be published to the reader.");
+        }
+        var preparer = await context.GetJsonAsync(PreparerActor, CompanyGdc, "/api/v1/shell/capabilities", cancellationToken);
+        if (!Capabilities(preparer).Contains(PhysicalAllocationControl, StringComparer.Ordinal)
+            || Capabilities(reader).Contains(PhysicalAllocationControl, StringComparer.Ordinal))
+        {
+            throw new InvalidOperationException("The physical-allocation control must be published only to the authorized s04 preparer.");
         }
 
         // D2 persona preflight through the real API: both actors own their fixture record and hold the same
@@ -360,7 +399,69 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
             ["productUnitProfileVersion"] = productCandidate.ProfileVersion,
             ["productCode"] = productCandidate.Code,
             ["productName"] = productCandidate.Name,
+            ["allocationLineId"] = CoilLineId.ToString("D"),
+            ["allocationLabelId"] = AllocationLabelId.ToString("D"),
+            ["allocationLabelVersion"] = allocationLabelVersion,
         };
+    }
+
+    private static async Task<string> EnsureAllocationLabelAsync(
+        BrowserSuiteFixtureContext context,
+        ProductStockCandidateFixtureOutput product,
+        Guid locationId,
+        CancellationToken cancellationToken)
+    {
+        using var client = context.Api(PreparerActor, CompanyGdc);
+        using var request = new HttpRequestMessage(HttpMethod.Post, OpeningCountsPath)
+        {
+            Content = JsonContent.Create(new
+            {
+                countId = AllocationOpeningId,
+                locationId,
+                countedOn = BusinessDate,
+                sheetReference = context.Label("allocation opening"),
+                lines = new[]
+                {
+                    new
+                    {
+                        lineId = AllocationOpeningLineId,
+                        labelId = AllocationLabelId,
+                        labelCode = AllocationLabelCode,
+                        lotId = AllocationLotId,
+                        heatNumber = (string?)null,
+                        coilNumber = (string?)null,
+                        productId = product.ProductId,
+                        productVersion = product.ProductVersion,
+                        quantityKg = "10",
+                    },
+                },
+            }),
+        };
+        request.Headers.Add(BrowserSuiteFixtureContext.IdempotencyHeader, context.IdempotencyKey("allocation-opening"));
+        using var response = await client.SendAsync(request, cancellationToken);
+        if ((int)response.StatusCode is not 200 and not 201)
+        {
+            throw new InvalidOperationException($"The real opening command refused the s04 allocation label: {(int)response.StatusCode}.");
+        }
+        var count = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: cancellationToken);
+        var line = count.GetProperty("lines").EnumerateArray().Single();
+        if (count.GetProperty("countId").GetGuid() != AllocationOpeningId
+            || line.GetProperty("labelId").GetGuid() != AllocationLabelId
+            || line.GetProperty("productId").GetGuid() != product.ProductId
+            || line.GetProperty("quantityKg").GetString() != "10")
+        {
+            throw new InvalidOperationException("The real opening command returned another allocation prerequisite.");
+        }
+
+        var label = await context.GetJsonAsync(
+            PreparerActor, CompanyGdc, $"/api/v1/inventory/labels/{AllocationLabelId:D}/detail", cancellationToken);
+        if (label.GetProperty("identity").GetProperty("productId").GetGuid() != product.ProductId
+            || label.GetProperty("balances").GetProperty("physicalKg").GetString() != "10")
+        {
+            throw new InvalidOperationException("The s04 allocation label does not reopen from Inventory server truth.");
+        }
+        return label.GetProperty("labelVersion").GetString()
+            ?? throw new InvalidOperationException("The s04 allocation label version is missing.");
     }
 
     private static async Task EnsureD2DraftAsync(
