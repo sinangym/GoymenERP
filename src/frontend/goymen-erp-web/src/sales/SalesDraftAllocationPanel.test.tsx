@@ -122,6 +122,38 @@ describe('Sales physical allocation consumer', () => {
     expect(calls.filter((call) => call.method === 'POST')).toHaveLength(2)
   })
 
+  it('keeps the fresher GET state when the recorded allocation already exists', async () => {
+    let createdId: string | null = null
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const method = init?.method ?? 'GET'
+      if (method === 'GET') {
+        const fresh = createdId === null ? [] : [{
+          allocation: { ...allocation('Released', '2'), allocationId: createdId }, labelVersion: '13',
+        }]
+        return answer({ items: fresh, searchWindowFull: false })
+      }
+      const body = JSON.parse(String(init?.body))
+      createdId = body.allocationId
+      return answer({ ...allocation('Active', '1'), allocationId: createdId }, 201)
+    }))
+
+    mount()
+    const card = await screen.findByTestId(`sales-allocation-line-${LINE}`)
+    expect(await within(card).findByText('Bu sipariş satırı için tahsis yok.')).toBeTruthy()
+    await userEvent.type(within(card).getByLabelText('Etiket kimliği'), LABEL)
+    await userEvent.type(within(card).getByLabelText('Etiket sürümü'), '11')
+    await userEvent.type(within(card).getByLabelText('Tahsis kg'), '5')
+    await userEvent.type(within(card).getByLabelText('Tahsis nedeni'), 'Sipariş için ayırıldı.')
+    await userEvent.click(within(card).getByRole('button', { name: 'Tahsis kaydet' }))
+
+    const recordedId = createdId
+    if (recordedId === null) throw new Error('The create request was not recorded.')
+    const row = await screen.findByTestId(`sales-allocation-${recordedId}`)
+    expect(within(row).getByText('Serbest bırakıldı')).toBeTruthy()
+    expect(within(row).getByText('2')).toBeTruthy()
+    expect(within(row).queryByText('Aktif')).toBeNull()
+  })
+
   it('renders and reads nothing without the published capability decision', () => {
     const fetch = vi.fn()
     vi.stubGlobal('fetch', fetch)

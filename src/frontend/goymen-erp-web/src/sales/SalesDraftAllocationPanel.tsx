@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { classifyOutcome } from '../shell/uiState'
 import type { DraftLine } from './contract'
@@ -51,7 +51,6 @@ function AllocationLine({ companyId, namespace, routeEntryGeneration, salesOrder
   readonly line: DraftLine
 }) {
   const boundary = useAuthBoundary()
-  const queryClient = useQueryClient()
   const scope: AllocationScope = {
     companyId,
     salesOrderId,
@@ -77,32 +76,30 @@ function AllocationLine({ companyId, namespace, routeEntryGeneration, salesOrder
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<{ readonly tone: 'success' | 'unknown' | 'error'; readonly text: string } | null>(null)
   const [attemptRevision, setAttemptRevision] = useState(0)
+  const [recordedAllocations, setRecordedAllocations] = useState<readonly PhysicalAllocation[]>([])
   const createScope: AllocationAttemptScope = { companyId, salesOrderId, salesOrderLineId: line.lineId, kind: 'create' }
   const pendingCreate = loadAllocationAttempt<CreatePhysicalAllocationBody>(createScope)
 
   const refresh = async () => {
-    await query.refetch()
+    return query.refetch()
   }
 
-  const showRecordedAllocation = (allocation: PhysicalAllocation, labelVersion: string) => {
-    queryClient.setQueryData(queryKey, (current: typeof query.data) => {
-      if (current?.type !== 'ok-single') return current
-      const item = { allocation, labelVersion }
-      const items = current.data.items.some((candidate) => candidate.allocation.allocationId === allocation.allocationId)
-        ? current.data.items.map((candidate) => candidate.allocation.allocationId === allocation.allocationId ? item : candidate)
-        : [...current.data.items, item]
-      return { ...current, data: { ...current.data, items } }
-    })
+  const showRecordedAllocation = (allocation: PhysicalAllocation, refreshed: typeof query.data) => {
+    if (refreshed?.type !== 'ok-single') return
+    const exists = refreshed.data.items.some((candidate) => candidate.allocation.allocationId === allocation.allocationId)
+    setRecordedAllocations((current) => exists
+      ? current.filter((candidate) => candidate.allocationId !== allocation.allocationId)
+      : [...current.filter((candidate) => candidate.allocationId !== allocation.allocationId), allocation])
   }
 
   const settle = async (outcome: AllocationMutationOutcome, attemptScope: AllocationAttemptScope, key: string,
-    authSnapshot: ReturnType<typeof boundary.capture>, success: string, labelVersion?: string) => {
+    authSnapshot: ReturnType<typeof boundary.capture>, success: string) => {
     if (outcome.type === 'recorded') {
       finishAllocationAttempt(attemptScope, key)
       setAttemptRevision((value) => value + 1)
       setNotice({ tone: 'success', text: outcome.replayed ? T.replayed : success })
-      await refresh()
-      if (labelVersion !== undefined) showRecordedAllocation(outcome.allocation, labelVersion)
+      const refreshed = await refresh()
+      showRecordedAllocation(outcome.allocation, refreshed.data)
       return
     }
     if (outcome.type === 'http') {
@@ -141,8 +138,7 @@ function AllocationLine({ companyId, namespace, routeEntryGeneration, salesOrder
     const authSnapshot = boundary.capture()
     setBusy(true)
     try {
-      await settle(await createPhysicalAllocation(scope, attempt), createScope, attempt.idempotencyKey, authSnapshot,
-        T.saved, candidate.expectedLabelVersion)
+      await settle(await createPhysicalAllocation(scope, attempt), createScope, attempt.idempotencyKey, authSnapshot, T.saved)
     } finally {
       setBusy(false)
     }
@@ -180,6 +176,10 @@ function AllocationLine({ companyId, namespace, routeEntryGeneration, salesOrder
   const outcome = query.data
   const state = outcome === undefined ? { kind: 'initial-loading' as const } : classifyOutcome(outcome)
   const page = outcome?.type === 'ok-single' ? outcome.data : null
+  const allocations = page === null ? [] : [
+    ...page.items.map((item) => item.allocation),
+    ...recordedAllocations.filter((recorded) => !page.items.some((item) => item.allocation.allocationId === recorded.allocationId)),
+  ]
   return (
     <article className={styles.line} data-testid={`sales-allocation-line-${line.lineId}`} data-attempt-revision={attemptRevision}>
       <h3 className={styles.lineTitle}>Satır {line.lineNo}: {line.productName}</h3>
@@ -193,11 +193,11 @@ function AllocationLine({ companyId, namespace, routeEntryGeneration, salesOrder
       {state.kind === 'ready' && page !== null ? (
         <>
           {page.searchWindowFull ? <p className={styles.notice} data-tone="unknown">{T.fullWindow}</p> : null}
-          {page.items.length === 0 ? <p data-testid="sales-allocation-empty">{T.empty}</p> : (
+          {allocations.length === 0 ? <p data-testid="sales-allocation-empty">{T.empty}</p> : (
             <div className={styles.tableWrap}>
               <table className={styles.table}>
                 <thead><tr><th>Etiket</th><th>Durum</th><th>Tahsis kg</th><th>Kalan kg</th><th>Sürüm</th><th>İşlem</th></tr></thead>
-                <tbody>{page.items.map(({ allocation }) => {
+                <tbody>{allocations.map((allocation) => {
                   const releaseScope: AllocationAttemptScope = { companyId, salesOrderId, salesOrderLineId: line.lineId,
                     kind: 'release', allocationId: allocation.allocationId }
                   const pendingRelease = loadAllocationAttempt<ReleasePhysicalAllocationBody>(releaseScope)
