@@ -8,13 +8,16 @@
 
 import { randomUUID } from 'node:crypto'
 import { expect, request, test, type APIRequestContext, type BrowserContext, type Page, type Request, type Route } from '@playwright/test'
-import { apiAs, PARENT_ROLL_CODE, readParentRollCandidate } from '../src/arrange.js'
+import { apiAs, PARENT_ROLL_CODE, readOrder, readParentRollCandidate } from '../src/arrange.js'
 import { readEnvironment } from '../src/env.js'
 
 const env = readEnvironment()
 const OTHER_COMPANY = '10000000-0000-0000-0000-000000000002'
 const PLAN_POST_RE = /\/api\/v1\/manufacturing\/plans$/
 const PLAN_GET_RE = /\/api\/v1\/manufacturing\/plans\/[^/]+$/
+const PLAN_APPROVAL_RE = /\/api\/v1\/manufacturing\/plans\/[^/]+\/approval$/
+const ORDER_POST_RE = /\/api\/v1\/manufacturing\/orders$/
+const ORDER_GET_RE = /\/api\/v1\/manufacturing\/orders\/[^/]+$/
 const CANDIDATES_RE = /\/api\/v1\/inventory\/references\/parent-rolls(?:\?|$)/
 
 interface CandidateAnswer {
@@ -78,7 +81,7 @@ async function readPlan(api: APIRequestContext, planId: string) {
 }
 
 test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
-  test('the in-list action saves, closes the form and reopens the same stored plan', async ({ page, context }) => {
+  test('the in-list action saves, reopens and approves the plan, then creates and opens its order', async ({ page, context }) => {
     const rewritten = await asActor(context, env.seed.recorderActor)
     const answered = watchAnswers(page)
     const candidate = await openPlanForm(page)
@@ -127,6 +130,56 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
       })
     } finally {
       await api.dispose()
+    }
+
+    const approvalResponse = page.waitForResponse(
+      (response) => PLAN_APPROVAL_RE.test(response.url()) && response.request().method() === 'POST',
+    )
+    const approvedFreshRead = page.waitForResponse(
+      (response) => PLAN_GET_RE.test(response.url()) && response.url().endsWith(body.planId)
+        && response.request().method() === 'GET',
+    )
+    await page.getByRole('button', { name: 'Planı onayla', exact: true }).click()
+    const approved = await approvalResponse
+    expect(approved.status()).toBe(200)
+    expect(approved.request().headers()['idempotency-key']).toMatch(/^[0-9a-f-]{36}$/)
+    expect(approved.request().postDataJSON()).toEqual({ expectedVersion: 1 })
+    expect((await approvedFreshRead).status()).toBe(200)
+    await expect(page.getByText('Plan onaylandı ve güncel kayıt yeniden okundu.', { exact: true })).toBeVisible()
+    await expect(page.getByText('Onaylı', { exact: true })).toBeVisible()
+
+    const orderResponse = page.waitForResponse(
+      (response) => ORDER_POST_RE.test(response.url()) && response.request().method() === 'POST',
+    )
+    const orderFreshRead = page.waitForResponse(
+      (response) => ORDER_GET_RE.test(response.url()) && response.request().method() === 'GET',
+    )
+    await page.getByRole('button', { name: 'Üretim emri oluştur', exact: true }).click()
+    const created = await orderResponse
+    expect(created.status()).toBe(201)
+    expect(created.request().headers()['idempotency-key']).toMatch(/^[0-9a-f-]{36}$/)
+    const orderBody = created.request().postDataJSON() as { orderId: string; planId: string }
+    expect(orderBody.planId).toBe(body.planId)
+    expect(orderBody.orderId).toMatch(/^[0-9a-f-]{36}$/)
+    expect((await orderFreshRead).status()).toBe(200)
+    expect(new URL(page.url()).pathname).toBe(`/uretim/emir/${orderBody.orderId}`)
+    await expect(page.getByRole('heading', { name: 'Üretim emri' })).toBeVisible()
+    await expect(page.getByText(orderBody.orderId, { exact: true })).toBeVisible()
+
+    const verify = await apiAs(env, env.seed.recorderActor)
+    try {
+      const currentPlan = await readPlan(verify, body.planId)
+      expect(currentPlan.response.status()).toBe(200)
+      expect(currentPlan.body).toMatchObject({ planId: body.planId, status: 'Approved', version: 2 })
+      expect(await readOrder(env, orderBody.orderId)).toMatchObject({
+        orderId: orderBody.orderId,
+        planId: body.planId,
+        companyId: env.seed.companyId,
+        status: 'Open',
+        version: 1,
+      })
+    } finally {
+      await verify.dispose()
     }
     expectEveryAnswerRewritten(answered, rewritten)
   })

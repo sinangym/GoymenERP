@@ -182,6 +182,15 @@ public static class ErpPermissions
     public const string FinanceManualReceiptReverseApprove = "finance.manual-receipt.reverse.approve";
 
     /// <summary>
+    /// R47 manual outgoing bank payments. Registration makes these names measurable; it grants
+    /// nothing. The records are company-wide and the service revalidates each action afresh.
+    /// </summary>
+    public const string FinanceManualBankPaymentDraftSave = "finance.manual-bank-payment.draft.save";
+    public const string FinanceManualBankPaymentDraftRead = "finance.manual-bank-payment.draft.read";
+    public const string FinanceManualBankPaymentApprove = "finance.manual-bank-payment.approve";
+    public const string FinanceManualBankPaymentRecord = "finance.manual-bank-payment.record";
+
+    /// <summary>
     /// Sales order drafts (SALES-API, #321): the Sales owner's names (SalesPermissionManifestV1, same
     /// strings). Registered, not granted: no seeded role and no user receives them; who holds them is a
     /// human gate. Company-wide only: a draft belongs to the server-resolved company and the routes filter
@@ -369,6 +378,10 @@ public static class ErpPermissions
         FinanceManualReceiptRecord,
         FinanceManualReceiptReversePropose,
         FinanceManualReceiptReverseApprove,
+        FinanceManualBankPaymentDraftSave,
+        FinanceManualBankPaymentDraftRead,
+        FinanceManualBankPaymentApprove,
+        FinanceManualBankPaymentRecord,
             IdentityProfileRead,
             IdentityAccessRequest,
             IdentityAccessApprove,
@@ -432,6 +445,10 @@ public static class ErpPermissions
         FinanceManualReceiptRecord,
         FinanceManualReceiptReversePropose,
         FinanceManualReceiptReverseApprove,
+        FinanceManualBankPaymentDraftSave,
+        FinanceManualBankPaymentDraftRead,
+        FinanceManualBankPaymentApprove,
+        FinanceManualBankPaymentRecord,
             IdentityAuditRead,
         ],
         StringComparer.Ordinal);

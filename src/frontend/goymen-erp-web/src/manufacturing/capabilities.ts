@@ -9,19 +9,24 @@
  * block and `hasCapability` answers false. The frontend never mints a capability to open
  * its own screen, and the server re-authorizes every request regardless (ERP-000K §10.2).
  *
- * WHY FOUR IDS. They map onto the permissions the server enforces separately
+ * WHY EIGHT IDS. They map onto the permissions the server enforces separately
  * (`ManufacturingEndpoints`):
  *
  *   manufacturing.orders.detail <- manufacturing.orders.read
  *   manufacturing.orders.facts  <- manufacturing.orders.read + manufacturing.facts.record
  *   manufacturing.orders.list   <- manufacturing.orders.read
  *   manufacturing.orders.close  <- manufacturing.orders.read + manufacturing.orders.close
+ *   manufacturing.plans.create  <- manufacturing.plans.write
+ *   manufacturing.plans.detail  <- manufacturing.plans.read
+ *   manufacturing.plans.approve <- manufacturing.plans.read + manufacturing.plans.approve
+ *   manufacturing.plans.order-create <- manufacturing.plans.read + manufacturing.orders.create
  *
  * Reading an order and recording a fact on it are different authorities, so a reader
  * sees the balances and NO form (card D3: without the capability the control is not
  * drawn; the server enforces either way). Closing is a third authority: whoever may
  * record a fact does not thereby close the order, and the close button is a control of
- * the detail screen, drawn only for its own capability.
+ * the detail screen, drawn only for its own capability. Plan approval and order creation
+ * follow the same child-control rule on plan detail.
  *
  * This is a technical, functional sub-view (card D1). The canonical production screens
  * (PR-09/13/14/15) are `DECISION_ONLY_REFERENCE_MISSING`; nothing here is a locked
@@ -41,6 +46,10 @@ export const MANUFACTURING_CAPABILITY = {
   planCreate: 'manufacturing.plans.create',
   /** Reopen one stored plan through `manufacturing.plans.read`. */
   planDetail: 'manufacturing.plans.detail',
+  /** Approve the Draft shown on the plan detail screen. Not a route — a control. */
+  planApprove: 'manufacturing.plans.approve',
+  /** Create one order from the Approved plan shown on the detail screen. Not a route — a control. */
+  planOrderCreate: 'manufacturing.plans.order-create',
 } as const
 
 export type ManufacturingCapabilityId =

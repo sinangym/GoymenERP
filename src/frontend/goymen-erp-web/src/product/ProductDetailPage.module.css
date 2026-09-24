@@ -241,3 +241,36 @@
     overflow-x: auto;
   }
 }
+
+/* U-01 §9 item 6: change history. */
+.historyList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.historyEntry {
+  padding: 8px 10px;
+  border-left: 3px solid #d5dbe6;
+}
+
+.historyTitle,
+.historyLine {
+  margin: 0;
+  font-size: 0.88rem;
+  overflow-wrap: anywhere;
+}
+
+.historyLine {
+  color: #3b4660;
+}
+
+.historyError {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}

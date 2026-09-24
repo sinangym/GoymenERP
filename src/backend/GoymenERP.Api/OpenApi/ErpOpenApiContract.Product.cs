@@ -118,6 +118,18 @@ public static partial class ErpOpenApiContract
             schema.MinProperties = 1;
         }
         if (type == typeof(ProductDraftView)) SetPositiveIntegerStringProperty(schema, "version");
+        if (type == typeof(ProductHistoryEntryView))
+        {
+            SetPositiveIntegerStringProperty(schema, "versionAfter");
+            schema.Properties!["versionBefore"] = new OpenApiSchema
+            {
+                Type = JsonSchemaType.String | JsonSchemaType.Null,
+                MinLength = 1,
+                MaxLength = 19,
+                Pattern = PositiveIntegerStringPattern,
+                Description = "Lossless positive Int64 decimal string; null only for DraftCreate.",
+            };
+        }
         if (type == typeof(EditProductDraftRequest) || type == typeof(ActivateProductRequest))
         {
             schema.Properties!["expectedVersion"] = new OpenApiSchema { Type = JsonSchemaType.String,

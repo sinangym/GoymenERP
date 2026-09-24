@@ -18,6 +18,8 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Shell;
 /// <see cref="ErpPermissions.ManufacturingPlansWrite"/>.</item>
 /// <item><c>manufacturing.plans.detail</c> → <c>/uretim/plan/:planId</c> on
 /// <see cref="ErpPermissions.ManufacturingPlansRead"/>.</item>
+/// <item><c>manufacturing.plans.approve</c> and <c>manufacturing.plans.order-create</c>: controls on the
+/// plan detail route, adding the existing approve and order-create permissions respectively.</item>
 /// </list>
 /// Company-wide scope only, as the API requires (K-1): the routes do not filter by work center.
 /// <c>MFG-01</c> is a technical sub-view id, like ORG-01/02; the canonical production screens
@@ -29,7 +31,7 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Shell;
 public sealed class ManufacturingShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "MANUFACTURING";
-    public const string OwnerContractVersion = "1.1";
+    public const string OwnerContractVersion = "1.2";
 
     public const string DetailCapabilityId = "manufacturing.orders.detail";
     public const string FactsCapabilityId = "manufacturing.orders.facts";
@@ -49,6 +51,8 @@ public sealed class ManufacturingShellCapabilityProvider : IShellCapabilityProvi
     public const string PlanDetailRouteId = "manufacturing.plan-detail";
     public const string PlanDetailRoutePath = "/uretim/plan/:planId";
     public const string PlanDetailScreenId = "MFG-PLAN-DETAIL";
+    public const string PlanApproveCapabilityId = "manufacturing.plans.approve";
+    public const string PlanOrderCreateCapabilityId = "manufacturing.plans.order-create";
 
     public string Owner => OwnerId;
 
@@ -120,6 +124,18 @@ public sealed class ManufacturingShellCapabilityProvider : IShellCapabilityProvi
             list,
             planCreate,
             planDetail,
+            planDetail with
+            {
+                CapabilityId = PlanApproveCapabilityId,
+                ParentCapabilityId = PlanDetailCapabilityId,
+                RequiredPermissions = [ErpPermissions.ManufacturingPlansRead, ErpPermissions.ManufacturingPlansApprove],
+            },
+            planDetail with
+            {
+                CapabilityId = PlanOrderCreateCapabilityId,
+                ParentCapabilityId = PlanDetailCapabilityId,
+                RequiredPermissions = [ErpPermissions.ManufacturingPlansRead, ErpPermissions.ManufacturingOrdersCreate],
+            },
         ];
     }
 }
