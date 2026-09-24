@@ -78,6 +78,14 @@ public sealed partial class OpenApiContractGenerationTests
                 "query:q:false:type:string;canonicalization:trim;canonical-max-length:64",
                 "query:limit:false:type:integer;format:int32",
             ]),
+        new("get", "/api/v1/inventory/physical-allocations", "GetInventoryPhysicalAllocationsV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "409:application/problem+json", "503:application/problem+json"),
+            ParameterValues:
+            [
+                "query:salesOrderId:true:type:string;format:uuid",
+                "query:salesOrderLineId:true:type:string;format:uuid",
+                "query:limit:false:type:integer;format:int32",
+            ]),
         new("get", "/api/v1/inventory/references/products", "GetInventoryProductCandidatesV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "409:application/problem+json", "503:application/problem+json"),
             ParameterValues:
@@ -460,6 +468,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetInventoryLabelDetailV1"] = "ref:InventoryLabelDetailV1",
             ["GetInventoryParentRollCandidatesV1"] = "ref:InventoryParentRollCandidatesV1",
             ["GetInventoryStockPositionsV1"] = "ref:InventoryStockPositionsV1",
+            ["GetInventoryPhysicalAllocationsV1"] = "ref:InventoryPhysicalAllocationReadsV1",
             ["GetInventoryProductCandidatesV1"] = "ref:ProductStockCandidatesV1",
             ["GetInventoryLocationCandidatesV1"] = "ref:OrganizationLocationCandidatesV1",
             ["CreateInventoryPhysicalAllocationV1"] = "ref:InventoryPhysicalAllocationViewV1",
@@ -569,6 +578,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetInventoryLabelDetailV1",
         "GetInventoryParentRollCandidatesV1",
         "GetInventoryStockPositionsV1",
+        "GetInventoryPhysicalAllocationsV1",
         "GetInventoryProductCandidatesV1",
         "GetInventoryLocationCandidatesV1",
         "CreateInventoryPhysicalAllocationV1",
@@ -998,6 +1008,8 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetInventoryParentRollCandidatesV1:409"] = [InventoryParentRollCodesV1.ReadConflict],
             ["GetInventoryStockPositionsV1:400"] = [InventoryStockPositionCodesV1.InvalidQuery],
             ["GetInventoryStockPositionsV1:409"] = [InventoryStockPositionCodesV1.ReadConflict],
+            ["GetInventoryPhysicalAllocationsV1:400"] = [InventoryPhysicalAllocationReadCodesV1.InvalidQuery],
+            ["GetInventoryPhysicalAllocationsV1:409"] = [InventoryPhysicalAllocationReadCodesV1.ReadConflict],
             ["GetInventoryLabelDetailV1:409"] = [InventoryLabelDetailCodesV1.ReadConflict],
             ["GetInventoryLabelDetailV1:503"] = [InventoryLabelDetailCodesV1.Unavailable],
             ["GetInventoryProductCandidatesV1:400"] = [InventoryReferenceCodesV1.ProductInvalidQuery],
@@ -2145,6 +2157,14 @@ public sealed partial class OpenApiContractGenerationTests
                     ("allocatedKg", "type:string"), ("remainingKg", "type:string"), ("reason", "type:string"),
                     ("reservedUntilUtc", "type:null|string;format:date-time"),
                     ("createdAtUtc", "type:string;format:date-time"), ("updatedAtUtc", "type:string;format:date-time")),
+                ["InventoryPhysicalAllocationReadsV1"] = ObjectSchema(
+                    ["items", "searchWindowFull"],
+                    ("items", "type:array;items:ref:InventoryPhysicalAllocationReadItemV1"),
+                    ("searchWindowFull", "type:boolean")),
+                ["InventoryPhysicalAllocationReadItemV1"] = ObjectSchema(
+                    ["allocation", "labelVersion"],
+                    ("allocation", "ref:InventoryPhysicalAllocationViewV1"),
+                    ("labelVersion", "type:string")),
                 ["OpeningCountViewV1"] = ObjectSchema(
                     ["countId", "companyId", "locationId", "countedOn", "sheetReference", "lines"],
                     ("countId", "type:string;format:uuid"), ("companyId", "type:string;format:uuid"),
@@ -3049,9 +3069,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(111, operations.Count);
+        Assert.Equal(112, operations.Count);
         Assert.Equal(
-            111,
+            112,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());
@@ -3156,6 +3176,11 @@ public sealed partial class OpenApiContractGenerationTests
             if (expected.OperationId is "GetInventoryParentRollCandidatesV1" or "GetInventoryStockPositionsV1")
             {
                 AssertInventoryParentRollQueryContract(actual.Value);
+            }
+
+            if (expected.OperationId == "GetInventoryPhysicalAllocationsV1")
+            {
+                AssertInventoryPhysicalAllocationReadQueryContract(actual.Value);
             }
         }
 
@@ -3652,6 +3677,17 @@ public sealed partial class OpenApiContractGenerationTests
         var q = parameters["q"];
         Assert.Equal("trim", q.GetProperty(ErpOpenApiContract.CanonicalizationExtensionName).GetString());
         Assert.Equal(64, q.GetProperty(ErpOpenApiContract.CanonicalMaximumLengthExtensionName).GetInt32());
+        var limit = parameters["limit"];
+        Assert.Equal(1, limit.GetProperty("minimum").GetInt32());
+        Assert.Equal(100, limit.GetProperty("maximum").GetInt32());
+    }
+
+    private static void AssertInventoryPhysicalAllocationReadQueryContract(JsonElement operation)
+    {
+        var parameters = ReadQuerySchemas(operation);
+        Assert.Equal(3, parameters.Count);
+        Assert.Equal("uuid", parameters["salesOrderId"].GetProperty("format").GetString());
+        Assert.Equal("uuid", parameters["salesOrderLineId"].GetProperty("format").GetString());
         var limit = parameters["limit"];
         Assert.Equal(1, limit.GetProperty("minimum").GetInt32());
         Assert.Equal(100, limit.GetProperty("maximum").GetInt32());

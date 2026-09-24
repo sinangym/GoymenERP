@@ -61,7 +61,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // opinion about whether a change is semantic. Any edit to a pinned file, comment included, is re-pinned in
     // the same push.
     private const string ReviewedOpenApiStartupFingerprint =
-        "16a2e32e5931eae1e0dfac6dabeea8be76c3489c2b81044c7c13ef56f9ce25f7";
+        "4ce85ca6967aaaad85a2be6a7f88602041be319364927042fecd32b3052bfe21";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedIdentityReconcilerPath =
@@ -149,7 +149,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // inventory
             ["tools/relational_inventory/inventory.txt"] =
-                "d4f8be80b8b9ab559a5f3ed0ff6acf5b4f4d41a2f37e642b0d2cabfd0d232690",
+                "8af0ea5b42c1794797eef0d53e91184618f0e0a9c6cb38c659b3ac20fd955c1b",
 
             // logistics
             ["tools/relational_inventory/logistics.txt"] =

@@ -633,6 +633,11 @@ public static partial class ErpOpenApiContract
             AddInventoryParentRollCandidateParameters(operation);
         }
 
+        if (string.Equals(operation.OperationId, "GetInventoryPhysicalAllocationsV1", StringComparison.Ordinal))
+        {
+            AddInventoryPhysicalAllocationReadParameters(operation);
+        }
+
         if (string.Equals(operation.OperationId, "GetInventoryProductCandidatesV1", StringComparison.Ordinal))
         {
             AddInventoryProductCandidateParameters(operation);
@@ -986,6 +991,33 @@ public static partial class ErpOpenApiContract
                 Maximum = "100",
             },
             "Maximum candidate rows; default 25, range 1..100.");
+    }
+
+    private static void AddInventoryPhysicalAllocationReadParameters(OpenApiOperation operation)
+    {
+        AddQueryParameter(
+            operation,
+            "salesOrderId",
+            new OpenApiSchema { Type = JsonSchemaType.String, Format = "uuid" },
+            "Required Sales order identifier.",
+            required: true);
+        AddQueryParameter(
+            operation,
+            "salesOrderLineId",
+            new OpenApiSchema { Type = JsonSchemaType.String, Format = "uuid" },
+            "Required Sales order line identifier.",
+            required: true);
+        AddQueryParameter(
+            operation,
+            "limit",
+            new OpenApiSchema
+            {
+                Type = JsonSchemaType.Integer,
+                Format = "int32",
+                Minimum = "1",
+                Maximum = "100",
+            },
+            "Maximum allocation rows; default 100, range 1..100.");
     }
 
     private static void AddInventoryProductCandidateParameters(OpenApiOperation operation)
