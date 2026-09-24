@@ -24,6 +24,9 @@ public static class AccountingEndpoints
     private const int MaximumIdempotencyKeyLength = 128;
     private const int MaximumCursorLength = 512;
 
+    private static readonly HashSet<string> TrialBalanceQueryNames =
+        new(StringComparer.Ordinal) { "fromAccountingDate", "throughAccountingDate", "currencyId" };
+
     private static readonly string[] BadRequestCodes = [AccountingApiCodes.RequestInvalid];
 
     private static readonly string[] PeriodConflictCodes =
@@ -183,6 +186,25 @@ public static class AccountingEndpoints
             .Produces<JournalDetailV1>(StatusCodes.Status200OK)
             .WithReadProblems(notFound: true);
 
+        group.MapGet("/trial-balance", async (
+                AccountingTrialBalanceServiceV1 service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response.Headers);
+                if (!TryReadTrialBalanceRequest(httpContext.Request.Query, out var request, out var field))
+                {
+                    return Problem(StatusCodes.Status400BadRequest, AccountingApiCodes.RequestInvalid, field);
+                }
+
+                return ToHttpResult(httpContext, await service.ReadAsync(request, cancellationToken), null);
+            })
+            .RequireCompanyContext()
+            .RequireAuthorization(AccountingPermissionManifestV1.JournalsRead)
+            .WithName("GetAccountingTrialBalanceV1")
+            .Produces<TrialBalanceReportV1>(StatusCodes.Status200OK)
+            .WithReadProblems(notFound: false);
+
         group.MapPost("/normal-journal-drafts", async (
                 CreateNormalJournalDraftRequestV1 request,
                 NormalJournalDraftPublicServiceV1 service,
@@ -286,6 +308,52 @@ public static class AccountingEndpoints
         return ToHttpResult(httpContext, result, result.Resource is { } resource && location is not null
             ? location(resource)
             : null);
+    }
+
+    private static bool TryReadTrialBalanceRequest(
+        IQueryCollection query,
+        out TrialBalanceRequestV1 request,
+        out string field)
+    {
+        request = default!;
+        field = "request";
+        if (query.Any(pair => !TrialBalanceQueryNames.Contains(pair.Key) || pair.Value.Count != 1))
+        {
+            return false;
+        }
+
+        field = "accountingDate";
+        if (!TryReadExactDate(query, "fromAccountingDate", out var fromAccountingDate)
+            || !TryReadExactDate(query, "throughAccountingDate", out var throughAccountingDate)
+            || throughAccountingDate < fromAccountingDate)
+        {
+            return false;
+        }
+
+        Guid? currencyId = null;
+        if (query.TryGetValue("currencyId", out var currencyValues))
+        {
+            field = "currencyId";
+            if (!Guid.TryParseExact(currencyValues[0], "D", out var parsedCurrencyId)
+                || parsedCurrencyId == Guid.Empty)
+            {
+                return false;
+            }
+
+            currencyId = parsedCurrencyId;
+        }
+
+        request = new TrialBalanceRequestV1(fromAccountingDate, throughAccountingDate, currencyId);
+        return true;
+    }
+
+    private static bool TryReadExactDate(IQueryCollection query, string name, out DateOnly value)
+    {
+        value = default;
+        return query.TryGetValue(name, out var values)
+               && values.Count == 1
+               && DateOnly.TryParseExact(values[0], "yyyy-MM-dd", CultureInfo.InvariantCulture,
+                   DateTimeStyles.None, out value);
     }
 
     private static IResult ToHttpResult<T>(HttpContext httpContext, AccountingApiResult<T> result, string? location)
