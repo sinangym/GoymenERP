@@ -447,7 +447,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Inventory connection and current parent-label truth before constructing one Manufacturing context.
                 [ReviewedManufacturingInventoryReturnOutputHostPath] =
                     new(
-                        "5a5bb02daf2a621fcf0f0b1dc1a23e0bd298a659fa91d56a9d0ac62b5451757c",
+                        "05d4636176e6ee04bd4fca106c9f9c3771fd27ce1ea52f8aed1f1cc6ffad543f",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1,
