@@ -46,7 +46,7 @@ public sealed class FinanceBankAccountTests
         var commands = design.FindEntityType(typeof(FinanceCommandRow))!;
         var target = Assert.Single(commands.GetCheckConstraints(), check => check.Name == "CK_Commands_Target");
         Assert.Equal(FinanceDbContext.TargetCheck, target.Sql);
-        Assert.EndsWith("OR ([DraftId] IS NULL AND [BankAccountId] IS NULL AND [ReversalProposalId] IS NULL AND [ManualBankPaymentId] IS NULL AND JSON_VALUE([ResultJson], '$.outcome') = 'ValidationFailed')",
+        Assert.EndsWith("OR ([DraftId] IS NULL AND [BankAccountId] IS NULL AND [ReversalProposalId] IS NULL AND [ManualBankPaymentId] IS NULL AND [FinanceAllocationId] IS NULL AND JSON_VALUE([ResultJson], '$.outcome') = 'ValidationFailed')",
             target.Sql, StringComparison.Ordinal);
         Assert.All(commands.GetForeignKeys().Where(key => key.PrincipalEntityType.ClrType != typeof(OrganizationCompanyReference)),
             key => Assert.False(key.IsRequired));
@@ -57,9 +57,9 @@ public sealed class FinanceBankAccountTests
     {
         using var context = Context();
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddBankAccounts", StringComparison.Ordinal));
-        // The NEWEST migration is pinned by name on purpose: R47's manual-payment lifecycle must be
-        // a deliberate append after FIN-T06/D4/B3, never an unreviewed migration that silently becomes authoritative.
-        Assert.Equal("20260923213000_AddManualBankPayments", context.Database.GetMigrations().Last());
+        // The NEWEST migration is pinned by name on purpose: F-03 allocation persistence must be a
+        // deliberate append after R47, never an unreviewed migration that silently becomes authoritative.
+        Assert.Equal("20260924113000_AddFinanceAllocations", context.Database.GetMigrations().Last());
         Assert.False(context.Database.HasPendingModelChanges());
     }
 

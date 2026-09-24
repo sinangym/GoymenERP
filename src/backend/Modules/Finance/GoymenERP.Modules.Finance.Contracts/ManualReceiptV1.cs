@@ -90,6 +90,7 @@ public enum FinanceAction
     ProposeBankAccountIbanChange, ApproveBankAccountIbanChange,
     SaveManualBankPaymentDraft, ReadManualBankPayments,
     ApproveManualBankPayment, RecordManualBankPayment,
+    WriteAllocation,
 }
 public enum PermissionDecision { Unavailable, Denied, Allowed }
 

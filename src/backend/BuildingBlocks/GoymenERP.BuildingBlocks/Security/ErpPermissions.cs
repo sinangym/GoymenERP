@@ -191,6 +191,12 @@ public static class ErpPermissions
     public const string FinanceManualBankPaymentRecord = "finance.manual-bank-payment.record";
 
     /// <summary>
+    /// F-03 allocation commands. Registration makes the Finance owner's permission name available
+    /// to endpoint authorization; it grants no role or user access.
+    /// </summary>
+    public const string FinanceAllocationWrite = "finance.allocation.write";
+
+    /// <summary>
     /// Sales order drafts (SALES-API, #321): the Sales owner's names (SalesPermissionManifestV1, same
     /// strings). Registered, not granted: no seeded role and no user receives them; who holds them is a
     /// human gate. Company-wide only: a draft belongs to the server-resolved company and the routes filter
@@ -382,6 +388,7 @@ public static class ErpPermissions
         FinanceManualBankPaymentDraftRead,
         FinanceManualBankPaymentApprove,
         FinanceManualBankPaymentRecord,
+        FinanceAllocationWrite,
             IdentityProfileRead,
             IdentityAccessRequest,
             IdentityAccessApprove,
@@ -449,6 +456,7 @@ public static class ErpPermissions
         FinanceManualBankPaymentDraftRead,
         FinanceManualBankPaymentApprove,
         FinanceManualBankPaymentRecord,
+        FinanceAllocationWrite,
             IdentityAuditRead,
         ],
         StringComparer.Ordinal);
