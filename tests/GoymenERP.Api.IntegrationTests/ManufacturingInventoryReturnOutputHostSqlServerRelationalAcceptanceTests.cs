@@ -262,7 +262,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
             metadata.RoleCodes,
             metadata.CorrelationId,
             metadata.CausationId,
-            $"manufacturing-output-declaration:{CompanyA:N}:{command.OrderId:N}:{command.OutputId:N}",
+            $"mfg-output:{CompanyA:N}:{command.OrderId:N}:{command.OutputId:N}",
             metadata.SourceChannel,
             metadata.ClientIpAddress,
             metadata.UserAgent);
