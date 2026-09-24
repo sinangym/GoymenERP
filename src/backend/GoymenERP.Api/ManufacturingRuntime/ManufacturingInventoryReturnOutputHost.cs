@@ -29,7 +29,126 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
     ISettingsPrerequisiteProvider settings,
     IManufacturingInventoryOutputAdmission outputAdmission,
     Func<ManufacturingInventoryReturnOutputStage, CancellationToken, Task>? observer = null)
+    : IManufacturingInventoryReturnOutputPortV1
 {
+    async Task<ManufacturingInventoryInputReturnPortResultV1> IManufacturingInventoryReturnOutputPortV1.ReturnAsync(
+        ManufacturingInventoryInputReturnPortCommandV1 command,
+        ManufacturingCommandMetadata metadata,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await ReturnAsync(new ManufacturingInventoryInputReturnCommand(
+                command.OrderId,
+                command.ExpectedOrderVersion,
+                command.ReturnId,
+                command.ParentLabelId,
+                command.ExpectedParentLabelVersion,
+                command.MovementId,
+                command.Quantity,
+                command.OccurredAtUtc), metadata, cancellationToken);
+            return new ManufacturingInventoryInputReturnPortResultV1(
+                result.OrderVersion, result.ParentLabelVersion, result.IsReplay);
+        }
+        catch (InventoryManufacturingRealizationException exception)
+        {
+            throw PortRefusal(exception.Status, exception.Code);
+        }
+        catch (ManufacturingInventoryReturnOutputHostException exception)
+        {
+            throw new ManufacturingInventoryRealizationPortException(
+                ManufacturingApiStatus.Conflict, exception.Code);
+        }
+        catch (ManufacturingInventoryReturnOutputRecoveryException)
+        {
+            throw new ManufacturingInventoryRealizationPortException(
+                ManufacturingApiStatus.Unavailable,
+                InventoryManufacturingRealizationCodesV1.Unavailable);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            throw new ManufacturingInventoryRealizationPortException(
+                ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied);
+        }
+    }
+
+    async Task<ManufacturingInventoryOutputPortResultV1> IManufacturingInventoryReturnOutputPortV1.DeclareOutputAsync(
+        ManufacturingInventoryOutputPortCommandV1 command,
+        ManufacturingCommandMetadata metadata,
+        CancellationToken cancellationToken)
+    {
+        if (!Enum.TryParse<StockPartyKind>(command.OwnerKind, ignoreCase: false, out var ownerKind)
+            || !Enum.IsDefined(ownerKind))
+        {
+            throw new ManufacturingInventoryRealizationPortException(
+                ManufacturingApiStatus.Invalid, ManufacturingApiCodes.RequestInvalid, "ownerKind");
+        }
+
+        if (!Enum.TryParse<StockPartyKind>(command.CustodianKind, ignoreCase: false, out var custodianKind)
+            || !Enum.IsDefined(custodianKind))
+        {
+            throw new ManufacturingInventoryRealizationPortException(
+                ManufacturingApiStatus.Invalid, ManufacturingApiCodes.RequestInvalid, "custodianKind");
+        }
+
+        if (!Enum.TryParse<BlockState>(command.InitialBlock, ignoreCase: false, out var initialBlock)
+            || !Enum.IsDefined(initialBlock))
+        {
+            throw new ManufacturingInventoryRealizationPortException(
+                ManufacturingApiStatus.Invalid, ManufacturingApiCodes.RequestInvalid, "initialBlock");
+        }
+
+        try
+        {
+            var result = await DeclareOutputAsync(new ManufacturingInventoryOutputCommand(
+                command.OrderId,
+                command.ExpectedOrderVersion,
+                command.OutputId,
+                command.ParentLabelId,
+                command.ExpectedParentLabelVersion,
+                command.OutputClass,
+                command.ProductId,
+                command.ExpectedProductVersion,
+                command.LotId,
+                command.LabelId,
+                command.LabelCode,
+                command.HeatNumber,
+                command.CoilNumber,
+                command.RequiredDocuments,
+                ownerKind,
+                command.OwnerId,
+                custodianKind,
+                command.CustodianId,
+                command.LocationId,
+                initialBlock,
+                command.MovementId,
+                command.Quantity,
+                command.OccurredAtUtc), metadata, cancellationToken);
+            return new ManufacturingInventoryOutputPortResultV1(
+                result.OrderVersion, result.ParentLabelVersion, result.LabelVersion, result.IsReplay);
+        }
+        catch (InventoryManufacturingRealizationException exception)
+        {
+            throw PortRefusal(exception.Status, exception.Code);
+        }
+        catch (ManufacturingInventoryReturnOutputHostException exception)
+        {
+            throw new ManufacturingInventoryRealizationPortException(
+                ManufacturingApiStatus.Conflict, exception.Code);
+        }
+        catch (ManufacturingInventoryReturnOutputRecoveryException)
+        {
+            throw new ManufacturingInventoryRealizationPortException(
+                ManufacturingApiStatus.Unavailable,
+                InventoryManufacturingRealizationCodesV1.Unavailable);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            throw new ManufacturingInventoryRealizationPortException(
+                ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied);
+        }
+    }
+
     public async Task<ManufacturingInventoryInputReturnResult> ReturnAsync(
         ManufacturingInventoryInputReturnCommand command,
         ManufacturingCommandMetadata metadata,
@@ -363,6 +482,15 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
     private static ManufacturingInventoryReturnOutputHostException Incomplete() =>
         new ManufacturingInventoryReturnOutputHostException(
             ManufacturingInventoryReturnOutputHostCodes.IncompleteRealization);
+
+    private static ManufacturingInventoryRealizationPortException PortRefusal(int status, string code) =>
+        new(status switch
+        {
+            StatusCodes.Status400BadRequest => ManufacturingApiStatus.Invalid,
+            StatusCodes.Status404NotFound => ManufacturingApiStatus.NotFound,
+            StatusCodes.Status409Conflict => ManufacturingApiStatus.Conflict,
+            _ => ManufacturingApiStatus.Unavailable,
+        }, code);
 }
 
 /// <summary>
