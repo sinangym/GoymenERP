@@ -162,6 +162,152 @@ partial class InventoryDbContextModelSnapshot : ModelSnapshot
             });
         });
 
+        modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.AllocationRow", b =>
+            {
+                b.Property<Guid>("Id")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<decimal>("AllocatedKg")
+                    .HasPrecision(18, 3)
+                    .HasColumnType("decimal(18,3)");
+
+                b.Property<int>("Block")
+                    .HasColumnType("int");
+
+                b.Property<Guid>("CompanyId")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<DateTimeOffset>("CreatedAtUtc")
+                    .HasColumnType("datetimeoffset");
+
+                b.Property<Guid>("CustodianId")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<int>("CustodianKind")
+                    .HasColumnType("int");
+
+                b.Property<Guid>("LabelId")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<Guid>("LocationId")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<Guid>("OwnerId")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<int>("OwnerKind")
+                    .HasColumnType("int");
+
+                b.Property<decimal>("RemainingKg")
+                    .HasPrecision(18, 3)
+                    .HasColumnType("decimal(18,3)");
+
+                b.Property<byte[]>("RowVersion")
+                    .IsConcurrencyToken()
+                    .IsRequired()
+                    .ValueGeneratedOnAddOrUpdate()
+                    .HasColumnType("rowversion");
+
+                b.Property<int>("Status")
+                    .HasColumnType("int");
+
+                b.Property<DateTimeOffset>("UpdatedAtUtc")
+                    .HasColumnType("datetimeoffset");
+
+                b.Property<long>("Version")
+                    .HasColumnType("bigint");
+
+                b.HasKey("Id");
+
+                b.HasAlternateKey("CompanyId", "Id");
+
+                b.HasIndex("CompanyId", "LabelId");
+
+                b.HasIndex("CompanyId", "LocationId");
+
+                b.ToTable("Allocations", "inventory", t =>
+                    {
+                        t.HasCheckConstraint("CK_Allocations_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [OwnerId] <> '00000000-0000-0000-0000-000000000000' AND [CustodianId] <> '00000000-0000-0000-0000-000000000000' AND [LocationId] <> '00000000-0000-0000-0000-000000000000' AND [LabelId] <> '00000000-0000-0000-0000-000000000000'");
+
+                        t.HasCheckConstraint("CK_Allocations_Quantity", "[AllocatedKg] > 0 AND [RemainingKg] >= 0 AND [RemainingKg] <= [AllocatedKg] AND (([Status] = 1 AND [RemainingKg] > 0) OR ([Status] = 2 AND [RemainingKg] = 0))");
+
+                        t.HasCheckConstraint("CK_Allocations_State", "[OwnerKind] IN (1, 2) AND [CustodianKind] IN (1, 2) AND [Block] = 1 AND [Status] IN (1, 2) AND [Version] >= 1");
+                    });
+            });
+
+        modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.InventoryOutboxRow", b =>
+            {
+                b.Property<Guid>("Id")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<Guid>("AggregateId")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<string>("AggregateType")
+                    .IsRequired()
+                    .HasMaxLength(160)
+                    .IsUnicode(false)
+                    .HasColumnType("varchar(160)");
+
+                b.Property<long>("AggregateVersion")
+                    .HasColumnType("bigint");
+
+                b.Property<string>("CausationId")
+                    .HasMaxLength(128)
+                    .HasColumnType("nvarchar(128)")
+                    .UseCollation("Latin1_General_100_BIN2");
+
+                b.Property<Guid>("CompanyId")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<string>("CorrelationId")
+                    .IsRequired()
+                    .HasMaxLength(128)
+                    .HasColumnType("nvarchar(128)")
+                    .UseCollation("Latin1_General_100_BIN2");
+
+                b.Property<string>("EventType")
+                    .IsRequired()
+                    .HasMaxLength(160)
+                    .IsUnicode(false)
+                    .HasColumnType("varchar(160)");
+
+                b.Property<DateTimeOffset>("OccurredAtUtc")
+                    .HasColumnType("datetimeoffset");
+
+                b.Property<string>("PayloadJson")
+                    .IsRequired()
+                    .HasColumnType("nvarchar(max)");
+
+                b.Property<DateTimeOffset>("RecordedAtUtc")
+                    .HasColumnType("datetimeoffset");
+
+                b.Property<int>("SchemaVersion")
+                    .HasColumnType("int");
+
+                b.Property<long>("Sequence")
+                    .HasColumnType("bigint");
+
+                b.Property<string>("SourceOperation")
+                    .IsRequired()
+                    .HasMaxLength(128)
+                    .IsUnicode(false)
+                    .HasColumnType("varchar(128)");
+
+                b.HasKey("Id");
+
+                b.HasIndex("CompanyId", "EventType", "AggregateId", "Sequence")
+                    .IsUnique()
+                    .HasDatabaseName("UX_OutboxMessages_AggregateSequence");
+
+                b.ToTable("OutboxMessages", "inventory", t =>
+                    {
+                        t.HasCheckConstraint("CK_OutboxMessages_Envelope", "LEN([EventType]) > 0 AND [SchemaVersion] >= 1 AND LEN([SourceOperation]) > 0 AND LEN([AggregateType]) > 0 AND [AggregateVersion] >= 1 AND [Sequence] >= 1 AND LEN([CorrelationId]) > 0 AND ISJSON([PayloadJson]) = 1");
+
+                        t.HasCheckConstraint("CK_OutboxMessages_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [AggregateId] <> '00000000-0000-0000-0000-000000000000'");
+                    });
+            });
+
         modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.BalanceRow", b =>
         {
             b.Property<Guid>("Id")
@@ -828,6 +974,37 @@ partial class InventoryDbContextModelSnapshot : ModelSnapshot
                     "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [SourceId] <> '00000000-0000-0000-0000-000000000000' AND LEN([SourceKind]) > 0");
             });
         });
+
+        modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.AllocationRow", b =>
+            {
+                b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                    .WithMany()
+                    .HasForeignKey("CompanyId")
+                    .OnDelete(DeleteBehavior.Restrict)
+                    .IsRequired();
+
+                b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.LabelRow", null)
+                    .WithMany()
+                    .HasForeignKey("CompanyId", "LabelId")
+                    .HasPrincipalKey("CompanyId", "Id")
+                    .OnDelete(DeleteBehavior.Restrict)
+                    .IsRequired();
+
+                b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.OrganizationLocationReference", null)
+                    .WithMany()
+                    .HasForeignKey("CompanyId", "LocationId")
+                    .OnDelete(DeleteBehavior.Restrict)
+                    .IsRequired();
+            });
+
+        modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.InventoryOutboxRow", b =>
+            {
+                b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                    .WithMany()
+                    .HasForeignKey("CompanyId")
+                    .OnDelete(DeleteBehavior.Restrict)
+                    .IsRequired();
+            });
 
         modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.BalanceRow", b =>
         {

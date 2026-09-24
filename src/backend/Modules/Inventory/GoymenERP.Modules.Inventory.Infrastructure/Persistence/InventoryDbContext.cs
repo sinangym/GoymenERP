@@ -50,6 +50,10 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
 
     internal DbSet<BalanceRow> Balances => Set<BalanceRow>();
 
+    internal DbSet<AllocationRow> Allocations => Set<AllocationRow>();
+
+    internal DbSet<InventoryOutboxRow> OutboxMessages => Set<InventoryOutboxRow>();
+
     internal DbSet<OpeningCountRow> OpeningCounts => Set<OpeningCountRow>();
 
     internal DbSet<OpeningCountLineRow> OpeningCountLines => Set<OpeningCountLineRow>();
@@ -69,6 +73,8 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         ConfigureMovements(modelBuilder);
         ConfigureMovementLines(modelBuilder);
         ConfigureBalances(modelBuilder);
+        ConfigureAllocations(modelBuilder);
+        ConfigureOutboxMessages(modelBuilder);
         ConfigureOpeningCounts(modelBuilder);
         ConfigureCommands(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
@@ -308,6 +314,71 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
     }
 
     /// <summary>
+    /// Physical allocations are separate from stock movements (DEC-STK-003). This table stores the
+    /// exact free position and optimistic version required by LOG-5; no creation, expiry, release or
+    /// partial-allocation policy is introduced by this predecessor.
+    /// </summary>
+    private void ConfigureAllocations(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<AllocationRow>();
+        entity.ToTable("Allocations", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_Allocations_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [OwnerId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [CustodianId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [LocationId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [LabelId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_Allocations_State",
+                "[OwnerKind] IN (1, 2) AND [CustodianKind] IN (1, 2) AND [Block] = 1 "
+                + "AND [Status] IN (1, 2) AND [Version] >= 1");
+            table.HasCheckConstraint("CK_Allocations_Quantity",
+                "[AllocatedKg] > 0 AND [RemainingKg] >= 0 AND [RemainingKg] <= [AllocatedKg] "
+                + "AND (([Status] = 1 AND [RemainingKg] > 0) OR ([Status] = 2 AND [RemainingKg] = 0))");
+        });
+        entity.HasKey(x => x.Id);
+        entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.AllocatedKg).HasPrecision(18, 3);
+        entity.Property(x => x.RemainingKg).HasPrecision(18, 3);
+        entity.Property(x => x.RowVersion).IsRowVersion();
+        entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        LabelOf(entity);
+        LocationOf(entity);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    private void ConfigureOutboxMessages(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<InventoryOutboxRow>();
+        entity.ToTable("OutboxMessages", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_OutboxMessages_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [AggregateId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_OutboxMessages_Envelope",
+                "LEN([EventType]) > 0 AND [SchemaVersion] >= 1 AND LEN([SourceOperation]) > 0 "
+                + "AND LEN([AggregateType]) > 0 AND [AggregateVersion] >= 1 AND [Sequence] >= 1 "
+                + "AND LEN([CorrelationId]) > 0 AND ISJSON([PayloadJson]) = 1");
+        });
+        entity.HasKey(x => x.Id);
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.EventType).HasMaxLength(160).IsUnicode(false).IsRequired();
+        entity.Property(x => x.SourceOperation).HasMaxLength(128).IsUnicode(false).IsRequired();
+        entity.Property(x => x.AggregateType).HasMaxLength(160).IsUnicode(false).IsRequired();
+        entity.Property(x => x.PayloadJson).HasColumnType("nvarchar(max)").IsRequired();
+        entity.Property(x => x.CorrelationId).HasMaxLength(128).UseCollation("Latin1_General_100_BIN2").IsRequired();
+        entity.Property(x => x.CausationId).HasMaxLength(128).UseCollation("Latin1_General_100_BIN2");
+        entity.HasIndex(x => new { x.CompanyId, x.EventType, x.AggregateId, x.Sequence })
+            .IsUnique().HasDatabaseName("UX_OutboxMessages_AggregateSequence");
+        entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    /// <summary>
     /// INV-OPEN-1: the count document and its counted pieces. A count is at one of its company's
     /// locations; every line names a label of the company and its one receipt movement (the line id is
     /// the movement id), so no line exists without its posted receipt. Append-only.
@@ -433,6 +504,11 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
                 {
                     LabelRow => [nameof(LabelRow.Version), nameof(LabelRow.UpdatedAtUtc)],
                     BalanceRow => [nameof(BalanceRow.QuantityKg)],
+                    AllocationRow =>
+                    [
+                        nameof(AllocationRow.RemainingKg), nameof(AllocationRow.Status),
+                        nameof(AllocationRow.Version), nameof(AllocationRow.UpdatedAtUtc),
+                    ],
                     _ => [],
                 };
                 var changed = entry.Properties

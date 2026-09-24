@@ -145,6 +145,53 @@ internal sealed class BalanceRow : IInventoryTenantRow
     public byte[] RowVersion { get; set; } = [];
 }
 
+/// <summary>
+/// One physical-stock allocation. Its immutable position identifies the exact free balance the
+/// allocation protects. Only remaining kg, status and version change when a definite shipment
+/// consumes it; allocation creation/release policies are outside this predecessor.
+/// </summary>
+internal sealed class AllocationRow : IInventoryTenantRow
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public int OwnerKind { get; set; }
+    public Guid OwnerId { get; set; }
+    public int CustodianKind { get; set; }
+    public Guid CustodianId { get; set; }
+    public Guid LocationId { get; set; }
+    public Guid LabelId { get; set; }
+    public int Block { get; set; }
+    public decimal AllocatedKg { get; set; }
+    public decimal RemainingKg { get; set; }
+    public int Status { get; set; }
+    public long Version { get; set; }
+    public byte[] RowVersion { get; set; } = [];
+    public DateTimeOffset CreatedAtUtc { get; set; }
+    public DateTimeOffset UpdatedAtUtc { get; set; }
+}
+
+/// <summary>
+/// One unpublished Inventory-owned event stored in the producer transaction. This slice has no
+/// dispatcher and never mutates publication state; the row is append-only.
+/// </summary>
+internal sealed class InventoryOutboxRow : IInventoryTenantRow
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public string EventType { get; set; } = string.Empty;
+    public int SchemaVersion { get; set; }
+    public string SourceOperation { get; set; } = string.Empty;
+    public string AggregateType { get; set; } = string.Empty;
+    public Guid AggregateId { get; set; }
+    public long AggregateVersion { get; set; }
+    public long Sequence { get; set; }
+    public string PayloadJson { get; set; } = string.Empty;
+    public DateTimeOffset OccurredAtUtc { get; set; }
+    public string CorrelationId { get; set; } = string.Empty;
+    public string? CausationId { get; set; }
+    public DateTimeOffset RecordedAtUtc { get; set; }
+}
+
 /// <summary>Organization's company, referenced by identity only (the table is Organization's, not migrated here).</summary>
 internal sealed class OrganizationCompanyReference
 {
