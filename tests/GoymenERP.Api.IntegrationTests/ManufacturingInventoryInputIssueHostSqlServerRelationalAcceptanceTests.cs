@@ -155,9 +155,8 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
             "SELECT QuantityKg FROM inventory.Balances WHERE LabelId = @label AND Block = 1",
             ("@label", stale.Label.Id)));
 
-        var foreign = await SeedManufacturingParentForCompanyAsync(run, CompanyB,
-            "SYN-MFG-HOST-FOREIGN", 100m);
-        var foreignCommand = await SeedManufacturingOrderAsync(run, scope.Store, foreign.Label.Id, 2, 10m);
+        var foreign = await SeedManufacturingForeignLabelAsync(run, "SYN-MFG-HOST-FOREIGN");
+        var foreignCommand = await SeedManufacturingOrderAsync(run, scope.Store, foreign.Id, 2, 10m);
         var foreignError = await Assert.ThrowsAsync<InventoryManufacturingRealizationException>(() =>
             scope.Host.IssueAsync(foreignCommand, ManufacturingHostMetadata(run, "foreign-parent")));
         Assert.Equal((404, InventoryManufacturingRealizationCodesV1.InvalidReference),
@@ -250,6 +249,18 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
                 CorrelationId = $"mfg-host-foreign-stock-{Guid.NewGuid():N}",
             });
         return new ManufacturingParentSeed(label, location);
+    }
+
+    private static async Task<MaterialLabel> SeedManufacturingForeignLabelAsync(Run run, string code)
+    {
+        var label = InventoryHostLabel(CompanyB, code);
+        await using var store = InventoryHostStore(run, CompanyB);
+        await store.Labels.SaveLabelAsync(label,
+            InventoryHostMetadata(run) with
+            {
+                CorrelationId = $"mfg-host-foreign-label-{Guid.NewGuid():N}",
+            });
+        return label;
     }
 
     private static async Task<Guid> InventoryHostLocationOfAsync(Run run, Guid companyId) =>
