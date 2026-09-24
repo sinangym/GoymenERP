@@ -17,7 +17,8 @@
 #                   finance.manual-receipt.reverse.propose, plus manual outgoing-payment draft save/read.
 #   fin01-approver: approves another person's proposal (Ö4) — finance.bank-account.read / .approve,
 #                   finance.manual-receipt.reverse.approve, accounting.periods.read, and manual outgoing-payment
-#                   draft read / approve / record. These grants exist only in this disposable browser role.
+#                   draft read / approve / record. Its final record revalidates the selected party/account through
+#                   the Cari owner, so this disposable actor also holds counterparty.parties.read.
 services:
   api:
     environment:
@@ -61,6 +62,7 @@ services:
       IdentitySeed__Roles__6__Permissions__4: finance.manual-bank-payment.draft.read
       IdentitySeed__Roles__6__Permissions__5: finance.manual-bank-payment.approve
       IdentitySeed__Roles__6__Permissions__6: finance.manual-bank-payment.record
+      IdentitySeed__Roles__6__Permissions__7: counterparty.parties.read
       IdentitySeed__Assignments__7__Id: b4000000-0000-4000-8000-00000000f101
       IdentitySeed__Assignments__7__UserId: b2000000-0000-4000-8000-00000000f101
       IdentitySeed__Assignments__7__RoleId: b3000000-0000-4000-8000-00000000f101

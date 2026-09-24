@@ -336,12 +336,12 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
     const recordedBody = recordedRequest.postDataJSON()
     expect(recordedBody).toEqual({ paymentId: manualPaymentId, expectedVersion: '2', bankResultConfirmed: true })
     const recordedResponse = await recordAnswer
-    expect(recordedResponse.status()).toBe(200)
     const first = await recordedResponse.json() as {
       readonly isReplay?: unknown
       readonly originalCorrelationId?: unknown
       readonly resource?: { readonly id?: unknown; readonly status?: unknown; readonly version?: unknown }
     }
+    expect(recordedResponse.status(), JSON.stringify(first)).toBe(200)
     expect(first).toMatchObject({ isReplay: false, resource: { id: manualPaymentId, status: 'Recorded', version: '3' } })
     await expect(page.getByText('Giden ödeme kesin kaydedildi.', { exact: true })).toBeVisible()
 
