@@ -28,6 +28,7 @@ import { FinancePortProvider } from './financePort'
 import { createHttpFinancePort } from './httpPort'
 import { ReceiptDetailPage, ReceiptDraftPage, ReceiptListPage } from './ReceiptPages'
 import { ReversalApprovalsPage } from './ReversalApprovalsPage'
+import { ManualBankPaymentStartPage, type ManualBankPaymentEntryContext } from './ManualBankPaymentStartPage'
 import {
   ManualBankPaymentCreatePage,
   ManualBankPaymentDetailPage,
@@ -79,7 +80,26 @@ function ManualBankPaymentCreateRoute() {
   const currencyId = one('currencyId')
   const profileId = one('profileId')
   const profileVersion = one('profileVersion')
-  if (context === null || !isBoundUuid(partyId) || !isBoundUuid(companyAccountId)
+  if (context === null) {
+    return <StateBlock state={{ kind: 'not-found' }} subject="giden ödeme başlangıç bağlamı" />
+  }
+  const names = ['partyId', 'companyAccountId', 'treasuryAccountId', 'currencyId', 'profileId', 'profileVersion']
+  const hasEntryQuery = names.some((name) => query.has(name))
+  if (!hasEntryQuery) {
+    const continueWith = (entry: ManualBankPaymentEntryContext) => {
+      const params = new URLSearchParams({
+        partyId: entry.partyId,
+        companyAccountId: entry.companyAccountId,
+        treasuryAccountId: entry.treasuryAccountId,
+        currencyId: entry.currencyId,
+        profileId: entry.profileId,
+        profileVersion: entry.profileVersion,
+      })
+      navigate(`${FINANCE_ROUTE.manualBankPaymentsCreate}?${params.toString()}`)
+    }
+    return <ManualBankPaymentStartPage companyId={context.companyId} onContinue={continueWith} />
+  }
+  if (!isBoundUuid(partyId) || !isBoundUuid(companyAccountId)
     || !isBoundUuid(treasuryAccountId) || !isBoundUuid(currencyId) || !isBoundUuid(profileId)
     || !isPositiveInt64Text(profileVersion)) {
     return <StateBlock state={{ kind: 'not-found' }} subject="giden ödeme başlangıç bağlamı" />

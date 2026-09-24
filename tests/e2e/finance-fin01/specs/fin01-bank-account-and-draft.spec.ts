@@ -47,15 +47,6 @@ let reversalSourceId = ''
 let bankAccountId = ''
 let manualPaymentId = ''
 
-interface ManualPaymentEntry {
-  readonly partyId: string
-  readonly companyAccountId: string
-  readonly treasuryAccountId: string
-  readonly currencyId: string
-  readonly profileId: string
-  readonly profileVersion: string
-}
-
 /** Binds `actor` to every API request of this context and records which requests it rewrote. */
 async function asActor(context: BrowserContext, actor: string): Promise<Set<Request>> {
   const rewritten = new Set<Request>()
@@ -81,41 +72,6 @@ function expectEveryAnswerRewritten(answered: readonly Request[], rewritten: Rea
 
 function accountRow(page: Page) {
   return page.getByRole('row', { name: new RegExp(ACCOUNT_NAME) })
-}
-
-async function readManualPaymentEntry(page: Page): Promise<ManualPaymentEntry> {
-  expect(bankAccountId).toMatch(/^[0-9a-f-]{36}$/)
-  const query = new URLSearchParams({
-    treasuryAccountId: bankAccountId,
-    partyId: env.seed.partyId,
-    companyAccountId: env.seed.companyAccountId,
-    occurredOn: '2026-09-18',
-  })
-  const answer = await page.evaluate(async (path) => {
-    const response = await fetch(path)
-    return { status: response.status, body: await response.json() as unknown }
-  }, `/api/v1/finance/manual-receipts/draft-context?${query.toString()}`)
-  expect(answer.status).toBe(200)
-  const body = answer.body as {
-    readonly bankAccount?: { readonly id?: unknown; readonly currencyId?: unknown }
-    readonly currency?: {
-      readonly currencyId?: unknown
-      readonly profile?: { readonly reference?: { readonly profileId?: unknown; readonly version?: unknown } }
-    }
-  }
-  expect(body.bankAccount?.id).toBe(bankAccountId)
-  expect(body.bankAccount?.currencyId).toBe(body.currency?.currencyId)
-  expect(body.currency?.currencyId).toEqual(expect.stringMatching(/^[0-9a-f-]{36}$/))
-  expect(body.currency?.profile?.reference?.profileId).toEqual(expect.stringMatching(/^[0-9a-f-]{36}$/))
-  expect(body.currency?.profile?.reference?.version).toEqual(expect.stringMatching(/^[1-9][0-9]*$/))
-  return {
-    partyId: env.seed.partyId,
-    companyAccountId: env.seed.companyAccountId,
-    treasuryAccountId: bankAccountId,
-    currencyId: body.currency!.currencyId as string,
-    profileId: body.currency!.profile!.reference!.profileId as string,
-    profileVersion: body.currency!.profile!.reference!.version as string,
-  }
 }
 
 test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () => {
@@ -279,10 +235,34 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
   test('FIN01-02D the maker creates, lists and reopens one real outgoing bank payment draft', async ({ page, context }) => {
     const rewritten = await asActor(context, env.seed.proposerActor)
     const answered = watchAnswers(page)
-    const entry = await readManualPaymentEntry(page)
-    const query = new URLSearchParams(entry)
-
-    await page.goto(`/finans/odemeler/yeni?${query.toString()}`)
+    expect(bankAccountId).toMatch(/^[0-9a-f-]{36}$/)
+    await page.goto('/finans/odemeler')
+    await page.getByRole('button', { name: 'Yeni', exact: true }).click()
+    await expect(page).toHaveURL(/\/finans\/odemeler\/yeni$/)
+    await page.getByLabel('Cari hesabı', { exact: true }).selectOption({ index: 1 })
+    await page.getByLabel('Banka hesabı', { exact: true }).selectOption({ label: ACCOUNT_NAME })
+    await page.getByLabel('İşlem tarihi', { exact: true }).fill('2026-09-18')
+    const continueButton = page.getByRole('button', { name: 'Ödeme formuna devam et', exact: true })
+    await expect(continueButton).toBeEnabled({ timeout: 30_000 })
+    await continueButton.click()
+    await expect(page).toHaveURL(/\/finans\/odemeler\/yeni\?.+/)
+    const canonical = new URL(page.url()).searchParams
+    const entry = {
+      partyId: canonical.get('partyId'),
+      companyAccountId: canonical.get('companyAccountId'),
+      treasuryAccountId: canonical.get('treasuryAccountId'),
+      currencyId: canonical.get('currencyId'),
+      profileId: canonical.get('profileId'),
+      profileVersion: canonical.get('profileVersion'),
+    }
+    expect(entry).toMatchObject({
+      partyId: env.seed.partyId,
+      companyAccountId: env.seed.companyAccountId,
+      treasuryAccountId: bankAccountId,
+      currencyId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+      profileId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+      profileVersion: expect.stringMatching(/^[1-9][0-9]*$/),
+    })
     await expect(page.getByRole('heading', { level: 1, name: 'Yeni giden banka ödemesi', exact: true }))
       .toBeVisible({ timeout: 30_000 })
     await page.getByLabel('Tutar', { exact: true }).fill('875,25')
