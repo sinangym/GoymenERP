@@ -21,7 +21,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// interceptor. Every plan, order, roll and fact below is synthetic test data in this test's own
 /// database; nothing is seeded.
 /// </summary>
-public sealed class ManufacturingSqlServerRelationalAcceptanceTests
+public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
 {
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;
