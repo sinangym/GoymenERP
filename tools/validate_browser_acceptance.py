@@ -244,7 +244,9 @@ SUITE_IDENTITY_PERMISSIONS = {
     # S05 adds the two separate price names to that same disposable preparer; no other actor gains them.
     "s04": ("sales.drafts.create", "sales.drafts.read", "sales.orders.approve",
             "counterparty.parties.read", "counterparty.parties.update.basic",
-            "product.operational-selection.read", "sales.orders.price.read", "sales.orders.price.write"),
+            "product.operational-selection.read", "sales.orders.price.read", "sales.orders.price.write",
+            "inventory.opening-stock.record", "inventory.labels.read", "inventory.balances.read",
+            "inventory.physical-allocation.write"),
     # The six Accounting names. The preparer holds .approve on purpose — Ö4 must refuse its OWN proposal
     # although the grant is there — and holds periods.read alone in the second company; the approver holds
     # no journal or queue name, so those routes stay closed to it.
