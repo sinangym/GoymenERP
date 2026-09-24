@@ -11,7 +11,11 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Shell;
 public sealed class InventoryShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "INVENTORY";
-    public const string OwnerContractVersion = "1.0";
+    public const string OwnerContractVersion = "1.1";
+    public const string StockPositionsCapabilityId = "inventory.stock-positions.list";
+    public const string StockPositionsRouteId = "inventory.stock-positions";
+    public const string StockPositionsRoutePath = "/stok/pozisyonlar";
+    public const string StockPositionsScreenId = "ST-01";
     public const string OpeningStockCapabilityId = ErpPermissions.InventoryOpeningStockRecord;
     public const string OpeningStockRouteId = "inventory.opening-stock";
     public const string OpeningStockRoutePath = "/stok/acilis";
@@ -22,6 +26,16 @@ public sealed class InventoryShellCapabilityProvider : IShellCapabilityProvider
 
     public IReadOnlyCollection<ShellCapabilityDeclaration> GetDeclarations() =>
     [
+        new(
+            StockPositionsCapabilityId,
+            StockPositionsRouteId,
+            StockPositionsRoutePath,
+            StockPositionsScreenId,
+            ShellCapabilityRoutePrecedence.Static,
+            ShellCapabilityContextRequirement.SingleCompany,
+            ShellCapabilityScopeRequirement.CompanyWide,
+            [ErpPermissions.InventoryLabelsRead, ErpPermissions.InventoryBalancesRead],
+            ImplementationAvailable: true),
         new(
             OpeningStockCapabilityId,
             OpeningStockRouteId,

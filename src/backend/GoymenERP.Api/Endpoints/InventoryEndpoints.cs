@@ -78,6 +78,7 @@ public static class InventoryEndpoints
             .ProducesErpAuthenticatedProblems();
 
         MapParentRollCandidateEndpoint(endpoints);
+        MapStockPositionEndpoint(endpoints);
         endpoints.MapInventoryReferenceEndpoints();
         MapOpeningCountEndpoints(group);
         return endpoints;
@@ -170,6 +171,97 @@ public static class InventoryEndpoints
     }
 
     private static IResult ParentRollProblem(int statusCode, string? code = null) => code is null
+        ? Results.Problem(statusCode: statusCode)
+        : Results.Problem(statusCode: statusCode,
+            extensions: new Dictionary<string, object?> { ["code"] = code });
+
+    private static void MapStockPositionEndpoint(IEndpointRouteBuilder endpoints)
+    {
+        endpoints.MapGet(InventoryStockPositionApiV1.PositionsPath, async (
+                HttpContext httpContext,
+                IInventoryStockPositionsV1 positions,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response);
+                if (!TryReadStockPositionQuery(httpContext.Request.Query, out var query))
+                {
+                    return StockPositionProblem(StatusCodes.Status400BadRequest,
+                        InventoryStockPositionCodesV1.InvalidQuery);
+                }
+
+                try
+                {
+                    return Results.Ok(await positions.SearchAsync(query, cancellationToken));
+                }
+                catch (InventoryStockPositionException exception)
+                {
+                    return exception.StatusCode switch
+                    {
+                        StatusCodes.Status400BadRequest
+                            when exception.Code == InventoryStockPositionCodesV1.InvalidQuery =>
+                            StockPositionProblem(exception.StatusCode, exception.Code),
+                        StatusCodes.Status409Conflict
+                            when exception.Code == InventoryStockPositionCodesV1.ReadConflict =>
+                            StockPositionProblem(exception.StatusCode, exception.Code),
+                        StatusCodes.Status503ServiceUnavailable
+                            when exception.Code == InventoryStockPositionCodesV1.Unavailable =>
+                            StockPositionProblem(exception.StatusCode, exception.Code),
+                        StatusCodes.Status401Unauthorized or StatusCodes.Status403Forbidden =>
+                            StockPositionProblem(exception.StatusCode),
+                        _ => StockPositionProblem(StatusCodes.Status503ServiceUnavailable),
+                    };
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception)
+                {
+                    return StockPositionProblem(StatusCodes.Status503ServiceUnavailable);
+                }
+            })
+            .WithName(InventoryStockPositionApiV1.GetPositionsOperationId)
+            .WithTags("Inventory")
+            .WithMetadata(new PrivateNoStoreOnAuthorizationFailureMetadata())
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.InventoryLabelsRead, ErpPermissions.InventoryBalancesRead)
+            .Produces<InventoryStockPositionsV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest(InventoryStockPositionCodesV1.InvalidQuery)
+            .ProducesErpConflict(InventoryStockPositionCodesV1.ReadConflict)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+    }
+
+    private static bool TryReadStockPositionQuery(
+        IQueryCollection query,
+        out InventoryStockPositionQueryV1 parsed)
+    {
+        parsed = new();
+        if (query.Keys.Any(name => name is not "q" and not "limit")
+            || query.Any(parameter => parameter.Value.Count != 1))
+        {
+            return false;
+        }
+
+        string? q = null;
+        if (query.TryGetValue("q", out var qValues))
+        {
+            q = qValues[0];
+        }
+
+        var limit = 25;
+        if (query.TryGetValue("limit", out var limitValues)
+            && (!int.TryParse(limitValues[0], NumberStyles.None, CultureInfo.InvariantCulture, out limit)
+                || limit is < 1 or > 100))
+        {
+            return false;
+        }
+
+        parsed = new InventoryStockPositionQueryV1(q, limit);
+        return true;
+    }
+
+    private static IResult StockPositionProblem(int statusCode, string? code = null) => code is null
         ? Results.Problem(statusCode: statusCode)
         : Results.Problem(statusCode: statusCode,
             extensions: new Dictionary<string, object?> { ["code"] = code });
