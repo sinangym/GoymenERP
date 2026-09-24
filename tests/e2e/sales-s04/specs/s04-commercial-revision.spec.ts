@@ -119,7 +119,8 @@ test('S04-08 one approved record is priced in the form, reopened as Rev.1, and i
     },
   )
   expect(forbidden.status()).toBe(403)
-  expect(await readDetail(request)).toMatchObject({
+  const detailAfterForbidden = await readDetail(request)
+  expect(detailAfterForbidden).toMatchObject({
     draft: {
       id: seed.draftId,
       version: approved.draft.version,
@@ -127,6 +128,7 @@ test('S04-08 one approved record is priced in the form, reopened as Rev.1, and i
       approvalState: 'Approved',
     },
   })
+  expect(detailAfterForbidden.lines).toEqual(approved.lines)
 
   await openDraft(page, seed.ordinaryCreatorActor)
   await expect(page.getByTestId('sales-draft-approval-state')).toHaveText('Onaylı')
