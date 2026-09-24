@@ -7,6 +7,7 @@ using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Manufacturing.Domain.Common;
 using GoymenERP.Modules.Manufacturing.Domain.Orders;
 using GoymenERP.Modules.Manufacturing.Domain.Plans;
+using GoymenERP.Modules.Organization.Application.Contracts;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Manufacturing.UnitTests;
@@ -283,7 +284,70 @@ public sealed class ManufacturingCommandServiceTests
         Assert.Equal(("GoodOutputMass", "950"), (result.Resource.Target!.Basis, result.Resource.Target.Kg));
         Assert.Equal(new[] { DateOnly.FromDateTime(At.UtcDateTime), DateOnly.FromDateTime(At.UtcDateTime) }, fixture.Settings.Days);
         Assert.Equal(new InventoryParentRollSelectionV1(Roll, LabelVersion), Assert.Single(fixture.ParentRolls.Selections));
-        Assert.Equal(["authority", "settings", "parent-roll", "authority"], fixture.Calls);
+        Assert.Equal(["authority", "work-center", "settings", "parent-roll", "authority"], fixture.Calls);
+    }
+
+    [Fact]
+    public async Task A_saved_plan_uses_the_selected_slitting_work_centers_process()
+    {
+        var fixture = new Fixture();
+
+        var result = await fixture.Service.SavePlanAsync(Plan(LabelVersion), "key-1",
+            "manufacturing.plans.write", CancellationToken.None);
+
+        Assert.Equal(ManufacturingApiStatus.Created, result.Status);
+        Assert.Equal("Slitting", result.Resource!.Process);
+        Assert.Equal(ManufacturingProcess.Slitting, fixture.Store.Plans[result.Resource.PlanId].Process);
+        Assert.Equal((Company, WorkCenter), Assert.Single(fixture.WorkCenters.Requests));
+    }
+
+    [Theory]
+    [InlineData("Paint")]
+    [InlineData("TubeProfile")]
+    [InlineData("ColdRolling")]
+    [InlineData("CutToLength")]
+    public async Task An_organization_process_not_yet_in_the_manufacturing_persistence_contract_fails_closed(string kind)
+    {
+        var fixture = new Fixture();
+        fixture.WorkCenters.Kind = kind;
+
+        var result = await fixture.Service.SavePlanAsync(Plan(LabelVersion), "key-1",
+            "manufacturing.plans.write", CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Unavailable, (string?)null), (result.Status, result.Code));
+        Assert.Equal(0, fixture.Settings.Asked);
+        Assert.Equal(0, fixture.ParentRolls.Asked);
+        Assert.Empty(fixture.Store.Commands);
+        Assert.Empty(fixture.Store.Writes);
+    }
+
+    [Theory]
+    [InlineData("missing")]
+    [InlineData("foreign")]
+    [InlineData("kind")]
+    [InlineData("failure")]
+    [InlineData("provider")]
+    public async Task A_missing_or_invalid_work_center_reference_fails_closed_before_other_owner_reads(string refusal)
+    {
+        var fixture = new Fixture(withWorkCenters: refusal != "provider");
+        switch (refusal)
+        {
+            case "missing": fixture.WorkCenters.Missing = true; break;
+            case "foreign": fixture.WorkCenters.ReturnedId = Guid.NewGuid(); break;
+            case "kind": fixture.WorkCenters.Kind = "Unknown"; break;
+            case "failure": fixture.WorkCenters.Exception = new InvalidOperationException("owner unavailable"); break;
+        }
+
+        var result = await fixture.Service.SavePlanAsync(Plan(LabelVersion), "key-1",
+            "manufacturing.plans.write", CancellationToken.None);
+
+        Assert.Equal(refusal == "missing" ? ManufacturingApiStatus.Unprocessable : ManufacturingApiStatus.Unavailable,
+            result.Status);
+        Assert.Equal(refusal == "missing" ? ManufacturingStoreCodes.WorkCenterNotFound : null, result.Code);
+        Assert.Equal(0, fixture.Settings.Asked);
+        Assert.Equal(0, fixture.ParentRolls.Asked);
+        Assert.Empty(fixture.Store.Commands);
+        Assert.Empty(fixture.Store.Writes);
     }
 
     /// <summary>
@@ -531,7 +595,7 @@ public sealed class ManufacturingCommandServiceTests
 
         Assert.Equal((ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied),
             (result.Status, result.Code));
-        Assert.Equal(["authority", "settings", "parent-roll", "authority"], fixture.Calls);
+        Assert.Equal(["authority", "work-center", "settings", "parent-roll", "authority"], fixture.Calls);
         Assert.Single(fixture.ParentRolls.Selections);
         Assert.Empty(fixture.Store.Commands);
         Assert.Empty(fixture.Store.Writes);
@@ -972,7 +1036,7 @@ public sealed class ManufacturingCommandServiceTests
 
     private sealed class Fixture
     {
-        public Fixture()
+        public Fixture(bool withWorkCenters = true)
         {
             var company = new CompanyContext();
             company.Set(Company);
@@ -981,9 +1045,10 @@ public sealed class ManufacturingCommandServiceTests
             Settings = new SettingsPort(Calls);
             Authority = new AuthorityPort(Calls) { Scope = Scope(companyWide: true, "PRODUCTION_OPERATOR") };
             ParentRolls = new ParentRollPort(Calls);
+            WorkCenters = new WorkCenterPort(Calls);
             Correlation = correlation;
             Service = new ManufacturingCommandService(Store, Store, Store, new ManufacturingMassVerifier(Settings), Authority,
-                company, User, correlation, new FixedTime(), ParentRolls);
+                company, User, correlation, new FixedTime(), ParentRolls, withWorkCenters ? WorkCenters : null);
         }
 
         public List<string> Calls { get; } = [];
@@ -997,6 +1062,8 @@ public sealed class ManufacturingCommandServiceTests
         public AuthorityPort Authority { get; }
 
         public ParentRollPort ParentRolls { get; }
+
+        public WorkCenterPort WorkCenters { get; }
 
         public User User { get; } = new();
 
@@ -1084,6 +1151,32 @@ public sealed class ManufacturingCommandServiceTests
                 Company, selection.LabelId, selection.ExpectedLabelVersion, "LBL-1", Guid.NewGuid(),
                 new InventoryLotV1(Guid.NewGuid(), null, null), null, null, "Complete", [], [], "10", "10", "0", [],
                 DraftSelectable: true, DraftRefusalCode: null, ProductionUseRequiresRevalidation: true));
+        }
+    }
+
+    private sealed class WorkCenterPort(List<string> calls) : IOrganizationWorkCenterPlanningReferenceV1
+    {
+        public string Kind { get; set; } = "Slitting";
+        public Guid ReturnedId { get; set; } = WorkCenter;
+        public bool Missing { get; set; }
+        public Exception? Exception { get; set; }
+        public List<(Guid CompanyId, Guid WorkCenterId)> Requests { get; } = [];
+
+        public Task<OrganizationWorkCenterPlanningReferenceV1?> ReadAsync(
+            Guid companyId,
+            Guid workCenterId,
+            CancellationToken cancellationToken = default)
+        {
+            calls.Add("work-center");
+            Requests.Add((companyId, workCenterId));
+            if (Exception is { } exception)
+            {
+                throw exception;
+            }
+
+            return Task.FromResult(Missing
+                ? null
+                : new OrganizationWorkCenterPlanningReferenceV1(ReturnedId, Kind));
         }
     }
 

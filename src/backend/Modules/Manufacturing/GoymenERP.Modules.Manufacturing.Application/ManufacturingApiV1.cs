@@ -12,6 +12,7 @@ using GoymenERP.Modules.Manufacturing.Domain.Engines;
 using GoymenERP.Modules.Manufacturing.Domain.Engines.Balance;
 using GoymenERP.Modules.Manufacturing.Domain.Orders;
 using GoymenERP.Modules.Manufacturing.Domain.Plans;
+using GoymenERP.Modules.Organization.Application.Contracts;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Modules.Manufacturing.Application;
@@ -195,7 +196,8 @@ public sealed partial class ManufacturingCommandService(
     ICurrentUser currentUser,
     ICorrelationContext correlation,
     TimeProvider timeProvider,
-    IInventoryParentRollValidationV1? parentRolls = null)
+    IInventoryParentRollValidationV1? parentRolls = null,
+    IOrganizationWorkCenterPlanningReferenceV1? workCenters = null)
 {
     /// <summary>Any integer mantissa of this many digits fits a decimal's 96 bits, so such a text converts exactly.</summary>
     private const int ExactDecimalDigits = 28;
@@ -269,6 +271,12 @@ public sealed partial class ManufacturingCommandService(
         return RunAsync<PlanViewV1>(permission, idempotencyKey, ManufacturingCommandNames.SavePlan, canonical,
             ManufacturingApiStatus.Created, async (metadata, _) =>
             {
+                var process = await ResolveProcessAsync(request.WorkCenterId, cancellationToken);
+                if (process.Refusal is not null)
+                {
+                    return Refusal<PlanViewV1>(process.Refusal);
+                }
+
                 var today = DateOnly.FromDateTime(timeProvider.GetUtcNow().UtcDateTime);
                 var planned = new List<(Guid ParentRollId, Kilograms Mass)>();
                 for (var index = 0; index < inputs.Count; index++)
@@ -310,7 +318,7 @@ public sealed partial class ManufacturingCommandService(
                 // Built behind the fence, so the domain's own refusals (a zero planned mass, a repeated
                 // roll) map like every other refusal.
                 var plan = new ProductionPlan(request.PlanId, companyContext.CompanyId, request.WorkCenterId,
-                    ManufacturingProcess.Slitting, planned.Select(input => new PlannedInput(input.ParentRollId, input.Mass)),
+                    process.Value, planned.Select(input => new PlannedInput(input.ParentRollId, input.Mass)),
                     request.Target is { } targetRequest && targetMass is { } targetValue
                         ? new ProductionTarget(ParseBasis(targetRequest.Basis)!.Value, targetValue)
                         : null);
@@ -876,6 +884,52 @@ public sealed partial class ManufacturingCommandService(
         {
             return new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false,
                 InventoryParentRollCodesV1.Unavailable);
+        }
+    }
+
+    /// <summary>
+    /// Resolves the selected Organization work center after the stored-answer lookup. Manufacturing's
+    /// persisted process contract currently contains only <c>Slitting</c>; every other Organization kind
+    /// therefore fails closed instead of being falsely stored as Slitting. No client process, active-state
+    /// policy, tolerance or default is introduced. Missing/foreign is the existing work-center refusal,
+    /// while an absent, failed, unsupported or malformed owner source is unavailable.
+    /// </summary>
+    private async Task<(ManufacturingProcess Value, ManufacturingApiResult<object>? Refusal)> ResolveProcessAsync(
+        Guid workCenterId,
+        CancellationToken cancellationToken)
+    {
+        if (workCenters is null)
+        {
+            return (default, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false, null));
+        }
+
+        try
+        {
+            var reference = await workCenters.ReadAsync(companyContext.CompanyId, workCenterId, cancellationToken);
+            if (reference is null)
+            {
+                return (default, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unprocessable, null, false,
+                    ManufacturingStoreCodes.WorkCenterNotFound));
+            }
+
+            var process = reference.WorkCenterId == workCenterId
+                ? reference.Kind switch
+                {
+                    "Slitting" => ManufacturingProcess.Slitting,
+                    _ => (ManufacturingProcess?)null,
+                }
+                : null;
+            return process is { } value
+                ? (value, null)
+                : (default, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false, null));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return (default, new ManufacturingApiResult<object>(ManufacturingApiStatus.Unavailable, null, false, null));
         }
     }
 
