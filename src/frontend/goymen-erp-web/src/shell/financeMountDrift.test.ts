@@ -13,7 +13,13 @@
 import { describe, expect, it } from 'vitest'
 import { matchPath } from 'react-router'
 import { CAPABILITY, CAPABILITY_ROUTE, CAPABILITY_NAV_LABEL, type CapabilityId } from './capabilities'
-import { FINANCE_CAPABILITY, FINANCE_ROUTE, receiptDetailPath, receiptDraftPath } from '../finance/capabilities'
+import {
+  FINANCE_CAPABILITY,
+  FINANCE_ROUTE,
+  manualBankPaymentDetailPath,
+  receiptDetailPath,
+  receiptDraftPath,
+} from '../finance/capabilities'
 
 const ROUTED = [
   [CAPABILITY.financeReceiptsList, FINANCE_CAPABILITY.receiptsList, FINANCE_ROUTE.receiptsList],
@@ -26,6 +32,12 @@ const ROUTED = [
   ],
   [CAPABILITY.financeBankAccountsList, FINANCE_CAPABILITY.bankAccountsList, FINANCE_ROUTE.bankAccountsList],
   [CAPABILITY.financeBankAccountsPropose, FINANCE_CAPABILITY.bankAccountsPropose, FINANCE_ROUTE.bankAccountsPropose],
+  [CAPABILITY.financeManualBankPaymentsList, FINANCE_CAPABILITY.manualBankPaymentsList,
+    FINANCE_ROUTE.manualBankPaymentsList],
+  [CAPABILITY.financeManualBankPaymentsCreate, FINANCE_CAPABILITY.manualBankPaymentsCreate,
+    FINANCE_ROUTE.manualBankPaymentsCreate],
+  [CAPABILITY.financeManualBankPaymentsDetail, FINANCE_CAPABILITY.manualBankPaymentsDetail,
+    FINANCE_ROUTE.manualBankPaymentsDetail],
 ] as const
 
 /**
@@ -42,6 +54,8 @@ const CONTROLS: readonly string[] = [
   FINANCE_CAPABILITY.bankAccountsApprove,
   FINANCE_CAPABILITY.receiptsRecord,
   FINANCE_CAPABILITY.receiptsReversePropose,
+  FINANCE_CAPABILITY.manualBankPaymentsApprove,
+  FINANCE_CAPABILITY.manualBankPaymentsRecord,
 ]
 
 describe('shell ↔ Finance lane capability ids', () => {
@@ -57,7 +71,7 @@ describe('shell ↔ Finance lane capability ids', () => {
     ).toEqual([...classified].sort())
   })
 
-  it('declares the lane’s six route ids with the lane’s values and routes', () => {
+  it('declares the lane’s nine route ids with the lane’s values and routes', () => {
     for (const [shellId, laneId, route] of ROUTED) {
       expect(shellId).toBe(laneId)
       expect(CAPABILITY_ROUTE[shellId]).toBe(route)
@@ -90,6 +104,11 @@ describe('shell ↔ Finance lane capability ids', () => {
     expect(matchPath(CAPABILITY_ROUTE[CAPABILITY.financeReceiptsDraft], entry.pathname)).not.toBeNull()
     expect(matchPath(CAPABILITY_ROUTE[CAPABILITY.financeReceiptsList], FINANCE_ROUTE.receiptsDraft)).toBeNull()
     expect(matchPath(CAPABILITY_ROUTE[CAPABILITY.financeBankAccountsList], FINANCE_ROUTE.bankAccountsPropose)).toBeNull()
+    const paymentId = '7b1c0f2e-0000-4a00-8000-000000000005'
+    expect(matchPath(CAPABILITY_ROUTE[CAPABILITY.financeManualBankPaymentsDetail],
+      manualBankPaymentDetailPath(paymentId))?.params.paymentId).toBe(paymentId)
+    expect(matchPath(CAPABILITY_ROUTE[CAPABILITY.financeManualBankPaymentsList],
+      FINANCE_ROUTE.manualBankPaymentsCreate)).toBeNull()
   })
 
   it('gives the two lists and reversal queue nav entries and the other three none', () => {
@@ -102,6 +121,9 @@ describe('shell ↔ Finance lane capability ids', () => {
       'finance.receipts.reverse.approve': 'Ters Kayıt Onayları',
       'finance.bank-accounts.list': 'Banka Hesapları',
       'finance.bank-accounts.propose': '',
+      'finance.manual-bank-payments.list': 'Giden Ödemeler',
+      'finance.manual-bank-payments.create': '',
+      'finance.manual-bank-payments.detail': '',
     })
   })
 })

@@ -44,6 +44,7 @@ export const DRAFTS_PATH = '/finance/manual-receipts/drafts'
 export const REVERSAL_PROPOSALS_PATH = '/finance/manual-receipts/reversal-proposals'
 export const BANK_ACCOUNT_MASTER_PATH = '/finance/bank-accounts/master'
 export const BANK_ACCOUNT_CURRENCY_CANDIDATES_PATH = '/finance/bank-accounts/currency-candidates'
+export const MANUAL_BANK_PAYMENTS_PATH = '/finance/manual-bank-payments'
 
 const READ_OUTCOME_BY_STATUS: Readonly<Record<number, 'Denied' | 'NotFound' | 'Unavailable'>> = {
   403: 'Denied',
@@ -128,6 +129,31 @@ function unpublishedCommand(): Promise<PortReply> {
 
 export function createHttpFinancePort(): FinanceReceiptPort {
   return {
+    listManualBankPayments: (scope, request, signal) => {
+      const params = new URLSearchParams()
+      if (request.cursor !== null) params.set('cursor', request.cursor)
+      const query = params.toString()
+      return read(`${API_BASE}${MANUAL_BANK_PAYMENTS_PATH}${query === '' ? '' : `?${query}`}`, scope, signal)
+    },
+    manualBankPaymentDetail: (scope, paymentId, signal) =>
+      read(`${API_BASE}${MANUAL_BANK_PAYMENTS_PATH}/${encodeURIComponent(paymentId)}`, scope, signal),
+    saveManualBankPaymentDraft: (scope, idempotencyKey, request) =>
+      command(`${API_BASE}${MANUAL_BANK_PAYMENTS_PATH}`, scope, idempotencyKey, request),
+    approveManualBankPayment: (scope, idempotencyKey, request) =>
+      command(
+        `${API_BASE}${MANUAL_BANK_PAYMENTS_PATH}/${encodeURIComponent(request.paymentId)}/approval`,
+        scope,
+        idempotencyKey,
+        request,
+      ),
+    recordManualBankPayment: (scope, idempotencyKey, request) =>
+      command(
+        `${API_BASE}${MANUAL_BANK_PAYMENTS_PATH}/${encodeURIComponent(request.paymentId)}/record`,
+        scope,
+        idempotencyKey,
+        request,
+      ),
+
     listBankAccounts: (scope, signal) => read(`${API_BASE}${BANK_ACCOUNTS_PATH}`, scope, signal),
 
     listSources: (scope, request, signal) => {

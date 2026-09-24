@@ -80,6 +80,7 @@ public static class InventoryEndpoints
         MapParentRollCandidateEndpoint(endpoints);
         MapStockPositionEndpoint(endpoints);
         endpoints.MapInventoryReferenceEndpoints();
+        MapPhysicalAllocationEndpoints(group);
         MapOpeningCountEndpoints(group);
         return endpoints;
     }
@@ -251,7 +252,8 @@ public static class InventoryEndpoints
 
         var limit = 25;
         if (query.TryGetValue("limit", out var limitValues)
-            && (!int.TryParse(limitValues[0], NumberStyles.None, CultureInfo.InvariantCulture, out limit)
+            && (!int.TryParse(limitValues[0], System.Globalization.NumberStyles.None,
+                    System.Globalization.CultureInfo.InvariantCulture, out limit)
                 || limit is < 1 or > 100))
         {
             return false;
@@ -265,6 +267,223 @@ public static class InventoryEndpoints
         ? Results.Problem(statusCode: statusCode)
         : Results.Problem(statusCode: statusCode,
             extensions: new Dictionary<string, object?> { ["code"] = code });
+
+    private static void MapPhysicalAllocationEndpoints(RouteGroupBuilder group)
+    {
+        group.MapPost(PhysicalAllocationsPath, async (
+                HttpContext httpContext,
+                InventoryPhysicalAllocationHostService service,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key) || !correlation.IsResolved)
+                {
+                    return AllocationProblem(StatusCodes.Status400BadRequest,
+                        InventoryAllocationCodesV1.ValidationFailed, correlation);
+                }
+
+                if (!httpContext.Request.HasJsonContentType())
+                {
+                    return Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+                }
+
+                CreateInventoryPhysicalAllocationRequestV1? request;
+                try
+                {
+                    request = await JsonSerializer.DeserializeAsync<CreateInventoryPhysicalAllocationRequestV1>(
+                        httpContext.Request.Body, AllocationJson, cancellationToken);
+                }
+                catch (JsonException)
+                {
+                    return AllocationProblem(StatusCodes.Status400BadRequest,
+                        InventoryAllocationCodesV1.ValidationFailed, correlation);
+                }
+
+                if (request is null)
+                {
+                    return AllocationProblem(StatusCodes.Status400BadRequest,
+                        InventoryAllocationCodesV1.ValidationFailed, correlation);
+                }
+
+                try
+                {
+                    var result = await service.CreateAsync(request,
+                        TransportMetadata(currentUser, correlation, key), cancellationToken);
+                    if (result.IsReplay)
+                    {
+                        ApplyReplayHeaders(httpContext, result.OriginalCorrelationId);
+                    }
+
+                    return Results.Json(result.Allocation, AllocationJson,
+                        statusCode: result.IsReplay ? StatusCodes.Status200OK : StatusCodes.Status201Created);
+                }
+                catch (InventoryPhysicalAllocationHostException exception)
+                {
+                    return AllocationProblem(exception.Status, exception.Code, correlation);
+                }
+                catch (InventoryAllocationException exception)
+                {
+                    return AllocationProblem(exception, correlation, create: true);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception)
+                {
+                    return Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable);
+                }
+            })
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.InventoryPhysicalAllocationWrite)
+            .WithName("CreateInventoryPhysicalAllocationV1")
+            .WithIdempotencyContract(StatusCodes.Status200OK)
+            .Accepts<CreateInventoryPhysicalAllocationRequestV1>("application/json")
+            .Produces<InventoryPhysicalAllocationViewV1>(StatusCodes.Status201Created)
+            .Produces<InventoryPhysicalAllocationViewV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest([.. InventoryPhysicalAllocationHttpCodesV1.Status400Codes.Order(StringComparer.Ordinal)])
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict([.. InventoryPhysicalAllocationHttpCodesV1.CreateStatus409Codes.Order(StringComparer.Ordinal)])
+            .ProducesErpUnprocessableEntity([.. InventoryPhysicalAllocationHttpCodesV1.Status422Codes.Order(StringComparer.Ordinal)])
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
+        group.MapPost(PhysicalAllocationsPath + "/{allocationId:guid}/release", async (
+                Guid allocationId,
+                HttpContext httpContext,
+                InventoryPhysicalAllocationHostService service,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key) || !correlation.IsResolved)
+                {
+                    return AllocationProblem(StatusCodes.Status400BadRequest,
+                        InventoryAllocationCodesV1.ValidationFailed, correlation);
+                }
+
+                if (!httpContext.Request.HasJsonContentType())
+                {
+                    return Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+                }
+
+                ReleasePhysicalAllocationV1? request;
+                try
+                {
+                    request = await JsonSerializer.DeserializeAsync<ReleasePhysicalAllocationV1>(
+                        httpContext.Request.Body, AllocationJson, cancellationToken);
+                }
+                catch (JsonException)
+                {
+                    return AllocationProblem(StatusCodes.Status400BadRequest,
+                        InventoryAllocationCodesV1.ValidationFailed, correlation);
+                }
+
+                if (request is null)
+                {
+                    return AllocationProblem(StatusCodes.Status400BadRequest,
+                        InventoryAllocationCodesV1.ValidationFailed, correlation);
+                }
+
+                try
+                {
+                    var result = await service.ReleaseAsync(allocationId, request,
+                        TransportMetadata(currentUser, correlation, key), cancellationToken);
+                    if (result.IsReplay)
+                    {
+                        ApplyReplayHeaders(httpContext, result.OriginalCorrelationId);
+                    }
+
+                    return Results.Json(result.Allocation, AllocationJson);
+                }
+                catch (InventoryPhysicalAllocationHostException exception)
+                {
+                    return AllocationProblem(exception.Status, exception.Code, correlation);
+                }
+                catch (InventoryAllocationException exception)
+                {
+                    return AllocationProblem(exception, correlation, create: false);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception)
+                {
+                    return Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable);
+                }
+            })
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.InventoryPhysicalAllocationWrite)
+            .WithName("ReleaseInventoryPhysicalAllocationV1")
+            .WithIdempotencyContract(StatusCodes.Status200OK)
+            .Accepts<ReleasePhysicalAllocationV1>("application/json")
+            .Produces<InventoryPhysicalAllocationViewV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest([.. InventoryPhysicalAllocationHttpCodesV1.Status400Codes.Order(StringComparer.Ordinal)])
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict([.. InventoryPhysicalAllocationHttpCodesV1.ReleaseStatus409Codes.Order(StringComparer.Ordinal)])
+            .ProducesErpUnprocessableEntity([.. InventoryPhysicalAllocationHttpCodesV1.Status422Codes.Order(StringComparer.Ordinal)])
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+    }
+
+    private static InventoryCommandMetadata TransportMetadata(
+        ICurrentUser currentUser,
+        ICorrelationContext correlation,
+        string idempotencyKey) => new(
+        currentUser.UserId ?? string.Empty,
+        InventoryPermissionManifestV1.PhysicalAllocationWrite,
+        [],
+        correlation.CorrelationId,
+        correlation.CausationId,
+        idempotencyKey,
+        correlation.SourceChannel,
+        correlation.ClientIpAddress,
+        correlation.UserAgent);
+
+    private static IResult AllocationProblem(
+        InventoryAllocationException exception,
+        ICorrelationContext correlation,
+        bool create)
+    {
+        var accepted = exception.Status switch
+        {
+            StatusCodes.Status400BadRequest =>
+                InventoryPhysicalAllocationHttpCodesV1.Status400Codes.Contains(exception.Code),
+            StatusCodes.Status404NotFound => exception.Code == InventoryAllocationCodesV1.InvalidReference,
+            StatusCodes.Status409Conflict => (create
+                ? InventoryPhysicalAllocationHttpCodesV1.CreateStatus409Codes
+                : InventoryPhysicalAllocationHttpCodesV1.ReleaseStatus409Codes).Contains(exception.Code),
+            StatusCodes.Status422UnprocessableEntity =>
+                InventoryPhysicalAllocationHttpCodesV1.Status422Codes.Contains(exception.Code),
+            StatusCodes.Status503ServiceUnavailable => exception.Code == InventoryAllocationCodesV1.InvalidReference,
+            _ => false,
+        };
+        return accepted
+            ? AllocationProblem(exception.Status, exception.Code, correlation)
+            : Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+
+    private static IResult AllocationProblem(int status, string? code, ICorrelationContext correlation)
+    {
+        if (status is StatusCodes.Status401Unauthorized or StatusCodes.Status403Forbidden
+            or StatusCodes.Status404NotFound or StatusCodes.Status503ServiceUnavailable || code is null)
+        {
+            return Results.Problem(statusCode: status);
+        }
+
+        return Results.Problem(statusCode: status,
+            extensions: new Dictionary<string, object?>
+            {
+                ["code"] = code,
+                ["correlationId"] = correlation.IsResolved ? correlation.CorrelationId : null,
+            });
+    }
 
     /// <summary>
     /// INV-OPEN-1 part 2 (T07 = A, #66 5738113623 §2): record an opening count and read one back. The
@@ -447,12 +666,14 @@ public static class InventoryEndpoints
     }
 
     private const string OpeningCountsPath = "/opening-counts";
+    private const string PhysicalAllocationsPath = "/physical-allocations";
     private const string IdempotencyHeaderName = "Idempotency-Key";
     private const int MaximumIdempotencyKeyLength = 128;
 
     // The contract DTOs refuse unknown and missing required members themselves (JsonUnmappedMemberHandling,
     // JsonRequired); web defaults give camelCase names and ISO dates.
     private static readonly JsonSerializerOptions OpeningJson = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions AllocationJson = new(JsonSerializerDefaults.Web);
 
     private static IResult NotFound() =>
         Results.Problem(

@@ -9,6 +9,7 @@ public static class FinanceMoneyOperations
 {
     // Technical Settings lookup key. It does not select scale, currency, grant or period policy.
     public const string ManualBankReceiptV1 = "finance.manual-bank-receipt.v1";
+    public const string ManualBankPaymentV1 = "finance.manual-bank-payment.v1";
 }
 
 public sealed record DraftReadContextRequest(Guid TreasuryAccountId, Guid PartyId,

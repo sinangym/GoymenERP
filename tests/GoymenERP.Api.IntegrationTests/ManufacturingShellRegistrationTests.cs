@@ -32,7 +32,7 @@ public sealed class ManufacturingShellRegistrationTests
 
         var actual = ShellCapabilityRegistry.ComputeCandidateRevision(providers);
         Assert.True(
-            string.Equals(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11AndPublishedManufacturingV11, actual,
+            string.Equals(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV12AndPublishedManufacturingV12, actual,
                 StringComparison.Ordinal),
             $"Manufacturing normal-host authority drifted. Actual: {actual}");
     }
@@ -45,7 +45,7 @@ public sealed class ManufacturingShellRegistrationTests
         var authority = C01E2eShellCapabilityActivation.Configure(services, new TestingEnvironment(),
             new ConfigurationBuilder().Build());
 
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV11AndPublishedManufacturingV11,
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV12AndPublishedManufacturingV12,
             authority);
         using var container = services.BuildServiceProvider();
         var registry = new ShellCapabilityRegistry(container.GetServices<IShellCapabilityProvider>(),
@@ -56,12 +56,13 @@ public sealed class ManufacturingShellRegistrationTests
         // The order detail, its two controls (the fact forms and, MFG-ORD, the close) and the MFG-02 order
         // list, published. A declaration still grants nothing: each route's service measures its own
         // Manufacturing permission afresh, and the close measures its own name on top of the read.
-        Assert.Equal(6, manufacturing.Length);
+        Assert.Equal(8, manufacturing.Length);
         string[] expected =
         [
             "manufacturing.orders.close", "manufacturing.orders.detail", "manufacturing.orders.facts",
             "manufacturing.orders.list",
-            "manufacturing.plans.create", "manufacturing.plans.detail",
+            "manufacturing.plans.approve", "manufacturing.plans.create", "manufacturing.plans.detail",
+            "manufacturing.plans.order-create",
         ];
         Assert.Equal(expected,
             manufacturing.Select(item => item.Declaration.CapabilityId).Order(StringComparer.Ordinal).ToArray());

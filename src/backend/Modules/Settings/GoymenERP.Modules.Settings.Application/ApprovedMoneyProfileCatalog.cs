@@ -62,6 +62,7 @@ public sealed class ApprovedMoneyProfileCatalog
         Operations: new HashSet<string>(StringComparer.Ordinal)
         {
             "accounting.journal-amount.v1",
+            "finance.manual-bank-payment.v1",
             "finance.manual-bank-receipt.v1",
             "sales.order-draft.v1",
         },

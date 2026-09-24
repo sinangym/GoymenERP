@@ -79,6 +79,10 @@ export function FinancePortProvider({ port, children }: { readonly port: Finance
   return <FinancePortContext.Provider value={port}>{children}</FinancePortContext.Provider>
 }
 
+export function useFinancePort(): FinanceReceiptPort | null {
+  return useContext(FinancePortContext)
+}
+
 /** The verified, bound single-company context — or null (switching, group, unbound). */
 export function useFinanceBinding(): { readonly binding: AttemptBinding; readonly namespace: string } | null {
   const shell = useShellState()

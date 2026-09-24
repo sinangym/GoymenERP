@@ -54,6 +54,10 @@ public sealed class FinancePermissionPort(
         // approve the other. A new name here would be a grant nobody decided.
         FinanceAction.ProposeBankAccountIbanChange => ErpPermissions.FinanceBankAccountPropose,
         FinanceAction.ApproveBankAccountIbanChange => ErpPermissions.FinanceBankAccountApprove,
+        FinanceAction.SaveManualBankPaymentDraft => FinancePermissionNames.ManualBankPaymentDraftSave,
+        FinanceAction.ReadManualBankPayments => FinancePermissionNames.ManualBankPaymentDraftRead,
+        FinanceAction.ApproveManualBankPayment => FinancePermissionNames.ManualBankPaymentApprove,
+        FinanceAction.RecordManualBankPayment => FinancePermissionNames.ManualBankPaymentRecord,
         _ => null,
     };
 
