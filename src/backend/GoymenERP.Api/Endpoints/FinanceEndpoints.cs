@@ -19,6 +19,7 @@ public static class FinanceEndpoints
     public const string BankAccountsPath = "/api/v1/finance/bank-accounts";
     public const string BankAccountMasterPath = "/api/v1/finance/bank-accounts/master";
     public const string BankAccountCurrencyCandidatesPath = "/api/v1/finance/bank-accounts/currency-candidates";
+    public const string ManualBankPaymentsPath = "/api/v1/finance/manual-bank-payments";
     private const string IdempotencyHeaderName = "Idempotency-Key";
     private const int MaximumIdempotencyKeyLength = 128;
     private static readonly JsonSerializerOptions ContractJson = FinanceJson.CreateOptions();
@@ -76,8 +77,137 @@ public static class FinanceEndpoints
             .ProducesErpServiceUnavailable();
 
         MapManualReceiptEndpoints(endpoints);
+        MapManualBankPaymentEndpoints(endpoints);
         MapBankAccountEndpoints(endpoints);
         return endpoints;
+    }
+
+    private static void MapManualBankPaymentEndpoints(IEndpointRouteBuilder endpoints)
+    {
+        endpoints.MapPost(ManualBankPaymentsPath, async (
+                HttpContext httpContext,
+                IManualBankPaymentService service,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key))
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                if (await ReadBodyAsync<ManualBankPaymentDraftSaveRequest>(httpContext, cancellationToken)
+                    is not { } request)
+                    return httpContext.Request.HasJsonContentType()
+                        ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                        : Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+                var result = await service.DraftSaveAsync(Context(companyContext, currentUser, correlation),
+                    new CommandMetadata(key), request, cancellationToken);
+                return Command(httpContext, result, result.Outcome, result.IsReplay, result.OriginalCorrelationId);
+            })
+            .WithName("SaveFinanceManualBankPaymentDraftV1")
+            .WithTags("Finance").RequireAuthorization().RequireCompanyContext()
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
+            .Accepts<ManualBankPaymentDraftSaveRequest>("application/json")
+            .Produces<ManualBankPaymentCommandResult>(StatusCodes.Status200OK)
+            .Produces<ManualBankPaymentCommandResult>(StatusCodes.Status409Conflict)
+            .Produces<ManualBankPaymentCommandResult>(StatusCodes.Status422UnprocessableEntity)
+            .ProducesErpAuthenticatedProblems().ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody().AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapPost(ManualBankPaymentsPath + "/{paymentId:guid}/approval", async (
+                Guid paymentId, HttpContext httpContext, IManualBankPaymentService service,
+                ICompanyContext companyContext, ICurrentUser currentUser, ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key))
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                if (await ReadBodyAsync<ApproveManualBankPaymentRequest>(httpContext, cancellationToken)
+                    is not { } request || request.PaymentId != paymentId)
+                    return httpContext.Request.HasJsonContentType()
+                        ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                        : Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+                var result = await service.ApproveAsync(Context(companyContext, currentUser, correlation),
+                    new CommandMetadata(key), request, cancellationToken);
+                return Command(httpContext, result, result.Outcome, result.IsReplay, result.OriginalCorrelationId);
+            })
+            .WithName("ApproveFinanceManualBankPaymentV1")
+            .WithTags("Finance").RequireAuthorization().RequireCompanyContext()
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
+            .Accepts<ApproveManualBankPaymentRequest>("application/json")
+            .Produces<ManualBankPaymentCommandResult>(StatusCodes.Status200OK)
+            .Produces<ManualBankPaymentCommandResult>(StatusCodes.Status409Conflict)
+            .Produces<ManualBankPaymentCommandResult>(StatusCodes.Status422UnprocessableEntity)
+            .ProducesErpAuthenticatedProblems().ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody().AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapPost(ManualBankPaymentsPath + "/{paymentId:guid}/record", async (
+                Guid paymentId, HttpContext httpContext, IManualBankPaymentService service,
+                ICompanyContext companyContext, ICurrentUser currentUser, ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key))
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                if (await ReadBodyAsync<RecordManualBankPaymentRequest>(httpContext, cancellationToken)
+                    is not { } request || request.PaymentId != paymentId)
+                    return httpContext.Request.HasJsonContentType()
+                        ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                        : Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+                var result = await service.RecordAsync(Context(companyContext, currentUser, correlation),
+                    new CommandMetadata(key), request, cancellationToken);
+                return Command(httpContext, result, result.Outcome, result.IsReplay, result.OriginalCorrelationId);
+            })
+            .WithName("RecordFinanceManualBankPaymentV1")
+            .WithTags("Finance").RequireAuthorization().RequireCompanyContext()
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
+            .Accepts<RecordManualBankPaymentRequest>("application/json")
+            .Produces<ManualBankPaymentCommandResult>(StatusCodes.Status200OK)
+            .Produces<ManualBankPaymentCommandResult>(StatusCodes.Status409Conflict)
+            .Produces<ManualBankPaymentCommandResult>(StatusCodes.Status422UnprocessableEntity)
+            .ProducesErpAuthenticatedProblems().ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody().AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapGet(ManualBankPaymentsPath, async (
+                [FromQuery] string? cursor, HttpContext httpContext, IManualBankPaymentService service,
+                ICompanyContext companyContext, ICurrentUser currentUser, ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                var result = await service.ListAuthorizedAsync(Context(companyContext, currentUser, correlation),
+                    cursor, cancellationToken);
+                return result.Outcome == ReadOutcome.NotFound
+                    ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                    : Read(result);
+            })
+            .WithName("GetFinanceManualBankPaymentsV1")
+            .WithTags("Finance").RequireAuthorization().RequireCompanyContext()
+            .Produces<ManualBankPaymentPage>().ProducesErpAuthenticatedProblems().ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody().AllowsCodeLessErpBadRequestBody()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapGet(ManualBankPaymentsPath + "/{paymentId:guid}", async (
+                Guid paymentId, HttpContext httpContext, IManualBankPaymentService service,
+                ICompanyContext companyContext, ICurrentUser currentUser, ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                return Read(await service.DetailAuthorizedAsync(
+                    Context(companyContext, currentUser, correlation), paymentId, cancellationToken));
+            })
+            .WithName("GetFinanceManualBankPaymentV1")
+            .WithTags("Finance").RequireAuthorization().RequireCompanyContext()
+            .Produces<ManualBankPaymentView>().ProducesErpAuthenticatedProblems().ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable();
     }
 
     /// <summary>

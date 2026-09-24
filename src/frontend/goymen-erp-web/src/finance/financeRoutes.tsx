@@ -9,16 +9,30 @@
  */
 
 import type { ReactNode } from 'react'
-import type { RouteObject } from 'react-router'
+import { useNavigate, useParams, useSearchParams, type RouteObject } from 'react-router'
 import { CapabilityRoute } from '../shell/CapabilityRoute'
 import type { CapabilityId } from '../shell/capabilities'
+import { StateBlock } from '../shell/StateBlock'
+import { useShellState } from '../shell/shellContext'
+import { hasCapability } from '../shell/shellState'
 import { BankAccountProposePage } from './BankAccountProposePage'
 import { BankAccountsPage } from './BankAccountsPage'
-import { FINANCE_CAPABILITY, FINANCE_ROUTE, type FinanceCapabilityId } from './capabilities'
+import {
+  FINANCE_CAPABILITY,
+  FINANCE_ROUTE,
+  manualBankPaymentDetailPath,
+  type FinanceCapabilityId,
+} from './capabilities'
+import { isBoundUuid, isPositiveInt64Text } from './contract'
 import { FinancePortProvider } from './financePort'
 import { createHttpFinancePort } from './httpPort'
 import { ReceiptDetailPage, ReceiptDraftPage, ReceiptListPage } from './ReceiptPages'
 import { ReversalApprovalsPage } from './ReversalApprovalsPage'
+import {
+  ManualBankPaymentCreatePage,
+  ManualBankPaymentDetailPage,
+  ManualBankPaymentListPage,
+} from './ManualBankPaymentPages'
 
 const port = createHttpFinancePort()
 
@@ -35,6 +49,58 @@ function gate(capability: FinanceCapabilityId, children: ReactNode) {
   )
 }
 
+function usePaymentContext() {
+  const context = useShellState().activeContext
+  return context?.scopeMode === 'single' && context.companyId !== null ? context : null
+}
+
+function ManualBankPaymentListRoute() {
+  const context = usePaymentContext()
+  const navigate = useNavigate()
+  return context === null
+    ? <StateBlock state={{ kind: 'not-found' }} subject="giden ödeme listesi" />
+    : <ManualBankPaymentListPage companyId={context.companyId}
+        onOpen={(paymentId) => navigate(manualBankPaymentDetailPath(paymentId))} />
+}
+
+function ManualBankPaymentCreateRoute() {
+  const context = usePaymentContext()
+  const navigate = useNavigate()
+  const [query] = useSearchParams()
+  const one = (name: string) => query.getAll(name).length === 1 ? query.get(name) : null
+  const partyId = one('partyId')
+  const companyAccountId = one('companyAccountId')
+  const treasuryAccountId = one('treasuryAccountId')
+  const currencyId = one('currencyId')
+  const profileId = one('profileId')
+  const profileVersion = one('profileVersion')
+  if (context === null || !isBoundUuid(partyId) || !isBoundUuid(companyAccountId)
+    || !isBoundUuid(treasuryAccountId) || !isBoundUuid(currencyId) || !isBoundUuid(profileId)
+    || !isPositiveInt64Text(profileVersion)) {
+    return <StateBlock state={{ kind: 'not-found' }} subject="giden ödeme başlangıç bağlamı" />
+  }
+  return <ManualBankPaymentCreatePage companyId={context.companyId}
+    entry={{ partyId, companyAccountId, treasuryAccountId, currencyId,
+      profile: { profileId, version: profileVersion } }}
+    onOpen={(paymentId) => navigate(manualBankPaymentDetailPath(paymentId))} />
+}
+
+function ManualBankPaymentDetailRoute() {
+  const shell = useShellState()
+  const context = shell.activeContext?.scopeMode === 'single' && shell.activeContext.companyId !== null
+    ? shell.activeContext : null
+  const navigate = useNavigate()
+  const { paymentId } = useParams<{ paymentId: string }>()
+  if (context === null || !isBoundUuid(paymentId)) {
+    return <StateBlock state={{ kind: 'not-found' }} subject="giden ödeme" />
+  }
+  return <ManualBankPaymentDetailPage companyId={context.companyId} actorId={context.userId}
+    paymentId={paymentId}
+    canApprove={hasCapability(shell, FINANCE_CAPABILITY.manualBankPaymentsApprove)}
+    canRecord={hasCapability(shell, FINANCE_CAPABILITY.manualBankPaymentsRecord)}
+    onOpen={(id) => navigate(manualBankPaymentDetailPath(id))} />
+}
+
 export const financeRoutes: RouteObject[] = [
   { path: FINANCE_ROUTE.receiptsList.slice(1), element: gate(FINANCE_CAPABILITY.receiptsList, <ReceiptListPage />) },
   // Static `yeni` before `:sourceId`, so it is never read as a source id.
@@ -48,5 +114,18 @@ export const financeRoutes: RouteObject[] = [
   {
     path: FINANCE_ROUTE.bankAccountsPropose.slice(1),
     element: gate(FINANCE_CAPABILITY.bankAccountsPropose, <BankAccountProposePage />),
+  },
+  {
+    path: FINANCE_ROUTE.manualBankPaymentsList.slice(1),
+    element: gate(FINANCE_CAPABILITY.manualBankPaymentsList, <ManualBankPaymentListRoute />),
+  },
+  // Static create before the parameter route: `yeni` is never a payment id.
+  {
+    path: FINANCE_ROUTE.manualBankPaymentsCreate.slice(1),
+    element: gate(FINANCE_CAPABILITY.manualBankPaymentsCreate, <ManualBankPaymentCreateRoute />),
+  },
+  {
+    path: FINANCE_ROUTE.manualBankPaymentsDetail.slice(1),
+    element: gate(FINANCE_CAPABILITY.manualBankPaymentsDetail, <ManualBankPaymentDetailRoute />),
   },
 ]

@@ -50,6 +50,21 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
         FinancePermissionNames.DraftSave, FinancePermissionNames.DraftRead, FinancePermissionNames.AmountRead,
         "finance.bank-account.read",
     ];
+    private static readonly string[] ManualPaymentPreparerGrants =
+    [
+        FinancePermissionNames.ManualBankPaymentDraftSave,
+        FinancePermissionNames.ManualBankPaymentDraftRead,
+        FinancePermissionNames.AmountRead,
+        "finance.bank-account.read",
+    ];
+    private static readonly string[] ManualPaymentDeciderGrants =
+    [
+        FinancePermissionNames.ManualBankPaymentDraftRead,
+        FinancePermissionNames.ManualBankPaymentApprove,
+        FinancePermissionNames.ManualBankPaymentRecord,
+        FinancePermissionNames.AmountRead,
+        "finance.bank-account.read",
+    ];
 
     /// <summary>
     /// Ö4 over HTTP: the proposer's candidates are Settings' real ones; a proposal replays; the
@@ -605,6 +620,144 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.receipt-reversal.rejected.v1' "
             + "AND EntityId = @p", ("@p", rejectedProposalId.ToString("D"))));
     }
+
+    /// <summary>
+    /// R47 A-now over the real host and real SQL store: a null-document draft is prepared, approved by
+    /// another user and recorded exactly once. Stale versions are terminal and replayable, company B
+    /// cannot observe company A, missing authority is 403, and a non-null document fails closed through
+    /// the registered unavailable owner without persisting a payment, command, audit or money event.
+    /// The period and party owner answers are explicit SENTETIK test ports; no production grant is made.
+    /// </summary>
+    [SqlServerFact]
+    public async Task Manual_bank_payment_is_company_scoped_replayable_and_fails_closed_for_an_unowned_document()
+    {
+        await using var run = await Run.StartAsync(services =>
+        {
+            services.RemoveAll<IFinancePartyAccountPort>();
+            services.AddSingleton<SyntheticGate>();
+            services.AddScoped<IFinancePartyAccountPort, SyntheticParties>();
+            services.RemoveAll<IFinanceRecordPeriodRule>();
+            services.AddScoped<IFinanceRecordPeriodRule, SyntheticOpenPeriodRule>();
+        });
+        var account = await run.ApprovedBankAccountAsync(CompanyA);
+        await run.GrantAsync(Proposer, CompanyA, ManualPaymentPreparerGrants);
+        await run.GrantAsync(Approver, CompanyA, ManualPaymentDeciderGrants);
+        using var preparer = run.Client(Proposer, CompanyA);
+        using var decider = run.Client(Approver, CompanyA);
+
+        var draftRequest = PaymentSave(account, linkedDocument: null);
+        Guid paymentId;
+        using (var saved = await preparer.SendAsync(Post(FinanceEndpoints.ManualBankPaymentsPath,
+                   "SENTETIK-payment-save", Guid.NewGuid().ToString("N"), draftRequest)))
+        {
+            Assert.Equal(HttpStatusCode.OK, saved.StatusCode);
+            Assert.True(saved.Headers.CacheControl is { Private: true, NoStore: true });
+            var result = await Json(saved);
+            Assert.Equal("Succeeded", result.GetProperty("outcome").GetString());
+            paymentId = result.GetProperty("resource").GetProperty("id").GetGuid();
+            Assert.Equal("Draft", result.GetProperty("resource").GetProperty("status").GetString());
+            Assert.Equal("1", result.GetProperty("resource").GetProperty("version").GetString());
+            Assert.Equal(JsonValueKind.Null, result.GetProperty("resource").GetProperty("linkedDocument").ValueKind);
+        }
+
+        using (var listed = await preparer.GetAsync(FinanceEndpoints.ManualBankPaymentsPath))
+        {
+            Assert.Equal(HttpStatusCode.OK, listed.StatusCode);
+            Assert.Equal(paymentId, Single(await Json(listed)).GetProperty("id").GetGuid());
+        }
+        using (var detailed = await decider.GetAsync($"{FinanceEndpoints.ManualBankPaymentsPath}/{paymentId:D}"))
+        {
+            Assert.Equal(HttpStatusCode.OK, detailed.StatusCode);
+            Assert.Equal(paymentId, (await Json(detailed)).GetProperty("id").GetGuid());
+        }
+
+        var staleCorrelation = Guid.NewGuid().ToString("N");
+        using (var stale = await decider.SendAsync(Post(
+                   $"{FinanceEndpoints.ManualBankPaymentsPath}/{paymentId:D}/approval",
+                   "SENTETIK-payment-stale", staleCorrelation,
+                   new ApproveManualBankPaymentRequest(paymentId, "7"))))
+        {
+            Assert.Equal(HttpStatusCode.Conflict, stale.StatusCode);
+            Assert.Equal("version_conflict", Issue(await Json(stale)));
+        }
+        using (var staleReplay = await decider.SendAsync(Post(
+                   $"{FinanceEndpoints.ManualBankPaymentsPath}/{paymentId:D}/approval",
+                   "SENTETIK-payment-stale", Guid.NewGuid().ToString("N"),
+                   new ApproveManualBankPaymentRequest(paymentId, "7"))))
+        {
+            Assert.Equal(HttpStatusCode.Conflict, staleReplay.StatusCode);
+            AssertReplayOf(staleReplay, staleCorrelation);
+        }
+
+        using (var approved = await decider.SendAsync(Post(
+                   $"{FinanceEndpoints.ManualBankPaymentsPath}/{paymentId:D}/approval",
+                   "SENTETIK-payment-approve", Guid.NewGuid().ToString("N"),
+                   new ApproveManualBankPaymentRequest(paymentId, "1"))))
+        {
+            Assert.Equal(HttpStatusCode.OK, approved.StatusCode);
+            var resource = (await Json(approved)).GetProperty("resource");
+            Assert.Equal("Approved", resource.GetProperty("status").GetString());
+            Assert.Equal("2", resource.GetProperty("version").GetString());
+        }
+
+        var recordCorrelation = Guid.NewGuid().ToString("N");
+        using (var recorded = await decider.SendAsync(Post(
+                   $"{FinanceEndpoints.ManualBankPaymentsPath}/{paymentId:D}/record",
+                   "SENTETIK-payment-record", recordCorrelation,
+                   new RecordManualBankPaymentRequest(paymentId, "2", BankResultConfirmed: true))))
+        {
+            Assert.Equal(HttpStatusCode.OK, recorded.StatusCode);
+            var resource = (await Json(recorded)).GetProperty("resource");
+            Assert.Equal("Recorded", resource.GetProperty("status").GetString());
+            Assert.Equal("3", resource.GetProperty("version").GetString());
+            Assert.True(resource.GetProperty("bankResultConfirmed").GetBoolean());
+        }
+        using (var replayed = await decider.SendAsync(Post(
+                   $"{FinanceEndpoints.ManualBankPaymentsPath}/{paymentId:D}/record",
+                   "SENTETIK-payment-record", Guid.NewGuid().ToString("N"),
+                   new RecordManualBankPaymentRequest(paymentId, "2", BankResultConfirmed: true))))
+        {
+            Assert.Equal(HttpStatusCode.OK, replayed.StatusCode);
+            AssertReplayOf(replayed, recordCorrelation);
+        }
+
+        using var companyBWithoutGrant = run.Client(Approver, CompanyB);
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await companyBWithoutGrant.GetAsync(FinanceEndpoints.ManualBankPaymentsPath)).StatusCode);
+        await run.GrantAsync(TestUsers.CompanyB, CompanyB, FinancePermissionNames.ManualBankPaymentDraftRead);
+        using var companyB = run.Client(TestUsers.CompanyB, CompanyB);
+        Assert.Empty((await Json(await companyB.GetAsync(FinanceEndpoints.ManualBankPaymentsPath)))
+            .GetProperty("items").EnumerateArray());
+        Assert.Equal(HttpStatusCode.NotFound,
+            (await companyB.GetAsync($"{FinanceEndpoints.ManualBankPaymentsPath}/{paymentId:D}")).StatusCode);
+
+        var documentRequest = PaymentSave(account,
+            new ManualBankPaymentLinkedDocumentRequest(Guid.NewGuid(), "document-v1"));
+        using (var unavailable = await preparer.SendAsync(Post(FinanceEndpoints.ManualBankPaymentsPath,
+                   "SENTETIK-payment-document", Guid.NewGuid().ToString("N"), documentRequest)))
+        {
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, unavailable.StatusCode);
+            var result = await Json(unavailable);
+            Assert.Equal("Unavailable", result.GetProperty("outcome").GetString());
+            Assert.Equal("finance_manual_bank_payment_document_unavailable", Issue(result));
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.ManualBankPayments"));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OutgoingMoneyEvents"));
+        Assert.Equal(4, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.Commands WHERE ManualBankPaymentId = @id", ("@id", paymentId)));
+        Assert.Equal(3, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Finance.ManualBankPayment'"));
+    }
+
+    private static ManualBankPaymentDraftSaveRequest PaymentSave(
+        Guid bankAccount,
+        ManualBankPaymentLinkedDocumentRequest? linkedDocument) =>
+        new(null, null, new ManualBankPaymentPreparation(Party, PartyAccount, bankAccount,
+            new MoneyText("1000.00", Lira),
+            new ProfileReference(ApprovedMoneyProfileCatalog.GdcTurkishLiraV1.ProfileId.ToString("D"),
+                ApprovedMoneyProfileCatalog.GdcTurkishLiraV1.Version.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+            new DateOnly(2026, 9, 18), null, null, null), linkedDocument);
 
     private static DraftSaveRequest Save(Guid bankAccount, Guid party, Guid? draftId, string? expectedVersion) =>
         new DraftSaveRequest(draftId, expectedVersion, new ReceiptPreparation(party, PartyAccount, bankAccount,
