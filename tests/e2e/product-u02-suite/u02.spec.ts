@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { ActorProbe } from '../cari-acceptance-009/src/lHarness'
 
 /**
  * Product u02 — the fixture's proof on the REAL API, nothing mocked or intercepted:
@@ -40,6 +41,7 @@ function seed(): Seed {
 
 const PRODUCTS_PATH = '/api/v1/products'
 const unauthorizedBaseUrl = process.env.BROWSER_E2E_UNAUTHORIZED_BASE_URL?.trim() ?? ''
+const apiBaseUrl = process.env.BROWSER_E2E_API_BASE_URL?.trim() ?? ''
 const MISSING_PRODUCT_ID = 'ffffffff-ffff-4fff-8fff-ffffffffffff'
 
 type HistoryEntry = {
@@ -281,8 +283,10 @@ test('U02-FIX-01 the authorized actor creates, edits and reopens technical field
   expect(traffic.writeStatuses).toEqual([201, 200, 200])
 })
 
-test('U02-FIX-02 the unauthorized actor is closed out of the Product screens and sends no Product request', async ({ page }) => {
+test('U02-FIX-02 the unauthorized actor is closed out of the Product screens and sends no Product request', async ({ page, request }) => {
   expect(unauthorizedBaseUrl, 'BROWSER_E2E_UNAUTHORIZED_BASE_URL is not set').not.toBe('')
+  expect(apiBaseUrl, 'BROWSER_E2E_API_BASE_URL is not set').not.toBe('')
+  const { companyId, unauthorizedActor } = seed()
   const traffic = watchProducts(page)
   for (const route of ['/urun', '/urun/yeni']) {
     await page.goto(new URL(route, unauthorizedBaseUrl).toString())
@@ -290,10 +294,18 @@ test('U02-FIX-02 the unauthorized actor is closed out of the Product screens and
   }
   expect(traffic.reads + traffic.writes).toBe(0)
 
-  const deniedHistoryStatus = await redirectNextApplicationRead(
-    page,
-    '**/api/v1/shell/capabilities',
-    `${PRODUCTS_PATH}/${MISSING_PRODUCT_ID}/history`,
-  )
-  expect(deniedHistoryStatus, 'Product authority is checked before history existence').toBe(403)
+  // Same direct actor probe used by Product L-02: the browser bundle stays bound to
+  // its own actor, while this isolated request names the fixture's unauthorized actor
+  // and real company context. Product ignores the helper's Counterparty contract header.
+  const probe = new ActorProbe(request, 'optional-trade-roles-v1')
+  const deniedHistory = await probe.send({
+    label: 'history',
+    actor: unauthorizedActor,
+    method: 'GET',
+    path: `${apiBaseUrl.replace(/\/$/, '')}${PRODUCTS_PATH}/${MISSING_PRODUCT_ID}/history`,
+    companyId,
+    mustNotDisclose: [MISSING_PRODUCT_ID],
+  })
+  expect(deniedHistory.status, 'Product authority is checked before history existence').toBe(403)
+  expect(deniedHistory.disclosedForbiddenText).toBe(false)
 })
