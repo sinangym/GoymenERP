@@ -30,6 +30,9 @@ function balances() {
     positions: [{
       ownerKind: 'Company', ownerId: OWNER, custodianKind: 'Company', custodianId: CUSTODIAN,
       locationId: LOCATION, productId: PRODUCT, block: 'Free', quantityKg: '1200',
+    }, {
+      ownerKind: 'Company', ownerId: OWNER, custodianKind: 'Company', custodianId: CUSTODIAN,
+      locationId: LOCATION, productId: PRODUCT, block: 'Blocked', quantityKg: '50.5',
     }],
   }
 }
@@ -57,5 +60,23 @@ describe('Inventory label detail contract', () => {
       positions: [{ ...decodedBalances.positions[0], productId: OWNER }],
     }, COMPANY, LABEL)).toBeNull()
     expect(combineInventoryLabelDetail('03', decodedIdentity, decodedBalances, COMPANY, LABEL)).toBeNull()
+  })
+
+  it('rejects negative quantities, non-positive positions and totals that do not match their positions', () => {
+    expect(decodeInventoryLabelBalances({ ...balances(), physicalKg: '-1250.5' })).toBeNull()
+    expect(decodeInventoryLabelBalances({ ...balances(), freeKg: '-1' })).toBeNull()
+    expect(decodeInventoryLabelBalances({ ...balances(), blockedKg: '-1' })).toBeNull()
+    expect(decodeInventoryLabelBalances({
+      ...balances(), positions: [{ ...balances().positions[0], quantityKg: '-1200' }],
+    })).toBeNull()
+    expect(decodeInventoryLabelBalances({
+      ...balances(), positions: [{ ...balances().positions[0], quantityKg: '0' }],
+    })).toBeNull()
+    expect(decodeInventoryLabelBalances({ ...balances(), physicalKg: '1250.6' })).toBeNull()
+    expect(decodeInventoryLabelBalances({ ...balances(), freeKg: '1199.9' })).toBeNull()
+    expect(decodeInventoryLabelBalances({ ...balances(), blockedKg: '50.4' })).toBeNull()
+    expect(decodeInventoryLabelBalances({
+      ...balances(), positions: balances().positions.map((item) => ({ ...item, block: 'Reserved' })),
+    })).toBeNull()
   })
 })

@@ -58,7 +58,7 @@ export interface InventoryLabelDetail {
 type JsonObject = Record<string, unknown>
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const NIL_GUID = '00000000-0000-0000-0000-000000000000'
-const DECIMAL = /^-?(0|[1-9]\d*)(\.\d*[1-9])?$/
+const DECIMAL = /^(0|[1-9]\d*)(\.\d*[1-9])?$/
 const VERSION = /^[1-9]\d*$/
 const MAX_INT64 = 9223372036854775807n
 
@@ -94,6 +94,22 @@ function quantity(value: unknown): value is string {
   return typeof value === 'string' && DECIMAL.test(value)
 }
 
+function positiveQuantity(value: unknown): value is string {
+  return quantity(value) && value !== '0'
+}
+
+function decimalParts(value: string): readonly [bigint, number] {
+  const [whole, fraction = ''] = value.split('.')
+  return [BigInt(`${whole}${fraction}`), fraction.length]
+}
+
+function decimalSumEquals(total: string, values: readonly string[]): boolean {
+  const parts = [total, ...values].map(decimalParts)
+  const scale = Math.max(...parts.map(([, digits]) => digits))
+  const scaled = ([units, digits]: readonly [bigint, number]) => units * (10n ** BigInt(scale - digits))
+  return scaled(parts[0]) === parts.slice(1).reduce((sum, value) => sum + scaled(value), 0n)
+}
+
 function document(value: unknown): InventoryLabelDocument | null {
   const source = record(value)
   if (source === null || !exact(source, ['kind', 'attachedAtUtc']) || !text(source.kind) || !instant(source.attachedAtUtc)) return null
@@ -121,7 +137,7 @@ function position(value: unknown): InventoryLabelPosition | null {
     'ownerKind', 'ownerId', 'custodianKind', 'custodianId', 'locationId', 'productId', 'block', 'quantityKg',
   ]) || !text(source.ownerKind) || !guid(source.ownerId) || !text(source.custodianKind) ||
     !guid(source.custodianId) || !guid(source.locationId) || !guid(source.productId) ||
-    !text(source.block) || !quantity(source.quantityKg) || source.quantityKg === '0') return null
+    (source.block !== 'Free' && source.block !== 'Blocked') || !positiveQuantity(source.quantityKg)) return null
   return source as unknown as InventoryLabelPosition
 }
 
@@ -158,7 +174,11 @@ export function decodeInventoryLabelBalances(value: unknown): InventoryLabelBala
     !quantity(source.blockedKg) || !Array.isArray(source.positions)) return null
   const positions = source.positions.map(position)
   if (positions.some((item) => item === null)) return null
-  return { ...(source as unknown as InventoryLabelBalances), positions: positions as InventoryLabelPosition[] }
+  const decoded = positions as InventoryLabelPosition[]
+  if (!decimalSumEquals(source.physicalKg, decoded.map((item) => item.quantityKg)) ||
+    !decimalSumEquals(source.freeKg, decoded.filter((item) => item.block === 'Free').map((item) => item.quantityKg)) ||
+    !decimalSumEquals(source.blockedKg, decoded.filter((item) => item.block === 'Blocked').map((item) => item.quantityKg))) return null
+  return { ...(source as unknown as InventoryLabelBalances), positions: decoded }
 }
 
 export function combineInventoryLabelDetail(
