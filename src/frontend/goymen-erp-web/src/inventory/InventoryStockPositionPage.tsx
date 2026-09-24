@@ -5,7 +5,8 @@ import type { InventoryStockPositions } from './contract'
 import { createRequestFence } from '../purchasing/requestFence'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { useShellState } from '../shell/shellContext'
-import { contextKey, contextKeyString } from '../shell/shellState'
+import { CAPABILITY } from '../shell/capabilities'
+import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
 import { productDetailPath } from '../product/capabilities'
 import { locationDetailPath } from '../organization/capabilities'
 import styles from './inventory.module.css'
@@ -34,10 +35,20 @@ export function InventoryStockPositionPage() {
   return <InventoryStockPositionView
     key={`${namespace ?? 'no-context'}::${shell.routeEntryGeneration}`}
     companyId={shell.activeContext?.scopeMode === 'single' ? shell.activeContext.companyId : null}
+    canOpenProduct={hasCapability(shell, CAPABILITY.productItemsDetail)}
+    canOpenLocation={hasCapability(shell, CAPABILITY.organizationLocationsDetail)}
   />
 }
 
-function InventoryStockPositionView({ companyId }: { readonly companyId: string | null }) {
+function InventoryStockPositionView({
+  companyId,
+  canOpenProduct,
+  canOpenLocation,
+}: {
+  readonly companyId: string | null
+  readonly canOpenProduct: boolean
+  readonly canOpenLocation: boolean
+}) {
   const boundary = useAuthBoundary()
   const [q, setQ] = useState('')
   const [state, setState] = useState<State>({ type: 'loading' })
@@ -92,7 +103,11 @@ function InventoryStockPositionView({ companyId }: { readonly companyId: string 
         <th>Etiket / lot</th><th>Ürün / lokasyon</th><th>Sahiplik / gözetim</th><th>Fiziksel kg</th><th>Bloklu kg</th><th>Aktif tahsis kg</th><th>Serbest kg</th>
       </tr></thead><tbody>{state.data.items.map((item) => <tr key={item.labelId} data-label-id={item.labelId}>
         <td><strong>{item.labelCode}</strong><br />{item.lot.heatNumber ?? item.heatNumber ?? 'Döküm bilinmiyor'} · {item.lot.coilNumber ?? item.coilNumber ?? 'Rulo bilinmiyor'}<br />{item.documentStatus}</td>
-        <td><Link to={productDetailPath(item.productId)}>Ürün kartı</Link><br /><Link to={locationDetailPath(item.locationId)}>Lokasyon kartı</Link></td>
+        <td>
+          {canOpenProduct ? <Link to={productDetailPath(item.productId)}>Ürün kartı</Link> : <span>Ürün kartı</span>}
+          <br />
+          {canOpenLocation ? <Link to={locationDetailPath(item.locationId)}>Lokasyon kartı</Link> : <span>Lokasyon kartı</span>}
+        </td>
         <td>{ownership(item.ownerKind, item.ownerId, companyId)}<br />{custody(item.custodianKind, item.custodianId, companyId)}</td>
         <td>{item.physicalKg}</td><td>{item.blockedPhysicalKg}</td><td>{item.activeAllocationKg}</td><td>{item.availableKg}</td>
       </tr>)}</tbody></table></div>
