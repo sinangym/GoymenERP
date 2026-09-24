@@ -257,14 +257,38 @@ test('P01 saves one real Product-backed request, closes the form, reopens the sa
   expect(linkedApproval.status()).toBe(200)
 
   await signInAs(page, readerActor)
+  // Close the request and reopen the actual linked order before traversing its source.
   await page.goto(`${LIST_ROUTE}/${linkedOrderId}`)
+  await expect(page.getByText(linkedOrderId, { exact: true })).toBeVisible()
+  const storedBeforeReturn = await readOrder(page, readerActor, linkedOrderId)
+  const sourceRead = page.waitForResponse((response) =>
+    response.request().method() === 'GET' && new URL(response.url()).pathname === `${REQUESTS_PATH}/${requestId}`)
   await page.getByRole('link', { name: requestId, exact: true }).click()
+  const sourceResponse = await sourceRead
+  expect(sourceResponse.status()).toBe(200)
+  expect((await sourceResponse.json() as RequestDetail).request).toMatchObject({ id: requestId, companyId })
   await expect(page.getByRole('heading', { level: 1, name: 'Satın alma talebi' })).toBeVisible()
   await expect(page.getByText(requestId, { exact: true })).toBeVisible()
-  await page.goBack()
+  const returnLink = page.getByRole('link', { name: 'Kaynak siparişe dön', exact: true })
+  await expect(returnLink).toHaveAttribute('href', `${LIST_ROUTE}/${linkedOrderId}`)
+  const returnedOrderRead = page.waitForResponse((response) =>
+    response.request().method() === 'GET' && new URL(response.url()).pathname === `${ORDERS_PATH}/${linkedOrderId}`)
+  await returnLink.click()
+  const returnedOrderResponse = await returnedOrderRead
+  expect(returnedOrderResponse.status()).toBe(200)
+  const returnedOrder = await returnedOrderResponse.json() as OrderDetail
+  expect(returnedOrder.order).toMatchObject({
+    id: linkedOrderId, companyId, status: 'Approved', version: storedBeforeReturn.order.version,
+  })
   await expect(page.getByRole('heading', { level: 1, name: 'Satın alma siparişi' })).toBeVisible()
   await expect(page.getByText(linkedOrderId, { exact: true })).toBeVisible()
   await expect(page.getByText('Onaylandı', { exact: true })).toBeVisible()
+  expect((await readOrder(page, readerActor, linkedOrderId)).order).toEqual(storedBeforeReturn.order)
+
+  // A direct entry has no bound source order; navigation must not guess one.
+  await page.goto(`${REQUEST_LIST_ROUTE}/${requestId}`)
+  await expect(page.getByText(requestId, { exact: true })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Kaynak siparişe dön', exact: true })).toHaveCount(0)
 })
 
 

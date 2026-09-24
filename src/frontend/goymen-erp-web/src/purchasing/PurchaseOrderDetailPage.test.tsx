@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes } from 'react-router'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { PurchaseOrderDetailPage } from './PurchaseOrderDetailPage'
 
@@ -68,10 +68,18 @@ vi.mock('./approvalApi', () => ({
   }),
 }))
 
+function LocationReceipt() {
+  const location = useLocation()
+  return <output aria-label="Navigation state">{JSON.stringify(location.state)}</output>
+}
+
 function renderDetail() {
   return render(
     <MemoryRouter initialEntries={[`/satinalma/siparisler/${ORDER}`]}>
-      <Routes><Route path="/satinalma/siparisler/:orderId" element={<PurchaseOrderDetailPage />} /></Routes>
+      <Routes>
+        <Route path="/satinalma/siparisler/:orderId" element={<PurchaseOrderDetailPage />} />
+        <Route path="/satinalma/talepler/:requestId" element={<LocationReceipt />} />
+      </Routes>
     </MemoryRouter>,
   )
 }
@@ -122,5 +130,23 @@ describe('PurchaseOrderDetailPage approval outcome', () => {
 
     expect(screen.queryByRole('link', { name: scenario.sourceRequestId })).toBeNull()
     expect(screen.getByText(scenario.sourceRequestId)).toBeTruthy()
+  })
+})
+
+describe('PurchaseOrderDetailPage source-return hint', () => {
+  it('carries only the current namespace and exact server request/order identities', async () => {
+    scenario.sourceRequestId = '66666666-6666-4666-8666-666666666666'
+    const user = userEvent.setup()
+    renderDetail()
+    await user.click(screen.getByRole('link', { name: scenario.sourceRequestId }))
+    expect(JSON.parse(screen.getByLabelText('Navigation state').textContent ?? 'null')).toEqual({
+      ns: 'fixture', requestId: scenario.sourceRequestId, orderId: ORDER,
+    })
+  })
+
+  it('does not manufacture a request link for an unlinked order', () => {
+    renderDetail()
+    expect(screen.getByText('Bağlı değil')).toBeTruthy()
+    expect(screen.queryByRole('link')).toBeNull()
   })
 })
