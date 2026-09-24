@@ -154,18 +154,6 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
                 .EnsureAsync(cancellationToken);
         }
 
-        ProductStockCandidateFixtureOutput stockCandidate;
-        await using (var stockScope = context.Services.CreateAsyncScope())
-        {
-            stockCandidate = await stockScope.ServiceProvider
-                .GetRequiredService<C01E2eProductStockCandidateFixtureWriter>()
-                .EnsureAsync(cancellationToken);
-        }
-        if (stockCandidate.ProductVersion != "1" || stockCandidate.ProfileVersion != "1")
-        {
-            throw new InvalidOperationException("The Sales fixture writer's V1 snapshot no longer matches the stock candidate versions.");
-        }
-
         var locations = await context.GetJsonAsync(CariActor, CompanyGdc, OrganizationLocationsPath, cancellationToken);
         var allocationLocationId = locations.GetProperty("items").EnumerateArray()
             .Where(item => item.GetProperty("isActive").GetBoolean() && !item.GetProperty("isExternal").GetBoolean())
@@ -177,7 +165,7 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
             throw new InvalidOperationException("The s04 allocation prerequisite has no active non-external GDC location.");
         }
         var allocationLabelVersion = await EnsureAllocationLabelAsync(
-            context, stockCandidate, allocationLocationId, cancellationToken);
+            context, productCandidate, allocationLocationId, cancellationToken);
 
         // SALES-A2a: the REAL customer, opened and described through the real Cari API (audited commands).
         var customer = await CariBrowserSeed.OpenPartyWithAccountAsync(
@@ -196,8 +184,8 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
                     BusinessDate,
                     new SalesDraftFixtureOwners(PartyId, CompanyAccountId, CurrencyId, MoneyProfileId, EffectiveFrom),
                     [
-                        new SalesDraftFixtureLine(CoilLineId, stockCandidate.ProductId, "S04-ALLOC", context.Label("tahsis rulosu"),
-                            stockCandidate.UnitId, stockCandidate.ProfileId, "kg", "weight", IsKilogram: true, Scale: 3, "1.250", 1.250m),
+                        new SalesDraftFixtureLine(CoilLineId, productCandidate.ProductId, "S04-ALLOC", context.Label("tahsis rulosu"),
+                            productCandidate.UnitId, productCandidate.ProfileId, "kg", "weight", IsKilogram: true, Scale: 3, "1.250", 1.250m),
                         new SalesDraftFixtureLine(SheetLineId, SheetProductId, "S04-SHEET", context.Label("levha 2 × 1000 × 2000"),
                             PieceUnitId, PieceProfileId, "adet", "count", IsKilogram: false, Scale: 0, "3", 3m),
                     ],
@@ -407,7 +395,7 @@ public sealed class S04BrowserSeed : IBrowserSuiteFixture
 
     private static async Task<string> EnsureAllocationLabelAsync(
         BrowserSuiteFixtureContext context,
-        ProductStockCandidateFixtureOutput product,
+        ProductSalesCandidateFixtureOutput product,
         Guid locationId,
         CancellationToken cancellationToken)
     {
