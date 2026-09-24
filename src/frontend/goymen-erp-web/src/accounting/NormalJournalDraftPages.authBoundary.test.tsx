@@ -56,8 +56,8 @@ function fillCreateForm() {
   const amounts = screen.getAllByLabelText(/Tutar/i)
   fireEvent.change(accounts[0], { target: { value: DEBIT } })
   fireEvent.change(accounts[1], { target: { value: CREDIT } })
-  fireEvent.change(amounts[0], { target: { value: '10.00' } })
-  fireEvent.change(amounts[1], { target: { value: '10.00' } })
+  fireEvent.change(amounts[0], { target: { value: '10,00' } })
+  fireEvent.change(amounts[1], { target: { value: '10,00' } })
 }
 
 afterEach(() => {
@@ -129,7 +129,7 @@ describe('normal journal command security and company fences', () => {
     await screen.findByRole('button', { name: /kaydet/i })
     fillCreateForm()
     fireEvent.click(screen.getByRole('button', { name: /kaydet/i }))
-    expect(await screen.findByRole('button', { name: /Aynı istek.*yeniden gönder/i })).toBeTruthy()
+    expect(await screen.findByRole('button', { name: 'Aynı isteği yeniden gönder' })).toBeTruthy()
   })
 
   it('reports an approval 403 and suppresses the approval capability', async () => {
