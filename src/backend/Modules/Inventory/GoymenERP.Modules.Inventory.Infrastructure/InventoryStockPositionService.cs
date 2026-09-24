@@ -51,14 +51,15 @@ internal sealed class InventoryStockPositionService(
         CancellationToken cancellationToken = default)
     {
         var scope = await RequireAsync(null, cancellationToken);
-        if (query is null || query.Limit is < 1 or > 100 || query.Q?.Length > MaterialLabel.MaximumCodeLength)
+        var normalizedQ = query?.Q?.Trim();
+        if (query is null || query.Limit is < 1 or > 100 || normalizedQ?.Length > MaterialLabel.MaximumCodeLength)
         {
             throw Error(400, InventoryStockPositionCodesV1.InvalidQuery);
         }
 
         var source = reader ?? throw Error(503, InventoryStockPositionCodesV1.Unavailable);
         var window = await FencedAsync(
-            () => source.SearchAsync(scope.CompanyId, query.Q?.Trim() ?? string.Empty, query.Limit, cancellationToken),
+            () => source.SearchAsync(scope.CompanyId, normalizedQ ?? string.Empty, query.Limit, cancellationToken),
             scope,
             cancellationToken);
         return new InventoryStockPositionsV1(

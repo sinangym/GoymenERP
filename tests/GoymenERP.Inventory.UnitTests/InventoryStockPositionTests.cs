@@ -75,11 +75,14 @@ public sealed class InventoryStockPositionTests
         {
             new InventoryStockPositionQueryV1(null, 0),
             new InventoryStockPositionQueryV1(null, 101),
-            new InventoryStockPositionQueryV1(new string('x', 65), 25),
+            new InventoryStockPositionQueryV1(" " + new string('x', 65) + " ", 25),
         })
         {
             await Refused(world.Service().SearchAsync(query), 400, InventoryStockPositionCodesV1.InvalidQuery);
         }
+
+        await world.Service().SearchAsync(new(" " + new string('x', 64) + " ", 25));
+        Assert.Equal(new string('x', 64), world.Reader.Query.Q);
 
         world.Reader.HasMore = true;
         var page = await world.Service().SearchAsync(new(" SYN ", 1));
