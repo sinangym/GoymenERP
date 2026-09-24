@@ -71,6 +71,38 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
     ];
 
     [SqlServerFact]
+    public async Task A_non_slitting_work_center_is_refused_and_a_slitting_plan_reopens_with_its_process()
+    {
+        await using var run = await Run.StartAsync();
+        var paint = await run.WorkCenterOfKindAsync(CompanyA, "Paint");
+        var slitting = await run.WorkCenterOfKindAsync(CompanyA, "Slitting");
+        var user = await run.GrantAsync(TestUsers.CompanyA, CompanyA,
+            [.. AllWrites, ErpPermissions.ManufacturingPlansRead]);
+        using var client = run.ClientFor(user, CompanyA);
+        var roll = await run.StockedLabelAsync("SYN-MFG-WORK-CENTER-PLAN");
+
+        var unsupported = new SavePlanRequestV1(Guid.NewGuid(), paint,
+            [new PlannedInputRequestV1(roll.Id, "100", roll.Version)], null);
+        var unsupportedResponse = await client.PostWithKeyAsync($"{Base}/plans", unsupported);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, unsupportedResponse.StatusCode);
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM manufacturing.Plans WHERE CompanyId = @c AND Id = @id",
+            ("@c", CompanyA), ("@id", unsupported.PlanId)));
+
+        var request = unsupported with { PlanId = Guid.NewGuid(), WorkCenterId = slitting };
+        var response = await client.PostWithKeyAsync($"{Base}/plans", request);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var created = (await response.Content.ReadFromJsonAsync<PlanViewV1>())!;
+        Assert.Equal((slitting, "Slitting"), (created.WorkCenterId, created.Process));
+
+        var reopenedResponse = await client.GetAsync($"{Base}/plans/{created.PlanId:D}");
+        Assert.Equal(HttpStatusCode.OK, reopenedResponse.StatusCode);
+        var reopened = (await reopenedResponse.Content.ReadFromJsonAsync<PlanViewV1>())!;
+        Assert.Equal((created.PlanId, slitting, "Slitting"),
+            (reopened.PlanId, reopened.WorkCenterId, reopened.Process));
+    }
+
+    [SqlServerFact]
     public async Task An_authorized_user_plans_approves_orders_records_facts_and_reads_the_roll_balance()
     {
         await using var run = await Run.StartAsync();
@@ -830,7 +862,12 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
         }
 
         public Task<Guid> WorkCenterOfAsync(Guid company) =>
-            ScalarAsync<Guid>("SELECT TOP (1) Id FROM organization.WorkCenters WHERE CompanyId = @c ORDER BY Id", ("@c", company));
+            WorkCenterOfKindAsync(company, "Slitting");
+
+        public Task<Guid> WorkCenterOfKindAsync(Guid company, string kind) =>
+            ScalarAsync<Guid>(
+                "SELECT TOP (1) Id FROM organization.WorkCenters WHERE CompanyId = @c AND Kind = @kind ORDER BY Id",
+                ("@c", company), ("@kind", kind));
 
         /// <summary>
         /// A real company-A Inventory label with a physical position. The version is read after the owner
