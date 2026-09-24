@@ -108,6 +108,15 @@ public sealed class AddManualBankPayments : Migration
 
     protected override void Down(MigrationBuilder migrationBuilder)
     {
+        // Empty-only rollback: no payment, outgoing money fact or command target may be discarded.
+        // 51053 is a forward-fix signal and runs before the first destructive schema operation.
+        migrationBuilder.Sql("""
+            IF EXISTS (SELECT 1 FROM [finance].[ManualBankPayments])
+               OR EXISTS (SELECT 1 FROM [finance].[OutgoingMoneyEvents])
+               OR EXISTS (SELECT 1 FROM [finance].[Commands] WHERE [ManualBankPaymentId] IS NOT NULL)
+                THROW 51053, 'Finance manual bank payment facts exist; AddManualBankPayments is not rolled back (forward fix).', 1;
+            """);
+
         migrationBuilder.DropForeignKey(
             name: "FK_Commands_ManualBankPayments_CompanyId_ManualBankPaymentId",
             schema: "finance", table: "Commands");

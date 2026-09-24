@@ -138,7 +138,7 @@ export function createHttpFinancePort(): FinanceReceiptPort {
     manualBankPaymentDetail: (scope, paymentId, signal) =>
       read(`${API_BASE}${MANUAL_BANK_PAYMENTS_PATH}/${encodeURIComponent(paymentId)}`, scope, signal),
     saveManualBankPaymentDraft: (scope, idempotencyKey, request) =>
-      command(`${API_BASE}${MANUAL_BANK_PAYMENTS_PATH}/drafts`, scope, idempotencyKey, request),
+      command(`${API_BASE}${MANUAL_BANK_PAYMENTS_PATH}`, scope, idempotencyKey, request),
     approveManualBankPayment: (scope, idempotencyKey, request) =>
       command(
         `${API_BASE}${MANUAL_BANK_PAYMENTS_PATH}/${encodeURIComponent(request.paymentId)}/approval`,

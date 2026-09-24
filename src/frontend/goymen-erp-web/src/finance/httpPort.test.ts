@@ -10,6 +10,7 @@ import {
   BANK_ACCOUNT_CURRENCY_CANDIDATES_PATH,
   BANK_ACCOUNT_MASTER_PATH,
   DRAFTS_PATH,
+  MANUAL_BANK_PAYMENTS_PATH,
   MANUAL_RECEIPTS_PATH,
   createHttpFinancePort,
 } from './httpPort'
@@ -129,6 +130,24 @@ describe('draftSave', () => {
     stubFetch(new TypeError('network'))
 
     expect(await createHttpFinancePort().draftSave(SCOPE, 'key-1', REQUEST)).toEqual({ kind: 'no-reply' })
+  })
+})
+
+describe('manual bank payment draft save', () => {
+  it('posts the draft to the canonical collection route with its key and company', async () => {
+    const result = { outcome: 'Succeeded', resource: {}, isReplay: false, originalCorrelationId: 'c', issues: [] }
+    const fetchMock = stubFetch(new Response(JSON.stringify(result), { status: 200 }))
+    const request = { paymentId: null, expectedVersion: null, preparation: {}, linkedDocument: null } as never
+
+    const reply = await createHttpFinancePort().saveManualBankPaymentDraft(SCOPE, 'payment-key', request)
+
+    expect(reply).toEqual({ kind: 'body', body: result })
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe(`${API_BASE}${MANUAL_BANK_PAYMENTS_PATH}`)
+    expect(init?.method).toBe('POST')
+    expect(headersOf(init)['Idempotency-Key']).toBe('payment-key')
+    expect(headersOf(init)['X-Company-Id']).toBe(SCOPE.companyId)
+    expect(init?.body).toBe(JSON.stringify(request))
   })
 })
 

@@ -231,7 +231,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
              + "Persistence/FinanceDbContext.cs"] =
-            "9d686e0ccc5c4d2e191dd37f456081928a28266c72d1e56db5244906e237b234",
+            "a4c6ef66ba30477dd403940596c76c32869f1b43585595d45ba759b77b01dd93",
             // ACC-3 (#298): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for ACC-V0a: the ADR-011 command log (Commands) is mapped here, company-scoped with the
@@ -717,6 +717,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // and 51051 is used by no other module. Forward fix; nothing is deleted.
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20260920090000_AddMoneyEvents.cs"] =
                     new("5af1d703aca150af6ca748c57b42e9f088cec37aaa3841116e31016a35a72eed",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // R47: Down refuses before its first destructive operation while a manual payment,
+                // outgoing money fact or command target exists. Empty schemas can still roll back.
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20260923213000_AddManualBankPayments.cs"] =
+                    new("f4ed1a10a57688ae1b92376b222ad3c3e0bc73f4b43c3df5db4607e3a4152223",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // MFG-6 slice 2: the Down's only raw SQL is Manufacturing's module refusal (51047) while any plan

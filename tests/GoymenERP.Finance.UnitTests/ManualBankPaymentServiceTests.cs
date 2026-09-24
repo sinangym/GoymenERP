@@ -173,12 +173,17 @@ public sealed class ManualBankPaymentServiceTests
         await using var maker = run.Scope("maker", new AllowAll(), new DocumentPort(
             ManualBankPaymentDocumentValidationOutcome.Found, "owner-v7"));
 
-        var saved = await maker.Service.DraftSaveAsync(maker.Context, Key("linked"),
-            Draft(new ManualBankPaymentLinkedDocumentRequest(Document, "owner-v7")), CancellationToken.None);
+        var saved = await maker.Service.DraftSaveAsync(maker.Context, Key("unlinked"), Draft(),
+            CancellationToken.None);
+        var linked = Draft(new ManualBankPaymentLinkedDocumentRequest(Document, "owner-v7"));
+        var updated = await maker.Service.DraftSaveAsync(maker.Context, Key("linked"),
+            new ManualBankPaymentDraftSaveRequest(saved.Resource!.Id, saved.Resource.Version,
+                linked.Preparation, linked.LinkedDocument), CancellationToken.None);
 
-        Assert.Equal(CommandOutcome.Succeeded, saved.Outcome);
-        Assert.Equal(new ManualBankPaymentLinkedDocument(Document, "owner-v7"), saved.Resource!.LinkedDocument);
-        var reopened = await maker.Service.DetailAuthorizedAsync(maker.Context, saved.Resource.Id,
+        Assert.Equal(CommandOutcome.Succeeded, updated.Outcome);
+        Assert.Equal(new ManualBankPaymentLinkedDocument(Document, "owner-v7"), updated.Resource!.LinkedDocument);
+        Assert.NotEqual(saved.Resource.Version, updated.Resource.Version);
+        var reopened = await maker.Service.DetailAuthorizedAsync(maker.Context, updated.Resource.Id,
             CancellationToken.None);
         Assert.Equal(new ManualBankPaymentLinkedDocument(Document, "owner-v7"), reopened.Resource!.LinkedDocument);
         await using var verify = run.Context();

@@ -65,15 +65,31 @@ describe('manual bank payment pages', () => {
 
   it('lists the company record and opens it', async () => {
     const open = vi.fn()
+    const create = vi.fn()
     const list = vi.fn(async () => ({ kind: 'body' as const, body: {
       outcome: 'Found', resource: { companyId: COMPANY, items: [view('Draft')], nextCursor: null },
     } }))
     render(<FinancePortProvider port={provider({ listManualBankPayments: list })}>
-      <ManualBankPaymentListPage companyId={COMPANY} onOpen={open} />
+      <ManualBankPaymentListPage companyId={COMPANY} onOpen={open} onCreate={create} />
     </FinancePortProvider>)
     await screen.findByText('1250.50')
+    expect(screen.getAllByRole('button', { name: 'Yeni' })).toHaveLength(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Yeni' }))
+    expect(create).toHaveBeenCalledOnce()
     fireEvent.click(screen.getByRole('button', { name: 'Aç' }))
     expect(open).toHaveBeenCalledWith(PAYMENT)
+  })
+
+  it('does not offer create from the list without its capability callback', async () => {
+    const list = vi.fn(async () => ({ kind: 'body' as const, body: {
+      outcome: 'Found', resource: { companyId: COMPANY, items: [], nextCursor: null },
+    } }))
+    render(<FinancePortProvider port={provider({ listManualBankPayments: list })}>
+      <ManualBankPaymentListPage companyId={COMPANY} onOpen={() => undefined} />
+    </FinancePortProvider>)
+
+    await screen.findByText('Kayıt yok.')
+    expect(screen.queryByRole('button', { name: 'Yeni' })).toBeNull()
   })
 
   it('requires explicit result confirmation and keeps the terminal reopen action', async () => {

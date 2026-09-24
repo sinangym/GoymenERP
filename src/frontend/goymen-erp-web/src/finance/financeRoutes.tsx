@@ -51,15 +51,20 @@ function gate(capability: FinanceCapabilityId, children: ReactNode) {
 
 function usePaymentContext() {
   const context = useShellState().activeContext
-  return context?.scopeMode === 'single' && context.companyId !== null ? context : null
+  if (context?.scopeMode !== 'single' || context.companyId === null) return null
+  return { ...context, companyId: context.companyId }
 }
 
 function ManualBankPaymentListRoute() {
   const context = usePaymentContext()
+  const shell = useShellState()
   const navigate = useNavigate()
   return context === null
     ? <StateBlock state={{ kind: 'not-found' }} subject="giden ödeme listesi" />
     : <ManualBankPaymentListPage companyId={context.companyId}
+        onCreate={hasCapability(shell, FINANCE_CAPABILITY.manualBankPaymentsCreate)
+          ? () => navigate(FINANCE_ROUTE.manualBankPaymentsCreate)
+          : undefined}
         onOpen={(paymentId) => navigate(manualBankPaymentDetailPath(paymentId))} />
 }
 
@@ -87,8 +92,7 @@ function ManualBankPaymentCreateRoute() {
 
 function ManualBankPaymentDetailRoute() {
   const shell = useShellState()
-  const context = shell.activeContext?.scopeMode === 'single' && shell.activeContext.companyId !== null
-    ? shell.activeContext : null
+  const context = usePaymentContext()
   const navigate = useNavigate()
   const { paymentId } = useParams<{ paymentId: string }>()
   if (context === null || !isBoundUuid(paymentId)) {

@@ -137,7 +137,11 @@ export function ManualBankPaymentCreatePage({
   )
 }
 
-export function ManualBankPaymentListPage({ companyId, onOpen }: CommonProps) {
+export function ManualBankPaymentListPage({
+  companyId,
+  onOpen,
+  onCreate,
+}: CommonProps & { readonly onCreate?: () => void }) {
   const port = useFinancePort()
   const [items, setItems] = useState<readonly ManualBankPaymentView[] | null>(null)
   const [message, setMessage] = useState('Yükleniyor')
@@ -164,6 +168,7 @@ export function ManualBankPaymentListPage({ companyId, onOpen }: CommonProps) {
   return (
     <section>
       <h1>Giden banka ödemeleri</h1>
+      {onCreate === undefined ? null : <button type="button" onClick={onCreate}>Yeni</button>}
       {items === null || items.length === 0 ? <p role="status">{message}</p> : (
         <table><thead><tr><th>İşlem</th><th>Durum</th><th>Tutar</th><th /></tr></thead><tbody>
           {items.map((payment) => <tr key={payment.id}>

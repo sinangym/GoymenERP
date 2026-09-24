@@ -15,6 +15,8 @@ using GoymenERP.Modules.Settings.Application;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -639,6 +641,29 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
             services.RemoveAll<IFinanceRecordPeriodRule>();
             services.AddScoped<IFinanceRecordPeriodRule, SyntheticOpenPeriodRule>();
         });
+        const string beforeManualBankPayments = "20260921120000_AddReversalProposals";
+        await using (var context = run.Context(CompanyA))
+        {
+            await context.GetService<IMigrator>().MigrateAsync(beforeManualBankPayments);
+            Assert.Equal(0, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'finance') "
+                + "AND name IN (N'ManualBankPayments', N'OutgoingMoneyEvents')"));
+            Assert.Equal(0, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM sys.columns WHERE object_id = OBJECT_ID(N'finance.Commands') "
+                + "AND name = N'ManualBankPaymentId'"));
+            Assert.EndsWith("_AddReversalProposals",
+                (await context.Database.GetAppliedMigrationsAsync()).Last(), StringComparison.Ordinal);
+
+            await context.Database.MigrateAsync();
+            Assert.Equal(2, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'finance') "
+                + "AND name IN (N'ManualBankPayments', N'OutgoingMoneyEvents')"));
+            Assert.Equal(1, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM sys.columns WHERE object_id = OBJECT_ID(N'finance.Commands') "
+                + "AND name = N'ManualBankPaymentId'"));
+            Assert.EndsWith("_AddManualBankPayments",
+                (await context.Database.GetAppliedMigrationsAsync()).Last(), StringComparison.Ordinal);
+        }
         var account = await run.ApprovedBankAccountAsync(CompanyA);
         await run.GrantAsync(Proposer, CompanyA, ManualPaymentPreparerGrants);
         await run.GrantAsync(Approver, CompanyA, ManualPaymentDeciderGrants);
@@ -742,12 +767,26 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
             Assert.Equal("finance_manual_bank_payment_document_unavailable", Issue(result));
         }
 
+        await using (var context = run.Context(CompanyA))
+        {
+            var error = await Assert.ThrowsAsync<SqlException>(() =>
+                context.GetService<IMigrator>().MigrateAsync(beforeManualBankPayments));
+            Assert.Equal(51053, error.Number);
+            Assert.EndsWith("_AddManualBankPayments",
+                (await context.Database.GetAppliedMigrationsAsync()).Last(), StringComparison.Ordinal);
+        }
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.ManualBankPayments"));
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OutgoingMoneyEvents"));
         Assert.Equal(4, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM finance.Commands WHERE ManualBankPaymentId = @id", ("@id", paymentId)));
         Assert.Equal(3, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Finance.ManualBankPayment'"));
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'finance') "
+            + "AND name IN (N'ManualBankPayments', N'OutgoingMoneyEvents')"));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM sys.columns WHERE object_id = OBJECT_ID(N'finance.Commands') "
+            + "AND name = N'ManualBankPaymentId'"));
     }
 
     private static ManualBankPaymentDraftSaveRequest PaymentSave(
@@ -882,6 +921,16 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
             client.DefaultRequestHeaders.Remove("Idempotency-Key");
             client.DefaultRequestHeaders.Remove("X-Correlation-Id");
             return client;
+        }
+
+        public FinanceDbContext Context(Guid company)
+        {
+            var companyContext = new CompanyContext();
+            companyContext.Set(company);
+            return new FinanceDbContext(new DbContextOptionsBuilder<FinanceDbContext>()
+                .UseSqlServer(Factory.DatabaseConnectionString,
+                    sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", FinanceDbContext.Schema))
+                .Options, companyContext);
         }
 
         /// <summary>A SENTETIK approved TRY account row of the company (two synthetic actors, Ö4 holds in the row).</summary>
