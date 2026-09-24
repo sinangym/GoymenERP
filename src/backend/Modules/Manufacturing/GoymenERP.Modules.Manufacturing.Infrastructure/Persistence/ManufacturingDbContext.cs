@@ -125,6 +125,8 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
             table.HasCheckConstraint("CK_PlanInputs_Roll", "[ParentRollId] <> '00000000-0000-0000-0000-000000000000'");
             table.HasCheckConstraint("CK_PlanInputs_Mass", "[PlannedKg] > 0");
             table.HasCheckConstraint("CK_PlanInputs_Sequence", "[Sequence] >= 1");
+            table.HasCheckConstraint("CK_PlanInputs_LabelVersion",
+                "[ExpectedLabelVersion] IS NULL OR [ExpectedLabelVersion] >= 1");
         });
         entity.HasKey(x => new { x.CompanyId, x.PlanId, x.ParentRollId });
         entity.HasIndex(x => new { x.CompanyId, x.PlanId, x.Sequence }).IsUnique();
@@ -197,6 +199,8 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
             table.HasCheckConstraint("CK_OrderInputs_Roll", "[ParentRollId] <> '00000000-0000-0000-0000-000000000000'");
             table.HasCheckConstraint("CK_OrderInputs_Mass", "[PlannedKg] > 0");
             table.HasCheckConstraint("CK_OrderInputs_Sequence", "[Sequence] >= 1");
+            table.HasCheckConstraint("CK_OrderInputs_LabelVersion",
+                "[ExpectedLabelVersion] IS NULL OR [ExpectedLabelVersion] >= 1");
         });
         entity.HasKey(x => new { x.CompanyId, x.OrderId, x.ParentRollId });
         entity.HasIndex(x => new { x.CompanyId, x.OrderId, x.Sequence }).IsUnique();

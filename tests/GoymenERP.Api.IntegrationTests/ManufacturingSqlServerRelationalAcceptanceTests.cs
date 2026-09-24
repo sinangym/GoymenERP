@@ -29,6 +29,71 @@ public sealed class ManufacturingSqlServerRelationalAcceptanceTests
     private static readonly DateTimeOffset At = new(2026, 9, 18, 9, 0, 0, TimeSpan.Zero);
 
     [SqlServerFact]
+    public async Task Accepted_inventory_label_versions_are_durable_in_the_plan_and_order_snapshot()
+    {
+        await using var run = await Run.StartAsync();
+        var workCenter = await run.WorkCenterOfAsync(CompanyA);
+        var plan = new ProductionPlan(Guid.NewGuid(), CompanyA, workCenter, ManufacturingProcess.Slitting,
+            [new PlannedInput(RollA, Kg(10_000m), 17), new PlannedInput(RollB, Kg(5_000m), 23)],
+            new ProductionTarget(TargetBasis.InputMass, Kg(15_000m)));
+        var orderId = Guid.NewGuid();
+
+        await using (var store = run.Store(CompanyA))
+        {
+            await store.Plans.SavePlanAsync(plan, Metadata(run));
+            await store.Plans.ApprovePlanAsync(plan.Id, 1, run.Actor, At, Metadata(run));
+            await store.Orders.CreateOrderAsync(orderId, plan.Id, Metadata(run));
+        }
+
+        await using var context = run.Context(CompanyA);
+        var planVersions = await context.PlanInputs.AsNoTracking()
+            .Where(row => row.PlanId == plan.Id)
+            .OrderBy(row => row.Sequence)
+            .Select(row => row.ExpectedLabelVersion!.Value)
+            .ToArrayAsync();
+        var orderVersions = await context.OrderInputs.AsNoTracking()
+            .Where(row => row.OrderId == orderId)
+            .OrderBy(row => row.Sequence)
+            .Select(row => row.ExpectedLabelVersion!.Value)
+            .ToArrayAsync();
+        Assert.Equal(new long[] { 17, 23 }, planVersions);
+        Assert.Equal(new long[] { 17, 23 }, orderVersions);
+    }
+
+    [SqlServerFact]
+    public async Task The_input_label_version_migration_round_trips_and_legacy_null_keeps_its_replay_identity()
+    {
+        await using var run = await Run.StartAsync();
+        const string beforeLabelVersions = "20260924150000_ExpandManufacturingProcesses";
+        var legacy = NewPlan(CompanyA, await run.WorkCenterOfAsync(CompanyA));
+
+        await using (var store = run.Store(CompanyA))
+        {
+            Assert.Equal(ManufacturingWriteOutcome.Recorded,
+                await store.Plans.SavePlanAsync(legacy, Metadata(run)));
+        }
+
+        await using (var context = run.Context(CompanyA))
+        {
+            var migrator = context.GetService<IMigrator>();
+            await migrator.MigrateAsync(beforeLabelVersions);
+            Assert.Equal(beforeLabelVersions, (await context.Database.GetAppliedMigrationsAsync()).Last());
+            Assert.Equal(0, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM sys.columns WHERE [name] = N'ExpectedLabelVersion' "
+                + "AND [object_id] IN (OBJECT_ID(N'[manufacturing].[PlanInputs]'), "
+                + "OBJECT_ID(N'[manufacturing].[OrderInputs]'))"));
+            await context.Database.MigrateAsync();
+        }
+
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM manufacturing.PlanInputs WHERE PlanId = @id AND ExpectedLabelVersion IS NULL",
+            ("@id", legacy.Id)));
+        await using var replayStore = run.Store(CompanyA);
+        Assert.Equal(ManufacturingWriteOutcome.Replayed,
+            await replayStore.Plans.SavePlanAsync(Draft(legacy), Metadata(run)));
+    }
+
+    [SqlServerFact]
     public async Task Plan_order_and_facts_are_durable_replayable_audited_and_close_from_stored_facts()
     {
         await using var run = await Run.StartAsync();

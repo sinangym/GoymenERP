@@ -107,6 +107,7 @@ public sealed class ManufacturingStore(
                 ParentRollId = input.ParentRollId,
                 Sequence = ++sequence,
                 PlannedKg = input.PlannedMass.Value,
+                ExpectedLabelVersion = input.ExpectedLabelVersion,
             });
         }
 
@@ -209,6 +210,7 @@ public sealed class ManufacturingStore(
                 ParentRollId = input.ParentRollId,
                 Sequence = ++sequence,
                 PlannedKg = input.PlannedMass.Value,
+                ExpectedLabelVersion = input.ExpectedLabelVersion,
             });
         }
 
@@ -528,7 +530,8 @@ public sealed class ManufacturingStore(
             .OrderBy(line => line.Sequence)
             .ToListAsync(cancellationToken);
         return ProductionPlan.Restore(row.Id, row.CompanyId, row.WorkCenterId, (ManufacturingProcess)row.Process,
-            inputs.Select(input => new PlannedInput(input.ParentRollId, new Kilograms(input.PlannedKg))),
+            inputs.Select(input => new PlannedInput(input.ParentRollId, new Kilograms(input.PlannedKg),
+                input.ExpectedLabelVersion)),
             Target(row.TargetBasis, row.TargetKg), row.ApprovedByUserId, row.ApprovedAtUtc, row.Version,
             Spec(lines, row.WindingTargetKg));
     }
@@ -573,7 +576,8 @@ public sealed class ManufacturingStore(
         ProductionOrder.Restore(
             row.Id, row.PlanId, row.CompanyId, row.WorkCenterId, (ManufacturingProcess)row.Process,
             Target(row.TargetBasis, row.TargetKg),
-            inputs.Select(input => new PlannedInput(input.ParentRollId, new Kilograms(input.PlannedKg))),
+            inputs.Select(input => new PlannedInput(input.ParentRollId, new Kilograms(input.PlannedKg),
+                input.ExpectedLabelVersion)),
             Of(FactKind.InputIssue).Select(fact => new InputIssue(fact.Id, fact.ParentRollId, new Kilograms(fact.MassKg),
                 fact.OccurredAtUtc)),
             Of(FactKind.InputReturn).Select(fact => new InputReturn(fact.Id, fact.ParentRollId, new Kilograms(fact.MassKg),
@@ -629,7 +633,13 @@ public sealed class ManufacturingStore(
             .Append(plan.Target is null ? "-" : $"{(int)plan.Target.Basis}:{Canonical(plan.Target.Mass.Value)}").Append('|');
         foreach (var input in plan.Inputs)
         {
-            builder.Append(input.ParentRollId.ToString("D")).Append(':').Append(Canonical(input.PlannedMass.Value)).Append(';');
+            builder.Append(input.ParentRollId.ToString("D")).Append(':').Append(Canonical(input.PlannedMass.Value));
+            if (input.ExpectedLabelVersion is { } expectedLabelVersion)
+            {
+                builder.Append('@').Append(expectedLabelVersion.ToString(CultureInfo.InvariantCulture));
+            }
+
+            builder.Append(';');
         }
 
         // MFG-6: only a plan WITH a slitting spec extends the canonical content, so every plan stored before
