@@ -45,6 +45,17 @@ public sealed class AddManufacturingInputLabelVersions : Migration
 
     protected override void Down(MigrationBuilder migrationBuilder)
     {
+        migrationBuilder.Sql("""
+            IF EXISTS (
+                SELECT 1 FROM [manufacturing].[PlanInputs]
+                WHERE [ExpectedLabelVersion] IS NOT NULL
+            ) OR EXISTS (
+                SELECT 1 FROM [manufacturing].[OrderInputs]
+                WHERE [ExpectedLabelVersion] IS NOT NULL
+            )
+                THROW 51047, 'Manufacturing input label versions must be forward-fixed before downgrade.', 1;
+            """);
+
         migrationBuilder.DropCheckConstraint(
             name: "CK_OrderInputs_LabelVersion",
             schema: "manufacturing",
