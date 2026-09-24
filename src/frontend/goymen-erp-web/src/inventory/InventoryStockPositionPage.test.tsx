@@ -58,6 +58,7 @@ describe('InventoryStockPositionPage', () => {
     const row = (await screen.findByText('LBL-1')).closest('tr')
     expect(row).not.toBeNull()
     expect(row?.textContent).toContain('Şirket malı')
+    expect(screen.getByRole('link', { name: 'LBL-1' }).getAttribute('href')).toBe(`/stok/etiket/${LABEL}`)
     expect(screen.getByText('60')).toBeTruthy()
     expect(screen.getByRole('link', { name: 'Ürün kartı' }).getAttribute('href')).toBe(`/urun/${PRODUCT}`)
     expect(screen.getByRole('link', { name: 'Lokasyon kartı' }).getAttribute('href'))

@@ -439,7 +439,8 @@ public static partial class ErpOpenApiContract
     }
 
     public static RouteHandlerBuilder ProducesErpServiceUnavailable(
-        this RouteHandlerBuilder builder)
+        this RouteHandlerBuilder builder,
+        params string[] codes)
     {
         builder.Produces<ErpProblemDetailsContract>(
             StatusCodes.Status503ServiceUnavailable,
@@ -447,7 +448,7 @@ public static partial class ErpOpenApiContract
         AddProblemCodeMetadata(
             builder,
             StatusCodes.Status503ServiceUnavailable,
-            [ErpProblemCodes.ServiceUnavailable]);
+            [ErpProblemCodes.ServiceUnavailable, .. codes]);
         return builder;
     }
 
