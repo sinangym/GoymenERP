@@ -29,7 +29,7 @@ describe('M-06 trial-balance public consumer', () => {
   })
 
   it('sends the exact inclusive query and company header, accepting only exact 200', async () => {
-    const fetch = vi.fn(async () => new Response(JSON.stringify(report()), {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response(JSON.stringify(report()), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     }))
@@ -38,7 +38,7 @@ describe('M-06 trial-balance public consumer', () => {
     const result = await fetchTrialBalance(COMPANY, query)
 
     expect(result.type).toBe('ok-single')
-    const [url, init] = fetch.mock.calls[0]
+    const [url, init] = fetch.mock.calls[0]!
     expect(String(url)).toContain('/accounting/trial-balance?fromAccountingDate=2026-09-01&throughAccountingDate=2026-09-30')
     expect(String(url)).toContain(`currencyId=${CURRENCY}`)
     expect(new Headers(init?.headers).get('X-Company-Id')).toBe(COMPANY)

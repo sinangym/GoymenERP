@@ -44,15 +44,21 @@ public sealed class AccountingTrialBalanceReader(
                 line.Credit,
             };
 
-        return await query
+        var rows = await query
             .GroupBy(row => new { row.AccountId, row.CurrencyId })
-            .Select(group => new TrialBalanceReadRowV1(
+            .Select(group => new
+            {
                 group.Key.AccountId,
                 group.Key.CurrencyId,
-                group.Sum(row => row.Debit),
-                group.Sum(row => row.Credit)))
+                Debit = group.Sum(row => row.Debit),
+                Credit = group.Sum(row => row.Credit),
+            })
             .OrderBy(row => row.CurrencyId)
             .ThenBy(row => row.AccountId)
             .ToArrayAsync(cancellationToken);
+
+        return rows
+            .Select(row => new TrialBalanceReadRowV1(row.AccountId, row.CurrencyId, row.Debit, row.Credit))
+            .ToArray();
     }
 }
