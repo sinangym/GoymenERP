@@ -9,14 +9,33 @@ namespace GoymenERP.Accounting.UnitTests;
 
 public sealed class NormalJournalDraftV1Tests
 {
-    // All ids, codes, permissions and mappings in this file are synthetic unit-test inputs only.
+    // Ids, account codes and mappings are synthetic. Permission values below are the owner's real
+    // source constants; this package registers or grants none of them.
     private static readonly Guid Company = Guid.Parse("a0000000-0000-4000-8000-0000000000a1");
     private static readonly Guid Preparer = Guid.Parse("a0000000-0000-4000-8000-0000000000b1");
     private static readonly Guid OtherActor = Guid.Parse("a0000000-0000-4000-8000-0000000000b2");
     private static readonly Guid Currency = Guid.Parse("a0000000-0000-4000-8000-0000000000c1");
     private static readonly DateTimeOffset At = new(2026, 9, 24, 9, 0, 0, TimeSpan.Zero);
-    private const string Create = "SENTETIK.normal-draft.create";
-    private const string Approve = "SENTETIK.normal-draft.approve";
+    private const string Create = NormalJournalPermissionNamesV1.DraftCreate;
+    private const string Approve = NormalJournalPermissionNamesV1.DraftApprove;
+
+    [Fact]
+    public void Owner_permission_constants_are_distinct_and_registration_compatible()
+    {
+        var implicitBinding = new NormalJournalPermissionBindingV1();
+        var explicitBinding = new NormalJournalPermissionBindingV1(Create, Approve);
+        var simulatedCentralRegistration = AccountingPermissionManifestV1.All
+            .Concat(NormalJournalPermissionNamesV1.All)
+            .ToHashSet(StringComparer.Ordinal);
+
+        Assert.NotEqual(Create, Approve);
+        Assert.Equal((Create, Approve),
+            (implicitBinding.CreatePermission, implicitBinding.ApprovePermission));
+        Assert.Equal((Create, Approve),
+            (explicitBinding.CreatePermission, explicitBinding.ApprovePermission));
+        Assert.Contains(Create, simulatedCentralRegistration);
+        Assert.Contains(Approve, simulatedCentralRegistration);
+    }
 
     [Theory]
     [InlineData(true)]
@@ -151,14 +170,23 @@ public sealed class NormalJournalDraftV1Tests
     }
 
     [Fact]
-    public void Existing_period_or_read_authority_cannot_be_repurposed_for_normal_approval()
+    public void Legacy_unknown_or_substituted_names_cannot_bind_normal_draft_authority()
     {
-        foreach (var permission in AccountingPermissionManifestV1.All)
+        var nonOwnerNames = AccountingPermissionManifestV1.All
+            .Concat([AccountingMoneyOperations.JournalAmountV1, "accounting.journals.reverse",
+                "accounting.unknown.permission"])
+            .Where(permission => !NormalJournalPermissionNamesV1.All.Contains(permission,
+                StringComparer.Ordinal));
+
+        foreach (var permission in nonOwnerNames)
         {
             Assert.Throws<ArgumentException>(() => new NormalJournalPermissionBindingV1(Create, permission));
             Assert.Throws<ArgumentException>(() => new NormalJournalPermissionBindingV1(permission, Approve));
         }
+
         Assert.Throws<ArgumentException>(() => new NormalJournalPermissionBindingV1(Create, Create));
+        Assert.Throws<ArgumentException>(() => new NormalJournalPermissionBindingV1(Approve, Approve));
+        Assert.Throws<ArgumentException>(() => new NormalJournalPermissionBindingV1(Approve, Create));
     }
 
     [Theory]

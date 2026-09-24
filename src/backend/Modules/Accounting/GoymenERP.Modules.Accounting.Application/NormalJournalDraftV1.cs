@@ -225,22 +225,42 @@ public sealed class NormalJournalDraftV1
 }
 
 /// <summary>
-/// Trusted server-side dependency, NOT an HTTP field, permission declaration or grant. The central
-/// owner must supply its eventually registered narrow normal-draft create/approve names. Existing
-/// ACC-V0 read/period names and a shared create/approve name are refused. Supplying a name alone
-/// authorizes nothing: the current authority service must grant THAT approval name company-wide.
+/// Accounting-owned names for the narrow normal-journal draft actions. Central registration must
+/// use these exact strings; this declaration registers or grants nothing by itself.
+/// </summary>
+public static class NormalJournalPermissionNamesV1
+{
+    public const string DraftCreate = "accounting.normal-journal.draft.create";
+    public const string DraftApprove = "accounting.normal-journal.draft.approve";
+
+    public static IReadOnlyList<string> All { get; } = [DraftCreate, DraftApprove];
+}
+
+/// <summary>
+/// Trusted server-side dependency, NOT an HTTP field, permission registration or grant. Only the
+/// Accounting owner's exact narrow normal-draft create/approve names bind. Existing ACC-V0
+/// read/period names, money/reversal names, unknown names and create-as-approve substitution are
+/// refused. Supplying a name alone authorizes nothing: the current authority service must grant the
+/// exact approval name company-wide.
 /// </summary>
 public sealed class NormalJournalPermissionBindingV1
 {
+    public NormalJournalPermissionBindingV1()
+        : this(NormalJournalPermissionNamesV1.DraftCreate, NormalJournalPermissionNamesV1.DraftApprove)
+    {
+    }
+
     public NormalJournalPermissionBindingV1(string createPermission, string approvePermission)
     {
         AccountPlanMirrorV1.RequireText(createPermission, nameof(createPermission));
         AccountPlanMirrorV1.RequireText(approvePermission, nameof(approvePermission));
-        if (string.Equals(createPermission, approvePermission, StringComparison.Ordinal)
-            || AccountingPermissionManifestV1.All.Contains(createPermission, StringComparer.Ordinal)
-            || AccountingPermissionManifestV1.All.Contains(approvePermission, StringComparer.Ordinal))
+        if (!string.Equals(createPermission, NormalJournalPermissionNamesV1.DraftCreate,
+                StringComparison.Ordinal)
+            || !string.Equals(approvePermission, NormalJournalPermissionNamesV1.DraftApprove,
+                StringComparison.Ordinal))
         {
-            throw new ArgumentException("Normal draft create and approve need distinct owner-supplied narrow permissions.");
+            throw new ArgumentException(
+                "Normal draft create and approve must use the Accounting owner's exact distinct permissions.");
         }
 
         CreatePermission = createPermission;
