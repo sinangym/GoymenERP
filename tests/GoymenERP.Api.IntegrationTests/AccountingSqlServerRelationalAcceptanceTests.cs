@@ -50,6 +50,21 @@ public sealed class AccountingSqlServerRelationalAcceptanceTests
             Assert.Equal(NormalJournalDraftStatusV1.Draft, created.Record.Status);
         }
 
+        var reordered = NormalDraft(run, "normal-draft-1", draft, reverseLines: true);
+        await using (var scope = run.Store(CompanyA))
+        {
+            var conflict = await Assert.ThrowsAsync<AccountingStoreException>(() =>
+                scope.Drafts.CreateNormalDraftAsync(
+                    reordered,
+                    static _ => Task.CompletedTask,
+                    Metadata(run)));
+            Assert.Equal(NormalJournalDraftStoreCodesV1.ContentConflict, conflict.Code);
+            var preserved = (await scope.Drafts.FindNormalDraftAsync(draft.Id))!;
+            Assert.Collection(preserved.Request.Lines,
+                line => Assert.Equal("synthetic-debit-key", line.MappingKey),
+                line => Assert.Equal("synthetic-credit-key", line.MappingKey));
+        }
+
         await using (var reopened = run.Store(CompanyA))
         {
             Assert.Equal(draft.Id, (await reopened.Drafts.FindNormalDraftAsync(draft.Id))!.Id);
@@ -535,23 +550,38 @@ public sealed class AccountingSqlServerRelationalAcceptanceTests
         [new JournalLine(accounts.Debit, amount, 0m), new JournalLine(accounts.Credit, 0m, amount)];
 
     private static PostingRequest Request(Guid company, string messageId, Guid source, (AccountRef Debit, AccountRef Credit) accounts,
-        decimal? amount = 100m, string ruleVersion = "synthetic-rule-1", bool mapCredit = true) =>
-        new PostingRequest(
+        decimal? amount = 100m, string ruleVersion = "synthetic-rule-1", bool mapCredit = true,
+        Guid? journalId = null, bool reverseLines = false)
+    {
+        ProposedLine[] lines =
+        [
+            new ProposedLine("synthetic-debit-key", accounts.Debit, PostingSide.Debit, amount),
+            new ProposedLine("synthetic-credit-key", mapCredit ? accounts.Credit : null, PostingSide.Credit, amount),
+        ];
+        if (reverseLines) Array.Reverse(lines);
+
+        return new PostingRequest(
             Consumer,
             messageId,
-            Guid.NewGuid(),
+            journalId ?? Guid.NewGuid(),
             new SourceReference(company, source, Purpose),
             ruleVersion,
             Currency,
             InSeptember,
-            [
-                new ProposedLine("synthetic-debit-key", accounts.Debit, PostingSide.Debit, amount),
-                new ProposedLine("synthetic-credit-key", mapCredit ? accounts.Credit : null, PostingSide.Credit, amount),
-            ]);
+            lines);
+    }
 
-    private static NormalJournalDraftV1 NormalDraft(Run run, string messageId)
+    private static NormalJournalDraftV1 NormalDraft(
+        Run run,
+        string messageId,
+        NormalJournalDraftV1? snapshot = null,
+        bool reverseLines = false)
     {
-        var accounts = Accounts(CompanyA);
+        var accounts = snapshot is null
+            ? Accounts(CompanyA)
+            : (
+                Debit: snapshot.Request.Lines.Single(line => line.MappingKey == "synthetic-debit-key").Account!.Value,
+                Credit: snapshot.Request.Lines.Single(line => line.MappingKey == "synthetic-credit-key").Account!.Value);
         var mirror = new AccountPlanMirrorV1(
             CompanyA,
             "synthetic-mikro-plan-v1",
@@ -574,7 +604,13 @@ public sealed class AccountingSqlServerRelationalAcceptanceTests
             ]);
         return NormalJournalDraftV1.Prepare(
             JournalKind.Original,
-            Request(CompanyA, messageId, Guid.NewGuid(), accounts),
+            Request(
+                CompanyA,
+                messageId,
+                snapshot?.Request.Source.SourceId ?? Guid.NewGuid(),
+                accounts,
+                journalId: snapshot?.Id,
+                reverseLines: reverseLines),
             1,
             run.Actor,
             mirror,

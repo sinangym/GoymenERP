@@ -66,6 +66,25 @@ public sealed class NormalJournalDraftLifecycleV1Tests
         Assert.Equal(0, store.Completions);
     }
 
+    [Fact]
+    public async Task Reordered_lines_with_the_same_idempotency_key_are_refused_and_preserve_the_first_snapshot()
+    {
+        var store = new MemoryStore(Record());
+        var service = Service(store, new PermissionAuthority(create: Granted(), approve: Granted()));
+
+        var first = await service.CreateAsync(Draft(), "key-line-order");
+        var reordered = await service.CreateAsync(Draft(reverseLines: true), "key-line-order");
+
+        Assert.Equal(AccountingApiStatus.Created, first.Status);
+        Assert.Equal(AccountingApiStatus.Conflict, reordered.Status);
+        Assert.Equal(AccountingApiCodes.IdempotencyConflict, reordered.Code);
+        Assert.Equal(1, store.Creates);
+        Assert.Equal(1, store.Completions);
+        Assert.Collection(store.Record.Request.Lines,
+            line => Assert.Equal("debit", line.MappingKey),
+            line => Assert.Equal("credit", line.MappingKey));
+    }
+
     private static NormalJournalDraftServiceV1 Service(
         MemoryStore store,
         IErpAuthorityRevalidationService authority)
@@ -120,7 +139,7 @@ public sealed class NormalJournalDraftLifecycleV1Tests
                 ]));
     }
 
-    private static NormalJournalDraftV1 Draft()
+    private static NormalJournalDraftV1 Draft(bool reverseLines = false)
     {
         var at = DateTimeOffset.Parse("2026-09-24T15:00:00Z");
         var debit = new AccountRef(Company, Guid.Parse("b0000000-0000-4000-8000-000000000001"));
@@ -135,6 +154,13 @@ public sealed class NormalJournalDraftLifecycleV1Tests
             new NormalJournalMappingV1("debit", PostingSide.Debit, debit),
             new NormalJournalMappingV1("credit", PostingSide.Credit, credit),
         ]);
+        ProposedLine[] lines =
+        [
+            new ProposedLine("debit", debit, PostingSide.Debit, 10m),
+            new ProposedLine("credit", credit, PostingSide.Credit, 10m),
+        ];
+        if (reverseLines) Array.Reverse(lines);
+
         var request = new PostingRequest(
             "synthetic-consumer",
             "synthetic-message",
@@ -144,10 +170,7 @@ public sealed class NormalJournalDraftLifecycleV1Tests
             "synthetic-rule-v1",
             Guid.Parse("d0000000-0000-4000-8000-000000000001"),
             new PostingDates(new DateOnly(2026, 9, 24), new DateOnly(2026, 9, 24), null, at),
-        [
-            new ProposedLine("debit", debit, PostingSide.Debit, 10m),
-            new ProposedLine("credit", credit, PostingSide.Credit, 10m),
-        ]);
+            lines);
         return Assert.IsType<NormalJournalDraftV1>(
             NormalJournalDraftV1.Prepare(JournalKind.Original, request, 1, Actor, mirror, rule).Draft);
     }
@@ -183,6 +206,7 @@ public sealed class NormalJournalDraftLifecycleV1Tests
     private sealed class MemoryStore(NormalJournalDraftRecordV1 record)
         : IAccountingNormalJournalDraftStore, IAccountingCommandLog
     {
+        private readonly List<AccountingCommandRecord> commands = [];
         public NormalJournalDraftRecordV1 Record { get; private set; } = record;
         public int Approvals { get; private set; }
         public int Creates { get; private set; }
@@ -197,8 +221,9 @@ public sealed class NormalJournalDraftLifecycleV1Tests
             await Task.Yield();
             await freshAuthorityFence(cancellationToken);
             Creates++;
-            if (metadata.Completion?.Invoke(Record) is not null)
+            if (metadata.Completion?.Invoke(Record) is { } command)
             {
+                commands.Add(command);
                 Completions++;
             }
 
@@ -239,10 +264,15 @@ public sealed class NormalJournalDraftLifecycleV1Tests
         public Task<AccountingCommandRecord?> FindCommandAsync(
             string commandName,
             string idempotencyKeyHash,
-            CancellationToken cancellationToken = default) => Task.FromResult<AccountingCommandRecord?>(null);
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(commands.SingleOrDefault(command =>
+                command.CommandName == commandName && command.IdempotencyKeyHash == idempotencyKeyHash));
 
-        public Task RecordCommandAsync(AccountingCommandRecord record, CancellationToken cancellationToken = default) =>
-            Task.CompletedTask;
+        public Task RecordCommandAsync(AccountingCommandRecord record, CancellationToken cancellationToken = default)
+        {
+            commands.Add(record);
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class FixedUser : ICurrentUser

@@ -383,17 +383,15 @@ public sealed class NormalJournalDraftServiceV1(
             accountingDate = Date(draft.Request.Dates.AccountingDate),
             valueDate = draft.Request.Dates.ValueDate is { } valueDate ? Date(valueDate) : null,
             recordedAt = Utc(draft.Request.Dates.RecordedAtUtc),
-            lines = draft.Request.Lines.Select(line => new
+            lines = draft.Request.Lines.Select((line, index) => new
                 {
+                    lineNumber = index + 1,
                     line.MappingKey,
                     accountId = line.Account!.Value.AccountId,
                     side = (int)line.Side,
                     amount = Text(line.Amount!.Value),
                 })
-                .OrderBy(line => line.MappingKey, StringComparer.Ordinal)
-                .ThenBy(line => line.accountId)
-                .ThenBy(line => line.side)
-                .ThenBy(line => line.amount, StringComparer.Ordinal),
+                .ToArray(),
         },
     };
 

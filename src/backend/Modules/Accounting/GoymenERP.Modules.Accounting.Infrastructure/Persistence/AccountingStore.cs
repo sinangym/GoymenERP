@@ -1087,17 +1087,15 @@ public sealed class AccountingStore(
                 business = BusinessDates(draft.Request.Dates),
                 recordedAt = draft.Request.Dates.RecordedAtUtc.UtcDateTime.ToString("O", CultureInfo.InvariantCulture),
             },
-            lines = draft.Request.Lines.Select(line => new
+            lines = draft.Request.Lines.Select((line, index) => new
                 {
+                    lineNumber = index + 1,
                     line.MappingKey,
                     accountId = line.Account!.Value.AccountId,
                     side = (int)line.Side,
                     amount = Canonical(line.Amount!.Value),
                 })
-                .OrderBy(line => line.MappingKey, StringComparer.Ordinal)
-                .ThenBy(line => line.accountId)
-                .ThenBy(line => line.side)
-                .ThenBy(line => line.amount, StringComparer.Ordinal),
+                .ToArray(),
         },
     });
 
