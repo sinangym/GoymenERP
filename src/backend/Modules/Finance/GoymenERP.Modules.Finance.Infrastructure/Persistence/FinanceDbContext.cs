@@ -38,6 +38,12 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
 
     internal DbSet<MoneyEventRow> MoneyEvents => Set<MoneyEventRow>();
 
+    internal DbSet<FinanceOpenItemRow> OpenItems => Set<FinanceOpenItemRow>();
+
+    internal DbSet<FinanceSourceAllocationStateRow> SourceAllocationStates => Set<FinanceSourceAllocationStateRow>();
+
+    internal DbSet<FinanceAllocationRow> Allocations => Set<FinanceAllocationRow>();
+
     internal DbSet<ReversalProposalRow> ReversalProposals => Set<ReversalProposalRow>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -52,6 +58,9 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         ConfigureBankAccounts(modelBuilder);
         ConfigureCommands(modelBuilder);
         ConfigureMoneyEvents(modelBuilder);
+        ConfigureOpenItems(modelBuilder);
+        ConfigureSourceAllocationStates(modelBuilder);
+        ConfigureAllocations(modelBuilder);
         ConfigureReversalProposals(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
@@ -265,6 +274,116 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    private void ConfigureOpenItems(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<FinanceOpenItemRow>();
+        entity.ToTable("OpenItems", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_OpenItems_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[SourceId] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "([SourceLineId] IS NULL OR [SourceLineId] <> '00000000-0000-0000-0000-000000000000') AND "
+                + "[PartyId] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[CurrencyId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_OpenItems_Text",
+                "LEN([SourceKind]) > 0 AND LEN([SourceVersion]) > 0 AND "
+                + "LEN([OriginalAmountText]) > 0 AND LEN([OutstandingAmountText]) > 0 AND "
+                + "LEN([CreatedBy]) > 0 AND LEN([UpdatedBy]) > 0");
+            table.HasCheckConstraint("CK_OpenItems_Status", "[Status] IN (1, 2)");
+            table.HasCheckConstraint("CK_OpenItems_Version", "[Version] >= 1");
+        });
+        entity.HasKey(x => x.Id);
+        entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.SourceKind).HasMaxLength(128).IsUnicode(false).IsRequired();
+        entity.Property(x => x.SourceVersion).HasMaxLength(128).IsUnicode(false).IsRequired();
+        entity.Property(x => x.OriginalAmountText).HasColumnType("varchar(max)").IsUnicode(false).IsRequired();
+        entity.Property(x => x.OutstandingAmountText).HasColumnType("varchar(max)").IsUnicode(false).IsRequired();
+        entity.Property(x => x.DueOn).HasColumnType("date");
+        entity.Property(x => x.Version).IsConcurrencyToken();
+        entity.Property(x => x.CreatedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        entity.Property(x => x.UpdatedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        entity.HasIndex(x => new { x.CompanyId, x.SourceKind, x.SourceId, x.SourceLineId }).IsUnique();
+        entity.HasIndex(x => new { x.CompanyId, x.CompanyAccountId, x.CurrencyId, x.Status, x.DueOn });
+        entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    private void ConfigureAllocations(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<FinanceAllocationRow>();
+        entity.ToTable("Allocations", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_Allocations_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[SourceId] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[OpenItemId] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[CurrencyId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_Allocations_Text",
+                "LEN([AmountText]) > 0 AND LEN([Reason]) > 0 AND LEN([CreatedBy]) > 0");
+            table.HasCheckConstraint("CK_Allocations_Version", "[Version] >= 1");
+            table.HasCheckConstraint("CK_Allocations_Status", AllocationStatusCheck);
+        });
+        entity.HasKey(x => x.Id);
+        entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.AmountText).HasColumnType("varchar(max)").IsUnicode(false).IsRequired();
+        entity.Property(x => x.Reason).HasMaxLength(1000).IsRequired();
+        entity.Property(x => x.Version).IsConcurrencyToken();
+        entity.Property(x => x.CreatedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        entity.Property(x => x.ReleasedBy).HasMaxLength(128).UseCollation(IdentityCollation);
+        entity.Property(x => x.ReleaseReason).HasMaxLength(1000);
+        entity.HasIndex(x => new { x.CompanyId, x.SourceId, x.Status });
+        entity.HasIndex(x => new { x.CompanyId, x.OpenItemId, x.Status });
+        entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<ReceiptDraftRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.SourceId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<FinanceOpenItemRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.OpenItemId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    private void ConfigureSourceAllocationStates(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<FinanceSourceAllocationStateRow>();
+        entity.ToTable("SourceAllocationStates", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_SourceAllocationStates_Identity",
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[SourceId] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[CurrencyId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_SourceAllocationStates_Text",
+                "LEN([OriginalAmountText]) > 0 AND LEN([UnallocatedAmountText]) > 0 AND LEN([UpdatedBy]) > 0");
+            table.HasCheckConstraint("CK_SourceAllocationStates_Version", "[Version] >= 1");
+        });
+        entity.HasKey(x => new { x.CompanyId, x.SourceId });
+        entity.Property(x => x.OriginalAmountText).HasColumnType("varchar(max)").IsUnicode(false).IsRequired();
+        entity.Property(x => x.UnallocatedAmountText).HasColumnType("varchar(max)").IsUnicode(false).IsRequired();
+        entity.Property(x => x.Version).IsConcurrencyToken();
+        entity.Property(x => x.UpdatedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<ReceiptDraftRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.SourceId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    internal const string AllocationStatusCheck =
+        "([Status] = 1 AND [ReleasedBy] IS NULL AND [ReleasedAtUtc] IS NULL AND [ReleaseReason] IS NULL) OR "
+        + "([Status] = 2 AND [ReleasedBy] IS NOT NULL AND LEN([ReleasedBy]) > 0 "
+        + "AND [ReleasedAtUtc] IS NOT NULL AND [ReleaseReason] IS NOT NULL AND LEN([ReleaseReason]) > 0)";
+
     internal const string ReversalProposalDecisionCheck =
         "([Status] = 0 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [DecisionReason] IS NULL AND [ReversalSourceId] IS NULL) OR "
         + "([Status] = 1 AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL "
@@ -276,10 +395,11 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
 
     /// <summary>The command record's target rule; the migration that introduced it uses the same text.</summary>
     internal const string TargetCheck =
-        "([DraftId] IS NOT NULL AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [BankAccountId] IS NULL AND [ReversalProposalId] IS NULL) OR "
-        + "([BankAccountId] IS NOT NULL AND [BankAccountId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL AND [ReversalProposalId] IS NULL) OR "
-        + "([ReversalProposalId] IS NOT NULL AND [ReversalProposalId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL AND [BankAccountId] IS NULL) OR "
-        + "([DraftId] IS NULL AND [BankAccountId] IS NULL AND [ReversalProposalId] IS NULL AND JSON_VALUE([ResultJson], '$.outcome') = 'ValidationFailed')";
+        "([DraftId] IS NOT NULL AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [BankAccountId] IS NULL AND [ReversalProposalId] IS NULL AND [FinanceAllocationId] IS NULL) OR "
+        + "([BankAccountId] IS NOT NULL AND [BankAccountId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL AND [ReversalProposalId] IS NULL AND [FinanceAllocationId] IS NULL) OR "
+        + "([ReversalProposalId] IS NOT NULL AND [ReversalProposalId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL AND [BankAccountId] IS NULL AND [FinanceAllocationId] IS NULL) OR "
+        + "([FinanceAllocationId] IS NOT NULL AND [FinanceAllocationId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL AND [BankAccountId] IS NULL AND [ReversalProposalId] IS NULL) OR "
+        + "([DraftId] IS NULL AND [BankAccountId] IS NULL AND [ReversalProposalId] IS NULL AND [FinanceAllocationId] IS NULL AND JSON_VALUE([ResultJson], '$.outcome') = 'ValidationFailed')";
 
     private void ConfigureCommands(ModelBuilder modelBuilder)
     {
@@ -306,6 +426,7 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         entity.HasIndex(x => new { x.CompanyId, x.DraftId });
         entity.HasIndex(x => new { x.CompanyId, x.BankAccountId });
         entity.HasIndex(x => new { x.CompanyId, x.ReversalProposalId });
+        entity.HasIndex(x => new { x.CompanyId, x.FinanceAllocationId });
         entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
             .OnDelete(DeleteBehavior.Restrict);
         entity.HasOne<ReceiptDraftRow>().WithMany()
@@ -318,6 +439,10 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
             .OnDelete(DeleteBehavior.Restrict);
         entity.HasOne<ReversalProposalRow>().WithMany()
             .HasForeignKey(x => new { x.CompanyId, x.ReversalProposalId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<FinanceAllocationRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.FinanceAllocationId })
             .HasPrincipalKey(x => new { x.CompanyId, x.Id })
             .OnDelete(DeleteBehavior.Restrict);
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -359,6 +484,20 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
 
             if (entry.State == EntityState.Modified)
             {
+                if (entry.Entity is BankAccountRow bankAccount
+                    && !IsAllowedBankAccountTransition(entry, bankAccount))
+                {
+                    throw new InvalidOperationException(
+                        "Banka hesabı yalnız ilk onay veya bekleyen IBAN öneri/onay geçişiyle değişir.");
+                }
+
+                if (entry.Entity is FinanceAllocationRow allocation
+                    && !IsAllowedAllocationRelease(entry, allocation))
+                {
+                    throw new InvalidOperationException(
+                        "Finans dağıtımı yalnız aktif durumdan sürümlü serbest bırakma ile değişir.");
+                }
+
                 string[] allowed = entry.Entity switch
                 {
                     ReceiptDraftRow =>
@@ -372,17 +511,38 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                         nameof(ReceiptDraftRow.UpdatedBy), nameof(ReceiptDraftRow.Stage),
                         nameof(ReceiptDraftRow.RecordedAtUtc), nameof(ReceiptDraftRow.RecordedBy),
                     ],
-                    // The one approval; name and currency never change.
+                    // Initial approval and D4's two-step IBAN transition; the state-aware guard above
+                    // prevents these columns from becoming general-purpose mutable fields.
                     BankAccountRow =>
                     [
                         nameof(BankAccountRow.Status), nameof(BankAccountRow.ApprovedBy),
                         nameof(BankAccountRow.ApprovedAtUtc), nameof(BankAccountRow.UpdatedAtUtc),
+                        nameof(BankAccountRow.Iban), nameof(BankAccountRow.PendingIban),
+                        nameof(BankAccountRow.PendingIbanProposedBy),
+                        nameof(BankAccountRow.PendingIbanProposedAtUtc),
+                        nameof(BankAccountRow.PendingIbanReason),
                     ],
                     ReversalProposalRow =>
                     [
                         nameof(ReversalProposalRow.Status), nameof(ReversalProposalRow.DecidedBy),
                         nameof(ReversalProposalRow.DecidedAtUtc), nameof(ReversalProposalRow.DecisionReason),
                         nameof(ReversalProposalRow.ReversalSourceId),
+                    ],
+                    FinanceAllocationRow =>
+                    [
+                        nameof(FinanceAllocationRow.Status), nameof(FinanceAllocationRow.ReleasedBy),
+                        nameof(FinanceAllocationRow.ReleasedAtUtc), nameof(FinanceAllocationRow.ReleaseReason),
+                    ],
+                    FinanceOpenItemRow =>
+                    [
+                        nameof(FinanceOpenItemRow.OutstandingAmountText), nameof(FinanceOpenItemRow.Status),
+                        nameof(FinanceOpenItemRow.UpdatedBy), nameof(FinanceOpenItemRow.UpdatedAtUtc),
+                    ],
+                    FinanceSourceAllocationStateRow =>
+                    [
+                        nameof(FinanceSourceAllocationStateRow.UnallocatedAmountText),
+                        nameof(FinanceSourceAllocationStateRow.UpdatedBy),
+                        nameof(FinanceSourceAllocationStateRow.UpdatedAtUtc),
                     ],
                     _ => [],
                 };
@@ -398,5 +558,82 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                 }
             }
         }
+    }
+
+    private static bool IsAllowedAllocationRelease(
+        Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<IFinanceTenantRow> entry,
+        FinanceAllocationRow current)
+    {
+        var originalStatus = (int)entry.OriginalValues[nameof(FinanceAllocationRow.Status)]!;
+        var originalVersion = (long)entry.OriginalValues[nameof(FinanceAllocationRow.Version)]!;
+        return originalStatus == FinanceAllocationStatuses.Active
+            && current.Status == FinanceAllocationStatuses.Released
+            && current.Version == checked(originalVersion + 1)
+            && entry.OriginalValues[nameof(FinanceAllocationRow.ReleasedBy)] is null
+            && entry.OriginalValues[nameof(FinanceAllocationRow.ReleasedAtUtc)] is null
+            && entry.OriginalValues[nameof(FinanceAllocationRow.ReleaseReason)] is null
+            && !string.IsNullOrWhiteSpace(current.ReleasedBy)
+            && current.ReleasedAtUtc is not null
+            && !string.IsNullOrWhiteSpace(current.ReleaseReason);
+    }
+
+    private static bool IsAllowedBankAccountTransition(
+        Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<IFinanceTenantRow> entry,
+        BankAccountRow current)
+    {
+        const int proposed = 1;
+        const int approved = 2;
+        var originalStatus = (int)entry.OriginalValues[nameof(BankAccountRow.Status)]!;
+        var originalIban = (string?)entry.OriginalValues[nameof(BankAccountRow.Iban)];
+        var originalApprovedBy = (string?)entry.OriginalValues[nameof(BankAccountRow.ApprovedBy)];
+        var originalApprovedAt = (DateTimeOffset?)entry.OriginalValues[nameof(BankAccountRow.ApprovedAtUtc)];
+        var originalPendingIban = (string?)entry.OriginalValues[nameof(BankAccountRow.PendingIban)];
+        var originalPendingBy = (string?)entry.OriginalValues[nameof(BankAccountRow.PendingIbanProposedBy)];
+        var originalPendingAt = (DateTimeOffset?)entry.OriginalValues[nameof(BankAccountRow.PendingIbanProposedAtUtc)];
+        var originalPendingReason = (string?)entry.OriginalValues[nameof(BankAccountRow.PendingIbanReason)];
+
+        var originalPendingEmpty = originalPendingIban is null && originalPendingBy is null
+            && originalPendingAt is null && originalPendingReason is null;
+        var originalPendingComplete = originalPendingIban is not null && !string.IsNullOrWhiteSpace(originalPendingBy)
+            && originalPendingAt is not null && !string.IsNullOrWhiteSpace(originalPendingReason);
+        var currentPendingEmpty = current.PendingIban is null && current.PendingIbanProposedBy is null
+            && current.PendingIbanProposedAtUtc is null && current.PendingIbanReason is null;
+        var currentPendingComplete = current.PendingIban is not null
+            && !string.IsNullOrWhiteSpace(current.PendingIbanProposedBy)
+            && current.PendingIbanProposedAtUtc is not null && !string.IsNullOrWhiteSpace(current.PendingIbanReason);
+
+        var initialApproval = originalStatus == proposed && current.Status == approved
+            && originalPendingEmpty && currentPendingEmpty
+            && string.Equals(current.Iban, originalIban, StringComparison.Ordinal)
+            && originalApprovedBy is null && originalApprovedAt is null
+            && !string.IsNullOrWhiteSpace(current.ApprovedBy) && current.ApprovedAtUtc is not null;
+
+        var proposesIban = originalStatus == approved && current.Status == approved
+            && originalPendingEmpty && currentPendingComplete
+            && string.Equals(current.Iban, originalIban, StringComparison.Ordinal)
+            && string.Equals(current.ApprovedBy, originalApprovedBy, StringComparison.Ordinal)
+            && current.ApprovedAtUtc == originalApprovedAt;
+
+        // D4 explicitly keeps one waiting slot whose newest proposal replaces the previous waiting
+        // proposal. Keep that approved service semantic without turning the pending columns into
+        // generally mutable fields: both sides must be complete, the approved value/approval stay
+        // untouched, and at least one pending-proposal fact must actually change.
+        var replacesPendingIban = originalStatus == approved && current.Status == approved
+            && originalPendingComplete && currentPendingComplete
+            && string.Equals(current.Iban, originalIban, StringComparison.Ordinal)
+            && string.Equals(current.ApprovedBy, originalApprovedBy, StringComparison.Ordinal)
+            && current.ApprovedAtUtc == originalApprovedAt
+            && (!string.Equals(current.PendingIban, originalPendingIban, StringComparison.Ordinal)
+                || !string.Equals(current.PendingIbanProposedBy, originalPendingBy, StringComparison.Ordinal)
+                || current.PendingIbanProposedAtUtc != originalPendingAt
+                || !string.Equals(current.PendingIbanReason, originalPendingReason, StringComparison.Ordinal));
+
+        var approvesIban = originalStatus == approved && current.Status == approved
+            && originalPendingComplete && currentPendingEmpty
+            && string.Equals(current.Iban, originalPendingIban, StringComparison.Ordinal)
+            && string.Equals(current.ApprovedBy, originalApprovedBy, StringComparison.Ordinal)
+            && current.ApprovedAtUtc == originalApprovedAt;
+
+        return initialApproval || proposesIban || replacesPendingIban || approvesIban;
     }
 }

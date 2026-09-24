@@ -78,13 +78,14 @@ public static class FinanceModuleExtensions
         services.AddScoped(CreateReversalProposalService);
         services.AddScoped<IReversalProposalService>(provider =>
             provider.GetRequiredService<ReversalProposalService>());
+        services.AddScoped<IFinanceAllocationService>(CreateAllocationService);
         // FIN-T05: the Record's period gate. K1 (#66 5748258299) answered it — occurredOn decides — but the rule
         // that maps the date reads Accounting's period port, which this module cannot see. So the HOST registers
         // OccurredOnFinanceRecordPeriodRule before calling this method and the TryAdd below then does nothing;
         // a composition that registers none still gets the undecided rule, which refuses every Record rather
         // than guessing a period.
         services.TryAddSingleton<IFinanceRecordPeriodRule, UndecidedFinanceRecordPeriodRule>();
-        services.TryAddSingleton<IFinanceReversalAllocationGate, NoAllocationSubsystemFinanceReversalGate>();
+        services.AddScoped<IFinanceReversalAllocationGate, FinanceAllocationReversalGate>();
         services.TryAddSingleton(TimeProvider.System);
         return services;
     }
@@ -143,6 +144,19 @@ public static class FinanceModuleExtensions
                     FinanceAction.ProposeReversal),
                 Envelope(provider, FinancePermissionNames.ReverseApprove, permissions,
                     FinanceAction.ApproveReversal)),
+            provider.GetRequiredService<TimeProvider>());
+    }
+
+    private static FinanceAllocationService CreateAllocationService(IServiceProvider provider)
+    {
+        var permissions = provider.GetRequiredService<FinancePermissionPort>();
+        return new FinanceAllocationService(
+            provider.GetRequiredService<FinanceDbContext>(),
+            provider.GetRequiredService<ICompanyContext>(),
+            provider.GetRequiredService<ICurrentUser>(),
+            permissions,
+            provider.GetRequiredService<IAuditEventCollector>(),
+            Envelope(provider, FinancePermissionNames.AllocationWrite, permissions, FinanceAction.WriteAllocation),
             provider.GetRequiredService<TimeProvider>());
     }
 

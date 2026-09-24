@@ -25,4 +25,7 @@ public static class FinancePermissionNames
     public const string ReversePropose = "finance.manual-receipt.reverse.propose";
 
     public const string ReverseApprove = "finance.manual-receipt.reverse.approve";
+
+    // F-03 technical declaration only. Central registration and every real grant remain separate.
+    public const string AllocationWrite = "finance.allocation.write";
 }

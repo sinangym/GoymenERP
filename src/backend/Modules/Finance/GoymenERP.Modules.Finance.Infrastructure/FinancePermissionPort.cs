@@ -46,6 +46,7 @@ public sealed class FinancePermissionPort(
         FinanceAction.Record => FinancePermissionNames.Record,
         FinanceAction.ProposeReversal => FinancePermissionNames.ReversePropose,
         FinanceAction.ApproveReversal => FinancePermissionNames.ReverseApprove,
+        FinanceAction.WriteAllocation => FinancePermissionNames.AllocationWrite,
         FinanceAction.ReadBankAccounts => ErpPermissions.FinanceBankAccountRead,
         FinanceAction.ProposeBankAccount => ErpPermissions.FinanceBankAccountPropose,
         FinanceAction.ApproveBankAccount => ErpPermissions.FinanceBankAccountApprove,

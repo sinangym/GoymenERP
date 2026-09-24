@@ -3,10 +3,9 @@ using GoymenERP.Modules.Finance.Contracts;
 namespace GoymenERP.Modules.Finance.Infrastructure;
 
 /// <summary>
-/// The current modular monolith has no allocation persistence or allocation command surface, so an
-/// allocation cannot exist. This narrowly states that physical fact; it is not an "assume clear"
-/// fallback. When an allocation owner is introduced, composition must replace this registration with
-/// its real company-filtered reader before that owner can write allocations.
+/// Legacy synthetic fixture for tests that intentionally model a world before F-03. Runtime DI must
+/// never register this fallback now that Finance owns allocation persistence; production composition
+/// uses <see cref="FinanceAllocationReversalGate"/>.
 /// </summary>
 public sealed class NoAllocationSubsystemFinanceReversalGate : IFinanceReversalAllocationGate
 {

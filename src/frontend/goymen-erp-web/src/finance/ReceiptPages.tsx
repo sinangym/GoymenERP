@@ -73,7 +73,7 @@ export function ReceiptDraftPage() {
 export function ReceiptDetailPage() {
   const { sourceId } = useParams()
   const shell = useShellState()
-  // FIN-T05a: the Record control only for the holder of its capability (declared in FIN-T05's central round).
+  // FIN-T05/T06: controls are offered only when the reviewed shell authority returns their capabilities.
   const canRecord = hasCapability(shell, FINANCE_CAPABILITY.receiptsRecord)
   const canProposeReversal = hasCapability(shell, FINANCE_CAPABILITY.receiptsReversePropose)
   return (

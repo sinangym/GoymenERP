@@ -867,6 +867,16 @@ public sealed class FinanceBankAccountService(
         FinanceAction action, string command, string payloadHash, BankAccountCommandResult result,
         CancellationToken cancellationToken)
     {
+        // The command may have awaited command/account/settings reads since StartAsync. Measure the
+        // action again immediately before the write; a permission revoked during those reads must not
+        // persist the account transition, idempotency answer or audit sidecar prepared by the stale
+        // authorization decision. This is the same narrow fence used by the reversal command path.
+        if (await FenceAsync(context, action, result.Resource?.Id, cancellationToken) is { } fenced)
+        {
+            dbContext.ChangeTracker.Clear();
+            return fenced;
+        }
+
         try
         {
             await dbContext.SaveChangesAsync(cancellationToken);

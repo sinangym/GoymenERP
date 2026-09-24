@@ -362,6 +362,37 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
         Assert.Equal((ReadOutcome.Found, (Guid?)null, draft.Id),
             (reversalDetail.Outcome, reversalDetail.Resource!.ReversalSourceId, reversalDetail.Resource.ReversesSourceId));
 
+        // B1 corrects a normal receipt once; the generated reversal source is not a new reversal root.
+        // Refusal is not terminal and produces no proposal, event, command or audit side effect.
+        var beforeReverseOfReverse = (
+            Proposals: await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.ReversalProposals"),
+            Events: await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.MoneyEvents"),
+            Commands: await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM finance.Commands WHERE CommandName = @c",
+                ("@c", ReversalProposalService.ProposeCommand)),
+            Audits: await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.receipt-reversal.proposed.v1'"));
+        await using (var reverseSourceMaker = run.ReversalService(CompanyA, Guid.NewGuid().ToString("D")))
+        {
+            var refused = await reverseSourceMaker.Service.ProposeAsync(reverseSourceMaker.Context,
+                Key("reverse-of-reversal"),
+                new ProposeReversalRequest(reversalSourceId, reversalDetail.Resource.Source.Version,
+                    reversalOccurredOn.AddDays(1), "SENTETIK-ters-kaynagi-yeniden-tersleme"),
+                CancellationToken.None);
+            Assert.Equal(CommandOutcome.ValidationFailed, refused.Outcome);
+            Assert.Equal(new ValidationIssue("sourceId", "finance_reversal_source_not_original_receipt"),
+                Assert.Single(refused.Issues));
+            Assert.Null(refused.Resource);
+        }
+        Assert.Equal(beforeReverseOfReverse, (
+            Proposals: await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.ReversalProposals"),
+            Events: await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.MoneyEvents"),
+            Commands: await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM finance.Commands WHERE CommandName = @c",
+                ("@c", ReversalProposalService.ProposeCommand)),
+            Audits: await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.receipt-reversal.proposed.v1'")));
+
         // The first definitive reversal does not prevent an auditor from seeing a later proposal attempt,
         // but the database and service together prevent that proposal from becoming a second money fact.
         var secondMaker = Guid.NewGuid().ToString("D");
@@ -397,6 +428,68 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
             await run.ScalarAsync<int>(
                 "SELECT COUNT(*) FROM finance.Commands WHERE CommandName = @c AND ReversalProposalId = @p",
                 ("@c", ReversalProposalService.ApproveCommand), ("@p", secondProposal.Resource.Id))));
+    }
+
+    [SqlServerFact]
+    public async Task Permission_revoked_during_reads_refuses_propose_and_reject_before_save()
+    {
+        await using var run = await Run.StartAsync();
+        var owners = Owners.For(CompanyA);
+        var draft = await run.SaveDraftAsync(owners, "1250.50");
+
+        CommandResult recorded;
+        await using (var recording = run.Service(CompanyA, owners))
+        {
+            recorded = await recording.Service.RecordAsync(recording.Context, Key("revoke-record"),
+                new RecordRequest(draft.Id, draft.Version), CancellationToken.None);
+        }
+        Assert.Equal(CommandOutcome.Succeeded, recorded.Outcome);
+
+        var proposePermission = new RevokeAfterFirstPermissionCheck();
+        await using (var maker = run.ReversalService(CompanyA, run.Actor, permissions: proposePermission))
+        {
+            var refused = await maker.Service.ProposeAsync(maker.Context, Key("revoke-propose"),
+                new ProposeReversalRequest(draft.Id, recorded.Resource!.Source.Version, OccurredOn.AddDays(2),
+                    "SENTETIK-yetki-geri-alindi"), CancellationToken.None);
+            Assert.Equal(CommandOutcome.Denied, refused.Outcome);
+            Assert.Null(refused.Resource);
+        }
+        Assert.Equal(2, proposePermission.CheckCount);
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.ReversalProposals"));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.Commands WHERE CommandName = @c",
+            ("@c", ReversalProposalService.ProposeCommand)));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.receipt-reversal.proposed.v1'"));
+
+        ReversalProposalCommandResult proposed;
+        await using (var maker = run.ReversalService(CompanyA, run.Actor))
+        {
+            proposed = await maker.Service.ProposeAsync(maker.Context, Key("allowed-propose"),
+                new ProposeReversalRequest(draft.Id, recorded.Resource!.Source.Version, OccurredOn.AddDays(2),
+                    "SENTETIK-reject-hazirligi"), CancellationToken.None);
+        }
+        Assert.Equal(CommandOutcome.Succeeded, proposed.Outcome);
+
+        var rejectPermission = new RevokeAfterFirstPermissionCheck();
+        await using (var checker = run.ReversalService(CompanyA, Guid.NewGuid().ToString("D"),
+                         permissions: rejectPermission))
+        {
+            var refused = await checker.Service.RejectAsync(checker.Context, Key("revoke-reject"),
+                new RejectReversalRequest(proposed.Resource!.Id, proposed.Resource.Version,
+                    "SENTETIK-yetki-geri-alindi"), CancellationToken.None);
+            Assert.Equal(CommandOutcome.Denied, refused.Outcome);
+            Assert.Null(refused.Resource);
+        }
+        Assert.Equal(2, rejectPermission.CheckCount);
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.ReversalProposals WHERE Id = @p AND Status = 0 AND Version = 1 AND DecidedBy IS NULL AND DecisionReason IS NULL",
+            ("@p", proposed.Resource!.Id)));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.Commands WHERE CommandName = @c",
+            ("@c", ReversalProposalService.RejectCommand)));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.receipt-reversal.rejected.v1'"));
     }
 
     /// <summary>
@@ -481,10 +574,9 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
         }
 
         Assert.Equal(CommandOutcome.Succeeded, proposed.Outcome);
-        await using (var checker = run.ReversalService(CompanyA, Guid.NewGuid().ToString("D"),
-                         allocationGate: new FixedAllocationGate(
-                             new ReversalAllocationAnswer(ReversalAllocationOutcome.HasAllocation,
-                                 "finance_reversal_has_allocations"))))
+        var allocationId = await run.SeedActiveAllocationAsync(
+            CompanyA, draft.Id, owners.Account, Currency, "1250.50", "250.10");
+        await using (var checker = run.ReversalService(CompanyA, Guid.NewGuid().ToString("D")))
         {
             var refused = await checker.Service.ApproveAsync(checker.Context, Key("allocated-reverse-approve"),
                 new ApproveReversalRequest(proposed.Resource!.Id, proposed.Resource.Version), CancellationToken.None);
@@ -504,6 +596,9 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
         Assert.Equal(0, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM finance.Commands WHERE CommandName = @c",
             ("@c", ReversalProposalService.ApproveCommand)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.Allocations WHERE Id = @id AND CompanyId = @company AND SourceId = @source AND Status = 1",
+            ("@id", allocationId), ("@company", CompanyA), ("@source", draft.Id)));
     }
 
     private static CommandMetadata Key(string key) => new CommandMetadata(key);
@@ -598,7 +693,8 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
 
         public ReversalServiceScope ReversalService(Guid company, string actor,
             IFinanceRecordPeriodRule? rule = null, string? correlation = null,
-            IFinanceReversalAllocationGate? allocationGate = null)
+            IFinanceReversalAllocationGate? allocationGate = null,
+            IFinancePermissionPort? permissions = null)
         {
             var companyContext = new CompanyContext();
             companyContext.Set(company);
@@ -611,14 +707,85 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
                 .Options;
             var dbContext = new FinanceDbContext(options, companyContext);
             var service = new ReversalProposalService(dbContext, companyContext, currentUser,
-                new SyntheticPermissions(), rule ?? new SyntheticOpenPeriodRule(),
-                allocationGate ?? new NoAllocationSubsystemFinanceReversalGate(), collector,
+                permissions ?? new SyntheticPermissions(), rule ?? new SyntheticOpenPeriodRule(),
+                allocationGate ?? new FinanceAllocationReversalGate(dbContext, companyContext, currentUser), collector,
                 new FinanceReversalEnvelopes(
                     new FinanceAuditEnvelope(ReversalProposalService.ProposeCommand, ["SENTETIK-FINANCE"], "Web"),
                     new FinanceAuditEnvelope(ReversalProposalService.ApproveCommand, ["SENTETIK-FINANCE"], "Web")),
                 TimeProvider.System);
             return new ReversalServiceScope(dbContext, service,
                 new FinanceContext(company, actor, correlation ?? $"fin-t06-{Guid.NewGuid():N}", null));
+        }
+
+        /// <summary>
+        /// F-03 predecessor fixture: persists the owner row through FinanceDbContext so the reversal
+        /// gate performs a real company-filtered SQL read. This is not an allocation command or a
+        /// user/grant acceptance; the command/open-item owner path is a separate pending slice.
+        /// </summary>
+        public async Task<Guid> SeedActiveAllocationAsync(
+            Guid company,
+            Guid sourceId,
+            Guid companyAccountId,
+            Guid currencyId,
+            string sourceAmount,
+            string amount)
+        {
+            var companyContext = new CompanyContext();
+            companyContext.Set(company);
+            await using var dbContext = new FinanceDbContext(
+                new DbContextOptionsBuilder<FinanceDbContext>()
+                    .UseSqlServer(Factory.DatabaseConnectionString,
+                        sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", FinanceDbContext.Schema))
+                    .Options,
+                companyContext);
+            var id = Guid.NewGuid();
+            var openItemId = Guid.NewGuid();
+            dbContext.OpenItems.Add(new FinanceOpenItemRow
+            {
+                Id = openItemId,
+                CompanyId = company,
+                SourceKind = "synthetic.receivable.v1",
+                SourceId = Guid.NewGuid(),
+                SourceVersion = "1",
+                PartyId = Guid.NewGuid(),
+                CompanyAccountId = companyAccountId,
+                CurrencyId = currencyId,
+                OriginalAmountText = sourceAmount,
+                OutstandingAmountText = "1000.40",
+                Status = FinanceOpenItemStatuses.Open,
+                Version = 2,
+                CreatedBy = "synthetic-finance-open-item-fixture",
+                CreatedAtUtc = DateTimeOffset.UtcNow,
+                UpdatedBy = "synthetic-finance-allocation-fixture",
+                UpdatedAtUtc = DateTimeOffset.UtcNow,
+            });
+            dbContext.SourceAllocationStates.Add(new FinanceSourceAllocationStateRow
+            {
+                CompanyId = company,
+                SourceId = sourceId,
+                CurrencyId = currencyId,
+                OriginalAmountText = sourceAmount,
+                UnallocatedAmountText = "1000.40",
+                Version = 1,
+                UpdatedBy = "synthetic-finance-allocation-fixture",
+                UpdatedAtUtc = DateTimeOffset.UtcNow,
+            });
+            dbContext.Allocations.Add(new FinanceAllocationRow
+            {
+                Id = id,
+                CompanyId = company,
+                SourceId = sourceId,
+                OpenItemId = openItemId,
+                CurrencyId = currencyId,
+                AmountText = amount,
+                Reason = "SENTETIK persisted reversal gate allocation",
+                Status = FinanceAllocationStatuses.Active,
+                Version = 1,
+                CreatedBy = "synthetic-finance-allocation-fixture",
+                CreatedAtUtc = DateTimeOffset.UtcNow,
+            });
+            await dbContext.SaveChangesAsync();
+            return id;
         }
 
         /// <summary>The Accounting tables in the SAME database, so a period and a money event are one system.</summary>
@@ -761,6 +928,20 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
     {
         public Task<PermissionDecision> CheckAsync(FinanceContext context, FinanceAction action, Guid? sourceId,
             CancellationToken cancellationToken) => Task.FromResult(PermissionDecision.Allowed);
+    }
+
+    /// <summary>SENTETIK: Start is allowed, then the same actor/company loses the action before SaveChanges.</summary>
+    private sealed class RevokeAfterFirstPermissionCheck : IFinancePermissionPort
+    {
+        private int _checkCount;
+
+        public int CheckCount => Volatile.Read(ref _checkCount);
+
+        public Task<PermissionDecision> CheckAsync(FinanceContext context, FinanceAction action, Guid? sourceId,
+            CancellationToken cancellationToken) => Task.FromResult(
+            Interlocked.Increment(ref _checkCount) == 1
+                ? PermissionDecision.Allowed
+                : PermissionDecision.Denied);
     }
 
     /// <summary>SENTETIK: one usable bank account of the company in the test currency.</summary>

@@ -61,6 +61,18 @@ public sealed class ReversalProposalService(
                 cancellationToken);
         }
 
+        // B1 is the correction of one normal manual receipt. A generated reversal source already owns
+        // the counter-event kind and must not become a fresh reversal root (R1 -> R2 -> ...).
+        var sourceEventKinds = await dbContext.MoneyEvents.AsNoTracking()
+            .Where(row => row.SourceId == original.Id)
+            .Select(row => row.Kind)
+            .ToArrayAsync(cancellationToken);
+        if (sourceEventKinds.Length != 1 || sourceEventKinds[0] != MoneyEventKinds.ManualBankReceiptRecorded)
+        {
+            return Refused(context, CommandOutcome.ValidationFailed,
+                Issue("sourceId", "finance_reversal_source_not_original_receipt"));
+        }
+
         ReversalProposalRow proposal;
         try
         {
@@ -398,6 +410,15 @@ public sealed class ReversalProposalService(
         FinanceContext context, CommandMetadata metadata, FinanceAction action, string command, string payloadHash,
         ReversalProposalCommandResult result, CancellationToken cancellationToken)
     {
+        // The command may have awaited proposal/source/owner reads since StartAsync. Measure the action
+        // again immediately before the write; a revoked permission must not persist the business row,
+        // idempotency answer or audit sidecar prepared by the stale authorization decision.
+        if (await FenceAsync(context, action, result.Resource?.Id, cancellationToken) is { } fenced)
+        {
+            dbContext.ChangeTracker.Clear();
+            return fenced;
+        }
+
         try
         {
             await dbContext.SaveChangesAsync(cancellationToken);
