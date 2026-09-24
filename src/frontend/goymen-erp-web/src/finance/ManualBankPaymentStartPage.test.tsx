@@ -1,6 +1,7 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { FinanceReceiptPort } from './port'
+import type { DraftContextRequest } from './draftContext'
+import type { FinanceReceiptPort, FinanceScope } from './port'
 import { ManualBankPaymentStartPage } from './ManualBankPaymentStartPage'
 import {
   COMPANY_A,
@@ -48,7 +49,7 @@ function startPort(contextStatusCode?: number): FinanceReceiptPort {
         isOwnPendingIbanProposal: false,
       }],
     }),
-    draftContext: async (_scope, request) => contextStatusCode === undefined
+    draftContext: async (_scope: FinanceScope, request: DraftContextRequest) => contextStatusCode === undefined
       ? contextOk(draftContextBody(COMPANY_A, request, { bankAccount: bankAccount(COMPANY_A, { id: BANK }) }))
       : contextStatus(contextStatusCode),
   } as unknown as FinanceReceiptPort
