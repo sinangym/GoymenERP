@@ -496,18 +496,21 @@ public sealed class ManufacturingCommandServiceTests
             CancellationToken.None);
         Assert.Equal(ManufacturingApiStatus.Created, created.Status);
         Assert.Equal(1, fixture.ParentRolls.Asked);
+        Assert.Single(fixture.WorkCenters.Requests);
 
         fixture.ParentRolls.Exception = new InventoryParentRollException(503, InventoryParentRollCodesV1.Unavailable);
         var replay = await fixture.Service.SavePlanAsync(request, "key-1", "manufacturing.plans.write",
             CancellationToken.None);
         Assert.Equal((ManufacturingApiStatus.Created, true), (replay.Status, replay.IsReplay));
         Assert.Equal(1, fixture.ParentRolls.Asked);
+        Assert.Single(fixture.WorkCenters.Requests);
 
         var mismatch = await fixture.Service.SavePlanAsync(Plan("8", request.PlanId), "key-1",
             "manufacturing.plans.write", CancellationToken.None);
         Assert.Equal((ManufacturingApiStatus.Conflict, ManufacturingApiCodes.IdempotencyConflict, false),
             (mismatch.Status, mismatch.Code, mismatch.IsReplay));
         Assert.Equal(1, fixture.ParentRolls.Asked);
+        Assert.Single(fixture.WorkCenters.Requests);
     }
 
     [Fact]
