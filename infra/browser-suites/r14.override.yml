@@ -1,7 +1,7 @@
-# R14 Inventory opening-stock acceptance. Recorder owns the existing Inventory command permission and
-# Product's existing selector-read permission; denied owns only the Product read; arranger owns only
-# Organization's existing location read. All are company-wide in disposable GDC. The Product issuer has
-# no role, assignment or sign-in actor. No production grant or policy is changed.
+# R14 Inventory opening-stock acceptance and existing label/Product detail drill-down.
+# Recorder has the existing opening, selector, label/balance and Product-detail permissions only.
+# Denied retains only selector-read; arranger only Organization location-read. All are disposable GDC.
+# The Product issuer has no role, assignment or sign-in actor. No production grant or policy changes.
 services:
   api:
     environment:
@@ -39,6 +39,9 @@ services:
       IdentitySeed__Roles__5__IsSystem: "false"
       IdentitySeed__Roles__5__Permissions__0: inventory.opening-stock.record
       IdentitySeed__Roles__5__Permissions__1: product.operational-selection.read
+      IdentitySeed__Roles__5__Permissions__2: inventory.labels.read
+      IdentitySeed__Roles__5__Permissions__3: inventory.balances.read
+      IdentitySeed__Roles__5__Permissions__4: product.items.detail
       IdentitySeed__Roles__6__Id: b3000000-0000-4000-8000-000000000702
       IdentitySeed__Roles__6__Code: BROWSER_R14_DENIED
       IdentitySeed__Roles__6__Name: SENTETIK browser-suite:r14 Inventory denied actor

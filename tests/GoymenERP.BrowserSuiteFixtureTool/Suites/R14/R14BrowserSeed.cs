@@ -24,6 +24,8 @@ public sealed class R14BrowserSeed : IBrowserSuiteFixture
     private const string LocationCandidatesPath = "/api/v1/inventory/references/locations";
     private const string CapabilitiesPath = "/api/v1/shell/capabilities";
     private const string OpeningCapability = "inventory.opening-stock.record";
+    private const string LabelDetailCapability = "inventory.stock-positions.list";
+    private const string ProductDetailCapability = "product.items.detail";
 
     public string Suite => "r14";
 
@@ -95,8 +97,10 @@ public sealed class R14BrowserSeed : IBrowserSuiteFixture
 
         string[] recorderCapabilities = await CapabilitiesAsync(context, RecorderActor, cancellationToken);
         string[] deniedCapabilities = await CapabilitiesAsync(context, DeniedActor, cancellationToken);
-        if (!recorderCapabilities.Contains(OpeningCapability, StringComparer.Ordinal)
-            || deniedCapabilities.Contains(OpeningCapability, StringComparer.Ordinal))
+        string[] requiredCapabilities = [OpeningCapability, LabelDetailCapability, ProductDetailCapability];
+        if (requiredCapabilities.Any(capability =>
+                !recorderCapabilities.Contains(capability, StringComparer.Ordinal)
+                || deniedCapabilities.Contains(capability, StringComparer.Ordinal)))
         {
             throw new InvalidOperationException("The R14 capability split does not match recorder and denied actors.");
         }
