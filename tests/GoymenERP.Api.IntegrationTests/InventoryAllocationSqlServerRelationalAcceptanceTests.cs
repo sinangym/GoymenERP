@@ -100,11 +100,16 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             await scope.Store.CreateAsync(AllocationRequest(own, "80"), Metadata(run));
         }
 
+        var currentLabelVersion = await run.ScalarAsync<long>(
+            "SELECT Version FROM inventory.Labels WHERE Id = @id", ("@id", own.LabelId));
         var before = await AllocationEffectCountsAsync(run);
         await using (var scope = run.Store(CompanyA))
         {
             var insufficient = await Assert.ThrowsAsync<InventoryAllocationException>(() =>
-                scope.Store.CreateAsync(AllocationRequest(own, "20.001") with { AllocationId = Guid.NewGuid() }, Metadata(run)));
+                scope.Store.CreateAsync(AllocationRequest(own, "20.001") with
+                {
+                    AllocationId = Guid.NewGuid(), ExpectedLabelVersion = currentLabelVersion.ToString(),
+                }, Metadata(run)));
             Assert.Equal((409, InventoryAllocationCodesV1.InsufficientFreeStock),
                 (insufficient.Status, insufficient.Code));
         }
