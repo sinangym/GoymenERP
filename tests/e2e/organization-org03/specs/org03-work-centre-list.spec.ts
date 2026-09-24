@@ -113,4 +113,10 @@ test('ORG03-03 a reader holding the location name as well gets the link, and it 
   // ORG-02 opened for real — the link is not merely present, it resolves through the real API.
   await expect(page).toHaveURL(/\/ayarlar\/organizasyon\/lokasyon\/[0-9a-f-]{36}$/, { timeout: 30_000 })
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible({ timeout: 30_000 })
+
+  const back = page.getByRole('navigation', { name: 'Geri' }).getByRole('link', { name: /İş Merkezleri/ })
+  await expect(back).toHaveAttribute('href', WORK_CENTRE_LIST_ROUTE)
+  await back.click()
+  await expect(page).toHaveURL(new RegExp(`${WORK_CENTRE_LIST_ROUTE}$`))
+  await expect(page.getByRole('table')).toBeVisible()
 })
