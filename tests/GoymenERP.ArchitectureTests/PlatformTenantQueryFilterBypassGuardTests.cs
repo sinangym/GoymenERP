@@ -149,7 +149,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // inventory
             ["tools/relational_inventory/inventory.txt"] =
-                "e5bd94e786c185e2cd6431103e2d9362a5f82d1284cc389401120d308d36afd9",
+                "d4f8be80b8b9ab559a5f3ed0ff6acf5b4f4d41a2f37e642b0d2cabfd0d232690",
 
             // logistics
             ["tools/relational_inventory/logistics.txt"] =
@@ -219,7 +219,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // lines, attempts) and AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
              + "Persistence/PurchasingDbContext.cs"] =
-                "592e82c96e2922a739b065e2b020a652aac88a4613d6a0a37ef5c5ffb9b8e9f6",
+                "a5a2acdf37eb037d00d09d3d2a529a9185f0e8dcb7ae30fac1385bf89860bea6",
             // Re-measured for MFG-API (#313): the ADR-011 command log (CommandRecords) is mapped here, company-
             // scoped with the CompanyId filter like every other tenant row.
             // MFG-5 (#303): company-scoped like Organization; every tenant row and AuditEvent carries the
@@ -581,12 +581,34 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                             ["EnsureCreatedAsync"] = 1,
                             ["MigrateAsync"] = 1
                         }),
+                // R16/P04: reviewed provider participants. Exact source and provider-boundary token counts are
+                // pinned; changes require a fresh source review rather than broadening this allowlist.
+                ["src/backend/Modules/Inventory/"
+                 + "GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryGoodsReceiptParticipant.cs"] =
+                    new(
+                        "7d226f744116a2dc8049d5155c4a668bc8746a94a5aa358a8ba1989c0d5c55a0",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["System.Data.Common"] = 1,
+                            ["Microsoft.Data.SqlClient"] = 1,
+                            ["DbConnection"] = 3
+                        }),
+                ["src/backend/Modules/Purchasing/"
+                 + "GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchaseAcceptanceParticipant.cs"] =
+                    new(
+                        "6451cab8315ccecb3167abc36a9d5629bb7b641f5687bc3bade8240cac40fd3e",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["System.Data.Common"] = 1,
+                            ["Microsoft.Data.SqlClient"] = 1,
+                            ["DbConnection"] = 3
+                        }),
                 // PUR-4a: the SqlClient namespace only to recognise a unique-key violation (SqlException
                 // 2601/2627) after SaveChanges, as the Sales store does. No connection, command or raw SQL.
                 ["src/backend/Modules/Purchasing/"
                  + "GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.cs"] =
                     new(
-                        "9c780e5f846d8ffaa3f4bf74ce6c774985e7f52fe45ca306f2f8586a33e72cd6",
+                        "96cdc61a31589ed2b6df6e1cdc8ef32c61f52dbe07b2b68f7a50f91e5c54de5c",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
