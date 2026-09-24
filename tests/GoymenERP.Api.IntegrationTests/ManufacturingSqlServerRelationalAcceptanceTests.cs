@@ -363,6 +363,130 @@ public sealed class ManufacturingSqlServerRelationalAcceptanceTests
             "SELECT COUNT(*) FROM manufacturing.PlanSlitLines WHERE PlanId = @p", ("@p", plan.Id)));
     }
 
+    /// <summary>
+    /// DEC-PRDCT-001's discriminator expansion is reversible while all durable facts still use the
+    /// original Slitting value. Existing plan/order rows survive both Down and the following Up.
+    /// </summary>
+    [SqlServerFact]
+    public async Task The_process_constraint_migration_rolls_back_and_reapplies_while_only_slitting_is_stored()
+    {
+        await using var run = await Run.StartAsync();
+        const string beforeProcesses = "20260919130000_AddPlanSlittingSpecs";
+        var expandedPlanConstraint = await run.ScalarAsync<string>(
+            "SELECT [definition] FROM sys.check_constraints WHERE [name] = N'CK_Plans_Enums' "
+            + "AND [parent_object_id] = OBJECT_ID(N'[manufacturing].[Plans]')");
+        var expandedOrderConstraint = await run.ScalarAsync<string>(
+            "SELECT [definition] FROM sys.check_constraints WHERE [name] = N'CK_Orders_Enums' "
+            + "AND [parent_object_id] = OBJECT_ID(N'[manufacturing].[Orders]')");
+
+        // An empty Manufacturing store travels Down and Up cleanly.
+        await using (var context = run.Context(CompanyA))
+        {
+            var migrator = context.GetService<IMigrator>();
+            await migrator.MigrateAsync(beforeProcesses);
+            Assert.Equal(beforeProcesses, (await context.Database.GetAppliedMigrationsAsync()).Last());
+            Assert.NotEqual(expandedPlanConstraint, await run.ScalarAsync<string>(
+                "SELECT [definition] FROM sys.check_constraints WHERE [name] = N'CK_Plans_Enums' "
+                + "AND [parent_object_id] = OBJECT_ID(N'[manufacturing].[Plans]')"));
+            Assert.NotEqual(expandedOrderConstraint, await run.ScalarAsync<string>(
+                "SELECT [definition] FROM sys.check_constraints WHERE [name] = N'CK_Orders_Enums' "
+                + "AND [parent_object_id] = OBJECT_ID(N'[manufacturing].[Orders]')"));
+            await context.Database.MigrateAsync();
+            Assert.EndsWith("_ExpandManufacturingProcesses", (await context.Database.GetAppliedMigrationsAsync()).Last(),
+                StringComparison.Ordinal);
+            Assert.Equal(expandedPlanConstraint, await run.ScalarAsync<string>(
+                "SELECT [definition] FROM sys.check_constraints WHERE [name] = N'CK_Plans_Enums' "
+                + "AND [parent_object_id] = OBJECT_ID(N'[manufacturing].[Plans]')"));
+            Assert.Equal(expandedOrderConstraint, await run.ScalarAsync<string>(
+                "SELECT [definition] FROM sys.check_constraints WHERE [name] = N'CK_Orders_Enums' "
+                + "AND [parent_object_id] = OBJECT_ID(N'[manufacturing].[Orders]')"));
+        }
+
+        // Slitting-only durable rows also survive the round trip unchanged.
+        var (plan, orderId) = await run.ApprovedOrderAsync(CompanyA);
+        await using (var context = run.Context(CompanyA))
+        {
+            var migrator = context.GetService<IMigrator>();
+            await migrator.MigrateAsync(beforeProcesses);
+            Assert.Equal(beforeProcesses, (await context.Database.GetAppliedMigrationsAsync()).Last());
+            Assert.Equal((1, 1),
+                (await run.ScalarAsync<int>("SELECT Process FROM manufacturing.Plans WHERE Id = @id", ("@id", plan.Id)),
+                    await run.ScalarAsync<int>("SELECT Process FROM manufacturing.Orders WHERE Id = @id", ("@id", orderId))));
+            await context.Database.MigrateAsync();
+            Assert.EndsWith("_ExpandManufacturingProcesses", (await context.Database.GetAppliedMigrationsAsync()).Last(),
+                StringComparison.Ordinal);
+        }
+
+        Assert.Equal((1, 1),
+            (await run.ScalarAsync<int>("SELECT Process FROM manufacturing.Plans WHERE Id = @id", ("@id", plan.Id)),
+                await run.ScalarAsync<int>("SELECT Process FROM manufacturing.Orders WHERE Id = @id", ("@id", orderId))));
+    }
+
+    /// <summary>
+    /// A non-Slitting plan or order makes Down a forward-fix refusal. The 51047 guard runs before
+    /// either constraint changes and before migration history moves.
+    /// </summary>
+    [SqlServerFact]
+    public async Task The_process_constraint_migration_refuses_down_before_mutation_for_each_non_slitting_table()
+    {
+        await using var run = await Run.StartAsync();
+        const string beforeProcesses = "20260919130000_AddPlanSlittingSpecs";
+        var workCenter = await run.WorkCenterOfKindAsync(CompanyA, "ColdRolling");
+        var plan = NewPlan(CompanyA, workCenter, ManufacturingProcess.ColdRolling);
+        var orderId = Guid.NewGuid();
+
+        await using (var store = run.Store(CompanyA))
+        {
+            await store.Plans.SavePlanAsync(plan, Metadata(run));
+        }
+
+        var planConstraint = await run.ScalarAsync<string>(
+            "SELECT [definition] FROM sys.check_constraints WHERE [name] = N'CK_Plans_Enums' "
+            + "AND [parent_object_id] = OBJECT_ID(N'[manufacturing].[Plans]')");
+        var orderConstraint = await run.ScalarAsync<string>(
+            "SELECT [definition] FROM sys.check_constraints WHERE [name] = N'CK_Orders_Enums' "
+            + "AND [parent_object_id] = OBJECT_ID(N'[manufacturing].[Orders]')");
+
+        async Task AssertDownRefusedBeforeMutation()
+        {
+            await using var context = run.Context(CompanyA);
+            var error = await Assert.ThrowsAsync<SqlException>(
+                () => context.GetService<IMigrator>().MigrateAsync(beforeProcesses));
+            Assert.Equal(51047, error.Number);
+            Assert.EndsWith("_ExpandManufacturingProcesses", (await context.Database.GetAppliedMigrationsAsync()).Last(),
+                StringComparison.Ordinal);
+            Assert.Equal(planConstraint, await run.ScalarAsync<string>(
+                "SELECT [definition] FROM sys.check_constraints WHERE [name] = N'CK_Plans_Enums' "
+                + "AND [parent_object_id] = OBJECT_ID(N'[manufacturing].[Plans]')"));
+            Assert.Equal(orderConstraint, await run.ScalarAsync<string>(
+                "SELECT [definition] FROM sys.check_constraints WHERE [name] = N'CK_Orders_Enums' "
+                + "AND [parent_object_id] = OBJECT_ID(N'[manufacturing].[Orders]')"));
+        }
+
+        // Plans alone block the downgrade.
+        await AssertDownRefusedBeforeMutation();
+        Assert.Equal(ManufacturingProcess.ColdRolling, (ManufacturingProcess)await run.ScalarAsync<int>(
+            "SELECT Process FROM manufacturing.Plans WHERE Id = @id", ("@id", plan.Id)));
+
+        // Then isolate the Orders predicate: create the matching order and make only its snapshot non-Slitting.
+        await using (var store = run.Store(CompanyA))
+        {
+            await store.Plans.ApprovePlanAsync(plan.Id, 1, run.Actor, At, Metadata(run));
+            await store.Orders.CreateOrderAsync(orderId, plan.Id, Metadata(run));
+        }
+
+        await using (var context = run.Context(CompanyA))
+        {
+            await context.Database.ExecuteSqlInterpolatedAsync(
+                $"UPDATE [manufacturing].[Plans] SET [Process] = 1 WHERE [Id] = {plan.Id}");
+        }
+
+        await AssertDownRefusedBeforeMutation();
+        Assert.Equal((1, (int)ManufacturingProcess.ColdRolling),
+            (await run.ScalarAsync<int>("SELECT Process FROM manufacturing.Plans WHERE Id = @id", ("@id", plan.Id)),
+                await run.ScalarAsync<int>("SELECT Process FROM manufacturing.Orders WHERE Id = @id", ("@id", orderId))));
+    }
+
     /// <summary>A plan with the §28.4 golden slit lines and a winding target, on one roll of 28.750 kg.</summary>
     private static ProductionPlan SpecPlan(Guid company, Guid workCenter) =>
         new(Guid.NewGuid(), company, workCenter, ManufacturingProcess.Slitting, [new PlannedInput(RollA, Kg(28_750m))],
@@ -374,8 +498,11 @@ public sealed class ManufacturingSqlServerRelationalAcceptanceTests
 
     private static Kilograms Kg(decimal value) => new(value);
 
-    private static ProductionPlan NewPlan(Guid company, Guid workCenter) =>
-        new(Guid.NewGuid(), company, workCenter, ManufacturingProcess.Slitting,
+    private static ProductionPlan NewPlan(
+        Guid company,
+        Guid workCenter,
+        ManufacturingProcess process = ManufacturingProcess.Slitting) =>
+        new(Guid.NewGuid(), company, workCenter, process,
             [new PlannedInput(RollA, Kg(10_000m)), new PlannedInput(RollB, Kg(5_000m))],
             new ProductionTarget(TargetBasis.InputMass, Kg(15_000m)));
 
@@ -461,6 +588,11 @@ public sealed class ManufacturingSqlServerRelationalAcceptanceTests
         public async Task<Guid> WorkCenterOfAsync(Guid company) =>
             await ScalarAsync<Guid>("SELECT TOP (1) Id FROM organization.WorkCenters WHERE CompanyId = @c ORDER BY Id",
                 ("@c", company));
+
+        public async Task<Guid> WorkCenterOfKindAsync(Guid company, string kind) =>
+            await ScalarAsync<Guid>(
+                "SELECT TOP (1) Id FROM organization.WorkCenters WHERE CompanyId = @c AND Kind = @kind ORDER BY Id",
+                ("@c", company), ("@kind", kind));
 
         public async Task<T> ScalarAsync<T>(string sql, params (string Name, object Value)[] parameters)
         {

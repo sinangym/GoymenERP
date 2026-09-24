@@ -16,8 +16,8 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 /// The Purchasing store of the server-resolved company (PUR-4a; the Sales SALES-P2 / Logistics LOG-4a shape).
 /// One call is one save; a stored record is rebuilt through the domain in recording order (lines, technical
 /// slices, then the transition), so a corrupt row is refused, not repaired, and the stored version must be
-/// the one the rebuild reaches. Acceptance shares have no rows in this slice (PUR-4b brings the goods
-/// receipt): a stored Accepted total other than zero is refused. The Σ-shares rule of an approval (Sinan #66
+/// the one the rebuild reaches. PUR-4b acceptance shares are replayed by identity after approval so the
+/// persisted Accepted totals and aggregate version must agree. The Σ-shares rule of an approval (Sinan #66
 /// 5738113623 §1) is measured inside the approval's save, and the source request's sourcing version moves
 /// with it so two approvals against the same request collide on the request's row version.
 /// </summary>
@@ -357,14 +357,16 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         }
 
         var lineRows = await dbContext.OrderLines.Where(line => line.OrderId == orderId).OrderBy(line => line.LineNo).ToListAsync(cancellationToken);
-        var order = RestoreOrder(row, lineRows);
+        var acceptanceRows = await dbContext.Acceptances.AsNoTracking().Where(acceptance => acceptance.OrderId == orderId)
+            .OrderBy(acceptance => acceptance.OrderVersionAfter).ThenBy(acceptance => acceptance.AcceptanceId).ToListAsync(cancellationToken);
+        var order = RestoreOrder(row, lineRows, acceptanceRows);
         var versionBefore = order.Version;
         var before = Snapshot(order);
         var now = timeProvider.GetUtcNow();
         // The domain decides; a refusal leaves the tracked rows untouched (nothing below has run).
         mutate(order, now);
         if (order.Version != versionBefore + 1 || order.Id != row.Id || order.CompanyId != companyId || order.Lines.Count != lineRows.Count
-            || order.Acceptances.Count != 0)
+            || order.Acceptances.Count != acceptanceRows.Count)
         {
             throw new InvalidOperationException("Bir komut tam olarak bir sürüm ilerletir; satır ve kabul payı eklemez.");
         }
@@ -595,18 +597,24 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
 
         var ids = rows.Select(row => row.Id).ToArray();
         var lines = await dbContext.OrderLines.AsNoTracking().Where(line => ids.Contains(line.OrderId)).ToListAsync(cancellationToken);
+        var acceptances = await dbContext.Acceptances.AsNoTracking().Where(acceptance => ids.Contains(acceptance.OrderId)).ToListAsync(cancellationToken);
         return [.. rows.Select(row =>
         {
             var own = lines.Where(line => line.OrderId == row.Id).OrderBy(line => line.LineNo).ToList();
-            return new StoredPurchaseOrder(RestoreOrder(row, own), row.CompanyAccountId, row.EffectiveOn, VersionsOf(own));
+            var ownAcceptances = acceptances.Where(acceptance => acceptance.OrderId == row.Id)
+                .OrderBy(acceptance => acceptance.OrderVersionAfter).ThenBy(acceptance => acceptance.AcceptanceId).ToList();
+            return new StoredPurchaseOrder(RestoreOrder(row, own, ownAcceptances), row.CompanyAccountId, row.EffectiveOn, VersionsOf(own));
         })];
     }
 
     /// <summary>
-    /// Rebuilds the order through the domain in recording order (general lines, technical slices, then the approval);
-    /// the stored version and totals must be the ones the rebuild reaches. Acceptance shares have no rows in PUR-4a.
+    /// Rebuilds the order through the domain in recording order (general lines, technical slices, approval, acceptance shares);
+    /// the stored version and totals must be the ones the rebuild reaches.
     /// </summary>
-    private static PurchaseOrder RestoreOrder(PurchaseOrderRow row, IReadOnlyList<PurchaseOrderLineRow> lines)
+    internal static PurchaseOrder RestoreOrder(
+        PurchaseOrderRow row,
+        IReadOnlyList<PurchaseOrderLineRow> lines,
+        IReadOnlyList<PurchaseAcceptanceRow>? acceptances = null)
     {
         var order = row.SourceRequestId is { } sourceRequestId
             ? PurchaseOrder.CreateForRequest(row.Id, row.CompanyId, row.SupplierPartyId, sourceRequestId, row.CreatedAtUtc)
@@ -632,6 +640,35 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
             order.Approve(order.Version, row.UpdatedAtUtc);
         }
 
+        var orderedAcceptances = (acceptances ?? [])
+            .OrderBy(acceptance => acceptance.OrderVersionAfter)
+            .ThenBy(acceptance => acceptance.AcceptanceId)
+            .ToArray();
+        var expectedVersionAfter = checked(order.Version + 1);
+        foreach (var acceptance in orderedAcceptances)
+        {
+            if (acceptance.CompanyId != row.CompanyId || acceptance.OrderId != row.Id
+                || acceptance.OrderVersionAfter != expectedVersionAfter)
+            {
+                throw new InvalidOperationException("Kayıtlı kabul payı sipariş sürümünde ardışık değil.");
+            }
+
+            var sourceLine = lines.SingleOrDefault(line => line.LineId == acceptance.LineId)
+                ?? throw new InvalidOperationException("Kayıtlı kabul payının sipariş satırı bulunamadı.");
+            order.RecordAcceptance(
+                order.Version,
+                acceptance.AcceptanceId,
+                acceptance.LineId,
+                Quantity.Of(acceptance.Quantity, UnitOf(sourceLine.UnitIsKilogram)),
+                acceptance.RecordedAtUtc);
+            if (order.Version != acceptance.OrderVersionAfter)
+            {
+                throw new InvalidOperationException("Kayıtlı kabul payının sürümü domain sürümüyle uyuşmuyor.");
+            }
+
+            expectedVersionAfter = checked(expectedVersionAfter + 1);
+        }
+
         if (order.Version != row.Version || order.Status != (PurchaseOrderStatus)row.Status)
         {
             throw new InvalidOperationException("Kayıtlı siparişin sürümü satırlarından yeniden kurulan sürümle uyuşmuyor.");
@@ -640,9 +677,9 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         foreach (var line in lines)
         {
             var rebuilt = order.Lines.Single(candidate => candidate.Id == line.LineId);
-            if (rebuilt.TechnicalQuantity.Value != line.Technical || line.Accepted != 0m || rebuilt.AcceptedQuantity.Value != line.Accepted)
+            if (rebuilt.TechnicalQuantity.Value != line.Technical || rebuilt.AcceptedQuantity.Value != line.Accepted)
             {
-                throw new InvalidOperationException("Kayıtlı satır toplamları yeniden kurulan toplamlarla uyuşmuyor; kabul payları PUR-4b'de kaydedilir.");
+                throw new InvalidOperationException("Kayıtlı satır toplamları yeniden kurulan toplamlarla uyuşmuyor.");
             }
         }
 
