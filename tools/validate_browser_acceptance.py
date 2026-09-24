@@ -430,15 +430,16 @@ SUITE_FIXTURE_OUTPUTS: dict[str, frozenset[str]] = {
     # SİPARİŞ's Suites/S04 seed: the three actors, the company and the one Preparing draft written through
     # the gated Sales draft writer (C01E2eSalesDraftFixtureWriter).
     # SALES-A2a adds the second draft the delivery-reference path uses, the real party and its company
-    # account, and the address and contact the owner answered. Ids only: seed_export accepts a GUID or an
-    # actor id, so the texts the spec asserts (the address label, the contact name, the currency code) stay
-    # deterministic constants in the spec instead of travelling as seed outputs.
+    # account, and the address and contact the owner answered. Allocation acceptance adds the exact Sales
+    # line and Inventory label ids plus the label's current positive version. Other texts stay deterministic
+    # constants in the spec instead of travelling as seed outputs.
     "s04": frozenset({"preparerActor", "approverActor", "readerActor", "companyId", "draftId",
                       "deliveryDraftId", "realPartyId", "realCompanyAccountId", "deliveryAddressId",
                       "deliveryContactId", "supportCreatorActor", "ordinaryCreatorActor", "supportDraftId",
                       "ordinaryApproveDraftId", "ordinaryRejectDraftId", "withdrawalDraftId",
                       "productId", "productVersion", "productUnitId", "productUnitProfileId",
-                      "productUnitProfileVersion", "productCode", "productName"}),
+                      "productUnitProfileVersion", "productCode", "productName",
+                      "allocationLineId", "allocationLabelId", "allocationLabelVersion"}),
     # FİNANS's Suites/ACC01 seed: the two actors and both companies. No Accounting row is seeded — the suite
     # proposes, approves and closes through the real API, and the second company exists only to show that
     # GDC's periods never appear there.
@@ -488,7 +489,8 @@ def seed_export(suite: str, seed: object) -> str:
         require(isinstance(value, str), f"seed output {key} must be a string")
         is_guid = _ANY_GUID.fullmatch(value) is not None and value != "00000000-0000-0000-0000-000000000000"
         is_actor = value in CANONICAL_ACTORS or re.fullmatch(rf"{suite}-[a-z0-9-]{{1,48}}", value) is not None
-        is_s04_version = suite == "s04" and key in {"productVersion", "productUnitProfileVersion"} \
+        is_s04_version = suite == "s04" and key in {"productVersion", "productUnitProfileVersion",
+                                                     "allocationLabelVersion"} \
             and re.fullmatch(r"[1-9][0-9]*", value) is not None
         is_s04_code = suite == "s04" and key == "productCode" \
             and re.fullmatch(r"SYNS04-[1-9][0-9]*", value) is not None
