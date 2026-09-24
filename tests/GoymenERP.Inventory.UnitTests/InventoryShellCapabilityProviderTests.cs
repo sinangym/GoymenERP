@@ -11,12 +11,12 @@ public sealed class InventoryShellCapabilityProviderTests
     {
         var provider = new InventoryShellCapabilityProvider();
         var declarations = provider.GetDeclarations();
-        Assert.Equal(2, declarations.Count);
+        Assert.Equal(3, declarations.Count);
         var declaration = Assert.Single(declarations,
             item => item.CapabilityId == InventoryShellCapabilityProvider.OpeningStockCapabilityId);
 
         Assert.Equal("INVENTORY", provider.Owner);
-        Assert.Equal("1.1", provider.ContractVersion);
+        Assert.Equal("1.2", provider.ContractVersion);
         Assert.Equal(ErpPermissions.InventoryOpeningStockRecord, declaration.CapabilityId);
         Assert.Equal("inventory.opening-stock", declaration.RouteId);
         Assert.Equal("/stok/acilis", declaration.RoutePath);
@@ -46,5 +46,28 @@ public sealed class InventoryShellCapabilityProviderTests
             declaration.RequiredPermissions);
         Assert.True(declaration.ImplementationAvailable);
         Assert.Null(declaration.ParentCapabilityId);
+    }
+
+    [Fact]
+    public void Physical_allocation_write_is_a_stock_position_control_over_existing_permissions()
+    {
+        var declaration = Assert.Single(new InventoryShellCapabilityProvider().GetDeclarations(),
+            item => item.CapabilityId == InventoryShellCapabilityProvider.PhysicalAllocationCapabilityId);
+
+        Assert.Equal("inventory.stock-positions", declaration.RouteId);
+        Assert.Equal("/stok/pozisyonlar", declaration.RoutePath);
+        Assert.Equal("ST-01", declaration.ScreenId);
+        Assert.Equal(ShellCapabilityRoutePrecedence.Static, declaration.RoutePrecedence);
+        Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, declaration.ContextRequirement);
+        Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide, declaration.ScopeRequirement);
+        Assert.Equal(
+            [
+                ErpPermissions.InventoryLabelsRead,
+                ErpPermissions.InventoryBalancesRead,
+                ErpPermissions.InventoryPhysicalAllocationWrite,
+            ],
+            declaration.RequiredPermissions);
+        Assert.True(declaration.ImplementationAvailable);
+        Assert.Equal(InventoryShellCapabilityProvider.StockPositionsCapabilityId, declaration.ParentCapabilityId);
     }
 }
