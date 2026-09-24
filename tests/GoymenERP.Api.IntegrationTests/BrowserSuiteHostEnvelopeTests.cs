@@ -47,6 +47,7 @@ public sealed class BrowserSuiteHostEnvelopeTests
             {
                 ["productVersion"] = "2",
                 ["productUnitProfileVersion"] = "1",
+                ["allocationLabelVersion"] = "3",
                 ["productCode"] = "SYNS04-1",
                 ["productName"] = "SENTETIK browser-suite:s04 sales candidate",
             },
@@ -62,6 +63,9 @@ public sealed class BrowserSuiteHostEnvelopeTests
     [InlineData("productVersion", "0")]
     [InlineData("productVersion", "02")]
     [InlineData("productUnitProfileVersion", "1.5")]
+    [InlineData("allocationLabelVersion", "0")]
+    [InlineData("allocationLabelVersion", "03")]
+    [InlineData("allocationLabelVersion", "3.5")]
     [InlineData("productCode", "SYNS04-0")]
     [InlineData("productCode", "OTHER-1")]
     [InlineData("productName", "SENTETIK browser-suite:s04 sales candidate ")]

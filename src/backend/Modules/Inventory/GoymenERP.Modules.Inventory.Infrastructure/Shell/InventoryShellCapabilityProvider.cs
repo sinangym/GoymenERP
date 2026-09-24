@@ -11,11 +11,12 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Shell;
 public sealed class InventoryShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "INVENTORY";
-    public const string OwnerContractVersion = "1.1";
+    public const string OwnerContractVersion = "1.2";
     public const string StockPositionsCapabilityId = "inventory.stock-positions.list";
     public const string StockPositionsRouteId = "inventory.stock-positions";
     public const string StockPositionsRoutePath = "/stok/pozisyonlar";
     public const string StockPositionsScreenId = "ST-01";
+    public const string PhysicalAllocationCapabilityId = ErpPermissions.InventoryPhysicalAllocationWrite;
     public const string OpeningStockCapabilityId = ErpPermissions.InventoryOpeningStockRecord;
     public const string OpeningStockRouteId = "inventory.opening-stock";
     public const string OpeningStockRoutePath = "/stok/acilis";
@@ -24,9 +25,9 @@ public sealed class InventoryShellCapabilityProvider : IShellCapabilityProvider
     public string Owner => OwnerId;
     public string ContractVersion => OwnerContractVersion;
 
-    public IReadOnlyCollection<ShellCapabilityDeclaration> GetDeclarations() =>
-    [
-        new(
+    public IReadOnlyCollection<ShellCapabilityDeclaration> GetDeclarations()
+    {
+        var stockPositions = new ShellCapabilityDeclaration(
             StockPositionsCapabilityId,
             StockPositionsRouteId,
             StockPositionsRoutePath,
@@ -35,7 +36,22 @@ public sealed class InventoryShellCapabilityProvider : IShellCapabilityProvider
             ShellCapabilityContextRequirement.SingleCompany,
             ShellCapabilityScopeRequirement.CompanyWide,
             [ErpPermissions.InventoryLabelsRead, ErpPermissions.InventoryBalancesRead],
-            ImplementationAvailable: true),
+            ImplementationAvailable: true);
+
+        return
+        [
+        stockPositions,
+        stockPositions with
+        {
+            CapabilityId = PhysicalAllocationCapabilityId,
+            ParentCapabilityId = StockPositionsCapabilityId,
+            RequiredPermissions =
+            [
+                ErpPermissions.InventoryLabelsRead,
+                ErpPermissions.InventoryBalancesRead,
+                ErpPermissions.InventoryPhysicalAllocationWrite,
+            ],
+        },
         new(
             OpeningStockCapabilityId,
             OpeningStockRouteId,
@@ -46,5 +62,6 @@ public sealed class InventoryShellCapabilityProvider : IShellCapabilityProvider
             ShellCapabilityScopeRequirement.CompanyWide,
             [ErpPermissions.InventoryOpeningStockRecord],
             ImplementationAvailable: true),
-    ];
+        ];
+    }
 }
