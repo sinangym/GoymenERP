@@ -6,9 +6,8 @@ namespace GoymenERP.Manufacturing.UnitTests;
 
 /// <summary>
 /// The published Manufacturing shell provider (MFG-UI card D1–D3; MFG-UI-F; MFG-ORD): four routes — the
-/// order screen/list and plan create/detail — two controls on the order screen and two on plan detail. The six
-/// already-consumed ids and all routes stay pinned to <c>src/manufacturing/capabilities.ts</c>; the two new
-/// plan controls are pinned below until the owner consumer lands them.
+/// order screen/list and plan create/detail — two controls on the order screen and two on plan detail. All eight
+/// consumed ids and all routes stay pinned to <c>src/manufacturing/capabilities.ts</c>, so frontend drift is red here.
 /// company-wide scope, and <c>ImplementationAvailable: true</c> on all of them. Each control is its
 /// parent with only its id, parent and permissions changed, so the registry's control rule (same route,
 /// context and scope; the parent's permissions kept; never available under a staged parent) holds by
@@ -29,12 +28,7 @@ public sealed class ManufacturingShellCapabilityProviderContractTests
         Assert.Equal(8, declarations.Count);
         foreach (var declaration in declarations)
         {
-            if (declaration.CapabilityId is not ManufacturingShellCapabilityProvider.PlanApproveCapabilityId
-                and not ManufacturingShellCapabilityProvider.PlanOrderCreateCapabilityId)
-            {
-                Assert.Contains($"'{declaration.CapabilityId}'", source);
-            }
-
+            Assert.Contains($"'{declaration.CapabilityId}'", source);
             Assert.Contains($"'{declaration.RoutePath}'", source);
             Assert.Equal(
                 (ShellCapabilityContextRequirement.SingleCompany, ShellCapabilityScopeRequirement.CompanyWide),
