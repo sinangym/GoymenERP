@@ -3,6 +3,7 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SalesDraftAllocationPanel } from './SalesDraftAllocationPanel'
+import { decodePhysicalAllocation, isGuid } from './allocationContract'
 import type { DraftLine } from './contract'
 
 const COMPANY = '10000000-0000-4000-8000-000000000001'
@@ -65,6 +66,18 @@ afterEach(() => {
 })
 
 describe('Sales physical allocation consumer', () => {
+  it('accepts canonical non-nil ids without requiring RFC version bits', () => {
+    expect(isGuid(COMPANY)).toBe(true)
+    expect(isGuid('00000000-0000-0000-0000-000000000000')).toBe(false)
+    expect(decodePhysicalAllocation(allocation('Active', '1'), {
+      companyId: COMPANY,
+      salesOrderId: ORDER,
+      salesOrderLineId: LINE,
+      productId: PRODUCT,
+      productVersion: '7',
+    })).not.toBeNull()
+  })
+
   it('saves, closes, reopens, releases and reopens the same server record', async () => {
     let stored: ReturnType<typeof allocation> | null = null
     let hideRecordedOnNextGet = false
