@@ -30,7 +30,7 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 public sealed class InventoryManufacturingRealizationParticipant
     : IInventoryManufacturingRealizationParticipantV1
 {
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
     private readonly InventoryDbContext context;
     private readonly InventoryStore store;
     private readonly DbConnection connection;
@@ -86,7 +86,8 @@ public sealed class InventoryManufacturingRealizationParticipant
             var effectiveClock = clock ?? TimeProvider.System;
             var store = new InventoryStore(context, company, audit,
                 new InventoryKilogramScale(settings), effectiveClock);
-            return new(context, store, connection, transaction, companyId, effectiveClock, onStaged);
+            return new InventoryManufacturingRealizationParticipant(
+                context, store, connection, transaction, companyId, effectiveClock, onStaged);
         }
         catch
         {
@@ -293,7 +294,7 @@ public sealed class InventoryManufacturingRealizationParticipant
             throw Refused(409, InventoryManufacturingRealizationCodesV1.ParentLabelNotReleasable);
         }
 
-        return new(row, label);
+        return new ParentLabel(row, label);
     }
 
     private async Task<StockPosition> CurrentFreePositionAsync(MaterialLabel label, Kilograms quantity,
@@ -360,7 +361,7 @@ public sealed class InventoryManufacturingRealizationParticipant
                     && line.Direction == (int)StockDirection.In
                 select line.QuantityKg)
             .SumAsync(cancellationToken);
-        return new(positions[0], issueRows.Sum(row => row.QuantityKg), returned);
+        return new InputTrace(positions[0], issueRows.Sum(row => row.QuantityKg), returned);
     }
 
     private void ValidateStoredPositions(MaterialLabel label, IReadOnlyList<BalanceRow> rows)
@@ -376,12 +377,12 @@ public sealed class InventoryManufacturingRealizationParticipant
         }
     }
 
-    private StockPosition Position(BalanceRow row, MaterialLabel label) => new(companyId,
+    private StockPosition Position(BalanceRow row, MaterialLabel label) => new StockPosition(companyId,
         new StockOwner((StockPartyKind)row.OwnerKind, row.OwnerId),
         new StockCustodian((StockPartyKind)row.CustodianKind, row.CustodianId),
         row.LocationId, label, (BlockState)row.Block);
 
-    private StockPosition Position(MovementLineRow row, MaterialLabel label) => new(companyId,
+    private StockPosition Position(MovementLineRow row, MaterialLabel label) => new StockPosition(companyId,
         new StockOwner((StockPartyKind)row.OwnerKind, row.OwnerId),
         new StockCustodian((StockPartyKind)row.CustodianKind, row.CustodianId),
         row.LocationId, label, (BlockState)row.Block);
