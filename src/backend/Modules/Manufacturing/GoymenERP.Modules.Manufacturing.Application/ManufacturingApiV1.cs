@@ -278,7 +278,7 @@ public sealed partial class ManufacturingCommandService(
                 }
 
                 var today = DateOnly.FromDateTime(timeProvider.GetUtcNow().UtcDateTime);
-                var planned = new List<(Guid ParentRollId, Kilograms Mass)>();
+                var planned = new List<(Guid ParentRollId, Kilograms Mass, long ExpectedLabelVersion)>();
                 for (var index = 0; index < inputs.Count; index++)
                 {
                     var input = inputs[index];
@@ -295,7 +295,8 @@ public sealed partial class ManufacturingCommandService(
                         return Refusal<PlanViewV1>(reference);
                     }
 
-                    planned.Add((input.ParentRollId, mass.Value));
+                    planned.Add((input.ParentRollId, mass.Value, long.Parse(input.ExpectedLabelVersion,
+                        NumberStyles.None, CultureInfo.InvariantCulture)));
                 }
 
                 Kilograms? targetMass = null;
@@ -318,7 +319,8 @@ public sealed partial class ManufacturingCommandService(
                 // Built behind the fence, so the domain's own refusals (a zero planned mass, a repeated
                 // roll) map like every other refusal.
                 var plan = new ProductionPlan(request.PlanId, companyContext.CompanyId, request.WorkCenterId,
-                    process.Value, planned.Select(input => new PlannedInput(input.ParentRollId, input.Mass)),
+                    process.Value, planned.Select(input => new PlannedInput(
+                        input.ParentRollId, input.Mass, input.ExpectedLabelVersion)),
                     request.Target is { } targetRequest && targetMass is { } targetValue
                         ? new ProductionTarget(ParseBasis(targetRequest.Basis)!.Value, targetValue)
                         : null);

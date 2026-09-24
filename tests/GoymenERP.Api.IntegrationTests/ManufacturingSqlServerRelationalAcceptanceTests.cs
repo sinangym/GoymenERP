@@ -1,3 +1,4 @@
+using System.Text.Json;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
@@ -27,6 +28,119 @@ public sealed class ManufacturingSqlServerRelationalAcceptanceTests
     private static readonly Guid RollA = Guid.Parse("5a1d2c3b-4a59-4687-9a0b-1c2d3e4f5a71");
     private static readonly Guid RollB = Guid.Parse("5a1d2c3b-4a59-4687-9a0b-1c2d3e4f5a72");
     private static readonly DateTimeOffset At = new(2026, 9, 18, 9, 0, 0, TimeSpan.Zero);
+
+    [SqlServerFact]
+    public async Task Accepted_inventory_label_versions_are_durable_in_the_plan_and_order_snapshot()
+    {
+        await using var run = await Run.StartAsync();
+        var workCenter = await run.WorkCenterOfAsync(CompanyA);
+        var plan = new ProductionPlan(Guid.NewGuid(), CompanyA, workCenter, ManufacturingProcess.Slitting,
+            [new PlannedInput(RollA, Kg(10_000m), 17), new PlannedInput(RollB, Kg(5_000m), 23)],
+            new ProductionTarget(TargetBasis.InputMass, Kg(15_000m)));
+        var orderId = Guid.NewGuid();
+
+        await using (var store = run.Store(CompanyA))
+        {
+            Assert.Equal(ManufacturingWriteOutcome.Recorded,
+                await store.Plans.SavePlanAsync(plan, Metadata(run)));
+            Assert.Equal(ManufacturingWriteOutcome.Replayed,
+                await store.Plans.SavePlanAsync(plan, Metadata(run)));
+            var changedVersion = new ProductionPlan(plan.Id, CompanyA, workCenter, ManufacturingProcess.Slitting,
+                [new PlannedInput(RollA, Kg(10_000m), 18), new PlannedInput(RollB, Kg(5_000m), 23)],
+                new ProductionTarget(TargetBasis.InputMass, Kg(15_000m)));
+            var conflict = await Assert.ThrowsAsync<ManufacturingStoreException>(
+                () => store.Plans.SavePlanAsync(changedVersion, Metadata(run)));
+            Assert.Equal(ManufacturingStoreCodes.PlanIdConflict, conflict.Code);
+            await store.Plans.ApprovePlanAsync(plan.Id, 1, run.Actor, At, Metadata(run));
+            await store.Orders.CreateOrderAsync(orderId, plan.Id, Metadata(run));
+        }
+
+        await using var context = run.Context(CompanyA);
+        var planVersions = await context.PlanInputs.AsNoTracking()
+            .Where(row => row.PlanId == plan.Id)
+            .OrderBy(row => row.Sequence)
+            .Select(row => row.ExpectedLabelVersion!.Value)
+            .ToArrayAsync();
+        var orderVersions = await context.OrderInputs.AsNoTracking()
+            .Where(row => row.OrderId == orderId)
+            .OrderBy(row => row.Sequence)
+            .Select(row => row.ExpectedLabelVersion!.Value)
+            .ToArrayAsync();
+        Assert.Equal(new long[] { 17, 23 }, planVersions);
+        Assert.Equal(new long[] { 17, 23 }, orderVersions);
+        Assert.Equal(new long?[] { 17, 23 }, AuditInputVersions(await run.ScalarAsync<string>(
+            "SELECT AfterJson FROM audit.AuditEvents WHERE EventType = N'manufacturing.plan.created.v1' "
+            + "AND EntityId = @id", ("@id", plan.Id.ToString("D")))));
+        Assert.Equal(new long?[] { 17, 23 }, AuditInputVersions(await run.ScalarAsync<string>(
+            "SELECT BeforeJson FROM audit.AuditEvents WHERE EventType = N'manufacturing.plan.approved.v1' "
+            + "AND EntityId = @id", ("@id", plan.Id.ToString("D")))));
+        Assert.Equal(new long?[] { 17, 23 }, AuditInputVersions(await run.ScalarAsync<string>(
+            "SELECT AfterJson FROM audit.AuditEvents WHERE EventType = N'manufacturing.plan.approved.v1' "
+            + "AND EntityId = @id", ("@id", plan.Id.ToString("D")))));
+        Assert.Equal(new long?[] { 17, 23 }, AuditInputVersions(await run.ScalarAsync<string>(
+            "SELECT AfterJson FROM audit.AuditEvents WHERE EventType = N'manufacturing.order.created.v1' "
+            + "AND EntityId = @id", ("@id", orderId.ToString("D")))));
+
+        const string beforeLabelVersions = "20260924150000_ExpandManufacturingProcesses";
+        var error = await Assert.ThrowsAsync<SqlException>(
+            () => context.GetService<IMigrator>().MigrateAsync(beforeLabelVersions));
+        Assert.Equal(51047, error.Number);
+        Assert.EndsWith("_AddManufacturingInputLabelVersions",
+            (await context.Database.GetAppliedMigrationsAsync()).Last(), StringComparison.Ordinal);
+        Assert.Equal(new long[] { 17, 23 }, await context.OrderInputs.AsNoTracking()
+            .Where(row => row.OrderId == orderId)
+            .OrderBy(row => row.Sequence)
+            .Select(row => row.ExpectedLabelVersion!.Value)
+            .ToArrayAsync());
+    }
+
+    [SqlServerFact]
+    public async Task The_input_label_version_migration_round_trips_and_legacy_null_keeps_its_replay_identity()
+    {
+        await using var run = await Run.StartAsync();
+        const string beforeLabelVersions = "20260924150000_ExpandManufacturingProcesses";
+        var legacy = NewPlan(CompanyA, await run.WorkCenterOfAsync(CompanyA));
+
+        await using (var store = run.Store(CompanyA))
+        {
+            Assert.Equal(ManufacturingWriteOutcome.Recorded,
+                await store.Plans.SavePlanAsync(legacy, Metadata(run)));
+        }
+
+        await using (var context = run.Context(CompanyA))
+        {
+            var migrator = context.GetService<IMigrator>();
+            await migrator.MigrateAsync(beforeLabelVersions);
+            Assert.Equal(beforeLabelVersions, (await context.Database.GetAppliedMigrationsAsync()).Last());
+            Assert.Equal(0, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM sys.columns WHERE [name] = N'ExpectedLabelVersion' "
+                + "AND [object_id] IN (OBJECT_ID(N'[manufacturing].[PlanInputs]'), "
+                + "OBJECT_ID(N'[manufacturing].[OrderInputs]'))"));
+            await context.Database.MigrateAsync();
+        }
+
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM manufacturing.PlanInputs WHERE PlanId = @id AND ExpectedLabelVersion IS NULL",
+            ("@id", legacy.Id)));
+        Assert.Equal(new long?[] { null, null }, AuditInputVersions(await run.ScalarAsync<string>(
+            "SELECT AfterJson FROM audit.AuditEvents WHERE EventType = N'manufacturing.plan.created.v1' "
+            + "AND EntityId = @id", ("@id", legacy.Id.ToString("D")))));
+        await using var replayStore = run.Store(CompanyA);
+        Assert.Equal(ManufacturingWriteOutcome.Replayed,
+            await replayStore.Plans.SavePlanAsync(Draft(legacy), Metadata(run)));
+    }
+
+    private static long?[] AuditInputVersions(string json)
+    {
+        using var document = JsonDocument.Parse(json);
+        return document.RootElement.GetProperty("inputs").EnumerateArray()
+            .Select(input =>
+            {
+                Assert.True(input.TryGetProperty("expectedLabelVersion", out var version));
+                return version.ValueKind == JsonValueKind.Null ? (long?)null : version.GetInt64();
+            })
+            .ToArray();
+    }
 
     [SqlServerFact]
     public async Task Plan_order_and_facts_are_durable_replayable_audited_and_close_from_stored_facts()
@@ -392,8 +506,8 @@ public sealed class ManufacturingSqlServerRelationalAcceptanceTests
                 "SELECT [definition] FROM sys.check_constraints WHERE [name] = N'CK_Orders_Enums' "
                 + "AND [parent_object_id] = OBJECT_ID(N'[manufacturing].[Orders]')"));
             await context.Database.MigrateAsync();
-            Assert.EndsWith("_ExpandManufacturingProcesses", (await context.Database.GetAppliedMigrationsAsync()).Last(),
-                StringComparison.Ordinal);
+            Assert.EndsWith("_AddManufacturingInputLabelVersions",
+                (await context.Database.GetAppliedMigrationsAsync()).Last(), StringComparison.Ordinal);
             Assert.Equal(expandedPlanConstraint, await run.ScalarAsync<string>(
                 "SELECT [definition] FROM sys.check_constraints WHERE [name] = N'CK_Plans_Enums' "
                 + "AND [parent_object_id] = OBJECT_ID(N'[manufacturing].[Plans]')"));
@@ -413,8 +527,8 @@ public sealed class ManufacturingSqlServerRelationalAcceptanceTests
                 (await run.ScalarAsync<int>("SELECT Process FROM manufacturing.Plans WHERE Id = @id", ("@id", plan.Id)),
                     await run.ScalarAsync<int>("SELECT Process FROM manufacturing.Orders WHERE Id = @id", ("@id", orderId))));
             await context.Database.MigrateAsync();
-            Assert.EndsWith("_ExpandManufacturingProcesses", (await context.Database.GetAppliedMigrationsAsync()).Last(),
-                StringComparison.Ordinal);
+            Assert.EndsWith("_AddManufacturingInputLabelVersions",
+                (await context.Database.GetAppliedMigrationsAsync()).Last(), StringComparison.Ordinal);
         }
 
         Assert.Equal((1, 1),
@@ -431,6 +545,7 @@ public sealed class ManufacturingSqlServerRelationalAcceptanceTests
     {
         await using var run = await Run.StartAsync();
         const string beforeProcesses = "20260919130000_AddPlanSlittingSpecs";
+        const string processMigration = "20260924150000_ExpandManufacturingProcesses";
         var workCenter = await run.WorkCenterOfKindAsync(CompanyA, "ColdRolling");
         var plan = NewPlan(CompanyA, workCenter, ManufacturingProcess.ColdRolling);
         var orderId = Guid.NewGuid();
@@ -463,12 +578,25 @@ public sealed class ManufacturingSqlServerRelationalAcceptanceTests
                 + "AND [parent_object_id] = OBJECT_ID(N'[manufacturing].[Orders]')"));
         }
 
+        async Task MoveToProcessMigrationAsync()
+        {
+            await using var context = run.Context(CompanyA);
+            await context.GetService<IMigrator>().MigrateAsync(processMigration);
+            Assert.Equal(processMigration, (await context.Database.GetAppliedMigrationsAsync()).Last());
+        }
+
         // Plans alone block the downgrade.
+        await MoveToProcessMigrationAsync();
         await AssertDownRefusedBeforeMutation();
         Assert.Equal(ManufacturingProcess.ColdRolling, (ManufacturingProcess)await run.ScalarAsync<int>(
             "SELECT Process FROM manufacturing.Plans WHERE Id = @id", ("@id", plan.Id)));
 
         // Then isolate the Orders predicate: create the matching order and make only its snapshot non-Slitting.
+        await using (var context = run.Context(CompanyA))
+        {
+            await context.Database.MigrateAsync();
+        }
+
         await using (var store = run.Store(CompanyA))
         {
             await store.Plans.ApprovePlanAsync(plan.Id, 1, run.Actor, At, Metadata(run));
@@ -481,10 +609,14 @@ public sealed class ManufacturingSqlServerRelationalAcceptanceTests
                 $"UPDATE [manufacturing].[Plans] SET [Process] = 1 WHERE [Id] = {plan.Id}");
         }
 
+        await MoveToProcessMigrationAsync();
         await AssertDownRefusedBeforeMutation();
         Assert.Equal((1, (int)ManufacturingProcess.ColdRolling),
             (await run.ScalarAsync<int>("SELECT Process FROM manufacturing.Plans WHERE Id = @id", ("@id", plan.Id)),
                 await run.ScalarAsync<int>("SELECT Process FROM manufacturing.Orders WHERE Id = @id", ("@id", orderId))));
+
+        await using var restored = run.Context(CompanyA);
+        await restored.Database.MigrateAsync();
     }
 
     /// <summary>A plan with the §28.4 golden slit lines and a winding target, on one roll of 28.750 kg.</summary>

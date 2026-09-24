@@ -157,7 +157,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // manufacturing
             ["tools/relational_inventory/manufacturing.txt"] =
-                "bb721e80b47a9e2cede37ea944c9654831a6a8b77060a5ae0fc05055fc5097db",
+                "840d37fdfed0c75d7f2d57066e7db85333e0f46b03f55918ec38b9dd7c17bfc7",
 
             // organization
             ["tools/relational_inventory/organization.txt"] =
@@ -226,7 +226,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/"
              + "Persistence/ManufacturingDbContext.cs"] =
-                "a0ce37e08dbb87969301c0c3ac9fc6b92981e7866f742f7bedefcf36504086d5",
+                "409f9d51466a63c0485f6cb89b20f283a55adff0a0cebb9b6c44c5b94a616a92",
             // FIN-T04a (#305): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
@@ -590,7 +590,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Manufacturing/"
                  + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.cs"] =
                     new(
-                        "f89b494d209ca3be43b950d33dfad580ff71a968f856eb5314ac77e88334af08",
+                        "e88d303e66c0842524612f8d2c11f0ed6fcc4ecefc2d687764adb7f45853555a",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -776,6 +776,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         ReviewedMigrationMutationSources =
             new Dictionary<string, ReviewedMigrationMutationSource>(StringComparer.Ordinal)
             {
+                // Manufacturing input label versions are durable; Down uses one reviewed statement
+                // to refuse downgrade while any trusted accepted version remains.
+                ["src/backend/Modules/Manufacturing/"
+                 + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/Migrations/"
+                 + "20260924210000_AddManufacturingInputLabelVersions.cs"] =
+                    new(
+                        "6ed747c9211a2809fdc8f96e2f2d239292d3609a35abad397a09d2dd5a29699c",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
                 // Purchasing acceptance history is durable; Down uses one reviewed statement to refuse
                 // downgrade while any acceptance share exists.
                 ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
