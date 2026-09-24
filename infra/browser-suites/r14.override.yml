@@ -1,5 +1,6 @@
 # R14 Inventory opening-stock acceptance and existing label/Product detail drill-down.
-# Recorder has the existing opening, selector, label/balance and Product-detail permissions only.
+# Recorder has the existing opening, selector and label/balance permissions only; Product detail is
+# derived from the gated disposable Product master Read assignment created by the R14 fixture.
 # Denied retains only selector-read; arranger only Organization location-read. All are disposable GDC.
 # The Product issuer has no role, assignment or sign-in actor. No production grant or policy changes.
 services:
@@ -41,7 +42,6 @@ services:
       IdentitySeed__Roles__5__Permissions__1: product.operational-selection.read
       IdentitySeed__Roles__5__Permissions__2: inventory.labels.read
       IdentitySeed__Roles__5__Permissions__3: inventory.balances.read
-      IdentitySeed__Roles__5__Permissions__4: product.items.detail
       IdentitySeed__Roles__6__Id: b3000000-0000-4000-8000-000000000702
       IdentitySeed__Roles__6__Code: BROWSER_R14_DENIED
       IdentitySeed__Roles__6__Name: SENTETIK browser-suite:r14 Inventory denied actor

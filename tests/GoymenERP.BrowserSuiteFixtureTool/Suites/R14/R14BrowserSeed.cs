@@ -1,5 +1,7 @@
 using System.Text.Json;
 using GoymenERP.Api.Shell;
+using GoymenERP.Modules.Identity.Domain.Assignments;
+using GoymenERP.Modules.Identity.Infrastructure.Fixtures;
 using GoymenERP.Modules.Product.Infrastructure.Fixtures;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -18,6 +20,15 @@ public sealed class R14BrowserSeed : IBrowserSuiteFixture
 
     public static readonly Guid CompanyGdc = Guid.Parse("10000000-0000-0000-0000-000000000001");
     public static readonly Guid CompanyOther = Guid.Parse("10000000-0000-0000-0000-000000000002");
+    public static readonly Guid RecorderUserId = Guid.Parse("b2000000-0000-4000-8000-000000000701");
+    public static readonly Guid RecorderRoleId = Guid.Parse("b3000000-0000-4000-8000-000000000701");
+    public static readonly Guid ProductIssuerUserId = Guid.Parse("b2000000-0000-4000-8000-000000000204");
+    public static readonly Guid ProductIssuerExternalIdentityId = Guid.Parse("b2100000-0000-4000-8000-000000000204");
+
+    private static readonly Guid ProductReadAssignmentId = Guid.Parse("b5000000-0000-4000-8000-000000000701");
+    private static readonly Guid ProductReadDecisionId = Guid.Parse("b5100000-0000-4000-8000-000000000701");
+    private static readonly DateTimeOffset ProductReadValidFromUtc =
+        new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
     private const string LocationsPath = "/api/v1/organization/locations?page=1&pageSize=100";
     private const string ProductCandidatesPath = "/api/v1/inventory/references/products";
@@ -37,6 +48,21 @@ public sealed class R14BrowserSeed : IBrowserSuiteFixture
         {
             await registryScope.ServiceProvider.GetRequiredService<C01E2eProductTechnicalCardFixtureWriter>()
                 .EnsureAsync(cancellationToken);
+        }
+
+        await using (var authorityScope = context.Services.CreateAsyncScope())
+        {
+            await authorityScope.ServiceProvider.GetRequiredService<C01E2eProductMasterAssignmentFixtureWriter>()
+                .EnsureAsync(new ProductMasterAssignmentFixtureRow(
+                    ProductReadAssignmentId,
+                    RecorderUserId,
+                    RecorderRoleId,
+                    ProductMasterOperation.Read,
+                    ProductIssuerUserId,
+                    ProductIssuerExternalIdentityId,
+                    ProductReadDecisionId,
+                    context.Label($"Product master Read for {RecorderActor}"),
+                    ProductReadValidFromUtc), cancellationToken);
         }
 
         ProductStockCandidateFixtureOutput product;
