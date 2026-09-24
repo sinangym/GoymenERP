@@ -216,6 +216,7 @@ internal sealed class FinanceCommandRow : IFinanceTenantRow
     public Guid? BankAccountId { get; set; }
     public Guid? ReversalProposalId { get; set; }
     public Guid? ManualBankPaymentId { get; set; }
+    public Guid? FinanceAllocationId { get; set; }
     public string ResultJson { get; set; } = string.Empty;
     public string CorrelationId { get; set; } = string.Empty;
     public DateTimeOffset RecordedAtUtc { get; set; }
