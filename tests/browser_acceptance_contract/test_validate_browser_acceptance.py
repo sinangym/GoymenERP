@@ -137,11 +137,13 @@ class WorkflowTests(unittest.TestCase):
             validator.SUITE_IDENTITY_PERMISSIONS["pur01"],
         )
 
-    def test_r14_identity_permissions_are_the_command_owner_read_and_location_arranger(self):
+    def test_r14_identity_permissions_are_the_command_detail_reads_and_location_arranger(self):
         self.assertEqual(
             (
                 "inventory.opening-stock.record",
                 "product.operational-selection.read",
+                "inventory.labels.read",
+                "inventory.balances.read",
                 "organization.locations.read",
             ),
             validator.SUITE_IDENTITY_PERMISSIONS["r14"],

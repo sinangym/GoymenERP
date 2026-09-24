@@ -97,7 +97,7 @@ public sealed class NormalJournalDraftV1Tests
     {
         var f = new Fixture();
         var other = new Fixture(Guid.NewGuid());
-        var absent = await f.Policy.CheckAsync(null, 7);
+        var absent = await f.Policy.CheckAsync<NormalJournalDraftV1>(null, 7);
         var foreign = await f.Policy.CheckAsync(other.Prepare().Draft!, 7);
         Assert.Equal(AccountingApiStatus.NotFound, absent.Status);
         Assert.Equal(absent, foreign);
