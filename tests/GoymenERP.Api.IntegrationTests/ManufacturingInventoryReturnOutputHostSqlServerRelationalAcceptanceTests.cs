@@ -54,7 +54,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         Assert.Equal(outputResult.OrderVersion, outputReplay.OrderVersion);
         Assert.Equal(4, returnResult.ParentLabelVersion);
         Assert.Equal(4, outputResult.ParentLabelVersion);
-        Assert.Equal(1, outputResult.LabelVersion);
+        Assert.Equal(2, outputResult.LabelVersion);
         Assert.Equal(4, admission.Calls);
         Assert.Equal(5L, await run.ScalarAsync<long>(
             "SELECT Version FROM manufacturing.Orders WHERE Id = @id", ("@id", seed.OrderId)));
