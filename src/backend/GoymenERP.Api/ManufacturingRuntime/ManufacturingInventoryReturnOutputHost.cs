@@ -154,8 +154,11 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
                 command.MovementId,
                 Quantity(command.Quantity),
                 command.OccurredAtUtc);
+            // Inventory command identities are capped at 128 characters. The explicit company/order/output
+            // grain already makes this participant key unique; keep the operation token short enough that the
+            // complete deterministic identity remains inside that owner contract.
             var inventoryMetadata = InventoryMetadata(metadata, companyId, command.OrderId, command.OutputId,
-                "manufacturing-output-declaration");
+                "mfg-output");
             var connection = manufacturing.Database.GetDbConnection();
             var databaseTransaction = transaction.GetDbTransaction();
             await using var inventory = await InventoryManufacturingRealizationParticipant.EnlistAsync(
