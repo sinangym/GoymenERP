@@ -103,7 +103,7 @@ public sealed class NormalJournalPreparationV1
 /// invented, rounded, persisted or approved. Journal.Restore is deliberately not used to manufacture
 /// a posted journal. The existing ledger/store remain the ONLY posting path.
 /// </summary>
-public sealed class NormalJournalDraftV1
+public sealed class NormalJournalDraftV1 : INormalJournalDraftApprovalSnapshotV1
 {
     private NormalJournalDraftV1(PostingRequest request, long version, Guid preparedByUserId,
         NormalJournalPostingRuleV1 rule, JournalLine[] lines)
@@ -291,48 +291,49 @@ public sealed class NormalJournalDraftApprovalPolicyV1(
     ICompanyContext companyContext,
     ICurrentUser currentUser)
 {
-    public async Task<AccountingApiResult<NormalJournalDraftV1>> CheckAsync(NormalJournalDraftV1? draft,
+    public async Task<AccountingApiResult<TDraft>> CheckAsync<TDraft>(TDraft? draft,
         long expectedVersion, CancellationToken cancellationToken = default)
+        where TDraft : class, INormalJournalDraftApprovalSnapshotV1
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (!companyContext.IsResolved || companyContext.CompanyId == Guid.Empty
             || !currentUser.IsAuthenticated || !Guid.TryParse(currentUser.UserId, out var actor)
             || actor == Guid.Empty || !currentUser.CanAccessCompany(companyContext.CompanyId))
         {
-            return Denied();
+            return Denied<TDraft>();
         }
 
         var company = companyContext.CompanyId;
         if (!await HasAuthorityAsync(company, actor, cancellationToken))
         {
-            return Denied();
+            return Denied<TDraft>();
         }
 
         if (draft is null || draft.CompanyId != company)
         {
-            return new AccountingApiResult<NormalJournalDraftV1>(AccountingApiStatus.NotFound, null, false, null);
+            return new AccountingApiResult<TDraft>(AccountingApiStatus.NotFound, null, false, null);
         }
 
         if (expectedVersion <= 0)
         {
-            return new AccountingApiResult<NormalJournalDraftV1>(AccountingApiStatus.Invalid, null, false,
+            return new AccountingApiResult<TDraft>(AccountingApiStatus.Invalid, null, false,
                 AccountingApiCodes.RequestInvalid, "expectedVersion");
         }
 
         if (draft.Version != expectedVersion)
         {
-            return new AccountingApiResult<NormalJournalDraftV1>(AccountingApiStatus.Conflict, null, false,
+            return new AccountingApiResult<TDraft>(AccountingApiStatus.Conflict, null, false,
                 AccountingApiCodes.VersionConflict, ExpectedVersion: expectedVersion, CurrentVersion: draft.Version);
         }
 
         // Re-check at release. In particular, create authority is NEVER used as a substitute.
         if (!await HasAuthorityAsync(company, actor, cancellationToken))
         {
-            return Denied();
+            return Denied<TDraft>();
         }
 
         // Deliberately no preparer != actor rule: Business permits normal self-approval with this grant.
-        return new AccountingApiResult<NormalJournalDraftV1>(AccountingApiStatus.Ok, draft, false, null);
+        return new AccountingApiResult<TDraft>(AccountingApiStatus.Ok, draft, false, null);
     }
 
     private async Task<bool> HasAuthorityAsync(Guid company, Guid actor, CancellationToken cancellationToken)
@@ -346,6 +347,6 @@ public sealed class NormalJournalDraftApprovalPolicyV1(
             && Guid.TryParse(currentUser.UserId, out var currentActor) && currentActor == actor;
     }
 
-    private static AccountingApiResult<NormalJournalDraftV1> Denied() =>
-        new AccountingApiResult<NormalJournalDraftV1>(AccountingApiStatus.Denied, null, false, AccountingApiCodes.AuthorityDenied);
+    private static AccountingApiResult<TDraft> Denied<TDraft>() where TDraft : class =>
+        new AccountingApiResult<TDraft>(AccountingApiStatus.Denied, null, false, AccountingApiCodes.AuthorityDenied);
 }
