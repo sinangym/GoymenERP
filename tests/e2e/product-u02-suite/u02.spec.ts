@@ -75,6 +75,31 @@ function watchProducts(page: Page): { reads: number; writes: number; writeStatus
   return traffic
 }
 
+/**
+ * Reuses one request made by the real browser application so the fixture's actor and
+ * committed-company headers remain intact. A raw page.request call carries neither and
+ * only proves the anonymous 401 boundary.
+ */
+async function redirectNextApplicationRead(page: Page, requestPattern: string, targetPath: string): Promise<number> {
+  let status: number | null = null
+  await page.route(requestPattern, async (route) => {
+    if (status !== null) return route.fallback()
+    const target = new URL(route.request().url())
+    target.pathname = targetPath
+    target.search = ''
+    const response = await route.fetch({ url: target.toString() })
+    status = response.status()
+    await route.fulfill({ response })
+  })
+  try {
+    await page.reload()
+    await expect.poll(() => status, { timeout: 30_000 }).not.toBeNull()
+    return status!
+  } finally {
+    await page.unroute(requestPattern)
+  }
+}
+
 test('U02-FIX-01 the authorized actor creates, edits and reopens technical fields and history through the real API', async ({ page }) => {
   const { codeGroupId, technicalFamilyId } = seed()
   const traffic = watchProducts(page)
@@ -247,8 +272,12 @@ test('U02-FIX-01 the authorized actor creates, edits and reopens technical field
   await expect(historyItems.nth(2)).toContainText('Gerekçe: Ürün taslağı oluşturma')
   await expect(page.getByText('Değişikliği yapan kişi bu görünümde gösterilmez.')).toBeVisible()
 
-  const missingHistory = await page.request.get(`${PRODUCTS_PATH}/${MISSING_PRODUCT_ID}/history`)
-  expect(missingHistory.status(), 'an authorized read does not disclose a missing Product as history').toBe(404)
+  const missingHistoryStatus = await redirectNextApplicationRead(
+    page,
+    `**${PRODUCTS_PATH}/${id}/history`,
+    `${PRODUCTS_PATH}/${MISSING_PRODUCT_ID}/history`,
+  )
+  expect(missingHistoryStatus, 'an authorized read does not disclose a missing Product as history').toBe(404)
   expect(traffic.writeStatuses).toEqual([201, 200, 200])
 })
 
@@ -261,8 +290,10 @@ test('U02-FIX-02 the unauthorized actor is closed out of the Product screens and
   }
   expect(traffic.reads + traffic.writes).toBe(0)
 
-  const deniedHistory = await page.request.get(
-    new URL(`${PRODUCTS_PATH}/${MISSING_PRODUCT_ID}/history`, unauthorizedBaseUrl).toString(),
+  const deniedHistoryStatus = await redirectNextApplicationRead(
+    page,
+    '**/api/v1/shell/capabilities',
+    `${PRODUCTS_PATH}/${MISSING_PRODUCT_ID}/history`,
   )
-  expect(deniedHistory.status(), 'Product authority is checked before history existence').toBe(403)
+  expect(deniedHistoryStatus, 'Product authority is checked before history existence').toBe(403)
 })
