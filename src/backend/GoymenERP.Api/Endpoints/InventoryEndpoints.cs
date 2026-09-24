@@ -331,6 +331,59 @@ public static class InventoryEndpoints
 
     private static void MapPhysicalAllocationEndpoints(RouteGroupBuilder group)
     {
+        group.MapGet(PhysicalAllocationsPath, async (
+                HttpContext httpContext,
+                IInventoryPhysicalAllocationReadsV1 reads,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response);
+                if (!TryReadPhysicalAllocationQuery(httpContext.Request.Query, out var query))
+                {
+                    return PhysicalAllocationReadProblem(StatusCodes.Status400BadRequest,
+                        InventoryPhysicalAllocationReadCodesV1.InvalidQuery);
+                }
+
+                try
+                {
+                    return Results.Ok(await reads.SearchAsync(query, cancellationToken));
+                }
+                catch (InventoryPhysicalAllocationReadException exception)
+                {
+                    return exception.StatusCode switch
+                    {
+                        StatusCodes.Status400BadRequest
+                            when exception.Code == InventoryPhysicalAllocationReadCodesV1.InvalidQuery =>
+                            PhysicalAllocationReadProblem(exception.StatusCode, exception.Code),
+                        StatusCodes.Status409Conflict
+                            when exception.Code == InventoryPhysicalAllocationReadCodesV1.ReadConflict =>
+                            PhysicalAllocationReadProblem(exception.StatusCode, exception.Code),
+                        StatusCodes.Status503ServiceUnavailable
+                            when exception.Code == InventoryPhysicalAllocationReadCodesV1.Unavailable =>
+                            PhysicalAllocationReadProblem(exception.StatusCode),
+                        StatusCodes.Status401Unauthorized or StatusCodes.Status403Forbidden =>
+                            PhysicalAllocationReadProblem(exception.StatusCode),
+                        _ => PhysicalAllocationReadProblem(StatusCodes.Status503ServiceUnavailable),
+                    };
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception)
+                {
+                    return PhysicalAllocationReadProblem(StatusCodes.Status503ServiceUnavailable);
+                }
+            })
+            .WithName("GetInventoryPhysicalAllocationsV1")
+            .WithMetadata(new PrivateNoStoreOnAuthorizationFailureMetadata())
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.InventoryPhysicalAllocationWrite)
+            .Produces<InventoryPhysicalAllocationReadsV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest(InventoryPhysicalAllocationReadCodesV1.InvalidQuery)
+            .ProducesErpConflict(InventoryPhysicalAllocationReadCodesV1.ReadConflict)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
         group.MapPost(PhysicalAllocationsPath, async (
                 HttpContext httpContext,
                 InventoryPhysicalAllocationHostService service,
@@ -492,6 +545,40 @@ public static class InventoryEndpoints
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
     }
+
+    private static bool TryReadPhysicalAllocationQuery(
+        IQueryCollection query,
+        out InventoryPhysicalAllocationReadQueryV1 parsed)
+    {
+        parsed = new(Guid.Empty, Guid.Empty);
+        if (query.Keys.Any(name => name is not "salesOrderId" and not "salesOrderLineId" and not "limit")
+            || query.Any(parameter => parameter.Value.Count != 1)
+            || !query.TryGetValue("salesOrderId", out var salesOrderValues)
+            || !Guid.TryParseExact(salesOrderValues[0], "D", out var salesOrderId)
+            || salesOrderId == Guid.Empty
+            || !query.TryGetValue("salesOrderLineId", out var salesOrderLineValues)
+            || !Guid.TryParseExact(salesOrderLineValues[0], "D", out var salesOrderLineId)
+            || salesOrderLineId == Guid.Empty)
+        {
+            return false;
+        }
+
+        var limit = 100;
+        if (query.TryGetValue("limit", out var limitValues)
+            && (!int.TryParse(limitValues[0], NumberStyles.None, CultureInfo.InvariantCulture, out limit)
+                || limit is < 1 or > 100))
+        {
+            return false;
+        }
+
+        parsed = new InventoryPhysicalAllocationReadQueryV1(salesOrderId, salesOrderLineId, limit);
+        return true;
+    }
+
+    private static IResult PhysicalAllocationReadProblem(int statusCode, string? code = null) => code is null
+        ? Results.Problem(statusCode: statusCode)
+        : Results.Problem(statusCode: statusCode,
+            extensions: new Dictionary<string, object?> { ["code"] = code });
 
     private static InventoryCommandMetadata TransportMetadata(
         ICurrentUser currentUser,

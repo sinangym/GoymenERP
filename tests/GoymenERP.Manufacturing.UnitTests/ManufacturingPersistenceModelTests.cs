@@ -83,7 +83,22 @@ public sealed class ManufacturingPersistenceModelTests
             migration => migration.EndsWith("_AddManufacturingCommands", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("_AddPlanSlittingSpecs", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_ExpandManufacturingProcesses", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
+    }
+
+    [Fact]
+    public void Plans_and_orders_persist_exactly_the_five_locked_process_values()
+    {
+        using var context = Context();
+        var model = context.GetService<IDesignTimeModel>().Model;
+        foreach (var table in new[] { "Plans", "Orders" })
+        {
+            var entity = model.GetEntityTypes().Single(type => type.GetTableName() == table);
+            var constraint = entity.GetCheckConstraints().Single(check => check.Name == $"CK_{table}_Enums");
+            Assert.Equal("[Process] IN (1, 2, 3, 4, 5) AND [Status] IN (1, 2)", constraint.Sql);
+        }
     }
 
     [Theory]
