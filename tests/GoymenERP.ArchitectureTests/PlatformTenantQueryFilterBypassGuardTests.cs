@@ -157,7 +157,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // manufacturing
             ["tools/relational_inventory/manufacturing.txt"] =
-                "840d37fdfed0c75d7f2d57066e7db85333e0f46b03f55918ec38b9dd7c17bfc7",
+                "1cfabeacd569580cde528e792df6340c2c450fac8379e84b5c8928df04c2843b",
 
             // organization
             ["tools/relational_inventory/organization.txt"] =
@@ -272,6 +272,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string ReviewedFinanceOpenItemSourceAdmissionServicePath =
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
         + "FinanceOpenItemSourceAdmissionService.cs";
+    private const string ReviewedManufacturingInventoryInputIssueHostPath =
+        "src/backend/GoymenERP.Api/ManufacturingRuntime/ManufacturingInventoryInputIssueHost.cs";
     private static readonly IReadOnlyDictionary<string, (string ContextTypeName, int ExpectedCount)>
         ReviewedRuntimeContextConstructions =
             new Dictionary<string, (string ContextTypeName, int ExpectedCount)>(StringComparer.Ordinal)
@@ -280,7 +282,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 [ReviewedInventoryGoodsReceiptParticipantPath] = ("InventoryDbContext", 1),
                 [ReviewedInventoryManufacturingRealizationParticipantPath] = ("InventoryDbContext", 1),
                 [ReviewedPurchaseAcceptanceParticipantPath] = ("PurchasingDbContext", 3),
-                [ReviewedFinanceOpenItemSourceAdmissionServicePath] = ("FinanceDbContext", 1)
+                [ReviewedFinanceOpenItemSourceAdmissionServicePath] = ("FinanceDbContext", 1),
+                [ReviewedManufacturingInventoryInputIssueHostPath] = ("ManufacturingDbContext", 1)
             };
     private const string ReviewedManualBankPaymentServicePath =
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
@@ -426,6 +429,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                             ["System.Data.Common"] = 1,
                             ["Microsoft.Data.SqlClient"] = 1,
                             ["DbConnection"] = 3
+                        }),
+                // MFG inventory realization: the API host opens the Inventory transaction connection and
+                // constructs exactly one ManufacturingDbContext over it. The exact fingerprint and three
+                // API counts keep this reviewed bridge narrower than a general direct-database exemption.
+                [ReviewedManufacturingInventoryInputIssueHostPath] =
+                    new(
+                        "d157cc7d1f02743e25b19545d40b1b7d01da372c68f9b7dd62a840d6394fb206",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1,
+                            ["GetDbConnection"] = 1
                         }),
                 // INV-2 (#293): the SqlClient namespace only to recognise a unique-key violation
                 // (SqlException 2601/2627) after SaveChanges, as the Idempotency terminal store does.
