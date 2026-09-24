@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router'
 import { parseAmountInput } from '../finance/decimalText'
@@ -118,6 +118,7 @@ function NormalJournalDraftDetail({ draftId, mode }: { readonly draftId: string;
   const [periodId, setPeriodId] = useState('')
   const [snapshot, setSnapshot] = useState<NormalJournalCommandSnapshot | null>(null)
   const [outcome, setOutcome] = useState<NormalJournalCommandOutcome | null>(null)
+  const inFlight = useRef(false)
   const query = useQuery({
     queryKey: [companyId, shell.routeEntryGeneration, 'normal-journal-draft', draftId],
     enabled: single && GUID.test(draftId),
@@ -133,17 +134,30 @@ function NormalJournalDraftDetail({ draftId, mode }: { readonly draftId: string;
   const remote = (query.isPending ? { kind: 'initial-loading' } : classifyOutcome(query.data ?? { type: 'malformed' })) as RemoteViewState<NormalJournalDraft>
   if (remote.kind !== 'ready' && outcome?.type !== 'applied') return <Frame title="Normal fiş taslağı"><StateBlock state={remote} subject="normal fiş taslağı" onRetry={() => void query.refetch()} /></Frame>
   const draft = outcome?.type === 'applied' ? outcome.draft : (remote as { kind: 'ready'; data: NormalJournalDraft }).data
-  const send = async (next: NormalJournalCommandSnapshot) => { setSnapshot(next); setOutcome(null); setOutcome(await sendNormalJournalCommand(companyId, next)) }
+  const sending = snapshot !== null && outcome === null
+  const unresolved = outcome?.type === 'unknown'
+  const send = async (next: NormalJournalCommandSnapshot, retry = false) => {
+    if (inFlight.current || (unresolved && !retry)) return
+    inFlight.current = true
+    setSnapshot(next)
+    setOutcome(null)
+    try {
+      setOutcome(await sendNormalJournalCommand(companyId, next))
+    } finally {
+      inFlight.current = false
+    }
+  }
   const approve = () => {
+    if (inFlight.current || unresolved) return
     if (!GUID.test(periodId)) return setOutcome({ type: 'failed', failure: { kind: 'validation', field: 'periodId' } })
     void send({ operation: 'approve', idempotencyKey: newId(), draftId, expectedVersion: draft.version, periodId })
   }
   return <Frame title="Normal fiş taslağı">
     <dl className={styles.form}><div className={styles.control}><dt>Durum</dt><dd>{draft.status}</dd></div><div className={styles.control}><dt>Sürüm</dt><dd>{draft.version}</dd></div><div className={styles.control}><dt>Kaynak</dt><dd className={styles.mono}>{draft.sourceId}</dd></div><div className={styles.control}><dt>Posting rule</dt><dd>{draft.postingRuleVersion}</dd></div></dl>
     <div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>Satır</th><th>Hesap</th><th>Taraf</th><th className={styles.amount}>Tutar</th></tr></thead><tbody>{draft.lines.map(line => <tr key={line.lineNumber}><td>{line.lineNumber}</td><td className={styles.mono}>{line.accountId}</td><td>{line.side === 'Debit' ? 'Borç' : 'Alacak'}</td><td className={styles.amount}>{line.amount}</td></tr>)}</tbody></table></div>
-    {outcome?.type === 'unknown' ? <div role="alert" className={styles.noticeWarn}>Onay sonucu bilinmiyor.<button type="button" onClick={() => snapshot && void send(snapshot)}>Aynı isteği yeniden gönder</button></div> : null}
+    {outcome?.type === 'unknown' ? <div role="alert" className={styles.noticeWarn}>Onay sonucu bilinmiyor.<button type="button" onClick={() => snapshot && void send(snapshot, true)}>Aynı isteği yeniden gönder</button></div> : null}
     {outcome?.type === 'failed' ? <p role="alert" className={styles.error}>Onay reddedildi: {outcome.failure.kind}</p> : null}
-    {mode === 'approve' && draft.status === 'Draft' ? <div className={styles.actions}><label className={styles.control}>Açık dönem kimliği<input value={periodId} onChange={event => setPeriodId(event.target.value)} /></label><button type="button" onClick={approve}>Normal taslağı onayla</button></div> : null}
+    {mode === 'approve' && draft.status === 'Draft' ? <div className={styles.actions}><label className={styles.control}>Açık dönem kimliği<input value={periodId} disabled={sending || unresolved} onChange={event => setPeriodId(event.target.value)} /></label><button type="button" disabled={sending || unresolved} onClick={approve}>Normal taslağı onayla</button></div> : null}
     <div className={styles.actions}>{draft.status === 'Approved' && draft.postedJournalId && hasCapability(shell, ACCOUNTING_CAPABILITY.journalsDetail) ? <Link to={journalDetailPath(draft.postedJournalId)}>Oluşturulan fişi aç</Link> : null}{mode === 'own' && hasCapability(shell, ACCOUNTING_CAPABILITY.normalDraftApprove) ? <Link to={normalDraftApprovalPath(draftId)}>Onay ekranını aç</Link> : null}<Link to={ACCOUNTING_ROUTE.journalsList}>Fişlere dön</Link></div>
   </Frame>
 }
