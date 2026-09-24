@@ -47,10 +47,14 @@ export interface S04Seed {
   readonly productUnitProfileVersion: string
   readonly productCode: string
   readonly productName: string
+  readonly allocationLineId: string
+  readonly allocationLabelId: string
+  readonly allocationLabelVersion: string
 }
 
 export interface S04Environment {
   readonly apiBaseUrl: string
+  readonly sqlConnection: string
   readonly testedCommit: string
   readonly seed: S04Seed
 }
@@ -131,6 +135,9 @@ export function readEnvironment(): S04Environment {
     productUnitProfileVersion: positiveVersion(raw, 'productUnitProfileVersion'),
     productCode: productCode(raw),
     productName: productName(raw),
+    allocationLineId: text(raw, 'allocationLineId', true),
+    allocationLabelId: text(raw, 'allocationLabelId', true),
+    allocationLabelVersion: positiveVersion(raw, 'allocationLabelVersion'),
   }
   if (new Set([seed.preparerActor, seed.approverActor, seed.readerActor, seed.supportCreatorActor, seed.ordinaryCreatorActor]).size !== 5) {
     throw new Error('BROWSER_E2E_S04_SEED binds the same actor to two personas')
@@ -145,5 +152,5 @@ export function readEnvironment(): S04Environment {
   ]).size !== 6) {
     throw new Error('BROWSER_E2E_S04_SEED repeats a draft id')
   }
-  return { apiBaseUrl, testedCommit, seed }
+  return { apiBaseUrl, sqlConnection: required('BROWSER_E2E_SQL_CONNECTION'), testedCommit, seed }
 }

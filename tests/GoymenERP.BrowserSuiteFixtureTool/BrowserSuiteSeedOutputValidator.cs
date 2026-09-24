@@ -52,7 +52,8 @@ internal static class BrowserSuiteSeedOutputValidator
         {
             return key switch
             {
-                "productVersion" or "productUnitProfileVersion" => IsPositiveDecimal(value),
+                "productVersion" or "productUnitProfileVersion" or "allocationLabelVersion" =>
+                    IsPositiveDecimal(value),
                 "productCode" => value.StartsWith("SYNS04-", StringComparison.Ordinal)
                                  && IsPositiveDecimal(value[7..]),
                 "productName" => string.Equals(

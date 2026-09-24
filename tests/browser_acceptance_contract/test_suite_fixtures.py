@@ -70,6 +70,19 @@ class FixtureListTests(unittest.TestCase):
             frozenset({"companyId", "codeGroupId", "technicalFamilyId", "authorizedActor", "unauthorizedActor"}),
             browser.SUITE_FIXTURE_OUTPUTS["u02"])
 
+    def test_s04_exports_the_sales_allocation_tuple(self):
+        self.assertEqual(
+            frozenset({
+                "preparerActor", "approverActor", "readerActor", "companyId", "draftId",
+                "deliveryDraftId", "realPartyId", "realCompanyAccountId", "deliveryAddressId",
+                "deliveryContactId", "supportCreatorActor", "ordinaryCreatorActor", "supportDraftId",
+                "ordinaryApproveDraftId", "ordinaryRejectDraftId", "withdrawalDraftId",
+                "productId", "productVersion", "productUnitId", "productUnitProfileId",
+                "productUnitProfileVersion", "productCode", "productName",
+                "allocationLineId", "allocationLabelId", "allocationLabelVersion",
+            }),
+            browser.SUITE_FIXTURE_OUTPUTS["s04"])
+
     def test_pur01_exports_the_separate_creator_supplier_and_existing_approval_axis(self):
         self.assertEqual(
             frozenset({
@@ -251,6 +264,28 @@ class SeedExportTests(unittest.TestCase):
             ):
                 with self.subTest(key=key, value=value), self.assertRaises(browser.ContractError):
                     browser.seed_export("pur01", {**good, key: value})
+
+    def test_s04_accepts_only_its_exact_product_and_allocation_scalars(self):
+        keys = frozenset({
+            "productVersion", "productUnitProfileVersion", "productCode", "productName",
+            "allocationLabelVersion",
+        })
+        good = {
+            "productVersion": "2",
+            "productUnitProfileVersion": "1",
+            "productCode": "SYNS04-1",
+            "productName": "SENTETIK browser-suite:s04 sales candidate",
+            "allocationLabelVersion": "3",
+        }
+        with mock.patch.dict(browser.SUITE_FIXTURE_OUTPUTS, {"s04": keys}):
+            self.assertIn('"allocationLabelVersion":"3"', browser.seed_export("s04", good))
+            for key, value in (
+                ("allocationLabelVersion", "0"),
+                ("allocationLabelVersion", "03"),
+                ("allocationLabelVersion", "3.5"),
+            ):
+                with self.subTest(key=key, value=value), self.assertRaises(browser.ContractError):
+                    browser.seed_export("s04", {**good, key: value})
 
     def test_r14_accepts_only_its_exact_product_scalars(self):
         keys = frozenset({"productVersion", "productUnitProfileVersion", "productCode", "productName"})

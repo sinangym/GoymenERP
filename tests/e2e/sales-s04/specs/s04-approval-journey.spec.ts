@@ -18,10 +18,12 @@
  */
 
 import { expect, test, type Page, type Response } from '@playwright/test'
+import sql from 'mssql'
 import { readEnvironment } from '../src/env.js'
 
 const env = readEnvironment()
-const { preparerActor, approverActor, readerActor, companyId, draftId } = env.seed
+const { preparerActor, approverActor, readerActor, companyId, draftId,
+  allocationLineId, allocationLabelId, allocationLabelVersion } = env.seed
 const DRAFTS_PATH = '/api/v1/sales/drafts'
 const DRAFT_PATH = `${DRAFTS_PATH}/${draftId}`
 const DETAIL_ROUTE = `/satis/siparisler/${draftId}`
@@ -240,4 +242,93 @@ test('S04-05 the S-02 list filters by the server\'s approval state', async ({ pa
   await expect(page.locator('[data-state="empty-no-data"]')).toBeVisible()
   await expect(page.getByRole('table')).toHaveCount(0)
   expect(queries).toContain('PendingApproval')
+})
+
+test('S04-06 authorized allocation saves, closes, reopens, releases and reopens from server truth', async ({ page }) => {
+  const pool = await new sql.ConnectionPool(env.sqlConnection).connect()
+  try {
+    const before = await pool.request()
+      .input('companyId', sql.UniqueIdentifier, companyId)
+      .input('labelId', sql.UniqueIdentifier, allocationLabelId)
+      .query<{ allocations: number; movements: number }>(`
+        SELECT
+          (SELECT COUNT(*) FROM inventory.Allocations WHERE CompanyId=@companyId AND LabelId=@labelId) AS allocations,
+          (SELECT COUNT(DISTINCT movement.Id)
+             FROM inventory.Movements movement
+             INNER JOIN inventory.MovementLines movementLine
+               ON movementLine.CompanyId=movement.CompanyId AND movementLine.MovementId=movement.Id
+            WHERE movement.CompanyId=@companyId AND movementLine.LabelId=@labelId) AS movements`)
+    expect(before.recordset[0]).toEqual({ allocations: 0, movements: 1 })
+
+    await signInAs(page, preparerActor)
+    await openDraft(page)
+    await expect(state(page)).toHaveText('Onaylı')
+    const line = page.getByTestId(`sales-allocation-line-${allocationLineId}`)
+    await expect(line).toBeVisible()
+    await line.getByLabel('Etiket kimliği').fill(allocationLabelId)
+    await line.getByLabel('Etiket sürümü').fill(allocationLabelVersion)
+    await line.getByLabel('Tahsis kg').fill('5')
+    await line.getByLabel('Tahsis nedeni').fill('SENTETIK s04 sipariş tahsisi')
+
+    const createAnswer = page.waitForResponse((response) => response.request().method() === 'POST'
+      && new URL(response.url()).pathname === '/api/v1/inventory/physical-allocations')
+    await line.getByRole('button', { name: 'Tahsis kaydet' }).click()
+    const createdResponse = await createAnswer
+    expect(createdResponse.status()).toBe(201)
+    const created = await createdResponse.json() as { readonly allocationId: string; readonly status: string; readonly version: string }
+    expect(created).toMatchObject({ status: 'Active', version: '1' })
+    await expect(line.getByText('Aktif')).toBeVisible()
+
+    await page.goto('/satis/siparisler')
+    await expect(page.getByRole('heading', { level: 1, name: 'Satış siparişi taslakları' })).toBeVisible()
+    await page.locator(`a[href="${DETAIL_ROUTE}"]`).click()
+    const reopened = page.getByTestId(`sales-allocation-${created.allocationId}`)
+    await expect(reopened.getByText('Aktif')).toBeVisible()
+
+    const reopenedLine = page.getByTestId(`sales-allocation-line-${allocationLineId}`)
+    await reopenedLine.getByLabel('Serbest bırakma nedeni').fill('SENTETIK s04 tahsis serbest')
+    const releaseAnswer = page.waitForResponse((response) => response.request().method() === 'POST'
+      && new URL(response.url()).pathname === `/api/v1/inventory/physical-allocations/${created.allocationId}/release`)
+    await reopened.getByRole('button', { name: 'Tahsis serbest bırak' }).click()
+    const releasedResponse = await releaseAnswer
+    expect(releasedResponse.status()).toBe(200)
+    expect(await releasedResponse.json()).toMatchObject({ allocationId: created.allocationId, status: 'Released', version: '2', remainingKg: '0' })
+    await expect(reopenedLine.getByText('Serbest bırakıldı')).toBeVisible()
+
+    await page.goto('/satis/siparisler')
+    await page.locator(`a[href="${DETAIL_ROUTE}"]`).click()
+    const finalRow = page.getByTestId(`sales-allocation-${created.allocationId}`)
+    await expect(finalRow.getByText('Serbest bırakıldı')).toBeVisible()
+    await expect(finalRow.getByRole('button', { name: 'Tahsis serbest bırak' })).toHaveCount(0)
+
+    const fresh = await page.request.get(`${env.apiBaseUrl}/api/v1/inventory/physical-allocations?salesOrderId=${draftId}&salesOrderLineId=${allocationLineId}&limit=100`, {
+      headers: { [DEVELOPMENT_USER_HEADER]: preparerActor, 'X-Company-Id': companyId },
+    })
+    expect(fresh.status()).toBe(200)
+    expect(await fresh.json()).toMatchObject({ items: [{ allocation: {
+      allocationId: created.allocationId, status: 'Released', version: '2', remainingKg: '0',
+      demandId: draftId, demandLineId: allocationLineId, labelId: allocationLabelId,
+    } }] })
+
+    const effects = await pool.request()
+      .input('companyId', sql.UniqueIdentifier, companyId)
+      .input('labelId', sql.UniqueIdentifier, allocationLabelId)
+      .input('allocationId', sql.UniqueIdentifier, created.allocationId)
+      .input('entityId', sql.NVarChar, created.allocationId)
+      .query<{ allocations: number; commands: number; audits: number; movements: number }>(`
+        SELECT
+          (SELECT COUNT(*) FROM inventory.Allocations WHERE CompanyId=@companyId AND Id=@allocationId
+            AND LabelId=@labelId AND Status=3 AND Version=2 AND RemainingKg=0) AS allocations,
+          (SELECT COUNT(*) FROM inventory.Commands WHERE CompanyId=@companyId AND TargetId=@allocationId) AS commands,
+          (SELECT COUNT(*) FROM audit.AuditEvents WHERE CompanyId=@companyId
+            AND EntityType=N'Inventory.StockAllocation' AND EntityId=@entityId) AS audits,
+          (SELECT COUNT(DISTINCT movement.Id)
+             FROM inventory.Movements movement
+             INNER JOIN inventory.MovementLines movementLine
+               ON movementLine.CompanyId=movement.CompanyId AND movementLine.MovementId=movement.Id
+            WHERE movement.CompanyId=@companyId AND movementLine.LabelId=@labelId) AS movements`)
+    expect(effects.recordset[0]).toEqual({ allocations: 1, commands: 2, audits: 2, movements: 1 })
+  } finally {
+    await pool.close()
+  }
 })
