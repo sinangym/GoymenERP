@@ -253,7 +253,11 @@ test('S04-06 authorized allocation saves, closes, reopens, releases and reopens 
       .query<{ allocations: number; movements: number }>(`
         SELECT
           (SELECT COUNT(*) FROM inventory.Allocations WHERE CompanyId=@companyId AND LabelId=@labelId) AS allocations,
-          (SELECT COUNT(*) FROM inventory.Movements WHERE CompanyId=@companyId AND LabelId=@labelId) AS movements`)
+          (SELECT COUNT(DISTINCT movement.Id)
+             FROM inventory.Movements movement
+             INNER JOIN inventory.MovementLines movementLine
+               ON movementLine.CompanyId=movement.CompanyId AND movementLine.MovementId=movement.Id
+            WHERE movement.CompanyId=@companyId AND movementLine.LabelId=@labelId) AS movements`)
     expect(before.recordset[0]).toEqual({ allocations: 0, movements: 1 })
 
     await signInAs(page, preparerActor)
@@ -318,7 +322,11 @@ test('S04-06 authorized allocation saves, closes, reopens, releases and reopens 
           (SELECT COUNT(*) FROM inventory.Commands WHERE CompanyId=@companyId AND TargetId=@allocationId) AS commands,
           (SELECT COUNT(*) FROM audit.AuditEvents WHERE CompanyId=@companyId
             AND EntityType=N'Inventory.StockAllocation' AND EntityId=@entityId) AS audits,
-          (SELECT COUNT(*) FROM inventory.Movements WHERE CompanyId=@companyId AND LabelId=@labelId) AS movements`)
+          (SELECT COUNT(DISTINCT movement.Id)
+             FROM inventory.Movements movement
+             INNER JOIN inventory.MovementLines movementLine
+               ON movementLine.CompanyId=movement.CompanyId AND movementLine.MovementId=movement.Id
+            WHERE movement.CompanyId=@companyId AND movementLine.LabelId=@labelId) AS movements`)
     expect(effects.recordset[0]).toEqual({ allocations: 1, commands: 2, audits: 2, movements: 1 })
   } finally {
     await pool.close()

@@ -3,6 +3,7 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SalesDraftAllocationPanel } from './SalesDraftAllocationPanel'
+import { decodePhysicalAllocation, isGuid } from './allocationContract'
 import type { DraftLine } from './contract'
 
 const COMPANY = '10000000-0000-4000-8000-000000000001'
@@ -65,8 +66,21 @@ afterEach(() => {
 })
 
 describe('Sales physical allocation consumer', () => {
+  it('accepts canonical non-nil ids without requiring RFC version bits', () => {
+    expect(isGuid(COMPANY)).toBe(true)
+    expect(isGuid('00000000-0000-0000-0000-000000000000')).toBe(false)
+    expect(decodePhysicalAllocation(allocation('Active', '1'), {
+      companyId: COMPANY,
+      salesOrderId: ORDER,
+      salesOrderLineId: LINE,
+      productId: PRODUCT,
+      productVersion: '7',
+    })).not.toBeNull()
+  })
+
   it('saves, closes, reopens, releases and reopens the same server record', async () => {
     let stored: ReturnType<typeof allocation> | null = null
+    let hideRecordedOnNextGet = false
     const calls: { readonly method: string; readonly url: string; readonly body: any; readonly headers: Headers }[] = []
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
@@ -74,7 +88,12 @@ describe('Sales physical allocation consumer', () => {
       const body = init?.body === undefined ? null : JSON.parse(String(init.body))
       const headers = new Headers(init?.headers)
       calls.push({ method, url, body, headers })
-      if (method === 'GET') return answer({ items: stored === null ? [] : [{ allocation: stored, labelVersion: stored.status === 'Active' ? '12' : '13' }], searchWindowFull: false })
+      if (method === 'GET') {
+        const visible = hideRecordedOnNextGet ? null : stored
+        hideRecordedOnNextGet = false
+        return answer({ items: visible === null ? [] : [{ allocation: visible,
+          labelVersion: visible.status === 'Active' ? '12' : '13' }], searchWindowFull: false })
+      }
       if (url.endsWith('/release')) {
         expect(body).toEqual({ expectedAllocationVersion: '1', reason: 'Sipariş değişti.' })
         stored = { ...allocation('Released', '2'), allocationId: stored!.allocationId }
@@ -84,6 +103,7 @@ describe('Sales physical allocation consumer', () => {
         expectedLabelVersion: '11', quantityKg: '5', reason: 'Sipariş için ayırıldı.', reservedUntilUtc: null })
       expect(body.allocationId).toMatch(/^[0-9a-f-]{36}$/)
       stored = { ...allocation('Active', '1'), allocationId: body.allocationId }
+      hideRecordedOnNextGet = true
       return answer(stored, 201)
     }))
 
@@ -114,6 +134,99 @@ describe('Sales physical allocation consumer', () => {
     expect(within(final).getByText('Serbest bırakıldı')).toBeTruthy()
     expect(within(final).queryByRole('button', { name: 'Tahsis serbest bırak' })).toBeNull()
     expect(calls.filter((call) => call.method === 'POST')).toHaveLength(2)
+  })
+
+  it('keeps the fresher GET state when the recorded allocation already exists', async () => {
+    let createdId: string | null = null
+    vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const method = init?.method ?? 'GET'
+      if (method === 'GET') {
+        const fresh = createdId === null ? [] : [{
+          allocation: { ...allocation('Released', '2'), allocationId: createdId }, labelVersion: '13',
+        }]
+        return answer({ items: fresh, searchWindowFull: false })
+      }
+      const body = JSON.parse(String(init?.body))
+      createdId = body.allocationId
+      return answer({ ...allocation('Active', '1'), allocationId: createdId }, 201)
+    }))
+
+    mount()
+    const card = await screen.findByTestId(`sales-allocation-line-${LINE}`)
+    expect(await within(card).findByText('Bu sipariş satırı için tahsis yok.')).toBeTruthy()
+    await userEvent.type(within(card).getByLabelText('Etiket kimliği'), LABEL)
+    await userEvent.type(within(card).getByLabelText('Etiket sürümü'), '11')
+    await userEvent.type(within(card).getByLabelText('Tahsis kg'), '5')
+    await userEvent.type(within(card).getByLabelText('Tahsis nedeni'), 'Sipariş için ayırıldı.')
+    await userEvent.click(within(card).getByRole('button', { name: 'Tahsis kaydet' }))
+
+    const recordedId = createdId
+    if (recordedId === null) throw new Error('The create request was not recorded.')
+    const row = await screen.findByTestId(`sales-allocation-${recordedId}`)
+    expect(within(row).getByText('Serbest bırakıldı')).toBeTruthy()
+    expect(within(row).getByText('2')).toBeTruthy()
+    expect(within(row).queryByText('Aktif')).toBeNull()
+  })
+
+  it('drops a recorded fallback when the authorization scope generation changes', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if ((init?.method ?? 'GET') === 'GET') return answer({ items: [], searchWindowFull: false })
+      const body = JSON.parse(String(init?.body))
+      return answer({ ...allocation('Active', '1'), allocationId: body.allocationId }, 201)
+    }))
+
+    const first = mount()
+    const card = await screen.findByTestId(`sales-allocation-line-${LINE}`)
+    expect(await within(card).findByText('Bu sipariş satırı için tahsis yok.')).toBeTruthy()
+    await userEvent.type(within(card).getByLabelText('Etiket kimliği'), LABEL)
+    await userEvent.type(within(card).getByLabelText('Etiket sürümü'), '11')
+    await userEvent.type(within(card).getByLabelText('Tahsis kg'), '5')
+    await userEvent.type(within(card).getByLabelText('Tahsis nedeni'), 'Sipariş için ayırıldı.')
+    await userEvent.click(within(card).getByRole('button', { name: 'Tahsis kaydet' }))
+    await waitFor(() => expect(within(card).getByText('Aktif')).toBeTruthy())
+
+    first.rerender(<QueryClientProvider client={first.client}><SalesDraftAllocationPanel
+      enabled companyId={COMPANY} namespace="ctx-b" routeEntryGeneration={2}
+      salesOrderId={ORDER} lines={[line]} /></QueryClientProvider>)
+
+    const remounted = await screen.findByTestId(`sales-allocation-line-${LINE}`)
+    expect(await within(remounted).findByText('Bu sipariş satırı için tahsis yok.')).toBeTruthy()
+    expect(within(remounted).queryByText('Aktif')).toBeNull()
+  })
+
+  it('drops a recorded fallback and reads again when the product scope changes', async () => {
+    const fetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if ((init?.method ?? 'GET') === 'GET') return answer({ items: [], searchWindowFull: false })
+      const body = JSON.parse(String(init?.body))
+      return answer({ ...allocation('Active', '1'), allocationId: body.allocationId }, 201)
+    })
+    vi.stubGlobal('fetch', fetch)
+
+    const first = mount()
+    const card = await screen.findByTestId(`sales-allocation-line-${LINE}`)
+    expect(await within(card).findByText('Bu sipariş satırı için tahsis yok.')).toBeTruthy()
+    await userEvent.type(within(card).getByLabelText('Etiket kimliği'), LABEL)
+    await userEvent.type(within(card).getByLabelText('Etiket sürümü'), '11')
+    await userEvent.type(within(card).getByLabelText('Tahsis kg'), '5')
+    await userEvent.type(within(card).getByLabelText('Tahsis nedeni'), 'Sipariş için ayırıldı.')
+    await userEvent.click(within(card).getByRole('button', { name: 'Tahsis kaydet' }))
+    await waitFor(() => expect(within(card).getByText('Aktif')).toBeTruthy())
+    const readsBeforeProductChange = fetch.mock.calls.filter(([, init]) => (init?.method ?? 'GET') === 'GET').length
+
+    const changedLine = {
+      ...line,
+      productId: '40000000-0000-4000-8000-000000000002',
+      productVersion: '8',
+    }
+    first.rerender(<QueryClientProvider client={first.client}><SalesDraftAllocationPanel
+      enabled companyId={COMPANY} namespace="ctx-a" routeEntryGeneration={1}
+      salesOrderId={ORDER} lines={[changedLine]} /></QueryClientProvider>)
+
+    const remounted = await screen.findByTestId(`sales-allocation-line-${LINE}`)
+    expect(await within(remounted).findByText('Bu sipariş satırı için tahsis yok.')).toBeTruthy()
+    expect(within(remounted).queryByText('Aktif')).toBeNull()
+    await waitFor(() => expect(fetch.mock.calls.filter(([, init]) => (init?.method ?? 'GET') === 'GET').length)
+      .toBeGreaterThan(readsBeforeProductChange))
   })
 
   it('renders and reads nothing without the published capability decision', () => {

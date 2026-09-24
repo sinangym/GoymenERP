@@ -304,6 +304,9 @@ partial class ManufacturingDbContextModelSnapshot : ModelSnapshot
             b.Property<Guid>("OrderId")
                 .HasColumnType("uniqueidentifier");
 
+            b.Property<long?>("ExpectedLabelVersion")
+                .HasColumnType("bigint");
+
             b.Property<Guid>("ParentRollId")
                 .HasColumnType("uniqueidentifier");
 
@@ -321,6 +324,10 @@ partial class ManufacturingDbContextModelSnapshot : ModelSnapshot
 
             b.ToTable("OrderInputs", "manufacturing", t =>
             {
+                t.HasCheckConstraint(
+                    "CK_OrderInputs_LabelVersion",
+                    "[ExpectedLabelVersion] IS NULL OR [ExpectedLabelVersion] >= 1");
+
                 t.HasCheckConstraint(
                     "CK_OrderInputs_Mass",
                     "[PlannedKg] > 0");
@@ -457,6 +464,9 @@ partial class ManufacturingDbContextModelSnapshot : ModelSnapshot
             b.Property<Guid>("ParentRollId")
                 .HasColumnType("uniqueidentifier");
 
+            b.Property<long?>("ExpectedLabelVersion")
+                .HasColumnType("bigint");
+
             b.Property<decimal>("PlannedKg")
                 .HasPrecision(18, 3)
                 .HasColumnType("decimal(18,3)");
@@ -471,6 +481,10 @@ partial class ManufacturingDbContextModelSnapshot : ModelSnapshot
 
             b.ToTable("PlanInputs", "manufacturing", t =>
             {
+                t.HasCheckConstraint(
+                    "CK_PlanInputs_LabelVersion",
+                    "[ExpectedLabelVersion] IS NULL OR [ExpectedLabelVersion] >= 1");
+
                 t.HasCheckConstraint(
                     "CK_PlanInputs_Mass",
                     "[PlannedKg] > 0");

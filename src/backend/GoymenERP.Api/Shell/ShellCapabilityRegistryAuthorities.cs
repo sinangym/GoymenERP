@@ -171,10 +171,11 @@ internal static class ShellCapabilityRegistryAuthorities
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV12PublishedManufacturingV12PublishedLogisticsV10PublishedPurchasingV13PublishedAccountingV10AndPublishedInventoryV10 =
         "sha256:F_6PIbW9hd2rjxL51mSza2t_1V1p8ibbjj7PoN2LQUU";
 
-    // ST-01: Inventory 1.1 publishes the stock-position read beside the opening-stock workspace.
-    // Both declarations reuse accepted company-wide permissions; publication grants nothing.
-    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV12PublishedManufacturingV12PublishedLogisticsV10PublishedPurchasingV13PublishedAccountingV10AndPublishedInventoryV11 =
-        "sha256:i4qBY0s8-oZypMsf2liKYUZvkQj-NbljioItOHCqFiA";
+    // ST-01 / S04 allocation: Inventory 1.2 publishes the stock-position read and its physical-allocation
+    // child control beside the opening-stock workspace. The control preserves the parent's route/context/scope
+    // and adds only the existing write permission; publication grants nothing.
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV12PublishedManufacturingV12PublishedLogisticsV10PublishedPurchasingV13PublishedAccountingV10AndPublishedInventoryV12 =
+        "sha256:5nEDQa8lHFJk2yIBTYRxt0CSCzO3pUKU3wbpI7GXdoo";
 
     internal const string CounterpartyV15PublishedListCreateAndDetail =
         "sha256:UBHnivzhe_dp5f7vU7dP5n7HG-P8XYBGhxvD_OjMSnw";

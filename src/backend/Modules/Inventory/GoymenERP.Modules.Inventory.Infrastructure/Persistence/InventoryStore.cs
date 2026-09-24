@@ -56,7 +56,7 @@ public sealed partial class InventoryStore(
     IAuditEventCollector auditEvents,
     InventoryKilogramScale kilogramScale,
     TimeProvider timeProvider) : IInventoryLotStore, IInventoryLabelStore, IInventoryMovementStore, IInventoryOpeningStore,
-    IInventoryPhysicalAllocationWriterV1
+    IInventoryPhysicalAllocationWriterV1, IInventoryLabelGenealogyWriterV1, IInventoryLabelGenealogyReaderV1
 {
     private const string LotEntityType = "Inventory.MaterialLot";
     private const string LabelEntityType = "Inventory.MaterialLabel";
@@ -771,6 +771,9 @@ public sealed partial class InventoryStore(
 
     private static IEnumerable<(int Number, string Message)> Errors(SqlException sql) =>
         sql.Errors.Cast<SqlError>().Select(error => (error.Number, error.Message));
+
+    private static bool IsUniqueConstraintViolation(DbUpdateException exception) =>
+        exception.InnerException is SqlException { Number: 2601 or 2627 };
 
     [GeneratedRegex("[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}", RegexOptions.CultureInvariant)]
     private static partial Regex GuidPattern();

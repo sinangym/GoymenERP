@@ -55,7 +55,8 @@ export interface ReleasePhysicalAllocationBody {
   readonly reason: string
 }
 
-const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const NIL_GUID = '00000000-0000-0000-0000-000000000000'
 const VERSION = /^[1-9][0-9]*$/
 const DECIMAL = /^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/
 const STATUS = new Set<AllocationStatus>(['Active', 'Consumed', 'Released'])
@@ -64,7 +65,7 @@ const record = (value: unknown): Record<string, unknown> | null =>
   typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : null
 
 const text = (value: unknown): value is string => typeof value === 'string' && value.trim() === value && value.length > 0
-const guid = (value: unknown): value is string => text(value) && GUID.test(value)
+const guid = (value: unknown): value is string => text(value) && GUID.test(value) && value.toLowerCase() !== NIL_GUID
 const version = (value: unknown): value is string => text(value) && VERSION.test(value)
 const decimal = (value: unknown): value is string => text(value) && DECIMAL.test(value)
 const instant = (value: unknown): value is string => text(value) && !Number.isNaN(Date.parse(value))
@@ -108,7 +109,7 @@ export function problemCode(value: unknown): string | null {
 }
 
 export function isGuid(value: string): boolean {
-  return GUID.test(value)
+  return guid(value)
 }
 
 export function isPositiveVersion(value: string): boolean {

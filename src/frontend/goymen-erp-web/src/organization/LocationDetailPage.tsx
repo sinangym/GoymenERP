@@ -40,7 +40,8 @@ import {
   type AttemptSnapshot,
   type AttemptState,
 } from './activeStateAttempt'
-import { ORGANIZATION_CAPABILITY } from './capabilities'
+import { ORGANIZATION_CAPABILITY, workCenterListPath } from './capabilities'
+import { filteredWorkCenterBackPath, isCanonicalLocationId, WORK_CENTER_LOCATION_TEXT } from './workCenterLocationFilter'
 import { detailBackTarget } from './detailReturn'
 import {
   attemptStoreKey,
@@ -202,9 +203,22 @@ function LocationDetail({ namespace }: { readonly namespace: string | null }) {
     )
   }
 
+  // The DTO has no CompanyId: its authority is the existing company-bound read, not an invented field.
+  // It must still identify exactly the card the route requested before a dependent link is exposed.
+  if (state.data.id !== locationId) {
+    return <Frame namespace={namespace}>
+      <StateBlock state={{ kind: 'malformed-response' }} subject="lokasyon" onRetry={() => void query.refetch()} />
+      <OutstandingCommandBanner storeKey={storeKey} />
+    </Frame>
+  }
+
   return (
     <Frame namespace={namespace}>
       <LocationCard location={state.data} />
+      {namespace !== null && isCanonicalLocationId(state.data.id) &&
+        hasCapability(shell, ORGANIZATION_CAPABILITY.workCentersList) ? (
+          <p><Link to={workCenterListPath(state.data.id)}>{WORK_CENTER_LOCATION_TEXT.action}</Link></p>
+        ) : null}
       {canChangeStatus ? (
         <ActiveStateSection
           location={state.data}
@@ -235,13 +249,24 @@ function Frame({
   readonly children: React.ReactNode
 }) {
   const routerLocation = useLocation()
-  const back = detailBackTarget(routerLocation.state, namespace)
+  const shell = useShellState()
+  const { locationId } = useParams()
+  const canReadWorkCenters = hasCapability(shell, ORGANIZATION_CAPABILITY.workCentersList)
+  const filteredBack = canReadWorkCenters
+    ? filteredWorkCenterBackPath(routerLocation.state, namespace, locationId)
+    : null
+  const back = filteredBack === null
+    ? detailBackTarget(routerLocation.state, namespace)
+    : { path: filteredBack, label: 'İş Merkezleri' }
+  const canGoBack = back.path === workCenterListPath() || filteredBack !== null
+    ? canReadWorkCenters
+    : hasCapability(shell, ORGANIZATION_CAPABILITY.settingsList)
   return (
     <section aria-labelledby="org-location-heading" className={styles.page}>
       <nav aria-label="Geri" className={styles.breadcrumb}>
-        <Link to={back.path} state={routerLocation.state}>
+        {canGoBack ? <Link to={back.path} state={routerLocation.state}>
           ← {back.label}
-        </Link>
+        </Link> : <span>← {back.label}</span>}
       </nav>
       <h1 id="org-location-heading">Lokasyon</h1>
       {children}

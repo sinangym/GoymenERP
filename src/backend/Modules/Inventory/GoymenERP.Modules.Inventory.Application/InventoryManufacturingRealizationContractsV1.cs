@@ -210,6 +210,7 @@ public static class InventoryManufacturingRealizationContractV1
         ValidateInput(request.CompanyId, request.ManufacturingOrderId, request.ReturnId,
             request.ManufacturingOrderVersionAfter, request.ParentLabelId, request.ExpectedParentLabelVersion,
             request.MovementId, request.OccurredAtUtc, metadata, enlistedCompanyId);
+        RequireDistinctMovement(request.ReturnId, request.MovementId);
         return Quantity(request.QuantityKg);
     }
 
@@ -220,6 +221,7 @@ public static class InventoryManufacturingRealizationContractV1
         ValidateInput(request.CompanyId, request.ManufacturingOrderId, request.OutputId,
             request.ManufacturingOrderVersionAfter, request.ParentLabelId, request.ExpectedParentLabelVersion,
             request.MovementId, request.OccurredAtUtc, metadata, enlistedCompanyId);
+        RequireDistinctMovement(request.OutputId, request.MovementId);
         if (request.ProductId == Guid.Empty || request.LotId == Guid.Empty || request.LabelId == Guid.Empty
             || request.OwnerId == Guid.Empty || request.CustodianId == Guid.Empty || request.LocationId == Guid.Empty
             || request.RequiredDocuments is null || !Enum.IsDefined(request.OwnerKind)
@@ -261,6 +263,14 @@ public static class InventoryManufacturingRealizationContractV1
         RequireVersion(manufacturingOrderVersionAfter);
         RequireVersion(expectedParentLabelVersion);
         RequireMetadata(metadata);
+    }
+
+    private static void RequireDistinctMovement(Guid factId, Guid movementId)
+    {
+        if (factId == movementId)
+        {
+            throw Refused(400, InventoryManufacturingRealizationCodesV1.InvalidRequest);
+        }
     }
 
     private static Kilograms Quantity(string value)

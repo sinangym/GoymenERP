@@ -42,7 +42,9 @@ export function SalesDraftAllocationPanel(props: SalesDraftAllocationPanelProps)
     <section className={styles.section} aria-labelledby="sales-allocations-heading" data-testid="sales-allocations">
       <h2 id="sales-allocations-heading">{T.heading}</h2>
       <p className={styles.muted}>{T.note}</p>
-      {props.lines.map((line) => <AllocationLine key={line.lineId} {...props} line={line} />)}
+      {props.lines.map((line) => <AllocationLine
+        key={`${props.namespace}:${props.routeEntryGeneration}:${props.companyId}:${props.salesOrderId}:${line.lineId}:${line.productId}:${line.productVersion}`}
+        {...props} line={line} />)}
     </section>
   )
 }
@@ -58,8 +60,10 @@ function AllocationLine({ companyId, namespace, routeEntryGeneration, salesOrder
     productId: line.productId,
     productVersion: line.productVersion,
   }
+  const queryKey = [namespace, routeEntryGeneration, 'physical-allocations', salesOrderId, line.lineId,
+    line.productId, line.productVersion] as const
   const query = useQuery({
-    queryKey: [namespace, routeEntryGeneration, 'physical-allocations', salesOrderId, line.lineId],
+    queryKey,
     queryFn: async ({ signal }) => {
       const snapshot = boundary.capture()
       const outcome = await fetchPhysicalAllocations(scope, signal)
@@ -75,11 +79,20 @@ function AllocationLine({ companyId, namespace, routeEntryGeneration, salesOrder
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<{ readonly tone: 'success' | 'unknown' | 'error'; readonly text: string } | null>(null)
   const [attemptRevision, setAttemptRevision] = useState(0)
+  const [recordedAllocations, setRecordedAllocations] = useState<readonly PhysicalAllocation[]>([])
   const createScope: AllocationAttemptScope = { companyId, salesOrderId, salesOrderLineId: line.lineId, kind: 'create' }
   const pendingCreate = loadAllocationAttempt<CreatePhysicalAllocationBody>(createScope)
 
   const refresh = async () => {
-    await query.refetch()
+    return query.refetch()
+  }
+
+  const showRecordedAllocation = (allocation: PhysicalAllocation, refreshed: typeof query.data) => {
+    if (refreshed?.type !== 'ok-single') return
+    const exists = refreshed.data.items.some((candidate) => candidate.allocation.allocationId === allocation.allocationId)
+    setRecordedAllocations((current) => exists
+      ? current.filter((candidate) => candidate.allocationId !== allocation.allocationId)
+      : [...current.filter((candidate) => candidate.allocationId !== allocation.allocationId), allocation])
   }
 
   const settle = async (outcome: AllocationMutationOutcome, attemptScope: AllocationAttemptScope, key: string,
@@ -88,7 +101,8 @@ function AllocationLine({ companyId, namespace, routeEntryGeneration, salesOrder
       finishAllocationAttempt(attemptScope, key)
       setAttemptRevision((value) => value + 1)
       setNotice({ tone: 'success', text: outcome.replayed ? T.replayed : success })
-      await refresh()
+      const refreshed = await refresh()
+      showRecordedAllocation(outcome.allocation, refreshed.data)
       return
     }
     if (outcome.type === 'http') {
@@ -165,6 +179,10 @@ function AllocationLine({ companyId, namespace, routeEntryGeneration, salesOrder
   const outcome = query.data
   const state = outcome === undefined ? { kind: 'initial-loading' as const } : classifyOutcome(outcome)
   const page = outcome?.type === 'ok-single' ? outcome.data : null
+  const allocations = page === null ? [] : [
+    ...page.items.map((item) => item.allocation),
+    ...recordedAllocations.filter((recorded) => !page.items.some((item) => item.allocation.allocationId === recorded.allocationId)),
+  ]
   return (
     <article className={styles.line} data-testid={`sales-allocation-line-${line.lineId}`} data-attempt-revision={attemptRevision}>
       <h3 className={styles.lineTitle}>Satır {line.lineNo}: {line.productName}</h3>
@@ -178,11 +196,11 @@ function AllocationLine({ companyId, namespace, routeEntryGeneration, salesOrder
       {state.kind === 'ready' && page !== null ? (
         <>
           {page.searchWindowFull ? <p className={styles.notice} data-tone="unknown">{T.fullWindow}</p> : null}
-          {page.items.length === 0 ? <p data-testid="sales-allocation-empty">{T.empty}</p> : (
+          {allocations.length === 0 ? <p data-testid="sales-allocation-empty">{T.empty}</p> : (
             <div className={styles.tableWrap}>
               <table className={styles.table}>
                 <thead><tr><th>Etiket</th><th>Durum</th><th>Tahsis kg</th><th>Kalan kg</th><th>Sürüm</th><th>İşlem</th></tr></thead>
-                <tbody>{page.items.map(({ allocation }) => {
+                <tbody>{allocations.map((allocation) => {
                   const releaseScope: AllocationAttemptScope = { companyId, salesOrderId, salesOrderLineId: line.lineId,
                     kind: 'release', allocationId: allocation.allocationId }
                   const pendingRelease = loadAllocationAttempt<ReleasePhysicalAllocationBody>(releaseScope)
