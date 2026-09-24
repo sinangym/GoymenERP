@@ -58,7 +58,7 @@ export interface InventoryLabelDetail {
 type JsonObject = Record<string, unknown>
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const NIL_GUID = '00000000-0000-0000-0000-000000000000'
-const DECIMAL = /^(0|[1-9]\d*)(\.\d*[1-9])?$/
+const DECIMAL = /^(0|[1-9]\d*)(\.\d{0,2}[1-9])?$/
 const VERSION = /^[1-9]\d*$/
 const MAX_INT64 = 9223372036854775807n
 

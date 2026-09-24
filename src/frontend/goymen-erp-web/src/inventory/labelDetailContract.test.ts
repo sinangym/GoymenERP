@@ -78,5 +78,9 @@ describe('Inventory label detail contract', () => {
     expect(decodeInventoryLabelBalances({
       ...balances(), positions: balances().positions.map((item) => ({ ...item, block: 'Reserved' })),
     })).toBeNull()
+    expect(decodeInventoryLabelBalances({
+      ...balances(), physicalKg: '1.0001', freeKg: '1.0001', blockedKg: '0',
+      positions: [{ ...balances().positions[0], quantityKg: '1.0001' }],
+    })).toBeNull()
   })
 })
