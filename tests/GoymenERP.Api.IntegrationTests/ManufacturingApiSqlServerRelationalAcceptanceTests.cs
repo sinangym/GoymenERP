@@ -21,7 +21,6 @@ using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Manufacturing.Domain.Common;
 using GoymenERP.Modules.Manufacturing.Domain.Orders;
 using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence;
-using GoymenERP.Modules.Organization.Infrastructure;
 using GoymenERP.Modules.Settings.Application;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Data.SqlClient;
@@ -841,8 +840,7 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
         {
             var baseConnectionString = Environment.GetEnvironmentVariable(
                 SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
-            var factory = new SqlServerRelationalApiFactory(baseConnectionString,
-                services => services.AddOrganizationWorkCenterPlanningReferences());
+            var factory = new SqlServerRelationalApiFactory(baseConnectionString);
             var run = new Run(baseConnectionString, factory);
             // The host migrates Organization first and Manufacturing after it.
             using var client = factory.CreateClient();
