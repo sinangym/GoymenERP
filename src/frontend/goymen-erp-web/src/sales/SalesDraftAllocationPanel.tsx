@@ -43,7 +43,7 @@ export function SalesDraftAllocationPanel(props: SalesDraftAllocationPanelProps)
       <h2 id="sales-allocations-heading">{T.heading}</h2>
       <p className={styles.muted}>{T.note}</p>
       {props.lines.map((line) => <AllocationLine
-        key={`${props.namespace}:${props.routeEntryGeneration}:${props.companyId}:${props.salesOrderId}:${line.lineId}`}
+        key={`${props.namespace}:${props.routeEntryGeneration}:${props.companyId}:${props.salesOrderId}:${line.lineId}:${line.productId}:${line.productVersion}`}
         {...props} line={line} />)}
     </section>
   )
@@ -60,7 +60,8 @@ function AllocationLine({ companyId, namespace, routeEntryGeneration, salesOrder
     productId: line.productId,
     productVersion: line.productVersion,
   }
-  const queryKey = [namespace, routeEntryGeneration, 'physical-allocations', salesOrderId, line.lineId] as const
+  const queryKey = [namespace, routeEntryGeneration, 'physical-allocations', salesOrderId, line.lineId,
+    line.productId, line.productVersion] as const
   const query = useQuery({
     queryKey,
     queryFn: async ({ signal }) => {

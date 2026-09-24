@@ -180,6 +180,41 @@ describe('Sales physical allocation consumer', () => {
     expect(within(remounted).queryByText('Aktif')).toBeNull()
   })
 
+  it('drops a recorded fallback and reads again when the product scope changes', async () => {
+    const fetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if ((init?.method ?? 'GET') === 'GET') return answer({ items: [], searchWindowFull: false })
+      const body = JSON.parse(String(init?.body))
+      return answer({ ...allocation('Active', '1'), allocationId: body.allocationId }, 201)
+    })
+    vi.stubGlobal('fetch', fetch)
+
+    const first = mount()
+    const card = await screen.findByTestId(`sales-allocation-line-${LINE}`)
+    expect(await within(card).findByText('Bu sipariş satırı için tahsis yok.')).toBeTruthy()
+    await userEvent.type(within(card).getByLabelText('Etiket kimliği'), LABEL)
+    await userEvent.type(within(card).getByLabelText('Etiket sürümü'), '11')
+    await userEvent.type(within(card).getByLabelText('Tahsis kg'), '5')
+    await userEvent.type(within(card).getByLabelText('Tahsis nedeni'), 'Sipariş için ayırıldı.')
+    await userEvent.click(within(card).getByRole('button', { name: 'Tahsis kaydet' }))
+    await waitFor(() => expect(within(card).getByText('Aktif')).toBeTruthy())
+    const readsBeforeProductChange = fetch.mock.calls.filter(([, init]) => (init?.method ?? 'GET') === 'GET').length
+
+    const changedLine = {
+      ...line,
+      productId: '40000000-0000-4000-8000-000000000002',
+      productVersion: '8',
+    }
+    first.rerender(<QueryClientProvider client={first.client}><SalesDraftAllocationPanel
+      enabled companyId={COMPANY} namespace="ctx-a" routeEntryGeneration={1}
+      salesOrderId={ORDER} lines={[changedLine]} /></QueryClientProvider>)
+
+    const remounted = await screen.findByTestId(`sales-allocation-line-${LINE}`)
+    expect(await within(remounted).findByText('Bu sipariş satırı için tahsis yok.')).toBeTruthy()
+    expect(within(remounted).queryByText('Aktif')).toBeNull()
+    await waitFor(() => expect(fetch.mock.calls.filter(([, init]) => (init?.method ?? 'GET') === 'GET').length)
+      .toBeGreaterThan(readsBeforeProductChange))
+  })
+
   it('renders and reads nothing without the published capability decision', () => {
     const fetch = vi.fn()
     vi.stubGlobal('fetch', fetch)
