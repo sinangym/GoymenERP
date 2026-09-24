@@ -2,6 +2,7 @@ using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Domain.Allocations;
+using GoymenERP.Modules.Inventory.Domain.Lots;
 using GoymenERP.Modules.Inventory.Domain.Movements;
 using GoymenERP.Modules.Inventory.Domain.Stock;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
@@ -609,10 +610,33 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         var position = Position(company, location, label, BlockState.Free);
         await using (var scope = run.Store(company))
         {
-            await scope.Labels.SaveLabelAsync(label, Metadata(run) with { CorrelationId = $"seed-{Guid.NewGuid():N}" });
-            await scope.Movements.RecordMovementAsync(
-                Movement(company, StockMovementKind.Receipt, In(position, quantity)),
-                Metadata(run) with { CorrelationId = $"seed-{Guid.NewGuid():N}" });
+            var seedMetadata = Metadata(run) with { CorrelationId = $"seed-{Guid.NewGuid():N}" };
+            await scope.Lots.SaveLotAsync(
+                new MaterialLot(company == CompanyB ? LotB : LotA, company, Product), [], seedMetadata);
+            await scope.Labels.SaveLabelAsync(label, seedMetadata);
+
+            if (company == CompanyA)
+            {
+                await scope.Movements.RecordMovementAsync(
+                    Movement(company, StockMovementKind.Receipt, In(position, quantity)), seedMetadata);
+            }
+        }
+
+        // Only GDC/CompanyA has an approved Settings kilogram profile. The foreign-company
+        // isolation fixture therefore stores its pre-existing balance directly, as the definite-
+        // shipment foreign fixture below already does; it must not invent a CompanyB profile.
+        if (company != CompanyA)
+        {
+            await using var foreign = run.Context(company);
+            foreign.Balances.Add(new BalanceRow
+            {
+                Id = Guid.NewGuid(), CompanyId = company,
+                OwnerKind = (int)position.Owner.Kind, OwnerId = position.Owner.Id,
+                CustodianKind = (int)position.Custodian.Kind, CustodianId = position.Custodian.Id,
+                LocationId = position.LocationId, LabelId = position.LabelId, ProductId = position.ProductId,
+                Block = (int)position.Block, QuantityKg = quantity,
+            });
+            await foreign.SaveChangesAsync();
         }
 
         await using var context = run.Context(company);
