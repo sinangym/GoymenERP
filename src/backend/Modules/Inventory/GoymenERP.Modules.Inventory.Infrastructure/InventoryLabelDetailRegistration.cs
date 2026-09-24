@@ -24,5 +24,6 @@ public static class InventoryLabelDetailRegistration
             services.GetRequiredService<IErpAuthorityRevalidationService>(),
             services.GetService<InventoryDbContext>() is { } db
                 ? new SqlInventoryLabelDetailReader(db)
-                : null);
+                : null,
+            services.GetService<IInventoryLabelGenealogyReaderV1>());
 }

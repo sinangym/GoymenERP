@@ -6,6 +6,7 @@ using GoymenERP.Modules.Inventory.Domain;
 using GoymenERP.Modules.Inventory.Domain.Balances;
 using GoymenERP.Modules.Inventory.Domain.Labels;
 using GoymenERP.Modules.Inventory.Domain.Lots;
+using GoymenERP.Modules.Inventory.Domain.Quantities;
 
 namespace GoymenERP.Modules.Inventory.Infrastructure;
 
@@ -27,7 +28,8 @@ internal sealed class InventoryLabelDetailService(
     ICompanyContext company,
     ICurrentUser user,
     IErpAuthorityRevalidationService authority,
-    IInventoryLabelDetailReader? reader) : IInventoryLabelDetailsV1
+    IInventoryLabelDetailReader? reader,
+    IInventoryLabelGenealogyReaderV1? genealogyReader) : IInventoryLabelDetailsV1
 {
     public async Task<InventoryLabelDetailV1> GetAsync(
         Guid labelId,
@@ -40,6 +42,7 @@ internal sealed class InventoryLabelDetailService(
         }
 
         var source = reader ?? throw Error(503, InventoryLabelDetailCodesV1.Unavailable);
+        var genealogySource = genealogyReader ?? throw Error(503, InventoryLabelDetailCodesV1.Unavailable);
         var record = await FencedAsync(
             () => source.ReadAsync(scope.CompanyId, labelId, cancellationToken),
             scope,
@@ -49,11 +52,30 @@ internal sealed class InventoryLabelDetailService(
             throw Error(404, InventoryLabelDetailCodesV1.NotFound);
         }
 
-        return View(record, scope.CompanyId, labelId);
+        var genealogy = await FencedAsync(
+            () => genealogySource.ReadAsync(labelId, cancellationToken: cancellationToken),
+            scope,
+            cancellationToken);
+        if (genealogy is null)
+        {
+            throw Error(503, InventoryLabelDetailCodesV1.Unavailable);
+        }
+
+        var confirmation = await FencedAsync(
+            () => source.ReadAsync(scope.CompanyId, labelId, cancellationToken),
+            scope,
+            cancellationToken);
+        if (confirmation is null || confirmation.Version != record.Version)
+        {
+            throw Error(409, InventoryLabelDetailCodesV1.ReadConflict);
+        }
+
+        return View(record, genealogy, scope.CompanyId, labelId);
     }
 
     private static InventoryLabelDetailV1 View(
         InventoryLabelDetailRecord record,
+        InventoryLabelGenealogyV1 genealogy,
         Guid companyId,
         Guid labelId)
     {
@@ -63,7 +85,8 @@ internal sealed class InventoryLabelDetailService(
             || record.Lot.ProductId != label.ProductId
             || record.Balances.Any(balance => balance.Position.CompanyId != companyId
                 || balance.Position.LabelId != label.Id
-                || balance.Position.ProductId != label.ProductId))
+                || balance.Position.ProductId != label.ProductId)
+            || !ValidGenealogy(genealogy, label))
         {
             throw Error(503, InventoryLabelDetailCodesV1.Unavailable);
         }
@@ -74,7 +97,8 @@ internal sealed class InventoryLabelDetailService(
             return new InventoryLabelDetailV1(
                 record.Version.ToString(CultureInfo.InvariantCulture),
                 InventoryReadModelsV1.LabelView(label, record.Lot),
-                InventoryReadModelsV1.Balances(label.Id, record.Balances));
+                InventoryReadModelsV1.Balances(label.Id, record.Balances),
+                genealogy);
         }
         catch (InventoryRuleException exception)
         {
@@ -83,6 +107,75 @@ internal sealed class InventoryLabelDetailService(
         catch (ArgumentException exception)
         {
             throw Error(503, InventoryLabelDetailCodesV1.Unavailable, exception);
+        }
+    }
+
+    private static bool ValidGenealogy(InventoryLabelGenealogyV1 genealogy, MaterialLabel label)
+    {
+        if (genealogy.LabelId != label.Id
+            || !string.Equals(genealogy.LabelCode, label.Code, StringComparison.Ordinal)
+            || genealogy.Edges is null)
+        {
+            return false;
+        }
+
+        foreach (var edge in genealogy.Edges)
+        {
+            if (edge is null || edge.TransformationId == Guid.Empty
+                || edge.OccurredAtUtc.Offset != TimeSpan.Zero
+                || edge.SourceLabelId == Guid.Empty || edge.OutputLabelId == Guid.Empty
+                || string.IsNullOrWhiteSpace(edge.SourceCode) || string.IsNullOrWhiteSpace(edge.OutputCode)
+                || edge.Kind is not (nameof(InventoryLabelTransformationKind.Split)
+                    or nameof(InventoryLabelTransformationKind.Merge))
+                || !PositiveVersion(edge.SourceLabelVersion)
+                || !PositiveVersion(edge.OutputLabelVersion)
+                || !CanonicalQuantity(edge.SourceQuantityKg)
+                || !CanonicalQuantity(edge.OutputQuantityKg))
+            {
+                return false;
+            }
+        }
+
+        var connectedLabels = new HashSet<Guid> { label.Id };
+        var remaining = genealogy.Edges.ToList();
+        while (remaining.Count > 0)
+        {
+            var connected = remaining.Where(edge =>
+                connectedLabels.Contains(edge.SourceLabelId) || connectedLabels.Contains(edge.OutputLabelId)).ToArray();
+            if (connected.Length == 0)
+            {
+                return false;
+            }
+
+            foreach (var edge in connected)
+            {
+                connectedLabels.Add(edge.SourceLabelId);
+                connectedLabels.Add(edge.OutputLabelId);
+                remaining.Remove(edge);
+            }
+        }
+
+        return true;
+    }
+
+    private static bool PositiveVersion(string value) =>
+        long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed) && parsed > 0;
+
+    private static bool CanonicalQuantity(string value)
+    {
+        if (!decimal.TryParse(value, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var parsed)
+            || parsed <= 0m)
+        {
+            return false;
+        }
+
+        try
+        {
+            return string.Equals(Kilograms.Positive(parsed).ToString(), value, StringComparison.Ordinal);
+        }
+        catch (InventoryRuleException)
+        {
+            return false;
         }
     }
 

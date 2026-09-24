@@ -69,6 +69,11 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
                 (genealogy.LabelId, genealogy.LabelCode, genealogy.Edges.Count));
             Assert.Equal(2, genealogy.Edges.Select(edge => edge.TransformationId).Distinct().Count());
             Assert.Equal(["Merge", "Split"], genealogy.Edges.Select(edge => edge.Kind).Distinct().Order().ToArray());
+
+            var detail = await LabelDetails(scope.DbContext, CompanyA, scope.Store).GetAsync(merged);
+            Assert.Equal((merged, "SYN-GENEALOGY-MERGED", 4, false),
+                (detail.Genealogy.LabelId, detail.Genealogy.LabelCode,
+                    detail.Genealogy.Edges.Count, detail.Genealogy.WindowFull));
         }
 
         Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.LabelTransformations"));
