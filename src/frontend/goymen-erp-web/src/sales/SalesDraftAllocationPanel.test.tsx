@@ -76,9 +76,10 @@ describe('Sales physical allocation consumer', () => {
       const headers = new Headers(init?.headers)
       calls.push({ method, url, body, headers })
       if (method === 'GET') {
-        const visible = stored !== null && !hideRecordedOnNextGet
+        const visible = hideRecordedOnNextGet ? null : stored
         hideRecordedOnNextGet = false
-        return answer({ items: visible ? [{ allocation: stored, labelVersion: stored.status === 'Active' ? '12' : '13' }] : [], searchWindowFull: false })
+        return answer({ items: visible === null ? [] : [{ allocation: visible,
+          labelVersion: visible.status === 'Active' ? '12' : '13' }], searchWindowFull: false })
       }
       if (url.endsWith('/release')) {
         expect(body).toEqual({ expectedAllocationVersion: '1', reason: 'Sipariş değişti.' })
@@ -124,7 +125,7 @@ describe('Sales physical allocation consumer', () => {
 
   it('keeps the fresher GET state when the recorded allocation already exists', async () => {
     let createdId: string | null = null
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       const method = init?.method ?? 'GET'
       if (method === 'GET') {
         const fresh = createdId === null ? [] : [{
