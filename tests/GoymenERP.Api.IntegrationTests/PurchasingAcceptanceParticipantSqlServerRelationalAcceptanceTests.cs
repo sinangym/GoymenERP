@@ -215,6 +215,8 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         var orderId = Guid.NewGuid();
         var lineId = Guid.NewGuid();
         var unitId = selectedUnitId ?? AcceptanceUnit;
+        var createKey = $"acceptance-seed-create-{orderId:N}";
+        var approveKey = $"acceptance-seed-approve-{orderId:N}";
         await using StoreScope scope = run.Store(CompanyA);
         var store = scope.Store;
         var order = PurchaseOrder.Create(orderId, CompanyA, AcceptanceSupplier, AcceptanceTime);
@@ -226,22 +228,32 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             Quantity.Of(10m, unit),
             sourceRequestLineId: null,
             AcceptanceTime);
-        await store.StoreOrderAsync(
-            Envelope("acceptance-seed-create", "correlation-seed-create"),
-            AcceptanceHash("acceptance-seed-create"),
+        var stored = await store.StoreOrderAsync(
+            Envelope(createKey, $"correlation-{createKey}"),
+            AcceptanceHash(createKey),
             AcceptanceAccount,
             DateOnly.FromDateTime(AcceptanceTime.UtcDateTime),
             () => order,
             new Dictionary<Guid, string> { [lineId] = "product-v1" });
+        Assert.Equal(orderId, stored.Order.Order.Id);
+        Assert.Equal(PurchaseOrderStatus.Draft, stored.Order.Order.Status);
+        var versionBeforeApproval = stored.Order.Order.Version;
         var approved = await store.MutateOrderAsync(
-            Envelope("acceptance-seed-approve", "correlation-seed-approve"),
-            AcceptanceHash("acceptance-seed-approve"),
+            Envelope(approveKey, $"correlation-{approveKey}"),
+            AcceptanceHash(approveKey),
             PurchasingCommands.OrderApproveV1,
             orderId,
             (candidate, now) => candidate.Approve(candidate.Version, now),
             new PurchasingMutationAudit("purchasing.purchase-order.approved.v1", "Approve", "Test approval"));
         Assert.NotNull(approved);
-        Assert.Equal(3, approved.Order.Order.Version);
+        Assert.Equal(PurchaseOrderStatus.Approved, approved.Order.Order.Status);
+        Assert.Equal(versionBeforeApproval + 1, approved.Order.Order.Version);
+        var reopened = await store.FindOrderAsync(orderId);
+        Assert.NotNull(reopened);
+        Assert.Equal((orderId, PurchaseOrderStatus.Approved, approved.Order.Order.Version),
+            (reopened!.Order.Id, reopened.Order.Status, reopened.Order.Version));
+        var reopenedLine = Assert.Single(reopened.Order.Lines);
+        Assert.Equal((lineId, unitId), (reopenedLine.Id, reopenedLine.UnitId));
         return new AcceptanceSeed(orderId, lineId, unitId, approved.Order.Order.Version);
     }
 
