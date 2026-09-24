@@ -24,7 +24,14 @@ vi.mock('../shell/shellContext', () => ({
     activeContext: { userId: 'actor-a', companyId: COMPANY, scopeMode: 'single', capabilities: shell.capabilities },
   }),
 }))
-vi.mock('../shell/shellState', () => ({ contextKey: () => ['fixture'], contextKeyString: () => 'fixture' }))
+vi.mock('../shell/shellState', () => ({
+  contextKey: () => ['fixture'],
+  contextKeyString: () => 'fixture',
+  hasCapability: (
+    state: { readonly activeContext?: { readonly capabilities?: readonly string[] } },
+    capability: string,
+  ) => state.activeContext?.capabilities?.includes(capability) ?? false,
+}))
 vi.mock('../shell/useAuthBoundary', () => ({ useAuthBoundary: () => auth }))
 
 const item = {
