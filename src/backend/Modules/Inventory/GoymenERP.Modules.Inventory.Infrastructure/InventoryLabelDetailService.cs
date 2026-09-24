@@ -70,6 +70,15 @@ internal sealed class InventoryLabelDetailService(
             throw Error(409, InventoryLabelDetailCodesV1.ReadConflict);
         }
 
+        var genealogyConfirmation = await FencedAsync(
+            () => genealogySource.ReadAsync(labelId, cancellationToken: cancellationToken),
+            scope,
+            cancellationToken);
+        if (genealogyConfirmation is null || !SameGenealogy(genealogy, genealogyConfirmation))
+        {
+            throw Error(409, InventoryLabelDetailCodesV1.ReadConflict);
+        }
+
         return View(record, genealogy, scope.CompanyId, labelId);
     }
 
@@ -160,6 +169,12 @@ internal sealed class InventoryLabelDetailService(
 
     private static bool PositiveVersion(string value) =>
         long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed) && parsed > 0;
+
+    private static bool SameGenealogy(InventoryLabelGenealogyV1 left, InventoryLabelGenealogyV1 right) =>
+        left.LabelId == right.LabelId
+        && string.Equals(left.LabelCode, right.LabelCode, StringComparison.Ordinal)
+        && left.WindowFull == right.WindowFull
+        && left.Edges.SequenceEqual(right.Edges);
 
     private static bool CanonicalQuantity(string value)
     {

@@ -36,9 +36,11 @@ public sealed class InventoryLabelDetailTests
             ErpPermissions.InventoryBalancesRead,
             ErpPermissions.InventoryLabelsRead,
             ErpPermissions.InventoryBalancesRead,
+            ErpPermissions.InventoryLabelsRead,
+            ErpPermissions.InventoryBalancesRead,
         ], world.Authority.Calls);
         Assert.Equal(2, world.Reader.Reads);
-        Assert.Equal(1, world.Genealogy.Reads);
+        Assert.Equal(2, world.Genealogy.Reads);
     }
 
     [Fact]
@@ -153,6 +155,12 @@ public sealed class InventoryLabelDetailTests
         var changed = new World();
         changed.Genealogy.During = () => changed.Reader.Record = changed.Reader.Record! with { Version = 4 };
         await Refused(changed.Service().GetAsync(changed.Reader.Record!.Label.Id), 409,
+            InventoryLabelDetailCodesV1.ReadConflict);
+
+        var genealogyChanged = new World();
+        genealogyChanged.Genealogy.During = () => genealogyChanged.Genealogy.Result =
+            genealogyChanged.Genealogy.Result! with { WindowFull = true };
+        await Refused(genealogyChanged.Service().GetAsync(genealogyChanged.Reader.Record!.Label.Id), 409,
             InventoryLabelDetailCodesV1.ReadConflict);
     }
 
@@ -283,9 +291,10 @@ public sealed class InventoryLabelDetailTests
         {
             Reads++;
             await Task.Yield();
+            var result = Result;
             During?.Invoke();
             if (Fail) throw new InvalidOperationException("Provider failure");
-            return Result;
+            return result;
         }
     }
 }
