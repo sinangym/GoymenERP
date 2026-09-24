@@ -53,8 +53,8 @@ describe('normal journal approval interaction', () => {
     fireEvent.click(approve)
 
     await waitFor(() => expect(requestsFor(recorded, '/approval', 'POST')).toHaveLength(1))
-    expect(period).toBeDisabled()
-    expect(approve).toBeDisabled()
+    expect((period as HTMLInputElement).disabled).toBe(true)
+    expect((approve as HTMLButtonElement).disabled).toBe(true)
     release?.(json(draft({ status: 'Approved', version: 2, approvedByUserId: ACTOR,
       approvedAtUtc: '2026-09-24T14:00:00Z', periodId: PERIOD, postedJournalId: DRAFT })))
     await screen.findByText('Approved')

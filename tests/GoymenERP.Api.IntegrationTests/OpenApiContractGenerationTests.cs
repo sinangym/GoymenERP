@@ -430,6 +430,15 @@ public sealed partial class OpenApiContractGenerationTests
             ParameterValues: ["path:journalId:true:type:string;format:uuid"]),
         new("get", "/api/v1/accounting/posting-queues", "GetAccountingPostingQueuesV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json")),
+        new("post", "/api/v1/accounting/normal-journal-drafts", "CreateAccountingNormalJournalDraftV1",
+            AuthenticatedResponses("201:application/json", "400:application/problem+json", "415:", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/CreateNormalJournalDraftRequestV1"),
+        new("get", "/api/v1/accounting/normal-journal-drafts/{draftId}", "GetAccountingNormalJournalDraftV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["path:draftId:true:type:string;format:uuid"]),
+        new("post", "/api/v1/accounting/normal-journal-drafts/{draftId}/approval", "ApproveAccountingNormalJournalDraftV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/ApproveNormalJournalDraftRequestV1", ["path:draftId:true:type:string;format:uuid"]),
         new("get", "/api/v1/manufacturing/orders/{orderId}/mass-balance", "GetManufacturingOrderMassBalanceV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["path:orderId:true:type:string;format:uuid"]),
@@ -563,6 +572,9 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetAccountingJournalsV1"] = "ref:JournalPageV1",
             ["GetAccountingJournalV1"] = "ref:JournalDetailV1",
             ["GetAccountingPostingQueuesV1"] = "ref:PostingQueuesV1",
+            ["CreateAccountingNormalJournalDraftV1"] = "ref:NormalJournalDraftViewV1",
+            ["GetAccountingNormalJournalDraftV1"] = "ref:NormalJournalDraftViewV1",
+            ["ApproveAccountingNormalJournalDraftV1"] = "ref:NormalJournalDraftViewV1",
             ["GetManufacturingOrderMassBalanceV1"] = "ref:MassBalanceViewV1",
             ["ListManufacturingOrdersV1"] = "ref:OrderListViewV1",
             ["CloseManufacturingOrderV1"] = "ref:OrderViewV1",
@@ -666,6 +678,9 @@ public sealed partial class OpenApiContractGenerationTests
         "GetAccountingJournalsV1",
         "GetAccountingJournalV1",
         "GetAccountingPostingQueuesV1",
+        "CreateAccountingNormalJournalDraftV1",
+        "GetAccountingNormalJournalDraftV1",
+        "ApproveAccountingNormalJournalDraftV1",
         "GetManufacturingOrderMassBalanceV1",
         "ListManufacturingOrdersV1",
         "CloseManufacturingOrderV1",
@@ -728,6 +743,8 @@ public sealed partial class OpenApiContractGenerationTests
         "ProposeAccountingPeriodV1",
         "ApproveAccountingPeriodV1",
         "CloseAccountingPeriodV1",
+        "CreateAccountingNormalJournalDraftV1",
+        "ApproveAccountingNormalJournalDraftV1",
         "CloseManufacturingOrderV1",
     ];
 
@@ -831,6 +848,8 @@ public sealed partial class OpenApiContractGenerationTests
                 ["ProposeAccountingPeriodV1"] = [StatusCodes.Status201Created],
                 ["ApproveAccountingPeriodV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
                 ["CloseAccountingPeriodV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
+                ["CreateAccountingNormalJournalDraftV1"] = [StatusCodes.Status201Created],
+                ["ApproveAccountingNormalJournalDraftV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
                 ["CloseManufacturingOrderV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
             };
 
@@ -902,6 +921,8 @@ public sealed partial class OpenApiContractGenerationTests
         "ProposeAccountingPeriodV1",
         "ApproveAccountingPeriodV1",
         "CloseAccountingPeriodV1",
+        "CreateAccountingNormalJournalDraftV1",
+        "ApproveAccountingNormalJournalDraftV1",
         "CloseManufacturingOrderV1",
         "GetLogisticsApprovedOrderLinesV1",
         "GetSalesContactInformationReferencesV1",
@@ -951,6 +972,8 @@ public sealed partial class OpenApiContractGenerationTests
         "ApproveAccountingPeriodV1:404",
         "CloseAccountingPeriodV1:404",
         "GetAccountingJournalV1:404",
+        "GetAccountingNormalJournalDraftV1:404",
+        "ApproveAccountingNormalJournalDraftV1:404",
         "GetManufacturingOrderMassBalanceV1:404",
         "CloseManufacturingOrderV1:404",
         "GetSalesContactInformationReferencesV1:404",
@@ -958,6 +981,8 @@ public sealed partial class OpenApiContractGenerationTests
 
     private static readonly HashSet<string> MixedProblemResponses =
     [
+        "CreateAccountingNormalJournalDraftV1:400",
+        "ApproveAccountingNormalJournalDraftV1:400",
         "GetAuditEventsV1:400",
         "SetOrganizationLocationActiveStateV1:400",
         "GetFinanceManualReceiptDraftContextV1:400",
@@ -1146,18 +1171,25 @@ public sealed partial class OpenApiContractGenerationTests
             ["ApprovePurchaseOrderV1:422"] = ["validation_failed"],
             ["GetAccountingPeriodsV1:400"] = ["accounting_request_invalid"],
             ["ProposeAccountingPeriodV1:400"] = ["accounting_request_invalid"],
-            ["ProposeAccountingPeriodV1:409"] = ["accounting_concurrent_change", "accounting_period_conflict", "accounting_period_overlap", "accounting_period_preparer_conflict", "accounting_version_conflict", "idempotency_conflict"],
-            ["ProposeAccountingPeriodV1:422"] = ["accounting_invalid_reference", "accounting_period_already_closed", "accounting_period_invalid", "accounting_period_not_open", "accounting_period_not_proposed", "accounting_value_does_not_fit"],
+            ["ProposeAccountingPeriodV1:409"] = ["accounting_concurrent_change", "accounting_normal_journal_draft_content_conflict", "accounting_normal_journal_draft_not_pending", "accounting_normal_journal_draft_posting_conflict", "accounting_period_conflict", "accounting_period_overlap", "accounting_period_preparer_conflict", "accounting_version_conflict", "idempotency_conflict"],
+            ["ProposeAccountingPeriodV1:422"] = ["accounting_company_mismatch", "accounting_invalid_reference", "accounting_journal_line_invalid", "accounting_journal_too_few_lines", "accounting_journal_unbalanced", "accounting_period_already_closed", "accounting_period_closed", "accounting_period_does_not_cover_date", "accounting_period_invalid", "accounting_period_not_open", "accounting_period_not_proposed", "accounting_value_does_not_fit"],
             ["GetAccountingPeriodV1:400"] = ["accounting_request_invalid"],
             ["ApproveAccountingPeriodV1:400"] = ["accounting_request_invalid"],
-            ["ApproveAccountingPeriodV1:409"] = ["accounting_concurrent_change", "accounting_period_conflict", "accounting_period_overlap", "accounting_period_preparer_conflict", "accounting_version_conflict", "idempotency_conflict"],
-            ["ApproveAccountingPeriodV1:422"] = ["accounting_invalid_reference", "accounting_period_already_closed", "accounting_period_invalid", "accounting_period_not_open", "accounting_period_not_proposed", "accounting_value_does_not_fit"],
+            ["ApproveAccountingPeriodV1:409"] = ["accounting_concurrent_change", "accounting_normal_journal_draft_content_conflict", "accounting_normal_journal_draft_not_pending", "accounting_normal_journal_draft_posting_conflict", "accounting_period_conflict", "accounting_period_overlap", "accounting_period_preparer_conflict", "accounting_version_conflict", "idempotency_conflict"],
+            ["ApproveAccountingPeriodV1:422"] = ["accounting_company_mismatch", "accounting_invalid_reference", "accounting_journal_line_invalid", "accounting_journal_too_few_lines", "accounting_journal_unbalanced", "accounting_period_already_closed", "accounting_period_closed", "accounting_period_does_not_cover_date", "accounting_period_invalid", "accounting_period_not_open", "accounting_period_not_proposed", "accounting_value_does_not_fit"],
             ["CloseAccountingPeriodV1:400"] = ["accounting_request_invalid"],
-            ["CloseAccountingPeriodV1:409"] = ["accounting_concurrent_change", "accounting_period_conflict", "accounting_period_overlap", "accounting_period_preparer_conflict", "accounting_version_conflict", "idempotency_conflict"],
-            ["CloseAccountingPeriodV1:422"] = ["accounting_invalid_reference", "accounting_period_already_closed", "accounting_period_invalid", "accounting_period_not_open", "accounting_period_not_proposed", "accounting_value_does_not_fit"],
+            ["CloseAccountingPeriodV1:409"] = ["accounting_concurrent_change", "accounting_normal_journal_draft_content_conflict", "accounting_normal_journal_draft_not_pending", "accounting_normal_journal_draft_posting_conflict", "accounting_period_conflict", "accounting_period_overlap", "accounting_period_preparer_conflict", "accounting_version_conflict", "idempotency_conflict"],
+            ["CloseAccountingPeriodV1:422"] = ["accounting_company_mismatch", "accounting_invalid_reference", "accounting_journal_line_invalid", "accounting_journal_too_few_lines", "accounting_journal_unbalanced", "accounting_period_already_closed", "accounting_period_closed", "accounting_period_does_not_cover_date", "accounting_period_invalid", "accounting_period_not_open", "accounting_period_not_proposed", "accounting_value_does_not_fit"],
             ["GetAccountingJournalsV1:400"] = ["accounting_request_invalid"],
             ["GetAccountingJournalV1:400"] = ["accounting_request_invalid"],
             ["GetAccountingPostingQueuesV1:400"] = ["accounting_request_invalid"],
+            ["CreateAccountingNormalJournalDraftV1:400"] = ["accounting_request_invalid"],
+            ["CreateAccountingNormalJournalDraftV1:409"] = ["accounting_concurrent_change", "accounting_normal_journal_draft_content_conflict", "accounting_normal_journal_draft_not_pending", "accounting_normal_journal_draft_posting_conflict", "accounting_period_conflict", "accounting_period_overlap", "accounting_period_preparer_conflict", "accounting_version_conflict", "idempotency_conflict"],
+            ["CreateAccountingNormalJournalDraftV1:422"] = ["accounting_company_mismatch", "accounting_invalid_reference", "accounting_journal_line_invalid", "accounting_journal_too_few_lines", "accounting_journal_unbalanced", "accounting_period_already_closed", "accounting_period_closed", "accounting_period_does_not_cover_date", "accounting_period_invalid", "accounting_period_not_open", "accounting_period_not_proposed", "accounting_value_does_not_fit"],
+            ["GetAccountingNormalJournalDraftV1:400"] = ["accounting_request_invalid"],
+            ["ApproveAccountingNormalJournalDraftV1:400"] = ["accounting_request_invalid"],
+            ["ApproveAccountingNormalJournalDraftV1:409"] = ["accounting_concurrent_change", "accounting_normal_journal_draft_content_conflict", "accounting_normal_journal_draft_not_pending", "accounting_normal_journal_draft_posting_conflict", "accounting_period_conflict", "accounting_period_overlap", "accounting_period_preparer_conflict", "accounting_version_conflict", "idempotency_conflict"],
+            ["ApproveAccountingNormalJournalDraftV1:422"] = ["accounting_company_mismatch", "accounting_invalid_reference", "accounting_journal_line_invalid", "accounting_journal_too_few_lines", "accounting_journal_unbalanced", "accounting_period_already_closed", "accounting_period_closed", "accounting_period_does_not_cover_date", "accounting_period_invalid", "accounting_period_not_open", "accounting_period_not_proposed", "accounting_value_does_not_fit"],
             // MFG-ORD: the list refuses a bad page size, cursor or status on the field; the close is a
             // write like the others, and adds manufacturing_unexplained_difference to the shared 422 list.
             ["ListManufacturingOrdersV1:400"] = ["manufacturing_request_invalid"],
@@ -1300,6 +1332,35 @@ public sealed partial class OpenApiContractGenerationTests
                     ("totalCredit", "type:string"),
                     ("lineCount", "type:integer|string;format:int32"),
                     ("storedAtUtc", "type:string;format:date-time")),
+                ["NormalJournalDraftLineViewV1"] = ObjectSchema(
+                    ["lineNumber", "mappingKey", "side", "accountId", "amount"],
+                    ("lineNumber", "type:integer|string;format:int32"),
+                    ("mappingKey", "type:string"),
+                    ("side", "type:string"),
+                    ("accountId", "type:string;format:uuid"),
+                    ("amount", "type:string")),
+                ["NormalJournalDraftViewV1"] = ObjectSchema(
+                    ["draftId", "companyId", "version", "status", "preparedByUserId", "preparedAtUtc", "approvedByUserId", "approvedAtUtc", "periodId", "postedJournalId", "sourceId", "postingPurpose", "postingRuleVersion", "accountPlanSourceVersion", "accountPlanSourceSha256", "currencyId", "transactionDate", "accountingDate", "valueDate", "lines"],
+                    ("draftId", "type:string;format:uuid"),
+                    ("companyId", "type:string;format:uuid"),
+                    ("version", "type:integer|string;format:int64"),
+                    ("status", "type:string"),
+                    ("preparedByUserId", "type:string;format:uuid"),
+                    ("preparedAtUtc", "type:string;format:date-time"),
+                    ("approvedByUserId", "type:null|string;format:uuid"),
+                    ("approvedAtUtc", "type:null|string;format:date-time"),
+                    ("periodId", "type:null|string;format:uuid"),
+                    ("postedJournalId", "type:null|string;format:uuid"),
+                    ("sourceId", "type:string;format:uuid"),
+                    ("postingPurpose", "type:string"),
+                    ("postingRuleVersion", "type:string"),
+                    ("accountPlanSourceVersion", "type:string"),
+                    ("accountPlanSourceSha256", "type:string"),
+                    ("currencyId", "type:string;format:uuid"),
+                    ("transactionDate", "type:string;format:date"),
+                    ("accountingDate", "type:string;format:date"),
+                    ("valueDate", "type:null|string;format:date"),
+                    ("lines", "type:array;items:ref:NormalJournalDraftLineViewV1")),
                 ["PendingValuationViewV1"] = ObjectSchema(
                     ["sourceId", "postingPurpose", "postingRuleVersion", "linesAwaitingAmount", "firstMessageId"],
                     ("sourceId", "type:string;format:uuid"),
@@ -2278,6 +2339,23 @@ public sealed partial class OpenApiContractGenerationTests
         ExpectedRequestComponentSchemas =
             new Dictionary<string, ComponentSchemaExpectation>(StringComparer.Ordinal)
             {
+                ["ApproveNormalJournalDraftRequestV1"] = ObjectSchema(
+                    ["expectedVersion", "periodId"],
+                    ("expectedVersion", "type:integer|string;format:int64"),
+                    ("periodId", "type:string;format:uuid")),
+                ["CreateNormalJournalDraftLineRequestV1"] = ObjectSchema(
+                    ["accountId", "side", "amount"],
+                    ("accountId", "type:string;format:uuid"),
+                    ("side", "type:string"),
+                    ("amount", "type:string")),
+                ["CreateNormalJournalDraftRequestV1"] = ObjectSchema(
+                    ["draftId", "sourceId", "transactionDate", "accountingDate", "valueDate", "lines"],
+                    ("draftId", "type:string;format:uuid"),
+                    ("sourceId", "type:string;format:uuid"),
+                    ("transactionDate", "type:string;format:date"),
+                    ("accountingDate", "type:string;format:date"),
+                    ("valueDate", "type:null|string;format:date"),
+                    ("lines", "type:array;items:ref:CreateNormalJournalDraftLineRequestV1")),
                 ["CloseOrderRequestV1"] = ObjectSchema(
                     ["expectedVersion"],
                     ("expectedVersion", "type:integer|string;format:int64")),
@@ -3133,9 +3211,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(114, operations.Count);
+        Assert.Equal(117, operations.Count);
         Assert.Equal(
-            114,
+            117,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());

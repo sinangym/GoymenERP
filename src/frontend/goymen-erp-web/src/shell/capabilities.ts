@@ -196,6 +196,10 @@ export const CAPABILITY = {
   accountingJournalsList: 'accounting.journals.list',
   /** M-04-DETAIL one journal, read-only. Route `/muhasebe/fisler/:journalId`. A SEPARATE grant from the list. */
   accountingJournalsDetail: 'accounting.journals.detail',
+  /** ACC-V1 normal journal create, own-draft reopen and narrow approval routes. */
+  accountingNormalDraftCreate: 'accounting.normal-journal-drafts.create',
+  accountingNormalDraftDetail: 'accounting.normal-journal-drafts.detail',
+  accountingNormalDraftApprove: 'accounting.normal-journal-drafts.approve',
   /** M-01 Muhasebe Kontrol Merkezi — the posting queues, read-only. Route `/muhasebe/kontrol`. */
   accountingPostingQueues: 'accounting.posting-queues',
   /** INV-OPEN-2 opening-stock workspace. Home, create and detail share this existing permission. */
@@ -277,6 +281,9 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.accountingPeriodsPropose]: '/muhasebe/donemler/yeni',
   [CAPABILITY.accountingJournalsList]: '/muhasebe/fisler',
   [CAPABILITY.accountingJournalsDetail]: '/muhasebe/fisler/:journalId',
+  [CAPABILITY.accountingNormalDraftCreate]: '/muhasebe/normal-fisler/yeni',
+  [CAPABILITY.accountingNormalDraftDetail]: '/muhasebe/normal-fisler/:draftId',
+  [CAPABILITY.accountingNormalDraftApprove]: '/muhasebe/normal-fis-onay/:draftId',
   [CAPABILITY.accountingPostingQueues]: '/muhasebe/kontrol',
   [CAPABILITY.inventoryOpeningStockRecord]: '/stok/acilis',
   [CAPABILITY.inventoryStockPositionsList]: '/stok/pozisyonlar',
@@ -355,6 +362,9 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   // Not these two: a period is proposed from the M-07 list and a journal opened from a row.
   [CAPABILITY.accountingPeriodsPropose]: '',
   [CAPABILITY.accountingJournalsDetail]: '',
+  [CAPABILITY.accountingNormalDraftCreate]: '',
+  [CAPABILITY.accountingNormalDraftDetail]: '',
+  [CAPABILITY.accountingNormalDraftApprove]: '',
   [CAPABILITY.logisticsInstructionsList]: 'Yükleme Talimatları',
   // Neither of these two: the new-instruction screen is reached from the L-02 list's own primary
   // link (one entry point per creation route, the Finance and Accounting precedent), and an
