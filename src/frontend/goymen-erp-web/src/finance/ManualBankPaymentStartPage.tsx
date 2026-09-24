@@ -4,8 +4,8 @@ import { fetchCounterparties } from '../cari/api'
 import type { CounterpartyListItem } from '../cari/contract'
 import { StateBlock } from '../shell/StateBlock'
 import { decodeBankAccountMasterPage, type BankAccountMasterItem } from './bankAccountContract'
-import { draftContextRequestFor } from './draftContext'
-import { useDraftContext, useFinanceRead } from './financePort'
+import { manualBankPaymentDraftContextRequestFor } from './manualBankPaymentDraftContext'
+import { useFinanceRead, useManualBankPaymentDraftContext } from './financePort'
 
 export interface ManualBankPaymentEntryContext {
   readonly partyId: string
@@ -57,14 +57,15 @@ export function ManualBankPaymentStartPage({
   const request = useMemo(
     () => selectedParty === null
       ? null
-      : draftContextRequestFor(
+      : manualBankPaymentDraftContextRequestFor(
           treasuryAccountId,
-          { partyId: selectedParty.id, companyAccountId: selectedParty.companyAccounts[0].id },
+          selectedParty.id,
+          selectedParty.companyAccounts[0].id,
           occurredOn,
         ),
     [occurredOn, selectedParty, treasuryAccountId],
   )
-  const canonical = useDraftContext(request)
+  const canonical = useManualBankPaymentDraftContext(request)
 
   const submit = () => {
     if (canonical.state.kind !== 'ready') return
@@ -72,7 +73,7 @@ export function ManualBankPaymentStartPage({
     onContinue({
       partyId: value.party.partyId,
       companyAccountId: value.party.companyAccountId,
-      treasuryAccountId: value.bankAccount.id,
+      treasuryAccountId: value.treasuryAccount.id,
       currencyId: value.currency.currencyId,
       profileId: value.currency.profile.reference.profileId,
       profileVersion: value.currency.profile.reference.version,

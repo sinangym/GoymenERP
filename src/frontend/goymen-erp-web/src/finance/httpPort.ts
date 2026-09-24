@@ -35,7 +35,7 @@
  * The company is only the verified shell company in `X-Company-Id`; it is never put into a body.
  */
 
-import { API_BASE, devHeaders, fetchDraftContext } from './http'
+import { API_BASE, devHeaders, fetchDraftContext, fetchManualBankPaymentDraftContext } from './http'
 import type { FinanceReceiptPort, FinanceScope, PortReply } from './port'
 
 export const BANK_ACCOUNTS_PATH = '/finance/bank-accounts'
@@ -129,6 +129,9 @@ function unpublishedCommand(): Promise<PortReply> {
 
 export function createHttpFinancePort(): FinanceReceiptPort {
   return {
+    manualBankPaymentDraftContext: (scope, request, signal) =>
+      fetchManualBankPaymentDraftContext(scope.companyId, request, signal),
+
     listManualBankPayments: (scope, request, signal) => {
       const params = new URLSearchParams()
       if (request.cursor !== null) params.set('cursor', request.cursor)

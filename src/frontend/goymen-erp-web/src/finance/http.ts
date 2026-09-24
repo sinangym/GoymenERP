@@ -9,6 +9,7 @@
  */
 
 import type { DraftContextRequest } from './draftContext'
+import type { ManualBankPaymentDraftContextRequest } from './manualBankPaymentDraftContext'
 
 export const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '/api/v1'
 const DEV_USER = (import.meta.env.VITE_DEV_USER as string | undefined) ?? 'company-a-user'
@@ -30,6 +31,7 @@ export type HttpReadReply =
   | { readonly kind: 'no-reply' }
 
 export const DRAFT_CONTEXT_PATH = '/finance/manual-receipts/draft-context'
+export const MANUAL_BANK_PAYMENT_DRAFT_CONTEXT_PATH = '/finance/manual-bank-payments/draft-context'
 
 export function draftContextUrl(request: DraftContextRequest): string {
   const params = new URLSearchParams()
@@ -50,6 +52,33 @@ export async function fetchDraftContext(
     response = await fetch(draftContextUrl(request), {
       headers: { ...devHeaders(), 'X-Company-Id': companyId, Accept: 'application/json' },
       signal,
+    })
+  } catch {
+    return { kind: 'no-reply' }
+  }
+  if (response.status !== 200) return { kind: 'status', status: response.status }
+  try {
+    return { kind: 'ok', body: await response.json() }
+  } catch {
+    return signal.aborted ? { kind: 'no-reply' } : { kind: 'ok', body: undefined }
+  }
+}
+
+export function manualBankPaymentDraftContextUrl(request: ManualBankPaymentDraftContextRequest): string {
+  const params = new URLSearchParams()
+  params.set('treasuryAccountId', request.treasuryAccountId)
+  params.set('partyId', request.partyId)
+  params.set('companyAccountId', request.companyAccountId)
+  params.set('occurredOn', request.occurredOn)
+  return `${API_BASE}${MANUAL_BANK_PAYMENT_DRAFT_CONTEXT_PATH}?${params.toString()}`
+}
+
+export async function fetchManualBankPaymentDraftContext(companyId: string,
+  request: ManualBankPaymentDraftContextRequest, signal: AbortSignal): Promise<HttpReadReply> {
+  let response: Response
+  try {
+    response = await fetch(manualBankPaymentDraftContextUrl(request), {
+      headers: { ...devHeaders(), 'X-Company-Id': companyId, Accept: 'application/json' }, signal,
     })
   } catch {
     return { kind: 'no-reply' }

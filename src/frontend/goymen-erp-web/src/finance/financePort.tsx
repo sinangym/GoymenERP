@@ -29,6 +29,8 @@ import {
   type ValidationIssue,
 } from './contract'
 import { decodeDraftContext, type DraftContext, type DraftContextRequest } from './draftContext'
+import { decodeManualBankPaymentDraftContext, type ManualBankPaymentDraftContext,
+  type ManualBankPaymentDraftContextRequest } from './manualBankPaymentDraftContext'
 import type { HttpReadReply } from './http'
 import type { FinanceReceiptPort, FinanceScope, PortReply } from './port'
 import {
@@ -248,6 +250,68 @@ export function useDraftContext(request: DraftContextRequest | null): DraftConte
     403: { kind: 'forbidden' },
     404: { kind: 'not-found' },
     503: { kind: 'unavailable' },
+  }
+  return { state: byStatus[tag.status] ?? { kind: 'unavailable' }, refetch }
+}
+
+export type ManualBankPaymentDraftContextState =
+  | { readonly kind: 'needs-selection' }
+  | { readonly kind: 'loading' }
+  | { readonly kind: 'ready'; readonly context: ManualBankPaymentDraftContext }
+  | { readonly kind: 'invalid-request' }
+  | { readonly kind: 'forbidden' }
+  | { readonly kind: 'not-found' }
+  | { readonly kind: 'unavailable' }
+  | { readonly kind: 'unauthenticated' }
+  | { readonly kind: 'malformed' }
+  | { readonly kind: 'network-error' }
+
+type ManualBankPaymentContextTag =
+  | { readonly type: 'ready'; readonly context: ManualBankPaymentDraftContext }
+  | { readonly type: 'status'; readonly status: number }
+  | { readonly type: 'malformed' }
+  | { readonly type: 'no-reply' }
+
+export function useManualBankPaymentDraftContext(request: ManualBankPaymentDraftContextRequest | null) {
+  const port = useContext(FinancePortContext)
+  const bound = useFinanceBinding()
+  const boundary = useAuthBoundary()
+  const companyId = bound?.binding.companyId ?? null
+  const query = useQuery({
+    queryKey: [bound?.namespace ?? 'unbound', 'finance', 'manual-bank-payment-draft-context',
+      request?.treasuryAccountId ?? '', request?.partyId ?? '', request?.companyAccountId ?? '',
+      request?.occurredOn ?? ''],
+    enabled: port !== null && bound !== null && request !== null,
+    queryFn: async ({ signal }): Promise<ManualBankPaymentContextTag> => {
+      if (port === null || companyId === null || request === null) return { type: 'no-reply' }
+      const snapshot = boundary.capture()
+      let reply: HttpReadReply
+      try {
+        reply = await port.manualBankPaymentDraftContext({ companyId }, request, signal)
+      } catch {
+        return { type: 'no-reply' }
+      }
+      if (reply.kind === 'no-reply') return { type: 'no-reply' }
+      if (reply.kind === 'status') {
+        boundary.report(reply.status, snapshot)
+        return { type: 'status', status: reply.status }
+      }
+      const decoded = decodeManualBankPaymentDraftContext(reply.body, companyId, request)
+      return decoded.ok ? { type: 'ready', context: decoded.value } : { type: 'malformed' }
+    },
+  })
+  const refetch = useCallback(() => void query.refetch(), [query])
+  if (request === null) return { state: { kind: 'needs-selection' } as const, refetch }
+  if (port === null) return { state: { kind: 'unavailable' } as const, refetch }
+  const tag = query.data
+  if (bound === null || tag === undefined || query.isFetching)
+    return { state: { kind: 'loading' } as const, refetch }
+  if (tag.type === 'ready') return { state: { kind: 'ready' as const, context: tag.context }, refetch }
+  if (tag.type === 'malformed') return { state: { kind: 'malformed' } as const, refetch }
+  if (tag.type === 'no-reply') return { state: { kind: 'network-error' } as const, refetch }
+  const byStatus: Readonly<Record<number, ManualBankPaymentDraftContextState>> = {
+    400: { kind: 'invalid-request' }, 401: { kind: 'unauthenticated' }, 403: { kind: 'forbidden' },
+    404: { kind: 'not-found' }, 503: { kind: 'unavailable' },
   }
   return { state: byStatus[tag.status] ?? { kind: 'unavailable' }, refetch }
 }

@@ -1,6 +1,6 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { DraftContextRequest } from './draftContext'
+import type { ManualBankPaymentDraftContextRequest } from './manualBankPaymentDraftContext'
 import type { FinanceReceiptPort, FinanceScope } from './port'
 import { ManualBankPaymentStartPage } from './ManualBankPaymentStartPage'
 import {
@@ -49,8 +49,19 @@ function startPort(contextStatusCode?: number): FinanceReceiptPort {
         isOwnPendingIbanProposal: false,
       }],
     }),
-    draftContext: async (_scope: FinanceScope, request: DraftContextRequest) => contextStatusCode === undefined
-      ? contextOk(draftContextBody(COMPANY_A, request, { bankAccount: bankAccount(COMPANY_A, { id: BANK }) }))
+    manualBankPaymentDraftContext: async (_scope: FinanceScope, request: ManualBankPaymentDraftContextRequest) => contextStatusCode === undefined
+      ? contextOk((() => {
+          const receipt = draftContextBody(COMPANY_A,
+            { treasuryAccountId: request.treasuryAccountId,
+              party: { partyId: request.partyId, companyAccountId: request.companyAccountId },
+              occurredOn: request.occurredOn },
+            { bankAccount: bankAccount(COMPANY_A, { id: BANK }) })
+          return { companyId: receipt.companyId, occurredOn: receipt.occurredOn,
+            treasuryAccount: { id: receipt.bankAccount.id, companyId: receipt.bankAccount.companyId,
+              currencyId: receipt.bankAccount.currencyId, isActive: true, isUsableForPayment: true,
+              displayName: receipt.bankAccount.displayName, version: receipt.bankAccount.version },
+            currency: receipt.currency, party: receipt.party }
+        })())
       : contextStatus(contextStatusCode),
   } as unknown as FinanceReceiptPort
 }

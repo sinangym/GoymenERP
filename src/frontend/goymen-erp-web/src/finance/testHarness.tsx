@@ -76,6 +76,7 @@ type CommandName =
   | 'approveManualBankPayment'
   | 'recordManualBankPayment'
 type ReadName =
+  | 'manualBankPaymentDraftContext'
   | 'listBankAccounts'
   | 'listSources'
   | 'sourceDetail'
@@ -166,6 +167,7 @@ export function recordingPort(respond: ReadResponder) {
   }
 
   const port: FinanceReceiptPort = {
+    manualBankPaymentDraftContext: read('manualBankPaymentDraftContext') as FinanceReceiptPort['manualBankPaymentDraftContext'],
     listManualBankPayments: read('listManualBankPayments') as FinanceReceiptPort['listManualBankPayments'],
     manualBankPaymentDetail: read('manualBankPaymentDetail') as FinanceReceiptPort['manualBankPaymentDetail'],
     saveManualBankPaymentDraft: command('saveManualBankPaymentDraft'),

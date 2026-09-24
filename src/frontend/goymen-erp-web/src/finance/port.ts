@@ -26,6 +26,7 @@ import type {
   ReverseRequest,
 } from './contract'
 import type { DraftContextRequest } from './draftContext'
+import type { ManualBankPaymentDraftContextRequest } from './manualBankPaymentDraftContext'
 import type { HttpReadReply } from './http'
 import type {
   ApproveManualBankPaymentRequest,
@@ -40,6 +41,8 @@ export interface FinanceScope {
 }
 
 export interface FinanceReceiptPort {
+  manualBankPaymentDraftContext(scope: FinanceScope, request: ManualBankPaymentDraftContextRequest,
+    signal: AbortSignal): Promise<HttpReadReply>
   listManualBankPayments(
     scope: FinanceScope,
     request: { readonly cursor: string | null },

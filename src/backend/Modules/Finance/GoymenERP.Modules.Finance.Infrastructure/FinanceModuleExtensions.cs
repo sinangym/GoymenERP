@@ -78,6 +78,9 @@ public static class FinanceModuleExtensions
         services.TryAddScoped<IManualBankPaymentDocumentValidationPort,
             UnavailableManualBankPaymentDocumentValidationPort>();
         services.AddScoped<IManualBankPaymentService>(CreateManualBankPaymentService);
+        services.AddScoped<IManualBankPaymentDraftContextTreasuryPort,
+            FinanceManualBankPaymentDraftContextTreasuryPort>();
+        services.AddScoped<IManualBankPaymentDraftContextReader, ManualBankPaymentDraftContextReader>();
         services.AddScoped(CreateReversalProposalService);
         services.AddScoped<IReversalProposalService>(provider =>
             provider.GetRequiredService<ReversalProposalService>());
