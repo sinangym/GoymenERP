@@ -259,6 +259,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string ReviewedInventoryDefiniteShipmentParticipantPath =
         "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
         + "Persistence/InventoryDefiniteShipmentParticipant.cs";
+    private const string ReviewedManualBankPaymentServicePath =
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
+        + "ManualBankPaymentService.cs";
 
     private static readonly IReadOnlyDictionary<string, ReviewedRuntimeDatabaseBypassSource>
         ReviewedRuntimeDatabaseBypassSources =
@@ -457,7 +460,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Finance.Infrastructure/"
                  + "FinanceModuleExtensions.cs"] =
                     new(
-                        "4d850c0223be71a735a471d0bd5de829a203b27b12902029c6ec668aec158b38",
+                        "feeb2edad1d1298a1530503aae28a2438902f4c1aefbcc10c474e87486de9477",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -471,6 +474,16 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Finance.Infrastructure/ReceiptDraftService.cs"] =
                     new(
                         "cbfe6e681ed27f97e02bb421d9a7bae8ede57206544ae1a5ac38fb9a84314f72",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1
+                        }),
+                // R47: the manual-payment writer references SqlException only to classify SQL
+                // unique-key races after SaveChanges. Exact fingerprint/API count keeps this from
+                // authorizing a connection, command, raw SQL or a DbContext construction.
+                [ReviewedManualBankPaymentServicePath] =
+                    new(
+                        "b9b6ee9afb8083ccbbe5098ac020481f20df7a9a515d2f2dbf4a892a8ff3c1ff",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -5853,7 +5866,6 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ComputeReviewedSourceFingerprint(runtimeSource),
                 reviewedRuntimeSource.ReviewedFingerprint,
                 StringComparison.Ordinal);
-
         foreach (var construction in constructions)
         {
             var authorizedByDesignTimeFactory = ReviewedPlatformContextFactories.TryGetValue(
