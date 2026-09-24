@@ -231,6 +231,23 @@ public sealed partial class OpenApiContractGenerationTests
         new("post", "/api/v1/finance/manual-receipts/drafts", "SaveFinanceManualReceiptDraftV1",
             AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json", "400:application/problem+json", "415:", "503:application/problem+json"),
             "#/components/schemas/DraftSaveRequest"),
+        new("post", "/api/v1/finance/manual-bank-payments", "SaveFinanceManualBankPaymentDraftV1",
+            AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json", "400:application/problem+json", "415:", "503:application/problem+json"),
+            "#/components/schemas/ManualBankPaymentDraftSaveRequest"),
+        new("get", "/api/v1/finance/manual-bank-payments", "GetFinanceManualBankPaymentsV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["query:cursor:false:type:string"]),
+        new("get", "/api/v1/finance/manual-bank-payments/{paymentId}", "GetFinanceManualBankPaymentV1",
+            AuthenticatedResponses("200:application/json", "404:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["path:paymentId:true:type:string;format:uuid"]),
+        new("post", "/api/v1/finance/manual-bank-payments/{paymentId}/approval", "ApproveFinanceManualBankPaymentV1",
+            AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json", "400:application/problem+json", "415:", "503:application/problem+json"),
+            "#/components/schemas/ApproveManualBankPaymentRequest",
+            ParameterValues: ["path:paymentId:true:type:string;format:uuid"]),
+        new("post", "/api/v1/finance/manual-bank-payments/{paymentId}/record", "RecordFinanceManualBankPaymentV1",
+            AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json", "400:application/problem+json", "415:", "503:application/problem+json"),
+            "#/components/schemas/RecordManualBankPaymentRequest",
+            ParameterValues: ["path:paymentId:true:type:string;format:uuid"]),
         new("post", "/api/v1/finance/manual-receipts/{sourceId}/record", "RecordFinanceManualReceiptV1",
             AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json", "400:application/problem+json", "415:", "503:application/problem+json"),
             "#/components/schemas/RecordRequest", ["path:sourceId:true:type:string;format:uuid"]),
@@ -457,6 +474,11 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetManufacturingOrderV1"] = "ref:OrderViewV1",
             ["SaveFinanceManualReceiptDraftV1"] = "ref:CommandResult",
             ["RecordFinanceManualReceiptV1"] = "ref:CommandResult",
+            ["SaveFinanceManualBankPaymentDraftV1"] = "ref:ManualBankPaymentCommandResult",
+            ["GetFinanceManualBankPaymentsV1"] = "ref:ManualBankPaymentPage",
+            ["GetFinanceManualBankPaymentV1"] = "ref:ManualBankPaymentView",
+            ["ApproveFinanceManualBankPaymentV1"] = "ref:ManualBankPaymentCommandResult",
+            ["RecordFinanceManualBankPaymentV1"] = "ref:ManualBankPaymentCommandResult",
             ["ProposeFinanceManualReceiptReversalV1"] = "ref:ReversalProposalCommandResult",
             ["ApproveFinanceManualReceiptReversalV1"] = "ref:ReversalProposalCommandResult",
             ["RejectFinanceManualReceiptReversalV1"] = "ref:ReversalProposalCommandResult",
@@ -533,6 +555,11 @@ public sealed partial class OpenApiContractGenerationTests
         "CreateCounterpartyCompanyAccountV1",
         "SetCounterpartyCompanyAccountActiveStateV1",
         "GetFinanceManualReceiptDraftContextV1",
+        "SaveFinanceManualBankPaymentDraftV1",
+        "GetFinanceManualBankPaymentsV1",
+        "GetFinanceManualBankPaymentV1",
+        "ApproveFinanceManualBankPaymentV1",
+        "RecordFinanceManualBankPaymentV1",
         "GetSalesAccountReferencesV1",
         "GetSalesCurrencyReferenceV1",
         "GetSalesProductReferenceV1",
@@ -625,6 +652,9 @@ public sealed partial class OpenApiContractGenerationTests
         "DeclareManufacturingOutputV1",
         "SaveFinanceManualReceiptDraftV1",
         "RecordFinanceManualReceiptV1",
+        "SaveFinanceManualBankPaymentDraftV1",
+        "ApproveFinanceManualBankPaymentV1",
+        "RecordFinanceManualBankPaymentV1",
         "ProposeFinanceManualReceiptReversalV1",
         "ApproveFinanceManualReceiptReversalV1",
         "RejectFinanceManualReceiptReversalV1",
@@ -695,6 +725,18 @@ public sealed partial class OpenApiContractGenerationTests
                 [
                     StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity,
                 ],
+                ["SaveFinanceManualBankPaymentDraftV1"] =
+                [
+                    StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity,
+                ],
+                ["ApproveFinanceManualBankPaymentV1"] =
+                [
+                    StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity,
+                ],
+                ["RecordFinanceManualBankPaymentV1"] =
+                [
+                    StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity,
+                ],
                 ["ProposeFinanceManualReceiptReversalV1"] =
                 [
                     StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity,
@@ -755,6 +797,10 @@ public sealed partial class OpenApiContractGenerationTests
         "DeclareManufacturingOutputV1",
         "SaveFinanceManualReceiptDraftV1",
         "RecordFinanceManualReceiptV1",
+        "SaveFinanceManualBankPaymentDraftV1",
+        "GetFinanceManualBankPaymentsV1",
+        "ApproveFinanceManualBankPaymentV1",
+        "RecordFinanceManualBankPaymentV1",
         "ProposeFinanceManualReceiptReversalV1",
         "ApproveFinanceManualReceiptReversalV1",
         "RejectFinanceManualReceiptReversalV1",
@@ -818,6 +864,7 @@ public sealed partial class OpenApiContractGenerationTests
         "DeclareManufacturingOutputV1:404",
         "GetManufacturingOrderV1:404",
         "GetFinanceManualReceiptV1:404",
+        "GetFinanceManualBankPaymentV1:404",
         "GetFinanceManualReceiptReversalV1:404",
         "GetSalesOrderDraftV1:404",
         "SubmitSalesOrderDraftV1:404",
@@ -859,6 +906,10 @@ public sealed partial class OpenApiContractGenerationTests
         "GetFinanceManualReceiptsV1:400",
         "GetFinanceManualReceiptV1:400",
         "GetFinanceBankAccountsV1:400",
+        "SaveFinanceManualBankPaymentDraftV1:400",
+        "GetFinanceManualBankPaymentsV1:400",
+        "ApproveFinanceManualBankPaymentV1:400",
+        "RecordFinanceManualBankPaymentV1:400",
         "ProposeFinanceBankAccountV1:400",
         "ApproveFinanceBankAccountV1:400",
         "ProposeFinanceBankAccountIbanChangeV1:400",
@@ -1510,6 +1561,49 @@ public sealed partial class OpenApiContractGenerationTests
                     ("isReplay", "type:boolean"),
                     ("originalCorrelationId", "type:string"),
                     ("issues", "type:array;items:ref:ValidationIssue")),
+                ["ManualBankPaymentCommandResult"] = ObjectSchema(
+                    ["outcome", "resource", "isReplay", "originalCorrelationId", "issues"],
+                    ("outcome", "ref:CommandOutcome"),
+                    ("resource", "oneOf:ref:ManualBankPaymentView|type:null"),
+                    ("isReplay", "type:boolean"),
+                    ("originalCorrelationId", "type:string"),
+                    ("issues", "type:array;items:ref:ValidationIssue")),
+                ["ManualBankPaymentLinkedDocument"] = ObjectSchema(
+                    ["documentId", "version"],
+                    ("documentId", "type:string;format:uuid"),
+                    ("version", "type:string")),
+                ["ManualBankPaymentPage"] = ObjectSchema(
+                    ["companyId", "items", "nextCursor"],
+                    ("companyId", "type:string;format:uuid"),
+                    ("items", "type:array;items:ref:ManualBankPaymentView"),
+                    ("nextCursor", "type:null|string")),
+                ["ManualBankPaymentPreparation"] = ObjectSchema(
+                    ["partyId", "companyAccountId", "treasuryAccountId", "money", "profile", "occurredOn", "valueOn", "bankReference", "description"],
+                    ("partyId", "type:string;format:uuid"),
+                    ("companyAccountId", "type:string;format:uuid"),
+                    ("treasuryAccountId", "type:string;format:uuid"),
+                    ("money", "ref:MoneyText"),
+                    ("profile", "ref:ProfileReference"),
+                    ("occurredOn", "type:string;format:date"),
+                    ("valueOn", "type:null|string;format:date"),
+                    ("bankReference", "type:null|string"),
+                    ("description", "type:null|string")),
+                ["ManualBankPaymentStatus"] = ScalarSchema("enum:Draft|Approved|Recorded"),
+                ["ManualBankPaymentView"] = ObjectSchema(
+                    ["id", "companyId", "status", "preparation", "linkedDocument", "preparedBy", "preparedAtUtc", "approvedBy", "approvedAtUtc", "recordedBy", "recordedAtUtc", "bankResultConfirmed", "version"],
+                    ("id", "type:string;format:uuid"),
+                    ("companyId", "type:string;format:uuid"),
+                    ("status", "ref:ManualBankPaymentStatus"),
+                    ("preparation", "ref:ManualBankPaymentPreparation"),
+                    ("linkedDocument", "oneOf:ref:ManualBankPaymentLinkedDocument|type:null"),
+                    ("preparedBy", "type:string"),
+                    ("preparedAtUtc", "type:string;format:date-time"),
+                    ("approvedBy", "type:null|string"),
+                    ("approvedAtUtc", "type:null|string;format:date-time"),
+                    ("recordedBy", "type:null|string"),
+                    ("recordedAtUtc", "type:null|string;format:date-time"),
+                    ("bankResultConfirmed", "type:boolean"),
+                    ("version", "type:string")),
                 ["ReversalProposalStatus"] = ScalarSchema("enum:Pending|Approved|Rejected"),
                 ["ReversalProposalView"] = ObjectSchema(
                     ["id", "originalSourceId", "occurredOn", "reason", "status", "proposedBy", "proposedAtUtc",
@@ -2172,6 +2266,25 @@ public sealed partial class OpenApiContractGenerationTests
                     ("note", "type:null|string"),
                     ("requestedDeliverySlices", "type:array|null;items:ref:SalesDraftDeliverySliceV1"),
                     ("discountPercent", "type:null|string")),
+                ["ApproveManualBankPaymentRequest"] = ObjectSchema(
+                    ["paymentId", "expectedVersion"],
+                    ("paymentId", "type:string;format:uuid"),
+                    ("expectedVersion", "type:string")),
+                ["ManualBankPaymentDraftSaveRequest"] = ObjectSchema(
+                    ["paymentId", "expectedVersion", "preparation", "linkedDocument"],
+                    ("paymentId", "type:null|string;format:uuid"),
+                    ("expectedVersion", "type:null|string"),
+                    ("preparation", "ref:ManualBankPaymentPreparation"),
+                    ("linkedDocument", "oneOf:ref:ManualBankPaymentLinkedDocumentRequest|type:null")),
+                ["ManualBankPaymentLinkedDocumentRequest"] = ObjectSchema(
+                    ["documentId", "expectedVersion"],
+                    ("documentId", "type:string;format:uuid"),
+                    ("expectedVersion", "type:string")),
+                ["RecordManualBankPaymentRequest"] = ObjectSchema(
+                    ["paymentId", "expectedVersion", "bankResultConfirmed"],
+                    ("paymentId", "type:string;format:uuid"),
+                    ("expectedVersion", "type:string"),
+                    ("bankResultConfirmed", "type:boolean")),
                 ["DraftSaveRequest"] = ObjectSchema(
                     ["draftId", "expectedVersion", "preparation"],
                     ("draftId", "type:null|string;format:uuid"),
@@ -2841,9 +2954,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(102, operations.Count);
+        Assert.Equal(107, operations.Count);
         Assert.Equal(
-            102,
+            107,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());

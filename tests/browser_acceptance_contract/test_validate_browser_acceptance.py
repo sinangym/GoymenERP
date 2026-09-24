@@ -117,6 +117,10 @@ class WorkflowTests(unittest.TestCase):
                 "accounting.periods.read",
                 "finance.manual-receipt.reverse.propose",
                 "finance.manual-receipt.reverse.approve",
+                "finance.manual-bank-payment.draft.save",
+                "finance.manual-bank-payment.draft.read",
+                "finance.manual-bank-payment.approve",
+                "finance.manual-bank-payment.record",
             ),
             validator.SUITE_IDENTITY_PERMISSIONS["fin01"],
         )

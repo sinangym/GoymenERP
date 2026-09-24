@@ -40,6 +40,10 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
 
     internal DbSet<ReversalProposalRow> ReversalProposals => Set<ReversalProposalRow>();
 
+    internal DbSet<ManualBankPaymentRow> ManualBankPayments => Set<ManualBankPaymentRow>();
+
+    internal DbSet<OutgoingMoneyEventRow> OutgoingMoneyEvents => Set<OutgoingMoneyEventRow>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -53,6 +57,8 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         ConfigureCommands(modelBuilder);
         ConfigureMoneyEvents(modelBuilder);
         ConfigureReversalProposals(modelBuilder);
+        ConfigureManualBankPayments(modelBuilder);
+        ConfigureOutgoingMoneyEvents(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -274,12 +280,93 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         + "AND [DecisionReason] IS NOT NULL AND LEN([DecisionReason]) > 0 AND [ReversalSourceId] IS NULL "
         + "AND [ProposedBy] <> [DecidedBy])";
 
+    internal const string ManualBankPaymentStatusCheck =
+        "([Status] = 0 AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [RecordedBy] IS NULL "
+        + "AND [RecordedAtUtc] IS NULL AND [BankResultConfirmed] = 0) OR "
+        + "([Status] = 1 AND [ApprovedBy] IS NOT NULL AND LEN([ApprovedBy]) > 0 AND [ApprovedAtUtc] IS NOT NULL "
+        + "AND [ApprovedBy] <> [PreparedBy] AND [RecordedBy] IS NULL AND [RecordedAtUtc] IS NULL "
+        + "AND [BankResultConfirmed] = 0) OR "
+        + "([Status] = 2 AND [ApprovedBy] IS NOT NULL AND LEN([ApprovedBy]) > 0 AND [ApprovedAtUtc] IS NOT NULL "
+        + "AND [ApprovedBy] <> [PreparedBy] AND [RecordedBy] IS NOT NULL AND LEN([RecordedBy]) > 0 "
+        + "AND [RecordedAtUtc] IS NOT NULL AND [BankResultConfirmed] = 1)";
+
+    private void ConfigureManualBankPayments(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<ManualBankPaymentRow>();
+        entity.ToTable("ManualBankPayments", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_ManualBankPayments_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [PartyId] <> '00000000-0000-0000-0000-000000000000' AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [TreasuryAccountId] <> '00000000-0000-0000-0000-000000000000' AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_ManualBankPayments_Text",
+                "LEN([AmountText]) > 0 AND LEN([ProfileId]) > 0 AND LEN([ProfileVersion]) > 0 AND LEN([PreparedBy]) > 0 "
+                + "AND (([LinkedDocumentId] IS NULL AND [LinkedDocumentVersion] IS NULL) OR "
+                + "([LinkedDocumentId] IS NOT NULL AND [LinkedDocumentId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [LinkedDocumentVersion] IS NOT NULL AND LEN([LinkedDocumentVersion]) > 0))");
+            table.HasCheckConstraint("CK_ManualBankPayments_Version", "[Version] >= 1");
+            table.HasCheckConstraint("CK_ManualBankPayments_Status", ManualBankPaymentStatusCheck);
+        });
+        entity.HasKey(x => x.Id);
+        entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.Version).IsConcurrencyToken();
+        entity.Property(x => x.AmountText).HasColumnType("varchar(max)").IsUnicode(false).IsRequired();
+        entity.Property(x => x.ProfileId).HasMaxLength(36).IsUnicode(false).IsRequired();
+        entity.Property(x => x.ProfileVersion).HasMaxLength(20).IsUnicode(false).IsRequired();
+        entity.Property(x => x.OccurredOn).HasColumnType("date");
+        entity.Property(x => x.ValueOn).HasColumnType("date");
+        entity.Property(x => x.BankReference).HasMaxLength(128);
+        entity.Property(x => x.Description).HasMaxLength(1000);
+        entity.Property(x => x.LinkedDocumentVersion).HasMaxLength(128).UseCollation(IdentityCollation);
+        entity.Property(x => x.PreparedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        entity.Property(x => x.ApprovedBy).HasMaxLength(128).UseCollation(IdentityCollation);
+        entity.Property(x => x.RecordedBy).HasMaxLength(128).UseCollation(IdentityCollation);
+        entity.HasIndex(x => new { x.CompanyId, x.PreparedAtUtc, x.Id });
+        entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    private void ConfigureOutgoingMoneyEvents(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<OutgoingMoneyEventRow>();
+        entity.ToTable("OutgoingMoneyEvents", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_OutgoingMoneyEvents_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [PaymentId] <> '00000000-0000-0000-0000-000000000000' AND [PartyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' AND [TreasuryAccountId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_OutgoingMoneyEvents_Text",
+                "LEN([AmountText]) > 0 AND LEN([ProfileId]) > 0 AND LEN([ProfileVersion]) > 0 AND LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
+        });
+        entity.HasKey(x => x.Id);
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.AmountText).HasColumnType("varchar(max)").IsUnicode(false).IsRequired();
+        entity.Property(x => x.ProfileId).HasMaxLength(36).IsUnicode(false).IsRequired();
+        entity.Property(x => x.ProfileVersion).HasMaxLength(20).IsUnicode(false).IsRequired();
+        entity.Property(x => x.OccurredOn).HasColumnType("date");
+        entity.Property(x => x.ValueOn).HasColumnType("date");
+        entity.Property(x => x.RecordedBy).HasMaxLength(128).IsRequired();
+        entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        entity.HasIndex(x => new { x.CompanyId, x.PaymentId }).IsUnique();
+        entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<ManualBankPaymentRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.PaymentId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     /// <summary>The command record's target rule; the migration that introduced it uses the same text.</summary>
     internal const string TargetCheck =
-        "([DraftId] IS NOT NULL AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [BankAccountId] IS NULL AND [ReversalProposalId] IS NULL) OR "
-        + "([BankAccountId] IS NOT NULL AND [BankAccountId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL AND [ReversalProposalId] IS NULL) OR "
-        + "([ReversalProposalId] IS NOT NULL AND [ReversalProposalId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL AND [BankAccountId] IS NULL) OR "
-        + "([DraftId] IS NULL AND [BankAccountId] IS NULL AND [ReversalProposalId] IS NULL AND JSON_VALUE([ResultJson], '$.outcome') = 'ValidationFailed')";
+        "([DraftId] IS NOT NULL AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [BankAccountId] IS NULL AND [ReversalProposalId] IS NULL AND [ManualBankPaymentId] IS NULL) OR "
+        + "([BankAccountId] IS NOT NULL AND [BankAccountId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL AND [ReversalProposalId] IS NULL AND [ManualBankPaymentId] IS NULL) OR "
+        + "([ReversalProposalId] IS NOT NULL AND [ReversalProposalId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL AND [BankAccountId] IS NULL AND [ManualBankPaymentId] IS NULL) OR "
+        + "([ManualBankPaymentId] IS NOT NULL AND [ManualBankPaymentId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL AND [BankAccountId] IS NULL AND [ReversalProposalId] IS NULL) OR "
+        + "([DraftId] IS NULL AND [BankAccountId] IS NULL AND [ReversalProposalId] IS NULL AND [ManualBankPaymentId] IS NULL AND JSON_VALUE([ResultJson], '$.outcome') = 'ValidationFailed')";
 
     private void ConfigureCommands(ModelBuilder modelBuilder)
     {
@@ -306,6 +393,7 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         entity.HasIndex(x => new { x.CompanyId, x.DraftId });
         entity.HasIndex(x => new { x.CompanyId, x.BankAccountId });
         entity.HasIndex(x => new { x.CompanyId, x.ReversalProposalId });
+        entity.HasIndex(x => new { x.CompanyId, x.ManualBankPaymentId });
         entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
             .OnDelete(DeleteBehavior.Restrict);
         entity.HasOne<ReceiptDraftRow>().WithMany()
@@ -318,6 +406,10 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
             .OnDelete(DeleteBehavior.Restrict);
         entity.HasOne<ReversalProposalRow>().WithMany()
             .HasForeignKey(x => new { x.CompanyId, x.ReversalProposalId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<ManualBankPaymentRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.ManualBankPaymentId })
             .HasPrincipalKey(x => new { x.CompanyId, x.Id })
             .OnDelete(DeleteBehavior.Restrict);
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -359,6 +451,13 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
 
             if (entry.State == EntityState.Modified)
             {
+                if (entry.Entity is ManualBankPaymentRow payment
+                    && !IsAllowedManualBankPaymentTransition(entry, payment))
+                {
+                    throw new InvalidOperationException(
+                        "Manuel banka ödemesi yalnız taslak, onay ve kesin kayıt geçişleriyle değişir.");
+                }
+
                 if (entry.Entity is BankAccountRow bankAccount
                     && !IsAllowedBankAccountTransition(entry, bankAccount))
                 {
@@ -396,6 +495,20 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                         nameof(ReversalProposalRow.DecidedAtUtc), nameof(ReversalProposalRow.DecisionReason),
                         nameof(ReversalProposalRow.ReversalSourceId),
                     ],
+                    ManualBankPaymentRow =>
+                    [
+                        nameof(ManualBankPaymentRow.PartyId), nameof(ManualBankPaymentRow.CompanyAccountId),
+                        nameof(ManualBankPaymentRow.TreasuryAccountId), nameof(ManualBankPaymentRow.CurrencyId),
+                        nameof(ManualBankPaymentRow.AmountText), nameof(ManualBankPaymentRow.ProfileId),
+                        nameof(ManualBankPaymentRow.ProfileVersion), nameof(ManualBankPaymentRow.OccurredOn),
+                        nameof(ManualBankPaymentRow.ValueOn), nameof(ManualBankPaymentRow.BankReference),
+                        nameof(ManualBankPaymentRow.Description), nameof(ManualBankPaymentRow.LinkedDocumentId),
+                        nameof(ManualBankPaymentRow.LinkedDocumentVersion), nameof(ManualBankPaymentRow.Status),
+                        nameof(ManualBankPaymentRow.PreparedBy), nameof(ManualBankPaymentRow.PreparedAtUtc),
+                        nameof(ManualBankPaymentRow.ApprovedBy), nameof(ManualBankPaymentRow.ApprovedAtUtc),
+                        nameof(ManualBankPaymentRow.RecordedBy), nameof(ManualBankPaymentRow.RecordedAtUtc),
+                        nameof(ManualBankPaymentRow.BankResultConfirmed),
+                    ],
                     _ => [],
                 };
                 var changed = entry.Properties
@@ -410,6 +523,47 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                 }
             }
         }
+    }
+
+    private static bool IsAllowedManualBankPaymentTransition(
+        Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<IFinanceTenantRow> entry,
+        ManualBankPaymentRow current)
+    {
+        var originalStatus = (int)entry.OriginalValues[nameof(ManualBankPaymentRow.Status)]!;
+        var modified = entry.Properties
+            .Where(property => property.IsModified && !property.Metadata.IsConcurrencyToken)
+            .Select(property => property.Metadata.Name)
+            .ToHashSet(StringComparer.Ordinal);
+        bool Only(params string[] names) => modified.All(names.Contains);
+
+        if (originalStatus == ManualBankPaymentStatuses.Draft && current.Status == ManualBankPaymentStatuses.Draft)
+        {
+            return Only(nameof(ManualBankPaymentRow.PartyId), nameof(ManualBankPaymentRow.CompanyAccountId),
+                nameof(ManualBankPaymentRow.TreasuryAccountId), nameof(ManualBankPaymentRow.CurrencyId),
+                nameof(ManualBankPaymentRow.AmountText), nameof(ManualBankPaymentRow.ProfileId),
+                nameof(ManualBankPaymentRow.ProfileVersion), nameof(ManualBankPaymentRow.OccurredOn),
+                nameof(ManualBankPaymentRow.ValueOn), nameof(ManualBankPaymentRow.BankReference),
+                nameof(ManualBankPaymentRow.Description), nameof(ManualBankPaymentRow.LinkedDocumentId),
+                nameof(ManualBankPaymentRow.LinkedDocumentVersion), nameof(ManualBankPaymentRow.PreparedBy),
+                nameof(ManualBankPaymentRow.PreparedAtUtc));
+        }
+
+        if (originalStatus == ManualBankPaymentStatuses.Draft && current.Status == ManualBankPaymentStatuses.Approved)
+        {
+            return Only(nameof(ManualBankPaymentRow.Status), nameof(ManualBankPaymentRow.ApprovedBy),
+                       nameof(ManualBankPaymentRow.ApprovedAtUtc))
+                   && !string.IsNullOrWhiteSpace(current.ApprovedBy)
+                   && !string.Equals(current.PreparedBy, current.ApprovedBy, StringComparison.Ordinal)
+                   && current.ApprovedAtUtc is not null;
+        }
+
+        return originalStatus == ManualBankPaymentStatuses.Approved
+               && current.Status == ManualBankPaymentStatuses.Recorded
+               && Only(nameof(ManualBankPaymentRow.Status), nameof(ManualBankPaymentRow.RecordedBy),
+                   nameof(ManualBankPaymentRow.RecordedAtUtc), nameof(ManualBankPaymentRow.BankResultConfirmed))
+               && !string.IsNullOrWhiteSpace(current.RecordedBy)
+               && current.RecordedAtUtc is not null
+               && current.BankResultConfirmed;
     }
 
     private static bool IsAllowedBankAccountTransition(

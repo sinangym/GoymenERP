@@ -141,7 +141,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // finance
             ["tools/relational_inventory/finance.txt"] =
-                "ea9da6397e8f92e9c5eff8a3486aad14d640e535bc93dd4f7344b3bbcf432042",
+                "f40a376505b7ad2126ae716d2ffd9e312ed4e7c246c0ce506cae3f871883acdf",
 
             // identity
             ["tools/relational_inventory/identity.txt"] =
@@ -231,7 +231,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
              + "Persistence/FinanceDbContext.cs"] =
-            "9d686e0ccc5c4d2e191dd37f456081928a28266c72d1e56db5244906e237b234",
+            "a4c6ef66ba30477dd403940596c76c32869f1b43585595d45ba759b77b01dd93",
             // ACC-3 (#298): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for ACC-V0a: the ADR-011 command log (Commands) is mapped here, company-scoped with the
@@ -259,6 +259,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string ReviewedInventoryDefiniteShipmentParticipantPath =
         "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
         + "Persistence/InventoryDefiniteShipmentParticipant.cs";
+    private const string ReviewedManualBankPaymentServicePath =
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
+        + "ManualBankPaymentService.cs";
 
     private static readonly IReadOnlyDictionary<string, ReviewedRuntimeDatabaseBypassSource>
         ReviewedRuntimeDatabaseBypassSources =
@@ -467,7 +470,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Finance.Infrastructure/"
                  + "FinanceModuleExtensions.cs"] =
                     new(
-                        "4d850c0223be71a735a471d0bd5de829a203b27b12902029c6ec668aec158b38",
+                        "feeb2edad1d1298a1530503aae28a2438902f4c1aefbcc10c474e87486de9477",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -481,6 +484,16 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Finance.Infrastructure/ReceiptDraftService.cs"] =
                     new(
                         "cbfe6e681ed27f97e02bb421d9a7bae8ede57206544ae1a5ac38fb9a84314f72",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1
+                        }),
+                // R47: the manual-payment writer references SqlException only to classify SQL
+                // unique-key races after SaveChanges. Exact fingerprint/API count keeps this from
+                // authorizing a connection, command, raw SQL or a DbContext construction.
+                [ReviewedManualBankPaymentServicePath] =
+                    new(
+                        "b9b6ee9afb8083ccbbe5098ac020481f20df7a9a515d2f2dbf4a892a8ff3c1ff",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -727,6 +740,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // and 51051 is used by no other module. Forward fix; nothing is deleted.
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20260920090000_AddMoneyEvents.cs"] =
                     new("5af1d703aca150af6ca748c57b42e9f088cec37aaa3841116e31016a35a72eed",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // R47: Down refuses before its first destructive operation while a manual payment,
+                // outgoing money fact or command target exists. Empty schemas can still roll back.
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20260923213000_AddManualBankPayments.cs"] =
+                    new("f4ed1a10a57688ae1b92376b222ad3c3e0bc73f4b43c3df5db4607e3a4152223",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // MFG-6 slice 2: the Down's only raw SQL is Manufacturing's module refusal (51047) while any plan
@@ -5861,7 +5880,6 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ComputeReviewedSourceFingerprint(runtimeSource),
                 reviewedRuntimeSource.ReviewedFingerprint,
                 StringComparison.Ordinal);
-
         foreach (var construction in constructions)
         {
             var authorizedByDesignTimeFactory = ReviewedPlatformContextFactories.TryGetValue(

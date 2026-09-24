@@ -35,6 +35,11 @@ export const FINANCE_CAPABILITY = {
   receiptsReversePropose: 'finance.receipts.reverse.propose',
   /** FIN-T06/B1: pending reversal checker route. */
   receiptsReverseApprove: 'finance.receipts.reverse.approve',
+  manualBankPaymentsList: 'finance.manual-bank-payments.list',
+  manualBankPaymentsCreate: 'finance.manual-bank-payments.create',
+  manualBankPaymentsDetail: 'finance.manual-bank-payments.detail',
+  manualBankPaymentsApprove: 'finance.manual-bank-payments.approve',
+  manualBankPaymentsRecord: 'finance.manual-bank-payments.record',
 } as const
 
 export type FinanceCapabilityId = (typeof FINANCE_CAPABILITY)[keyof typeof FINANCE_CAPABILITY]
@@ -47,9 +52,15 @@ export const FINANCE_ROUTE = {
   reversalApprovals: '/finans/ters-kayit-onaylari',
   bankAccountsList: '/finans/banka-hesaplari',
   bankAccountsPropose: '/finans/banka-hesaplari/yeni',
+  manualBankPaymentsList: '/finans/odemeler',
+  manualBankPaymentsCreate: '/finans/odemeler/yeni',
+  manualBankPaymentsDetail: '/finans/odemeler/:paymentId',
 } as const
 
 export const receiptDetailPath = (sourceId: string) => `/finans/tahsilatlar/${encodeURIComponent(sourceId)}`
+
+export const manualBankPaymentDetailPath = (paymentId: string) =>
+  `/finans/odemeler/${encodeURIComponent(paymentId)}`
 
 /**
  * The entry into a new draft: the Cari account screen links here with the party and its company
