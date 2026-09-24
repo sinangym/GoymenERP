@@ -685,6 +685,67 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
             Assert.Equal(JsonValueKind.Null, result.GetProperty("resource").GetProperty("linkedDocument").ValueKind);
         }
 
+        const string downPositiveCommand = "SqlManualTargetDownPositive";
+        const string downNegativeCommand = "SqlManualTargetDownNegative";
+        const string upPositiveCommand = "SqlManualTargetUpPositive";
+        const string upNegativeCommand = "SqlManualTargetUpNegative";
+        await using (var context = run.Context(CompanyA))
+        {
+            var migrations = context.Database.GetMigrations().ToArray();
+            var allocationMigration = Array.FindIndex(migrations,
+                migration => migration.EndsWith("_AddFinanceAllocations", StringComparison.Ordinal));
+            Assert.True(allocationMigration > 0);
+            await context.GetService<IMigrator>().MigrateAsync(migrations[allocationMigration - 1]);
+
+            Assert.Equal(1, await context.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO finance.Commands
+                    (CompanyId, CommandName, IdempotencyKeyHash, ActorId, PayloadHash,
+                     ManualBankPaymentId, ResultJson, CorrelationId, RecordedAtUtc)
+                VALUES
+                    ({CompanyA}, {downPositiveCommand}, {new string('A', 64)}, {Proposer}, {new string('B', 64)},
+                     {paymentId}, {"{\"outcome\":\"Succeeded\"}"}, {Guid.NewGuid().ToString("N")}, {DateTimeOffset.UtcNow})
+                """));
+            var downFailure = await Assert.ThrowsAsync<Microsoft.Data.SqlClient.SqlException>(() =>
+                context.Database.ExecuteSqlInterpolatedAsync($"""
+                    INSERT INTO finance.Commands
+                        (CompanyId, CommandName, IdempotencyKeyHash, ActorId, PayloadHash,
+                         BankAccountId, ManualBankPaymentId, ResultJson, CorrelationId, RecordedAtUtc)
+                    VALUES
+                        ({CompanyA}, {downNegativeCommand}, {new string('C', 64)}, {Proposer}, {new string('D', 64)},
+                         {account.Id}, {paymentId}, {"{\"outcome\":\"Succeeded\"}"}, {Guid.NewGuid().ToString("N")}, {DateTimeOffset.UtcNow})
+                    """));
+            Assert.Contains("CK_Commands_Target", downFailure.Message, StringComparison.Ordinal);
+            Assert.Equal(0, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM finance.Commands WHERE CompanyId = @companyId AND CommandName = @command",
+                ("@companyId", CompanyA), ("@command", downNegativeCommand)));
+
+            await context.Database.MigrateAsync();
+            Assert.Equal(1, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM finance.Commands WHERE CompanyId = @companyId AND CommandName = @command AND ManualBankPaymentId = @paymentId",
+                ("@companyId", CompanyA), ("@command", downPositiveCommand), ("@paymentId", paymentId)));
+            Assert.Equal(1, await context.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO finance.Commands
+                    (CompanyId, CommandName, IdempotencyKeyHash, ActorId, PayloadHash,
+                     ManualBankPaymentId, ResultJson, CorrelationId, RecordedAtUtc)
+                VALUES
+                    ({CompanyA}, {upPositiveCommand}, {new string('E', 64)}, {Proposer}, {new string('F', 64)},
+                     {paymentId}, {"{\"outcome\":\"Succeeded\"}"}, {Guid.NewGuid().ToString("N")}, {DateTimeOffset.UtcNow})
+                """));
+            var upFailure = await Assert.ThrowsAsync<Microsoft.Data.SqlClient.SqlException>(() =>
+                context.Database.ExecuteSqlInterpolatedAsync($"""
+                    INSERT INTO finance.Commands
+                        (CompanyId, CommandName, IdempotencyKeyHash, ActorId, PayloadHash,
+                         BankAccountId, ManualBankPaymentId, ResultJson, CorrelationId, RecordedAtUtc)
+                    VALUES
+                        ({CompanyA}, {upNegativeCommand}, {new string('0', 64)}, {Proposer}, {new string('1', 64)},
+                         {account.Id}, {paymentId}, {"{\"outcome\":\"Succeeded\"}"}, {Guid.NewGuid().ToString("N")}, {DateTimeOffset.UtcNow})
+                    """));
+            Assert.Contains("CK_Commands_Target", upFailure.Message, StringComparison.Ordinal);
+            Assert.Equal(0, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM finance.Commands WHERE CompanyId = @companyId AND CommandName = @command",
+                ("@companyId", CompanyA), ("@command", upNegativeCommand)));
+        }
+
         using (var listed = await preparer.GetAsync(FinanceEndpoints.ManualBankPaymentsPath))
         {
             Assert.Equal(HttpStatusCode.OK, listed.StatusCode);
