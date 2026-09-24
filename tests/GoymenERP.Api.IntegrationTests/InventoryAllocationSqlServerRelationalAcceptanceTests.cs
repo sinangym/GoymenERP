@@ -103,6 +103,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             IdempotencyKey = $"log5-conflict-{Guid.NewGuid():N}",
             CorrelationId = $"log5-conflict-{Guid.NewGuid():N}",
         };
+        var foreignState = await SeedForeignAllocationAsync(run, "SYN-LOG5-FOREIGN");
         var request = Request(state, "5");
         await using (var connection = new SqlConnection(run.Factory.DatabaseConnectionString))
         {
@@ -114,6 +115,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             await transaction.CommitAsync();
         }
 
+        var beforeConflict = await SnapshotShipmentEffectsAsync(run, state, foreignState);
         await using (var connection = new SqlConnection(run.Factory.DatabaseConnectionString))
         {
             await connection.OpenAsync();
@@ -125,7 +127,9 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             Assert.Equal((409, InventoryDefiniteShipmentCodesV1.IdempotencyConflict), (conflict.Status, conflict.Code));
             await transaction.RollbackAsync();
         }
+        Assert.Equal(beforeConflict, await SnapshotShipmentEffectsAsync(run, state, foreignState));
 
+        var beforeForeign = await SnapshotShipmentEffectsAsync(run, state, foreignState);
         await using (var connection = new SqlConnection(run.Factory.DatabaseConnectionString))
         {
             await connection.OpenAsync();
@@ -133,16 +137,19 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             await using var participant = await InventoryDefiniteShipmentParticipant.EnlistAsync(connection, transaction,
                 CompanyA, Settings(run, CompanyA));
             var hidden = await Assert.ThrowsAsync<InventoryDefiniteShipmentException>(() => participant.StageAsync(
-                request with { AllocationId = Guid.NewGuid() }, metadata with
+                request with
+                {
+                    AllocationId = foreignState.AllocationId,
+                    LabelId = foreignState.LabelId,
+                    ExpectedLabelVersion = foreignState.LabelVersion.ToString(),
+                }, metadata with
                 {
                     IdempotencyKey = $"foreign-{Guid.NewGuid():N}",
                 }));
             Assert.Equal((404, InventoryDefiniteShipmentCodesV1.InvalidReference), (hidden.Status, hidden.Code));
             await transaction.RollbackAsync();
         }
-
-        Assert.Equal(1, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM inventory.OutboxMessages WHERE AggregateId = @id", ("@id", state.AllocationId)));
+        Assert.Equal(beforeForeign, await SnapshotShipmentEffectsAsync(run, state, foreignState));
     }
 
     [SqlServerFact]
@@ -260,6 +267,73 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         return new(allocationId, label.Id, labelVersion);
     }
 
+    private static async Task<ShipmentState> SeedForeignAllocationAsync(Run run, string code)
+    {
+        var location = await run.LocationOfAsync(CompanyB);
+        var label = NewLabel(CompanyB, code);
+        var position = Position(CompanyB, location, label, BlockState.Free);
+        await using (var store = run.Store(CompanyB))
+        {
+            await store.Labels.SaveLabelAsync(label,
+                Metadata(run) with { CorrelationId = $"foreign-seed-{Guid.NewGuid():N}" });
+        }
+
+        var allocationId = Guid.NewGuid();
+        await using var context = run.Context(CompanyB);
+        context.Balances.Add(new BalanceRow
+        {
+            Id = Guid.NewGuid(), CompanyId = CompanyB,
+            OwnerKind = (int)position.Owner.Kind, OwnerId = position.Owner.Id,
+            CustodianKind = (int)position.Custodian.Kind, CustodianId = position.Custodian.Id,
+            LocationId = position.LocationId, LabelId = position.LabelId, ProductId = position.ProductId,
+            Block = (int)position.Block, QuantityKg = 100m,
+        });
+        context.Allocations.Add(new AllocationRow
+        {
+            Id = allocationId, CompanyId = CompanyB,
+            OwnerKind = (int)position.Owner.Kind, OwnerId = position.Owner.Id,
+            CustodianKind = (int)position.Custodian.Kind, CustodianId = position.Custodian.Id,
+            LocationId = position.LocationId, LabelId = position.LabelId, Block = (int)position.Block,
+            AllocatedKg = 80m, RemainingKg = 80m, Status = (int)StockAllocationStatus.Active, Version = 1,
+            CreatedAtUtc = At, UpdatedAtUtc = At,
+        });
+        await context.SaveChangesAsync();
+        var labelVersion = await context.Labels.Where(row => row.Id == label.Id).Select(row => row.Version).SingleAsync();
+        return new(allocationId, label.Id, labelVersion);
+    }
+
+    private static async Task<ShipmentEffectSnapshot> SnapshotShipmentEffectsAsync(
+        Run run,
+        ShipmentState own,
+        ShipmentState foreign) =>
+        new(
+            await run.ScalarAsync<decimal>(
+                "SELECT RemainingKg FROM inventory.Allocations WHERE Id = @id", ("@id", own.AllocationId)),
+            await run.ScalarAsync<long>(
+                "SELECT Version FROM inventory.Allocations WHERE Id = @id", ("@id", own.AllocationId)),
+            await run.ScalarAsync<int>(
+                "SELECT Status FROM inventory.Allocations WHERE Id = @id", ("@id", own.AllocationId)),
+            await run.ScalarAsync<decimal>(
+                "SELECT QuantityKg FROM inventory.Balances WHERE LabelId = @id", ("@id", own.LabelId)),
+            await run.ScalarAsync<long>(
+                "SELECT Version FROM inventory.Labels WHERE Id = @id", ("@id", own.LabelId)),
+            await run.ScalarAsync<decimal>(
+                "SELECT RemainingKg FROM inventory.Allocations WHERE Id = @id", ("@id", foreign.AllocationId)),
+            await run.ScalarAsync<long>(
+                "SELECT Version FROM inventory.Allocations WHERE Id = @id", ("@id", foreign.AllocationId)),
+            await run.ScalarAsync<int>(
+                "SELECT Status FROM inventory.Allocations WHERE Id = @id", ("@id", foreign.AllocationId)),
+            await run.ScalarAsync<decimal>(
+                "SELECT QuantityKg FROM inventory.Balances WHERE LabelId = @id", ("@id", foreign.LabelId)),
+            await run.ScalarAsync<long>(
+                "SELECT Version FROM inventory.Labels WHERE Id = @id", ("@id", foreign.LabelId)),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Movements"),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.MovementLines"),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.SourceGrains"),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.OutboxMessages"),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Commands"),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents"));
+
     private static InventoryDefiniteShipmentRequestV1 Request(ShipmentState state, string quantityKg) => new(
         CompanyA, Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), state.AllocationId, "1",
         state.LabelId, state.LabelVersion.ToString(), Guid.NewGuid(), quantityKg, At);
@@ -272,4 +346,22 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     }
 
     private sealed record ShipmentState(Guid AllocationId, Guid LabelId, long LabelVersion);
+
+    private sealed record ShipmentEffectSnapshot(
+        decimal OwnAllocationRemainingKg,
+        long OwnAllocationVersion,
+        int OwnAllocationStatus,
+        decimal OwnBalanceQuantityKg,
+        long OwnLabelVersion,
+        decimal ForeignAllocationRemainingKg,
+        long ForeignAllocationVersion,
+        int ForeignAllocationStatus,
+        decimal ForeignBalanceQuantityKg,
+        long ForeignLabelVersion,
+        int MovementCount,
+        int MovementLineCount,
+        int SourceGrainCount,
+        int OutboxCount,
+        int CommandCount,
+        int AuditCount);
 }
