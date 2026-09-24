@@ -91,7 +91,6 @@ describe('normal journal command security and company fences', () => {
     await waitFor(() => expect(submittedCompany).toBe(COMPANY_A))
 
     fireEvent.change(screen.getByRole('combobox', { name: 'Şirket' }), { target: { value: COMPANY_B } })
-    fireEvent.click(await screen.findByRole('button', { name: 'Değişiklikleri bırak' }))
     await waitFor(() => expect((screen.getByRole('combobox', { name: 'Şirket' }) as HTMLSelectElement).value).toBe(COMPANY_B))
     expect((screen.getByLabelText(/Kaynak kimliği/i) as HTMLInputElement).value).toBe('')
 
