@@ -274,6 +274,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + "FinanceOpenItemSourceAdmissionService.cs";
     private const string ReviewedManufacturingInventoryInputIssueHostPath =
         "src/backend/GoymenERP.Api/ManufacturingRuntime/ManufacturingInventoryInputIssueHost.cs";
+    private const string ReviewedManufacturingInventoryReturnOutputHostPath =
+        "src/backend/GoymenERP.Api/ManufacturingRuntime/ManufacturingInventoryReturnOutputHost.cs";
     private static readonly IReadOnlyDictionary<string, (string ContextTypeName, int ExpectedCount)>
         ReviewedRuntimeContextConstructions =
             new Dictionary<string, (string ContextTypeName, int ExpectedCount)>(StringComparer.Ordinal)
@@ -440,6 +442,16 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         {
                             ["Microsoft.Data.SqlClient"] = 1,
                             ["GetDbConnection"] = 1
+                        }),
+                // Return/output uses the same reviewed borrowed-transaction boundary but obtains both the
+                // Inventory connection and current parent-label truth before constructing one Manufacturing context.
+                [ReviewedManufacturingInventoryReturnOutputHostPath] =
+                    new(
+                        "5a5bb02daf2a621fcf0f0b1dc1a23e0bd298a659fa91d56a9d0ac62b5451757c",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1,
+                            ["GetDbConnection"] = 2
                         }),
                 // INV-2 (#293): the SqlClient namespace only to recognise a unique-key violation
                 // (SqlException 2601/2627) after SaveChanges, as the Idempotency terminal store does.
