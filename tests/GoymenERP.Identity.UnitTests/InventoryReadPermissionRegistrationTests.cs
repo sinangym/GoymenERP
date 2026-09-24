@@ -28,6 +28,8 @@ public sealed class InventoryReadPermissionRegistrationTests
         ErpPermissions.InventoryBalancesRead,
         // INV-OPEN-1 part 2 (T07 = A): the opening record name, registered the same way (reason on the constant).
         ErpPermissions.InventoryOpeningStockRecord,
+        // STK/T11: allocation create/release is its own command permission, never implied by these reads.
+        ErpPermissions.InventoryPhysicalAllocationWrite,
     };
 
     [Fact]
@@ -36,6 +38,7 @@ public sealed class InventoryReadPermissionRegistrationTests
         Assert.Equal("inventory.labels.read", ErpPermissions.InventoryLabelsRead);
         Assert.Equal("inventory.balances.read", ErpPermissions.InventoryBalancesRead);
         Assert.Equal("inventory.opening-stock.record", ErpPermissions.InventoryOpeningStockRecord);
+        Assert.Equal("inventory.physical-allocation.write", ErpPermissions.InventoryPhysicalAllocationWrite);
     }
 
     [Theory]

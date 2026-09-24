@@ -53,6 +53,15 @@ public static class ErpPermissions
     public const string InventoryOpeningStockRecord = "inventory.opening-stock.record";
 
     /// <summary>
+    /// STK/T11: create and explicitly release a physical allocation. This Inventory-owned command
+    /// permission is deliberately separate from Sales order entry/approval, Logistics writes and the
+    /// Inventory read/opening permissions. Registration grants nothing; no seeded role or actor receives
+    /// it here. Company-wide only because the allocation command has no narrower scope dimension. It is
+    /// not Critical: no approved source adds grant-time dual control for this name.
+    /// </summary>
+    public const string InventoryPhysicalAllocationWrite = "inventory.physical-allocation.write";
+
+    /// <summary>
     /// Finance bank-account master (FS0, #312): names are the Finance owner's technical mapping
     /// (Business #254 5654539215). Registering them makes them KNOWN, not granted: no role and no
     /// user receives them here, and who holds which is a human gate. All three are company-wide
@@ -347,6 +356,7 @@ public static class ErpPermissions
             InventoryLabelsRead,
             InventoryBalancesRead,
             InventoryOpeningStockRecord,
+            InventoryPhysicalAllocationWrite,
             LogisticsLoadingInstructionsCreate,
             LogisticsLoadingInstructionsRead,
             LogisticsLoadsRecord,
@@ -413,6 +423,7 @@ public static class ErpPermissions
             InventoryLabelsRead,
             InventoryBalancesRead,
             InventoryOpeningStockRecord,
+            InventoryPhysicalAllocationWrite,
             LogisticsLoadingInstructionsCreate,
             LogisticsLoadingInstructionsRead,
             LogisticsLoadsRecord,

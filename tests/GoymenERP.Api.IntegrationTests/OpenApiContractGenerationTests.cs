@@ -83,6 +83,13 @@ public sealed partial class OpenApiContractGenerationTests
                 "query:q:false:type:string",
                 "query:limit:false:type:integer;format:int32",
             ]),
+        new("post", "/api/v1/inventory/physical-allocations", "CreateInventoryPhysicalAllocationV1",
+            AuthenticatedResponses("201:application/json", "200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/CreateInventoryPhysicalAllocationRequestV1"),
+        new("post", "/api/v1/inventory/physical-allocations/{allocationId}/release", "ReleaseInventoryPhysicalAllocationV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/ReleasePhysicalAllocationV1",
+            ["path:allocationId:true:type:string;format:uuid"]),
         // INV-OPEN-1 part 2 (T07 = A): record an opening count (ADR-011) and read one back.
         new("post", "/api/v1/inventory/opening-counts", "RecordInventoryOpeningCountV1",
             AuthenticatedResponses("201:application/json", "200:application/json", "400:application/problem+json", "415:", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
@@ -443,6 +450,8 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetInventoryParentRollCandidatesV1"] = "ref:InventoryParentRollCandidatesV1",
             ["GetInventoryProductCandidatesV1"] = "ref:ProductStockCandidatesV1",
             ["GetInventoryLocationCandidatesV1"] = "ref:OrganizationLocationCandidatesV1",
+            ["CreateInventoryPhysicalAllocationV1"] = "ref:InventoryPhysicalAllocationViewV1",
+            ["ReleaseInventoryPhysicalAllocationV1"] = "ref:InventoryPhysicalAllocationViewV1",
             ["RecordInventoryOpeningCountV1"] = "ref:OpeningCountViewV1",
             ["GetInventoryOpeningCountV1"] = "ref:OpeningCountViewV1",
             ["SetOrganizationLocationActiveStateV1"] = "none",
@@ -548,6 +557,8 @@ public sealed partial class OpenApiContractGenerationTests
         "GetInventoryParentRollCandidatesV1",
         "GetInventoryProductCandidatesV1",
         "GetInventoryLocationCandidatesV1",
+        "CreateInventoryPhysicalAllocationV1",
+        "ReleaseInventoryPhysicalAllocationV1",
         "RecordInventoryOpeningCountV1",
         "GetInventoryOpeningCountV1",
         "GetCounterpartyCompanyAccountLinkCandidatesV1",
@@ -638,6 +649,8 @@ public sealed partial class OpenApiContractGenerationTests
     private static readonly HashSet<string> IdempotentOperations =
     [
         "RecordInventoryOpeningCountV1",
+        "CreateInventoryPhysicalAllocationV1",
+        "ReleaseInventoryPhysicalAllocationV1",
         "UpdateCounterpartyContactInformationV1",
         "SetOrganizationLocationActiveStateV1",
         "CreateCounterpartyV1",
@@ -761,6 +774,8 @@ public sealed partial class OpenApiContractGenerationTests
                 ["ApproveFinanceBankAccountIbanChangeV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
                 // INV-OPEN-1 part 2: the count (200 on a replay) and the recorded terminal refusals (§7).
                 ["RecordInventoryOpeningCountV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
+                ["CreateInventoryPhysicalAllocationV1"] = [StatusCodes.Status200OK],
+                ["ReleaseInventoryPhysicalAllocationV1"] = [StatusCodes.Status200OK],
                 ["CreateLoadingInstructionV1"] = [StatusCodes.Status201Created, StatusCodes.Status409Conflict],
                 ["IssueLoadingInstructionV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["RecordLoadingInstructionLoadV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
@@ -776,6 +791,8 @@ public sealed partial class OpenApiContractGenerationTests
 
     private static readonly HashSet<string> EmptyBodyPossible400Operations =
     [
+        "CreateInventoryPhysicalAllocationV1",
+        "ReleaseInventoryPhysicalAllocationV1",
         "UpdateCounterpartyContactInformationV1",
         "GetAuditEventsV1",
         "GetOrganizationLocationsV1",
@@ -850,6 +867,8 @@ public sealed partial class OpenApiContractGenerationTests
         "GetInventoryLabelV1:404",
         "GetInventoryLabelBalancesV1:404",
         "GetInventoryOpeningCountV1:404",
+        "CreateInventoryPhysicalAllocationV1:404",
+        "ReleaseInventoryPhysicalAllocationV1:404",
         "SetOrganizationLocationActiveStateV1:404",
         "SetOrganizationLocationActiveStateV1:409",
         "GetFinanceManualReceiptDraftContextV1:404",
@@ -954,6 +973,12 @@ public sealed partial class OpenApiContractGenerationTests
             ["RecordInventoryOpeningCountV1:400"] = [.. InventoryOpeningCodesV1.Status400Codes.Order(StringComparer.Ordinal)],
             ["RecordInventoryOpeningCountV1:409"] = [.. InventoryOpeningCodesV1.Status409Codes.Order(StringComparer.Ordinal)],
             ["RecordInventoryOpeningCountV1:422"] = [.. InventoryOpeningCodesV1.Status422Codes.Order(StringComparer.Ordinal)],
+            ["CreateInventoryPhysicalAllocationV1:400"] = [.. InventoryPhysicalAllocationHttpCodesV1.Status400Codes.Order(StringComparer.Ordinal)],
+            ["CreateInventoryPhysicalAllocationV1:409"] = [.. InventoryPhysicalAllocationHttpCodesV1.CreateStatus409Codes.Order(StringComparer.Ordinal)],
+            ["CreateInventoryPhysicalAllocationV1:422"] = [.. InventoryPhysicalAllocationHttpCodesV1.Status422Codes.Order(StringComparer.Ordinal)],
+            ["ReleaseInventoryPhysicalAllocationV1:400"] = [.. InventoryPhysicalAllocationHttpCodesV1.Status400Codes.Order(StringComparer.Ordinal)],
+            ["ReleaseInventoryPhysicalAllocationV1:409"] = [.. InventoryPhysicalAllocationHttpCodesV1.ReleaseStatus409Codes.Order(StringComparer.Ordinal)],
+            ["ReleaseInventoryPhysicalAllocationV1:422"] = [.. InventoryPhysicalAllocationHttpCodesV1.Status422Codes.Order(StringComparer.Ordinal)],
             ["GetInventoryParentRollCandidatesV1:400"] = [InventoryParentRollCodesV1.InvalidQuery],
             ["GetInventoryParentRollCandidatesV1:409"] = [InventoryParentRollCodesV1.ReadConflict],
             ["GetInventoryProductCandidatesV1:400"] = [InventoryReferenceCodesV1.ProductInvalidQuery],
@@ -2059,6 +2084,16 @@ public sealed partial class OpenApiContractGenerationTests
                     ("draftSelectable", "type:boolean"),
                     ("draftRefusalCode", "type:null|string"),
                     ("productionUseRequiresRevalidation", "type:boolean")),
+                ["InventoryPhysicalAllocationViewV1"] = ObjectSchema(
+                    ["allocationId", "companyId", "version", "status", "labelId", "productId", "demandKind", "demandId", "demandLineId", "demandProductVersion", "allocatedKg", "remainingKg", "reason", "reservedUntilUtc", "createdAtUtc", "updatedAtUtc"],
+                    ("allocationId", "type:string;format:uuid"), ("companyId", "type:string;format:uuid"),
+                    ("version", "type:string"), ("status", "type:string"),
+                    ("labelId", "type:string;format:uuid"), ("productId", "type:string;format:uuid"),
+                    ("demandKind", "type:string"), ("demandId", "type:string;format:uuid"),
+                    ("demandLineId", "type:string;format:uuid"), ("demandProductVersion", "type:string"),
+                    ("allocatedKg", "type:string"), ("remainingKg", "type:string"), ("reason", "type:string"),
+                    ("reservedUntilUtc", "type:null|string;format:date-time"),
+                    ("createdAtUtc", "type:string;format:date-time"), ("updatedAtUtc", "type:string;format:date-time")),
                 ["OpeningCountViewV1"] = ObjectSchema(
                     ["countId", "companyId", "locationId", "countedOn", "sheetReference", "lines"],
                     ("countId", "type:string;format:uuid"), ("companyId", "type:string;format:uuid"),
@@ -2194,6 +2229,15 @@ public sealed partial class OpenApiContractGenerationTests
                     ("countId", "type:string;format:uuid"), ("locationId", "type:string;format:uuid"),
                     ("countedOn", "type:string;format:date"), ("sheetReference", "type:string"),
                     ("lines", "type:array;items:ref:OpeningCountLineRequestV1")),
+                ["CreateInventoryPhysicalAllocationRequestV1"] = ObjectSchema(
+                    ["allocationId", "salesOrderId", "salesOrderLineId", "labelId", "expectedLabelVersion", "quantityKg", "reason", "reservedUntilUtc"],
+                    ("allocationId", "type:string;format:uuid"), ("salesOrderId", "type:string;format:uuid"),
+                    ("salesOrderLineId", "type:string;format:uuid"), ("labelId", "type:string;format:uuid"),
+                    ("expectedLabelVersion", "type:string"), ("quantityKg", "type:string"),
+                    ("reason", "type:string"), ("reservedUntilUtc", "type:null|string;format:date-time")),
+                ["ReleasePhysicalAllocationV1"] = ObjectSchema(
+                    ["expectedAllocationVersion", "reason"],
+                    ("expectedAllocationVersion", "type:string"), ("reason", "type:string")),
                 ["OpeningCountLineRequestV1"] = ObjectSchema(
                     ["lineId", "labelId", "labelCode", "lotId", "heatNumber", "coilNumber", "productId", "productVersion", "quantityKg"],
                     ("lineId", "type:string;format:uuid"), ("labelId", "type:string;format:uuid"),
@@ -2954,9 +2998,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(107, operations.Count);
+        Assert.Equal(109, operations.Count);
         Assert.Equal(
-            107,
+            109,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());
@@ -3013,7 +3057,8 @@ public sealed partial class OpenApiContractGenerationTests
 
             if (expected.RequestSchemaReference is null)
             {
-                Assert.False(actual.Value.TryGetProperty("requestBody", out _));
+                Assert.False(actual.Value.TryGetProperty("requestBody", out _),
+                    $"{expected.OperationId} unexpectedly has a request body.");
             }
             else
             {
@@ -3172,9 +3217,11 @@ public sealed partial class OpenApiContractGenerationTests
             var idempotencyHeader = parameters.SingleOrDefault(parameter =>
                 parameter.GetProperty("in").GetString() == "header"
                 && parameter.GetProperty("name").GetString() == "Idempotency-Key");
-            Assert.Equal(
-                IdempotentOperations.Contains(operation.OperationId),
-                idempotencyHeader.ValueKind == JsonValueKind.Object);
+            var expectsIdempotency = IdempotentOperations.Contains(operation.OperationId);
+            var hasIdempotency = idempotencyHeader.ValueKind == JsonValueKind.Object;
+            Assert.True(
+                expectsIdempotency == hasIdempotency,
+                $"Operation '{operation.OperationId}' idempotency header mismatch. Expected {expectsIdempotency}, actual {hasIdempotency}.");
             if (idempotencyHeader.ValueKind == JsonValueKind.Object)
             {
                 AssertHeaderSchema(
@@ -3202,8 +3249,11 @@ public sealed partial class OpenApiContractGenerationTests
                     response.Name,
                     CultureInfo.InvariantCulture);
                 var acknowledgmentExpected = isCounterparty;
-                Assert.Equal(acknowledgmentExpected, responseHeaders.TryGetProperty(
-                    CounterpartyClientContract.HeaderName, out _));
+                var hasAcknowledgment = responseHeaders.TryGetProperty(
+                    CounterpartyClientContract.HeaderName, out _);
+                Assert.True(
+                    acknowledgmentExpected == hasAcknowledgment,
+                    $"Operation '{operation.OperationId}' response '{response.Name}' counterparty acknowledgment mismatch. Expected {acknowledgmentExpected}, actual {hasAcknowledgment}.");
                 if (acknowledgmentExpected)
                 {
                     AssertResponseHeaderSchema(responseHeaders,
@@ -3224,16 +3274,18 @@ public sealed partial class OpenApiContractGenerationTests
                 var replayHeadersExpected = ReplayableResponseStatuses
                     .GetValueOrDefault(operation.OperationId, [])
                     .Contains(numericStatusCode);
-                Assert.Equal(
-                    replayHeadersExpected,
-                    responseHeaders.TryGetProperty(
-                        "Idempotency-Replayed",
-                        out _));
-                Assert.Equal(
-                    replayHeadersExpected,
-                    responseHeaders.TryGetProperty(
-                        "Idempotency-Original-Correlation-Id",
-                        out _));
+                var hasReplayHeader = responseHeaders.TryGetProperty(
+                    "Idempotency-Replayed",
+                    out _);
+                var hasOriginalCorrelationHeader = responseHeaders.TryGetProperty(
+                    "Idempotency-Original-Correlation-Id",
+                    out _);
+                Assert.True(
+                    replayHeadersExpected == hasReplayHeader,
+                    $"Operation '{operation.OperationId}' response '{response.Name}' replay header mismatch. Expected {replayHeadersExpected}, actual {hasReplayHeader}.");
+                Assert.True(
+                    replayHeadersExpected == hasOriginalCorrelationHeader,
+                    $"Operation '{operation.OperationId}' response '{response.Name}' original-correlation header mismatch. Expected {replayHeadersExpected}, actual {hasOriginalCorrelationHeader}.");
                 if (replayHeadersExpected)
                 {
                     AssertResponseHeaderSchema(
@@ -3272,12 +3324,13 @@ public sealed partial class OpenApiContractGenerationTests
                 {
                     var expectedEmptyBodyVariant =
                         EmptyBodyPossible400Operations.Contains(operation.OperationId);
-                    Assert.Equal(
-                        expectedEmptyBodyVariant,
-                        response.Value.TryGetProperty(
+                    var hasEmptyBodyVariant = response.Value.TryGetProperty(
                             ErpOpenApiContract.EmptyBodyPossibleExtensionName,
                             out var emptyBodyPossible)
-                        && emptyBodyPossible.ValueKind == JsonValueKind.True);
+                        && emptyBodyPossible.ValueKind == JsonValueKind.True;
+                    Assert.True(
+                        expectedEmptyBodyVariant == hasEmptyBodyVariant,
+                        $"Operation '{operation.OperationId}' response '{response.Name}' empty-body variant mismatch. Expected {expectedEmptyBodyVariant}, actual {hasEmptyBodyVariant}.");
                 }
             }
         }
@@ -3424,10 +3477,11 @@ public sealed partial class OpenApiContractGenerationTests
         var parameter = Assert.Single(parameters, candidate =>
             candidate.GetProperty("in").GetString() == "header"
             && candidate.GetProperty("name").GetString() == name);
-        Assert.Equal(
-            required,
-            parameter.TryGetProperty("required", out var requiredValue)
-            && requiredValue.GetBoolean());
+        var actualRequired = parameter.TryGetProperty("required", out var requiredValue)
+            && requiredValue.GetBoolean();
+        Assert.True(
+            required == actualRequired,
+            $"Header '{name}' required mismatch. Expected {required}, actual {actualRequired}.");
         AssertStringSchema(
             parameter.GetProperty("schema"),
             type,
@@ -3436,12 +3490,13 @@ public sealed partial class OpenApiContractGenerationTests
             pattern,
             format,
             canonicalMaximumLength);
-        Assert.Equal(
-            nonEmptyUuid,
-            parameter.GetProperty("schema").TryGetProperty(
+        var actualNonEmptyUuid = parameter.GetProperty("schema").TryGetProperty(
                 ErpOpenApiContract.NonEmptyUuidExtensionName,
                 out var nonEmptyValue)
-            && nonEmptyValue.ValueKind == JsonValueKind.True);
+            && nonEmptyValue.ValueKind == JsonValueKind.True;
+        Assert.True(
+            nonEmptyUuid == actualNonEmptyUuid,
+            $"Header '{name}' non-empty UUID mismatch. Expected {nonEmptyUuid}, actual {actualNonEmptyUuid}.");
     }
 
     private static void AssertResponseHeaderSchema(
