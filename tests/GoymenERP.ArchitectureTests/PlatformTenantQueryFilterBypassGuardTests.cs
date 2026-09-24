@@ -823,7 +823,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // R47: Down refuses before its first destructive operation while a manual payment,
                 // outgoing money fact or command target exists. Empty schemas can still roll back.
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20260923213000_AddManualBankPayments.cs"] =
-                    new("f4ed1a10a57688ae1b92376b222ad3c3e0bc73f4b43c3df5db4607e3a4152223",
+                    new("2ab197f7060b5bb166f8ab9dd5aef6b22fc870c42ea400d28073561faa1418b9",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // F-03: Down refuses before destructive rollback while an allocation, open item or
