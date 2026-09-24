@@ -213,6 +213,9 @@ builder.Services.AddSalesModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(
         services.GetRequiredService<AuditSaveChangesInterceptor>()));
+// STK/T11: the host-owned allocation boundary consumes Sales only through its approved-line port and
+// hands the derived command to Inventory's writer after fresh company-wide authority fences.
+builder.Services.AddScoped<InventoryPhysicalAllocationHostService>();
 // LOG-4a: the loading instruction's customer is the Cari owner's answer (the Sales party port's shape) and its
 // order lines are Sales's approved-line port (registered by the Sales module); nothing of either is copied.
 builder.Services.AddScoped<ILogisticsPartyAccountPortV1, CounterpartyLogisticsPartyAccountPortV1>();
