@@ -712,7 +712,7 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
                          BankAccountId, ManualBankPaymentId, ResultJson, CorrelationId, RecordedAtUtc)
                     VALUES
                         ({CompanyA}, {downNegativeCommand}, {new string('C', 64)}, {Proposer}, {new string('D', 64)},
-                         {account.Id}, {paymentId}, {"{\"outcome\":\"Succeeded\"}"}, {Guid.NewGuid().ToString("N")}, {DateTimeOffset.UtcNow})
+                         {account}, {paymentId}, {"{\"outcome\":\"Succeeded\"}"}, {Guid.NewGuid().ToString("N")}, {DateTimeOffset.UtcNow})
                     """));
             Assert.Contains("CK_Commands_Target", downFailure.Message, StringComparison.Ordinal);
             Assert.Equal(0, await run.ScalarAsync<int>(
@@ -738,7 +738,7 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
                          BankAccountId, ManualBankPaymentId, ResultJson, CorrelationId, RecordedAtUtc)
                     VALUES
                         ({CompanyA}, {upNegativeCommand}, {new string('0', 64)}, {Proposer}, {new string('1', 64)},
-                         {account.Id}, {paymentId}, {"{\"outcome\":\"Succeeded\"}"}, {Guid.NewGuid().ToString("N")}, {DateTimeOffset.UtcNow})
+                         {account}, {paymentId}, {"{\"outcome\":\"Succeeded\"}"}, {Guid.NewGuid().ToString("N")}, {DateTimeOffset.UtcNow})
                     """));
             Assert.Contains("CK_Commands_Target", upFailure.Message, StringComparison.Ordinal);
             Assert.Equal(0, await run.ScalarAsync<int>(
