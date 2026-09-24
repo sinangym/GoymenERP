@@ -225,6 +225,46 @@ test('P01 saves one real Product-backed request, closes the form, reopens the sa
     headers: { [DEVELOPMENT_USER_HEADER]: creatorActor, 'X-Company-Id': otherCompanyId },
   })
   expect([403, 404]).toContain(elsewhere.status())
+
+  const linkedOrderCreate = await page.request.post(`${env.apiBaseUrl}${ORDERS_PATH}`, {
+    headers: {
+      [DEVELOPMENT_USER_HEADER]: creatorActor, 'X-Company-Id': companyId,
+      'Idempotency-Key': `browser-suite:pur01:source-order:${requestId}`, 'Content-Type': 'application/json',
+    },
+    data: {
+      supplierPartyId, companyAccountId, sourceRequestId: requestId, effectiveOn: '2026-09-18',
+      lines: [{
+        lineId: '7b1c0f2e-0000-4a00-8000-000000000098', productId,
+        expectedProductVersion: productVersion, unitId: productUnitId, quantity: '5',
+        sourceRequestLineId: created.detail.lines[0].lineId,
+      }],
+    },
+  })
+  expect(linkedOrderCreate.status()).toBe(201)
+  const linkedOrder = (await linkedOrderCreate.json()) as ApprovalResponse
+  const linkedOrderId = linkedOrder.detail.order.id
+  const linkedOrderVersion = linkedOrder.detail.order.version
+  expect(linkedOrder.detail.order).toMatchObject({ id: linkedOrderId, status: 'Draft' })
+
+  const linkedApproval = await page.request.post(`${env.apiBaseUrl}${ORDERS_PATH}/${linkedOrderId}/approval`, {
+    headers: {
+      [DEVELOPMENT_USER_HEADER]: approverActor, 'X-Company-Id': companyId,
+      'Idempotency-Key': `browser-suite:pur01:source-order-approval:${requestId}`,
+      'Content-Type': 'application/json',
+    },
+    data: { expectedVersion: linkedOrderVersion },
+  })
+  expect(linkedApproval.status()).toBe(200)
+
+  await signInAs(page, readerActor)
+  await page.goto(`${LIST_ROUTE}/${linkedOrderId}`)
+  await page.getByRole('link', { name: requestId, exact: true }).click()
+  await expect(page.getByRole('heading', { level: 1, name: 'Satın alma talebi' })).toBeVisible()
+  await expect(page.getByText(requestId, { exact: true })).toBeVisible()
+  await page.goBack()
+  await expect(page.getByRole('heading', { level: 1, name: 'Satın alma siparişi' })).toBeVisible()
+  await expect(page.getByText(linkedOrderId, { exact: true })).toBeVisible()
+  await expect(page.getByText('Onaylandı', { exact: true })).toBeVisible()
 })
 
 
