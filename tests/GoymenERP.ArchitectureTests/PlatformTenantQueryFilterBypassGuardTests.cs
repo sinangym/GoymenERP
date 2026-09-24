@@ -387,7 +387,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                             ["MigrateAsync"] = 1
                         }),
                 // LOG-5: the enlisted participant uses the host transaction's connection and
-                // constructs three InventoryDbContext instances over that exact connection. The
+                // explicitly constructs one InventoryDbContext over that exact connection. The
                 // source fingerprint and API counts keep this narrower than a general runtime
                 // context-construction or direct-database exemption.
                 [ReviewedInventoryDefiniteShipmentParticipantPath] =
@@ -5813,7 +5813,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         GetLineNumber(searchableSource, construction.Index)));
             }
 
-            if (!ReviewedPlatformContextFactories.ContainsKey(normalizedPath))
+            if (!ReviewedPlatformContextFactories.ContainsKey(normalizedPath)
+                && !string.Equals(
+                    normalizedPath,
+                    ReviewedInventoryDefiniteShipmentParticipantPath,
+                    StringComparison.Ordinal))
             {
                 var reviewedTypes = ReviewedContextTypeIdentifierRegex()
                     .Matches(searchableSource)
@@ -5883,10 +5887,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     construction.ContextTypeName,
                     "InventoryDbContext",
                     StringComparison.Ordinal));
-            if (participantConstructions != 3)
+            if (participantConstructions != 1)
             {
                 errors.Add(
-                    "Expected exactly three 'InventoryDbContext' constructions in reviewed "
+                    "Expected exactly one 'InventoryDbContext' construction in reviewed "
                     + $"runtime participant {ReviewedInventoryDefiniteShipmentParticipantPath}, "
                     + $"but found {participantConstructions}.");
             }
