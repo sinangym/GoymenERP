@@ -85,7 +85,29 @@ public sealed class ManufacturingPersistenceModelTests
             migration => migration.EndsWith("_AddPlanSlittingSpecs", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("_ExpandManufacturingProcesses", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AddManufacturingInputLabelVersions", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
+    }
+
+    [Fact]
+    public void Plan_and_order_inputs_keep_a_nullable_positive_inventory_label_version()
+    {
+        using var context = Context();
+        var model = context.GetService<IDesignTimeModel>().Model;
+
+        foreach (var (type, constraintName) in new[]
+        {
+            (typeof(PlanInputRow), "CK_PlanInputs_LabelVersion"),
+            (typeof(OrderInputRow), "CK_OrderInputs_LabelVersion"),
+        })
+        {
+            var entity = model.FindEntityType(type)!;
+            Assert.True(entity.FindProperty(nameof(PlanInputRow.ExpectedLabelVersion))!.IsNullable);
+            var constraint = entity.GetCheckConstraints()
+                .Single(check => check.Name == constraintName);
+            Assert.Equal("[ExpectedLabelVersion] IS NULL OR [ExpectedLabelVersion] >= 1", constraint.Sql);
+        }
     }
 
     [Fact]

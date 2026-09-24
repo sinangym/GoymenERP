@@ -282,6 +282,8 @@ public sealed class ManufacturingCommandServiceTests
             result.Resource.Process, result.Resource.Status, result.Resource.Version));
         Assert.Equal("1000.25", Assert.Single(result.Resource.Inputs).PlannedKg);
         Assert.Equal(("GoodOutputMass", "950"), (result.Resource.Target!.Basis, result.Resource.Target.Kg));
+        Assert.Equal(long.Parse(LabelVersion),
+            Assert.Single(fixture.Store.Plans[result.Resource.PlanId].Inputs).ExpectedLabelVersion);
         Assert.Equal(new[] { DateOnly.FromDateTime(At.UtcDateTime), DateOnly.FromDateTime(At.UtcDateTime) }, fixture.Settings.Days);
         Assert.Equal(new InventoryParentRollSelectionV1(Roll, LabelVersion), Assert.Single(fixture.ParentRolls.Selections));
         Assert.Equal(["authority", "work-center", "settings", "parent-roll", "authority"], fixture.Calls);
