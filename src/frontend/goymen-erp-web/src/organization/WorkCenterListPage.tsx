@@ -23,6 +23,7 @@ import { Link } from 'react-router'
 import { fetchWorkCenters } from './api'
 import type { WorkCenterSummary } from './contract'
 import { locationDetailPath } from './capabilities'
+import { workCenterDetailReturn } from './detailReturn'
 import {
   LOCATION_NOT_OPENABLE,
   WORK_CENTERS_HEADING,
@@ -109,13 +110,19 @@ function WorkCenterList({ namespace }: { readonly namespace: string | null }) {
         // where ORG-01 needs two.
         <StateBlock state={{ kind: 'empty-no-data' }} subject="iş merkezleri" />
       ) : (
-        <WorkCenterTable rows={state.data} />
+        <WorkCenterTable rows={state.data} namespace={namespace} />
       )}
     </section>
   )
 }
 
-function WorkCenterTable({ rows }: { readonly rows: readonly WorkCenterSummary[] }) {
+function WorkCenterTable({
+  rows,
+  namespace,
+}: {
+  readonly rows: readonly WorkCenterSummary[]
+  readonly namespace: string | null
+}) {
   return (
     <div className={styles.tableScroll}>
       <table className={styles.table}>
@@ -149,7 +156,7 @@ function WorkCenterTable({ rows }: { readonly rows: readonly WorkCenterSummary[]
                 </span>
               </td>
               <td>
-                <LocationCell row={row} />
+                <LocationCell row={row} namespace={namespace} />
               </td>
             </tr>
           ))}
@@ -178,12 +185,22 @@ function WorkCenterTable({ rows }: { readonly rows: readonly WorkCenterSummary[]
  * Not a link, and not a disabled link either: a disabled control implies "later, or with
  * one more step", and there is neither here. It is a plain statement of scope.
  */
-function LocationCell({ row }: { readonly row: WorkCenterSummary }) {
+function LocationCell({
+  row,
+  namespace,
+}: {
+  readonly row: WorkCenterSummary
+  readonly namespace: string | null
+}) {
   if (!row.canOpenLocationDetail) {
     return <span className={styles.locationClosed}>{LOCATION_NOT_OPENABLE}</span>
   }
   return (
-    <Link className={styles.rowLink} to={locationDetailPath(row.locationId)}>
+    <Link
+      className={styles.rowLink}
+      to={locationDetailPath(row.locationId)}
+      state={workCenterDetailReturn(namespace)}
+    >
       {/* The location NAME is not in this response, so the id is shown rather than a
           guessed label. Inventing one, or fetching the card just to title a link, would
           both be claims this screen has no source for. */}

@@ -135,6 +135,39 @@ describe('the card', () => {
   })
 })
 
+describe('the back destination', () => {
+  it('uses the canonical location list for a direct entry', async () => {
+    stub()
+    renderAt(PATH)
+
+    await screen.findByText('OSM-H0')
+    const back = within(screen.getByRole('navigation', { name: 'Geri' })).getByRole('link', {
+      name: /Organizasyon/,
+    })
+    expect(back.getAttribute('href')).toBe('/ayarlar/organizasyon')
+  })
+
+  it('ignores an untrusted origin from another context', async () => {
+    stub()
+    const { router } = renderAt(PATH)
+    await screen.findByText('OSM-H0')
+
+    await router.navigate(PATH, {
+      state: {
+        ns: 'another-company::generation',
+        from: 'javascript:alert(1)',
+      },
+    })
+
+    await waitFor(() => {
+      const back = within(screen.getByRole('navigation', { name: 'Geri' })).getByRole('link', {
+        name: /Organizasyon/,
+      })
+      expect(back.getAttribute('href')).toBe('/ayarlar/organizasyon')
+    })
+  })
+})
+
 describe('who may change the state', () => {
   it('hides the write surface from a read-only holder', async () => {
     // The server would refuse anyway; offering a form that can only fail is not a

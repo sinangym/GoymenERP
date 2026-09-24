@@ -10,16 +10,20 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import {
   COMPANY_A,
   LOC_H0,
   LOC_H1,
+  READ_CAPABILITIES,
+  SITE_OSM,
   WC_PAINT,
   WC_SLIT,
   WC_UNKNOWN_KIND,
   WORK_CENTERS_ONLY_CAPABILITIES,
   installFetch,
   json,
+  location,
   renderAt,
   requestsFor,
   workCenter,
@@ -95,6 +99,41 @@ describe('ORG-03 work centre list', () => {
     // not need to, and a probe would turn a deliberate 404 into an existence oracle.
     expect(requestsFor(recorded, `/organization/locations/${LOC_H1}`)).toEqual([])
     expect(requestsFor(recorded, `/organization/locations/${LOC_H0}`)).toEqual([])
+  })
+
+  it('returns from an opened location card to this work-center list', async () => {
+    installFetch({
+      capabilities: [
+        ...READ_CAPABILITIES,
+        ORGANIZATION_CAPABILITY.workCentersList,
+      ],
+      respond: (url) => {
+        if (url.includes('/organization/work-centers')) {
+          return json([
+            workCenter(WC_PAINT, LOC_H0, 'BY-01', 'Boya Hattı 1', {
+              canOpenLocationDetail: true,
+            }),
+          ])
+        }
+        if (url.includes(`/organization/locations/${LOC_H0}`)) {
+          return json(location(LOC_H0, SITE_OSM, 'OSM-H0', 'Hol-0'))
+        }
+        return undefined
+      },
+    })
+    const { router } = renderAt(PATH)
+
+    await userEvent.click(await screen.findByRole('link', { name: 'Lokasyon kartını aç' }))
+    expect(await screen.findByText('OSM-H0')).toBeTruthy()
+
+    const back = within(screen.getByRole('navigation', { name: 'Geri' })).getByRole('link', {
+      name: /İş Merkezleri/,
+    })
+    expect(back.getAttribute('href')).toBe(PATH)
+    await userEvent.click(back)
+
+    expect(await screen.findByRole('table')).toBeTruthy()
+    expect(router.state.location.pathname).toBe(PATH)
   })
 
   it('says "no records" for an empty list rather than showing an empty table', async () => {
