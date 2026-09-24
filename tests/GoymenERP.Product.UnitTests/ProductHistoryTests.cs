@@ -300,6 +300,8 @@ public sealed class ProductHistoryTests
         public Task<ProductReferenceOptions> GetReferenceOptionsAsync(ProductReferenceQuery query, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<ProductMutationResponse> CreateDraftAsync(CreateProductDraftRequest request, string idempotencyKey, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<ProductMutationResponse> EditDraftAsync(Guid id, EditProductDraftRequest request, string idempotencyKey, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<ProductMutationResponse> ActivateAsync(Guid id, ActivateProductRequest request,
+            string idempotencyKey, CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 
     private sealed class Audit(IReadOnlyList<ProductAuditRecordV1> records) : IProductAuditHistorySourceV1
