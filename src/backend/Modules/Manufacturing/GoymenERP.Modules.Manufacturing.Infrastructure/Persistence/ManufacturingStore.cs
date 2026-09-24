@@ -216,7 +216,19 @@ public sealed class ManufacturingStore(
 
         Audit(metadata, companyId, OrderEntityType, order.Id, "manufacturing.order.created.v1", "Create",
             versionBefore: null, versionAfter: order.Version, before: "{}",
-            after: JsonSerializer.Serialize(new { order.Id, order.PlanId, order.WorkCenterId, rolls = order.PlannedInputs.Count }, Json),
+            after: JsonSerializer.Serialize(new
+            {
+                order.Id,
+                order.PlanId,
+                order.WorkCenterId,
+                rolls = order.PlannedInputs.Count,
+                inputs = order.PlannedInputs.Select(input => new
+                {
+                    input.ParentRollId,
+                    kg = input.PlannedMass.Value,
+                    input.ExpectedLabelVersion,
+                }),
+            }, Json),
             "Üretim emri kaydı");
         Complete(metadata, companyId, order);
         await SaveAsync(cancellationToken);
@@ -688,7 +700,12 @@ public sealed class ManufacturingStore(
             process = plan.Process.ToString(),
             status = plan.Status.ToString(),
             target = plan.Target is null ? null : new { basis = plan.Target.Basis.ToString(), kg = plan.Target.Mass.Value },
-            inputs = plan.Inputs.Select(input => new { input.ParentRollId, kg = input.PlannedMass.Value }),
+            inputs = plan.Inputs.Select(input => new
+            {
+                input.ParentRollId,
+                kg = input.PlannedMass.Value,
+                input.ExpectedLabelVersion,
+            }),
             slitting = new
             {
                 lines = spec.Lines.Select(line => new { bandWidthMm = line.BandWidthMm, count = line.Count }),
@@ -704,7 +721,12 @@ public sealed class ManufacturingStore(
         process = plan.Process.ToString(),
         status = plan.Status.ToString(),
         target = plan.Target is null ? null : new { basis = plan.Target.Basis.ToString(), kg = plan.Target.Mass.Value },
-        inputs = plan.Inputs.Select(input => new { input.ParentRollId, kg = input.PlannedMass.Value }),
+        inputs = plan.Inputs.Select(input => new
+        {
+            input.ParentRollId,
+            kg = input.PlannedMass.Value,
+            input.ExpectedLabelVersion,
+        }),
         plan.ApprovedByUserId,
         plan.ApprovedAtUtc,
     }, Json);

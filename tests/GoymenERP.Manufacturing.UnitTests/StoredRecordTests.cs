@@ -229,10 +229,11 @@ public sealed class StoredRecordTests
     [Fact]
     public void The_inventory_label_version_is_positive_durable_plan_content()
     {
+        var planId = Guid.NewGuid();
         var input = new PlannedInput(RollA, Kg(10_000m), 7);
-        var same = new ProductionPlan(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.Slitting,
+        var same = new ProductionPlan(planId, Company, WorkCenter, ManufacturingProcess.Slitting,
             [input], new ProductionTarget(TargetBasis.InputMass, Kg(10_000m)));
-        var newer = new ProductionPlan(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.Slitting,
+        var newer = new ProductionPlan(planId, Company, WorkCenter, ManufacturingProcess.Slitting,
             [new PlannedInput(RollA, Kg(10_000m), 8)], new ProductionTarget(TargetBasis.InputMass, Kg(10_000m)));
 
         Assert.Equal(7, input.ExpectedLabelVersion);

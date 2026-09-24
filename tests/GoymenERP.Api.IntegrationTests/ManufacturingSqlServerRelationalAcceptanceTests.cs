@@ -1,3 +1,4 @@
+using System.Text.Json;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
@@ -40,7 +41,16 @@ public sealed class ManufacturingSqlServerRelationalAcceptanceTests
 
         await using (var store = run.Store(CompanyA))
         {
-            await store.Plans.SavePlanAsync(plan, Metadata(run));
+            Assert.Equal(ManufacturingWriteOutcome.Recorded,
+                await store.Plans.SavePlanAsync(plan, Metadata(run)));
+            Assert.Equal(ManufacturingWriteOutcome.Replayed,
+                await store.Plans.SavePlanAsync(plan, Metadata(run)));
+            var changedVersion = new ProductionPlan(plan.Id, CompanyA, workCenter, ManufacturingProcess.Slitting,
+                [new PlannedInput(RollA, Kg(10_000m), 18), new PlannedInput(RollB, Kg(5_000m), 23)],
+                new ProductionTarget(TargetBasis.InputMass, Kg(15_000m)));
+            var conflict = await Assert.ThrowsAsync<ManufacturingStoreException>(
+                () => store.Plans.SavePlanAsync(changedVersion, Metadata(run)));
+            Assert.Equal(ManufacturingStoreCodes.PlanIdConflict, conflict.Code);
             await store.Plans.ApprovePlanAsync(plan.Id, 1, run.Actor, At, Metadata(run));
             await store.Orders.CreateOrderAsync(orderId, plan.Id, Metadata(run));
         }
@@ -58,6 +68,18 @@ public sealed class ManufacturingSqlServerRelationalAcceptanceTests
             .ToArrayAsync();
         Assert.Equal(new long[] { 17, 23 }, planVersions);
         Assert.Equal(new long[] { 17, 23 }, orderVersions);
+        Assert.Equal(new long?[] { 17, 23 }, AuditInputVersions(await run.ScalarAsync<string>(
+            "SELECT AfterJson FROM audit.AuditEvents WHERE EventType = N'manufacturing.plan.created.v1' "
+            + "AND EntityId = @id", ("@id", plan.Id.ToString("D")))));
+        Assert.Equal(new long?[] { 17, 23 }, AuditInputVersions(await run.ScalarAsync<string>(
+            "SELECT BeforeJson FROM audit.AuditEvents WHERE EventType = N'manufacturing.plan.approved.v1' "
+            + "AND EntityId = @id", ("@id", plan.Id.ToString("D")))));
+        Assert.Equal(new long?[] { 17, 23 }, AuditInputVersions(await run.ScalarAsync<string>(
+            "SELECT AfterJson FROM audit.AuditEvents WHERE EventType = N'manufacturing.plan.approved.v1' "
+            + "AND EntityId = @id", ("@id", plan.Id.ToString("D")))));
+        Assert.Equal(new long?[] { 17, 23 }, AuditInputVersions(await run.ScalarAsync<string>(
+            "SELECT AfterJson FROM audit.AuditEvents WHERE EventType = N'manufacturing.order.created.v1' "
+            + "AND EntityId = @id", ("@id", orderId.ToString("D")))));
 
         const string beforeLabelVersions = "20260924150000_ExpandManufacturingProcesses";
         var error = await Assert.ThrowsAsync<SqlException>(
@@ -100,9 +122,24 @@ public sealed class ManufacturingSqlServerRelationalAcceptanceTests
         Assert.Equal(2, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM manufacturing.PlanInputs WHERE PlanId = @id AND ExpectedLabelVersion IS NULL",
             ("@id", legacy.Id)));
+        Assert.Equal(new long?[] { null, null }, AuditInputVersions(await run.ScalarAsync<string>(
+            "SELECT AfterJson FROM audit.AuditEvents WHERE EventType = N'manufacturing.plan.created.v1' "
+            + "AND EntityId = @id", ("@id", legacy.Id.ToString("D")))));
         await using var replayStore = run.Store(CompanyA);
         Assert.Equal(ManufacturingWriteOutcome.Replayed,
             await replayStore.Plans.SavePlanAsync(Draft(legacy), Metadata(run)));
+    }
+
+    private static long?[] AuditInputVersions(string json)
+    {
+        using var document = JsonDocument.Parse(json);
+        return document.RootElement.GetProperty("inputs").EnumerateArray()
+            .Select(input =>
+            {
+                Assert.True(input.TryGetProperty("expectedLabelVersion", out var version));
+                return version.ValueKind == JsonValueKind.Null ? (long?)null : version.GetInt64();
+            })
+            .ToArray();
     }
 
     [SqlServerFact]
