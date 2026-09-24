@@ -51,6 +51,47 @@ public sealed class StoredRecordTests
     }
 
     [Theory]
+    [InlineData(ManufacturingProcess.ColdRolling)]
+    [InlineData(ManufacturingProcess.TubeProfile)]
+    [InlineData(ManufacturingProcess.Paint)]
+    [InlineData(ManufacturingProcess.CutToLength)]
+    public void A_new_non_slitting_plan_cannot_carry_a_slitting_spec(ManufacturingProcess process)
+    {
+        var error = Assert.Throws<ArgumentException>(() => new ProductionPlan(
+            Guid.NewGuid(), Company, WorkCenter, process, Inputs(), spec: SlittingSpec()));
+
+        Assert.Equal("spec", error.ParamName);
+    }
+
+    [Theory]
+    [InlineData(ManufacturingProcess.ColdRolling)]
+    [InlineData(ManufacturingProcess.TubeProfile)]
+    [InlineData(ManufacturingProcess.Paint)]
+    [InlineData(ManufacturingProcess.CutToLength)]
+    public void A_stored_non_slitting_plan_with_a_slitting_spec_is_refused_not_repaired(ManufacturingProcess process)
+    {
+        var error = Assert.Throws<ManufacturingRuleException>(() => ProductionPlan.Restore(
+            Guid.NewGuid(), Company, WorkCenter, process, Inputs(), target: null,
+            approvedByUserId: null, approvedAtUtc: null, version: 1, spec: SlittingSpec()));
+
+        Assert.Equal(ManufacturingRuleCodes.StoredRecordInvalid, error.Code);
+    }
+
+    [Fact]
+    public void Slitting_with_its_spec_and_another_process_without_one_remain_valid()
+    {
+        var spec = SlittingSpec();
+        var slitting = new ProductionPlan(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.Slitting,
+            Inputs(), spec: spec);
+        var coldRolling = ProductionPlan.Restore(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.ColdRolling,
+            Inputs(), target: null, approvedByUserId: null, approvedAtUtc: null, version: 1);
+
+        Assert.Same(spec, slitting.Spec);
+        Assert.Null(coldRolling.Spec);
+        Assert.Equal(ManufacturingProcess.ColdRolling, coldRolling.Process);
+    }
+
+    [Theory]
     [InlineData("approver-without-instant")]
     [InlineData("instant-without-approver")]
     [InlineData("draft-with-version-2")]
@@ -227,4 +268,7 @@ public sealed class StoredRecordTests
 
         Assert.Equal((PlanStatus.Draft, spec), (restored.Status, restored.Spec));
     }
+
+    private static SlittingSpec SlittingSpec() =>
+        new([new SlitLine(150m, 4), new SlitLine(240m, 3)], Kg(2_000m));
 }

@@ -287,26 +287,37 @@ public sealed class ManufacturingCommandServiceTests
         Assert.Equal(["authority", "work-center", "settings", "parent-roll", "authority"], fixture.Calls);
     }
 
-    [Fact]
-    public async Task A_saved_plan_uses_the_selected_slitting_work_centers_process()
+    [Theory]
+    [InlineData("Slitting", ManufacturingProcess.Slitting, 1)]
+    [InlineData("ColdRolling", ManufacturingProcess.ColdRolling, 2)]
+    [InlineData("TubeProfile", ManufacturingProcess.TubeProfile, 3)]
+    [InlineData("Paint", ManufacturingProcess.Paint, 4)]
+    [InlineData("CutToLength", ManufacturingProcess.CutToLength, 5)]
+    public async Task A_saved_plan_uses_each_exact_organization_process_kind(
+        string kind,
+        ManufacturingProcess expected,
+        int persistedValue)
     {
         var fixture = new Fixture();
+        fixture.WorkCenters.Kind = kind;
 
         var result = await fixture.Service.SavePlanAsync(Plan(LabelVersion), "key-1",
             "manufacturing.plans.write", CancellationToken.None);
 
         Assert.Equal(ManufacturingApiStatus.Created, result.Status);
-        Assert.Equal("Slitting", result.Resource!.Process);
-        Assert.Equal(ManufacturingProcess.Slitting, fixture.Store.Plans[result.Resource.PlanId].Process);
+        Assert.Equal(kind, result.Resource!.Process);
+        Assert.Equal(expected, fixture.Store.Plans[result.Resource.PlanId].Process);
+        Assert.Equal(persistedValue, (int)fixture.Store.Plans[result.Resource.PlanId].Process);
         Assert.Equal((Company, WorkCenter), Assert.Single(fixture.WorkCenters.Requests));
     }
 
     [Theory]
-    [InlineData("Paint")]
-    [InlineData("TubeProfile")]
-    [InlineData("ColdRolling")]
-    [InlineData("CutToLength")]
-    public async Task An_organization_process_not_yet_in_the_manufacturing_persistence_contract_fails_closed(string kind)
+    [InlineData("slitting")]
+    [InlineData("Painting")]
+    [InlineData("Cold Rolling")]
+    [InlineData("Tube/Profile")]
+    [InlineData("5")]
+    public async Task A_noncanonical_organization_process_kind_fails_closed_before_other_owner_reads(string kind)
     {
         var fixture = new Fixture();
         fixture.WorkCenters.Kind = kind;

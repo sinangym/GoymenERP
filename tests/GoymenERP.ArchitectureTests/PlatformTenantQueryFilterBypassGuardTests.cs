@@ -157,7 +157,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // manufacturing
             ["tools/relational_inventory/manufacturing.txt"] =
-                "92e06f2b2aed67deffc4e749c3830273540f91c94fe3b9d015c9050ed0a4cc7f",
+                "bb721e80b47a9e2cede37ea944c9654831a6a8b77060a5ae0fc05055fc5097db",
 
             // organization
             ["tools/relational_inventory/organization.txt"] =
@@ -226,7 +226,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/"
              + "Persistence/ManufacturingDbContext.cs"] =
-                "fc6818d5c21d556087c39bad90362c83cd83303e6d86f35cd4547685c91c6c10",
+                "a0ce37e08dbb87969301c0c3ac9fc6b92981e7866f742f7bedefcf36504086d5",
             // FIN-T04a (#305): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
@@ -699,6 +699,15 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         ReviewedMigrationMutationSources =
             new Dictionary<string, ReviewedMigrationMutationSource>(StringComparer.Ordinal)
             {
+                // Manufacturing process expansion uses one reviewed DDL statement in this exact migration.
+                ["src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/"
+                 + "Persistence/Migrations/20260924150000_ExpandManufacturingProcesses.cs"] =
+                    new(
+                        "631d6b751b5c01ad166935e802c1e80ed5a601d087dc3eab1f7c74b01d57528e",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
                 // SALES-A1: the Down's only raw SQL is the refusal (51045) while any draft left Preparing or any
                 // state-command attempt carries a DraftId (the pre-A1 unique index could not be restored);
                 // forward fix, no approval fact or attempt is dropped.
