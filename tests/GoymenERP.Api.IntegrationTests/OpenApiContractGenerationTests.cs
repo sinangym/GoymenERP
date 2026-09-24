@@ -61,6 +61,9 @@ public sealed partial class OpenApiContractGenerationTests
         new("get", "/api/v1/inventory/labels/{labelId}/balances", "GetInventoryLabelBalancesV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json"),
             ParameterValues: ["path:labelId:true:type:string;format:uuid"]),
+        new("get", "/api/v1/inventory/labels/{labelId}/detail", "GetInventoryLabelDetailV1",
+            AuthenticatedResponses("200:application/json", "404:application/problem+json", "409:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["path:labelId:true:type:string;format:uuid"]),
         new("get", "/api/v1/inventory/references/parent-rolls", "GetInventoryParentRollCandidatesV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "409:application/problem+json", "503:application/problem+json"),
             ParameterValues:
@@ -454,6 +457,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetOrganizationLocationV1"] = "ref:LocationSummary",
             ["GetInventoryLabelV1"] = "ref:InventoryLabelViewV1",
             ["GetInventoryLabelBalancesV1"] = "ref:InventoryLabelBalancesV1",
+            ["GetInventoryLabelDetailV1"] = "ref:InventoryLabelDetailV1",
             ["GetInventoryParentRollCandidatesV1"] = "ref:InventoryParentRollCandidatesV1",
             ["GetInventoryStockPositionsV1"] = "ref:InventoryStockPositionsV1",
             ["GetInventoryProductCandidatesV1"] = "ref:ProductStockCandidatesV1",
@@ -562,6 +566,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetOrganizationWorkCentersV1",
         "GetInventoryLabelV1",
         "GetInventoryLabelBalancesV1",
+        "GetInventoryLabelDetailV1",
         "GetInventoryParentRollCandidatesV1",
         "GetInventoryStockPositionsV1",
         "GetInventoryProductCandidatesV1",
@@ -875,6 +880,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetOrganizationLocationV1:404",
         "GetInventoryLabelV1:404",
         "GetInventoryLabelBalancesV1:404",
+        "GetInventoryLabelDetailV1:404",
         "GetInventoryOpeningCountV1:404",
         "CreateInventoryPhysicalAllocationV1:404",
         "ReleaseInventoryPhysicalAllocationV1:404",
@@ -992,6 +998,8 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetInventoryParentRollCandidatesV1:409"] = [InventoryParentRollCodesV1.ReadConflict],
             ["GetInventoryStockPositionsV1:400"] = [InventoryStockPositionCodesV1.InvalidQuery],
             ["GetInventoryStockPositionsV1:409"] = [InventoryStockPositionCodesV1.ReadConflict],
+            ["GetInventoryLabelDetailV1:409"] = [InventoryLabelDetailCodesV1.ReadConflict],
+            ["GetInventoryLabelDetailV1:503"] = [InventoryLabelDetailCodesV1.Unavailable],
             ["GetInventoryProductCandidatesV1:400"] = [InventoryReferenceCodesV1.ProductInvalidQuery],
             ["GetInventoryProductCandidatesV1:409"] = [InventoryReferenceCodesV1.ProductReadConflict],
             ["GetInventoryLocationCandidatesV1:400"] = [InventoryReferenceCodesV1.LocationInvalidQuery],
@@ -2068,6 +2076,10 @@ public sealed partial class OpenApiContractGenerationTests
                     ("labelId", "type:string;format:uuid"), ("physicalKg", "type:string"),
                     ("freeKg", "type:string"), ("blockedKg", "type:string"),
                     ("positions", "type:array;items:ref:InventoryPositionV1")),
+                ["InventoryLabelDetailV1"] = ObjectSchema(
+                    ["labelVersion", "identity", "balances"],
+                    ("labelVersion", "type:string"), ("identity", "ref:InventoryLabelViewV1"),
+                    ("balances", "ref:InventoryLabelBalancesV1")),
                 ["InventoryParentRollCandidatesV1"] = ObjectSchema(
                     ["items", "searchWindowFull"],
                     ("items", "type:array;items:ref:InventoryParentRollReferenceV1"),
@@ -3037,9 +3049,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(110, operations.Count);
+        Assert.Equal(111, operations.Count);
         Assert.Equal(
-            110,
+            111,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());

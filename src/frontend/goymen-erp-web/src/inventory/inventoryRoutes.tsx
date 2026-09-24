@@ -11,7 +11,9 @@ import {
 import { InventoryOpeningCreatePage } from './InventoryOpeningCreatePage'
 import { InventoryOpeningDetailPage } from './InventoryOpeningDetailPage'
 import { InventoryOpeningHomePage } from './InventoryOpeningHomePage'
+import { InventoryLabelDetailPage } from './InventoryLabelDetailPage'
 import { InventoryStockPositionPage } from './InventoryStockPositionPage'
+import { INVENTORY_LABEL_DETAIL_ROUTE } from './labelDetailRoute'
 
 function gate(children: ReactNode) {
   return <CapabilityRoute capability={INVENTORY_OPENING_CAPABILITY as CapabilityId}>{children}</CapabilityRoute>
@@ -23,6 +25,14 @@ export const inventoryRoutes: RouteObject[] = [
     element: (
       <CapabilityRoute capability={INVENTORY_STOCK_POSITIONS_CAPABILITY as CapabilityId}>
         <InventoryStockPositionPage />
+      </CapabilityRoute>
+    ),
+  },
+  {
+    path: INVENTORY_LABEL_DETAIL_ROUTE.slice(1),
+    element: (
+      <CapabilityRoute capability={INVENTORY_STOCK_POSITIONS_CAPABILITY as CapabilityId}>
+        <InventoryLabelDetailPage />
       </CapabilityRoute>
     ),
   },
