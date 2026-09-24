@@ -574,10 +574,9 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
         }
 
         Assert.Equal(CommandOutcome.Succeeded, proposed.Outcome);
-        await using (var checker = run.ReversalService(CompanyA, Guid.NewGuid().ToString("D"),
-                         allocationGate: new FixedAllocationGate(
-                             new ReversalAllocationAnswer(ReversalAllocationOutcome.HasAllocation,
-                                 "finance_reversal_has_allocations"))))
+        var allocationId = await run.SeedActiveAllocationAsync(
+            CompanyA, draft.Id, owners.Account, Currency, "1250.50", "250.10");
+        await using (var checker = run.ReversalService(CompanyA, Guid.NewGuid().ToString("D")))
         {
             var refused = await checker.Service.ApproveAsync(checker.Context, Key("allocated-reverse-approve"),
                 new ApproveReversalRequest(proposed.Resource!.Id, proposed.Resource.Version), CancellationToken.None);
@@ -597,6 +596,9 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
         Assert.Equal(0, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM finance.Commands WHERE CommandName = @c",
             ("@c", ReversalProposalService.ApproveCommand)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.Allocations WHERE Id = @id AND CompanyId = @company AND SourceId = @source AND Status = 1",
+            ("@id", allocationId), ("@company", CompanyA), ("@source", draft.Id)));
     }
 
     private static CommandMetadata Key(string key) => new CommandMetadata(key);
@@ -706,13 +708,84 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
             var dbContext = new FinanceDbContext(options, companyContext);
             var service = new ReversalProposalService(dbContext, companyContext, currentUser,
                 permissions ?? new SyntheticPermissions(), rule ?? new SyntheticOpenPeriodRule(),
-                allocationGate ?? new NoAllocationSubsystemFinanceReversalGate(), collector,
+                allocationGate ?? new FinanceAllocationReversalGate(dbContext, companyContext, currentUser), collector,
                 new FinanceReversalEnvelopes(
                     new FinanceAuditEnvelope(ReversalProposalService.ProposeCommand, ["SENTETIK-FINANCE"], "Web"),
                     new FinanceAuditEnvelope(ReversalProposalService.ApproveCommand, ["SENTETIK-FINANCE"], "Web")),
                 TimeProvider.System);
             return new ReversalServiceScope(dbContext, service,
                 new FinanceContext(company, actor, correlation ?? $"fin-t06-{Guid.NewGuid():N}", null));
+        }
+
+        /// <summary>
+        /// F-03 predecessor fixture: persists the owner row through FinanceDbContext so the reversal
+        /// gate performs a real company-filtered SQL read. This is not an allocation command or a
+        /// user/grant acceptance; the command/open-item owner path is a separate pending slice.
+        /// </summary>
+        public async Task<Guid> SeedActiveAllocationAsync(
+            Guid company,
+            Guid sourceId,
+            Guid companyAccountId,
+            Guid currencyId,
+            string sourceAmount,
+            string amount)
+        {
+            var companyContext = new CompanyContext();
+            companyContext.Set(company);
+            await using var dbContext = new FinanceDbContext(
+                new DbContextOptionsBuilder<FinanceDbContext>()
+                    .UseSqlServer(Factory.DatabaseConnectionString,
+                        sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", FinanceDbContext.Schema))
+                    .Options,
+                companyContext);
+            var id = Guid.NewGuid();
+            var openItemId = Guid.NewGuid();
+            dbContext.OpenItems.Add(new FinanceOpenItemRow
+            {
+                Id = openItemId,
+                CompanyId = company,
+                SourceKind = "synthetic.receivable.v1",
+                SourceId = Guid.NewGuid(),
+                SourceVersion = "1",
+                PartyId = Guid.NewGuid(),
+                CompanyAccountId = companyAccountId,
+                CurrencyId = currencyId,
+                OriginalAmountText = sourceAmount,
+                OutstandingAmountText = "1000.40",
+                Status = FinanceOpenItemStatuses.Open,
+                Version = 2,
+                CreatedBy = "synthetic-finance-open-item-fixture",
+                CreatedAtUtc = DateTimeOffset.UtcNow,
+                UpdatedBy = "synthetic-finance-allocation-fixture",
+                UpdatedAtUtc = DateTimeOffset.UtcNow,
+            });
+            dbContext.SourceAllocationStates.Add(new FinanceSourceAllocationStateRow
+            {
+                CompanyId = company,
+                SourceId = sourceId,
+                CurrencyId = currencyId,
+                OriginalAmountText = sourceAmount,
+                UnallocatedAmountText = "1000.40",
+                Version = 1,
+                UpdatedBy = "synthetic-finance-allocation-fixture",
+                UpdatedAtUtc = DateTimeOffset.UtcNow,
+            });
+            dbContext.Allocations.Add(new FinanceAllocationRow
+            {
+                Id = id,
+                CompanyId = company,
+                SourceId = sourceId,
+                OpenItemId = openItemId,
+                CurrencyId = currencyId,
+                AmountText = amount,
+                Reason = "SENTETIK persisted reversal gate allocation",
+                Status = FinanceAllocationStatuses.Active,
+                Version = 1,
+                CreatedBy = "synthetic-finance-allocation-fixture",
+                CreatedAtUtc = DateTimeOffset.UtcNow,
+            });
+            await dbContext.SaveChangesAsync();
+            return id;
         }
 
         /// <summary>The Accounting tables in the SAME database, so a period and a money event are one system.</summary>

@@ -6,6 +6,8 @@ using GoymenERP.Modules.Finance.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
 
 namespace GoymenERP.Finance.UnitTests;
 
@@ -27,7 +29,8 @@ public sealed class FinanceDraftPersistenceModelTests
         foreach (var type in new[]
                  {
                      typeof(ReceiptDraftRow), typeof(FinanceCommandRow), typeof(MoneyEventRow),
-                     typeof(ReversalProposalRow),
+                     typeof(ReversalProposalRow), typeof(FinanceOpenItemRow), typeof(FinanceSourceAllocationStateRow),
+                     typeof(FinanceAllocationRow),
                  })
         {
             var entity = context.Model.FindEntityType(type)!;
@@ -55,10 +58,15 @@ public sealed class FinanceDraftPersistenceModelTests
         Assert.False(design.FindProperty(nameof(FinanceCommandRow.ActorId))!.IsNullable);
         Assert.Contains(design.GetCheckConstraints(), check => check.Name == "CK_Commands_KeyHash");
         Assert.NotNull(design.FindProperty(nameof(FinanceCommandRow.ReversalProposalId)));
+        Assert.NotNull(design.FindProperty(nameof(FinanceCommandRow.FinanceAllocationId)));
         Assert.Contains(design.GetForeignKeys(), key =>
             key.PrincipalEntityType.ClrType == typeof(ReversalProposalRow)
             && key.Properties.Select(property => property.Name)
                 .SequenceEqual([nameof(FinanceCommandRow.CompanyId), nameof(FinanceCommandRow.ReversalProposalId)]));
+        Assert.Contains(design.GetForeignKeys(), key =>
+            key.PrincipalEntityType.ClrType == typeof(FinanceAllocationRow)
+            && key.Properties.Select(property => property.Name)
+                .SequenceEqual([nameof(FinanceCommandRow.CompanyId), nameof(FinanceCommandRow.FinanceAllocationId)]));
         // The key hash is the trimmed key's upper-case SHA-256 (ADR-011 §2).
         Assert.Equal(64, FinanceCommandKeys.Hash("k-1").Length);
         Assert.Equal(FinanceCommandKeys.Hash("k-1"), FinanceCommandKeys.Hash("k-1").ToUpperInvariant());
@@ -79,7 +87,20 @@ public sealed class FinanceDraftPersistenceModelTests
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AlignCommandsWithAdr011", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddMoneyEvents", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddReversalProposals", StringComparison.Ordinal));
-        Assert.False(context.Database.HasPendingModelChanges());
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddFinanceAllocations", StringComparison.Ordinal));
+        var snapshot = context.GetService<IMigrationsAssembly>().ModelSnapshot?.Model;
+        Assert.NotNull(snapshot);
+        if (snapshot is IMutableModel mutable)
+        {
+            snapshot = mutable.FinalizeModel();
+        }
+
+        snapshot = context.GetService<IModelRuntimeInitializer>().Initialize(snapshot);
+        var differences = context.GetService<IMigrationsModelDiffer>().GetDifferences(
+            snapshot.GetRelationalModel(), context.GetService<IDesignTimeModel>().Model.GetRelationalModel());
+
+        Assert.True(differences.Count == 0,
+            "Finance snapshot differs from the model: " + string.Join(" | ", differences.Select(Describe)));
     }
 
     [Theory]
@@ -104,6 +125,7 @@ public sealed class FinanceDraftPersistenceModelTests
     [InlineData("delete-money-event")]
     [InlineData("edit-recorded-source")]
     [InlineData("edit-reversal-proposal-origin")]
+    [InlineData("edit-allocation-source")]
     public void Drafts_are_never_deleted_and_command_records_never_change(string fault)
     {
         using var context = Context();
@@ -131,6 +153,9 @@ public sealed class FinanceDraftPersistenceModelTests
                 break;
             case "edit-reversal-proposal-origin":
                 Attach(context, ReversalProposal()).OriginalSourceId = Guid.NewGuid();
+                break;
+            case "edit-allocation-source":
+                Attach(context, Allocation()).SourceId = Guid.NewGuid();
                 break;
             default:
                 Attach(context, Command()).PayloadHash = new string('1', 64);
@@ -178,6 +203,59 @@ public sealed class FinanceDraftPersistenceModelTests
         Assert.Equal(2, design.GetForeignKeys().Count(key => key.PrincipalEntityType.ClrType == typeof(ReceiptDraftRow)));
         Assert.True(design.FindProperty(nameof(ReversalProposalRow.Version))!.IsConcurrencyToken);
         Assert.Contains(design.GetCheckConstraints(), check => check.Name == "CK_ReversalProposals_Decision");
+    }
+
+    [Fact]
+    public void A_finance_allocation_is_company_filtered_source_bound_text_money_and_release_only()
+    {
+        using var context = Context();
+        var design = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(FinanceAllocationRow))!;
+
+        Assert.True(design.FindProperty(nameof(FinanceAllocationRow.Version))!.IsConcurrencyToken);
+        Assert.Equal(typeof(string), design.FindProperty(nameof(FinanceAllocationRow.AmountText))!.ClrType);
+        Assert.DoesNotContain(design.GetProperties(), property => property.ClrType == typeof(decimal));
+        Assert.Contains(design.GetIndexes(), index => index.Properties.Select(property => property.Name)
+            .SequenceEqual(["CompanyId", "SourceId", "Status"]));
+        Assert.Contains(design.GetIndexes(), index => index.Properties.Select(property => property.Name)
+            .SequenceEqual(["CompanyId", "OpenItemId", "Status"]));
+        Assert.Contains(design.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(ReceiptDraftRow)
+            && key.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "SourceId"]));
+        Assert.Contains(design.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(FinanceOpenItemRow)
+            && key.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "OpenItemId"]));
+        Assert.Contains(design.GetCheckConstraints(), check => check.Name == "CK_Allocations_Status");
+    }
+
+    [Fact]
+    public void An_open_item_keeps_owner_identity_lossless_money_and_company_scoped_source_uniqueness()
+    {
+        using var context = Context();
+        var design = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(FinanceOpenItemRow))!;
+
+        Assert.True(design.FindProperty(nameof(FinanceOpenItemRow.Version))!.IsConcurrencyToken);
+        Assert.Equal(typeof(string), design.FindProperty(nameof(FinanceOpenItemRow.OriginalAmountText))!.ClrType);
+        Assert.Equal(typeof(string), design.FindProperty(nameof(FinanceOpenItemRow.OutstandingAmountText))!.ClrType);
+        Assert.DoesNotContain(design.GetProperties(), property => property.ClrType == typeof(decimal));
+        Assert.Contains(design.GetIndexes(), index => index.IsUnique
+            && index.Properties.Select(property => property.Name)
+                .SequenceEqual(["CompanyId", "SourceKind", "SourceId", "SourceLineId"]));
+        Assert.Contains(design.GetCheckConstraints(), check => check.Name == "CK_OpenItems_Status");
+    }
+
+    [Fact]
+    public void A_source_allocation_state_is_one_versioned_lossless_balance_per_company_source()
+    {
+        using var context = Context();
+        var design = context.GetService<IDesignTimeModel>().Model
+            .FindEntityType(typeof(FinanceSourceAllocationStateRow))!;
+
+        Assert.Equal(["CompanyId", "SourceId"],
+            design.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        Assert.True(design.FindProperty(nameof(FinanceSourceAllocationStateRow.Version))!.IsConcurrencyToken);
+        Assert.Equal(typeof(string), design.FindProperty(nameof(FinanceSourceAllocationStateRow.OriginalAmountText))!.ClrType);
+        Assert.Equal(typeof(string), design.FindProperty(nameof(FinanceSourceAllocationStateRow.UnallocatedAmountText))!.ClrType);
+        Assert.DoesNotContain(design.GetProperties(), property => property.ClrType == typeof(decimal));
+        Assert.Contains(design.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(ReceiptDraftRow)
+            && key.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "SourceId"]));
     }
 
     [Fact]
@@ -249,12 +327,27 @@ public sealed class FinanceDraftPersistenceModelTests
         ProposedAtUtc = At, Version = 1,
     };
 
+    private static FinanceAllocationRow Allocation() => new FinanceAllocationRow
+    {
+        Id = Guid.NewGuid(), CompanyId = CompanyA, SourceId = Guid.NewGuid(), OpenItemId = Guid.NewGuid(),
+        CurrencyId = Guid.NewGuid(), AmountText = "100", Reason = "Synthetic allocation",
+        Status = FinanceAllocationStatuses.Active, Version = 1, CreatedBy = "synthetic-actor", CreatedAtUtc = At,
+    };
+
     private static FinanceCommandRow Command() => new FinanceCommandRow
     {
         CompanyId = CompanyA, CommandName = ReceiptDraftService.SaveDraftCommand, IdempotencyKeyHash = FinanceCommandKeys.Hash("k-1"), ActorId = "synthetic-actor",
         PayloadHash = new string('0', 64), DraftId = Guid.NewGuid(), ResultJson = "{}", CorrelationId = "synthetic-correlation",
         RecordedAtUtc = At,
     };
+
+    private static string Describe(MigrationOperation operation)
+    {
+        var type = operation.GetType();
+        var table = type.GetProperty("Table")?.GetValue(operation) ?? type.GetProperty("Name")?.GetValue(operation);
+        var name = type.GetProperty("Table") is null ? null : type.GetProperty("Name")?.GetValue(operation);
+        return $"{type.Name} {table}{(name is null ? "" : "." + name)}";
+    }
 
     /// <summary>A context of company A, or of no resolved company at all.</summary>
     private static FinanceDbContext Context(bool resolved = true)
