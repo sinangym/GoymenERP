@@ -888,11 +888,10 @@ public sealed partial class ManufacturingCommandService(
     }
 
     /// <summary>
-    /// Resolves the selected Organization work center after the stored-answer lookup. Manufacturing's
-    /// persisted process contract currently contains only <c>Slitting</c>; every other Organization kind
-    /// therefore fails closed instead of being falsely stored as Slitting. No client process, active-state
-    /// policy, tolerance or default is introduced. Missing/foreign is the existing work-center refusal,
-    /// while an absent, failed, unsupported or malformed owner source is unavailable.
+    /// Resolves the selected Organization work center after the stored-answer lookup. Only the five exact
+    /// Organization kind names locked by DEC-PRDCT-001 enter Manufacturing's persisted process contract.
+    /// No client process, active-state policy, tolerance or default is introduced. Missing/foreign is the
+    /// existing work-center refusal, while an absent, failed, unsupported or malformed owner source is unavailable.
     /// </summary>
     private async Task<(ManufacturingProcess Value, ManufacturingApiResult<object>? Refusal)> ResolveProcessAsync(
         Guid workCenterId,
@@ -916,6 +915,10 @@ public sealed partial class ManufacturingCommandService(
                 ? reference.Kind switch
                 {
                     "Slitting" => ManufacturingProcess.Slitting,
+                    "ColdRolling" => ManufacturingProcess.ColdRolling,
+                    "TubeProfile" => ManufacturingProcess.TubeProfile,
+                    "Paint" => ManufacturingProcess.Paint,
+                    "CutToLength" => ManufacturingProcess.CutToLength,
                     _ => (ManufacturingProcess?)null,
                 }
                 : null;

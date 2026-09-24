@@ -400,7 +400,7 @@ partial class ManufacturingDbContextModelSnapshot : ModelSnapshot
 
                 t.HasCheckConstraint(
                     "CK_Orders_Enums",
-                    "[Process] IN (1) AND [Status] IN (1, 2)");
+                    "[Process] IN (1, 2, 3, 4, 5) AND [Status] IN (1, 2)");
 
                 t.HasCheckConstraint(
                     "CK_Orders_Identity",
@@ -555,7 +555,7 @@ partial class ManufacturingDbContextModelSnapshot : ModelSnapshot
 
                 t.HasCheckConstraint(
                     "CK_Plans_Enums",
-                    "[Process] IN (1) AND [Status] IN (1, 2)");
+                    "[Process] IN (1, 2, 3, 4, 5) AND [Status] IN (1, 2)");
 
                 t.HasCheckConstraint(
                     "CK_Plans_Identity",

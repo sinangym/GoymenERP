@@ -20,6 +20,7 @@ using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Manufacturing.Domain.Common;
 using GoymenERP.Modules.Manufacturing.Domain.Orders;
+using GoymenERP.Modules.Manufacturing.Domain.Plans;
 using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence;
 using GoymenERP.Modules.Settings.Application;
 using Microsoft.AspNetCore.TestHost;
@@ -71,35 +72,58 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
     ];
 
     [SqlServerFact]
-    public async Task A_non_slitting_work_center_is_refused_and_a_slitting_plan_reopens_with_its_process()
+    public async Task Each_locked_organization_process_persists_reopens_and_snapshots_into_its_order()
     {
         await using var run = await Run.StartAsync();
-        var paint = await run.WorkCenterOfKindAsync(CompanyA, "Paint");
-        var slitting = await run.WorkCenterOfKindAsync(CompanyA, "Slitting");
         var user = await run.GrantAsync(TestUsers.CompanyA, CompanyA,
             [.. AllWrites, ErpPermissions.ManufacturingPlansRead]);
         using var client = run.ClientFor(user, CompanyA);
         var roll = await run.StockedLabelAsync("SYN-MFG-WORK-CENTER-PLAN");
 
-        var unsupported = new SavePlanRequestV1(Guid.NewGuid(), paint,
-            [new PlannedInputRequestV1(roll.Id, "100", roll.Version)], null);
-        var unsupportedResponse = await client.PostWithKeyAsync($"{Base}/plans", unsupported);
-        Assert.Equal(HttpStatusCode.ServiceUnavailable, unsupportedResponse.StatusCode);
-        Assert.Equal(0, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM manufacturing.Plans WHERE CompanyId = @c AND Id = @id",
-            ("@c", CompanyA), ("@id", unsupported.PlanId)));
+        foreach (var process in new[]
+        {
+            ManufacturingProcess.Slitting,
+            ManufacturingProcess.ColdRolling,
+            ManufacturingProcess.TubeProfile,
+            ManufacturingProcess.Paint,
+            ManufacturingProcess.CutToLength,
+        })
+        {
+            var kind = process.ToString();
+            var workCenter = await run.WorkCenterOfKindAsync(CompanyA, kind);
+            var request = new SavePlanRequestV1(Guid.NewGuid(), workCenter,
+                [new PlannedInputRequestV1(roll.Id, "100", roll.Version)], null);
+            var response = await client.PostWithKeyAsync($"{Base}/plans", request);
+            Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+            var created = (await response.Content.ReadFromJsonAsync<PlanViewV1>())!;
+            Assert.Equal((workCenter, kind), (created.WorkCenterId, created.Process));
 
-        var request = unsupported with { PlanId = Guid.NewGuid(), WorkCenterId = slitting };
-        var response = await client.PostWithKeyAsync($"{Base}/plans", request);
-        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        var created = (await response.Content.ReadFromJsonAsync<PlanViewV1>())!;
-        Assert.Equal((slitting, "Slitting"), (created.WorkCenterId, created.Process));
+            var reopenedResponse = await client.GetAsync($"{Base}/plans/{created.PlanId:D}");
+            Assert.Equal(HttpStatusCode.OK, reopenedResponse.StatusCode);
+            var reopened = (await reopenedResponse.Content.ReadFromJsonAsync<PlanViewV1>())!;
+            Assert.Equal((created.PlanId, workCenter, kind),
+                (reopened.PlanId, reopened.WorkCenterId, reopened.Process));
 
-        var reopenedResponse = await client.GetAsync($"{Base}/plans/{created.PlanId:D}");
-        Assert.Equal(HttpStatusCode.OK, reopenedResponse.StatusCode);
-        var reopened = (await reopenedResponse.Content.ReadFromJsonAsync<PlanViewV1>())!;
-        Assert.Equal((created.PlanId, slitting, "Slitting"),
-            (reopened.PlanId, reopened.WorkCenterId, reopened.Process));
+            var approval = await client.PostWithKeyAsync($"{Base}/plans/{created.PlanId:D}/approval",
+                new ApprovePlanRequestV1(created.Version));
+            Assert.Equal(HttpStatusCode.OK, approval.StatusCode);
+            var orderId = Guid.NewGuid();
+            var orderResponse = await client.PostWithKeyAsync($"{Base}/orders",
+                new CreateOrderRequestV1(orderId, created.PlanId));
+            Assert.Equal(HttpStatusCode.Created, orderResponse.StatusCode);
+            var order = (await orderResponse.Content.ReadFromJsonAsync<OrderViewV1>())!;
+            Assert.Equal((orderId, workCenter, kind), (order.OrderId, order.WorkCenterId, order.Process));
+
+            var reopenedOrder = await client.GetFromJsonAsync<OrderViewV1>($"{Base}/orders/{orderId:D}");
+            Assert.Equal((orderId, workCenter, kind),
+                (reopenedOrder!.OrderId, reopenedOrder.WorkCenterId, reopenedOrder.Process));
+            Assert.Equal((int)process, await run.ScalarAsync<int>(
+                "SELECT Process FROM manufacturing.Plans WHERE CompanyId = @c AND Id = @id",
+                ("@c", CompanyA), ("@id", created.PlanId)));
+            Assert.Equal((int)process, await run.ScalarAsync<int>(
+                "SELECT Process FROM manufacturing.Orders WHERE CompanyId = @c AND Id = @id",
+                ("@c", CompanyA), ("@id", orderId)));
+        }
     }
 
     [SqlServerFact]
