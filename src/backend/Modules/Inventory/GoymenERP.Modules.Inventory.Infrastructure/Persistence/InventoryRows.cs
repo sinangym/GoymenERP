@@ -67,6 +67,42 @@ internal sealed class LabelDocumentRow : IInventoryTenantRow
     public string AttachedBy { get; set; } = string.Empty;
 }
 
+/// <summary>One immutable same-company split or merge event (DEC-LBL-002/003).</summary>
+internal sealed class LabelTransformationRow : IInventoryTenantRow
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public int Kind { get; set; }
+    public DateTimeOffset OccurredAtUtc { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public string PayloadHash { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+    public string RecordedBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>A source-label edge captured before its whole balance is consumed.</summary>
+internal sealed class LabelTransformationInputRow : IInventoryTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid TransformationId { get; set; }
+    public int Sequence { get; set; }
+    public Guid LabelId { get; set; }
+    public long LabelVersion { get; set; }
+    public decimal QuantityKg { get; set; }
+}
+
+/// <summary>An output-label edge captured when its new physical identity is created.</summary>
+internal sealed class LabelTransformationOutputRow : IInventoryTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid TransformationId { get; set; }
+    public int Sequence { get; set; }
+    public Guid LabelId { get; set; }
+    public long LabelVersion { get; set; }
+    public decimal QuantityKg { get; set; }
+}
+
 /// <summary>
 /// A stored <see cref="Domain.Movements.StockMovement"/>. Append-only: a wrong movement is corrected
 /// by a new linked movement (T13), never by editing this one. <see cref="PayloadHash"/> is the

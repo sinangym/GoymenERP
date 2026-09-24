@@ -19,7 +19,9 @@ public sealed class InventoryPersistenceModelTests
 {
     private static readonly Type[] TenantRows =
         [
-            typeof(LotRow), typeof(LabelRow), typeof(LabelPrintRow), typeof(LabelDocumentRow), typeof(MovementRow), typeof(MovementLineRow),
+            typeof(LotRow), typeof(LabelRow), typeof(LabelPrintRow), typeof(LabelDocumentRow),
+            typeof(LabelTransformationRow), typeof(LabelTransformationInputRow), typeof(LabelTransformationOutputRow),
+            typeof(MovementRow), typeof(MovementLineRow),
             typeof(BalanceRow), typeof(SourceGrainRow), typeof(OpeningCountRow), typeof(OpeningCountLineRow),
             typeof(InventoryCommandRow), typeof(AllocationRow), typeof(InventoryOutboxRow),
         ];
@@ -113,6 +115,33 @@ public sealed class InventoryPersistenceModelTests
     }
 
     [Fact]
+    public void Label_genealogy_edges_are_company_scoped_and_reference_both_event_and_label()
+    {
+        using var context = Context();
+        foreach (var type in new[] { typeof(LabelTransformationInputRow), typeof(LabelTransformationOutputRow) })
+        {
+            var edge = context.Model.FindEntityType(type)!;
+            Assert.Contains(edge.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(LabelTransformationRow)
+                && key.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "TransformationId"])
+                && key.PrincipalKey.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "Id"])
+                && key.DeleteBehavior == DeleteBehavior.Restrict);
+            Assert.Contains(edge.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(LabelRow)
+                && key.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "LabelId"])
+                && key.PrincipalKey.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "Id"])
+                && key.DeleteBehavior == DeleteBehavior.Restrict);
+            Assert.Contains(edge.GetIndexes(), index => index.IsUnique
+                && index.Properties.Select(property => property.Name)
+                    .SequenceEqual(["CompanyId", "TransformationId", "LabelId"]));
+            Assert.Contains(edge.GetIndexes(), index => index.Properties.Select(property => property.Name)
+                .SequenceEqual(["CompanyId", "LabelId", "TransformationId"]));
+        }
+
+        var transformation = context.Model.FindEntityType(typeof(LabelTransformationRow))!;
+        Assert.Equal(["CompanyId", "Id"], transformation.GetKeys().Single(key => !key.IsPrimaryKey())
+            .Properties.Select(property => property.Name));
+    }
+
+    [Fact]
     public void The_migration_is_discoverable_and_the_snapshot_matches_the_model()
     {
         using var context = Context();
@@ -129,6 +158,8 @@ public sealed class InventoryPersistenceModelTests
             migration => migration.EndsWith("_AddInventoryDefiniteShipmentRuntime", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("_AddInventoryPhysicalAllocationLifecycle", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AddInventoryLabelGenealogy", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -190,6 +221,9 @@ public sealed class InventoryPersistenceModelTests
     [InlineData("edit-allocation-position")]
     [InlineData("edit-allocation-demand")]
     [InlineData("edit-outbox")]
+    [InlineData("edit-transformation")]
+    [InlineData("edit-transformation-input")]
+    [InlineData("delete-transformation-output")]
     public void Stored_stock_is_never_deleted_and_only_its_allowed_field_changes(string fault)
     {
         using var context = Context();
@@ -248,6 +282,15 @@ public sealed class InventoryPersistenceModelTests
                 break;
             case "edit-outbox":
                 Attach(context, Outbox()).PayloadJson = "{\"changed\":true}";
+                break;
+            case "edit-transformation":
+                Attach(context, Transformation()).Reason = "SYN-CHANGED";
+                break;
+            case "edit-transformation-input":
+                Attach(context, TransformationInput()).QuantityKg = 2m;
+                break;
+            case "delete-transformation-output":
+                context.LabelTransformationOutputs.Remove(Attach(context, TransformationOutput()));
                 break;
             default:
                 Attach(context, Balance()).CompanyId = CompanyB;
@@ -329,6 +372,25 @@ public sealed class InventoryPersistenceModelTests
         AggregateType = "Inventory.StockAllocation", AggregateId = Guid.NewGuid(),
         AggregateVersion = 2, Sequence = 2, PayloadJson = "{}", OccurredAtUtc = At,
         CorrelationId = "synthetic", RecordedAtUtc = At,
+    };
+
+    private static LabelTransformationRow Transformation() => new()
+    {
+        Id = Guid.NewGuid(), CompanyId = CompanyA, Kind = 1, OccurredAtUtc = At,
+        Reason = "synthetic split", PayloadHash = new string('0', 64), RecordedAtUtc = At,
+        RecordedBy = "synthetic-actor", CorrelationId = "synthetic-correlation",
+    };
+
+    private static LabelTransformationInputRow TransformationInput() => new()
+    {
+        CompanyId = CompanyA, TransformationId = Guid.NewGuid(), Sequence = 1,
+        LabelId = Guid.NewGuid(), LabelVersion = 1, QuantityKg = 1m,
+    };
+
+    private static LabelTransformationOutputRow TransformationOutput() => new()
+    {
+        CompanyId = CompanyA, TransformationId = Guid.NewGuid(), Sequence = 1,
+        LabelId = Guid.NewGuid(), LabelVersion = 1, QuantityKg = 1m,
     };
 
     private static MovementRow Movement() => new()
