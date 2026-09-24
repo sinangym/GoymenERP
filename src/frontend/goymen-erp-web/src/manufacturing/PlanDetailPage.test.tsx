@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MANUFACTURING_CAPABILITY, orderDetailPath } from './capabilities'
+import { pendingPlanLifecycleKey, reservePendingPlanLifecycle } from './planCommandApi'
 import {
   APPROVER,
   COMPANY_A,
@@ -218,6 +219,58 @@ describe('plan approval and order creation', () => {
     expect(screen.getByRole('button', { name: 'Planı onayla' })).toBeTruthy()
     expect(requestsFor(recorded, `/manufacturing/plans/${PLAN}`, 'GET')).toHaveLength(3)
     expect(requestsFor(recorded, `/manufacturing/plans/${PLAN}/approval`, 'POST')).toHaveLength(1)
+  })
+
+  it('suppresses a recalled unknown approval after its child capability is revoked', async () => {
+    const recorded = installFetch({
+      capabilities: [MANUFACTURING_CAPABILITY.planDetail],
+      respond: (url) => url.endsWith(`/manufacturing/plans/${PLAN}`) ? json(plan()) : undefined,
+    })
+    reservePendingPlanLifecycle(pendingPlanLifecycleKey(0, APPROVER, COMPANY_A, PLAN), {
+      actorId: APPROVER,
+      companyId: COMPANY_A,
+      planId: PLAN,
+      snapshot: {
+        kind: 'approve',
+        idempotencyKey: '10000000-0000-4000-8000-000000000001',
+        expectedVersion: 1,
+      },
+    })
+    renderAt(`/uretim/plan/${PLAN}`)
+
+    await screen.findByRole('heading', { name: 'Plan yeniden açıldı' })
+    expect(screen.queryByRole('button', { name: 'Aynı istek ve anahtarla yeniden gönder' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Planı onayla' })).toBeNull()
+    expect(requestsFor(recorded, `/manufacturing/plans/${PLAN}/approval`, 'POST')).toHaveLength(0)
+  })
+
+  it('suppresses a recalled unknown order create after its child capability is revoked', async () => {
+    const approved = plan({
+      status: 'Approved',
+      version: 2,
+      approvedByUserId: APPROVER,
+      approvedAtUtc: '2026-09-24T09:00:00Z',
+    })
+    const recorded = installFetch({
+      capabilities: [MANUFACTURING_CAPABILITY.planDetail],
+      respond: (url) => url.endsWith(`/manufacturing/plans/${PLAN}`) ? json(approved) : undefined,
+    })
+    reservePendingPlanLifecycle(pendingPlanLifecycleKey(0, APPROVER, COMPANY_A, PLAN), {
+      actorId: APPROVER,
+      companyId: COMPANY_A,
+      planId: PLAN,
+      snapshot: {
+        kind: 'create-order',
+        idempotencyKey: '10000000-0000-4000-8000-000000000002',
+        orderId: '10000000-0000-4000-8000-000000000003',
+      },
+    })
+    renderAt(`/uretim/plan/${PLAN}`)
+
+    await screen.findByRole('heading', { name: 'Plan yeniden açıldı' })
+    expect(screen.queryByRole('button', { name: 'Aynı istek ve anahtarla yeniden gönder' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Üretim emri oluştur' })).toBeNull()
+    expect(requestsFor(recorded, '/manufacturing/orders', 'POST')).toHaveLength(0)
   })
 
   it('draws neither command when the server publishes only plan read', async () => {

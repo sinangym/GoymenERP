@@ -137,6 +137,7 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
   const send = useCallback(async (pending: PendingPlanLifecycle) => {
     if (companyId === null || actorId === null || inFlight.current) return
     if (pending.companyId !== companyId || pending.actorId !== actorId || pending.planId !== planId) return
+    if (pending.snapshot.kind === 'approve' ? !canApprove : !canCreateOrder) return
     inFlight.current = true
     const commandGeneration = ++generation.current
     reservePendingPlanLifecycle(storeKey, pending)
@@ -180,7 +181,7 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
         ? 'Önceki emir oluşturma sonucu yeniden gösterildi.'
         : 'Üretim emri oluşturuldu.',
     })
-  }, [actorId, boundary, canOpenOrder, companyId, navigate, planId, refreshPlan, storeKey])
+  }, [actorId, boundary, canApprove, canCreateOrder, canOpenOrder, companyId, navigate, planId, refreshPlan, storeKey])
 
   const start = (snapshot: PlanLifecycleSnapshot) => {
     if (companyId === null || actorId === null) return
@@ -207,7 +208,9 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
   }
 
   const busy = attempt.phase === 'sending'
-  const unresolved = attempt.phase === 'unknown'
+  const unresolved = attempt.phase === 'unknown' && (
+    attempt.pending.snapshot.kind === 'approve' ? canApprove : canCreateOrder
+  )
 
   return (
     <main className={styles.page} aria-labelledby="manufacturing-plan-heading">
