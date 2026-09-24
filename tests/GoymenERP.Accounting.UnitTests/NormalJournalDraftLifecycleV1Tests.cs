@@ -52,6 +52,20 @@ public sealed class NormalJournalDraftLifecycleV1Tests
         Assert.Equal(NormalJournalDraftStatusV1.Draft, store.Record.Status);
     }
 
+    [Fact]
+    public async Task Create_authority_lost_after_the_owner_read_is_refused_without_effects()
+    {
+        var draft = Draft();
+        var store = new MemoryStore(Record());
+        var service = Service(store, new SequencedAuthority(Granted(), Granted(), PermissionScope.Denied));
+
+        var result = await service.CreateAsync(draft, "key-create-revoked");
+
+        Assert.Equal(AccountingApiStatus.Denied, result.Status);
+        Assert.Equal(0, store.Creates);
+        Assert.Equal(0, store.Completions);
+    }
+
     private static NormalJournalDraftServiceV1 Service(
         MemoryStore store,
         IErpAuthorityRevalidationService authority)
@@ -106,6 +120,38 @@ public sealed class NormalJournalDraftLifecycleV1Tests
                 ]));
     }
 
+    private static NormalJournalDraftV1 Draft()
+    {
+        var at = DateTimeOffset.Parse("2026-09-24T15:00:00Z");
+        var debit = new AccountRef(Company, Guid.Parse("b0000000-0000-4000-8000-000000000001"));
+        var credit = new AccountRef(Company, Guid.Parse("b0000000-0000-4000-8000-000000000002"));
+        var mirror = new AccountPlanMirrorV1(Company, "synthetic-plan-v1", new string('a', 64), Actor, at,
+        [
+            new AccountPlanMirrorRowV1(debit, "SYNTHETIC-001", "Synthetic debit"),
+            new AccountPlanMirrorRowV1(credit, "SYNTHETIC-002", "Synthetic credit"),
+        ]);
+        var rule = new NormalJournalPostingRuleV1(mirror, "synthetic-purpose", "synthetic-rule-v1", Actor, at,
+        [
+            new NormalJournalMappingV1("debit", PostingSide.Debit, debit),
+            new NormalJournalMappingV1("credit", PostingSide.Credit, credit),
+        ]);
+        var request = new PostingRequest(
+            "synthetic-consumer",
+            "synthetic-message",
+            Guid.Parse("c0000000-0000-4000-8000-000000000001"),
+            new SourceReference(Company, Guid.Parse("c0000000-0000-4000-8000-000000000002"),
+                "synthetic-purpose"),
+            "synthetic-rule-v1",
+            Guid.Parse("d0000000-0000-4000-8000-000000000001"),
+            new PostingDates(new DateOnly(2026, 9, 24), new DateOnly(2026, 9, 24), null, at),
+        [
+            new ProposedLine("debit", debit, PostingSide.Debit, 10m),
+            new ProposedLine("credit", credit, PostingSide.Credit, 10m),
+        ]);
+        return Assert.IsType<NormalJournalDraftV1>(
+            NormalJournalDraftV1.Prepare(JournalKind.Original, request, 1, Actor, mirror, rule).Draft);
+    }
+
     private static PermissionScope Granted() => new(
         true,
         true,
@@ -139,11 +185,25 @@ public sealed class NormalJournalDraftLifecycleV1Tests
     {
         public NormalJournalDraftRecordV1 Record { get; private set; } = record;
         public int Approvals { get; private set; }
+        public int Creates { get; private set; }
+        public int Completions { get; private set; }
 
-        public Task<(NormalJournalDraftRecordV1 Record, AccountingWriteOutcome Outcome)> CreateNormalDraftAsync(
+        public async Task<(NormalJournalDraftRecordV1 Record, AccountingWriteOutcome Outcome)> CreateNormalDraftAsync(
             NormalJournalDraftV1 draft,
+            Func<CancellationToken, Task> freshAuthorityFence,
             AccountingCommandMetadata metadata,
-            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+            CancellationToken cancellationToken = default)
+        {
+            await Task.Yield();
+            await freshAuthorityFence(cancellationToken);
+            Creates++;
+            if (metadata.Completion?.Invoke(Record) is not null)
+            {
+                Completions++;
+            }
+
+            return (Record, AccountingWriteOutcome.Recorded);
+        }
 
         public Task<NormalJournalDraftRecordV1?> FindNormalDraftAsync(
             Guid draftId,

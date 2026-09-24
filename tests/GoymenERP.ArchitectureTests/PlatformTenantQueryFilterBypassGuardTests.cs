@@ -472,11 +472,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // ACC-3 (#298): the SqlClient namespace only to recognise a unique-key violation
                 // (SqlException 2601/2627) after SaveChanges, as InventoryStore and the Idempotency
                 // terminal store do. No connection, command or raw SQL. Re-fingerprinted for ACC-V1: the normal
-                // journal draft lifecycle persists through EF; SqlClient count remains unchanged (1).
+                // journal draft lifecycle persists through EF and carries a late create-authority fence;
+                // SqlClient count remains unchanged (1).
                 ["src/backend/Modules/Accounting/"
                  + "GoymenERP.Modules.Accounting.Infrastructure/Persistence/AccountingStore.cs"] =
                     new(
-                        "d54c5640c23eacd77e2b1008cd6426a774074ffd1d4ea74020cd7bf4b9a93aee",
+                        "5b6509bcd3fee89314ab9fe89461d1edf0b91a4bdfaefd9e362949ce0c282c1e",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1

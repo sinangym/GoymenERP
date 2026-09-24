@@ -87,6 +87,7 @@ public interface IAccountingNormalJournalDraftStore
 {
     Task<(NormalJournalDraftRecordV1 Record, AccountingWriteOutcome Outcome)> CreateNormalDraftAsync(
         NormalJournalDraftV1 draft,
+        Func<CancellationToken, Task> freshAuthorityFence,
         AccountingCommandMetadata metadata,
         CancellationToken cancellationToken = default);
 
@@ -150,7 +151,11 @@ public sealed class NormalJournalDraftServiceV1(
                     return Denied();
                 }
 
-                var (record, outcome) = await drafts.CreateNormalDraftAsync(draft, metadata, cancellationToken);
+                var (record, outcome) = await drafts.CreateNormalDraftAsync(
+                    draft,
+                    token => FenceAsync(permissions.CreatePermission, actor, token),
+                    metadata,
+                    cancellationToken);
                 return new AccountingApiResult<NormalJournalDraftViewV1>(
                     AccountingApiStatus.Created,
                     View(record),

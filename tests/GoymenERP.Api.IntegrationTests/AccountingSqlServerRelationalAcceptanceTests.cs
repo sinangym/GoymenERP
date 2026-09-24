@@ -44,6 +44,7 @@ public sealed class AccountingSqlServerRelationalAcceptanceTests
         await using (var scope = run.Store(CompanyA))
         {
             var created = await scope.Drafts.CreateNormalDraftAsync(draft,
+                static _ => Task.CompletedTask,
                 Metadata(run, Completion(run, NormalJournalCommandNamesV1.CreateDraft, "create-1")));
             Assert.Equal(AccountingWriteOutcome.Recorded, created.Outcome);
             Assert.Equal(NormalJournalDraftStatusV1.Draft, created.Record.Status);
@@ -85,7 +86,7 @@ public sealed class AccountingSqlServerRelationalAcceptanceTests
         var refused = NormalDraft(run, "normal-draft-refused");
         await using (var scope = run.Store(CompanyA))
         {
-            await scope.Drafts.CreateNormalDraftAsync(refused, Metadata(run));
+            await scope.Drafts.CreateNormalDraftAsync(refused, static _ => Task.CompletedTask, Metadata(run));
         }
 
         await using (var scope = run.Store(CompanyA))

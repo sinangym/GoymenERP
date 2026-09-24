@@ -282,10 +282,12 @@ public sealed class AccountingStore(
 
     public async Task<(NormalJournalDraftRecordV1 Record, AccountingWriteOutcome Outcome)> CreateNormalDraftAsync(
         NormalJournalDraftV1 draft,
+        Func<CancellationToken, Task> freshAuthorityFence,
         AccountingCommandMetadata metadata,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(draft);
+        ArgumentNullException.ThrowIfNull(freshAuthorityFence);
         RequireMetadata(metadata);
         RequireCompany(draft.CompanyId);
         RequireNormalDraft(draft);
@@ -300,7 +302,9 @@ public sealed class AccountingStore(
                     "Aynı taslak kimliği başka değişmez içerikle kaydedilmiş.");
             }
 
-            return (await RestoreNormalDraftAsync(existing, cancellationToken), AccountingWriteOutcome.Replayed);
+            var replay = await RestoreNormalDraftAsync(existing, cancellationToken);
+            await freshAuthorityFence(cancellationToken);
+            return (replay, AccountingWriteOutcome.Replayed);
         }
 
         var now = timeProvider.GetUtcNow();
@@ -346,6 +350,9 @@ public sealed class AccountingStore(
         dbContext.NormalJournalDraftLines.AddRange(lineRows);
 
         var record = RestoreNormalDraft(row, lineRows);
+        // The existing-row/line lookup above is the final awaited owner read. Revalidate immediately
+        // before the synchronous audit/command additions and their one atomic EF save.
+        await freshAuthorityFence(cancellationToken);
         Audit(metadata, draft.CompanyId, NormalDraftEntityType, draft.Id.ToString("D"),
             "accounting.normal-journal-draft.created.v1", "Create", null, draft.Version, "{}",
             NormalDraftAudit(record), "Normal fiş taslağı onaylı plan ve kural snapshot'ına bağlı hazırlandı");
