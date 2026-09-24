@@ -29,6 +29,9 @@ public sealed class AddManualBankPayments : Migration
                 ValueOn = table.Column<DateOnly>(type: "date", nullable: true),
                 BankReference = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: true),
                 Description = table.Column<string>(type: "nvarchar(1000)", maxLength: 1000, nullable: true),
+                LinkedDocumentId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
+                LinkedDocumentVersion = table.Column<string>(type: "nvarchar(128)", maxLength: 128,
+                    nullable: true, collation: FinanceDbContext.IdentityCollation),
                 Status = table.Column<int>(type: "int", nullable: false),
                 PreparedBy = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: false, collation: FinanceDbContext.IdentityCollation),
                 PreparedAtUtc = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
@@ -43,7 +46,7 @@ public sealed class AddManualBankPayments : Migration
                 table.PrimaryKey("PK_ManualBankPayments", x => x.Id);
                 table.UniqueConstraint("AK_ManualBankPayments_CompanyId_Id", x => new { x.CompanyId, x.Id });
                 table.CheckConstraint("CK_ManualBankPayments_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [PartyId] <> '00000000-0000-0000-0000-000000000000' AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' AND [TreasuryAccountId] <> '00000000-0000-0000-0000-000000000000' AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000'");
-                table.CheckConstraint("CK_ManualBankPayments_Text", "LEN([AmountText]) > 0 AND LEN([ProfileId]) > 0 AND LEN([ProfileVersion]) > 0 AND LEN([PreparedBy]) > 0");
+                table.CheckConstraint("CK_ManualBankPayments_Text", "LEN([AmountText]) > 0 AND LEN([ProfileId]) > 0 AND LEN([ProfileVersion]) > 0 AND LEN([PreparedBy]) > 0 AND (([LinkedDocumentId] IS NULL AND [LinkedDocumentVersion] IS NULL) OR ([LinkedDocumentId] IS NOT NULL AND [LinkedDocumentId] <> '00000000-0000-0000-0000-000000000000' AND [LinkedDocumentVersion] IS NOT NULL AND LEN([LinkedDocumentVersion]) > 0))");
                 table.CheckConstraint("CK_ManualBankPayments_Version", "[Version] >= 1");
                 table.CheckConstraint("CK_ManualBankPayments_Status", FinanceDbContext.ManualBankPaymentStatusCheck);
                 table.ForeignKey("FK_ManualBankPayments_Companies_CompanyId", x => x.CompanyId,

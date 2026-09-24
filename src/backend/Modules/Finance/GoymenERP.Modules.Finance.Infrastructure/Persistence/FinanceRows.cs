@@ -105,6 +105,8 @@ internal sealed class ManualBankPaymentRow : IFinanceTenantRow
     public DateOnly? ValueOn { get; set; }
     public string? BankReference { get; set; }
     public string? Description { get; set; }
+    public Guid? LinkedDocumentId { get; set; }
+    public string? LinkedDocumentVersion { get; set; }
     public int Status { get; set; }
     public string PreparedBy { get; set; } = string.Empty;
     public DateTimeOffset PreparedAtUtc { get; set; }

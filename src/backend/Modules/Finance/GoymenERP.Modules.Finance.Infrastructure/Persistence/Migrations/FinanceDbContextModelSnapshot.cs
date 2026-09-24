@@ -378,6 +378,8 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
             b.Property<DateOnly?>("ValueOn").HasColumnType("date");
             b.Property<string>("BankReference").HasMaxLength(128).HasColumnType("nvarchar(128)");
             b.Property<string>("Description").HasMaxLength(1000).HasColumnType("nvarchar(1000)");
+            b.Property<Guid?>("LinkedDocumentId").HasColumnType("uniqueidentifier");
+            b.Property<string>("LinkedDocumentVersion").HasMaxLength(128).HasColumnType("nvarchar(128)").UseCollation("Latin1_General_100_BIN2");
             b.Property<int>("Status").HasColumnType("int");
             b.Property<string>("PreparedBy").IsRequired().HasMaxLength(128).HasColumnType("nvarchar(128)").UseCollation("Latin1_General_100_BIN2");
             b.Property<DateTimeOffset>("PreparedAtUtc").HasColumnType("datetimeoffset");
@@ -392,7 +394,7 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
             b.ToTable("ManualBankPayments", "finance", t =>
             {
                 t.HasCheckConstraint("CK_ManualBankPayments_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [PartyId] <> '00000000-0000-0000-0000-000000000000' AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' AND [TreasuryAccountId] <> '00000000-0000-0000-0000-000000000000' AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000'");
-                t.HasCheckConstraint("CK_ManualBankPayments_Text", "LEN([AmountText]) > 0 AND LEN([ProfileId]) > 0 AND LEN([ProfileVersion]) > 0 AND LEN([PreparedBy]) > 0");
+                t.HasCheckConstraint("CK_ManualBankPayments_Text", "LEN([AmountText]) > 0 AND LEN([ProfileId]) > 0 AND LEN([ProfileVersion]) > 0 AND LEN([PreparedBy]) > 0 AND (([LinkedDocumentId] IS NULL AND [LinkedDocumentVersion] IS NULL) OR ([LinkedDocumentId] IS NOT NULL AND [LinkedDocumentId] <> '00000000-0000-0000-0000-000000000000' AND [LinkedDocumentVersion] IS NOT NULL AND LEN([LinkedDocumentVersion]) > 0))");
                 t.HasCheckConstraint("CK_ManualBankPayments_Version", "[Version] >= 1");
                 t.HasCheckConstraint("CK_ManualBankPayments_Status", "([Status] = 0 AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [RecordedBy] IS NULL AND [RecordedAtUtc] IS NULL AND [BankResultConfirmed] = 0) OR ([Status] = 1 AND [ApprovedBy] IS NOT NULL AND LEN([ApprovedBy]) > 0 AND [ApprovedAtUtc] IS NOT NULL AND [ApprovedBy] <> [PreparedBy] AND [RecordedBy] IS NULL AND [RecordedAtUtc] IS NULL AND [BankResultConfirmed] = 0) OR ([Status] = 2 AND [ApprovedBy] IS NOT NULL AND LEN([ApprovedBy]) > 0 AND [ApprovedAtUtc] IS NOT NULL AND [ApprovedBy] <> [PreparedBy] AND [RecordedBy] IS NOT NULL AND LEN([RecordedBy]) > 0 AND [RecordedAtUtc] IS NOT NULL AND [BankResultConfirmed] = 1)");
             });

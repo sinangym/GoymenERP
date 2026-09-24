@@ -17,11 +17,43 @@ public sealed record ManualBankPaymentPreparation(
     string? BankReference,
     string? Description);
 
+public sealed record ManualBankPaymentLinkedDocumentRequest(Guid DocumentId, string ExpectedVersion);
+
+public sealed record ManualBankPaymentLinkedDocument(Guid DocumentId, string Version);
+
+public enum ManualBankPaymentDocumentValidationOutcome
+{
+    Found,
+    Invalid,
+    Denied,
+    NotFound,
+    VersionConflict,
+    Unavailable
+}
+
+public sealed record ManualBankPaymentDocumentValidationResult(
+    ManualBankPaymentDocumentValidationOutcome Outcome,
+    ManualBankPaymentLinkedDocument? Reference);
+
+/// <summary>
+/// Document-owner seam for R47. The adapter must validate existence, company scope, actor link/read
+/// authority and the opaque current version. Finance retains only the canonical identity/version.
+/// </summary>
+public interface IManualBankPaymentDocumentValidationPort
+{
+    Task<ManualBankPaymentDocumentValidationResult> ValidateAsync(
+        FinanceContext context,
+        Guid documentId,
+        string expectedVersion,
+        CancellationToken cancellationToken);
+}
+
 /// <summary>Creates or completely replaces a draft. Null optional values clear their fields.</summary>
 public sealed record ManualBankPaymentDraftSaveRequest(
     Guid? PaymentId,
     string? ExpectedVersion,
-    ManualBankPaymentPreparation Preparation);
+    ManualBankPaymentPreparation Preparation,
+    ManualBankPaymentLinkedDocumentRequest? LinkedDocument);
 
 /// <summary>The approver must be a different actor from the draft preparer.</summary>
 public sealed record ApproveManualBankPaymentRequest(Guid PaymentId, string ExpectedVersion);
@@ -48,6 +80,7 @@ public sealed record ManualBankPaymentView(
     Guid CompanyId,
     ManualBankPaymentStatus Status,
     ManualBankPaymentPreparation Preparation,
+    ManualBankPaymentLinkedDocument? LinkedDocument,
     string PreparedBy,
     DateTimeOffset PreparedAtUtc,
     string? ApprovedBy,
@@ -110,6 +143,13 @@ public static class ManualBankPaymentValidator
         request.PaymentId is null
             ? request.ExpectedVersion is null
             : request.PaymentId != Guid.Empty && IsVersion(request.ExpectedVersion);
+
+    public static bool IsValidLinkedDocument(ManualBankPaymentLinkedDocumentRequest? reference) =>
+        reference is null || reference.DocumentId != Guid.Empty && IsOpaqueVersion(reference.ExpectedVersion);
+
+    public static bool IsOpaqueVersion(string? value) =>
+        !string.IsNullOrWhiteSpace(value) && value.Length <= 128
+        && string.Equals(value, value.Trim(), StringComparison.Ordinal);
 
     public static bool CanApprove(
         ManualBankPaymentStatus status,

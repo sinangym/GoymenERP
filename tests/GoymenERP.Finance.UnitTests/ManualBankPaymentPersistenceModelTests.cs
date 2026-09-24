@@ -36,6 +36,7 @@ public sealed class ManualBankPaymentPersistenceModelTests
         Assert.Equal(typeof(string), design.FindProperty(nameof(ManualBankPaymentRow.AmountText))!.ClrType);
         Assert.DoesNotContain(design.GetProperties(), property => property.ClrType == typeof(decimal));
         Assert.True(design.FindProperty(nameof(ManualBankPaymentRow.Version))!.IsConcurrencyToken);
+        Assert.Equal(128, design.FindProperty(nameof(ManualBankPaymentRow.LinkedDocumentVersion))!.GetMaxLength());
         var lifecycle = Assert.Single(design.GetCheckConstraints(), check =>
             check.Name == "CK_ManualBankPayments_Status");
         Assert.Contains("[ApprovedBy] <> [PreparedBy]", lifecycle.Sql, StringComparison.Ordinal);
@@ -44,6 +45,9 @@ public sealed class ManualBankPaymentPersistenceModelTests
         Assert.Contains("[Status] = 2", lifecycle.Sql, StringComparison.Ordinal);
         Assert.Contains("[RecordedBy] IS NOT NULL", lifecycle.Sql, StringComparison.Ordinal);
         Assert.Contains("[BankResultConfirmed] = 1", lifecycle.Sql, StringComparison.Ordinal);
+        var text = Assert.Single(design.GetCheckConstraints(), check => check.Name == "CK_ManualBankPayments_Text");
+        Assert.Contains("[LinkedDocumentId] IS NULL AND [LinkedDocumentVersion] IS NULL", text.Sql,
+            StringComparison.Ordinal);
     }
 
     [Fact]

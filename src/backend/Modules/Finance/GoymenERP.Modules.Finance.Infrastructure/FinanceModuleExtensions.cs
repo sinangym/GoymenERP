@@ -75,6 +75,8 @@ public static class FinanceModuleExtensions
         services.AddScoped<IFinanceBankAccountReader>(provider => provider.GetRequiredService<FinanceBankAccountService>());
         services.AddScoped<IFinanceBankAccountMaster>(provider => provider.GetRequiredService<FinanceBankAccountService>());
         services.AddScoped<IManualReceiptService>(CreateReceiptDraftService);
+        services.TryAddScoped<IManualBankPaymentDocumentValidationPort,
+            UnavailableManualBankPaymentDocumentValidationPort>();
         services.AddScoped<IManualBankPaymentService>(CreateManualBankPaymentService);
         services.AddScoped(CreateReversalProposalService);
         services.AddScoped<IReversalProposalService>(provider =>
@@ -156,6 +158,7 @@ public static class FinanceModuleExtensions
             provider.GetRequiredService<ICurrentUser>(),
             permissions,
             provider.GetRequiredService<IFinancePartyAccountPort>(),
+            provider.GetRequiredService<IManualBankPaymentDocumentValidationPort>(),
             provider.GetRequiredService<ISettingsPrerequisiteProvider>(),
             provider.GetRequiredService<IFinanceRecordPeriodRule>(),
             provider.GetRequiredService<IAuditEventCollector>(),

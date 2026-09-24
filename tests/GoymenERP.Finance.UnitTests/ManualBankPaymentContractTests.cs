@@ -31,6 +31,7 @@ public sealed class ManualBankPaymentContractTests
             Company,
             ManualBankPaymentStatus.Approved,
             Preparation(),
+            null,
             "SENTETIK-maker",
             new DateTimeOffset(2026, 9, 23, 10, 0, 0, TimeSpan.Zero),
             "SENTETIK-approver",
@@ -45,7 +46,7 @@ public sealed class ManualBankPaymentContractTests
 
         Assert.Equal(value, restored);
         Assert.Null(restored!.Preparation.BankReference);
-        Assert.DoesNotContain("document", json, StringComparison.OrdinalIgnoreCase);
+        Assert.Null(restored.LinkedDocument);
     }
 
     [Fact]
@@ -95,10 +96,10 @@ public sealed class ManualBankPaymentContractTests
     [Fact]
     public void Draft_create_and_replace_identifiers_are_distinct()
     {
-        Assert.True(ManualBankPaymentValidator.IsValidDraftIdentity(new(null, null, Preparation())));
-        Assert.False(ManualBankPaymentValidator.IsValidDraftIdentity(new(null, "1", Preparation())));
-        Assert.False(ManualBankPaymentValidator.IsValidDraftIdentity(new(Payment, null, Preparation())));
-        Assert.True(ManualBankPaymentValidator.IsValidDraftIdentity(new(Payment, "9007199254740993", Preparation())));
+        Assert.True(ManualBankPaymentValidator.IsValidDraftIdentity(new(null, null, Preparation(), null)));
+        Assert.False(ManualBankPaymentValidator.IsValidDraftIdentity(new(null, "1", Preparation(), null)));
+        Assert.False(ManualBankPaymentValidator.IsValidDraftIdentity(new(Payment, null, Preparation(), null)));
+        Assert.True(ManualBankPaymentValidator.IsValidDraftIdentity(new(Payment, "9007199254740993", Preparation(), null)));
     }
 
     [Fact]

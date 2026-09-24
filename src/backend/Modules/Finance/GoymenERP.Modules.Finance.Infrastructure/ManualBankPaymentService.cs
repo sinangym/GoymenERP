@@ -32,6 +32,7 @@ public sealed class ManualBankPaymentService(
     ICurrentUser currentUser,
     IFinancePermissionPort permissions,
     IFinancePartyAccountPort parties,
+    IManualBankPaymentDocumentValidationPort documents,
     ISettingsPrerequisiteProvider settings,
     IFinanceRecordPeriodRule periodRule,
     IAuditEventCollector auditEvents,
@@ -72,6 +73,9 @@ public sealed class ManualBankPaymentService(
         if (!ManualBankPaymentValidator.IsValidDraftIdentity(request) || request.Preparation is null
             || request.Preparation.Money is null || request.Preparation.Profile is null)
             return Refused(context, CommandOutcome.ValidationFailed, Issue("paymentId", "payment_identity_invalid"));
+        if (!ManualBankPaymentValidator.IsValidLinkedDocument(request.LinkedDocument))
+            return Refused(context, CommandOutcome.ValidationFailed,
+                Issue("linkedDocument", "finance_manual_bank_payment_document_invalid"));
 
         ManualBankPaymentRow? row = null;
         if (request.PaymentId is { } paymentId)
@@ -107,6 +111,10 @@ public sealed class ManualBankPaymentService(
         if (await ValidatePreparationAsync(context, preparation, bank.View!, party.Resource, request.PaymentId,
                 FinanceAction.SaveManualBankPaymentDraft, cancellationToken) is { } invalid) return invalid;
 
+        var linked = await ResolveLinkedDocumentAsync(context, request.LinkedDocument, request.PaymentId,
+            cancellationToken);
+        if (linked.Result is { } linkedFailure) return linkedFailure;
+
         var now = timeProvider.GetUtcNow();
         var before = row is null ? "{}" : AuditJson(row);
         var versionBefore = row?.Version;
@@ -121,12 +129,12 @@ public sealed class ManualBankPaymentService(
                 PreparedBy = context.ActorId,
                 PreparedAtUtc = now,
             };
-            Apply(row, preparation);
+            Apply(row, preparation, linked.Reference);
             dbContext.ManualBankPayments.Add(row);
         }
         else
         {
-            Apply(row, preparation);
+            Apply(row, preparation, linked.Reference);
             row.Version = checked(row.Version + 1);
         }
 
@@ -381,6 +389,63 @@ public sealed class ManualBankPaymentService(
         }
     }
 
+    private async Task<(ManualBankPaymentLinkedDocument? Reference, ManualBankPaymentCommandResult? Result)>
+        ResolveLinkedDocumentAsync(
+            FinanceContext context,
+            ManualBankPaymentLinkedDocumentRequest? requested,
+            Guid? paymentId,
+            CancellationToken cancellationToken)
+    {
+        if (requested is null) return (null, null);
+
+        ManualBankPaymentDocumentValidationResult answer;
+        try
+        {
+            answer = await documents.ValidateAsync(context, requested.DocumentId, requested.ExpectedVersion,
+                cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            if (await FenceAsync(context, FinanceAction.SaveManualBankPaymentDraft, paymentId, cancellationToken)
+                is { } fenced) return (null, fenced);
+            return (null, Refused(context, CommandOutcome.Unavailable,
+                Issue("linkedDocument", "finance_manual_bank_payment_document_unavailable")));
+        }
+
+        if (await FenceAsync(context, FinanceAction.SaveManualBankPaymentDraft, paymentId, cancellationToken)
+            is { } afterOwner) return (null, afterOwner);
+        if (answer is null) return (null, Refused(context, CommandOutcome.Unavailable,
+            Issue("linkedDocument", "finance_manual_bank_payment_document_unavailable")));
+
+        if (answer.Outcome == ManualBankPaymentDocumentValidationOutcome.Found)
+        {
+            var reference = answer.Reference;
+            if (reference is null || reference.DocumentId == Guid.Empty
+                || reference.DocumentId != requested.DocumentId
+                || !ManualBankPaymentValidator.IsOpaqueVersion(reference.Version)
+                || !string.Equals(reference.Version, requested.ExpectedVersion, StringComparison.Ordinal))
+                return (null, Refused(context, CommandOutcome.Unavailable,
+                    Issue("linkedDocument", "finance_manual_bank_payment_document_unavailable")));
+            return (reference, null);
+        }
+
+        return answer.Outcome switch
+        {
+            ManualBankPaymentDocumentValidationOutcome.Invalid => (null, Refused(context,
+                CommandOutcome.ValidationFailed,
+                Issue("linkedDocument", "finance_manual_bank_payment_document_invalid"))),
+            ManualBankPaymentDocumentValidationOutcome.Denied => (null, Refused(context, CommandOutcome.Denied)),
+            ManualBankPaymentDocumentValidationOutcome.NotFound => (null, Refused(context,
+                CommandOutcome.ValidationFailed,
+                Issue("linkedDocument", "finance_manual_bank_payment_document_not_found"))),
+            ManualBankPaymentDocumentValidationOutcome.VersionConflict => (null, Refused(context,
+                CommandOutcome.VersionConflict,
+                Issue("linkedDocument", "finance_manual_bank_payment_document_version_conflict"))),
+            _ => (null, Refused(context, CommandOutcome.Unavailable,
+                Issue("linkedDocument", "finance_manual_bank_payment_document_unavailable"))),
+        };
+    }
+
     private async Task<ManualBankPaymentCommandResult?> PriorAsync(
         FinanceContext context,
         string command,
@@ -527,7 +592,8 @@ public sealed class ManualBankPaymentService(
         _ => throw new InvalidOperationException("Bilinmeyen odeme durumu."),
     };
 
-    private static void Apply(ManualBankPaymentRow row, ManualBankPaymentPreparation preparation)
+    private static void Apply(ManualBankPaymentRow row, ManualBankPaymentPreparation preparation,
+        ManualBankPaymentLinkedDocument? linkedDocument)
     {
         row.PartyId = preparation.PartyId;
         row.CompanyAccountId = preparation.CompanyAccountId;
@@ -540,6 +606,8 @@ public sealed class ManualBankPaymentService(
         row.ValueOn = preparation.ValueOn;
         row.BankReference = preparation.BankReference;
         row.Description = preparation.Description;
+        row.LinkedDocumentId = linkedDocument?.DocumentId;
+        row.LinkedDocumentVersion = linkedDocument?.Version;
     }
 
     private static ManualBankPaymentPreparation Preparation(ManualBankPaymentRow row) => new(
@@ -548,7 +616,11 @@ public sealed class ManualBankPaymentService(
         row.OccurredOn, row.ValueOn, row.BankReference, row.Description);
 
     private static ManualBankPaymentView View(ManualBankPaymentRow row) => new(
-        row.Id, row.CompanyId, ToStatus(row.Status), Preparation(row), row.PreparedBy, row.PreparedAtUtc,
+        row.Id, row.CompanyId, ToStatus(row.Status), Preparation(row),
+        row.LinkedDocumentId is { } documentId
+            ? new ManualBankPaymentLinkedDocument(documentId, row.LinkedDocumentVersion!)
+            : null,
+        row.PreparedBy, row.PreparedAtUtc,
         row.ApprovedBy, row.ApprovedAtUtc, row.RecordedBy, row.RecordedAtUtc, row.BankResultConfirmed,
         VersionText(row.Version));
 
@@ -595,4 +667,19 @@ public sealed class ManualBankPaymentService(
         row.RecordedBy,
         row.BankResultConfirmed,
     }, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+}
+
+public sealed class UnavailableManualBankPaymentDocumentValidationPort
+    : IManualBankPaymentDocumentValidationPort
+{
+    public Task<ManualBankPaymentDocumentValidationResult> ValidateAsync(
+        FinanceContext context,
+        Guid documentId,
+        string expectedVersion,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(new ManualBankPaymentDocumentValidationResult(
+            ManualBankPaymentDocumentValidationOutcome.Unavailable, null));
+    }
 }

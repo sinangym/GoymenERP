@@ -19,6 +19,7 @@ const PROFILE = '77777777-7777-4777-8777-777777777777'
 function view(status: 'Draft' | 'Approved' | 'Recorded') {
   return {
     id: PAYMENT, companyId: COMPANY, status,
+    linkedDocument: null,
     preparation: {
       partyId: PARTY, companyAccountId: ACCOUNT, treasuryAccountId: BANK,
       money: { amount: '1250.50', currencyId: CURRENCY }, profile: { profileId: PROFILE, version: '1' },
@@ -56,7 +57,7 @@ describe('manual bank payment pages', () => {
     await screen.findByRole('heading', { name: 'Giden ödeme taslağı kaydedildi' })
     expect(save).toHaveBeenCalledWith(
       { companyId: COMPANY }, expect.any(String),
-      expect.objectContaining({ preparation: expect.objectContaining({ bankReference: null }) }),
+      expect.objectContaining({ preparation: expect.objectContaining({ bankReference: null }), linkedDocument: null }),
     )
     fireEvent.click(screen.getByRole('button', { name: 'Kaydı aç' }))
     expect(open).toHaveBeenCalledWith(PAYMENT)

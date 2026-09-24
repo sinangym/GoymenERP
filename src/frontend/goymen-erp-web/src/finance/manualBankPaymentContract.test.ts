@@ -12,6 +12,7 @@ function recorded(overrides: Record<string, unknown> = {}) {
     id: '22222222-2222-4222-8222-222222222222',
     companyId: COMPANY,
     status: 'Recorded',
+    linkedDocument: null,
     preparation: {
       partyId: '33333333-3333-4333-8333-333333333333',
       companyAccountId: '44444444-4444-4444-8444-444444444444',
@@ -43,11 +44,12 @@ describe('manual bank payment v1 decoder', () => {
     if (decoded.ok) expect(decoded.value.preparation.bankReference).toBeNull()
   })
 
-  it('rejects an invented document field because it is not in the v1 contract', () => {
-    const value = recorded()
-    value.preparation = { ...value.preparation, documentReference: null }
-
-    expect(decodeManualBankPaymentView(value, COMPANY).ok).toBe(false)
+  it('accepts a canonical linked document and rejects malformed identity or version', () => {
+    const documentId = '88888888-8888-4888-8888-888888888888'
+    expect(decodeManualBankPaymentView(recorded({ linkedDocument: { documentId, version: 'owner-v7' } }), COMPANY).ok)
+      .toBe(true)
+    expect(decodeManualBankPaymentView(recorded({ linkedDocument: { documentId: COMPANY, version: '' } }), COMPANY).ok)
+      .toBe(false)
   })
 
   it('rejects unknown bank outcome and maker-checker collapse', () => {
