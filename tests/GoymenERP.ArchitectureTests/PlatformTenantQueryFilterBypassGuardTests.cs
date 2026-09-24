@@ -157,7 +157,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // manufacturing
             ["tools/relational_inventory/manufacturing.txt"] =
-                "55d648d35c15af18fe93bc777ab096319faba8175d420dace0c2d791b53c9898",
+                "ef13047b4db55139a11c67e66e5e92e21d998968b8ece96d1f0d8faae276b9a3",
 
             // organization
             ["tools/relational_inventory/organization.txt"] =
@@ -274,6 +274,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + "FinanceOpenItemSourceAdmissionService.cs";
     private const string ReviewedManufacturingInventoryInputIssueHostPath =
         "src/backend/GoymenERP.Api/ManufacturingRuntime/ManufacturingInventoryInputIssueHost.cs";
+    private const string ReviewedManufacturingInventoryReturnOutputHostPath =
+        "src/backend/GoymenERP.Api/ManufacturingRuntime/ManufacturingInventoryReturnOutputHost.cs";
     private static readonly IReadOnlyDictionary<string, (string ContextTypeName, int ExpectedCount)>
         ReviewedRuntimeContextConstructions =
             new Dictionary<string, (string ContextTypeName, int ExpectedCount)>(StringComparer.Ordinal)
@@ -440,6 +442,16 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         {
                             ["Microsoft.Data.SqlClient"] = 1,
                             ["GetDbConnection"] = 1
+                        }),
+                // Return/output uses the same reviewed borrowed-transaction boundary but obtains both the
+                // Inventory connection and current parent-label truth before constructing one Manufacturing context.
+                [ReviewedManufacturingInventoryReturnOutputHostPath] =
+                    new(
+                        "05d4636176e6ee04bd4fca106c9f9c3771fd27ce1ea52f8aed1f1cc6ffad543f",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1,
+                            ["GetDbConnection"] = 2
                         }),
                 // INV-2 (#293): the SqlClient namespace only to recognise a unique-key violation
                 // (SqlException 2601/2627) after SaveChanges, as the Idempotency terminal store does.
