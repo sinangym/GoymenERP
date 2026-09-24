@@ -275,7 +275,7 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
         Guid companyId,
         Guid orderId,
         Guid factId,
-        string operation) => new(
+        string operation) => new InventoryCommandMetadata(
         metadata.ActorId,
         metadata.PermissionCode,
         metadata.RoleCodes,
@@ -358,7 +358,8 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
     }
 
     private static ManufacturingInventoryReturnOutputHostException Incomplete() =>
-        new(ManufacturingInventoryReturnOutputHostCodes.IncompleteRealization);
+        new ManufacturingInventoryReturnOutputHostException(
+            ManufacturingInventoryReturnOutputHostCodes.IncompleteRealization);
 }
 
 /// <summary>
