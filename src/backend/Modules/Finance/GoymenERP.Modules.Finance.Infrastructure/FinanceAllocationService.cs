@@ -44,6 +44,7 @@ public sealed class FinanceAllocationService(
         {
             return prior;
         }
+        var normalizedRequest = Normalize(request);
 
         var source = await dbContext.ReceiptDrafts.SingleOrDefaultAsync(row => row.Id == request.SourceId,
             cancellationToken);
@@ -71,7 +72,7 @@ public sealed class FinanceAllocationService(
         FinanceAllocationMutation mutation;
         try
         {
-            mutation = FinanceAllocationPolicy.Create(source, openItem, sourceState, request);
+            mutation = FinanceAllocationPolicy.Create(source, openItem, sourceState, normalizedRequest);
         }
         catch (FinanceAllocationPolicyException exception)
         {
@@ -115,8 +116,8 @@ public sealed class FinanceAllocationService(
             SourceId = source.Id,
             OpenItemId = openItem.Id,
             CurrencyId = source.CurrencyId,
-            AmountText = request.Amount,
-            Reason = request.Reason,
+            AmountText = normalizedRequest.Amount,
+            Reason = normalizedRequest.Reason,
             Status = FinanceAllocationStatuses.Active,
             Version = 1,
             CreatedBy = context.ActorId,
@@ -147,6 +148,7 @@ public sealed class FinanceAllocationService(
         {
             return prior;
         }
+        var normalizedRequest = Normalize(request);
 
         var allocation = await dbContext.Allocations.SingleOrDefaultAsync(row => row.Id == request.AllocationId,
             cancellationToken);
@@ -166,7 +168,7 @@ public sealed class FinanceAllocationService(
         FinanceAllocationMutation mutation;
         try
         {
-            mutation = FinanceAllocationPolicy.Release(allocation, openItem, sourceState, request);
+            mutation = FinanceAllocationPolicy.Release(allocation, openItem, sourceState, normalizedRequest);
         }
         catch (FinanceAllocationPolicyException exception)
         {
@@ -180,7 +182,7 @@ public sealed class FinanceAllocationService(
         allocation.Version = checked(allocation.Version + 1);
         allocation.ReleasedBy = context.ActorId;
         allocation.ReleasedAtUtc = now;
-        allocation.ReleaseReason = request.Reason;
+        allocation.ReleaseReason = normalizedRequest.Reason;
         sourceState.UnallocatedAmountText = mutation.SourceUnallocated;
         sourceState.Version = checked(sourceState.Version + 1);
         sourceState.UpdatedBy = context.ActorId;
@@ -194,7 +196,7 @@ public sealed class FinanceAllocationService(
         var result = Succeeded(context, allocation);
         AddCommand(context, metadata, ReleaseCommandName, payloadHash, null, allocation.Id, result, now);
         Audit(context, metadata, allocation, "finance.allocation.released.v1", "Release", 1, allocation.Version,
-            before, AuditJson(allocation), request.Reason);
+            before, AuditJson(allocation), normalizedRequest.Reason);
         return await SaveAsync(context, metadata, ReleaseCommandName, payloadHash,
             allocation.Id, result, cancellationToken);
     }
@@ -332,6 +334,22 @@ public sealed class FinanceAllocationService(
     private static string PayloadHash<T>(string command, T request) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(command + "|" + JsonSerializer.Serialize(request, Json))))
             .ToLowerInvariant();
+
+    private static CreateFinanceAllocationRequest Normalize(CreateFinanceAllocationRequest request) => request with
+    {
+        Amount = FinanceExactDecimalText.TryParsePositive(request.Amount, out var amount)
+            ? amount.Text
+            : request.Amount,
+        Reason = NormalizeReason(request.Reason),
+    };
+
+    private static ReleaseFinanceAllocationRequest Normalize(ReleaseFinanceAllocationRequest request) => request with
+    {
+        Reason = NormalizeReason(request.Reason),
+    };
+
+    private static string NormalizeReason(string value) =>
+        !string.IsNullOrWhiteSpace(value) && value.Length <= 1000 ? value.Trim() : value;
 
     private static FinanceAllocationCommandResult PolicyRefusal(
         FinanceContext context, FinanceAllocationPolicyException exception) =>

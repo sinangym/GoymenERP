@@ -168,8 +168,7 @@ internal static class FinanceAllocationPolicy
 
     private static void RequireReason(string value)
     {
-        if (string.IsNullOrWhiteSpace(value) || value.Length > 1000
-            || !string.Equals(value, value.Trim(), StringComparison.Ordinal))
+        if (string.IsNullOrWhiteSpace(value) || value.Length > 1000)
         {
             throw Failure("reason", "validation_failed");
         }
@@ -235,11 +234,6 @@ internal readonly record struct FinanceExactDecimalText(BigInteger Unscaled, int
 
         var separator = value.IndexOf('.');
         if (separator == 0 || separator == value.Length - 1)
-        {
-            return false;
-        }
-        var whole = separator < 0 ? value : value[..separator];
-        if (whole.Length > 1 && whole[0] == '0')
         {
             return false;
         }
