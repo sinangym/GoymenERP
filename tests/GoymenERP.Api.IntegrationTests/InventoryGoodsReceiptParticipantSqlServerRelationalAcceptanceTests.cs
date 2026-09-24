@@ -234,7 +234,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         correlation,
         null,
         key,
-        "integration-test",
+        "Integration",
         null,
         null);
 
@@ -292,7 +292,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         correlation,
         null,
         key,
-        "integration-test");
+        "Integration");
 
     private static ISettingsPrerequisiteProvider GoodsReceiptSettings(Run run, Guid? company = null)
     {

@@ -212,7 +212,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         CorrelationId: correlationId,
         CausationId: null,
         IdempotencyKey: key,
-        SourceChannel: "integration-test",
+        SourceChannel: "Integration",
         ClientIpAddress: null,
         UserAgent: null);
 
