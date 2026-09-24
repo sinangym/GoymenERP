@@ -137,7 +137,7 @@ test('C03 reads both authorized company relationships, switches company, disclos
     const denied = await deniedAnswer
     expect(denied.status()).toBe(404)
     const deniedBody = await denied.text()
-    expect(deniedBody).not.toMatch(/"code"\s*:/)
+    expect(JSON.parse(deniedBody)).toMatchObject({ status: 404, code: 'not_found' })
     expect(deniedBody).not.toContain(PARTY_ID)
     expect(deniedBody).not.toContain('Ayşe Örnek')
     expect(deniedBody).not.toContain(COMPANY_B)

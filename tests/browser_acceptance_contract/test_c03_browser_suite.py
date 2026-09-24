@@ -28,7 +28,7 @@ class C03BrowserSuiteContractTests(unittest.TestCase):
         self.assertIn("expect(await snapshot(pool)).toEqual(before)", spec)
         self.assertIn("expect(denied.status()).toBe(404)", spec)
         self.assertIn("deniedPanel.locator('[data-state=\"not-found\"]')", spec)
-        self.assertIn("expect(deniedBody).not.toMatch(/\"code\"\\s*:/)", spec)
+        self.assertIn("code: 'not_found'", spec)
         self.assertIn("request.headers()['x-company-id'] === undefined", spec)
         for method in (".post(", ".put(", ".patch(", ".delete("):
             self.assertNotIn(method, spec.lower())
