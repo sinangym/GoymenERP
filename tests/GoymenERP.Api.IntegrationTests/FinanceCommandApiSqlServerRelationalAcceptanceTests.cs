@@ -840,8 +840,21 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
         }
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.ManualBankPayments"));
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OutgoingMoneyEvents"));
-        Assert.Equal(4, await run.ScalarAsync<int>(
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.ManualBankPayments WHERE Id = @id AND PartyId = @party "
+            + "AND CompanyAccountId = @partyAccount AND TreasuryAccountId = @treasuryAccount",
+            ("@id", paymentId), ("@party", Party), ("@partyAccount", PartyAccount),
+            ("@treasuryAccount", account)));
+        Assert.Equal(6, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM finance.Commands WHERE ManualBankPaymentId = @id", ("@id", paymentId)));
+        Assert.Equal(4, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.Commands WHERE ManualBankPaymentId = @id "
+            + "AND CommandName NOT IN (@downProbe, @upProbe)",
+            ("@id", paymentId), ("@downProbe", downPositiveCommand), ("@upProbe", upPositiveCommand)));
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.Commands WHERE ManualBankPaymentId = @id "
+            + "AND CommandName IN (@downProbe, @upProbe)",
+            ("@id", paymentId), ("@downProbe", downPositiveCommand), ("@upProbe", upPositiveCommand)));
         Assert.Equal(3, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Finance.ManualBankPayment'"));
         Assert.Equal(2, await run.ScalarAsync<int>(
