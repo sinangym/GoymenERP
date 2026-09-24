@@ -26,6 +26,9 @@ const ROUTED = [
   [CAPABILITY.accountingPeriodsPropose, ACCOUNTING_CAPABILITY.periodsPropose, ACCOUNTING_ROUTE.periodsPropose],
   [CAPABILITY.accountingJournalsList, ACCOUNTING_CAPABILITY.journalsList, ACCOUNTING_ROUTE.journalsList],
   [CAPABILITY.accountingJournalsDetail, ACCOUNTING_CAPABILITY.journalsDetail, ACCOUNTING_ROUTE.journalsDetail],
+  [CAPABILITY.accountingNormalDraftCreate, ACCOUNTING_CAPABILITY.normalDraftCreate, ACCOUNTING_ROUTE.normalDraftCreate],
+  [CAPABILITY.accountingNormalDraftDetail, ACCOUNTING_CAPABILITY.normalDraftDetail, ACCOUNTING_ROUTE.normalDraftDetail],
+  [CAPABILITY.accountingNormalDraftApprove, ACCOUNTING_CAPABILITY.normalDraftApprove, ACCOUNTING_ROUTE.normalDraftApprove],
   [CAPABILITY.accountingPostingQueues, ACCOUNTING_CAPABILITY.postingQueues, ACCOUNTING_ROUTE.postingQueues],
 ] as const
 
@@ -36,7 +39,7 @@ describe('shell ↔ Accounting lane capability ids', () => {
     }
   })
 
-  it('mounts the five routed ids and NEITHER control', () => {
+  it('mounts the eight routed ids and NEITHER period control', () => {
     const shellIds = (Object.values(CAPABILITY) as string[]).filter((id) => id.startsWith('accounting.'))
     expect([...shellIds].sort()).toEqual([...ROUTED.map(([shellId]) => shellId as string)].sort())
     for (const control of [ACCOUNTING_CAPABILITY.periodsApprove, ACCOUNTING_CAPABILITY.periodsClose]) {
@@ -70,5 +73,8 @@ describe('shell ↔ Accounting lane capability ids', () => {
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.accountingPostingQueues]).toBe('Muhasebe Kontrol')
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.accountingPeriodsPropose]).toBe('')
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.accountingJournalsDetail]).toBe('')
+    expect(CAPABILITY_NAV_LABEL[CAPABILITY.accountingNormalDraftCreate]).toBe('')
+    expect(CAPABILITY_NAV_LABEL[CAPABILITY.accountingNormalDraftDetail]).toBe('')
+    expect(CAPABILITY_NAV_LABEL[CAPABILITY.accountingNormalDraftApprove]).toBe('')
   })
 })
