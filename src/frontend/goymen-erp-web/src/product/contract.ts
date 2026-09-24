@@ -808,3 +808,160 @@ export function productFieldErrorsOf(raw: unknown): readonly ProductFieldError[]
   }
   return out
 }
+
+/* ── Change history (ProductHistoryView) ──────────────────────────────────── */
+
+/**
+ * `GET /api/v1/products/{id}/history` → `ProductHistoryView(ProductId, Entries, Truncated)`,
+ * U-01 spec §5.4 and §9 item 6 (CASE-PRD-U01-016). Source: `ProductHistoryContractsV1.cs`.
+ *
+ * Deliberately NOT on the wire and therefore not decoded: the actor, client address,
+ * user agent, correlation and key material. The history says what changed, when, the
+ * version step and the recorded reason — not who, until an Identity display source
+ * exists for it.
+ */
+export const HISTORY_OPERATION = ['DraftCreate', 'DraftBasicEdit', 'Activate'] as const
+export type HistoryOperation = (typeof HISTORY_OPERATION)[number]
+
+/** `ProductHistoryFields.All`, in the server's display order. */
+export const HISTORY_FIELD = [
+  'name',
+  'classId',
+  'familyId',
+  'lifecycle',
+  'roles.purchasable',
+  'roles.sellable',
+  'roles.productionInput',
+  'roles.productionOutput',
+  'references.templateId',
+  'references.templateVersion',
+  'references.attributes',
+  'references.units.stock',
+  'references.units.purchase',
+  'references.units.sales',
+  'references.units.price',
+  'references.units.production',
+  'references.units.package',
+  'references.trackingPolicyId',
+] as const
+export type HistoryField = (typeof HISTORY_FIELD)[number]
+
+/** Server `ProductHistoryApiV1.PageSize`; a longer list is drift, not more history. */
+export const HISTORY_PAGE_SIZE = 50
+const HISTORY_REASON_MAX = 1000
+
+export type HistoryOperationValue =
+  | { readonly known: true; readonly value: HistoryOperation }
+  | { readonly known: false; readonly raw: string }
+
+export interface ProductHistoryEntry {
+  readonly eventId: string
+  readonly operation: HistoryOperationValue
+  readonly occurredAtUtc: string
+  readonly versionBefore: string | null
+  readonly versionAfter: string
+  readonly reason: string
+  /** Server order; a key this client does not know is kept verbatim rather than dropped. */
+  readonly changedFields: readonly string[]
+}
+
+export interface ProductHistory {
+  readonly productId: string
+  readonly entries: readonly ProductHistoryEntry[]
+  readonly truncated: boolean
+}
+
+export function isHistoryField(value: string): value is HistoryField {
+  return (HISTORY_FIELD as readonly string[]).includes(value)
+}
+
+function decodeHistoryEntry(raw: unknown): ProductHistoryEntry | null {
+  if (typeof raw !== 'object' || raw === null) return null
+  const e = raw as Record<string, unknown>
+  if (!isBoundUuid(e.eventId)) return null
+  if (!isMachineToken(e.operation, 64)) return null
+  if (!isInstant(e.occurredAtUtc)) return null
+  if (!isLosslessVersion(e.versionAfter)) return null
+  if (e.versionBefore !== null && !isLosslessVersion(e.versionBefore)) return null
+  // The reason is text a person wrote: bounded and non-blank, never re-validated as a token.
+  if (!isNonEmptyString(e.reason, HISTORY_REASON_MAX)) return null
+  const fields = e.changedFields
+  if (!Array.isArray(fields) || fields.length > HISTORY_FIELD.length) return null
+  if (!fields.every((field) => isMachineToken(field, 64))) return null
+  if (new Set(fields).size !== fields.length) return null
+
+  const operation: HistoryOperationValue = (HISTORY_OPERATION as readonly string[]).includes(e.operation)
+    ? { known: true, value: e.operation as HistoryOperation }
+    : { known: false, raw: e.operation }
+  if (operation.known && operation.value === 'DraftCreate') {
+    // A creation has no "before" and starts at 1; it has nothing to diff against.
+    if (e.versionBefore !== null || e.versionAfter !== '1' || fields.length > 0) return null
+  }
+  if (operation.known && operation.value !== 'DraftCreate') {
+    // An edit or activation moves the revision by exactly one; compared as integers, never as doubles.
+    if (typeof e.versionBefore !== 'string') return null
+    if (BigInt(e.versionAfter) !== BigInt(e.versionBefore) + BigInt(1)) return null
+  }
+
+  return {
+    eventId: e.eventId,
+    operation,
+    occurredAtUtc: e.occurredAtUtc,
+    versionBefore: e.versionBefore as string | null,
+    versionAfter: e.versionAfter,
+    reason: e.reason,
+    changedFields: fields as string[],
+  }
+}
+
+/**
+ * Decode a history, bound to the Product that was requested.
+ *
+ * Entry rules alone cannot see a MISSING event, so the entries are also read against each
+ * other: one unbroken version chain, and — unless the server says it cut the list — an
+ * oldest entry that is the creation. A history with a hole in it, or one that starts in
+ * the middle, otherwise reaches the screen as if it were the whole story.
+ *
+ * The card's own version is deliberately NOT compared here: this decoder is given the
+ * history alone, and the server's reader is the only layer that holds both. A history that
+ * stops short of the card fails there, before it is serialized.
+ */
+export function decodeProductHistory(raw: unknown, expectedId: string): ProductHistory | null {
+  if (typeof raw !== 'object' || raw === null) return null
+  const h = raw as Record<string, unknown>
+  if (h.productId !== expectedId) return null
+  if (typeof h.truncated !== 'boolean') return null
+  // An existing Product always has its creation event; an empty list is drift, not "no changes".
+  if (!Array.isArray(h.entries) || h.entries.length === 0 || h.entries.length > HISTORY_PAGE_SIZE) return null
+  const entries: ProductHistoryEntry[] = []
+  const seen = new Set<string>()
+  let previous: number | null = null
+  for (const item of h.entries) {
+    const entry = decodeHistoryEntry(item)
+    if (entry === null || seen.has(entry.eventId)) return null
+    const at = Date.parse(entry.occurredAtUtc)
+    // Newest first, as the server orders it. A reordered list would misstate the sequence.
+    if (previous !== null && at > previous) return null
+    previous = at
+    seen.add(entry.eventId)
+    entries.push(entry)
+  }
+
+  // ONE CHAIN: each entry's predecessor is the next older entry. A gap, a creation event
+  // that is not the oldest, and equal-time entries in the wrong order all break this.
+  for (let index = 0; index + 1 < entries.length; index += 1) {
+    if (entries[index].versionBefore !== entries[index + 1].versionAfter) return null
+  }
+
+  const oldest = entries[entries.length - 1]
+  if (h.truncated) {
+    // The server reports a cut only when it actually cut at the page size; a shorter list
+    // that still claims to be cut is drift, and it would hide the missing creation event.
+    if (entries.length !== HISTORY_PAGE_SIZE) return null
+  } else if (!(oldest.operation.known && oldest.operation.value === 'DraftCreate')) {
+    // An uncut list reaches back to the creation event (which the entry rules pin at 1).
+    return null
+  }
+
+  return { productId: expectedId, entries, truncated: h.truncated }
+}

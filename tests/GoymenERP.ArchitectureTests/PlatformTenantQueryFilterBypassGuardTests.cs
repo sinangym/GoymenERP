@@ -169,7 +169,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // product
             ["tools/relational_inventory/product.txt"] =
-                "8c5ebea9f3344f3ec137e5251f5e0e5eec837065899a0916df206d83edbe9d5b",
+                "d7dbec7ff39d9a487be2ecfae3ee3188a1e7b16dc8d695fb8e9a98952b0c991e",
 
             // purchasing
             ["tools/relational_inventory/purchasing.txt"] =
@@ -270,8 +270,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // singleton shell provider; no new database capability, MigrateAsync stays 2).
                 // Re-measured for Inventory opening stock: the bounded Product stock-candidate reader/service are
                 // DI-only additions over the existing Product read store; no new database capability, MigrateAsync stays 2.
+                // Re-measured for Product history: the scoped Audit-owner adapter and Product history reader are
+                // read-only DI additions; no new database capability, MigrateAsync stays 2.
                 ["src/backend/GoymenERP.Api/ProductRuntime/ProductRuntimeExtensions.cs"] =
-                    new("eb34fc4dd25443bcf5c9c0380157443ea2c848d75c89d5b89063fe691b68a689",
+                    new("b43d6443ee83f27694f9a9f1adbdf555b869f20a96da657d01b3d571367fca86",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["MigrateAsync"] = 2 }),
                 // Re-measured for PRD-UNIT-1: the Product participant gets Settings' unit-identity catalog

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { ActorProbe } from '../cari-acceptance-009/src/lHarness'
 
 /**
  * Product u02 — the fixture's proof on the REAL API, nothing mocked or intercepted:
@@ -9,6 +10,11 @@ import { expect, test, type Page } from '@playwright/test'
  *    answers 201 and the screen prints the server's code, whose prefix is the fixture group's.
  *  - U02-FIX-02 the unauthorized actor (company-a-user: no Product master authority) is closed out of the
  *    Product screens and sends no Product request.
+ *  - Product history is read from the real endpoint after closing and reopening the card. The fixture grants
+ *    no Activate authority and the Product UI exposes no activation control, so a real Activate row remains
+ *    explicitly NOT_RUN here; no synthetic grant or direct command is manufactured for this suite.
+ *  - The fixture has one authorized company context. The history 404 and authority 403 boundaries run here;
+ *    a cross-company history negative remains explicitly NOT_RUN rather than being faked with headers.
  *
  * This is the owner suite's plumbing proof (the fixture, the issuer binding, the gated writers). The U-02
  * cases of the open PRs (#270, #274) run as this suite at their own exact heads.
@@ -35,6 +41,24 @@ function seed(): Seed {
 
 const PRODUCTS_PATH = '/api/v1/products'
 const unauthorizedBaseUrl = process.env.BROWSER_E2E_UNAUTHORIZED_BASE_URL?.trim() ?? ''
+const apiBaseUrl = process.env.BROWSER_E2E_API_BASE_URL?.trim() ?? ''
+const MISSING_PRODUCT_ID = 'ffffffff-ffff-4fff-8fff-ffffffffffff'
+
+type HistoryEntry = {
+  readonly eventId: string
+  readonly operation: string
+  readonly occurredAtUtc: string
+  readonly versionBefore: string | null
+  readonly versionAfter: string
+  readonly reason: string
+  readonly changedFields: string[]
+}
+
+type ProductHistory = {
+  readonly productId: string
+  readonly entries: HistoryEntry[]
+  readonly truncated: boolean
+}
 
 /** Counts the browser's own Product traffic (reads and writes), with the write statuses. */
 function watchProducts(page: Page): { reads: number; writes: number; writeStatuses: number[] } {
@@ -53,7 +77,32 @@ function watchProducts(page: Page): { reads: number; writes: number; writeStatus
   return traffic
 }
 
-test('U02-FIX-01 the authorized actor creates, edits and reopens technical fields through the real API', async ({ page }) => {
+/**
+ * Reuses one request made by the real browser application so the fixture's actor and
+ * committed-company headers remain intact. A raw page.request call carries neither and
+ * only proves the anonymous 401 boundary.
+ */
+async function redirectNextApplicationRead(page: Page, requestPattern: string, targetPath: string): Promise<number> {
+  let status: number | null = null
+  await page.route(requestPattern, async (route) => {
+    if (status !== null) return route.fallback()
+    const target = new URL(route.request().url())
+    target.pathname = targetPath
+    target.search = ''
+    const response = await route.fetch({ url: target.toString() })
+    status = response.status()
+    await route.fulfill({ response })
+  })
+  try {
+    await page.reload()
+    await expect.poll(() => status, { timeout: 30_000 }).not.toBeNull()
+    return status!
+  } finally {
+    await page.unroute(requestPattern)
+  }
+}
+
+test('U02-FIX-01 the authorized actor creates, edits and reopens technical fields and history through the real API', async ({ page }) => {
   const { codeGroupId, technicalFamilyId } = seed()
   const traffic = watchProducts(page)
   const groupsAnswer = page.waitForResponse((response) =>
@@ -182,10 +231,14 @@ test('U02-FIX-01 the authorized actor creates, edits and reopens technical field
   await expect(page.getByRole('heading', { name: 'Değişiklikler kaydedildi' })).toBeVisible()
   await page.goto('about:blank')
   const finalRead = page.waitForResponse(response => new URL(response.url()).pathname === `${PRODUCTS_PATH}/${id}` && response.request().method() === 'GET')
+  const finalHistoryRead = page.waitForResponse(response => new URL(response.url()).pathname === `${PRODUCTS_PATH}/${id}/history` && response.request().method() === 'GET')
   await page.goto(`/urun/${id}`)
   const finalResponse = await finalRead
+  const finalHistoryResponse = await finalHistoryRead
   expect(finalResponse.status()).toBe(200)
+  expect(finalHistoryResponse.status()).toBe(200)
   const finalCard = await finalResponse.json()
+  const history = await finalHistoryResponse.json() as ProductHistory
   expect(finalCard.product.id).toBe(id)
   expect(finalCard.product.version).toBe(selectedBody.card.product.version)
   expect(finalCard.references.units.purchase).toBe(kilogram.id)
@@ -193,15 +246,66 @@ test('U02-FIX-01 the authorized actor creates, edits and reopens technical field
   expect(finalCard.references.units.sales).toBe(kilogram.id)
   expect(finalCard.references.attributes).toEqual(persisted.references.attributes)
   await expect(page.getByTestId('product-unit-purchase')).toHaveText(kilogram.displayName)
+  expect(history.productId).toBe(id)
+  expect(history.truncated).toBe(false)
+  expect(history.entries.map(entry => entry.operation)).toEqual(['DraftBasicEdit', 'DraftBasicEdit', 'DraftCreate'])
+  expect(history.entries.map(entry => [entry.versionBefore, entry.versionAfter])).toEqual([
+    [editedBody.card.product.version, selectedBody.card.product.version],
+    [createdBody.card.product.version, editedBody.card.product.version],
+    [null, createdBody.card.product.version],
+  ])
+  expect(history.entries.map(entry => entry.reason)).toEqual([
+    'SENTETIK u02 alış birimi seçimi',
+    'SENTETIK u02 teknik ölçü düzeltmesi',
+    'Ürün taslağı oluşturma',
+  ])
+  const allowedEntryKeys = ['changedFields', 'eventId', 'occurredAtUtc', 'operation', 'reason', 'versionAfter', 'versionBefore']
+  for (const entry of history.entries) expect(Object.keys(entry).sort()).toEqual(allowedEntryKeys)
+  expect(JSON.stringify(history)).not.toMatch(/actor|clientIp|userAgent|correlation|causation|idempotency/i)
+
+  const historyItems = page.getByTestId('product-history').getByRole('listitem')
+  await expect(page.getByRole('heading', { level: 2, name: 'Değişiklik geçmişi' })).toBeVisible()
+  await expect(historyItems).toHaveCount(3)
+  await expect(historyItems.nth(0)).toContainText(`Sürüm ${editedBody.card.product.version} → ${selectedBody.card.product.version}`)
+  await expect(historyItems.nth(0)).toContainText('Gerekçe: SENTETIK u02 alış birimi seçimi')
+  await expect(historyItems.nth(1)).toContainText(`Sürüm ${createdBody.card.product.version} → ${editedBody.card.product.version}`)
+  await expect(historyItems.nth(1)).toContainText('Gerekçe: SENTETIK u02 teknik ölçü düzeltmesi')
+  await expect(historyItems.nth(2)).toContainText(`Sürüm ${createdBody.card.product.version}`)
+  await expect(historyItems.nth(2)).toContainText('Gerekçe: Ürün taslağı oluşturma')
+  await expect(page.getByText('Değişikliği yapan kişi bu görünümde gösterilmez.')).toBeVisible()
+
+  const missingHistoryStatus = await redirectNextApplicationRead(
+    page,
+    `**${PRODUCTS_PATH}/${id}/history`,
+    `${PRODUCTS_PATH}/${MISSING_PRODUCT_ID}/history`,
+  )
+  expect(missingHistoryStatus, 'an authorized read does not disclose a missing Product as history').toBe(404)
   expect(traffic.writeStatuses).toEqual([201, 200, 200])
 })
 
-test('U02-FIX-02 the unauthorized actor is closed out of the Product screens and sends no Product request', async ({ page }) => {
+test('U02-FIX-02 the unauthorized actor is closed out of the Product screens and sends no Product request', async ({ page, request }) => {
   expect(unauthorizedBaseUrl, 'BROWSER_E2E_UNAUTHORIZED_BASE_URL is not set').not.toBe('')
+  expect(apiBaseUrl, 'BROWSER_E2E_API_BASE_URL is not set').not.toBe('')
+  const { companyId, unauthorizedActor } = seed()
   const traffic = watchProducts(page)
   for (const route of ['/urun', '/urun/yeni']) {
     await page.goto(new URL(route, unauthorizedBaseUrl).toString())
     await expect(page.locator('[data-state="not-found"]')).toBeVisible({ timeout: 30_000 })
   }
   expect(traffic.reads + traffic.writes).toBe(0)
+
+  // Same direct actor probe used by Product L-02: the browser bundle stays bound to
+  // its own actor, while this isolated request names the fixture's unauthorized actor
+  // and real company context. Product ignores the helper's Counterparty contract header.
+  const probe = new ActorProbe(request, 'optional-trade-roles-v1')
+  const deniedHistory = await probe.send({
+    label: 'history',
+    actor: unauthorizedActor,
+    method: 'GET',
+    path: `${apiBaseUrl.replace(/\/$/, '')}${PRODUCTS_PATH}/${MISSING_PRODUCT_ID}/history`,
+    companyId,
+    mustNotDisclose: [MISSING_PRODUCT_ID],
+  })
+  expect(deniedHistory.status, 'Product authority is checked before history existence').toBe(403)
+  expect(deniedHistory.disclosedForbiddenText).toBe(false)
 })

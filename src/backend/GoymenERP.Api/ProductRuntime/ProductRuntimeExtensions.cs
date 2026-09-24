@@ -55,6 +55,8 @@ public static class ProductRuntimeExtensions
         services.AddScoped<IGroupSharedCommandTerminalReader, SqlGroupSharedCommandTerminalStore>();
         services.AddScoped<IGroupSharedCommandReplayResolver, GroupSharedCommandReplayResolver>();
         services.AddScoped<GroupSharedProductAuditReader>();
+        services.AddScoped<IProductAuditHistorySourceV1, ProductAuditHistorySource>();
+        services.AddScoped<ProductHistoryReader>();
         services.AddScoped<ProductCommandGateway>();
         services.AddScoped<ProductReadStore>();
         services.AddSingleton<ProductCursorCodec>(provider =>
