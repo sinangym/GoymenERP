@@ -239,7 +239,7 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
     await page.goto('/finans/odemeler')
     await page.getByRole('button', { name: 'Yeni', exact: true }).click()
     await expect(page).toHaveURL(/\/finans\/odemeler\/yeni$/)
-    await page.getByLabel('Cari hesabı', { exact: true }).selectOption({ index: 1 })
+    await page.getByLabel('Cari hesabı', { exact: true }).selectOption(env.seed.partyId)
     await page.getByLabel('Banka hesabı', { exact: true }).selectOption({ label: ACCOUNT_NAME })
     await page.getByLabel('İşlem tarihi', { exact: true }).fill('2026-09-18')
     const continueButton = page.getByRole('button', { name: 'Ödeme formuna devam et', exact: true })
