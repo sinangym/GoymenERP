@@ -111,7 +111,7 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                 name: "CK_Allocations_Demand",
                 schema: "inventory",
                 table: "Allocations",
-                sql: "([DemandKind] IS NULL AND [DemandId] IS NULL AND [DemandLineId] IS NULL AND [DemandProductId] IS NULL AND [DemandProductVersion] IS NULL AND [Reason] IS NULL) OR ([DemandKind] = 'sales.order-line' AND [DemandId] <> '00000000-0000-0000-0000-000000000000' AND [DemandLineId] <> '00000000-0000-0000-0000-000000000000' AND [DemandProductId] <> '00000000-0000-0000-0000-000000000000' AND LEN([DemandProductVersion]) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0)");
+                sql: "([DemandKind] IS NULL AND [DemandId] IS NULL AND [DemandLineId] IS NULL AND [DemandProductId] IS NULL AND [DemandProductVersion] IS NULL AND [Reason] IS NULL AND [ReservedUntilUtc] IS NULL) OR ([DemandKind] IS NOT NULL AND [DemandKind] = 'sales.order-line' AND [DemandId] IS NOT NULL AND [DemandId] <> '00000000-0000-0000-0000-000000000000' AND [DemandLineId] IS NOT NULL AND [DemandLineId] <> '00000000-0000-0000-0000-000000000000' AND [DemandProductId] IS NOT NULL AND [DemandProductId] <> '00000000-0000-0000-0000-000000000000' AND [DemandProductVersion] IS NOT NULL AND LEN([DemandProductVersion]) > 0 AND [Reason] IS NOT NULL AND LEN(LTRIM(RTRIM([Reason]))) > 0)");
 
             migrationBuilder.AddCheckConstraint(
                 name: "CK_Allocations_Quantity",
@@ -123,7 +123,7 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                 name: "CK_Allocations_Release",
                 schema: "inventory",
                 table: "Allocations",
-                sql: "([Status] = 3 AND [ReleasedAtUtc] IS NOT NULL AND LEN(LTRIM(RTRIM([ReleaseReason]))) > 0) OR ([Status] <> 3 AND [ReleasedAtUtc] IS NULL AND [ReleaseReason] IS NULL)");
+                sql: "([Status] = 3 AND [ReleasedAtUtc] IS NOT NULL AND [ReleaseReason] IS NOT NULL AND LEN(LTRIM(RTRIM([ReleaseReason]))) > 0) OR ([Status] <> 3 AND [ReleasedAtUtc] IS NULL AND [ReleaseReason] IS NULL)");
 
             migrationBuilder.AddCheckConstraint(
                 name: "CK_Allocations_State",
@@ -140,7 +140,16 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                 IF EXISTS (
                     SELECT 1
                     FROM [inventory].[Allocations]
-                    WHERE [DemandKind] IS NOT NULL OR [Status] = 3
+                    WHERE [DemandKind] IS NOT NULL
+                       OR [DemandId] IS NOT NULL
+                       OR [DemandLineId] IS NOT NULL
+                       OR [DemandProductId] IS NOT NULL
+                       OR [DemandProductVersion] IS NOT NULL
+                       OR [Reason] IS NOT NULL
+                       OR [ReservedUntilUtc] IS NOT NULL
+                       OR [ReleasedAtUtc] IS NOT NULL
+                       OR [ReleaseReason] IS NOT NULL
+                       OR [Status] = 3
                 )
                     THROW 51052, 'Physical allocation lifecycle data exists; use a reviewed forward fix.', 1;
                 """);

@@ -337,13 +337,17 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
                 + "AND (([Status] = 1 AND [RemainingKg] > 0) OR ([Status] IN (2, 3) AND [RemainingKg] = 0))");
             table.HasCheckConstraint("CK_Allocations_Demand",
                 "([DemandKind] IS NULL AND [DemandId] IS NULL AND [DemandLineId] IS NULL "
-                + "AND [DemandProductId] IS NULL AND [DemandProductVersion] IS NULL AND [Reason] IS NULL) "
-                + "OR ([DemandKind] = 'sales.order-line' AND [DemandId] <> '00000000-0000-0000-0000-000000000000' "
-                + "AND [DemandLineId] <> '00000000-0000-0000-0000-000000000000' "
-                + "AND [DemandProductId] <> '00000000-0000-0000-0000-000000000000' "
-                + "AND LEN([DemandProductVersion]) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0)");
+                + "AND [DemandProductId] IS NULL AND [DemandProductVersion] IS NULL AND [Reason] IS NULL "
+                + "AND [ReservedUntilUtc] IS NULL) "
+                + "OR ([DemandKind] IS NOT NULL AND [DemandKind] = 'sales.order-line' "
+                + "AND [DemandId] IS NOT NULL AND [DemandId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [DemandLineId] IS NOT NULL AND [DemandLineId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [DemandProductId] IS NOT NULL AND [DemandProductId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [DemandProductVersion] IS NOT NULL AND LEN([DemandProductVersion]) > 0 "
+                + "AND [Reason] IS NOT NULL AND LEN(LTRIM(RTRIM([Reason]))) > 0)");
             table.HasCheckConstraint("CK_Allocations_Release",
-                "([Status] = 3 AND [ReleasedAtUtc] IS NOT NULL AND LEN(LTRIM(RTRIM([ReleaseReason]))) > 0) "
+                "([Status] = 3 AND [ReleasedAtUtc] IS NOT NULL AND [ReleaseReason] IS NOT NULL "
+                + "AND LEN(LTRIM(RTRIM([ReleaseReason]))) > 0) "
                 + "OR ([Status] <> 3 AND [ReleasedAtUtc] IS NULL AND [ReleaseReason] IS NULL)");
         });
         entity.HasKey(x => x.Id);
