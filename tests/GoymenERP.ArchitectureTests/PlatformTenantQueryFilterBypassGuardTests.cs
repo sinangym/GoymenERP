@@ -141,7 +141,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // finance
             ["tools/relational_inventory/finance.txt"] =
-                "093bc8251f883c1c4cb407ee00b2498301b8a8ed0d2911de8a204fca8f8ec98a",
+                "b18c13d9b748c59722987ab1cd62d3d68381c77495f46ba09b7266e6885e411d",
 
             // identity
             ["tools/relational_inventory/identity.txt"] =
@@ -518,7 +518,18 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Finance/"
                  + "GoymenERP.Modules.Finance.Infrastructure/FinanceAllocationService.cs"] =
                     new(
-                        "d01e5fed6a48ac4da91566b8550c501425763bc0199329166e8fc6c5b74b9971",
+                        "c4520eee191baaca06faadc0e30fe720384bdad9903636fe02dd111737bde4bf",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1
+                        }),
+                // F-03 source admission uses the tenant-filtered FinanceDbContext. SqlClient is
+                // referenced only to classify 2601/2627 races after SaveChanges; there is no direct
+                // connection, command, raw SQL or query-filter bypass surface.
+                ["src/backend/Modules/Finance/"
+                 + "GoymenERP.Modules.Finance.Infrastructure/FinanceOpenItemSourceAdmissionService.cs"] =
+                    new(
+                        "6811c3396e99bf54f0a686c11b1f6436df8df46bf004eacdc4e29e421b7b5250",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -540,7 +551,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Finance/"
                  + "GoymenERP.Modules.Finance.Infrastructure/ReversalProposalService.cs"] =
                     new(
-                        "d0431aac31f3ca6bca820879e063302f5045a96feba36399b746c312fed405e0",
+                        "5c391ebb303e5e031e2c912b777a9b934446177e797e1e226fed7d74e4268f76",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1

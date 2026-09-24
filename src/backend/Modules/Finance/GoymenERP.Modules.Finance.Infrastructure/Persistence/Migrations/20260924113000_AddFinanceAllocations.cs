@@ -103,6 +103,8 @@ public sealed class AddFinanceAllocations : Migration
         migrationBuilder.CreateIndex("UX_OpenItems_CompanyId_Source", "OpenItems",
             new[] { "CompanyId", "SourceKind", "SourceId", "SourceLineId" },
             schema: "finance", unique: true);
+        migrationBuilder.CreateIndex("IX_OpenItems_CompanyId_SourceBatchId", "OpenItems",
+            new[] { "CompanyId", "SourceBatchId" }, schema: "finance");
         migrationBuilder.CreateIndex("IX_OpenItems_CompanyId_Account_Currency_Status_DueOn", "OpenItems",
             new[] { "CompanyId", "CompanyAccountId", "CurrencyId", "Status", "DueOn" }, schema: "finance");
 

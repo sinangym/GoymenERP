@@ -523,6 +523,8 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
                 b.HasIndex("CompanyId", "SourceKind", "SourceId", "SourceLineId")
                     .IsUnique();
 
+                b.HasIndex("CompanyId", "SourceBatchId");
+
                 b.HasIndex("CompanyId", "CompanyAccountId", "CurrencyId", "Status", "DueOn");
 
                 b.ToTable("OpenItems", "finance", t =>
