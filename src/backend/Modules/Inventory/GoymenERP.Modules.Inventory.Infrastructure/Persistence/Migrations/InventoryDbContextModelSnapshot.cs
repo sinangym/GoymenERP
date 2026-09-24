@@ -837,7 +837,7 @@ partial class InventoryDbContextModelSnapshot : ModelSnapshot
 
                 t.HasCheckConstraint(
                     "CK_Movements_Kind",
-                    "[Kind] BETWEEN 1 AND 4");
+                    "[Kind] BETWEEN 1 AND 5");
 
                 t.HasCheckConstraint(
                     "CK_Movements_PayloadHash",

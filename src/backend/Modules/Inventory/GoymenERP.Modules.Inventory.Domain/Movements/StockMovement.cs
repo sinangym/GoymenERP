@@ -4,7 +4,7 @@ using GoymenERP.Modules.Inventory.Domain.Stock;
 
 namespace GoymenERP.Modules.Inventory.Domain.Movements;
 
-/// <summary>The kinds this first slice records. Transfer, count and return come with T13.</summary>
+/// <summary>The physical movement kinds currently recorded by Inventory.</summary>
 public enum StockMovementKind
 {
     /// <summary>Physical arrival: every line adds stock.</summary>
@@ -22,6 +22,12 @@ public enum StockMovementKind
 
     /// <summary>Blocked → Free on the same position. Physical total unchanged.</summary>
     Release = 4,
+
+    /// <summary>
+    /// Unused production input returned to the same existing label and physical position.
+    /// Unlike a receipt, this deliberately adds stock to an already registered piece.
+    /// </summary>
+    Return = 5,
 }
 
 public enum StockDirection
@@ -189,6 +195,9 @@ public sealed class StockMovement
                     throw Invalid("Bloklu stok çıkış hareketiyle çıkamaz; önce blokaj kaldırılmalıdır.");
                 }
 
+                break;
+            case StockMovementKind.Return:
+                RequireAll(StockDirection.In, "İade hareketinin bütün satırları giriş olmalıdır.");
                 break;
             case StockMovementKind.Block:
                 RequireBlockPair(BlockState.Free, BlockState.Blocked);

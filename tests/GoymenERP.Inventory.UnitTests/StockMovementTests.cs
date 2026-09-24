@@ -52,6 +52,7 @@ public sealed class StockMovementTests
     [Theory]
     [InlineData("receipt-with-out-line")]
     [InlineData("issue-with-in-line")]
+    [InlineData("return-with-out-line")]
     [InlineData("no-lines")]
     [InlineData("line-in-other-company")]
     [InlineData("local-time")]
@@ -69,6 +70,7 @@ public sealed class StockMovementTests
         {
             "receipt-with-out-line" => () => Movement(StockMovementKind.Receipt, In(free, 1m), Out(Position(label: Label2), 1m)),
             "issue-with-in-line" => () => Movement(StockMovementKind.Issue, In(free, 1m)),
+            "return-with-out-line" => () => Movement(StockMovementKind.Return, Out(free, 1m)),
             "no-lines" => () => Movement(StockMovementKind.Receipt),
             // The transaction company is the movement's; a line cannot slip into another one.
             "line-in-other-company" => () => Movement(StockMovementKind.Receipt, CompanyA, In(Position(company: CompanyB), 1m)),
