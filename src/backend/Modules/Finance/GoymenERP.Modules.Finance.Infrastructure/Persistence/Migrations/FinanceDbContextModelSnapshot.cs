@@ -471,13 +471,29 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
                 b.Property<Guid>("SourceId")
                     .HasColumnType("uniqueidentifier");
 
+                b.Property<string>("SourceBatchChecksum")
+                    .IsRequired()
+                    .IsUnicode(false)
+                    .IsFixedLength()
+                    .HasMaxLength(64)
+                    .HasColumnType("char(64)");
+
+                b.Property<Guid>("SourceBatchId")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<string>("SourceBatchVersion")
+                    .IsRequired()
+                    .HasMaxLength(128)
+                    .IsUnicode(false)
+                    .HasColumnType("varchar(128)");
+
                 b.Property<string>("SourceKind")
                     .IsRequired()
                     .HasMaxLength(128)
                     .IsUnicode(false)
                     .HasColumnType("varchar(128)");
 
-                b.Property<Guid?>("SourceLineId")
+                b.Property<Guid>("SourceLineId")
                     .HasColumnType("uniqueidentifier");
 
                 b.Property<string>("SourceVersion")
@@ -505,20 +521,100 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
                 b.HasKey("Id");
 
                 b.HasIndex("CompanyId", "SourceKind", "SourceId", "SourceLineId")
-                    .IsUnique()
-                    .HasFilter("[SourceLineId] IS NOT NULL");
+                    .IsUnique();
 
                 b.HasIndex("CompanyId", "CompanyAccountId", "CurrencyId", "Status", "DueOn");
 
                 b.ToTable("OpenItems", "finance", t =>
                     {
-                        t.HasCheckConstraint("CK_OpenItems_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [SourceId] <> '00000000-0000-0000-0000-000000000000' AND ([SourceLineId] IS NULL OR [SourceLineId] <> '00000000-0000-0000-0000-000000000000') AND [PartyId] <> '00000000-0000-0000-0000-000000000000' AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000'");
+                        t.HasCheckConstraint("CK_OpenItems_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [SourceId] <> '00000000-0000-0000-0000-000000000000' AND [SourceLineId] <> '00000000-0000-0000-0000-000000000000' AND [SourceBatchId] <> '00000000-0000-0000-0000-000000000000' AND [PartyId] <> '00000000-0000-0000-0000-000000000000' AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000'");
 
                         t.HasCheckConstraint("CK_OpenItems_Status", "[Status] IN (1, 2)");
 
-                        t.HasCheckConstraint("CK_OpenItems_Text", "LEN([SourceKind]) > 0 AND LEN([SourceVersion]) > 0 AND LEN([OriginalAmountText]) > 0 AND LEN([OutstandingAmountText]) > 0 AND LEN([CreatedBy]) > 0 AND LEN([UpdatedBy]) > 0");
+                        t.HasCheckConstraint("CK_OpenItems_Text", "LEN([SourceKind]) > 0 AND LEN([SourceVersion]) > 0 AND LEN([SourceBatchVersion]) > 0 AND LEN([SourceBatchChecksum]) = 64 AND LEN([OriginalAmountText]) > 0 AND LEN([OutstandingAmountText]) > 0 AND LEN([CreatedBy]) > 0 AND LEN([UpdatedBy]) > 0");
 
                         t.HasCheckConstraint("CK_OpenItems_Version", "[Version] >= 1");
+                    });
+            });
+
+        modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceOpenItemSourceBatchRow", b =>
+            {
+                b.Property<Guid>("Id")
+                    .ValueGeneratedNever()
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<DateTimeOffset>("AdmittedAtUtc")
+                    .HasColumnType("datetimeoffset");
+
+                b.Property<string>("ActorId")
+                    .IsRequired()
+                    .HasMaxLength(128)
+                    .HasColumnType("nvarchar(128)")
+                    .UseCollation("Latin1_General_100_BIN2");
+
+                b.Property<string>("CausationId")
+                    .HasMaxLength(128)
+                    .HasColumnType("nvarchar(128)")
+                    .UseCollation("Latin1_General_100_BIN2");
+
+                b.Property<Guid>("CompanyId")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<string>("CorrelationId")
+                    .IsRequired()
+                    .HasMaxLength(128)
+                    .HasColumnType("nvarchar(128)")
+                    .UseCollation("Latin1_General_100_BIN2");
+
+                b.Property<string>("IdempotencyKeyHash")
+                    .IsRequired()
+                    .IsUnicode(false)
+                    .IsFixedLength()
+                    .HasMaxLength(64)
+                    .HasColumnType("char(64)");
+
+                b.Property<string>("PayloadHash")
+                    .IsRequired()
+                    .IsUnicode(false)
+                    .IsFixedLength()
+                    .HasMaxLength(64)
+                    .HasColumnType("char(64)");
+
+                b.Property<string>("ResultJson")
+                    .IsRequired()
+                    .HasColumnType("nvarchar(max)");
+
+                b.Property<string>("SourceChecksum")
+                    .IsRequired()
+                    .IsUnicode(false)
+                    .IsFixedLength()
+                    .HasMaxLength(64)
+                    .HasColumnType("char(64)");
+
+                b.Property<string>("SourceKind")
+                    .IsRequired()
+                    .HasMaxLength(128)
+                    .IsUnicode(false)
+                    .HasColumnType("varchar(128)");
+
+                b.Property<string>("SourceVersion")
+                    .IsRequired()
+                    .HasMaxLength(128)
+                    .IsUnicode(false)
+                    .HasColumnType("varchar(128)");
+
+                b.HasKey("Id");
+
+                b.HasAlternateKey("CompanyId", "Id");
+
+                b.HasIndex("CompanyId", "IdempotencyKeyHash")
+                    .IsUnique();
+
+                b.ToTable("OpenItemSourceBatches", "finance", t =>
+                    {
+                        t.HasCheckConstraint("CK_OpenItemSourceBatches_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000'");
+
+                        t.HasCheckConstraint("CK_OpenItemSourceBatches_Text", "LEN([SourceKind]) > 0 AND LEN([SourceVersion]) > 0 AND LEN([SourceChecksum]) = 64 AND LEN([IdempotencyKeyHash]) = 64 AND LEN([PayloadHash]) = 64 AND LEN([ActorId]) > 0 AND LEN([CorrelationId]) > 0 AND ISJSON([ResultJson]) = 1");
                     });
             });
 
@@ -938,6 +1034,22 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
                     .OnDelete(DeleteBehavior.Restrict);
             });
         modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceOpenItemRow", b =>
+            {
+                b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                    .WithMany()
+                    .HasForeignKey("CompanyId")
+                    .OnDelete(DeleteBehavior.Restrict)
+                    .IsRequired();
+
+                b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceOpenItemSourceBatchRow", null)
+                    .WithMany()
+                    .HasForeignKey("CompanyId", "SourceBatchId")
+                    .HasPrincipalKey("CompanyId", "Id")
+                    .OnDelete(DeleteBehavior.Restrict)
+                    .IsRequired();
+            });
+
+        modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceOpenItemSourceBatchRow", b =>
             {
                 b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.OrganizationCompanyReference", null)
                     .WithMany()

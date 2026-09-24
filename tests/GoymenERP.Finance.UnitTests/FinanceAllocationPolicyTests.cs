@@ -81,6 +81,47 @@ public sealed class FinanceAllocationPolicyTests
         Assert.Equal(FinanceOpenItemStatuses.Open, result.OpenItemStatus);
     }
 
+    [Fact]
+    public void Reversal_barrier_preserves_money_scale_and_advances_existing_state()
+    {
+        var source = Source("1250.50");
+        var state = new FinanceSourceAllocationStateRow
+        {
+            CompanyId = CompanyId,
+            SourceId = source.Id,
+            CurrencyId = CurrencyId,
+            OriginalAmountText = "1250.50",
+            UnallocatedAmountText = "1250.50",
+            Version = 7,
+            UpdatedBy = "actor",
+            UpdatedAtUtc = DateTimeOffset.UtcNow,
+        };
+        var barrier = FinanceAllocationPolicy.PrepareReversalBarrier(source, state);
+        Assert.Equal("1250.50", barrier.OriginalAmount);
+        Assert.Equal("0.00", barrier.UnallocatedAmount);
+        Assert.Equal(8, barrier.Version);
+    }
+
+    [Fact]
+    public void Reversal_barrier_refuses_a_state_with_unreleased_or_drifted_amount()
+    {
+        var source = Source("1250.50");
+        var state = new FinanceSourceAllocationStateRow
+        {
+            CompanyId = CompanyId,
+            SourceId = source.Id,
+            CurrencyId = CurrencyId,
+            OriginalAmountText = "1250.50",
+            UnallocatedAmountText = "1000.40",
+            Version = 1,
+            UpdatedBy = "actor",
+            UpdatedAtUtc = DateTimeOffset.UtcNow,
+        };
+        var failure = Assert.Throws<FinanceAllocationPolicyException>(() =>
+            FinanceAllocationPolicy.PrepareReversalBarrier(source, state));
+        Assert.Equal("finance_allocation_state_invalid", failure.Code);
+    }
+
     private static ReceiptDraftRow Source(string amount) => new()
     {
         Id = Guid.NewGuid(), CompanyId = CompanyId, CompanyAccountId = AccountId, CurrencyId = CurrencyId,

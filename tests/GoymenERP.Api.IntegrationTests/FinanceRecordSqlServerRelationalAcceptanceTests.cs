@@ -601,6 +601,403 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
             ("@id", allocationId), ("@company", CompanyA), ("@source", draft.Id)));
     }
 
+    [SqlServerFact]
+    public async Task Concurrent_allocation_create_and_reversal_approval_commit_exactly_one_complete_outcome()
+    {
+        await using var run = await Run.StartAsync();
+        var owners = Owners.For(CompanyA);
+        var draft = await run.SaveDraftAsync(owners, "1250.50");
+        CommandResult recorded;
+        await using (var recording = run.Service(CompanyA, owners))
+        {
+            recorded = await recording.Service.RecordAsync(recording.Context, Key("race-record"),
+                new RecordRequest(draft.Id, draft.Version), CancellationToken.None);
+        }
+        Assert.Equal(CommandOutcome.Succeeded, recorded.Outcome);
+        ReversalProposalCommandResult proposed;
+        await using (var maker = run.ReversalService(CompanyA, run.Actor))
+        {
+            proposed = await maker.Service.ProposeAsync(maker.Context, Key("race-reversal-propose"),
+                new ProposeReversalRequest(draft.Id, recorded.Resource!.Source.Version, OccurredOn.AddDays(2),
+                    "SENTETIK-concurrent-allocation-reversal"), CancellationToken.None);
+        }
+        Assert.Equal(CommandOutcome.Succeeded, proposed.Outcome);
+        var openItem = await run.SeedOpenItemAsync(CompanyA, owners.Account, Currency, "1250.50");
+        var allocationId = Guid.NewGuid();
+        using var finalFence = new Barrier(2);
+        var allocationPermission = new FinalWriteBarrierPermission(
+            FinanceAction.WriteAllocation, 2, finalFence);
+        var reversalPermission = new FinalWriteBarrierPermission(
+            FinanceAction.ApproveReversal, 4, finalFence);
+
+        async Task<FinanceAllocationCommandResult> AllocateAsync()
+        {
+            await using var allocation = run.AllocationService(
+                CompanyA, Guid.NewGuid().ToString("D"), allocationPermission);
+            return await allocation.Service.CreateAsync(allocation.Context, Key("race-allocation-create"),
+                new CreateFinanceAllocationRequest(allocationId, draft.Id, recorded.Resource!.Source.Version,
+                    openItem.Id, openItem.Version, "250.10", "SENTETIK concurrent allocation"),
+                CancellationToken.None);
+        }
+        async Task<ReversalProposalCommandResult> ReverseAsync()
+        {
+            await using var checker = run.ReversalService(
+                CompanyA, Guid.NewGuid().ToString("D"), permissions: reversalPermission);
+            return await checker.Service.ApproveAsync(checker.Context, Key("race-reversal-approve"),
+                new ApproveReversalRequest(proposed.Resource!.Id, proposed.Resource.Version),
+                CancellationToken.None);
+        }
+        var allocationTask = Task.Run(AllocateAsync);
+        var reversalTask = Task.Run(ReverseAsync);
+        await Task.WhenAll((Task)allocationTask, reversalTask);
+        var allocationResult = await allocationTask;
+        var reversalResult = await reversalTask;
+        var outcomes = new[] { allocationResult.Outcome, reversalResult.Outcome };
+        Assert.Single(outcomes, outcome => outcome == CommandOutcome.Succeeded);
+        Assert.Single(outcomes, outcome => outcome == CommandOutcome.VersionConflict);
+        var loserIssues = allocationResult.Outcome == CommandOutcome.VersionConflict
+            ? allocationResult.Issues : reversalResult.Issues;
+        Assert.Equal("concurrent_change", Assert.Single(loserIssues).Code);
+        var allocationWon = allocationResult.Outcome == CommandOutcome.Succeeded;
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.SourceAllocationStates WHERE CompanyId = @company AND SourceId = @source",
+            ("@company", CompanyA), ("@source", draft.Id)));
+        Assert.Equal(allocationWon ? "1000.40" : "0.00", await run.ScalarAsync<string>(
+            "SELECT UnallocatedAmountText FROM finance.SourceAllocationStates WHERE CompanyId = @company AND SourceId = @source",
+            ("@company", CompanyA), ("@source", draft.Id)));
+        Assert.Equal(allocationWon ? 1 : 0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.Allocations WHERE Id = @id AND Status = 1", ("@id", allocationId)));
+        Assert.Equal(allocationWon ? 0 : 1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.ReversalProposals WHERE Id = @id AND Status = 1 AND ReversalSourceId IS NOT NULL",
+            ("@id", proposed.Resource!.Id)));
+        Assert.Equal(allocationWon ? 1 : 2,
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.MoneyEvents"));
+        Assert.Equal(allocationWon ? "1000.40" : "1250.50", await run.ScalarAsync<string>(
+            "SELECT OutstandingAmountText FROM finance.OpenItems WHERE Id = @id", ("@id", openItem.Id)));
+        Assert.Equal(allocationWon ? 1 : 0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.Commands WHERE CommandName = @command",
+            ("@command", FinanceAllocationService.CreateCommandName)));
+        Assert.Equal(allocationWon ? 0 : 1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.Commands WHERE CommandName = @command",
+            ("@command", ReversalProposalService.ApproveCommand)));
+    }
+
+    [SqlServerFact]
+    public async Task Synthetic_approved_source_admits_once_and_native_cutover_reuses_immutable_identity()
+    {
+        await using var run = await Run.StartAsync();
+        var owners = Owners.For(CompanyA);
+        var row = new ApprovedFinanceOpenItemSourceRow(
+            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "invoice-v1",
+            FinanceOpenItemSourceKinds.OfficialInvoiceInstallmentDocument,
+            owners.Party, owners.Account, Currency, "1250.50", new DateOnly(2026, 10, 31));
+        var firstReference = new FinanceOpenItemSourceReference(
+            Guid.NewGuid(), "official-file-v1", new string('a', 64));
+        var firstBatch = new ApprovedFinanceOpenItemSourceBatch(
+            firstReference.BatchId, CompanyA, firstReference.BatchVersion, firstReference.BatchChecksum, [row]);
+        await using (var first = run.OpenItemSourceService(CompanyA, owners, firstBatch))
+        {
+            var admitted = await first.Service.AdmitAsync(first.Context, Key("open-item-source-1"),
+                firstReference, CancellationToken.None);
+            Assert.Equal(CommandOutcome.Succeeded, admitted.Outcome);
+            Assert.False(admitted.IsReplay);
+            Assert.Equal(row.OpenItemId, Assert.Single(admitted.OpenItemIds));
+        }
+
+        var nativeReference = new FinanceOpenItemSourceReference(
+            Guid.NewGuid(), "native-cutover-v1", new string('b', 64));
+        var nativeBatch = new ApprovedFinanceOpenItemSourceBatch(
+            nativeReference.BatchId, CompanyA, nativeReference.BatchVersion, nativeReference.BatchChecksum, [row]);
+        await using (var native = run.OpenItemSourceService(CompanyA, owners, nativeBatch))
+        {
+            var reused = await native.Service.AdmitAsync(native.Context, Key("open-item-source-2"),
+                nativeReference, CancellationToken.None);
+            Assert.Equal(CommandOutcome.Succeeded, reused.Outcome);
+            Assert.True(reused.IsReplay);
+            Assert.Equal(row.OpenItemId, Assert.Single(reused.OpenItemIds));
+        }
+
+        var conflictingReference = new FinanceOpenItemSourceReference(
+            Guid.NewGuid(), "conflicting-file-v1", new string('c', 64));
+        var conflictingBatch = new ApprovedFinanceOpenItemSourceBatch(
+            conflictingReference.BatchId, CompanyA, conflictingReference.BatchVersion,
+            conflictingReference.BatchChecksum, [row with { Amount = "1250.51" }]);
+        await using (var conflict = run.OpenItemSourceService(CompanyA, owners, conflictingBatch))
+        {
+            var refused = await conflict.Service.AdmitAsync(conflict.Context, Key("open-item-source-3"),
+                conflictingReference, CancellationToken.None);
+            Assert.Equal(CommandOutcome.ValidationFailed, refused.Outcome);
+            Assert.Equal("finance_open_item_source_identity_conflict", Assert.Single(refused.Issues).Code);
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OpenItems"));
+        Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OpenItemSourceBatches"));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.MoneyEvents"));
+        Assert.Equal("1250.50", await run.ScalarAsync<string>(
+            "SELECT OriginalAmountText FROM finance.OpenItems WHERE Id = @id", ("@id", row.OpenItemId)));
+    }
+
+    [SqlServerFact]
+    public async Task Synthetic_authority_revoked_during_source_read_refuses_before_open_item_save()
+    {
+        await using var run = await Run.StartAsync();
+        var owners = Owners.For(CompanyA);
+        var reference = new FinanceOpenItemSourceReference(
+            Guid.NewGuid(), "revoked-source-v1", new string('d', 64));
+        var batch = new ApprovedFinanceOpenItemSourceBatch(
+            reference.BatchId, CompanyA, reference.BatchVersion, reference.BatchChecksum,
+            [new ApprovedFinanceOpenItemSourceRow(
+                Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "invoice-v1",
+                FinanceOpenItemSourceKinds.OfficialInvoiceInstallmentDocument,
+                owners.Party, owners.Account, Currency, "1250.50", OccurredOn)]);
+
+        await using (var scope = run.OpenItemSourceService(
+            CompanyA, owners, batch, new RevokeOpenItemSourceAuthorityAfterFirstCheck()))
+        {
+            var refused = await scope.Service.AdmitAsync(
+                scope.Context, Key("open-item-source-revoked"), reference, CancellationToken.None);
+            Assert.Equal(CommandOutcome.Denied, refused.Outcome);
+        }
+
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OpenItems"));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OpenItemSourceBatches"));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.open-item-source.admitted.v1'"));
+    }
+
+    [SqlServerFact]
+    public async Task Synthetic_missing_party_mapping_refuses_source_batch_without_writes()
+    {
+        await using var run = await Run.StartAsync();
+        var owners = Owners.For(CompanyA);
+        var reference = new FinanceOpenItemSourceReference(
+            Guid.NewGuid(), "missing-mapping-v1", new string('e', 64));
+        var batch = new ApprovedFinanceOpenItemSourceBatch(
+            reference.BatchId, CompanyA, reference.BatchVersion, reference.BatchChecksum,
+            [new ApprovedFinanceOpenItemSourceRow(
+                Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "invoice-v1",
+                FinanceOpenItemSourceKinds.OfficialInvoiceInstallmentDocument,
+                owners.Party, owners.Account, Currency, "1250.50", OccurredOn)]);
+
+        await using (var scope = run.OpenItemSourceService(
+            CompanyA, owners, batch, parties: new MissingOpenItemParty()))
+        {
+            var refused = await scope.Service.AdmitAsync(
+                scope.Context, Key("open-item-source-missing-mapping"), reference, CancellationToken.None);
+            Assert.Equal(CommandOutcome.ValidationFailed, refused.Outcome);
+            Assert.Equal("party_account_not_found", Assert.Single(refused.Issues).Code);
+        }
+
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OpenItems"));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OpenItemSourceBatches"));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.open-item-source.admitted.v1'"));
+    }
+
+    [SqlServerFact]
+    public async Task Synthetic_order_source_is_refused_without_open_item_write()
+    {
+        await using var run = await Run.StartAsync();
+        var owners = Owners.For(CompanyA);
+        var reference = new FinanceOpenItemSourceReference(
+            Guid.NewGuid(), "order-source-v1", new string('f', 64));
+        var batch = new ApprovedFinanceOpenItemSourceBatch(
+            reference.BatchId, CompanyA, reference.BatchVersion, reference.BatchChecksum,
+            [new ApprovedFinanceOpenItemSourceRow(
+                Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "order-v1", "order",
+                owners.Party, owners.Account, Currency, "1250.50", OccurredOn)]);
+
+        await using (var scope = run.OpenItemSourceService(CompanyA, owners, batch))
+        {
+            var refused = await scope.Service.AdmitAsync(
+                scope.Context, Key("open-item-source-order"), reference, CancellationToken.None);
+            Assert.Equal(CommandOutcome.ValidationFailed, refused.Outcome);
+            Assert.Equal(
+                "finance_open_item_source_document_kind_invalid",
+                Assert.Single(refused.Issues).Code);
+        }
+
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OpenItems"));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OpenItemSourceBatches"));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.open-item-source.admitted.v1'"));
+    }
+
+    [SqlServerFact]
+    public async Task Concurrent_source_admission_commits_one_open_item_and_returns_one_durable_replay()
+    {
+        await using var run = await Run.StartAsync();
+        var owners = Owners.For(CompanyA);
+        var reference = new FinanceOpenItemSourceReference(
+            Guid.NewGuid(), "concurrent-source-v1", new string('a', 64));
+        var row = new ApprovedFinanceOpenItemSourceRow(
+            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "invoice-v1",
+            FinanceOpenItemSourceKinds.OfficialInvoiceInstallmentDocument,
+            owners.Party, owners.Account, Currency, "1250.50", OccurredOn);
+        var batch = new ApprovedFinanceOpenItemSourceBatch(
+            reference.BatchId, CompanyA, reference.BatchVersion, reference.BatchChecksum, [row]);
+        using var finalFence = new Barrier(2);
+
+        async Task<FinanceOpenItemAdmissionResult> AdmitAsync()
+        {
+            await using var scope = run.OpenItemSourceService(
+                CompanyA, owners, batch, new FinalOpenItemSourceAuthority(5, finalFence));
+            return await scope.Service.AdmitAsync(
+                scope.Context, Key("open-item-source-concurrent"), reference, CancellationToken.None);
+        }
+
+        var firstTask = Task.Run(AdmitAsync);
+        var secondTask = Task.Run(AdmitAsync);
+        await Task.WhenAll((Task)firstTask, secondTask);
+        var results = new[] { await firstTask, await secondTask };
+
+        Assert.All(results, result => Assert.Equal(CommandOutcome.Succeeded, result.Outcome));
+        Assert.Single(results, result => !result.IsReplay);
+        Assert.Single(results, result => result.IsReplay);
+        Assert.All(results, result => Assert.Equal(row.OpenItemId, Assert.Single(result.OpenItemIds)));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OpenItems"));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OpenItemSourceBatches"));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.open-item-source.admitted.v1'"));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.MoneyEvents"));
+    }
+
+    [SqlServerFact]
+    public async Task Foreign_company_source_batch_is_refused_without_open_item_or_audit()
+    {
+        await using var run = await Run.StartAsync();
+        var owners = Owners.For(CompanyB);
+        var reference = new FinanceOpenItemSourceReference(
+            Guid.NewGuid(), "foreign-company-v1", new string('b', 64));
+        var batch = new ApprovedFinanceOpenItemSourceBatch(
+            reference.BatchId, CompanyA, reference.BatchVersion, reference.BatchChecksum,
+            [new ApprovedFinanceOpenItemSourceRow(
+                Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "invoice-v1",
+                FinanceOpenItemSourceKinds.OfficialInvoiceInstallmentDocument,
+                owners.Party, owners.Account, Currency, "1250.50", OccurredOn)]);
+
+        await using (var scope = run.OpenItemSourceService(CompanyB, owners, batch))
+        {
+            var refused = await scope.Service.AdmitAsync(
+                scope.Context, Key("open-item-source-foreign-company"), reference, CancellationToken.None);
+            Assert.Equal(CommandOutcome.ValidationFailed, refused.Outcome);
+            Assert.Equal(
+                "finance_open_item_source_metadata_mismatch",
+                Assert.Single(refused.Issues).Code);
+        }
+
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.OpenItems"));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.OpenItemSourceBatches"));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.open-item-source.admitted.v1'"));
+    }
+
+    [SqlServerFact]
+    public async Task Same_admission_key_with_another_batch_is_an_idempotency_conflict_without_second_effect()
+    {
+        await using var run = await Run.StartAsync();
+        var owners = Owners.For(CompanyA);
+        var firstReference = new FinanceOpenItemSourceReference(
+            Guid.NewGuid(), "first-batch-v1", new string('c', 64));
+        var firstBatch = new ApprovedFinanceOpenItemSourceBatch(
+            firstReference.BatchId, CompanyA, firstReference.BatchVersion, firstReference.BatchChecksum,
+            [new ApprovedFinanceOpenItemSourceRow(
+                Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "invoice-v1",
+                FinanceOpenItemSourceKinds.OfficialInvoiceInstallmentDocument,
+                owners.Party, owners.Account, Currency, "1250.50", OccurredOn)]);
+        var key = Key("open-item-source-idempotency-conflict");
+        await using (var first = run.OpenItemSourceService(CompanyA, owners, firstBatch))
+        {
+            var admitted = await first.Service.AdmitAsync(
+                first.Context, key, firstReference, CancellationToken.None);
+            Assert.Equal(CommandOutcome.Succeeded, admitted.Outcome);
+        }
+
+        var secondReference = new FinanceOpenItemSourceReference(
+            Guid.NewGuid(), "second-batch-v1", new string('d', 64));
+        var secondBatch = new ApprovedFinanceOpenItemSourceBatch(
+            secondReference.BatchId, CompanyA, secondReference.BatchVersion, secondReference.BatchChecksum,
+            [new ApprovedFinanceOpenItemSourceRow(
+                Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "invoice-v2",
+                FinanceOpenItemSourceKinds.OfficialInvoiceInstallmentDocument,
+                owners.Party, owners.Account, Currency, "500.00", OccurredOn)]);
+        await using (var second = run.OpenItemSourceService(CompanyA, owners, secondBatch))
+        {
+            var refused = await second.Service.AdmitAsync(
+                second.Context, key, secondReference, CancellationToken.None);
+            Assert.Equal(CommandOutcome.IdempotencyConflict, refused.Outcome);
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OpenItems"));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OpenItemSourceBatches"));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.open-item-source.admitted.v1'"));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.MoneyEvents"));
+    }
+
+    [SqlServerFact]
+    public async Task Unavailable_approved_file_adapter_refuses_without_open_item_batch_or_audit()
+    {
+        await using var run = await Run.StartAsync();
+        var owners = Owners.For(CompanyA);
+        var reference = new FinanceOpenItemSourceReference(
+            Guid.NewGuid(), "unavailable-file-v1", new string('e', 64));
+        var placeholderBatch = new ApprovedFinanceOpenItemSourceBatch(
+            reference.BatchId, CompanyA, reference.BatchVersion, reference.BatchChecksum,
+            [new ApprovedFinanceOpenItemSourceRow(
+                Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "invoice-v1",
+                FinanceOpenItemSourceKinds.OfficialInvoiceInstallmentDocument,
+                owners.Party, owners.Account, Currency, "1250.50", OccurredOn)]);
+
+        await using (var scope = run.OpenItemSourceService(
+            CompanyA, owners, placeholderBatch, sourcePort: new UnavailableApprovedOpenItemSource()))
+        {
+            var refused = await scope.Service.AdmitAsync(
+                scope.Context, Key("open-item-source-unavailable-file"), reference, CancellationToken.None);
+            Assert.Equal(CommandOutcome.Unavailable, refused.Outcome);
+            Assert.Equal(
+                "finance_open_item_source_unavailable",
+                Assert.Single(refused.Issues).Code);
+        }
+
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OpenItems"));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OpenItemSourceBatches"));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.open-item-source.admitted.v1'"));
+    }
+
+    [SqlServerFact]
+    public async Task Approved_batch_version_or_checksum_drift_is_refused_without_writes()
+    {
+        await using var run = await Run.StartAsync();
+        var owners = Owners.For(CompanyA);
+        var requested = new FinanceOpenItemSourceReference(
+            Guid.NewGuid(), "requested-v1", new string('a', 64));
+        var driftedBatch = new ApprovedFinanceOpenItemSourceBatch(
+            requested.BatchId, CompanyA, "adapter-v2", new string('b', 64),
+            [new ApprovedFinanceOpenItemSourceRow(
+                Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "invoice-v1",
+                FinanceOpenItemSourceKinds.OfficialInvoiceInstallmentDocument,
+                owners.Party, owners.Account, Currency, "1250.50", OccurredOn)]);
+
+        await using (var scope = run.OpenItemSourceService(CompanyA, owners, driftedBatch))
+        {
+            var refused = await scope.Service.AdmitAsync(
+                scope.Context, Key("open-item-source-metadata-drift"), requested, CancellationToken.None);
+            Assert.Equal(CommandOutcome.ValidationFailed, refused.Outcome);
+            Assert.Equal(
+                "finance_open_item_source_metadata_mismatch",
+                Assert.Single(refused.Issues).Code);
+        }
+
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OpenItems"));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OpenItemSourceBatches"));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.open-item-source.admitted.v1'"));
+    }
+
     private static CommandMetadata Key(string key) => new CommandMetadata(key);
 
     private static DraftSaveRequest Save(Owners owners, string amount, Guid? draftId = null, string? expectedVersion = null,
@@ -615,6 +1012,8 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
     }
 
     private sealed record SavedDraft(Guid Id, string Version);
+
+    private sealed record SavedOpenItem(Guid Id, string Version);
 
     private sealed class Run : IAsyncDisposable
     {
@@ -717,6 +1116,79 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
                 new FinanceContext(company, actor, correlation ?? $"fin-t06-{Guid.NewGuid():N}", null));
         }
 
+        public AllocationServiceScope AllocationService(Guid company, string actor, IFinancePermissionPort permissions)
+        {
+            var companyContext = new CompanyContext();
+            companyContext.Set(company);
+            var currentUser = new FixedCurrentUser(actor, company);
+            var collector = new AuditEventCollector();
+            var dbContext = new FinanceDbContext(new DbContextOptionsBuilder<FinanceDbContext>()
+                .UseSqlServer(Factory.DatabaseConnectionString,
+                    sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", FinanceDbContext.Schema))
+                .AddInterceptors(new AuditSaveChangesInterceptor(collector, companyContext))
+                .Options, companyContext);
+            var service = new FinanceAllocationService(
+                dbContext, companyContext, currentUser, permissions, collector,
+                new FinanceAuditEnvelope(FinanceAllocationService.CreateCommandName, ["SENTETIK-FINANCE"], "Web"),
+                TimeProvider.System);
+            return new AllocationServiceScope(dbContext, service,
+                new FinanceContext(company, actor, $"fin-f03-{Guid.NewGuid():N}", null));
+        }
+
+        public OpenItemSourceServiceScope OpenItemSourceService(
+            Guid company,
+            Owners owners,
+            ApprovedFinanceOpenItemSourceBatch batch,
+            IFinanceOpenItemSourceAuthority? authority = null,
+            IFinancePartyAccountPort? parties = null,
+            IApprovedFinanceOpenItemSourcePort? sourcePort = null)
+        {
+            var companyContext = new CompanyContext();
+            companyContext.Set(company);
+            var currentUser = new FixedCurrentUser(Actor, company);
+            var collector = new AuditEventCollector();
+            var dbContext = new FinanceDbContext(new DbContextOptionsBuilder<FinanceDbContext>()
+                .UseSqlServer(Factory.DatabaseConnectionString,
+                    sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", FinanceDbContext.Schema))
+                .AddInterceptors(new AuditSaveChangesInterceptor(collector, companyContext))
+                .Options, companyContext);
+            var service = new FinanceOpenItemSourceAdmissionService(
+                dbContext, companyContext, currentUser,
+                authority ?? new SyntheticOpenItemSourceAuthority(),
+                sourcePort ?? new FixedApprovedOpenItemSource(batch),
+                parties ?? new ActiveSyntheticParty(owners),
+                collector,
+                new FinanceAuditEnvelope(
+                    "synthetic.finance.open-item-source.admit", ["SYNTHETIC-FINANCE"], "Test"),
+                TimeProvider.System);
+            return new OpenItemSourceServiceScope(
+                dbContext, service, new FinanceContext(company, Actor, $"f03-{Guid.NewGuid():N}", null));
+        }
+
+        public async Task<SavedOpenItem> SeedOpenItemAsync(
+            Guid company, Guid companyAccountId, Guid currencyId, string amount)
+        {
+            await using var dbContext = Context(company);
+            var batchId = Guid.NewGuid();
+            dbContext.OpenItemSourceBatches.Add(SyntheticSourceBatch(
+                company, batchId, "synthetic.receivable.v1"));
+            var row = new FinanceOpenItemRow
+            {
+                Id = Guid.NewGuid(), CompanyId = company, SourceKind = "synthetic.receivable.v1",
+                SourceId = Guid.NewGuid(), SourceLineId = Guid.NewGuid(), SourceVersion = "1",
+                SourceBatchId = batchId, SourceBatchVersion = "synthetic-v1",
+                SourceBatchChecksum = new string('f', 64), PartyId = Guid.NewGuid(),
+                CompanyAccountId = companyAccountId, CurrencyId = currencyId,
+                OriginalAmountText = amount, OutstandingAmountText = amount,
+                Status = FinanceOpenItemStatuses.Open, Version = 1,
+                CreatedBy = "synthetic-finance-open-item-fixture", CreatedAtUtc = DateTimeOffset.UtcNow,
+                UpdatedBy = "synthetic-finance-open-item-fixture", UpdatedAtUtc = DateTimeOffset.UtcNow,
+            };
+            dbContext.OpenItems.Add(row);
+            await dbContext.SaveChangesAsync();
+            return new SavedOpenItem(row.Id, row.Version.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+
         /// <summary>
         /// F-03 predecessor fixture: persists the owner row through FinanceDbContext so the reversal
         /// gate performs a real company-filtered SQL read. This is not an allocation command or a
@@ -740,13 +1212,20 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
                 companyContext);
             var id = Guid.NewGuid();
             var openItemId = Guid.NewGuid();
+            var batchId = Guid.NewGuid();
+            dbContext.OpenItemSourceBatches.Add(SyntheticSourceBatch(
+                company, batchId, "synthetic.receivable.v1"));
             dbContext.OpenItems.Add(new FinanceOpenItemRow
             {
                 Id = openItemId,
                 CompanyId = company,
                 SourceKind = "synthetic.receivable.v1",
                 SourceId = Guid.NewGuid(),
+                SourceLineId = Guid.NewGuid(),
                 SourceVersion = "1",
+                SourceBatchId = batchId,
+                SourceBatchVersion = "synthetic-v1",
+                SourceBatchChecksum = new string('f', 64),
                 PartyId = Guid.NewGuid(),
                 CompanyAccountId = companyAccountId,
                 CurrencyId = currencyId,
@@ -787,6 +1266,22 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
             await dbContext.SaveChangesAsync();
             return id;
         }
+
+        private static FinanceOpenItemSourceBatchRow SyntheticSourceBatch(
+            Guid company, Guid batchId, string sourceKind) => new()
+        {
+            Id = batchId,
+            CompanyId = company,
+            SourceKind = sourceKind,
+            SourceVersion = "synthetic-v1",
+            SourceChecksum = new string('f', 64),
+            IdempotencyKeyHash = Guid.NewGuid().ToString("N") + Guid.NewGuid().ToString("N"),
+            PayloadHash = Guid.NewGuid().ToString("N") + Guid.NewGuid().ToString("N"),
+            ActorId = "synthetic-finance-open-item-fixture",
+            ResultJson = "{}",
+            CorrelationId = "synthetic-finance-open-item-fixture",
+            AdmittedAtUtc = DateTimeOffset.UtcNow,
+        };
 
         /// <summary>The Accounting tables in the SAME database, so a period and a money event are one system.</summary>
         public async Task MigrateAccountingAsync()
@@ -908,6 +1403,106 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
         public ValueTask DisposeAsync() => dbContext.DisposeAsync();
     }
 
+    private sealed class AllocationServiceScope(
+        FinanceDbContext dbContext, FinanceAllocationService service, FinanceContext context) : IAsyncDisposable
+    {
+        public IFinanceAllocationService Service => service;
+        public FinanceContext Context => context;
+        public ValueTask DisposeAsync() => dbContext.DisposeAsync();
+    }
+
+    private sealed class OpenItemSourceServiceScope(
+        FinanceDbContext dbContext,
+        FinanceOpenItemSourceAdmissionService service,
+        FinanceContext context) : IAsyncDisposable
+    {
+        public IFinanceOpenItemSourceAdmissionService Service => service;
+        public FinanceContext Context => context;
+        public ValueTask DisposeAsync() => dbContext.DisposeAsync();
+    }
+
+    private sealed class SyntheticOpenItemSourceAuthority : IFinanceOpenItemSourceAuthority
+    {
+        public Task<PermissionDecision> CheckAsync(
+            FinanceContext context, Guid batchId, CancellationToken cancellationToken) =>
+            Task.FromResult(PermissionDecision.Allowed);
+    }
+
+    private sealed class RevokeOpenItemSourceAuthorityAfterFirstCheck : IFinanceOpenItemSourceAuthority
+    {
+        private int checkCount;
+
+        public Task<PermissionDecision> CheckAsync(
+            FinanceContext context, Guid batchId, CancellationToken cancellationToken) =>
+            Task.FromResult(Interlocked.Increment(ref checkCount) == 1
+                ? PermissionDecision.Allowed
+                : PermissionDecision.Denied);
+    }
+
+    private sealed class FinalOpenItemSourceAuthority(
+        int waitAtCheck,
+        Barrier barrier) : IFinanceOpenItemSourceAuthority
+    {
+        private int checkCount;
+
+        public Task<PermissionDecision> CheckAsync(
+            FinanceContext context, Guid batchId, CancellationToken cancellationToken)
+        {
+            if (Interlocked.Increment(ref checkCount) == waitAtCheck
+                && !barrier.SignalAndWait(TimeSpan.FromSeconds(30), cancellationToken))
+            {
+                throw new TimeoutException(
+                    "Concurrent open-item admissions did not reach the final save fence.");
+            }
+            return Task.FromResult(PermissionDecision.Allowed);
+        }
+    }
+
+    private sealed class FixedApprovedOpenItemSource(ApprovedFinanceOpenItemSourceBatch batch)
+        : IApprovedFinanceOpenItemSourcePort
+    {
+        public Task<ReadResult<ApprovedFinanceOpenItemSourceBatch>> GetApprovedAsync(
+            FinanceContext context,
+            FinanceOpenItemSourceReference source,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new ReadResult<ApprovedFinanceOpenItemSourceBatch>(ReadOutcome.Found, batch));
+    }
+
+    private sealed class UnavailableApprovedOpenItemSource : IApprovedFinanceOpenItemSourcePort
+    {
+        public Task<ReadResult<ApprovedFinanceOpenItemSourceBatch>> GetApprovedAsync(
+            FinanceContext context,
+            FinanceOpenItemSourceReference source,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new ReadResult<ApprovedFinanceOpenItemSourceBatch>(
+                ReadOutcome.Unavailable, null));
+    }
+
+    private sealed class ActiveSyntheticParty(Owners owners) : IFinancePartyAccountPort
+    {
+        public Task<ReadResult<PartyAccountEligibility>> GetAuthorizedAsync(
+            FinanceContext context,
+            Guid partyId,
+            Guid companyAccountId,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(partyId == owners.Party && companyAccountId == owners.Account
+                && context.CompanyId == owners.Company
+                ? new ReadResult<PartyAccountEligibility>(ReadOutcome.Found,
+                    new PartyAccountEligibility(
+                        owners.Party, owners.Account, owners.Company, true, IsPartyActive: true))
+                : new ReadResult<PartyAccountEligibility>(ReadOutcome.NotFound, null));
+    }
+
+    private sealed class MissingOpenItemParty : IFinancePartyAccountPort
+    {
+        public Task<ReadResult<PartyAccountEligibility>> GetAuthorizedAsync(
+            FinanceContext context,
+            Guid partyId,
+            Guid companyAccountId,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new ReadResult<PartyAccountEligibility>(ReadOutcome.NotFound, null));
+    }
+
     private sealed class FixedAllocationGate(ReversalAllocationAnswer answer) : IFinanceReversalAllocationGate
     {
         public Task<ReversalAllocationAnswer> CheckAsync(FinanceContext context, Guid originalSourceId,
@@ -942,6 +1537,23 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
             Interlocked.Increment(ref _checkCount) == 1
                 ? PermissionDecision.Allowed
                 : PermissionDecision.Denied);
+    }
+
+    private sealed class FinalWriteBarrierPermission(
+        FinanceAction action, int waitAtCheck, Barrier barrier) : IFinancePermissionPort
+    {
+        private int checkCount;
+        public Task<PermissionDecision> CheckAsync(
+            FinanceContext context, FinanceAction requestedAction, Guid? sourceId,
+            CancellationToken cancellationToken)
+        {
+            if (requestedAction == action && Interlocked.Increment(ref checkCount) == waitAtCheck
+                && !barrier.SignalAndWait(TimeSpan.FromSeconds(30), cancellationToken))
+            {
+                throw new TimeoutException("The concurrent Finance writers did not reach the final save fence.");
+            }
+            return Task.FromResult(PermissionDecision.Allowed);
+        }
     }
 
     /// <summary>SENTETIK: one usable bank account of the company in the test currency.</summary>

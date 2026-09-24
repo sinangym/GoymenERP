@@ -10,12 +10,43 @@ internal sealed record FinanceAllocationMutation(
     string OpenItemOutstanding,
     int OpenItemStatus);
 
+internal sealed record FinanceSourceReversalBarrier(
+    string OriginalAmount,
+    string UnallocatedAmount,
+    long Version);
+
 /// <summary>
 /// Pure F-03 invariants. It performs arbitrary-precision decimal arithmetic over canonical text;
 /// no CLR/database decimal range, floating point or rounding participates in an allocation.
 /// </summary>
 internal static class FinanceAllocationPolicy
 {
+    public static FinanceSourceReversalBarrier PrepareReversalBarrier(
+        ReceiptDraftRow source,
+        FinanceSourceAllocationStateRow? sourceState)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        if (source.Stage != ReceiptStages.Recorded
+            || !FinanceExactDecimalText.TryParsePositive(source.AmountText, out var sourceAmount))
+        {
+            throw Failure("sourceId", "finance_allocation_state_invalid");
+        }
+
+        if (sourceState is not null
+            && (sourceState.CompanyId != source.CompanyId || sourceState.SourceId != source.Id
+                || sourceState.CurrencyId != source.CurrencyId || sourceState.Version < 1
+                || !FinanceExactDecimalText.Equal(sourceState.OriginalAmountText, source.AmountText)
+                || !FinanceExactDecimalText.Equal(sourceState.UnallocatedAmountText, source.AmountText)))
+        {
+            throw Failure("sourceId", "finance_allocation_state_invalid");
+        }
+
+        return new FinanceSourceReversalBarrier(
+            source.AmountText,
+            sourceAmount.Subtract(sourceAmount).Text,
+            sourceState is null ? 1 : checked(sourceState.Version + 1));
+    }
+
     public static FinanceAllocationMutation Create(
         ReceiptDraftRow source,
         FinanceOpenItemRow openItem,

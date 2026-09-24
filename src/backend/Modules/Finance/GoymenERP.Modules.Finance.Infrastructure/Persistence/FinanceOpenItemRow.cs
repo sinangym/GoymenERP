@@ -12,8 +12,11 @@ internal sealed class FinanceOpenItemRow : IFinanceTenantRow
     public Guid CompanyId { get; set; }
     public string SourceKind { get; set; } = string.Empty;
     public Guid SourceId { get; set; }
-    public Guid? SourceLineId { get; set; }
+    public Guid SourceLineId { get; set; }
     public string SourceVersion { get; set; } = string.Empty;
+    public Guid SourceBatchId { get; set; }
+    public string SourceBatchVersion { get; set; } = string.Empty;
+    public string SourceBatchChecksum { get; set; } = string.Empty;
     public Guid PartyId { get; set; }
     public Guid CompanyAccountId { get; set; }
     public Guid CurrencyId { get; set; }

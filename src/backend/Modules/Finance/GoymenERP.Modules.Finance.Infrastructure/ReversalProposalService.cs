@@ -170,6 +170,18 @@ public sealed class ReversalProposalService(
                 Issue("occurredOn", period.Code ?? "finance_period_rule_unavailable"));
         }
 
+        var sourceAllocationState = await dbContext.SourceAllocationStates.SingleOrDefaultAsync(
+            row => row.SourceId == original.Id, cancellationToken);
+        FinanceSourceReversalBarrier allocationBarrier;
+        try
+        {
+            allocationBarrier = FinanceAllocationPolicy.PrepareReversalBarrier(original, sourceAllocationState);
+        }
+        catch (FinanceAllocationPolicyException exception)
+        {
+            return Refused(context, CommandOutcome.ValidationFailed, Issue(exception.Field, exception.Code));
+        }
+
         var before = ProposalAudit(proposal);
         var versionBefore = proposal.Version;
         ApprovedReversalRows rows;
@@ -181,6 +193,28 @@ public sealed class ReversalProposalService(
         catch (ReversalPolicyException exception)
         {
             return PolicyRefusal(context, exception);
+        }
+
+        if (sourceAllocationState is null)
+        {
+            dbContext.SourceAllocationStates.Add(new FinanceSourceAllocationStateRow
+            {
+                CompanyId = context.CompanyId,
+                SourceId = original.Id,
+                CurrencyId = original.CurrencyId,
+                OriginalAmountText = allocationBarrier.OriginalAmount,
+                UnallocatedAmountText = allocationBarrier.UnallocatedAmount,
+                Version = allocationBarrier.Version,
+                UpdatedBy = context.ActorId,
+                UpdatedAtUtc = now,
+            });
+        }
+        else
+        {
+            sourceAllocationState.UnallocatedAmountText = allocationBarrier.UnallocatedAmount;
+            sourceAllocationState.Version = allocationBarrier.Version;
+            sourceAllocationState.UpdatedBy = context.ActorId;
+            sourceAllocationState.UpdatedAtUtc = now;
         }
 
         dbContext.ReceiptDrafts.Add(rows.Source);

@@ -39,6 +39,7 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
     internal DbSet<MoneyEventRow> MoneyEvents => Set<MoneyEventRow>();
 
     internal DbSet<FinanceOpenItemRow> OpenItems => Set<FinanceOpenItemRow>();
+    internal DbSet<FinanceOpenItemSourceBatchRow> OpenItemSourceBatches => Set<FinanceOpenItemSourceBatchRow>();
 
     internal DbSet<FinanceSourceAllocationStateRow> SourceAllocationStates => Set<FinanceSourceAllocationStateRow>();
 
@@ -62,6 +63,7 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         ConfigureBankAccounts(modelBuilder);
         ConfigureCommands(modelBuilder);
         ConfigureMoneyEvents(modelBuilder);
+        ConfigureOpenItemSourceBatches(modelBuilder);
         ConfigureOpenItems(modelBuilder);
         ConfigureSourceAllocationStates(modelBuilder);
         ConfigureAllocations(modelBuilder);
@@ -280,6 +282,37 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    private void ConfigureOpenItemSourceBatches(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<FinanceOpenItemSourceBatchRow>();
+        entity.ToTable("OpenItemSourceBatches", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_OpenItemSourceBatches_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[CompanyId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_OpenItemSourceBatches_Text",
+                "LEN([SourceKind]) > 0 AND LEN([SourceVersion]) > 0 AND LEN([SourceChecksum]) = 64 AND "
+                + "LEN([IdempotencyKeyHash]) = 64 AND LEN([PayloadHash]) = 64 AND LEN([ActorId]) > 0 AND "
+                + "LEN([CorrelationId]) > 0 AND ISJSON([ResultJson]) = 1");
+        });
+        entity.HasKey(x => x.Id);
+        entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.SourceKind).HasMaxLength(128).IsUnicode(false).IsRequired();
+        entity.Property(x => x.SourceVersion).HasMaxLength(128).IsUnicode(false).IsRequired();
+        entity.Property(x => x.SourceChecksum).HasMaxLength(64).IsUnicode(false).IsFixedLength().IsRequired();
+        entity.Property(x => x.IdempotencyKeyHash).HasMaxLength(64).IsUnicode(false).IsFixedLength().IsRequired();
+        entity.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsFixedLength().IsRequired();
+        entity.Property(x => x.ActorId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        entity.Property(x => x.ResultJson).IsRequired();
+        entity.Property(x => x.CorrelationId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        entity.Property(x => x.CausationId).HasMaxLength(128).UseCollation(IdentityCollation);
+        entity.HasIndex(x => new { x.CompanyId, x.IdempotencyKeyHash }).IsUnique();
+        entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     private void ConfigureOpenItems(ModelBuilder modelBuilder)
     {
         var entity = modelBuilder.Entity<FinanceOpenItemRow>();
@@ -289,12 +322,14 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                 "[Id] <> '00000000-0000-0000-0000-000000000000' AND "
                 + "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND "
                 + "[SourceId] <> '00000000-0000-0000-0000-000000000000' AND "
-                + "([SourceLineId] IS NULL OR [SourceLineId] <> '00000000-0000-0000-0000-000000000000') AND "
+                + "[SourceLineId] <> '00000000-0000-0000-0000-000000000000' AND "
+                + "[SourceBatchId] <> '00000000-0000-0000-0000-000000000000' AND "
                 + "[PartyId] <> '00000000-0000-0000-0000-000000000000' AND "
                 + "[CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' AND "
                 + "[CurrencyId] <> '00000000-0000-0000-0000-000000000000'");
             table.HasCheckConstraint("CK_OpenItems_Text",
                 "LEN([SourceKind]) > 0 AND LEN([SourceVersion]) > 0 AND "
+                + "LEN([SourceBatchVersion]) > 0 AND LEN([SourceBatchChecksum]) = 64 AND "
                 + "LEN([OriginalAmountText]) > 0 AND LEN([OutstandingAmountText]) > 0 AND "
                 + "LEN([CreatedBy]) > 0 AND LEN([UpdatedBy]) > 0");
             table.HasCheckConstraint("CK_OpenItems_Status", "[Status] IN (1, 2)");
@@ -305,6 +340,8 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         entity.Property(x => x.Id).ValueGeneratedNever();
         entity.Property(x => x.SourceKind).HasMaxLength(128).IsUnicode(false).IsRequired();
         entity.Property(x => x.SourceVersion).HasMaxLength(128).IsUnicode(false).IsRequired();
+        entity.Property(x => x.SourceBatchVersion).HasMaxLength(128).IsUnicode(false).IsRequired();
+        entity.Property(x => x.SourceBatchChecksum).HasMaxLength(64).IsUnicode(false).IsFixedLength().IsRequired();
         entity.Property(x => x.OriginalAmountText).HasColumnType("varchar(max)").IsUnicode(false).IsRequired();
         entity.Property(x => x.OutstandingAmountText).HasColumnType("varchar(max)").IsUnicode(false).IsRequired();
         entity.Property(x => x.DueOn).HasColumnType("date");
@@ -314,6 +351,10 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         entity.HasIndex(x => new { x.CompanyId, x.SourceKind, x.SourceId, x.SourceLineId }).IsUnique();
         entity.HasIndex(x => new { x.CompanyId, x.CompanyAccountId, x.CurrencyId, x.Status, x.DueOn });
         entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<FinanceOpenItemSourceBatchRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.SourceBatchId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
             .OnDelete(DeleteBehavior.Restrict);
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }

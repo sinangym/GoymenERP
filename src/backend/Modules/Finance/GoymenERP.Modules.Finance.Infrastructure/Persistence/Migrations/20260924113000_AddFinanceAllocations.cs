@@ -18,6 +18,42 @@ public sealed class AddFinanceAllocations : Migration
     protected override void Up(MigrationBuilder migrationBuilder)
     {
         migrationBuilder.CreateTable(
+            name: "OpenItemSourceBatches", schema: "finance",
+            columns: table => new
+            {
+                Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                CompanyId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                SourceKind = table.Column<string>(type: "varchar(128)", unicode: false, maxLength: 128, nullable: false),
+                SourceVersion = table.Column<string>(type: "varchar(128)", unicode: false, maxLength: 128, nullable: false),
+                SourceChecksum = table.Column<string>(type: "char(64)", unicode: false, fixedLength: true, maxLength: 64, nullable: false),
+                IdempotencyKeyHash = table.Column<string>(type: "char(64)", unicode: false, fixedLength: true, maxLength: 64, nullable: false),
+                PayloadHash = table.Column<string>(type: "char(64)", unicode: false, fixedLength: true, maxLength: 64, nullable: false),
+                ActorId = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: false,
+                    collation: "Latin1_General_100_BIN2"),
+                ResultJson = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                CorrelationId = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: false,
+                    collation: "Latin1_General_100_BIN2"),
+                CausationId = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: true,
+                    collation: "Latin1_General_100_BIN2"),
+                AdmittedAtUtc = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false)
+            },
+            constraints: table =>
+            {
+                table.PrimaryKey("PK_OpenItemSourceBatches", x => x.Id);
+                table.UniqueConstraint("AK_OpenItemSourceBatches_CompanyId_Id", x => new { x.CompanyId, x.Id });
+                table.CheckConstraint("CK_OpenItemSourceBatches_Identity",
+                    "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000'");
+                table.CheckConstraint("CK_OpenItemSourceBatches_Text",
+                    "LEN([SourceKind]) > 0 AND LEN([SourceVersion]) > 0 AND LEN([SourceChecksum]) = 64 AND LEN([IdempotencyKeyHash]) = 64 AND LEN([PayloadHash]) = 64 AND LEN([ActorId]) > 0 AND LEN([CorrelationId]) > 0 AND ISJSON([ResultJson]) = 1");
+                table.ForeignKey("FK_OpenItemSourceBatches_Companies_CompanyId", x => x.CompanyId,
+                    principalSchema: "organization", principalTable: "Companies", principalColumn: "Id",
+                    onDelete: ReferentialAction.Restrict);
+            });
+        migrationBuilder.CreateIndex("UX_OpenItemSourceBatches_CompanyId_IdempotencyKeyHash",
+            "OpenItemSourceBatches", new[] { "CompanyId", "IdempotencyKeyHash" },
+            schema: "finance", unique: true);
+
+        migrationBuilder.CreateTable(
             name: "OpenItems", schema: "finance",
             columns: table => new
             {
@@ -25,8 +61,11 @@ public sealed class AddFinanceAllocations : Migration
                 CompanyId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                 SourceKind = table.Column<string>(type: "varchar(128)", unicode: false, maxLength: 128, nullable: false),
                 SourceId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                SourceLineId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
+                SourceLineId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                 SourceVersion = table.Column<string>(type: "varchar(128)", unicode: false, maxLength: 128, nullable: false),
+                SourceBatchId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                SourceBatchVersion = table.Column<string>(type: "varchar(128)", unicode: false, maxLength: 128, nullable: false),
+                SourceBatchChecksum = table.Column<string>(type: "char(64)", unicode: false, fixedLength: true, maxLength: 64, nullable: false),
                 PartyId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                 CompanyAccountId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                 CurrencyId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
@@ -47,19 +86,23 @@ public sealed class AddFinanceAllocations : Migration
                 table.PrimaryKey("PK_OpenItems", x => x.Id);
                 table.UniqueConstraint("AK_OpenItems_CompanyId_Id", x => new { x.CompanyId, x.Id });
                 table.CheckConstraint("CK_OpenItems_Identity",
-                    "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [SourceId] <> '00000000-0000-0000-0000-000000000000' AND ([SourceLineId] IS NULL OR [SourceLineId] <> '00000000-0000-0000-0000-000000000000') AND [PartyId] <> '00000000-0000-0000-0000-000000000000' AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000'");
+                    "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [SourceId] <> '00000000-0000-0000-0000-000000000000' AND [SourceLineId] <> '00000000-0000-0000-0000-000000000000' AND [SourceBatchId] <> '00000000-0000-0000-0000-000000000000' AND [PartyId] <> '00000000-0000-0000-0000-000000000000' AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000'");
                 table.CheckConstraint("CK_OpenItems_Text",
-                    "LEN([SourceKind]) > 0 AND LEN([SourceVersion]) > 0 AND LEN([OriginalAmountText]) > 0 AND LEN([OutstandingAmountText]) > 0 AND LEN([CreatedBy]) > 0 AND LEN([UpdatedBy]) > 0");
+                    "LEN([SourceKind]) > 0 AND LEN([SourceVersion]) > 0 AND LEN([SourceBatchVersion]) > 0 AND LEN([SourceBatchChecksum]) = 64 AND LEN([OriginalAmountText]) > 0 AND LEN([OutstandingAmountText]) > 0 AND LEN([CreatedBy]) > 0 AND LEN([UpdatedBy]) > 0");
                 table.CheckConstraint("CK_OpenItems_Status", "[Status] IN (1, 2)");
                 table.CheckConstraint("CK_OpenItems_Version", "[Version] >= 1");
                 table.ForeignKey("FK_OpenItems_Companies_CompanyId", x => x.CompanyId,
                     principalSchema: "organization", principalTable: "Companies", principalColumn: "Id",
                     onDelete: ReferentialAction.Restrict);
+                table.ForeignKey("FK_OpenItems_OpenItemSourceBatches_CompanyId_SourceBatchId",
+                    x => new { x.CompanyId, x.SourceBatchId }, principalSchema: "finance",
+                    principalTable: "OpenItemSourceBatches", principalColumns: new[] { "CompanyId", "Id" },
+                    onDelete: ReferentialAction.Restrict);
             });
 
         migrationBuilder.CreateIndex("UX_OpenItems_CompanyId_Source", "OpenItems",
             new[] { "CompanyId", "SourceKind", "SourceId", "SourceLineId" },
-            schema: "finance", unique: true, filter: "[SourceLineId] IS NOT NULL");
+            schema: "finance", unique: true);
         migrationBuilder.CreateIndex("IX_OpenItems_CompanyId_Account_Currency_Status_DueOn", "OpenItems",
             new[] { "CompanyId", "CompanyAccountId", "CurrencyId", "Status", "DueOn" }, schema: "finance");
 
@@ -169,7 +212,7 @@ public sealed class AddFinanceAllocations : Migration
     {
         migrationBuilder.Sql(
             "IF EXISTS (SELECT 1 FROM [finance].[Allocations]) OR EXISTS (SELECT 1 FROM [finance].[OpenItems]) "
-            + "OR EXISTS (SELECT 1 FROM [finance].[SourceAllocationStates]) "
+            + "OR EXISTS (SELECT 1 FROM [finance].[SourceAllocationStates]) OR EXISTS (SELECT 1 FROM [finance].[OpenItemSourceBatches]) "
             + "THROW 51052, 'Finance open items or allocations exist; use a forward fix.', 1;");
         migrationBuilder.DropForeignKey(
             name: "FK_Commands_Allocations_CompanyId_FinanceAllocationId", schema: "finance", table: "Commands");
@@ -187,5 +230,6 @@ public sealed class AddFinanceAllocations : Migration
         migrationBuilder.DropTable(name: "Allocations", schema: "finance");
         migrationBuilder.DropTable(name: "SourceAllocationStates", schema: "finance");
         migrationBuilder.DropTable(name: "OpenItems", schema: "finance");
+        migrationBuilder.DropTable(name: "OpenItemSourceBatches", schema: "finance");
     }
 }
