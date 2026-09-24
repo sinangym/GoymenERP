@@ -273,6 +273,13 @@ public sealed partial class OpenApiContractGenerationTests
             AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json", "400:application/problem+json", "415:", "503:application/problem+json"),
             "#/components/schemas/RecordManualBankPaymentRequest",
             ParameterValues: ["path:paymentId:true:type:string;format:uuid"]),
+        new("post", "/api/v1/finance/allocations", "CreateFinanceAllocationV1",
+            AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json", "400:application/problem+json", "415:", "503:application/problem+json"),
+            "#/components/schemas/CreateFinanceAllocationRequest"),
+        new("post", "/api/v1/finance/allocations/{allocationId}/release", "ReleaseFinanceAllocationV1",
+            AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json", "400:application/problem+json", "415:", "503:application/problem+json"),
+            "#/components/schemas/ReleaseFinanceAllocationRequest",
+            ParameterValues: ["path:allocationId:true:type:string;format:uuid"]),
         new("post", "/api/v1/finance/manual-receipts/{sourceId}/record", "RecordFinanceManualReceiptV1",
             AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json", "400:application/problem+json", "415:", "503:application/problem+json"),
             "#/components/schemas/RecordRequest", ["path:sourceId:true:type:string;format:uuid"]),
@@ -509,6 +516,8 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetFinanceManualBankPaymentV1"] = "ref:ManualBankPaymentView",
             ["ApproveFinanceManualBankPaymentV1"] = "ref:ManualBankPaymentCommandResult",
             ["RecordFinanceManualBankPaymentV1"] = "ref:ManualBankPaymentCommandResult",
+            ["CreateFinanceAllocationV1"] = "ref:FinanceAllocationCommandResult",
+            ["ReleaseFinanceAllocationV1"] = "ref:FinanceAllocationCommandResult",
             ["ProposeFinanceManualReceiptReversalV1"] = "ref:ReversalProposalCommandResult",
             ["ApproveFinanceManualReceiptReversalV1"] = "ref:ReversalProposalCommandResult",
             ["RejectFinanceManualReceiptReversalV1"] = "ref:ReversalProposalCommandResult",
@@ -595,6 +604,8 @@ public sealed partial class OpenApiContractGenerationTests
         "GetFinanceManualBankPaymentV1",
         "ApproveFinanceManualBankPaymentV1",
         "RecordFinanceManualBankPaymentV1",
+        "CreateFinanceAllocationV1",
+        "ReleaseFinanceAllocationV1",
         "GetSalesAccountReferencesV1",
         "GetSalesCurrencyReferenceV1",
         "GetSalesProductReferenceV1",
@@ -692,6 +703,8 @@ public sealed partial class OpenApiContractGenerationTests
         "SaveFinanceManualBankPaymentDraftV1",
         "ApproveFinanceManualBankPaymentV1",
         "RecordFinanceManualBankPaymentV1",
+        "CreateFinanceAllocationV1",
+        "ReleaseFinanceAllocationV1",
         "ProposeFinanceManualReceiptReversalV1",
         "ApproveFinanceManualReceiptReversalV1",
         "RejectFinanceManualReceiptReversalV1",
@@ -774,6 +787,14 @@ public sealed partial class OpenApiContractGenerationTests
                 [
                     StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity,
                 ],
+                ["CreateFinanceAllocationV1"] =
+                [
+                    StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity,
+                ],
+                ["ReleaseFinanceAllocationV1"] =
+                [
+                    StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity,
+                ],
                 ["ProposeFinanceManualReceiptReversalV1"] =
                 [
                     StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity,
@@ -842,6 +863,8 @@ public sealed partial class OpenApiContractGenerationTests
         "GetFinanceManualBankPaymentsV1",
         "ApproveFinanceManualBankPaymentV1",
         "RecordFinanceManualBankPaymentV1",
+        "CreateFinanceAllocationV1",
+        "ReleaseFinanceAllocationV1",
         "ProposeFinanceManualReceiptReversalV1",
         "ApproveFinanceManualReceiptReversalV1",
         "RejectFinanceManualReceiptReversalV1",
@@ -954,6 +977,8 @@ public sealed partial class OpenApiContractGenerationTests
         "GetFinanceManualBankPaymentsV1:400",
         "ApproveFinanceManualBankPaymentV1:400",
         "RecordFinanceManualBankPaymentV1:400",
+        "CreateFinanceAllocationV1:400",
+        "ReleaseFinanceAllocationV1:400",
         "ProposeFinanceBankAccountV1:400",
         "ApproveFinanceBankAccountV1:400",
         "ProposeFinanceBankAccountIbanChangeV1:400",
@@ -1624,6 +1649,30 @@ public sealed partial class OpenApiContractGenerationTests
                     ("isReplay", "type:boolean"),
                     ("originalCorrelationId", "type:string"),
                     ("issues", "type:array;items:ref:ValidationIssue")),
+                ["FinanceAllocationCommandResult"] = ObjectSchema(
+                    ["outcome", "resource", "isReplay", "originalCorrelationId", "issues"],
+                    ("outcome", "ref:CommandOutcome"),
+                    ("resource", "oneOf:ref:FinanceAllocationView|type:null"),
+                    ("isReplay", "type:boolean"),
+                    ("originalCorrelationId", "type:string"),
+                    ("issues", "type:array;items:ref:ValidationIssue")),
+                ["FinanceAllocationStatus"] = ScalarSchema("enum:Active|Released"),
+                ["FinanceAllocationView"] = ObjectSchema(
+                    ["id", "companyId", "sourceId", "openItemId", "currencyId", "amount", "status", "version", "reason", "createdBy", "createdAtUtc", "releasedBy", "releasedAtUtc", "releaseReason"],
+                    ("id", "type:string;format:uuid"),
+                    ("companyId", "type:string;format:uuid"),
+                    ("sourceId", "type:string;format:uuid"),
+                    ("openItemId", "type:string;format:uuid"),
+                    ("currencyId", "type:string;format:uuid"),
+                    ("amount", "type:string"),
+                    ("status", "ref:FinanceAllocationStatus"),
+                    ("version", "type:string"),
+                    ("reason", "type:string"),
+                    ("createdBy", "type:string"),
+                    ("createdAtUtc", "type:string;format:date-time"),
+                    ("releasedBy", "type:null|string"),
+                    ("releasedAtUtc", "type:null|string;format:date-time"),
+                    ("releaseReason", "type:null|string")),
                 ["ManualBankPaymentLinkedDocument"] = ObjectSchema(
                     ["documentId", "version"],
                     ("documentId", "type:string;format:uuid"),
@@ -2400,6 +2449,21 @@ public sealed partial class OpenApiContractGenerationTests
                     ("paymentId", "type:string;format:uuid"),
                     ("expectedVersion", "type:string"),
                     ("bankResultConfirmed", "type:boolean")),
+                ["CreateFinanceAllocationRequest"] = ObjectSchema(
+                    ["allocationId", "sourceId", "expectedSourceVersion", "openItemId", "expectedOpenItemVersion", "amount", "reason"],
+                    ("allocationId", "type:string;format:uuid"),
+                    ("sourceId", "type:string;format:uuid"),
+                    ("expectedSourceVersion", "type:string"),
+                    ("openItemId", "type:string;format:uuid"),
+                    ("expectedOpenItemVersion", "type:string"),
+                    ("amount", "type:string"),
+                    ("reason", "type:string")),
+                ["ReleaseFinanceAllocationRequest"] = ObjectSchema(
+                    ["allocationId", "expectedAllocationVersion", "expectedOpenItemVersion", "reason"],
+                    ("allocationId", "type:string;format:uuid"),
+                    ("expectedAllocationVersion", "type:string"),
+                    ("expectedOpenItemVersion", "type:string"),
+                    ("reason", "type:string")),
                 ["DraftSaveRequest"] = ObjectSchema(
                     ["draftId", "expectedVersion", "preparation"],
                     ("draftId", "type:null|string;format:uuid"),
@@ -3069,9 +3133,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(112, operations.Count);
+        Assert.Equal(114, operations.Count);
         Assert.Equal(
-            112,
+            114,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());

@@ -141,7 +141,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // finance
             ["tools/relational_inventory/finance.txt"] =
-                "f40a376505b7ad2126ae716d2ffd9e312ed4e7c246c0ce506cae3f871883acdf",
+                "b18c13d9b748c59722987ab1cd62d3d68381c77495f46ba09b7266e6885e411d",
 
             // identity
             ["tools/relational_inventory/identity.txt"] =
@@ -231,7 +231,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
              + "Persistence/FinanceDbContext.cs"] =
-            "a4c6ef66ba30477dd403940596c76c32869f1b43585595d45ba759b77b01dd93",
+            "4bd806094224b2369c80a9a5cb62ce2d5c3085f307d2990cb2119e5fc9aae5bd",
             // ACC-3 (#298): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for ACC-V0a: the ADR-011 command log (Commands) is mapped here, company-scoped with the
@@ -269,6 +269,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string ReviewedPurchaseAcceptanceParticipantPath =
         "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
         + "Persistence/PurchaseAcceptanceParticipant.cs";
+    private const string ReviewedFinanceOpenItemSourceAdmissionServicePath =
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
+        + "FinanceOpenItemSourceAdmissionService.cs";
     private static readonly IReadOnlyDictionary<string, (string ContextTypeName, int ExpectedCount)>
         ReviewedRuntimeContextConstructions =
             new Dictionary<string, (string ContextTypeName, int ExpectedCount)>(StringComparer.Ordinal)
@@ -276,7 +279,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 [ReviewedInventoryDefiniteShipmentParticipantPath] = ("InventoryDbContext", 1),
                 [ReviewedInventoryGoodsReceiptParticipantPath] = ("InventoryDbContext", 1),
                 [ReviewedInventoryManufacturingRealizationParticipantPath] = ("InventoryDbContext", 1),
-                [ReviewedPurchaseAcceptanceParticipantPath] = ("PurchasingDbContext", 3)
+                [ReviewedPurchaseAcceptanceParticipantPath] = ("PurchasingDbContext", 3),
+                [ReviewedFinanceOpenItemSourceAdmissionServicePath] = ("FinanceDbContext", 1)
             };
     private const string ReviewedManualBankPaymentServicePath =
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
@@ -491,7 +495,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Finance.Infrastructure/"
                  + "FinanceModuleExtensions.cs"] =
                     new(
-                        "feeb2edad1d1298a1530503aae28a2438902f4c1aefbcc10c474e87486de9477",
+                        "dd3869e1245925031441e77b0f77c3a2897a119e9d8062a388cf8776ce08a41a",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -519,6 +523,27 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         {
                             ["Microsoft.Data.SqlClient"] = 1
                         }),
+                // F-03: allocation writes stay on the tenant-filtered FinanceDbContext. SqlClient is
+                // referenced only to classify 2601/2627 races after SaveChanges; there is no direct
+                // connection, command or raw SQL surface.
+                ["src/backend/Modules/Finance/"
+                 + "GoymenERP.Modules.Finance.Infrastructure/FinanceAllocationService.cs"] =
+                    new(
+                        "c4520eee191baaca06faadc0e30fe720384bdad9903636fe02dd111737bde4bf",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1
+                        }),
+                // F-03 source admission uses the tenant-filtered FinanceDbContext. SqlClient is
+                // referenced only to classify 2601/2627 races after SaveChanges; there is no direct
+                // connection, command, raw SQL or query-filter bypass surface.
+                [ReviewedFinanceOpenItemSourceAdmissionServicePath] =
+                    new(
+                        "6811c3396e99bf54f0a686c11b1f6436df8df46bf004eacdc4e29e421b7b5250",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1
+                        }),
                 // FS0 (#312): the bank-account master is the module's second writer; the SqlClient
                 // namespace only to recognise a unique-key violation (SqlException 2601/2627) after
                 // SaveChanges, as ReceiptDraftService does. No connection, command or raw SQL.
@@ -536,7 +561,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Finance/"
                  + "GoymenERP.Modules.Finance.Infrastructure/ReversalProposalService.cs"] =
                     new(
-                        "d0431aac31f3ca6bca820879e063302f5045a96feba36399b746c312fed405e0",
+                        "5c391ebb303e5e031e2c912b777a9b934446177e797e1e226fed7d74e4268f76",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -822,7 +847,14 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // R47: Down refuses before its first destructive operation while a manual payment,
                 // outgoing money fact or command target exists. Empty schemas can still roll back.
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20260923213000_AddManualBankPayments.cs"] =
-                    new("f4ed1a10a57688ae1b92376b222ad3c3e0bc73f4b43c3df5db4607e3a4152223",
+                    new("2ab197f7060b5bb166f8ab9dd5aef6b22fc870c42ea400d28073561faa1418b9",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // F-03: Down refuses before destructive rollback while an allocation, open item or
+                // source-allocation state exists. Empty schemas can still roll back; populated ones
+                // require an explicit forward fix.
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20260924113000_AddFinanceAllocations.cs"] =
+                    new("431c95117e3a0216d30a3341ffd72b58e6274be9b938ecd671f6a725d9f2cc67",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // MFG-6 slice 2: the Down's only raw SQL is Manufacturing's module refusal (51047) while any plan

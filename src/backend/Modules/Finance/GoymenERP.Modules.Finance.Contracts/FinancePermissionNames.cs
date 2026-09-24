@@ -33,4 +33,7 @@ public static class FinancePermissionNames
     public const string ManualBankPaymentDraftRead = "finance.manual-bank-payment.draft.read";
     public const string ManualBankPaymentApprove = "finance.manual-bank-payment.approve";
     public const string ManualBankPaymentRecord = "finance.manual-bank-payment.record";
+
+    // F-03 technical declaration only. Central registration and every real grant remain separate.
+    public const string AllocationWrite = "finance.allocation.write";
 }
