@@ -1,5 +1,13 @@
+using System.Net;
+using System.Net.Http.Json;
+using GoymenERP.Api.Endpoints;
+using GoymenERP.Api.Security;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Identity.Domain.Assignments;
+using GoymenERP.Modules.Identity.Domain.Roles;
+using GoymenERP.Modules.Identity.Domain.Users;
+using GoymenERP.Modules.Identity.Infrastructure.Persistence;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Domain.Allocations;
 using GoymenERP.Modules.Inventory.Domain.Lots;
@@ -8,15 +16,87 @@ using GoymenERP.Modules.Inventory.Domain.Stock;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 using GoymenERP.Modules.Settings.Application;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
+using GoymenERP.Modules.Sales.Application.Contracts;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace GoymenERP.Api.IntegrationTests;
 
 public sealed partial class InventorySqlServerRelationalAcceptanceTests
 {
+    [SqlServerFact]
+    public async Task Physical_allocation_HTTP_create_replay_and_release_use_one_company_scoped_SQL_lifecycle()
+    {
+        await using var run = await Run.StartAsync();
+        var source = await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-ALLOC-HTTP", 100m);
+        var orderId = Guid.NewGuid();
+        var lineId = Guid.NewGuid();
+        var allocationId = Guid.NewGuid();
+        var actor = await GrantAllocationAsync(run, TestUsers.CompanyA, CompanyA,
+            ErpPermissions.InventoryPhysicalAllocationWrite);
+        var ownerAnswer = new SalesOrderLineReferenceAnswerV1(
+            SalesOrderLineReferenceOutcomeV1.Approved,
+            new SalesOrderLineReferenceV1(CompanyA, orderId, lineId, 1, Guid.NewGuid(), Guid.NewGuid(),
+                source.ProductId, "7", Guid.NewGuid(), "10", 0, 4),
+            null);
+
+        await using var host = run.Factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+        {
+            services.RemoveAll<ISalesOrderLineReferencePortV1>();
+            services.AddSingleton<ISalesOrderLineReferencePortV1>(new FixedApprovedSalesLine(ownerAnswer));
+        }));
+
+        using (var denied = ClientFor(host, TestUsers.CompanyAViewer, CompanyA))
+        using (var request = AllocationPost(allocationId, orderId, lineId, source, "SYN-ALLOC-HTTP-denied"))
+        using (var response = await denied.SendAsync(request))
+        {
+            Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        }
+
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Allocations"));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Commands"));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Inventory.StockAllocation'"));
+
+        using var client = ClientFor(host, actor, CompanyA);
+        using var firstRequest = AllocationPost(allocationId, orderId, lineId, source, "SYN-ALLOC-HTTP-create");
+        using var first = await client.SendAsync(firstRequest);
+        Assert.Equal(HttpStatusCode.Created, first.StatusCode);
+        var created = (await first.Content.ReadFromJsonAsync<InventoryPhysicalAllocationViewV1>())!;
+        Assert.Equal((allocationId, CompanyA, source.ProductId, "7", "Active", "60"),
+            (created.AllocationId, created.CompanyId, created.ProductId, created.DemandProductVersion,
+                created.Status, created.RemainingKg));
+
+        using var replayRequest = AllocationPost(allocationId, orderId, lineId, source, "SYN-ALLOC-HTTP-create");
+        using var replay = await client.SendAsync(replayRequest);
+        Assert.Equal(HttpStatusCode.OK, replay.StatusCode);
+        Assert.Equal("true", Assert.Single(replay.Headers.GetValues("Idempotency-Replayed")));
+
+        using var releaseRequest = new HttpRequestMessage(HttpMethod.Post,
+            $"/api/v1/inventory/physical-allocations/{allocationId:D}/release")
+        {
+            Content = JsonContent.Create(new ReleasePhysicalAllocationV1("1", "SENTETIK release")),
+        };
+        releaseRequest.Headers.Add("Idempotency-Key", "SYN-ALLOC-HTTP-release");
+        using var releasedResponse = await client.SendAsync(releaseRequest);
+        Assert.Equal(HttpStatusCode.OK, releasedResponse.StatusCode);
+        var released = (await releasedResponse.Content.ReadFromJsonAsync<InventoryPhysicalAllocationViewV1>())!;
+        Assert.Equal(("2", "Released", "0"), (released.Version, released.Status, released.RemainingKg));
+
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Allocations WHERE Id = @id AND CompanyId = @company AND Status = 3 AND RemainingKg = 0",
+            ("@id", allocationId), ("@company", CompanyA)));
+        Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Commands"));
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Inventory.StockAllocation' AND EntityId = @id",
+            ("@id", allocationId.ToString("D"))));
+    }
+
     [SqlServerFact]
     public async Task Physical_sales_allocation_reduces_free_capacity_without_a_movement_and_release_restores_it()
     {
@@ -704,6 +784,84 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     private static CreatePhysicalSalesAllocationV1 AllocationRequest(PhysicalSource source, string quantityKg) => new(
         Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), source.ProductId, "7", source.LabelId,
         source.LabelVersion.ToString(), quantityKg, "Onaylı satış satırı için fiziksel kaynak.", null);
+
+    private static HttpClient ClientFor(
+        Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> host,
+        string developmentUser,
+        Guid companyId)
+    {
+        var client = host.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Development-User", developmentUser);
+        client.DefaultRequestHeaders.Add("X-Company-Id", companyId.ToString("D"));
+        client.DefaultRequestHeaders.Add("X-Correlation-Id", $"SYN-ALLOC-HTTP-{Guid.NewGuid():N}");
+        return client;
+    }
+
+    private static HttpRequestMessage AllocationPost(
+        Guid allocationId,
+        Guid orderId,
+        Guid lineId,
+        PhysicalSource source,
+        string idempotencyKey)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/inventory/physical-allocations")
+        {
+            Content = JsonContent.Create(new CreateInventoryPhysicalAllocationRequestV1(
+                allocationId, orderId, lineId, source.LabelId, source.LabelVersion.ToString(), "60",
+                "SENTETIK approved order allocation", null)),
+        };
+        request.Headers.Add("Idempotency-Key", idempotencyKey);
+        return request;
+    }
+
+    private static async Task<string> GrantAllocationAsync(
+        Run run,
+        string developmentUser,
+        Guid companyId,
+        params string[] permissions)
+    {
+        await using var scope = run.Factory.Services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
+        var link = await dbContext.ExternalIdentities.SingleOrDefaultAsync(
+            value => value.Issuer == BootstrapIdentityOptions.Issuer && value.Subject == developmentUser);
+        var actorId = link?.UserId ?? Guid.NewGuid();
+        if (link is null)
+        {
+            dbContext.Users.Add(new UserAccount(actorId, "Synthetic Inventory allocation actor", null));
+            dbContext.ExternalIdentities.Add(new ExternalIdentityLink(Guid.NewGuid(), actorId,
+                BootstrapIdentityOptions.Issuer, developmentUser));
+        }
+
+        var roleId = Guid.NewGuid();
+        var role = new RoleDefinition(roleId, $"INV-ALLOC-{roleId:N}",
+            "Synthetic Inventory allocation acceptance role", true);
+        foreach (var permission in permissions)
+        {
+            role.AddPermission(permission);
+        }
+
+        var assignment = new RoleAssignment(Guid.NewGuid(), actorId, roleId, companyId,
+            DateTimeOffset.UtcNow.AddMinutes(-1), null, approvedByUserId: null);
+        assignment.AddScope(AccessScopeType.Company, companyId);
+        dbContext.Roles.Add(role);
+        dbContext.RoleAssignments.Add(assignment);
+        await dbContext.SaveChangesAsync();
+        return developmentUser;
+    }
+
+    private sealed class FixedApprovedSalesLine(SalesOrderLineReferenceAnswerV1 answer)
+        : ISalesOrderLineReferencePortV1
+    {
+        public Task<SalesOrderLineReferenceAnswerV1> GetApprovedLineAsync(
+            Guid orderId,
+            Guid lineId,
+            CancellationToken cancellationToken = default) => Task.FromResult(answer);
+
+        public Task<SalesApprovedLinePageV1> ListApprovedLinesAsync(
+            int pageSize,
+            string? cursor,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
 
     private static async Task<decimal> FreeAfterAllocationsAsync(Run run, Guid labelId) =>
         await run.ScalarAsync<decimal>(

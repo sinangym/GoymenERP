@@ -61,7 +61,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // opinion about whether a change is semantic. Any edit to a pinned file, comment included, is re-pinned in
     // the same push.
     private const string ReviewedOpenApiStartupFingerprint =
-        "0e43fbde434c644b4da1f6fb95cf8507b2733f99997c403230c0dea86cf33982";
+        "16a2e32e5931eae1e0dfac6dabeea8be76c3489c2b81044c7c13ef56f9ce25f7";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedIdentityReconcilerPath =
@@ -149,7 +149,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // inventory
             ["tools/relational_inventory/inventory.txt"] =
-                "824a2e81fb274020c6cad01efa56a0846df14bd5f0234a9685fe5cd087268be1",
+                "ea30e7ab1f76242228eb35572c961b7197850a51dab719bbd806ab18b5eb3e4c",
 
             // logistics
             ["tools/relational_inventory/logistics.txt"] =
@@ -385,7 +385,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Inventory.Infrastructure/"
                  + "InventoryModuleExtensions.cs"] =
                     new(
-                        "c7138bf89440ce2f96b5bf4a08bd303f3481da30df9a914ee840f3e824f36f44",
+                        "34557625e62c2425f5a0bbce0b3399559d7d2fe3f0d800ab7253b974a3611fbd",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,

@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { matchPath, matchRoutes } from 'react-router'
-import { INVENTORY_OPENING_CAPABILITY, INVENTORY_OPENING_ROUTE } from '../inventory/capabilities'
+import {
+  INVENTORY_OPENING_CAPABILITY,
+  INVENTORY_OPENING_ROUTE,
+  INVENTORY_STOCK_POSITIONS_CAPABILITY,
+  INVENTORY_STOCK_POSITIONS_ROUTE,
+} from '../inventory/capabilities'
 import { inventoryRoutes } from '../inventory/inventoryRoutes'
 import { NAV_CAPABILITIES } from './AppShell'
 import { CAPABILITY, CAPABILITY_NAV_LABEL, CAPABILITY_ROUTE } from './capabilities'
@@ -11,7 +16,14 @@ describe('shell ↔ Inventory opening-stock contract', () => {
     expect(CAPABILITY_ROUTE[CAPABILITY.inventoryOpeningStockRecord]).toBe(INVENTORY_OPENING_ROUTE.home)
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.inventoryOpeningStockRecord]).toBe('Stok Açılışı')
     expect(NAV_CAPABILITIES.filter((item) => item === INVENTORY_OPENING_CAPABILITY)).toHaveLength(1)
-    expect(inventoryRoutes).toHaveLength(3)
+    expect(CAPABILITY.inventoryStockPositionsList).toBe(INVENTORY_STOCK_POSITIONS_CAPABILITY)
+    expect(CAPABILITY_ROUTE[CAPABILITY.inventoryStockPositionsList]).toBe(INVENTORY_STOCK_POSITIONS_ROUTE)
+    expect(CAPABILITY_NAV_LABEL[CAPABILITY.inventoryStockPositionsList]).toBe('Stok / Malzeme Pozisyonu')
+    expect(NAV_CAPABILITIES.filter((item) => item === INVENTORY_STOCK_POSITIONS_CAPABILITY)).toHaveLength(1)
+    expect(inventoryRoutes).toHaveLength(4)
+    expect(matchRoutes(inventoryRoutes, INVENTORY_STOCK_POSITIONS_ROUTE)?.at(-1)?.route.path).toBe(
+      INVENTORY_STOCK_POSITIONS_ROUTE.slice(1),
+    )
   })
 
   it('keeps static create before detail and never reads yeni as a count id', () => {

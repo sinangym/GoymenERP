@@ -12,6 +12,9 @@ public static class InventoryPermissionManifestV1
 {
     /// <summary>Record — and read back — an opening count. Company-wide.</summary>
     public const string OpeningStockRecord = "inventory.opening-stock.record";
+
+    /// <summary>Create and explicitly release a physical stock allocation. Company-wide.</summary>
+    public const string PhysicalAllocationWrite = "inventory.physical-allocation.write";
 }
 
 /// <summary>The opening count as the client sends it: one physical count sheet of one location.</summary>
