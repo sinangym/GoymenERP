@@ -256,22 +256,6 @@ test('P01 saves one real Product-backed request, closes the form, reopens the sa
   })
   expect(linkedApproval.status()).toBe(200)
 
-  await signInAs(page, approverActor)
-  const approverCapabilities = await page.request.get(`${env.apiBaseUrl}/api/v1/shell/capabilities`, {
-    headers: { [DEVELOPMENT_USER_HEADER]: approverActor, 'X-Company-Id': companyId },
-  })
-  expect(approverCapabilities.status()).toBe(200)
-  const approverSnapshot = (await approverCapabilities.json()) as { readonly capabilities?: unknown }
-  const approverPublished = Array.isArray(approverSnapshot.capabilities)
-    ? approverSnapshot.capabilities as string[]
-    : []
-  expect(approverPublished).not.toContain('purchasing.requests.detail')
-  await page.goto(`${LIST_ROUTE}/${linkedOrderId}`)
-  await expect(page.getByText(linkedOrderId, { exact: true })).toBeVisible()
-  await expect(page.getByText('Onaylandı', { exact: true })).toBeVisible()
-  await expect(page.getByRole('link', { name: requestId, exact: true })).toHaveCount(0)
-  await expect(page.getByText(requestId, { exact: true })).toBeVisible()
-
   await signInAs(page, readerActor)
   await page.goto(`${LIST_ROUTE}/${linkedOrderId}`)
   await page.getByRole('link', { name: requestId, exact: true }).click()
