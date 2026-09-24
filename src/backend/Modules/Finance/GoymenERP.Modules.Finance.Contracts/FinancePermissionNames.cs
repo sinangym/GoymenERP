@@ -25,4 +25,12 @@ public static class FinancePermissionNames
     public const string ReversePropose = "finance.manual-receipt.reverse.propose";
 
     public const string ReverseApprove = "finance.manual-receipt.reverse.approve";
+
+    // R47 / PLAN-48H-20260923-01: owner declarations only. They are deliberately not mapped from
+    // FinanceAction until the central permission catalog and authority tuple land together. A name
+    // here grants nothing and cannot make an endpoint available.
+    public const string ManualBankPaymentDraftSave = "finance.manual-bank-payment.draft.save";
+    public const string ManualBankPaymentDraftRead = "finance.manual-bank-payment.draft.read";
+    public const string ManualBankPaymentApprove = "finance.manual-bank-payment.approve";
+    public const string ManualBankPaymentRecord = "finance.manual-bank-payment.record";
 }

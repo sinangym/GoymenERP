@@ -1,0 +1,236 @@
+import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { isDateOnly } from './dateOnly'
+import { parseAmountInput } from './decimalText'
+import { decodeReadResult, type ProfileReference } from './contract'
+import { useFinancePort } from './financePort'
+import {
+  decodeManualBankPaymentCommandResult,
+  decodeManualBankPaymentPage,
+  decodeManualBankPaymentView,
+  type ManualBankPaymentDraftSaveRequest,
+  type ManualBankPaymentView,
+} from './manualBankPaymentContract'
+
+export interface ManualBankPaymentEntryContext {
+  readonly partyId: string
+  readonly companyAccountId: string
+  readonly treasuryAccountId: string
+  readonly currencyId: string
+  readonly profile: ProfileReference
+}
+
+interface CommonProps {
+  readonly companyId: string
+  onOpen(paymentId: string): void
+}
+
+function key(): string {
+  return globalThis.crypto.randomUUID()
+}
+
+function PaymentFacts({ payment }: { readonly payment: ManualBankPaymentView }) {
+  return (
+    <dl>
+      <dt>Durum</dt><dd>{payment.status}</dd>
+      <dt>Tutar</dt><dd>{payment.preparation.money.amount}</dd>
+      <dt>İşlem tarihi</dt><dd>{payment.preparation.occurredOn}</dd>
+      <dt>Banka referansı</dt><dd>{payment.preparation.bankReference ?? 'Yok'}</dd>
+      <dt>Hazırlayan</dt><dd>{payment.preparedBy}</dd>
+      <dt>Onaylayan</dt><dd>{payment.approvedBy ?? 'Bekliyor'}</dd>
+      <dt>Kesin kaydeden</dt><dd>{payment.recordedBy ?? 'Bekliyor'}</dd>
+    </dl>
+  )
+}
+
+export function ManualBankPaymentCreatePage({
+  companyId,
+  entry,
+  onOpen,
+}: CommonProps & { readonly entry: ManualBankPaymentEntryContext }) {
+  const port = useFinancePort()
+  const [amount, setAmount] = useState('')
+  const [occurredOn, setOccurredOn] = useState('')
+  const [valueOn, setValueOn] = useState('')
+  const [bankReference, setBankReference] = useState('')
+  const [description, setDescription] = useState('')
+  const [message, setMessage] = useState<string | null>(null)
+  const [saved, setSaved] = useState<ManualBankPaymentView | null>(null)
+  const [busy, setBusy] = useState(false)
+  const attemptKey = useRef(key())
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault()
+    if (port === null || busy) return
+    const parsed = parseAmountInput(amount)
+    if (!parsed.ok || !isDateOnly(occurredOn) || (valueOn !== '' && !isDateOnly(valueOn))) {
+      setMessage('Tutar ve tarih alanlarını kontrol edin.')
+      return
+    }
+    const request: ManualBankPaymentDraftSaveRequest = {
+      paymentId: null,
+      expectedVersion: null,
+      preparation: {
+        partyId: entry.partyId,
+        companyAccountId: entry.companyAccountId,
+        treasuryAccountId: entry.treasuryAccountId,
+        money: { amount: parsed.wire, currencyId: entry.currencyId },
+        profile: entry.profile,
+        occurredOn,
+        valueOn: valueOn === '' ? null : valueOn,
+        bankReference: bankReference.trim() === '' ? null : bankReference.trim(),
+        description: description.trim() === '' ? null : description.trim(),
+      },
+    }
+    setBusy(true)
+    const reply = await port.saveManualBankPaymentDraft({ companyId }, attemptKey.current, request)
+      .catch(() => ({ kind: 'no-reply' } as const))
+    setBusy(false)
+    if (reply.kind === 'no-reply') {
+      setMessage('Sonuç bilinmiyor. Aynı anahtarla tekrar doğrulanmalıdır.')
+      return
+    }
+    const decoded = decodeManualBankPaymentCommandResult(reply.body, companyId)
+    if (!decoded.ok || decoded.value.outcome !== 'Succeeded') {
+      setMessage(decoded.ok && decoded.value.outcome === 'Denied' ? 'Bu işlem için yetkiniz yok.' : 'Taslak kaydedilemedi.')
+      return
+    }
+    setSaved(decoded.value.resource)
+    setMessage('Giden ödeme taslağı kaydedildi.')
+  }
+
+  if (saved !== null) {
+    return (
+      <section>
+        <h1>Giden ödeme taslağı kaydedildi</h1>
+        <PaymentFacts payment={saved} />
+        <button type="button" onClick={() => onOpen(saved.id)}>Kaydı aç</button>
+      </section>
+    )
+  }
+
+  return (
+    <section>
+      <h1>Yeni giden banka ödemesi</h1>
+      <p>Para etkisi yalnız ayrı onay ve gerçekleşme doğrulamasından sonra oluşur.</p>
+      <form onSubmit={submit}>
+        <label>Tutar<input aria-label="Tutar" value={amount} onChange={(event) => setAmount(event.target.value)} /></label>
+        <label>İşlem tarihi<input aria-label="İşlem tarihi" value={occurredOn} onChange={(event) => setOccurredOn(event.target.value)} /></label>
+        <label>Valör<input aria-label="Valör" value={valueOn} onChange={(event) => setValueOn(event.target.value)} /></label>
+        <label>Banka referansı (opsiyonel)<input aria-label="Banka referansı (opsiyonel)" value={bankReference} onChange={(event) => setBankReference(event.target.value)} /></label>
+        <label>Açıklama<textarea aria-label="Açıklama" value={description} onChange={(event) => setDescription(event.target.value)} /></label>
+        <button type="submit" disabled={busy}>{busy ? 'Kaydediliyor' : 'Taslağı kaydet'}</button>
+      </form>
+      {message === null ? null : <p role="status">{message}</p>}
+    </section>
+  )
+}
+
+export function ManualBankPaymentListPage({ companyId, onOpen }: CommonProps) {
+  const port = useFinancePort()
+  const [items, setItems] = useState<readonly ManualBankPaymentView[] | null>(null)
+  const [message, setMessage] = useState('Yükleniyor')
+
+  useEffect(() => {
+    const controller = new AbortController()
+    if (port === null) {
+      setMessage('Hizmet kullanılamıyor.')
+      return () => controller.abort()
+    }
+    void port.listManualBankPayments({ companyId }, { cursor: null }, controller.signal).then((reply) => {
+      if (controller.signal.aborted || reply.kind === 'no-reply') return
+      const decoded = decodeReadResult(reply.body, (resource) => decodeManualBankPaymentPage(resource, companyId))
+      if (!decoded.ok || decoded.value.outcome !== 'Found') {
+        setMessage('Giden ödemeler okunamadı.')
+        return
+      }
+      setItems(decoded.value.resource.items)
+      setMessage(decoded.value.resource.items.length === 0 ? 'Kayıt yok.' : '')
+    })
+    return () => controller.abort()
+  }, [companyId, port])
+
+  return (
+    <section>
+      <h1>Giden banka ödemeleri</h1>
+      {items === null || items.length === 0 ? <p role="status">{message}</p> : (
+        <table><thead><tr><th>İşlem</th><th>Durum</th><th>Tutar</th><th /></tr></thead><tbody>
+          {items.map((payment) => <tr key={payment.id}>
+            <td>{payment.preparation.occurredOn}</td><td>{payment.status}</td>
+            <td>{payment.preparation.money.amount}</td>
+            <td><button type="button" onClick={() => onOpen(payment.id)}>Aç</button></td>
+          </tr>)}
+        </tbody></table>
+      )}
+    </section>
+  )
+}
+
+export function ManualBankPaymentDetailPage({
+  companyId,
+  actorId,
+  paymentId,
+  onOpen,
+}: CommonProps & { readonly actorId: string; readonly paymentId: string }) {
+  const port = useFinancePort()
+  const [payment, setPayment] = useState<ManualBankPaymentView | null>(null)
+  const [message, setMessage] = useState('Yükleniyor')
+  const [confirmed, setConfirmed] = useState(false)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    if (port === null) return () => controller.abort()
+    void port.manualBankPaymentDetail({ companyId }, paymentId, controller.signal).then((reply) => {
+      if (controller.signal.aborted || reply.kind === 'no-reply') return
+      const decoded = decodeReadResult(reply.body, (resource) => decodeManualBankPaymentView(resource, companyId))
+      if (!decoded.ok || decoded.value.outcome !== 'Found' || decoded.value.resource.id !== paymentId) {
+        setMessage('Giden ödeme okunamadı.')
+        return
+      }
+      setPayment(decoded.value.resource)
+      setMessage('')
+    })
+    return () => controller.abort()
+  }, [companyId, paymentId, port])
+
+  const settle = async (operation: 'approve' | 'record') => {
+    if (port === null || payment === null || busy) return
+    setBusy(true)
+    const reply = operation === 'approve'
+      ? await port.approveManualBankPayment({ companyId }, key(), { paymentId, expectedVersion: payment.version })
+      : await port.recordManualBankPayment({ companyId }, key(), {
+          paymentId,
+          expectedVersion: payment.version,
+          bankResultConfirmed: confirmed,
+        })
+    setBusy(false)
+    if (reply.kind === 'no-reply') {
+      setMessage('Sonuç bilinmiyor; yeni işlem göndermeden önce kayıt yeniden okunmalıdır.')
+      return
+    }
+    const decoded = decodeManualBankPaymentCommandResult(reply.body, companyId)
+    if (!decoded.ok || decoded.value.outcome !== 'Succeeded' || decoded.value.resource.id !== paymentId) {
+      setMessage('İşlem tamamlanamadı.')
+      return
+    }
+    setPayment(decoded.value.resource)
+    setMessage(operation === 'approve' ? 'Ödeme onaylandı.' : 'Giden ödeme kesin kaydedildi.')
+  }
+
+  if (payment === null) return <section><h1>Giden banka ödemesi</h1><p role="status">{message}</p></section>
+  return (
+    <section>
+      <h1>Giden banka ödemesi</h1>
+      <PaymentFacts payment={payment} />
+      {payment.status === 'Draft' && payment.preparedBy !== actorId
+        ? <button type="button" disabled={busy} onClick={() => void settle('approve')}>Onayla</button> : null}
+      {payment.status === 'Approved' ? <>
+        <label><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} />Banka sonucu gerçekleşti</label>
+        <button type="button" disabled={busy || !confirmed} onClick={() => void settle('record')}>Kesin kaydet</button>
+      </> : null}
+      {payment.status === 'Recorded'
+        ? <button type="button" onClick={() => onOpen(payment.id)}>Kesin kaydı yeniden aç</button> : null}
+      {message === '' ? null : <p role="status">{message}</p>}
+    </section>
+  )
+}

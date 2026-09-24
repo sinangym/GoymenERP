@@ -88,6 +88,8 @@ public enum FinanceAction
     ReadBankAccounts, ReadSources, ReadAmount, SaveDraft, Record, Reverse, ProposeReversal, ApproveReversal,
     ProposeBankAccount, ApproveBankAccount,
     ProposeBankAccountIbanChange, ApproveBankAccountIbanChange,
+    SaveManualBankPaymentDraft, ReadManualBankPayments,
+    ApproveManualBankPayment, RecordManualBankPayment,
 }
 public enum PermissionDecision { Unavailable, Denied, Allowed }
 

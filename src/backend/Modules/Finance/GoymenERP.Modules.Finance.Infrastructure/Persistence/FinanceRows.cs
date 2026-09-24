@@ -88,6 +88,60 @@ internal static class MoneyEventKinds
     public const int ManualBankReceiptReversed = 2;
 }
 
+/// <summary>R47 manual outgoing bank payment, from preparation through a separately confirmed record.</summary>
+internal sealed class ManualBankPaymentRow : IFinanceTenantRow
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public long Version { get; set; }
+    public Guid PartyId { get; set; }
+    public Guid CompanyAccountId { get; set; }
+    public Guid TreasuryAccountId { get; set; }
+    public Guid CurrencyId { get; set; }
+    public string AmountText { get; set; } = string.Empty;
+    public string ProfileId { get; set; } = string.Empty;
+    public string ProfileVersion { get; set; } = string.Empty;
+    public DateOnly OccurredOn { get; set; }
+    public DateOnly? ValueOn { get; set; }
+    public string? BankReference { get; set; }
+    public string? Description { get; set; }
+    public int Status { get; set; }
+    public string PreparedBy { get; set; } = string.Empty;
+    public DateTimeOffset PreparedAtUtc { get; set; }
+    public string? ApprovedBy { get; set; }
+    public DateTimeOffset? ApprovedAtUtc { get; set; }
+    public string? RecordedBy { get; set; }
+    public DateTimeOffset? RecordedAtUtc { get; set; }
+    public bool BankResultConfirmed { get; set; }
+}
+
+internal static class ManualBankPaymentStatuses
+{
+    public const int Draft = 0;
+    public const int Approved = 1;
+    public const int Recorded = 2;
+}
+
+/// <summary>Exactly one append-only outgoing money event for a recorded R47 payment.</summary>
+internal sealed class OutgoingMoneyEventRow : IFinanceTenantRow
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public Guid PaymentId { get; set; }
+    public Guid PartyId { get; set; }
+    public Guid CompanyAccountId { get; set; }
+    public Guid TreasuryAccountId { get; set; }
+    public Guid CurrencyId { get; set; }
+    public string AmountText { get; set; } = string.Empty;
+    public string ProfileId { get; set; } = string.Empty;
+    public string ProfileVersion { get; set; } = string.Empty;
+    public DateOnly OccurredOn { get; set; }
+    public DateOnly? ValueOn { get; set; }
+    public DateTimeOffset RecordedAtUtc { get; set; }
+    public string RecordedBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
 /// <summary>
 /// A Finance bank account (FS0, card #66 5731563923): exactly the fields of the reviewed
 /// <c>BankAccountView</c>. Proposed (1) is neither active nor usable; Approved (2) is both, and
@@ -159,6 +213,7 @@ internal sealed class FinanceCommandRow : IFinanceTenantRow
     public Guid? DraftId { get; set; }
     public Guid? BankAccountId { get; set; }
     public Guid? ReversalProposalId { get; set; }
+    public Guid? ManualBankPaymentId { get; set; }
     public string ResultJson { get; set; } = string.Empty;
     public string CorrelationId { get; set; } = string.Empty;
     public DateTimeOffset RecordedAtUtc { get; set; }

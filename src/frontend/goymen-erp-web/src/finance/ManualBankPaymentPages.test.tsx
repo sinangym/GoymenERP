@@ -1,0 +1,109 @@
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
+import { FinancePortProvider } from './financePort'
+import type { FinanceReceiptPort } from './port'
+import {
+  ManualBankPaymentCreatePage,
+  ManualBankPaymentDetailPage,
+  ManualBankPaymentListPage,
+} from './ManualBankPaymentPages'
+
+const COMPANY = '11111111-1111-4111-8111-111111111111'
+const PAYMENT = '22222222-2222-4222-8222-222222222222'
+const PARTY = '33333333-3333-4333-8333-333333333333'
+const ACCOUNT = '44444444-4444-4444-8444-444444444444'
+const BANK = '55555555-5555-4555-8555-555555555555'
+const CURRENCY = '66666666-6666-4666-8666-666666666666'
+const PROFILE = '77777777-7777-4777-8777-777777777777'
+
+function view(status: 'Draft' | 'Approved' | 'Recorded') {
+  return {
+    id: PAYMENT, companyId: COMPANY, status,
+    preparation: {
+      partyId: PARTY, companyAccountId: ACCOUNT, treasuryAccountId: BANK,
+      money: { amount: '1250.50', currencyId: CURRENCY }, profile: { profileId: PROFILE, version: '1' },
+      occurredOn: '2026-09-23', valueOn: null, bankReference: null, description: 'SENTETIK',
+    },
+    preparedBy: 'maker', preparedAtUtc: '2026-09-23T18:00:00Z',
+    approvedBy: status === 'Draft' ? null : 'checker', approvedAtUtc: status === 'Draft' ? null : '2026-09-23T18:10:00Z',
+    recordedBy: status === 'Recorded' ? 'checker' : null, recordedAtUtc: status === 'Recorded' ? '2026-09-23T18:20:00Z' : null,
+    bankResultConfirmed: status === 'Recorded', version: status === 'Draft' ? '1' : status === 'Approved' ? '2' : '3',
+  }
+}
+
+function success(resource: ReturnType<typeof view>) {
+  return { kind: 'body' as const, body: { outcome: 'Succeeded', resource, isReplay: false, originalCorrelationId: 'c', issues: [] } }
+}
+
+function provider(methods: Partial<FinanceReceiptPort>) {
+  return methods as FinanceReceiptPort
+}
+
+describe('manual bank payment pages', () => {
+  it('creates A-now draft without bank reference and opens the saved record', async () => {
+    const save = vi.fn(async () => success(view('Draft')))
+    const open = vi.fn()
+    render(<FinancePortProvider port={provider({ saveManualBankPaymentDraft: save })}>
+      <ManualBankPaymentCreatePage companyId={COMPANY} onOpen={open} entry={{
+        partyId: PARTY, companyAccountId: ACCOUNT, treasuryAccountId: BANK, currencyId: CURRENCY,
+        profile: { profileId: PROFILE, version: '1' },
+      }} />
+    </FinancePortProvider>)
+    fireEvent.change(screen.getByLabelText('Tutar'), { target: { value: '1250,50' } })
+    fireEvent.change(screen.getByLabelText('İşlem tarihi'), { target: { value: '2026-09-23' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Taslağı kaydet' }))
+
+    await screen.findByRole('heading', { name: 'Giden ödeme taslağı kaydedildi' })
+    expect(save).toHaveBeenCalledWith(
+      { companyId: COMPANY }, expect.any(String),
+      expect.objectContaining({ preparation: expect.objectContaining({ bankReference: null }) }),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Kaydı aç' }))
+    expect(open).toHaveBeenCalledWith(PAYMENT)
+  })
+
+  it('lists the company record and opens it', async () => {
+    const open = vi.fn()
+    const list = vi.fn(async () => ({ kind: 'body' as const, body: {
+      outcome: 'Found', resource: { companyId: COMPANY, items: [view('Draft')], nextCursor: null },
+    } }))
+    render(<FinancePortProvider port={provider({ listManualBankPayments: list })}>
+      <ManualBankPaymentListPage companyId={COMPANY} onOpen={open} />
+    </FinancePortProvider>)
+    await screen.findByText('1250.50')
+    fireEvent.click(screen.getByRole('button', { name: 'Aç' }))
+    expect(open).toHaveBeenCalledWith(PAYMENT)
+  })
+
+  it('requires explicit result confirmation and keeps the terminal reopen action', async () => {
+    const detail = vi.fn(async () => ({ kind: 'body' as const, body: { outcome: 'Found', resource: view('Approved') } }))
+    const record = vi.fn(async () => success(view('Recorded')))
+    const open = vi.fn()
+    render(<FinancePortProvider port={provider({ manualBankPaymentDetail: detail, recordManualBankPayment: record })}>
+      <ManualBankPaymentDetailPage companyId={COMPANY} actorId="checker" paymentId={PAYMENT} onOpen={open} />
+    </FinancePortProvider>)
+    const recordButton = await screen.findByRole('button', { name: 'Kesin kaydet' })
+    expect((recordButton as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(screen.getByLabelText('Banka sonucu gerçekleşti'))
+    fireEvent.click(recordButton)
+    await screen.findByText('Giden ödeme kesin kaydedildi.')
+    expect(record).toHaveBeenCalledWith({ companyId: COMPANY }, expect.any(String), {
+      paymentId: PAYMENT, expectedVersion: '2', bankResultConfirmed: true,
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Kesin kaydı yeniden aç' }))
+    expect(open).toHaveBeenCalledWith(PAYMENT)
+  })
+
+  it('shows approval only to a non-maker and carries the current version', async () => {
+    const detail = vi.fn(async () => ({ kind: 'body' as const, body: { outcome: 'Found', resource: view('Draft') } }))
+    const approve = vi.fn(async () => success(view('Approved')))
+    render(<FinancePortProvider port={provider({ manualBankPaymentDetail: detail, approveManualBankPayment: approve })}>
+      <ManualBankPaymentDetailPage companyId={COMPANY} actorId="checker" paymentId={PAYMENT} onOpen={() => undefined} />
+    </FinancePortProvider>)
+    fireEvent.click(await screen.findByRole('button', { name: 'Onayla' }))
+    await waitFor(() => expect(approve).toHaveBeenCalledWith(
+      { companyId: COMPANY }, expect.any(String), { paymentId: PAYMENT, expectedVersion: '1' },
+    ))
+    await screen.findByRole('button', { name: 'Kesin kaydet' })
+  })
+})

@@ -31,6 +31,11 @@ import type {
   ReverseRequest,
 } from './contract'
 import type { BankAccountApprovalBody, BankAccountProposeRequest } from './bankAccountContract'
+import type {
+  ApproveManualBankPaymentRequest,
+  ManualBankPaymentDraftSaveRequest,
+  RecordManualBankPaymentRequest,
+} from './manualBankPaymentContract'
 import { clearAttemptStore } from './receiptCommand'
 import { clearBankAttemptStore } from './bankAccountCommand'
 import { DRAFT_CONTEXT_EXAMPLE, EXAMPLE_BANK, EXAMPLE_COMPANY, EXAMPLE_CURRENCY, NEGATIVE_EXAMPLE, NORMAL_EXAMPLE } from './contractExamples'
@@ -67,6 +72,9 @@ type CommandName =
   | 'approveBankAccount'
   | 'proposeBankAccountIbanChange'
   | 'approveBankAccountIbanChange'
+  | 'saveManualBankPaymentDraft'
+  | 'approveManualBankPayment'
+  | 'recordManualBankPayment'
 type ReadName =
   | 'listBankAccounts'
   | 'listSources'
@@ -76,6 +84,8 @@ type ReadName =
   | 'bankAccountCurrencyCandidates'
   | 'pendingReversals'
   | 'reversalProposal'
+  | 'listManualBankPayments'
+  | 'manualBankPaymentDetail'
 
 export interface CommandCall {
   readonly method: CommandName
@@ -90,6 +100,9 @@ export interface CommandCall {
     | ApproveReversalRequest
     | RejectReversalRequest
     | BankAccountProposeRequest
+    | ManualBankPaymentDraftSaveRequest
+    | ApproveManualBankPaymentRequest
+    | RecordManualBankPaymentRequest
     | ApprovalCall
   resolve(reply: PortReply): Promise<void>
   reject(): Promise<void>
@@ -153,6 +166,11 @@ export function recordingPort(respond: ReadResponder) {
   }
 
   const port: FinanceReceiptPort = {
+    listManualBankPayments: read('listManualBankPayments') as FinanceReceiptPort['listManualBankPayments'],
+    manualBankPaymentDetail: read('manualBankPaymentDetail') as FinanceReceiptPort['manualBankPaymentDetail'],
+    saveManualBankPaymentDraft: command('saveManualBankPaymentDraft'),
+    approveManualBankPayment: command('approveManualBankPayment'),
+    recordManualBankPayment: command('recordManualBankPayment'),
     listBankAccounts: read('listBankAccounts') as FinanceReceiptPort['listBankAccounts'],
     listSources: read('listSources') as FinanceReceiptPort['listSources'],
     sourceDetail: read('sourceDetail') as FinanceReceiptPort['sourceDetail'],
