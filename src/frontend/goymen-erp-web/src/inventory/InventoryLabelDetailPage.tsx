@@ -43,7 +43,7 @@ function InventoryLabelDetailView({ namespace, labelId }: {
     return <main className={styles.page}><StateBlock state={state} subject="etiket" onRetry={() => void query.refetch()} /></main>
   }
 
-  const { identity, balances } = state.data
+  const { labelVersion, identity, balances } = state.data
   return <main className={styles.page}>
     <header className={styles.header}>
       <div><p className={styles.eyebrow}>ST-02</p><h1>{identity.code}</h1></div>
@@ -54,6 +54,7 @@ function InventoryLabelDetailView({ namespace, labelId }: {
       <h2 id="label-identity-heading">Etiket ve lot kimliği</h2>
       <dl className={styles.facts}>
         <div><dt>Etiket kimliği</dt><dd className={styles.mono}>{identity.labelId}</dd></div>
+        <div><dt>Etiket sürümü</dt><dd>{labelVersion}</dd></div>
         <div><dt>Ürün</dt><dd className={styles.mono}>{identity.productId}</dd></div>
         <div><dt>Lot</dt><dd className={styles.mono}>{identity.lotId}</dd></div>
         <div><dt>Döküm</dt><dd>{identity.heatNumber ?? identity.lot.heatNumber ?? '—'}</dd></div>

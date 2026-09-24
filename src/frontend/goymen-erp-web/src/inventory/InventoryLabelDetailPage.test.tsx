@@ -32,6 +32,7 @@ beforeEach(() => {
   api.detail.mockReset().mockResolvedValue({
     type: 'ok-single',
     data: {
+      labelVersion: '3',
       identity: {
         labelId: LABEL, companyId: COMPANY, code: 'LBL-100', productId: PRODUCT, lotId: LOT,
         heatNumber: null, coilNumber: 'COIL-9', documentStatus: 'Complete', requiredDocuments: ['MTC'],

@@ -50,6 +50,7 @@ export interface InventoryLabelBalances {
 }
 
 export interface InventoryLabelDetail {
+  readonly labelVersion: string
   readonly identity: InventoryLabelIdentity
   readonly balances: InventoryLabelBalances
 }
@@ -58,6 +59,8 @@ type JsonObject = Record<string, unknown>
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const NIL_GUID = '00000000-0000-0000-0000-000000000000'
 const DECIMAL = /^-?(0|[1-9]\d*)(\.\d*[1-9])?$/
+const VERSION = /^[1-9]\d*$/
+const MAX_INT64 = 9223372036854775807n
 
 function record(value: unknown): JsonObject | null {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -159,12 +162,29 @@ export function decodeInventoryLabelBalances(value: unknown): InventoryLabelBala
 }
 
 export function combineInventoryLabelDetail(
+  labelVersion: string,
   identity: InventoryLabelIdentity,
   balances: InventoryLabelBalances,
   expectedCompanyId: string,
   expectedLabelId: string,
 ): InventoryLabelDetail | null {
-  if (identity.companyId !== expectedCompanyId || identity.labelId !== expectedLabelId ||
+  if (!VERSION.test(labelVersion) || labelVersion.length > 19 || BigInt(labelVersion) > MAX_INT64 ||
+    identity.companyId !== expectedCompanyId || identity.labelId !== expectedLabelId ||
     balances.labelId !== expectedLabelId || balances.positions.some((item) => item.productId !== identity.productId)) return null
-  return { identity, balances }
+  return { labelVersion, identity, balances }
+}
+
+export function decodeInventoryLabelDetail(
+  value: unknown,
+  expectedCompanyId: string,
+  expectedLabelId: string,
+): InventoryLabelDetail | null {
+  const source = record(value)
+  if (source === null || !exact(source, ['labelVersion', 'identity', 'balances']) ||
+    typeof source.labelVersion !== 'string') return null
+  const identity = decodeInventoryLabelIdentity(source.identity)
+  const balances = decodeInventoryLabelBalances(source.balances)
+  return identity === null || balances === null
+    ? null
+    : combineInventoryLabelDetail(source.labelVersion, identity, balances, expectedCompanyId, expectedLabelId)
 }

@@ -26,16 +26,14 @@ describe('fetchInventoryLabelDetail', () => {
 
   it('reads both existing endpoints with one company fence and returns their bound result', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(new Response(JSON.stringify(identity), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify(balances), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ labelVersion: '3', identity, balances }), { status: 200 }))
 
     const result = await fetchInventoryLabelDetail(COMPANY, LABEL)
 
     expect(result).toMatchObject({ type: 'ok-single', data: { identity: { code: 'LBL-100' }, balances: { physicalKg: '10' } } })
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
-      `/api/v1/inventory/labels/${LABEL}`,
-      `/api/v1/inventory/labels/${LABEL}/balances`,
+      `/api/v1/inventory/labels/${LABEL}/detail`,
     ])
     for (const [, init] of fetchMock.mock.calls) {
       expect(init).toMatchObject({ cache: 'no-store', headers: { 'X-Company-Id': COMPANY } })
@@ -44,15 +42,15 @@ describe('fetchInventoryLabelDetail', () => {
 
   it('does not render a valid-looking response from another company', async () => {
     vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(new Response(JSON.stringify({ ...identity, companyId: PARTY }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify(balances), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        labelVersion: '3', identity: { ...identity, companyId: PARTY }, balances,
+      }), { status: 200 }))
     await expect(fetchInventoryLabelDetail(COMPANY, LABEL)).resolves.toEqual({ type: 'malformed' })
   })
 
   it('preserves authorization and not-found HTTP outcomes without decoding their bodies as data', async () => {
     vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(new Response(JSON.stringify({ status: 404 }), { status: 404 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ status: 403 }), { status: 403 }))
     await expect(fetchInventoryLabelDetail(COMPANY, LABEL)).resolves.toEqual({
       type: 'http', status: 404, body: { status: 404 },
     })

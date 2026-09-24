@@ -40,8 +40,8 @@ describe('Inventory label detail contract', () => {
     const decodedBalances = decodeInventoryLabelBalances(balances())
     expect(decodedIdentity).not.toBeNull()
     expect(decodedBalances).not.toBeNull()
-    expect(combineInventoryLabelDetail(decodedIdentity!, decodedBalances!, COMPANY, LABEL)).toEqual({
-      identity: decodedIdentity, balances: decodedBalances,
+    expect(combineInventoryLabelDetail('3', decodedIdentity!, decodedBalances!, COMPANY, LABEL)).toEqual({
+      labelVersion: '3', identity: decodedIdentity, balances: decodedBalances,
     })
   })
 
@@ -50,11 +50,12 @@ describe('Inventory label detail contract', () => {
     expect(decodeInventoryLabelIdentity({ ...identity(), lot: { ...identity().lot, id: OWNER } })).toBeNull()
     const decodedIdentity = decodeInventoryLabelIdentity(identity())!
     const decodedBalances = decodeInventoryLabelBalances(balances())!
-    expect(combineInventoryLabelDetail(decodedIdentity, decodedBalances, OWNER, LABEL)).toBeNull()
-    expect(combineInventoryLabelDetail(decodedIdentity, decodedBalances, COMPANY, OWNER)).toBeNull()
-    expect(combineInventoryLabelDetail(decodedIdentity, {
+    expect(combineInventoryLabelDetail('3', decodedIdentity, decodedBalances, OWNER, LABEL)).toBeNull()
+    expect(combineInventoryLabelDetail('3', decodedIdentity, decodedBalances, COMPANY, OWNER)).toBeNull()
+    expect(combineInventoryLabelDetail('3', decodedIdentity, {
       ...decodedBalances,
       positions: [{ ...decodedBalances.positions[0], productId: OWNER }],
     }, COMPANY, LABEL)).toBeNull()
+    expect(combineInventoryLabelDetail('03', decodedIdentity, decodedBalances, COMPANY, LABEL)).toBeNull()
   })
 })
