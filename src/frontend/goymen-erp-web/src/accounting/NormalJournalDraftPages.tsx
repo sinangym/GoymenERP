@@ -27,6 +27,9 @@ type LineForm = { readonly accountId: string; readonly side: NormalJournalSide; 
 export function NormalJournalDraftCreatePage() {
   const shell = useShellState()
   const key = contextKey(shell)
+  if (key === null) {
+    return <StateBlock state={{ kind: 'initial-loading' }} subject="muhasebe şirket bağlamı" />
+  }
   const namespace = contextKeyString(key)
   return <NormalJournalDraftCreate key={`${namespace ?? 'none'}:${shell.routeEntryGeneration}`} />
 }
@@ -35,8 +38,11 @@ function NormalJournalDraftCreate() {
   const shell = useShellState()
   const boundary = useAuthBoundary()
   const mountedRef = useRef(true)
-  useEffect(() => () => {
-    mountedRef.current = false
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
   }, [])
   const companyId = shell.activeContext?.companyId ?? null
   const single = shell.activeContext?.scopeMode === 'single' && companyId !== null
@@ -132,8 +138,11 @@ function NormalJournalDraftDetail({ draftId, mode }: { readonly draftId: string;
   const shell = useShellState()
   const boundary = useAuthBoundary()
   const mountedRef = useRef(true)
-  useEffect(() => () => {
-    mountedRef.current = false
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
   }, [])
   const companyId = shell.activeContext?.companyId ?? null
   const single = shell.activeContext?.scopeMode === 'single' && companyId !== null

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, fireEvent, screen, waitFor } from '@testing-library/react'
+import { act, configure, fireEvent, screen, waitFor } from '@testing-library/react'
 import {
   ACCOUNTING_CAPABILITY,
   ACCOUNTING_ROUTE,
@@ -61,6 +61,7 @@ function fillCreateForm() {
 }
 
 afterEach(() => {
+  configure({ reactStrictMode: false })
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })
@@ -114,6 +115,21 @@ describe('normal journal command security and company fences', () => {
     fillCreateForm()
     fireEvent.click(screen.getByRole('button', { name: /kaydet/i }))
     expect(await screen.findByText(/Oturum sonlandı/i)).toBeTruthy()
+  })
+
+  it('settles a create result after the StrictMode setup-cleanup-setup cycle', async () => {
+    configure({ reactStrictMode: true })
+    installFetch({
+      capabilities: [ACCOUNTING_CAPABILITY.normalDraftCreate],
+      respond: (url, init) => url.endsWith('/accounting/normal-journal-drafts') && init?.method === 'POST'
+        ? json({ status: 503 }, 503)
+        : undefined,
+    })
+    renderAt(ACCOUNTING_ROUTE.normalDraftCreate)
+    await screen.findByRole('button', { name: /kaydet/i })
+    fillCreateForm()
+    fireEvent.click(screen.getByRole('button', { name: /kaydet/i }))
+    expect(await screen.findByRole('button', { name: /Aynı istek.*yeniden gönder/i })).toBeTruthy()
   })
 
   it('reports an approval 403 and suppresses the approval capability', async () => {
