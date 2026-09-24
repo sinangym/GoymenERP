@@ -6,7 +6,7 @@ namespace GoymenERP.Manufacturing.UnitTests;
 
 /// <summary>
 /// The published Manufacturing shell provider (MFG-UI card D1–D3; MFG-UI-F; MFG-ORD): four routes — the
-/// order screen/list and plan create/detail — and two controls on the order screen, the frontend's ids and routes
+/// order screen/list and plan create/detail — two controls on the order screen and two on plan detail, the frontend's ids and routes
 /// (<c>src/manufacturing/capabilities.ts</c> read from the repository, so a drift is red here),
 /// company-wide scope, and <c>ImplementationAvailable: true</c> on all of them. Each control is its
 /// parent with only its id, parent and permissions changed, so the registry's control rule (same route,
@@ -24,8 +24,8 @@ public sealed class ManufacturingShellCapabilityProviderContractTests
         var provider = new ManufacturingShellCapabilityProvider();
         var declarations = provider.GetDeclarations();
 
-        Assert.Equal(("MANUFACTURING", "1.1"), (provider.Owner, provider.ContractVersion));
-        Assert.Equal(6, declarations.Count);
+        Assert.Equal(("MANUFACTURING", "1.2"), (provider.Owner, provider.ContractVersion));
+        Assert.Equal(8, declarations.Count);
         foreach (var declaration in declarations)
         {
             Assert.Contains($"'{declaration.CapabilityId}'", source);
@@ -74,6 +74,10 @@ public sealed class ManufacturingShellCapabilityProviderContractTests
             [ErpPermissions.ManufacturingOrdersRead, ErpPermissions.ManufacturingFactsRecord]);
         AssertControl(declarations, detail, "manufacturing.orders.close",
             [ErpPermissions.ManufacturingOrdersRead, ErpPermissions.ManufacturingOrdersClose]);
+        AssertControl(declarations, planDetail, "manufacturing.plans.approve",
+            [ErpPermissions.ManufacturingPlansRead, ErpPermissions.ManufacturingPlansApprove]);
+        AssertControl(declarations, planDetail, "manufacturing.plans.order-create",
+            [ErpPermissions.ManufacturingPlansRead, ErpPermissions.ManufacturingOrdersCreate]);
 
         // Closing is not recording: neither control's permissions contain the other's own permission.
         var facts = Assert.Single(declarations, item => item.CapabilityId == "manufacturing.orders.facts");

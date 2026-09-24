@@ -1,14 +1,60 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Link, useParams } from 'react-router'
+import { Link, useNavigate, useParams } from 'react-router'
 import { fetchPlan } from './api'
-import { orderListPath } from './capabilities'
+import { MANUFACTURING_CAPABILITY, orderDetailPath, orderListPath } from './capabilities'
+import {
+  approvePlan,
+  createOrder,
+  pendingPlanLifecycleKey,
+  recallPendingPlanLifecycle,
+  releasePendingPlanLifecycle,
+  reservePendingPlanLifecycle,
+  type PendingPlanLifecycle,
+  type PlanLifecycleOutcome,
+  type PlanLifecycleSnapshot,
+} from './planCommandApi'
+import type { ProductionPlanView } from './contract'
 import { TARGET_BASIS_LABEL } from './manufacturingText'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { StateBlock } from '../shell/StateBlock'
 import { useShellState } from '../shell/shellContext'
-import { contextKey, contextKeyString } from '../shell/shellState'
+import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import styles from './PlanPage.module.css'
+
+type Attempt =
+  | { readonly phase: 'idle' }
+  | { readonly phase: 'sending'; readonly pending: PendingPlanLifecycle }
+  | { readonly phase: 'unknown'; readonly pending: PendingPlanLifecycle; readonly message: string }
+  | { readonly phase: 'failed'; readonly message: string }
+  | { readonly phase: 'refresh-needed'; readonly approved: ProductionPlanView; readonly message: string }
+  | { readonly phase: 'applied'; readonly message: string; readonly orderId?: string }
+
+function newId(): string {
+  const bytes = new Uint8Array(16)
+  globalThis.crypto.getRandomValues(bytes)
+  bytes[6] = (bytes[6] & 0x0f) | 0x40
+  bytes[8] = (bytes[8] & 0x3f) | 0x80
+  const hex = Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
+function failureText(
+  kind: PlanLifecycleSnapshot['kind'],
+  outcome: Extract<PlanLifecycleOutcome<unknown>, { type: 'failed' }>,
+): string {
+  const subject = kind === 'approve' ? 'Plan onayı' : 'Üretim emri'
+  if (outcome.status === 401 || outcome.status === 403) return `${subject} yetkiniz artık geçerli değil.`
+  if (outcome.status === 404) return `${subject} için kayıt bu şirket bağlamında bulunamadı.`
+  if (outcome.status === 409) return `${subject} uygulanmadı (${outcome.code ?? 'conflict'}). Güncel plan yeniden okundu.`
+  if (outcome.status === 422) return `${subject} iş kuralı tarafından reddedildi (${outcome.code ?? 'rule_refusal'}).`
+  return `${subject} uygulanmadı (${outcome.code ?? outcome.status}).`
+}
+
+function unknownText(kind: PlanLifecycleSnapshot['kind']): string {
+  return `${kind === 'approve' ? 'Plan onayının' : 'Emir oluşturmanın'} sonucu bilinmiyor. Aynı istek ve anahtarla yeniden gönderin.`
+}
 
 export function PlanDetailPage() {
   const shell = useShellState()
@@ -21,7 +67,19 @@ export function PlanDetailPage() {
 function PlanDetail({ namespace, planId }: { readonly namespace: string | null; readonly planId: string }) {
   const shell = useShellState()
   const boundary = useAuthBoundary()
+  const navigate = useNavigate()
   const companyId = shell.activeContext?.scopeMode === 'single' ? shell.activeContext.companyId : null
+  const actorId = shell.activeContext?.userId ?? null
+  const canApprove = hasCapability(shell, MANUFACTURING_CAPABILITY.planApprove)
+  const canCreateOrder = hasCapability(shell, MANUFACTURING_CAPABILITY.planOrderCreate)
+  const canOpenOrder = hasCapability(shell, MANUFACTURING_CAPABILITY.orderDetail)
+  const storeKey = pendingPlanLifecycleKey(shell.sessionEpoch, actorId, companyId, planId)
+  const recalled = recallPendingPlanLifecycle(storeKey)
+  const [attempt, setAttempt] = useState<Attempt>(() => recalled === null
+    ? { phase: 'idle' }
+    : { phase: 'unknown', pending: recalled, message: unknownText(recalled.snapshot.kind) })
+  const generation = useRef(0)
+  const inFlight = useRef(false)
   const query = useQuery({
     queryKey: [namespace ?? 'no-context', shell.routeEntryGeneration, 'manufacturing-plan', planId],
     enabled: namespace !== null && companyId !== null && planId !== '',
@@ -35,6 +93,73 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
     },
   })
   const plan = query.data?.type === 'ok-single' ? query.data.data : null
+
+  useEffect(() => () => {
+    generation.current += 1
+  }, [])
+
+  const refreshApproved = useCallback(async (approved: ProductionPlanView) => {
+    const refreshed = await query.refetch()
+    const fresh = refreshed.data?.type === 'ok-single' ? refreshed.data.data : null
+    if (fresh?.status === 'Approved' && fresh.version === approved.version) {
+      setAttempt({ phase: 'applied', message: 'Plan onaylandı ve güncel kayıt yeniden okundu.' })
+    } else {
+      setAttempt({
+        phase: 'refresh-needed',
+        approved,
+        message: 'Plan onaylandı; güncel kayıt henüz yeniden okunamadı.',
+      })
+    }
+  }, [query])
+
+  const send = useCallback(async (pending: PendingPlanLifecycle) => {
+    if (companyId === null || actorId === null || inFlight.current) return
+    if (pending.companyId !== companyId || pending.actorId !== actorId || pending.planId !== planId) return
+    inFlight.current = true
+    const commandGeneration = ++generation.current
+    reservePendingPlanLifecycle(storeKey, pending)
+    setAttempt({ phase: 'sending', pending })
+    const security = boundary.capture()
+    const outcome = pending.snapshot.kind === 'approve'
+      ? await approvePlan(companyId, planId, pending.snapshot)
+      : await createOrder(companyId, planId, pending.snapshot)
+    if (commandGeneration !== generation.current) return
+    inFlight.current = false
+    if (outcome.type === 'failed' && (outcome.status === 401 || outcome.status === 403)) {
+      boundary.report(outcome.status, security)
+    }
+    if (outcome.type === 'unknown') {
+      setAttempt({ phase: 'unknown', pending, message: unknownText(pending.snapshot.kind) })
+      return
+    }
+    releasePendingPlanLifecycle(storeKey, pending.snapshot.idempotencyKey)
+    if (outcome.type === 'failed') {
+      setAttempt({ phase: 'failed', message: failureText(pending.snapshot.kind, outcome) })
+      if (outcome.status === 409) await query.refetch()
+      return
+    }
+    if (pending.snapshot.kind === 'approve') {
+      await refreshApproved(outcome.resource as ProductionPlanView)
+      return
+    }
+    const orderId = pending.snapshot.orderId
+    if (canOpenOrder) {
+      navigate(orderDetailPath(orderId))
+      return
+    }
+    setAttempt({
+      phase: 'applied',
+      orderId,
+      message: outcome.replayed
+        ? 'Önceki emir oluşturma sonucu yeniden gösterildi.'
+        : 'Üretim emri oluşturuldu.',
+    })
+  }, [actorId, boundary, canOpenOrder, companyId, navigate, planId, query, refreshApproved, storeKey])
+
+  const start = (snapshot: PlanLifecycleSnapshot) => {
+    if (companyId === null || actorId === null) return
+    void send({ actorId, companyId, planId, snapshot })
+  }
 
   if (companyId === null || namespace === null) {
     return (
@@ -54,6 +179,9 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
       </main>
     )
   }
+
+  const busy = attempt.phase === 'sending'
+  const unresolved = attempt.phase === 'unknown'
 
   return (
     <main className={styles.page} aria-labelledby="manufacturing-plan-heading">
@@ -95,9 +223,68 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
           </table>
         </div>
       </section>
-      {plan.status === 'Approved' ? (
-        <p className={styles.note}>Onaylı plan bu ekranda salt okunurdur.</p>
-      ) : null}
+
+      <section className={styles.commandCard} aria-labelledby="manufacturing-plan-next-heading">
+        <h2 id="manufacturing-plan-next-heading">Sonraki işlem</h2>
+        {unresolved ? (
+          <>
+            <p role="alert" className={styles.error}>{attempt.message}</p>
+            <div className={styles.actions}>
+              <button type="button" onClick={() => void send(attempt.pending)}>
+                Aynı istek ve anahtarla yeniden gönder
+              </button>
+            </div>
+          </>
+        ) : attempt.phase === 'refresh-needed' ? (
+          <>
+            <p role="alert" className={styles.error}>{attempt.message}</p>
+            <div className={styles.actions}>
+              <button type="button" onClick={() => void refreshApproved(attempt.approved)}>
+                Güncel planı yeniden oku
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            {attempt.phase === 'failed' ? <p role="alert" className={styles.error}>{attempt.message}</p> : null}
+            {attempt.phase === 'applied' ? (
+              <p role="status" className={styles.success}>
+                {attempt.message}{attempt.orderId === undefined ? '' : ` Emir: ${attempt.orderId}`}
+              </p>
+            ) : null}
+            {plan.status === 'Draft' && canApprove ? (
+              <div className={styles.actions}>
+                <button
+                  type="button"
+                  disabled={busy}
+                  aria-busy={busy}
+                  onClick={() => start({ kind: 'approve', idempotencyKey: newId(), expectedVersion: plan.version })}
+                >
+                  {busy ? 'Plan onaylanıyor…' : 'Planı onayla'}
+                </button>
+              </div>
+            ) : null}
+            {plan.status === 'Approved' && canCreateOrder ? (
+              <div className={styles.actions}>
+                <button
+                  type="button"
+                  disabled={busy}
+                  aria-busy={busy}
+                  onClick={() => start({ kind: 'create-order', idempotencyKey: newId(), orderId: newId() })}
+                >
+                  {busy ? 'Üretim emri oluşturuluyor…' : 'Üretim emri oluştur'}
+                </button>
+              </div>
+            ) : null}
+            {plan.status === 'Approved' && !canCreateOrder ? (
+              <p className={styles.note}>Onaylı plan bu ekranda salt okunurdur.</p>
+            ) : null}
+            {plan.status === 'Draft' && !canApprove ? (
+              <p className={styles.note}>Taslak plan bu ekranda salt okunurdur.</p>
+            ) : null}
+          </>
+        )}
+      </section>
     </main>
   )
 }

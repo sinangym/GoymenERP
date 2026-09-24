@@ -22,6 +22,8 @@
 .facts dt { color: #607267; font-size: .78rem; margin-bottom: .3rem; }
 .facts dd { margin: 0; overflow-wrap: anywhere; }
 .note { border-left: 4px solid #ce7a25; background: #fff3dc; padding: .8rem 1rem; color: #5f4a2f; }
+.commandCard { max-width: 54rem; border: 1px solid #b8c8bb; border-radius: .8rem; background: #fff; padding: 1rem; }
+.commandCard h2 { margin-bottom: .75rem; }
 .error { color: #a51d2d; font-weight: 700; }
 .success { color: #176336; font-weight: 700; }
 .warningCard, .successCard { max-width: 54rem; border: 1px solid #d5a04d; border-radius: .8rem; padding: 1rem; background: #fff7e7; }
