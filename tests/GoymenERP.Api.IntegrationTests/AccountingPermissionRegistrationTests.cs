@@ -16,6 +16,8 @@ public sealed class AccountingPermissionRegistrationTests
     [InlineData(AccountingPermissionManifestV1.PeriodsClose, ErpPermissions.AccountingPeriodsClose)]
     [InlineData(AccountingPermissionManifestV1.JournalsRead, ErpPermissions.AccountingJournalsRead)]
     [InlineData(AccountingPermissionManifestV1.PostingQueuesRead, ErpPermissions.AccountingPostingQueuesRead)]
+    [InlineData(NormalJournalPermissionNamesV1.DraftCreate, ErpPermissions.AccountingNormalJournalDraftCreate)]
+    [InlineData(NormalJournalPermissionNamesV1.DraftApprove, ErpPermissions.AccountingNormalJournalDraftApprove)]
     public void The_owner_name_is_the_registered_central_name(string ownerName, string centralName)
     {
         Assert.Equal(ownerName, centralName);
@@ -28,7 +30,7 @@ public sealed class AccountingPermissionRegistrationTests
     [Fact]
     public void Every_owner_name_is_registered_and_nothing_else_under_accounting()
     {
-        Assert.Equal(AccountingPermissionManifestV1.All.Order(StringComparer.Ordinal),
+        Assert.Equal(AccountingPermissionManifestV1.All.Concat(NormalJournalPermissionNamesV1.All).Order(StringComparer.Ordinal),
             ErpPermissions.All.Where(name => name.StartsWith("accounting.", StringComparison.Ordinal)).Order(StringComparer.Ordinal));
     }
 }

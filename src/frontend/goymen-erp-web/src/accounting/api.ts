@@ -16,10 +16,12 @@ import {
   decodeJournalPage,
   decodePeriodPage,
   decodePostingQueues,
+  decodeNormalJournalDraft,
   type JournalDetail,
   type JournalPage,
   type PeriodPage,
   type PostingQueues,
+  type NormalJournalDraft,
 } from './contract'
 
 export const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '/api/v1'
@@ -104,4 +106,18 @@ export function fetchJournal(
 /** `GET /accounting/posting-queues` — the open mapping exceptions and pending valuations (M-01). */
 export function fetchPostingQueues(companyId: string, signal?: AbortSignal): Promise<ViewOutcome<PostingQueues>> {
   return read(`${ACCOUNTING_BASE}/posting-queues`, companyId, decodePostingQueues, signal)
+}
+
+/** ACC-V1 draft read. Create authority sees only its own; approve authority sees company drafts. */
+export function fetchNormalJournalDraft(
+  companyId: string,
+  draftId: string,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<NormalJournalDraft>> {
+  return read(
+    `${ACCOUNTING_BASE}/normal-journal-drafts/${encodeURIComponent(draftId)}`,
+    companyId,
+    (body) => decodeNormalJournalDraft(body, companyId),
+    signal,
+  )
 }

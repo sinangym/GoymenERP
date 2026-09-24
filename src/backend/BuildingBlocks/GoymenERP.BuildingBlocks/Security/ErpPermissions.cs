@@ -328,6 +328,18 @@ public static class ErpPermissions
     /// <inheritdoc cref="AccountingPeriodsRead"/>
     public const string AccountingPostingQueuesRead = "accounting.posting-queues.read";
 
+    /// <summary>
+    /// ACC-V1 normal journal draft actions. Registration makes the Accounting owner's exact names
+    /// measurable and grants nothing. Both are company-wide because a draft belongs to the
+    /// server-resolved company and has no narrower scope dimension. They are not Critical: the
+    /// approved normal-journal policy permits a narrowly authorized preparer to approve their own
+    /// normal draft; reversal, period and money maker-checker boundaries are unchanged.
+    /// </summary>
+    public const string AccountingNormalJournalDraftCreate = "accounting.normal-journal.draft.create";
+
+    /// <inheritdoc cref="AccountingNormalJournalDraftCreate"/>
+    public const string AccountingNormalJournalDraftApprove = "accounting.normal-journal.draft.approve";
+
     public const string IdentityProfileRead = "identity.profile.read";
     public const string IdentityAccessRequest = "identity.access.request";
     public const string IdentityAccessApprove = "identity.access.approve";
@@ -375,6 +387,8 @@ public static class ErpPermissions
             AccountingPeriodsClose,
             AccountingJournalsRead,
             AccountingPostingQueuesRead,
+            AccountingNormalJournalDraftCreate,
+            AccountingNormalJournalDraftApprove,
             FinanceBankAccountRead,
             FinanceBankAccountPropose,
             FinanceBankAccountApprove,
@@ -443,6 +457,8 @@ public static class ErpPermissions
             AccountingPeriodsClose,
             AccountingJournalsRead,
             AccountingPostingQueuesRead,
+            AccountingNormalJournalDraftCreate,
+            AccountingNormalJournalDraftApprove,
             FinanceBankAccountRead,
             FinanceBankAccountPropose,
             FinanceBankAccountApprove,

@@ -17,12 +17,15 @@ public sealed class AccountingShellCapabilityProviderTests
     {
         var declarations = new AccountingShellCapabilityProvider().GetDeclarations();
 
-        Assert.Equal(7, declarations.Count);
+        Assert.Equal(10, declarations.Count);
         // ACC-V0c: the flip publishes exactly what the acc01 acceptance walked — the period list, its propose
         // screen, the approve and close controls, the M-04 list and the M-01 queues.
         Assert.Equal(
             [
                 AccountingShellCapabilityProvider.JournalListCapabilityId,
+                AccountingShellCapabilityProvider.NormalDraftApproveCapabilityId,
+                AccountingShellCapabilityProvider.NormalDraftCreateCapabilityId,
+                AccountingShellCapabilityProvider.NormalDraftDetailCapabilityId,
                 AccountingShellCapabilityProvider.PeriodApproveCapabilityId,
                 AccountingShellCapabilityProvider.PeriodCloseCapabilityId,
                 AccountingShellCapabilityProvider.PeriodListCapabilityId,
@@ -44,7 +47,7 @@ public sealed class AccountingShellCapabilityProviderTests
         var provider = new AccountingShellCapabilityProvider();
         var byId = provider.GetDeclarations().ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
 
-        Assert.Equal(("ACCOUNTING", "1.0"), (provider.Owner, provider.ContractVersion));
+        Assert.Equal(("ACCOUNTING", "1.1"), (provider.Owner, provider.ContractVersion));
         (string Capability, string Route, string Path, string Screen, ShellCapabilityRoutePrecedence Precedence, string[] Permissions)[] expected =
         [
             ("accounting.periods.list", "accounting.periods", "/muhasebe/donemler", "M-07", ShellCapabilityRoutePrecedence.Static,
@@ -59,11 +62,21 @@ public sealed class AccountingShellCapabilityProviderTests
                 [AccountingPermissionManifestV1.JournalsRead]),
             ("accounting.journals.detail", "accounting.journals.detail", "/muhasebe/fisler/:journalId", "M-04-DETAIL",
                 ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [AccountingPermissionManifestV1.JournalsRead]),
+            ("accounting.normal-journal-drafts.create", "accounting.normal-journal-drafts.new", "/muhasebe/normal-fisler/yeni", "M-04-NEW",
+                ShellCapabilityRoutePrecedence.Static, [NormalJournalPermissionNamesV1.DraftCreate]),
+            ("accounting.normal-journal-drafts.detail", "accounting.normal-journal-drafts.detail", "/muhasebe/normal-fisler/:draftId", "M-04-DRAFT",
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [NormalJournalPermissionNamesV1.DraftCreate]),
+            ("accounting.normal-journal-drafts.approve", "accounting.normal-journal-drafts.approve", "/muhasebe/normal-fis-onay/:draftId", "M-04-APPROVE",
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [NormalJournalPermissionNamesV1.DraftApprove]),
             ("accounting.posting-queues", "accounting.posting-queues", "/muhasebe/kontrol", "M-01",
                 ShellCapabilityRoutePrecedence.Static, [AccountingPermissionManifestV1.PostingQueuesRead]),
         ];
 
         Assert.Equal(expected.Select(item => item.Capability).Order(StringComparer.Ordinal), byId.Keys.Order(StringComparer.Ordinal));
+        var ownerPermissions = AccountingPermissionManifestV1.All
+            .Concat(NormalJournalPermissionNamesV1.All)
+            .ToHashSet(StringComparer.Ordinal);
+
         foreach (var item in expected)
         {
             var declaration = byId[item.Capability];
@@ -74,7 +87,7 @@ public sealed class AccountingShellCapabilityProviderTests
             Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide, declaration.ScopeRequirement);
             Assert.Null(declaration.GlobalProductOperation);
             // Only the owner's own narrow names; the central registry registers exactly these (CARİ).
-            Assert.All(declaration.RequiredPermissions, permission => Assert.Contains(permission, AccountingPermissionManifestV1.All));
+            Assert.All(declaration.RequiredPermissions, permission => Assert.Contains(permission, ownerPermissions));
         }
     }
 
@@ -105,7 +118,7 @@ public sealed class AccountingShellCapabilityProviderTests
     {
         var routes = new AccountingShellCapabilityProvider().GetDeclarations().Where(item => item.ParentCapabilityId is null).ToArray();
 
-        Assert.Equal(["M-01", "M-04", "M-04-DETAIL", "M-07", "M-07-NEW"], routes.Select(item => item.ScreenId).Order(StringComparer.Ordinal));
+        Assert.Equal(["M-01", "M-04", "M-04-APPROVE", "M-04-DETAIL", "M-04-DRAFT", "M-04-NEW", "M-07", "M-07-NEW"], routes.Select(item => item.ScreenId).Order(StringComparer.Ordinal));
     }
 
     [Fact]
