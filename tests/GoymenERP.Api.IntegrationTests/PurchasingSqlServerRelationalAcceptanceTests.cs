@@ -27,7 +27,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// SENTETIK owners: the supplier and the product are identities here — the owners' answers are the service's
 /// (unit tests) evidence.
 /// </summary>
-public sealed class PurchasingSqlServerRelationalAcceptanceTests
+public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
 {
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;
