@@ -201,6 +201,7 @@ builder.Services.AddInventoryModule(
     (services, options) => options.AddInterceptors(
         services.GetRequiredService<AuditSaveChangesInterceptor>()));
 builder.Services.AddInventoryParentRollReferences();
+builder.Services.AddInventoryPhysicalAllocationReads();
 // INV-OPEN-1 part 2: the opening command's host ports — Organization's company-scoped location module read
 // and Product's stock eligibility (the owners' contracts; no user read, no copy of either owner's rows).
 builder.Services.AddScoped<IInventoryLocationStatusPort, OrganizationInventoryLocationStatusPort>();
