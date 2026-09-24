@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { useParams } from 'react-router'
+import { Link, useParams } from 'react-router'
 import { approvePurchaseOrder, type ApprovalOutcome } from './approvalApi'
 import { fetchPurchaseOrder } from './api'
-import { PURCHASING_CAPABILITY } from './capabilities'
+import { purchaseRequestDetailPath, PURCHASING_CAPABILITY } from './capabilities'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
@@ -35,6 +35,7 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
   const companyId = shell.activeContext?.scopeMode === 'single' ? shell.activeContext.companyId : null
   const actorId = shell.activeContext?.userId ?? null
   const canApprove = hasCapability(shell, PURCHASING_CAPABILITY.orderApprove as never)
+  const canReadSourceRequest = hasCapability(shell, PURCHASING_CAPABILITY.requestDetail as never)
   const storeKey = pendingApprovalKey(shell.sessionEpoch, actorId, companyId, orderId ?? '')
   const [attempt, setAttempt] = useState<
     | { readonly phase: 'idle' }
@@ -105,7 +106,7 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
       ? <p role="alert" className={styles.error}>Onay kaydedilmedi ({attempt.code ?? attempt.status}). Kayıt yeniden okundu.</p>
       : null
   return frame(<>
-    <dl className={styles.facts}><div><dt>Sipariş</dt><dd className={styles.mono}>{order.id}</dd></div><div><dt>Durum</dt><dd><span className={order.status === 'Approved' ? styles.approved : styles.draft}>{order.status === 'Approved' ? 'Onaylandı' : 'Taslak'}</span></dd></div><div><dt>Sürüm</dt><dd>{order.version}</dd></div><div><dt>Tedarikçi hesabı</dt><dd className={styles.mono}>{order.companyAccountId}</dd></div><div><dt>Kaynak talep</dt><dd className={styles.mono}>{order.sourceRequestId ?? 'Bağlı değil'}</dd></div><div><dt>İş tarihi</dt><dd>{order.effectiveOn}</dd></div></dl>
+    <dl className={styles.facts}><div><dt>Sipariş</dt><dd className={styles.mono}>{order.id}</dd></div><div><dt>Durum</dt><dd><span className={order.status === 'Approved' ? styles.approved : styles.draft}>{order.status === 'Approved' ? 'Onaylandı' : 'Taslak'}</span></dd></div><div><dt>Sürüm</dt><dd>{order.version}</dd></div><div><dt>Tedarikçi hesabı</dt><dd className={styles.mono}>{order.companyAccountId}</dd></div><div><dt>Kaynak talep</dt><dd className={styles.mono}>{order.sourceRequestId === null ? 'Bağlı değil' : canReadSourceRequest ? <Link to={purchaseRequestDetailPath(order.sourceRequestId)}>{order.sourceRequestId}</Link> : order.sourceRequestId}</dd></div><div><dt>İş tarihi</dt><dd>{order.effectiveOn}</dd></div></dl>
     <section><h2>Taahhüt satırları</h2><div className={styles.tableWrap}><table><thead><tr><th>No</th><th>Ürün</th><th>Birim</th><th>Sipariş</th><th>Teknik</th><th>Taahhüt</th><th>Kabul</th><th>Kalan</th></tr></thead><tbody>{lines.map((line) => <tr key={line.lineId}><td>{line.lineNo}</td><td className={styles.mono}>…{line.productId.slice(-8)}</td><td className={styles.mono}>…{line.unitId.slice(-8)}</td><td>{line.ordered}</td><td>{line.technical}</td><td>{line.committed}</td><td>{line.accepted}</td><td>{line.remaining}</td></tr>)}</tbody></table></div></section>
     {canApprove ? outcomeNotice : null}
     {canApprove && (order.status === 'Draft' || unresolved) ? <section className={styles.actionCard}><h2>Siparişi onayla</h2><p>Onay, talep satırı paylarını sunucuda yeniden ölçer. Fiyat veya stok hareketi üretmez.</p>{attempt.phase === 'unknown' ? <p role="alert" className={styles.warning}>Sonuç bilinmiyor. Yeni işlem başlatmadan aynı anahtar ve sürümle yeniden gönderin.</p> : null}<button type="button" disabled={attempt.phase === 'submitting'} onClick={() => void sendApproval(attempt.phase === 'unknown' ? attempt.snapshot : undefined)}>{attempt.phase === 'submitting' ? 'Gönderiliyor…' : attempt.phase === 'unknown' ? 'Aynı onayı yeniden gönder' : 'Onayla'}</button></section> : null}
