@@ -5,22 +5,35 @@ using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Domain;
+using GoymenERP.Modules.Inventory.Domain.Labels;
+using GoymenERP.Modules.Inventory.Domain.Lots;
 using GoymenERP.Modules.Inventory.Domain.Movements;
 using GoymenERP.Modules.Inventory.Domain.Stock;
+using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Manufacturing.Domain.Common;
 using GoymenERP.Modules.Manufacturing.Domain.Plans;
 using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence;
+using GoymenERP.Modules.Settings.Application;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.EntityFrameworkCore;
+using InventoryKilograms = GoymenERP.Modules.Inventory.Domain.Quantities.Kilograms;
 
 namespace GoymenERP.Api.IntegrationTests;
 
-public sealed partial class InventorySqlServerRelationalAcceptanceTests
+public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
 {
+    private static readonly Guid InventoryHostProduct =
+        Guid.Parse("9b000000-0000-4000-8000-000000000451");
+    private static readonly Guid InventoryHostLotA =
+        Guid.Parse("9b000000-0000-4000-8000-000000000452");
+    private static readonly Guid InventoryHostLotB =
+        Guid.Parse("9b000000-0000-4000-8000-000000000453");
+
     [SqlServerFact]
     public async Task Manufacturing_input_issue_commits_one_fact_one_physical_effect_and_replays_across_transport_keys()
     {
-        await using var run = await Run.StartAsync();
+        await using var run = await StartManufacturingInventoryRunAsync();
         var parent = await SeedManufacturingParentAsync(run, "SYN-MFG-HOST-COMMIT", 100m);
         var authority = new ManufacturingHostAuthority(GrantedManufacturingScope());
         await using var scope = ManufacturingHostScope.Create(run, CompanyA, authority);
@@ -78,7 +91,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     [SqlServerFact]
     public async Task Manufacturing_input_issue_rolls_back_both_owners_when_inventory_stage_fails()
     {
-        await using var run = await Run.StartAsync();
+        await using var run = await StartManufacturingInventoryRunAsync();
         var parent = await SeedManufacturingParentAsync(run, "SYN-MFG-HOST-STAGE-ROLLBACK", 100m);
         var authority = new ManufacturingHostAuthority(GrantedManufacturingScope());
         await using var scope = ManufacturingHostScope.Create(run, CompanyA, authority,
@@ -96,7 +109,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     [SqlServerFact]
     public async Task Manufacturing_input_issue_rolls_back_both_owners_when_final_authority_is_revoked()
     {
-        await using var run = await Run.StartAsync();
+        await using var run = await StartManufacturingInventoryRunAsync();
         var parent = await SeedManufacturingParentAsync(run, "SYN-MFG-HOST-AUTH-ROLLBACK", 100m);
         var authority = new ManufacturingHostAuthority(GrantedManufacturingScope(), PermissionScope.Denied);
         await using var scope = ManufacturingHostScope.Create(run, CompanyA, authority);
@@ -112,18 +125,22 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     [SqlServerFact]
     public async Task Manufacturing_input_issue_refuses_stale_and_foreign_parent_references_without_partial_fact()
     {
-        await using var run = await Run.StartAsync();
+        await using var run = await StartManufacturingInventoryRunAsync();
         var stale = await SeedManufacturingParentAsync(run, "SYN-MFG-HOST-STALE", 100m);
         var authority = new ManufacturingHostAuthority(GrantedManufacturingScope());
         await using var scope = ManufacturingHostScope.Create(run, CompanyA, authority);
         var staleCommand = await SeedManufacturingOrderAsync(run, scope.Store, stale.Label.Id, 2, 10m);
-        await using (var inventory = run.Store(CompanyA))
+        await using (var inventory = InventoryHostStore(run, CompanyA))
         {
             await inventory.Movements.RecordMovementAsync(
-                Movement(CompanyA, StockMovementKind.Issue,
+                InventoryHostMovement(CompanyA, StockMovementKind.Issue,
                     new StockSourceReference("synthetic.manufacturing-host-stale", Guid.NewGuid()),
-                    Out(Position(CompanyA, stale.LocationId, stale.Label, BlockState.Free), 1m)),
-                Metadata(run) with { CorrelationId = $"mfg-host-stale-prerequisite-{Guid.NewGuid():N}" });
+                    InventoryHostOut(InventoryHostPosition(
+                        CompanyA, stale.LocationId, stale.Label, BlockState.Free), 1m)),
+                InventoryHostMetadata(run) with
+                {
+                    CorrelationId = $"mfg-host-stale-prerequisite-{Guid.NewGuid():N}",
+                });
         }
 
         var staleError = await Assert.ThrowsAsync<InventoryManufacturingRealizationException>(() =>
@@ -173,20 +190,140 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             Guid.NewGuid(), new Kilograms(quantity), At.AddMinutes(1));
     }
 
+    private static async Task<Run> StartManufacturingInventoryRunAsync()
+    {
+        var run = await Run.StartAsync();
+        try
+        {
+            await using (var context = InventoryHostContext(run, CompanyA))
+            {
+                await context.Database.MigrateAsync();
+            }
+
+            foreach (var (companyId, lotId) in new[]
+                     {
+                         (CompanyA, InventoryHostLotA),
+                         (CompanyB, InventoryHostLotB),
+                     })
+            {
+                await using var store = InventoryHostStore(run, companyId);
+                await store.Lots.SaveLotAsync(
+                    new MaterialLot(lotId, companyId, InventoryHostProduct),
+                    [],
+                    InventoryHostMetadata(run) with
+                    {
+                        CorrelationId = $"mfg-host-lot-{companyId:N}-{Guid.NewGuid():N}",
+                    });
+            }
+
+            return run;
+        }
+        catch
+        {
+            await run.DisposeAsync();
+            throw;
+        }
+    }
+
+    private static async Task<ManufacturingParentSeed> SeedManufacturingParentAsync(
+        Run run, string code, decimal quantity) =>
+        await SeedManufacturingParentForCompanyAsync(run, CompanyA, code, quantity);
+
     private static async Task<ManufacturingParentSeed> SeedManufacturingParentForCompanyAsync(
         Run run, Guid companyId, string code, decimal quantity)
     {
-        var location = await run.LocationOfAsync(companyId);
-        var label = NewLabel(companyId, code);
-        await using var store = run.Store(companyId);
+        var location = await InventoryHostLocationOfAsync(run, companyId);
+        var label = InventoryHostLabel(companyId, code);
+        await using var store = InventoryHostStore(run, companyId);
         await store.Labels.SaveLabelAsync(label,
-            Metadata(run) with { CorrelationId = $"mfg-host-foreign-label-{Guid.NewGuid():N}" });
+            InventoryHostMetadata(run) with
+            {
+                CorrelationId = $"mfg-host-foreign-label-{Guid.NewGuid():N}",
+            });
         await store.Movements.RecordMovementAsync(
-            Movement(companyId, StockMovementKind.Receipt,
+            InventoryHostMovement(companyId, StockMovementKind.Receipt,
                 new StockSourceReference("synthetic.manufacturing-host-parent", Guid.NewGuid()),
-                In(Position(companyId, location, label, BlockState.Free), quantity)),
-            Metadata(run) with { CorrelationId = $"mfg-host-foreign-stock-{Guid.NewGuid():N}" });
+                InventoryHostIn(InventoryHostPosition(
+                    companyId, location, label, BlockState.Free), quantity)),
+            InventoryHostMetadata(run) with
+            {
+                CorrelationId = $"mfg-host-foreign-stock-{Guid.NewGuid():N}",
+            });
         return new ManufacturingParentSeed(label, location);
+    }
+
+    private static async Task<Guid> InventoryHostLocationOfAsync(Run run, Guid companyId) =>
+        await run.ScalarAsync<Guid>(
+            "SELECT TOP (1) Id FROM organization.Locations WHERE CompanyId = @company ORDER BY Id",
+            ("@company", companyId));
+
+    private static InventoryDbContext InventoryHostContext(Run run, Guid companyId)
+    {
+        var company = new CompanyContext();
+        company.Set(companyId);
+        var options = new DbContextOptionsBuilder<InventoryDbContext>()
+            .UseSqlServer(run.Factory.DatabaseConnectionString,
+                sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", InventoryDbContext.Schema))
+            .Options;
+        return new InventoryDbContext(options, company);
+    }
+
+    private static InventoryHostStoreScope InventoryHostStore(Run run, Guid companyId)
+    {
+        var company = new CompanyContext();
+        company.Set(companyId);
+        var audit = new AuditEventCollector();
+        var options = new DbContextOptionsBuilder<InventoryDbContext>()
+            .UseSqlServer(run.Factory.DatabaseConnectionString,
+                sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", InventoryDbContext.Schema))
+            .AddInterceptors(new AuditSaveChangesInterceptor(audit, company))
+            .Options;
+        var context = new InventoryDbContext(options, company);
+        var settings = new ApprovedSettingsPrerequisiteProvider(
+            company, new ManufacturingHostCurrentUser(run.Actor, companyId));
+        var store = new InventoryStore(
+            context, company, audit, new InventoryKilogramScale(settings), TimeProvider.System);
+        return new InventoryHostStoreScope(context, store);
+    }
+
+    private static MaterialLabel InventoryHostLabel(Guid companyId, string code) =>
+        new(Guid.NewGuid(), companyId, code, InventoryHostProduct,
+            companyId == CompanyA ? InventoryHostLotA : InventoryHostLotB);
+
+    private static StockPosition InventoryHostPosition(
+        Guid companyId, Guid locationId, MaterialLabel label, BlockState block) =>
+        new(companyId,
+            new StockOwner(StockPartyKind.Company, companyId),
+            new StockCustodian(StockPartyKind.Company, companyId),
+            locationId,
+            label,
+            block);
+
+    private static StockMovementLine InventoryHostIn(StockPosition position, decimal kilograms) =>
+        new(position, StockDirection.In, InventoryKilograms.Positive(kilograms));
+
+    private static StockMovementLine InventoryHostOut(StockPosition position, decimal kilograms) =>
+        new(position, StockDirection.Out, InventoryKilograms.Positive(kilograms));
+
+    private static StockMovement InventoryHostMovement(
+        Guid companyId, StockMovementKind kind, StockSourceReference source, params StockMovementLine[] lines) =>
+        new(Guid.NewGuid(), companyId, kind, At, source, lines);
+
+    private static InventoryCommandMetadata InventoryHostMetadata(Run run) => new(
+        run.Actor.ToString("D"),
+        ErpPermissions.ManufacturingFactsRecord,
+        ["SYNTHETIC-MANUFACTURING"],
+        $"manufacturing-host-inventory-{Guid.NewGuid():N}",
+        null,
+        $"manufacturing-host-inventory-{Guid.NewGuid():N}",
+        "Integration");
+
+    private static ISettingsPrerequisiteProvider ManufacturingSettings(Run run)
+    {
+        var company = new CompanyContext();
+        company.Set(CompanyA);
+        return new ApprovedSettingsPrerequisiteProvider(
+            company, new ManufacturingHostCurrentUser(run.Actor, CompanyA));
     }
 
     private static async Task AssertNoManufacturingInventoryIssueEffectAsync(
@@ -270,6 +407,26 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         }
 
         public ValueTask DisposeAsync() => context.DisposeAsync();
+    }
+
+    private sealed class InventoryHostStoreScope(InventoryDbContext context, InventoryStore store)
+        : IAsyncDisposable
+    {
+        public IInventoryLotStore Lots => store;
+        public IInventoryLabelStore Labels => store;
+        public IInventoryMovementStore Movements => store;
+
+        public ValueTask DisposeAsync() => context.DisposeAsync();
+    }
+
+    private sealed record ManufacturingParentSeed(MaterialLabel Label, Guid LocationId);
+
+    private sealed class ManufacturingHostCurrentUser(Guid actorId, Guid companyId) : ICurrentUser
+    {
+        public bool IsAuthenticated => true;
+        public string? UserId => actorId.ToString("D");
+        public IReadOnlySet<Guid> AllowedCompanyIds { get; } = new HashSet<Guid> { companyId };
+        public bool CanAccessCompany(Guid candidate) => AllowedCompanyIds.Contains(candidate);
     }
 
     private sealed class SyntheticManufacturingHostFailure : Exception;
