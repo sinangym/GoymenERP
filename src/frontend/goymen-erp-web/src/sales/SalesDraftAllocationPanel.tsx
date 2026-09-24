@@ -42,7 +42,9 @@ export function SalesDraftAllocationPanel(props: SalesDraftAllocationPanelProps)
     <section className={styles.section} aria-labelledby="sales-allocations-heading" data-testid="sales-allocations">
       <h2 id="sales-allocations-heading">{T.heading}</h2>
       <p className={styles.muted}>{T.note}</p>
-      {props.lines.map((line) => <AllocationLine key={line.lineId} {...props} line={line} />)}
+      {props.lines.map((line) => <AllocationLine
+        key={`${props.namespace}:${props.routeEntryGeneration}:${props.companyId}:${props.salesOrderId}:${line.lineId}`}
+        {...props} line={line} />)}
     </section>
   )
 }
