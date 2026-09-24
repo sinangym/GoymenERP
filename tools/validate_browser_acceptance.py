@@ -262,8 +262,10 @@ SUITE_IDENTITY_PERMISSIONS = {
     # this closed list grants nothing outside the disposable normal profile.
     "pur01": ("purchasing.orders.read", "purchasing.orders.approve", "purchasing.orders.create",
               "counterparty.parties.read", "product.operational-selection.read"),
-    # R14: one Inventory recorder, one owner-read-only denied actor, and one Organization location reader.
+    # R14: one Inventory recorder with opening and detail reads, one owner-read-only denied actor,
+    # and one Organization location reader.
     "r14": ("inventory.opening-stock.record", "product.operational-selection.read",
+            "inventory.labels.read", "inventory.balances.read", "product.items.detail",
             "organization.locations.read"),
 }
 
