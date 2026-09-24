@@ -13,7 +13,8 @@ public sealed class AccountPlanMirrorRowV1
     public AccountPlanMirrorRowV1(AccountRef account, string code, string name)
     {
         AccountPlanMirrorV1.RequireText(code, nameof(code));
-        if (account == default || string.IsNullOrWhiteSpace(name))
+        if (account == default || account.CompanyId == Guid.Empty || account.AccountId == Guid.Empty
+            || string.IsNullOrWhiteSpace(name))
         {
             throw new AccountingDomainException(AccountingErrorCodes.InvalidReference,
                 "A mirrored account needs an explicit identity, code and name.");

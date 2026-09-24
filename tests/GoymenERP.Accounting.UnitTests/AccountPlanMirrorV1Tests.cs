@@ -85,6 +85,21 @@ public sealed class AccountPlanMirrorV1Tests
     public void Rejects_blank_name(string name) =>
         Assert.Throws<AccountingDomainException>(() => Row(1, "SENTETIK-001", name));
 
+    [Theory]
+    [InlineData("company")]
+    [InlineData("account")]
+    public void Rejects_partially_empty_account_identity_before_mirror_indexing(string emptyPart)
+    {
+        var companyId = emptyPart == "company" ? Guid.Empty : Company;
+        var accountId = emptyPart == "account" ? Guid.Empty : Guid.NewGuid();
+
+        var exception = Assert.Throws<AccountingDomainException>(() =>
+            new AccountPlanMirrorRowV1(new AccountRef(companyId, accountId),
+                "SENTETIK-001", "Synthetic account"));
+
+        Assert.Equal(AccountingErrorCodes.InvalidReference, exception.Code);
+    }
+
     [Fact]
     public void Rejects_duplicate_codes_or_ids_instead_of_picking_a_winner()
     {
