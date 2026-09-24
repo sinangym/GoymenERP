@@ -31,9 +31,10 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     public async Task Goods_receipt_commits_purchasing_and_inventory_once_and_both_participants_replay()
     {
         await using var run = await Run.StartAsync();
+        var location = await run.LocationOfAsync(CompanyA);
         var seed = await SeedGoodsReceiptPurchaseOrderAsync(run);
         var acceptanceId = Guid.NewGuid();
-        var receipt = Receipt(seed, acceptanceId, "4");
+        var receipt = Receipt(seed, acceptanceId, "4", location);
         var purchasing = GoodsReceiptPurchaseRequest(seed, acceptanceId, "4");
         var key = $"goods-receipt-{Guid.NewGuid():N}";
         var correlation = $"goods-receipt-{Guid.NewGuid():N}";
@@ -87,9 +88,10 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     public async Task Goods_receipt_host_rollback_removes_purchasing_and_inventory_effects()
     {
         await using var run = await Run.StartAsync();
+        var location = await run.LocationOfAsync(CompanyA);
         var seed = await SeedGoodsReceiptPurchaseOrderAsync(run);
         var acceptanceId = Guid.NewGuid();
-        var receipt = Receipt(seed, acceptanceId, "3");
+        var receipt = Receipt(seed, acceptanceId, "3", location);
         var correlation = $"goods-receipt-rollback-{Guid.NewGuid():N}";
         var key = $"goods-receipt-rollback-{Guid.NewGuid():N}";
 
@@ -116,9 +118,10 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     public async Task Goods_receipt_payload_or_company_mismatch_writes_no_partial_effect()
     {
         await using var run = await Run.StartAsync();
+        var location = await run.LocationOfAsync(CompanyA);
         var seed = await SeedGoodsReceiptPurchaseOrderAsync(run);
         var acceptanceId = Guid.NewGuid();
-        var receipt = Receipt(seed, acceptanceId, "2");
+        var receipt = Receipt(seed, acceptanceId, "2", location);
         var correlation = $"goods-receipt-conflict-{Guid.NewGuid():N}";
         var key = $"goods-receipt-conflict-{Guid.NewGuid():N}";
 
@@ -149,7 +152,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         Assert.Equal(committed, await ReceiptEffectsAsync(run, seed, receipt, correlation));
 
         var foreignSeed = await SeedGoodsReceiptPurchaseOrderAsync(run);
-        var foreignReceipt = Receipt(foreignSeed, Guid.NewGuid(), "1");
+        var foreignReceipt = Receipt(foreignSeed, Guid.NewGuid(), "1", location);
         var foreignCorrelation = $"goods-receipt-foreign-{Guid.NewGuid():N}";
         await using (var connection = new SqlConnection(run.Factory.DatabaseConnectionString))
         {
@@ -259,7 +262,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     }
 
     private static InventoryGoodsReceiptRequestV1 Receipt(
-        GoodsReceiptAcceptanceSeed seed, Guid acceptanceId, string quantity) => new(
+        GoodsReceiptAcceptanceSeed seed, Guid acceptanceId, string quantity, Guid locationId) => new(
         CompanyA,
         acceptanceId,
         seed.OrderId,
@@ -278,7 +281,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         CompanyA,
         StockPartyKind.Company,
         CompanyA,
-        Guid.NewGuid(),
+        locationId,
         BlockState.Blocked,
         Guid.NewGuid(),
         quantity,
