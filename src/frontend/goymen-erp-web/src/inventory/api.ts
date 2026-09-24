@@ -1,5 +1,6 @@
 import type { ViewOutcome } from '../shell/uiState'
 import {
+  decodeInventoryStockPositions,
   decodeOpeningCount,
   decodeOrganizationLocationCandidates,
   decodeProductStockCandidates,
@@ -7,6 +8,7 @@ import {
   type OpeningCountView,
   type OrganizationLocationCandidates,
   type ProductStockCandidates,
+  type InventoryStockPositions,
 } from './contract'
 
 export const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '/api/v1'
@@ -17,6 +19,7 @@ const CANDIDATE_LIMIT = 25
 export const INVENTORY_OPENING_COUNTS_PATH = `${API_BASE}/inventory/opening-counts`
 export const INVENTORY_PRODUCT_CANDIDATES_PATH = `${API_BASE}/inventory/references/products`
 export const INVENTORY_LOCATION_CANDIDATES_PATH = `${API_BASE}/inventory/references/locations`
+export const INVENTORY_STOCK_POSITIONS_PATH = `${API_BASE}/inventory/positions`
 
 export function inventoryHeaders(companyId: string): Record<string, string> {
   return {
@@ -74,6 +77,29 @@ export async function fetchOpeningLocations(
     if (response.status !== 200) return { type: 'http', status: response.status, body }
     const decoded = decodeOrganizationLocationCandidates(body)
     return decoded === null ? { type: 'malformed' } : { type: 'ok-single', data: decoded }
+  } catch {
+    if (signal?.aborted) return { type: 'fence-stale' }
+    return navigator.onLine ? { type: 'network-error' } : { type: 'offline' }
+  }
+}
+
+export async function fetchStockPositions(
+  companyId: string,
+  q = '',
+  signal?: AbortSignal,
+): Promise<ViewOutcome<InventoryStockPositions>> {
+  const query = new URLSearchParams({ limit: String(CANDIDATE_LIMIT) })
+  const search = q.trim()
+  if (search !== '') query.set('q', search)
+  try {
+    const response = await fetch(`${INVENTORY_STOCK_POSITIONS_PATH}?${query.toString()}`, {
+      headers: inventoryHeaders(companyId), cache: 'no-store', signal,
+    })
+    const body = await bodyOf(response)
+    if (response.status !== 200) return { type: 'http', status: response.status, body }
+    const decoded = decodeInventoryStockPositions(body)
+    if (decoded === null || decoded.items.some((item) => item.companyId !== companyId)) return { type: 'malformed' }
+    return { type: 'ok-single', data: decoded }
   } catch {
     if (signal?.aborted) return { type: 'fence-stale' }
     return navigator.onLine ? { type: 'network-error' } : { type: 'offline' }

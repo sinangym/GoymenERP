@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  decodeInventoryStockPositions,
   decodeOpeningCount,
   decodeOrganizationLocationCandidates,
   decodeProductStockCandidates,
@@ -64,5 +65,28 @@ describe('Inventory opening wire contracts', () => {
       items: [{ locationId: LOCATION, locationCode: 'A', locationName: 'Ana', siteId: SITE, siteCode: 'S', siteName: 'Site', extra: true }],
       searchWindowFull: false,
     })).toBeNull()
+  })
+
+  it('decodes stock components only when physical and free equations reconcile exactly', () => {
+    const position = {
+      companyId: COMPANY, labelId: LABEL, labelVersion: '3', labelCode: 'LBL-1', productId: PRODUCT,
+      lot: { id: LOT, heatNumber: 'H-1', coilNumber: null }, heatNumber: null, coilNumber: 'C-1',
+      documentStatus: 'Complete', ownerKind: 'Company', ownerId: COMPANY,
+      custodianKind: 'Company', custodianId: COMPANY, locationId: LOCATION,
+      physicalKg: '12.125', freePhysicalKg: '10.125', blockedPhysicalKg: '2',
+      activeAllocationKg: '4.5', availableKg: '5.625',
+    }
+    expect(decodeInventoryStockPositions({ items: [position], searchWindowFull: false })?.items[0].availableKg)
+      .toBe('5.625')
+    expect(decodeInventoryStockPositions({
+      items: [{ ...position, availableKg: '5.624' }], searchWindowFull: false,
+    })).toBeNull()
+    expect(decodeInventoryStockPositions({
+      items: [{ ...position, physicalKg: '12.124' }], searchWindowFull: false,
+    })).toBeNull()
+    expect(decodeInventoryStockPositions({
+      items: [{ ...position, physicalKg: '12.1250' }], searchWindowFull: false,
+    })).toBeNull()
+    expect(decodeInventoryStockPositions({ items: [position, position], searchWindowFull: true })).toBeNull()
   })
 })
