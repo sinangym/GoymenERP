@@ -42,6 +42,12 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
 
     internal DbSet<LabelDocumentRow> LabelDocuments => Set<LabelDocumentRow>();
 
+    internal DbSet<LabelTransformationRow> LabelTransformations => Set<LabelTransformationRow>();
+
+    internal DbSet<LabelTransformationInputRow> LabelTransformationInputs => Set<LabelTransformationInputRow>();
+
+    internal DbSet<LabelTransformationOutputRow> LabelTransformationOutputs => Set<LabelTransformationOutputRow>();
+
     internal DbSet<MovementRow> Movements => Set<MovementRow>();
 
     internal DbSet<SourceGrainRow> SourceGrains => Set<SourceGrainRow>();
@@ -69,6 +75,7 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         ConfigureLabels(modelBuilder);
         ConfigureLabelPrints(modelBuilder);
         ConfigureLabelDocuments(modelBuilder);
+        ConfigureLabelTransformations(modelBuilder);
         ConfigureSourceGrains(modelBuilder);
         ConfigureMovements(modelBuilder);
         ConfigureMovementLines(modelBuilder);
@@ -197,6 +204,74 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         entity.Property(x => x.AttachedBy).HasMaxLength(128).IsRequired();
         LabelOf(entity);
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    private void ConfigureLabelTransformations(ModelBuilder modelBuilder)
+    {
+        var transformation = modelBuilder.Entity<LabelTransformationRow>();
+        transformation.ToTable("LabelTransformations", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_LabelTransformations_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_LabelTransformations_Kind", "[Kind] IN (1, 2)");
+            table.HasCheckConstraint("CK_LabelTransformations_Text",
+                "LEN([Reason]) > 0 AND LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0 AND LEN([PayloadHash]) = 64");
+        });
+        transformation.HasKey(x => x.Id);
+        transformation.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        transformation.Property(x => x.Id).ValueGeneratedNever();
+        transformation.Property(x => x.Reason).HasMaxLength(1000).IsRequired();
+        transformation.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        transformation.Property(x => x.RecordedBy).HasMaxLength(128).IsRequired();
+        transformation.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        transformation.HasIndex(x => new { x.CompanyId, x.OccurredAtUtc, x.Id });
+        transformation.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        transformation.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        ConfigureLabelTransformationInput(modelBuilder.Entity<LabelTransformationInputRow>());
+        ConfigureLabelTransformationOutput(modelBuilder.Entity<LabelTransformationOutputRow>());
+    }
+
+    private void ConfigureLabelTransformationInput(EntityTypeBuilder<LabelTransformationInputRow> entity)
+    {
+        entity.ToTable("LabelTransformationInputs", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_LabelTransformationInputs_Sequence", "[Sequence] >= 1");
+            table.HasCheckConstraint("CK_LabelTransformationInputs_State", "[LabelVersion] >= 1 AND [QuantityKg] > 0");
+        });
+        entity.HasKey(x => new { x.CompanyId, x.TransformationId, x.Sequence });
+        entity.Property(x => x.QuantityKg).HasPrecision(18, 3);
+        entity.HasIndex(x => new { x.CompanyId, x.TransformationId, x.LabelId }).IsUnique();
+        entity.HasIndex(x => new { x.CompanyId, x.LabelId, x.TransformationId });
+        TransformationOf(entity);
+        LabelOf(entity);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    private void ConfigureLabelTransformationOutput(EntityTypeBuilder<LabelTransformationOutputRow> entity)
+    {
+        entity.ToTable("LabelTransformationOutputs", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_LabelTransformationOutputs_Sequence", "[Sequence] >= 1");
+            table.HasCheckConstraint("CK_LabelTransformationOutputs_State", "[LabelVersion] >= 1 AND [QuantityKg] > 0");
+        });
+        entity.HasKey(x => new { x.CompanyId, x.TransformationId, x.Sequence });
+        entity.Property(x => x.QuantityKg).HasPrecision(18, 3);
+        entity.HasIndex(x => new { x.CompanyId, x.TransformationId, x.LabelId }).IsUnique();
+        entity.HasIndex(x => new { x.CompanyId, x.LabelId, x.TransformationId });
+        TransformationOf(entity);
+        LabelOf(entity);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    private static void TransformationOf<TEntity>(EntityTypeBuilder<TEntity> entity)
+        where TEntity : class, IInventoryTenantRow
+    {
+        entity.HasOne<LabelTransformationRow>().WithMany()
+            .HasForeignKey("CompanyId", "TransformationId")
+            .HasPrincipalKey(nameof(LabelTransformationRow.CompanyId), nameof(LabelTransformationRow.Id))
+            .OnDelete(DeleteBehavior.Restrict);
     }
 
     private void ConfigureMovements(ModelBuilder modelBuilder)
