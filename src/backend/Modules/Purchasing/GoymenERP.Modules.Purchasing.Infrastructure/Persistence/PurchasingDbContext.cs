@@ -39,6 +39,8 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
 
     internal DbSet<PurchaseOrderLineRow> OrderLines => Set<PurchaseOrderLineRow>();
 
+    internal DbSet<PurchaseAcceptanceRow> Acceptances => Set<PurchaseAcceptanceRow>();
+
     internal DbSet<PurchaseAttemptRow> Attempts => Set<PurchaseAttemptRow>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -53,6 +55,7 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
         ConfigureRequestLines(modelBuilder);
         ConfigureOrders(modelBuilder);
         ConfigureOrderLines(modelBuilder);
+        ConfigureAcceptances(modelBuilder);
         ConfigureAttempts(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
@@ -165,6 +168,8 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
                 "[Ordered] > 0 AND [Technical] >= 0 AND [Accepted] >= 0 AND [Technical] + [Accepted] <= [Ordered]");
         });
         entity.HasKey(x => new { x.CompanyId, x.OrderId, x.LineNo });
+        entity.HasAlternateKey(x => new { x.CompanyId, x.OrderId, x.LineId })
+            .HasName("AK_PurchaseOrderLines_CompanyId_OrderId_LineId");
         entity.HasIndex(x => new { x.CompanyId, x.OrderId, x.LineId }).IsUnique().HasDatabaseName("UX_PurchaseOrderLines_LineId");
         entity.HasIndex(x => new { x.CompanyId, x.SourceRequestLineId }).HasDatabaseName("IX_PurchaseOrderLines_SourceRequestLine");
         entity.Property(x => x.ProductVersion).HasMaxLength(64).IsRequired();
@@ -215,6 +220,43 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
             .HasForeignKey(x => new { x.CompanyId, x.OrderId })
             .HasPrincipalKey(x => new { x.CompanyId, x.Id })
             .IsRequired(false)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    private void ConfigureAcceptances(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<PurchaseAcceptanceRow>();
+        entity.ToTable("PurchaseAcceptanceShares", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_PurchaseAcceptanceShares_Identity",
+                $"[AcceptanceId] <> {EmptyGuid} AND [CompanyId] <> {EmptyGuid} AND [OrderId] <> {EmptyGuid} AND [LineId] <> {EmptyGuid}");
+            table.HasCheckConstraint("CK_PurchaseAcceptanceShares_Quantity", "[Quantity] > 0");
+            table.HasCheckConstraint("CK_PurchaseAcceptanceShares_Version", "[OrderVersionAfter] >= 1");
+            table.HasCheckConstraint("CK_PurchaseAcceptanceShares_Hashes", "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
+            table.HasCheckConstraint("CK_PurchaseAcceptanceShares_Text",
+                "LEN([ActorId]) > 0 AND LEN([CorrelationId]) > 0 AND ISJSON([ResultJson]) = 1");
+        });
+        entity.HasKey(x => x.AcceptanceId);
+        entity.HasAlternateKey(x => new { x.CompanyId, x.AcceptanceId });
+        entity.Property(x => x.AcceptanceId).ValueGeneratedNever();
+        entity.Property(x => x.Quantity).HasPrecision(18, 3);
+        entity.Property(x => x.IdempotencyKeyHash).HasMaxLength(64).IsUnicode(false).UseCollation(IdentityCollation).IsRequired();
+        entity.Property(x => x.RequestHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        entity.Property(x => x.ActorId).HasMaxLength(128).IsRequired();
+        entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        entity.Property(x => x.ResultJson).HasColumnType("nvarchar(max)").IsRequired();
+        entity.HasIndex(x => new { x.CompanyId, x.IdempotencyKeyHash }).IsUnique()
+            .HasDatabaseName("UX_PurchaseAcceptanceShares_Idempotency");
+        entity.HasIndex(x => new { x.CompanyId, x.OrderId, x.LineId, x.RecordedAtUtc, x.AcceptanceId })
+            .HasDatabaseName("IX_PurchaseAcceptanceShares_OrderLineRecorded");
+        entity.HasOne<PurchaseOrderRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.OrderId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<PurchaseOrderLineRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.OrderId, x.LineId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.OrderId, x.LineId })
             .OnDelete(DeleteBehavior.Restrict);
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }

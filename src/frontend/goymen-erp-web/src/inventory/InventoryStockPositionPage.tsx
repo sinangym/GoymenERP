@@ -9,6 +9,7 @@ import { CAPABILITY } from '../shell/capabilities'
 import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
 import { productDetailPath } from '../product/capabilities'
 import { locationDetailPath } from '../organization/capabilities'
+import { inventoryLabelDetailPath } from './labelDetailRoute'
 import styles from './inventory.module.css'
 
 type State =
@@ -102,7 +103,7 @@ function InventoryStockPositionView({
       <div className={styles.tableWrap}><table aria-busy="false"><thead><tr>
         <th>Etiket / lot</th><th>Ürün / lokasyon</th><th>Sahiplik / gözetim</th><th>Fiziksel kg</th><th>Bloklu kg</th><th>Aktif tahsis kg</th><th>Serbest kg</th>
       </tr></thead><tbody>{state.data.items.map((item) => <tr key={item.labelId} data-label-id={item.labelId}>
-        <td><strong>{item.labelCode}</strong><br />{item.lot.heatNumber ?? item.heatNumber ?? 'Döküm bilinmiyor'} · {item.lot.coilNumber ?? item.coilNumber ?? 'Rulo bilinmiyor'}<br />{item.documentStatus}</td>
+        <td><strong><Link to={inventoryLabelDetailPath(item.labelId)}>{item.labelCode}</Link></strong><br />{item.lot.heatNumber ?? item.heatNumber ?? 'Döküm bilinmiyor'} · {item.lot.coilNumber ?? item.coilNumber ?? 'Rulo bilinmiyor'}<br />{item.documentStatus}</td>
         <td>
           {canOpenProduct ? <Link to={productDetailPath(item.productId)}>Ürün kartı</Link> : <span>Ürün kartı</span>}
           <br />

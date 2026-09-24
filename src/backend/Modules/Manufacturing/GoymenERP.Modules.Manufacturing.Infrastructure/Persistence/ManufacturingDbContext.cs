@@ -94,7 +94,7 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
             table.HasCheckConstraint("CK_Plans_Identity",
                 "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [WorkCenterId] <> '00000000-0000-0000-0000-000000000000'");
-            table.HasCheckConstraint("CK_Plans_Enums", "[Process] IN (1) AND [Status] IN (1, 2)");
+            table.HasCheckConstraint("CK_Plans_Enums", "[Process] IN (1, 2, 3, 4, 5) AND [Status] IN (1, 2)");
             table.HasCheckConstraint("CK_Plans_Target",
                 "([TargetBasis] IS NULL AND [TargetKg] IS NULL) OR ([TargetBasis] IN (1, 2) AND [TargetKg] > 0)");
             table.HasCheckConstraint("CK_Plans_Approval",
@@ -164,7 +164,7 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
                 "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [PlanId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [WorkCenterId] <> '00000000-0000-0000-0000-000000000000'");
-            table.HasCheckConstraint("CK_Orders_Enums", "[Process] IN (1) AND [Status] IN (1, 2)");
+            table.HasCheckConstraint("CK_Orders_Enums", "[Process] IN (1, 2, 3, 4, 5) AND [Status] IN (1, 2)");
             table.HasCheckConstraint("CK_Orders_Target",
                 "([TargetBasis] IS NULL AND [TargetKg] IS NULL) OR ([TargetBasis] IN (1, 2) AND [TargetKg] > 0)");
             table.HasCheckConstraint("CK_Orders_Close",

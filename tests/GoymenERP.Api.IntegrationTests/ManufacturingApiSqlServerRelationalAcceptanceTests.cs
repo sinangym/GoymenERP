@@ -20,6 +20,7 @@ using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Manufacturing.Domain.Common;
 using GoymenERP.Modules.Manufacturing.Domain.Orders;
+using GoymenERP.Modules.Manufacturing.Domain.Plans;
 using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence;
 using GoymenERP.Modules.Settings.Application;
 using Microsoft.AspNetCore.TestHost;
@@ -69,6 +70,61 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
         ErpPermissions.InventoryLabelsRead,
         ErpPermissions.InventoryBalancesRead,
     ];
+
+    [SqlServerFact]
+    public async Task Each_locked_organization_process_persists_reopens_and_snapshots_into_its_order()
+    {
+        await using var run = await Run.StartAsync();
+        var user = await run.GrantAsync(TestUsers.CompanyA, CompanyA,
+            [.. AllWrites, ErpPermissions.ManufacturingPlansRead]);
+        using var client = run.ClientFor(user, CompanyA);
+        var roll = await run.StockedLabelAsync("SYN-MFG-WORK-CENTER-PLAN");
+
+        foreach (var process in new[]
+        {
+            ManufacturingProcess.Slitting,
+            ManufacturingProcess.ColdRolling,
+            ManufacturingProcess.TubeProfile,
+            ManufacturingProcess.Paint,
+            ManufacturingProcess.CutToLength,
+        })
+        {
+            var kind = process.ToString();
+            var workCenter = await run.WorkCenterOfKindAsync(CompanyA, kind);
+            var request = new SavePlanRequestV1(Guid.NewGuid(), workCenter,
+                [new PlannedInputRequestV1(roll.Id, "100", roll.Version)], null);
+            var response = await client.PostWithKeyAsync($"{Base}/plans", request);
+            Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+            var created = (await response.Content.ReadFromJsonAsync<PlanViewV1>())!;
+            Assert.Equal((workCenter, kind), (created.WorkCenterId, created.Process));
+
+            var reopenedResponse = await client.GetAsync($"{Base}/plans/{created.PlanId:D}");
+            Assert.Equal(HttpStatusCode.OK, reopenedResponse.StatusCode);
+            var reopened = (await reopenedResponse.Content.ReadFromJsonAsync<PlanViewV1>())!;
+            Assert.Equal((created.PlanId, workCenter, kind),
+                (reopened.PlanId, reopened.WorkCenterId, reopened.Process));
+
+            var approval = await client.PostWithKeyAsync($"{Base}/plans/{created.PlanId:D}/approval",
+                new ApprovePlanRequestV1(created.Version));
+            Assert.Equal(HttpStatusCode.OK, approval.StatusCode);
+            var orderId = Guid.NewGuid();
+            var orderResponse = await client.PostWithKeyAsync($"{Base}/orders",
+                new CreateOrderRequestV1(orderId, created.PlanId));
+            Assert.Equal(HttpStatusCode.Created, orderResponse.StatusCode);
+            var order = (await orderResponse.Content.ReadFromJsonAsync<OrderViewV1>())!;
+            Assert.Equal((orderId, workCenter, kind), (order.OrderId, order.WorkCenterId, order.Process));
+
+            var reopenedOrder = await client.GetFromJsonAsync<OrderViewV1>($"{Base}/orders/{orderId:D}");
+            Assert.Equal((orderId, workCenter, kind),
+                (reopenedOrder!.OrderId, reopenedOrder.WorkCenterId, reopenedOrder.Process));
+            Assert.Equal((int)process, await run.ScalarAsync<int>(
+                "SELECT Process FROM manufacturing.Plans WHERE CompanyId = @c AND Id = @id",
+                ("@c", CompanyA), ("@id", created.PlanId)));
+            Assert.Equal((int)process, await run.ScalarAsync<int>(
+                "SELECT Process FROM manufacturing.Orders WHERE CompanyId = @c AND Id = @id",
+                ("@c", CompanyA), ("@id", orderId)));
+        }
+    }
 
     [SqlServerFact]
     public async Task An_authorized_user_plans_approves_orders_records_facts_and_reads_the_roll_balance()
@@ -830,7 +886,12 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
         }
 
         public Task<Guid> WorkCenterOfAsync(Guid company) =>
-            ScalarAsync<Guid>("SELECT TOP (1) Id FROM organization.WorkCenters WHERE CompanyId = @c ORDER BY Id", ("@c", company));
+            WorkCenterOfKindAsync(company, "Slitting");
+
+        public Task<Guid> WorkCenterOfKindAsync(Guid company, string kind) =>
+            ScalarAsync<Guid>(
+                "SELECT TOP (1) Id FROM organization.WorkCenters WHERE CompanyId = @c AND Kind = @kind ORDER BY Id",
+                ("@c", company), ("@kind", kind));
 
         /// <summary>
         /// A real company-A Inventory label with a physical position. The version is read after the owner

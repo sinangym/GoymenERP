@@ -34,6 +34,11 @@ public sealed class ProductionPlan
             throw new ArgumentOutOfRangeException(nameof(process), process, "Tanımsız üretim süreci.");
         }
 
+        if (process != ManufacturingProcess.Slitting && spec is not null)
+        {
+            throw new ArgumentException("Dilme planı ayrıntıları yalnız Dilme/Sarım sürecinde kullanılabilir.", nameof(spec));
+        }
+
         Process = process;
         ArgumentNullException.ThrowIfNull(inputs);
         _inputs = inputs.ToList();
@@ -106,6 +111,13 @@ public sealed class ProductionPlan
         long version,
         SlittingSpec? spec = null)
     {
+        if (process != ManufacturingProcess.Slitting && spec is not null)
+        {
+            throw new ManufacturingRuleException(
+                ManufacturingRuleCodes.StoredRecordInvalid,
+                "Kayıtlı dilme planı ayrıntıları Dilme/Sarım dışındaki bir sürece bağlı olamaz.");
+        }
+
         var plan = new ProductionPlan(id, companyId, workCenterId, process, inputs, target, spec);
         if (approvedByUserId is { } approvedBy && approvedAtUtc is { } approvedAt)
         {
