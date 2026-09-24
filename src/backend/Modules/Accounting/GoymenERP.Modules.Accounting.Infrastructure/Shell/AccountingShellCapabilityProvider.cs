@@ -30,7 +30,7 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Shell;
 public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "ACCOUNTING";
-    public const string OwnerContractVersion = "1.0";
+    public const string OwnerContractVersion = "1.1";
 
     public const string PeriodListScreenId = "M-07";
     public const string PeriodProposeScreenId = "M-07-NEW";
@@ -57,6 +57,19 @@ public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
     public const string PostingQueuesCapabilityId = "accounting.posting-queues";
     public const string PostingQueuesRouteId = "accounting.posting-queues";
     public const string PostingQueuesRoutePath = "/muhasebe/kontrol";
+
+    public const string NormalDraftCreateScreenId = "M-04-NEW";
+    public const string NormalDraftDetailScreenId = "M-04-DRAFT";
+    public const string NormalDraftApproveScreenId = "M-04-APPROVE";
+    public const string NormalDraftCreateCapabilityId = "accounting.normal-journal-drafts.create";
+    public const string NormalDraftCreateRouteId = "accounting.normal-journal-drafts.new";
+    public const string NormalDraftCreateRoutePath = "/muhasebe/normal-fisler/yeni";
+    public const string NormalDraftDetailCapabilityId = "accounting.normal-journal-drafts.detail";
+    public const string NormalDraftDetailRouteId = "accounting.normal-journal-drafts.detail";
+    public const string NormalDraftDetailRoutePath = "/muhasebe/normal-fisler/:draftId";
+    public const string NormalDraftApproveCapabilityId = "accounting.normal-journal-drafts.approve";
+    public const string NormalDraftApproveRouteId = "accounting.normal-journal-drafts.approve";
+    public const string NormalDraftApproveRoutePath = "/muhasebe/normal-fis-onay/:draftId";
 
     public string Owner => OwnerId;
 
@@ -94,6 +107,15 @@ public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
             Declaration(JournalDetailCapabilityId, JournalDetailRouteId, JournalDetailRoutePath, JournalDetailScreenId,
                 ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [AccountingPermissionManifestV1.JournalsRead],
                 available: false),
+            Declaration(NormalDraftCreateCapabilityId, NormalDraftCreateRouteId, NormalDraftCreateRoutePath,
+                NormalDraftCreateScreenId, ShellCapabilityRoutePrecedence.Static,
+                [NormalJournalPermissionNamesV1.DraftCreate], available: true),
+            Declaration(NormalDraftDetailCapabilityId, NormalDraftDetailRouteId, NormalDraftDetailRoutePath,
+                NormalDraftDetailScreenId, ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
+                [NormalJournalPermissionNamesV1.DraftCreate], available: true),
+            Declaration(NormalDraftApproveCapabilityId, NormalDraftApproveRouteId, NormalDraftApproveRoutePath,
+                NormalDraftApproveScreenId, ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
+                [NormalJournalPermissionNamesV1.DraftApprove], available: true),
             Declaration(PostingQueuesCapabilityId, PostingQueuesRouteId, PostingQueuesRoutePath, PostingQueuesScreenId,
                 ShellCapabilityRoutePrecedence.Static, [AccountingPermissionManifestV1.PostingQueuesRead], available: true),
         ];

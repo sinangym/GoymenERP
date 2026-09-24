@@ -39,6 +39,61 @@ public sealed class NormalJournalDraftLifecycleV1Tests
     }
 
     [Fact]
+    public async Task A_saved_normal_draft_can_be_reopened_and_approved_by_its_preparer_with_the_narrow_grant()
+    {
+        var draft = Draft();
+        var store = new MemoryStore(Record());
+        var authority = new PermissionAuthority(create: Granted(), approve: Granted());
+
+        var created = await Service(store, authority).CreateAsync(draft, "key-save-close");
+
+        Assert.Equal(AccountingApiStatus.Created, created.Status);
+        Assert.Equal(draft.Id, created.Resource!.DraftId);
+        Assert.Equal(1, created.Resource.Version);
+        Assert.Equal("Draft", created.Resource.Status);
+        Assert.Equal(Actor, created.Resource.PreparedByUserId);
+
+        // A new service instance represents closing and reopening the client while retaining the durable store.
+        var reopened = await store.FindNormalDraftAsync(draft.Id);
+        Assert.NotNull(reopened);
+        Assert.Equal(draft.Id, reopened.Id);
+        Assert.Equal(1, reopened.Version);
+        Assert.Equal(NormalJournalDraftStatusV1.Draft, reopened.Status);
+
+        var periodId = Guid.Parse("e0000000-0000-4000-8000-000000000001");
+        var approved = await Service(store, authority).ApproveAsync(
+            reopened.Id, reopened.Version, periodId, "key-reopen-approve");
+
+        Assert.Equal(AccountingApiStatus.Ok, approved.Status);
+        Assert.Equal(2, approved.Resource!.Version);
+        Assert.Equal("Approved", approved.Resource.Status);
+        Assert.Equal(Actor, approved.Resource.ApprovedByUserId);
+        Assert.Equal(periodId, approved.Resource.PeriodId);
+        Assert.Equal(draft.Id, approved.Resource.PostedJournalId);
+        Assert.Equal(1, store.Creates);
+        Assert.Equal(1, store.Approvals);
+        Assert.Equal(2, store.Completions);
+    }
+
+    [Fact]
+    public async Task Create_authority_reads_only_its_own_draft_while_approve_authority_reads_company_drafts()
+    {
+        var anotherPreparer = Guid.Parse("a0000000-0000-4000-8000-0000000000b2");
+        var store = new MemoryStore(Record() with { PreparedByUserId = anotherPreparer });
+
+        var createOnly = await Service(store,
+            new PermissionAuthority(create: Granted(), approve: PermissionScope.Denied))
+            .ReadAsync(store.Record.Id);
+        var approver = await Service(store,
+            new PermissionAuthority(create: PermissionScope.Denied, approve: Granted()))
+            .ReadAsync(store.Record.Id);
+
+        Assert.Equal(AccountingApiStatus.Denied, createOnly.Status);
+        Assert.Equal(AccountingApiStatus.Ok, approver.Status);
+        Assert.Equal(store.Record.Id, approver.Resource!.DraftId);
+    }
+
+    [Fact]
     public async Task Approval_authority_lost_at_the_final_store_fence_is_refused()
     {
         var answers = Enumerable.Repeat(Granted(), 5).Append(PermissionScope.Denied).ToArray();
@@ -105,38 +160,28 @@ public sealed class NormalJournalDraftLifecycleV1Tests
     }
 
     private static NormalJournalDraftRecordV1 Record()
+        => Record(Draft());
+
+    private static NormalJournalDraftRecordV1 Record(NormalJournalDraftV1 draft)
     {
-        var draftId = Guid.NewGuid();
         return new NormalJournalDraftRecordV1(
-            draftId,
-            Company,
-            1,
+            draft.Id,
+            draft.CompanyId,
+            draft.Version,
             NormalJournalDraftStatusV1.Draft,
-            Actor,
-            DateTimeOffset.Parse("2026-09-24T16:00:00Z"),
+            draft.PreparedByUserId,
+            draft.Request.Dates.RecordedAtUtc,
             null,
             null,
             null,
             null,
-            "synthetic-plan-v1",
-            new string('a', 64),
-            Actor,
-            DateTimeOffset.Parse("2026-09-24T15:00:00Z"),
-            Actor,
-            DateTimeOffset.Parse("2026-09-24T15:30:00Z"),
-            new PostingRequest(
-                "synthetic-consumer",
-                "synthetic-message",
-                draftId,
-                new SourceReference(Company, Guid.NewGuid(), "synthetic-purpose"),
-                "synthetic-rule-v1",
-                Guid.NewGuid(),
-                new PostingDates(new DateOnly(2026, 9, 24), new DateOnly(2026, 9, 24), null,
-                    DateTimeOffset.Parse("2026-09-24T14:00:00Z")),
-                [
-                    new ProposedLine("debit", new AccountRef(Company, Guid.NewGuid()), PostingSide.Debit, 10m),
-                    new ProposedLine("credit", new AccountRef(Company, Guid.NewGuid()), PostingSide.Credit, 10m),
-                ]));
+            draft.Rule.Mirror.SourceVersion,
+            draft.Rule.Mirror.SourceSha256,
+            draft.Rule.Mirror.ApprovedByUserId,
+            draft.Rule.Mirror.ApprovedAtUtc,
+            draft.Rule.ApprovedByUserId,
+            draft.Rule.ApprovedAtUtc,
+            draft.Request);
     }
 
     private static NormalJournalDraftV1 Draft(bool reverseLines = false)
@@ -221,6 +266,7 @@ public sealed class NormalJournalDraftLifecycleV1Tests
             await Task.Yield();
             await freshAuthorityFence(cancellationToken);
             Creates++;
+            Record = NormalJournalDraftLifecycleV1Tests.Record(draft);
             if (metadata.Completion?.Invoke(Record) is { } command)
             {
                 commands.Add(command);
@@ -257,7 +303,11 @@ public sealed class NormalJournalDraftLifecycleV1Tests
                 PostedJournalId = draftId,
             };
             Approvals++;
-            metadata.Completion?.Invoke(Record);
+            if (metadata.Completion?.Invoke(Record) is { } command)
+            {
+                commands.Add(command);
+                Completions++;
+            }
             return Record;
         }
 

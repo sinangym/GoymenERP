@@ -39,7 +39,7 @@ public sealed class AccountingShellRegistrationTests
 
         var actual = ShellCapabilityRegistry.ComputeCandidateRevision(providers);
         Assert.True(
-            string.Equals(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV12PublishedManufacturingV12PublishedLogisticsV10PublishedPurchasingV13AndPublishedAccountingV10, actual,
+            string.Equals(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV12PublishedManufacturingV12PublishedLogisticsV10PublishedPurchasingV13AndPublishedAccountingV11, actual,
                 StringComparison.Ordinal),
             $"Accounting normal-host authority drifted. Actual: {actual}");
     }
@@ -52,7 +52,7 @@ public sealed class AccountingShellRegistrationTests
         var authority = C01E2eShellCapabilityActivation.Configure(services, new TestingEnvironment(),
             new ConfigurationBuilder().Build());
 
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV12PublishedManufacturingV12PublishedLogisticsV10PublishedPurchasingV13AndPublishedAccountingV10,
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV12PublishedManufacturingV12PublishedLogisticsV10PublishedPurchasingV13AndPublishedAccountingV11,
             authority);
         using var container = services.BuildServiceProvider();
         var registry = new ShellCapabilityRegistry(container.GetServices<IShellCapabilityProvider>(),
@@ -61,15 +61,16 @@ public sealed class AccountingShellRegistrationTests
             .Where(item => item.Owner == AccountingShellCapabilityProvider.OwnerId)
             .ToArray();
         // M-07 and its propose screen, the approve and close controls of that list, M-04 and its detail, M-01:
-        // seven declarations. ACC-V0c is the separate change the previous version of this test predicted:
-        // the acc01 acceptance published six of them.
-        Assert.Equal(7, accounting.Length);
+        // ten declarations after ACC-V1: the seven ACC-V0 routes/controls and three normal-draft routes.
+        Assert.Equal(10, accounting.Length);
         // Named rather than counted, and asserted as a SET: "all staged" was true only until the flip, while
         // "these six and no others" stays true and fails loudly if a seventh is ever published without an
         // acceptance to stand on.
         string[] published =
         [
-            "accounting.journals.list", "accounting.periods.approve", "accounting.periods.close",
+            "accounting.journals.list", "accounting.normal-journal-drafts.approve",
+            "accounting.normal-journal-drafts.create", "accounting.normal-journal-drafts.detail",
+            "accounting.periods.approve", "accounting.periods.close",
             "accounting.periods.list", "accounting.periods.propose", "accounting.posting-queues",
         ];
         Assert.Equal(published, accounting.Where(item => item.Declaration.ImplementationAvailable)
@@ -82,7 +83,8 @@ public sealed class AccountingShellRegistrationTests
         Assert.False(journalDetail.Declaration.ImplementationAvailable);
         string[] expected =
         [
-            "accounting.journals.detail", "accounting.journals.list", "accounting.periods.approve",
+            "accounting.journals.detail", "accounting.journals.list", "accounting.normal-journal-drafts.approve",
+            "accounting.normal-journal-drafts.create", "accounting.normal-journal-drafts.detail", "accounting.periods.approve",
             "accounting.periods.close", "accounting.periods.list", "accounting.periods.propose",
             "accounting.posting-queues",
         ];
