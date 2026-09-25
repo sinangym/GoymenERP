@@ -185,18 +185,22 @@ public sealed class InventoryReadApiSqlServerRelationalAcceptanceTests
             var customerContext = new InventoryParentRollPositionContextV1(
                 StockPartyKind.Counterparty, customerPosition.OwnerId,
                 StockPartyKind.Company, customerPosition.CustodianId);
-            var contextual = await service.SearchAsync(new("SYN-R13", 100, customerContext));
+            IInventoryContextualParentRollReferencesV1 contextualPort = service;
+            var contextual = await contextualPort.SearchAsync(new(customerContext, "SYN-R13", 100));
             var contextualCustomer = Assert.Single(contextual.Items, i => i.LabelId == customer.Id);
             Assert.True(contextualCustomer.DraftSelectable);
             Assert.Null(contextualCustomer.DraftRefusalCode);
             var contextualOwn = Assert.Single(contextual.Items, i => i.LabelId == own.Id);
             Assert.False(contextualOwn.DraftSelectable);
             Assert.Equal(InventoryParentRollCodesV1.ContextRequired, contextualOwn.DraftRefusalCode);
-            var validatedCustomer = await service.ValidateAsync(new(customer.Id, "3", customerContext));
+            var contextualSelection = new InventoryContextualParentRollSelectionV1(
+                customer.Id, "3", customerContext);
+            var validatedCustomer = await contextualPort.ValidateAsync(contextualSelection);
             Assert.Equal((customer.Id, true, (string?)null),
                 (validatedCustomer.LabelId, validatedCustomer.DraftSelectable,
                     validatedCustomer.DraftRefusalCode));
-            await ParentRollRefused(service.ValidateAsync(new(customer.Id, "3",
+            Assert.Equivalent(validatedCustomer, await contextualPort.ValidateAsync(contextualSelection), strict: true);
+            await ParentRollRefused(contextualPort.ValidateAsync(new(customer.Id, "3",
                     customerContext with { OwnerId = Guid.NewGuid() })),
                 422, InventoryParentRollCodesV1.ContextRequired);
             await ParentRollRefused(service.ValidateAsync(new(own.Id, "2")), 409, InventoryParentRollCodesV1.VersionConflict);

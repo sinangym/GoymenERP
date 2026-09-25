@@ -1,5 +1,3 @@
-using GoymenERP.Modules.Inventory.Domain.Stock;
-
 namespace GoymenERP.Modules.Inventory.Application;
 
 /// <summary>
@@ -32,25 +30,8 @@ public interface IInventoryParentRollValidationV1
         CancellationToken cancellationToken = default);
 }
 
-public sealed record InventoryParentRollQueryV1(
-    string? Q = null,
-    int Limit = 25,
-    InventoryParentRollPositionContextV1? PositionContext = null);
-
-public sealed record InventoryParentRollSelectionV1(
-    Guid LabelId,
-    string ExpectedLabelVersion,
-    InventoryParentRollPositionContextV1? PositionContext = null);
-
-/// <summary>
-/// Exact Inventory identity supplied only after the consumer has authorized its commercial context.
-/// It does not carry a party role, account, grant, availability promise or reservation.
-/// </summary>
-public sealed record InventoryParentRollPositionContextV1(
-    StockPartyKind OwnerKind,
-    Guid OwnerId,
-    StockPartyKind CustodianKind,
-    Guid CustodianId);
+public sealed record InventoryParentRollQueryV1(string? Q = null, int Limit = 25);
+public sealed record InventoryParentRollSelectionV1(Guid LabelId, string ExpectedLabelVersion);
 public sealed record InventoryParentRollCandidatesV1(
     IReadOnlyList<InventoryParentRollReferenceV1> Items, bool SearchWindowFull);
 

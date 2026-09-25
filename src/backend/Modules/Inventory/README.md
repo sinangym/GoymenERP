@@ -42,12 +42,12 @@ company/product/version, then revalidate authority/company/actor immediately bef
 ## R13 — draft parent-roll reference predecessor (Business #66/5778472429 A)
 
 `GoymenERP.Modules.Inventory.Application.IInventoryParentRollCandidatesV1.SearchAsync` accepts
-`InventoryParentRollQueryV1(Q, Limit=25, PositionContext=null)` (label-code search, max64 characters,
-examined window1..100)
+`InventoryParentRollQueryV1(Q, Limit=25)` (label-code search, max64 characters, examined window1..100)
 and returns `Items/SearchWindowFull`. `IInventoryParentRollValidationV1.ValidateAsync` accepts
-`InventoryParentRollSelectionV1(LabelId, ExpectedLabelVersion, PositionContext=null)`. The optional typed
-context contains only exact owner/custodian kind and ID after the consumer has authorized its commercial
-context; party roles/accounts/versions remain with Counterparty and Manufacturing. There is deliberately no PlannedKg:
+`InventoryParentRollSelectionV1(LabelId, ExpectedLabelVersion)`. These public contracts remain context-free.
+The separate in-process `IInventoryContextualParentRollReferencesV1` accepts only exact typed owner/custodian
+kind and ID after the consumer has authorized its commercial context; party roles/accounts/versions and
+location are not inputs. There is deliberately no PlannedKg:
 this read does not choose equality, partial-coil, upper-bound, reservation or availability policy.
 `AddInventoryParentRollReferences()` registers only these owner ports. Central owns HTTP/host publication.
 `InventoryParentRollApiV1` fixes that publication's owner contract at

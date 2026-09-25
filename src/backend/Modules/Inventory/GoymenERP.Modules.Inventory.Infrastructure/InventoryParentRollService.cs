@@ -22,20 +22,35 @@ internal interface IInventoryParentRollReader
 
 internal sealed class InventoryParentRollService(ICompanyContext company, ICurrentUser user,
     IErpAuthorityRevalidationService authority, IInventoryParentRollReader? reader)
-    : IInventoryParentRollCandidatesV1, IInventoryParentRollValidationV1
+    : IInventoryParentRollCandidatesV1, IInventoryParentRollValidationV1,
+        IInventoryContextualParentRollReferencesV1
 {
     public async Task<InventoryParentRollCandidatesV1> SearchAsync(InventoryParentRollQueryV1 query,
         CancellationToken cancellationToken = default)
     {
         var scope = await RequireAsync(null, cancellationToken);
-        if (query is null || query.Limit is < 1 or > 100 || query.Q?.Length > MaterialLabel.MaximumCodeLength
-            || query.PositionContext is not null && !IsValid(query.PositionContext))
+        if (query is null || query.Limit is < 1 or > 100 || query.Q?.Length > MaterialLabel.MaximumCodeLength)
             throw Error(400, InventoryParentRollCodesV1.InvalidQuery);
+        return await SearchAsync(scope, query.Q, query.Limit, null, cancellationToken);
+    }
+
+    async Task<InventoryParentRollCandidatesV1> IInventoryContextualParentRollReferencesV1.SearchAsync(
+        InventoryContextualParentRollQueryV1 query, CancellationToken cancellationToken)
+    {
+        var scope = await RequireAsync(null, cancellationToken);
+        if (query is null || query.Limit is < 1 or > 100 || query.Q?.Length > MaterialLabel.MaximumCodeLength
+            || !IsValid(query.PositionContext))
+            throw Error(400, InventoryParentRollCodesV1.InvalidQuery);
+        return await SearchAsync(scope, query.Q, query.Limit, query.PositionContext, cancellationToken);
+    }
+
+    private async Task<InventoryParentRollCandidatesV1> SearchAsync(Scope scope, string? q, int limit,
+        InventoryParentRollPositionContextV1? context, CancellationToken cancellationToken)
+    {
         var source = reader ?? throw Error(503, InventoryParentRollCodesV1.Unavailable);
-        var window = await FencedAsync(() => source.SearchAsync(scope.CompanyId, query.Q?.Trim() ?? "",
-            query.Limit, cancellationToken), scope, cancellationToken);
-        return new([.. window.Records.Select(record => View(record, scope.CompanyId, query.PositionContext))],
-            window.HasMore);
+        var window = await FencedAsync(() => source.SearchAsync(scope.CompanyId, q?.Trim() ?? "",
+            limit, cancellationToken), scope, cancellationToken);
+        return new([.. window.Records.Select(record => View(record, scope.CompanyId, context))], window.HasMore);
     }
 
     public async Task<InventoryParentRollReferenceV1> ValidateAsync(InventoryParentRollSelectionV1 selection,
@@ -44,18 +59,35 @@ internal sealed class InventoryParentRollService(ICompanyContext company, ICurre
         var scope = await RequireAsync(null, cancellationToken);
         if (selection is null || selection.LabelId == Guid.Empty)
             throw Error(404, InventoryParentRollCodesV1.InvalidReference);
-        if (selection.PositionContext is not null && !IsValid(selection.PositionContext))
+        return await ValidateAsync(scope, selection.LabelId, selection.ExpectedLabelVersion, null, cancellationToken);
+    }
+
+    async Task<InventoryParentRollReferenceV1> IInventoryContextualParentRollReferencesV1.ValidateAsync(
+        InventoryContextualParentRollSelectionV1 selection, CancellationToken cancellationToken)
+    {
+        var scope = await RequireAsync(null, cancellationToken);
+        if (selection is null || selection.LabelId == Guid.Empty)
+            throw Error(404, InventoryParentRollCodesV1.InvalidReference);
+        if (!IsValid(selection.PositionContext))
             throw Error(422, InventoryParentRollCodesV1.ContextRequired);
-        if (!long.TryParse(selection.ExpectedLabelVersion, NumberStyles.None, CultureInfo.InvariantCulture,
-            out var expected) || expected <= 0 || expected.ToString(CultureInfo.InvariantCulture) != selection.ExpectedLabelVersion)
+        return await ValidateAsync(scope, selection.LabelId, selection.ExpectedLabelVersion,
+            selection.PositionContext, cancellationToken);
+    }
+
+    private async Task<InventoryParentRollReferenceV1> ValidateAsync(Scope scope, Guid labelId,
+        string expectedLabelVersion, InventoryParentRollPositionContextV1? context,
+        CancellationToken cancellationToken)
+    {
+        if (!long.TryParse(expectedLabelVersion, NumberStyles.None, CultureInfo.InvariantCulture,
+            out var expected) || expected <= 0 || expected.ToString(CultureInfo.InvariantCulture) != expectedLabelVersion)
             throw Error(400, InventoryParentRollCodesV1.InvalidVersion);
         var source = reader ?? throw Error(503, InventoryParentRollCodesV1.Unavailable);
-        var record = await FencedAsync(() => source.ReadAsync(scope.CompanyId, selection.LabelId, cancellationToken),
+        var record = await FencedAsync(() => source.ReadAsync(scope.CompanyId, labelId, cancellationToken),
             scope, cancellationToken);
-        if (record is null || record.Label.CompanyId != scope.CompanyId || record.Label.Id != selection.LabelId)
+        if (record is null || record.Label.CompanyId != scope.CompanyId || record.Label.Id != labelId)
             throw Error(404, InventoryParentRollCodesV1.InvalidReference);
         if (record.Version != expected) throw Error(409, InventoryParentRollCodesV1.VersionConflict);
-        var view = View(record, scope.CompanyId, selection.PositionContext);
+        var view = View(record, scope.CompanyId, context);
         if (!view.DraftSelectable) throw Error(422, view.DraftRefusalCode!);
         return view;
     }
