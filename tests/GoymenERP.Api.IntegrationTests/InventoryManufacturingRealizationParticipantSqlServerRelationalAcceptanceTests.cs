@@ -138,6 +138,12 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             OwnerId = CompanyA,
         }, ManufacturingMetadata(run, "customer-output-wrong-owner"), 409,
             InventoryManufacturingRealizationCodesV1.ParentLabelContextConflict);
+        await AssertOutputRefusalAsync(run, output with
+        {
+            CustodianKind = StockPartyKind.Counterparty,
+            CustodianId = customer,
+        }, ManufacturingMetadata(run, "customer-output-wrong-custodian"), 409,
+            InventoryManufacturingRealizationCodesV1.ParentLabelContextConflict);
 
         var outputResult = await CommitOutputAsync(run, output,
             ManufacturingMetadata(run, "customer-output"));
