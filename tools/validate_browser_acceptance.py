@@ -422,8 +422,15 @@ SUITE_FIXTURE_OUTPUTS: dict[str, frozenset[str]] = {
     # ORG's Suites/MFG seed (#323 5735635840): the actors, the company, the seeded work centre (read
     # through the real Organization API) and the plan -> approval -> order it writes through the real API.
     # MFG-ORD adds the closer actor; the list and the close need no further seeded row.
-    "mfg": frozenset({"recorderActor", "readerActor", "closerActor", "companyId", "workCenterId",
-                      "orderId", "rollId"}),
+    "mfg": frozenset({
+        "recorderActor", "readerActor", "closerActor", "companyId", "workCenterId", "orderId", "rollId",
+        "issueRollId", "issueRollCode", "replayRollId", "replayRollCode", "conflictRollId",
+        "conflictRollCode", "listRollId", "listRollCode", "closeRollId", "closeRollCode",
+        "planCreateRollId", "planCreateRollCode", "planReplayRollId", "planReplayRollCode",
+        "planRefusalRollId", "planRefusalRollCode", "outputProductId", "outputProductVersion",
+        "outputRequiredDocuments", "outputOwnerKind", "outputOwnerId", "outputCustodianKind",
+        "outputCustodianId", "outputLocationId", "outputInitialBlock",
+    }),
     # FİNANS's Suites/Fin01 seed (#332): the company, the customer opened through the real Cari API and
     # its company account, and the two suite actors. No SQL, no gated writer, no Finance row.
     "fin01": frozenset({"companyId", "partyId", "companyAccountId", "proposerActor", "approverActor"}),
@@ -508,10 +515,33 @@ def seed_export(suite: str, seed: object) -> str:
             and re.fullmatch(r"SYNR14-[1-9][0-9]*", value) is not None
         is_r14_name = suite == "r14" and key == "productName" \
             and value == "SENTETIK browser-suite:r14 stock candidate"
+        mfg_exact_text = {
+            "issueRollCode": "SYN-MFG-ROLL-2",
+            "replayRollCode": "SYN-MFG-ROLL-3",
+            "conflictRollCode": "SYN-MFG-ROLL-4",
+            "listRollCode": "SYN-MFG-ROLL-5",
+            "closeRollCode": "SYN-MFG-ROLL-6",
+            "planCreateRollCode": "SYN-MFG-ROLL-7",
+            "planReplayRollCode": "SYN-MFG-ROLL-8",
+            "planRefusalRollCode": "SYN-MFG-ROLL-9",
+            "outputRequiredDocuments": "[]",
+            "outputOwnerKind": "Company",
+            "outputCustodianKind": "Company",
+            "outputInitialBlock": "Free",
+        }
+        is_mfg_exact_text = suite == "mfg" and mfg_exact_text.get(key) == value
+        is_mfg_version = suite == "mfg" and key == "outputProductVersion" \
+            and re.fullmatch(r"[1-9][0-9]*", value) is not None
         require(is_guid or is_actor or is_s04_version or is_s04_code or is_s04_name
                 or is_pur01_version or is_pur01_code or is_pur01_name
-                or is_r14_version or is_r14_code or is_r14_name,
+                or is_r14_version or is_r14_code or is_r14_name
+                or is_mfg_exact_text or is_mfg_version,
                 f"seed output {key} must be a GUID or an actor id or an approved suite Product value")
+    if suite == "mfg":
+        require(seed["outputOwnerId"] == seed["companyId"],
+                "mfg output owner must be the seeded company")
+        require(seed["outputCustodianId"] == seed["companyId"],
+                "mfg output custodian must be the seeded company")
     compact = json.dumps(seed, sort_keys=True, separators=(",", ":"))
     return f"BROWSER_E2E_{suite.upper()}_SEED={compact}"
 
