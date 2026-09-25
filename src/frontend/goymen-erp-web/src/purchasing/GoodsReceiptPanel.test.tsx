@@ -70,6 +70,7 @@ describe('Purchasing goods receipt consumer, synthetic NOT_ENV', () => {
   it('records independent quantities with hidden identities and reopens the same Free receipt without quality release', async () => {
     const server = fixture()
     const page = mount()
+    expect(screen.getByText(T.note).textContent).toContain('şimdilik zorunlu değildir')
     await fill()
     await userEvent.click(screen.getByRole('button', { name: T.save }))
     await screen.findByRole('status')

@@ -49,6 +49,18 @@ public static class PurchaseGoodsReceiptCodesV1
 }
 
 /// <summary>
+/// Sinan #66/5829412526 explicitly defers mandatory receipt documents. This is an accepted
+/// NEW-receipt policy, not a fallback for an unavailable source. Delivery-note/weighbridge-ticket
+/// images or PDFs are optional; attachment storage/security remains with its existing owner.
+/// Future activation needs an accepted policy/source change, never a rewrite of stored receipts.
+/// </summary>
+public static class PurchaseGoodsReceiptDocumentPolicyV1
+{
+    public const bool MandatoryDocumentsEnabled = false;
+    public static IReadOnlyList<string> RequiredForNewReceipt { get; } = Array.Empty<string>();
+}
+
+/// <summary>
 /// Host owns ONE transaction/connection. Both existing participants borrow it, Purchasing first, Inventory
 /// second with Purchasing's returned post-stage order version. Invoke beforeCommit AFTER every stage/read,
 /// immediately before sole commit. Any throw rolls back all rows/audits/outbox and disposes participants,
@@ -70,9 +82,10 @@ public interface IPurchaseGoodsReceiptParticipantsV1
     Task<PurchaseReceiptStockRequestV1?> ReadOriginalAsync(Guid acceptanceId, PurchasingWriteEnvelope envelope, CancellationToken cancellationToken);
 
     /// <summary>
-    /// First attempts only. Resolve authorized location/owner/custodian and version-bound required documents
-    /// from ACCEPTED owner sources. No document source is currently published: until one is approved/bound,
-    /// throw DocumentSourceUnavailable; NEVER use [], MTC or browser documents as a default.
+    /// First attempts only. Resolve authorized location/owner/custodian from ACCEPTED owner sources.
+    /// Under Sinan #66/5829412526, mandatory documents are deferred: do not query an unavailable document
+    /// policy or throw DocumentSourceUnavailable for that deferral. The service supplies the accepted
+    /// new-receipt document policy. Missing position facts still refuse and roll back both participants.
     /// </summary>
     Task<PurchaseReceiptFactsV1> ResolveFirstAsync(PurchaseReceiptSourceV1 source, Guid locationId, CancellationToken cancellationToken);
 
@@ -89,8 +102,10 @@ public interface IPurchaseGoodsReceiptReadsV1
     Task<PurchaseGoodsReceiptViewV1?> GetReceiptAsync(Guid orderId, Guid acceptanceId, CancellationToken cancellationToken);
 }
 
+// The optional legacy member preserves adapter source compatibility. It does not override the
+// accepted new-receipt policy; only ReadOriginalAsync supplies immutable historical requirements.
 public sealed record PurchaseReceiptFactsV1(Guid CompanyId, Guid ProductId, string ProductVersion, Guid LocationId,
-    string OwnerKind, Guid OwnerId, string CustodianKind, Guid CustodianId, IReadOnlyList<string> RequiredDocuments);
+    string OwnerKind, Guid OwnerId, string CustodianKind, Guid CustodianId, IReadOnlyList<string>? RequiredDocuments = null);
 
 /// <summary>Server-only Inventory adapter DTO. New receipts default to Free; replay adapters preserve the immutable original block.</summary>
 public sealed record PurchaseReceiptStockRequestV1(Guid CompanyId, Guid AcceptanceId, Guid PurchaseOrderId, Guid PurchaseOrderLineId,

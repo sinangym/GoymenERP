@@ -16,6 +16,19 @@ public sealed partial class PurchasingServiceTests
             result.Receipt.MeasuredQuantityKg, result.Receipt.InitialBlock));
         Assert.Equal("4", runner.Stock!.PurchaseOrderVersionAfter);
         Assert.Equal("Free", runner.Stock.InitialBlock);
+        Assert.False(PurchaseGoodsReceiptDocumentPolicyV1.MandatoryDocumentsEnabled);
+        Assert.Empty(runner.Stock.RequiredDocuments);
+        Assert.Equal(["receipt-read", "purchase", "first-source", "inventory", "fence", "commit"], runner.Events);
+    }
+
+    [Fact]
+    public async Task New_receipt_uses_explicit_optional_policy_not_legacy_document_requirements()
+    {
+        var (world, runner, orderId, lineId) = await ReceiptWorldAsync();
+        runner.RequiredDocuments = ["SYNTHETIC-LEGACY-DOCUMENT"];
+        await world.Service(runner).RecordGoodsReceiptAsync(orderId, lineId, ReceiptRequest(), Metadata("receipt-1"));
+        Assert.Empty(runner.Stock!.RequiredDocuments);
+        Assert.Equal("Free", runner.Stock.InitialBlock);
         Assert.Equal(["receipt-read", "purchase", "first-source", "inventory", "fence", "commit"], runner.Events);
     }
 
@@ -27,13 +40,14 @@ public sealed partial class PurchasingServiceTests
         var (world, runner, orderId, lineId) = await ReceiptWorldAsync();
         var request = ReceiptRequest();
         await world.Service(runner).RecordGoodsReceiptAsync(orderId, lineId, request, Metadata("receipt-1"));
-        runner.Original = runner.Stock! with { InitialBlock = originalBlock };
-        runner.DocumentSourceUnavailable = true;
+        runner.Original = runner.Stock! with { InitialBlock = originalBlock, RequiredDocuments = ["SYNTHETIC-ORIGINAL-DOCUMENT"] };
+        runner.PositionSourceUnavailable = true;
         runner.Events.Clear();
         var result = await world.Service(runner).RecordGoodsReceiptAsync(orderId, lineId, request, Metadata("receipt-1", "retry"));
         Assert.True(result.IsReplay);
         Assert.Equal(originalBlock, result.Receipt.InitialBlock);
         Assert.Equal(originalBlock, runner.Stock!.InitialBlock);
+        Assert.Equal(["SYNTHETIC-ORIGINAL-DOCUMENT"], runner.Stock.RequiredDocuments);
         Assert.Equal(["receipt-read", "purchase", "inventory", "fence", "commit"], runner.Events);
         Assert.Equal("synthetic-correlation", result.OriginalCorrelationId);
     }
@@ -69,13 +83,13 @@ public sealed partial class PurchasingServiceTests
     }
 
     [Fact]
-    public async Task Missing_document_source_never_defaults_to_empty_documents_or_commits_acceptance_alone()
+    public async Task Missing_position_source_never_defaults_to_browser_facts_or_commits_acceptance_alone()
     {
         var (world, runner, orderId, lineId) = await ReceiptWorldAsync();
-        runner.DocumentSourceUnavailable = true;
+        runner.PositionSourceUnavailable = true;
         var refusal = await Assert.ThrowsAsync<PurchasingServiceException>(() => world.Service(runner)
             .RecordGoodsReceiptAsync(orderId, lineId, ReceiptRequest(), Metadata("receipt-1")));
-        Assert.Equal((503, PurchaseGoodsReceiptCodesV1.DocumentSourceUnavailable), (refusal.Status, refusal.Code));
+        Assert.Equal((503, PurchaseGoodsReceiptCodesV1.Unavailable), (refusal.Status, refusal.Code));
         Assert.DoesNotContain("inventory", runner.Events);
         Assert.DoesNotContain("commit", runner.Events);
     }
@@ -131,7 +145,8 @@ public sealed partial class PurchasingServiceTests
         public List<string> Events { get; } = [];
         public PurchaseReceiptStockRequestV1? Stock { get; private set; }
         public PurchaseReceiptStockRequestV1? Original { get; set; }
-        public bool DocumentSourceUnavailable { get; set; }
+        public bool PositionSourceUnavailable { get; set; }
+        public IReadOnlyList<string>? RequiredDocuments { get; set; }
         public Action? BeforeFence { get; set; }
 
         public async Task<T> ExecuteAsync<T>(Guid companyId, Func<IPurchaseGoodsReceiptParticipantsV1, CancellationToken, Task<T>> operation,
@@ -155,9 +170,9 @@ public sealed partial class PurchasingServiceTests
         public Task<PurchaseReceiptFactsV1> ResolveFirstAsync(PurchaseReceiptSourceV1 source, Guid locationId, CancellationToken cancellationToken)
         {
             Events.Add("first-source");
-            if (DocumentSourceUnavailable) throw new PurchasingServiceException(503, PurchaseGoodsReceiptCodesV1.DocumentSourceUnavailable);
+            if (PositionSourceUnavailable) throw new PurchasingServiceException(503, PurchaseGoodsReceiptCodesV1.Unavailable);
             return Task.FromResult(new PurchaseReceiptFactsV1(Company, source.ProductId, source.ProductVersion, locationId,
-                "Company", Company, "Company", Company, ["SYNTHETIC-DOCUMENT"]));
+                "Company", Company, "Company", Company, RequiredDocuments));
         }
 
         public Task<PurchaseAcceptanceStageResultV1> StagePurchaseAsync(PurchaseAcceptanceStageRequestV1 request, PurchasingWriteEnvelope envelope,

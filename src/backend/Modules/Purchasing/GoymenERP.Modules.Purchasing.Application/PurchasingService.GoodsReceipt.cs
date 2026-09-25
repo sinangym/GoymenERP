@@ -57,12 +57,13 @@ public sealed partial class PurchasingService
                 }
                 else
                 {
-                    // A missing source rolls Purchasing's staged acceptance back. It is NEVER an empty-document default.
+                    // Missing authorized position facts still roll back the staged acceptance. Document
+                    // optionality is the explicit NEW-receipt decision, never applied to original replay facts.
                     var facts = await GuardedAsync(scope, permission, () => participants.ResolveFirstAsync(source, request.LocationId, token), token);
                     RequireReceiptFacts(source, request.LocationId, facts);
                     stockRequest = new(scope.CompanyId, request.AcceptanceId, orderId, lineId, purchase.PurchaseOrderVersion,
                         source.ProductId, request.ExpectedProductVersion, source.UnitId, request.LotId, request.LabelId,
-                        request.LabelCode, request.HeatNumber, request.CoilNumber, facts.RequiredDocuments,
+                        request.LabelCode, request.HeatNumber, request.CoilNumber, PurchaseGoodsReceiptDocumentPolicyV1.RequiredForNewReceipt,
                         facts.OwnerKind, facts.OwnerId, facts.CustodianKind, facts.CustodianId, facts.LocationId,
                         request.MovementId, request.MeasuredQuantityKg, request.OccurredAtUtc);
                 }
@@ -174,9 +175,7 @@ public sealed partial class PurchasingService
         if (facts is null || facts.CompanyId != source.CompanyId || facts.ProductId != source.ProductId
             || facts.ProductVersion != source.ProductVersion || facts.LocationId != locationId || locationId == Guid.Empty
             || facts.OwnerId == Guid.Empty || facts.CustodianId == Guid.Empty
-            || facts.OwnerKind is not ("Company" or "Counterparty") || facts.CustodianKind is not ("Company" or "Counterparty")
-            || facts.RequiredDocuments is null || facts.RequiredDocuments.Any(document => string.IsNullOrWhiteSpace(document)
-                || document.Length > 64 || document != document.Trim() || document.Any(char.IsControl)))
+            || facts.OwnerKind is not ("Company" or "Counterparty") || facts.CustodianKind is not ("Company" or "Counterparty"))
         {
             throw ReceiptSourceInvalid();
         }
