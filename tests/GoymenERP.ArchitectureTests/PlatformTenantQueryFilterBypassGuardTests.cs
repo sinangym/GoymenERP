@@ -61,7 +61,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // opinion about whether a change is semantic. Any edit to a pinned file, comment included, is re-pinned in
     // the same push.
     private const string ReviewedOpenApiStartupFingerprint =
-        "e3008f69f6f492101d541df3fd21df7dc75d8b018016400ef54807e555fee003";
+        "e6a57d52fd3a21f5145f30621b56e3dbb3bc094121a5ab58a70fb10248935725";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedIdentityReconcilerPath =
@@ -627,11 +627,23 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Logistics.Infrastructure/"
                  + "LogisticsModuleExtensions.cs"] =
                     new(
-                        "b90a7ee47d22d2aa1b3fce3e16750fa24d2cc3646751e02ab800bf7735858fb4",
+                        "d36ed923bf17fd96bf1ce9156576f6f3fa0896f9519eb8d9cd8c2bea9b8d4a79",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
                             ["MigrateAsync"] = 1
+                        }),
+                // LOG-5: shipment and delivery share the Logistics transaction boundary. Only shipment
+                // borrows the current Inventory connection/participant; delivery never resolves Inventory.
+                ["src/backend/GoymenERP.Api/LogisticsRuntime/"
+                 + "LogisticsRealizationTransactionRunner.cs"] =
+                    new(
+                        "0f4e8bc60d4794d38bb9bf08ffae8679b236c43c08c274b66d215413754db651",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["System.Data.Common"] = 1,
+                            ["GetDbConnection"] = 1,
+                            ["DbConnection"] = 1
                         }),
                 // LOG-4a: the SqlClient namespace only to recognise a unique-key violation (SqlException
                 // 2601/2627) after SaveChanges, as the Sales store does. No connection, command or raw SQL.

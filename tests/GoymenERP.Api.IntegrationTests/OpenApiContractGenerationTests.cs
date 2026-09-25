@@ -394,6 +394,12 @@ public sealed partial class OpenApiContractGenerationTests
         new("post", "/api/v1/logistics/loading-instructions/{id}/lines/{lineId}/loads", "RecordLoadingInstructionLoadV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
             "#/components/schemas/RecordLoadRequest", ["path:id:true:type:string;format:uuid", "path:lineId:true:type:string;format:uuid"]),
+        new("post", "/api/v1/logistics/loading-instructions/{id}/lines/{lineId}/shipments", "RecordLoadingInstructionShipmentV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/RecordShipmentRequest", ["path:id:true:type:string;format:uuid", "path:lineId:true:type:string;format:uuid"]),
+        new("post", "/api/v1/logistics/loading-instructions/{id}/lines/{lineId}/deliveries", "RecordLoadingInstructionDeliveryV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/RecordDeliveryRequest", ["path:id:true:type:string;format:uuid", "path:lineId:true:type:string;format:uuid"]),
         new("get", "/api/v1/purchasing/requests", "GetPurchaseRequestsV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["query:pageSize:false:type:integer|string;format:int32;pattern:^-?(?:0|[1-9]\\d*)$", "query:cursor:false:type:string", "query:status:false:type:string"]),
@@ -581,6 +587,8 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetLoadingInstructionV1"] = "ref:LoadingInstructionDetailView",
             ["IssueLoadingInstructionV1"] = "ref:LoadingInstructionResponse",
             ["RecordLoadingInstructionLoadV1"] = "ref:LoadingInstructionResponse",
+            ["RecordLoadingInstructionShipmentV1"] = "ref:LoadingInstructionResponse",
+            ["RecordLoadingInstructionDeliveryV1"] = "ref:LoadingInstructionResponse",
             ["GetPurchaseRequestsV1"] = "ref:PurchaseRequestListResponse",
             ["CreatePurchaseRequestV1"] = "ref:PurchaseRequestResponse",
             ["GetPurchaseRequestV1"] = "ref:PurchaseRequestDetailView",
@@ -690,6 +698,8 @@ public sealed partial class OpenApiContractGenerationTests
         "GetLoadingInstructionV1",
         "IssueLoadingInstructionV1",
         "RecordLoadingInstructionLoadV1",
+        "RecordLoadingInstructionShipmentV1",
+        "RecordLoadingInstructionDeliveryV1",
         "GetPurchaseRequestsV1",
         "CreatePurchaseRequestV1",
         "GetPurchaseRequestV1",
@@ -766,6 +776,8 @@ public sealed partial class OpenApiContractGenerationTests
         "CreateLoadingInstructionV1",
         "IssueLoadingInstructionV1",
         "RecordLoadingInstructionLoadV1",
+        "RecordLoadingInstructionShipmentV1",
+        "RecordLoadingInstructionDeliveryV1",
         "CreatePurchaseRequestV1",
         "SubmitPurchaseRequestV1",
         "CreatePurchaseOrderV1",
@@ -871,6 +883,8 @@ public sealed partial class OpenApiContractGenerationTests
                 ["CreateLoadingInstructionV1"] = [StatusCodes.Status201Created, StatusCodes.Status409Conflict],
                 ["IssueLoadingInstructionV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["RecordLoadingInstructionLoadV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
+                ["RecordLoadingInstructionShipmentV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
+                ["RecordLoadingInstructionDeliveryV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["CreatePurchaseRequestV1"] = [StatusCodes.Status201Created, StatusCodes.Status409Conflict],
                 ["SubmitPurchaseRequestV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["CreatePurchaseOrderV1"] = [StatusCodes.Status201Created, StatusCodes.Status409Conflict],
@@ -941,6 +955,8 @@ public sealed partial class OpenApiContractGenerationTests
         "CreateLoadingInstructionV1",
         "IssueLoadingInstructionV1",
         "RecordLoadingInstructionLoadV1",
+        "RecordLoadingInstructionShipmentV1",
+        "RecordLoadingInstructionDeliveryV1",
         "GetPurchaseRequestsV1",
         "CreatePurchaseRequestV1",
         "SubmitPurchaseRequestV1",
@@ -994,6 +1010,8 @@ public sealed partial class OpenApiContractGenerationTests
         "GetLoadingInstructionV1:404",
         "IssueLoadingInstructionV1:404",
         "RecordLoadingInstructionLoadV1:404",
+        "RecordLoadingInstructionShipmentV1:404",
+        "RecordLoadingInstructionDeliveryV1:404",
         "GetPurchaseRequestV1:404",
         "SubmitPurchaseRequestV1:404",
         "GetPurchaseOrderV1:404",
@@ -1216,6 +1234,31 @@ public sealed partial class OpenApiContractGenerationTests
             ["RecordLoadingInstructionLoadV1:400"] = ["command_metadata_invalid", "validation_failed"],
             ["RecordLoadingInstructionLoadV1:409"] = ["concurrent_change", "logistics_duplicate_share_id", "logistics_instruction_state", "logistics_line_blocked", "logistics_load_exceeds_instructed", "same_key_payload_mismatch", "version_conflict"],
             ["RecordLoadingInstructionLoadV1:422"] = ["unsupported_unit", "validation_failed"],
+            ["RecordLoadingInstructionShipmentV1:400"] =
+            [
+                "command_metadata_invalid", "inventory_definite_shipment_invalid_request",
+                "inventory_definite_shipment_quantity_invalid", "inventory_definite_shipment_version_invalid",
+                "validation_failed",
+            ],
+            ["RecordLoadingInstructionShipmentV1:409"] =
+            [
+                "concurrent_change", "inventory_allocation_insufficient", "inventory_allocation_label_mismatch",
+                "inventory_allocation_state_conflict", "inventory_allocation_version_conflict",
+                "inventory_definite_shipment_concurrent_change", "inventory_definite_shipment_idempotency_conflict",
+                "inventory_label_not_releasable", "inventory_label_version_conflict",
+                "inventory_physical_stock_insufficient", "logistics_allocation_source_mismatch",
+                "logistics_duplicate_share_id", "logistics_instruction_state", "logistics_line_blocked",
+                "logistics_shipment_exceeds_loaded", "same_key_payload_mismatch", "version_conflict",
+            ],
+            ["RecordLoadingInstructionShipmentV1:422"] = ["unsupported_unit", "validation_failed"],
+            ["RecordLoadingInstructionDeliveryV1:400"] = ["command_metadata_invalid", "validation_failed"],
+            ["RecordLoadingInstructionDeliveryV1:409"] =
+            [
+                "concurrent_change", "logistics_delivery_exceeds_shipment", "logistics_duplicate_share_id",
+                "logistics_instruction_state", "logistics_shipment_source_invalid", "same_key_payload_mismatch",
+                "version_conflict",
+            ],
+            ["RecordLoadingInstructionDeliveryV1:422"] = ["unsupported_unit", "validation_failed"],
             ["GetPurchaseRequestsV1:400"] = ["invalid_cursor", "validation_failed"],
             ["CreatePurchaseRequestV1:400"] = ["command_metadata_invalid", "validation_failed"],
             ["CreatePurchaseRequestV1:409"] = ["concurrent_change", "same_key_payload_mismatch", "version_conflict"],
@@ -2544,6 +2587,24 @@ public sealed partial class OpenApiContractGenerationTests
                     ("loadId", "type:string;format:uuid"),
                     ("quantity", "type:string"),
                     ("measurement", "type:string")),
+                ["RecordShipmentRequest"] = ObjectSchema(
+                    ["expectedVersion", "shipmentId", "allocationId", "expectedAllocationVersion",
+                        "expectedLabelVersion", "movementId", "quantity", "occurredAtUtc"],
+                    ("expectedVersion", "type:string"),
+                    ("shipmentId", "type:string;format:uuid"),
+                    ("allocationId", "type:string;format:uuid"),
+                    ("expectedAllocationVersion", "type:string"),
+                    ("expectedLabelVersion", "type:string"),
+                    ("movementId", "type:string;format:uuid"),
+                    ("quantity", "type:string"),
+                    ("occurredAtUtc", "type:string;format:date-time")),
+                ["RecordDeliveryRequest"] = ObjectSchema(
+                    ["expectedVersion", "deliveryId", "sourceShipmentId", "quantity", "occurredAtUtc"],
+                    ("expectedVersion", "type:string"),
+                    ("deliveryId", "type:string;format:uuid"),
+                    ("sourceShipmentId", "type:string;format:uuid"),
+                    ("quantity", "type:string"),
+                    ("occurredAtUtc", "type:string;format:date-time")),
                 ["OpeningCountRequestV1"] = ObjectSchema(
                     ["countId", "locationId", "countedOn", "sheetReference", "lines"],
                     ("countId", "type:string;format:uuid"), ("locationId", "type:string;format:uuid"),
@@ -3370,9 +3431,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(120, operations.Count);
+        Assert.Equal(122, operations.Count);
         Assert.Equal(
-            120,
+            122,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());

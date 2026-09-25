@@ -104,8 +104,8 @@ public sealed class LogisticsPersistenceModelTests
     {
         var provider = new LogisticsShellCapabilityProvider();
         var declarations = provider.GetDeclarations();
-        Assert.Equal("1.0", provider.ContractVersion);
-        Assert.Equal(3, declarations.Count);
+        Assert.Equal("1.1", provider.ContractVersion);
+        Assert.Equal(5, declarations.Count);
         Assert.All(declarations, declaration => Assert.True(declaration.ImplementationAvailable));
         Assert.Equal(
             [
@@ -113,15 +113,24 @@ public sealed class LogisticsPersistenceModelTests
                 ("logistics.instructions.detail", "/lojistik/yukleme-talimatlari/:instructionId", LogisticsPermissionManifestV1.InstructionsRead),
                 ("logistics.instructions.list", "/lojistik/yukleme-talimatlari", LogisticsPermissionManifestV1.InstructionsRead),
             ],
-            declarations.Select(declaration => (declaration.CapabilityId, declaration.RoutePath, declaration.RequiredPermissions.Single()))
+            declarations.Where(declaration => declaration.ParentCapabilityId is null)
+                .Select(declaration => (declaration.CapabilityId, declaration.RoutePath, declaration.RequiredPermissions.Single()))
                 .OrderBy(item => item.CapabilityId, StringComparer.Ordinal).ToArray());
         Assert.Equal(5, LogisticsPermissionManifestV1.Names.Count);
         Assert.Equal("logistics.shipments.record", LogisticsPermissionManifestV1.ShipmentsRecord);
         Assert.Equal("logistics.deliveries.record", LogisticsPermissionManifestV1.DeliveriesRecord);
         Assert.Equal(5, LogisticsPermissionManifestV1.Names.Distinct(StringComparer.Ordinal).Count());
         // Master v3 §27.8: L-02 is the instruction list, L-03 the new/edit workspace; the detail is a view of one L-02 row.
-        Assert.Equal(["L-03", "L-02-DETAIL", "L-02"],
+        Assert.Equal(["L-03", "L-02-DETAIL", "L-02-DETAIL", "L-02-DETAIL", "L-02"],
             declarations.OrderBy(declaration => declaration.CapabilityId, StringComparer.Ordinal).Select(declaration => declaration.ScreenId).ToArray());
+        var shipment = declarations.Single(item => item.CapabilityId == LogisticsShellCapabilityProvider.ShipmentCapabilityId);
+        Assert.Equal(LogisticsShellCapabilityProvider.DetailCapabilityId, shipment.ParentCapabilityId);
+        Assert.Equal([LogisticsPermissionManifestV1.InstructionsRead, LogisticsPermissionManifestV1.ShipmentsRecord,
+            ErpPermissions.InventoryPhysicalAllocationWrite], shipment.RequiredPermissions);
+        var delivery = declarations.Single(item => item.CapabilityId == LogisticsShellCapabilityProvider.DeliveryCapabilityId);
+        Assert.Equal(LogisticsShellCapabilityProvider.DetailCapabilityId, delivery.ParentCapabilityId);
+        Assert.Equal([LogisticsPermissionManifestV1.InstructionsRead, LogisticsPermissionManifestV1.DeliveriesRecord],
+            delivery.RequiredPermissions);
     }
 
     private static LoadingInstructionRow Instruction(Guid company) => new()
