@@ -14,8 +14,8 @@ using Microsoft.Extensions.Hosting;
 namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>
-/// Product's real shell capability provider: Product's four screens (U-01 list and 360 detail, U-02
-/// create and basic edit) are published to the shell and granted only from the global Product
+/// Product's real shell capability provider: Product's four screens and U-01-360 activation control
+/// are published to the shell and granted only from the matching global Product
 /// authority. These checks need no database; the granted/denied answer through the real host on a real
 /// SQL Server is <see cref="ProductShellCapabilitySqlServerRelationalAcceptanceTests"/>.
 /// </summary>
@@ -33,6 +33,7 @@ public sealed class ProductShellCapabilityProviderTests
         Assert.Equal("PRODUCT", provider.Owner);
         Assert.Equal(
             [
+                ("product.items.activate", "/urun/:productId", GroupSharedMasterOperation.Activate),
                 ("product.items.create", "/urun/yeni", GroupSharedMasterOperation.DraftCreate),
                 ("product.items.detail", "/urun/:productId", GroupSharedMasterOperation.Read),
                 ("product.items.edit", "/urun/:productId/duzenle", GroupSharedMasterOperation.DraftBasicEdit),
@@ -45,8 +46,14 @@ public sealed class ProductShellCapabilityProviderTests
             // Global Product authority, never a company permission.
             Assert.Empty(registration.Declaration.RequiredPermissions);
             Assert.True(registration.Declaration.ImplementationAvailable);
-            Assert.Null(registration.Declaration.ParentCapabilityId);
         });
+        var activation = Assert.Single(registry.Registrations,
+            registration => registration.Declaration.CapabilityId == ProductShellCapabilityProvider.ActivateCapabilityId);
+        Assert.Equal(ProductShellCapabilityProvider.DetailCapabilityId, activation.Declaration.ParentCapabilityId);
+        Assert.Equal("product.detail", activation.Declaration.RouteId);
+        Assert.Equal("U-01-360", activation.Declaration.ScreenId);
+        Assert.All(registry.Registrations.Where(registration => registration != activation),
+            registration => Assert.Null(registration.Declaration.ParentCapabilityId));
     }
 
     [Fact]
