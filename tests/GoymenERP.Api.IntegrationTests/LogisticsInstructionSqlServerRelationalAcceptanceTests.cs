@@ -23,6 +23,7 @@ using GoymenERP.Modules.Logistics.Domain.Loading;
 using GoymenERP.Modules.Logistics.Domain.Quantities;
 using GoymenERP.Modules.Logistics.Infrastructure.Persistence;
 using GoymenERP.Modules.Sales.Application.Contracts;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -297,7 +298,7 @@ public sealed class LogisticsInstructionSqlServerRelationalAcceptanceTests
         var grant = await GrantRealizationAsync(run, $"SYN-LOG5-terminal-{Guid.NewGuid():N}");
         var revoker = new InventoryWriteRevoker(run.Factory, grant.RoleId);
         var reads = new HostedAllocationReads(fixture, revoker.RevokeAsync);
-        await using var host = HostedShipmentHost(run, fixture, reads);
+        await using var host = HostedShipmentHost(run, fixture, reads, grant.Subject);
         using var client = HostedClientFor(host, grant.Subject, CompanyA);
         var request = CreateHostedShipmentRequest(fixture, expectedAllocationVersion: "2", "terminal-authority");
         var before = await HostedEffectsAsync(run, fixture, request);
@@ -317,7 +318,7 @@ public sealed class LogisticsInstructionSqlServerRelationalAcceptanceTests
         var grant = await GrantRealizationAsync(run, $"SYN-LOG5-staged-{Guid.NewGuid():N}");
         var revoker = new InventoryWriteRevoker(run.Factory, grant.RoleId);
         var reads = new HostedAllocationReads(fixture);
-        await using var host = HostedShipmentHost(run, fixture, reads,
+        await using var host = HostedShipmentHost(run, fixture, reads, grant.Subject,
             new RevokeInventoryWriteAfterStage(revoker));
         using var client = HostedClientFor(host, grant.Subject, CompanyA);
         var request = CreateHostedShipmentRequest(fixture, expectedAllocationVersion: "1", "staged-authority");
@@ -336,7 +337,8 @@ public sealed class LogisticsInstructionSqlServerRelationalAcceptanceTests
         await using var run = await Run.StartAsync();
         var fixture = await SeedHostedShipmentAsync(run, "SYN-LOG5-TERMINAL-REPLAY");
         var grant = await GrantRealizationAsync(run, $"SYN-LOG5-terminal-replay-{Guid.NewGuid():N}");
-        await using var host = HostedShipmentHost(run, fixture, new HostedAllocationReads(fixture));
+        await using var host = HostedShipmentHost(
+            run, fixture, new HostedAllocationReads(fixture), grant.Subject);
         using var client = HostedClientFor(host, grant.Subject, CompanyA);
         var first = CreateHostedShipmentRequest(fixture, "2", "terminal-replay");
         var before = await HostedEffectsAsync(run, fixture, first);
@@ -464,18 +466,24 @@ public sealed class LogisticsInstructionSqlServerRelationalAcceptanceTests
         Run run,
         HostedShipmentFixture fixture,
         HostedAllocationReads reads,
+        string bootstrapSubject,
         ILogisticsRealizationStageObserver? observer = null) =>
-        run.Factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+        run.Factory.WithWebHostBuilder(builder =>
         {
-            services.RemoveAll<ISalesOrderLineReferencePortV1>();
-            services.AddSingleton<ISalesOrderLineReferencePortV1>(new HostedSalesLine(fixture));
-            services.RemoveAll<IInventoryPhysicalAllocationReadsV1>();
-            services.AddSingleton<IInventoryPhysicalAllocationReadsV1>(reads);
-            if (observer is not null)
+            builder.UseSetting("BootstrapIdentity:Users:7:UserId", bootstrapSubject);
+            builder.UseSetting("BootstrapIdentity:Users:7:DisplayName", "Synthetic Logistics realization actor");
+            builder.ConfigureTestServices(services =>
             {
-                services.AddSingleton(observer);
-            }
-        }));
+                services.RemoveAll<ISalesOrderLineReferencePortV1>();
+                services.AddSingleton<ISalesOrderLineReferencePortV1>(new HostedSalesLine(fixture));
+                services.RemoveAll<IInventoryPhysicalAllocationReadsV1>();
+                services.AddSingleton<IInventoryPhysicalAllocationReadsV1>(reads);
+                if (observer is not null)
+                {
+                    services.AddSingleton(observer);
+                }
+            });
+        });
 
     private static HttpClient HostedClientFor(
         Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> host,
