@@ -464,8 +464,12 @@ test('L04-05 shipment consumes one allocation and one stock exit; reopen replay 
     expect(shipped).toMatchObject({ lineId: line.lineId, quantity: '2', sourceShipmentId: null })
     expect(await effects(shipmentBody.movementId)).toEqual({ allocations: 1, consumed: 1, movements: 2, shipmentMovement: 1 })
 
-    await page.goto(LIST_ROUTE)
-    await openDetail(page, createdId)
+    await page.getByRole('link', { name: '← Yükleme talimatları', exact: true }).click()
+    await expect(page.getByRole('heading', { level: 1, name: 'Yükleme talimatları', exact: true })).toBeVisible()
+    const detailRead = page.waitForResponse((response) => response.request().method() === 'GET'
+      && new URL(response.url()).pathname === `${INSTRUCTIONS_PATH}/${createdId}`)
+    await instructionRow(page, createdId).getByRole('link', { name: createdId, exact: true }).click()
+    expect((await detailRead).status()).toBe(200)
     const replayAnswer = page.waitForResponse((response) => response.request().method() === 'POST'
       && new URL(response.url()).pathname === shipmentPath)
     await page.getByRole('button', { name: 'Aynı işlemi tekrar dene' }).click()
