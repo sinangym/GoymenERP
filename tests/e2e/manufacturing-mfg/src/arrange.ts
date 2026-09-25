@@ -74,8 +74,12 @@ export async function readParentRollCandidate(
   }
 }
 
-/** An approved slitting plan of one 1000 kg parent roll and its open order. */
-export async function arrangeOpenOrder(env: MfgEnvironment, roll: MfgRollSeed): Promise<ArrangedOrder> {
+/** An approved plan of one 1000 kg parent roll and its open order at the named Organization work center. */
+export async function arrangeOpenOrder(
+  env: MfgEnvironment,
+  roll: MfgRollSeed,
+  workCenterId = env.seed.workCenterId,
+): Promise<ArrangedOrder> {
   const api = await apiAs(env, env.seed.recorderActor)
   try {
     const candidate = await readParentRollCandidate(env, roll)
@@ -83,7 +87,7 @@ export async function arrangeOpenOrder(env: MfgEnvironment, roll: MfgRollSeed): 
     const planId = randomUUID()
     await post(api, '/plans', {
       planId,
-      workCenterId: env.seed.workCenterId,
+      workCenterId,
       inputs: [{ parentRollId: rollId, plannedKg: '1000', expectedLabelVersion: candidate.labelVersion }],
       target: null,
     }, 201)
