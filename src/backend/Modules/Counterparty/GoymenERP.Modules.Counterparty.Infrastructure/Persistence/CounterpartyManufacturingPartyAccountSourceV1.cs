@@ -22,7 +22,18 @@ public sealed class CounterpartyManufacturingPartyAccountSourceV1(
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (!IsCurrent() || !TryCanonicalize(query, out var canonicalQuery))
+        if (!IsCurrent())
+        {
+            return Search(CounterpartyManufacturingPartyAccountOutcomeV1.Denied);
+        }
+
+        var canonicalization = TryCanonicalize(query, out var canonicalQuery);
+        if (canonicalization == QueryCanonicalization.InvalidCursor)
+        {
+            return Search(CounterpartyManufacturingPartyAccountOutcomeV1.InvalidCursor);
+        }
+
+        if (canonicalization != QueryCanonicalization.Succeeded)
         {
             return Search(CounterpartyManufacturingPartyAccountOutcomeV1.Denied);
         }
@@ -181,8 +192,8 @@ public sealed class CounterpartyManufacturingPartyAccountSourceV1(
         }
 
         if (accounts.Length != 1
-            || !TryCanonicalVersion(party.Version, out var partyVersion)
-            || !TryCanonicalVersion(accounts[0].Version, out var accountVersion))
+            || !TryOpaqueVersion(party.Version, out var partyVersion)
+            || !TryOpaqueVersion(accounts[0].Version, out var accountVersion))
         {
             return Exact(CounterpartyManufacturingPartyAccountOutcomeV1.Unavailable);
         }
@@ -214,17 +225,21 @@ public sealed class CounterpartyManufacturingPartyAccountSourceV1(
         && companyContext.CompanyId == companyId
         && string.Equals(currentUser.UserId, actorId, StringComparison.Ordinal);
 
-    private static bool TryCanonicalize(
+    private static QueryCanonicalization TryCanonicalize(
         CounterpartyManufacturingPartyAccountSearchV1? query,
         out CounterpartyManufacturingPartyAccountSearchV1 canonical)
     {
         canonical = null!;
-        if (query is null
-            || query.Limit is <= 0 or > MaximumLimit
-            || query.Cursor is not null
-            && (query.Cursor.Length == 0 || !string.Equals(query.Cursor, query.Cursor.Trim(), StringComparison.Ordinal)))
+        if (query is null || query.Limit is <= 0 or > MaximumLimit)
         {
-            return false;
+            return QueryCanonicalization.InvalidQuery;
+        }
+
+        if (query.Cursor is not null
+            && (query.Cursor.Length == 0
+                || !string.Equals(query.Cursor, query.Cursor.Trim(), StringComparison.Ordinal)))
+        {
+            return QueryCanonicalization.InvalidCursor;
         }
 
         string? normalizedQuery = null;
@@ -237,12 +252,12 @@ public sealed class CounterpartyManufacturingPartyAccountSourceV1(
             }
             else if (normalizedQuery.EnumerateRunes().Count() > 200)
             {
-                return false;
+                return QueryCanonicalization.InvalidQuery;
             }
         }
 
         canonical = query with { Query = normalizedQuery };
-        return true;
+        return QueryCanonicalization.Succeeded;
     }
 
     private static bool TryFormatVersion(long value, out string version)
@@ -251,12 +266,10 @@ public sealed class CounterpartyManufacturingPartyAccountSourceV1(
         return value > 0;
     }
 
-    private static bool TryCanonicalVersion(string value, out string version)
+    private static bool TryOpaqueVersion(string value, out string version)
     {
         version = value;
-        return long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed)
-            && parsed > 0
-            && string.Equals(value, parsed.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal);
+        return !string.IsNullOrEmpty(value);
     }
 
     private static CounterpartyManufacturingPartyAccountSearchAnswerV1 Search(
@@ -264,4 +277,11 @@ public sealed class CounterpartyManufacturingPartyAccountSourceV1(
 
     private static CounterpartyManufacturingPartyAccountAnswerV1 Exact(
         CounterpartyManufacturingPartyAccountOutcomeV1 outcome) => new(outcome, null);
+
+    private enum QueryCanonicalization
+    {
+        Succeeded,
+        InvalidQuery,
+        InvalidCursor,
+    }
 }

@@ -69,13 +69,26 @@ public sealed class CounterpartyManufacturingPartyAccountSourceV1Tests
     [Theory]
     [InlineData("query", 0, null)]
     [InlineData("query", 101, null)]
-    [InlineData("query", 25, " cursor")]
     public async Task Search_NonCanonicalOrOutOfRangeInput_IsDenied(string? query, int limit, string? cursor)
     {
         var read = new ReadService();
         var answer = await Create(read).SearchAuthorizedAsync(new(query, limit, cursor));
 
         Assert.Equal(CounterpartyManufacturingPartyAccountOutcomeV1.Denied, answer.Outcome);
+        Assert.Equal(0, read.PageCalls);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(" cursor")]
+    [InlineData("cursor ")]
+    public async Task Search_MalformedCursor_IsInvalidCursorWithoutOwnerDispatch(string cursor)
+    {
+        var read = new ReadService();
+
+        var answer = await Create(read).SearchAuthorizedAsync(new(null, Cursor: cursor));
+
+        Assert.Equal(CounterpartyManufacturingPartyAccountOutcomeV1.InvalidCursor, answer.Outcome);
         Assert.Equal(0, read.PageCalls);
     }
 
@@ -163,17 +176,19 @@ public sealed class CounterpartyManufacturingPartyAccountSourceV1Tests
     }
 
     [Fact]
-    public async Task ExactValidation_NonCanonicalVersion_IsUnavailable()
+    public async Task ExactValidation_OpaqueVersions_ArePreservedLosslessly()
     {
         var read = new ReadService
         {
             Detail = new CounterpartyDetailView(Party, "CR-001", PartyKind.LegalEntity, "Cari", null,
-                true, "01", [new CounterpartyDetailAccountView(Account, Company, PartyRole.Customer, true, "1")]),
+                true, "01", [new CounterpartyDetailAccountView(Account, Company, PartyRole.Customer, true, "vNext:002")]),
         };
 
         var answer = await Create(read).GetAuthorizedAsync(Party, Account);
 
-        Assert.Equal(CounterpartyManufacturingPartyAccountOutcomeV1.Unavailable, answer.Outcome);
+        Assert.Equal(CounterpartyManufacturingPartyAccountOutcomeV1.Found, answer.Outcome);
+        Assert.Equal("01", answer.Account!.PartyVersion);
+        Assert.Equal("vNext:002", answer.Account.AccountVersion);
     }
 
     [Fact]
