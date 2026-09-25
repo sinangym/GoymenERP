@@ -42,6 +42,9 @@ public static class CounterpartyModuleExtensions
             configureDbContext?.Invoke(serviceProvider, options);
         });
         services.AddScoped<ICounterpartyReadService, CounterpartyReadService>();
+        services.AddScoped<
+            ICounterpartyManufacturingPartyAccountSourceV1,
+            CounterpartyManufacturingPartyAccountSourceV1>();
         services.AddScoped<ICounterpartyLinkCandidateReadService, CounterpartyLinkCandidateReadService>();
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<ICounterpartyReadSqlObserver, NullCounterpartyReadSqlObserver>();
