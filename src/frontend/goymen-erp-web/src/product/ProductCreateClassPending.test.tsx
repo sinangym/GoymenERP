@@ -183,6 +183,34 @@ describe('a chosen class while its scoped reference read is out', () => {
     expect(posts(calls)).toHaveLength(0)
   })
 
+  it('keeps the chosen class when its settled catalogue is unavailable and holds the save', async () => {
+    const held = deferred()
+    const { calls } = installFetch({ capabilities: CREATE_ONLY, onOptions: optionsFor(() => held.promise) })
+    renderProductApp(PATH)
+    await formVisible()
+    await chooseOfferedClass(calls)
+
+    await act(async () => {
+      held.resolve(
+        json(referenceOptions({
+          classId: CLASS_FLAT,
+          classes: [],
+          unavailableCatalogs: ['classes'],
+        })),
+      )
+    })
+
+    await waitFor(() => expect(screen.getByText(CATALOG_UNAVAILABLE)).toBeTruthy())
+    expect(classSelect().value).toBe(CLASS_FLAT)
+    expect(shownLabel(classSelect())).toBe('Yassı ürün')
+    expect(screen.queryByText(STALE_CLASS)).toBeNull()
+    expect(classSelect().getAttribute('aria-invalid')).toBeNull()
+
+    await userEvent.click(saveButton())
+    expect(holdNote()?.textContent).toBe(FAILED_HOLD)
+    expect(posts(calls)).toHaveLength(0)
+  })
+
   it.each([
     ['a 503', () => json({ code: 'service_unavailable' }, 503)],
     ['a network failure', () => Promise.reject(new TypeError('Failed to fetch'))],

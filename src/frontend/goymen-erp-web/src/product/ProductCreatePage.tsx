@@ -433,14 +433,22 @@ function ProductCreateForm({
    * dropped it, waiting if the answer is out — instead of silently reading as unchosen.
    */
   const [chosenClass, setChosenClass] = useState<{ id: string; displayName: string } | null>(null)
-  /** Only a SETTLED owner answer can say the chosen class is no longer offered. */
-  const classStale = options !== null && values.classId !== '' && !classIds.includes(values.classId)
+  /** Only a SETTLED, available catalogue can say the chosen class is no longer offered. */
+  const classStale =
+    options !== null &&
+    !classesUnavailable &&
+    values.classId !== '' &&
+    !classIds.includes(values.classId)
   const classMissingFromShown =
     values.classId !== '' && !shownClasses.some((entry) => entry.id === values.classId)
   /** A save tried while the chosen references could not be checked yet. */
   const [referenceHold, setReferenceHold] = useState(false)
   const referencesChosen = values.classId !== '' || values.familyId !== ''
-  const referencesUnsettled = referencesPending || referencesFailed
+  const chosenReferencesUnavailable =
+    (values.classId !== '' && classesUnavailable) ||
+    (values.familyId !== '' && familiesUnavailable)
+  const referencesUnsettled =
+    referencesPending || referencesFailed || chosenReferencesUnavailable
 
   /**
    * A class chosen under one group is meaningless under another, and the family
@@ -917,7 +925,7 @@ function ProductCreateForm({
                     ? CATALOG_EMPTY
                     : PRODUCT_CREATE_TEXT.referenceHint}
           </p>
-          {referencesFailed ? (
+          {referencesFailed || chosenReferencesUnavailable ? (
             <button
               type="button"
               className={styles.secondaryAction}
