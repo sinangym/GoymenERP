@@ -34,6 +34,14 @@ export interface MfgRollSeed {
 export const MFG_PROCESSES = ['Slitting', 'ColdRolling', 'TubeProfile', 'Paint', 'CutToLength'] as const
 export type MfgProcess = (typeof MFG_PROCESSES)[number]
 
+const PROCESS_ROLL_SUFFIX: Readonly<Record<MfgProcess, number>> = {
+  Slitting: 11,
+  ColdRolling: 12,
+  TubeProfile: 13,
+  Paint: 14,
+  CutToLength: 15,
+}
+
 export interface MfgRolls {
   readonly issue: MfgRollSeed
   readonly replay: MfgRollSeed
@@ -109,6 +117,16 @@ function stringList(raw: Record<string, unknown>, field: string): readonly strin
   return value
 }
 
+function processRoll(process: MfgProcess): MfgRollSeed {
+  const suffix = PROCESS_ROLL_SUFFIX[process]
+  return {
+    // MfgBrowserSeed.Roll owns these deterministic disposable-fixture identities. They stay out of
+    // BROWSER_E2E_MFG_SEED so the centrally governed seed-output contract remains unchanged.
+    labelId: `c3000000-0000-4000-8000-${suffix.toString().padStart(12, '0')}`,
+    labelCode: `SYN-MFG-ROLL-${suffix}`,
+  }
+}
+
 export function readEnvironment(): MfgEnvironment {
   const testedCommit = required('BROWSER_E2E_TESTED_COMMIT')
   if (!/^[0-9a-f]{40}$/.test(testedCommit)) {
@@ -142,11 +160,11 @@ export function readEnvironment(): MfgEnvironment {
       planRefusal: roll('planRefusal'),
       outputUi: roll('outputUi'),
       process: {
-        Slitting: roll('processSlitting'),
-        ColdRolling: roll('processColdRolling'),
-        TubeProfile: roll('processTubeProfile'),
-        Paint: roll('processPaint'),
-        CutToLength: roll('processCutToLength'),
+        Slitting: processRoll('Slitting'),
+        ColdRolling: processRoll('ColdRolling'),
+        TubeProfile: processRoll('TubeProfile'),
+        Paint: processRoll('Paint'),
+        CutToLength: processRoll('CutToLength'),
       },
     },
     output: {

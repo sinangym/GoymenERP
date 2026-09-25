@@ -104,11 +104,6 @@ internal static class BrowserSuiteSeedOutputValidator
                 "planReplayRollCode" => value == "SYN-MFG-ROLL-8",
                 "planRefusalRollCode" => value == "SYN-MFG-ROLL-9",
                 "outputUiRollCode" => value == "SYN-MFG-ROLL-10",
-                "processSlittingRollCode" => value == "SYN-MFG-ROLL-11",
-                "processColdRollingRollCode" => value == "SYN-MFG-ROLL-12",
-                "processTubeProfileRollCode" => value == "SYN-MFG-ROLL-13",
-                "processPaintRollCode" => value == "SYN-MFG-ROLL-14",
-                "processCutToLengthRollCode" => value == "SYN-MFG-ROLL-15",
                 "outputProductVersion" => IsPositiveDecimal(value),
                 "outputRequiredDocuments" => value == "[]",
                 "outputOwnerKind" or "outputCustodianKind" => value == "Company",
@@ -138,10 +133,7 @@ internal static class BrowserSuiteSeedOutputValidator
     private static bool IsManufacturingScalarKey(string key) => key is
         "issueRollCode" or "replayRollCode" or "conflictRollCode" or "listRollCode"
         or "closeRollCode" or "planCreateRollCode" or "planReplayRollCode"
-        or "planRefusalRollCode" or "outputUiRollCode"
-        or "processSlittingRollCode" or "processColdRollingRollCode"
-        or "processTubeProfileRollCode" or "processPaintRollCode"
-        or "processCutToLengthRollCode" or "outputProductVersion"
+        or "planRefusalRollCode" or "outputUiRollCode" or "outputProductVersion"
         or "outputRequiredDocuments" or "outputOwnerKind" or "outputCustodianKind"
         or "outputInitialBlock";
 
