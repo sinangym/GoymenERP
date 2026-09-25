@@ -111,7 +111,7 @@ describe('LOG5 owner UI, synthetic NOT_ENV', () => {
 
   it.each([{ companyId: COMPANY_B }, { demandLineId: LINE }, { productId: LABEL }, { demandKind: 'invented' }])(
     'rejects allocation source drift %j instead of displaying a cross-context choice', (fault) => {
-      const detail = decodeInstructionDetail(loaded())!
+      const detail = decodeInstructionDetail(loaded(), INSTRUCTION)!
       expect(decodeShipmentAllocations(allocations(fault), COMPANY_A, detail.lines[0])).toBeNull()
     })
 

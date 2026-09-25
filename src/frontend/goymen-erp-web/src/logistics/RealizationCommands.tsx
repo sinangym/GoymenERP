@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { fetchShipmentAllocations, recordDelivery, recordShipment } from './api'
 import { parseQuantityInput, type InstructionDetail, type InstructionLine, type InstructionMutation } from './contract'
@@ -40,9 +40,11 @@ function useRealizationAttempt<P>(props: LineProps, kind: 'shipment' | 'delivery
   const [initial] = useState(() => recallInstructionAttempt<P, null>(slot))
   const [attempt, setAttempt] = useState<AttemptState<P, InstructionMutation>>(() => initial?.attempt ?? { phase: 'idle' })
   const latest = useRef(props)
-  latest.current = props
   const current = useRef(attempt)
-  current.current = attempt
+  useLayoutEffect(() => {
+    latest.current = props
+    current.current = attempt
+  }, [props, attempt])
   const boundary = useAuthBoundary()
 
   async function send(snapshot: AttemptSnapshot<P>) {
