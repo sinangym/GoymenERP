@@ -82,7 +82,7 @@ async function fillIssue(page: Page, rollId: string, kg: string) {
 
 test.describe('MFG order screen (real API, real SQL)', () => {
   test('a recorder records an input issue and the table is the server’s re-read', async ({ page, context }) => {
-    const arranged = await arrangeOpenOrder(env)
+    const arranged = await arrangeOpenOrder(env, env.seed.rolls.issue)
     const rewritten = await asActor(context, env.seed.recorderActor)
     const answered = watchAnswers(page)
 
@@ -120,7 +120,7 @@ test.describe('MFG order screen (real API, real SQL)', () => {
   })
 
   test('an answer the browser never received is re-sent with the same key and recorded once', async ({ page, context }) => {
-    const arranged = await arrangeOpenOrder(env)
+    const arranged = await arrangeOpenOrder(env, env.seed.rolls.replay)
     const rewritten = await asActor(context, env.seed.recorderActor)
     const answered = watchAnswers(page)
     // Withhold the DELIVERY of the first real answer: the server records the fact, the page learns nothing.
@@ -156,7 +156,7 @@ test.describe('MFG order screen (real API, real SQL)', () => {
   })
 
   test('a write that another writer overtook is a conflict, re-read, and a new command at the new version', async ({ page, context }) => {
-    const arranged = await arrangeOpenOrder(env)
+    const arranged = await arrangeOpenOrder(env, env.seed.rolls.conflict)
     const rewritten = await asActor(context, env.seed.recorderActor)
     const answered = watchAnswers(page)
 
@@ -205,7 +205,7 @@ test.describe('MFG order screen (real API, real SQL)', () => {
   })
 
   test('the list opens one order, and the order it opens is the one the list named', async ({ page, context }) => {
-    const arranged = await arrangeOpenOrder(env)
+    const arranged = await arrangeOpenOrder(env, env.seed.rolls.list)
     const rewritten = await asActor(context, env.seed.recorderActor)
     const answered = watchAnswers(page)
 
@@ -230,7 +230,7 @@ test.describe('MFG order screen (real API, real SQL)', () => {
   test('a closer is refused while a roll is unexplained, and closes it once the mass is accounted', async ({ page, context }) => {
     // MFG-4 (Business 5728619644) through the real stack: 1000 issued, 600 declared → refused with the
     // rule's own code; the remaining 400 declared → accepted. No tolerance anywhere.
-    const arranged = await arrangeOpenOrder(env)
+    const arranged = await arrangeOpenOrder(env, env.seed.rolls.close)
     const issued = await issueThroughApi(env, arranged, arranged.version, '1000')
     const partial = await declareThroughApi(env, arranged, issued.version as number, 'GoodProduct', '600')
     const rewritten = await asActor(context, env.seed.closerActor)

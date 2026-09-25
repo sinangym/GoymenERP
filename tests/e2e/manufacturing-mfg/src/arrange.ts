@@ -9,9 +9,7 @@
 
 import { randomUUID } from 'node:crypto'
 import { expect, request, type APIRequestContext } from '@playwright/test'
-import type { MfgEnvironment } from './env.js'
-
-export const PARENT_ROLL_CODE = 'SYN-MFG-ROLL-1'
+import type { MfgEnvironment, MfgRollSeed } from './env.js'
 
 export interface ArrangedOrder {
   readonly orderId: string
@@ -47,17 +45,18 @@ async function post(api: APIRequestContext, path: string, body: unknown, status:
 
 export async function readParentRollCandidate(
   env: MfgEnvironment,
+  roll: MfgRollSeed,
   actor = env.seed.recorderActor,
 ): Promise<ParentRollCandidate> {
   const api = await apiAs(env, actor)
   try {
     const response = await api.get('/api/v1/inventory/references/parent-rolls', {
-      params: { q: PARENT_ROLL_CODE, limit: 25 },
+      params: { q: roll.labelCode, limit: 25 },
     })
     const text = await response.text()
     expect(response.status(), text).toBe(200)
     const body = JSON.parse(text) as { items?: ParentRollCandidate[] }
-    const candidate = body.items?.find((item) => item.labelId === env.seed.rollId)
+    const candidate = body.items?.find((item) => item.labelId === roll.labelId)
     expect(candidate, 'fixture parent roll must be returned by the real Inventory candidate API').toBeDefined()
     expect(candidate?.draftSelectable).toBe(true)
     expect(candidate?.labelVersion).toMatch(/^[1-9][0-9]*$/)
@@ -68,10 +67,10 @@ export async function readParentRollCandidate(
 }
 
 /** An approved slitting plan of one 1000 kg parent roll and its open order. */
-export async function arrangeOpenOrder(env: MfgEnvironment): Promise<ArrangedOrder> {
+export async function arrangeOpenOrder(env: MfgEnvironment, roll: MfgRollSeed): Promise<ArrangedOrder> {
   const api = await apiAs(env, env.seed.recorderActor)
   try {
-    const candidate = await readParentRollCandidate(env)
+    const candidate = await readParentRollCandidate(env, roll)
     const rollId = candidate.labelId
     const planId = randomUUID()
     await post(api, '/plans', {
@@ -94,7 +93,8 @@ export async function issueThroughApi(env: MfgEnvironment, arranged: ArrangedOrd
   const api = await apiAs(env, env.seed.recorderActor)
   try {
     return await post(api, `/orders/${arranged.orderId}/input-issues`, {
-      factId: randomUUID(),
+      issueId: randomUUID(),
+      movementId: randomUUID(),
       expectedVersion,
       parentRollId: arranged.rollId,
       kg,

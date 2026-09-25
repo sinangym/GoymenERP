@@ -402,6 +402,8 @@ describe('fact forms', () => {
         })),
       ],
       labels: [
+        () => json(labelDetail('7', '1000')),
+        () => json(labelDetail('8', '750')),
         () => json(labelDetail('8', '750')),
         () => json(labelDetail('9', '800')),
       ],
@@ -410,18 +412,26 @@ describe('fact forms', () => {
     renderAt(PATH)
     await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
 
+    // Cache v7 first. The issue itself must not trust or require it, and its success must
+    // refresh this exact label before return can reuse the cache.
+    await user.click(screen.getByLabelText('Kullanılmayan girdi iadesi'))
+    await user.selectOptions(screen.getByLabelText('Ana rulo'), ROLL_1)
+    await screen.findByTestId('parent-label-state')
+    expect(within(screen.getByTestId('parent-label-state')).getByText('7')).toBeTruthy()
+    await user.click(screen.getByLabelText('Girdi çıkışı'))
     await fillFact(user)
     await user.click(screen.getByRole('button', { name: 'Kaydet' }))
     await waitFor(() => expect(reads(recorded)).toHaveLength(2))
-    expect(labelReads(recorded)).toHaveLength(0)
+    await waitFor(() => expect(labelReads(recorded)).toHaveLength(2))
 
     await fillFact(user, { kind: 'Kullanılmayan girdi iadesi', kg: '50' })
-    await waitFor(() => expect(labelReads(recorded)).toHaveLength(1))
+    await waitFor(() => expect(labelReads(recorded)).toHaveLength(3))
+    expect(within(screen.getByTestId('parent-label-state')).getByText('8')).toBeTruthy()
     expect(within(screen.getByTestId('parent-label-state')).getAllByText('750 kg')).toHaveLength(2)
     await user.click(screen.getByRole('button', { name: 'Kaydet' }))
     await waitFor(() => expect(posts(recorded)).toHaveLength(2))
     await waitFor(() => expect(reads(recorded)).toHaveLength(3))
-    await waitFor(() => expect(labelReads(recorded)).toHaveLength(2))
+    await waitFor(() => expect(labelReads(recorded)).toHaveLength(4))
     await waitFor(() => expect(within(screen.getByTestId('parent-label-state')).getAllByText('800 kg')).toHaveLength(2))
 
     const [issue, returned] = posts(recorded)

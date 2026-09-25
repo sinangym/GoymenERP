@@ -8,8 +8,8 @@
 
 import { randomUUID } from 'node:crypto'
 import { expect, request, test, type APIRequestContext, type BrowserContext, type Page, type Request, type Route } from '@playwright/test'
-import { apiAs, PARENT_ROLL_CODE, readOrder, readParentRollCandidate } from '../src/arrange.js'
-import { readEnvironment } from '../src/env.js'
+import { apiAs, readOrder, readParentRollCandidate } from '../src/arrange.js'
+import { readEnvironment, type MfgRollSeed } from '../src/env.js'
 
 const env = readEnvironment()
 const OTHER_COMPANY = '10000000-0000-0000-0000-000000000002'
@@ -47,7 +47,7 @@ function expectEveryAnswerRewritten(answered: readonly Request[], rewritten: Rea
   expect(answered.filter((request) => !rewritten.has(request)).map((request) => request.url())).toEqual([])
 }
 
-async function openPlanForm(page: Page): Promise<CandidateAnswer> {
+async function openPlanForm(page: Page, roll: MfgRollSeed): Promise<CandidateAnswer> {
   await page.goto('/uretim/emirler')
   await expect(page.getByRole('heading', { name: 'Üretim emirleri' })).toBeVisible()
   const createActions = page.getByRole('link', { name: 'Yeni üretim planı' })
@@ -56,7 +56,7 @@ async function openPlanForm(page: Page): Promise<CandidateAnswer> {
   await expect(page.getByRole('heading', { name: 'Yeni taslak plan' })).toBeVisible()
 
   await page.getByRole('combobox', { name: 'İş merkezi' }).selectOption(env.seed.workCenterId)
-  await page.getByLabel('Etiket, ürün veya lot ara').fill(PARENT_ROLL_CODE)
+  await page.getByLabel('Etiket, ürün veya lot ara').fill(roll.labelCode)
   const candidatesAnswer = page.waitForResponse(
     (response) => CANDIDATES_RE.test(response.url()) && response.request().method() === 'GET',
   )
@@ -64,14 +64,14 @@ async function openPlanForm(page: Page): Promise<CandidateAnswer> {
   const response = await candidatesAnswer
   expect(response.status()).toBe(200)
   const candidates = (await response.json()) as { items: CandidateAnswer[] }
-  const candidate = candidates.items.find((item) => item.labelId === env.seed.rollId)
-  expect(candidate).toMatchObject({ labelId: env.seed.rollId, draftSelectable: true })
+  const candidate = candidates.items.find((item) => item.labelId === roll.labelId)
+  expect(candidate).toMatchObject({ labelId: roll.labelId, draftSelectable: true })
   expect(candidate?.labelVersion).toMatch(/^[1-9][0-9]*$/)
 
-  const row = page.getByRole('row', { name: new RegExp(PARENT_ROLL_CODE) })
+  const row = page.getByRole('row', { name: new RegExp(roll.labelCode) })
   await expect(row).toContainText('1000 kg')
   await row.getByRole('button', { name: 'Ekle', exact: true }).click()
-  await page.getByRole('textbox', { name: `${PARENT_ROLL_CODE} planlanan kg` }).fill('1000')
+  await page.getByRole('textbox', { name: `${roll.labelCode} planlanan kg` }).fill('1000')
   return candidate as CandidateAnswer
 }
 
@@ -84,7 +84,7 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
   test('the in-list action saves, reopens and approves the plan, then creates and opens its order', async ({ page, context }) => {
     const rewritten = await asActor(context, env.seed.recorderActor)
     const answered = watchAnswers(page)
-    const candidate = await openPlanForm(page)
+    const candidate = await openPlanForm(page, env.seed.rolls.planCreate)
 
     const sentPlan = page.waitForRequest((request) => PLAN_POST_RE.test(request.url()) && request.method() === 'POST')
     await page.getByRole('button', { name: 'Taslak planı kaydet', exact: true }).click()
@@ -98,7 +98,7 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
     expect(body).toMatchObject({
       workCenterId: env.seed.workCenterId,
       inputs: [{
-        parentRollId: env.seed.rollId,
+        parentRollId: candidate.labelId,
         plannedKg: '1000',
         expectedLabelVersion: candidate.labelVersion,
       }],
@@ -115,7 +115,7 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
     expect(new URL(page.url()).pathname).toBe(`/uretim/plan/${body.planId}`)
     await expect(page.getByRole('heading', { name: 'Plan yeniden açıldı' })).toBeVisible()
     await expect(page.getByText(body.planId, { exact: true })).toBeVisible()
-    await expect(page.getByRole('row', { name: new RegExp(`${env.seed.rollId}.*1000`) })).toBeVisible()
+    await expect(page.getByRole('row', { name: new RegExp(`${candidate.labelId}.*1000`) })).toBeVisible()
 
     const api = await apiAs(env, env.seed.recorderActor)
     try {
@@ -126,7 +126,7 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
         companyId: env.seed.companyId,
         status: 'Draft',
         workCenterId: env.seed.workCenterId,
-        inputs: [{ parentRollId: env.seed.rollId, plannedKg: '1000' }],
+        inputs: [{ parentRollId: candidate.labelId, plannedKg: '1000' }],
       })
     } finally {
       await api.dispose()
@@ -187,7 +187,7 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
   test('an undelivered save is replayed with the same key and creates one plan', async ({ page, context }) => {
     const rewritten = await asActor(context, env.seed.recorderActor)
     const answered = watchAnswers(page)
-    await openPlanForm(page)
+    await openPlanForm(page, env.seed.rolls.planReplay)
 
     let firstRequest: Request | null = null
     let firstStatus: number | null = null
@@ -232,7 +232,7 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
   })
 
   test('permission and stale-label refusals write no plan, and a refusal replay is stable', async () => {
-    const candidate = await readParentRollCandidate(env)
+    const candidate = await readParentRollCandidate(env, env.seed.rolls.planRefusal)
     const refusedPlanId = randomUUID()
     const body = {
       planId: refusedPlanId,

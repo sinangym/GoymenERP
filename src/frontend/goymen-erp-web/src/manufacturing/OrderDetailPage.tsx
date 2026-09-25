@@ -671,7 +671,7 @@ function FactSection({
 
   const refetchLabel = labelQuery.refetch
   const refreshReads = useCallback(async (snapshot: FactSnapshot) => {
-    if (snapshot.kind !== 'input-returns' || !canReadInventoryLabel) {
+    if ((snapshot.kind !== 'input-issues' && snapshot.kind !== 'input-returns') || !canReadInventoryLabel) {
       await onRefresh()
       return
     }
