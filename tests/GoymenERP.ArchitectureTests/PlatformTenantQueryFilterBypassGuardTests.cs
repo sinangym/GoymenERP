@@ -492,13 +492,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                             ["Microsoft.Data.SqlClient"] = 1
                         }),
                 // ACC-3 (#298): the Accounting initializer's one provider branch, as Organization.
-                // Re-fingerprinted for ACC-V1: normal-journal lifecycle services are registered;
+                // Re-fingerprinted for ACC reversal: its lifecycle and proposal store are registered;
                 // Ensure/Migrate counts remain unchanged.
                 ["src/backend/Modules/Accounting/"
                  + "GoymenERP.Modules.Accounting.Infrastructure/"
                  + "AccountingModuleExtensions.cs"] =
                     new(
-                        "e165e9022ef082f582da10433fcbe1e096bf15764bcbdc176bf99c4d6690ae3f",
+                        "950cbdc60c5f8c16638aa1f3e2f0199b970fcacd540b90dca0327633fc0611b5",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -507,12 +507,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // ACC-3 (#298): the SqlClient namespace only to recognise a unique-key violation
                 // (SqlException 2601/2627) after SaveChanges, as InventoryStore and the Idempotency
                 // terminal store do. No connection, command or raw SQL. Re-fingerprinted for ACC-V1: the normal
-                // journal draft lifecycle persists through EF and carries a late create-authority fence;
+                // journal draft and reversal lifecycles persist through EF and carry late authority fences;
                 // SqlClient count remains unchanged (1).
                 ["src/backend/Modules/Accounting/"
                  + "GoymenERP.Modules.Accounting.Infrastructure/Persistence/AccountingStore.cs"] =
                     new(
-                        "0f6e98dbb774cfa6d07e7f7e5e251ab200d25af2478a35f0376cedfe5fdee736",
+                        "4acd06ca4b512e7fb73d58f87c572043ce136f9ea16ec4ff5007cac3487f8422",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
