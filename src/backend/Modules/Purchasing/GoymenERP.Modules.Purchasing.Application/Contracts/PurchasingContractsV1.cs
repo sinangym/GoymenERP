@@ -143,7 +143,10 @@ public sealed class PurchasingServiceException(int status, string code,
 public sealed record PurchasingServiceBindings(
     string? CreatePermission = PurchasingPermissionManifestV1.OrdersCreate,
     string? ReadPermission = PurchasingPermissionManifestV1.OrdersRead,
-    string? ApprovePermission = PurchasingPermissionManifestV1.OrdersApprove);
+    string? ApprovePermission = PurchasingPermissionManifestV1.OrdersApprove,
+    // Source gate: no approved receipt action mapping exists in the current central catalogue.
+    // Never alias this to create/read/approve. Central binds only an accepted action; null is fail-closed.
+    string? GoodsReceiptPermission = null);
 
 /// <summary>Constructed by the server, never bound from the request body.</summary>
 public sealed record PurchasingCommandMetadata(string IdempotencyKey, string CorrelationId, string? CausationId, DateTimeOffset RequestedAtUtc);
