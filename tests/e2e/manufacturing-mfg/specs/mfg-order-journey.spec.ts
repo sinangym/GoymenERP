@@ -14,7 +14,14 @@
  */
 
 import { expect, test, type BrowserContext, type Page, type Request, type Route } from '@playwright/test'
-import { arrangeOpenOrder, declareThroughApi, issueThroughApi, readMassBalance, readOrder } from '../src/arrange.js'
+import {
+  arrangeOpenOrder,
+  declareThroughApi,
+  issueThroughApi,
+  readMassBalance,
+  readOrder,
+  recordWipThroughApi,
+} from '../src/arrange.js'
 import { readEnvironment } from '../src/env.js'
 
 const env = readEnvironment()
@@ -163,24 +170,27 @@ test.describe('MFG order screen (real API, real SQL)', () => {
     await openOrder(page, arranged.orderId)
     await fillIssue(page, arranged.rollId, '50')
     // Another writer records first through the real API; the page still holds the old version.
-    const moved = await issueThroughApi(env, arranged, arranged.version, '10')
+    const moved = await recordWipThroughApi(env, arranged, arranged.version, '10')
     const posts: Request[] = []
     page.on('request', (request) => {
       if (FACT_RE.test(request.url()) && request.method() === 'POST') posts.push(request)
     })
     await page.getByRole('button', { name: 'Kaydet', exact: true }).click()
     await expect(page.getByText(/Emir siz formu doldururken değişti/)).toBeVisible()
-    await expect(issuedCell(page, arranged.rollId)).toHaveText('10')
+    await expect(issuedCell(page, arranged.rollId)).toHaveText('0')
 
     await page.getByRole('button', { name: 'Kaydet', exact: true }).click()
     await expect(page.getByText('Kaydedildi', { exact: true })).toBeVisible()
-    await expect(issuedCell(page, arranged.rollId)).toHaveText('60')
+    await expect(issuedCell(page, arranged.rollId)).toHaveText('50')
     expect(posts).toHaveLength(2)
     expect(posts[1].postDataJSON()).toMatchObject({ expectedVersion: moved.version })
     expect(posts[1].headers()['idempotency-key']).not.toBe(posts[0].headers()['idempotency-key'])
 
     const stored = await readOrder(env, arranged.orderId)
-    expect((stored.rolls as Array<{ issuedKg: string }>)[0].issuedKg).toBe('60')
+    expect((stored.rolls as Array<{ issuedKg: string; workInProgressKg: string }>)[0]).toMatchObject({
+      issuedKg: '50',
+      workInProgressKg: '10',
+    })
     expectEveryAnswerRewritten(answered, rewritten)
   })
 
