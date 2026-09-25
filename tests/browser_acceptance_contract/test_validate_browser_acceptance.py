@@ -272,6 +272,27 @@ class WorkflowTests(unittest.TestCase):
             validator.SUITE_IDENTITY_PERMISSIONS["s04"],
         )
 
+    def test_l04_identity_permissions_include_the_shipment_delivery_and_inventory_axis(self):
+        self.assertEqual(
+            (
+                "logistics.loading-instructions.create",
+                "logistics.loading-instructions.read",
+                "logistics.loads.record",
+                "logistics.shipments.record",
+                "logistics.deliveries.record",
+                "sales.drafts.create",
+                "sales.drafts.read",
+                "sales.orders.approve",
+                "counterparty.parties.read",
+                "inventory.opening-stock.record",
+                "inventory.labels.read",
+                "inventory.balances.read",
+                "inventory.physical-allocation.write",
+                "product.operational-selection.read",
+            ),
+            validator.SUITE_IDENTITY_PERMISSIONS["l04"],
+        )
+
     def test_pur01_identity_permissions_are_the_creator_owner_reads_and_existing_approval_axis(self):
         self.assertEqual(
             (
