@@ -428,6 +428,9 @@ public sealed partial class OpenApiContractGenerationTests
         new("get", "/api/v1/accounting/journals/{journalId}", "GetAccountingJournalV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json", "404:application/problem+json"),
             ParameterValues: ["path:journalId:true:type:string;format:uuid"]),
+        new("get", "/api/v1/accounting/trial-balance", "GetAccountingTrialBalanceV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["query:fromAccountingDate:true:type:string;format:date", "query:throughAccountingDate:true:type:string;format:date", "query:currencyId:false:type:string;format:uuid"]),
         new("get", "/api/v1/accounting/posting-queues", "GetAccountingPostingQueuesV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json")),
         new("post", "/api/v1/accounting/normal-journal-drafts", "CreateAccountingNormalJournalDraftV1",
@@ -571,6 +574,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["CloseAccountingPeriodV1"] = "ref:PeriodViewV1",
             ["GetAccountingJournalsV1"] = "ref:JournalPageV1",
             ["GetAccountingJournalV1"] = "ref:JournalDetailV1",
+            ["GetAccountingTrialBalanceV1"] = "ref:TrialBalanceReportV1",
             ["GetAccountingPostingQueuesV1"] = "ref:PostingQueuesV1",
             ["CreateAccountingNormalJournalDraftV1"] = "ref:NormalJournalDraftViewV1",
             ["GetAccountingNormalJournalDraftV1"] = "ref:NormalJournalDraftViewV1",
@@ -677,6 +681,7 @@ public sealed partial class OpenApiContractGenerationTests
         "CloseAccountingPeriodV1",
         "GetAccountingJournalsV1",
         "GetAccountingJournalV1",
+        "GetAccountingTrialBalanceV1",
         "GetAccountingPostingQueuesV1",
         "CreateAccountingNormalJournalDraftV1",
         "GetAccountingNormalJournalDraftV1",
@@ -1182,6 +1187,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["CloseAccountingPeriodV1:422"] = ["accounting_invalid_reference", "accounting_period_already_closed", "accounting_period_invalid", "accounting_period_not_open", "accounting_period_not_proposed", "accounting_value_does_not_fit"],
             ["GetAccountingJournalsV1:400"] = ["accounting_request_invalid"],
             ["GetAccountingJournalV1:400"] = ["accounting_request_invalid"],
+            ["GetAccountingTrialBalanceV1:400"] = ["accounting_request_invalid"],
             ["GetAccountingPostingQueuesV1:400"] = ["accounting_request_invalid"],
             ["CreateAccountingNormalJournalDraftV1:400"] = ["accounting_request_invalid"],
             ["CreateAccountingNormalJournalDraftV1:409"] = ["accounting_concurrent_change", "accounting_normal_journal_draft_content_conflict", "accounting_normal_journal_draft_not_pending", "accounting_normal_journal_draft_posting_conflict", "accounting_period_conflict", "accounting_period_overlap", "accounting_period_preparer_conflict", "accounting_version_conflict", "idempotency_conflict"],
@@ -1315,6 +1321,27 @@ public sealed partial class OpenApiContractGenerationTests
                     ["items", "nextCursor"],
                     ("items", "type:array;items:ref:JournalSummaryV1"),
                     ("nextCursor", "type:null|string")),
+                ["TrialBalanceCurrencyTotalV1"] = ObjectSchema(
+                    ["currencyId", "debit", "credit", "isBalanced"],
+                    ("currencyId", "type:string;format:uuid"),
+                    ("debit", "type:string"),
+                    ("credit", "type:string"),
+                    ("isBalanced", "type:boolean")),
+                ["TrialBalanceLineV1"] = ObjectSchema(
+                    ["accountId", "currencyId", "debit", "credit", "balanceSide", "balance"],
+                    ("accountId", "type:string;format:uuid"),
+                    ("currencyId", "type:string;format:uuid"),
+                    ("debit", "type:string"),
+                    ("credit", "type:string"),
+                    ("balanceSide", "type:string"),
+                    ("balance", "type:string")),
+                ["TrialBalanceReportV1"] = ObjectSchema(
+                    ["fromAccountingDate", "throughAccountingDate", "currencyId", "lines", "currencyTotals"],
+                    ("fromAccountingDate", "type:string;format:date"),
+                    ("throughAccountingDate", "type:string;format:date"),
+                    ("currencyId", "type:null|string;format:uuid"),
+                    ("lines", "type:array;items:ref:TrialBalanceLineV1"),
+                    ("currencyTotals", "type:array;items:ref:TrialBalanceCurrencyTotalV1")),
                 ["JournalSummaryV1"] = ObjectSchema(
                     ["journalId", "kind", "sourceId", "postingPurpose", "postingRuleVersion", "currencyId", "transactionDate", "accountingDate", "valueDate", "periodId", "linkedJournalId", "totalDebit", "totalCredit", "lineCount", "storedAtUtc"],
                     ("journalId", "type:string;format:uuid"),
@@ -3211,9 +3238,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(117, operations.Count);
+        Assert.Equal(118, operations.Count);
         Assert.Equal(
-            117,
+            118,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());

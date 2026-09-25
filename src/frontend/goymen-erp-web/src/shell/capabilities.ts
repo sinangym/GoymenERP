@@ -202,6 +202,8 @@ export const CAPABILITY = {
   accountingNormalDraftApprove: 'accounting.normal-journal-drafts.approve',
   /** M-01 Muhasebe Kontrol Merkezi — the posting queues, read-only. Route `/muhasebe/kontrol`. */
   accountingPostingQueues: 'accounting.posting-queues',
+  /** M-06 Mizan — posted-journal aggregates, read-only. Route `/muhasebe/mizan`. */
+  accountingTrialBalance: 'accounting.trial-balance',
   /** INV-OPEN-2 opening-stock workspace. Home, create and detail share this existing permission. */
   inventoryOpeningStockRecord: 'inventory.opening-stock.record',
   /** ST-01 bounded, company-scoped physical stock-position read. */
@@ -285,6 +287,7 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.accountingNormalDraftDetail]: '/muhasebe/normal-fisler/:draftId',
   [CAPABILITY.accountingNormalDraftApprove]: '/muhasebe/normal-fis-onay/:draftId',
   [CAPABILITY.accountingPostingQueues]: '/muhasebe/kontrol',
+  [CAPABILITY.accountingTrialBalance]: '/muhasebe/mizan',
   [CAPABILITY.inventoryOpeningStockRecord]: '/stok/acilis',
   [CAPABILITY.inventoryStockPositionsList]: '/stok/pozisyonlar',
   [CAPABILITY.logisticsInstructionsList]: '/lojistik/yukleme-talimatlari',
@@ -357,6 +360,8 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   [CAPABILITY.accountingPeriodsList]: 'Muhasebe Dönemleri',
   [CAPABILITY.accountingJournalsList]: 'Muhasebe Fişleri',
   [CAPABILITY.accountingPostingQueues]: 'Muhasebe Kontrol',
+  // Staged until the actual M-06 browser acceptance; no sidebar publication yet.
+  [CAPABILITY.accountingTrialBalance]: '',
   [CAPABILITY.inventoryOpeningStockRecord]: 'Stok Açılışı',
   [CAPABILITY.inventoryStockPositionsList]: 'Stok / Malzeme Pozisyonu',
   // Not these two: a period is proposed from the M-07 list and a journal opened from a row.

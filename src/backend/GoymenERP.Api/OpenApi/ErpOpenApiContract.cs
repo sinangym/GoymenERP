@@ -617,6 +617,19 @@ public static partial class ErpOpenApiContract
                 operation, ParameterLocation.Query, "expectedProductVersion", 1, 128);
         }
 
+        if (string.Equals(operation.OperationId, "GetAccountingTrialBalanceV1", StringComparison.Ordinal))
+        {
+            AddQueryParameter(operation, "fromAccountingDate",
+                new OpenApiSchema { Type = JsonSchemaType.String, Format = "date" },
+                "Inclusive first accounting date (yyyy-MM-dd).", required: true);
+            AddQueryParameter(operation, "throughAccountingDate",
+                new OpenApiSchema { Type = JsonSchemaType.String, Format = "date" },
+                "Inclusive last accounting date (yyyy-MM-dd).", required: true);
+            AddQueryParameter(operation, "currencyId",
+                new OpenApiSchema { Type = JsonSchemaType.String, Format = "uuid" },
+                "Optional non-empty currency identifier; currencies are never combined.");
+        }
+
         if (string.Equals(
                 operation.OperationId,
                 GoymenERP.Modules.Inventory.Application.InventoryParentRollApiV1.GetCandidatesOperationId,
