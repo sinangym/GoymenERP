@@ -189,6 +189,27 @@ Notes carried from the #293 review (INFO; no change in this slice):
 - **Evidence and outcome.** The evidence is real SQL through the real host with synthetic grants and synthetic stock written through the store. It is **not a user outcome**: no real product card and no accepted opening stock source exist yet (plan §14 T07, Ö1).
 - **No write here.** The receipt (T07 write) waits for the opening-acceptance question on #66 (NEEDS-SINAN 5731613477). The lot record is the next section.
 
+### ST-04 movement timeline on the label detail
+
+`GET /api/v1/inventory/labels/{labelId}/detail` also returns `movementTimeline`: at most the
+newest 100 stored physical movements that contain the requested label, ordered by occurrence time.
+Each entry exposes only Inventory's immutable movement identity/kind/time, stable source identity
+and that label's own direction, owner, custodian, location, block and exact kg lines. Cost and
+source-module payloads are not disclosed. `windowFull=true` means older stored movements exist.
+
+The existing `inventory.labels.read` plus `inventory.balances.read` company-wide fence is reused;
+there is no new permission, route or grant. The detail service reads the bounded timeline twice,
+with fresh authority checks after every awaited owner read, and refuses `409
+inventory_label_detail_read_conflict` if the two captures differ. Unknown enum values, foreign
+product facts, malformed block/release pairs or non-canonical quantities fail closed as `503`.
+This is a read projection over existing `inventory.Movements`; it creates no movement and selects
+no transfer, return, correction or quality policy.
+
+This is the first ST-04 read slice, not the whole ST-04 card: the current ledger has Receipt,
+Issue, Block, Release and Return records. A distinct transfer or reversal record is shown only
+after its separately accepted Inventory writer and semantics exist; this reader does not infer
+either event from unrelated rows.
+
 ## T07 lot record: `MaterialLot`
 
 Card: #66 5733503803 (ÜRÜN). Business accepted it as an independent core slice and set its boundary in #66 5734060341; that text is the contract of this section. It closes none of Q1–Q3 and chooses no policy.
