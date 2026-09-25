@@ -22,6 +22,33 @@ export const OUTPUT_CLASSES = [
 
 export type OutputClass = (typeof OUTPUT_CLASSES)[number]
 
+export interface ManufacturingOutputProductCandidate {
+  readonly productId: string
+  readonly productVersion: string
+  readonly code: string
+  readonly name: string
+  readonly stockUnitCode: string
+}
+
+export interface ManufacturingOutputProductCandidates {
+  readonly items: readonly ManufacturingOutputProductCandidate[]
+  readonly searchWindowFull: boolean
+}
+
+export interface ManufacturingOutputLocationCandidate {
+  readonly locationId: string
+  readonly locationCode: string
+  readonly locationName: string
+  readonly siteId: string
+  readonly siteCode: string
+  readonly siteName: string
+}
+
+export interface ManufacturingOutputLocationCandidates {
+  readonly items: readonly ManufacturingOutputLocationCandidate[]
+  readonly searchWindowFull: boolean
+}
+
 export type OrderStatus = 'Open' | 'Closed'
 
 export interface RollBalance {
@@ -92,6 +119,7 @@ export interface ProductionOrderView {
 }
 
 const GUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
+const NIL_GUID = '00000000-0000-0000-0000-000000000000'
 /** The server's own `Text(decimal)`: invariant, no grouping, no exponent. */
 const KG_OUT = /^(0|[1-9][0-9]*)(\.[0-9]*[1-9])?$/
 const SIGNED_KG_OUT = /^-?(0|[1-9][0-9]*)(\.[0-9]*[1-9])?$/
@@ -113,8 +141,23 @@ function isObject(value: unknown): value is Json {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+function hasExactKeys(value: Json, keys: readonly string[]): boolean {
+  const actual = Object.keys(value).sort()
+  const expected = [...keys].sort()
+  return actual.length === expected.length && actual.every((key, index) => key === expected[index])
+}
+
+function requiredText(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 && value === value.trim()
+}
+
 function guid(value: unknown): string | null {
   return typeof value === 'string' && GUID.test(value) ? value : null
+}
+
+function nonNilGuid(value: unknown): string | null {
+  const decoded = guid(value)
+  return decoded === null || decoded.toLowerCase() === NIL_GUID ? null : decoded
 }
 
 function nullableGuid(value: unknown): string | null | undefined {
@@ -129,6 +172,62 @@ function kg(value: unknown, signed = false): string | null {
 function nullableKg(value: unknown): string | null | undefined {
   if (value === null) return null
   return kg(value) ?? undefined
+}
+
+export function decodeManufacturingOutputProductCandidates(
+  value: unknown,
+): ManufacturingOutputProductCandidates | null {
+  if (!isObject(value) || !hasExactKeys(value, ['items', 'searchWindowFull'])
+    || !Array.isArray(value.items) || typeof value.searchWindowFull !== 'boolean') return null
+  const items: ManufacturingOutputProductCandidate[] = []
+  const ids = new Set<string>()
+  for (const raw of value.items) {
+    if (!isObject(raw) || !hasExactKeys(raw, ['productId', 'productVersion', 'code', 'name', 'stockUnitCode'])) {
+      return null
+    }
+    const productId = nonNilGuid(raw.productId)
+    if (productId === null || ids.has(productId) || !requiredText(raw.productVersion)
+      || !/^[1-9][0-9]*$/.test(raw.productVersion) || !requiredText(raw.code)
+      || !requiredText(raw.name) || !requiredText(raw.stockUnitCode)) return null
+    ids.add(productId)
+    items.push({
+      productId,
+      productVersion: raw.productVersion,
+      code: raw.code,
+      name: raw.name,
+      stockUnitCode: raw.stockUnitCode,
+    })
+  }
+  return { items, searchWindowFull: value.searchWindowFull }
+}
+
+export function decodeManufacturingOutputLocationCandidates(
+  value: unknown,
+): ManufacturingOutputLocationCandidates | null {
+  if (!isObject(value) || !hasExactKeys(value, ['items', 'searchWindowFull'])
+    || !Array.isArray(value.items) || typeof value.searchWindowFull !== 'boolean') return null
+  const items: ManufacturingOutputLocationCandidate[] = []
+  const ids = new Set<string>()
+  for (const raw of value.items) {
+    if (!isObject(raw) || !hasExactKeys(raw, [
+      'locationId', 'locationCode', 'locationName', 'siteId', 'siteCode', 'siteName',
+    ])) return null
+    const locationId = nonNilGuid(raw.locationId)
+    const siteId = nonNilGuid(raw.siteId)
+    if (locationId === null || siteId === null || ids.has(locationId)
+      || !requiredText(raw.locationCode) || !requiredText(raw.locationName)
+      || !requiredText(raw.siteCode) || !requiredText(raw.siteName)) return null
+    ids.add(locationId)
+    items.push({
+      locationId,
+      locationCode: raw.locationCode,
+      locationName: raw.locationName,
+      siteId,
+      siteCode: raw.siteCode,
+      siteName: raw.siteName,
+    })
+  }
+  return { items, searchWindowFull: value.searchWindowFull }
 }
 
 function decodeOutputs(value: unknown): Record<OutputClass, string> | null {
@@ -342,11 +441,11 @@ export function decodeOrder(body: unknown): ProductionOrderView | null {
 }
 
 /**
- * The realization commands this screen can complete without inventing output ownership or block policy.
- * Output remains a server contract, but its selection flow is gated on the separate InitialBlock and
- * Counterparty decisions.
+ * The realization commands this screen can complete from explicit server-backed selections. Output is
+ * deliberately the company-owned path only: customer/subcontract ownership remains gated on its separate
+ * Counterparty contract. InitialBlock is an explicit user selection, never a client default.
  */
-export const FACT_KINDS = ['input-issues', 'input-returns', 'wip-measurements'] as const
+export const FACT_KINDS = ['input-issues', 'input-returns', 'wip-measurements', 'outputs'] as const
 
 export type FactKind = (typeof FACT_KINDS)[number]
 
@@ -380,6 +479,26 @@ export type FactSnapshot =
       readonly movementId: null
       readonly expectedParentLabelVersion: null
     })
+  | (FactSnapshotBase & {
+      readonly kind: 'outputs'
+      readonly movementId: string
+      readonly expectedParentLabelVersion: string
+      readonly outputClass: OutputClass
+      readonly productId: string
+      readonly expectedProductVersion: string
+      readonly lotId: string
+      readonly labelId: string
+      readonly labelCode: string
+      readonly heatNumber: string | null
+      readonly coilNumber: string | null
+      readonly requiredDocuments: readonly string[]
+      readonly ownerKind: 'Company'
+      readonly ownerId: string
+      readonly custodianKind: 'Company'
+      readonly custodianId: string
+      readonly locationId: string
+      readonly initialBlock: 'Free' | 'Blocked'
+    })
 
 /** The exact strict request body selected by the route segment. */
 export function factBody(snapshot: FactSnapshot): Record<string, unknown> {
@@ -397,6 +516,29 @@ export function factBody(snapshot: FactSnapshot): Record<string, unknown> {
       returnId: snapshot.factId,
       ...common,
       expectedParentLabelVersion: snapshot.expectedParentLabelVersion,
+      movementId: snapshot.movementId,
+    }
+  }
+  if (snapshot.kind === 'outputs') {
+    return {
+      outputId: snapshot.factId,
+      ...common,
+      expectedParentLabelVersion: snapshot.expectedParentLabelVersion,
+      outputClass: snapshot.outputClass,
+      productId: snapshot.productId,
+      expectedProductVersion: snapshot.expectedProductVersion,
+      lotId: snapshot.lotId,
+      labelId: snapshot.labelId,
+      labelCode: snapshot.labelCode,
+      heatNumber: snapshot.heatNumber,
+      coilNumber: snapshot.coilNumber,
+      requiredDocuments: snapshot.requiredDocuments,
+      ownerKind: snapshot.ownerKind,
+      ownerId: snapshot.ownerId,
+      custodianKind: snapshot.custodianKind,
+      custodianId: snapshot.custodianId,
+      locationId: snapshot.locationId,
+      initialBlock: snapshot.initialBlock,
       movementId: snapshot.movementId,
     }
   }

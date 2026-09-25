@@ -48,6 +48,47 @@ describe('recordFact', () => {
     })
   })
 
+  it('posts the strict output snapshot to the output route without changing any identity', async () => {
+    const output: FactSnapshot = {
+      ...SNAPSHOT,
+      kind: 'outputs',
+      expectedParentLabelVersion: '8',
+      outputClass: 'GoodProduct',
+      productId: 'f0000000-0000-4000-8000-000000000010',
+      expectedProductVersion: '12',
+      lotId: 'f0000000-0000-4000-8000-000000000011',
+      labelId: 'f0000000-0000-4000-8000-000000000012',
+      labelCode: 'OUT-12',
+      heatNumber: null,
+      coilNumber: 'COIL-12',
+      requiredDocuments: ['CERT-12'],
+      ownerKind: 'Company',
+      ownerId: COMPANY_A,
+      custodianKind: 'Company',
+      custodianId: COMPANY_A,
+      locationId: 'f0000000-0000-4000-8000-000000000013',
+      initialBlock: 'Free',
+    }
+    const fetchMock = answer(json({}, 200))
+
+    await recordFact(COMPANY_A, ORDER, output)
+
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe(`/api/v1/manufacturing/orders/${ORDER}/outputs`)
+    expect(init.headers).toMatchObject({ 'Idempotency-Key': 'key-1', 'X-Company-Id': COMPANY_A })
+    expect(JSON.parse(init.body as string)).toMatchObject({
+      outputId: output.factId,
+      movementId: output.movementId,
+      expectedParentLabelVersion: '8',
+      expectedProductVersion: '12',
+      ownerKind: 'Company',
+      ownerId: COMPANY_A,
+      custodianKind: 'Company',
+      custodianId: COMPANY_A,
+      initialBlock: 'Free',
+    })
+  })
+
   it('reads a 200 as applied and a replay as the recorded answer', async () => {
     answer(json({}, 200))
     expect(await recordFact(COMPANY_A, ORDER, SNAPSHOT)).toEqual({

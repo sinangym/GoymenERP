@@ -15,6 +15,7 @@
 
 import { expect, test, type BrowserContext, type Page, type Request, type Route } from '@playwright/test'
 import {
+  apiAs,
   arrangeOpenOrder,
   declareThroughApi,
   issueThroughApi,
@@ -29,6 +30,8 @@ const ORDER_RE = /\/api\/v1\/manufacturing\/orders\/[^/]+$/
 const BALANCE_RE = /\/api\/v1\/manufacturing\/orders\/[^/]+\/mass-balance$/
 const CLOSE_RE = /\/api\/v1\/manufacturing\/orders\/[^/]+\/close$/
 const LIST_RE = /\/api\/v1\/manufacturing\/orders(\?|$)/
+const OUTPUT_PRODUCTS_RE = /\/api\/v1\/manufacturing\/references\/output-products\?/
+const OUTPUT_LOCATIONS_RE = /\/api\/v1\/manufacturing\/references\/output-locations\?/
 
 /** Binds `actor` to every API request of this context and records which requests it rewrote. */
 async function asActor(context: BrowserContext, actor: string): Promise<Set<Request>> {
@@ -129,6 +132,82 @@ test.describe('MFG order screen (real API, real SQL)', () => {
 
     const stored = await readOrder(env, arranged.orderId)
     expect((stored.rolls as Array<{ issuedKg: string }>)[0].issuedKg).toBe('250.5')
+    expectEveryAnswerRewritten(answered, rewritten)
+  })
+
+  test('a recorder selects owner-backed references and stores one company-owned output and Inventory label', async ({ page, context }) => {
+    const arranged = await arrangeOpenOrder(env, env.seed.rolls.outputUi)
+    const issued = await issueThroughApi(env, arranged, arranged.version, '100')
+    const rewritten = await asActor(context, env.seed.recorderActor)
+    const answered = watchAnswers(page)
+    const products = page.waitForResponse((response) =>
+      OUTPUT_PRODUCTS_RE.test(response.url()) && response.request().method() === 'GET')
+    const locations = page.waitForResponse((response) =>
+      OUTPUT_LOCATIONS_RE.test(response.url()) && response.request().method() === 'GET')
+
+    await openOrder(page, arranged.orderId)
+    await page.getByRole('radio', { name: 'Şirket malı üretim çıktısı', exact: true }).check()
+    await page.getByRole('combobox', { name: 'Ana rulo', exact: true }).selectOption(arranged.rollId)
+    await page.getByLabel('Zaman', { exact: true }).fill('2026-09-25T09:30')
+    expect((await products).status()).toBe(200)
+    expect((await locations).status()).toBe(200)
+
+    await page.getByRole('combobox', { name: 'Çıktı sınıfı', exact: true }).selectOption('GoodProduct')
+    await page.getByRole('combobox', { name: 'Ürün', exact: true }).selectOption(env.seed.output.productId)
+    await page.getByRole('combobox', { name: 'Lokasyon', exact: true }).selectOption(env.seed.output.locationId)
+    await page.getByLabel('Yeni etiket kodu', { exact: true })
+      .fill(`SYN-MFG-UI-OUT-${arranged.orderId.replaceAll('-', '')}`)
+    await page.getByRole('combobox', { name: 'İlk stok durumu', exact: true })
+      .selectOption(env.seed.output.initialBlock)
+    await kgField(page).fill('40')
+
+    const post = page.waitForRequest((request) =>
+      request.url().endsWith(`/orders/${arranged.orderId}/outputs`) && request.method() === 'POST')
+    await page.getByRole('button', { name: 'Kaydet', exact: true }).click()
+    const sent = await post
+    const body = sent.postDataJSON() as Record<string, unknown>
+    expect(body).toMatchObject({
+      expectedVersion: issued.version,
+      parentRollId: arranged.rollId,
+      outputClass: 'GoodProduct',
+      productId: env.seed.output.productId,
+      expectedProductVersion: env.seed.output.productVersion,
+      ownerKind: 'Company',
+      ownerId: env.seed.companyId,
+      custodianKind: 'Company',
+      custodianId: env.seed.companyId,
+      locationId: env.seed.output.locationId,
+      initialBlock: env.seed.output.initialBlock,
+      kg: '40',
+    })
+    const ids = ['outputId', 'movementId', 'lotId', 'labelId'].map((name) => body[name] as string)
+    expect(new Set(ids).size).toBe(4)
+    expect(body.expectedParentLabelVersion).toMatch(/^[1-9][0-9]*$/)
+    await expect(page.getByText('Kaydedildi', { exact: true })).toBeVisible()
+    await expect(rollRow(page, arranged.rollId)).toContainText('40')
+
+    const api = await apiAs(env, env.seed.recorderActor)
+    try {
+      const labelResponse = await api.get(`/api/v1/inventory/labels/${body.labelId as string}/detail`)
+      const labelText = await labelResponse.text()
+      expect(labelResponse.status(), labelText).toBe(200)
+      const label = JSON.parse(labelText) as {
+        identity: { labelId: string; productId: string }
+        balances: { physicalKg: string; positions: Array<Record<string, unknown>> }
+      }
+      expect(label.identity).toMatchObject({ labelId: body.labelId, productId: env.seed.output.productId })
+      expect(label.balances.physicalKg).toBe('40')
+      expect(label.balances.positions).toContainEqual(expect.objectContaining({
+        ownerKind: 'Company', ownerId: env.seed.companyId,
+        custodianKind: 'Company', custodianId: env.seed.companyId,
+        locationId: env.seed.output.locationId, block: env.seed.output.initialBlock, quantityKg: '40',
+      }))
+    } finally {
+      await api.dispose()
+    }
+
+    const stored = await readOrder(env, arranged.orderId)
+    expect((stored.rolls as Array<{ outputsKg: Record<string, string> }>)[0].outputsKg.GoodProduct).toBe('40')
     expectEveryAnswerRewritten(answered, rewritten)
   })
 

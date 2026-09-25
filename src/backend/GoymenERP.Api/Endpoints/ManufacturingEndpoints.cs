@@ -6,6 +6,7 @@ using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Manufacturing.Domain.Common;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Net.Http.Headers;
 
 namespace GoymenERP.Api.Endpoints;
@@ -24,6 +25,12 @@ public static class ManufacturingEndpoints
 {
     private const string IdempotencyHeaderName = "Idempotency-Key";
     private const int MaximumIdempotencyKeyLength = 128;
+
+    private static readonly HashSet<string> OutputProductQueryNames =
+        new(["q", "effectiveOn", "limit"], StringComparer.Ordinal);
+
+    private static readonly HashSet<string> OutputLocationQueryNames =
+        new(["q", "limit"], StringComparer.Ordinal);
 
     private static readonly string[] BadRequestCodes =
     [
@@ -72,6 +79,64 @@ public static class ManufacturingEndpoints
         var group = endpoints.MapGroup("/api/v1/manufacturing")
             .RequireAuthorization()
             .WithTags("Manufacturing");
+
+        group.MapGet("/references/output-products", async (
+                HttpContext httpContext,
+                [FromServices] IManufacturingOutputSelectionV1 selections,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response.Headers);
+                if (!TryReadOutputProductQuery(httpContext.Request.Query, out var query))
+                {
+                    return Problem(StatusCodes.Status400BadRequest,
+                        ManufacturingOutputSelectionCodesV1.InvalidQuery, null);
+                }
+
+                try
+                {
+                    return Results.Ok(await selections.SearchProductsAsync(query, cancellationToken));
+                }
+                catch (ManufacturingOutputSelectionException exception)
+                {
+                    return OutputSelectionProblem(exception);
+                }
+            })
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.ManufacturingFactsRecord)
+            .WithName("GetManufacturingOutputProductCandidatesV1")
+            .Produces<ManufacturingOutputProductCandidatesV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest(ManufacturingOutputSelectionCodesV1.InvalidQuery)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
+        group.MapGet("/references/output-locations", async (
+                HttpContext httpContext,
+                [FromServices] IManufacturingOutputSelectionV1 selections,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response.Headers);
+                if (!TryReadOutputLocationQuery(httpContext.Request.Query, out var query))
+                {
+                    return Problem(StatusCodes.Status400BadRequest,
+                        ManufacturingOutputSelectionCodesV1.InvalidQuery, null);
+                }
+
+                try
+                {
+                    return Results.Ok(await selections.SearchLocationsAsync(query, cancellationToken));
+                }
+                catch (ManufacturingOutputSelectionException exception)
+                {
+                    return OutputSelectionProblem(exception);
+                }
+            })
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.ManufacturingFactsRecord)
+            .WithName("GetManufacturingOutputLocationCandidatesV1")
+            .Produces<ManufacturingOutputLocationCandidatesV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest(ManufacturingOutputSelectionCodesV1.InvalidQuery)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
 
         group.MapPost("/plans", async (
                 SavePlanRequestV1 request,
@@ -414,6 +479,62 @@ public static class ManufacturingEndpoints
         idempotencyKey = canonical;
         return true;
     }
+
+    private static bool TryReadOutputProductQuery(
+        IQueryCollection values,
+        out ManufacturingOutputProductQueryV1 query)
+    {
+        query = new(null, default);
+        if (!HasOnlySingleKnownValues(values, OutputProductQueryNames)
+            || !values.TryGetValue("effectiveOn", out var effectiveOnValues)
+            || !DateOnly.TryParseExact(effectiveOnValues[0], "yyyy-MM-dd", CultureInfo.InvariantCulture,
+                DateTimeStyles.None, out var effectiveOn)
+            || !TryReadOutputLimit(values, out var limit))
+        {
+            return false;
+        }
+
+        query = new(values.TryGetValue("q", out var q) ? q[0] : null, effectiveOn, limit);
+        return true;
+    }
+
+    private static bool TryReadOutputLocationQuery(
+        IQueryCollection values,
+        out ManufacturingOutputLocationQueryV1 query)
+    {
+        query = new(null);
+        if (!HasOnlySingleKnownValues(values, OutputLocationQueryNames)
+            || !TryReadOutputLimit(values, out var limit))
+        {
+            return false;
+        }
+
+        query = new(values.TryGetValue("q", out var q) ? q[0] : null, limit);
+        return true;
+    }
+
+    private static bool HasOnlySingleKnownValues(IQueryCollection query, IReadOnlySet<string> names) =>
+        query.Keys.All(names.Contains) && query.All(item => item.Value.Count == 1);
+
+    private static bool TryReadOutputLimit(IQueryCollection query, out int limit)
+    {
+        limit = 25;
+        return !query.TryGetValue("limit", out var values)
+               || int.TryParse(values[0], NumberStyles.None, CultureInfo.InvariantCulture, out limit)
+               && limit is >= 1 and <= 100;
+    }
+
+    private static IResult OutputSelectionProblem(ManufacturingOutputSelectionException exception) =>
+        exception.Failure switch
+        {
+            ManufacturingOutputSelectionFailure.Invalid => Problem(StatusCodes.Status400BadRequest,
+                ManufacturingOutputSelectionCodesV1.InvalidQuery, null),
+            ManufacturingOutputSelectionFailure.Denied => Problem(StatusCodes.Status403Forbidden,
+                ErpProblemCodes.Forbidden, null),
+            ManufacturingOutputSelectionFailure.Unavailable => Problem(StatusCodes.Status503ServiceUnavailable,
+                ErpProblemCodes.ServiceUnavailable, null),
+            _ => throw new InvalidOperationException("Tanımsız üretim çıktı seçim sonucu."),
+        };
 
     private static void SetPrivateNoStore(IHeaderDictionary headers)
     {
