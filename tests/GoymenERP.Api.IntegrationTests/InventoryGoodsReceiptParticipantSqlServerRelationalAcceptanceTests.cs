@@ -103,7 +103,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             ("@company", CompanyA), ("@label", receipt.LabelId));
         try
         {
-            await SetRequiredDocumentsJsonAsync(run, receipt.LabelId, "null");
+            await SetRequiredDocumentsJsonAsync(run, receipt.LabelId, "{}");
             var unavailable = await Assert.ThrowsAsync<InventoryGoodsReceiptException>(() =>
                 ReadGoodsReceiptSourceAsync(run, CompanyA, acceptanceId));
             Assert.Equal((503, InventoryGoodsReceiptCodesV1.Unavailable),
