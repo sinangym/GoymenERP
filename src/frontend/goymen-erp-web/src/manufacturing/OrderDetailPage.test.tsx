@@ -7,12 +7,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { INVENTORY_STOCK_POSITIONS_CAPABILITY } from '../inventory/capabilities'
 import {
   CLOSER_CAPABILITIES,
   COMPANY_A,
   COMPANY_B,
   ORDER,
   READER_CAPABILITIES,
+  RECORDER_CAPABILITIES,
   ROLL_1,
   installFetch,
   json,
@@ -31,6 +33,7 @@ const PATH = `/uretim/emir/${ORDER}`
 const PRODUCT = 'e0000000-0000-4000-8000-000000000010'
 const LOT = 'e0000000-0000-4000-8000-000000000011'
 const LOCATION = 'e0000000-0000-4000-8000-000000000012'
+const INVENTORY_RECORDER_CAPABILITIES = [...RECORDER_CAPABILITIES, INVENTORY_STOCK_POSITIONS_CAPABILITY]
 
 function labelDetail(
   labelVersion = '7',
@@ -129,7 +132,7 @@ async function fillFact(
 ) {
   if (values.kind !== undefined) await user.click(screen.getByLabelText(values.kind))
   await user.selectOptions(screen.getByLabelText('Ana rulo'), ROLL_1)
-  if (values.kind !== 'WIP ölçümü') await screen.findByTestId('parent-label-state')
+  if (values.kind === 'Kullanılmayan girdi iadesi') await screen.findByTestId('parent-label-state')
   const kg = screen.getByLabelText('Kütle (kg)')
   await user.clear(kg)
   await user.type(kg, values.kg ?? '250.5')
@@ -333,6 +336,7 @@ describe('fact forms', () => {
     expect(screen.getByRole('textbox', { name: 'Kütle (kg)' })).toBeTruthy()
     expect(screen.getByLabelText('Zaman')).toBeTruthy()
     expect(screen.getByLabelText('WIP ölçümü')).toBeTruthy()
+    expect(screen.queryByLabelText('Kullanılmayan girdi iadesi')).toBeNull()
     expect(screen.queryByLabelText('Çıktı bildirimi')).toBeNull()
   })
 
@@ -364,7 +368,7 @@ describe('fact forms', () => {
     await waitFor(() => expect(reads(recorded)).toHaveLength(2))
     const row = await rollRow()
     await waitFor(() => expect(within(row).getAllByText('250.5').length).toBeGreaterThan(0))
-    await waitFor(() => expect(labelReads(recorded)).toHaveLength(2))
+    expect(labelReads(recorded)).toHaveLength(0)
   })
 
   it('says a replayed answer was already recorded', async () => {
@@ -380,6 +384,7 @@ describe('fact forms', () => {
   it('issues a planned company roll, reopens order and label, then returns with the fresh label version', async () => {
     const user = userEvent.setup()
     const { recorded } = stub({
+      capabilities: INVENTORY_RECORDER_CAPABILITIES,
       reads: [
         () => json(order()),
         () => json(order({
@@ -397,7 +402,6 @@ describe('fact forms', () => {
         })),
       ],
       labels: [
-        () => json(labelDetail('7', '1000')),
         () => json(labelDetail('8', '750')),
         () => json(labelDetail('9', '800')),
       ],
@@ -409,14 +413,15 @@ describe('fact forms', () => {
     await fillFact(user)
     await user.click(screen.getByRole('button', { name: 'Kaydet' }))
     await waitFor(() => expect(reads(recorded)).toHaveLength(2))
-    await waitFor(() => expect(labelReads(recorded)).toHaveLength(2))
-    await waitFor(() => expect(within(screen.getByTestId('parent-label-state')).getAllByText('750 kg')).toHaveLength(2))
+    expect(labelReads(recorded)).toHaveLength(0)
 
     await fillFact(user, { kind: 'Kullanılmayan girdi iadesi', kg: '50' })
+    await waitFor(() => expect(labelReads(recorded)).toHaveLength(1))
+    expect(within(screen.getByTestId('parent-label-state')).getAllByText('750 kg')).toHaveLength(2)
     await user.click(screen.getByRole('button', { name: 'Kaydet' }))
     await waitFor(() => expect(posts(recorded)).toHaveLength(2))
     await waitFor(() => expect(reads(recorded)).toHaveLength(3))
-    await waitFor(() => expect(labelReads(recorded)).toHaveLength(3))
+    await waitFor(() => expect(labelReads(recorded)).toHaveLength(2))
     await waitFor(() => expect(within(screen.getByTestId('parent-label-state')).getAllByText('800 kg')).toHaveLength(2))
 
     const [issue, returned] = posts(recorded)
@@ -440,9 +445,13 @@ describe('fact forms', () => {
 
   it('keeps customer/fason ownership fail-closed and sends no input command', async () => {
     const user = userEvent.setup()
-    const { recorded } = stub({ labels: [() => json(labelDetail('7', '1000', COMPANY_B, COMPANY_B))] })
+    const { recorded } = stub({
+      capabilities: INVENTORY_RECORDER_CAPABILITIES,
+      labels: [() => json(labelDetail('7', '1000', COMPANY_B, COMPANY_B))],
+    })
     renderAt(PATH)
     await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+    await user.click(screen.getByLabelText('Kullanılmayan girdi iadesi'))
     await user.selectOptions(screen.getByLabelText('Ana rulo'), ROLL_1)
     await waitFor(() => expect(labelReads(recorded)).toHaveLength(1))
 
@@ -451,9 +460,27 @@ describe('fact forms', () => {
     expect(posts(recorded)).toHaveLength(0)
   })
 
+  it('fences a revoked Inventory label read on 403 and never sends a return', async () => {
+    const user = userEvent.setup()
+    const { recorded } = stub({
+      capabilities: INVENTORY_RECORDER_CAPABILITIES,
+      labels: [() => problem(403, { code: 'inventory_label_detail_forbidden' })],
+    })
+    renderAt(PATH)
+    await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+    await user.click(screen.getByLabelText('Kullanılmayan girdi iadesi'))
+    await user.selectOptions(screen.getByLabelText('Ana rulo'), ROLL_1)
+
+    await waitFor(() => expect(labelReads(recorded)).toHaveLength(1))
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Gerçekleşme kaydı' })).toBeNull())
+    expect(labelReads(recorded)).toHaveLength(1)
+    expect(posts(recorded)).toHaveLength(0)
+  })
+
   it('refreshes both owner reads after a parent-label version conflict and keeps the typed return', async () => {
     const user = userEvent.setup()
     const { recorded } = stub({
+      capabilities: INVENTORY_RECORDER_CAPABILITIES,
       reads: [
         () => json(order({
           version: 2,
@@ -542,6 +569,7 @@ describe('fact forms', () => {
   it('names a rule refusal by its code and an unlisted code as a generic refusal with the code', async () => {
     const user = userEvent.setup()
     stub({
+      capabilities: INVENTORY_RECORDER_CAPABILITIES,
       commands: [
         () => problem(409, { code: 'inventory_manufacturing_input_return_exceeds_issued' }),
         () => problem(422, { code: 'manufacturing_new_rule' }),

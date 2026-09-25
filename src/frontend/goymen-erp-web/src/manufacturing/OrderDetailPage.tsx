@@ -1,6 +1,6 @@
 /**
  * One production order: each parent roll's mass balance, and — for a holder of the
- * facts capability — the four fact forms (MFG-UI card, coordinator-approved).
+ * facts capability — the currently authorized fact forms (MFG-UI card, coordinator-approved).
  *
  * A technical, functional sub-view (card D1): published on the server since MFG-UI-F (#349,
  * after the `mfg` browser acceptance), and not a locked visual reference for the canonical
@@ -31,6 +31,7 @@ import { fetchMassBalance, fetchOrder } from './api'
 import { closeOrder, recordFact, type FactFailure, type FactUnknown } from './commandApi'
 import { fetchInventoryLabelDetail } from '../inventory/labelDetailApi'
 import type { InventoryLabelDetail } from '../inventory/labelDetailContract'
+import { INVENTORY_STOCK_POSITIONS_CAPABILITY } from '../inventory/capabilities'
 import {
   FACT_KINDS,
   OUTPUT_CLASSES,
@@ -129,6 +130,7 @@ function OrderDetail({ namespace }: { readonly namespace: string | null }) {
   const singleCompanyContext =
     (shell.activeContext?.scopeMode ?? 'single') === 'single' && activeCompanyId !== null
   const canRecord = hasCapability(shell, MANUFACTURING_CAPABILITY.orderFacts)
+  const canReadInventoryLabel = hasCapability(shell, INVENTORY_STOCK_POSITIONS_CAPABILITY)
   // A third authority (MFG-ORD): recording a fact never closes an order.
   const canClose = hasCapability(shell, MANUFACTURING_CAPABILITY.orderClose)
   const storeKey = pendingFactKey(
@@ -201,6 +203,7 @@ function OrderDetail({ namespace }: { readonly namespace: string | null }) {
         <FactSection
           order={order}
           companyId={activeCompanyId ?? ''}
+          canReadInventoryLabel={canReadInventoryLabel}
           storeKey={storeKey}
           refreshing={query.isFetching}
           onRefresh={refresh}
@@ -598,12 +601,14 @@ function restored(storeKey: string | null): FactAttempt {
 function FactSection({
   order,
   companyId,
+  canReadInventoryLabel,
   storeKey,
   refreshing,
   onRefresh,
 }: {
   readonly order: ProductionOrderView
   readonly companyId: string
+  readonly canReadInventoryLabel: boolean
   readonly storeKey: string | null
   readonly refreshing: boolean
   readonly onRefresh: () => Promise<void>
@@ -619,7 +624,9 @@ function FactSection({
   const [error, setError] = useState<string | null>(null)
   const noticeRef = useRef<HTMLDivElement>(null)
 
-  const needsInventoryState = form.kind === 'input-issues' || form.kind === 'input-returns'
+  const unresolved = isUnresolved(attempt)
+  const returnSelected = form.kind === 'input-returns'
+  const needsInventoryState = returnSelected && canReadInventoryLabel
   const labelQuery = useQuery({
     queryKey: ['manufacturing-parent-label', companyId, form.parentRollId],
     enabled: needsInventoryState && form.parentRollId.length > 0,
@@ -639,7 +646,6 @@ function FactSection({
         : classifyOutcome(labelQuery.data ?? { type: 'malformed' })) as RemoteViewState<InventoryLabelDetail>
   const companyOwned = labelState?.kind === 'ready' && isCompanyOwned(labelState.data, companyId)
 
-  const unresolved = isUnresolved(attempt)
   const busy = attempt.phase === 'submitting'
   const closed = order.status === 'Closed'
 
@@ -665,12 +671,12 @@ function FactSection({
 
   const refetchLabel = labelQuery.refetch
   const refreshReads = useCallback(async (snapshot: FactSnapshot) => {
-    if (snapshot.kind === 'wip-measurements') {
+    if (snapshot.kind !== 'input-returns' || !canReadInventoryLabel) {
       await onRefresh()
       return
     }
     await Promise.all([onRefresh(), refetchLabel()])
-  }, [onRefresh, refetchLabel])
+  }, [canReadInventoryLabel, onRefresh, refetchLabel])
 
   const send = useCallback(
     async (snapshot: FactSnapshot, resends: number) => {
@@ -691,7 +697,7 @@ function FactSection({
         (outcome.failure.kind === 'version-conflict' || outcome.failure.kind === 'label-version-conflict' ||
           outcome.failure.kind === 'concurrent-change')
       ) {
-        // An owner record moved on: read both owner states again; typed values stay for a new submit.
+        // An owner record moved on: re-read every state this command is authorized to use.
         await refreshReads(snapshot)
       }
     },
@@ -704,6 +710,7 @@ function FactSection({
     // A submit refused here mints NO id and NO key: nothing was attempted.
     if (form.parentRollId.length === 0) return setError(ROLL_REQUIRED)
     if (!isKilogramText(form.kg)) return setError(KG_FORMAT_ERROR)
+    if (returnSelected && !canReadInventoryLabel) return
     if (needsInventoryState && labelState?.kind !== 'ready') return setError(INPUT_INVENTORY_TEXT.loadingRequired)
     if (needsInventoryState && !companyOwned) return setError(INPUT_INVENTORY_TEXT.companyOwnedRequired)
     const at = form.occurredAt.length === 0 ? Number.NaN : new Date(form.occurredAt).getTime()
@@ -754,7 +761,7 @@ function FactSection({
       <form className={styles.section} onSubmit={submit} noValidate aria-describedby="mfg-fact-help">
         <fieldset className={styles.kinds} disabled={frozen}>
           <legend className={styles.help}>Olgu türü</legend>
-          {FACT_KINDS.map((kind) => (
+          {FACT_KINDS.filter((kind) => kind !== 'input-returns' || canReadInventoryLabel).map((kind) => (
             <label key={kind}>
               <input
                 type="radio"
@@ -830,7 +837,10 @@ function FactSection({
               Aynı olguyu yeniden gönder
             </button>
           ) : (
-            <button type="submit" disabled={frozen || (needsInventoryState && (!companyOwned || labelState?.kind !== 'ready'))}>
+            <button
+              type="submit"
+              disabled={frozen || (needsInventoryState && (!companyOwned || labelState?.kind !== 'ready'))}
+            >
               {busy ? 'Gönderiliyor…' : 'Kaydet'}
             </button>
           )}
