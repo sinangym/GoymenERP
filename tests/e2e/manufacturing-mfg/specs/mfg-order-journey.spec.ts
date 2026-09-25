@@ -76,6 +76,11 @@ function issuedCell(page: Page, rollId: string) {
   return rollRow(page, rollId).getByRole('cell').nth(1)
 }
 
+/** The roll's "İade" cell, immediately after "Çıkan". */
+function returnedCell(page: Page, rollId: string) {
+  return rollRow(page, rollId).getByRole('cell').nth(2)
+}
+
 function kgField(page: Page) {
   return page.getByRole('textbox', { name: 'Kütle (kg)', exact: true })
 }
@@ -97,7 +102,7 @@ async function fillWip(page: Page, rollId: string, kg: string) {
 }
 
 test.describe('MFG order screen (real API, real SQL)', () => {
-  test('a recorder records an input issue and the table is the server’s re-read', async ({ page, context }) => {
+  test('a recorder issues input, reopens it, and returns unused stock with the fresh Inventory label version', async ({ page, context }) => {
     const arranged = await arrangeOpenOrder(env, env.seed.rolls.issue)
     const rewritten = await asActor(context, env.seed.recorderActor)
     const answered = watchAnswers(page)
@@ -132,6 +137,63 @@ test.describe('MFG order screen (real API, real SQL)', () => {
 
     const stored = await readOrder(env, arranged.orderId)
     expect((stored.rolls as Array<{ issuedKg: string }>)[0].issuedKg).toBe('250.5')
+
+    // Reopen the same order before returning stock. The browser must read the current Inventory
+    // label and carry that exact version; it cannot reuse the plan snapshot or infer a version.
+    await openOrder(page, arranged.orderId)
+    await page.getByRole('radio', { name: 'Kullanılmayan girdi iadesi', exact: true }).check()
+    const labelBeforeReturn = page.waitForResponse((response) =>
+      response.url().endsWith(`/api/v1/inventory/labels/${arranged.rollId}/detail`)
+      && response.request().method() === 'GET')
+    await page.getByRole('combobox', { name: 'Ana rulo', exact: true }).selectOption(arranged.rollId)
+    const labelResponse = await labelBeforeReturn
+    expect(labelResponse.status()).toBe(200)
+    const label = await labelResponse.json() as {
+      labelVersion: string
+      balances: { physicalKg: string }
+    }
+    expect(label.labelVersion).toMatch(/^[1-9][0-9]*$/)
+    expect(label.balances.physicalKg).toBe('749.5')
+    await kgField(page).fill('50')
+    await page.getByLabel('Zaman', { exact: true }).fill('2026-09-18T10:00')
+
+    const returnPost = page.waitForRequest((request) =>
+      request.url().endsWith(`/orders/${arranged.orderId}/input-returns`) && request.method() === 'POST')
+    await page.getByRole('button', { name: 'Kaydet', exact: true }).click()
+    const returned = await returnPost
+    const returnBody = returned.postDataJSON() as Record<string, unknown>
+    expect(returnBody).toMatchObject({
+      expectedVersion: 2,
+      parentRollId: arranged.rollId,
+      expectedParentLabelVersion: label.labelVersion,
+      kg: '50',
+    })
+    expect(returnBody.returnId).toMatch(/^[0-9a-f-]{36}$/)
+    expect(returnBody.movementId).toMatch(/^[0-9a-f-]{36}$/)
+    expect(returnBody.movementId).not.toBe(returnBody.returnId)
+    await expect(page.getByText('Kaydedildi', { exact: true })).toBeVisible()
+
+    // A fresh browser read and a direct owner read must agree on both sides of the atomic host.
+    await openOrder(page, arranged.orderId)
+    await expect(issuedCell(page, arranged.rollId)).toHaveText('250.5')
+    await expect(returnedCell(page, arranged.rollId)).toHaveText('50')
+    const returnedOrder = await readOrder(env, arranged.orderId)
+    expect((returnedOrder.rolls as Array<{ returnedKg: string; netIssuedKg: string }>)[0])
+      .toMatchObject({ returnedKg: '50', netIssuedKg: '200.5' })
+    const api = await apiAs(env, env.seed.recorderActor)
+    try {
+      const currentLabelResponse = await api.get(`/api/v1/inventory/labels/${arranged.rollId}/detail`)
+      const currentLabelText = await currentLabelResponse.text()
+      expect(currentLabelResponse.status(), currentLabelText).toBe(200)
+      const currentLabel = JSON.parse(currentLabelText) as {
+        labelVersion: string
+        balances: { physicalKg: string }
+      }
+      expect(BigInt(currentLabel.labelVersion)).toBeGreaterThan(BigInt(label.labelVersion))
+      expect(currentLabel.balances.physicalKg).toBe('799.5')
+    } finally {
+      await api.dispose()
+    }
     expectEveryAnswerRewritten(answered, rewritten)
   })
 
