@@ -149,7 +149,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // inventory
             ["tools/relational_inventory/inventory.txt"] =
-                "fbc435f7d97ad5297f08eb1b416141c9fff18df244d46459042dfa0c870a4453",
+                "83badd33359b93eb675250877cd0104af55ae6fd03760fa2e11d8f5424fabd8e",
 
             // logistics
             ["tools/relational_inventory/logistics.txt"] =
@@ -157,7 +157,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // manufacturing
             ["tools/relational_inventory/manufacturing.txt"] =
-                "ccd039cf70abfa0dc14fb52009f94a8d1d5ad68a1abe0bd7c4d658c0879d8d19",
+                "8e933fcfb0b7d0f90bb98c6f0abf0592684ee5e7cf3218d85906f4b6375233f4",
 
             // organization
             ["tools/relational_inventory/organization.txt"] =
@@ -438,7 +438,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // API counts keep this reviewed bridge narrower than a general direct-database exemption.
                 [ReviewedManufacturingInventoryInputIssueHostPath] =
                     new(
-                        "f1b5bb4384fd389d603b317dc20f86c415997ed1513c636d44517e4ceecec57f",
+                        "e13ac455cb8799eef71ec346a8855fed00065eaea9384fd68f31852fc7b52701",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1,
@@ -669,7 +669,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // one reviewed provider connection; exact source/count drift remains fail-closed.
                 [ReviewedInventoryManufacturingRealizationParticipantPath] =
                     new(
-                        "12f01ded4665766d47dfd3a88711a439fc3055ce8784bfe317d55aa58e91fae1",
+                        "cb51cef12828c78d9147ec6d89017f1b65310de9bd379035f0d43d5667740862",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,
