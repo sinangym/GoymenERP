@@ -494,8 +494,8 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
 }
 
 /// <summary>
-/// Required host-owned validation of explicit output product, location and party assertions.
-/// Inventory independently binds output ownership and custody to its immutable issued-input trace.
+/// Required host-owned validation of explicit output product, label and physical-position facts.
+/// The runtime deliberately has no default; future composition must bind accepted owner policies.
 /// </summary>
 internal interface IManufacturingInventoryOutputAdmission
 {
