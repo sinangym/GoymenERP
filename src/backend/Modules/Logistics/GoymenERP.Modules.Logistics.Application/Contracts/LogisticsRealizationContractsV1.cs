@@ -36,6 +36,30 @@ public static class LogisticsRealizationCodesV1
 }
 
 /// <summary>
+/// Existing cross-module names consumed by definite shipment. These are contract pins, not a new grant:
+/// the API host and Inventory remain the owners of registration, authorization and refusal semantics.
+/// </summary>
+public static class LogisticsRealizationDependenciesV1
+{
+    public const string InventoryPhysicalAllocationWritePermission = "inventory.physical-allocation.write";
+
+    // InventoryDefiniteShipmentCodesV1.Status409Codes, pinned here without adding a Logistics -> Inventory
+    // application reference. Only these closed owner refusals may become durable Logistics terminal attempts.
+    public static IReadOnlySet<string> InventoryTerminalConflictCodes { get; } = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "inventory_allocation_version_conflict",
+        "inventory_label_version_conflict",
+        "inventory_allocation_state_conflict",
+        "inventory_allocation_label_mismatch",
+        "inventory_allocation_insufficient",
+        "inventory_label_not_releasable",
+        "inventory_physical_stock_insufficient",
+        "inventory_definite_shipment_idempotency_conflict",
+        "inventory_definite_shipment_concurrent_change",
+    };
+}
+
+/// <summary>
 /// API-host-owned atomic boundary. Use the SAME scoped Logistics store/context and a borrowed Inventory
 /// participant on the same SQL connection/transaction. Operation stages writes, beforeCommit performs the
 /// last fresh authority check, then the host alone commits. Any exception (including cancellation, a stock

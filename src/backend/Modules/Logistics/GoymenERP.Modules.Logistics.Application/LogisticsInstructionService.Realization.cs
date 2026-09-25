@@ -70,7 +70,11 @@ public sealed partial class LogisticsInstructionService
                 }
 
                 return Response(result.Instruction, staged.IsReplay, result.OriginalCorrelationId);
-            }, token => RequireStillAsync(scope, permission, token), cancellationToken), cancellationToken);
+            }, async token =>
+            {
+                await RequireStillAsync(scope, permission, token);
+                await RequireStillAsync(scope, LogisticsRealizationDependenciesV1.InventoryPhysicalAllocationWritePermission, token);
+            }, cancellationToken), cancellationToken);
     }
 
     public async Task<LoadingInstructionResponse> RecordDeliveryAsync(Guid instructionId, Guid lineId,
@@ -169,6 +173,11 @@ public sealed partial class LogisticsInstructionService
         {
             terminal = new(409, LogisticsProblemCodesV1.VersionConflict, [new("expectedVersion", "version_conflict")]);
         }
+        catch (LogisticsInstructionServiceException exception) when (
+            exception.Status == 409 && IsTerminalRealizationConflict(exception.Code))
+        {
+            terminal = new(409, exception.Code, exception.Errors);
+        }
         catch (LogisticsRuleException exception)
         {
             var code = exception.Code switch
@@ -212,4 +221,8 @@ public sealed partial class LogisticsInstructionService
 
         throw new LogisticsInstructionServiceException(terminal.Status, terminal.Code, terminal.Errors);
     }
+
+    private static bool IsTerminalRealizationConflict(string code) =>
+        code is LogisticsRealizationCodesV1.AllocationSourceMismatch or LogisticsProblemCodesV1.OrderLineState
+        || LogisticsRealizationDependenciesV1.InventoryTerminalConflictCodes.Contains(code);
 }
