@@ -498,7 +498,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Accounting.Infrastructure/"
                  + "AccountingModuleExtensions.cs"] =
                     new(
-                        "950cbdc60c5f8c16638aa1f3e2f0199b970fcacd540b90dca0327633fc0611b5",
+                        "49b2f9a5ab78048fc9db63293aef4379b0d1f65f361e28c731d90e7bba32dcdd",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,

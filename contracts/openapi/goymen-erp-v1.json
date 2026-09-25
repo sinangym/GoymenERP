@@ -31980,6 +31980,696 @@
         ]
       }
     },
+    "/api/v1/accounting/journal-reversal-proposals": {
+      "post": {
+        "tags": [
+          "Accounting"
+        ],
+        "operationId": "ProposeAccountingJournalReversalV1",
+        "parameters": [
+          {
+            "name": "X-Correlation-Id",
+            "in": "header",
+            "description": "Optional client correlation identifier; the server creates one when absent.",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Causation-Id",
+            "in": "header",
+            "description": "Optional identifier of the command or event that caused this request.",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Company-Id",
+            "in": "header",
+            "description": "Selected company identifier for this company-scoped request.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "x-erp-non-empty-uuid": true
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Unique command key; one non-empty value with at most 128 canonical characters.",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "pattern": "^(?!.*[,])(?=.*\\S).+$",
+              "type": "string",
+              "x-erp-canonicalization": "trim",
+              "x-erp-canonical-max-length": 128
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProposeAccountingJournalReversalRequestV1"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              },
+              "Idempotency-Replayed": {
+                "description": "True only when the response safely replays an earlier command result.",
+                "schema": {
+                  "type": "boolean"
+                }
+              },
+              "Idempotency-Original-Correlation-Id": {
+                "description": "Original command correlation identifier when the response is a replay.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountingJournalReversalProposalViewV1"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErpCodeLessProblemDetailsContract"
+                    }
+                  ]
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "accounting_request_invalid",
+              "company_context_invalid",
+              "correlation_metadata_invalid"
+            ],
+            "x-erp-empty-body-possible": true
+          },
+          "415": {
+            "description": "Unsupported Media Type",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "accounting_concurrent_change",
+              "accounting_journal_reversal_not_pending",
+              "accounting_journal_reversal_posting_conflict",
+              "accounting_journal_reversal_proposal_content_conflict",
+              "accounting_journal_reversal_version_conflict",
+              "accounting_period_conflict",
+              "accounting_period_overlap",
+              "accounting_period_preparer_conflict",
+              "accounting_version_conflict",
+              "idempotency_conflict"
+            ]
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "accounting_invalid_reference",
+              "accounting_period_already_closed",
+              "accounting_period_invalid",
+              "accounting_period_not_open",
+              "accounting_period_not_proposed",
+              "accounting_value_does_not_fit"
+            ]
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "service_unavailable"
+            ]
+          },
+          "401": {
+            "description": "Unauthorized",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "authentication_required"
+            ]
+          },
+          "403": {
+            "description": "Forbidden",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "forbidden"
+            ]
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "internal_error"
+            ]
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/api/v1/accounting/journal-reversal-proposals/{proposalId}/approval": {
+      "post": {
+        "tags": [
+          "Accounting"
+        ],
+        "operationId": "ApproveAccountingJournalReversalV1",
+        "parameters": [
+          {
+            "name": "proposalId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "X-Correlation-Id",
+            "in": "header",
+            "description": "Optional client correlation identifier; the server creates one when absent.",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Causation-Id",
+            "in": "header",
+            "description": "Optional identifier of the command or event that caused this request.",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Company-Id",
+            "in": "header",
+            "description": "Selected company identifier for this company-scoped request.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "x-erp-non-empty-uuid": true
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Unique command key; one non-empty value with at most 128 canonical characters.",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "pattern": "^(?!.*[,])(?=.*\\S).+$",
+              "type": "string",
+              "x-erp-canonicalization": "trim",
+              "x-erp-canonical-max-length": 128
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApproveAccountingJournalReversalRequestV1"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              },
+              "Idempotency-Replayed": {
+                "description": "True only when the response safely replays an earlier command result.",
+                "schema": {
+                  "type": "boolean"
+                }
+              },
+              "Idempotency-Original-Correlation-Id": {
+                "description": "Original command correlation identifier when the response is a replay.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountingJournalReversalProposalViewV1"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErpCodeLessProblemDetailsContract"
+                    }
+                  ]
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "accounting_request_invalid",
+              "company_context_invalid",
+              "correlation_metadata_invalid"
+            ],
+            "x-erp-empty-body-possible": true
+          },
+          "415": {
+            "description": "Unsupported Media Type",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              },
+              "Idempotency-Replayed": {
+                "description": "True only when the response safely replays an earlier command result.",
+                "schema": {
+                  "type": "boolean"
+                }
+              },
+              "Idempotency-Original-Correlation-Id": {
+                "description": "Original command correlation identifier when the response is a replay.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "accounting_concurrent_change",
+              "accounting_journal_reversal_not_pending",
+              "accounting_journal_reversal_posting_conflict",
+              "accounting_journal_reversal_proposal_content_conflict",
+              "accounting_journal_reversal_version_conflict",
+              "accounting_period_conflict",
+              "accounting_period_overlap",
+              "accounting_period_preparer_conflict",
+              "accounting_version_conflict",
+              "idempotency_conflict"
+            ]
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "accounting_invalid_reference",
+              "accounting_period_already_closed",
+              "accounting_period_invalid",
+              "accounting_period_not_open",
+              "accounting_period_not_proposed",
+              "accounting_value_does_not_fit"
+            ]
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "service_unavailable"
+            ]
+          },
+          "401": {
+            "description": "Unauthorized",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "authentication_required"
+            ]
+          },
+          "403": {
+            "description": "Forbidden",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "forbidden"
+            ]
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "internal_error"
+            ]
+          },
+          "404": {
+            "description": "Not Found",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              },
+              "Idempotency-Replayed": {
+                "description": "True only when the response safely replays an earlier command result.",
+                "schema": {
+                  "type": "boolean"
+                }
+              },
+              "Idempotency-Original-Correlation-Id": {
+                "description": "Original command correlation identifier when the response is a replay.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpCodeLessProblemDetailsContract"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
     "/api/v1/accounting/posting-queues": {
       "get": {
         "tags": [
@@ -32367,6 +33057,109 @@
   },
   "components": {
     "schemas": {
+      "AccountingJournalReversalProposalViewV1": {
+        "required": [
+          "proposalId",
+          "companyId",
+          "sourceJournalId",
+          "reversalJournalId",
+          "periodId",
+          "transactionDate",
+          "accountingDate",
+          "valueDate",
+          "reason",
+          "proposedBy",
+          "proposedAtUtc",
+          "status",
+          "decidedBy",
+          "decidedAtUtc",
+          "decisionReason",
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "proposalId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "companyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sourceJournalId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reversalJournalId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "periodId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "transactionDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "accountingDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "valueDate": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "proposedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string"
+          },
+          "decidedBy": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "decidedAtUtc": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "decisionReason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "version": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
       "ActivateProductRequest": {
         "required": [
           "expectedVersion"
@@ -32415,6 +33208,22 @@
                 "$ref": "#/components/schemas/MoneyText"
               }
             ]
+          }
+        }
+      },
+      "ApproveAccountingJournalReversalRequestV1": {
+        "required": [
+          "expectedVersion"
+        ],
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
           }
         }
       },
@@ -38971,6 +39780,47 @@
             "type": "string"
           },
           "version": {
+            "type": "string"
+          }
+        }
+      },
+      "ProposeAccountingJournalReversalRequestV1": {
+        "required": [
+          "proposalId",
+          "sourceJournalId",
+          "periodId",
+          "transactionDate",
+          "accountingDate",
+          "valueDate",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "proposalId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sourceJournalId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "periodId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "transactionDate": {
+            "type": "string"
+          },
+          "accountingDate": {
+            "type": "string"
+          },
+          "valueDate": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "reason": {
             "type": "string"
           }
         }
