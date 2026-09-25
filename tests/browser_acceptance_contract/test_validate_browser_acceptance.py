@@ -1,3 +1,4 @@
+import json
 import pathlib
 import re
 import sys
@@ -82,6 +83,129 @@ class PrivacyTests(unittest.TestCase):
 
 class WorkflowTests(unittest.TestCase):
     workflow = WORKFLOW.read_text(encoding="utf-8")
+
+    @staticmethod
+    def _mfg_seed():
+        company_id = "10000000-0000-0000-0000-000000000001"
+        return {
+            "recorderActor": "mfg-recorder",
+            "readerActor": "mfg-reader",
+            "closerActor": "mfg-closer",
+            "companyId": company_id,
+            "workCenterId": "10000000-0000-0000-0000-000000000002",
+            "orderId": "10000000-0000-0000-0000-000000000003",
+            "rollId": "10000000-0000-0000-0000-000000000004",
+            "issueRollId": "10000000-0000-0000-0000-000000000005",
+            "issueRollCode": "SYN-MFG-ROLL-2",
+            "replayRollId": "10000000-0000-0000-0000-000000000006",
+            "replayRollCode": "SYN-MFG-ROLL-3",
+            "conflictRollId": "10000000-0000-0000-0000-000000000007",
+            "conflictRollCode": "SYN-MFG-ROLL-4",
+            "listRollId": "10000000-0000-0000-0000-000000000008",
+            "listRollCode": "SYN-MFG-ROLL-5",
+            "closeRollId": "10000000-0000-0000-0000-000000000009",
+            "closeRollCode": "SYN-MFG-ROLL-6",
+            "planCreateRollId": "10000000-0000-0000-0000-000000000010",
+            "planCreateRollCode": "SYN-MFG-ROLL-7",
+            "planReplayRollId": "10000000-0000-0000-0000-000000000011",
+            "planReplayRollCode": "SYN-MFG-ROLL-8",
+            "planRefusalRollId": "10000000-0000-0000-0000-000000000012",
+            "planRefusalRollCode": "SYN-MFG-ROLL-9",
+            "outputProductId": "10000000-0000-0000-0000-000000000013",
+            "outputProductVersion": "1",
+            "outputRequiredDocuments": "[]",
+            "outputOwnerKind": "Company",
+            "outputOwnerId": company_id,
+            "outputCustodianKind": "Company",
+            "outputCustodianId": company_id,
+            "outputLocationId": "10000000-0000-0000-0000-000000000014",
+            "outputInitialBlock": "Free",
+        }
+
+    def test_mfg_fixture_output_is_the_exact_current_closed_contract(self):
+        seed = self._mfg_seed()
+        exported = validator.seed_export("mfg", seed)
+        prefix, payload = exported.split("=", 1)
+
+        self.assertEqual("BROWSER_E2E_MFG_SEED", prefix)
+        self.assertEqual(seed, json.loads(payload))
+        self.assertEqual(frozenset(seed), validator.SUITE_FIXTURE_OUTPUTS["mfg"])
+
+    def test_mfg_fixture_output_rejects_missing_and_extra_keys(self):
+        missing = self._mfg_seed()
+        missing.pop("outputLocationId")
+        extra = self._mfg_seed()
+        extra["futureOutput"] = "10000000-0000-0000-0000-000000000015"
+
+        for seed in (missing, extra):
+            with self.subTest(keys=sorted(seed)):
+                with self.assertRaisesRegex(validator.ContractError, "closed list"):
+                    validator.seed_export("mfg", seed)
+
+    def test_mfg_fixture_output_rejects_noncanonical_values(self):
+        invalid_values = {
+            "issueRollCode": "SYN-MFG-ROLL-02",
+            "outputProductVersion": "0",
+            "outputRequiredDocuments": "[ ]",
+            "outputOwnerKind": "Counterparty",
+            "outputCustodianKind": "counterparty",
+            "outputInitialBlock": "Blocked",
+        }
+        for key, value in invalid_values.items():
+            seed = self._mfg_seed()
+            seed[key] = value
+            with self.subTest(key=key, value=value):
+                with self.assertRaises(validator.ContractError):
+                    validator.seed_export("mfg", seed)
+
+    def test_mfg_fixture_output_binds_owner_and_custodian_to_the_seeded_company(self):
+        for key in ("outputOwnerId", "outputCustodianId"):
+            seed = self._mfg_seed()
+            seed[key] = "20000000-0000-0000-0000-000000000001"
+            with self.subTest(key=key):
+                with self.assertRaisesRegex(validator.ContractError, "seeded company"):
+                    validator.seed_export("mfg", seed)
+
+    def test_mfg_fixture_output_rejects_cross_type_bypasses(self):
+        actor_keys = {"recorderActor", "readerActor", "closerActor"}
+        scalar_keys = {
+            "issueRollCode", "replayRollCode", "conflictRollCode", "listRollCode",
+            "closeRollCode", "planCreateRollCode", "planReplayRollCode", "planRefusalRollCode",
+            "outputProductVersion", "outputRequiredDocuments", "outputOwnerKind",
+            "outputCustodianKind", "outputInitialBlock",
+        }
+        identity_keys = set(self._mfg_seed()) - actor_keys - scalar_keys
+        guid_value = "30000000-0000-0000-0000-000000000001"
+        actor_value = "mfg-cross-type-actor"
+
+        for key in actor_keys:
+            seed = self._mfg_seed()
+            seed[key] = guid_value
+            with self.subTest(kind="actor-as-guid", key=key):
+                with self.assertRaisesRegex(validator.ContractError, "current-run actor"):
+                    validator.seed_export("mfg", seed)
+
+        for key in identity_keys:
+            seed = self._mfg_seed()
+            seed[key] = actor_value
+            with self.subTest(kind="guid-as-actor", key=key):
+                with self.assertRaisesRegex(validator.ContractError, "lowercase GUID"):
+                    validator.seed_export("mfg", seed)
+
+        for key in scalar_keys:
+            for value in (guid_value, actor_value):
+                seed = self._mfg_seed()
+                seed[key] = value
+                with self.subTest(kind="scalar-fallback", key=key, value=value):
+                    with self.assertRaises(validator.ContractError):
+                        validator.seed_export("mfg", seed)
+
+        seed = self._mfg_seed()
+        seed["companyId"] = actor_value
+        seed["outputOwnerId"] = actor_value
+        seed["outputCustodianId"] = actor_value
+        with self.assertRaisesRegex(validator.ContractError, "lowercase GUID"):
+            validator.seed_export("mfg", seed)
 
     def test_mfg_identity_is_the_real_plan_and_opening_stock_closed_list(self):
         self.assertTrue(validator.SUITE_API_EXTENSIONS["mfg"]["issuer"])

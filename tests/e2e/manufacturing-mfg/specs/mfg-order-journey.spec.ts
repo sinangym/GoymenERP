@@ -14,7 +14,13 @@
  */
 
 import { expect, test, type BrowserContext, type Page, type Request, type Route } from '@playwright/test'
-import { arrangeOpenOrder, declareThroughApi, issueThroughApi, readMassBalance, readOrder } from '../src/arrange.js'
+import {
+  arrangeOpenOrder,
+  declareThroughApi,
+  issueThroughApi,
+  readMassBalance,
+  readOrder,
+} from '../src/arrange.js'
 import { readEnvironment } from '../src/env.js'
 
 const env = readEnvironment()
@@ -80,9 +86,16 @@ async function fillIssue(page: Page, rollId: string, kg: string) {
   await page.getByLabel('Zaman', { exact: true }).fill('2026-09-18T09:30')
 }
 
+async function fillWip(page: Page, rollId: string, kg: string) {
+  await page.getByRole('radio', { name: 'WIP ölçümü', exact: true }).check()
+  await page.getByRole('combobox', { name: 'Ana rulo', exact: true }).selectOption(rollId)
+  await kgField(page).fill(kg)
+  await page.getByLabel('Zaman', { exact: true }).fill('2026-09-18T09:30')
+}
+
 test.describe('MFG order screen (real API, real SQL)', () => {
   test('a recorder records an input issue and the table is the server’s re-read', async ({ page, context }) => {
-    const arranged = await arrangeOpenOrder(env)
+    const arranged = await arrangeOpenOrder(env, env.seed.rolls.issue)
     const rewritten = await asActor(context, env.seed.recorderActor)
     const answered = watchAnswers(page)
 
@@ -120,7 +133,7 @@ test.describe('MFG order screen (real API, real SQL)', () => {
   })
 
   test('an answer the browser never received is re-sent with the same key and recorded once', async ({ page, context }) => {
-    const arranged = await arrangeOpenOrder(env)
+    const arranged = await arrangeOpenOrder(env, env.seed.rolls.replay)
     const rewritten = await asActor(context, env.seed.recorderActor)
     const answered = watchAnswers(page)
     // Withhold the DELIVERY of the first real answer: the server records the fact, the page learns nothing.
@@ -156,14 +169,14 @@ test.describe('MFG order screen (real API, real SQL)', () => {
   })
 
   test('a write that another writer overtook is a conflict, re-read, and a new command at the new version', async ({ page, context }) => {
-    const arranged = await arrangeOpenOrder(env)
+    const arranged = await arrangeOpenOrder(env, env.seed.rolls.conflict)
     const rewritten = await asActor(context, env.seed.recorderActor)
     const answered = watchAnswers(page)
 
     await openOrder(page, arranged.orderId)
-    await fillIssue(page, arranged.rollId, '50')
-    // Another writer records first through the real API; the page still holds the old version.
-    const moved = await issueThroughApi(env, arranged, arranged.version, '10')
+    await fillWip(page, arranged.rollId, '5')
+    // Another writer issues this roll through the real API; the page still holds the old order version.
+    const moved = await issueThroughApi(env, arranged, arranged.version, '10', '2026-09-18T09:25:00.000Z')
     const posts: Request[] = []
     page.on('request', (request) => {
       if (FACT_RE.test(request.url()) && request.method() === 'POST') posts.push(request)
@@ -174,13 +187,16 @@ test.describe('MFG order screen (real API, real SQL)', () => {
 
     await page.getByRole('button', { name: 'Kaydet', exact: true }).click()
     await expect(page.getByText('Kaydedildi', { exact: true })).toBeVisible()
-    await expect(issuedCell(page, arranged.rollId)).toHaveText('60')
+    await expect(issuedCell(page, arranged.rollId)).toHaveText('10')
     expect(posts).toHaveLength(2)
     expect(posts[1].postDataJSON()).toMatchObject({ expectedVersion: moved.version })
     expect(posts[1].headers()['idempotency-key']).not.toBe(posts[0].headers()['idempotency-key'])
 
     const stored = await readOrder(env, arranged.orderId)
-    expect((stored.rolls as Array<{ issuedKg: string }>)[0].issuedKg).toBe('60')
+    expect((stored.rolls as Array<{ issuedKg: string; workInProgressKg: string }>)[0]).toMatchObject({
+      issuedKg: '10',
+      workInProgressKg: '5',
+    })
     expectEveryAnswerRewritten(answered, rewritten)
   })
 
@@ -205,7 +221,7 @@ test.describe('MFG order screen (real API, real SQL)', () => {
   })
 
   test('the list opens one order, and the order it opens is the one the list named', async ({ page, context }) => {
-    const arranged = await arrangeOpenOrder(env)
+    const arranged = await arrangeOpenOrder(env, env.seed.rolls.list)
     const rewritten = await asActor(context, env.seed.recorderActor)
     const answered = watchAnswers(page)
 
@@ -230,7 +246,7 @@ test.describe('MFG order screen (real API, real SQL)', () => {
   test('a closer is refused while a roll is unexplained, and closes it once the mass is accounted', async ({ page, context }) => {
     // MFG-4 (Business 5728619644) through the real stack: 1000 issued, 600 declared → refused with the
     // rule's own code; the remaining 400 declared → accepted. No tolerance anywhere.
-    const arranged = await arrangeOpenOrder(env)
+    const arranged = await arrangeOpenOrder(env, env.seed.rolls.close)
     const issued = await issueThroughApi(env, arranged, arranged.version, '1000')
     const partial = await declareThroughApi(env, arranged, issued.version as number, 'GoodProduct', '600')
     const rewritten = await asActor(context, env.seed.closerActor)

@@ -1,11 +1,11 @@
 /**
- * The four fact commands: `POST /api/v1/manufacturing/orders/{orderId}/{kind}` with
- * `kind` ∈ input-issues · input-returns · wip-measurements · outputs.
+ * The bounded fact commands currently exposed by the order screen:
+ * `input-issues` · `input-returns` · `wip-measurements`.
  *
  * Wire facts, all from the merged MFG-API (#313) endpoint and its README:
  *
- *  - body is exactly `RecordFactRequestV1` (`DeclareOutputRequestV1` adds `outputClass`);
- *    no company, no predicted version, kilograms as text;
+ *  - input issue/return use their strict Inventory realization request; WIP keeps
+ *    `RecordFactRequestV1`. No body carries company or a predicted version;
  *  - headers: `X-Company-Id`, one `Idempotency-Key`. The transport never mints or rotates
  *    the key — the caller owns it, one per frozen snapshot;
  *  - success is EXACTLY 200 with the order view as it was when the command was first
@@ -49,9 +49,11 @@ export type FactFailure =
   | { readonly kind: 'idempotency-conflict' }
   /** 409 `manufacturing_concurrent_change` — another writer committed first; nothing stored. */
   | { readonly kind: 'concurrent-change' }
+  /** 409 — Inventory's parent label moved after the fresh detail read. */
+  | { readonly kind: 'label-version-conflict' }
   /** 409 `manufacturing_*_id_conflict` — this fact id already names other content. */
   | { readonly kind: 'id-conflict'; readonly code: string }
-  /** 422 — a domain or kilogram-profile rule refused it, by its stable code. */
+  /** 409/422 — a domain, Inventory or kilogram-profile rule refused it, by its stable code. */
   | { readonly kind: 'rule'; readonly code: string }
   | { readonly kind: 'unsupported-media' }
 
@@ -110,7 +112,9 @@ function classifyFailure(status: number, body: unknown, replayed: boolean): Fact
   const code = stringField(body, 'code')
   if (code === null) return null
   if (status === 409) {
-    if (code === 'idempotency_conflict') return { kind: 'idempotency-conflict' }
+    if (code === 'idempotency_conflict' || code === 'inventory_manufacturing_realization_idempotency_conflict') {
+      return { kind: 'idempotency-conflict' }
+    }
     if (code === 'manufacturing_version_conflict') {
       return {
         kind: 'version-conflict',
@@ -119,8 +123,14 @@ function classifyFailure(status: number, body: unknown, replayed: boolean): Fact
         conflictIsCurrent: !replayed,
       }
     }
-    if (code === 'manufacturing_concurrent_change') return { kind: 'concurrent-change' }
+    if (code === 'manufacturing_concurrent_change' || code === 'inventory_manufacturing_realization_concurrent_change') {
+      return { kind: 'concurrent-change' }
+    }
+    if (code === 'inventory_manufacturing_parent_label_version_conflict') {
+      return { kind: 'label-version-conflict' }
+    }
     if (/^manufacturing_[a-z_]+_id_conflict$/.test(code)) return { kind: 'id-conflict', code }
+    if (/^inventory_manufacturing_[a-z_]+$/.test(code)) return { kind: 'rule', code }
     return null
   }
   if (status === 422) return { kind: 'rule', code }

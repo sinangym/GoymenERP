@@ -412,8 +412,9 @@ def validate_suite_identity(suite: str, extra: dict, actor_ids: list[str]) -> No
 
 # Stage 2 (a2 part 2): suites whose owner seeds data through the fixture runner
 # (tests/GoymenERP.BrowserSuiteFixtureTool, class in Suites/<Suite>/), each with the closed list of the
-# output keys exported to the browser suite as BROWSER_E2E_<SUITE>_SEED. Values are GUIDs or actor ids
-# only. A read-only suite cannot have a fixture: its post-browser SQL check compares against the
+# output keys exported to the browser suite as BROWSER_E2E_<SUITE>_SEED. Values are GUIDs, actor ids
+# or the suite's explicitly approved closed scalar values. A read-only suite cannot have a fixture:
+# its post-browser SQL check compares against the
 # canonical baseline, which a seed would move.
 FIXTURE_TOOL_SUITES_DIRECTORY = "tests/GoymenERP.BrowserSuiteFixtureTool/Suites"
 SUITE_FIXTURE_OUTPUTS: dict[str, frozenset[str]] = {
@@ -422,8 +423,15 @@ SUITE_FIXTURE_OUTPUTS: dict[str, frozenset[str]] = {
     # ORG's Suites/MFG seed (#323 5735635840): the actors, the company, the seeded work centre (read
     # through the real Organization API) and the plan -> approval -> order it writes through the real API.
     # MFG-ORD adds the closer actor; the list and the close need no further seeded row.
-    "mfg": frozenset({"recorderActor", "readerActor", "closerActor", "companyId", "workCenterId",
-                      "orderId", "rollId"}),
+    "mfg": frozenset({
+        "recorderActor", "readerActor", "closerActor", "companyId", "workCenterId", "orderId", "rollId",
+        "issueRollId", "issueRollCode", "replayRollId", "replayRollCode", "conflictRollId",
+        "conflictRollCode", "listRollId", "listRollCode", "closeRollId", "closeRollCode",
+        "planCreateRollId", "planCreateRollCode", "planReplayRollId", "planReplayRollCode",
+        "planRefusalRollId", "planRefusalRollCode", "outputProductId", "outputProductVersion",
+        "outputRequiredDocuments", "outputOwnerKind", "outputOwnerId", "outputCustodianKind",
+        "outputCustodianId", "outputLocationId", "outputInitialBlock",
+    }),
     # FİNANS's Suites/Fin01 seed (#332): the company, the customer opened through the real Cari API and
     # its company account, and the two suite actors. No SQL, no gated writer, no Finance row.
     "fin01": frozenset({"companyId", "partyId", "companyAccountId", "proposerActor", "approverActor"}),
@@ -485,10 +493,38 @@ def seed_export(suite: str, seed: object) -> str:
     require(set(seed) == set(expected),
             f"seed output keys are not the closed list: missing {sorted(expected - set(seed))}, "
             f"extra {sorted(set(seed) - expected)}")
+    mfg_actor_keys = frozenset({"recorderActor", "readerActor", "closerActor"})
+    mfg_exact_text = {
+        "issueRollCode": "SYN-MFG-ROLL-2",
+        "replayRollCode": "SYN-MFG-ROLL-3",
+        "conflictRollCode": "SYN-MFG-ROLL-4",
+        "listRollCode": "SYN-MFG-ROLL-5",
+        "closeRollCode": "SYN-MFG-ROLL-6",
+        "planCreateRollCode": "SYN-MFG-ROLL-7",
+        "planReplayRollCode": "SYN-MFG-ROLL-8",
+        "planRefusalRollCode": "SYN-MFG-ROLL-9",
+        "outputRequiredDocuments": "[]",
+        "outputOwnerKind": "Company",
+        "outputCustodianKind": "Company",
+        "outputInitialBlock": "Free",
+    }
+    mfg_guid_keys = expected - mfg_actor_keys - frozenset(mfg_exact_text) - {"outputProductVersion"}
     for key, value in seed.items():
         require(isinstance(value, str), f"seed output {key} must be a string")
         is_guid = _ANY_GUID.fullmatch(value) is not None and value != "00000000-0000-0000-0000-000000000000"
         is_actor = value in CANONICAL_ACTORS or re.fullmatch(rf"{suite}-[a-z0-9-]{{1,48}}", value) is not None
+        if suite == "mfg":
+            if key in mfg_actor_keys:
+                require(is_actor, f"mfg seed output {key} must be a current-run actor id")
+            elif key in mfg_guid_keys:
+                require(is_guid, f"mfg seed output {key} must be a canonical nonzero lowercase GUID")
+            elif key == "outputProductVersion":
+                require(re.fullmatch(r"[1-9][0-9]*", value) is not None,
+                        "mfg seed output outputProductVersion must be a positive integer")
+            else:
+                require(mfg_exact_text.get(key) == value,
+                        f"mfg seed output {key} must match its exact closed-contract value")
+            continue
         is_s04_version = suite == "s04" and key in {"productVersion", "productUnitProfileVersion",
                                                      "allocationLabelVersion"} \
             and re.fullmatch(r"[1-9][0-9]*", value) is not None
@@ -512,6 +548,11 @@ def seed_export(suite: str, seed: object) -> str:
                 or is_pur01_version or is_pur01_code or is_pur01_name
                 or is_r14_version or is_r14_code or is_r14_name,
                 f"seed output {key} must be a GUID or an actor id or an approved suite Product value")
+    if suite == "mfg":
+        require(seed["outputOwnerId"] == seed["companyId"],
+                "mfg output owner must be the seeded company")
+        require(seed["outputCustodianId"] == seed["companyId"],
+                "mfg output custodian must be the seeded company")
     compact = json.dumps(seed, sort_keys=True, separators=(",", ":"))
     return f"BROWSER_E2E_{suite.upper()}_SEED={compact}"
 

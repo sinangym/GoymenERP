@@ -37,9 +37,28 @@ public sealed class MfgBrowserSeed : IBrowserSuiteFixture
     public static readonly Guid OrderId = Guid.Parse("c2000000-0000-4000-8000-000000000001");
     public static readonly Guid ParentRollId = Guid.Parse("c3000000-0000-4000-8000-000000000001");
     public static readonly Guid OpeningCountId = Guid.Parse("c3100000-0000-4000-8000-000000000001");
+    public static readonly Guid CaseRollOpeningCountId = Guid.Parse("c3100000-0000-4000-8000-000000000002");
     public static readonly Guid OpeningLineId = Guid.Parse("c3200000-0000-4000-8000-000000000001");
     public static readonly Guid ParentRollLotId = Guid.Parse("c3300000-0000-4000-8000-000000000001");
     public const string ParentRollCode = "SYN-MFG-ROLL-1";
+
+    private sealed record ParentRollFixture(Guid LabelId, Guid LineId, Guid LotId, string Code, string CoilNumber);
+
+    private static readonly ParentRollFixture ReaderRoll =
+        new(ParentRollId, OpeningLineId, ParentRollLotId, ParentRollCode, "SYN-MFG-COIL-1");
+    private static readonly ParentRollFixture IssueRoll = Roll(2);
+    private static readonly ParentRollFixture ReplayRoll = Roll(3);
+    private static readonly ParentRollFixture ConflictRoll = Roll(4);
+    private static readonly ParentRollFixture ListRoll = Roll(5);
+    private static readonly ParentRollFixture CloseRoll = Roll(6);
+    private static readonly ParentRollFixture PlanCreateRoll = Roll(7);
+    private static readonly ParentRollFixture PlanReplayRoll = Roll(8);
+    private static readonly ParentRollFixture PlanRefusalRoll = Roll(9);
+    private static readonly ParentRollFixture[] CaseRolls =
+    [
+        IssueRoll, ReplayRoll, ConflictRoll, ListRoll, CloseRoll,
+        PlanCreateRoll, PlanReplayRoll, PlanRefusalRoll,
+    ];
 
     private const string ManufacturingPath = "/api/v1/manufacturing";
     private const string OpeningCountsPath = "/api/v1/inventory/opening-counts";
@@ -92,12 +111,12 @@ public sealed class MfgBrowserSeed : IBrowserSuiteFixture
                 {
                     new
                     {
-                        lineId = OpeningLineId,
-                        labelId = ParentRollId,
-                        labelCode = ParentRollCode,
-                        lotId = ParentRollLotId,
+                        lineId = ReaderRoll.LineId,
+                        labelId = ReaderRoll.LabelId,
+                        labelCode = ReaderRoll.Code,
+                        lotId = ReaderRoll.LotId,
                         heatNumber = (string?)null,
-                        coilNumber = "SYN-MFG-COIL-1",
+                        coilNumber = ReaderRoll.CoilNumber,
                         productId = product.ProductId,
                         productVersion = product.ProductVersion,
                         quantityKg = "1000",
@@ -113,6 +132,74 @@ public sealed class MfgBrowserSeed : IBrowserSuiteFixture
             || openedLine.GetProperty("quantityKg").GetString() != "1000")
         {
             throw new InvalidOperationException("Inventory opening count did not answer the exact MFG parent roll.");
+        }
+
+        var caseOpening = await context.PostJsonAsync(
+            RecorderActor,
+            CompanyGdc,
+            OpeningCountsPath,
+            new
+            {
+                countId = CaseRollOpeningCountId,
+                locationId,
+                countedOn = ProductSalesCandidateFixture.EffectiveOn,
+                sheetReference = "SYN-MFG-CASE-ROLLS-1",
+                lines = CaseRolls.Select(roll => new
+                {
+                    lineId = roll.LineId,
+                    labelId = roll.LabelId,
+                    labelCode = roll.Code,
+                    lotId = roll.LotId,
+                    heatNumber = (string?)null,
+                    coilNumber = roll.CoilNumber,
+                    productId = product.ProductId,
+                    productVersion = product.ProductVersion,
+                    quantityKg = "1000",
+                }).ToArray(),
+            },
+            "case-rolls-opening-count",
+            cancellationToken);
+        var openedLines = caseOpening.GetProperty("lines").EnumerateArray()
+            .ToDictionary(line => line.GetProperty("labelId").GetGuid());
+        if (openedLines.Count != CaseRolls.Length || CaseRolls.Any(roll =>
+                !openedLines.TryGetValue(roll.LabelId, out var line)
+                || line.GetProperty("labelCode").GetString() != roll.Code
+                || line.GetProperty("productId").GetGuid() != product.ProductId
+                || line.GetProperty("quantityKg").GetString() != "1000"))
+        {
+            throw new InvalidOperationException("Inventory opening count did not answer every isolated MFG case roll.");
+        }
+
+        // Publish output facts from the real close-case Inventory candidate. The browser must send
+        // these facts explicitly; it does not infer position policy from the parent or output class.
+        var closeCandidates = await context.GetJsonAsync(
+            RecorderActor,
+            CompanyGdc,
+            $"{ParentRollCandidatesPath}?q={CloseRoll.Code}&limit=25",
+            cancellationToken);
+        var closeRoll = closeCandidates.GetProperty("items").EnumerateArray()
+            .SingleOrDefault(candidate => candidate.GetProperty("labelId").GetGuid() == CloseRoll.LabelId);
+        var closePositions = closeRoll.ValueKind == JsonValueKind.Object
+            ? closeRoll.GetProperty("positions").EnumerateArray().ToArray()
+            : [];
+        if (closeRoll.ValueKind != JsonValueKind.Object
+            || closeRoll.GetProperty("productId").GetGuid() != product.ProductId
+            || closeRoll.GetProperty("physicalKg").GetString() != "1000"
+            || !closeRoll.GetProperty("draftSelectable").GetBoolean()
+            || closePositions.Length != 1)
+        {
+            throw new InvalidOperationException("The close-case Inventory roll did not expose one exact output position source.");
+        }
+        var outputPosition = closePositions[0];
+        if (outputPosition.GetProperty("ownerKind").GetString() != "Company"
+            || outputPosition.GetProperty("ownerId").GetGuid() != CompanyGdc
+            || outputPosition.GetProperty("custodianKind").GetString() != "Company"
+            || outputPosition.GetProperty("custodianId").GetGuid() != CompanyGdc
+            || outputPosition.GetProperty("locationId").GetGuid() != locationId
+            || outputPosition.GetProperty("productId").GetGuid() != product.ProductId
+            || outputPosition.GetProperty("block").GetString() != "Free")
+        {
+            throw new InvalidOperationException("The close-case Inventory roll position differs from the accepted fixture facts.");
         }
 
         var candidates = await context.GetJsonAsync(
@@ -189,8 +276,40 @@ public sealed class MfgBrowserSeed : IBrowserSuiteFixture
             ["workCenterId"] = workCenterId.ToString("D"),
             ["orderId"] = OrderId.ToString("D"),
             ["rollId"] = ParentRollId.ToString("D"),
+            ["issueRollId"] = IssueRoll.LabelId.ToString("D"),
+            ["issueRollCode"] = IssueRoll.Code,
+            ["replayRollId"] = ReplayRoll.LabelId.ToString("D"),
+            ["replayRollCode"] = ReplayRoll.Code,
+            ["conflictRollId"] = ConflictRoll.LabelId.ToString("D"),
+            ["conflictRollCode"] = ConflictRoll.Code,
+            ["listRollId"] = ListRoll.LabelId.ToString("D"),
+            ["listRollCode"] = ListRoll.Code,
+            ["closeRollId"] = CloseRoll.LabelId.ToString("D"),
+            ["closeRollCode"] = CloseRoll.Code,
+            ["planCreateRollId"] = PlanCreateRoll.LabelId.ToString("D"),
+            ["planCreateRollCode"] = PlanCreateRoll.Code,
+            ["planReplayRollId"] = PlanReplayRoll.LabelId.ToString("D"),
+            ["planReplayRollCode"] = PlanReplayRoll.Code,
+            ["planRefusalRollId"] = PlanRefusalRoll.LabelId.ToString("D"),
+            ["planRefusalRollCode"] = PlanRefusalRoll.Code,
+            ["outputProductId"] = closeRoll.GetProperty("productId").GetGuid().ToString("D"),
+            ["outputProductVersion"] = product.ProductVersion,
+            ["outputRequiredDocuments"] = closeRoll.GetProperty("requiredDocuments").GetRawText(),
+            ["outputOwnerKind"] = outputPosition.GetProperty("ownerKind").GetString()!,
+            ["outputOwnerId"] = outputPosition.GetProperty("ownerId").GetGuid().ToString("D"),
+            ["outputCustodianKind"] = outputPosition.GetProperty("custodianKind").GetString()!,
+            ["outputCustodianId"] = outputPosition.GetProperty("custodianId").GetGuid().ToString("D"),
+            ["outputLocationId"] = outputPosition.GetProperty("locationId").GetGuid().ToString("D"),
+            ["outputInitialBlock"] = outputPosition.GetProperty("block").GetString()!,
         };
     }
+
+    private static ParentRollFixture Roll(int suffix) => new(
+        Guid.Parse($"c3000000-0000-4000-8000-{suffix:D12}"),
+        Guid.Parse($"c3200000-0000-4000-8000-{suffix:D12}"),
+        Guid.Parse($"c3300000-0000-4000-8000-{suffix:D12}"),
+        $"SYN-MFG-ROLL-{suffix}",
+        $"SYN-MFG-COIL-{suffix}");
 
     private static void RequireString(JsonElement answer, string property, params string[] allowed)
     {

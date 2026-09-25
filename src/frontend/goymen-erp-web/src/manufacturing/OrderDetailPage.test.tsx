@@ -7,11 +7,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { INVENTORY_STOCK_POSITIONS_CAPABILITY } from '../inventory/capabilities'
 import {
   CLOSER_CAPABILITIES,
   COMPANY_A,
+  COMPANY_B,
   ORDER,
   READER_CAPABILITIES,
+  RECORDER_CAPABILITIES,
   ROLL_1,
   installFetch,
   json,
@@ -27,6 +30,52 @@ import {
 } from './testHarness'
 
 const PATH = `/uretim/emir/${ORDER}`
+const PRODUCT = 'e0000000-0000-4000-8000-000000000010'
+const LOT = 'e0000000-0000-4000-8000-000000000011'
+const LOCATION = 'e0000000-0000-4000-8000-000000000012'
+const INVENTORY_RECORDER_CAPABILITIES = [...RECORDER_CAPABILITIES, INVENTORY_STOCK_POSITIONS_CAPABILITY]
+
+function labelDetail(
+  labelVersion = '7',
+  physicalKg = '1000',
+  ownerId = COMPANY_A,
+  custodianId = COMPANY_A,
+) {
+  return {
+    labelVersion,
+    identity: {
+      labelId: ROLL_1,
+      companyId: COMPANY_A,
+      code: 'SYN-MFG-ROLL-1',
+      productId: PRODUCT,
+      lotId: LOT,
+      heatNumber: null,
+      coilNumber: null,
+      documentStatus: 'Complete',
+      requiredDocuments: [],
+      documents: [],
+      prints: [],
+      lot: { id: LOT, heatNumber: null, coilNumber: null },
+    },
+    balances: {
+      labelId: ROLL_1,
+      physicalKg,
+      freeKg: physicalKg,
+      blockedKg: '0',
+      positions: [{
+        ownerKind: 'Company',
+        ownerId,
+        custodianKind: 'Company',
+        custodianId,
+        locationId: LOCATION,
+        productId: PRODUCT,
+        block: 'Free',
+        quantityKg: physicalKg,
+      }],
+    },
+    genealogy: { labelId: ROLL_1, labelCode: 'SYN-MFG-ROLL-1', edges: [], windowFull: false },
+  }
+}
 
 interface Scenario {
   readonly recorded: RecordedRequest[]
@@ -39,17 +88,25 @@ function stub(
     capabilities?: readonly string[]
     /** GDC-BAL/1 reads (BAL slice 2), answered on their own so they never consume an order read. */
     balances?: Array<() => Response>
+    labels?: Array<() => Response>
   } = {},
 ): Scenario {
   const reads = options.reads ?? [() => json(order())]
   const commands = options.commands ?? [() => json(order({ version: 2 }))]
   const balances = options.balances ?? [() => json(massBalance())]
+  const labels = options.labels ?? [() => json(labelDetail())]
   let readIndex = 0
   let commandIndex = 0
   let balanceIndex = 0
+  let labelIndex = 0
   const recorded = installFetch({
     capabilities: options.capabilities,
     respond: (url, init) => {
+      if (url.includes(`/inventory/labels/${ROLL_1}/detail`)) {
+        const respond = labels[Math.min(labelIndex, labels.length - 1)]
+        labelIndex += 1
+        return respond()
+      }
       if (!url.includes(`/manufacturing/orders/${ORDER}`)) return undefined
       if (url.endsWith('/mass-balance')) {
         const respond = balances[Math.min(balanceIndex, balances.length - 1)]
@@ -71,13 +128,11 @@ function stub(
 
 async function fillFact(
   user: ReturnType<typeof userEvent.setup>,
-  values: { kind?: string; kg?: string; outputClass?: string } = {},
+  values: { kind?: string; kg?: string } = {},
 ) {
   if (values.kind !== undefined) await user.click(screen.getByLabelText(values.kind))
   await user.selectOptions(screen.getByLabelText('Ana rulo'), ROLL_1)
-  if (values.outputClass !== undefined) {
-    await user.selectOptions(screen.getByLabelText('Çıktı sınıfı'), values.outputClass)
-  }
+  if (values.kind === 'Kullanılmayan girdi iadesi') await screen.findByTestId('parent-label-state')
   const kg = screen.getByLabelText('Kütle (kg)')
   await user.clear(kg)
   await user.type(kg, values.kg ?? '250.5')
@@ -90,6 +145,7 @@ const posts = (recorded: RecordedRequest[]) => requestsFor(recorded, '/manufactu
 const reads = (recorded: RecordedRequest[]) =>
   requestsFor(recorded, `/manufacturing/orders/${ORDER}`, 'GET').filter((request) => !request.url.endsWith('/mass-balance'))
 const balanceReads = (recorded: RecordedRequest[]) => requestsFor(recorded, `/manufacturing/orders/${ORDER}/mass-balance`, 'GET')
+const labelReads = (recorded: RecordedRequest[]) => requestsFor(recorded, `/inventory/labels/${ROLL_1}/detail`, 'GET')
 
 /** The roll's row in the roll-balance table (the mass-balance panel has a row per roll too). */
 async function rollRow(): Promise<HTMLElement> {
@@ -273,15 +329,15 @@ describe('fact forms', () => {
   it('names each control by its label alone: no option or help text in the accessible name', async () => {
     // The mfg browser gate (run 35436388761) found a wrapping <label> folding the roll options into the
     // select's name. A role query with a string name is an exact match, so any folded text fails here.
-    const user = userEvent.setup()
     stub()
     renderAt(PATH)
     await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
     expect(screen.getByRole('combobox', { name: 'Ana rulo' })).toBeTruthy()
     expect(screen.getByRole('textbox', { name: 'Kütle (kg)' })).toBeTruthy()
     expect(screen.getByLabelText('Zaman')).toBeTruthy()
-    await user.click(screen.getByLabelText('Çıktı bildirimi'))
-    expect(screen.getByRole('combobox', { name: 'Çıktı sınıfı' })).toBeTruthy()
+    expect(screen.getByLabelText('WIP ölçümü')).toBeTruthy()
+    expect(screen.queryByLabelText('Kullanılmayan girdi iadesi')).toBeNull()
+    expect(screen.queryByLabelText('Çıktı bildirimi')).toBeNull()
   })
 
   it('sends one frozen fact with its own key and id, then shows the RE-READ order', async () => {
@@ -303,11 +359,16 @@ describe('fact forms', () => {
     expect(post.headers['X-Company-Id']).toBe(COMPANY_A)
     expect(post.headers['Idempotency-Key']).toMatch(/^[0-9a-f-]{36}$/)
     expect(post.body).toMatchObject({ expectedVersion: 1, parentRollId: ROLL_1, kg: '250.5' })
+    expect((post.body as { issueId: string }).issueId).toMatch(/^[0-9a-f-]{36}$/)
+    expect((post.body as { movementId: string }).movementId).toMatch(/^[0-9a-f-]{36}$/)
+    expect((post.body as { movementId: string }).movementId).not.toBe((post.body as { issueId: string }).issueId)
     expect((post.body as { occurredAtUtc: string }).occurredAtUtc).toMatch(/Z$/)
     expect(post.body).not.toHaveProperty('companyId')
+    expect(post.body).not.toHaveProperty('factId')
     await waitFor(() => expect(reads(recorded)).toHaveLength(2))
     const row = await rollRow()
     await waitFor(() => expect(within(row).getAllByText('250.5').length).toBeGreaterThan(0))
+    expect(labelReads(recorded)).toHaveLength(0)
   })
 
   it('says a replayed answer was already recorded', async () => {
@@ -320,25 +381,141 @@ describe('fact forms', () => {
     expect(await screen.findByText('Daha önce kaydedilmiş')).toBeTruthy()
   })
 
-  it('sends an output with its class, and refuses to send one without it', async () => {
+  it('issues a planned company roll, reopens order and label, then returns with the fresh label version', async () => {
     const user = userEvent.setup()
-    const { recorded } = stub()
+    const { recorded } = stub({
+      capabilities: INVENTORY_RECORDER_CAPABILITIES,
+      reads: [
+        () => json(order()),
+        () => json(order({
+          version: 2,
+          rolls: [roll(ROLL_1, {
+            issuedKg: '250.5', netIssuedKg: '250.5', unexplainedKg: '250.5', isFullyAccounted: false,
+          })],
+        })),
+        () => json(order({
+          version: 3,
+          rolls: [roll(ROLL_1, {
+            issuedKg: '250.5', returnedKg: '50', netIssuedKg: '200.5', unexplainedKg: '200.5',
+            isFullyAccounted: false,
+          })],
+        })),
+      ],
+      labels: [
+        () => json(labelDetail('7', '1000')),
+        () => json(labelDetail('8', '750')),
+        () => json(labelDetail('8', '750')),
+        () => json(labelDetail('9', '800')),
+      ],
+      commands: [() => json(order({ version: 2 })), () => json(order({ version: 3 }))],
+    })
     renderAt(PATH)
     await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
-    await user.click(screen.getByLabelText('Çıktı bildirimi'))
-    await user.selectOptions(screen.getByLabelText('Ana rulo'), ROLL_1)
-    await user.type(screen.getByLabelText('Kütle (kg)'), '100')
-    await user.type(screen.getByLabelText('Zaman'), '2026-09-18T09:30')
-    await user.click(screen.getByRole('button', { name: 'Kaydet' }))
-    expect(await screen.findByText('Bir çıktı sınıfı seçin.')).toBeTruthy()
-    expect(posts(recorded)).toHaveLength(0)
 
-    await user.selectOptions(screen.getByLabelText('Çıktı sınıfı'), 'Scrap')
+    // Cache v7 first. The issue itself must not trust or require it, and its success must
+    // refresh this exact label before return can reuse the cache.
+    await user.click(screen.getByLabelText('Kullanılmayan girdi iadesi'))
+    await user.selectOptions(screen.getByLabelText('Ana rulo'), ROLL_1)
+    await screen.findByTestId('parent-label-state')
+    expect(within(screen.getByTestId('parent-label-state')).getByText('7')).toBeTruthy()
+    await user.click(screen.getByLabelText('Girdi çıkışı'))
+    await fillFact(user)
     await user.click(screen.getByRole('button', { name: 'Kaydet' }))
-    await screen.findByText('Kaydedildi')
-    const [post] = posts(recorded)
-    expect(post.url).toMatch(/\/outputs$/)
-    expect(post.body).toMatchObject({ outputClass: 'Scrap', kg: '100' })
+    await waitFor(() => expect(reads(recorded)).toHaveLength(2))
+    await waitFor(() => expect(labelReads(recorded)).toHaveLength(2))
+
+    await fillFact(user, { kind: 'Kullanılmayan girdi iadesi', kg: '50' })
+    await waitFor(() => expect(labelReads(recorded)).toHaveLength(3))
+    expect(within(screen.getByTestId('parent-label-state')).getByText('8')).toBeTruthy()
+    expect(within(screen.getByTestId('parent-label-state')).getAllByText('750 kg')).toHaveLength(2)
+    await user.click(screen.getByRole('button', { name: 'Kaydet' }))
+    await waitFor(() => expect(posts(recorded)).toHaveLength(2))
+    await waitFor(() => expect(reads(recorded)).toHaveLength(3))
+    await waitFor(() => expect(labelReads(recorded)).toHaveLength(4))
+    await waitFor(() => expect(within(screen.getByTestId('parent-label-state')).getAllByText('800 kg')).toHaveLength(2))
+
+    const [issue, returned] = posts(recorded)
+    expect(issue.url).toBe(`/api/v1/manufacturing/orders/${ORDER}/input-issues`)
+    expect(issue.body).toMatchObject({ expectedVersion: 1, parentRollId: ROLL_1, kg: '250.5' })
+    expect(returned.url).toBe(`/api/v1/manufacturing/orders/${ORDER}/input-returns`)
+    expect(returned.body).toMatchObject({
+      expectedVersion: 2,
+      parentRollId: ROLL_1,
+      expectedParentLabelVersion: '8',
+      kg: '50',
+    })
+    expect((returned.body as { returnId: string }).returnId).toMatch(/^[0-9a-f-]{36}$/)
+    expect((returned.body as { movementId: string }).movementId).toMatch(/^[0-9a-f-]{36}$/)
+    expect((returned.body as { movementId: string }).movementId)
+      .not.toBe((returned.body as { returnId: string }).returnId)
+    expect(returned.body).not.toHaveProperty('factId')
+    const row = await rollRow()
+    expect(within(row).getByText('50')).toBeTruthy()
+  })
+
+  it('keeps customer/fason ownership fail-closed and sends no input command', async () => {
+    const user = userEvent.setup()
+    const { recorded } = stub({
+      capabilities: INVENTORY_RECORDER_CAPABILITIES,
+      labels: [() => json(labelDetail('7', '1000', COMPANY_B, COMPANY_B))],
+    })
+    renderAt(PATH)
+    await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+    await user.click(screen.getByLabelText('Kullanılmayan girdi iadesi'))
+    await user.selectOptions(screen.getByLabelText('Ana rulo'), ROLL_1)
+    await waitFor(() => expect(labelReads(recorded)).toHaveLength(1))
+
+    expect(await screen.findByText(/yalnız şirketin kendi malı/)).toBeTruthy()
+    expect((screen.getByRole('button', { name: 'Kaydet' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(posts(recorded)).toHaveLength(0)
+  })
+
+  it('fences a revoked Inventory label read on 403 and never sends a return', async () => {
+    const user = userEvent.setup()
+    const { recorded } = stub({
+      capabilities: INVENTORY_RECORDER_CAPABILITIES,
+      labels: [() => problem(403, { code: 'inventory_label_detail_forbidden' })],
+    })
+    renderAt(PATH)
+    await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+    await user.click(screen.getByLabelText('Kullanılmayan girdi iadesi'))
+    await user.selectOptions(screen.getByLabelText('Ana rulo'), ROLL_1)
+
+    await waitFor(() => expect(labelReads(recorded)).toHaveLength(1))
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Gerçekleşme kaydı' })).toBeNull())
+    expect(labelReads(recorded)).toHaveLength(1)
+    expect(posts(recorded)).toHaveLength(0)
+  })
+
+  it('refreshes both owner reads after a parent-label version conflict and keeps the typed return', async () => {
+    const user = userEvent.setup()
+    const { recorded } = stub({
+      capabilities: INVENTORY_RECORDER_CAPABILITIES,
+      reads: [
+        () => json(order({
+          version: 2,
+          rolls: [roll(ROLL_1, { issuedKg: '250.5', netIssuedKg: '250.5', unexplainedKg: '250.5' })],
+        })),
+        () => json(order({
+          version: 2,
+          rolls: [roll(ROLL_1, { issuedKg: '250.5', netIssuedKg: '250.5', unexplainedKg: '250.5' })],
+        })),
+      ],
+      labels: [() => json(labelDetail('8', '750')), () => json(labelDetail('9', '750'))],
+      commands: [() => problem(409, { code: 'inventory_manufacturing_parent_label_version_conflict' })],
+    })
+    renderAt(PATH)
+    await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+    await fillFact(user, { kind: 'Kullanılmayan girdi iadesi', kg: '50' })
+    await user.click(screen.getByRole('button', { name: 'Kaydet' }))
+
+    expect(await screen.findByText(/etiketi siz formu doldururken değişti/)).toBeTruthy()
+    await waitFor(() => expect(reads(recorded)).toHaveLength(2))
+    await waitFor(() => expect(labelReads(recorded)).toHaveLength(2))
+    expect(within(screen.getByTestId('parent-label-state')).getByText('9')).toBeTruthy()
+    expect((screen.getByLabelText('Kütle (kg)') as HTMLInputElement).value).toBe('50')
+    const [request] = posts(recorded)
+    expect(request.body).toMatchObject({ expectedVersion: 2, expectedParentLabelVersion: '8' })
   })
 
   it('refuses a kilogram outside the plain-decimal grammar without sending anything', async () => {
@@ -375,7 +552,7 @@ describe('fact forms', () => {
     const [first, second] = posts(recorded)
     expect(second.body).toMatchObject({ expectedVersion: 3 })
     expect(second.headers['Idempotency-Key']).not.toBe(first.headers['Idempotency-Key'])
-    expect((second.body as { factId: string }).factId).not.toBe((first.body as { factId: string }).factId)
+    expect((second.body as { issueId: string }).issueId).not.toBe((first.body as { issueId: string }).issueId)
   })
 
   it('freezes an unknown outcome and re-sends the SAME fact id and key until the server settles it', async () => {
@@ -402,8 +579,9 @@ describe('fact forms', () => {
   it('names a rule refusal by its code and an unlisted code as a generic refusal with the code', async () => {
     const user = userEvent.setup()
     stub({
+      capabilities: INVENTORY_RECORDER_CAPABILITIES,
       commands: [
-        () => problem(422, { code: 'manufacturing_return_exceeds_issued' }),
+        () => problem(409, { code: 'inventory_manufacturing_input_return_exceeds_issued' }),
         () => problem(422, { code: 'manufacturing_new_rule' }),
       ],
     })
@@ -411,7 +589,7 @@ describe('fact forms', () => {
     await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
     await fillFact(user, { kind: 'Kullanılmayan girdi iadesi' })
     await user.click(screen.getByRole('button', { name: 'Kaydet' }))
-    expect(await screen.findByText('İade, bu rulodan çıkan kütleyi aşamaz.')).toBeTruthy()
+    expect(await screen.findByText('İade, bu rulodan net çıkan kütleyi aşamaz.')).toBeTruthy()
 
     await user.click(screen.getByRole('button', { name: 'Kaydet' }))
     expect(await screen.findByText('İşlem reddedildi (manufacturing_new_rule).')).toBeTruthy()
