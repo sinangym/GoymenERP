@@ -44,7 +44,7 @@ internal sealed class ManufacturingInventoryInputIssueHost(
                 command.Quantity,
                 command.OccurredAtUtc), metadata, cancellationToken);
             return new ManufacturingInventoryInputIssuePortResultV1(
-                result.OrderVersion, result.ParentLabelVersion, result.IsReplay);
+                result.OrderVersion, result.ParentLabelVersion, result.ParentPosition, result.IsReplay);
         }
         catch (InventoryManufacturingRealizationException exception)
         {
@@ -145,16 +145,28 @@ internal sealed class ManufacturingInventoryInputIssueHost(
                     ManufacturingInventoryInputIssueHostCodes.IncompleteRealization);
             }
 
+            var parentPosition = inventoryResult.ParentPosition;
             if (inventoryResult.CompanyId != companyId || inventoryResult.ManufacturingOrderId != command.OrderId
                 || inventoryResult.IssueId != command.IssueId || inventoryResult.ParentLabelId != command.ParentLabelId
                 || inventoryResult.MovementId != command.MovementId
                 || !long.TryParse(inventoryResult.ParentLabelVersion, NumberStyles.None,
                     CultureInfo.InvariantCulture, out var parentLabelVersion)
-                || parentLabelVersion <= 0)
+                || parentLabelVersion <= 0
+                || parentPosition is null
+                || !Enum.IsDefined(parentPosition.OwnerKind) || parentPosition.OwnerId == Guid.Empty
+                || !Enum.IsDefined(parentPosition.CustodianKind) || parentPosition.CustodianId == Guid.Empty
+                || parentPosition.LocationId == Guid.Empty)
             {
                 throw new ManufacturingInventoryInputIssueHostException(
                     ManufacturingInventoryInputIssueHostCodes.IncompleteRealization);
             }
+
+            var manufacturingPosition = new ManufacturingInventoryPositionSnapshotV1(
+                parentPosition.OwnerKind.ToString(),
+                parentPosition.OwnerId,
+                parentPosition.CustodianKind.ToString(),
+                parentPosition.CustodianId,
+                parentPosition.LocationId);
 
             if (observer is not null)
             {
@@ -170,6 +182,7 @@ internal sealed class ManufacturingInventoryInputIssueHost(
                 realizationOrderVersion,
                 command.ParentLabelId,
                 parentLabelVersion,
+                manufacturingPosition,
                 command.MovementId,
                 command.Quantity,
                 manufacturingOutcome == ManufacturingWriteOutcome.Replayed);
@@ -274,6 +287,7 @@ internal sealed record ManufacturingInventoryInputIssueResult(
     long OrderVersion,
     Guid ParentLabelId,
     long ParentLabelVersion,
+    ManufacturingInventoryPositionSnapshotV1 ParentPosition,
     Guid MovementId,
     Kilograms Quantity,
     bool IsReplay);
