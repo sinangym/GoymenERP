@@ -104,6 +104,21 @@ public sealed class InventoryGoodsReceiptContractTests
     }
 
     [Fact]
+    public void Replay_lookup_requires_the_original_command_identity_shape()
+    {
+        var missingAcceptance = Assert.Throws<InventoryGoodsReceiptException>(() =>
+            InventoryGoodsReceiptContractV1.ValidateReplayLookup(Guid.Empty, Metadata(), Company));
+        Assert.Equal((400, InventoryGoodsReceiptCodesV1.InvalidRequest),
+            (missingAcceptance.Status, missingAcceptance.Code));
+
+        var malformedKey = Assert.Throws<InventoryGoodsReceiptException>(() =>
+            InventoryGoodsReceiptContractV1.ValidateReplayLookup(
+                Request().AcceptanceId, Metadata() with { IdempotencyKey = " receipt-key-1" }, Company));
+        Assert.Equal((400, InventoryGoodsReceiptCodesV1.InvalidRequest),
+            (malformedKey.Status, malformedKey.Code));
+    }
+
+    [Fact]
     public void Refusal_contract_is_closed()
     {
         Assert.True(InventoryGoodsReceiptCodesV1.IsDefined(409,
