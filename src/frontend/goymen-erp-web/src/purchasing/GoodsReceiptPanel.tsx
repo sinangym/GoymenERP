@@ -37,7 +37,7 @@ function ReceiptWorkspace(props: Props) {
       {history.data.data.searchWindowFull ? <p>{T.limited}</p> : null}
       {history.data.data.items.length === 0 ? <p>{T.empty}</p> : <ul>{history.data.data.items.map((receipt) => <li key={receipt.acceptanceId}
         data-testid={`goods-receipt-${receipt.acceptanceId}`}>
-        <strong>{receipt.labelCode}</strong>: {T.accepted} {receipt.acceptedQuantity}; {T.measured} {receipt.measuredQuantityKg}. {T.blocked}
+        <strong>{receipt.labelCode}</strong>: {T.accepted} {receipt.acceptedQuantity}; {T.measured} {receipt.measuredQuantityKg}. {receipt.initialBlock === 'Free' ? T.initialFree : T.initialBlocked}
       </li>)}</ul>}
     </> : <StateBlock subject={T.history} state={history.data === undefined ? { kind: 'initial-loading' } : classifyOutcome(history.data)}
       onRetry={() => void history.refetch()} />}
@@ -129,7 +129,7 @@ function ReceiptLine({ binding, detail, line, onRecorded }: Props & { readonly l
       <button type="button" onClick={() => void send(pending)}>{T.retry}</button></div> : null}
     {phase === 'failed' ? <p role="alert" className={styles.error}>{T.failed}</p> : null}
     {phase === 'done' && answer !== null ? <p role="status" className={styles.success}>
-      {answer.isReplay ? T.replayed : T.saved} {answer.receipt.labelCode}: {T.blocked}
+      {answer.isReplay ? T.replayed : T.saved} {answer.receipt.labelCode}: {answer.receipt.initialBlock === 'Free' ? T.initialFree : T.initialBlocked}
     </p> : null}
     {active && options.data?.type !== 'ok-single' ? <StateBlock subject={T.location}
       state={options.data === undefined ? { kind: 'initial-loading' } : classifyOutcome(options.data)} onRetry={() => void options.refetch()} /> : null}

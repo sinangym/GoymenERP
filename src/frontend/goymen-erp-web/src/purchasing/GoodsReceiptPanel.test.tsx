@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { GoodsReceiptPanel } from './GoodsReceiptPanel'
 import { resetReceiptAttemptsForTests } from './goodsReceiptAttempt'
-import { decodeGoodsReceiptResponse, receiptQuantityInput, type GoodsReceipt, type GoodsReceiptRequest } from './goodsReceiptContract'
+import { decodeGoodsReceiptPage, decodeGoodsReceiptResponse, receiptQuantityInput, type GoodsReceipt, type GoodsReceiptRequest } from './goodsReceiptContract'
 import { GOODS_RECEIPT_TEXT as T } from './goodsReceiptText'
 import type { PurchaseOrderDetail } from './contract'
 
@@ -27,7 +27,7 @@ function recorded(payload: GoodsReceiptRequest): GoodsReceipt {
     purchaseOrderVersion: '4', productId: PRODUCT, productVersion: '7', unitId: UNIT, acceptedQuantity: payload.acceptedQuantity,
     remainingQuantity: '8', lotId: payload.lotId, labelId: payload.labelId, labelCode: payload.labelCode, labelVersion: '1',
     movementId: payload.movementId, locationId: payload.locationId, measuredQuantityKg: payload.measuredQuantityKg,
-    initialBlock: 'Blocked', occurredAtUtc: payload.occurredAtUtc }
+    initialBlock: 'Free', occurredAtUtc: payload.occurredAtUtc }
 }
 function fixture(unknownFirst = false) {
   const posts: { key: string; body: string }[] = []
@@ -67,7 +67,7 @@ describe('Purchasing goods receipt consumer, synthetic NOT_ENV', () => {
     expect(screen.queryByText(T.heading)).toBeNull()
     expect(fetch).not.toHaveBeenCalled()
   })
-  it('records independent quantities with hidden identities and reopens the same blocked receipt', async () => {
+  it('records independent quantities with hidden identities and reopens the same Free receipt without quality release', async () => {
     const server = fixture()
     const page = mount()
     await fill()
@@ -81,7 +81,7 @@ describe('Purchasing goods receipt consumer, synthetic NOT_ENV', () => {
     expect(sent).not.toHaveProperty('ownerId')
     page.unmount()
     mount()
-    expect(await screen.findByTestId(`goods-receipt-${server.receipts[0].acceptanceId}`)).toBeTruthy()
+    expect((await screen.findByTestId(`goods-receipt-${server.receipts[0].acceptanceId}`)).textContent).toContain(T.initialFree)
     expect(screen.getByText(/SYNTHETIC-RECEIPT-001/).textContent).toContain('SYNTHETIC-RECEIPT-001')
     expect(screen.queryByRole('button', { name: /serbest bırak/i })).toBeNull()
   })
@@ -100,12 +100,31 @@ describe('Purchasing goods receipt consumer, synthetic NOT_ENV', () => {
     await screen.findByText(new RegExp(T.replayed))
     expect(server.receipts).toHaveLength(1)
   })
-  it('refuses a response advertising Free instead of the approved initial Blocked state', () => {
+  it('refuses a new Blocked receipt but preserves the immutable Blocked state on a matching historical replay', () => {
     const request: GoodsReceiptRequest = { expectedPurchaseOrderVersion: '3', expectedProductVersion: '7', acceptanceId: LOCATION,
       acceptedQuantity: '2', measuredQuantityKg: '1.9', locationId: LOCATION, lotId: LINE, labelId: UNIT, labelCode: 'SYNTHETIC',
       heatNumber: null, coilNumber: null, movementId: PRODUCT, occurredAtUtc: '2026-09-25T10:00:00Z' }
-    const answer = { receipt: { ...recorded(request), initialBlock: 'Free' }, isReplay: false, originalCorrelationId: 'c' }
+    const answer = { receipt: { ...recorded(request), initialBlock: 'Blocked' }, isReplay: false, originalCorrelationId: 'c' }
     expect(decodeGoodsReceiptResponse(answer, detail, LINE, request, false)).toBeNull()
+    expect(decodeGoodsReceiptResponse({ ...answer, isReplay: true }, detail, LINE, request, true)?.receipt.initialBlock).toBe('Blocked')
+    expect(decodeGoodsReceiptResponse({ ...answer, isReplay: true }, detail, LINE, request, false)).toBeNull()
+  })
+  it('reopens a historical Blocked receipt without changing its stored state or submitting a release', async () => {
+    const server = fixture()
+    const request: GoodsReceiptRequest = { expectedPurchaseOrderVersion: '3', expectedProductVersion: '7', acceptanceId: LOCATION,
+      acceptedQuantity: '2', measuredQuantityKg: '1.9', locationId: LOCATION, lotId: LINE, labelId: UNIT, labelCode: 'HISTORICAL',
+      heatNumber: null, coilNumber: null, movementId: PRODUCT, occurredAtUtc: '2026-09-25T10:00:00Z' }
+    server.receipts.push({ ...recorded(request), initialBlock: 'Blocked' })
+    mount()
+    expect((await screen.findByTestId(`goods-receipt-${LOCATION}`)).textContent).toContain(T.initialBlocked)
+    expect(server.posts).toHaveLength(0)
+    expect(screen.queryByRole('button', { name: /serbest bırak/i })).toBeNull()
+  })
+  it('rejects unknown historical block values instead of describing them as Free', () => {
+    const request: GoodsReceiptRequest = { expectedPurchaseOrderVersion: '3', expectedProductVersion: '7', acceptanceId: LOCATION,
+      acceptedQuantity: '2', measuredQuantityKg: '1.9', locationId: LOCATION, lotId: LINE, labelId: UNIT, labelCode: 'SYNTHETIC',
+      heatNumber: null, coilNumber: null, movementId: PRODUCT, occurredAtUtc: '2026-09-25T10:00:00Z' }
+    expect(decodeGoodsReceiptPage({ items: [{ ...recorded(request), initialBlock: 'Unknown' }], searchWindowFull: false }, detail)).toBeNull()
   })
   it.each(['0', '-1', '1.0001', '1,2.3', '1000000000000000'])('refuses invalid/rounded quantity %s', (value) => {
     expect(receiptQuantityInput(value)).toBeNull()

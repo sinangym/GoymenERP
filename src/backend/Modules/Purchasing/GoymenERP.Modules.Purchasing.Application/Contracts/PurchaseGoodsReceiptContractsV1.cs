@@ -38,7 +38,7 @@ public static class PurchaseGoodsReceiptApiV1
     public const string RecordPath = PurchasingApiV1.OrderDetailPath + "/lines/{lineId}/goods-receipts";
     public const string OptionsPath = PurchasingApiV1.OrderDetailPath + "/lines/{lineId}/goods-receipt-options";
     public const string ReceiptsPath = PurchasingApiV1.OrderDetailPath + "/goods-receipts";
-    public const string InitialBlock = "Blocked";
+    public const string InitialBlock = "Free";
 }
 
 public static class PurchaseGoodsReceiptCodesV1
@@ -92,15 +92,17 @@ public interface IPurchaseGoodsReceiptReadsV1
 public sealed record PurchaseReceiptFactsV1(Guid CompanyId, Guid ProductId, string ProductVersion, Guid LocationId,
     string OwnerKind, Guid OwnerId, string CustodianKind, Guid CustodianId, IReadOnlyList<string> RequiredDocuments);
 
-/// <summary>Neutral adapter DTO for InventoryGoodsReceiptRequestV1; block is computed, not settable by browser or caller.</summary>
+/// <summary>Server-only Inventory adapter DTO. New receipts default to Free; replay adapters preserve the immutable original block.</summary>
 public sealed record PurchaseReceiptStockRequestV1(Guid CompanyId, Guid AcceptanceId, Guid PurchaseOrderId, Guid PurchaseOrderLineId,
     string PurchaseOrderVersionAfter, Guid ProductId, string ExpectedProductVersion, Guid PurchaseUnitId,
     Guid LotId, Guid LabelId, string LabelCode, string? HeatNumber, string? CoilNumber, IReadOnlyList<string> RequiredDocuments,
     string OwnerKind, Guid OwnerId, string CustodianKind, Guid CustodianId, Guid LocationId,
     Guid MovementId, string QuantityKg, DateTimeOffset OccurredAtUtc)
 {
-    // Sinan #66/5828506709. A separate quality release is NOT implemented by goods receipt.
-    public string InitialBlock => PurchaseGoodsReceiptApiV1.InitialBlock;
+    // Sinan #66/5829087145 supersedes mandatory quality quarantine for NEW receipts only.
+    // ReadOriginalAsync must copy Inventory's stored value, never apply today's default to history.
+    // This DTO is not the public request: callers cannot submit block/document/ownership facts.
+    public string InitialBlock { get; init; } = PurchaseGoodsReceiptApiV1.InitialBlock;
 }
 
 public sealed record PurchaseReceiptStockResultV1(Guid CompanyId, Guid AcceptanceId, Guid PurchaseOrderId, Guid PurchaseOrderLineId,

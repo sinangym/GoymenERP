@@ -130,7 +130,8 @@ public sealed partial class PurchasingService
             if (receipt is null || receipt.CompanyId != scope.CompanyId || receipt.PurchaseOrderId != orderId
                 || receipt.AcceptanceId != acceptance.AcceptanceId || receipt.PurchaseOrderLineId != acceptance.LineId
                 || receipt.AcceptedQuantity != Text(acceptance.Quantity) || receipt.LabelId == Guid.Empty
-                || receipt.LotId == Guid.Empty || receipt.MovementId == Guid.Empty || string.IsNullOrWhiteSpace(receipt.LabelCode))
+                || receipt.LotId == Guid.Empty || receipt.MovementId == Guid.Empty || string.IsNullOrWhiteSpace(receipt.LabelCode)
+                || receipt.InitialBlock is not ("Free" or "Blocked"))
             {
                 throw ReceiptSourceInvalid();
             }
@@ -154,7 +155,8 @@ public sealed partial class PurchasingService
     private static void RequireOriginalReceipt(Guid companyId, Guid orderId, Guid lineId, RecordPurchaseGoodsReceiptV1 request,
         PurchaseReceiptStockRequestV1 original)
     {
-        if (original.CompanyId != companyId || original.ProductId == Guid.Empty || original.PurchaseUnitId == Guid.Empty)
+        if (original.CompanyId != companyId || original.ProductId == Guid.Empty || original.PurchaseUnitId == Guid.Empty
+            || original.InitialBlock is not ("Free" or "Blocked"))
             throw ReceiptSourceInvalid();
         if (original.AcceptanceId != request.AcceptanceId || original.PurchaseOrderId != orderId || original.PurchaseOrderLineId != lineId
             || original.ExpectedProductVersion != request.ExpectedProductVersion || original.LotId != request.LotId

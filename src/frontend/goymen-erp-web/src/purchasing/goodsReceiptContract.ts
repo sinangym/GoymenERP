@@ -37,7 +37,8 @@ export interface GoodsReceipt {
   readonly movementId: string
   readonly locationId: string
   readonly measuredQuantityKg: string
-  readonly initialBlock: 'Blocked'
+  /** Original receipt state, not today's availability. Historical receipts must not be relabeled. */
+  readonly initialBlock: 'Free' | 'Blocked'
   readonly occurredAtUtc: string
 }
 
@@ -77,7 +78,8 @@ export function decodeGoodsReceipt(value: unknown, detail: PurchaseOrderDetail):
     || !quantity(item.acceptedQuantity) || item.acceptedQuantity === '0' || !quantity(item.remainingQuantity)
     || !guid(item.lotId) || !guid(item.labelId) || !text(item.labelCode) || !version(item.labelVersion)
     || !guid(item.movementId) || !guid(item.locationId) || !quantity(item.measuredQuantityKg) || item.measuredQuantityKg === '0'
-    || item.initialBlock !== 'Blocked' || !text(item.occurredAtUtc) || !Number.isFinite(Date.parse(item.occurredAtUtc))) return null
+    || (item.initialBlock !== 'Free' && item.initialBlock !== 'Blocked')
+    || !text(item.occurredAtUtc) || !Number.isFinite(Date.parse(item.occurredAtUtc))) return null
   const line = detail.lines.find((candidate) => candidate.lineId === item.purchaseOrderLineId)
   if (line === undefined || item.productId !== line.productId || item.unitId !== line.unitId) return null
   return item as unknown as GoodsReceipt
@@ -118,6 +120,7 @@ export function decodeGoodsReceiptResponse(value: unknown, detail: PurchaseOrder
   const body = record(value)
   const receipt = body === null ? null : decodeGoodsReceipt(body.receipt, detail)
   if (body === null || receipt === null || body.isReplay !== replayHeader || !text(body.originalCorrelationId)
+    || (!replayHeader && receipt.initialBlock !== 'Free')
     || receipt.purchaseOrderLineId !== lineId || receipt.acceptanceId !== sent.acceptanceId
     || receipt.productVersion !== sent.expectedProductVersion || receipt.acceptedQuantity !== sent.acceptedQuantity
     || receipt.measuredQuantityKg !== sent.measuredQuantityKg || receipt.lotId !== sent.lotId || receipt.labelId !== sent.labelId

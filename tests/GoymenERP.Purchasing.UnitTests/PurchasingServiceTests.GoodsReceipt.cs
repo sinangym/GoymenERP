@@ -7,31 +7,51 @@ namespace GoymenERP.Purchasing.UnitTests;
 public sealed partial class PurchasingServiceTests
 {
     [Fact]
-    public async Task Receipt_uses_post_stage_purchase_version_and_fixed_block_with_two_independent_quantities()
+    public async Task Receipt_uses_post_stage_purchase_version_and_Free_with_two_independent_quantities()
     {
         var (world, runner, orderId, lineId) = await ReceiptWorldAsync();
         var request = ReceiptRequest();
         var result = await world.Service(runner).RecordGoodsReceiptAsync(orderId, lineId, request, Metadata("receipt-1"));
-        Assert.Equal(("4", "2", "1.9", "Blocked"), (result.Receipt.PurchaseOrderVersion, result.Receipt.AcceptedQuantity,
+        Assert.Equal(("4", "2", "1.9", "Free"), (result.Receipt.PurchaseOrderVersion, result.Receipt.AcceptedQuantity,
             result.Receipt.MeasuredQuantityKg, result.Receipt.InitialBlock));
         Assert.Equal("4", runner.Stock!.PurchaseOrderVersionAfter);
-        Assert.Equal("Blocked", runner.Stock.InitialBlock);
+        Assert.Equal("Free", runner.Stock.InitialBlock);
         Assert.Equal(["receipt-read", "purchase", "first-source", "inventory", "fence", "commit"], runner.Events);
     }
 
-    [Fact]
-    public async Task Replay_uses_original_physical_facts_not_current_document_location_or_settings_masters()
+    [Theory]
+    [InlineData("Free")]
+    [InlineData("Blocked")]
+    public async Task Replay_preserves_original_block_and_physical_facts_not_current_masters(string originalBlock)
     {
         var (world, runner, orderId, lineId) = await ReceiptWorldAsync();
         var request = ReceiptRequest();
         await world.Service(runner).RecordGoodsReceiptAsync(orderId, lineId, request, Metadata("receipt-1"));
-        runner.Original = runner.Stock;
+        runner.Original = runner.Stock! with { InitialBlock = originalBlock };
         runner.DocumentSourceUnavailable = true;
         runner.Events.Clear();
         var result = await world.Service(runner).RecordGoodsReceiptAsync(orderId, lineId, request, Metadata("receipt-1", "retry"));
         Assert.True(result.IsReplay);
+        Assert.Equal(originalBlock, result.Receipt.InitialBlock);
+        Assert.Equal(originalBlock, runner.Stock!.InitialBlock);
         Assert.Equal(["receipt-read", "purchase", "inventory", "fence", "commit"], runner.Events);
         Assert.Equal("synthetic-correlation", result.OriginalCorrelationId);
+    }
+
+    [Theory]
+    [InlineData("Unknown")]
+    [InlineData("")]
+    public async Task Replay_refuses_invalid_stored_block_before_either_participant(string originalBlock)
+    {
+        var (world, runner, orderId, lineId) = await ReceiptWorldAsync();
+        var request = ReceiptRequest();
+        await world.Service(runner).RecordGoodsReceiptAsync(orderId, lineId, request, Metadata("receipt-1"));
+        runner.Original = runner.Stock! with { InitialBlock = originalBlock };
+        runner.Events.Clear();
+        var refusal = await Assert.ThrowsAsync<PurchasingServiceException>(() => world.Service(runner)
+            .RecordGoodsReceiptAsync(orderId, lineId, request, Metadata("receipt-1")));
+        Assert.Equal((503, PurchaseGoodsReceiptCodesV1.SourceInvalid), (refusal.Status, refusal.Code));
+        Assert.Equal(["receipt-read"], runner.Events);
     }
 
     [Fact]
@@ -85,6 +105,7 @@ public sealed partial class PurchasingServiceTests
 
     [Theory]
     [InlineData("initialBlock", "Free")]
+    [InlineData("initialBlock", "Blocked")]
     [InlineData("ownerId", "11111111-1111-1111-1111-111111111111")]
     [InlineData("requiredDocuments", "MTC")]
     public void Receipt_wire_rejects_browser_owned_policy_facts(string field, string value)
