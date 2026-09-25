@@ -75,6 +75,7 @@ function labelDetail(
       }],
     },
     genealogy: { labelId: ROLL_1, labelCode: 'SYN-MFG-ROLL-1', edges: [], windowFull: false },
+    movementTimeline: { labelId: ROLL_1, entries: [], windowFull: false },
   }
 }
 
