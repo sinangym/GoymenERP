@@ -70,6 +70,20 @@ public sealed class AccountingJournalReversalAuthorityDeniedException()
 /// Owner-side command handler for the two-step reversal workflow. Permission literals are bindings only;
 /// registration, role grants and production activation remain central/human-owned.
 /// </summary>
+public interface IAccountingJournalReversalLifecycleV1
+{
+    Task<AccountingApiResult<AccountingJournalReversalProposalViewV1>> ProposeAsync(
+        ProposeAccountingJournalReversalV1? request,
+        string idempotencyKey,
+        CancellationToken cancellationToken = default);
+
+    Task<AccountingApiResult<AccountingJournalReversalProposalViewV1>> ApproveAsync(
+        Guid proposalId,
+        int expectedVersion,
+        string idempotencyKey,
+        CancellationToken cancellationToken = default);
+}
+
 public sealed class AccountingJournalReversalServiceV1(
     IAccountingJournalReversalProposalStoreV1 proposals,
     IAccountingCommandLog commands,
@@ -77,7 +91,7 @@ public sealed class AccountingJournalReversalServiceV1(
     ICompanyContext companyContext,
     ICurrentUser currentUser,
     ICorrelationContext correlation,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider) : IAccountingJournalReversalLifecycleV1
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
@@ -226,8 +240,19 @@ public sealed class AccountingJournalReversalServiceV1(
         }
         catch (AccountingJournalReversalPolicyExceptionV1 exception)
         {
-            result = new AccountingApiResult<T>(AccountingApiStatus.Unprocessable, null, false,
-                exception.Code, exception.Field);
+            result = exception.Code switch
+            {
+                AccountingJournalReversalPolicyCodesV1.MakerCheckerRequired => Denied<T>(),
+                AccountingJournalReversalPolicyCodesV1.NotPending or
+                    AccountingJournalReversalPolicyCodesV1.VersionConflict =>
+                    new AccountingApiResult<T>(AccountingApiStatus.Conflict, null, false,
+                        exception.Code, exception.Field),
+                AccountingJournalReversalPolicyCodesV1.InvalidRequest =>
+                    new AccountingApiResult<T>(AccountingApiStatus.Invalid, null, false,
+                        exception.Code, exception.Field),
+                _ => new AccountingApiResult<T>(AccountingApiStatus.Unprocessable, null, false,
+                    exception.Code, exception.Field),
+            };
         }
         catch (AccountingStoreException exception) when (exception.Code == AccountingStoreCodes.ConcurrentChange)
         {
