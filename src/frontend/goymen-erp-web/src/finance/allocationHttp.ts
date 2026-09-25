@@ -38,6 +38,26 @@ function noReply(snapshot: FinanceAllocationWireSnapshot): FinanceAllocationHttp
   }
 }
 
+function unavailable(snapshot: FinanceAllocationWireSnapshot): FinanceAllocationHttpResult {
+  return {
+    kind: 'settlement',
+    settlement: classifyAllocationReply(
+      {
+        kind: 'body',
+        body: {
+          outcome: 'Unavailable',
+          resource: null,
+          isReplay: false,
+          originalCorrelationId: '',
+          issues: [],
+        },
+      },
+      { companyId: snapshot.binding.companyId },
+      snapshot.request,
+    ),
+  }
+}
+
 export async function sendFinanceAllocationCommand(
   snapshot: FinanceAllocationWireSnapshot,
   signal?: AbortSignal,
@@ -79,7 +99,8 @@ export async function sendFinanceAllocationCommand(
   if (response.status === 400 || response.status === 415) {
     return { kind: 'http-rejection', status: response.status }
   }
-  if (response.status >= 500) return noReply(snapshot)
+  if (response.status === 503) return unavailable(snapshot)
+  if (response.status >= 500) return malformed(snapshot)
   if (response.status !== 200 && response.status !== 409 && response.status !== 422) {
     return malformed(snapshot)
   }
@@ -88,7 +109,7 @@ export async function sendFinanceAllocationCommand(
   try {
     body = await response.json()
   } catch {
-    return malformed(snapshot)
+    return signal?.aborted ? noReply(snapshot) : malformed(snapshot)
   }
 
   const decoded = decodeFinanceAllocationCommandResult(body, binding.companyId)
