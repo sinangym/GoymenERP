@@ -5,7 +5,7 @@
  * (FİNANS), `src/shell/capabilities.ts` to the shared-integration owner. A rename on one side alone
  * would make the shell quietly stop mounting a screen the server has granted.
  *
- * The lane declares SEVEN ids but only FIVE routes: the approval (Ö4) and the close (Ö5) are controls
+ * The lane declares eleven ids but only nine routes: the approval (Ö4) and the close (Ö5) are controls
  * of the M-07 period list, read with `hasCapability` inside that screen. A control in a route table
  * would mount a screen that does not exist, so this test pins their absence as hard as it pins the
  * routes' presence.
@@ -26,7 +26,11 @@ const ROUTED = [
   [CAPABILITY.accountingPeriodsPropose, ACCOUNTING_CAPABILITY.periodsPropose, ACCOUNTING_ROUTE.periodsPropose],
   [CAPABILITY.accountingJournalsList, ACCOUNTING_CAPABILITY.journalsList, ACCOUNTING_ROUTE.journalsList],
   [CAPABILITY.accountingJournalsDetail, ACCOUNTING_CAPABILITY.journalsDetail, ACCOUNTING_ROUTE.journalsDetail],
+  [CAPABILITY.accountingNormalDraftCreate, ACCOUNTING_CAPABILITY.normalDraftCreate, ACCOUNTING_ROUTE.normalDraftCreate],
+  [CAPABILITY.accountingNormalDraftDetail, ACCOUNTING_CAPABILITY.normalDraftDetail, ACCOUNTING_ROUTE.normalDraftDetail],
+  [CAPABILITY.accountingNormalDraftApprove, ACCOUNTING_CAPABILITY.normalDraftApprove, ACCOUNTING_ROUTE.normalDraftApprove],
   [CAPABILITY.accountingPostingQueues, ACCOUNTING_CAPABILITY.postingQueues, ACCOUNTING_ROUTE.postingQueues],
+  [CAPABILITY.accountingTrialBalance, ACCOUNTING_CAPABILITY.trialBalance, ACCOUNTING_ROUTE.trialBalance],
 ] as const
 
 describe('shell ↔ Accounting lane capability ids', () => {
@@ -36,7 +40,7 @@ describe('shell ↔ Accounting lane capability ids', () => {
     }
   })
 
-  it('mounts the five routed ids and NEITHER control', () => {
+  it('mounts the nine routed ids and NEITHER period control', () => {
     const shellIds = (Object.values(CAPABILITY) as string[]).filter((id) => id.startsWith('accounting.'))
     expect([...shellIds].sort()).toEqual([...ROUTED.map(([shellId]) => shellId as string)].sort())
     for (const control of [ACCOUNTING_CAPABILITY.periodsApprove, ACCOUNTING_CAPABILITY.periodsClose]) {
@@ -70,5 +74,9 @@ describe('shell ↔ Accounting lane capability ids', () => {
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.accountingPostingQueues]).toBe('Muhasebe Kontrol')
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.accountingPeriodsPropose]).toBe('')
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.accountingJournalsDetail]).toBe('')
+    expect(CAPABILITY_NAV_LABEL[CAPABILITY.accountingNormalDraftCreate]).toBe('')
+    expect(CAPABILITY_NAV_LABEL[CAPABILITY.accountingNormalDraftDetail]).toBe('')
+    expect(CAPABILITY_NAV_LABEL[CAPABILITY.accountingNormalDraftApprove]).toBe('')
+    expect(CAPABILITY_NAV_LABEL[CAPABILITY.accountingTrialBalance]).toBe('')
   })
 })

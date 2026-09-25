@@ -10,7 +10,7 @@
  * A body that does not match is `null`: the caller treats it as a malformed answer, never as data.
  */
 
-import { isNonNegativeDecimalText } from '../finance/decimalText'
+import { isNonNegativeDecimalText, isPositiveDecimalText } from '../finance/decimalText'
 import { isDateOnly } from '../finance/dateOnly'
 
 export const PERIOD_STATUSES = ['Proposed', 'Open', 'Closed'] as const
@@ -97,6 +97,56 @@ export interface PostingQueues {
   readonly pending: readonly PendingValuationView[]
 }
 
+export const NORMAL_JOURNAL_DRAFT_STATUSES = ['Draft', 'Approved'] as const
+export type NormalJournalDraftStatus = (typeof NORMAL_JOURNAL_DRAFT_STATUSES)[number]
+export type NormalJournalSide = 'Debit' | 'Credit'
+
+export interface NormalJournalDraftLine {
+  readonly lineNumber: number
+  readonly mappingKey: string
+  readonly side: NormalJournalSide
+  readonly accountId: string
+  readonly amount: string
+}
+
+export interface NormalJournalDraft {
+  readonly draftId: string
+  readonly companyId: string
+  readonly version: number
+  readonly status: NormalJournalDraftStatus
+  readonly preparedByUserId: string
+  readonly preparedAtUtc: string
+  readonly approvedByUserId: string | null
+  readonly approvedAtUtc: string | null
+  readonly periodId: string | null
+  readonly postedJournalId: string | null
+  readonly sourceId: string
+  readonly postingPurpose: string
+  readonly postingRuleVersion: string
+  readonly accountPlanSourceVersion: string
+  readonly accountPlanSourceSha256: string
+  readonly currencyId: string
+  readonly transactionDate: string
+  readonly accountingDate: string
+  readonly valueDate: string | null
+  readonly lines: readonly NormalJournalDraftLine[]
+}
+
+export interface CreateNormalJournalDraftLine {
+  readonly accountId: string
+  readonly side: NormalJournalSide
+  readonly amount: string
+}
+
+export interface CreateNormalJournalDraftRequest {
+  readonly draftId: string
+  readonly sourceId: string
+  readonly transactionDate: string
+  readonly accountingDate: string
+  readonly valueDate: string | null
+  readonly lines: readonly CreateNormalJournalDraftLine[]
+}
+
 // ---------------------------------------------------------------------------------
 // Primitive readers
 // ---------------------------------------------------------------------------------
@@ -145,6 +195,89 @@ function isCount(value: unknown, minimum: number): value is number {
 
 function isCursor(value: unknown): value is string | null {
   return value === null || isText(value)
+}
+
+const NORMAL_DRAFT_KEYS = [
+  'draftId',
+  'companyId',
+  'version',
+  'status',
+  'preparedByUserId',
+  'preparedAtUtc',
+  'approvedByUserId',
+  'approvedAtUtc',
+  'periodId',
+  'postedJournalId',
+  'sourceId',
+  'postingPurpose',
+  'postingRuleVersion',
+  'accountPlanSourceVersion',
+  'accountPlanSourceSha256',
+  'currencyId',
+  'transactionDate',
+  'accountingDate',
+  'valueDate',
+  'lines',
+] as const
+
+export function decodeNormalJournalDraft(value: unknown, companyId: string): NormalJournalDraft | null {
+  const v = record(value)
+  if (v === null || !hasExactKeys(v, NORMAL_DRAFT_KEYS) || !Array.isArray(v.lines)) return null
+  if (!isGuid(v.draftId) || v.companyId !== companyId || !isCount(v.version, 1)) return null
+  if (typeof v.status !== 'string' || !(NORMAL_JOURNAL_DRAFT_STATUSES as readonly string[]).includes(v.status)) return null
+  if (!isGuid(v.preparedByUserId) || !isInstant(v.preparedAtUtc)) return null
+  if (!isNullableGuid(v.approvedByUserId) || !isNullableInstant(v.approvedAtUtc)) return null
+  if (!isNullableGuid(v.periodId) || !isNullableGuid(v.postedJournalId)) return null
+  if (!isGuid(v.sourceId) || !isText(v.postingPurpose) || !isText(v.postingRuleVersion)) return null
+  if (!isText(v.accountPlanSourceVersion) || typeof v.accountPlanSourceSha256 !== 'string'
+      || !/^[0-9a-f]{64}$/i.test(v.accountPlanSourceSha256) || !isGuid(v.currencyId)) return null
+  if (!isDate(v.transactionDate) || !isDate(v.accountingDate) || !(v.valueDate === null || isDate(v.valueDate))) return null
+
+  const status = v.status as NormalJournalDraftStatus
+  const unapproved = v.approvedByUserId === null && v.approvedAtUtc === null && v.periodId === null && v.postedJournalId === null
+  const approved = isGuid(v.approvedByUserId) && isInstant(v.approvedAtUtc) && isGuid(v.periodId)
+    && v.postedJournalId === v.draftId
+  if ((status === 'Draft' && !unapproved) || (status === 'Approved' && !approved)) return null
+
+  const lines: NormalJournalDraftLine[] = []
+  for (let index = 0; index < v.lines.length; index += 1) {
+    const line = record(v.lines[index])
+    if (line === null || !hasExactKeys(line, ['lineNumber', 'mappingKey', 'side', 'accountId', 'amount'])) return null
+    if (line.lineNumber !== index + 1 || !isText(line.mappingKey)
+        || (line.side !== 'Debit' && line.side !== 'Credit') || !isGuid(line.accountId)
+        || !isPositiveDecimalText(line.amount)) return null
+    lines.push({
+      lineNumber: line.lineNumber,
+      mappingKey: line.mappingKey,
+      side: line.side,
+      accountId: line.accountId,
+      amount: line.amount,
+    })
+  }
+  if (lines.length < 2) return null
+
+  return {
+    draftId: v.draftId,
+    companyId,
+    version: v.version,
+    status,
+    preparedByUserId: v.preparedByUserId,
+    preparedAtUtc: v.preparedAtUtc,
+    approvedByUserId: v.approvedByUserId,
+    approvedAtUtc: v.approvedAtUtc,
+    periodId: v.periodId,
+    postedJournalId: v.postedJournalId,
+    sourceId: v.sourceId,
+    postingPurpose: v.postingPurpose,
+    postingRuleVersion: v.postingRuleVersion,
+    accountPlanSourceVersion: v.accountPlanSourceVersion,
+    accountPlanSourceSha256: v.accountPlanSourceSha256,
+    currencyId: v.currencyId,
+    transactionDate: v.transactionDate,
+    accountingDate: v.accountingDate,
+    valueDate: v.valueDate,
+    lines,
+  }
 }
 
 // ---------------------------------------------------------------------------------

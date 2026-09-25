@@ -46,13 +46,22 @@ public static class AccountingModuleExtensions
         // registers ISettingsPrerequisiteProvider (the Settings module), never a default here.
         services.AddScoped<AccountingAmountScaleVerifier>();
         services.AddScoped<AccountingStore>();
+        services.AddScoped<AccountingTrialBalanceReader>();
+        services.AddScoped<IAccountingTrialBalanceReadStore>(serviceProvider =>
+            serviceProvider.GetRequiredService<AccountingTrialBalanceReader>());
+        services.AddScoped<AccountingTrialBalanceServiceV1>();
         services.AddScoped<IAccountingPeriodStore>(serviceProvider => serviceProvider.GetRequiredService<AccountingStore>());
         services.AddScoped<IAccountingPostingStore>(serviceProvider => serviceProvider.GetRequiredService<AccountingStore>());
         services.AddScoped<IAccountingCommandLog>(serviceProvider => serviceProvider.GetRequiredService<AccountingStore>());
         services.AddScoped<IAccountingNormalJournalDraftStore>(serviceProvider => serviceProvider.GetRequiredService<AccountingStore>());
         services.TryAddSingleton<NormalJournalPermissionBindingV1>();
+        services.TryAddScoped<INormalJournalDraftServerSourceProviderV1,
+            UnavailableNormalJournalDraftServerSourceProviderV1>();
         services.AddScoped<NormalJournalDraftApprovalPolicyV1>();
         services.AddScoped<NormalJournalDraftServiceV1>();
+        services.AddScoped<INormalJournalDraftLifecycleV1>(serviceProvider =>
+            serviceProvider.GetRequiredService<NormalJournalDraftServiceV1>());
+        services.AddScoped<NormalJournalDraftPublicServiceV1>();
         services.AddScoped<AccountingApiService>();
         return services;
     }

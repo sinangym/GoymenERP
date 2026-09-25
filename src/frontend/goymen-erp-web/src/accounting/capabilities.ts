@@ -25,8 +25,16 @@ export const ACCOUNTING_CAPABILITY = {
   journalsList: 'accounting.journals.list',
   /** M-04 — one journal, read-only. */
   journalsDetail: 'accounting.journals.detail',
+  /** ACC-V1 — create a normal journal draft from server-approved accounting sources. */
+  normalDraftCreate: 'accounting.normal-journal-drafts.create',
+  /** ACC-V1 — reopen a draft prepared by the current user. */
+  normalDraftDetail: 'accounting.normal-journal-drafts.detail',
+  /** ACC-V1 — read and approve a company draft with the narrow approval permission. */
+  normalDraftApprove: 'accounting.normal-journal-drafts.approve',
   /** M-01 Muhasebe Kontrol Merkezi — the posting queues, read-only. */
   postingQueues: 'accounting.posting-queues',
+  /** M-06 Mizan — posted journal aggregates, read-only. */
+  trialBalance: 'accounting.trial-balance',
 } as const
 
 export type AccountingCapabilityId = (typeof ACCOUNTING_CAPABILITY)[keyof typeof ACCOUNTING_CAPABILITY]
@@ -37,10 +45,20 @@ export const ACCOUNTING_ROUTE = {
   periodsPropose: '/muhasebe/donemler/yeni',
   journalsList: '/muhasebe/fisler',
   journalsDetail: '/muhasebe/fisler/:journalId',
+  normalDraftCreate: '/muhasebe/normal-fisler/yeni',
+  normalDraftDetail: '/muhasebe/normal-fisler/:draftId',
+  normalDraftApprove: '/muhasebe/normal-fis-onay/:draftId',
   postingQueues: '/muhasebe/kontrol',
+  trialBalance: '/muhasebe/mizan',
 } as const
 
 export const journalDetailPath = (journalId: string) => `/muhasebe/fisler/${encodeURIComponent(journalId)}`
+
+export const normalDraftDetailPath = (draftId: string) =>
+  `/muhasebe/normal-fisler/${encodeURIComponent(draftId)}`
+
+export const normalDraftApprovalPath = (draftId: string) =>
+  `/muhasebe/normal-fis-onay/${encodeURIComponent(draftId)}`
 
 export const periodJournalsPath = (periodId: string) =>
   `/muhasebe/fisler?${new URLSearchParams({ periodId }).toString()}`

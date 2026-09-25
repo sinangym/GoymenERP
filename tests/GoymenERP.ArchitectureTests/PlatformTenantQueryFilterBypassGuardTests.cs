@@ -133,7 +133,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         {
             // accounting
             ["tools/relational_inventory/accounting.txt"] =
-                "960437ec7cb458503c14a3b5fdf6aa29204a614136208a7d728e781c9f3ab885",
+                "2d1b1df4ccfef1e4360c298263051c6f9a72301f785d42eb77f85f7f05184457",
 
             // counterparty
             ["tools/relational_inventory/counterparty.txt"] =
@@ -157,7 +157,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // manufacturing
             ["tools/relational_inventory/manufacturing.txt"] =
-                "55d648d35c15af18fe93bc777ab096319faba8175d420dace0c2d791b53c9898",
+                "ef13047b4db55139a11c67e66e5e92e21d998968b8ece96d1f0d8faae276b9a3",
 
             // organization
             ["tools/relational_inventory/organization.txt"] =
@@ -274,6 +274,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + "FinanceOpenItemSourceAdmissionService.cs";
     private const string ReviewedManufacturingInventoryInputIssueHostPath =
         "src/backend/GoymenERP.Api/ManufacturingRuntime/ManufacturingInventoryInputIssueHost.cs";
+    private const string ReviewedManufacturingInventoryReturnOutputHostPath =
+        "src/backend/GoymenERP.Api/ManufacturingRuntime/ManufacturingInventoryReturnOutputHost.cs";
     private static readonly IReadOnlyDictionary<string, (string ContextTypeName, int ExpectedCount)>
         ReviewedRuntimeContextConstructions =
             new Dictionary<string, (string ContextTypeName, int ExpectedCount)>(StringComparer.Ordinal)
@@ -441,6 +443,16 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                             ["Microsoft.Data.SqlClient"] = 1,
                             ["GetDbConnection"] = 1
                         }),
+                // Return/output uses the same reviewed borrowed-transaction boundary but obtains both the
+                // Inventory connection and current parent-label truth before constructing one Manufacturing context.
+                [ReviewedManufacturingInventoryReturnOutputHostPath] =
+                    new(
+                        "05d4636176e6ee04bd4fca106c9f9c3771fd27ce1ea52f8aed1f1cc6ffad543f",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1,
+                            ["GetDbConnection"] = 2
+                        }),
                 // INV-2 (#293): the SqlClient namespace only to recognise a unique-key violation
                 // (SqlException 2601/2627) after SaveChanges, as the Idempotency terminal store does.
                 // No connection, command or raw SQL. Re-fingerprinted for #333 (#324 P3-1): a lot/label
@@ -485,7 +497,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Accounting.Infrastructure/"
                  + "AccountingModuleExtensions.cs"] =
                     new(
-                        "1f412f0f590beefcd97af20fa484d02fd1f641f2c4d228976bfffdbe27eeb8f2",
+                        "e165e9022ef082f582da10433fcbe1e096bf15764bcbdc176bf99c4d6690ae3f",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
