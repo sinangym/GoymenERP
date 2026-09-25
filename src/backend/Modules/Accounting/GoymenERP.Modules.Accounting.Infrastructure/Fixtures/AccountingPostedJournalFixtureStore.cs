@@ -63,7 +63,7 @@ public static class AccountingPostedJournalFixture
     public const string FixturePermissionCode = "fixture.acc01.posted-journal";
     public const string FixtureRoleCode = "SENTETIK-ACC01-FIXTURE";
 
-    public static PostingRequest Request() => new(
+    public static PostingRequest Request() => new PostingRequest(
         Consumer,
         MessageId,
         JournalId,
@@ -76,7 +76,7 @@ public static class AccountingPostedJournalFixture
             new ProposedLine("sentetik-credit", new AccountRef(CompanyId, CreditAccountId), PostingSide.Credit, Amount),
         ]);
 
-    public static AccountingCommandMetadata Metadata() => new(
+    public static AccountingCommandMetadata Metadata() => new AccountingCommandMetadata(
         FixtureActorId.ToString("D"),
         FixturePermissionCode,
         [FixtureRoleCode],
