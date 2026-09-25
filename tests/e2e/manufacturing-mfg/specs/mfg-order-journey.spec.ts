@@ -46,6 +46,22 @@ async function asActor(
   return rewritten
 }
 
+/** Keeps one route installed while a multi-actor journey changes its bound Development identity. */
+async function bindActors(context: BrowserContext, initialActor: string) {
+  const rewritten = new Set<Request>()
+  let actor = initialActor
+  await context.route('**/api/v1/**', async (route: Route) => {
+    rewritten.add(route.request())
+    await route.fallback({ headers: { ...route.request().headers(), 'x-development-user': actor } })
+  })
+  return {
+    rewritten,
+    switchTo(nextActor: string) {
+      actor = nextActor
+    },
+  }
+}
+
 interface WorkCenterAnswer {
   readonly id: string
   readonly kind: MfgProcess
@@ -139,7 +155,8 @@ async function fillWip(page: Page, rollId: string, kg: string) {
 
 test.describe('MFG order screen (real API, real SQL)', () => {
   test('each canonical process reaches an Inventory-backed realization and authorized close', async ({ page, context }) => {
-    const rewritten = await asActor(context, env.seed.recorderActor)
+    const actors = await bindActors(context, env.seed.recorderActor)
+    const { rewritten } = actors
     const answered = watchAnswers(page)
     const workCenters = await readCanonicalWorkCenters()
 
@@ -201,8 +218,7 @@ test.describe('MFG order screen (real API, real SQL)', () => {
       })
       await expect(page.getByText('Kaydedildi', { exact: true })).toBeVisible()
 
-      await context.unroute('**/api/v1/**')
-      await asActor(context, env.seed.closerActor, rewritten)
+      actors.switchTo(env.seed.closerActor)
       await openOrder(page, arranged.orderId)
       await expect(page.getByText(process, { exact: true })).toBeVisible()
       const closeResponse = page.waitForResponse((response) =>
@@ -228,8 +244,7 @@ test.describe('MFG order screen (real API, real SQL)', () => {
         }],
       })
 
-      await context.unroute('**/api/v1/**')
-      await asActor(context, env.seed.recorderActor, rewritten)
+      actors.switchTo(env.seed.recorderActor)
     }
     expectEveryAnswerRewritten(answered, rewritten)
   })
