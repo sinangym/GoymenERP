@@ -25,7 +25,7 @@ public sealed class ShellCapabilityModuleAuthorityTests
             [new CounterpartyShellCapabilityProvider(), new OrganizationShellCapabilityProvider(), new ProductShellCapabilityProvider()];
 
         // On failure xUnit prints the actual revision: the constant is never guessed.
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11AndProductV10,
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11AndProductV11,
             ShellCapabilityRegistry.ComputeCandidateRevision(providers));
     }
 
@@ -48,7 +48,7 @@ public sealed class ShellCapabilityModuleAuthorityTests
         {
             "counterparty" => ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetail,
             "counterparty+organization" => ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailAndOrganizationV11,
-            _ => ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11AndProductV10,
+            _ => ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11AndProductV11,
         }, authority);
     }
 
@@ -101,9 +101,9 @@ public sealed class ShellCapabilityModuleAuthorityTests
         using var container = services.BuildServiceProvider();
         var registry = new ShellCapabilityRegistry(container.GetServices<IShellCapabilityProvider>(),
             new ShellCapabilityAuthorityCatalog([authority]));
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11AndProductV10, authority);
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11AndProductV11, authority);
         Assert.Equal(
-            new[] { "product.items.create", "product.items.detail", "product.items.edit", "product.items.list" },
+            new[] { "product.items.activate", "product.items.create", "product.items.detail", "product.items.edit", "product.items.list" },
             registry.Registrations.Where(item => item.Owner == ProductShellCapabilityProvider.OwnerId)
                 .Select(item => item.Declaration.CapabilityId).Order(StringComparer.Ordinal));
         Assert.Contains(registry.Registrations, item => item.Owner == OrganizationShellCapabilityProvider.OwnerId);
