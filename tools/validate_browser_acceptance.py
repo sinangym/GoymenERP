@@ -138,8 +138,8 @@ SUITE_API_EXTENSIONS = {
     "s04": {"issuer": True, "actors": True, "identity": True},
     # ACC-01 (FİNANS, ACC-V0b): a preparer and an approver actor with their Identity users and grants.
     "acc01": {"issuer": False, "actors": True, "identity": True},
-    # L-04 (SİPARİŞ): a preparer, a loader and a reader actor plus the two Sales seed actors, with their grants.
-    "l04": {"issuer": False, "actors": True, "identity": True},
+    # L-04 (SİPARİŞ): the actors plus one non-actor Product issuer materialize the real Product fixture.
+    "l04": {"issuer": True, "actors": True, "identity": True},
     # PUR-01 (SATINALMA): the existing Product issuer plus creator, approver and read-only actors with
     # disposable Identity users and grants. The issuer itself has no actor, role, assignment or grant.
     "pur01": {"issuer": True, "actors": True, "identity": True},
