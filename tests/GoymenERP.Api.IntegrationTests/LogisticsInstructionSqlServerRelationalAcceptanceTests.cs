@@ -330,6 +330,45 @@ public sealed class LogisticsInstructionSqlServerRelationalAcceptanceTests
         Assert.Equal(before, await HostedEffectsAsync(run, fixture, request));
     }
 
+    [SqlServerFact]
+    public async Task Terminal_inventory_conflict_records_one_refusal_replays_and_leaves_no_physical_effect()
+    {
+        await using var run = await Run.StartAsync();
+        var fixture = await SeedHostedShipmentAsync(run, "SYN-LOG5-TERMINAL-REPLAY");
+        var grant = await GrantRealizationAsync(run, $"SYN-LOG5-terminal-replay-{Guid.NewGuid():N}");
+        await using var host = HostedShipmentHost(run, fixture, new HostedAllocationReads(fixture));
+        using var client = HostedClientFor(host, grant.Subject, CompanyA);
+        var first = CreateHostedShipmentRequest(fixture, "2", "terminal-replay");
+        var before = await HostedEffectsAsync(run, fixture, first);
+
+        using var firstResponse = await client.SendAsync(first.Message);
+        Assert.Equal(HttpStatusCode.Conflict, firstResponse.StatusCode);
+        Assert.Contains(InventoryDefiniteShipmentCodesV1.AllocationVersionConflict,
+            await firstResponse.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        var recorded = await HostedEffectsAsync(run, fixture, first);
+        Assert.Equal(before, recorded with { ShipmentAttemptCount = before.ShipmentAttemptCount });
+        Assert.Equal(before.ShipmentAttemptCount + 1, recorded.ShipmentAttemptCount);
+
+        var replay = CreateHostedShipmentRequest(fixture, "2", "terminal-replay",
+            first.ShipmentId, first.MovementId, correlationId: $"SYN-LOG5-replay-{Guid.NewGuid():N}");
+        using var replayResponse = await client.SendAsync(replay.Message);
+        Assert.Equal(HttpStatusCode.Conflict, replayResponse.StatusCode);
+        Assert.Equal("true", Assert.Single(replayResponse.Headers.GetValues("Idempotency-Replayed")));
+        Assert.Equal(first.CorrelationId,
+            Assert.Single(replayResponse.Headers.GetValues("Idempotency-Original-Correlation-Id")));
+        Assert.Contains(InventoryDefiniteShipmentCodesV1.AllocationVersionConflict,
+            await replayResponse.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+
+        var changed = CreateHostedShipmentRequest(fixture, "2", "terminal-replay",
+            first.ShipmentId, first.MovementId, quantity: "1",
+            correlationId: $"SYN-LOG5-changed-{Guid.NewGuid():N}");
+        using var changedResponse = await client.SendAsync(changed.Message);
+        Assert.Equal(HttpStatusCode.Conflict, changedResponse.StatusCode);
+        Assert.Contains(LogisticsProblemCodesV1.SameKeyPayloadMismatch,
+            await changedResponse.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        Assert.Equal(recorded, await HostedEffectsAsync(run, fixture, first));
+    }
+
     // ---- helpers --------------------------------------------------------------------------------
 
     private static async Task<HostedShipmentFixture> SeedHostedShipmentAsync(Run run, string labelCode)
@@ -452,21 +491,25 @@ public sealed class LogisticsInstructionSqlServerRelationalAcceptanceTests
     private static HostedShipmentRequest CreateHostedShipmentRequest(
         HostedShipmentFixture fixture,
         string expectedAllocationVersion,
-        string suffix)
+        string suffix,
+        Guid? shipmentId = null,
+        Guid? movementId = null,
+        string quantity = "2",
+        string? correlationId = null)
     {
-        var shipmentId = Guid.NewGuid();
-        var movementId = Guid.NewGuid();
-        var correlation = $"SYN-LOG5-{suffix}-{Guid.NewGuid():N}";
+        var shipment = shipmentId ?? Guid.NewGuid();
+        var movement = movementId ?? Guid.NewGuid();
+        var correlation = correlationId ?? $"SYN-LOG5-{suffix}-{Guid.NewGuid():N}";
         var message = new HttpRequestMessage(HttpMethod.Post,
             $"{LogisticsEndpoints.InstructionsPath}/{fixture.InstructionId:D}/lines/{fixture.LineId:D}/shipments")
         {
             Content = JsonContent.Create(new RecordShipmentRequest(
-                fixture.InstructionVersion.ToString(), shipmentId, fixture.AllocationId, expectedAllocationVersion,
-                "1", movementId, "2", T0.AddMinutes(10))),
+                fixture.InstructionVersion.ToString(), shipment, fixture.AllocationId, expectedAllocationVersion,
+                "1", movement, quantity, T0.AddMinutes(10))),
         };
         message.Headers.Add("Idempotency-Key", $"SYN-LOG5-{suffix}");
         message.Headers.Add("X-Correlation-Id", correlation);
-        return new(message, shipmentId, movementId, correlation);
+        return new(message, shipment, movement, correlation);
     }
 
     private static async Task<HostedShipmentEffects> HostedEffectsAsync(

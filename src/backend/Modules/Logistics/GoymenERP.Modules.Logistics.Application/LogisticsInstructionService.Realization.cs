@@ -19,7 +19,8 @@ public sealed partial class LogisticsInstructionService
         ValidateRealization(() => LogisticsRealizationJson.Validate(request), instructionId, lineId);
         var envelope = Envelope(scope, metadata, permission!);
         var hash = LogisticsRequestHash.Compute(LogisticsCommands.RecordShipmentV1, instructionId, new { lineId, request });
-        var replay = await FindReplayAsync(scope, permission, envelope, hash, LogisticsCommands.RecordShipmentV1, cancellationToken);
+        var replay = await FindRealizationReplayAsync(scope, permission, envelope, hash,
+            LogisticsCommands.RecordShipmentV1, cancellationToken);
         if (replay is not null) return Replayed(replay);
         var runner = realization ?? throw new LogisticsInstructionServiceException(503, LogisticsRealizationCodesV1.Unavailable);
 
@@ -27,7 +28,8 @@ public sealed partial class LogisticsInstructionService
             () => runner.ExecuteShipmentAsync(scope.CompanyId, async (stock, token) =>
             {
                 // A winner may have committed between the outer read and the transaction opening.
-                var won = await FindReplayAsync(scope, permission, envelope, hash, LogisticsCommands.RecordShipmentV1, token);
+                var won = await FindRealizationReplayAsync(scope, permission, envelope, hash,
+                    LogisticsCommands.RecordShipmentV1, token);
                 if (won is not null) return Replayed(won);
                 var stored = await ReadRealizationInstructionAsync(scope, permission, instructionId, token);
                 var line = stored.Instruction.Lines.SingleOrDefault(candidate => candidate.Id == lineId)
@@ -87,14 +89,16 @@ public sealed partial class LogisticsInstructionService
         ValidateRealization(() => LogisticsRealizationJson.Validate(request), instructionId, lineId);
         var envelope = Envelope(scope, metadata, permission!);
         var hash = LogisticsRequestHash.Compute(LogisticsCommands.RecordDeliveryV1, instructionId, new { lineId, request });
-        var replay = await FindReplayAsync(scope, permission, envelope, hash, LogisticsCommands.RecordDeliveryV1, cancellationToken);
+        var replay = await FindRealizationReplayAsync(scope, permission, envelope, hash,
+            LogisticsCommands.RecordDeliveryV1, cancellationToken);
         if (replay is not null) return Replayed(replay);
         var runner = realization ?? throw new LogisticsInstructionServiceException(503, LogisticsRealizationCodesV1.Unavailable);
 
         return await RunRealizationAsync(scope, permission, envelope, hash, LogisticsCommands.RecordDeliveryV1,
             () => runner.ExecuteDeliveryAsync(scope.CompanyId, async token =>
             {
-                var won = await FindReplayAsync(scope, permission, envelope, hash, LogisticsCommands.RecordDeliveryV1, token);
+                var won = await FindRealizationReplayAsync(scope, permission, envelope, hash,
+                    LogisticsCommands.RecordDeliveryV1, token);
                 if (won is not null) return Replayed(won);
                 var stored = await ReadRealizationInstructionAsync(scope, permission, instructionId, token);
                 var line = stored.Instruction.Lines.SingleOrDefault(candidate => candidate.Id == lineId)
@@ -196,7 +200,7 @@ public sealed partial class LogisticsInstructionService
         }
         catch (LogisticsStoreException exception) when (exception.Code == LogisticsStoreCodes.ConcurrentChange)
         {
-            var won = await FindReplayAsync(scope, permission, envelope, hash, command, cancellationToken);
+            var won = await FindRealizationReplayAsync(scope, permission, envelope, hash, command, cancellationToken);
             return won is null ? throw Store(exception) : Replayed(won);
         }
         catch (LogisticsStoreException exception) { throw Store(exception); }
@@ -214,12 +218,26 @@ public sealed partial class LogisticsInstructionService
         }
         catch (LogisticsStoreException exception) when (exception.Code == LogisticsStoreCodes.ConcurrentChange)
         {
-            var won = await FindReplayAsync(scope, permission, envelope, hash, command, cancellationToken);
+            var won = await FindRealizationReplayAsync(scope, permission, envelope, hash, command, cancellationToken);
             return won is null ? throw Store(exception) : Replayed(won);
         }
         catch (LogisticsStoreException exception) { throw Store(exception); }
 
         throw new LogisticsInstructionServiceException(terminal.Status, terminal.Code, terminal.Errors);
+    }
+
+    private async Task<LogisticsReplay?> FindRealizationReplayAsync(Scope scope, string? permission,
+        LogisticsWriteEnvelope envelope, string hash, string command, CancellationToken cancellationToken)
+    {
+        if (string.Equals(command, LogisticsCommands.RecordShipmentV1, StringComparison.Ordinal))
+        {
+            // Shipment replay is the same protected operation as first execution. Revalidate the
+            // Inventory half before reading any success, refusal or payload-mismatch oracle.
+            await RequireStillAsync(scope,
+                LogisticsRealizationDependenciesV1.InventoryPhysicalAllocationWritePermission, cancellationToken);
+        }
+
+        return await FindReplayAsync(scope, permission, envelope, hash, command, cancellationToken);
     }
 
     private async Task RequireTerminalRealizationAuthorityAsync(Scope scope, string? permission, string command,

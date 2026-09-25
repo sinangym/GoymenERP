@@ -49,6 +49,30 @@ public sealed partial class LogisticsInstructionServiceTests
         Assert.Equal((0, 0, 0), (world.Accounts.Calls, world.OrderLines.Calls, world.Settings.Calls));
     }
 
+    [Fact]
+    public async Task Shipment_success_replay_and_mismatch_require_inventory_authority_while_delivery_replay_does_not()
+    {
+        var (world, runner, id, line) = await LoadedWorldAsync();
+        var shipment = Shipment();
+        await world.Service(runner).RecordShipmentAsync(id, line, shipment, Metadata("ship-authority"));
+        var delivery = new RecordDeliveryRequest("5", Guid.NewGuid(), shipment.ShipmentId, "1", EventTime.AddMinutes(5));
+        await world.Service(runner).RecordDeliveryAsync(id, line, delivery, Metadata("delivery-authority"));
+        world.Authority.DeniedPermission =
+            LogisticsRealizationDependenciesV1.InventoryPhysicalAllocationWritePermission;
+
+        var replay = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() =>
+            world.Service(runner).RecordShipmentAsync(id, line, shipment, Metadata("ship-authority", correlation: "retry")));
+        var mismatch = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() =>
+            world.Service(runner).RecordShipmentAsync(id, line, shipment with { Quantity = "1" },
+                Metadata("ship-authority", correlation: "changed")));
+        var deliveryReplay = await world.Service(runner).RecordDeliveryAsync(id, line, delivery,
+            Metadata("delivery-authority", correlation: "retry"));
+
+        Assert.Equal((403, 403), (replay.Status, mismatch.Status));
+        Assert.True(deliveryReplay.IsReplay);
+        Assert.Single(runner.Stock.Requests);
+    }
+
     [Theory]
     [InlineData("3", "1", LogisticsProblemCodesV1.VersionConflict)]
     [InlineData("4", "5.001", LogisticsRealizationCodesV1.ShipmentExceedsLoaded)]
@@ -121,6 +145,29 @@ public sealed partial class LogisticsInstructionServiceTests
         Assert.Empty(runner.Stock.Requests);
         Assert.Equal((1, 1), (runner.ShipmentRuns, runner.Commits));
         Assert.Equal("4", (await world.Service().GetInstructionDetailAsync(id)).Instruction.Version);
+    }
+
+    [Fact]
+    public async Task Shipment_terminal_refusal_replay_and_mismatch_require_inventory_authority()
+    {
+        var (world, runner, id, line) = await LoadedWorldAsync();
+        runner.Stock.TerminalFailureCode = "inventory_allocation_version_conflict";
+        var request = Shipment();
+        await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() =>
+            world.Service(runner).RecordShipmentAsync(id, line, request, Metadata("inventory-authority-replay")));
+        world.Authority.DeniedPermission =
+            LogisticsRealizationDependenciesV1.InventoryPhysicalAllocationWritePermission;
+
+        var replay = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() =>
+            world.Service(runner).RecordShipmentAsync(id, line, request,
+                Metadata("inventory-authority-replay", correlation: "retry")));
+        var mismatch = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() =>
+            world.Service(runner).RecordShipmentAsync(id, line, request with { Quantity = "1" },
+                Metadata("inventory-authority-replay", correlation: "changed")));
+
+        Assert.Equal((403, 403), (replay.Status, mismatch.Status));
+        Assert.Single(world.Store.Refusals);
+        Assert.Equal((1, 1), (runner.ShipmentRuns, runner.Commits));
     }
 
     [Fact]
