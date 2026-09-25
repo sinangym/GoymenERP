@@ -1,7 +1,7 @@
 import type { PurchaseOrderDetail, PurchaseOrderLine } from './contract'
 
-/** UI mount identity only, NOT a permission or grant. Central must publish it against the accepted receipt action. */
-export const PURCHASE_GOODS_RECEIPT_CAPABILITY = 'purchasing.orders.goods-receipt'
+/** Exact server-published capability id used only to fail-closed the receipt control mount. */
+export const PURCHASE_GOODS_RECEIPT_CAPABILITY = 'purchasing.goods-receipts.record'
 
 export interface GoodsReceiptRequest {
   readonly expectedPurchaseOrderVersion: string
