@@ -13,11 +13,11 @@ namespace GoymenERP.Accounting.UnitTests;
 public sealed class AccountingShellCapabilityProviderTests
 {
     [Fact]
-    public void Only_the_screens_acc01_walked_are_published_and_the_journal_detail_stays_staged()
+    public void Only_accepted_screens_are_published_and_the_journal_detail_and_trial_balance_stay_staged()
     {
         var declarations = new AccountingShellCapabilityProvider().GetDeclarations();
 
-        Assert.Equal(10, declarations.Count);
+        Assert.Equal(11, declarations.Count);
         // ACC-V0c: the flip publishes exactly what the acc01 acceptance walked — the period list, its propose
         // screen, the approve and close controls, the M-04 list and the M-01 queues.
         Assert.Equal(
@@ -39,6 +39,9 @@ public sealed class AccountingShellCapabilityProviderTests
         var detail = Assert.Single(declarations,
             item => item.CapabilityId == AccountingShellCapabilityProvider.JournalDetailCapabilityId);
         Assert.False(detail.ImplementationAvailable);
+        var trialBalance = Assert.Single(declarations,
+            item => item.CapabilityId == AccountingShellCapabilityProvider.TrialBalanceCapabilityId);
+        Assert.False(trialBalance.ImplementationAvailable);
     }
 
     [Fact]
@@ -47,7 +50,7 @@ public sealed class AccountingShellCapabilityProviderTests
         var provider = new AccountingShellCapabilityProvider();
         var byId = provider.GetDeclarations().ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
 
-        Assert.Equal(("ACCOUNTING", "1.1"), (provider.Owner, provider.ContractVersion));
+        Assert.Equal(("ACCOUNTING", "1.2"), (provider.Owner, provider.ContractVersion));
         (string Capability, string Route, string Path, string Screen, ShellCapabilityRoutePrecedence Precedence, string[] Permissions)[] expected =
         [
             ("accounting.periods.list", "accounting.periods", "/muhasebe/donemler", "M-07", ShellCapabilityRoutePrecedence.Static,
@@ -70,6 +73,8 @@ public sealed class AccountingShellCapabilityProviderTests
                 ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [NormalJournalPermissionNamesV1.DraftApprove]),
             ("accounting.posting-queues", "accounting.posting-queues", "/muhasebe/kontrol", "M-01",
                 ShellCapabilityRoutePrecedence.Static, [AccountingPermissionManifestV1.PostingQueuesRead]),
+            ("accounting.trial-balance", "accounting.trial-balance", "/muhasebe/mizan", "M-06",
+                ShellCapabilityRoutePrecedence.Static, [AccountingPermissionManifestV1.JournalsRead]),
         ];
 
         Assert.Equal(expected.Select(item => item.Capability).Order(StringComparer.Ordinal), byId.Keys.Order(StringComparer.Ordinal));
@@ -118,7 +123,7 @@ public sealed class AccountingShellCapabilityProviderTests
     {
         var routes = new AccountingShellCapabilityProvider().GetDeclarations().Where(item => item.ParentCapabilityId is null).ToArray();
 
-        Assert.Equal(["M-01", "M-04", "M-04-APPROVE", "M-04-DETAIL", "M-04-DRAFT", "M-04-NEW", "M-07", "M-07-NEW"], routes.Select(item => item.ScreenId).Order(StringComparer.Ordinal));
+        Assert.Equal(["M-01", "M-04", "M-04-APPROVE", "M-04-DETAIL", "M-04-DRAFT", "M-04-NEW", "M-06", "M-07", "M-07-NEW"], routes.Select(item => item.ScreenId).Order(StringComparer.Ordinal));
     }
 
     [Fact]

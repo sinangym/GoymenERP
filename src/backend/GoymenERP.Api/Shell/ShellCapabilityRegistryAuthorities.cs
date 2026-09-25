@@ -164,8 +164,8 @@ internal static class ShellCapabilityRegistryAuthorities
     // with Accounting staged (the old half), and the same ACC-V0c model placed back at Organization 1.0
     // reproduces this branch's own sha256:OOlEtnDx… (the new half, which no accepted constant covered).
     // ACC-V1: Accounting 1.1 adds the published normal-draft create, own-detail and approval routes.
-    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV12PublishedManufacturingV12PublishedLogisticsV10PublishedPurchasingV13AndPublishedAccountingV11 =
-        "sha256:F7Koo_kqxgKHEVXwh50Qd9kOMGN4e6WwgSLt3EIiK_A";
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV12PublishedManufacturingV12PublishedLogisticsV10PublishedPurchasingV13AndPublishedAccountingV12 =
+        "sha256:lCCWcI1bDxv6IaEKrP94u1Z7T6UAWtTlrie-0rNeQEA";
 
     // R14: Inventory 1.0 publishes one opening-stock workspace after the existing normal tuple.
     // The capability reuses the accepted company-wide permission; publication grants nothing.
@@ -175,8 +175,8 @@ internal static class ShellCapabilityRegistryAuthorities
     // ST-01 / S04 allocation: Inventory 1.2 publishes the stock-position read and its physical-allocation
     // child control beside the opening-stock workspace. The control preserves the parent's route/context/scope
     // and adds only the existing write permission; publication grants nothing.
-    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV12PublishedManufacturingV12PublishedLogisticsV10PublishedPurchasingV13PublishedAccountingV11AndPublishedInventoryV12 =
-        "sha256:Df006Igk7Dgm7Y2pEhQlYy2sUE-twM1yocFxo1k14tU";
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV12PublishedManufacturingV12PublishedLogisticsV10PublishedPurchasingV13PublishedAccountingV12AndPublishedInventoryV12 =
+        "sha256:VQpDsP6DgKcZlQOBYAWGW75nX1P9-mzyEsOV7kwM8mE";
 
     internal const string CounterpartyV15PublishedListCreateAndDetail =
         "sha256:UBHnivzhe_dp5f7vU7dP5n7HG-P8XYBGhxvD_OjMSnw";

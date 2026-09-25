@@ -33,6 +33,8 @@ export const ACCOUNTING_CAPABILITY = {
   normalDraftApprove: 'accounting.normal-journal-drafts.approve',
   /** M-01 Muhasebe Kontrol Merkezi — the posting queues, read-only. */
   postingQueues: 'accounting.posting-queues',
+  /** M-06 Mizan — posted journal aggregates, read-only. */
+  trialBalance: 'accounting.trial-balance',
 } as const
 
 export type AccountingCapabilityId = (typeof ACCOUNTING_CAPABILITY)[keyof typeof ACCOUNTING_CAPABILITY]
@@ -47,6 +49,7 @@ export const ACCOUNTING_ROUTE = {
   normalDraftDetail: '/muhasebe/normal-fisler/:draftId',
   normalDraftApprove: '/muhasebe/normal-fis-onay/:draftId',
   postingQueues: '/muhasebe/kontrol',
+  trialBalance: '/muhasebe/mizan',
 } as const
 
 export const journalDetailPath = (journalId: string) => `/muhasebe/fisler/${encodeURIComponent(journalId)}`

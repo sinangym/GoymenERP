@@ -86,8 +86,6 @@ async function readHistory(request: APIRequestContext): Promise<RevisionHistory>
 }
 
 test('S04-08 one approved record is priced in the form, reopened as Rev.1, and its past-approved withdrawal is a terminal replayed refusal', async ({ page, request }) => {
-  await openDraft(page, seed.preparerActor)
-  await expect(page.getByTestId('sales-draft-approval-state')).toHaveText('Onaylı')
   const approved = await readDetail(request)
   const selectedPriceUnitId = approved.lines[0].orderUnitId
   const reviserIdentity = approved.approval.submittedBy
@@ -97,6 +95,47 @@ test('S04-08 one approved record is priced in the form, reopened as Rev.1, and i
   expect(approverIdentity).not.toBeNull()
   expect(approverIdentity).not.toBe('')
 
+  // The ordinary creator can create/read/decide, but does not hold the separate price-write
+  // permission. The server rejects the direct command and the shell withholds the control; neither
+  // the create nor approve permission silently confers commercial revision authority.
+  const forbiddenPayload = {
+    expectedVersion: approved.draft.version,
+    lines: approved.lines.map((line, index) => ({
+      lineId: line.lineId,
+      unitPrice: index === 0 ? '13.00' : null,
+      priceUnitId: index === 0 ? selectedPriceUnitId : null,
+      discountPercent: index === 0 ? '5' : null,
+    })),
+  }
+  const forbidden = await request.post(
+    `${apiBaseUrl}/api/v1/sales/drafts/${seed.draftId}/commercial-revision`,
+    {
+      headers: commandHeaders(
+        seed.ordinaryCreatorActor,
+        `s04-price-forbidden-${testedCommit.slice(0, 12)}`,
+        `s04-price-forbidden-correlation-${testedCommit.slice(0, 12)}`,
+      ),
+      data: forbiddenPayload,
+    },
+  )
+  expect(forbidden.status()).toBe(403)
+  const detailAfterForbidden = await readDetail(request)
+  expect(detailAfterForbidden).toMatchObject({
+    draft: {
+      id: seed.draftId,
+      version: approved.draft.version,
+      revision: approved.draft.revision,
+      approvalState: 'Approved',
+    },
+  })
+  expect(detailAfterForbidden.lines).toEqual(approved.lines)
+
+  await openDraft(page, seed.ordinaryCreatorActor)
+  await expect(page.getByTestId('sales-draft-approval-state')).toHaveText('Onaylı')
+  await expect(page.getByTestId('sales-price-revision-form')).toHaveCount(0)
+
+  await openDraft(page, seed.preparerActor)
+  await expect(page.getByTestId('sales-draft-approval-state')).toHaveText('Onaylı')
   const form = page.getByTestId('sales-price-revision-form')
   await expect(form).toBeVisible()
   await expect(form.getByRole('heading', { name: 'Fiyat ve iskonto revizyonu' })).toBeVisible()
