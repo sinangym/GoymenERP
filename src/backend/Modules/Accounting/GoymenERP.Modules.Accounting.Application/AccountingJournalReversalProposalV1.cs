@@ -41,6 +41,8 @@ public sealed record AccountingJournalReversalProposalV1(
 
 public static class AccountingJournalReversalPolicyV1
 {
+    public const int ReasonMaximumLength = 1024;
+
     public static AccountingJournalReversalProposalV1 Propose(
         Guid companyId,
         Guid proposerId,
@@ -60,7 +62,7 @@ public static class AccountingJournalReversalPolicyV1
         }
 
         RequireUtc(proposedAtUtc, "proposedAtUtc");
-        var reason = RequireText(request.Reason, "reason");
+        var reason = RequireText(request.Reason, "reason", ReasonMaximumLength);
 
         return new AccountingJournalReversalProposalV1(
             request.ProposalId,
@@ -113,7 +115,7 @@ public static class AccountingJournalReversalPolicyV1
         DateTimeOffset decidedAtUtc)
     {
         ValidateDecision(proposal, request, checkerId, decidedAtUtc);
-        var reason = RequireText(request.Reason, "reason");
+        var reason = RequireText(request.Reason, "reason", ReasonMaximumLength);
 
         return proposal with
         {
@@ -187,10 +189,10 @@ public static class AccountingJournalReversalPolicyV1
         }
     }
 
-    private static string RequireText(string? value, string field)
+    private static string RequireText(string? value, string field, int maximumLength)
     {
         var normalized = value?.Trim();
-        if (string.IsNullOrWhiteSpace(normalized))
+        if (string.IsNullOrWhiteSpace(normalized) || normalized.Length > maximumLength)
         {
             throw Invalid(field);
         }
