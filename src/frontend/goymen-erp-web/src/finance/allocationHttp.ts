@@ -19,14 +19,22 @@ export type FinanceAllocationHttpResult =
 function malformed(snapshot: FinanceAllocationWireSnapshot): FinanceAllocationHttpResult {
   return {
     kind: 'settlement',
-    settlement: classifyAllocationReply({ kind: 'body', body: undefined }, snapshot.binding.scope, snapshot.request),
+    settlement: classifyAllocationReply(
+      { kind: 'body', body: undefined },
+      { companyId: snapshot.binding.companyId },
+      snapshot.request,
+    ),
   }
 }
 
 function noReply(snapshot: FinanceAllocationWireSnapshot): FinanceAllocationHttpResult {
   return {
     kind: 'settlement',
-    settlement: classifyAllocationReply({ kind: 'no-reply' }, snapshot.binding.scope, snapshot.request),
+    settlement: classifyAllocationReply(
+      { kind: 'no-reply' },
+      { companyId: snapshot.binding.companyId },
+      snapshot.request,
+    ),
   }
 }
 
@@ -37,13 +45,13 @@ export async function sendFinanceAllocationCommand(
   const { key, binding, request } = snapshot
   if (
     key.trim().length === 0
-    || !isBoundUuid(binding.scope.companyId)
-    || (request.kind === 'release' && !isBoundUuid(request.body.allocationId))
+    || !isBoundUuid(binding.companyId)
+    || (request.operation === 'allocation-release' && !isBoundUuid(request.body.allocationId))
   ) {
     return malformed(snapshot)
   }
 
-  const path = request.kind === 'create'
+  const path = request.operation === 'allocation-create'
     ? '/finance/allocations'
     : `/finance/allocations/${encodeURIComponent(request.body.allocationId)}/release`
 
@@ -53,7 +61,7 @@ export async function sendFinanceAllocationCommand(
       method: 'POST',
       headers: {
         ...devHeaders(),
-        'X-Company-Id': binding.scope.companyId,
+        'X-Company-Id': binding.companyId,
         'Idempotency-Key': key,
         'Content-Type': 'application/json',
         Accept: 'application/json',
@@ -83,7 +91,7 @@ export async function sendFinanceAllocationCommand(
     return malformed(snapshot)
   }
 
-  const decoded = decodeFinanceAllocationCommandResult(body)
+  const decoded = decodeFinanceAllocationCommandResult(body, binding.companyId)
   if (!decoded.ok) return malformed(snapshot)
   const expectedOutcome = response.status === 200
     ? 'Succeeded'
@@ -97,6 +105,6 @@ export async function sendFinanceAllocationCommand(
 
   return {
     kind: 'settlement',
-    settlement: classifyAllocationReply({ kind: 'body', body }, binding.scope, request),
+    settlement: classifyAllocationReply({ kind: 'body', body }, { companyId: binding.companyId }, request),
   }
 }

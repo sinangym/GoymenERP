@@ -8,15 +8,16 @@ const ALLOCATION_ID = '22222222-2222-2222-2222-222222222222'
 const snapshot: FinanceAllocationWireSnapshot = {
   key: 'allocation-key-1',
   binding: {
-    scope: { companyId: COMPANY_ID },
+    companyId: COMPANY_ID,
     actorId: 'finance-user',
     sessionEpoch: 1,
   },
   request: {
-    kind: 'release',
+    operation: 'allocation-release',
     body: {
       allocationId: ALLOCATION_ID,
-      expectedVersion: 'version-1',
+      expectedAllocationVersion: 'version-1',
+      expectedOpenItemVersion: 'item-version-1',
       reason: 'Yanlis dagitim',
     },
   },
@@ -57,7 +58,7 @@ describe('sendFinanceAllocationCommand', () => {
     expect(result.kind).toBe('settlement')
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(fetchMock).toHaveBeenCalledWith(
-      `/api/finance/allocations/${ALLOCATION_ID}/release`,
+      `/api/v1/finance/allocations/${ALLOCATION_ID}/release`,
       expect.objectContaining({
         method: 'POST',
         headers: expect.objectContaining({
@@ -73,13 +74,15 @@ describe('sendFinanceAllocationCommand', () => {
     const createSnapshot: FinanceAllocationWireSnapshot = {
       ...snapshot,
       request: {
-        kind: 'create',
+        operation: 'allocation-create',
         body: {
+          allocationId: ALLOCATION_ID,
           sourceId: '33333333-3333-3333-3333-333333333333',
           openItemId: '44444444-4444-4444-4444-444444444444',
           amount: '125.50',
           expectedSourceVersion: 'source-version-1',
           expectedOpenItemVersion: 'item-version-1',
+          reason: 'Fatura tahsilati',
         },
       },
     }
@@ -93,7 +96,7 @@ describe('sendFinanceAllocationCommand', () => {
     await sendFinanceAllocationCommand(createSnapshot)
 
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/finance/allocations',
+      '/api/v1/finance/allocations',
       expect.objectContaining({ body: JSON.stringify(createSnapshot.request.body) }),
     )
   })
@@ -111,25 +114,25 @@ describe('sendFinanceAllocationCommand', () => {
   it('classifies a transport failure as unknown without changing the attempt', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('network unavailable')))
     const result = await sendFinanceAllocationCommand(snapshot)
-    expect(result).toMatchObject({ kind: 'settlement', settlement: { state: 'unknown' } })
+    expect(result).toMatchObject({ kind: 'settlement', settlement: { type: 'unknown' } })
   })
 
   it('classifies a server failure as unknown', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 503 })))
     const result = await sendFinanceAllocationCommand(snapshot)
-    expect(result).toMatchObject({ kind: 'settlement', settlement: { state: 'unknown' } })
+    expect(result).toMatchObject({ kind: 'settlement', settlement: { type: 'unknown' } })
   })
 
   it('rejects status and command-outcome disagreement as malformed', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response(200, commandResult('VersionConflict'))))
     const result = await sendFinanceAllocationCommand(snapshot)
-    expect(result).toMatchObject({ kind: 'settlement', settlement: { state: 'malformed' } })
+    expect(result).toMatchObject({ kind: 'settlement', settlement: { type: 'unknown', reason: 'malformed' } })
   })
 
   it('passes a coherent version conflict to the command classifier', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response(409, commandResult('VersionConflict'))))
     const result = await sendFinanceAllocationCommand(snapshot)
-    expect(result).toMatchObject({ kind: 'settlement', settlement: { state: 'refused' } })
+    expect(result).toMatchObject({ kind: 'settlement', settlement: { type: 'refused' } })
   })
 
   it('passes validation failure issues to the command classifier', async () => {
@@ -138,7 +141,7 @@ describe('sendFinanceAllocationCommand', () => {
       issues: [{ field: 'amount', code: 'finance_allocation_amount_exceeds_open_item' }],
     })))
     const result = await sendFinanceAllocationCommand(snapshot)
-    expect(result).toMatchObject({ kind: 'settlement', settlement: { state: 'refused' } })
+    expect(result).toMatchObject({ kind: 'settlement', settlement: { type: 'refused' } })
   })
 
   it('does not send a request for an unbound company id', async () => {
@@ -146,10 +149,10 @@ describe('sendFinanceAllocationCommand', () => {
     vi.stubGlobal('fetch', fetchMock)
     const result = await sendFinanceAllocationCommand({
       ...snapshot,
-      binding: { ...snapshot.binding, scope: { companyId: '00000000-0000-0000-0000-000000000000' } },
+      binding: { ...snapshot.binding, companyId: '00000000-0000-0000-0000-000000000000' },
     })
     expect(fetchMock).not.toHaveBeenCalled()
-    expect(result).toMatchObject({ kind: 'settlement', settlement: { state: 'malformed' } })
+    expect(result).toMatchObject({ kind: 'settlement', settlement: { type: 'unknown', reason: 'malformed' } })
   })
 
   it('does not send a release request for an unbound allocation id', async () => {
@@ -157,10 +160,18 @@ describe('sendFinanceAllocationCommand', () => {
     vi.stubGlobal('fetch', fetchMock)
     const result = await sendFinanceAllocationCommand({
       ...snapshot,
-      request: { ...snapshot.request, body: { ...snapshot.request.body, allocationId: 'not-a-guid' } },
+      request: {
+        operation: 'allocation-release',
+        body: {
+          allocationId: 'not-a-guid',
+          expectedAllocationVersion: 'version-1',
+          expectedOpenItemVersion: 'item-version-1',
+          reason: 'Yanlis dagitim',
+        },
+      },
     })
     expect(fetchMock).not.toHaveBeenCalled()
-    expect(result).toMatchObject({ kind: 'settlement', settlement: { state: 'malformed' } })
+    expect(result).toMatchObject({ kind: 'settlement', settlement: { type: 'unknown', reason: 'malformed' } })
   })
 
   it('preserves the supplied key and payload when the caller explicitly retries', async () => {
