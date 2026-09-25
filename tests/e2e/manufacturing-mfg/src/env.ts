@@ -31,6 +31,9 @@ export interface MfgRollSeed {
   readonly labelCode: string
 }
 
+export const MFG_PROCESSES = ['Slitting', 'ColdRolling', 'TubeProfile', 'Paint', 'CutToLength'] as const
+export type MfgProcess = (typeof MFG_PROCESSES)[number]
+
 export interface MfgRolls {
   readonly issue: MfgRollSeed
   readonly replay: MfgRollSeed
@@ -41,6 +44,7 @@ export interface MfgRolls {
   readonly planReplay: MfgRollSeed
   readonly planRefusal: MfgRollSeed
   readonly outputUi: MfgRollSeed
+  readonly process: Readonly<Record<MfgProcess, MfgRollSeed>>
 }
 
 export interface MfgOutputSeed {
@@ -137,6 +141,13 @@ export function readEnvironment(): MfgEnvironment {
       planReplay: roll('planReplay'),
       planRefusal: roll('planRefusal'),
       outputUi: roll('outputUi'),
+      process: {
+        Slitting: roll('processSlitting'),
+        ColdRolling: roll('processColdRolling'),
+        TubeProfile: roll('processTubeProfile'),
+        Paint: roll('processPaint'),
+        CutToLength: roll('processCutToLength'),
+      },
     },
     output: {
       productId: text(raw, 'outputProductId', true),

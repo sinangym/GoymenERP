@@ -55,10 +55,17 @@ public sealed class MfgBrowserSeed : IBrowserSuiteFixture
     private static readonly ParentRollFixture PlanReplayRoll = Roll(8);
     private static readonly ParentRollFixture PlanRefusalRoll = Roll(9);
     private static readonly ParentRollFixture OutputUiRoll = Roll(10);
+    private static readonly ParentRollFixture ProcessSlittingRoll = Roll(11);
+    private static readonly ParentRollFixture ProcessColdRollingRoll = Roll(12);
+    private static readonly ParentRollFixture ProcessTubeProfileRoll = Roll(13);
+    private static readonly ParentRollFixture ProcessPaintRoll = Roll(14);
+    private static readonly ParentRollFixture ProcessCutToLengthRoll = Roll(15);
     private static readonly ParentRollFixture[] CaseRolls =
     [
         IssueRoll, ReplayRoll, ConflictRoll, ListRoll, CloseRoll,
         PlanCreateRoll, PlanReplayRoll, PlanRefusalRoll, OutputUiRoll,
+        ProcessSlittingRoll, ProcessColdRollingRoll, ProcessTubeProfileRoll, ProcessPaintRoll,
+        ProcessCutToLengthRoll,
     ];
 
     private const string ManufacturingPath = "/api/v1/manufacturing";
@@ -295,6 +302,16 @@ public sealed class MfgBrowserSeed : IBrowserSuiteFixture
             ["planRefusalRollCode"] = PlanRefusalRoll.Code,
             ["outputUiRollId"] = OutputUiRoll.LabelId.ToString("D"),
             ["outputUiRollCode"] = OutputUiRoll.Code,
+            ["processSlittingRollId"] = ProcessSlittingRoll.LabelId.ToString("D"),
+            ["processSlittingRollCode"] = ProcessSlittingRoll.Code,
+            ["processColdRollingRollId"] = ProcessColdRollingRoll.LabelId.ToString("D"),
+            ["processColdRollingRollCode"] = ProcessColdRollingRoll.Code,
+            ["processTubeProfileRollId"] = ProcessTubeProfileRoll.LabelId.ToString("D"),
+            ["processTubeProfileRollCode"] = ProcessTubeProfileRoll.Code,
+            ["processPaintRollId"] = ProcessPaintRoll.LabelId.ToString("D"),
+            ["processPaintRollCode"] = ProcessPaintRoll.Code,
+            ["processCutToLengthRollId"] = ProcessCutToLengthRoll.LabelId.ToString("D"),
+            ["processCutToLengthRollCode"] = ProcessCutToLengthRoll.Code,
             ["outputProductId"] = closeRoll.GetProperty("productId").GetGuid().ToString("D"),
             ["outputProductVersion"] = product.ProductVersion,
             ["outputRequiredDocuments"] = closeRoll.GetProperty("requiredDocuments").GetRawText(),

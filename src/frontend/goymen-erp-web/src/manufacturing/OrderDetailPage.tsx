@@ -490,6 +490,10 @@ function OrderSummary({ order }: { readonly order: ProductionOrderView }) {
         <dd className={styles.mono}>{order.workCenterId}</dd>
       </div>
       <div className={styles.field}>
+        <dt>Proses</dt>
+        <dd>{order.process}</dd>
+      </div>
+      <div className={styles.field}>
         <dt>Hedef</dt>
         <dd>
           {order.target === null
