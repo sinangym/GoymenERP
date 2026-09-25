@@ -34,13 +34,53 @@ const PRODUCT = 'e0000000-0000-4000-8000-000000000010'
 const NEW_PRODUCT = 'e0000000-0000-4000-8000-000000000014'
 const LOT = 'e0000000-0000-4000-8000-000000000011'
 const LOCATION = 'e0000000-0000-4000-8000-000000000012'
+const ISSUE_LINE = 'e0000000-0000-4000-8000-000000000015'
+const ISSUE_MOVEMENT = 'e0000000-0000-4000-8000-000000000016'
 const INVENTORY_RECORDER_CAPABILITIES = [...RECORDER_CAPABILITIES, INVENTORY_STOCK_POSITIONS_CAPABILITY]
+
+type PartyKind = 'Company' | 'Counterparty'
+
+function issueMovement(
+  ownerKind: PartyKind = 'Company',
+  ownerId = COMPANY_A,
+  custodianKind: PartyKind = 'Company',
+  custodianId = COMPANY_A,
+  overrides: { movementId?: string; sourceId?: string; locationId?: string } = {},
+) {
+  return {
+    movementId: overrides.movementId ?? ISSUE_MOVEMENT,
+    kind: 'Issue',
+    occurredAtUtc: '2026-09-25T05:00:00Z',
+    sourceKind: 'manufacturing.input-issue',
+    sourceId: overrides.sourceId ?? ORDER,
+    sourceLineId: ISSUE_LINE,
+    sourceGrain: 'Line',
+    lines: [{
+      sequence: 1,
+      direction: 'Out',
+      ownerKind,
+      ownerId,
+      custodianKind,
+      custodianId,
+      locationId: overrides.locationId ?? LOCATION,
+      productId: PRODUCT,
+      block: 'Free',
+      quantityKg: '100',
+    }],
+  }
+}
 
 function labelDetail(
   labelVersion = '7',
   physicalKg = '1000',
   ownerId = COMPANY_A,
   custodianId = COMPANY_A,
+  ownerKind: PartyKind = 'Company',
+  custodianKind: PartyKind = 'Company',
+  movementEntries: readonly ReturnType<typeof issueMovement>[] = [
+    issueMovement(ownerKind, ownerId, custodianKind, custodianId),
+  ],
+  movementWindowFull = false,
 ) {
   return {
     labelVersion,
@@ -64,9 +104,9 @@ function labelDetail(
       freeKg: physicalKg,
       blockedKg: '0',
       positions: [{
-        ownerKind: 'Company',
+        ownerKind,
         ownerId,
-        custodianKind: 'Company',
+        custodianKind,
         custodianId,
         locationId: LOCATION,
         productId: PRODUCT,
@@ -75,7 +115,7 @@ function labelDetail(
       }],
     },
     genealogy: { labelId: ROLL_1, labelCode: 'SYN-MFG-ROLL-1', edges: [], windowFull: false },
-    movementTimeline: { labelId: ROLL_1, entries: [], windowFull: false },
+    movementTimeline: { labelId: ROLL_1, entries: movementEntries, windowFull: movementWindowFull },
   }
 }
 
@@ -176,7 +216,7 @@ async function openOutputSelectors(
   user: ReturnType<typeof userEvent.setup>,
   occurredAt = '2026-09-25T00:30',
 ) {
-  await user.click(screen.getByLabelText('Şirket malı üretim çıktısı'))
+  await user.click(screen.getByLabelText('Üretim çıktısı'))
   await user.type(screen.getByLabelText('Zaman'), occurredAt)
 }
 
@@ -382,7 +422,7 @@ describe('fact forms', () => {
     expect(screen.getByLabelText('Zaman')).toBeTruthy()
     expect(screen.getByLabelText('WIP ölçümü')).toBeTruthy()
     expect(screen.queryByLabelText('Kullanılmayan girdi iadesi')).toBeNull()
-    expect(screen.queryByLabelText('Şirket malı üretim çıktısı')).toBeNull()
+    expect(screen.queryByLabelText('Üretim çıktısı')).toBeNull()
   })
 
   it('sends one frozen fact with its own key and id, then shows the RE-READ order', async () => {
@@ -522,7 +562,7 @@ describe('fact forms', () => {
     renderAt(PATH)
     await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
 
-    await user.click(screen.getByLabelText('Şirket malı üretim çıktısı'))
+    await user.click(screen.getByLabelText('Üretim çıktısı'))
     await user.selectOptions(screen.getByLabelText('Ana rulo'), ROLL_1)
     const time = screen.getByLabelText('Zaman')
     await user.type(time, '2026-09-25T00:30')
@@ -572,6 +612,83 @@ describe('fact forms', () => {
     expect(selectedEffectiveOn).toBe((output.body as { occurredAtUtc: string }).occurredAtUtc.slice(0, 10))
     await waitFor(() => expect(reads(recorded)).toHaveLength(2))
     await waitFor(() => expect(labelReads(recorded)).toHaveLength(2))
+  })
+
+  it('freezes customer/fason owner and custodian from this order input issue into the output command', async () => {
+    const user = userEvent.setup()
+    const customerIssue = issueMovement('Counterparty', COMPANY_B, 'Company', COMPANY_A)
+    const customerLabel = () => labelDetail(
+      '8', '900', COMPANY_B, COMPANY_A, 'Counterparty', 'Company', [customerIssue],
+    )
+    const { recorded } = stub({
+      capabilities: INVENTORY_RECORDER_CAPABILITIES,
+      labels: [() => json(customerLabel()), () => json(customerLabel())],
+    })
+    renderAt(PATH)
+    await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+
+    await user.click(screen.getByLabelText('Üretim çıktısı'))
+    await user.selectOptions(screen.getByLabelText('Ana rulo'), ROLL_1)
+    await user.type(screen.getByLabelText('Zaman'), '2026-09-25T00:30')
+    await waitFor(() => expect(labelReads(recorded)).toHaveLength(1))
+    await screen.findByRole('option', { name: /PRD-12/ })
+    await screen.findByRole('option', { name: /HOL-1/ })
+
+    await user.selectOptions(screen.getByLabelText('Çıktı sınıfı'), 'GoodProduct')
+    await user.selectOptions(screen.getByLabelText('Ürün'), PRODUCT)
+    await user.selectOptions(screen.getByLabelText('Lokasyon'), LOCATION)
+    await user.type(screen.getByLabelText('Yeni etiket kodu'), 'FASON-OUT-40')
+    await user.selectOptions(screen.getByLabelText('İlk stok durumu'), 'Free')
+    await user.type(screen.getByLabelText('Kütle (kg)'), '40')
+    await user.click(screen.getByRole('button', { name: 'Kaydet' }))
+
+    await waitFor(() => expect(posts(recorded)).toHaveLength(1))
+    expect(posts(recorded)[0].body).toMatchObject({
+      ownerKind: 'Counterparty',
+      ownerId: COMPANY_B,
+      custodianKind: 'Company',
+      custodianId: COMPANY_A,
+      locationId: LOCATION,
+    })
+  })
+
+  it.each([
+    [
+      'truncated movement timeline',
+      () => labelDetail('7', '1000', COMPANY_B, COMPANY_A, 'Counterparty', 'Company', undefined, true),
+    ],
+    [
+      'no input issue for this order',
+      () => labelDetail('7', '1000', COMPANY_B, COMPANY_A, 'Counterparty', 'Company', [
+        issueMovement('Counterparty', COMPANY_B, 'Company', COMPANY_A, { sourceId: COMPANY_B }),
+      ]),
+    ],
+    [
+      'multiple input issue positions',
+      () => labelDetail('7', '1000', COMPANY_B, COMPANY_A, 'Counterparty', 'Company', [
+        issueMovement('Counterparty', COMPANY_B, 'Company', COMPANY_A),
+        issueMovement('Counterparty', COMPANY_B, 'Company', COMPANY_A, {
+          movementId: 'e0000000-0000-4000-8000-000000000017',
+          locationId: 'e0000000-0000-4000-8000-000000000018',
+        }),
+      ]),
+    ],
+  ])('fails output closed for %s', async (_caseName, detail) => {
+    const user = userEvent.setup()
+    const { recorded } = stub({
+      capabilities: INVENTORY_RECORDER_CAPABILITIES,
+      labels: [() => json(detail())],
+    })
+    renderAt(PATH)
+    await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+
+    await user.click(screen.getByLabelText('Üretim çıktısı'))
+    await user.selectOptions(screen.getByLabelText('Ana rulo'), ROLL_1)
+    await waitFor(() => expect(labelReads(recorded)).toHaveLength(1))
+
+    expect(await screen.findByText(/tek ve eksiksiz Inventory girdi çıkışı sahipliği/)).toBeTruthy()
+    expect((screen.getByRole('button', { name: 'Kaydet' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(posts(recorded)).toHaveLength(0)
   })
 
   it('re-reads output selectors after route re-entry inside the production stale window', async () => {
@@ -664,21 +781,33 @@ describe('fact forms', () => {
     expect(productReads(recorded)).toHaveLength(2)
   })
 
-  it('keeps customer/fason ownership fail-closed and sends no input command', async () => {
+  it('returns an issued customer/fason label with its fresh version and no invented ownership fields', async () => {
     const user = userEvent.setup()
     const { recorded } = stub({
       capabilities: INVENTORY_RECORDER_CAPABILITIES,
-      labels: [() => json(labelDetail('7', '1000', COMPANY_B, COMPANY_B))],
+      labels: [() => json(labelDetail(
+        '7', '1000', COMPANY_B, COMPANY_A, 'Counterparty', 'Company',
+      ))],
     })
     renderAt(PATH)
     await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
-    await user.click(screen.getByLabelText('Kullanılmayan girdi iadesi'))
-    await user.selectOptions(screen.getByLabelText('Ana rulo'), ROLL_1)
+    await fillFact(user, { kind: 'Kullanılmayan girdi iadesi', kg: '25' })
     await waitFor(() => expect(labelReads(recorded)).toHaveLength(1))
 
-    expect(await screen.findByText(/yalnız şirketin kendi malı/)).toBeTruthy()
-    expect((screen.getByRole('button', { name: 'Kaydet' }) as HTMLButtonElement).disabled).toBe(true)
-    expect(posts(recorded)).toHaveLength(0)
+    await user.click(screen.getByRole('button', { name: 'Kaydet' }))
+    await waitFor(() => expect(posts(recorded)).toHaveLength(1))
+    const [returned] = posts(recorded)
+    expect(returned.url).toBe(`/api/v1/manufacturing/orders/${ORDER}/input-returns`)
+    expect(returned.body).toMatchObject({
+      expectedVersion: 1,
+      parentRollId: ROLL_1,
+      expectedParentLabelVersion: '7',
+      kg: '25',
+    })
+    expect(returned.body).not.toHaveProperty('ownerKind')
+    expect(returned.body).not.toHaveProperty('ownerId')
+    expect(returned.body).not.toHaveProperty('custodianKind')
+    expect(returned.body).not.toHaveProperty('custodianId')
   })
 
   it('fences a revoked Inventory label read on 403 and never sends a return', async () => {

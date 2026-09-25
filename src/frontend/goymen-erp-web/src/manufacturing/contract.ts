@@ -492,9 +492,9 @@ export type FactSnapshot =
       readonly heatNumber: string | null
       readonly coilNumber: string | null
       readonly requiredDocuments: readonly string[]
-      readonly ownerKind: 'Company'
+      readonly ownerKind: 'Company' | 'Counterparty'
       readonly ownerId: string
-      readonly custodianKind: 'Company'
+      readonly custodianKind: 'Company' | 'Counterparty'
       readonly custodianId: string
       readonly locationId: string
       readonly initialBlock: 'Free' | 'Blocked'

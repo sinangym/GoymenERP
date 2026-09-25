@@ -34,7 +34,7 @@ export const FACT_KIND_LABEL: Record<FactKind, string> = {
   'input-issues': 'Girdi çıkışı',
   'input-returns': 'Kullanılmayan girdi iadesi',
   'wip-measurements': 'WIP ölçümü',
-  outputs: 'Şirket malı üretim çıktısı',
+  outputs: 'Üretim çıktısı',
 }
 
 export const FACT_KIND_HELP: Record<FactKind, string> = {
@@ -42,7 +42,7 @@ export const FACT_KIND_HELP: Record<FactKind, string> = {
   'input-returns': 'Çıkıp kullanılmayan ve geri dönen kütle; çıkandan fazla olamaz.',
   'wip-measurements': 'Rulonun üzerindeki yarı işlenmiş kütlenin son okuması; öncekinden sonra olmalı.',
   outputs:
-    'Yeni ürün etiketi ve stok hareketi aynı işlemde kaydedilir. Bu yol yalnız şirket malı ve şirket gözetimindeki çıktı içindir.',
+    'Yeni ürün etiketi ve stok hareketi aynı işlemde kaydedilir; sahiplik, bu emrin Inventory girdi çıkışından alınır.',
 }
 
 export const COST_STATUS_TEXT = 'Hesaplanmadı'
@@ -86,8 +86,10 @@ export const OUTPUT_INVENTORY_TEXT = {
   locationLoading: 'Lokasyon seçenekleri yükleniyor…',
   productUnavailable: 'Ürün seçenekleri okunamadı. Tekrar deneyin.',
   locationUnavailable: 'Lokasyon seçenekleri okunamadı. Tekrar deneyin.',
-  customerOwnedBlocked:
-    'Müşteri malı/fason çıktı, Manufacturing kapsamlı Cari seçim ve doğrulama sözleşmesi gelene kadar kapalıdır.',
+  issuedOwnershipHelp:
+    'Çıktının sahip ve gözeten bilgisi, bu emrin ana rulo Inventory girdi çıkışından değişmeden alınır.',
+  issuedOwnershipRequired:
+    'Bu emir için ana rulonun tek ve eksiksiz Inventory girdi çıkışı sahipliği doğrulanmadan çıktı gönderilemez.',
 } as const
 
 export const INPUT_INVENTORY_TEXT = {
@@ -97,8 +99,6 @@ export const INPUT_INVENTORY_TEXT = {
   free: 'Serbest',
   blocked: 'Blokeli',
   loadingRequired: 'Ana rulonun güncel Inventory durumu okunmadan bu işlem gönderilemez.',
-  companyOwnedRequired:
-    'Bu adım yalnız şirketin kendi malı ve kendi gözetimindeki ana rulo için kullanılabilir.',
 } as const
 
 /** MFG-02 order list. Column names are the summary's own fields; no figure is invented for a column. */

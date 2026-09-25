@@ -35,7 +35,7 @@ import {
 } from './api'
 import { closeOrder, recordFact, type FactFailure, type FactUnknown } from './commandApi'
 import { fetchInventoryLabelDetail } from '../inventory/labelDetailApi'
-import type { InventoryLabelDetail } from '../inventory/labelDetailContract'
+import type { InventoryLabelDetailWithMovementTimeline } from '../inventory/labelDetailContract'
 import { INVENTORY_STOCK_POSITIONS_CAPABILITY } from '../inventory/capabilities'
 import {
   FACT_KINDS,
@@ -647,10 +647,40 @@ function documents(value: string): readonly string[] {
   return value.split(/\r?\n/).map((item) => item.trim()).filter((item) => item.length > 0)
 }
 
-function isCompanyOwned(detail: InventoryLabelDetail, companyId: string): boolean {
-  return detail.balances.positions.length > 0 && detail.balances.positions.every((position) =>
-    position.ownerKind === 'Company' && position.ownerId === companyId &&
-    position.custodianKind === 'Company' && position.custodianId === companyId)
+interface OutputOwnershipSnapshot {
+  readonly ownerKind: 'Company' | 'Counterparty'
+  readonly ownerId: string
+  readonly custodianKind: 'Company' | 'Counterparty'
+  readonly custodianId: string
+}
+
+function issuedOutputOwnership(
+  detail: InventoryLabelDetailWithMovementTimeline,
+  orderId: string,
+): OutputOwnershipSnapshot | null {
+  if (detail.movementTimeline.windowFull) return null
+  const positions = detail.movementTimeline.entries
+    .filter((entry) =>
+      entry.kind === 'Issue' && entry.sourceKind === 'manufacturing.input-issue' &&
+      entry.sourceId === orderId && entry.sourceGrain === 'Line' && entry.sourceLineId !== null)
+    .flatMap((entry) => entry.lines.filter((line) => line.direction === 'Out'))
+  if (positions.length === 0) return null
+  const distinct = new Map<string, (typeof positions)[number]>()
+  for (const position of positions) {
+    const key = JSON.stringify([
+      position.ownerKind, position.ownerId, position.custodianKind, position.custodianId,
+      position.locationId, position.productId, position.block,
+    ])
+    distinct.set(key, position)
+  }
+  if (distinct.size !== 1) return null
+  const [position] = distinct.values()
+  return {
+    ownerKind: position.ownerKind,
+    ownerId: position.ownerId,
+    custodianKind: position.custodianKind,
+    custodianId: position.custodianId,
+  }
 }
 
 function restored(storeKey: string | null): FactAttempt {
@@ -711,8 +741,10 @@ function FactSection({
     ? null
     : (labelQuery.isPending
         ? { kind: 'initial-loading' }
-        : classifyOutcome(labelQuery.data ?? { type: 'malformed' })) as RemoteViewState<InventoryLabelDetail>
-  const companyOwned = labelState?.kind === 'ready' && isCompanyOwned(labelState.data, companyId)
+        : classifyOutcome(labelQuery.data ?? { type: 'malformed' })) as RemoteViewState<InventoryLabelDetailWithMovementTimeline>
+  const outputOwnership = labelState?.kind === 'ready'
+    ? issuedOutputOwnership(labelState.data, order.orderId)
+    : null
 
   const productQuery = useQuery({
     queryKey: [namespace, routeEntryGeneration, 'manufacturing-output-products', effectiveOn, form.productSearch],
@@ -814,7 +846,7 @@ function FactSection({
     if (!isKilogramText(form.kg)) return setError(KG_FORMAT_ERROR)
     if ((returnSelected || outputSelected) && !canReadInventoryLabel) return
     if (needsInventoryState && labelState?.kind !== 'ready') return setError(INPUT_INVENTORY_TEXT.loadingRequired)
-    if (needsInventoryState && !companyOwned) return setError(INPUT_INVENTORY_TEXT.companyOwnedRequired)
+    if (outputSelected && outputOwnership === null) return setError(OUTPUT_INVENTORY_TEXT.issuedOwnershipRequired)
     if (timing === null) return setError(TIME_REQUIRED)
     if (outputSelected && form.outputClass === '') return setError(OUTPUT_INVENTORY_TEXT.classRequired)
     if (outputSelected && selectedProduct === undefined) return setError(OUTPUT_INVENTORY_TEXT.productRequired)
@@ -854,10 +886,10 @@ function FactSection({
               heatNumber: cleanOptional(form.heatNumber),
               coilNumber: cleanOptional(form.coilNumber),
               requiredDocuments: documents(form.requiredDocuments),
-              ownerKind: 'Company',
-              ownerId: companyId,
-              custodianKind: 'Company',
-              custodianId: companyId,
+              ownerKind: outputOwnership!.ownerKind,
+              ownerId: outputOwnership!.ownerId,
+              custodianKind: outputOwnership!.custodianKind,
+              custodianId: outputOwnership!.custodianId,
               locationId: selectedLocation?.locationId ?? '',
               initialBlock: form.initialBlock as 'Free' | 'Blocked',
             }
@@ -958,8 +990,8 @@ function FactSection({
         </div>
         {outputSelected ? (
           <section aria-labelledby="mfg-output-heading" className={styles.section} data-testid="company-output-form">
-            <h3 id="mfg-output-heading">Şirket malı çıktı etiketi</h3>
-            <p className={styles.help}>{OUTPUT_INVENTORY_TEXT.customerOwnedBlocked}</p>
+            <h3 id="mfg-output-heading">Üretim çıktısı etiketi</h3>
+            <p className={styles.help}>{OUTPUT_INVENTORY_TEXT.issuedOwnershipHelp}</p>
             <div className={styles.form}>
               <div className={styles.control}>
                 <label htmlFor="mfg-output-class">Çıktı sınıfı</label>
@@ -1089,7 +1121,12 @@ function FactSection({
           </section>
         ) : null}
         {labelState !== null ? (
-          <ParentLabelState state={labelState} companyOwned={companyOwned} onRetry={() => void labelQuery.refetch()} />
+          <ParentLabelState
+            state={labelState}
+            outputSelected={outputSelected}
+            outputOwnership={outputOwnership}
+            onRetry={() => void labelQuery.refetch()}
+          />
         ) : null}
         {error !== null ? (
           <p className={styles.error} role="alert">
@@ -1104,7 +1141,8 @@ function FactSection({
           ) : (
             <button
               type="submit"
-              disabled={frozen || (needsInventoryState && (!companyOwned || labelState?.kind !== 'ready'))}
+              disabled={frozen || (needsInventoryState && labelState?.kind !== 'ready') ||
+                (outputSelected && outputOwnership === null)}
             >
               {busy ? 'Gönderiliyor…' : 'Kaydet'}
             </button>
@@ -1117,11 +1155,13 @@ function FactSection({
 
 function ParentLabelState({
   state,
-  companyOwned,
+  outputSelected,
+  outputOwnership,
   onRetry,
 }: {
-  readonly state: RemoteViewState<InventoryLabelDetail>
-  readonly companyOwned: boolean
+  readonly state: RemoteViewState<InventoryLabelDetailWithMovementTimeline>
+  readonly outputSelected: boolean
+  readonly outputOwnership: OutputOwnershipSnapshot | null
   readonly onRetry: () => void
 }) {
   if (state.kind !== 'ready') {
@@ -1143,7 +1183,9 @@ function ParentLabelState({
         <div><dt>{INPUT_INVENTORY_TEXT.free}</dt><dd>{detail.balances.freeKg} kg</dd></div>
         <div><dt>{INPUT_INVENTORY_TEXT.blocked}</dt><dd>{detail.balances.blockedKg} kg</dd></div>
       </dl>
-      {!companyOwned ? <p role="alert" className={styles.noticeWarn}>{INPUT_INVENTORY_TEXT.companyOwnedRequired}</p> : null}
+      {outputSelected && outputOwnership === null
+        ? <p role="alert" className={styles.noticeWarn}>{OUTPUT_INVENTORY_TEXT.issuedOwnershipRequired}</p>
+        : null}
     </section>
   )
 }
