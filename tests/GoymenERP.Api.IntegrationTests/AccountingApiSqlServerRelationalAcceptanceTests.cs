@@ -104,6 +104,34 @@ public sealed class AccountingApiSqlServerRelationalAcceptanceTests
                 run.Metadata())).Journal!;
         }
 
+        var unknownProposalId = Guid.NewGuid();
+        var unknownProposal = new ProposeAccountingJournalReversalRequestV1(
+            unknownProposalId, Guid.NewGuid(), periodId, "2026-09-23", "2026-09-24", null,
+            "SENTETIK bilinmeyen kaynak reddi");
+        using (var unknown = await maker.SendAsync(Post(
+                   ReversalProposalsPath, "SENTETIK-reversal-unknown-source", Guid.NewGuid().ToString("N"), unknownProposal)))
+        {
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, unknown.StatusCode);
+            Assert.Equal(AccountingJournalReversalStoreCodesV1.SourceJournalNotFound, Code(await Json(unknown)));
+        }
+
+        await run.GrantAsync(Preparer, CompanyB, AccountingJournalReversalPermissionNamesV1.Propose);
+        using (var companyBMaker = run.Client(Preparer, CompanyB))
+        {
+            var crossCompanyProposalId = Guid.NewGuid();
+            var crossCompanyProposal = new ProposeAccountingJournalReversalRequestV1(
+                crossCompanyProposalId, sourceJournal.Id, Guid.NewGuid(), "2026-09-23", "2026-09-24", null,
+                "SENTETIK şirketler arası kaynak reddi");
+            using var crossCompany = await companyBMaker.SendAsync(Post(
+                ReversalProposalsPath, "SENTETIK-reversal-cross-company-source", Guid.NewGuid().ToString("N"),
+                crossCompanyProposal));
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, crossCompany.StatusCode);
+            Assert.Equal(AccountingJournalReversalStoreCodesV1.SourceJournalNotFound, Code(await Json(crossCompany)));
+            Assert.Equal(0, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM accounting.JournalReversalProposals WHERE Id IN (@u, @x)",
+                ("@u", unknownProposalId), ("@x", crossCompanyProposalId)));
+        }
+
         var proposalId = Guid.NewGuid();
         var proposal = new ProposeAccountingJournalReversalRequestV1(
             proposalId,
@@ -114,6 +142,7 @@ public sealed class AccountingApiSqlServerRelationalAcceptanceTests
             null,
             "SENTETIK gerçek SQL ters kayıt gerekçesi");
         var proposeCorrelation = Guid.NewGuid().ToString("N");
+        DateTimeOffset proposedAtUtc;
 
         using (var proposed = await maker.SendAsync(Post(
                    ReversalProposalsPath, "SENTETIK-reversal-propose", proposeCorrelation, proposal)))
@@ -124,6 +153,7 @@ public sealed class AccountingApiSqlServerRelationalAcceptanceTests
                 (view.GetProperty("proposalId").GetGuid(), view.GetProperty("sourceJournalId").GetGuid(),
                     view.GetProperty("status").GetString(), view.GetProperty("version").GetInt32()));
             Assert.Equal(JsonValueKind.Null, view.GetProperty("reversalJournalId").ValueKind);
+            proposedAtUtc = view.GetProperty("proposedAtUtc").GetDateTimeOffset();
         }
 
         using (var replayed = await maker.SendAsync(Post(
@@ -131,6 +161,7 @@ public sealed class AccountingApiSqlServerRelationalAcceptanceTests
         {
             Assert.Equal(HttpStatusCode.Created, replayed.StatusCode);
             AssertReplayOf(replayed, proposeCorrelation);
+            Assert.Equal(proposedAtUtc, (await Json(replayed)).GetProperty("proposedAtUtc").GetDateTimeOffset());
         }
 
         Assert.Equal(1, await run.ScalarAsync<int>(
@@ -515,6 +546,64 @@ public sealed class AccountingApiSqlServerRelationalAcceptanceTests
         }
 
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM accounting.Periods WHERE Id = @p", ("@p", periodId)));
+    }
+
+    [SqlServerFact]
+    public async Task The_reversal_proposal_migration_rolls_back_only_while_no_proposal_is_stored()
+    {
+        await using var run = await Run.StartAsync();
+        const string beforeReversalProposals = "20260924122703_AddNormalJournalDrafts";
+
+        await using (var context = run.Context(CompanyA))
+        {
+            await context.GetService<IMigrator>().MigrateAsync(beforeReversalProposals);
+            Assert.Equal(0, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM sys.tables WHERE [name] = N'JournalReversalProposals' AND [schema_id] = SCHEMA_ID(N'accounting')"));
+            await context.Database.MigrateAsync();
+        }
+
+        await run.GrantAsync(Preparer, CompanyA,
+        [
+            .. PreparerGrants,
+            AccountingJournalReversalPermissionNamesV1.Propose,
+        ]);
+        await run.GrantAsync(Approver, CompanyA, ApproverGrants);
+        using var maker = run.Client(Preparer, CompanyA);
+        using var checker = run.Client(Approver, CompanyA);
+        var periodId = Guid.NewGuid();
+        Assert.Equal(HttpStatusCode.Created, (await maker.SendAsync(Post(
+            PeriodsPath, "SENTETIK-reversal-down-period", Guid.NewGuid().ToString("N"),
+            new ProposePeriodRequestV1(periodId, September1, September30)))).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await checker.SendAsync(
+            Approval(periodId, "SENTETIK-reversal-down-period-approval", 1))).StatusCode);
+
+        Journal source;
+        await using (var store = run.Store(CompanyA))
+        {
+            source = (await store.Postings.ReceiveAsync(
+                Request(Guid.NewGuid(), "SENTETIK-reversal-down-source",
+                    new AccountRef(CompanyA, Guid.NewGuid()), new AccountRef(CompanyA, Guid.NewGuid()), 100m),
+                periodId, run.Metadata())).Journal!;
+        }
+
+        var proposalId = Guid.NewGuid();
+        Assert.Equal(HttpStatusCode.Created, (await maker.SendAsync(Post(
+            ReversalProposalsPath, "SENTETIK-reversal-down-proposal", Guid.NewGuid().ToString("N"),
+            new ProposeAccountingJournalReversalRequestV1(
+                proposalId, source.Id, periodId, "2026-09-23", "2026-09-24", null,
+                "SENTETIK rollback refusal proposal")))).StatusCode);
+
+        await using (var context = run.Context(CompanyA))
+        {
+            var error = await Assert.ThrowsAsync<SqlException>(() =>
+                context.GetService<IMigrator>().MigrateAsync(beforeReversalProposals));
+            Assert.Equal(51048, error.Number);
+            Assert.EndsWith("_AddAccountingJournalReversalProposals",
+                (await context.Database.GetAppliedMigrationsAsync()).Last(), StringComparison.Ordinal);
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM accounting.JournalReversalProposals WHERE Id = @p", ("@p", proposalId)));
     }
 
     /// <summary>

@@ -2,6 +2,7 @@ using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Accounting.Application;
+using GoymenERP.Modules.Accounting.Domain;
 
 namespace GoymenERP.Accounting.UnitTests;
 
@@ -79,6 +80,36 @@ public sealed class AccountingJournalReversalLifecycleV1Tests
         Assert.Equal(AccountingJournalReversalProposalStatusV1.Pending, store.Proposal!.Status);
     }
 
+    [Theory]
+    [InlineData(AccountingErrorCodes.InvalidReference)]
+    [InlineData(AccountingErrorCodes.ReversalOfReversal)]
+    [InlineData(AccountingErrorCodes.PeriodClosed)]
+    [InlineData(AccountingErrorCodes.PeriodDoesNotCover)]
+    public async Task Reversal_domain_refusals_are_stable_unprocessable_answers(string code)
+    {
+        var store = new MemoryStore(Pending()) { ApprovalDomainFailureCode = code };
+        var service = Service(store, Checker, new FixedAuthority(Granted()));
+
+        var result = await service.ApproveAsync(Proposal, 1, $"domain-{code}");
+
+        Assert.Equal(AccountingApiStatus.Unprocessable, result.Status);
+        Assert.Equal(code, result.Code);
+        Assert.Equal(0, store.ReversalsWritten);
+        Assert.Equal(AccountingJournalReversalProposalStatusV1.Pending, store.Proposal!.Status);
+    }
+
+    [Fact]
+    public async Task Non_positive_approval_version_reports_expected_version()
+    {
+        var store = new MemoryStore(Pending());
+        var result = await Service(store, Checker, new FixedAuthority(Granted()))
+            .ApproveAsync(Proposal, 0, "invalid-version");
+
+        Assert.Equal(AccountingApiStatus.Invalid, result.Status);
+        Assert.Equal("expectedVersion", result.Field);
+        Assert.Equal(0, store.ReversalsWritten);
+    }
+
     private static AccountingJournalReversalServiceV1 Service(
         MemoryStore store,
         Guid actor,
@@ -123,6 +154,7 @@ public sealed class AccountingJournalReversalLifecycleV1Tests
         public AccountingJournalReversalProposalV1? Proposal { get; private set; } = proposal;
         public int ProposalsWritten { get; private set; }
         public int ReversalsWritten { get; private set; }
+        public string? ApprovalDomainFailureCode { get; init; }
 
         public async Task<(AccountingJournalReversalProposalV1 Proposal, AccountingWriteOutcome Outcome)> CreateAsync(
             AccountingJournalReversalProposalV1 proposal,
@@ -150,6 +182,11 @@ public sealed class AccountingJournalReversalLifecycleV1Tests
             AccountingCommandMetadata metadata,
             CancellationToken cancellationToken = default)
         {
+            if (ApprovalDomainFailureCode is { } code)
+            {
+                throw new AccountingDomainException(code, "Synthetic reversal refusal.");
+            }
+
             var current = Proposal ?? throw new AccountingStoreException(
                 AccountingJournalReversalStoreCodesV1.NotFound, "missing");
             var approved = AccountingJournalReversalPolicyV1.Approve(

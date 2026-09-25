@@ -2,6 +2,7 @@ using System.Text.Json;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Accounting.Domain;
 
 namespace GoymenERP.Modules.Accounting.Application;
 
@@ -20,6 +21,7 @@ public static class AccountingJournalReversalCommandNamesV1
 public static class AccountingJournalReversalStoreCodesV1
 {
     public const string NotFound = "accounting_journal_reversal_proposal_not_found";
+    public const string SourceJournalNotFound = "accounting_journal_reversal_source_journal_not_found";
     public const string ContentConflict = "accounting_journal_reversal_proposal_content_conflict";
     public const string PostingConflict = "accounting_journal_reversal_posting_conflict";
 }
@@ -134,9 +136,14 @@ public sealed class AccountingJournalReversalServiceV1(
         string idempotencyKey,
         CancellationToken cancellationToken = default)
     {
-        if (proposalId == Guid.Empty || expectedVersion <= 0)
+        if (proposalId == Guid.Empty)
         {
             return Task.FromResult(Invalid("proposalId"));
+        }
+
+        if (expectedVersion <= 0)
+        {
+            return Task.FromResult(Invalid("expectedVersion"));
         }
 
         return RunAsync(
@@ -269,6 +276,14 @@ public sealed class AccountingJournalReversalServiceV1(
                 _ => new AccountingApiResult<T>(AccountingApiStatus.Unprocessable, null, false,
                     exception.Code, exception.Field),
             };
+        }
+        catch (AccountingDomainException exception) when (exception.Code is
+            AccountingErrorCodes.InvalidReference or
+            AccountingErrorCodes.ReversalOfReversal or
+            AccountingErrorCodes.PeriodClosed or
+            AccountingErrorCodes.PeriodDoesNotCover)
+        {
+            result = new AccountingApiResult<T>(AccountingApiStatus.Unprocessable, null, false, exception.Code);
         }
         catch (AccountingStoreException exception) when (exception.Code == AccountingStoreCodes.ConcurrentChange)
         {
