@@ -93,6 +93,65 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
+    public async Task Manufacturing_customer_owned_parent_is_issued_without_caller_ownership_and_return_output_keep_owner_trace()
+    {
+        await using var run = await Run.StartAsync();
+        var customer = Guid.NewGuid();
+        var parent = await SeedManufacturingParentAsync(run, "SYN-MFG-CUSTOMER-PARENT", 100m,
+            StockPartyKind.Counterparty, customer, StockPartyKind.Company, CompanyA);
+        var orderId = Guid.NewGuid();
+        var issue = IssueRequest(orderId, parent.Label.Id, "2", "30");
+        var issueMetadata = ManufacturingMetadata(run, "customer-issue");
+
+        var issued = await CommitIssueAsync(run, issue, issueMetadata);
+        Assert.Equal(new InventoryManufacturingPositionSnapshotV1(
+            StockPartyKind.Counterparty, customer, StockPartyKind.Company, CompanyA, parent.LocationId),
+            issued.ParentPosition);
+
+        var replay = await CommitIssueAsync(run, issue,
+            issueMetadata with { CorrelationId = "manufacturing-customer-issue-retry" });
+        Assert.True(replay.IsReplay);
+        Assert.Equal(issued.ParentPosition, replay.ParentPosition);
+
+        var returnedRequest = ReturnRequest(orderId, parent.Label.Id, issued.ParentLabelVersion, "10");
+        var returned = await CommitReturnAsync(run, returnedRequest,
+            ManufacturingMetadata(run, "customer-return"));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.MovementLines WHERE MovementId = @movement "
+            + "AND OwnerKind = @ownerKind AND OwnerId = @ownerId "
+            + "AND CustodianKind = @custodianKind AND CustodianId = @custodianId AND LocationId = @location",
+            ("@movement", returnedRequest.MovementId), ("@ownerKind", (int)StockPartyKind.Counterparty),
+            ("@ownerId", customer), ("@custodianKind", (int)StockPartyKind.Company),
+            ("@custodianId", CompanyA), ("@location", parent.LocationId)));
+
+        var output = OutputRequest(orderId, parent.Label.Id, returned.ParentLabelVersion,
+            parent.LocationId, "20") with
+        {
+            OwnerKind = StockPartyKind.Counterparty,
+            OwnerId = customer,
+            CustodianKind = StockPartyKind.Company,
+            CustodianId = CompanyA,
+        };
+        await AssertOutputRefusalAsync(run, output with
+        {
+            OwnerKind = StockPartyKind.Company,
+            OwnerId = CompanyA,
+        }, ManufacturingMetadata(run, "customer-output-wrong-owner"), 409,
+            InventoryManufacturingRealizationCodesV1.ParentLabelContextConflict);
+
+        var outputResult = await CommitOutputAsync(run, output,
+            ManufacturingMetadata(run, "customer-output"));
+        Assert.False(outputResult.IsReplay);
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.MovementLines WHERE MovementId = @movement "
+            + "AND OwnerKind = @ownerKind AND OwnerId = @ownerId "
+            + "AND CustodianKind = @custodianKind AND CustodianId = @custodianId",
+            ("@movement", output.MovementId), ("@ownerKind", (int)StockPartyKind.Counterparty),
+            ("@ownerId", customer), ("@custodianKind", (int)StockPartyKind.Company),
+            ("@custodianId", CompanyA)));
+    }
+
+    [SqlServerFact]
     public async Task Manufacturing_participant_host_rollback_removes_input_and_output_effects()
     {
         await using var run = await Run.StartAsync();
@@ -228,7 +287,9 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     }
 
     private static async Task<ManufacturingParentSeed> SeedManufacturingParentAsync(
-        Run run, string code, decimal quantity)
+        Run run, string code, decimal quantity,
+        StockPartyKind ownerKind = StockPartyKind.Company, Guid? ownerId = null,
+        StockPartyKind custodianKind = StockPartyKind.Company, Guid? custodianId = null)
     {
         var location = await run.LocationOfAsync(CompanyA);
         var label = NewLabel(CompanyA, code);
@@ -237,11 +298,14 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             Metadata(run) with { CorrelationId = $"manufacturing-parent-label-{Guid.NewGuid():N}" });
         var receipt = new StockMovement(Guid.NewGuid(), CompanyA, StockMovementKind.Receipt, ManufacturingAt,
             new StockSourceReference("synthetic.manufacturing-parent", Guid.NewGuid()),
-            [new StockMovementLine(Position(CompanyA, location, label, BlockState.Free),
+            [new StockMovementLine(new StockPosition(CompanyA,
+                    new StockOwner(ownerKind, ownerId ?? CompanyA),
+                    new StockCustodian(custodianKind, custodianId ?? CompanyA),
+                    location, label, BlockState.Free),
                 StockDirection.In, Kilograms.Positive(quantity))]);
         await store.Movements.RecordMovementAsync(receipt,
             Metadata(run) with { CorrelationId = $"manufacturing-parent-stock-{Guid.NewGuid():N}" });
-        return new(label, location);
+        return new(label, location, ownerKind, ownerId ?? CompanyA, custodianKind, custodianId ?? CompanyA);
     }
 
     private static InventoryManufacturingInputIssueRequestV1 IssueRequest(
@@ -358,7 +422,13 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         await transaction.RollbackAsync();
     }
 
-    private sealed record ManufacturingParentSeed(MaterialLabel Label, Guid LocationId);
+    private sealed record ManufacturingParentSeed(
+        MaterialLabel Label,
+        Guid LocationId,
+        StockPartyKind OwnerKind,
+        Guid OwnerId,
+        StockPartyKind CustodianKind,
+        Guid CustodianId);
 
     private sealed class UnavailableSettings : ISettingsPrerequisiteProvider
     {

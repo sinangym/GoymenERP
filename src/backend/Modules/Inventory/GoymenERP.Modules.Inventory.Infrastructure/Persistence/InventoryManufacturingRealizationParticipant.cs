@@ -111,6 +111,7 @@ public sealed class InventoryManufacturingRealizationParticipant
             EnsureReplay(existing, metadata, payloadHash);
             var replay = JsonSerializer.Deserialize<InventoryManufacturingInputIssueResultV1>(existing.ResultJson, Json)
                 ?? throw Refused(503, InventoryManufacturingRealizationCodesV1.Unavailable);
+            EnsurePositionSnapshot(replay.ParentPosition);
             return replay with { IsReplay = true, OriginalCorrelationId = existing.CorrelationId };
         }
 
@@ -128,7 +129,7 @@ public sealed class InventoryManufacturingRealizationParticipant
         var result = new InventoryManufacturingInputIssueResultV1(companyId, request.ManufacturingOrderId,
             request.IssueId, request.ManufacturingOrderVersionAfter, parent.Label.Id,
             parent.Row.Version.ToString(CultureInfo.InvariantCulture), movement.Id, quantity.ToString(),
-            IsReplay: false, OriginalCorrelationId: metadata.CorrelationId);
+            PositionSnapshot(position), IsReplay: false, OriginalCorrelationId: metadata.CorrelationId);
         await SaveCommandAsync(InventoryManufacturingRealizationContractV1.InputIssueCommandName,
             keyHash, payloadHash, request.IssueId, result, metadata, cancellationToken);
         return result;
@@ -201,8 +202,15 @@ public sealed class InventoryManufacturingRealizationParticipant
         // Manufacturing itself permits an output only for an issued planned roll. Inventory keeps
         // the same invariant independently from its own physical trace; a declaration cannot mint
         // stock merely because it names a registered label.
-        _ = await InputTraceAsync(request.ManufacturingOrderId, parent.Label,
+        var trace = await InputTraceAsync(request.ManufacturingOrderId, parent.Label,
             InventoryManufacturingRealizationCodesV1.ParentInputNotIssued, cancellationToken);
+        if (request.OwnerKind != trace.Position.Owner.Kind || request.OwnerId != trace.Position.Owner.Id
+            || request.CustodianKind != trace.Position.Custodian.Kind
+            || request.CustodianId != trace.Position.Custodian.Id)
+        {
+            throw Refused(409, InventoryManufacturingRealizationCodesV1.ParentLabelContextConflict);
+        }
+
         if (await context.Labels.AsNoTracking().AnyAsync(row => row.Id == request.LabelId, cancellationToken))
         {
             throw Refused(409, InventoryManufacturingRealizationCodesV1.OutputLabelAlreadyRegistered);
@@ -311,11 +319,6 @@ public sealed class InventoryManufacturingRealizationParticipant
         }
 
         var row = free[0];
-        if (row.OwnerKind != (int)StockPartyKind.Company || row.OwnerId != companyId)
-        {
-            throw Refused(409, InventoryManufacturingRealizationCodesV1.ParentLabelContextConflict);
-        }
-
         if (row.QuantityKg < quantity.Value)
         {
             throw Refused(409, InventoryManufacturingRealizationCodesV1.PhysicalStockInsufficient);
@@ -339,11 +342,6 @@ public sealed class InventoryManufacturingRealizationParticipant
         if (issueRows.Count == 0)
         {
             throw Refused(409, missingIssueCode);
-        }
-
-        if (issueRows.Any(row => row.OwnerKind != (int)StockPartyKind.Company || row.OwnerId != companyId))
-        {
-            throw Refused(409, InventoryManufacturingRealizationCodesV1.ParentLabelContextConflict);
         }
 
         var positions = issueRows.Select(row => Position(row, label)).Distinct().ToArray();
@@ -370,6 +368,29 @@ public sealed class InventoryManufacturingRealizationParticipant
         {
             _ = StockLedger.FromStoredBalances(rows.Select(row =>
                 new StockBalance(Position(row, label), Kilograms.Of(row.QuantityKg))));
+        }
+        catch (Exception exception) when (exception is InventoryRuleException or ArgumentException)
+        {
+            throw Refused(503, InventoryManufacturingRealizationCodesV1.Unavailable);
+        }
+    }
+
+    private static InventoryManufacturingPositionSnapshotV1 PositionSnapshot(StockPosition position) =>
+        new InventoryManufacturingPositionSnapshotV1(
+        position.Owner.Kind, position.Owner.Id, position.Custodian.Kind, position.Custodian.Id,
+        position.LocationId);
+
+    private static void EnsurePositionSnapshot(InventoryManufacturingPositionSnapshotV1? snapshot)
+    {
+        try
+        {
+            if (snapshot is null || snapshot.LocationId == Guid.Empty)
+            {
+                throw new ArgumentException("Stored parent position is incomplete.");
+            }
+
+            _ = new StockOwner(snapshot.OwnerKind, snapshot.OwnerId);
+            _ = new StockCustodian(snapshot.CustodianKind, snapshot.CustodianId);
         }
         catch (Exception exception) when (exception is InventoryRuleException or ArgumentException)
         {
