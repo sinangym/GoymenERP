@@ -15,6 +15,7 @@ const env = readEnvironment()
 const OTHER_COMPANY = '10000000-0000-0000-0000-000000000002'
 const PLAN_POST_RE = /\/api\/v1\/manufacturing\/plans$/
 const PLAN_GET_RE = /\/api\/v1\/manufacturing\/plans\/[^/]+$/
+const PLAN_LIST_RE = /\/api\/v1\/manufacturing\/plans(?:\?|$)/
 const PLAN_APPROVAL_RE = /\/api\/v1\/manufacturing\/plans\/[^/]+\/approval$/
 const ORDER_POST_RE = /\/api\/v1\/manufacturing\/orders$/
 const ORDER_GET_RE = /\/api\/v1\/manufacturing\/orders\/[^/]+$/
@@ -265,6 +266,125 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
       })
     } finally {
       await verify.dispose()
+    }
+    expectEveryAnswerRewritten(answered, rewritten)
+  })
+
+  test('a saved plan whose screen was closed is found in the plan list, reopened, approved and ordered', async ({ page, context }) => {
+    const rewritten = await asActor(context, env.seed.recorderActor)
+    const answered = watchAnswers(page)
+    const candidate = await openPlanForm(page, env.seed.rolls.planCreate)
+
+    const sentPlan = page.waitForRequest((request) => PLAN_POST_RE.test(request.url()) && request.method() === 'POST')
+    await page.getByRole('button', { name: 'Taslak planı kaydet', exact: true }).click()
+    const body = (await sentPlan).postDataJSON() as { planId: string }
+    await expect(page.getByRole('heading', { name: 'Taslak plan kaydedildi' })).toBeVisible()
+    const reference = body.planId.slice(-8)
+
+    // Close the screen: the user leaves for the order list, and the plan's URL is no longer in hand.
+    await page.goto('/uretim/emirler')
+    await expect(page.getByRole('heading', { name: 'Üretim emirleri' })).toBeVisible()
+
+    // Find it again from the order list, through the plan list's own server read.
+    const listAnswer = page.waitForResponse(
+      (response) => PLAN_LIST_RE.test(response.url()) && response.request().method() === 'GET',
+    )
+    await page.getByRole('link', { name: 'Üretim planları', exact: true }).click()
+    const list = await listAnswer
+    expect(list.status()).toBe(200)
+    expect(list.request().headers()['x-company-id']).toBe(env.seed.companyId)
+    expect(new URL(page.url()).pathname).toBe('/uretim/planlar')
+    await expect(page.getByRole('heading', { name: 'Üretim planları' })).toBeVisible()
+    const listed = (await list.json()) as { plans: Array<Record<string, unknown>>; nextCursor: string | null }
+    expect(listed.plans.find((row) => row.planId === body.planId)).toMatchObject({
+      planId: body.planId,
+      workCenterId: env.seed.workCenterId,
+      status: 'Draft',
+      version: 1,
+      plannedRollCount: 1,
+      plannedInputKg: '1000',
+      approvedAtUtc: null,
+    })
+    const row = page.getByRole('row', { name: new RegExp(reference) })
+    await expect(row).toContainText('Taslak')
+    await expect(row).toContainText('1000')
+
+    // Reopen from the list row: the existing plan detail reads the stored plan afresh.
+    const reopened = page.waitForResponse(
+      (response) => PLAN_GET_RE.test(response.url()) && response.url().endsWith(body.planId)
+        && response.request().method() === 'GET',
+    )
+    await row.getByRole('link', { name: new RegExp(reference) }).click()
+    expect((await reopened).status()).toBe(200)
+    expect(new URL(page.url()).pathname).toBe(`/uretim/plan/${body.planId}`)
+    await expect(page.getByRole('heading', { name: 'Plan yeniden açıldı' })).toBeVisible()
+    await expect(page.getByRole('row', { name: new RegExp(`${candidate.labelId}.*1000`) })).toBeVisible()
+
+    // Downstream: approve, then create the order from the reopened plan.
+    const approvalResponse = page.waitForResponse(
+      (response) => PLAN_APPROVAL_RE.test(response.url()) && response.request().method() === 'POST',
+    )
+    await page.getByRole('button', { name: 'Planı onayla', exact: true }).click()
+    expect((await approvalResponse).status()).toBe(200)
+    await expect(page.getByText('Plan onaylandı ve güncel kayıt yeniden okundu.', { exact: true })).toBeVisible()
+
+    const orderResponse = page.waitForResponse(
+      (response) => ORDER_POST_RE.test(response.url()) && response.request().method() === 'POST',
+    )
+    await page.getByRole('button', { name: 'Üretim emri oluştur', exact: true }).click()
+    const created = await orderResponse
+    expect(created.status()).toBe(201)
+    const orderBody = created.request().postDataJSON() as { orderId: string; planId: string }
+    expect(orderBody.planId).toBe(body.planId)
+    await expect(page.getByRole('heading', { name: 'Üretim emri' })).toBeVisible()
+
+    // Back in the plan list the same plan now reads as approved; the Draft filter no longer shows it.
+    await page.goto('/uretim/planlar')
+    await expect(page.getByRole('heading', { name: 'Üretim planları' })).toBeVisible()
+    await expect(page.getByRole('row', { name: new RegExp(reference) })).toContainText('Onaylı')
+    const draftsAnswer = page.waitForResponse(
+      (response) => PLAN_LIST_RE.test(response.url()) && response.url().includes('status=Draft')
+        && response.request().method() === 'GET',
+    )
+    await page.getByLabel('Durum').selectOption('Draft')
+    const drafts = await draftsAnswer
+    expect(drafts.status()).toBe(200)
+    const draftPage = (await drafts.json()) as { plans: Array<{ planId: string }> }
+    expect(draftPage.plans.some((plan) => plan.planId === body.planId)).toBe(false)
+    await expect(page.getByRole('row', { name: new RegExp(reference) })).toHaveCount(0)
+
+    const verify = await apiAs(env, env.seed.recorderActor)
+    try {
+      const currentPlan = await readPlan(verify, body.planId)
+      expect(currentPlan.body).toMatchObject({ planId: body.planId, status: 'Approved', version: 2 })
+      expect(await readOrder(env, orderBody.orderId)).toMatchObject({
+        orderId: orderBody.orderId,
+        planId: body.planId,
+        companyId: env.seed.companyId,
+        status: 'Open',
+      })
+      // The API list agrees with the screen: the approved plan is in this company's Approved page.
+      const approvedList = await verify.get('/api/v1/manufacturing/plans?status=Approved&pageSize=100')
+      expect(approvedList.status()).toBe(200)
+      expect(((await approvedList.json()) as { plans: Array<{ planId: string }> }).plans.map((plan) => plan.planId))
+        .toContain(body.planId)
+    } finally {
+      await verify.dispose()
+    }
+
+    const otherCompany = await request.newContext({
+      baseURL: env.apiBaseUrl,
+      extraHTTPHeaders: {
+        'X-Development-User': env.seed.recorderActor,
+        'X-Company-Id': OTHER_COMPANY,
+        'X-Correlation-Id': `mfg-ci-${randomUUID()}`,
+      },
+    })
+    try {
+      // The recorder holds no grant in the other company: refused before anything is read.
+      expect((await otherCompany.get('/api/v1/manufacturing/plans')).status()).toBe(403)
+    } finally {
+      await otherCompany.dispose()
     }
     expectEveryAnswerRewritten(answered, rewritten)
   })
