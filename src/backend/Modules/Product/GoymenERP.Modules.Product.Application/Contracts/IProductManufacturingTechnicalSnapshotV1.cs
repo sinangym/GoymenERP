@@ -49,6 +49,7 @@ public sealed record ProductManufacturingTemplateRevisionV1(
     string SourceRevision);
 
 public sealed record ProductManufacturingKilogramUnitV1(
+    Guid CompanyId,
     Guid UnitId,
     string UnitCode,
     Guid ProfileId,

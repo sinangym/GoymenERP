@@ -88,7 +88,7 @@ public sealed class ProductManufacturingTechnicalSnapshotService(
             new(template.Id, template.Version, template.Code, template.SourceRef),
             thickness,
             width,
-            new(profile.UnitId, profile.UnitCode, profile.Profile.ProfileId,
+            new(profile.CompanyId, profile.UnitId, profile.UnitCode, profile.Profile.ProfileId,
                 profile.Profile.Version.ToString(CultureInfo.InvariantCulture)),
             selection.EffectiveOn);
         return new(snapshot, []);

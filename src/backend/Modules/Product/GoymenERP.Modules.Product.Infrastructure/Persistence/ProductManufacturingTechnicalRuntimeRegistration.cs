@@ -19,12 +19,11 @@ public static class ProductManufacturingTechnicalRuntimeRegistration
         ArgumentNullException.ThrowIfNull(runtimeEnabled);
         services.TryAddScoped<IProductManufacturingTechnicalRecordReader>(
             provider => provider.GetRequiredService<ProductReadStore>());
-        services.AddScoped<ProductManufacturingTechnicalSnapshotService>();
         services.AddScoped<IProductManufacturingTechnicalSnapshotV1>(provider =>
             runtimeEnabled(provider)
             && provider.GetService<ISettingsPrerequisiteProvider>() is not null
             && provider.GetService<IProductFamilyDefinitionSourceV2>() is not null
-                ? provider.GetRequiredService<ProductManufacturingTechnicalSnapshotService>()
+                ? ActivatorUtilities.CreateInstance<ProductManufacturingTechnicalSnapshotService>(provider)
                 : new UnavailableProductManufacturingTechnicalSnapshot());
         return services;
     }

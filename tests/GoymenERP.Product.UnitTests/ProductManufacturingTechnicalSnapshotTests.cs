@@ -1,6 +1,10 @@
 using System.Text.Json;
+using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Product.Application;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Product.Infrastructure.Persistence;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.Extensions.DependencyInjection;
 using static GoymenERP.Product.UnitTests.ProductSalesEligibilityServiceTests;
 
@@ -29,8 +33,8 @@ public sealed class ProductManufacturingTechnicalSnapshotTests
         Assert.Equal((TemplateId, "7", "gdc-coil-v7", "#66/5739827887"),
             (snapshot.Template.TemplateId, snapshot.Template.TemplateVersion,
                 snapshot.Template.TemplateCode, snapshot.Template.SourceRevision));
-        Assert.Equal((StockUnitId, "synthetic-kg", world.Settings.ProfileIdFor(StockUnitId), StoredVersion),
-            (snapshot.UnitKg.UnitId, snapshot.UnitKg.UnitCode,
+        Assert.Equal((CompanyId, StockUnitId, "synthetic-kg", world.Settings.ProfileIdFor(StockUnitId), StoredVersion),
+            (snapshot.UnitKg.CompanyId, snapshot.UnitKg.UnitId, snapshot.UnitKg.UnitCode,
                 snapshot.UnitKg.ProfileId, snapshot.UnitKg.ProfileVersion));
         Assert.Equal(4, world.Authorization.Calls);
         Assert.All(world.Authorization.AskedPermissions,
@@ -131,7 +135,7 @@ public sealed class ProductManufacturingTechnicalSnapshotTests
     }
 
     [Fact]
-    public async Task Disabled_runtime_resolves_only_the_fail_closed_port()
+    public async Task Disabled_runtime_resolves_only_the_fail_closed_port_and_never_the_concrete_service()
     {
         var services = new ServiceCollection();
         services.AddProductManufacturingTechnicalSnapshot(_ => false);
@@ -141,6 +145,54 @@ public sealed class ProductManufacturingTechnicalSnapshotTests
         var error = await Assert.ThrowsAsync<ProductOperationException>(() => port.ReadAsync(Selection, default));
 
         Assert.Equal((503, "product_runtime_unconfigured"), (error.StatusCode, error.Code));
+        Assert.Null(provider.GetService<ProductManufacturingTechnicalSnapshotService>());
+        Assert.Single(provider.GetServices<IProductManufacturingTechnicalSnapshotV1>());
+    }
+
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    public async Task Missing_owner_prerequisite_resolves_the_fail_closed_port(
+        bool settingsRegistered, bool definitionRegistered)
+    {
+        var services = new ServiceCollection();
+        if (settingsRegistered)
+        {
+            var world = World();
+            services.AddSingleton<ISettingsPrerequisiteProvider>(world.Settings);
+        }
+        if (definitionRegistered)
+            services.AddSingleton<IProductFamilyDefinitionSourceV2>(new DefinitionSource(Definition()));
+        services.AddProductManufacturingTechnicalSnapshot(_ => true);
+        await using var provider = services.BuildServiceProvider();
+
+        var port = provider.GetRequiredService<IProductManufacturingTechnicalSnapshotV1>();
+        var error = await Assert.ThrowsAsync<ProductOperationException>(() => port.ReadAsync(Selection, default));
+
+        Assert.Equal((503, "product_runtime_unconfigured"), (error.StatusCode, error.Code));
+        Assert.Null(provider.GetService<ProductManufacturingTechnicalSnapshotService>());
+    }
+
+    [Fact]
+    public void Enabled_runtime_resolves_only_the_gated_interface_to_the_real_service()
+    {
+        var world = World();
+        var services = new ServiceCollection();
+        services.AddSingleton<ICompanyContext>(world.Company);
+        services.AddSingleton<ICurrentUser>(world.User);
+        services.AddSingleton<IErpAuthorityRevalidationService>(world.Authorization);
+        services.AddSingleton<ISettingsPrerequisiteProvider>(world.Settings);
+        services.AddSingleton<IProductFamilyDefinitionSourceV2>(new DefinitionSource(Definition()));
+        services.AddSingleton<IProductManufacturingTechnicalRecordReader>(new TechnicalRecords(world.Records));
+        services.AddScoped<ProductUnitProfileAdapter>();
+        services.AddProductManufacturingTechnicalSnapshot(_ => true);
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        using var scope = provider.CreateScope();
+
+        Assert.IsType<ProductManufacturingTechnicalSnapshotService>(
+            scope.ServiceProvider.GetRequiredService<IProductManufacturingTechnicalSnapshotV1>());
+        Assert.Null(scope.ServiceProvider.GetService<ProductManufacturingTechnicalSnapshotService>());
+        Assert.Single(scope.ServiceProvider.GetServices<IProductManufacturingTechnicalSnapshotV1>());
     }
 
     private static ProductSalesEligibilityServiceTests.World World(ProductStoredRecord? record = null) =>
