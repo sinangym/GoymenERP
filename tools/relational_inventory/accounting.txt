@@ -3,6 +3,7 @@
 # One fully qualified test name per line, sorted. A test that executes n > 1 times (theory rows)
 # is written `<name>  x<n>  # <reason>`. Read by tools/verify_rcsi_relational_acceptance.py.
 
+GoymenERP.Api.IntegrationTests.AccountingApiSqlServerRelationalAcceptanceTests.A_journal_reversal_proposal_is_pending_until_another_user_approves_one_linked_reversal
 GoymenERP.Api.IntegrationTests.AccountingApiSqlServerRelationalAcceptanceTests.A_period_is_proposed_approved_by_another_user_and_closed_and_every_answer_of_a_key_holds
 GoymenERP.Api.IntegrationTests.AccountingApiSqlServerRelationalAcceptanceTests.Another_company_sees_nothing_and_each_read_needs_its_own_name
 GoymenERP.Api.IntegrationTests.AccountingApiSqlServerRelationalAcceptanceTests.The_journal_and_queue_reads_answer_what_the_ledger_stored_at_the_real_money_scale
