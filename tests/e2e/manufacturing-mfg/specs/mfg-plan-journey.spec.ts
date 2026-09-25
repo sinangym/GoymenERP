@@ -26,6 +26,14 @@ interface CandidateAnswer {
   readonly draftSelectable: boolean
 }
 
+const CANONICAL_PROCESSES = ['Slitting', 'ColdRolling', 'TubeProfile', 'Paint', 'CutToLength'] as const
+type CanonicalProcess = (typeof CANONICAL_PROCESSES)[number]
+
+interface WorkCenterAnswer {
+  readonly id: string
+  readonly kind: CanonicalProcess
+}
+
 async function asActor(context: BrowserContext, actor: string): Promise<Set<Request>> {
   const rewritten = new Set<Request>()
   await context.route('**/api/v1/**', async (route: Route) => {
@@ -47,7 +55,11 @@ function expectEveryAnswerRewritten(answered: readonly Request[], rewritten: Rea
   expect(answered.filter((request) => !rewritten.has(request)).map((request) => request.url())).toEqual([])
 }
 
-async function openPlanForm(page: Page, roll: MfgRollSeed): Promise<CandidateAnswer> {
+async function openPlanForm(
+  page: Page,
+  roll: MfgRollSeed,
+  workCenterId = env.seed.workCenterId,
+): Promise<CandidateAnswer> {
   await page.goto('/uretim/emirler')
   await expect(page.getByRole('heading', { name: 'Üretim emirleri' })).toBeVisible()
   const createActions = page.getByRole('link', { name: 'Yeni üretim planı' })
@@ -55,7 +67,7 @@ async function openPlanForm(page: Page, roll: MfgRollSeed): Promise<CandidateAns
   await createActions.click()
   await expect(page.getByRole('heading', { name: 'Yeni taslak plan' })).toBeVisible()
 
-  await page.getByRole('combobox', { name: 'İş merkezi' }).selectOption(env.seed.workCenterId)
+  await page.getByRole('combobox', { name: 'İş merkezi' }).selectOption(workCenterId)
   await page.getByLabel('Etiket, ürün veya lot ara').fill(roll.labelCode)
   const candidatesAnswer = page.waitForResponse(
     (response) => CANDIDATES_RE.test(response.url()) && response.request().method() === 'GET',
@@ -80,7 +92,80 @@ async function readPlan(api: APIRequestContext, planId: string) {
   return { response, body: response.status() === 200 ? await response.json() as Record<string, unknown> : null }
 }
 
+async function readCanonicalWorkCenters(api: APIRequestContext): Promise<ReadonlyMap<CanonicalProcess, WorkCenterAnswer>> {
+  const response = await api.get('/api/v1/organization/work-centers')
+  expect(response.status()).toBe(200)
+  const body = await response.json() as unknown
+  expect(Array.isArray(body)).toBe(true)
+
+  const result = new Map<CanonicalProcess, WorkCenterAnswer>()
+  for (const process of CANONICAL_PROCESSES) {
+    const row = (body as unknown[]).find((candidate) =>
+      typeof candidate === 'object' && candidate !== null
+        && (candidate as Record<string, unknown>).kind === process)
+    if (typeof row !== 'object' || row === null) {
+      throw new Error(`fixture must publish one ${process} work center`)
+    }
+    const id = (row as Record<string, unknown>).id
+    if (typeof id !== 'string' || !/^[0-9a-f-]{36}$/.test(id)) {
+      throw new Error(`fixture ${process} work center must publish a canonical id`)
+    }
+    result.set(process, { id, kind: process })
+  }
+  return result
+}
+
 test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
+  test('each canonical process follows the same authorized save and fresh-reopen path', async ({ page, context }) => {
+    const rewritten = await asActor(context, env.seed.recorderActor)
+    const answered = watchAnswers(page)
+    const api = await apiAs(env, env.seed.recorderActor)
+
+    try {
+      const workCenters = await readCanonicalWorkCenters(api)
+      for (const process of CANONICAL_PROCESSES) {
+        const workCenter = workCenters.get(process)!
+        const candidate = await openPlanForm(page, env.seed.rolls.planCreate, workCenter.id)
+        const sentPlan = page.waitForRequest((request) => PLAN_POST_RE.test(request.url()) && request.method() === 'POST')
+        await page.getByRole('button', { name: 'Taslak planı kaydet', exact: true }).click()
+        const sent = await sentPlan
+        const body = sent.postDataJSON() as {
+          planId: string
+          workCenterId: string
+          inputs: Array<{ parentRollId: string; expectedLabelVersion: string }>
+        }
+        expect(body).toMatchObject({
+          workCenterId: workCenter.id,
+          inputs: [{ parentRollId: candidate.labelId, expectedLabelVersion: candidate.labelVersion }],
+        })
+        await expect(page.getByRole('heading', { name: 'Taslak plan kaydedildi' })).toBeVisible()
+
+        const freshRead = page.waitForResponse(
+          (response) => PLAN_GET_RE.test(response.url()) && response.url().endsWith(body.planId)
+            && response.request().method() === 'GET',
+        )
+        await page.getByRole('link', { name: 'Formu kapat ve planı yeniden aç' }).click()
+        expect((await freshRead).status()).toBe(200)
+        await expect(page.getByRole('heading', { name: 'Plan yeniden açıldı' })).toBeVisible()
+        await expect(page.getByText(process, { exact: true })).toBeVisible()
+
+        const stored = await readPlan(api, body.planId)
+        expect(stored.response.status()).toBe(200)
+        expect(stored.body).toMatchObject({
+          planId: body.planId,
+          companyId: env.seed.companyId,
+          workCenterId: workCenter.id,
+          process,
+          status: 'Draft',
+          version: 1,
+        })
+      }
+    } finally {
+      await api.dispose()
+    }
+    expectEveryAnswerRewritten(answered, rewritten)
+  })
+
   test('the in-list action saves, reopens and approves the plan, then creates and opens its order', async ({ page, context }) => {
     const rewritten = await asActor(context, env.seed.recorderActor)
     const answered = watchAnswers(page)
