@@ -145,6 +145,36 @@ internal sealed class InventoryLabelDetailService(
             }
         }
 
+        foreach (var transformation in genealogy.Edges.GroupBy(edge => edge.TransformationId))
+        {
+            var first = transformation.First();
+            var pairs = new HashSet<(Guid SourceLabelId, Guid OutputLabelId)>();
+            var sources = new Dictionary<Guid, (string Code, string Version, string QuantityKg)>();
+            var outputs = new Dictionary<Guid, (string Code, string Version, string QuantityKg)>();
+            foreach (var edge in transformation)
+            {
+                if (!string.Equals(edge.Kind, first.Kind, StringComparison.Ordinal)
+                    || edge.OccurredAtUtc != first.OccurredAtUtc
+                    || !pairs.Add((edge.SourceLabelId, edge.OutputLabelId))
+                    || !SameLabelFacts(sources, edge.SourceLabelId, edge.SourceCode,
+                        edge.SourceLabelVersion, edge.SourceQuantityKg)
+                    || !SameLabelFacts(outputs, edge.OutputLabelId, edge.OutputCode,
+                        edge.OutputLabelVersion, edge.OutputQuantityKg))
+                {
+                    return false;
+                }
+            }
+
+            if (sources.Keys.Intersect(outputs.Keys).Any()
+                || first.Kind == nameof(InventoryLabelTransformationKind.Split)
+                    && (sources.Count != 1 || outputs.Count < 2)
+                || first.Kind == nameof(InventoryLabelTransformationKind.Merge)
+                    && (sources.Count < 2 || outputs.Count != 1))
+            {
+                return false;
+            }
+        }
+
         var connectedLabels = new HashSet<Guid> { label.Id };
         var remaining = genealogy.Edges.ToList();
         while (remaining.Count > 0)
@@ -164,6 +194,23 @@ internal sealed class InventoryLabelDetailService(
             }
         }
 
+        return true;
+    }
+
+    private static bool SameLabelFacts(
+        IDictionary<Guid, (string Code, string Version, string QuantityKg)> labels,
+        Guid labelId,
+        string code,
+        string version,
+        string quantityKg)
+    {
+        var facts = (code, version, quantityKg);
+        if (labels.TryGetValue(labelId, out var existing))
+        {
+            return existing == facts;
+        }
+
+        labels.Add(labelId, facts);
         return true;
     }
 

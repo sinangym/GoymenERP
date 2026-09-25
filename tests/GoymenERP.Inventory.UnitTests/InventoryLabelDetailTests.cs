@@ -164,6 +164,97 @@ public sealed class InventoryLabelDetailTests
             InventoryLabelDetailCodesV1.ReadConflict);
     }
 
+    [Fact]
+    public async Task Valid_split_and_merge_transformation_groups_are_returned()
+    {
+        var split = new World();
+        var splitId = Guid.NewGuid();
+        var splitSource = Guid.NewGuid();
+        var splitRoot = split.Reader.Record!.Label.Id;
+        var splitOccurredAt = DateTimeOffset.UtcNow;
+        split.Genealogy.Result = split.Genealogy.Result! with
+        {
+            Edges = [
+                Edge(splitSource, splitRoot, splitId, occurredAt: splitOccurredAt),
+                Edge(splitSource, Guid.NewGuid(), splitId, occurredAt: splitOccurredAt),
+            ],
+        };
+        Assert.Equal(2, (await split.Service().GetAsync(splitRoot)).Genealogy.Edges.Count);
+
+        var merge = new World();
+        var mergeId = Guid.NewGuid();
+        var mergeRoot = merge.Reader.Record!.Label.Id;
+        var mergeOccurredAt = DateTimeOffset.UtcNow;
+        merge.Genealogy.Result = merge.Genealogy.Result! with
+        {
+            Edges = [
+                Edge(Guid.NewGuid(), mergeRoot, mergeId, nameof(InventoryLabelTransformationKind.Merge), mergeOccurredAt),
+                Edge(Guid.NewGuid(), mergeRoot, mergeId, nameof(InventoryLabelTransformationKind.Merge), mergeOccurredAt),
+            ],
+        };
+        Assert.Equal(2, (await merge.Service().GetAsync(mergeRoot)).Genealogy.Edges.Count);
+    }
+
+    [Fact]
+    public async Task Corrupt_transformation_groups_are_fail_closed()
+    {
+        await RefusedGenealogy(world =>
+        {
+            var root = world.Reader.Record!.Label.Id;
+            return [Edge(Guid.NewGuid(), root, Guid.NewGuid())];
+        });
+        await RefusedGenealogy(world =>
+        {
+            var root = world.Reader.Record!.Label.Id;
+            return [Edge(Guid.NewGuid(), root, Guid.NewGuid(), nameof(InventoryLabelTransformationKind.Merge))];
+        });
+        await RefusedGenealogy(world =>
+        {
+            var root = world.Reader.Record!.Label.Id;
+            var transformationId = Guid.NewGuid();
+            var source = Guid.NewGuid();
+            var edge = Edge(source, root, transformationId);
+            return [edge, edge];
+        });
+        await RefusedGenealogy(world =>
+        {
+            var root = world.Reader.Record!.Label.Id;
+            var transformationId = Guid.NewGuid();
+            var source = Guid.NewGuid();
+            return [Edge(source, root, transformationId), Edge(source, source, transformationId)];
+        });
+        await RefusedGenealogy(world =>
+        {
+            var root = world.Reader.Record!.Label.Id;
+            var transformationId = Guid.NewGuid();
+            var occurredAt = DateTimeOffset.UtcNow;
+            var source = Guid.NewGuid();
+            return [
+                Edge(source, root, transformationId, occurredAt: occurredAt),
+                Edge(source, Guid.NewGuid(), transformationId, occurredAt: occurredAt.AddSeconds(1)),
+            ];
+        });
+        await RefusedGenealogy(world =>
+        {
+            var root = world.Reader.Record!.Label.Id;
+            var transformationId = Guid.NewGuid();
+            var source = Guid.NewGuid();
+            return [
+                Edge(source, root, transformationId),
+                Edge(source, Guid.NewGuid(), transformationId, sourceQuantityKg: "2"),
+            ];
+        });
+    }
+
+    private static async Task RefusedGenealogy(
+        Func<World, IReadOnlyList<InventoryLabelGenealogyEdgeV1>> edges)
+    {
+        var world = new World();
+        world.Genealogy.Result = world.Genealogy.Result! with { Edges = edges(world) };
+        await Refused(world.Service().GetAsync(world.Reader.Record!.Label.Id), 503,
+            InventoryLabelDetailCodesV1.Unavailable);
+    }
+
     private static async Task Refused(Task task, int status, string code)
     {
         var error = await Assert.ThrowsAsync<InventoryLabelDetailException>(() => task);
@@ -185,14 +276,20 @@ public sealed class InventoryLabelDetailTests
         return new(3, label, lot, [new StockBalance(position, Kilograms.Positive(10.125m))]);
     }
 
-    private static InventoryLabelGenealogyEdgeV1 Edge(Guid source, Guid output) => new(
-        Guid.NewGuid(),
-        nameof(InventoryLabelTransformationKind.Split),
-        DateTimeOffset.UtcNow,
+    private static InventoryLabelGenealogyEdgeV1 Edge(
+        Guid source,
+        Guid output,
+        Guid? transformationId = null,
+        string kind = nameof(InventoryLabelTransformationKind.Split),
+        DateTimeOffset? occurredAt = null,
+        string sourceQuantityKg = "1") => new(
+        transformationId ?? Guid.NewGuid(),
+        kind,
+        occurredAt ?? DateTimeOffset.UtcNow,
         source,
         $"LBL-{source:N}",
         "1",
-        "1",
+        sourceQuantityKg,
         output,
         $"LBL-{output:N}",
         "1",

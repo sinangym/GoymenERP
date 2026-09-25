@@ -180,6 +180,56 @@ function genealogyEdge(value: unknown): InventoryLabelGenealogyEdge | null {
   return source as unknown as InventoryLabelGenealogyEdge
 }
 
+interface GenealogyLabelFacts {
+  readonly code: string
+  readonly version: string
+  readonly quantityKg: string
+}
+
+function sameGenealogyLabelFacts(
+  labels: Map<string, GenealogyLabelFacts>,
+  labelId: string,
+  code: string,
+  versionValue: string,
+  quantityKg: string,
+): boolean {
+  const existing = labels.get(labelId)
+  if (existing !== undefined) {
+    return existing.code === code && existing.version === versionValue && existing.quantityKg === quantityKg
+  }
+  labels.set(labelId, { code, version: versionValue, quantityKg })
+  return true
+}
+
+function validGenealogyTransformations(edges: readonly InventoryLabelGenealogyEdge[]): boolean {
+  const groups = new Map<string, InventoryLabelGenealogyEdge[]>()
+  for (const edge of edges) {
+    const group = groups.get(edge.transformationId)
+    if (group === undefined) groups.set(edge.transformationId, [edge])
+    else group.push(edge)
+  }
+
+  for (const group of groups.values()) {
+    const first = group[0]
+    const pairs = new Set<string>()
+    const sources = new Map<string, GenealogyLabelFacts>()
+    const outputs = new Map<string, GenealogyLabelFacts>()
+    for (const edge of group) {
+      const pair = `${edge.sourceLabelId}:${edge.outputLabelId}`
+      if (edge.kind !== first.kind || edge.occurredAtUtc !== first.occurredAtUtc || pairs.has(pair) ||
+        !sameGenealogyLabelFacts(sources, edge.sourceLabelId, edge.sourceCode,
+          edge.sourceLabelVersion, edge.sourceQuantityKg) ||
+        !sameGenealogyLabelFacts(outputs, edge.outputLabelId, edge.outputCode,
+          edge.outputLabelVersion, edge.outputQuantityKg)) return false
+      pairs.add(pair)
+    }
+    if ([...sources.keys()].some((labelId) => outputs.has(labelId)) ||
+      (first.kind === 'Split' && (sources.size !== 1 || outputs.size < 2)) ||
+      (first.kind === 'Merge' && (sources.size < 2 || outputs.size !== 1))) return false
+  }
+  return true
+}
+
 export function decodeInventoryLabelIdentity(value: unknown): InventoryLabelIdentity | null {
   const source = record(value)
   if (source === null || !exact(source, [
@@ -232,6 +282,7 @@ export function decodeInventoryLabelGenealogy(
   const edges = source.edges.map(genealogyEdge)
   if (edges.some((item) => item === null)) return null
   const decoded = edges as InventoryLabelGenealogyEdge[]
+  if (!validGenealogyTransformations(decoded)) return null
   const connected = new Set([expectedLabelId])
   const remaining = [...decoded]
   while (remaining.length > 0) {

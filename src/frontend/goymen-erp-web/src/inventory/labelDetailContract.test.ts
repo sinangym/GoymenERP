@@ -15,6 +15,7 @@ const CUSTODIAN = '66666666-6666-6666-6666-666666666666'
 const LOCATION = '77777777-7777-7777-7777-777777777777'
 const SOURCE_LABEL = '88888888-8888-8888-8888-888888888888'
 const TRANSFORMATION = '99999999-9999-9999-9999-999999999999'
+const OUTPUT_LABEL = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
 
 function identity() {
   return {
@@ -47,6 +48,10 @@ function genealogy() {
       transformationId: TRANSFORMATION, kind: 'Split', occurredAtUtc: '2026-09-24T07:59:00Z',
       sourceLabelId: SOURCE_LABEL, sourceCode: 'LBL-090', sourceLabelVersion: '2', sourceQuantityKg: '1250.5',
       outputLabelId: LABEL, outputCode: 'LBL-100', outputLabelVersion: '3', outputQuantityKg: '1250.5',
+    }, {
+      transformationId: TRANSFORMATION, kind: 'Split', occurredAtUtc: '2026-09-24T07:59:00Z',
+      sourceLabelId: SOURCE_LABEL, sourceCode: 'LBL-090', sourceLabelVersion: '2', sourceQuantityKg: '1250.5',
+      outputLabelId: OUTPUT_LABEL, outputCode: 'LBL-101', outputLabelVersion: '1', outputQuantityKg: '250',
     }],
   }
 }
@@ -88,6 +93,18 @@ describe('Inventory label detail contract', () => {
         ...genealogy().edges[0], transformationId: OWNER, sourceLabelId: CUSTODIAN, outputLabelId: LOCATION,
       }],
     }, LABEL, 'LBL-100')).toBeNull()
+  })
+
+  it('fails closed for impossible or internally inconsistent transformation groups', () => {
+    const [first, second] = genealogy().edges
+    const decode = (edges: unknown[]) => decodeInventoryLabelGenealogy({ ...genealogy(), edges }, LABEL, 'LBL-100')
+
+    expect(decode([first])).toBeNull()
+    expect(decode([{ ...first, kind: 'Merge' }])).toBeNull()
+    expect(decode([first, first])).toBeNull()
+    expect(decode([first, { ...second, outputLabelId: SOURCE_LABEL }])).toBeNull()
+    expect(decode([first, { ...second, occurredAtUtc: '2026-09-24T08:00:00Z' }])).toBeNull()
+    expect(decode([first, { ...second, sourceQuantityKg: '1' }])).toBeNull()
   })
 
   it('rejects negative quantities, non-positive positions and totals that do not match their positions', () => {
