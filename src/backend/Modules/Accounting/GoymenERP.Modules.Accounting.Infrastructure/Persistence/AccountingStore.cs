@@ -523,7 +523,7 @@ public sealed class AccountingStore(
         if (existing is not null)
         {
             var restored = RestoreReversalProposal(existing);
-            if (restored != proposal)
+            if (!SameReversalProposalRequest(restored, proposal))
             {
                 throw Refused(AccountingJournalReversalStoreCodesV1.ContentConflict,
                     "Aynı ters kayıt teklif kimliği başka değişmez içerikle kaydedilmiş.");
@@ -533,6 +533,15 @@ public sealed class AccountingStore(
             Complete(metadata, proposal.CompanyId, restored);
             await SaveAsync(cancellationToken);
             return (restored, AccountingWriteOutcome.Replayed);
+        }
+
+        var sourceExists = await dbContext.Journals.AsNoTracking().AnyAsync(
+            row => row.CompanyId == proposal.CompanyId && row.Id == proposal.SourceJournalId,
+            cancellationToken);
+        if (!sourceExists)
+        {
+            throw Refused(AccountingJournalReversalStoreCodesV1.SourceJournalNotFound,
+                "Bu şirketin terslenecek kaynak fişi yok.");
         }
 
         var row = ToReversalProposalRow(proposal);
@@ -908,6 +917,19 @@ public sealed class AccountingStore(
             DecisionReason = proposal.DecisionReason,
             Version = proposal.Version,
         };
+
+    private static bool SameReversalProposalRequest(
+        AccountingJournalReversalProposalV1 stored,
+        AccountingJournalReversalProposalV1 requested) =>
+        stored.ProposalId == requested.ProposalId
+        && stored.CompanyId == requested.CompanyId
+        && stored.SourceJournalId == requested.SourceJournalId
+        && stored.PeriodId == requested.PeriodId
+        && stored.TransactionDate == requested.TransactionDate
+        && stored.AccountingDate == requested.AccountingDate
+        && stored.ValueDate == requested.ValueDate
+        && string.Equals(stored.Reason, requested.Reason, StringComparison.Ordinal)
+        && stored.ProposedBy == requested.ProposedBy;
 
     private static AccountingJournalReversalProposalV1 RestoreReversalProposal(
         AccountingJournalReversalProposalRow row) => new(

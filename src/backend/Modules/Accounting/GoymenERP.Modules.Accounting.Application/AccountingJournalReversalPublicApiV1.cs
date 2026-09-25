@@ -88,10 +88,17 @@ public sealed class AccountingJournalReversalPublicServiceV1(
         Guid proposalId,
         ApproveAccountingJournalReversalRequestV1? request,
         string idempotencyKey,
-        CancellationToken cancellationToken = default) =>
-        request is null
-            ? Task.FromResult(Invalid("request"))
+        CancellationToken cancellationToken = default)
+    {
+        if (request is null)
+        {
+            return Task.FromResult(Invalid("request"));
+        }
+
+        return request.ExpectedVersion <= 0
+            ? Task.FromResult(Invalid("expectedVersion"))
             : lifecycle.ApproveAsync(proposalId, request.ExpectedVersion, idempotencyKey, cancellationToken);
+    }
 
     private static bool TryDate(string? text, out DateOnly value)
     {

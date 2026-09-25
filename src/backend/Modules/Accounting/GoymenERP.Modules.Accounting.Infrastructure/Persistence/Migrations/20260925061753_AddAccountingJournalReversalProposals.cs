@@ -88,6 +88,14 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.Sql(
+                """
+                IF EXISTS (SELECT 1 FROM [accounting].[JournalReversalProposals])
+                BEGIN
+                    ;THROW 51048, N'Accounting reversal proposal migration cannot roll back while proposals exist.', 1;
+                END;
+                """);
+
             migrationBuilder.DropTable(
                 name: "JournalReversalProposals",
                 schema: "accounting");

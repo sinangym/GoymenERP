@@ -55,6 +55,20 @@ public sealed class AccountingJournalReversalPublicApiV1Tests
         Assert.Equal("approval-key", lifecycle.IdempotencyKey);
     }
 
+    [Fact]
+    public async Task Non_positive_approval_version_is_refused_with_the_expected_version_field()
+    {
+        var lifecycle = new CapturingLifecycle();
+        var service = new AccountingJournalReversalPublicServiceV1(lifecycle);
+
+        var result = await service.ApproveAsync(ProposalId,
+            new ApproveAccountingJournalReversalRequestV1(0), "approval-key");
+
+        Assert.Equal(AccountingApiStatus.Invalid, result.Status);
+        Assert.Equal("expectedVersion", result.Field);
+        Assert.Null(lifecycle.ApprovalProposalId);
+    }
+
     private static readonly Guid ProposalId = Guid.Parse("b1000000-0000-4000-8000-000000000001");
 
     private static ProposeAccountingJournalReversalRequestV1 Request(

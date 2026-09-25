@@ -56,6 +56,15 @@ public static class AccountingEndpoints
         AccountingJournalReversalStoreCodesV1.PostingConflict,
     ];
 
+    private static readonly string[] JournalReversalUnprocessableCodes =
+    [
+        AccountingErrorCodes.InvalidReference,
+        AccountingErrorCodes.ReversalOfReversal,
+        AccountingErrorCodes.PeriodClosed,
+        AccountingErrorCodes.PeriodDoesNotCover,
+        AccountingJournalReversalStoreCodesV1.SourceJournalNotFound,
+    ];
+
     private static readonly string[] PeriodUnprocessableCodes =
     [
         AccountingErrorCodes.PeriodNotProposed,
@@ -325,7 +334,9 @@ public static class AccountingEndpoints
         var conflictCodes = journalReversal
             ? JournalReversalConflictCodes
             : normalJournal ? NormalJournalConflictCodes : PeriodConflictCodes;
-        var unprocessableCodes = normalJournal ? NormalJournalUnprocessableCodes : PeriodUnprocessableCodes;
+        var unprocessableCodes = journalReversal
+            ? JournalReversalUnprocessableCodes
+            : normalJournal ? NormalJournalUnprocessableCodes : PeriodUnprocessableCodes;
         builder
             .ProducesErpBadRequest(BadRequestCodes)
             .AllowsCodeLessErpBadRequestBody()
