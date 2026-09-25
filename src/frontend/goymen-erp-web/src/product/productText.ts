@@ -347,6 +347,16 @@ export const PRODUCT_CREATE_TEXT = {
   groupsEmptyDetail:
     'Yetkili olduğunuz kod grubu bulunamadı. Kod grubu tanımlanana kadar yeni ürün oluşturulamaz.',
   retryGroups: 'Tekrar dene',
+  /**
+   * Business #66 5706740724: a class-scoped reference read that is out or failed is not
+   * evidence that the chosen class is gone. The choice stays; the save waits and says why.
+   */
+  referenceOptionsChecking: 'Seçenekler doğrulanıyor…',
+  referenceOptionsHold: 'Sınıf/aile seçenekleri doğrulanıyor; tamamlanınca kaydedebilirsiniz.',
+  referenceOptionsFailed: 'Sınıf/aile seçenekleri okunamadı; seçiminiz silinmedi.',
+  referenceOptionsFailedHold:
+    'Sınıf/aile seçenekleri okunamadı. Seçili sınıf veya aileyle kaydetmek için önce seçenekleri yeniden okuyun.',
+  retryReferenceOptions: 'Seçenekleri yeniden oku',
   codeCollisionTitle: 'Kayıt reddedildi',
   codeCollisionDetail: 'Sunucu kod veya kimlik çakışması bildirdi. Kayıt oluşturulmadı.',
   unknownOutcomeTitle: 'Kayıt sonucu doğrulanamadı',
