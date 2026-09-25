@@ -27,6 +27,11 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
                 detail.Balances.PhysicalKg, detail.Balances.FreeKg, detail.Balances.BlockedKg));
         Assert.Equal(source.LabelVersion.ToString(System.Globalization.CultureInfo.InvariantCulture), detail.LabelVersion);
         Assert.Single(detail.Balances.Positions);
+        var movement = Assert.Single(detail.MovementTimeline.Entries);
+        Assert.Equal(("Receipt", "synthetic.source", "In", "125.5"),
+            (movement.Kind, movement.SourceKind, Assert.Single(movement.Lines).Direction,
+                movement.Lines[0].QuantityKg));
+        Assert.False(detail.MovementTimeline.WindowFull);
         Assert.Equal(before, await run.ScalarAsync<string>(
             "SELECT CONCAT(COUNT(*), ':', SUM(Version)) FROM inventory.Labels"));
     }

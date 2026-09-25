@@ -35844,7 +35844,8 @@
           "labelVersion",
           "identity",
           "balances",
-          "genealogy"
+          "genealogy",
+          "movementTimeline"
         ],
         "type": "object",
         "properties": {
@@ -35859,6 +35860,9 @@
           },
           "genealogy": {
             "$ref": "#/components/schemas/InventoryLabelGenealogyV1"
+          },
+          "movementTimeline": {
+            "$ref": "#/components/schemas/InventoryLabelMovementTimelineV1"
           }
         }
       },
@@ -35957,6 +35961,134 @@
           },
           "windowFull": {
             "type": "boolean"
+          }
+        }
+      },
+      "InventoryLabelMovementLineV1": {
+        "required": [
+          "sequence",
+          "direction",
+          "ownerKind",
+          "ownerId",
+          "custodianKind",
+          "custodianId",
+          "locationId",
+          "productId",
+          "block",
+          "quantityKg"
+        ],
+        "type": "object",
+        "properties": {
+          "sequence": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "direction": {
+            "type": "string"
+          },
+          "ownerKind": {
+            "type": "string"
+          },
+          "ownerId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "custodianKind": {
+            "type": "string"
+          },
+          "custodianId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "locationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "productId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "block": {
+            "type": "string"
+          },
+          "quantityKg": {
+            "type": "string"
+          }
+        }
+      },
+      "InventoryLabelMovementTimelineV1": {
+        "required": [
+          "labelId",
+          "entries",
+          "windowFull"
+        ],
+        "type": "object",
+        "properties": {
+          "labelId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InventoryLabelMovementV1"
+            }
+          },
+          "windowFull": {
+            "type": "boolean"
+          }
+        }
+      },
+      "InventoryLabelMovementV1": {
+        "required": [
+          "movementId",
+          "kind",
+          "occurredAtUtc",
+          "sourceKind",
+          "sourceId",
+          "sourceLineId",
+          "sourceGrain",
+          "lines"
+        ],
+        "type": "object",
+        "properties": {
+          "movementId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "occurredAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "sourceKind": {
+            "type": "string"
+          },
+          "sourceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sourceLineId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "sourceGrain": {
+            "type": "string"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InventoryLabelMovementLineV1"
+            }
           }
         }
       },

@@ -22,7 +22,7 @@ import {
   readMassBalance,
   readOrder,
 } from '../src/arrange.js'
-import { readEnvironment } from '../src/env.js'
+import { MFG_PROCESSES, readEnvironment, type MfgProcess } from '../src/env.js'
 
 const env = readEnvironment()
 const FACT_RE = /\/api\/v1\/manufacturing\/orders\/[^/]+\/(input-issues|input-returns|wip-measurements|outputs)$/
@@ -34,13 +34,65 @@ const OUTPUT_PRODUCTS_RE = /\/api\/v1\/manufacturing\/references\/output-product
 const OUTPUT_LOCATIONS_RE = /\/api\/v1\/manufacturing\/references\/output-locations\?/
 
 /** Binds `actor` to every API request of this context and records which requests it rewrote. */
-async function asActor(context: BrowserContext, actor: string): Promise<Set<Request>> {
-  const rewritten = new Set<Request>()
+async function asActor(
+  context: BrowserContext,
+  actor: string,
+  rewritten = new Set<Request>(),
+): Promise<Set<Request>> {
   await context.route('**/api/v1/**', async (route: Route) => {
     rewritten.add(route.request())
     await route.fallback({ headers: { ...route.request().headers(), 'x-development-user': actor } })
   })
   return rewritten
+}
+
+/** Keeps one route installed while a multi-actor journey changes its bound Development identity. */
+async function bindActors(context: BrowserContext, initialActor: string) {
+  const rewritten = new Set<Request>()
+  let actor = initialActor
+  await context.route('**/api/v1/**', async (route: Route) => {
+    rewritten.add(route.request())
+    await route.fallback({ headers: { ...route.request().headers(), 'x-development-user': actor } })
+  })
+  return {
+    rewritten,
+    switchTo(nextActor: string) {
+      actor = nextActor
+    },
+  }
+}
+
+interface WorkCenterAnswer {
+  readonly id: string
+  readonly kind: MfgProcess
+}
+
+async function readCanonicalWorkCenters(): Promise<ReadonlyMap<MfgProcess, WorkCenterAnswer>> {
+  const api = await apiAs(env, env.seed.recorderActor)
+  try {
+    const response = await api.get('/api/v1/organization/work-centers')
+    expect(response.status()).toBe(200)
+    const body = await response.json() as unknown
+    expect(Array.isArray(body)).toBe(true)
+
+    const result = new Map<MfgProcess, WorkCenterAnswer>()
+    for (const process of MFG_PROCESSES) {
+      const row = (body as unknown[]).find((candidate) =>
+        typeof candidate === 'object' && candidate !== null
+          && (candidate as Record<string, unknown>).kind === process)
+      if (typeof row !== 'object' || row === null) {
+        throw new Error(`fixture must publish one ${process} work center`)
+      }
+      const id = (row as Record<string, unknown>).id
+      if (typeof id !== 'string' || !/^[0-9a-f-]{36}$/.test(id)) {
+        throw new Error(`fixture ${process} work center must publish a canonical id`)
+      }
+      result.set(process, { id, kind: process })
+    }
+    return result
+  } finally {
+    await api.dispose()
+  }
 }
 
 function watchAnswers(page: Page): Request[] {
@@ -102,6 +154,101 @@ async function fillWip(page: Page, rollId: string, kg: string) {
 }
 
 test.describe('MFG order screen (real API, real SQL)', () => {
+  test('each canonical process reaches an Inventory-backed realization and authorized close', async ({ page, context }) => {
+    const actors = await bindActors(context, env.seed.recorderActor)
+    const { rewritten } = actors
+    const answered = watchAnswers(page)
+    const workCenters = await readCanonicalWorkCenters()
+
+    for (const process of MFG_PROCESSES) {
+      const workCenter = workCenters.get(process)!
+      const arranged = await arrangeOpenOrder(env, env.seed.rolls.process[process], workCenter.id)
+
+      await openOrder(page, arranged.orderId)
+      await expect(page.getByText(process, { exact: true })).toBeVisible()
+      // Keep part of the company-owned parent label at its source position while recording the
+      // derived output. A full issue legitimately leaves no company-owned position for the UI's
+      // Inventory ownership admission to prove.
+      await fillIssue(page, arranged.rollId, '500')
+      const issuePost = page.waitForRequest((request) =>
+        request.url().endsWith(`/orders/${arranged.orderId}/input-issues`) && request.method() === 'POST')
+      const issueResponse = page.waitForResponse((response) =>
+        response.url().endsWith(`/orders/${arranged.orderId}/input-issues`) && response.request().method() === 'POST')
+      await page.getByRole('button', { name: 'Kaydet', exact: true }).click()
+      expect((await issueResponse).status()).toBe(200)
+      expect((await issuePost).postDataJSON()).toMatchObject({
+        expectedVersion: arranged.version,
+        parentRollId: arranged.rollId,
+        kg: '500',
+      })
+      await expect(page.getByText('Kaydedildi', { exact: true })).toBeVisible()
+
+      const products = page.waitForResponse((response) =>
+        OUTPUT_PRODUCTS_RE.test(response.url()) && response.request().method() === 'GET')
+      const locations = page.waitForResponse((response) =>
+        OUTPUT_LOCATIONS_RE.test(response.url()) && response.request().method() === 'GET')
+      await page.getByRole('radio', { name: 'Şirket malı üretim çıktısı', exact: true }).check()
+      await page.getByRole('combobox', { name: 'Ana rulo', exact: true }).selectOption(arranged.rollId)
+      await expect(page.getByTestId('parent-label-state')).toBeVisible()
+      await page.getByLabel('Zaman', { exact: true }).fill('2026-09-25T09:30')
+      expect((await products).status()).toBe(200)
+      expect((await locations).status()).toBe(200)
+      await page.getByRole('combobox', { name: 'Çıktı sınıfı', exact: true }).selectOption('GoodProduct')
+      await page.getByRole('combobox', { name: 'Ürün', exact: true }).selectOption(env.seed.output.productId)
+      await page.getByRole('combobox', { name: 'Lokasyon', exact: true }).selectOption(env.seed.output.locationId)
+      await page.getByLabel('Yeni etiket kodu', { exact: true })
+        .fill(`SYN-MFG-${process.toUpperCase()}-${arranged.orderId.replaceAll('-', '')}`)
+      await page.getByRole('combobox', { name: 'İlk stok durumu', exact: true })
+        .selectOption(env.seed.output.initialBlock)
+      await kgField(page).fill('500')
+
+      const outputPost = page.waitForRequest((request) =>
+        request.url().endsWith(`/orders/${arranged.orderId}/outputs`) && request.method() === 'POST')
+      const outputResponse = page.waitForResponse((response) =>
+        response.url().endsWith(`/orders/${arranged.orderId}/outputs`) && response.request().method() === 'POST')
+      await page.getByRole('button', { name: 'Kaydet', exact: true }).click()
+      expect((await outputResponse).status()).toBe(200)
+      expect((await outputPost).postDataJSON()).toMatchObject({
+        expectedVersion: 2,
+        parentRollId: arranged.rollId,
+        outputClass: 'GoodProduct',
+        productId: env.seed.output.productId,
+        locationId: env.seed.output.locationId,
+        kg: '500',
+      })
+      await expect(page.getByText('Kaydedildi', { exact: true })).toBeVisible()
+
+      actors.switchTo(env.seed.closerActor)
+      await openOrder(page, arranged.orderId)
+      await expect(page.getByText(process, { exact: true })).toBeVisible()
+      const closeResponse = page.waitForResponse((response) =>
+        response.url().endsWith(`/orders/${arranged.orderId}/close`) && response.request().method() === 'POST')
+      await page.getByRole('button', { name: 'Emri kapat', exact: true }).click()
+      await page.getByRole('button', { name: 'Evet, emri kapat', exact: true }).click()
+      expect((await closeResponse).status()).toBe(200)
+      await expect(page.getByText('Emir kapatıldı', { exact: true })).toBeVisible()
+
+      const stored = await readOrder(env, arranged.orderId)
+      expect(stored).toMatchObject({
+        orderId: arranged.orderId,
+        workCenterId: workCenter.id,
+        process,
+        status: 'Closed',
+        version: 4,
+        rolls: [{
+          parentRollId: arranged.rollId,
+          issuedKg: '500',
+          outputsKg: { GoodProduct: '500' },
+          unexplainedKg: '0',
+          isFullyAccounted: true,
+        }],
+      })
+
+      actors.switchTo(env.seed.recorderActor)
+    }
+    expectEveryAnswerRewritten(answered, rewritten)
+  })
+
   test('a recorder issues input, reopens it, and returns unused stock with the fresh Inventory label version', async ({ page, context }) => {
     const arranged = await arrangeOpenOrder(env, env.seed.rolls.issue)
     const rewritten = await asActor(context, env.seed.recorderActor)

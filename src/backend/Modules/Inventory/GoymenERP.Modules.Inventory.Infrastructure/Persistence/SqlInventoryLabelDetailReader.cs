@@ -3,6 +3,7 @@ using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Domain.Balances;
 using GoymenERP.Modules.Inventory.Domain.Labels;
 using GoymenERP.Modules.Inventory.Domain.Lots;
+using GoymenERP.Modules.Inventory.Domain.Movements;
 using GoymenERP.Modules.Inventory.Domain.Quantities;
 using GoymenERP.Modules.Inventory.Domain.Stock;
 using Microsoft.EntityFrameworkCore;
@@ -15,6 +16,8 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 /// </summary>
 internal sealed class SqlInventoryLabelDetailReader(InventoryDbContext db) : IInventoryLabelDetailReader
 {
+    private const int MovementWindow = 100;
+
     public async Task<InventoryLabelDetailRecord?> ReadAsync(
         Guid companyId,
         Guid labelId,
@@ -43,6 +46,29 @@ internal sealed class SqlInventoryLabelDetailReader(InventoryDbContext db) : IIn
             .Where(balance => balance.CompanyId == companyId && balance.LabelId == labelId
                 && balance.QuantityKg != 0m)
             .ToListAsync(cancellationToken);
+        var movementRows = await db.Movements.AsNoTracking()
+            .Where(movement => movement.CompanyId == companyId
+                && db.MovementLines.Any(line => line.CompanyId == companyId
+                    && line.MovementId == movement.Id && line.LabelId == labelId))
+            .OrderByDescending(movement => movement.OccurredAtUtc)
+            .ThenByDescending(movement => movement.Id)
+            .Take(MovementWindow + 1)
+            .ToListAsync(cancellationToken);
+        var movementWindowFull = movementRows.Count > MovementWindow;
+        if (movementWindowFull)
+        {
+            movementRows.RemoveAt(MovementWindow);
+        }
+
+        var movementIds = movementRows.Select(movement => movement.Id).ToArray();
+        List<MovementLineRow> movementLines = movementIds.Length == 0
+            ? []
+            : await db.MovementLines.AsNoTracking()
+                .Where(line => line.CompanyId == companyId && line.LabelId == labelId
+                    && movementIds.Contains(line.MovementId))
+                .OrderBy(line => line.MovementId)
+                .ThenBy(line => line.LineNumber)
+                .ToListAsync(cancellationToken);
         var finalVersion = await db.Labels.AsNoTracking()
             .Where(label => label.CompanyId == companyId && label.Id == labelId)
             .Select(label => (long?)label.Version)
@@ -78,11 +104,35 @@ internal sealed class SqlInventoryLabelDetailReader(InventoryDbContext db) : IIn
                     label,
                     (BlockState)balance.Block),
                 Kilograms.Of(balance.QuantityKg))).ToArray();
+            var linesByMovement = movementLines.ToLookup(line => line.MovementId);
+            var timeline = new InventoryLabelMovementTimelineV1(
+                labelId,
+                movementRows.Select(movement => new InventoryLabelMovementV1(
+                    movement.Id,
+                    EnumName<StockMovementKind>(movement.Kind),
+                    movement.OccurredAtUtc,
+                    movement.SourceKind,
+                    movement.SourceId,
+                    movement.SourceLineId,
+                    EnumName<StockSourceGrain>(movement.SourceGrain),
+                    linesByMovement[movement.Id].Select(line => new InventoryLabelMovementLineV1(
+                        line.LineNumber,
+                        EnumName<StockDirection>(line.Direction),
+                        EnumName<StockPartyKind>(line.OwnerKind),
+                        line.OwnerId,
+                        EnumName<StockPartyKind>(line.CustodianKind),
+                        line.CustodianId,
+                        line.LocationId,
+                        line.ProductId,
+                        EnumName<BlockState>(line.Block),
+                        Kilograms.Positive(line.QuantityKg).ToString())).ToArray())).ToArray(),
+                movementWindowFull);
             return new InventoryLabelDetailRecord(
                 row.Version,
                 label,
                 new MaterialLot(lot.Id, lot.CompanyId, lot.ProductId, lot.HeatNumber, lot.CoilNumber),
-                storedBalances);
+                storedBalances,
+                timeline);
         }
         catch (InventoryLabelDetailException)
         {
@@ -96,4 +146,9 @@ internal sealed class SqlInventoryLabelDetailReader(InventoryDbContext db) : IIn
 
     private static InventoryLabelDetailException Error(int statusCode, string code, Exception? exception = null) =>
         new InventoryLabelDetailException(statusCode, code, exception);
+
+    private static string EnumName<T>(int value) where T : struct, Enum =>
+        Enum.IsDefined(typeof(T), value)
+            ? Enum.GetName(typeof(T), value)!
+            : throw Error(503, InventoryLabelDetailCodesV1.Unavailable);
 }
