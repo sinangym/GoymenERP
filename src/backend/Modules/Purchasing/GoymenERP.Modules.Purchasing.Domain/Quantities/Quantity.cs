@@ -11,7 +11,9 @@ public enum QuantityUnit
 /// An exact non-negative quantity in one unit. Kilograms carry at most three decimals and
 /// pieces are whole numbers (Ö2). The value is never rounded or truncated: extra digits are
 /// refused, only trailing zeros are dropped, so "12.5000" is 12.5 kg and "12.5001" is an error.
-/// This is a purchasing share, not a physical stock quantity; Inventory owns those.
+/// This is a purchasing share, not a physical stock quantity; Inventory owns those. Which
+/// Settings unit a line is in, and that unit's approved scale, are checked by the Application
+/// layer's verifier against the Settings profile; this type only holds the arithmetic rule.
 /// </summary>
 public readonly record struct Quantity : IComparable<Quantity>
 {
@@ -48,7 +50,7 @@ public readonly record struct Quantity : IComparable<Quantity>
                 : $"Kilogram en fazla {scale} ondalık taşıyabilir.", nameof(value));
         }
 
-        return new Quantity(withinScale, unit);
+        return new Quantity(Normalize(withinScale), unit);
     }
 
     public static Quantity Positive(decimal value, QuantityUnit unit)
@@ -66,6 +68,12 @@ public readonly record struct Quantity : IComparable<Quantity>
 
     public static int AllowedScale(QuantityUnit unit) => unit == QuantityUnit.Piece ? 0 : KilogramScale;
 
+    /// <summary>The number of decimals that carry a non-zero digit: 12.5000 → 1, 12.5001 → 4, 1000 → 0.</summary>
+    public static int SignificantDecimals(decimal value) => Normalize(value).Scale;
+
+    /// <summary>Drops trailing zeros without changing the value, so equal quantities also print equally (Ö2: no padding zeros).</summary>
+    private static decimal Normalize(decimal value) => value / 1.0000000000000000000000000000m;
+
     public Quantity Add(Quantity other)
     {
         RequireSameUnit(other);
@@ -77,7 +85,8 @@ public readonly record struct Quantity : IComparable<Quantity>
         RequireSameUnit(other);
         if (other.Value > Value)
         {
-            throw new InvalidOperationException("Çıkarılan miktar eldeki miktardan büyük olamaz.");
+            throw new PurchasingRuleException(PurchasingRuleCodes.QuantityBelowZero,
+                "Çıkarılan miktar eldeki miktardan büyük olamaz.");
         }
 
         return new Quantity(Value - other.Value, Unit);
@@ -95,7 +104,8 @@ public readonly record struct Quantity : IComparable<Quantity>
     {
         if (other.Unit != Unit)
         {
-            throw new InvalidOperationException("Miktar birimleri farklı; kg ile adet birlikte işlenemez.");
+            throw new PurchasingRuleException(PurchasingRuleCodes.UnitMismatch,
+                "Miktar birimleri farklı; kg ile adet birlikte işlenemez.");
         }
     }
 

@@ -86,9 +86,14 @@ public sealed class ProductReaderTests
         using var cursors = Cursors();
         var reader = new ProductReader(new(context), cursors, authority);
 
-        Assert.Equal(GroupId, (await reader.GetReferenceOptionsAsync(new(GroupId), default)).GroupId);
+        var options = await reader.GetReferenceOptionsAsync(new(GroupId), default);
+        Assert.Equal(GroupId, options.GroupId);
         Assert.Equal(1, catalog.Reads);
         Assert.Equal(2, authority.Calls);
+        // PRD-FAM-1: no released family definition, so families and templates stay unavailable.
+        Assert.Equal(1, catalog.RegistryReads);
+        Assert.Empty(options.Families);
+        Assert.Equal(["classes", "families", "units", "trackingPolicies", "templates"], options.UnavailableCatalogs);
     }
 
     [Fact]
@@ -148,10 +153,21 @@ public sealed class ProductReaderTests
     private sealed class ControlledCatalog(bool exists, Action afterRead) : DbCommandInterceptor
     {
         public int Reads { get; private set; }
+        public int RegistryReads { get; private set; }
 
         public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(DbCommand command,
             CommandEventData eventData, InterceptionResult<DbDataReader> result, CancellationToken cancellationToken = default)
         {
+            if (command.CommandText.Contains("[product].[Families]", StringComparison.Ordinal))
+            {
+                // The family registry is empty: no released definition (PRD-FAM-1).
+                RegistryReads++;
+                var families = new DataTable();
+                foreach (var column in new[] { "Id", "Cins", "Code", "Name", "RuleSet", "SourceRef", "Tip", "Tur" })
+                    families.Columns.Add(column, column == "Id" ? typeof(Guid) : typeof(string));
+                return ValueTask.FromResult(InterceptionResult<DbDataReader>.SuppressWithResult(families.CreateDataReader()));
+            }
+
             Assert.Contains("[product].[CodeGroups]", command.CommandText);
             Reads++;
             var table = new DataTable();

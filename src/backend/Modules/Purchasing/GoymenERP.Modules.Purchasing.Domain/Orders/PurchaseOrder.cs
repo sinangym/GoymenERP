@@ -17,6 +17,11 @@ public enum PurchaseOrderStatus
 /// second allocation engine is deliberately not built here. Price, tax and currency are T28.
 /// Approval here is a state transition only; which approvals a purchase needs is policy (§8)
 /// and is not chosen by this type.
+/// <para>
+/// This aggregate is the single authority for every share bound; each refusal carries a
+/// <see cref="PurchasingRuleCodes"/> code. Line units are Settings identities; the Application
+/// layer's verifier checks them against the Settings profile before a line is added.
+/// </para>
 /// </summary>
 public sealed class PurchaseOrder
 {
@@ -46,15 +51,28 @@ public sealed class PurchaseOrder
     public long Version { get; private set; } = 1;
     public DateTimeOffset CreatedAtUtc { get; }
     public DateTimeOffset UpdatedAtUtc { get; private set; }
-    public IReadOnlyList<PurchaseOrderLine> Lines => lines;
-    public IReadOnlyList<PurchaseAcceptanceShare> Acceptances => acceptances;
+
+    /// <summary>Read-only views; the lists behind them never leave this record.</summary>
+    public IReadOnlyList<PurchaseOrderLine> Lines => lines.AsReadOnly();
+
+    public IReadOnlyList<PurchaseAcceptanceShare> Acceptances => acceptances.AsReadOnly();
 
     public static PurchaseOrder Create(Guid id, Guid companyId, Guid supplierPartyId, DateTimeOffset now) =>
         new(id, companyId, supplierPartyId, null, now);
 
     /// <summary>
-    /// Sources an order from a submitted request of the SAME company, copying its lines as
-    /// general lines. The request stays what it is; the order is the commitment.
+    /// PUR-4a: an order opened towards a supplier for ONE submitted request, whose lines bind to that request's
+    /// lines at the quantity this supplier takes (multi-sourcing, Sinan #66 5738113623 §1: a request line may
+    /// split across several orders; the sum of the shares never exceeds the line's need — the store enforces the
+    /// sum across orders at approval, this record enforces the binding shape).
+    /// </summary>
+    public static PurchaseOrder CreateForRequest(Guid id, Guid companyId, Guid supplierPartyId, Guid sourceRequestId, DateTimeOffset now) =>
+        new(id, companyId, supplierPartyId, Identity.Require(sourceRequestId, nameof(sourceRequestId)), now);
+
+    /// <summary>
+    /// Sources an order from a SUBMITTED request of the SAME company, copying its lines as
+    /// general lines with their units. The request stays what it is; the order is the commitment.
+    /// Sourcing the same request again is not refused today (open Business question, README).
     /// </summary>
     public static PurchaseOrder FromRequest(Guid id, PurchaseRequest request, Guid supplierPartyId,
         Func<Guid> lineIds, DateTimeOffset now)
@@ -63,32 +81,59 @@ public sealed class PurchaseOrder
         ArgumentNullException.ThrowIfNull(lineIds);
         if (request.Status != PurchaseRequestStatus.Submitted)
         {
-            throw new InvalidOperationException("Yalnız gönderilmiş talepten sipariş açılabilir.");
+            throw new PurchasingRuleException(PurchasingRuleCodes.RequestNotSubmitted,
+                "Yalnız gönderilmiş talepten sipariş açılabilir.");
         }
 
         var order = new PurchaseOrder(id, request.CompanyId, supplierPartyId, request.Id, now);
         foreach (var requestLine in request.Lines)
         {
-            order.lines.Add(new PurchaseOrderLine(Identity.Require(lineIds(), nameof(lineIds)),
-                requestLine.ProductId, requestLine.Quantity, PurchaseOrderLineKind.General, null, requestLine.Id));
+            order.lines.Add(new PurchaseOrderLine(Identity.Require(lineIds(), nameof(lineIds)), requestLine.ProductId,
+                requestLine.UnitId, requestLine.Quantity, PurchaseOrderLineKind.General, null, requestLine.Id));
         }
 
         return order;
     }
 
-    public PurchaseOrderLine AddLine(long expectedVersion, Guid lineId, Guid productId, Quantity ordered, DateTimeOffset now)
+    public PurchaseOrderLine AddLine(long expectedVersion, Guid lineId, Guid productId, Guid unitId, Quantity ordered, DateTimeOffset now) =>
+        AddLine(expectedVersion, lineId, productId, unitId, ordered, sourceRequestLineId: null, now);
+
+    /// <summary>
+    /// PUR-4a: a general line, optionally bound to one line of the order's source request (the share this
+    /// supplier takes of that need). A binding needs the order to have a source request; the same request line
+    /// is bound at most once per order (<see cref="PurchasingRuleCodes.DuplicateSourceLine"/>).
+    /// </summary>
+    public PurchaseOrderLine AddLine(long expectedVersion, Guid lineId, Guid productId, Guid unitId, Quantity ordered, Guid? sourceRequestLineId,
+        DateTimeOffset now)
     {
         RequireVersion(expectedVersion);
-        RequireStatus(PurchaseOrderStatus.Draft, "Yalnız taslak siparişe satır eklenebilir.");
+        RequireStatus(PurchaseOrderStatus.Draft, PurchasingRuleCodes.OrderNotDraft, "Yalnız taslak siparişe satır eklenebilir.");
         Identity.Require(lineId, nameof(lineId));
         Identity.Require(productId, nameof(productId));
+        Identity.Require(unitId, nameof(unitId));
         if (ordered.IsZero)
         {
             throw new ArgumentOutOfRangeException(nameof(ordered), "Sipariş miktarı sıfırdan büyük olmalıdır.");
         }
 
+        if (sourceRequestLineId is { } sourceLine)
+        {
+            Identity.Require(sourceLine, nameof(sourceRequestLineId));
+            if (SourceRequestId is null)
+            {
+                throw new PurchasingRuleException(PurchasingRuleCodes.SourceLineWithoutRequest,
+                    "Talep satırına bağlı satır yalnız bir talebe açılmış siparişe eklenir.");
+            }
+
+            if (lines.Any(line => line.SourceRequestLineId == sourceLine))
+            {
+                throw new PurchasingRuleException(PurchasingRuleCodes.DuplicateSourceLine,
+                    "Aynı talep satırı bir siparişe ikinci kez bağlanamaz; pay tek satırda verilir.");
+            }
+        }
+
         RequireNewLineId(lineId);
-        var line = new PurchaseOrderLine(lineId, productId, ordered, PurchaseOrderLineKind.General, null, null);
+        var line = new PurchaseOrderLine(lineId, productId, unitId, ordered, PurchaseOrderLineKind.General, null, sourceRequestLineId);
         lines.Add(line);
         Touch(now);
         return line;
@@ -97,10 +142,10 @@ public sealed class PurchaseOrder
     public void Approve(long expectedVersion, DateTimeOffset now)
     {
         RequireVersion(expectedVersion);
-        RequireStatus(PurchaseOrderStatus.Draft, "Yalnız taslak sipariş onaylanabilir.");
+        RequireStatus(PurchaseOrderStatus.Draft, PurchasingRuleCodes.OrderNotDraft, "Yalnız taslak sipariş onaylanabilir.");
         if (lines.Count == 0)
         {
-            throw new InvalidOperationException("Satırsız sipariş onaylanamaz.");
+            throw new PurchasingRuleException(PurchasingRuleCodes.OrderWithoutLines, "Satırsız sipariş onaylanamaz.");
         }
 
         Status = PurchaseOrderStatus.Approved;
@@ -109,18 +154,27 @@ public sealed class PurchaseOrder
 
     /// <summary>
     /// Carves a technical line out of a general line (§7.2, §13: 1.000 general → 925 general +
-    /// 75 technical). The general remainder plus its technical slices never exceed the first
-    /// commitment, an already accepted general share cannot be sliced again, and a technical
-    /// line cannot be broken down further.
+    /// 75 technical). Allowed while Draft and after approval — that is the §7.2 case, a general
+    /// purchase whose technical breakdown becomes known later; the total commitment never changes
+    /// and the technical line keeps the general line's unit, only its product may differ. The
+    /// general remainder plus its technical slices never exceed the first commitment, an already
+    /// accepted general share cannot be sliced again, and a technical line cannot be broken down
+    /// further. Whether a breakdown after approval needs a re-approval is §8 policy, not chosen here.
     /// </summary>
     public PurchaseOrderLine BreakDown(long expectedVersion, Guid generalLineId, Guid technicalLineId,
         Guid technicalProductId, Quantity slice, DateTimeOffset now)
     {
         RequireVersion(expectedVersion);
+        // Breakdown is open in both statuses that exist (Draft and Approved; pinned by tests), so
+        // there is no status guard here: one would be unreachable today and, the day a third
+        // status arrives, would need its own code — it must not report "not approved" for an
+        // order that was approved and then closed (ORG #288 P3-1). The slice adding that status
+        // adds the guard, its code and its test.
         var general = FindLine(generalLineId);
         if (general.Kind != PurchaseOrderLineKind.General)
         {
-            throw new InvalidOperationException("Teknik satır yeniden kırılamaz; kırılım yalnız genel satırdan yapılır.");
+            throw new PurchasingRuleException(PurchasingRuleCodes.TechnicalLineNotBreakable,
+                "Teknik satır yeniden kırılamaz; kırılım yalnız genel satırdan yapılır.");
         }
 
         Identity.Require(technicalLineId, nameof(technicalLineId));
@@ -133,10 +187,11 @@ public sealed class PurchaseOrder
 
         if (slice.IsGreaterThan(general.RemainingQuantity))
         {
-            throw new InvalidOperationException("Kırılım genel satırın kabul edilmemiş kalanını aşamaz; aynı pay ikinci kez kırılamaz.");
+            throw new PurchasingRuleException(PurchasingRuleCodes.SliceExceedsRemaining,
+                "Kırılım genel satırın kabul edilmemiş kalanını aşamaz; aynı pay ikinci kez kırılamaz.");
         }
 
-        var technical = new PurchaseOrderLine(technicalLineId, technicalProductId, slice,
+        var technical = new PurchaseOrderLine(technicalLineId, technicalProductId, general.UnitId, slice,
             PurchaseOrderLineKind.Technical, general.Id, general.SourceRequestLineId);
         general.AddTechnicalSlice(slice);
         lines.Add(technical);
@@ -153,11 +208,11 @@ public sealed class PurchaseOrder
         Quantity accepted, DateTimeOffset now)
     {
         RequireVersion(expectedVersion);
-        RequireStatus(PurchaseOrderStatus.Approved, "Kabul payı yalnız onaylı siparişe kaydedilir.");
+        RequireStatus(PurchaseOrderStatus.Approved, PurchasingRuleCodes.OrderNotApproved, "Kabul payı yalnız onaylı siparişe kaydedilir.");
         Identity.Require(acceptanceId, nameof(acceptanceId));
         if (acceptances.Any(share => share.AcceptanceId == acceptanceId))
         {
-            throw new InvalidOperationException("Aynı kabul kaydı ikinci kez işlenemez.");
+            throw new PurchasingRuleException(PurchasingRuleCodes.DuplicateAcceptanceId, "Aynı kabul kaydı ikinci kez işlenemez.");
         }
 
         if (accepted.IsZero)
@@ -168,7 +223,8 @@ public sealed class PurchaseOrder
         var line = FindLine(lineId);
         if (accepted.IsGreaterThan(line.RemainingQuantity))
         {
-            throw new InvalidOperationException("Kabul payı satırın kalan taahhüdünü aşamaz.");
+            throw new PurchasingRuleException(PurchasingRuleCodes.AcceptanceExceedsRemaining,
+                "Kabul payı satırın kalan taahhüdünü aşamaz.");
         }
 
         line.AddAcceptedShare(accepted);
@@ -185,21 +241,21 @@ public sealed class PurchaseOrder
 
     private PurchaseOrderLine FindLine(Guid lineId) =>
         lines.FirstOrDefault(line => line.Id == lineId)
-        ?? throw new InvalidOperationException("Sipariş satırı bulunamadı.");
+        ?? throw new PurchasingRuleException(PurchasingRuleCodes.LineNotFound, "Sipariş satırı bulunamadı.");
 
     private void RequireNewLineId(Guid lineId)
     {
         if (lines.Any(line => line.Id == lineId))
         {
-            throw new InvalidOperationException("Aynı sipariş satırı kimliği ikinci kez eklenemez.");
+            throw new PurchasingRuleException(PurchasingRuleCodes.DuplicateLineId, "Aynı sipariş satırı kimliği ikinci kez eklenemez.");
         }
     }
 
-    private void RequireStatus(PurchaseOrderStatus required, string message)
+    private void RequireStatus(PurchaseOrderStatus required, string code, string message)
     {
         if (Status != required)
         {
-            throw new InvalidOperationException(message);
+            throw new PurchasingRuleException(code, message);
         }
     }
 

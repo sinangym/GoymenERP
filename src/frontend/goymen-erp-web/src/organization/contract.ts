@@ -5,6 +5,7 @@
  * `main@3e7dd98` and the canonical `contracts/openapi/goymen-erp-v1.json`:
  *
  *   GET /api/v1/organization/sites                       -> SiteSummary[]
+ *   GET /api/v1/organization/work-centers                -> WorkCenterSummary[]
  *   GET /api/v1/organization/locations                   -> PageResultOfLocationSummary
  *   GET /api/v1/organization/locations/{id}              -> LocationSummary | 404
  *   PUT /api/v1/organization/locations/{id}/active-state -> 204 | 400 | 404 | 409
@@ -101,6 +102,71 @@ export interface LocationPage {
   readonly page: number
   readonly pageSize: number
   readonly totalCount: number
+}
+
+/**
+ * `WorkCenter.Kind` reaches the wire as `WorkCenterKind.ToString()` — today `Paint`,
+ * `TubeProfile`, `Slitting`, `ColdRolling` or `CutToLength`. Like `Site.Type` it is an
+ * open `string` in the OpenAPI schema, so the decoder accepts any non-empty token and
+ * the label layer decides what to show. A kind added server-side is a fact about the
+ * data, not a malformed response.
+ */
+export const WORK_CENTER_KIND = {
+  paint: 'Paint',
+  tubeProfile: 'TubeProfile',
+  slitting: 'Slitting',
+  coldRolling: 'ColdRolling',
+  cutToLength: 'CutToLength',
+} as const
+
+export interface WorkCenterSummary {
+  readonly id: string
+  /**
+   * The location this work center sits in. It is an IDENTIFIER, not an entitlement:
+   * the work-center read is authorized by `organization.work-centers.read` and the
+   * location read by `organization.locations.read`, so holding this id says nothing
+   * about whether the caller may open that location. `canOpenLocationDetail` says that,
+   * and the server re-authorizes the card read regardless.
+   */
+  readonly locationId: string
+  readonly code: string
+  readonly name: string
+  /** Raw server token. Never parsed for business meaning, only labelled. */
+  readonly kind: string
+  readonly isActive: boolean
+  /**
+   * The Organization owner's answer to "may THIS caller open THIS row's location card"
+   * (#66 5700319744): true exactly when `GET /organization/locations/{locationId}` would
+   * answer 200, computed server-side with the card read's own scope predicate. The
+   * screen never derives it — no scope parsing, no probing GET — and a missing or
+   * non-boolean value makes the row unreadable rather than defaulting either way.
+   */
+  readonly canOpenLocationDetail: boolean
+}
+
+export function decodeWorkCenter(raw: unknown): WorkCenterSummary | null {
+  if (!isRecord(raw)) return null
+  const { id, locationId, code, name, kind, isActive, canOpenLocationDetail } = raw
+  if (!isUuid(id) || !isUuid(locationId)) return null
+  if (!isNonEmptyString(code) || !isNonEmptyString(name)) return null
+  if (!isNonEmptyString(kind)) return null
+  if (typeof isActive !== 'boolean') return null
+  if (typeof canOpenLocationDetail !== 'boolean') return null
+  return { id, locationId, code, name, kind, isActive, canOpenLocationDetail }
+}
+
+export function decodeWorkCenters(raw: unknown): readonly WorkCenterSummary[] | null {
+  if (!Array.isArray(raw)) return null
+  const workCenters: WorkCenterSummary[] = []
+  for (const entry of raw) {
+    const workCenter = decodeWorkCenter(entry)
+    // One bad row invalidates the WHOLE list, for the reason `decodeSites` gives: this
+    // endpoint is UNPAGED, so the array is the caller's entire authorized set. A list
+    // silently one row short is indistinguishable from a correct one.
+    if (workCenter === null) return null
+    workCenters.push(workCenter)
+  }
+  return workCenters
 }
 
 /** The 409 body's `conflict` extension (`ErpVersionConflictContract`). */

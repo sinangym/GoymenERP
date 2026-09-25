@@ -8,8 +8,8 @@
  * Deliberately absent, each for a stated reason:
  *  - a product CODE field: the server mints it from the group's prefix, and the
  *    admin manual-code exception is a later explicit command;
- *  - `references` (template + version, attributes, the six units, tracking policy):
- *    §19.6 and the coordinator keep attribute/unit completeness in the NEXT slice;
+ *  - tracking policy: no accepted write adapter. Technical attributes and stock/sales
+ *    units come from the released reference-options read (PRD-CARD-1);
  *  - activation: the contract includes no activation command;
  *  - AI drafting and technical-attribute similarity: both need a server surface that
  *    does not exist. Exact collisions are still handled — from the server's answer.
@@ -88,6 +88,8 @@ import {
   type AttemptBinding,
 } from './pendingAttempt'
 import styles from './ProductCreatePage.module.css'
+import { ProductTechnicalFields } from './ProductTechnicalFields'
+import { technicalDraft } from './technicalForm'
 
 type CreateAttempt = AttemptState<CreateProductDraftPayload, ProductMutationResult>
 
@@ -402,10 +404,10 @@ function ProductCreateForm({
    * a confusing error rather than as a field that simply reset.
    */
   function chooseGroup(groupId: string) {
-    setValues((current) => ({ ...current, groupId, classId: '', familyId: '' }))
+    setValues((current) => ({ ...current, groupId, classId: '', familyId: '', technical: technicalDraft() }))
   }
   function chooseClass(classId: string) {
-    setValues((current) => ({ ...current, classId, familyId: '' }))
+    setValues((current) => ({ ...current, classId, familyId: '', technical: technicalDraft() }))
   }
 
   /**
@@ -491,7 +493,7 @@ function ProductCreateForm({
     // check is still only a warning — the send below does not wait for it.
     setCheckedName(nameMatchTerm(values.name))
 
-    const validation = validateCreateForm(values, groupIds, classIds, familyIds)
+    const validation = validateCreateForm(values, groupIds, classIds, familyIds, options)
     if (!validation.ok) {
       /**
        * A client-side rejection mints NO key: nothing was sent, so there is nothing
@@ -855,7 +857,8 @@ function ProductCreateForm({
             ref={(el) => {
               fieldRefs.current[CREATE_FIELD.familyId] = el
             }}
-            onChange={(event) => setValues((v) => ({ ...v, familyId: event.target.value }))}
+            onChange={(event) => setValues((v) => ({ ...v, familyId: event.target.value,
+              technical: { ...(v.technical ?? technicalDraft()), attributes: {}, attributesChanged: event.target.value !== '' } }))}
           >
             <option value="">{PRODUCT_CREATE_TEXT.chooseNone}</option>
             {(options?.families ?? []).map((entry) => (
@@ -883,6 +886,11 @@ function ProductCreateForm({
           a deliberate "no" would be the same state, which is the collapse the
           contract's tagged role input exists to prevent.
         */}
+        <ProductTechnicalFields familyId={values.familyId} options={options} value={values.technical}
+          fieldRef={el => { fieldRefs.current.references = el }}
+          frozen={frozen} onChange={technical => setValues(v => ({ ...v, technical }))}
+          errors={attempt.phase === 'failed' ? attempt.fieldErrors : undefined} />
+        {errors.references ? <p role="alert">{errors.references}</p> : null}
         <fieldset
           className={styles.roles}
           ref={(el) => {

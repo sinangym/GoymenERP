@@ -9,7 +9,6 @@ using GoymenERP.Modules.Counterparty.Domain.Accounts;
 using GoymenERP.Modules.Counterparty.Domain.Parties;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Sales.Application.Contracts;
-using GoymenERP.Modules.Settings.Application;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -318,7 +317,7 @@ public sealed class SalesReferenceHttpAcceptanceTests(GoymenErpApiFactory factor
         var orderUnitId = Guid.Parse("44444444-4444-4444-4444-444444444444");
         var products = new StubProductEligibility(new(new ProductSalesSnapshotV1(productId, "7", "EXAMPLE-CODE", "Example",
             Unit(Guid.NewGuid()), Unit(Guid.NewGuid()), Unit(orderUnitId), new DateOnly(2026, 9, 13)), []));
-        var settings = new StubSettings(new SettingsPrerequisiteException(ApprovedSettingsPrerequisiteProvider.UnitProfileNotFoundCode));
+        var settings = new StubSettings(new SettingsPrerequisiteException(SettingsPrerequisiteCodesV1.UnitProfileNotFound));
         var owner = new StubCounterpartyReadService(CounterpartyPageExecution.ServiceUnavailable());
         using var host = CreateRealHandlerHost(owner, products, settings);
         using var client = CreateClient(host, true);
@@ -328,10 +327,268 @@ public sealed class SalesReferenceHttpAcceptanceTests(GoymenErpApiFactory factor
         await AssertMatchesExampleAsync(example, response);
         Assert.Equal(1, products.Calls);
         Assert.Equal(1, settings.UnitReads);
-        Assert.DoesNotContain(ApprovedSettingsPrerequisiteProvider.UnitProfileNotFoundCode,
+        Assert.DoesNotContain(SettingsPrerequisiteCodesV1.UnitProfileNotFound,
             await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
 
         static ProductSalesUnitProfileV1 Unit(Guid unitId) => new(TestCompanyIds.CompanyA, unitId, Guid.NewGuid(), "1");
+    }
+
+    // ---- SALES-A2a: the two list routes and the contact-information adapter --------------------------
+
+    private static readonly Guid AddressId = Guid.Parse("aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa");
+    private static readonly Guid ContactId = Guid.Parse("bbbbbbbb-1111-4111-8111-bbbbbbbbbbbb");
+    private static readonly Guid ProfileId = Guid.Parse("cccccccc-1111-4111-8111-cccccccccccc");
+
+    [Fact]
+    public async Task Contact_information_success_is_lossless_and_private()
+    {
+        var service = new StubService
+        {
+            ContactInformation = new(200, new(TestCompanyIds.CompanyA, PartyId, AccountId, "9007199254740993",
+                [new(AddressId, "3", "delivery", "Sanayi Cad. 1, Gebze Kocaeli 41400, TR", "TR", "Sanayi Cad. 1", null, "Kocaeli", "Gebze", "41400")],
+                [new(ContactId, "2", "Ayşe Yükleme", null, "delivery")]), null)
+        };
+        using var host = CreateHost(service, new StubSessionBinding("trusted-session"));
+        using var client = CreateClient(host, true);
+        using var response = await client.GetAsync(SalesEndpoints.ContactInformationPath
+            + $"?partyId={PartyId:D}&companyAccountId={AccountId:D}");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        AssertPrivateNoStore(response);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = document.RootElement;
+        Assert.Equal(new[] { "companyId", "partyId", "companyAccountId", "accountVersion", "addresses", "contacts" }, Keys(root));
+        Assert.Equal("9007199254740993", root.GetProperty("accountVersion").GetString());
+        var address = Assert.Single(root.GetProperty("addresses").EnumerateArray());
+        Assert.Equal(new[] { "id", "version", "purpose", "text", "countryCode", "line1", "line2", "city", "district", "postalCode" }, Keys(address));
+        Assert.Equal((AddressId, "3", "Sanayi Cad. 1, Gebze Kocaeli 41400, TR", JsonValueKind.Null),
+            (address.GetProperty("id").GetGuid(), address.GetProperty("version").GetString(), address.GetProperty("text").GetString(),
+                address.GetProperty("line2").ValueKind));
+        var contact = Assert.Single(root.GetProperty("contacts").EnumerateArray());
+        Assert.Equal(new[] { "id", "version", "displayName", "jobTitle", "purpose" }, Keys(contact));
+        Assert.Equal((ContactId, "2", "Ayşe Yükleme"), (contact.GetProperty("id").GetGuid(), contact.GetProperty("version").GetString(),
+            contact.GetProperty("displayName").GetString()));
+        Assert.Equal(new SalesContactInformationQueryV1(PartyId, AccountId), Assert.Single(service.ContactQueries));
+    }
+
+    [Theory]
+    [InlineData("?partyId=44444444-4444-4444-4444-444444444444")]
+    [InlineData("?companyAccountId=55555555-5555-5555-5555-555555555555")]
+    [InlineData("?partyId=44444444-4444-4444-4444-444444444444&companyAccountId=55555555-5555-5555-5555-555555555555&companyAccountId=55555555-5555-5555-5555-555555555555")]
+    [InlineData("?partyId=44444444-4444-4444-4444-444444444444&companyAccountId=55555555-5555-5555-5555-555555555555&companyId=10000000-0000-0000-0000-000000000001")]
+    [InlineData("?partyId=00000000-0000-0000-0000-000000000000&companyAccountId=55555555-5555-5555-5555-555555555555")]
+    [InlineData("?partyId=not-a-guid&companyAccountId=55555555-5555-5555-5555-555555555555")]
+    public async Task Contact_information_rejects_a_missing_repeated_unknown_or_empty_query_before_the_service(string query)
+    {
+        var service = new StubService();
+        using var host = CreateHost(service, new StubSessionBinding("trusted-session"));
+        using var client = CreateClient(host, true);
+        using var response = await client.GetAsync(SalesEndpoints.ContactInformationPath + query);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Empty(service.ContactQueries);
+    }
+
+    [Theory]
+    [InlineData(403, null, "forbidden")]
+    [InlineData(503, "counterparty_provider_unavailable", "service_unavailable")]
+    [InlineData(503, "reference_provider_invalid", "service_unavailable")]
+    public async Task Contact_information_status_boundary_exposes_only_accepted_public_codes(
+        int status, string? sourceCode, string expectedPublicCode)
+    {
+        var service = new StubService { ContactInformation = new(status, null, sourceCode) };
+        using var host = CreateHost(service, new StubSessionBinding("trusted-session"));
+        using var client = CreateClient(host, true);
+        using var response = await client.GetAsync(SalesEndpoints.ContactInformationPath
+            + $"?partyId={PartyId:D}&companyAccountId={AccountId:D}");
+        Assert.Equal(status, (int)response.StatusCode);
+        AssertPrivateNoStore(response);
+        var body = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(body);
+        Assert.Equal(expectedPublicCode, document.RootElement.GetProperty("code").GetString());
+        if (sourceCode is not null) Assert.DoesNotContain(sourceCode, body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Contact_information_not_found_is_a_code_less_404()
+    {
+        var service = new StubService { ContactInformation = new(404, null, null) };
+        using var host = CreateHost(service, new StubSessionBinding("trusted-session"));
+        using var client = CreateClient(host, true);
+        using var response = await client.GetAsync(SalesEndpoints.ContactInformationPath
+            + $"?partyId={PartyId:D}&companyAccountId={AccountId:D}");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        AssertPrivateNoStore(response);
+        Assert.Single(service.ContactQueries);
+    }
+
+    [Fact]
+    public async Task Currencies_success_is_lossless_and_an_empty_list_is_a_200()
+    {
+        var service = new StubService
+        {
+            Currencies = new(200, new(TestCompanyIds.CompanyA, new DateOnly(2026, 9, 13),
+                [new(TestCompanyIds.CompanyA, new DateOnly(2026, 9, 13), CurrencyId, "TRY", "TRY", ProfileId, "9007199254740993")]), null)
+        };
+        using var host = CreateHost(service, new StubSessionBinding("trusted-session"));
+        using var client = CreateClient(host, true);
+        using var response = await client.GetAsync(SalesEndpoints.CurrenciesPath + "?effectiveOn=2026-09-13");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        AssertPrivateNoStore(response);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = document.RootElement;
+        Assert.Equal(new[] { "companyId", "effectiveOn", "currencies" }, Keys(root));
+        Assert.Equal("2026-09-13", root.GetProperty("effectiveOn").GetString());
+        var currency = Assert.Single(root.GetProperty("currencies").EnumerateArray());
+        Assert.Equal(new[] { "companyId", "effectiveOn", "currencyId", "code", "label", "profileId", "profileVersion" }, Keys(currency));
+        Assert.Equal((CurrencyId, "TRY", "9007199254740993"), (currency.GetProperty("currencyId").GetGuid(),
+            currency.GetProperty("code").GetString(), currency.GetProperty("profileVersion").GetString()));
+        Assert.Equal(new SalesCurrencyListQueryV1(new DateOnly(2026, 9, 13)), Assert.Single(service.CurrencyQueries));
+
+        service.Currencies = new(200, new(TestCompanyIds.CompanyA, new DateOnly(2026, 9, 13), []), null);
+        using var empty = await client.GetAsync(SalesEndpoints.CurrenciesPath + "?effectiveOn=2026-09-13");
+        Assert.Equal(HttpStatusCode.OK, empty.StatusCode);
+        using var emptyDocument = JsonDocument.Parse(await empty.Content.ReadAsStringAsync());
+        Assert.Empty(emptyDocument.RootElement.GetProperty("currencies").EnumerateArray());
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("?effectiveOn=09%2F13%2F2026")]
+    [InlineData("?effectiveOn=2026-09-13&effectiveOn=2026-09-14")]
+    [InlineData("?effectiveOn=2026-09-13&currencyId=66666666-6666-6666-6666-666666666666")]
+    public async Task Currencies_reject_a_missing_non_iso_repeated_or_unknown_query_before_the_service(string query)
+    {
+        var service = new StubService();
+        using var host = CreateHost(service, new StubSessionBinding("trusted-session"));
+        using var client = CreateClient(host, true);
+        using var response = await client.GetAsync(SalesEndpoints.CurrenciesPath + query);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Empty(service.CurrencyQueries);
+    }
+
+    [Theory]
+    [InlineData(403, "settings_access_denied", "forbidden")]
+    [InlineData(503, "settings_provider_unavailable", "service_unavailable")]
+    [InlineData(503, "settings_operation_unavailable", "service_unavailable")]
+    public async Task Currencies_status_boundary_exposes_only_accepted_public_codes(int status, string sourceCode, string expectedPublicCode)
+    {
+        var service = new StubService { Currencies = new(status, null, sourceCode) };
+        using var host = CreateHost(service, new StubSessionBinding("trusted-session"));
+        using var client = CreateClient(host, true);
+        using var response = await client.GetAsync(SalesEndpoints.CurrenciesPath + "?effectiveOn=2026-09-13");
+        Assert.Equal(status, (int)response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(body);
+        Assert.Equal(expectedPublicCode, document.RootElement.GetProperty("code").GetString());
+        Assert.DoesNotContain(sourceCode, body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Contact_information_adapter_maps_the_owners_account_addresses_and_contacts_as_given()
+    {
+        var owner = new StubCounterpartyContactInformationService(OwnerView(TestCompanyIds.CompanyA));
+        var adapter = new CounterpartySalesPartyAccountPortV1(new StubCompanyContext(TestCompanyIds.CompanyA),
+            new StubCurrentUser("sales-reader", TestCompanyIds.CompanyA), new NoPartyRead(), owner);
+
+        var answer = await adapter.GetContactInformationAsync(PartyId, AccountId);
+
+        Assert.Equal(SalesPartyContactInformationOutcomeV1.Found, answer.Outcome);
+        var information = answer.Information!;
+        Assert.Equal((PartyId, AccountId, TestCompanyIds.CompanyA, "9007199254740993"),
+            (information.PartyId, information.CompanyAccountId, information.CompanyId, information.AccountVersion));
+        Assert.Equal(2, information.Addresses.Count);
+        Assert.Equal(new SalesPartyAddressV1(AddressId, "3", true, "delivery", "TR", "Sanayi Cad. 1", null, "Kocaeli", "Gebze", "41400"),
+            information.Addresses[0]);
+        Assert.False(information.Addresses[1].IsActive);
+        Assert.Equal(new SalesPartyContactV1(ContactId, "2", true, "Ayşe Yükleme", "Sevkiyat", "delivery"),
+            Assert.Single(information.Contacts));
+        Assert.Equal(PartyId, Assert.Single(owner.Reads));
+    }
+
+    [Fact]
+    public async Task Contact_information_adapter_answers_not_found_for_a_missing_party_another_account_or_another_company()
+    {
+        var context = new StubCompanyContext(TestCompanyIds.CompanyA);
+        var user = new StubCurrentUser("sales-reader", TestCompanyIds.CompanyA);
+
+        var none = new CounterpartySalesPartyAccountPortV1(context, user, new NoPartyRead(), new StubCounterpartyContactInformationService(null));
+        Assert.Equal(SalesPartyContactInformationOutcomeV1.NotFound, (await none.GetContactInformationAsync(PartyId, AccountId)).Outcome);
+
+        var owner = new StubCounterpartyContactInformationService(OwnerView(TestCompanyIds.CompanyA));
+        var adapter = new CounterpartySalesPartyAccountPortV1(context, user, new NoPartyRead(), owner);
+        Assert.Equal(SalesPartyContactInformationOutcomeV1.NotFound, (await adapter.GetContactInformationAsync(PartyId, Guid.NewGuid())).Outcome);
+
+        var foreign = new CounterpartySalesPartyAccountPortV1(context, user, new NoPartyRead(),
+            new StubCounterpartyContactInformationService(OwnerView(TestCompanyIds.CompanyB)));
+        Assert.Equal(SalesPartyContactInformationOutcomeV1.NotFound, (await foreign.GetContactInformationAsync(PartyId, AccountId)).Outcome);
+    }
+
+    [Fact]
+    public async Task Contact_information_adapter_denies_before_the_owner_read_without_a_current_context_or_ids()
+    {
+        var owner = new StubCounterpartyContactInformationService(OwnerView(TestCompanyIds.CompanyA));
+        var foreignUser = new CounterpartySalesPartyAccountPortV1(new StubCompanyContext(TestCompanyIds.CompanyA),
+            new StubCurrentUser("sales-reader", TestCompanyIds.CompanyB), new NoPartyRead(), owner);
+        Assert.Equal(SalesPartyContactInformationOutcomeV1.Denied, (await foreignUser.GetContactInformationAsync(PartyId, AccountId)).Outcome);
+
+        var adapter = new CounterpartySalesPartyAccountPortV1(new StubCompanyContext(TestCompanyIds.CompanyA),
+            new StubCurrentUser("sales-reader", TestCompanyIds.CompanyA), new NoPartyRead(), owner);
+        Assert.Equal(SalesPartyContactInformationOutcomeV1.Denied, (await adapter.GetContactInformationAsync(Guid.Empty, AccountId)).Outcome);
+        Assert.Equal(SalesPartyContactInformationOutcomeV1.Denied, (await adapter.GetContactInformationAsync(PartyId, Guid.Empty)).Outcome);
+        Assert.Empty(owner.Reads);
+    }
+
+    [Fact]
+    public async Task Contact_information_adapter_turns_the_owners_authorization_exception_into_denied()
+    {
+        var owner = new StubCounterpartyContactInformationService(null) { Error = new UnauthorizedAccessException("owner-internal-detail") };
+        var adapter = new CounterpartySalesPartyAccountPortV1(new StubCompanyContext(TestCompanyIds.CompanyA),
+            new StubCurrentUser("sales-reader", TestCompanyIds.CompanyA), new NoPartyRead(), owner);
+        var answer = await adapter.GetContactInformationAsync(PartyId, AccountId);
+        Assert.Equal(SalesPartyContactInformationOutcomeV1.Denied, answer.Outcome);
+        Assert.Null(answer.Information);
+    }
+
+    [Theory]
+    [InlineData("company")]
+    [InlineData("actor")]
+    public async Task Contact_information_adapter_discards_the_owners_answer_after_a_late_context_change(string change)
+    {
+        var context = new StubCompanyContext(TestCompanyIds.CompanyA);
+        var user = new StubCurrentUser("sales-reader", TestCompanyIds.CompanyA, TestCompanyIds.CompanyB);
+        var owner = new StubCounterpartyContactInformationService(OwnerView(TestCompanyIds.CompanyA))
+        {
+            OnRead = () =>
+            {
+                if (change == "company") context.CompanyId = TestCompanyIds.CompanyB;
+                else user.UserId = "other-reader";
+            }
+        };
+        var adapter = new CounterpartySalesPartyAccountPortV1(context, user, new NoPartyRead(), owner);
+        var answer = await adapter.GetContactInformationAsync(PartyId, AccountId);
+        Assert.Equal(SalesPartyContactInformationOutcomeV1.Denied, answer.Outcome);
+        Assert.Null(answer.Information);
+        Assert.Single(owner.Reads);
+    }
+
+    private static CounterpartyContactInformationView OwnerView(Guid companyId) => new(PartyId, AccountId, companyId, "9007199254740993", true,
+        new CounterpartyContactInformation(null, null, null, null,
+            [
+                new(AddressId, "3", true, "delivery", "TR", "Sanayi Cad. 1", null, "Kocaeli", "Gebze", "41400"),
+                new(Guid.NewGuid(), "1", false, "delivery", "TR", "Old street", null, null, null, null),
+            ],
+            [new(ContactId, "2", true, "Ayşe Yükleme", "Sevkiyat", "delivery", [])]));
+
+    private static string[] Keys(JsonElement element) => [.. element.EnumerateObject().Select(property => property.Name)];
+
+    /// <summary>The party read is not part of the contact-information member; reaching it is a test failure.</summary>
+    private sealed class NoPartyRead : ICounterpartyReadService
+    {
+        public Task<CounterpartyPageExecution> GetAuthorizedPageAsync(CounterpartyReadRequest request,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<CounterpartyDetailView?> GetAuthorizedPartyAsync(Guid partyId,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
     private static CounterpartyPageQuery ExpectedOwnerQuery(string? q, int pageSize, string? cursor) =>
@@ -422,8 +679,12 @@ public sealed class SalesReferenceHttpAcceptanceTests(GoymenErpApiFactory factor
         public SalesReferenceReadResult<SalesAccountOptionsV1> Accounts { get; set; } = new(403, null, null);
         public SalesReferenceReadResult<SalesCurrencyReferenceV1> Currency { get; set; } = new(403, null, null);
         public SalesReferenceReadResult<SalesProductReferenceV1> Product { get; set; } = new(403, null, null);
+        public SalesReferenceReadResult<SalesContactInformationOptionsV1> ContactInformation { get; set; } = new(403, null, null);
+        public SalesReferenceReadResult<SalesCurrencyOptionsV1> Currencies { get; set; } = new(403, null, null);
         public List<string> Sessions { get; } = [];
         public int ProductCalls { get; private set; }
+        public List<SalesContactInformationQueryV1> ContactQueries { get; } = [];
+        public List<SalesCurrencyListQueryV1> CurrencyQueries { get; } = [];
         public Task<SalesReferenceReadResult<SalesAccountOptionsV1>> GetAccountsAsync(
             SalesAccountQueryV1 query, string sessionBinding, CancellationToken cancellationToken = default)
         { Sessions.Add(sessionBinding); return Task.FromResult(Accounts); }
@@ -432,6 +693,29 @@ public sealed class SalesReferenceHttpAcceptanceTests(GoymenErpApiFactory factor
         public Task<SalesReferenceReadResult<SalesProductReferenceV1>> GetProductAsync(
             SalesProductQueryV1 query, CancellationToken cancellationToken = default)
         { ProductCalls++; return Task.FromResult(Product); }
+        public Task<SalesReferenceReadResult<SalesContactInformationOptionsV1>> GetContactInformationAsync(
+            SalesContactInformationQueryV1 query, CancellationToken cancellationToken = default)
+        { ContactQueries.Add(query); return Task.FromResult(ContactInformation); }
+        public Task<SalesReferenceReadResult<SalesCurrencyOptionsV1>> GetCurrenciesAsync(
+            SalesCurrencyListQueryV1 query, CancellationToken cancellationToken = default)
+        { CurrencyQueries.Add(query); return Task.FromResult(Currencies); }
+    }
+
+    /// <summary>SALES-A2a: the Cari owner's contact-information read, answered as configured; the command is never reached.</summary>
+    private sealed class StubCounterpartyContactInformationService(CounterpartyContactInformationView? view)
+        : ICounterpartyContactInformationService
+    {
+        public List<Guid> Reads { get; } = [];
+        public Action? OnRead { get; init; }
+        public Exception? Error { get; init; }
+        public Task<CounterpartyContactInformationView?> GetContactInformationAsync(Guid partyId, CancellationToken cancellationToken)
+        {
+            Reads.Add(partyId);
+            OnRead?.Invoke();
+            return Error is null ? Task.FromResult(view) : Task.FromException<CounterpartyContactInformationView?>(Error);
+        }
+        public Task<CounterpartyCommandExecution> UpdateContactInformationAsync(Guid partyId, UpdateCounterpartyContactInformation command,
+            CounterpartyCommandMetadata metadata, CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 
     private sealed class StubCurrentUser(string userId, params Guid[] companies) : ICurrentUser

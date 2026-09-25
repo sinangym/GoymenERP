@@ -52,19 +52,29 @@ public sealed class ProductionOrder
 
     public OrderStatus Status { get; private set; }
 
+    /// <summary>
+    /// Optimistic concurrency (MFG-3, SİPARİŞ #292 P3-a): every mutation names the version it
+    /// read; a stale one is refused whole with <see cref="ManufacturingVersionConflictException"/>
+    /// before any rule runs, and every recorded change advances it by one. A refused rule leaves
+    /// it unchanged.
+    /// </summary>
+    public long Version { get; private set; } = 1;
+
     public Guid? ClosedByUserId { get; private set; }
 
     public DateTimeOffset? ClosedAtUtc { get; private set; }
 
-    public IReadOnlyList<PlannedInput> PlannedInputs => _plannedInputs;
+    // Read-only views (ÜRÜN #280 P3-1): a cast cannot reach the lists behind them, so the
+    // duplicate, roll and closed-order rules below cannot be bypassed.
+    public IReadOnlyList<PlannedInput> PlannedInputs => _plannedInputs.AsReadOnly();
 
-    public IReadOnlyList<InputIssue> Issues => _issues;
+    public IReadOnlyList<InputIssue> Issues => _issues.AsReadOnly();
 
-    public IReadOnlyList<InputReturn> Returns => _returns;
+    public IReadOnlyList<InputReturn> Returns => _returns.AsReadOnly();
 
-    public IReadOnlyList<WipMeasurement> WipMeasurements => _wipMeasurements;
+    public IReadOnlyList<WipMeasurement> WipMeasurements => _wipMeasurements.AsReadOnly();
 
-    public IReadOnlyList<OutputDeclaration> Outputs => _outputs;
+    public IReadOnlyList<OutputDeclaration> Outputs => _outputs.AsReadOnly();
 
     public static ProductionOrder FromApprovedPlan(Guid id, ProductionPlan plan)
     {
@@ -72,51 +82,136 @@ public sealed class ProductionOrder
         if (plan.Status != PlanStatus.Approved)
         {
             throw new ManufacturingRuleException(
-                "plan_not_approved",
+                ManufacturingRuleCodes.PlanNotApproved,
                 "Üretim emri yalnız onaylı plandan oluşturulabilir.");
         }
 
         return new ProductionOrder(id, plan);
     }
 
-    /// <summary>Input actually taken from a planned parent roll into production.</summary>
-    public InputIssue IssueInput(Guid issueId, Guid parentRollId, Kilograms mass, DateTimeOffset issuedAt)
+    /// <summary>
+    /// Rebuilds a stored order from its snapshot and its stored facts (MFG-5). The facts are
+    /// replayed through the same methods that recorded them — issues first, then returns, outputs
+    /// and WIP readings, each in time order — so every rule (fact identity, parent roll, return
+    /// bound, latest WIP reading) holds again, and a stored close is replayed through
+    /// <see cref="Close"/>, so a closed order must still reconcile roll by roll. A stored record
+    /// that breaks a rule is refused, not repaired; the stored version must be exactly the one its
+    /// facts add up to.
+    /// </summary>
+    public static ProductionOrder Restore(
+        Guid id,
+        Guid planId,
+        Guid companyId,
+        Guid workCenterId,
+        ManufacturingProcess process,
+        ProductionTarget? target,
+        IEnumerable<PlannedInput> plannedInputs,
+        IEnumerable<InputIssue> issues,
+        IEnumerable<InputReturn> returns,
+        IEnumerable<OutputDeclaration> outputs,
+        IEnumerable<WipMeasurement> wipMeasurements,
+        Guid? closedByUserId,
+        DateTimeOffset? closedAtUtc,
+        long version)
     {
+        ArgumentNullException.ThrowIfNull(issues);
+        ArgumentNullException.ThrowIfNull(returns);
+        ArgumentNullException.ThrowIfNull(outputs);
+        ArgumentNullException.ThrowIfNull(wipMeasurements);
+
+        // The plan's own rules decide the snapshot: at least one input, each parent roll once.
+        var snapshot = new ProductionPlan(planId, companyId, workCenterId, process, plannedInputs, target);
+        var order = new ProductionOrder(id, snapshot);
+
+        foreach (var issue in issues.OrderBy(fact => fact.IssuedAtUtc))
+        {
+            order.IssueInput(order.Version, issue.IssueId, issue.ParentRollId, issue.Mass, issue.IssuedAtUtc);
+        }
+
+        foreach (var entry in returns.OrderBy(fact => fact.ReturnedAtUtc))
+        {
+            order.ReturnUnusedInput(order.Version, entry.ReturnId, entry.ParentRollId, entry.Mass, entry.ReturnedAtUtc);
+        }
+
+        foreach (var output in outputs.OrderBy(fact => fact.DeclaredAtUtc))
+        {
+            if (output.Cost != CostResult.NotCalculated)
+            {
+                throw new ManufacturingRuleException(
+                    ManufacturingRuleCodes.StoredRecordInvalid, "Kayıtlı çıktının maliyet durumu bu dilimde üretilemez.");
+            }
+
+            order.DeclareOutput(order.Version, output.OutputId, output.ParentRollId, output.Class, output.Mass,
+                output.DeclaredAtUtc);
+        }
+
+        foreach (var measurement in wipMeasurements.OrderBy(fact => fact.MeasuredAtUtc))
+        {
+            order.RecordWorkInProgress(order.Version, measurement.MeasurementId, measurement.ParentRollId,
+                measurement.Mass, measurement.MeasuredAtUtc);
+        }
+
+        if (closedByUserId is { } closedBy && closedAtUtc is { } closedAt)
+        {
+            order.Close(order.Version, closedBy, closedAt);
+        }
+        else if (closedByUserId is not null || closedAtUtc is not null)
+        {
+            throw new ManufacturingRuleException(
+                ManufacturingRuleCodes.StoredRecordInvalid, "Kayıtlı kapanış izi kapatanı ve anı birlikte taşımalı.");
+        }
+
+        if (order.Version != version)
+        {
+            throw new ManufacturingRuleException(
+                ManufacturingRuleCodes.StoredRecordInvalid, "Kayıtlı emir sürümü olgularının toplamıyla uyuşmuyor.");
+        }
+
+        return order;
+    }
+
+    /// <summary>Input actually taken from a planned parent roll into production.</summary>
+    public InputIssue IssueInput(long expectedVersion, Guid issueId, Guid parentRollId, Kilograms mass, DateTimeOffset issuedAt)
+    {
+        RequireVersion(expectedVersion);
         RequireOpen();
         RequireId(issueId, nameof(issueId));
         RequirePlannedRoll(parentRollId);
         RequirePositive(mass, nameof(mass));
         if (_issues.Any(issue => issue.IssueId == issueId))
         {
-            throw new ManufacturingRuleException("input_already_issued", "Bu girdi çıkışı zaten kaydedildi.");
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.InputAlreadyIssued, "Bu girdi çıkışı zaten kaydedildi.");
         }
 
         var issue = new InputIssue(issueId, parentRollId, mass, issuedAt.ToUniversalTime());
         _issues.Add(issue);
+        Version++;
         return issue;
     }
 
     /// <summary>Unused input sent back; it can never exceed what is still issued.</summary>
-    public InputReturn ReturnUnusedInput(Guid returnId, Guid parentRollId, Kilograms mass, DateTimeOffset returnedAt)
+    public InputReturn ReturnUnusedInput(long expectedVersion, Guid returnId, Guid parentRollId, Kilograms mass, DateTimeOffset returnedAt)
     {
+        RequireVersion(expectedVersion);
         RequireOpen();
         RequireId(returnId, nameof(returnId));
         RequireIssuedRoll(parentRollId);
         RequirePositive(mass, nameof(mass));
         if (_returns.Any(entry => entry.ReturnId == returnId))
         {
-            throw new ManufacturingRuleException("return_already_recorded", "Bu iade zaten kaydedildi.");
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.ReturnAlreadyRecorded, "Bu iade zaten kaydedildi.");
         }
 
         if (ReturnedOf(parentRollId) + mass.Value > IssuedOf(parentRollId))
         {
             throw new ManufacturingRuleException(
-                "return_exceeds_issued",
+                ManufacturingRuleCodes.ReturnExceedsIssued,
                 "İade edilen kütle çıkış yapılan kütleyi aşamaz.");
         }
 
         var entry = new InputReturn(returnId, parentRollId, mass, returnedAt.ToUniversalTime());
         _returns.Add(entry);
+        Version++;
         return entry;
     }
 
@@ -125,8 +220,9 @@ public sealed class ProductionOrder
     /// in this phase (plan v2 R6), so every declaration carries <see cref="CostResult.NotCalculated"/>.
     /// </summary>
     public OutputDeclaration DeclareOutput(
-        Guid outputId, Guid parentRollId, OutputClass outputClass, Kilograms mass, DateTimeOffset declaredAt)
+        long expectedVersion, Guid outputId, Guid parentRollId, OutputClass outputClass, Kilograms mass, DateTimeOffset declaredAt)
     {
+        RequireVersion(expectedVersion);
         RequireOpen();
         RequireId(outputId, nameof(outputId));
         if (!Enum.IsDefined(outputClass))
@@ -138,12 +234,13 @@ public sealed class ProductionOrder
         RequirePositive(mass, nameof(mass));
         if (_outputs.Any(output => output.OutputId == outputId))
         {
-            throw new ManufacturingRuleException("output_already_declared", "Bu çıktı zaten beyan edildi.");
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.OutputAlreadyDeclared, "Bu çıktı zaten beyan edildi.");
         }
 
         var declaration = new OutputDeclaration(
             outputId, parentRollId, outputClass, mass, declaredAt.ToUniversalTime(), CostResult.NotCalculated);
         _outputs.Add(declaration);
+        Version++;
         return declaration;
     }
 
@@ -153,14 +250,15 @@ public sealed class ProductionOrder
     /// already recorded is refused: an old reading can neither overwrite a newer one nor tie
     /// with it.
     /// </summary>
-    public WipMeasurement RecordWorkInProgress(Guid measurementId, Guid parentRollId, Kilograms mass, DateTimeOffset measuredAt)
+    public WipMeasurement RecordWorkInProgress(long expectedVersion, Guid measurementId, Guid parentRollId, Kilograms mass, DateTimeOffset measuredAt)
     {
+        RequireVersion(expectedVersion);
         RequireOpen();
         RequireId(measurementId, nameof(measurementId));
         RequireIssuedRoll(parentRollId);
         if (_wipMeasurements.Any(entry => entry.MeasurementId == measurementId))
         {
-            throw new ManufacturingRuleException("wip_already_measured", "Bu WIP ölçümü zaten kaydedildi.");
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.WipAlreadyMeasured, "Bu WIP ölçümü zaten kaydedildi.");
         }
 
         var at = measuredAt.ToUniversalTime();
@@ -168,12 +266,13 @@ public sealed class ProductionOrder
         if (latest is not null && at <= latest.MeasuredAtUtc)
         {
             throw new ManufacturingRuleException(
-                "wip_measurement_not_latest",
+                ManufacturingRuleCodes.WipMeasurementNotLatest,
                 "WIP ölçümü bu rulonun son ölçümünden sonra olmalıdır.");
         }
 
         var measurement = new WipMeasurement(measurementId, parentRollId, mass, at);
         _wipMeasurements.Add(measurement);
+        Version++;
         return measurement;
     }
 
@@ -191,42 +290,43 @@ public sealed class ProductionOrder
             parentRollId,
             new Kilograms(IssuedOf(parentRollId)),
             new Kilograms(ReturnedOf(parentRollId)),
-            byClass,
+            byClass.AsReadOnly(),
             LatestWipOf(parentRollId)?.Mass ?? Kilograms.Zero);
     }
 
     /// <summary>
-    /// Plan v2 §7.3 and Ö7: with no approved tolerance profile, every non-zero unexplained
-    /// difference is an exception. An order with one does not close; the difference stays on the
-    /// order under its own name and is never written off as loss. The Ö7 exception path (reason +
-    /// single approval) needs a named approver and is a recorded dependency, not built here.
+    /// Closes the order when EVERY parent roll reconciles on its own (Business #66 5728619644 on
+    /// DEC-PRDCT-006/007 and Master v3 §28.9): issued − returned = good + second quality + usable
+    /// remnant + scrap + process loss + remaining WIP + unexplained, per roll; rolls never offset
+    /// each other.
+    /// <list type="bullet">
+    /// <item>Plan v2 §7.3 and Ö7: with no approved tolerance, a non-zero unexplained difference on
+    /// any roll refuses the close; the difference stays on the order under its own name and is
+    /// never written off as loss. The Ö7 exception path (reason + single approval) needs a named
+    /// approver and is a recorded dependency, not built here.</item>
+    /// <item>Remaining WIP does NOT block the close. A WIP reading is explicit, never negative
+    /// (<see cref="Kilograms"/>) and bound to an issued parent roll of this order
+    /// (<see cref="RecordWorkInProgress"/>). After the close it stays on the order as its own
+    /// position — never zeroed, scrapped or turned into good output — and no new realization can
+    /// be written (<see cref="ManufacturingRuleCodes.OrderClosed"/>). WIP is not an automatic loss
+    /// or output that could hide a difference: writing it down without declaring or returning the
+    /// mass makes the difference reappear and refuses the close.</item>
+    /// </list>
     /// </summary>
-    public void Close(Guid closedByUserId, DateTimeOffset closedAt)
+    public void Close(long expectedVersion, Guid closedByUserId, DateTimeOffset closedAt)
     {
+        RequireVersion(expectedVersion);
         RequireOpen();
         RequireId(closedByUserId, nameof(closedByUserId));
 
         var balances = _plannedInputs.Select(input => BalanceOf(input.ParentRollId)).ToList();
 
-        // TEMPORARY — awaiting Business confirmation ("Üretim emri, işlemde kütle (WIP) varken
-        // kapanabilir mi?"). Mass still in process would be left in an ownerless position, so the
-        // order stays open until that mass is declared as output or returned. Recording the WIP
-        // as zero without doing either does not help: the same mass then shows up as an
-        // unexplained difference, which also keeps the order open.
-        var inProcess = balances.Where(balance => balance.WorkInProgress.Value != 0m).ToList();
-        if (inProcess.Count > 0)
-        {
-            throw new ManufacturingRuleException(
-                "wip_open",
-                "İşlemde kütle (WIP) varken emir kapatılamaz: "
-                + string.Join(", ", inProcess.Select(balance => $"{balance.ParentRollId} ({balance.WorkInProgress})")));
-        }
-
+        // Each roll on its own: a surplus on one roll never covers a gap on another.
         var unaccounted = balances.Where(balance => !balance.IsFullyAccounted).ToList();
         if (unaccounted.Count > 0)
         {
             throw new ManufacturingRuleException(
-                "unexplained_difference",
+                ManufacturingRuleCodes.UnexplainedDifference,
                 "Açıklanamayan kütle farkı olan emir kapatılamaz: "
                 + string.Join(", ", unaccounted.Select(balance => $"{balance.ParentRollId} ({balance.Unexplained} kg)")));
         }
@@ -234,6 +334,7 @@ public sealed class ProductionOrder
         ClosedByUserId = closedByUserId;
         ClosedAtUtc = closedAt.ToUniversalTime();
         Status = OrderStatus.Closed;
+        Version++;
     }
 
     /// <summary>
@@ -273,11 +374,19 @@ public sealed class ProductionOrder
             .Where(entry => entry.ParentRollId == parentRollId)
             .MaxBy(entry => entry.MeasuredAtUtc);
 
+    private void RequireVersion(long expectedVersion)
+    {
+        if (expectedVersion != Version)
+        {
+            throw new ManufacturingVersionConflictException(expectedVersion, Version);
+        }
+    }
+
     private void RequireOpen()
     {
         if (Status != OrderStatus.Open)
         {
-            throw new ManufacturingRuleException("order_closed", "Kapanmış emre yeni gerçekleşme yazılamaz.");
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.OrderClosed, "Kapanmış emre yeni gerçekleşme yazılamaz.");
         }
     }
 
@@ -286,7 +395,7 @@ public sealed class ProductionOrder
         if (_plannedInputs.All(input => input.ParentRollId != parentRollId))
         {
             throw new ManufacturingRuleException(
-                "roll_not_in_order",
+                ManufacturingRuleCodes.RollNotInOrder,
                 "Ana rulo bu emrin planlanan girdileri arasında değil.");
         }
     }
@@ -297,7 +406,7 @@ public sealed class ProductionOrder
         if (IssuedOf(parentRollId) == 0m)
         {
             throw new ManufacturingRuleException(
-                "roll_not_issued",
+                ManufacturingRuleCodes.RollNotIssued,
                 "Bu ana rulodan henüz üretime girdi çıkışı yapılmadı.");
         }
     }

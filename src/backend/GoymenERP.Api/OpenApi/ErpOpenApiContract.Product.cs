@@ -35,7 +35,8 @@ public static partial class ErpOpenApiContract
         operation.Description = "Explicit server-resolved global Product authority is required for this operation. "
             + "X-Company-Id selects the authorized origin, not a Product owner. Company roles alone grant no global access. "
             + "Reads never create data. Responses are private, no-store; a successful read is not a durable write grant.";
-        var edit = operation.OperationId == "EditProductDraftV1";
+        // Both versioned card writes (draft edit, DEC-PRD-010 activation) answer lifecycle and version conflicts.
+        var versioned = operation.OperationId is "EditProductDraftV1" or "ActivateProductV1";
         if (operation.Parameters is not null)
             foreach (var parameter in operation.Parameters)
             {
@@ -62,7 +63,7 @@ public static partial class ErpOpenApiContract
                     : [ErpProblemCodes.CompanyContextInvalid, ErpProblemCodes.CorrelationMetadataInvalid, "validation_failed"],
                 "401" => ["authentication_required"],
                 "404" => ["not_found"],
-                "409" => edit ? ["idempotency_conflict", "lifecycle_conflict", "version_conflict"] : ["idempotency_conflict"],
+                "409" => versioned ? ["idempotency_conflict", "lifecycle_conflict", "version_conflict"] : ["idempotency_conflict"],
                 "500" => ["internal_error"],
                 "503" => ["product_write_contention"],
                 _ => [],
@@ -117,7 +118,19 @@ public static partial class ErpOpenApiContract
             schema.MinProperties = 1;
         }
         if (type == typeof(ProductDraftView)) SetPositiveIntegerStringProperty(schema, "version");
-        if (type == typeof(EditProductDraftRequest))
+        if (type == typeof(ProductHistoryEntryView))
+        {
+            SetPositiveIntegerStringProperty(schema, "versionAfter");
+            schema.Properties!["versionBefore"] = new OpenApiSchema
+            {
+                Type = JsonSchemaType.String | JsonSchemaType.Null,
+                MinLength = 1,
+                MaxLength = 19,
+                Pattern = PositiveIntegerStringPattern,
+                Description = "Lossless positive Int64 decimal string; null only for DraftCreate.",
+            };
+        }
+        if (type == typeof(EditProductDraftRequest) || type == typeof(ActivateProductRequest))
         {
             schema.Properties!["expectedVersion"] = new OpenApiSchema { Type = JsonSchemaType.String,
                 MinLength = 1, MaxLength = 19, Pattern = PositiveIntegerStringPattern,

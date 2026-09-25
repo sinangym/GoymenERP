@@ -13,10 +13,10 @@
  * Every route is wrapped in `<CapabilityRoute>`: an ungranted or unresolved capability
  * mounts nothing and renders the same neutral not-found block any unknown path gets.
  *
- * The shell now DECLARES these two ids (#247), which is only the frontend saying it has
- * an implementation for them. Whether they are GRANTED is the server's capability
- * provider (#246) — so until that publishes, these routes still mount nothing, by
- * design rather than by omission.
+ * The shell DECLARES these ids, which is only the frontend saying it has an
+ * implementation for them. Whether one is GRANTED is the server's capability provider
+ * (#246, and ORG-03's own declaration) — so a route whose id this caller was not granted
+ * still mounts nothing, by design rather than by omission.
  */
 
 import type { RouteObject } from 'react-router'
@@ -24,6 +24,7 @@ import { CapabilityRoute } from '../shell/CapabilityRoute'
 import { ORGANIZATION_CAPABILITY, ORGANIZATION_ROUTE } from './capabilities'
 import { OrganizationSettingsPage } from './OrganizationSettingsPage'
 import { LocationDetailPage } from './LocationDetailPage'
+import { WorkCenterListPage } from './WorkCenterListPage'
 
 export const organizationRoutes: RouteObject[] = [
   {
@@ -31,6 +32,19 @@ export const organizationRoutes: RouteObject[] = [
     element: (
       <CapabilityRoute capability={ORGANIZATION_CAPABILITY.settingsList}>
         <OrganizationSettingsPage />
+      </CapabilityRoute>
+    ),
+  },
+  {
+    // ORG-03. Static, and listed ahead of the parameterized route for the same reason
+    // `lokasyon` is: a static segment must never be reachable as a record id. Here the
+    // two paths also differ in LENGTH, so they could not collide today — the ordering is
+    // kept anyway, because the rule that protects the table is the one that holds when a
+    // future path does collide, not the one that happens to be unnecessary now.
+    path: ORGANIZATION_ROUTE[ORGANIZATION_CAPABILITY.workCentersList].slice(1),
+    element: (
+      <CapabilityRoute capability={ORGANIZATION_CAPABILITY.workCentersList}>
+        <WorkCenterListPage />
       </CapabilityRoute>
     ),
   },

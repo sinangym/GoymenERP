@@ -16,14 +16,20 @@ public enum PurchaseOrderLineKind
 /// commitment and <see cref="TechnicalQuantity"/> the part already moved into technical lines,
 /// so its own commitment is the difference. For a technical line the quantity is the slice.
 /// Accepted and remaining are shares (§7.2), never physical stock.
+/// <para>
+/// Every share bound is decided by <see cref="PurchaseOrder"/>; the checks in this class are a
+/// second, defensive guard and report <see cref="PurchasingRuleCodes.InternalInvariant"/> so
+/// they are never mistaken for the aggregate's rule.
+/// </para>
 /// </summary>
 public sealed class PurchaseOrderLine
 {
-    internal PurchaseOrderLine(Guid id, Guid productId, Quantity quantity, PurchaseOrderLineKind kind,
+    internal PurchaseOrderLine(Guid id, Guid productId, Guid unitId, Quantity quantity, PurchaseOrderLineKind kind,
         Guid? parentLineId, Guid? sourceRequestLineId)
     {
         Id = id;
         ProductId = productId;
+        UnitId = unitId;
         Quantity = quantity;
         Kind = kind;
         ParentLineId = parentLineId;
@@ -34,6 +40,10 @@ public sealed class PurchaseOrderLine
 
     public Guid Id { get; }
     public Guid ProductId { get; }
+
+    /// <summary>The Settings unit this line is in (identity only); a technical line keeps its general line's unit.</summary>
+    public Guid UnitId { get; }
+
     public Quantity Quantity { get; }
     public PurchaseOrderLineKind Kind { get; }
     public Guid? ParentLineId { get; }
@@ -55,7 +65,8 @@ public sealed class PurchaseOrderLine
         var next = TechnicalQuantity.Add(slice);
         if (next.Add(AcceptedQuantity).IsGreaterThan(Quantity))
         {
-            throw new InvalidOperationException("Teknik kırılımlar ve kabul edilen pay ilk taahhüdü aşamaz.");
+            throw new PurchasingRuleException(PurchasingRuleCodes.InternalInvariant,
+                "İç tutarsızlık: teknik kırılımlar ve kabul edilen pay ilk taahhüdü aşıyor.");
         }
 
         TechnicalQuantity = next;
@@ -66,7 +77,8 @@ public sealed class PurchaseOrderLine
         var next = AcceptedQuantity.Add(accepted);
         if (next.IsGreaterThan(CommittedQuantity))
         {
-            throw new InvalidOperationException("Kabul edilen pay taahhüdü aşamaz.");
+            throw new PurchasingRuleException(PurchasingRuleCodes.InternalInvariant,
+                "İç tutarsızlık: kabul edilen pay taahhüdü aşıyor.");
         }
 
         AcceptedQuantity = next;

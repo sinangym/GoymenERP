@@ -52,6 +52,7 @@ public sealed class StockMovementTests
     [Theory]
     [InlineData("receipt-with-out-line")]
     [InlineData("issue-with-in-line")]
+    [InlineData("return-with-out-line")]
     [InlineData("no-lines")]
     [InlineData("line-in-other-company")]
     [InlineData("local-time")]
@@ -69,6 +70,7 @@ public sealed class StockMovementTests
         {
             "receipt-with-out-line" => () => Movement(StockMovementKind.Receipt, In(free, 1m), Out(Position(label: Label2), 1m)),
             "issue-with-in-line" => () => Movement(StockMovementKind.Issue, In(free, 1m)),
+            "return-with-out-line" => () => Movement(StockMovementKind.Return, Out(free, 1m)),
             "no-lines" => () => Movement(StockMovementKind.Receipt),
             // The transaction company is the movement's; a line cannot slip into another one.
             "line-in-other-company" => () => Movement(StockMovementKind.Receipt, CompanyA, In(Position(company: CompanyB), 1m)),
@@ -118,12 +120,29 @@ public sealed class StockMovementTests
     [Fact]
     public void A_position_takes_its_product_from_the_label_and_cannot_be_told_otherwise()
     {
-        var coil = new MaterialLabel(Label2, CoilProduct, Lot1);
+        var coil = new MaterialLabel(Label2, CompanyA, CodeOf(Label2), CoilProduct, Lot1);
         var position = new StockPosition(CompanyA, OwnedByA, KeptByA, Warehouse1, coil, BlockState.Free);
 
         Assert.Equal((CoilProduct, Label2), (position.ProductId, position.LabelId));
         // No public way to build a position with a product of its own choosing.
         Assert.All(typeof(StockPosition).GetConstructors(), constructor =>
             Assert.DoesNotContain(constructor.GetParameters(), parameter => parameter.Name == "productId"));
+    }
+
+    [Fact]
+    public void A_source_may_name_one_of_its_lines_but_never_an_empty_one()
+    {
+        var sourceId = Guid.NewGuid();
+        var lineId = Guid.NewGuid();
+        var whole = new StockSourceReference(" purchase.receipt ", sourceId);
+        var line = new StockSourceReference("purchase.receipt", sourceId, lineId);
+
+        Assert.Equal(("purchase.receipt", sourceId, (Guid?)null), (whole.Kind, whole.Id, whole.LineId));
+        Assert.Equal(lineId, line.LineId);
+        Assert.NotEqual(whole, line);
+        Assert.Equal(InventoryRuleCodes.MissingReference, Assert.Throws<InventoryRuleException>(
+            () => new StockSourceReference("purchase.receipt", sourceId, Guid.Empty)).Code);
+        Assert.Equal(InventoryRuleCodes.InvalidMovement, Assert.Throws<InventoryRuleException>(
+            () => new StockSourceReference(new string('k', StockSourceReference.MaximumKindLength + 1), sourceId)).Code);
     }
 }

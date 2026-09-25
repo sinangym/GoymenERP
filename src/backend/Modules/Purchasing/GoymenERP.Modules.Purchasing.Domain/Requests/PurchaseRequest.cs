@@ -12,6 +12,12 @@ public enum PurchaseRequestStatus
 /// The demand side of talep → teklif → sipariş (#275 §7.2). A request names what a company
 /// needs; it is not a commitment, not future supply and not an order. Offers (teklif) are a
 /// later slice and no offer requirement is chosen here.
+/// <para>
+/// A submitted request does not record that it was sourced: today the same request can source
+/// more than one order, each with the full quantities. Whether that is a supplier split with
+/// partial quantities or a mistake is a Business decision still open (#66); until it is taken
+/// the behaviour is kept as it is and named in the README.
+/// </para>
 /// </summary>
 public sealed class PurchaseRequest
 {
@@ -31,16 +37,23 @@ public sealed class PurchaseRequest
     public long Version { get; private set; } = 1;
     public DateTimeOffset CreatedAtUtc { get; }
     public DateTimeOffset UpdatedAtUtc { get; private set; }
-    public IReadOnlyList<PurchaseRequestLine> Lines => lines;
+
+    /// <summary>A read-only view; the list behind it never leaves this record.</summary>
+    public IReadOnlyList<PurchaseRequestLine> Lines => lines.AsReadOnly();
 
     public static PurchaseRequest Create(Guid id, Guid companyId, DateTimeOffset now) => new(id, companyId, now);
 
-    public PurchaseRequestLine AddLine(long expectedVersion, Guid lineId, Guid productId, Quantity quantity, DateTimeOffset now)
+    /// <summary>
+    /// Adds a line for a product in a Settings unit (identity only; the unit's profile and the
+    /// quantity's scale are verified by the Application layer before the line is added).
+    /// </summary>
+    public PurchaseRequestLine AddLine(long expectedVersion, Guid lineId, Guid productId, Guid unitId, Quantity quantity, DateTimeOffset now)
     {
         RequireVersion(expectedVersion);
         RequireDraft();
         Identity.Require(lineId, nameof(lineId));
         Identity.Require(productId, nameof(productId));
+        Identity.Require(unitId, nameof(unitId));
         if (quantity.IsZero)
         {
             throw new ArgumentOutOfRangeException(nameof(quantity), "Talep miktarı sıfırdan büyük olmalıdır.");
@@ -48,10 +61,10 @@ public sealed class PurchaseRequest
 
         if (lines.Any(line => line.Id == lineId))
         {
-            throw new InvalidOperationException("Aynı talep satırı kimliği ikinci kez eklenemez.");
+            throw new PurchasingRuleException(PurchasingRuleCodes.DuplicateLineId, "Aynı talep satırı kimliği ikinci kez eklenemez.");
         }
 
-        var line = new PurchaseRequestLine(lineId, productId, quantity);
+        var line = new PurchaseRequestLine(lineId, productId, unitId, quantity);
         lines.Add(line);
         Touch(now);
         return line;
@@ -63,7 +76,7 @@ public sealed class PurchaseRequest
         RequireDraft();
         if (lines.Count == 0)
         {
-            throw new InvalidOperationException("Satırsız talep gönderilemez.");
+            throw new PurchasingRuleException(PurchasingRuleCodes.RequestWithoutLines, "Satırsız talep gönderilemez.");
         }
 
         Status = PurchaseRequestStatus.Submitted;
@@ -74,7 +87,7 @@ public sealed class PurchaseRequest
     {
         if (Status != PurchaseRequestStatus.Draft)
         {
-            throw new InvalidOperationException("Yalnız taslak talep değiştirilebilir.");
+            throw new PurchasingRuleException(PurchasingRuleCodes.RequestNotDraft, "Yalnız taslak talep değiştirilebilir.");
         }
     }
 
@@ -95,14 +108,19 @@ public sealed class PurchaseRequest
 
 public sealed class PurchaseRequestLine
 {
-    internal PurchaseRequestLine(Guid id, Guid productId, Quantity quantity)
+    internal PurchaseRequestLine(Guid id, Guid productId, Guid unitId, Quantity quantity)
     {
         Id = id;
         ProductId = productId;
+        UnitId = unitId;
         Quantity = quantity;
     }
 
     public Guid Id { get; }
     public Guid ProductId { get; }
+
+    /// <summary>The Settings unit this line is in (identity only).</summary>
+    public Guid UnitId { get; }
+
     public Quantity Quantity { get; }
 }

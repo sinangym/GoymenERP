@@ -42,4 +42,36 @@ public static class InventoryRuleCodes
 
     /// <summary>A label document requirement or reprint request is not valid.</summary>
     public const string InvalidLabelOperation = "inventory_invalid_label_operation";
+
+    /// <summary>A split or merge contradicts its same-company, whole-piece or mass-conservation rules.</summary>
+    public const string InvalidLabelTransformation = "inventory_invalid_label_transformation";
+
+    /// <summary>
+    /// A position names a label of another company. A label is a tenant record of the company
+    /// that holds its stock (ADR-INV-001 A); it never appears under another company.
+    /// </summary>
+    public const string LabelCompanyMismatch = "inventory_label_company_mismatch";
+
+    /// <summary>
+    /// A receipt names a label that already holds stock. A label is one physical piece that
+    /// arrives once; a second arrival of a stock-bearing label is a double count (ORG #281 P3-1).
+    /// A label whose stock has all left may be received again (a return is T13's own kind).
+    /// </summary>
+    public const string LabelAlreadyInStock = "inventory_label_already_in_stock";
+
+    /// <summary>This source (or source line) already caused a movement of this kind (ORG #281 P3-1).</summary>
+    public const string DuplicateSource = "inventory_duplicate_source";
+
+    /// <summary>
+    /// The source was already answered at the other grain for this kind: whole after lines, or a
+    /// line after the whole. Both would count the same quantity twice (#293 ORG P3-1).
+    /// </summary>
+    public const string SourceGrainMismatch = "inventory_source_grain_mismatch";
+
+    /// <summary>
+    /// An opening count is not a valid count document: no counted piece, a piece counted twice, a lot
+    /// given with two sets of facts, a label that does not name its own lot, or a missing sheet reference
+    /// (INV-OPEN-1).
+    /// </summary>
+    public const string InvalidOpeningCount = "inventory_invalid_opening_count";
 }

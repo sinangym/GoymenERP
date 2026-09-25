@@ -5,6 +5,7 @@
  * exists, and nothing here proves one.
  */
 
+import { useContext } from 'react'
 import { render } from '@testing-library/react'
 import { RouterProvider, createMemoryRouter } from 'react-router'
 import { QueryClient } from '@tanstack/react-query'
@@ -14,7 +15,15 @@ import { AppShell } from '../shell/AppShell'
 import { SHELL_CAPABILITY_CONTRACT_VERSION } from '../shell/api'
 import { SALES_CAPABILITY } from './capabilities'
 import { salesRoutes } from './salesRoutes'
-import { SalesReferenceSourceContext, type UseReferenceOptions } from './referenceSource'
+import {
+  SalesContactInformationSourceContext,
+  SalesCurrencySourceContext,
+  SalesReferenceSourceContext,
+  type UseContactInformation,
+  type UseCurrencyOptions,
+  type UseReferenceOptions,
+} from './referenceSource'
+import type { ContactInformationOptions, CurrencyOption } from './contract'
 import type { OrderDraftOptions } from './orderDraftForm'
 
 // Company A is the examples' company, so the Backend's own bodies describe it.
@@ -25,21 +34,82 @@ export const ACCOUNT = '55555555-5555-5555-5555-555555555555'
 export const CURRENCY = '33333333-3333-3333-3333-333333333333'
 export const PRODUCT = '22222222-2222-2222-2222-222222222222'
 export const KG = '44444444-4444-4444-4444-444444444444'
+/** SALES-A2a: the controlled Cari contact information of the example account, and the currencies list of company A. */
+export const ADDRESS = 'aaaaaaaa-1111-4111-8111-000000000401'
+export const CONTACT = 'bbbbbbbb-1111-4111-8111-000000000401'
+export const MONEY_PROFILE = 'cccccccc-1111-4111-8111-000000000401'
+export const UNIT_PROFILE = 'dddddddd-1111-4111-8111-000000000401'
+export const ADDRESS_TEXT = 'Sanayi Cad. 1, Kocaeli, TR'
+export const CONTACT_NAME = 'Ayşe Yükleme'
 
 export const ALL_SALES = [SALES_CAPABILITY.draftsList, SALES_CAPABILITY.draftsDetail, SALES_CAPABILITY.draftsCreate]
+/** SALES-A1: the three screens plus the approve control the shell publishes to an approver. */
+export const ALL_SALES_WITH_APPROVE = [...ALL_SALES, SALES_CAPABILITY.ordersApprove]
+
+export const CURRENCIES_A: readonly CurrencyOption[] = [
+  { currencyId: CURRENCY, code: 'TRY', profileId: MONEY_PROFILE, profileVersion: '3' },
+]
+
+export const CONTACT_INFORMATION_A: ContactInformationOptions = {
+  partyId: PARTY,
+  companyAccountId: ACCOUNT,
+  accountVersion: '2',
+  addresses: [{ id: ADDRESS, version: '4', purpose: 'delivery', text: ADDRESS_TEXT }],
+  contacts: [{ id: CONTACT, version: '2', displayName: CONTACT_NAME, jobTitle: 'Sevkiyat', purpose: 'delivery' }],
+}
+
+/** A second account of company A (SALES-A2a: choosing it clears the delivery selects; it lists no address). */
+export const OTHER_ACCOUNT = '55555555-5555-5555-5555-555555555556'
 
 export const OPTIONS_A: OrderDraftOptions = {
-  accounts: [{ partyId: PARTY, companyAccountId: ACCOUNT, label: 'ABC Demir — A hesabı' }],
-  currencies: [{ currencyId: CURRENCY, label: 'TRY' }],
-  products: [{ productId: PRODUCT, productVersion: '7', label: '40x40 profil', orderUnits: [{ unitId: KG, label: 'kg' }] }],
+  accounts: [
+    { partyId: PARTY, companyAccountId: ACCOUNT, label: 'ABC Demir — A hesabı' },
+    { partyId: PARTY, companyAccountId: OTHER_ACCOUNT, label: 'ABC Demir — B hesabı' },
+  ],
+  currencies: CURRENCIES_A.map((c) => ({ currencyId: c.currencyId, label: c.code })),
+  products: [{
+    productId: PRODUCT,
+    productVersion: '7',
+    code: 'PRF-40X40',
+    name: '40x40 profil',
+    label: 'PRF-40X40 — 40x40 profil',
+    orderUnits: [{ unitId: KG, code: 'kg', label: 'kg', profileId: UNIT_PROFILE, profileVersion: '3' }],
+  }],
 }
 
 /** Offers choices for company A only; B has no source, like the running app everywhere. */
 export const controlledSource: UseReferenceOptions = (companyId) =>
   companyId === COMPANY_A ? { status: 'ready', options: OPTIONS_A } : { status: 'unavailable' }
 
+/** The currencies list of company A for any real date; idle without a date (the real hook's shape). */
+export const controlledCurrencies: UseCurrencyOptions = (companyId, effectiveOn) =>
+  companyId === COMPANY_A && effectiveOn !== '' ? { status: 'ready', data: CURRENCIES_A } : { status: 'idle' }
+
+/**
+ * SALES-A2a: the header-only source of the running app on main — accounts and currencies real, products
+ * `no-list-route` (E1) — so the header selects are shown and the lines / submit are withheld.
+ */
+export const useHeaderOnlySource: UseReferenceOptions = (companyId, businessDate) => {
+  const useCurrencies = useContext(SalesCurrencySourceContext)
+  const currencies = useCurrencies(companyId, businessDate)
+  return companyId === COMPANY_A
+    ? { status: 'unavailable', missing: [{ source: 'products', reason: 'no-list-route' }], header: { accounts: OPTIONS_A.accounts, accountsOffer: { items: OPTIONS_A.accounts, nextCursor: null, loadingMore: false, moreFailed: null, loadMore: () => {} }, currencies } }
+    : { status: 'unavailable' }
+}
+
+/** The example account's contact information; another account lists nothing; no account chosen → idle. */
+export const controlledContactInformation: UseContactInformation = (companyId, partyId, companyAccountId) =>
+  partyId === '' || companyAccountId === '' || companyId === ''
+    ? { status: 'idle' }
+    : companyId === COMPANY_A && partyId === PARTY && companyAccountId === ACCOUNT
+      ? { status: 'ready', data: CONTACT_INFORMATION_A }
+      : { status: 'ready', data: { partyId, companyAccountId, accountVersion: '1', addresses: [], contacts: [] } }
+
+/** D2: the harness's signed-in actor — a draft "of one's own" is one whose stored creator / submitter is this id. */
+export const HARNESS_USER_ID = '77777777-7777-7777-7777-777777777777'
+
 const IDENTITY = {
-  userId: '77777777-7777-7777-7777-777777777777',
+  userId: HARNESS_USER_ID,
   displayName: 'Satış kullanıcısı',
   email: null,
   allowedCompanyIds: [COMPANY_A, COMPANY_B],
@@ -69,7 +139,10 @@ export interface HarnessConfig {
   readonly capabilities?: readonly string[]
   readonly onList?: (url: string, companyId: string | null) => Response | Promise<Response>
   readonly onDetail?: (url: string, companyId: string | null) => Response | Promise<Response>
+  readonly onRevisions?: (url: string, companyId: string | null) => Response | Promise<Response>
   readonly onCreate?: (attempt: number, call: RecordedCall) => Response | Promise<Response>
+  /** SALES-A1: a POST on `/sales/drafts/{id}/(submission|approval|rejection)`. */
+  readonly onCommand?: (command: string, call: RecordedCall) => Response | Promise<Response>
 }
 
 export function installFetch(config: HarnessConfig = {}) {
@@ -98,10 +171,18 @@ export function installFetch(config: HarnessConfig = {}) {
         })
       }
       if (url.includes('/sales/drafts')) {
+        const command = /\/sales\/drafts\/[^/?]+\/(submission|approval|rejection|withdrawal)$/.exec(url)?.[1]
+        if (call.method === 'POST' && command !== undefined) {
+          if (config.onCommand === undefined) throw new Error(`unexpected ${command}`)
+          return config.onCommand(command, call)
+        }
         if (call.method === 'POST') {
           creates += 1
           if (config.onCreate === undefined) throw new Error('unexpected create')
           return config.onCreate(creates, call)
+        }
+        if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/revisions$/.test(url)) {
+          return config.onRevisions?.(url, call.companyId) ?? json({ items: [] })
         }
         if (/\/sales\/drafts\/[^?]+/.test(url)) {
           if (config.onDetail === undefined) throw new Error('unexpected detail read')
@@ -116,7 +197,16 @@ export function installFetch(config: HarnessConfig = {}) {
   return { calls, salesCalls: () => calls.filter((c) => c.url.includes('/sales/')) }
 }
 
-export function renderSalesApp(initialPath: string, source: UseReferenceOptions = controlledSource) {
+export interface HarnessSources {
+  readonly currencies?: UseCurrencyOptions
+  readonly contactInformation?: UseContactInformation
+}
+
+export function renderSalesApp(
+  initialPath: string,
+  source: UseReferenceOptions = controlledSource,
+  sources: HarnessSources = {},
+) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: 0, refetchOnWindowFocus: false } },
   })
@@ -126,12 +216,17 @@ export function renderSalesApp(initialPath: string, source: UseReferenceOptions 
   return {
     ...render(
       <SalesReferenceSourceContext.Provider value={source}>
-        <ShellProvider queryClient={queryClient}>
-          <RouterProvider router={router} />
-        </ShellProvider>
+        <SalesCurrencySourceContext.Provider value={sources.currencies ?? controlledCurrencies}>
+          <SalesContactInformationSourceContext.Provider value={sources.contactInformation ?? controlledContactInformation}>
+            <ShellProvider queryClient={queryClient}>
+              <RouterProvider router={router} />
+            </ShellProvider>
+          </SalesContactInformationSourceContext.Provider>
+        </SalesCurrencySourceContext.Provider>
       </SalesReferenceSourceContext.Provider>,
     ),
     router,
+    queryClient,
   }
 }
 

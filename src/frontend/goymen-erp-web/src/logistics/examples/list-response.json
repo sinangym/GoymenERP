@@ -1,0 +1,17 @@
+{
+  "items": [
+    {
+      "id": "cccccccc-cccc-cccc-cccc-cccccccccccc",
+      "companyId": "99999999-9999-9999-9999-999999999999",
+      "status": "Draft",
+      "version": "2",
+      "customerPartyId": "11111111-1111-1111-1111-111111111111",
+      "companyAccountId": "55555555-5555-5555-5555-555555555555",
+      "effectiveOn": "2026-09-19",
+      "createdAtUtc": "2026-09-19T09:00:00Z",
+      "updatedAtUtc": "2026-09-19T09:00:00Z",
+      "lineCount": 1
+    }
+  ],
+  "nextCursor": null
+}

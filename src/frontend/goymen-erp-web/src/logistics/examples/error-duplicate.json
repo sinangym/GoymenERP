@@ -1,0 +1,12 @@
+{
+  "status": 409,
+  "title": "Conflict",
+  "code": "logistics_duplicate_share_id",
+  "correlationId": "corr-9",
+  "errors": [
+    {
+      "field": "loadId",
+      "code": "logistics_duplicate_share_id"
+    }
+  ]
+}

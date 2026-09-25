@@ -627,6 +627,23 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
     <section aria-labelledby="cari-list-heading" className={styles.page}>
       <h1 id="cari-list-heading">Cari Kartlar</h1>
 
+      {/**
+        * K5 (Sinan, 20 Eylül 2026): creation is ONE authorised "Yeni …" action INSIDE the relevant
+        * list, and cari is named among the modules whose parallel sidebar-create must not be
+        * duplicated. This is that action, and the sidebar entry is removed in the SAME change —
+        * `navEntryPointInvariant.test.ts` warns that deleting one without adding the other
+        * recreates the MFG-02 condition (a screen reachable from nowhere), so the two move
+        * atomically.
+        *
+        * Gated on the create capability, not on a role: a reader without it gets a list with no
+        * action rather than a button that exists in order to be refused.
+        */}
+      {hasCapability(shell, CAPABILITY.cariPartiesCreate) ? (
+        <Link className={styles.primaryAction} to="/cari/yeni">
+          Yeni Cari
+        </Link>
+      ) : null}
+
       <div role="status" aria-live="polite" className={styles.announce}>
         {cursorRecovered
           ? 'Liste güncellendi; ilk sayfaya dönüldü.'

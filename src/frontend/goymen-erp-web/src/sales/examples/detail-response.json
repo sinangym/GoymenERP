@@ -12,7 +12,8 @@
     "currencyId": "33333333-3333-3333-3333-333333333333",
     "businessDate": "2026-09-13",
     "createdAtUtc": "2026-09-13T09:00:00Z",
-    "lineCount": 1
+    "lineCount": 1,
+    "approvalState": "Preparing"
   },
   "requestedDeliveryDate": null,
   "note": null,
@@ -44,7 +45,8 @@
           "requestedDeliveryDate": "2026-09-22"
         }
       ],
-      "discountPercent": null
+      "discountPercent": null,
+      "priceDisclosure": "Visible"
     }
   ],
   "deliveryAddress": null,
@@ -52,5 +54,14 @@
   "responsible": null,
   "paymentTerms": null,
   "sourceStrategy": null,
-  "package": null
+  "package": null,
+  "approval": {
+    "submittedBy": null,
+    "submittedAtUtc": null,
+    "decidedBy": null,
+    "decidedAtUtc": null,
+    "rejectionReason": null
+  },
+  "isOwnDraft": false,
+  "isOwnDecisionRestricted": false
 }

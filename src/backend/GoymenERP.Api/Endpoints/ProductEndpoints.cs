@@ -1,5 +1,6 @@
 using GoymenERP.Api.Multitenancy;
 using GoymenERP.Api.OpenApi;
+using GoymenERP.Modules.Product.Application;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Product.Domain.Products;
 using Microsoft.AspNetCore.Builder;
@@ -40,6 +41,12 @@ public static class ProductEndpoints
             })).WithName("GetProductReferenceOptionsV1").Produces<ProductReferenceOptions>()
             .WithProductRuntimeContract(notFound: true, primitiveBinding: true);
 
+        group.MapGet("/{id:guid}/history", async (Guid id, ProductHistoryReader reader, HttpContext context,
+            CancellationToken cancellationToken) => await ExecuteAsync(context, async () =>
+                Results.Ok(await reader.GetAsync(id, cancellationToken))))
+            .WithName("GetProductHistoryV1").Produces<ProductHistoryView>()
+            .WithProductRuntimeContract(notFound: true);
+
         group.MapGet("/{id:guid}", async (Guid id, IProductService service, HttpContext context,
             CancellationToken cancellationToken) => await ExecuteAsync(context, async () =>
             {
@@ -60,6 +67,14 @@ public static class ProductEndpoints
             await ExecuteAsync(context, async () => Results.Ok(await service.EditDraftAsync(id, request,
                 ReadIdempotencyKey(context), cancellationToken))))
             .WithName("EditProductDraftV1").Produces<ProductMutationResponse>()
+            .WithProductRuntimeContract(mutation: true, notFound: true, primitiveBinding: true).WithIdempotencyContract(200);
+
+        // DEC-PRD-010: approval of a Draft card (Draft -> Active) under the global Activate authority.
+        group.MapPost("/{id:guid}/activation", async (Guid id, ActivateProductRequest request,
+            IProductService service, HttpContext context, CancellationToken cancellationToken) =>
+            await ExecuteAsync(context, async () => Results.Ok(await service.ActivateAsync(id, request,
+                ReadIdempotencyKey(context), cancellationToken))))
+            .WithName("ActivateProductV1").Produces<ProductMutationResponse>()
             .WithProductRuntimeContract(mutation: true, notFound: true, primitiveBinding: true).WithIdempotencyContract(200);
         return endpoints;
     }

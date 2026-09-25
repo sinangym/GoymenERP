@@ -172,7 +172,7 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
             using (var groupClient = factory.CreateClient())
             {
                 groupClient.DefaultRequestHeaders.Add("X-Development-User", TestUsers.GroupAdmin);
-                AssertExactEmptySnapshot(await ReadSnapshotAsync(groupClient));
+                AssertExactCounterpartyReadSnapshot(await ReadSnapshotAsync(groupClient));
             }
 
             // The existing SITE-OSM reader is a real persisted narrow grant,
@@ -370,31 +370,31 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
                 TestCompanyIds.CompanyA);
 
             var granted = await ReadSnapshotAsync(administratorClient);
-            var denied = await ReadSnapshotAsync(operatorClient);
-            Assert.DoesNotContain(
+            var operatorSnapshot = await ReadSnapshotAsync(operatorClient);
+            Assert.Contains(
                 CounterpartyShellCapabilityProvider.ListCapabilityId,
                 granted.Capabilities);
-            Assert.DoesNotContain(
+            Assert.Contains(
                 CounterpartyShellCapabilityProvider.CreateCapabilityId,
                 granted.Capabilities);
             Assert.DoesNotContain(
                 CounterpartyShellCapabilityProvider.LinkCapabilityId,
                 granted.Capabilities);
-            Assert.DoesNotContain(
+            Assert.Contains(
                 CounterpartyShellCapabilityProvider.DetailCapabilityId,
                 granted.Capabilities);
             Assert.DoesNotContain(
                 CounterpartyShellCapabilityProvider.ListCapabilityId,
-                denied.Capabilities);
+                operatorSnapshot.Capabilities);
             Assert.DoesNotContain(
                 CounterpartyShellCapabilityProvider.CreateCapabilityId,
-                denied.Capabilities);
+                operatorSnapshot.Capabilities);
             Assert.DoesNotContain(
                 CounterpartyShellCapabilityProvider.LinkCapabilityId,
-                denied.Capabilities);
+                operatorSnapshot.Capabilities);
             Assert.DoesNotContain(
                 CounterpartyShellCapabilityProvider.DetailCapabilityId,
-                denied.Capabilities);
+                operatorSnapshot.Capabilities);
 
             await using var connection = new SqlConnection(factory.DatabaseConnectionString);
             await connection.OpenAsync();
@@ -415,7 +415,7 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
             Assert.DoesNotContain(
                 CounterpartyShellCapabilityProvider.ListCapabilityId,
                 revoked.Capabilities);
-            Assert.DoesNotContain(
+            Assert.Contains(
                 CounterpartyShellCapabilityProvider.CreateCapabilityId,
                 revoked.Capabilities);
             Assert.DoesNotContain(
@@ -848,6 +848,18 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
         Assert.Empty(snapshot.Capabilities);
     }
 
+    private static void AssertExactCounterpartyReadSnapshot(CapabilitySnapshotProbe snapshot)
+    {
+        AssertSnapshotEnvelope(snapshot);
+        Assert.Equal(
+            new[]
+            {
+                CounterpartyShellCapabilityProvider.ListCapabilityId,
+                CounterpartyShellCapabilityProvider.DetailCapabilityId,
+            }.Order(StringComparer.Ordinal),
+            snapshot.Capabilities);
+    }
+
     private static void AssertExactOrganizationSnapshot(
         CapabilitySnapshotProbe snapshot, bool includeSites = true, bool includeStatus = true)
     {
@@ -861,6 +873,16 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
             expected.Add(OrganizationShellCapabilityProvider.SitesReadCapabilityId);
         if (includeStatus)
             expected.Add(OrganizationShellCapabilityProvider.StatusCapabilityId);
+        // ORG-03 is UNCONDITIONAL here, and that is derived from the seed rather than from which cases went red.
+        // Every actor this file uses holds `organization.work-centers.read`: company-a-user and company-b-user through
+        // ORGANIZATION_OPERATOR, company-a-viewer through ORGANIZATION_READER (identity-seed.json — all three roles carry
+        // it). Neither runtime revoke in this file touches it: they remove `organization.locations.status.update` and then
+        // `organization.sites.read`, which is why those two cases narrow with the flags above and still keep ORG-03.
+        // So no `includeWorkCenters` flag is added — an always-true parameter would suggest a case that does not exist.
+        // The first version of this fix was going to read "the three call sites that did not fail lack the permission".
+        // They did not fail because they never RAN: both tests died at their first assert (lines 121 and 168), so the
+        // later sites were never reached, and "did not fail" says nothing about them.
+        expected.Add(OrganizationShellCapabilityProvider.WorkCenterListCapabilityId);
         Assert.Equal(expected.Order(StringComparer.Ordinal), snapshot.Capabilities);
     }
 

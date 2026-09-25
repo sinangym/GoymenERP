@@ -36,6 +36,7 @@ export const FIELD_ERROR: Readonly<Record<FieldError, string>> = {
   'not-positive': 'Tutar sıfırdan büyük olmalıdır.',
   'date-format': 'Geçerli bir tarih girin (YYYY-AA-GG).',
   'bank-account-ineligible': 'Bu banka hesabı tahsilat için kullanılamıyor.',
+  'scale-exceeded': 'İzin verilenden fazla ondalık basamak var; tutar yuvarlanmaz, düzeltin.',
 }
 
 export const BANK_ACCOUNT_PLACEHOLDER = 'Banka hesabı seçin'
@@ -69,6 +70,7 @@ export const COLUMN = {
   valueOn: 'Valör',
   bankAccount: 'Banka hesabı',
   amount: 'Tutar',
+  currency: 'Para birimi',
   actions: 'İşlem',
 } as const
 
@@ -89,11 +91,55 @@ export const DETAIL = {
   recordedAt: 'Kesin kayıt zamanı',
   reversedBy: 'Düzelten ters kayıt',
   reverses: 'Düzelttiği kaynak',
+  currency: 'Para birimi',
   none: '—',
 } as const
 
-export const PROFILE_MISSING =
-  'Tutar hassasiyet profili bu ekrana sağlanmadı; yeni taslak kaydı kapalı. Profil sunucudan gelmeden tutar kaydedilemez.'
+// No technical id as final presentation (Business 5745076917). No source number series is decided, so the
+// server's "source number" is the record's id: it is shown as a labelled reference, never as a number.
+export const NO_SOURCE_NUMBER = 'Numara verilmedi'
+
+/**
+ * THE reference shape of Finance (ORG #356 INFO-2): "ref. …" and the last 8 characters of a technical id, the same
+ * length Accounting uses. Every Finance screen shows a reference this way — a currency without its code, a source
+ * without a number, a reversal link — so one reference never reads shorter than another.
+ */
+export const financeRef = (id: string) => `ref. …${id.slice(-8)}`
+const GUID_TEXT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** A real number as given; the record's own id (no series yet) as "Numara verilmedi · ref. …". */
+export function sourceNumberShown(sourceNumber: string, sourceId: string): string {
+  return sourceNumber === sourceId || GUID_TEXT.test(sourceNumber)
+    ? `${NO_SOURCE_NUMBER} · ${financeRef(sourceId)}`
+    : sourceNumber
+}
+
+export const PARTY_LABEL = 'Cari hesabı'
+export const PARTY_LABEL_PENDING = 'Banka hesabı ve işlem tarihi seçilince cari etiketi okunur.'
+
+/** Amount label with the server's currency display code, when the context is known. */
+export function amountLabelFor(displayCode: string | null): string {
+  return displayCode === null ? 'Tutar' : `Tutar (${displayCode})`
+}
+
+export function scaleHintFor(scale: number): string {
+  return scale === 0 ? 'Bu para biriminde ondalık basamak kullanılmaz.' : `En fazla ${scale} ondalık basamak.`
+}
+
+/** Why saving is closed while the draft read context is not ready. Never claims a balance or grant. */
+export const DRAFT_CONTEXT_TEXT = {
+  'needs-selection': 'Para birimi ve tutar profili, banka hesabı ile işlem tarihi seçilince okunur. O zamana kadar taslak kaydedilemez.',
+  loading: 'Para birimi, tutar profili ve cari etiketi okunuyor…',
+  'invalid-request': 'Seçim geçersiz; banka hesabı ve işlem tarihini yeniden seçin.',
+  forbidden: 'Bu taslak bağlamını okuma yetkiniz yok; taslak kaydedilemez.',
+  'not-found': 'Seçilen banka hesabı veya cari hesap bu şirkette bu işlem için uygun değil.',
+  unavailable:
+    'Tutar profili, banka kaynağı veya finans okuma yetkisi şu anda sağlanamıyor; taslak kaydı kapalı. Bu bir bakiye veya sıfır tutar bilgisi değildir.',
+  unauthenticated: 'Oturum sonlandı; yeniden giriş yapın.',
+  malformed: 'Sunucu yanıtı beklenen biçimde değil; taslak kaydı güvenli biçimde kapatıldı.',
+  'network-error': 'Sunucuya ulaşılamadı; taslak kaydı kapalı.',
+} as const
+export const DRAFT_CONTEXT_RETRY = 'Bağlamı yeniden oku'
 export const SAVE_DRAFT = 'Taslağı kaydet'
 export const DRAFT_SAVED = 'Taslak kaydedildi — para etkisi yok.'
 
@@ -105,12 +151,12 @@ export const RECORD_CONFIRM = 'Kesin kaydı onayla'
 export const CANCEL = 'Vazgeç'
 export const RECORD_DONE = 'Kesin kayıt yapıldı.'
 
-export const REVERSE_ACTION = 'Ters kayıtla düzelt'
+export const REVERSE_ACTION = 'Ters kayıt öner'
 export const REVERSE_DATE = 'Ters kayıt işlem tarihi'
 export const REVERSE_REASON = 'Gerekçe'
 export const REVERSE_REASON_REQUIRED = 'Gerekçe zorunludur.'
-export const REVERSE_CONFIRM = 'Ters kaydı gönder'
-export const REVERSE_DONE = 'Ters kayıt yapıldı.'
+export const REVERSE_CONFIRM = 'Onaya gönder'
+export const REVERSE_DONE = 'Ters kayıt önerisi oluşturuldu; başka bir yetkilinin onayı bekleniyor.'
 
 export const REREAD_AFTER_SUCCESS =
   'İşlem tamamlandı ancak güncel kayıt okunamadı. İşlem yeniden gönderilmez; yalnız kaydı yeniden okuyun.'
@@ -159,6 +205,26 @@ const ISSUE_TEXT: Readonly<Record<string, string>> = {
   finance_period_scope_mismatch: 'Dönem bilgisi bu işlemle eşleşmiyor.',
   finance_period_ineligible: 'İşlem tarihi uygun bir döneme ait değil.',
   finance_period_metadata_invalid: 'Dönem bilgisi eksik veya geçersiz.',
+  // FIN-UI-1a (bank-account master, terminal refusals)
+  draft_not_found: 'Bu taslak bu şirkette bulunamadı.',
+  version_conflict: 'Kayıt başka bir işlemle değişti; güncel sürümü okuyun.',
+  display_name_invalid: 'Hesap adı boş olamaz ve başında/sonunda boşluk olamaz.',
+  finance_value_does_not_fit: 'Bir alan izin verilen uzunluğu aşıyor.',
+  currency_not_a_candidate: 'Seçilen para birimi bu şirketin para birimleri arasında değil.',
+  bank_account_not_found: 'Bu banka hesabı bu şirkette bulunamadı.',
+  bank_account_not_proposed: 'Bu hesap onay beklemiyor; zaten onaylanmış olabilir.',
+  finance_approver_is_proposer: 'Öneriyi yapan kişi kendi onay veya ret kararını veremez; başka bir yetkili karar vermeli.',
+  finance_reversal_proposal_not_found: 'Ters kayıt önerisi bu şirkette bulunamadı.',
+  finance_reversal_proposal_not_pending: 'Bu ters kayıt önerisi artık onay beklemiyor.',
+  finance_source_not_found: 'Düzeltilecek finansal kaynak bu şirkette bulunamadı.',
+  finance_source_not_recorded: 'Yalnız kesin kayda alınmış bir kaynak için ters kayıt önerilebilir.',
+  finance_reversal_has_allocations: 'Bu kaynağa dağıtım bağlı; ters kayıt onaylanamaz.',
+  finance_allocation_rule_unavailable: 'Dağıtım durumu doğrulanamadı; ters kayıt onayı kapalı.',
+  finance_period_rule_unavailable: 'Ters kayıt dönemi doğrulanamadı; onay kapalı.',
+  finance_period_not_open: 'Ters kayıt işlem tarihi açık bir muhasebe dönemine ait değil.',
+  concurrent_change: 'Bu kaynak başka bir işlemle değişti; güncel durumu yeniden okuyun.',
+  idempotency_key_invalid: 'İşlem anahtarı geçersiz.',
+  settings_money_profile_not_found: 'Seçilen para birimi için onaylı tutar profili yok.',
 }
 
 export function issueText(code: string): string {
@@ -166,3 +232,14 @@ export function issueText(code: string): string {
 }
 
 export const PORT_MISSING_DETAIL = 'Finans servisi bu ortamda bağlı değil.'
+
+// F-02 route pages (FIN-UI-1b)
+export const RECEIPTS_TITLE = 'Tahsilat taslakları'
+export const RECEIPTS_NOTICE =
+  'Taslaklar para etkisi taşımaz. Yeni bir tahsilat taslağı ilgili cari hesabın ekranından başlatılır.'
+export const RECEIPT_DRAFT_TITLE = 'Yeni tahsilat taslağı'
+export const RECEIPT_DRAFT_NEEDS_PARTY =
+  'Tahsilat taslağı bir cari hesaptan başlatılır. Cari hesabın ekranındaki "Tahsilat taslağı" bağlantısını kullanın.'
+export const RECEIPT_DETAIL_TITLE = 'Tahsilat taslağı'
+export const OPEN_SAVED_DRAFT = 'Kaydedilen taslağı aç'
+export const BACK_TO_RECEIPTS = 'Tahsilat taslaklarına dön'

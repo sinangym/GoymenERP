@@ -140,8 +140,10 @@ public sealed class ApprovedUnitProfileProviderTests
     }
 
     [Fact]
-    public async Task Money_and_period_stay_unavailable_behind_the_same_access_check()
+    public async Task An_unapproved_money_operation_and_period_stay_unavailable_behind_the_same_access_check()
     {
+        // Since T02-b money has an approved source, but only for the owners' operation keys; an
+        // operation no profile answers for is still "nothing approved to ask".
         var provider = Provider(Gdc);
 
         Assert.Equal("settings_provider_unavailable", (await Assert.ThrowsAsync<SettingsPrerequisiteException>(
@@ -222,6 +224,19 @@ public sealed class ApprovedUnitProfileProviderTests
         Assert.Equal(2, (await provider.GetUnitProfileAsync(Kg, new DateOnly(2027, 1, 2))).Profile.Version);
         // A historical question keeps its historical answer: the new version does not rewrite it.
         Assert.Equal(new DateOnly(2027, 1, 1), (await provider.GetUnitProfileAsync(Kg, Approval)).EffectiveThrough);
+    }
+
+    [Fact]
+    public async Task The_not_found_code_is_published_in_the_contract_and_is_what_the_provider_raises()
+    {
+        // Consumers (Sales maps it to 422 unsupported_unit, #285) must depend on the contract
+        // constant; the provider's own constant is only an alias of it.
+        Assert.Equal("settings_unit_profile_not_found", SettingsPrerequisiteCodesV1.UnitProfileNotFound);
+        Assert.Equal(SettingsPrerequisiteCodesV1.UnitProfileNotFound, ApprovedSettingsPrerequisiteProvider.UnitProfileNotFoundCode);
+
+        var failure = await Assert.ThrowsAsync<SettingsPrerequisiteException>(
+            () => Provider(Gdc).GetUnitProfileAsync(Guid.Parse("0f3bd0a1-6e2c-4d77-a3a5-0b1c2d3e4f50"), Approval));
+        Assert.Equal(SettingsPrerequisiteCodesV1.UnitProfileNotFound, failure.Code);
     }
 
     [Fact]

@@ -94,6 +94,53 @@ export const NEGATIVE_EXAMPLE = {
   unavailableAllocation: { knowledge: 'Unavailable', amount: { disclosure: 'Unavailable', money: null } },
 } as const
 
+/**
+ * VERBATIM `src/backend/Modules/Finance/examples/draft-read-context.normal.json` from Finance
+ * Backend #261 (blob ad8c39ae73c282c9255d1a2cf17dae2cf6e7fecc, unchanged from 448e420 to fa875f8).
+ * SENTETIK/NOT_ENV — the scale 0 and profile are synthetic, not an approved money profile.
+ */
+export const DRAFT_CONTEXT_EXAMPLE = {
+  label: 'SENTETIK/NOT_ENV',
+  request: {
+    treasuryAccountId: '33333333-3333-3333-3333-333333333333',
+    partyId: '44444444-4444-4444-4444-444444444444',
+    companyAccountId: '55555555-5555-5555-5555-555555555555',
+    occurredOn: '2026-09-13',
+  },
+  response: {
+    companyId: '11111111-1111-1111-1111-111111111111',
+    occurredOn: '2026-09-13',
+    bankAccount: {
+      id: '33333333-3333-3333-3333-333333333333',
+      companyId: '11111111-1111-1111-1111-111111111111',
+      currencyId: '22222222-2222-2222-2222-222222222222',
+      displayName: 'SENTETIK bank',
+      isActive: true,
+      isUsableForReceipt: true,
+      version: '9007199254740993',
+    },
+    currency: {
+      currencyId: '22222222-2222-2222-2222-222222222222',
+      displayCode: 'SENTETIK',
+      profile: {
+        reference: { profileId: '77777777-7777-7777-7777-777777777777', version: '9007199254740993' },
+        scale: 0,
+        effectiveFrom: '2026-09-13',
+        effectiveThrough: null,
+      },
+    },
+    party: {
+      partyId: '44444444-4444-4444-4444-444444444444',
+      companyAccountId: '55555555-5555-5555-5555-555555555555',
+      code: 'SENTETIK-code',
+      legalName: 'SENTETIK legal name',
+      tradeName: null,
+      partyVersion: '9007199254740993',
+      companyAccountVersion: '9007199254740993',
+    },
+  },
+} as const
+
 /** The synthetic company the normal example's resource is bound to. */
 export const EXAMPLE_COMPANY = '11111111-1111-1111-1111-111111111111'
 export const EXAMPLE_CURRENCY = '22222222-2222-2222-2222-222222222222'

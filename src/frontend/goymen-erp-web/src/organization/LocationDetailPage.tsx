@@ -40,7 +40,9 @@ import {
   type AttemptSnapshot,
   type AttemptState,
 } from './activeStateAttempt'
-import { ORGANIZATION_CAPABILITY } from './capabilities'
+import { ORGANIZATION_CAPABILITY, workCenterListPath } from './capabilities'
+import { filteredWorkCenterBackPath, isCanonicalLocationId, WORK_CENTER_LOCATION_TEXT } from './workCenterLocationFilter'
+import { detailBackTarget } from './detailReturn'
 import {
   attemptStoreKey,
   recallAttempt,
@@ -178,7 +180,7 @@ function LocationDetail({ namespace }: { readonly namespace: string | null }) {
 
   if (!singleCompanyContext) {
     return (
-      <Frame>
+      <Frame namespace={namespace}>
         <StateBlock
           state={{ kind: 'no-authorized-company' }}
           subject="lokasyon kartı için tek şirket bağlamı"
@@ -194,16 +196,29 @@ function LocationDetail({ namespace }: { readonly namespace: string | null }) {
      * change never happened.
      */
     return (
-      <Frame>
+      <Frame namespace={namespace}>
         <StateBlock state={state} subject="lokasyon" onRetry={() => void query.refetch()} />
         <OutstandingCommandBanner storeKey={storeKey} />
       </Frame>
     )
   }
 
+  // The DTO has no CompanyId: its authority is the existing company-bound read, not an invented field.
+  // It must still identify exactly the card the route requested before a dependent link is exposed.
+  if (state.data.id !== locationId) {
+    return <Frame namespace={namespace}>
+      <StateBlock state={{ kind: 'malformed-response' }} subject="lokasyon" onRetry={() => void query.refetch()} />
+      <OutstandingCommandBanner storeKey={storeKey} />
+    </Frame>
+  }
+
   return (
-    <Frame>
+    <Frame namespace={namespace}>
       <LocationCard location={state.data} />
+      {namespace !== null && isCanonicalLocationId(state.data.id) &&
+        hasCapability(shell, ORGANIZATION_CAPABILITY.workCentersList) ? (
+          <p><Link to={workCenterListPath(state.data.id)}>{WORK_CENTER_LOCATION_TEXT.action}</Link></p>
+        ) : null}
       {canChangeStatus ? (
         <ActiveStateSection
           location={state.data}
@@ -226,14 +241,32 @@ function LocationDetail({ namespace }: { readonly namespace: string | null }) {
  * land on page 2; the list re-checks the namespace, so the same state after a company
  * switch is ignored and resets to page 1. Neither screen has to know the other's rule.
  */
-function Frame({ children }: { readonly children: React.ReactNode }) {
+function Frame({
+  namespace,
+  children,
+}: {
+  readonly namespace: string | null
+  readonly children: React.ReactNode
+}) {
   const routerLocation = useLocation()
+  const shell = useShellState()
+  const { locationId } = useParams()
+  const canReadWorkCenters = hasCapability(shell, ORGANIZATION_CAPABILITY.workCentersList)
+  const filteredBack = canReadWorkCenters
+    ? filteredWorkCenterBackPath(routerLocation.state, namespace, locationId)
+    : null
+  const back = filteredBack === null
+    ? detailBackTarget(routerLocation.state, namespace)
+    : { path: filteredBack, label: 'İş Merkezleri' }
+  const canGoBack = back.path === workCenterListPath() || filteredBack !== null
+    ? canReadWorkCenters
+    : hasCapability(shell, ORGANIZATION_CAPABILITY.settingsList)
   return (
     <section aria-labelledby="org-location-heading" className={styles.page}>
       <nav aria-label="Geri" className={styles.breadcrumb}>
-        <Link to="/ayarlar/organizasyon" state={routerLocation.state}>
-          ← Organizasyon
-        </Link>
+        {canGoBack ? <Link to={back.path} state={routerLocation.state}>
+          ← {back.label}
+        </Link> : <span>← {back.label}</span>}
       </nav>
       <h1 id="org-location-heading">Lokasyon</h1>
       {children}

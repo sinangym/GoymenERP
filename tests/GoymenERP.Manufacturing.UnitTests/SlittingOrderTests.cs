@@ -26,7 +26,7 @@ public sealed class SlittingOrderTests
     private static ProductionOrder ApprovedOrder(params PlannedInput[] inputs)
     {
         var plan = DraftPlan(inputs);
-        plan.Approve(Planner, DateTimeOffset.UnixEpoch);
+        plan.Approve(plan.Version, Planner, DateTimeOffset.UnixEpoch);
         return ProductionOrder.FromApprovedPlan(Guid.NewGuid(), plan);
     }
 
@@ -34,7 +34,7 @@ public sealed class SlittingOrderTests
     public void Approving_a_plan_consumes_nothing()
     {
         var plan = DraftPlan();
-        plan.Approve(Planner, DateTimeOffset.UnixEpoch);
+        plan.Approve(plan.Version, Planner, DateTimeOffset.UnixEpoch);
         var order = ProductionOrder.FromApprovedPlan(Guid.NewGuid(), plan);
 
         Assert.Equal(PlanStatus.Approved, plan.Status);
@@ -50,17 +50,17 @@ public sealed class SlittingOrderTests
     {
         var error = Assert.Throws<ManufacturingRuleException>(
             () => ProductionOrder.FromApprovedPlan(Guid.NewGuid(), DraftPlan()));
-        Assert.Equal("plan_not_approved", error.Code);
+        Assert.Equal(ManufacturingRuleCodes.PlanNotApproved, error.Code);
     }
 
     [Fact]
     public void A_plan_is_approved_once()
     {
         var plan = DraftPlan();
-        plan.Approve(Planner, DateTimeOffset.UnixEpoch);
+        plan.Approve(plan.Version, Planner, DateTimeOffset.UnixEpoch);
 
-        var error = Assert.Throws<ManufacturingRuleException>(() => plan.Approve(Planner, DateTimeOffset.UnixEpoch));
-        Assert.Equal("plan_not_draft", error.Code);
+        var error = Assert.Throws<ManufacturingRuleException>(() => plan.Approve(plan.Version, Planner, DateTimeOffset.UnixEpoch));
+        Assert.Equal(ManufacturingRuleCodes.PlanNotDraft, error.Code);
     }
 
     [Fact]
@@ -118,12 +118,12 @@ public sealed class SlittingOrderTests
 
         var notIssued = Assert.Throws<ManufacturingRuleException>(
             () => order.Declare(MasterRoll, OutputClass.GoodProduct, Kg(1m)));
-        Assert.Equal("roll_not_issued", notIssued.Code);
+        Assert.Equal(ManufacturingRuleCodes.RollNotIssued, notIssued.Code);
 
         order.Issue(MasterRoll, Kg(10_000m));
         var foreign = Assert.Throws<ManufacturingRuleException>(
             () => order.Declare(OtherRoll, OutputClass.GoodProduct, Kg(1m)));
-        Assert.Equal("roll_not_in_order", foreign.Code);
+        Assert.Equal(ManufacturingRuleCodes.RollNotInOrder, foreign.Code);
 
         var declared = order.Declare(MasterRoll, OutputClass.GoodProduct, Kg(1m));
         Assert.Equal(MasterRoll, declared.ParentRollId);
@@ -134,7 +134,7 @@ public sealed class SlittingOrderTests
     {
         var order = ApprovedOrder();
         var error = Assert.Throws<ManufacturingRuleException>(() => order.Issue(OtherRoll, Kg(10m)));
-        Assert.Equal("roll_not_in_order", error.Code);
+        Assert.Equal(ManufacturingRuleCodes.RollNotInOrder, error.Code);
     }
 
     [Fact]
@@ -175,7 +175,7 @@ public sealed class SlittingOrderTests
 
         var error = Assert.Throws<ManufacturingRuleException>(
             () => order.Return(MasterRoll, Kg(8_000.01m)));
-        Assert.Equal("return_exceeds_issued", error.Code);
+        Assert.Equal(ManufacturingRuleCodes.ReturnExceedsIssued, error.Code);
     }
 
     [Fact]
@@ -198,11 +198,11 @@ public sealed class SlittingOrderTests
         var order = ApprovedOrder();
         order.Issue(MasterRoll, Kg(10_000m));
         var outputId = Guid.NewGuid();
-        order.DeclareOutput(outputId, MasterRoll, OutputClass.GoodProduct, Kg(100m), OrderSteps.Next());
+        order.DeclareOutput(order.Version, outputId, MasterRoll, OutputClass.GoodProduct, Kg(100m), OrderSteps.Next());
 
         var error = Assert.Throws<ManufacturingRuleException>(
-            () => order.DeclareOutput(outputId, MasterRoll, OutputClass.Scrap, Kg(100m), OrderSteps.Next()));
-        Assert.Equal("output_already_declared", error.Code);
+            () => order.DeclareOutput(order.Version, outputId, MasterRoll, OutputClass.Scrap, Kg(100m), OrderSteps.Next()));
+        Assert.Equal(ManufacturingRuleCodes.OutputAlreadyDeclared, error.Code);
     }
 
     [Fact]
@@ -225,8 +225,10 @@ public sealed class SlittingOrderTests
         // Ö2: kilograms carry at most three decimals; a fourth is refused, never rounded or cut.
         Assert.Equal(0.001m, new Kilograms(0.001m).Value);
         Assert.Equal(12.5m, new Kilograms(12.5000m).Value);
-        Assert.Throws<ArgumentException>(() => new Kilograms(0.0005m));
-        Assert.Throws<ArgumentException>(() => new Kilograms(9_700.0001m));
+        Assert.Equal(ManufacturingRuleCodes.KilogramPrecisionExceeded,
+            Assert.Throws<ManufacturingRuleException>(() => new Kilograms(0.0005m)).Code);
+        Assert.Equal(ManufacturingRuleCodes.KilogramPrecisionExceeded,
+            Assert.Throws<ManufacturingRuleException>(() => new Kilograms(9_700.0001m)).Code);
         Assert.Throws<ArgumentOutOfRangeException>(() => new Kilograms(-0.001m));
     }
 
@@ -234,7 +236,7 @@ public sealed class SlittingOrderTests
     public void The_order_keeps_its_own_snapshot_of_the_planned_inputs()
     {
         var plan = DraftPlan(new PlannedInput(MasterRoll, Kg(10_000m)));
-        plan.Approve(Planner, DateTimeOffset.UnixEpoch);
+        plan.Approve(plan.Version, Planner, DateTimeOffset.UnixEpoch);
         var order = ProductionOrder.FromApprovedPlan(Guid.NewGuid(), plan);
 
         Assert.NotSame(plan.Inputs, order.PlannedInputs);
@@ -246,9 +248,11 @@ public sealed class SlittingOrderTests
     [Fact]
     public void A_plan_names_each_parent_roll_once_and_at_least_one()
     {
+        Assert.Equal(ManufacturingRuleCodes.PlanWithoutInputs, Assert.Throws<ManufacturingRuleException>(
+            () => new ProductionPlan(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.Slitting, [])).Code);
+        Assert.Equal(ManufacturingRuleCodes.DuplicateRollInPlan, Assert.Throws<ManufacturingRuleException>(
+            () => DraftPlan(new PlannedInput(MasterRoll, Kg(1m)), new PlannedInput(MasterRoll, Kg(2m)))).Code);
         Assert.Throws<ArgumentException>(() => new ProductionPlan(
-            Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.Slitting, []));
-        Assert.Throws<ArgumentException>(() => DraftPlan(
-            new PlannedInput(MasterRoll, Kg(1m)), new PlannedInput(MasterRoll, Kg(2m))));
+            Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.Slitting, [null!]));
     }
 }

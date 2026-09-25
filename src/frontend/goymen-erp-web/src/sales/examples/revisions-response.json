@@ -1,0 +1,30 @@
+{
+  "items": [
+    {
+      "revision": "Rev.0",
+      "submittedBy": "SENTETIK-satis-1",
+      "submittedAtUtc": "2026-09-23T09:00:00Z",
+      "approvedBy": "SENTETIK-onay-1",
+      "approvedAtUtc": "2026-09-23T09:05:00Z",
+      "archivedAtUtc": "2026-09-23T10:00:00Z",
+      "archivedBy": "SENTETIK-revizyon-1",
+      "moneyProfileId": "cccccccc-1111-4111-8111-000000000401",
+      "moneyProfileVersion": "3",
+      "moneyScale": 2,
+      "lines": [
+        {
+          "lineId": "66666666-6666-4666-8666-666666666666",
+          "lineNo": 1,
+          "productId": "22222222-2222-2222-2222-222222222222",
+          "productVersion": "9007199254740993",
+          "orderUnitId": "44444444-4444-4444-4444-444444444444",
+          "quantity": "1000.000",
+          "unitPrice": "12.500000",
+          "priceUnitId": "aaaaaaaa-1111-4111-8111-000000000909",
+          "discountPercent": "0",
+          "priceDisclosure": "Visible"
+        }
+      ]
+    }
+  ]
+}

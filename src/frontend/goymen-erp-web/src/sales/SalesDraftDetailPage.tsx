@@ -1,33 +1,82 @@
 /**
- * S-04 Sipariş 360 — the draft as `GET /api/v1/sales/drafts/{id}` describes it (#257).
+ * S-04 Sipariş 360 — the draft as `GET /api/v1/sales/drafts/{id}` describes it (#257), with the
+ * SALES-A1 internal approval axis (DEC-SAL-001/002; Business 5737989917).
  *
  * Only what the detail carries:
- *  - the commercial revision (`Rev.0`) and the concurrency version are shown as two
- *    separate facts, never merged into "v1" or similar;
- *  - a null is shown as unknown, never as zero, cash, today or "none": an unknown
- *    price is "not priced", an unknown plan is "no plan entered", an empty plan is
- *    "no planned slices" — three different statements;
- *  - "unplanned" is the quantity not yet placed on a dated slice. It is not
- *    delivered, reserved or open; nothing has been delivered on a draft;
- *  - party, account, currency and unit have no display name in this contract, so
- *    their ids are shown as ids rather than resolved by a client lookup.
+ *  - the lifecycle state (Draft), the internal approval state, the commercial revision
+ *    (`Rev.0`) and the concurrency version are FOUR separate facts, never merged;
+ *  - the approval facts (who submitted / decided, when, the reason) are shown as stored,
+ *    "not yet" when null — never derived, never defaulted;
+ *  - a null is shown as unknown, never as zero, cash, today or "none";
+ *  - "unplanned" is the quantity not yet placed on a dated slice; nothing has been
+ *    delivered, reserved or allocated on a draft — the linked effects line says so honestly
+ *    (D4: allocation 0 / loading 0, no consumer in this slice).
  *
- * No approval, allocation, shipment, invoice or money tab: none exists for a draft.
+ * Commands: "Onaya gönder" follows the create capability (whoever may create may submit);
+ * "Onayla" / "Reddet" follow the `sales.orders.approve` control the shell publishes only to an
+ * actor holding the approve permission beside the read. The shell decides the buttons; the API
+ * measures the grant afresh on every send. Each command is one idempotent attempt (the same rules
+ * as the create: one key per snapshot, an unknown outcome keeps its key, a retry resends the same
+ * snapshot). After a recorded transition the detail is re-read — the answer is the server's.
+ *
+ * SALES-A2a — the "Teslimat" block: the stored delivery address / contact references (ids + the owner's
+ * versions) are shown with the Cari owner's CURRENT texts, read afresh through the contact-information
+ * reference; the currency id with its code from the currencies reference for the business date. A
+ * reference the owner no longer lists says so beside the id; a read that fails names its reason; nothing
+ * is guessed and no read hides the draft. The reference reads are bound to `sales.drafts.create` on the
+ * server, so an actor without that grant is told the names cannot be read, and nothing is asked.
+ *
+ * An approved order may consume Inventory's existing physical-allocation surface when the shell
+ * publishes its write capability. Inventory remains the owner: create/release and every reopen are
+ * read from its server truth; this page creates no stock movement or local allocation projection.
  */
 
-import { useQuery } from '@tanstack/react-query'
+import { useContext, useRef, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router'
-import { fetchDraftDetail } from './api'
-import { OWNER_REFERENCE_FIELDS, type DraftDetail, type DraftLine } from './contract'
+import { fetchDraftDetail, sendDraftCommand } from './api'
+import {
+  APPROVAL_STATE,
+  OWNER_REFERENCE_FIELDS,
+  type ContactInformationOptions,
+  type DraftDetail,
+  type DraftLine,
+  type DraftMutation,
+  type DraftStateCommand,
+  type DraftStateCommandRequest,
+  type OwnerReference,
+} from './contract'
 import { unplannedQuantity } from './deliveryPlan'
-import { formatBusinessDate, formatInstant } from './format'
+import { contactLabel, formatBusinessDate, formatInstant } from './format'
+import {
+  SalesContactInformationSourceContext,
+  SalesCurrencySourceContext,
+  type ContactInformationReadState,
+} from './referenceSource'
+import {
+  abandon,
+  applyOutcome,
+  beginSend,
+  decideSubmit,
+  generateOrderAttemptKey,
+  isOutcomeStillUnknown,
+  liveSnapshot,
+  orderAttemptBinding,
+  type OrderAttemptSnapshot,
+  type OrderAttemptState,
+} from './orderAttempt'
 import { SALES_CAPABILITY, SALES_ROUTE } from './capabilities'
-import { ORDER_DETAIL_TEXT as T } from './salesText'
+import { APPROVAL_STATE_TEXT, ORDER_DETAIL_TEXT as T, ORDER_DRAFT_TEXT, problemCodeText } from './salesText'
+import { SALES_PROBLEM_CODE } from './contract'
 import { classifyOutcome } from '../shell/uiState'
 import { useShellState } from '../shell/shellContext'
-import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
+import { contextKey, contextKeyString, hasCapability, type ShellState } from '../shell/shellState'
 import { StateBlock } from '../shell/StateBlock'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
+import { SalesDraftCommercialRevisionForm } from './SalesDraftCommercialRevisionForm'
+import { SalesDraftRevisionHistory } from './SalesDraftRevisionHistory'
+import { SalesDraftAllocationPanel } from './SalesDraftAllocationPanel'
+import { INVENTORY_PHYSICAL_ALLOCATION_WRITE_CAPABILITY } from '../inventory/capabilities'
 import styles from './SalesPages.module.css'
 
 const orUnknown = (value: string | null) => value ?? T.unknown
@@ -39,9 +88,11 @@ export function SalesDraftDetailPage() {
   const namespace = key === null ? null : contextKeyString(key)
   const companyId = shell.activeContext?.scopeMode === 'single' ? shell.activeContext.companyId : null
   const boundary = useAuthBoundary()
+  const queryClient = useQueryClient()
 
+  const queryKey = [namespace ?? 'no-context', shell.routeEntryGeneration, 'sales-draft', draftId ?? '']
   const query = useQuery({
-    queryKey: [namespace ?? 'no-context', shell.routeEntryGeneration, 'sales-draft', draftId ?? ''],
+    queryKey,
     enabled: namespace !== null && companyId !== null && (draftId ?? '').length > 0,
     queryFn: async ({ signal }) => {
       const snapshot = boundary.capture()
@@ -70,11 +121,79 @@ export function SalesDraftDetailPage() {
       </section>
     )
   }
-  return <DraftView detail={outcome.data} backLink={backLink} />
+  return (
+    <DraftView
+      detail={outcome.data}
+      backLink={backLink}
+      delivery={companyId === null ? null : <DeliveryBlock shell={shell} detail={outcome.data} companyId={companyId} />}
+      revisionHistory={
+        namespace !== null && companyId !== null && outcome.data.draft.companyId === companyId ? (
+          <SalesDraftRevisionHistory
+            key={`history:${namespace}:${shell.routeEntryGeneration}:${outcome.data.draft.id}`}
+            draftId={outcome.data.draft.id}
+            draftVersion={outcome.data.draft.version}
+          />
+        ) : null
+      }
+      allocations={
+        namespace !== null && companyId !== null ? (
+          <SalesDraftAllocationPanel
+            enabled={outcome.data.draft.approvalState === APPROVAL_STATE.approved
+              && hasCapability(shell, INVENTORY_PHYSICAL_ALLOCATION_WRITE_CAPABILITY)}
+            companyId={companyId}
+            namespace={namespace}
+            routeEntryGeneration={shell.routeEntryGeneration}
+            salesOrderId={outcome.data.draft.id}
+            lines={outcome.data.lines}
+          />
+        ) : null
+      }
+      commands={
+        companyId === null ? null : (
+          <ApprovalCommands
+            key={`${namespace ?? ''}:${outcome.data.draft.id}`}
+            shell={shell}
+            detail={outcome.data}
+            companyId={companyId}
+            onRecorded={() => void queryClient.invalidateQueries({ queryKey })}
+          />
+        )
+      }
+      commercialActions={
+        companyId === null ? null : (
+          <SalesDraftCommercialRevisionForm
+            key={`price:${namespace ?? ''}:${outcome.data.draft.id}`}
+            shell={shell}
+            detail={outcome.data}
+            companyId={companyId}
+            onRecorded={() => void queryClient.invalidateQueries({ queryKey })}
+          />
+        )
+      }
+    />
+  )
 }
 
-export function DraftView({ detail, backLink }: { readonly detail: DraftDetail; readonly backLink: React.ReactNode }) {
-  const { draft } = detail
+export function DraftView({
+  detail,
+  backLink,
+  commands = null,
+  delivery = null,
+  commercialActions = null,
+  revisionHistory = null,
+  allocations = null,
+}: {
+  readonly detail: DraftDetail
+  readonly backLink: React.ReactNode
+  readonly commands?: React.ReactNode
+  /** SALES-A2a: the "Teslimat" block (the owner's texts for the stored references); null when no company is bound. */
+  readonly delivery?: React.ReactNode
+  readonly commercialActions?: React.ReactNode
+  readonly revisionHistory?: React.ReactNode
+  readonly allocations?: React.ReactNode
+}) {
+  const { draft, approval } = detail
+  const withdrawn = draft.approvalState === APPROVAL_STATE.withdrawn
   return (
     <article className={styles.page} aria-labelledby="sales-detail-heading">
       {backLink}
@@ -86,11 +205,15 @@ export function DraftView({ detail, backLink }: { readonly detail: DraftDetail; 
           <p className={styles.muted}>{T.referenceNote}</p>
         </div>
         <span className={styles.badge} data-testid="sales-draft-state">
-          {T.stateDraft}
+          {T.stateDraft} · {APPROVAL_STATE_TEXT[draft.approvalState]}
         </span>
       </header>
 
       <dl className={styles.facts}>
+        <div>
+          <dt>{T.approval.state}</dt>
+          <dd data-testid="sales-draft-approval-state">{APPROVAL_STATE_TEXT[draft.approvalState]}</dd>
+        </div>
         <div>
           <dt>{T.revision}</dt>
           <dd data-testid="sales-draft-revision">{draft.revision}</dd>
@@ -131,6 +254,43 @@ export function DraftView({ detail, backLink }: { readonly detail: DraftDetail; 
         </div>
       </dl>
 
+      {delivery}
+
+      <section className={styles.section} aria-labelledby="sales-approval-heading" data-testid="sales-approval">
+        <h2 id="sales-approval-heading">{T.approval.heading}</h2>
+        <dl className={styles.facts}>
+          <div>
+            <dt>{T.approval.submittedBy}</dt>
+            <dd data-testid="sales-approval-submitted-by">{approval.submittedBy ?? T.approval.notYet}</dd>
+          </div>
+          <div>
+            <dt>{T.approval.submittedAt}</dt>
+            <dd>{approval.submittedAtUtc === null ? T.approval.notYet : formatInstant(approval.submittedAtUtc)}</dd>
+          </div>
+          <div>
+            <dt>{withdrawn ? T.approval.withdrawnBy : T.approval.decidedBy}</dt>
+            <dd data-testid="sales-approval-decided-by">{approval.decidedBy ?? T.approval.notYet}</dd>
+          </div>
+          <div>
+            <dt>{withdrawn ? T.approval.withdrawnAt : T.approval.decidedAt}</dt>
+            <dd>{approval.decidedAtUtc === null ? T.approval.notYet : formatInstant(approval.decidedAtUtc)}</dd>
+          </div>
+          {draft.approvalState === APPROVAL_STATE.rejected || withdrawn ? (
+            <div>
+              <dt>{withdrawn ? T.approval.withdrawalReason : T.approval.rejectionReason}</dt>
+              <dd data-testid="sales-approval-reason">{approval.rejectionReason ?? T.approval.noReason}</dd>
+            </div>
+          ) : null}
+        </dl>
+        <p className={styles.muted} data-testid="sales-approval-linked-effects">
+          {T.approval.linkedEffects}
+        </p>
+        {draft.approvalState === APPROVAL_STATE.approved ? <p className={styles.muted}>{T.approval.approvedNote}</p> : null}
+        {draft.approvalState === APPROVAL_STATE.rejected ? <p className={styles.muted}>{T.approval.rejectedNote}</p> : null}
+        {withdrawn ? <p className={styles.muted}>{T.approval.withdrawnNote}</p> : null}
+        {commands}
+      </section>
+
       <section className={styles.section} aria-labelledby="sales-commercial-heading">
         <h2 id="sales-commercial-heading">{T.commercialHeading}</h2>
         <dl className={styles.facts}>
@@ -146,6 +306,7 @@ export function DraftView({ detail, backLink }: { readonly detail: DraftDetail; 
             )
           })}
         </dl>
+        {commercialActions}
       </section>
 
       <section className={styles.section} aria-labelledby="sales-lines-heading">
@@ -154,8 +315,344 @@ export function DraftView({ detail, backLink }: { readonly detail: DraftDetail; 
           <LineView key={line.lineId} line={line} />
         ))}
       </section>
+      {allocations}
+      {revisionHistory}
     </article>
   )
+}
+
+/* ── SALES-A2a: the delivery block ─────────────────────────────────────────── */
+
+function DeliveryBlock({
+  shell,
+  detail,
+  companyId,
+}: {
+  readonly shell: ShellState
+  readonly detail: DraftDetail
+  readonly companyId: string
+}) {
+  const { draft } = detail
+  const D = T.delivery
+  // The reference reads are the create form's (bound to sales.drafts.create): without that grant the
+  // ids are shown with the reason, and no read is attempted.
+  const canRead = hasCapability(shell, SALES_CAPABILITY.draftsCreate)
+  const wanted = detail.deliveryAddress !== null || detail.contact !== null
+  const useCurrencies = useContext(SalesCurrencySourceContext)
+  const useContactInformation = useContext(SalesContactInformationSourceContext)
+  const currencies = useCurrencies(canRead ? companyId : '', draft.businessDate)
+  const contactInformation = useContactInformation(canRead && wanted ? companyId : '', draft.partyId, draft.companyAccountId)
+  const currency = currencies.status === 'ready' ? (currencies.data.find((c) => c.currencyId === draft.currencyId) ?? null) : null
+
+  return (
+    <section className={styles.section} aria-labelledby="sales-delivery-heading" data-testid="sales-delivery-block">
+      <h2 id="sales-delivery-heading">{D.heading}</h2>
+      <dl className={styles.facts}>
+        <div>
+          <dt>{D.currency}</dt>
+          <dd data-testid="sales-currency-code">
+            {!canRead ? (
+              <IdWithNote id={draft.currencyId} note={D.noGrant} />
+            ) : currency !== null ? (
+              currency.code
+            ) : currencies.status === 'unavailable' ? (
+              <IdWithNote id={draft.currencyId} note={D.unreadable(currencies.reason)} retry={currencies.retry} />
+            ) : currencies.status === 'ready' ? (
+              <IdWithNote id={draft.currencyId} note={D.currencyNotListed} />
+            ) : (
+              D.reading
+            )}
+          </dd>
+        </div>
+        <ReferenceCell
+          testId="sales-delivery-address-text"
+          label={D.address}
+          reference={detail.deliveryAddress}
+          notChosen={D.addressNotChosen}
+          canRead={canRead}
+          read={contactInformation}
+          pick={(options, id) => {
+            const address = options.addresses.find((a) => a.id === id)
+            return address === undefined ? null : { version: address.version, text: address.text }
+          }}
+        />
+        <ReferenceCell
+          testId="sales-delivery-contact-text"
+          label={D.contact}
+          reference={detail.contact}
+          notChosen={D.contactNotChosen}
+          canRead={canRead}
+          read={contactInformation}
+          pick={(options, id) => {
+            const contact = options.contacts.find((c) => c.id === id)
+            return contact === undefined ? null : { version: contact.version, text: contactLabel(contact) }
+          }}
+        />
+      </dl>
+      {wanted ? null : (
+        <p className={styles.muted} data-testid="sales-delivery-none">
+          {D.notChosen}
+        </p>
+      )}
+    </section>
+  )
+}
+
+/** The stored id in mono beside the reason it cannot be shown as a name — never a guessed name. */
+function IdWithNote({ id, note, retry }: { readonly id: string; readonly note: string; readonly retry?: () => void }) {
+  return (
+    <>
+      <span className={styles.identifier}>{id}</span> — {note}
+      {retry === undefined ? null : (
+        <>
+          {' '}
+          <button type="button" className={styles.linkButton} onClick={retry}>
+            {ORDER_DRAFT_TEXT.references.retry}
+          </button>
+        </>
+      )}
+    </>
+  )
+}
+
+function ReferenceCell({
+  testId,
+  label,
+  reference,
+  notChosen,
+  canRead,
+  read,
+  pick,
+}: {
+  readonly testId: string
+  readonly label: string
+  readonly reference: OwnerReference | null
+  readonly notChosen: string
+  readonly canRead: boolean
+  readonly read: ContactInformationReadState
+  readonly pick: (options: ContactInformationOptions, id: string) => { readonly version: string; readonly text: string } | null
+}) {
+  const D = T.delivery
+  let content: React.ReactNode
+  if (reference === null) content = notChosen
+  else if (!canRead) content = <IdWithNote id={reference.id} note={D.noGrant} />
+  else if (read.status === 'unavailable') content = <IdWithNote id={reference.id} note={D.unreadable(read.reason)} retry={read.retry} />
+  else if (read.status !== 'ready') content = D.reading
+  else {
+    const found = pick(read.data, reference.id)
+    content =
+      found === null ? (
+        <IdWithNote id={reference.id} note={D.notListed} />
+      ) : (
+        <>
+          {found.text}
+          {found.version === reference.expectedVersion ? null : <span className={styles.muted}> — {D.versionChanged}</span>}
+        </>
+      )
+  }
+  return (
+    <div>
+      <dt>{label}</dt>
+      <dd data-testid={testId}>{content}</dd>
+    </div>
+  )
+}
+
+/* ── SALES-A1: the commands ────────────────────────────────────────────────── */
+
+type CommandAttempt = OrderAttemptState<DraftStateCommandRequest, DraftMutation>
+
+/** The attempt binding scope of the detail's commands: one per draft, so a key never crosses drafts. */
+const commandScope = (draftId: string, command: DraftStateCommand) => `sales.draft.${command}:${draftId}`
+
+function ApprovalCommands({
+  shell,
+  detail,
+  companyId,
+  onRecorded,
+}: {
+  readonly shell: ShellState
+  readonly detail: DraftDetail
+  readonly companyId: string
+  readonly onRecorded: () => void
+}) {
+  const { draft } = detail
+  const canSubmit = hasCapability(shell, SALES_CAPABILITY.draftsCreate)
+  const canDecide = hasCapability(shell, SALES_CAPABILITY.ordersApprove)
+  const [attempt, setAttempt] = useState<CommandAttempt>({ phase: 'idle' })
+  const [command, setCommand] = useState<DraftStateCommand | null>(null)
+  const [reason, setReason] = useState('')
+  const [withdrawReason, setWithdrawReason] = useState('')
+  const attemptRef = useRef(attempt)
+  attemptRef.current = attempt
+
+  // D2 (Sinan 5749046401, 5750987986): the persona fences are the SERVER's (403 at the API); both are measured against
+  // ONE server fact — the stored creator, the order this actor PREPARED (not the submitter). The server computes both
+  // the ownership relationship and the persona-specific decision restriction; the screen never infers a persona.
+  const ownDraft = detail.isOwnDraft
+  const ownDecisionRestricted = detail.isOwnDecisionRestricted
+  const unapproved =
+    draft.approvalState === APPROVAL_STATE.preparing ||
+    draft.approvalState === APPROVAL_STATE.pendingApproval ||
+    draft.approvalState === APPROVAL_STATE.rejected
+  const offerSubmit =
+    canSubmit && (draft.approvalState === APPROVAL_STATE.preparing || draft.approvalState === APPROVAL_STATE.rejected)
+  const pending = draft.approvalState === APPROVAL_STATE.pendingApproval
+  const offerDecision = canDecide && pending && !ownDecisionRestricted
+  const ownDecisionWithheld = canDecide && pending && ownDecisionRestricted
+  // A commercial revision can return an approved order to Preparing. D2's easy withdrawal
+  // must not be offered once approved history exists; the server remains the authority.
+  const offerWithdraw = canSubmit && ownDraft && unapproved && draft.revision === 'Rev.0'
+  if (!offerSubmit && !offerDecision && !offerWithdraw && !ownDecisionWithheld && attempt.phase === 'idle') return null
+
+  async function send(kind: DraftStateCommand, snapshot: OrderAttemptSnapshot<DraftStateCommandRequest>) {
+    const previous = attemptRef.current
+    const inFlight = beginSend<DraftStateCommandRequest, DraftMutation>(snapshot)
+    attemptRef.current = inFlight
+    setAttempt(inFlight)
+    setCommand(kind)
+    const outcome = await sendDraftCommand(kind, snapshot.payload, {
+      idempotencyKey: snapshot.key,
+      companyId: snapshot.companyId,
+      draftId: draft.id,
+    })
+    const next = applyOutcome(inFlight, snapshot, orderAttemptBinding(shell, commandScope(draft.id, kind)), outcome, previous)
+    attemptRef.current = next
+    setAttempt(next)
+    if (next.phase === 'completed' || (next.phase === 'failed' && next.failure === 'conflict')) onRecorded()
+  }
+
+  function start(kind: DraftStateCommand) {
+    const binding = orderAttemptBinding(shell, commandScope(draft.id, kind))
+    if (binding === null) return
+    const typed = kind === 'rejection' ? reason.trim() : kind === 'withdrawal' ? withdrawReason.trim() : ''
+    const payload: DraftStateCommandRequest =
+      typed !== '' ? { expectedVersion: draft.version, reason: typed } : { expectedVersion: draft.version }
+    const decision = decideSubmit(
+      attemptRef.current,
+      { path: `${draft.id}/${kind}`, binding, companyId, payload },
+      generateOrderAttemptKey,
+    )
+    if (decision.type !== 'send') return
+    void send(kind, decision.snapshot)
+  }
+
+  function retry() {
+    const live = liveSnapshot(attemptRef.current)
+    if (live === null || command === null || attemptRef.current.phase === 'submitting') return
+    void send(command, live)
+  }
+
+  function leave() {
+    const next = abandon(attemptRef.current)
+    attemptRef.current = next
+    setAttempt(next)
+  }
+
+  const frozen = attempt.phase === 'submitting' || isOutcomeStillUnknown(attempt)
+  const notice = commandNotice(attempt)
+
+  return (
+    <div className={styles.actions} data-testid="sales-approval-commands">
+      {notice === null ? null : (
+        <p role={attempt.phase === 'failed' ? 'alert' : 'status'} className={styles.notice} data-testid="sales-approval-notice">
+          {notice}
+        </p>
+      )}
+      {isOutcomeStillUnknown(attempt) && attempt.phase !== 'submitting' ? (
+        <>
+          <button type="button" className={styles.secondaryButton} onClick={retry}>
+            {T.approval.retry}
+          </button>
+          <button type="button" className={styles.linkButton} onClick={leave}>
+            {T.approval.abandon}
+          </button>
+        </>
+      ) : null}
+      {offerSubmit ? (
+        <button type="button" className={styles.primaryButton} disabled={frozen} onClick={() => start('submission')}>
+          {T.approval.submit}
+        </button>
+      ) : null}
+      {offerDecision ? (
+        <>
+          <button type="button" className={styles.primaryButton} disabled={frozen} onClick={() => start('approval')}>
+            {T.approval.approve}
+          </button>
+          <label htmlFor="sales-rejection-reason">{T.approval.reasonLabel}</label>
+          <textarea
+            id="sales-rejection-reason"
+            maxLength={4000}
+            value={reason}
+            disabled={frozen}
+            onChange={(event) => setReason(event.target.value)}
+          />
+          <button type="button" className={styles.secondaryButton} disabled={frozen} onClick={() => start('rejection')}>
+            {T.approval.reject}
+          </button>
+        </>
+      ) : null}
+      {ownDecisionWithheld ? (
+        <p className={styles.muted} data-testid="sales-own-decision-note">
+          {T.approval.ownDecisionNote}
+        </p>
+      ) : null}
+      {offerWithdraw ? (
+        <>
+          <label htmlFor="sales-withdrawal-reason">{T.approval.withdrawReasonLabel}</label>
+          <textarea
+            id="sales-withdrawal-reason"
+            maxLength={4000}
+            value={withdrawReason}
+            disabled={frozen}
+            onChange={(event) => setWithdrawReason(event.target.value)}
+          />
+          <button type="button" className={styles.secondaryButton} disabled={frozen} onClick={() => start('withdrawal')}>
+            {T.approval.withdraw}
+          </button>
+        </>
+      ) : null}
+    </div>
+  )
+}
+
+/** The notice of one command attempt, in the approval's own words. */
+function commandNotice(attempt: CommandAttempt): string | null {
+  switch (attempt.phase) {
+    case 'idle':
+      return null
+    case 'submitting':
+      return T.approval.submitting
+    case 'unknown':
+      return T.approval.unknown
+    case 'abandoned':
+      return T.approval.unknown
+    case 'completed':
+      return attempt.result.isReplay ? T.approval.replayed : T.approval.completed
+    case 'failed': {
+      // `version_conflict` on a state command means the draft moved after this screen read it (the
+      // approval's own sentence); the shared code text is the S-03 product-version sentence and would
+      // mislead here (browser run 35447380891, S04-03). Every other code keeps its shared text.
+      const code = attempt.problem?.code ?? null
+      const codeText = code === SALES_PROBLEM_CODE.versionConflict ? T.approval.versionConflict : problemCodeText(code)
+      const base =
+        attempt.failure === 'unauthenticated'
+          ? T.approval.unauthenticated
+          : attempt.failure === 'forbidden'
+            ? T.approval.forbidden
+            : attempt.failure === 'not-found'
+              ? T.approval.notFound
+              : attempt.failure === 'conflict'
+                ? T.approval.conflict
+                : attempt.failure === 'validation'
+                  ? T.approval.validation
+                  : T.approval.unexpected
+      const text = codeText === null ? base : `${base} ${codeText}`
+      return attempt.unresolvedSince === undefined ? text : `${text} ${T.approval.refusedAfterUnknown}`
+    }
+    default:
+      return null
+  }
 }
 
 function LineView({ line }: { readonly line: DraftLine }) {
@@ -186,12 +683,12 @@ function LineView({ line }: { readonly line: DraftLine }) {
         <div>
           <dt>{T.price}</dt>
           <dd data-testid={`sales-line-${line.lineNo}-price`}>
-            {line.unitPrice === null ? T.notPriced : `${line.unitPrice} / ${line.priceUnitId}`}
+            {line.priceDisclosure === 'Withheld' ? T.priceWithheld : line.unitPrice === null ? T.notPriced : `${line.unitPrice} / ${line.priceUnitId}`}
           </dd>
         </div>
         <div>
           <dt>{T.discount}</dt>
-          <dd>{orUnknown(line.discountPercent)}</dd>
+          <dd data-testid={`sales-line-${line.lineNo}-discount`}>{line.priceDisclosure === 'Withheld' ? T.priceWithheld : orUnknown(line.discountPercent)}</dd>
         </div>
         <div>
           <dt>{T.note}</dt>

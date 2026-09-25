@@ -176,7 +176,7 @@ public sealed class SourcePostingTests
     public void A_correction_of_a_closed_period_journal_lands_as_a_new_linked_journal_in_an_open_period()
     {
         var world = new AccountingWorld();
-        var august = new AccountingPeriod(Guid.NewGuid(), world.Company, new DateOnly(2026, 8, 1), new DateOnly(2026, 8, 31));
+        var august = AccountingWorld.Opened(world.Company, new DateOnly(2026, 8, 1), new DateOnly(2026, 8, 31));
         var original = world.Ledger.Receive(
             world.Request("m-1") with { Dates = AccountingWorld.Dates(new DateOnly(2026, 8, 20)) }, august).Journal!;
         august.Close(AccountingWorld.Closer, AccountingWorld.ClosedAt);

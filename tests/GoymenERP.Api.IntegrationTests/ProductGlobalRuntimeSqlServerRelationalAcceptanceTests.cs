@@ -9,6 +9,7 @@ using GoymenERP.Api.ProductRuntime;
 using GoymenERP.Api.Shell;
 using GoymenERP.BuildingBlocks.Shell;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
 using GoymenERP.Modules.Idempotency.Infrastructure.Persistence;
@@ -39,6 +40,70 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
     private static readonly Guid GroupId = Guid.Parse("82000000-0000-0000-0000-000000000001");
 
     [SqlServerFact]
+    public Task ProductSalesCandidateWindow_FiltersAndBoundsRealSqlWithoutWrites() =>
+        WithDatabaseAsync(async (factory, _) =>
+        {
+            using var client = factory.CreateClientFor("group-bootstrap-admin", CompanyA);
+            var ids = new List<Guid>();
+            foreach (var name in new[] { "Candidate Alpha", "Candidate Beta", "Candidate Draft", "Other" })
+            {
+                using var created = await CreateAsync(client, Guid.NewGuid().ToString("N"), name);
+                Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+                ids.Add((await created.Content.ReadFromJsonAsync<ProductMutationResponse>())!.Card.Product.Id);
+            }
+            await using var scope = factory.Services.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<ProductDbContext>();
+            // Isolated relational query fixture, NOT an activation or real released-family acceptance.
+            await db.Products.Where(row => row.Id == ids[0] || row.Id == ids[1] || row.Id == ids[3])
+                .ExecuteUpdateAsync(update => update.SetProperty(row => row.Lifecycle, 1)
+                    .SetProperty(row => row.SellableValue, true).SetProperty(row => row.SellableProvenance, 1));
+            var before = await SnapshotAsync(factory.DatabaseConnectionString);
+            var reader = new SqlProductSalesCandidateReader(new ProductReadStore(db));
+            var authority = new ProductSalesReadScope(CompanyA, ActorId.ToString("D"));
+            var first = await reader.ReadAsync(authority, new("Candidate", new(2026, 9, 21), 1), default);
+            Assert.Equal(ids[0], Assert.Single(first.Items).Id);
+            Assert.True(first.HasMore);
+            var all = await reader.ReadAsync(authority, new("Candidate", new(2026, 9, 21), 10), default);
+            Assert.Equal(new[] { ids[0], ids[1] }, all.Items.Select(item => item.Id));
+            Assert.False(all.HasMore);
+            var code = await reader.ReadAsync(authority, new("psql-2", new(2026, 9, 21)), default);
+            Assert.Equal(ids[1], Assert.Single(code.Items).Id);
+            Assert.Equal(before, await SnapshotAsync(factory.DatabaseConnectionString));
+        });
+
+    [SqlServerFact]
+    public Task ProductStockCandidateWindow_FiltersActiveCardsWithoutInventingARole() =>
+        WithDatabaseAsync(async (factory, _) =>
+        {
+            using var client = factory.CreateClientFor("group-bootstrap-admin", CompanyA);
+            var ids = new List<Guid>();
+            foreach (var name in new[] { "Stock Alpha", "Stock Beta", "Stock Draft", "Other Stock" })
+            {
+                using var created = await CreateAsync(client, Guid.NewGuid().ToString("N"), name);
+                Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+                ids.Add((await created.Content.ReadFromJsonAsync<ProductMutationResponse>())!.Card.Product.Id);
+            }
+
+            await using var scope = factory.Services.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<ProductDbContext>();
+            // Only lifecycle is changed: a stock operation has no commercial-role precondition.
+            await db.Products.Where(row => row.Id == ids[0] || row.Id == ids[1] || row.Id == ids[3])
+                .ExecuteUpdateAsync(update => update.SetProperty(row => row.Lifecycle, 1));
+            var before = await SnapshotAsync(factory.DatabaseConnectionString);
+            var reader = new SqlProductStockCandidateReader(new ProductReadStore(db));
+            var authority = new ProductStockReadScope(CompanyA, ActorId.ToString("D"));
+
+            var first = await reader.ReadAsync(authority, new("Stock", new(2026, 9, 23), 1), default);
+            Assert.Equal(ids[0], Assert.Single(first.Items).Id);
+            Assert.True(first.HasMore);
+
+            var all = await reader.ReadAsync(authority, new("Stock", new(2026, 9, 23), 10), default);
+            Assert.Equal(new[] { ids[0], ids[1], ids[3] }, all.Items.Select(item => item.Id));
+            Assert.False(all.HasMore);
+            Assert.Equal(before, await SnapshotAsync(factory.DatabaseConnectionString));
+        });
+
+    [SqlServerFact]
     public Task ProductGlobalRuntime_SharedSnapshotEmitsEmptyAndPopulatedJsonArrays() =>
         WithDatabaseAsync(async (factory, _) =>
         {
@@ -64,6 +129,49 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
             var unchanged = await ProductSharedStateSnapshot.ReadAsync(sql, CancellationToken.None);
             Assert.True(JsonElement.DeepEquals(edited.Audit, unchanged.Audit));
             Assert.True(JsonElement.DeepEquals(edited.Terminals, unchanged.Terminals));
+        });
+
+    [SqlServerFact]
+    public Task ProductHistoryReader_OrdersSameTimestampByVersionBeforeApplyingCutoff() =>
+        WithDatabaseAsync(async (factory, _) =>
+        {
+            var productId = Guid.NewGuid();
+            var occurredAt = new DateTimeOffset(2026, 9, 24, 12, 0, 0, TimeSpan.Zero);
+            await using var sql = new SqlConnection(factory.DatabaseConnectionString);
+            await sql.OpenAsync();
+
+            // SQL Server's uniqueidentifier ordering is deliberately measured instead of
+            // inferred. Giving the largest Id to v1 makes the former time/Id ordering return
+            // v1 first, while the Product contract must return v3 and v2 before applying Take(2).
+            var ids = new[] { Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid() };
+            var sqlIdOrder = await OrderIdsDescendingAsync(sql, ids);
+            var rows = new[]
+            {
+                HistoryData(productId, sqlIdOrder[0], occurredAt, ProductHistoryApiV1.DraftCreate, null, 1),
+                HistoryData(productId, sqlIdOrder[1], occurredAt, ProductHistoryApiV1.DraftBasicEdit, 1, 2),
+                HistoryData(productId, sqlIdOrder[2], occurredAt, ProductHistoryApiV1.DraftBasicEdit, 2, 3),
+            };
+            foreach (var row in rows) await InsertGroupSharedAuditAsync(sql, row);
+
+            await using var scope = factory.Services.CreateAsyncScope();
+            var accessor = scope.ServiceProvider.GetRequiredService<IHttpContextAccessor>();
+            var previous = accessor.HttpContext;
+            try
+            {
+                accessor.HttpContext = new DefaultHttpContext
+                {
+                    User = new ClaimsPrincipal(new ClaimsIdentity([
+                        new Claim(GoymenClaimTypes.UserId, ActorId.ToString("D")),
+                        new Claim(GoymenClaimTypes.CompanyAccess, CompanyA.ToString("D")),
+                    ], "IsolatedSqlFixture")),
+                };
+                scope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(CompanyA);
+                var history = await scope.ServiceProvider.GetRequiredService<GroupSharedProductAuditReader>()
+                    .ReadAsync(productId, 2);
+                Assert.Equal(new long[] { 3, 2 }, history.Select(item => item.Envelope.EntityVersionAfter));
+                Assert.Equal(new[] { sqlIdOrder[2], sqlIdOrder[1] }, history.Select(item => item.Envelope.Id));
+            }
+            finally { accessor.HttpContext = previous; }
         });
 
     [SqlServerFact]
@@ -376,6 +484,76 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
             await Assert.ThrowsAsync<UnauthorizedAccessException>(() => history.ReadAsync(productId));
         }
         finally { accessor.HttpContext = previous; }
+    }
+
+    private static async Task<Guid[]> OrderIdsDescendingAsync(SqlConnection connection, Guid[] ids)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT [Id] FROM (VALUES (@first), (@second), (@third)) AS [Ids]([Id]) ORDER BY [Id] DESC;";
+        command.Parameters.AddWithValue("@first", ids[0]);
+        command.Parameters.AddWithValue("@second", ids[1]);
+        command.Parameters.AddWithValue("@third", ids[2]);
+        var ordered = new List<Guid>(ids.Length);
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync()) ordered.Add(reader.GetGuid(0));
+        return ordered.ToArray();
+    }
+
+    private static GroupSharedAuditEventData HistoryData(Guid productId, Guid eventId,
+        DateTimeOffset occurredAt, string operation, long? versionBefore, long versionAfter)
+    {
+        var create = operation == ProductHistoryApiV1.DraftCreate;
+        return GroupSharedAuditEventData.Create(new(eventId,
+            new(productId, CompanyA, "same-time-cutoff-fixture"), occurredAt,
+            create ? "product.draft.created.v1" : "product.draft.basic-edited.v1",
+            "Product.Product", productId.ToString("D"), operation, versionBefore, versionAfter,
+            "User", ActorId.ToString("D"), create ? "product.draft.create" : "product.draft.edit",
+            "[\"SYSTEM_ADMINISTRATOR\"]", "{}", "{}", $"Synthetic v{versionAfter}", "None", null,
+            "System", null, null, $"same-time-v{versionAfter}", null, new string('A', 64), "Succeeded", 2));
+    }
+
+    private static async Task InsertGroupSharedAuditAsync(SqlConnection connection, GroupSharedAuditEventData data)
+    {
+        var envelope = data.Envelope;
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO [audit].[AuditEvents]
+                ([Id], [CompanyId], [SubjectKind], [OriginCompanyId], [AuthorityRevision], [OccurredAtUtc],
+                 [EventType], [EntityType], [EntityId], [Operation], [EntityVersionBefore], [EntityVersionAfter],
+                 [ActorType], [ActorId], [PermissionCode], [RoleCodesJson], [BeforeJson], [AfterJson], [Reason],
+                 [ApprovalContextJson], [AiInvolvement], [AiContextJson], [SourceChannel], [ClientIpAddress],
+                 [UserAgent], [CorrelationId], [CausationId], [IdempotencyKeyHash], [Outcome], [SchemaVersion], [IntegrityHash])
+            VALUES
+                (@id, NULL, N'GroupSharedProduct', @origin, @revision, @occurredAt,
+                 @eventType, @entityType, @entityId, @operation, @versionBefore, @versionAfter,
+                 @actorType, @actorId, @permission, @roles, @before, @after, @reason,
+                 NULL, @ai, NULL, @channel, NULL, NULL, @correlation, NULL, @idempotency, @outcome, @schema, @integrity);
+            """;
+        command.Parameters.AddWithValue("@id", envelope.Id);
+        command.Parameters.AddWithValue("@origin", envelope.Subject.OriginCompanyId);
+        command.Parameters.AddWithValue("@revision", envelope.Subject.AuthorityRevision);
+        command.Parameters.AddWithValue("@occurredAt", envelope.OccurredAtUtc);
+        command.Parameters.AddWithValue("@eventType", envelope.EventType);
+        command.Parameters.AddWithValue("@entityType", envelope.EntityType);
+        command.Parameters.AddWithValue("@entityId", envelope.EntityId);
+        command.Parameters.AddWithValue("@operation", envelope.Operation);
+        command.Parameters.AddWithValue("@versionBefore", (object?)envelope.EntityVersionBefore ?? DBNull.Value);
+        command.Parameters.AddWithValue("@versionAfter", envelope.EntityVersionAfter);
+        command.Parameters.AddWithValue("@actorType", envelope.ActorType);
+        command.Parameters.AddWithValue("@actorId", envelope.ActorId);
+        command.Parameters.AddWithValue("@permission", envelope.PermissionCode);
+        command.Parameters.AddWithValue("@roles", envelope.RoleCodesJson);
+        command.Parameters.AddWithValue("@before", envelope.BeforeJson);
+        command.Parameters.AddWithValue("@after", envelope.AfterJson);
+        command.Parameters.AddWithValue("@reason", envelope.Reason);
+        command.Parameters.AddWithValue("@ai", envelope.AiInvolvement);
+        command.Parameters.AddWithValue("@channel", envelope.SourceChannel);
+        command.Parameters.AddWithValue("@correlation", envelope.CorrelationId);
+        command.Parameters.AddWithValue("@idempotency", envelope.IdempotencyKeyHash);
+        command.Parameters.AddWithValue("@outcome", envelope.Outcome);
+        command.Parameters.AddWithValue("@schema", envelope.SchemaVersion);
+        command.Parameters.AddWithValue("@integrity", data.IntegrityHash);
+        Assert.Equal(1, await command.ExecuteNonQueryAsync());
     }
 
     private static async Task AssertDatabaseConstraintsAsync(string connectionString)

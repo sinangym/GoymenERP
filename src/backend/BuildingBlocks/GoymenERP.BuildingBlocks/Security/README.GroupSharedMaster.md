@@ -143,8 +143,8 @@ no global eligibility. No automatic bundle/backfill can recreate a revoked assig
 
 The Identity owner will persist an explicit Product assignment per local user/operation,
 referencing the actual canonical system role, authorized deciding identity and decision
-provenance. The supported operations are Read, DraftCreate, DraftBasicEdit only; no implicit
-operation expansion. Current state plus durable decision history change atomically with
+provenance. The supported operations are Read, DraftCreate, DraftBasicEdit and (#329, DEC-PRD-010)
+Activate only; no implicit operation expansion. Current state plus durable decision history change atomically with
 expected-version checks. A database-generated rowversion and canonical contributing values
 form the authority revision; a timestamp of observation is not a revision.
 

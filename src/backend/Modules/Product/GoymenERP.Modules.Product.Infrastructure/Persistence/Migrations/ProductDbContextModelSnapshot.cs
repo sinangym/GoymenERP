@@ -91,6 +91,122 @@ namespace GoymenERP.Modules.Product.Infrastructure.Persistence.Migrations
                     b.ToTable("CodeRegistrations", "product");
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.Persistence.ProductDictionaryEntryRow", b =>
+                {
+                    b.Property<string>("Dictionary")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("Code")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .UseCollation("Turkish_100_CI_AS");
+
+                    b.Property<bool>("IsExplicitNone")
+                        .HasColumnType("bit");
+
+                    b.Property<decimal?>("MassGm2")
+                        .HasPrecision(9, 3)
+                        .HasColumnType("decimal(9,3)");
+
+                    b.Property<string>("ParentCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("SourceRef")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.HasKey("Dictionary", "Code");
+
+                    b.ToTable("DictionaryEntries", "product", t =>
+                        {
+                            t.HasCheckConstraint("CK_DictionaryEntries_ExplicitNone", "[IsExplicitNone] = 0 OR [Status] = 1");
+
+                            t.HasCheckConstraint("CK_DictionaryEntries_Mass", "[MassGm2] IS NULL OR [MassGm2] > 0");
+
+                            t.HasCheckConstraint("CK_DictionaryEntries_Status", "[Status] IN (1, 2)");
+
+                            t.HasCheckConstraint("CK_DictionaryEntries_Text", "LEN([Dictionary]) > 0 AND LEN([Code]) > 0 AND LEN([DisplayName]) > 0 AND LEN([SourceRef]) > 0 AND ([ParentCode] IS NULL OR LEN([ParentCode]) > 0)");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.Persistence.ProductFamilyRow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Cins")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .UseCollation("Turkish_100_CI_AS");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .UseCollation("Turkish_100_CI_AS");
+
+                    b.Property<string>("RuleSet")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("SourceRef")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<string>("Tip")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .UseCollation("Turkish_100_CI_AS");
+
+                    b.Property<string>("Tur")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .UseCollation("Turkish_100_CI_AS");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.ToTable("Families", "product", t =>
+                        {
+                            t.HasCheckConstraint("CK_Families_Id", "[Id] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_Families_Text", "LEN([Code]) > 0 AND LEN([Name]) > 0 AND LEN([Cins]) > 0 AND LEN([Tur]) > 0 AND LEN([Tip]) > 0 AND LEN([RuleSet]) > 0 AND LEN([SourceRef]) > 0");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.Persistence.ProductRow", b =>
                 {
                     b.Property<Guid>("Id")
@@ -164,6 +280,8 @@ namespace GoymenERP.Modules.Product.Infrastructure.Persistence.Migrations
                     b.HasIndex("Code")
                         .IsUnique();
 
+                    b.HasIndex("FamilyId");
+
                     b.HasIndex("GroupId", "Id");
 
                     b.HasIndex("Name", "Id");
@@ -192,6 +310,136 @@ namespace GoymenERP.Modules.Product.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.Persistence.ProductTemplateFamilyRow", b =>
+                {
+                    b.Property<Guid>("TemplateId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("TemplateVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("FamilyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("TemplateId", "TemplateVersion", "FamilyId");
+
+                    b.HasIndex("FamilyId");
+
+                    b.ToTable("TemplateFamilies", "product");
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.Persistence.ProductTemplateFieldRow", b =>
+                {
+                    b.Property<Guid>("TemplateId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("TemplateVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Key")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<bool>("AllowsCandidate")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("AppliesWhenCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("AppliesWhenField")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("Dictionary")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ParentField")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("Required")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Role")
+                        .HasMaxLength(32)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(32)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.HasKey("TemplateId", "TemplateVersion", "Key");
+
+                    b.HasIndex("TemplateId", "TemplateVersion", "Position")
+                        .IsUnique();
+
+                    b.ToTable("TemplateFields", "product", t =>
+                        {
+                            t.HasCheckConstraint("CK_TemplateFields_Candidate", "[Required] = 0 OR [AllowsCandidate] = 0");
+
+                            t.HasCheckConstraint("CK_TemplateFields_Condition", "([AppliesWhenField] IS NULL AND [AppliesWhenCode] IS NULL) OR ([AppliesWhenField] IS NOT NULL AND [AppliesWhenCode] IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_TemplateFields_Key", "LEN([Key]) > 0 AND [Position] >= 1");
+
+                            t.HasCheckConstraint("CK_TemplateFields_Kind", "([Kind] = 1 AND [Dictionary] IS NULL AND [AllowsCandidate] = 0 AND [ParentField] IS NULL) OR ([Kind] = 2 AND [Dictionary] IS NOT NULL AND LEN([Dictionary]) > 0)");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.Persistence.ProductTemplateRow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .UseCollation("Turkish_100_CI_AS");
+
+                    b.Property<string>("SourceRef")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.HasKey("Id", "Version");
+
+                    b.HasIndex("Code", "Version")
+                        .IsUnique();
+
+                    b.ToTable("Templates", "product", t =>
+                        {
+                            t.HasCheckConstraint("CK_Templates_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [Version] >= 1");
+
+                            t.HasCheckConstraint("CK_Templates_Text", "LEN([Code]) > 0 AND LEN([Name]) > 0 AND LEN([SourceRef]) > 0");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.Persistence.ProductCodeRegistration", b =>
                 {
                     b.HasOne("GoymenERP.Modules.Product.Infrastructure.Persistence.ProductRow", null)
@@ -203,9 +451,38 @@ namespace GoymenERP.Modules.Product.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.Persistence.ProductRow", b =>
                 {
+                    b.HasOne("GoymenERP.Modules.Product.Infrastructure.Persistence.ProductFamilyRow", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("GoymenERP.Modules.Product.Infrastructure.Persistence.ProductCodeGroupRow", null)
                         .WithMany()
                         .HasForeignKey("GroupId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.Persistence.ProductTemplateFamilyRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Product.Infrastructure.Persistence.ProductFamilyRow", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Product.Infrastructure.Persistence.ProductTemplateRow", null)
+                        .WithMany()
+                        .HasForeignKey("TemplateId", "TemplateVersion")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.Persistence.ProductTemplateFieldRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Product.Infrastructure.Persistence.ProductTemplateRow", null)
+                        .WithMany()
+                        .HasForeignKey("TemplateId", "TemplateVersion")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

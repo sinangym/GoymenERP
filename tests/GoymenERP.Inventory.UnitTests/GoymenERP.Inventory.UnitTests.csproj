@@ -10,6 +10,8 @@
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
     <Using Include="Xunit" />
+    <ProjectReference Include="../../src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Application/GoymenERP.Modules.Inventory.Application.csproj" />
     <ProjectReference Include="../../src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Domain/GoymenERP.Modules.Inventory.Domain.csproj" />
+    <ProjectReference Include="../../src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/GoymenERP.Modules.Inventory.Infrastructure.csproj" />
   </ItemGroup>
 </Project>

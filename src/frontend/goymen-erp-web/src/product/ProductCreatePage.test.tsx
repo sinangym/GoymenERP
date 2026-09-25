@@ -54,6 +54,25 @@ const switchedTo = (companyId: string) =>
     expect(picker.value).toBe(companyId)
   })
 
+/**
+ * The code-group read has ANSWERED. Until it does the submit is closed (there is no
+ * group to create under), so a click before this is a click on a disabled button —
+ * the form renders first, and on a slow machine the read can still be pending.
+ */
+const groupsAnswered = () =>
+  waitFor(() => expect(screen.getByRole('option', { name: /Sac \(SAC\)/ })).toBeTruthy())
+
+/**
+ * The reference-options read that picking a group starts has ANSWERED.
+ *
+ * A reconnect while that read is still in flight does not issue a new one: TanStack
+ * joins the request already running. A case that swaps the fake fetch and then
+ * reconnects must wait for this first, or the swapped answer is never asked for —
+ * which is exactly what a slow machine does to it (the first read is still pending).
+ */
+const referencesAnswered = () =>
+  waitFor(() => expect(screen.getByRole('option', { name: 'Yassı ürün' })).toBeTruthy())
+
 /** Makes every stale query refetch through TanStack's own reconnect path. */
 function reconnect() {
   act(() => {
@@ -65,7 +84,7 @@ function reconnect() {
 async function fillMinimum() {
   await userEvent.type(screen.getByLabelText(/Ürün adı/), 'Siyah sac')
   // The group is a REFERENCE the server offered, never typed text.
-  await waitFor(() => expect(screen.getByRole('option', { name: /Sac \(SAC\)/ })).toBeTruthy())
+  await groupsAnswered()
   await userEvent.selectOptions(screen.getByLabelText(/Kod grubu/), GROUP_SAC)
 }
 
@@ -96,7 +115,8 @@ describe('the code group is a reference', () => {
     await formVisible()
     const group = await waitFor(() => screen.getByLabelText(/Kod grubu/))
     expect(group.tagName).toBe('SELECT')
-    expect(within(group).getByRole('option', { name: /Sac \(SAC\)/ })).toBeTruthy()
+    // The select is rendered before the code-group read answers; the option is not.
+    await waitFor(() => expect(within(group).getByRole('option', { name: /Sac \(SAC\)/ })).toBeTruthy())
   })
 
   it('cannot create at all when the code-group read fails', async () => {
@@ -170,6 +190,10 @@ describe('what the screen deliberately does not offer', () => {
     await fillMinimum()
     await waitFor(() => screen.getByRole('option', { name: 'Yassı ürün' }))
     await userEvent.selectOptions(screen.getByLabelText(/Ürün sınıfı/), CLASS_FLAT)
+    // Choosing a class starts a read scoped by it. Until that answers, the class is not
+    // among the offered ones and the form refuses to send it — as it should.
+    await waitFor(() => expect(calls.some((call) => call.url.includes(`classId=${CLASS_FLAT}`))).toBe(true))
+    await waitFor(() => screen.getByRole('option', { name: 'Soğuk hadde' }))
     await userEvent.click(saveButton())
 
     await waitFor(() => expect(calls.some((call) => call.method === 'POST')).toBe(true))
@@ -203,15 +227,15 @@ describe('what the screen deliberately does not offer', () => {
     expect((screen.getByLabelText(/Ürün ailesi/) as HTMLSelectElement).disabled).toBe(false)
   })
 
-  it('offers no template, unit or tracking-policy editor, and says why', async () => {
-    // The coordinator keeps attribute/unit completeness in the NEXT slice.
+  it('offers no arbitrary template or tracking-policy editor and explains the release boundary', async () => {
     installFetch({ capabilities: CREATE_ONLY })
     renderProductApp(PATH)
 
     await formVisible()
     expect(screen.queryByLabelText(/Takip politikası/)).toBeNull()
     expect(screen.queryByLabelText(/Şablon/)).toBeNull()
-    expect(screen.getByText(/sonraki dilimde aile bazlı tamlık/)).toBeTruthy()
+    expect(screen.getByLabelText('Stok birimi (kg)')).toBeTruthy()
+    expect(screen.getByText(/Takip politikası henüz düzenlenemez/)).toBeTruthy()
   })
 
   it('has no activate action — the contract includes no activation command', async () => {
@@ -239,6 +263,7 @@ describe('validation', () => {
     renderProductApp(PATH)
 
     await formVisible()
+    await groupsAnswered()
     await userEvent.click(saveButton())
 
     await waitFor(() => expect(screen.getByTestId('product-create-error-summary')).toBeTruthy())
@@ -251,6 +276,7 @@ describe('validation', () => {
     renderProductApp(PATH)
 
     await formVisible()
+    await groupsAnswered()
     await userEvent.click(saveButton())
 
     const name = await waitFor(() => screen.getByLabelText(/Ürün adı/))
@@ -987,6 +1013,7 @@ describe('an unknown attempt across a REAL capability re-fence', () => {
     await fillMinimum()
     await userEvent.click(saveButton())
     await waitFor(() => expect(answer).not.toBeNull())
+    await referencesAnswered()
 
     // The next reference read is refused; TanStack's reconnect refetch issues it.
     installFetch({ capabilities: CREATE_ONLY, onOptions: () => json({ code: 'forbidden' }, 403) })
@@ -1087,6 +1114,7 @@ describe('an unknown attempt across a REAL capability re-fence', () => {
     await fillMinimum()
     await userEvent.click(saveButton())
     await waitFor(() => expect(answerCreate).not.toBeNull())
+    await referencesAnswered()
 
     installFetch({
       capabilities: CREATE_ONLY,

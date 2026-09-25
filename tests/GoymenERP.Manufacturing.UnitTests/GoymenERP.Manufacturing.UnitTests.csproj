@@ -20,6 +20,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\backend\Modules\Manufacturing\GoymenERP.Modules.Manufacturing.Domain\GoymenERP.Modules.Manufacturing.Domain.csproj" />
+    <ProjectReference Include="..\..\src\backend\Modules\Manufacturing\GoymenERP.Modules.Manufacturing.Application\GoymenERP.Modules.Manufacturing.Application.csproj" />
+    <ProjectReference Include="..\..\src\backend\Modules\Manufacturing\GoymenERP.Modules.Manufacturing.Infrastructure\GoymenERP.Modules.Manufacturing.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\backend\Modules\Organization\GoymenERP.Modules.Organization.Application\GoymenERP.Modules.Organization.Application.csproj" />
   </ItemGroup>
 
 </Project>

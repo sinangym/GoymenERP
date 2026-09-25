@@ -1,37 +1,350 @@
-# Manufacturing (MFG-1 — first independent slice of T15, Dilme/Sarım)
+# Manufacturing (MFG-1 … MFG-5 — independent slices of T15, Dilme/Sarım)
 
-Source of truth: #275 plan v2 §7.3, §13, R3, R6 and `SINAN_KARARLARI_2026-09-18_O1_O8_VE_SON_ASAMA.md` (Ö2, Ö7), read at exact head `a5b8143b`; coordinator decisions of 2026-09-18.
+Source of truth: #275 plan v2 §7.3, §13, R3, R6 and `SINAN_KARARLARI_2026-09-18_O1_O8_VE_SON_ASAMA.md` (Ö2, Ö7), read at exact head `a5b8143b`; coordinator decisions of 2026-09-18; the approved GDC kg unit profile (#279, #284) and `Settings.Application.Contracts.V1` for mass verification.
 
-## What this slice is
+## What is here
 
-Domain records and their invariants only:
+### Domain (`GoymenERP.Modules.Manufacturing.Domain`)
 
 - `ProductionPlan` — parent rolls and planned mass, an optional **declared** target (`InputMass` or `GoodOutputMass`); approval records a decision and consumes nothing.
 - `ProductionOrder` — created only from an approved plan, with its own snapshot of the plan's inputs and target.
 - **Realization facts**, each with its own id and UTC time (R6), with the totals derived from them:
-  - `InputIssue`, `InputReturn`: the same id twice is refused (`input_already_issued`, `return_already_recorded`); a return never exceeds what was issued.
+  - `InputIssue`, `InputReturn`: the same id twice is refused (`manufacturing_input_already_issued`, `manufacturing_return_already_recorded`); a return never exceeds what was issued.
   - `OutputDeclaration`: bound to an issued parent roll of this order; a class out of good product, second quality, usable remnant, scrap or process loss; the same id twice is refused.
-  - `WipMeasurement`: the latest reading is the roll's WIP; a reading that is not strictly later than the latest is refused (`wip_measurement_not_latest`); the same id twice is refused.
+  - `WipMeasurement`: the latest reading is the roll's WIP; a reading that is not strictly later than the latest is refused (`manufacturing_wip_measurement_not_latest`); the same id twice is refused.
 - `MassBalance` per parent roll: `issued − returned = Σ outputs + WIP + unexplained`. The unexplained difference keeps its sign and is never folded into any class ("açıklanamayan fark otomatik fire olmaz").
-- `Close`:
-  - refused while any roll has WIP (`wip_open`, **TEMPORARY — awaiting Business: "Üretim emri, işlemde kütle (WIP) varken kapanabilir mi?"**);
-  - refused while any roll has an unexplained difference (`unexplained_difference`; no Ö7 tolerance is approved).
+- `Close` (MFG-4; Business #66 [5728619644](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-5728619644), [5730092974](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-5730092974), #299 [5730573197](https://github.com/sinangym/GoymenERP/pull/299#issuecomment-5730573197), on DEC-PRDCT-006/007 and Master v3 §28.9):
+  - **every parent roll reconciles on its own**: `issued − returned = good + second quality + usable remnant + scrap + process loss + remaining WIP + unexplained`; rolls never offset each other;
+  - refused while ANY roll has a non-zero unexplained difference (`manufacturing_unexplained_difference`; no Ö7 tolerance is approved, none is invented);
+  - **remaining WIP does not block the close** when it is explicit, never negative and bound to an issued parent roll of this order, and the roll's unexplained difference is 0. The WIP stays on the closed order as its own position (`BalanceOf(roll).WorkInProgress`): never zeroed, scrapped or turned into good output;
+  - WIP is never assumed: with no reading, mass nobody measured or declared stays an unexplained difference and the close is refused; writing WIP down to 0 without declaring or returning the mass does the same; WIP of a roll outside the order or of a roll nothing was issued from cannot be recorded;
+  - a closed order takes no new realization (`manufacturing_order_closed`).
+  - Real WIP stock/label persistence is proven later in the Inventory integration (T15); this slice proves the domain semantics.
 - `RemainingTarget`: only in the basis the plan declared; `Unavailable` otherwise.
-- `Kilograms`: non-negative, at most three decimals (Ö2); a fourth decimal is refused, never rounded or cut.
+- `Kilograms`: non-negative, at most three decimals (Ö2); a fourth decimal is refused (`manufacturing_kilogram_precision_exceeded`), never rounded or cut.
 - `CostResult`: R6 status only; every output is `NotCalculated`, an unknown cost has no amount (never 0), and no known cost can be built in this slice.
+- **Optimistic concurrency (MFG-3, SİPARİŞ #292 P3-a):** `ProductionPlan` and `ProductionOrder` carry a `Version`. Every mutation (`Approve`; `IssueInput`, `ReturnUnusedInput`, `DeclareOutput`, `RecordWorkInProgress`, `Close`) takes the `expectedVersion` its caller read. A stale one is refused whole with `ManufacturingVersionConflictException` (`manufacturing_version_conflict`, expected and current versions) before any rule runs; a recorded change advances the version by one; a refused rule leaves it unchanged. Same pattern as Purchasing and Logistics.
 - Other modules are `Guid` identities only (company, work center, parent roll/label, output label, user).
+- **Stable rule codes (MFG-2):** every rule refusal is a `ManufacturingRuleException` whose `Code` is a `ManufacturingRuleCodes` constant, all prefixed `manufacturing_` like the other modules' codes (MFG-1's unprefixed codes were renamed; nothing consumed them). Tests assert the code, not only the type. Caller errors (empty id, undefined enum value, zero or negative mass where a positive one is required) stay `ArgumentException`s.
+- **Read-only views (MFG-2, ÜRÜN #280 P3-1):** `PlannedInputs`, `Issues`, `Returns`, `WipMeasurements`, `Outputs`, `ProductionPlan.Inputs` and `MassBalance.OutputsByClass` are read-only wrappers; a cast cannot reach the collections behind them, so the duplicate, roll and closed-order rules cannot be bypassed.
 
-## What this slice is not
+### Application (`GoymenERP.Modules.Manufacturing.Application`, MFG-2)
+- `ManufacturingMassVerifier` — verifies a measured mass against the company's kilogram unit profile through `ISettingsPrerequisiteProvider` (Contracts.V1 only; no concrete Settings provider) before a fact is recorded with it:
+  - fail-closed: every Settings failure is a refusal with the owner's code kept verbatim (`settings_access_denied`, `settings_provider_unavailable`, `SettingsPrerequisiteCodesV1.UnitProfileNotFound`, `settings_profile_invalid`) — "denied", "unavailable" and "no profile" stay distinct;
+  - the unit asked about is always `SettingsUnitIdentitiesV1.Kilogram`; the profile must belong to the server-resolved company the caller passes (`…_profile_company_mismatch`), be a well-formed kilogram profile for that unit (`…_profile_invalid`) and be active on the effective date (`…_profile_not_in_effect`);
+  - precision = min(profile scale, Ö2's 3); more decimals are refused (`manufacturing_mass_scale_exceeded`), never rounded; the verifier works on a `decimal`, where trailing zeros are not precision. At the HTTP text boundary the API counts every written decimal, trailing zeros included (see MFG-API "Kilograms");
+  - a negative mass is refused (`manufacturing_mass_negative`); a zero mass is a valid reading (WIP), and whether a fact needs a positive mass stays the order's rule;
+  - the result carries the profile snapshot the port asks consumers to keep with what they record: unit, profile id, profile version as invariant text (the Purchasing/Logistics shape, SİPARİŞ #292 P3-b), the owner's raw `ProfileScale` and the applied `Scale` = min(profile, 3) — the one a consumer may offer for input or display (ÜRÜN #292 P3-1, PUR-3's shape). It authorizes nothing and is not a production policy.
+
+## MFG-5 — persistence (`GoymenERP.Modules.Manufacturing.Infrastructure`)
+
+Pattern: INV-2 (#293) and ADR-002/009/011. Tables in the `manufacturing` schema: `Plans`, `PlanInputs`, `Orders`, `OrderInputs`, `Facts`.
+
+| Rule | Where | Held by |
+|---|---|---|
+| Every row is a tenant row: global filter on the server-resolved company; a row of another company, a company change or a write without a company is refused | `ManufacturingDbContext` | EF filter + write guard |
+| A work center is referenced by (company, work center) against Organization's alternate key; a company by id; a plan/order row by (company, id) | `FK_*_WorkCenters_CompanyId_WorkCenterId`, `FK_*_Companies_CompanyId`, `FK_*_Plans_CompanyId_PlanId`, `FK_*_Orders_CompanyId_OrderId` | SQL (547) |
+| Plans and orders keep their content; only approval / close, the version and the update time change. Inputs and facts are append-only; nothing is deleted | `ManufacturingDbContext` | write guard |
+| The stored order is rebuilt through the domain: `ProductionPlan.Restore` / `ProductionOrder.Restore` replay the stored facts through the same methods, so a stored state the rules would refuse is refused (`manufacturing_stored_record_invalid`); close is judged on stored facts | domain | domain |
+| The plan / fact id is the idempotency identity: same id + same canonical content = replay with no second effect; other content = `manufacturing_plan_id_conflict` / `manufacturing_fact_id_conflict`; an order id with another plan = `manufacturing_order_id_conflict` | `ManufacturingStore` (`PayloadHash`: SHA-256 of invariant text, kg normalized so `5.00` and `5` are one content) | store + PK |
+| A fact id is one fact per company and kind, even for racing writers | `PK_Facts (CompanyId, Kind, Id)` | SQL (2627 → `manufacturing_concurrent_change`) |
+| Two writes that read the same order cannot both commit | `Version` (domain `expectedVersion`) + `RowVersion` | optimistic concurrency (`manufacturing_concurrent_change`) |
+| A fact, the order's version and its audit event commit together or not at all | one `SaveChanges` | SQL transaction |
+| Every write carries the ADR-009 envelope (actor, permission, roles, correlation, causation, idempotency key, channel) from the caller | `ManufacturingCommandMetadata` → Audit collector | same save |
+
+Deliberate limits of this slice:
+
+- **No HTTP, permission, host DI or UI.** `AddManufacturingModule`/`InitializeManufacturingModuleAsync` exist but the host does not call them; the permission code in the audit envelope is the caller's, and this module invents none.
+- **No Inventory integration (T15).** Parent rolls and outputs stay label identities without a foreign key; no stock moves.
+- **Cost** is stored as a status only; every output is `NotCalculated` and a stored known cost is refused.
+- The migration and model snapshot were written by hand (no local `dotnet ef`, memory gate closed); CI's `HasPendingModelChanges` check is the verification.
+
+## MFG-API — authorized HTTP surface (#313, approved card)
+
+`src/backend/GoymenERP.Api/Endpoints/ManufacturingEndpoints.cs` → `ManufacturingCommandService` (Application) → the MFG-5 store. All endpoints are under `/api/v1/manufacturing`, need the company context (`X-Company-Id`) and their own **company-wide** permission. The names are registered by the central writer; the grant is a human gate.
+
+| Endpoint | Permission | Answer |
+|---|---|---|
+| `POST /plans` | `manufacturing.plans.write` | 201 `PlanViewV1` (a slitting plan, Draft) |
+| `POST /plans/{planId}/approval` | `manufacturing.plans.approve` | 200 `PlanViewV1` |
+| `POST /orders` | `manufacturing.orders.create` | 201 `OrderViewV1` |
+| `POST /orders/{orderId}/input-issues` · `input-returns` · `wip-measurements` · `outputs` | `manufacturing.facts.record` | 200 `OrderViewV1` |
+| `GET /orders/{orderId}` | `manufacturing.orders.read` | 200 `OrderViewV1`: each roll's issued − returned = outputs by class + WIP + unexplained (signed), cost `NotCalculated` |
+| `GET /orders` (MFG-ORD) | `manufacturing.orders.read` | 200 `OrderListViewV1`: one page of this company's orders, newest first |
+| `POST /orders/{orderId}/close` (MFG-ORD) | `manufacturing.orders.close` | 200 `OrderViewV1` (closed), or the domain's refusal |
+
+Rules held here:
+
+- **Company:** only from the context; no request carries one. Another company's plan or order is the same code-less 404 as an unknown id.
+- **Kilograms (Ö2):** plain invariant decimal text (no sign, exponent or grouping), checked against the company's kilogram profile (`ManufacturingMassVerifier`) before anything is written. Facts use their own UTC date; plan masses use the server's date. More decimals than the profile allows is `manufacturing_mass_scale_exceeded` (422), never rounded.
+  - **The text is measured, not the number** (BAL slice 2; FİNANS #353 INFO-1, coordinator ruling: consistency with Settings' `ExactPositiveDecimalV1` text rule, not a new policy). Every written decimal counts, trailing zeros included: with the approved scale 3, `10.500` is recorded and `10.5000` is refused with `manufacturing_mass_scale_exceeded`. Settings still answers first, so its refusals keep their precedence. Zero stays a valid reading (a WIP of 0), unlike Settings' positive-only wire value.
+  - A text with more significant digits than a `decimal` holds exactly (over 28) is invalid text (400 `manufacturing_request_invalid`), never rounded (#353). Settings `settings_access_denied` → 403; `settings_provider_unavailable` / `settings_profile_invalid` → 503 (for example a company with no approved kilogram source); any other Settings or mass refusal → 422 with its code.
+- **Authority (#276):** the endpoint policy answers first. The permission is then measured fresh with `IErpAuthorityRevalidationService` twice: before any stored answer is read (ADR-011 §5), and again after the Settings read. Only a company-wide grant writes. Its role codes and the endpoint's permission go into the ADR-009 audit envelope, together with the request's correlation, causation and channel and the `Idempotency-Key` as its hash.
+- **Idempotency (ADR-011 §2–§8):** every write is one command attempt in the module's own log (`manufacturing.Commands`).
+  - **Key:** unique `(CompanyId, CommandName, IdempotencyKeyHash)`. The raw `Idempotency-Key` is never stored, only the uppercase SHA-256 of the trimmed key.
+  - **Request hash:** the versioned command name plus the canonical payload, with the path id included and kilograms normalized (`10.000` = `10`). The actor is stored beside it.
+  - **Order of checks:** the fresh authority check runs first. Then:
+    - the same key, request and actor answers the stored result with `Idempotency-Replayed: true` and `Idempotency-Original-Correlation-Id`;
+    - another request or actor under the key is 409 `idempotency_conflict`, disclosing nothing.
+  - **Atomicity:** a success is recorded in the same save as the business change and its audit event (`ManufacturingCommandMetadata.Completion`).
+  - **Terminal answers:** a terminal not-found or version conflict is recorded on its own (§7). Validation, Settings and rule refusals are not recorded, so a retry is evaluated again.
+  - **Races:** two attempts racing on one key leave one record, and the loser answers from it (§8).
+  - **The approval replays too.** A lost answer retried is its 200, not a version conflict.
+- **R3 underneath:** the store still recognises the caller's plan / order / fact id with the same canonical content as the same record, whatever the key (the ledger's own identity, MFG-5). Other content under that id is 409 (`*_id_conflict`). Under a new key such a success is recorded as that key's answer.
+- **Concurrency:** `expectedVersion` → 409 `manufacturing_version_conflict` with `expectedVersion` / `currentVersion`; a lost race → 409 `manufacturing_concurrent_change`.
+- **Refusals:** a domain rule → 422 with its code; a work center that is not this company's → 422 `manufacturing_work_center_not_found`; a malformed request → 400 `manufacturing_request_invalid` with `field`.
+- **Read under concurrent writes (FİNANS #313 INFO-4):** the store re-reads an order whose row and facts were committed apart (RCSI reads each statement on its own), up to three times. If it still meets a commit, `GET /orders/{orderId}` answers 503 `service_unavailable`: a retryable consistency failure, never a 500. It is not a 409, because 409 belongs to commands. Any other store refusal keeps its own path.
+- **409 / 422 codes are one declared superset:** every write endpoint declares the same 409 (6) and 422 (23) `manufacturing_*` codes (`WithWriteProblems`). For example, the plan save also declares `manufacturing_output_already_declared`.
+  - It is a true superset: no endpoint returns a code it does not declare.
+  - A client branches on the code, not on the endpoint. A code a screen does not handle is shown as a generic refusal.
+  - Narrowing per endpoint is a separate change: the endpoint, the regenerated OpenAPI and the contract expectations change together.
+
+Not here: cost, search beyond the order list's status filter, Inventory movements (T15), or any role assignment.
+
+### MFG-ORD — the order list and the close (coordinator-approved card)
+
+- **List** `GET /orders?pageSize&cursor&status`. The stored rows only: plan, work center, process, status, version, planned roll count, planned input mass (lossless text), the order's target snapshot, created and closed times. **No balance, no difference and no engine answer** — those are one order's own reads — and **no roll or order label**: the label read is Inventory's (ÜRÜN / T15), so the id travels as a technical reference and the screen says so.
+  - Newest first (`createdAtUtc desc, id desc`), page size 1–100 (default 50), keyset cursor as Sales' draft list (#257): opaque, bound to the company and ordering that produced it. A cursor of another company or ordering, or one that cannot be read, is 400 on `cursor` (`manufacturing_list_cursor_invalid` inside the store) — never a silent first page. `status` is an `OrderStatus` name exactly (`Open` / `Closed`); anything else is 400 on `status`.
+  - Another company's order is in no page: the list runs under the company context and the tenant filter, and it stores nothing.
+- **Close** `POST /orders/{orderId}/close` with `expectedVersion`, one `Idempotency-Key` per attempt.
+  - The rule is the domain's and unchanged (MFG-4, Business 5728619644): every planned roll accounts for its own issued mass, a surplus on one roll never covers a gap on another, remaining WIP stays as its own position, and any unexplained difference refuses the close with `manufacturing_unexplained_difference` (422). **No tolerance and no write-off**, here or on the screen.
+  - ADR-011: the success is recorded in the same save as the close and its audit event (§6, `manufacturing.order.close.v1`); a terminal not-found or version conflict is recorded on its own and replays (§7); the loser of a race on one key answers from the winner's record (§8). A closed order refuses a second close with `manufacturing_order_closed` — a replay of the first key is the first answer, never a second close.
+  - `manufacturing.orders.close` is its own permission, registered centrally and granted by a human gate. Recording a fact does not close an order.
+
+## MFG-UI — the order screen (approved card, D1–D5)
+
+- **Shell provider** `Infrastructure/Shell/ManufacturingShellCapabilityProvider`: `manufacturing.orders.detail` → `/uretim/emir/:orderId` (`manufacturing.orders.read`) and its control `manufacturing.orders.facts` (+ `manufacturing.facts.record`). Company-wide, single company.
+  - **MFG-ORD adds** the list route `manufacturing.orders.list` → `/uretim/emirler` (`MFG-02`, static, `manufacturing.orders.read`) and a second control on the order screen, `manufacturing.orders.close` (+ `manufacturing.orders.close`). Four declarations in total; the controls stay their parent with only id, parent and permissions changed.
+  - **Published (MFG-UI-F):** `ImplementationAvailable: true` on both rows. The `mfg` browser suite accepted the staged screen (#323, run 35438064043), and it runs on the `normal` profile since this change.
+    - The facts control is the detail with only its id, parent and permissions changed, so the registry's control rule holds by construction: same route, context and scope; the parent's permission kept; never available under a staged parent.
+    - Real SQL (`ManufacturingShellCapabilitySqlServerRelationalAcceptanceTests`, through the real host):
+      - no grant → nothing;
+      - `facts.record` alone → nothing;
+      - read + record → both; read alone → the order screen only;
+      - company A's grant asked in company B → nothing;
+      - a site-scoped grant → nothing, since the declarations are company-wide (K-1).
+    - Publishing grants nothing: every grant is a human gate.
+  - `MFG-01` is a technical sub-view id. The canonical production screens (PR-09/13/14/15) are `DECISION_ONLY_REFERENCE_MISSING`, and this is not their locked reference.
+  - The host registers the provider in the central writer's round (`src/frontend/goymen-erp-web/src/manufacturing/SHARED_MOUNT_HANDOFF.md`).
+- **Frontend** `src/frontend/goymen-erp-web/src/manufacturing/`:
+  - The order's roll balances, as read from the server. The unexplained difference is signed; cost shows as a status.
+  - Four fact forms, drawn only with the facts capability.
+  - One Idempotency-Key and one fact id per frozen submit.
+  - After an accepted fact the order is re-read; nothing is predicted.
+  - An unknown outcome freezes the forms until the same snapshot is re-sent.
+  - A 401/403 on a re-send does not settle it, because authority is measured before the stored answer.
+
+## MFG-6 slice 1 — the Slitting and Winding engines (approved card, Business 5737790175)
+
+`Domain/Engines`: pure, deterministic, versioned calculators of master v3 §28.4 (`SlittingEngineV1`, SLT-001…010) and §28.5 (`WindingEngineV1`, WND-001…009), exactly as written there. There is no I/O, no HTTP and no persistence yet; the preview API, the plan snapshot and the plan screen are the next slices of the card.
+
+- **Never a guess:**
+  - a missing parameter is `EngineOutcome.Unavailable` and is named;
+  - a broken rule is `EngineOutcome.Refused` with an `EngineCodes` code;
+  - a refusal wins over missing parameters, because a supplied value is wrong.
+- **No built-in parameter:** density, line speed and the metre tolerance are inputs (OPEN-007, OPEN-004/005, Ö7).
+  - Their values come from the Settings / Policy Registry (DEC-SET-001), and an approved plan snapshots them (DEC-PRDCT-008).
+  - A tolerance may be a stated zero; a missing one is unavailable, never zero.
+- **Ö2:** kilogram and nominal millimetre inputs take at most three decimals and are refused beyond.
+- **No rounding.** Results are unrounded decimals, because the rounding policy (§28.1) is not decided. π and the square root are decimal too, so a result is the same on every platform.
+- **Invariants:**
+  - the used width cannot exceed the net usable width (`engine_used_width_exceeds_net_width`);
+  - SLT-010's line time is the parent coil's walking metres over the line speed, never the output bands' metres.
+- **Evaluation order (SLT-001…007), algebraically identical to §28.4:**
+  - Line kg (SLT-003, `(HamKg / NetEn) × KullanılanEn`) is evaluated as `HamKg × KullanılanEn / NetEn`: multiply first, divide once.
+  - Plan kg (SLT-006, `ΣSatırKg`) is evaluated once as `HamKg × ToplamKullanılanEn / NetEn`, not as a sum of separately rounded line values.
+  - Remaining kg (SLT-007) is one subtraction.
+  - SLT-001's kg per mm is **reported only**, never a multiplicand. It is often non-terminating (`28750 / 1500`), and multiplying its 28-digit rounding back would leave a residue: a full-width plan showed −1e-24 kg remaining (#340 CI).
+  - No epsilon and no rounding are applied. §28.1 is not decided, so either would be a policy.
+- **What holds exactly vs within decimal precision** (Ö2 inputs; tested over a seeded set of plans):
+  - **Exact:** widths (SLT-002/004/005); remaining kg ≥ 0 whenever used ≤ net; plan kg + remaining kg == parent kg; a full-width plan leaves exactly 0.
+  - **Within decimal precision only:** Σ line kg == plan kg. Each line is its own single division, so they agree to about 1e-23 kg, not bit for bit.
+- **Versions:** every result carries `FormulaVersion`. A changed formula is a new version, never an edit (DEC-PRDCT-004).
+- **Not in version 1** (each needs a sourced rule before a new version can carry it):
+  - WND-010 (break-down into target-mass coils plus a remainder "above tolerance"). Its tolerance rule is not stated precisely enough to encode without choosing it.
+  - WND-008's "**or** kg tolerance" branch. Version 1 encodes only the metre form, `YürüyenMetre + ToleransMetre ≥ GerekliMetre`. Whether a kg tolerance replaces the metre one, adds to it, and against which mass it is measured is not stated.
+- **Golden tests** (`tests/GoymenERP.Manufacturing.UnitTests/Engines`): the master's examples at the precision it prints (±0.0005), plus an independent 40-digit reference (±1e-18). The density 7850 kg/m³ there is the test input the examples imply, not a production parameter.
+
+- **Change log of `GDC-WND/1`** (§28.17 "yeni davranışta yeni sürüm"; FİNANS #342 INFO-1):
+  - **2026-09-19, #342:** `Fit` (WND-008/009) takes WND-003's computed outer diameter as a positive computed value. It no longer takes it as an Ö2 nominal millimetre, which refused its own engine's result (e.g. 1371.1401108… mm) for "more than 3 decimals".
+  - The input domain widened; every previously computed output is unchanged, and no engine result had been stored. So it stays `GDC-WND/1`. The line's maximum stays a nominal millimetre.
+
+## MFG-6 slice 2 — the plan's slitting spec and the fail-closed approval gate (approved)
+
+- **Spec as plan content** (`Domain/Plans/SlittingSpec`):
+  - the slit lines (band width, a nominal Ö2 millimetre; count);
+  - an optional winding target (kg).
+  - It is set when the plan is created and never changed, like the plan's inputs and target.
+  - Stored in the same save as the plan: `manufacturing.PlanSlitLines` (bound by company + plan) and `Plans.WindingTargetKg`.
+  - The content hash is extended **only** for a plan that has a spec, so every plan stored before keeps its hash and replay identity (pinned by a test on the MFG-5 canonical string).
+  - The same id with another spec is `manufacturing_plan_id_conflict`.
+- **Scope of the gate:** only a plan that carries a spec. A plan without one (the MFG-5 plan: inputs and target) claims no engine computation and is approved as before. The live MFG-API and the `mfg` browser suite create such plans; there is no HTTP surface for a spec yet (the API slice).
+- **Approval gate** (`SlittingApprovalGate`, inside `ProductionPlan.Approve`):
+  - Order: the version fence first, then "only a draft", then the gate.
+  - Per planned roll: the label must be known usable; SLT-001…007 and SLT-010 must compute with the roll's planned mass as the parent mass.
+  - With a winding target, per roll and band width: WND-001…004 and the WND-008/009 fit.
+  - Nothing is approved with gaps:
+    - a missing input → `manufacturing_plan_parameters_unavailable`, naming every one (sorted, distinct);
+    - an engine refusal → `manufacturing_plan_engine_refused` (the engine's code + parameter);
+    - a label known not usable → `manufacturing_plan_label_not_usable`;
+    - a fit that computes and fails → `manufacturing_plan_winding_does_not_fit` (`metresSufficient` / `diameterFits`). Fail-closed; an authorized exception path would be a Business decision.
+  - A refusal wins over missing inputs.
+  - Nothing changes on a refusal: no version, no approval, no audit.
+  - A stored approval is restored without re-running the gate.
+- **The outside inputs today** (`SlittingPlanParameters`): all unknown, so every approval of a plan with a spec is refused with the full list. None of these is defaulted or entered on the plan:
+  - `labelState`: Inventory's module read of the label (queued, ÜRÜN);
+  - `thicknessMm`, `parentWidthMm`: Product's role read (ÜRÜN; data waits on Q6 #66 5740511161);
+  - `netUsableWidthMm`, `densityKgPerCubicMetre`, `lineSpeedMetresPerMinute`, `innerDiameterMm`, `maximumOuterDiameterMm`, `toleranceMetres`: the Settings / Policy Registry (DEC-SET-001, OPEN-007, OPEN-004/005).
+- **No parameter snapshot yet.** Its source-version shape is the registry's and lands with the registry's first reader. The gate means no approval can happen without it.
+- **Engine fix carried here:** WND-009's outer diameter is WND-003's computed value. `WindingEngineV1.Fit` now takes it as a positive computed value, not an Ö2 nominal millimetre, which a computed diameter never is. The line's maximum stays nominal. The formula is unchanged, so this is not a new version.
+- **Migration** `20260919130000_AddPlanSlittingSpecs`: its Down refuses with `THROW 51047` (Manufacturing's one module number) while any spec is stored. Forward fix. Real SQL: it rolls back and forward cleanly with no spec, and refuses (51047) with one.
+- **Open item** (#66 NEEDS-BUSINESS 5741547443): whether a slitting plan's parent mass is the whole coil (the label's balance) or may be a part of it. Until it is answered, the engine takes the planned mass (the kg that passes the line) and **no rule** ties it to the label's balance either way. The balance itself also needs Inventory's module read.
+
+- **Done in the BAL slice (FİNANS #342 INFO-3):** the store's decimal(18,3) column bound, which also bounds the band width, is named neutrally: `Decimal18Scale3Limit` (was `KilogramColumnLimit`). Same value, same checks.
+
+## MFG-7 slice 1 — the Cold Rolling engine (Business 5737790175, DEC-PRDCT-001 order)
+
+`Domain/Engines/ColdRolling/ColdRollingEngineV1` (`GDC-CR/1`) is master v3 §28.8 (CR-001…005) exactly, on the same core (`EngineResult` / `EngineInputs` / `EngineMath`) and under the same rules as the MFG-6 engines: pure, decimal, versioned, no I/O.
+
+- **Formula card:**
+
+| ID | Master §28.8 | Engine (evaluation order) |
+|---|---|---|
+| CR-001 input metres | `HamKg × 1000 / (GirişKalınlık × En × Yoğunluk[kg/dm³])` | `inputKg × 1 000 000 / (inputThicknessMm × widthMm × density[kg/m³])` |
+| CR-002 output kg | `HamKg − FireKg` | `inputKg − scrapKg` (exact) |
+| CR-003 elongation | `GirişKalınlık / HedefKalınlık` | the same, one division |
+| CR-004 output metres | `ÇıkışKg × 1000 / (HedefKalınlık × En × Yoğunluk[kg/dm³])` | `outputKg × 1 000 000 / (targetThicknessMm × widthMm × density[kg/m³])` |
+| CR-005 reduction % | `(GirişKalınlık − HedefKalınlık) / GirişKalınlık × 100` | `(input − target) × 100 / input` |
+
+- **Unit mapping:** density is ONE registry parameter in kg/m³, shared with WND-001 (OPEN-007, DEC-SET-001). §28.8 writes it in kg/dm³ with ×1000. With ρ[kg/dm³] = ρ[kg/m³] / 1000, the ×1000 becomes ×1 000 000; the two forms are algebraically identical. Golden check: 28 750 × 10⁶ / (2 × 1500 × 7850) = 1220.807 m.
+- **Invariants (§28.8), refused with codes, never clamped:**
+  - the target thickness must be below the input thickness (`engine_target_thickness_not_below_input`);
+  - the scrap must be below the input mass; equal or more is `engine_scrap_not_below_input_mass`.
+  - The scrap is supplied: a stated 0 is a value, a missing one is unavailable.
+- **Never a guess:** a missing input is `Unavailable` and is named; Ö2 kilogram and millimetre inputs take at most three decimals and are refused beyond. Nothing rounds.
+- **Refusal order (FİNANS #343 INFO-1):** "a refusal wins over missing values" covers **single-value** refusals (a non-positive value, a fourth decimal). A **cross-input** invariant (target < input thickness, scrap < input mass; SLT-004's used ≤ net width too) is checked only once every input is present. So a known-bad pair beside a missing density answers `Unavailable(density)`, and the refusal follows as soon as the missing value arrives.
+- **Carried (FİNANS #343 INFO-2), for the MFG-7 plan slice:** at plan time CR-002's scrap is an estimate, after production a measured fact. The plan gate (the #342 pattern) must name `scrapKg` as unavailable until a source for it exists, never pass 0 as a default. A stated 0 comes only from someone actually stating it.
+- **Carried (ÜRÜN #343 INFO-1), for the MFG-7 plan slice:** cold rolling reads two Product cards (input and target). Whether both must share the steel grade is an owner rule to state in that slice, not assume.
+- **One width:** the coil's width is one input for both sides, as §28.8 uses one `En`.
+- **Not in version 1:** multi-pass rolling, the pass plan, tolerance, work hardening and quality results. The master keeps these in the process model.
+- **Golden tests** (`ColdRollingEngineTests`): the §28.8 example (28.750 kg, 1500 mm, 2,00 → 1,50 mm → 1220,807 m, 1627,742 m, 1,333, %25) at the master's printed precision (±0.0005), plus an independent 40-digit reference (±1e-18). Its density 7850 kg/m³ and scrap 0 kg are test inputs, not production parameters.
+
+## MFG-8 slice 1 — the Tube / Profile and Painting engines (Business 5737790175, DEC-PRDCT-001 order)
+
+Pure, decimal, versioned calculators on the same core and under the same rules as the MFG-6 / MFG-7 engines: no I/O, no rounding, a missing input `Unavailable` and named, a single wrong value refused with a code, Ö2 on kg / nominal mm.
+
+- **`TubeProfileEngineV1` (`GDC-TUB/1`, master v3 §28.6):**
+
+| ID | Master | Call |
+|---|---|---|
+| TUB-001 pieces | `PaketSayısı × PaketİçiAdet` | `Run` (exact) |
+| TUB-002 metres | `ToplamAdet × Boy(mm) / 1000` | `Run` |
+| TUB-003 running minutes | `ToplamMetre / HatHızı(m/dk)` | `Run` |
+| TUB-004 kg | `BirimKg × ToplamAdet` | `Mass` |
+
+  - **Unit kg** (§28.6: the product / package master's; the geometric estimate is lower priority) is `Unavailable(unitKg)` until Product supplies it. This engine never estimates it.
+  - TUB-004 is its own call, so a missing unit mass never hides the length and time.
+  - **Carried (SİPARİŞ #344 INFO-1), for `GDC-TUB/2`:** `Mass` takes the unit kg as an Ö2 kg value (≤ 3 decimals), so 12,3456 is refused. Ö2's rule is for kg **quantities**; §28.1 (not locked) suggests 4–6 decimals for a unit kg, which comes from the Product master. Once Product's unit-kg precision is decided, the unit kg's scale changes with it, as a new version. No precision is chosen here.
+  - **TUB-003 is the running time only.** Set-up, die change, planned stops and cleaning are not part of it; the capacity calendar adds them (§28.6).
+- **`PaintingEngineV1` (`GDC-PNT/1`, master v3 §28.7):**
+
+| ID | Master | Call |
+|---|---|---|
+| PNT-001 pieces | `PaketSayısı × PaketİçiAdet` | `Run` (exact) |
+| PNT-002 profile metres | `Adet × Boy(mm) / 1000` | `Run` |
+| PNT-003 line-pass metres | `ToplamProfilMetre / EşZamanlıProfilAdedi` | `Run` (one division) |
+| PNT-004 minutes | `HatGeçişMetre / HatHızı` | `Run` (one division) |
+| PNT-005 area | `ProfilÇevre(mm) × Boy(mm) × Adet / 1 000 000` | `Area` |
+| PNT-006 theoretical litres | `Alan × Mikron / (KatıMaddeOranı × 1000) × FireKatsayısı` | `Paint`, evaluated as `Alan × Mikron × FireKatsayısı / (KatıMaddeOranı × 1000)` (algebraically identical) |
+
+  - **Inputs, never hard-coded (§28.7):** the simultaneous profile count, the solids ratio, the scrap factor, the line speed and the film thickness.
+  - **Solids ratio:** a fraction by definition; above 1 is refused (`engine_ratio_above_one`), never read as a percentage.
+  - **Theoretical litres only:** not the cost, not the actual consumption.
+  - **Scrap factor below 1 (FİNANS #344 INFO-1):** `GDC-PNT/1` accepts any positive `FireKatsayısı`, including 0 < factor < 1, which would mean negative loss and is almost certainly an input mistake. It is not refused in this version: refusing it (a validity check like the solids ratio's, not a policy number) is carried to the next Painting slice, as a new version.
+  - **Not in version 1:** colour change, transfer efficiency, paint density, coats, thinner, gun / line loss and rework (separate parameters or realizations, §28.7).
+- **Golden tests** (`TubeProfileAndPaintingEngineTests`): every result is exact in decimal (cross-checked with Python `decimal` at prec 40).
+  - §28.6: 20 × 50 × 6 m at 30 m/dk → 1000 pieces, 6000 m, 200 dk.
+  - §28.7: 10 × 50 × 6 m, perimeter 160 mm, 20 m/dk, 80 µm, solids 0,55, factor 1,10 → 480 m², 76,800 L, 50 dk.
+  - **Flag on the §28.7 golden:** the example does **not** state `EşZamanlıProfilAdedi`. 50 dk follows only with 3 (3000 m / 3 / 20 m/dk), so 3 is **derived from the master's result**. It is used only as a test input, and it is not a default.
+  - PNT-004 is also measured with an explicitly stated count (2 → 1500 m, 75 dk).
+
+## MFG-9 slice 1 — the Cut-to-Length engine (Business 5737790175, DEC-PRDCT-001 order: the fifth engine)
+
+`Domain/Engines/CutToLength/CutToLengthEngineV1` (`GDC-CUT/1`) is master v3 §28.3 (CUT-001…008), on the same core and under the same rules as the engines above.
+
+| ID | Master §28.3 | Engine (call, evaluation order) |
+|---|---|---|
+| CUT-001 unit kg | `SacBirimKg(t, en, hedefBoy)` = §28.2 MAT-002 `t × en × boy × ρ[kg/dm³] / 1 000 000` | `Plan`: `t × W × L × ρ[kg/m³] / 10⁹` |
+| CUT-002 line kg | `BirimKg × Adet` | `Plan`: `t × W × L × ρ × n / 10⁹` (one division) |
+| CUT-003 line metres | `HedefBoy(mm) / 1000 × Adet` | `Plan`: `L × n / 1000` |
+| CUT-004 input metres | `HamKg × 1000 / (t × en × ρ[kg/dm³])` | `Plan`: `HamKg × 10⁶ / (t × W × ρ[kg/m³])` |
+| CUT-005 remaining kg | `HamKg − ΣPlanKg` | `Plan`, exact |
+| CUT-006 remaining metres | `HamToplamMetre − ΣPlanMetre` | `Plan`: `remainingKg × 10⁶ / (t × W × ρ)` (algebraically identical) |
+| CUT-007 pieces per raw length | `floor(HamBoy / (HedefBoy + KesimPayı))` | `CutsPerRawLength` |
+| CUT-008 length scrap | `HamBoy − (HedefBoy × KesimAdedi) − (KesimPayı × KesimSayısı)` | `LengthScrap`, exact |
+
+- **Density:** the one registry density in kg/m³, shared with WND / CR. The kg/dm³ forms of §28.2 / §28.3 map with ρ[kg/dm³] = ρ[kg/m³] / 1000.
+- **Exactness:**
+  - The planned kg is exact in decimal: each line divides a finite product by 10⁹, which terminates.
+  - CUT-006 is evaluated from the remaining kg, so an exact fit leaves exactly 0. `HamToplamMetre − ΣPlanMetre` would subtract CUT-004's often non-terminating quotient and could leave a 10⁻²⁵ residue (the #340 lesson).
+- **Negative remainders are refused** (§28.3: no normal record, an automatic block):
+  - planned kg above the input kg → `engine_plan_exceeds_input_mass`;
+  - pieces + cuts above the raw length → `engine_cuts_exceed_raw_length`.
+  - Planned metres above the coil's metres is the same condition as the kg one, so it is checked once, exactly.
+  - The authorized exception is Business's and is not encoded. A zero remainder is a value.
+- **The kerf (KesimPayı) is mandatory for CUT-007 / CUT-008**, the master's "hedef davranış". It is versioned by material / machine / saw profile (OPEN-007). A missing kerf is `Unavailable(kerfMm)`; a stated 0 is a value.
+- **CUT-008's pieces and cuts are both stated by the caller.** §28.3 does not define KesimSayısı against KesimAdedi (N or N−1 cuts), so the engine never derives one from the other. A stated 0 cuts is a value; negative is refused.
+- **Golden:** §28.3's example has no kerf, so it covers CUT-001…006: 28.750 kg, 3 × 1500; 3000×50 + 6000×55 + 4500×10 → 525,000 m; 18.545,625 kg plan; 10.204,375 kg remaining. Every value is exact; CUT-004 / CUT-006 are checked against a 40-digit reference.
+  - The master states no kerf golden ("yeni sürümde ayrıca hesaplanır"), so none is invented: CUT-007 / CUT-008 are tested with explicit inputs.
+  - Density 7850 kg/m³ is a test input.
+
+## MFG-BAL — the mass-balance calculator (coordinator-approved consistency slice)
+
+`Domain/Engines/Balance/MassBalanceEngineV1` (`GDC-BAL/1`) is master v3 §28.9 BAL-003, BAL-004 and BAL-006, on the same core as the five process engines. Every input is explicit and named; nothing is derived inside the engine.
+
+| ID | Master §28.9 | Engine |
+|---|---|---|
+| BAL-003 mass difference | `Toplam Fiilî Girdi − (İyi Ürün + İkinci Kalite + Geri Kazanılabilir Yan Ürün + Hurda + Stok Dışı Proses Kaybı + Kalan WIP + Onaylı Ölçüm Düzeltmesi)` | `Difference`, exact; signed (never clamped); the correction is signed too |
+| BAL-004 fire % | `FireKg / HammaddeKg × 100` | `ScrapPercent`: `FireKg × 100 / HammaddeKg` (one division), both masses stated by the caller |
+| BAL-006 actual unit kg | `GerçekKg / GerçekAdet` | `ActualUnitMass`; a missing count is `Unavailable(actualCount)` |
+
+- **MFG-4's close runs on BAL-003.** `MassBalance` (one parent roll) computes its difference through the engine: one calculator for the close, the order read and any report (AGENTS).
+  - The order's facts map one to one: net issued (issued − returned) → actual input; good product, second quality, usable remnant (the recoverable by-product), scrap and process loss (the non-stock process loss) → their classes; the latest WIP reading → remaining WIP.
+  - A test pins that every `OutputClass` is a BAL-003 category, so a class added later cannot drop out of the balance.
+  - **The approved measurement correction** is the sum of the order's recorded corrections. The order has no correction fact yet, so that sum is 0. This is a fact of the data, not a default. Ö7's correction and exception path is a recorded dependency.
+  - The close's behaviour is unchanged and stays pinned by `WipCloseTests` and `OrderTargetAndCloseTests`: per roll, never offset, refused while any roll's difference is non-zero, WIP a position of its own.
+- **The GDC-BAL/1 read (BAL slice 2):** `GET /api/v1/manufacturing/orders/{orderId}/mass-balance` (`GetManufacturingOrderMassBalanceV1` → `MassBalanceViewV1`).
+  - Same order, company context, read permission (`manufacturing.orders.read`) and answers as the order read: another company's order and an unknown id are the same code-less 404; a read that keeps meeting commits is a retryable 503; `private, no-store`. It computes and stores nothing.
+  - Per planned parent roll: **BAL-003** (`difference`: actual input, accounted, signed difference, fully accounted), the same calculation the close uses.
+  - **BAL-004** (`scrapPercent`) and **BAL-006** (`actualUnitKg`) are the engine's own answer to the inputs the order can supply without a decision: none. So they answer `Unavailable` and name the inputs (`fireKg`, `rawMaterialKg`; `actualKg`, `actualCount`), never a number.
+    - BAL-004 waits for Business (#66 5744055923): is "Fire" only scrap, or scrap + non-stock process loss, and is the base the issued or the net issued mass?
+    - BAL-006 needs a piece count, which the order's kg-only facts do not have. It belongs to the count-producing processes (the TUB / CUT realization slices).
+    - A plan or report that one day feeds BAL-004 must say where its inputs come from: the calculator accepts fire above the raw material (a percent above 100); no bound is decided and none is invented (FİNANS #353 INFO-2).
+  - **The order screen's panel** ("Kütle dengesi (GDC-BAL/1)", #323 screen, normal runtime): its own read, keyed by the order's version, so every re-read after an accepted fact reads the balance again. `Unavailable` shows "Hesaplanamıyor — eksik girdi: …" with the inputs in the user's words; nothing is summed on the client. No new shell declaration: the panel is part of the order screen and needs its read grant.
+  - Real SQL through the host: `ManufacturingApiSqlServerRelationalAcceptanceTests.The_mass_balance_read_is_bal003_of_the_stored_facts_only_for_the_context_company_and_the_read_grant`. Browser: the `mfg` suite reads the panel after a fact (recorder) and with the read grant alone (reader).
+- **`MassBalance.Reconciliation` stays a computed getter** (SİPARİŞ #353 INFO-1): caching it in the record would survive a `with` copy and go stale; the calculation is seven sums and one subtraction. The read computes it once per roll.
+- **Not in version 1:** BAL-005 (the distribution of an empty actual quantity needs the §28.1 rounding stage, not decided), tolerance (Ö7: no approved profile; the close refuses any non-zero difference) and BAL-001 / BAL-002 (the donor's reference behaviour only).
+- **Golden:** §28.9 states no worked example, so none is invented. `MassBalanceEngineTests` uses explicit inputs with exact expected values.
+
+## Behaviour kept on purpose — Business decision pending
+
+- **One approved plan can open more than one order** (`FromApprovedPlan` does not mark the plan as converted). §7.3 does not say whether a plan becomes one order or several partial ones; the question is open with Business (#66 5728934213, the same principle as Purchasing's request → several orders). Pinned by a test; changes only by that decision. The physical guard is Inventory's.
+
+## What this module is not
 
 - No stock movement, lot or label: Inventory owns those.
-- No formula, trim/kerf, tolerance, template, rounding stage or roll-substitution policy.
-- No persistence, HTTP, DI, permission or host.
-- No other engine (cold rolling, tube/profile, painting, cut-to-length).
+- No trim/kerf value, tolerance number, template, rounding stage or roll-substitution policy. The only formulas are the five process engines (MFG-6…9, DEC-PRDCT-001's order complete) and the mass-balance calculator (MFG-BAL) above, and every parameter is supplied to them.
+- No UI beyond the order screen and its list (MFG-UI, MFG-ORD); HTTP since MFG-API, persistence since MFG-5 (above).
+- No planning, capacity or costing on top of the engines yet: each engine's plan slice (the #342 pattern) comes with its sources.
 
 ## dependency_wait
 
 - **Real stock movement** for issue/return/output and label identity: Inventory on main.
+- **T15 integration with Inventory** (ÜRÜN #280 Not-1, as the Inventory owner):
+  - an `InputIssue` is met by an Inventory `Issue` movement and an `OutputDeclaration` by a `Receipt`; the MFG fact and the Inventory movement are written in **one transaction**, so "Manufacturing recorded the issue, Inventory refused it" cannot happen (the same principle as the T09 acceptance share);
+  - a **blocked** parent roll, or one whose document is still pending (Ö3 flag), is checked **before** the MFG fact is recorded; Manufacturing does not know about blocks and must not, the integration asks Inventory first;
+  - **subcontract / customer-owned goods:** the output's owner and custodian are inherited from the parent roll's Inventory position; Manufacturing does not choose them (which is why it carries no owner).
+- **Command surface:** the verifier's refusal is mapped and its snapshot retained by the command handler that records a fact; nothing binds it to the domain methods yet.
 - **Ö7 profile**: approved tolerance/formula numbers and the "reason + single approval" exception path with a named approver. Until then every non-zero difference keeps the order open.
-- **Persistence and concurrency**: DbContext/migration via the central writer. Optimistic concurrency (`expectedVersion`) is added with the first command surface, not in this domain-only slice (#280 review SİPARİŞ P3-2).
 - **Known cost**: its money shape (a currency identity, not a code string) comes with T25/Finance.
 - **Estimated facts**: every fact here is an actual measurement; R6's actual/estimated distinction arrives with the first estimated source.

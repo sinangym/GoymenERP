@@ -1,3 +1,4 @@
+using GoymenERP.Modules.Purchasing.Domain;
 using GoymenERP.Modules.Purchasing.Domain.Quantities;
 
 namespace GoymenERP.Purchasing.UnitTests;
@@ -43,26 +44,41 @@ public sealed class QuantityTests
     }
 
     [Fact]
-    public void Units_never_mix()
+    public void Units_never_mix_and_say_so_by_code()
     {
         var kg = Quantity.Of(1m, QuantityUnit.Kilogram);
         var piece = Quantity.Of(1m, QuantityUnit.Piece);
-        Assert.Throws<InvalidOperationException>(() => kg.Add(piece));
-        Assert.Throws<InvalidOperationException>(() => kg.Subtract(piece));
-        Assert.Throws<InvalidOperationException>(() => kg.IsGreaterThan(piece));
+        Assert.Equal(PurchasingRuleCodes.UnitMismatch, Assert.Throws<PurchasingRuleException>(() => kg.Add(piece)).Code);
+        Assert.Equal(PurchasingRuleCodes.UnitMismatch, Assert.Throws<PurchasingRuleException>(() => kg.Subtract(piece)).Code);
+        Assert.Equal(PurchasingRuleCodes.UnitMismatch, Assert.Throws<PurchasingRuleException>(() => kg.IsGreaterThan(piece)).Code);
     }
 
     [Fact]
-    public void Subtracting_more_than_held_is_refused()
+    public void Subtracting_more_than_held_is_refused_by_code()
     {
         var held = Quantity.Of(40m, QuantityUnit.Kilogram);
-        Assert.Throws<InvalidOperationException>(() => held.Subtract(Quantity.Of(40.001m, QuantityUnit.Kilogram)));
+        Assert.Equal(PurchasingRuleCodes.QuantityBelowZero,
+            Assert.Throws<PurchasingRuleException>(() => held.Subtract(Quantity.Of(40.001m, QuantityUnit.Kilogram))).Code);
         Assert.Equal(0m, held.Subtract(held).Value);
     }
 
     [Fact]
-    public void Equal_values_with_different_scales_are_the_same_quantity()
+    public void Equal_values_with_different_scales_are_the_same_quantity_and_print_the_same()
     {
-        Assert.Equal(Quantity.Of(12.5m, QuantityUnit.Kilogram), Quantity.Of(12.500m, QuantityUnit.Kilogram));
+        var a = Quantity.Of(12.5m, QuantityUnit.Kilogram);
+        var b = Quantity.Of(12.500m, QuantityUnit.Kilogram);
+        Assert.Equal(a, b);
+        Assert.Equal("12.5 Kilogram", b.ToString());
+    }
+
+    [Theory]
+    [InlineData("12.5000", 1)]
+    [InlineData("12.5001", 4)]
+    [InlineData("1000", 0)]
+    [InlineData("0.001", 3)]
+    public void Significant_decimals_ignore_trailing_zeros(string text, int expected)
+    {
+        var value = decimal.Parse(text, System.Globalization.CultureInfo.InvariantCulture);
+        Assert.Equal(expected, Quantity.SignificantDecimals(value));
     }
 }

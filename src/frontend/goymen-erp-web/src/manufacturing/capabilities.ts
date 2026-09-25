@@ -1,0 +1,93 @@
+/**
+ * Capability ids of the Manufacturing order screens — the frontend's side of the
+ * coordinator-approved MFG-UI card (D2), not a grant.
+ *
+ * The server's `ManufacturingShellCapabilityProvider` declares these ids PUBLISHED
+ * (`ImplementationAvailable: true`, MFG-UI-F #349, after the `mfg` browser acceptance). The
+ * registry still publishes each only to an actor holding its permissions in the context
+ * company; for anyone else `CapabilityRoute` closes the route onto the neutral not-found
+ * block and `hasCapability` answers false. The frontend never mints a capability to open
+ * its own screen, and the server re-authorizes every request regardless (ERP-000K §10.2).
+ *
+ * WHY EIGHT IDS. They map onto the permissions the server enforces separately
+ * (`ManufacturingEndpoints`):
+ *
+ *   manufacturing.orders.detail <- manufacturing.orders.read
+ *   manufacturing.orders.facts  <- manufacturing.orders.read + manufacturing.facts.record
+ *   manufacturing.orders.list   <- manufacturing.orders.read
+ *   manufacturing.orders.close  <- manufacturing.orders.read + manufacturing.orders.close
+ *   manufacturing.plans.create  <- manufacturing.plans.write
+ *   manufacturing.plans.detail  <- manufacturing.plans.read
+ *   manufacturing.plans.approve <- manufacturing.plans.read + manufacturing.plans.approve
+ *   manufacturing.plans.order-create <- manufacturing.plans.read + manufacturing.orders.create
+ *
+ * Reading an order and recording a fact on it are different authorities, so a reader
+ * sees the balances and NO form (card D3: without the capability the control is not
+ * drawn; the server enforces either way). Closing is a third authority: whoever may
+ * record a fact does not thereby close the order, and the close button is a control of
+ * the detail screen, drawn only for its own capability. Plan approval and order creation
+ * follow the same child-control rule on plan detail.
+ *
+ * This is a technical, functional sub-view (card D1). The canonical production screens
+ * (PR-09/13/14/15) are `DECISION_ONLY_REFERENCE_MISSING`; nothing here is a locked
+ * visual reference or the Master §7.7 realization modes.
+ */
+
+export const MANUFACTURING_CAPABILITY = {
+  /** One production order: its roll balances. Route `/uretim/emir/:orderId`. */
+  orderDetail: 'manufacturing.orders.detail',
+  /** The fact forms INSIDE the order screen. Not a route — a control. */
+  orderFacts: 'manufacturing.orders.facts',
+  /** MFG-02 the company's production orders. Route `/uretim/emirler`. */
+  orderList: 'manufacturing.orders.list',
+  /** The close action INSIDE the order screen. Not a route — a control, like the fact forms. */
+  orderClose: 'manufacturing.orders.close',
+  /** Create a Draft plan from authorized work-center and Inventory candidate reads. */
+  planCreate: 'manufacturing.plans.create',
+  /** Reopen one stored plan through `manufacturing.plans.read`. */
+  planDetail: 'manufacturing.plans.detail',
+  /** Approve the Draft shown on the plan detail screen. Not a route — a control. */
+  planApprove: 'manufacturing.plans.approve',
+  /** Create one order from the Approved plan shown on the detail screen. Not a route — a control. */
+  planOrderCreate: 'manufacturing.plans.order-create',
+} as const
+
+export type ManufacturingCapabilityId =
+  (typeof MANUFACTURING_CAPABILITY)[keyof typeof MANUFACTURING_CAPABILITY]
+
+/** Route path per routed capability, as handed to the shell owner. */
+export const MANUFACTURING_ROUTE: Record<string, string> = {
+  [MANUFACTURING_CAPABILITY.planCreate]: '/uretim/plan/yeni',
+  [MANUFACTURING_CAPABILITY.planDetail]: '/uretim/plan/:planId',
+  [MANUFACTURING_CAPABILITY.orderDetail]: '/uretim/emir/:orderId',
+  [MANUFACTURING_CAPABILITY.orderList]: '/uretim/emirler',
+}
+
+/**
+ * Nav label per routed capability. The detail has none — an order is opened from the list or by
+ * its id — and the list is the module's one sidebar entry.
+ */
+export const MANUFACTURING_NAV_LABEL: Record<string, string> = {
+  [MANUFACTURING_CAPABILITY.orderDetail]: '',
+  [MANUFACTURING_CAPABILITY.orderList]: 'Üretim emirleri',
+  [MANUFACTURING_CAPABILITY.planCreate]: '',
+  [MANUFACTURING_CAPABILITY.planDetail]: '',
+}
+
+export function planCreatePath(): string {
+  return MANUFACTURING_ROUTE[MANUFACTURING_CAPABILITY.planCreate]
+}
+
+export function planDetailPath(planId: string): string {
+  return `/uretim/plan/${encodeURIComponent(planId)}`
+}
+
+/** Concrete path to one order. */
+export function orderDetailPath(orderId: string): string {
+  return `/uretim/emir/${encodeURIComponent(orderId)}`
+}
+
+/** The order list's own path. */
+export function orderListPath(): string {
+  return MANUFACTURING_ROUTE[MANUFACTURING_CAPABILITY.orderList]
+}

@@ -42,7 +42,7 @@ public sealed class ShellCapabilityAcceptanceTests(
     }
 
     [Fact]
-    public async Task HeaderlessGroupContext_IsAcceptedAndDistinctFromSelectedCompany()
+    public async Task HeaderlessGroupContext_PublishesOnlyAuthorizedMultiCompanyReads()
     {
         using var group = factory.CreateClientFor(TestUsers.GroupAdmin);
         using var selected = factory.CreateClientFor(
@@ -56,9 +56,19 @@ public sealed class ShellCapabilityAcceptanceTests(
         Assert.Equal(HttpStatusCode.OK, selectedResponse.StatusCode);
         var groupSnapshot = await groupResponse.Content.ReadFromJsonAsync<JsonElement>();
         var selectedSnapshot = await selectedResponse.Content.ReadFromJsonAsync<JsonElement>();
-        Assert.Empty(groupSnapshot.GetProperty("capabilities").EnumerateArray());
         Assert.Equal(
-            OrganizationCapabilities(),
+            [
+                CounterpartyShellCapabilityProvider.DetailCapabilityId,
+                CounterpartyShellCapabilityProvider.ListCapabilityId,
+            ],
+            groupSnapshot.GetProperty("capabilities").EnumerateArray().Select(item => item.GetString()!));
+        Assert.Equal(
+            [
+                CounterpartyShellCapabilityProvider.CreateCapabilityId,
+                CounterpartyShellCapabilityProvider.DetailCapabilityId,
+                CounterpartyShellCapabilityProvider.ListCapabilityId,
+                .. OrganizationCapabilities(),
+            ],
             selectedSnapshot.GetProperty("capabilities").EnumerateArray().Select(item => item.GetString()!));
         Assert.NotEqual(
             groupSnapshot.GetProperty("generation").GetString(),
@@ -162,7 +172,7 @@ public sealed class ShellCapabilityAcceptanceTests(
     }
 
     [Fact]
-    public async Task StagedCounterpartyCapabilities_AreNotPublishedBeforeTheirUiMounts()
+    public async Task PublishedCounterpartyCapabilities_AreReturnedWhileLinkRemainsStaged()
     {
         using var client = factory.CreateClientFor(
             TestUsers.GroupAdmin,
@@ -177,17 +187,24 @@ public sealed class ShellCapabilityAcceptanceTests(
             .EnumerateArray()
             .Select(item => item.GetString()!)
             .ToArray();
-        Assert.Equal(OrganizationCapabilities(), capabilities);
-        Assert.DoesNotContain(
+        Assert.Equal(
+            [
+                CounterpartyShellCapabilityProvider.CreateCapabilityId,
+                CounterpartyShellCapabilityProvider.DetailCapabilityId,
+                CounterpartyShellCapabilityProvider.ListCapabilityId,
+                .. OrganizationCapabilities(),
+            ],
+            capabilities);
+        Assert.Contains(
             CounterpartyShellCapabilityProvider.ListCapabilityId,
             capabilities);
-        Assert.DoesNotContain(
+        Assert.Contains(
             CounterpartyShellCapabilityProvider.CreateCapabilityId,
             capabilities);
         Assert.DoesNotContain(
             CounterpartyShellCapabilityProvider.LinkCapabilityId,
             capabilities);
-        Assert.DoesNotContain(
+        Assert.Contains(
             CounterpartyShellCapabilityProvider.DetailCapabilityId,
             capabilities);
     }
@@ -367,12 +384,16 @@ public sealed class ShellCapabilityAcceptanceTests(
         Assert.DoesNotContain("invoiceCapable", body, StringComparison.OrdinalIgnoreCase);
     }
 
+    // Ordinal order, because that is the order the snapshot publishes them in. ORG-03's id sorts
+    // LAST — `organization.work-centers.list` follows `organization.sites.read` — so it is appended
+    // rather than slotted in beside the other list.
     private static string[] OrganizationCapabilities() =>
     [
         OrganizationShellCapabilityProvider.DetailCapabilityId,
         OrganizationShellCapabilityProvider.StatusCapabilityId,
         OrganizationShellCapabilityProvider.ListCapabilityId,
         OrganizationShellCapabilityProvider.SitesReadCapabilityId,
+        OrganizationShellCapabilityProvider.WorkCenterListCapabilityId,
     ];
 
     private static async Task<string> ReadGenerationAsync(HttpClient client)

@@ -64,6 +64,12 @@ export function parseAmountInput(input: string): AmountInputResult {
   return { ok: true, wire }
 }
 
+/** Fraction digits exactly as written: "1000.10" → 2, "1000" → 0. */
+export function fractionDigits(wire: string): number {
+  const dot = wire.indexOf('.')
+  return dot === -1 ? 0 : wire.length - dot - 1
+}
+
 /** Wire text → what the person would type (`.` → `,`), for editing an existing draft. */
 export function amountInputFromWire(wire: string): string {
   return wire.replace('.', ',')

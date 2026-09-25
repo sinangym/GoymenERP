@@ -1,0 +1,197 @@
+# s04 (SİPARİŞ, SALES-A1 user-flow acceptance): the suite's closed-list API extensions on top of the
+# `normal` profile, validated by tools/validate_browser_acceptance.py with the merged model
+# (SUITE_API_EXTENSIONS["s04"]: Product issuer + actors + identity). The Product issuer is the existing
+# u02 synthetic identity, rebound to this disposable suite without a role, assignment or sign-in actor; it
+# enables Product's owned migrations/runtime before the gated host materializes one fixed candidate.
+#  - Six suite actors appended to the canonical two BootstrapIdentity users (indices 2..7). The browser
+#    suite signs in as each on the AUTHORIZED web (X-Development-User, the s03 way). The canonical users
+#    hold no Sales permission and are not used by the suite.
+#  - Each actor's Identity user, one role and one company-wide assignment in GDC through the real
+#    IdentityDataSeeder (decision 1), continuing the built-in seed's indices (Users 5, Roles 5,
+#    Assignments 7). The roles grant exactly the suite's closed list, split by persona (DEC-SAL-001, the
+#    SALES-A1 card): the preparer creates and reads drafts, the approver approves and reads, the reader
+#    only reads. S05 adds only the separate price read/write names to that same disposable preparer so the
+#    approved draft can be revised and its archived prices can be read. The shell publishes the Sales
+#    list/detail to all three and the approve control (a control of the detail, no route) to the approver only.
+#    SALES-A2a: the preparer also holds counterparty.parties.read
+#    (the s03 precedent) so the create screen's customer picker and its delivery address / contact selects read
+#    the Cari owner as that actor. Nothing else is granted, no system role is touched.
+# Every value is synthetic (SENTETIK browser-suite:s04 …) and exists only in the run's disposable
+# database. Not a production grant, role or user.
+services:
+  api:
+    environment:
+      ProductRuntime__IssuerLocalUserId: b2000000-0000-4000-8000-000000000201
+      ProductRuntime__IssuerExternalIdentityId: b2100000-0000-4000-8000-000000000201
+      BootstrapIdentity__Users__2__UserId: s04-preparer
+      BootstrapIdentity__Users__2__DisplayName: SENTETIK browser-suite:s04 Sales preparer
+      BootstrapIdentity__Users__3__UserId: s04-approver
+      BootstrapIdentity__Users__3__DisplayName: SENTETIK browser-suite:s04 Sales approver
+      BootstrapIdentity__Users__4__UserId: s04-reader
+      BootstrapIdentity__Users__4__DisplayName: SENTETIK browser-suite:s04 Sales reader
+      # ASSUMPTION-SALESA2A-1 (seed-only fixture actor, never a persona the browser signs in as): the s04 seed writes the
+      # REAL customer's contact information through the real Cari command, which measures counterparty.parties.read AND
+      # counterparty.parties.update.basic; no canonical actor holds update.basic (SYSTEM_ADMINISTRATOR: read/create/accounts
+      # only) and widening the built-in seed is a production change. The write is the Cari owner's own command with the
+      # owner's contract — an operational address and a contact person, no bank/tax/registry/price field. Disposable DB;
+      # the real role composition stays the human grant gate.
+      BootstrapIdentity__Users__5__UserId: s04-cari
+      BootstrapIdentity__Users__5__DisplayName: SENTETIK browser-suite:s04 Cari fixture writer
+      BootstrapIdentity__Users__6__UserId: s04-support-creator
+      BootstrapIdentity__Users__6__DisplayName: SENTETIK browser-suite:s04 SalesSupport creator
+      BootstrapIdentity__Users__7__UserId: s04-ordinary-creator
+      BootstrapIdentity__Users__7__DisplayName: SENTETIK browser-suite:s04 ordinary creator
+      IdentitySeed__Users__5__Id: b2000000-0000-4000-8000-000000000401
+      IdentitySeed__Users__5__DisplayName: SENTETIK browser-suite:s04 Sales preparer
+      IdentitySeed__Users__5__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000401
+      IdentitySeed__Users__5__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
+      IdentitySeed__Users__5__ExternalIdentities__0__Subject: s04-preparer
+      IdentitySeed__Users__6__Id: b2000000-0000-4000-8000-000000000402
+      IdentitySeed__Users__6__DisplayName: SENTETIK browser-suite:s04 Sales approver
+      IdentitySeed__Users__6__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000402
+      IdentitySeed__Users__6__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
+      IdentitySeed__Users__6__ExternalIdentities__0__Subject: s04-approver
+      IdentitySeed__Users__7__Id: b2000000-0000-4000-8000-000000000403
+      IdentitySeed__Users__7__DisplayName: SENTETIK browser-suite:s04 Sales reader
+      IdentitySeed__Users__7__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000403
+      IdentitySeed__Users__7__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
+      IdentitySeed__Users__7__ExternalIdentities__0__Subject: s04-reader
+      IdentitySeed__Users__8__Id: b2000000-0000-4000-8000-000000000404
+      IdentitySeed__Users__8__DisplayName: SENTETIK browser-suite:s04 Cari fixture writer
+      IdentitySeed__Users__8__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000404
+      IdentitySeed__Users__8__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
+      IdentitySeed__Users__8__ExternalIdentities__0__Subject: s04-cari
+      IdentitySeed__Users__9__Id: b2000000-0000-4000-8000-000000000405
+      IdentitySeed__Users__9__DisplayName: SENTETIK browser-suite:s04 SalesSupport creator
+      IdentitySeed__Users__9__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000405
+      IdentitySeed__Users__9__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
+      IdentitySeed__Users__9__ExternalIdentities__0__Subject: s04-support-creator
+      IdentitySeed__Users__10__Id: b2000000-0000-4000-8000-000000000406
+      IdentitySeed__Users__10__DisplayName: SENTETIK browser-suite:s04 ordinary creator
+      IdentitySeed__Users__10__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000406
+      IdentitySeed__Users__10__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
+      IdentitySeed__Users__10__ExternalIdentities__0__Subject: s04-ordinary-creator
+      # Existing u02 Product issuer identity: no BootstrapIdentity actor, role, assignment or permission.
+      IdentitySeed__Users__11__Id: b2000000-0000-4000-8000-000000000201
+      IdentitySeed__Users__11__DisplayName: SENTETIK browser-suite:s04 Product issuer
+      IdentitySeed__Users__11__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000201
+      IdentitySeed__Users__11__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
+      IdentitySeed__Users__11__ExternalIdentities__0__Subject: s04-issuer
+      IdentitySeed__Roles__5__Id: b3000000-0000-4000-8000-000000000401
+      IdentitySeed__Roles__5__Code: BROWSER_S04_PREPARER
+      IdentitySeed__Roles__5__Name: SENTETIK browser-suite:s04 sipariş hazırlayan rolü
+      IdentitySeed__Roles__5__IsSystem: "false"
+      IdentitySeed__Roles__5__Permissions__0: sales.drafts.create
+      IdentitySeed__Roles__5__Permissions__1: sales.drafts.read
+      # SALES-A2a: the create screen's customer picker and its delivery address / contact selects reach the Cari
+      # owner through the ACTOR's own grant (the s03 precedent): the preparer alone holds the authorized party read.
+      IdentitySeed__Roles__5__Permissions__2: counterparty.parties.read
+      # E1 acceptance only: this disposable preparer reads Product's one operational candidate. This is
+      # an Identity role assignment in the run database, not a Product issuer or production grant.
+      IdentitySeed__Roles__5__Permissions__3: product.operational-selection.read
+      # S05 acceptance only: the same disposable preparer changes the approved draft's commercial
+      # values and reads both the current and archived price fields. These remain separate permissions.
+      IdentitySeed__Roles__5__Permissions__4: sales.orders.price.read
+      IdentitySeed__Roles__5__Permissions__5: sales.orders.price.write
+      # Allocation acceptance reuses Inventory's registered permissions in this disposable suite only.
+      # The opening command creates the prerequisite label; the two reads publish and authorize stock
+      # positions; the browser creates/releases the allocation.
+      IdentitySeed__Roles__5__Permissions__6: inventory.opening-stock.record
+      IdentitySeed__Roles__5__Permissions__7: inventory.labels.read
+      IdentitySeed__Roles__5__Permissions__8: inventory.balances.read
+      IdentitySeed__Roles__5__Permissions__9: inventory.physical-allocation.write
+      IdentitySeed__Roles__6__Id: b3000000-0000-4000-8000-000000000402
+      IdentitySeed__Roles__6__Code: BROWSER_S04_APPROVER
+      IdentitySeed__Roles__6__Name: SENTETIK browser-suite:s04 sipariş onaylayan rolü
+      IdentitySeed__Roles__6__IsSystem: "false"
+      IdentitySeed__Roles__6__Permissions__0: sales.orders.approve
+      IdentitySeed__Roles__6__Permissions__1: sales.drafts.read
+      IdentitySeed__Roles__7__Id: b3000000-0000-4000-8000-000000000403
+      IdentitySeed__Roles__7__Code: BROWSER_S04_READER
+      IdentitySeed__Roles__7__Name: SENTETIK browser-suite:s04 sipariş okuyan rolü
+      IdentitySeed__Roles__7__IsSystem: "false"
+      IdentitySeed__Roles__7__Permissions__0: sales.drafts.read
+      IdentitySeed__Roles__8__Id: b3000000-0000-4000-8000-000000000404
+      IdentitySeed__Roles__8__Code: BROWSER_S04_CARI
+      IdentitySeed__Roles__8__Name: SENTETIK browser-suite:s04 cari iletişim bilgisi yazan rolü
+      IdentitySeed__Roles__8__IsSystem: "false"
+      IdentitySeed__Roles__8__Permissions__0: counterparty.parties.read
+      IdentitySeed__Roles__8__Permissions__1: counterparty.parties.update.basic
+      # D2: the SalesSupport creator is intentionally dual-role. This ordinary role supplies exactly the
+      # same command permissions as the non-SalesSupport creator; the separate accepted persona role below
+      # is therefore the only behavioral difference and cannot be bypassed by the ordinary role.
+      IdentitySeed__Roles__9__Id: b3000000-0000-4000-8000-000000000405
+      IdentitySeed__Roles__9__Code: BROWSER_S04_DUAL_DECIDER
+      IdentitySeed__Roles__9__Name: SENTETIK browser-suite:s04 dual-role karar yetkisi
+      IdentitySeed__Roles__9__IsSystem: "false"
+      IdentitySeed__Roles__9__Permissions__0: sales.drafts.create
+      IdentitySeed__Roles__9__Permissions__1: sales.drafts.read
+      IdentitySeed__Roles__9__Permissions__2: sales.orders.approve
+      IdentitySeed__Roles__10__Id: b3000000-0000-4000-8000-000000000406
+      IdentitySeed__Roles__10__Code: SALES_SUPPORT
+      IdentitySeed__Roles__10__Name: SENTETIK browser-suite:s04 SalesSupport persona
+      IdentitySeed__Roles__10__IsSystem: "false"
+      IdentitySeed__Roles__10__Permissions__0: sales.drafts.read
+      IdentitySeed__Roles__11__Id: b3000000-0000-4000-8000-000000000407
+      IdentitySeed__Roles__11__Code: BROWSER_S04_ORDINARY_CREATOR
+      IdentitySeed__Roles__11__Name: SENTETIK browser-suite:s04 ordinary creator karar yetkisi
+      IdentitySeed__Roles__11__IsSystem: "false"
+      IdentitySeed__Roles__11__Permissions__0: sales.drafts.create
+      IdentitySeed__Roles__11__Permissions__1: sales.drafts.read
+      IdentitySeed__Roles__11__Permissions__2: sales.orders.approve
+      IdentitySeed__Assignments__7__Id: b4000000-0000-4000-8000-000000000401
+      IdentitySeed__Assignments__7__UserId: b2000000-0000-4000-8000-000000000401
+      IdentitySeed__Assignments__7__RoleId: b3000000-0000-4000-8000-000000000401
+      IdentitySeed__Assignments__7__CompanyId: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__7__ValidFromUtc: "2026-01-01T00:00:00+00:00"
+      IdentitySeed__Assignments__7__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
+      IdentitySeed__Assignments__7__Scopes__0__Type: Company
+      IdentitySeed__Assignments__7__Scopes__0__Id: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__8__Id: b4000000-0000-4000-8000-000000000402
+      IdentitySeed__Assignments__8__UserId: b2000000-0000-4000-8000-000000000402
+      IdentitySeed__Assignments__8__RoleId: b3000000-0000-4000-8000-000000000402
+      IdentitySeed__Assignments__8__CompanyId: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__8__ValidFromUtc: "2026-01-01T00:00:00+00:00"
+      IdentitySeed__Assignments__8__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
+      IdentitySeed__Assignments__8__Scopes__0__Type: Company
+      IdentitySeed__Assignments__8__Scopes__0__Id: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__9__Id: b4000000-0000-4000-8000-000000000403
+      IdentitySeed__Assignments__9__UserId: b2000000-0000-4000-8000-000000000403
+      IdentitySeed__Assignments__9__RoleId: b3000000-0000-4000-8000-000000000403
+      IdentitySeed__Assignments__9__CompanyId: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__9__ValidFromUtc: "2026-01-01T00:00:00+00:00"
+      IdentitySeed__Assignments__9__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
+      IdentitySeed__Assignments__9__Scopes__0__Type: Company
+      IdentitySeed__Assignments__9__Scopes__0__Id: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__10__Id: b4000000-0000-4000-8000-000000000404
+      IdentitySeed__Assignments__10__UserId: b2000000-0000-4000-8000-000000000404
+      IdentitySeed__Assignments__10__RoleId: b3000000-0000-4000-8000-000000000404
+      IdentitySeed__Assignments__10__CompanyId: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__10__ValidFromUtc: "2026-01-01T00:00:00+00:00"
+      IdentitySeed__Assignments__10__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
+      IdentitySeed__Assignments__10__Scopes__0__Type: Company
+      IdentitySeed__Assignments__10__Scopes__0__Id: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__11__Id: b4000000-0000-4000-8000-000000000405
+      IdentitySeed__Assignments__11__UserId: b2000000-0000-4000-8000-000000000405
+      IdentitySeed__Assignments__11__RoleId: b3000000-0000-4000-8000-000000000405
+      IdentitySeed__Assignments__11__CompanyId: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__11__ValidFromUtc: "2026-01-01T00:00:00+00:00"
+      IdentitySeed__Assignments__11__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
+      IdentitySeed__Assignments__11__Scopes__0__Type: Company
+      IdentitySeed__Assignments__11__Scopes__0__Id: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__12__Id: b4000000-0000-4000-8000-000000000406
+      IdentitySeed__Assignments__12__UserId: b2000000-0000-4000-8000-000000000405
+      IdentitySeed__Assignments__12__RoleId: b3000000-0000-4000-8000-000000000406
+      IdentitySeed__Assignments__12__CompanyId: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__12__ValidFromUtc: "2026-01-01T00:00:00+00:00"
+      IdentitySeed__Assignments__12__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
+      IdentitySeed__Assignments__12__Scopes__0__Type: Company
+      IdentitySeed__Assignments__12__Scopes__0__Id: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__13__Id: b4000000-0000-4000-8000-000000000407
+      IdentitySeed__Assignments__13__UserId: b2000000-0000-4000-8000-000000000406
+      IdentitySeed__Assignments__13__RoleId: b3000000-0000-4000-8000-000000000407
+      IdentitySeed__Assignments__13__CompanyId: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__13__ValidFromUtc: "2026-01-01T00:00:00+00:00"
+      IdentitySeed__Assignments__13__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
+      IdentitySeed__Assignments__13__Scopes__0__Type: Company
+      IdentitySeed__Assignments__13__Scopes__0__Id: 10000000-0000-0000-0000-000000000001

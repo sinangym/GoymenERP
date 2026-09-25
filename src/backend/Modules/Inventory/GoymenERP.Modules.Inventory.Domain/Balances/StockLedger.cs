@@ -17,15 +17,21 @@ public sealed record StockBalance(StockPosition Position, Kilograms Quantity);
 /// <item>No physical balance ever goes below zero. A movement that would do so is refused
 /// WHOLE: its lines are checked together first, so nothing is partly applied.</item>
 /// <item>The same movement is applied at most once.</item>
+/// <item>One source (or source line) causes at most one movement of each kind, and a source is
+/// answered either whole or line by line for a kind, never both (ORG #281 P3-1, #293 ORG P3-1).</item>
 /// <item>A label is one physical piece: at any time all of its non-zero buckets share one
 /// company, owner, custodian, location and product; only the block state may differ (a
 /// partly blocked coil). Moving it is a transfer (T13), a second piece is a split (T13).</item>
-/// <item>Balances are only ever changed by applying a movement; there is no "set quantity".</item>
+/// <item>A receipt never names a label that already holds stock: a piece arrives once (ORG #281
+/// P3-1). Once all its stock has left, it may be received again.</item>
+/// <item>Balances are only ever changed by applying a movement; there is no "set quantity".
+/// <see cref="FromStoredBalances"/> seeds a ledger from balances that were themselves written
+/// only through movements, so a store can apply the next movement against them.</item>
 /// <item><see cref="Reconcile"/> compares stored balances with the movements, bucket by
 /// bucket.</item>
 /// </list>
-/// This is the in-memory domain rule. The persistent race guard (SQL rowversion/lock) is
-/// INV-2's work and is not claimed here.
+/// This is the in-memory domain rule. The persistent race guard is the store's (INV-2: a
+/// concurrency token on every touched label, and SQL unique indexes).
 /// </summary>
 public sealed class StockLedger
 {
@@ -34,6 +40,37 @@ public sealed class StockLedger
     private readonly HashSet<Guid> appliedIds = [];
 
     public IReadOnlyList<StockMovement> AppliedMovements => applied.AsReadOnly();
+
+    /// <summary>
+    /// A ledger holding exactly these stored balances and no applied movements. The balances
+    /// must themselves be a valid state: one bucket per position, and every label in one
+    /// physical place (a <see cref="Kilograms"/> value is never negative).
+    /// </summary>
+    public static StockLedger FromStoredBalances(IEnumerable<StockBalance> storedBalances)
+    {
+        ArgumentNullException.ThrowIfNull(storedBalances);
+        var ledger = new StockLedger();
+        foreach (var balance in storedBalances)
+        {
+            ArgumentNullException.ThrowIfNull(balance);
+            if (!ledger.balances.TryAdd(balance.Position, balance.Quantity.Value))
+            {
+                throw new InventoryRuleException(
+                    InventoryRuleCodes.InvalidMovement, "Aynı pozisyon için iki kayıtlı bakiye olamaz.");
+            }
+        }
+
+        var split = ledger.balances.Where(entry => entry.Value != 0m)
+            .GroupBy(entry => entry.Key.LabelId)
+            .Any(label => label.Select(entry => entry.Key.PhysicalPlace).Distinct().Count() > 1);
+        if (split)
+        {
+            throw new InventoryRuleException(
+                InventoryRuleCodes.LabelInTwoPositions, "Kayıtlı bakiyelerde bir etiket iki fiziksel yerde görünüyor.");
+        }
+
+        return ledger;
+    }
 
     /// <summary>Every non-zero bucket.</summary>
     public IReadOnlyList<StockBalance> Balances =>
@@ -68,6 +105,8 @@ public sealed class StockLedger
                 InventoryRuleCodes.DuplicateMovement, "Aynı hareket ikinci kez uygulanamaz.");
         }
 
+        RequireSourceUnused(movement);
+
         // Check every line against the resulting balance BEFORE changing anything: a movement
         // either applies whole or not at all.
         var next = new Dictionary<StockPosition, decimal>();
@@ -89,6 +128,10 @@ public sealed class StockLedger
         }
 
         RequireOnePhysicalPlacePerLabel(next);
+        if (movement.Kind == StockMovementKind.Receipt)
+        {
+            RequireNoStockBeforeReceipt(movement);
+        }
 
         foreach (var (position, quantity) in next)
         {
@@ -97,6 +140,44 @@ public sealed class StockLedger
 
         appliedIds.Add(movement.Id);
         applied.Add(movement);
+    }
+
+    /// <summary>
+    /// A source answers a kind once per line, or once whole; never both. Checked against the
+    /// movements this ledger applied; the store holds the same rule against stored movements.
+    /// </summary>
+    private void RequireSourceUnused(StockMovement movement)
+    {
+        foreach (var earlier in applied.Where(candidate => candidate.Kind == movement.Kind
+            && candidate.Source.IsSameSource(movement.Source)))
+        {
+            if (earlier.Source.Grain != movement.Source.Grain)
+            {
+                throw new InventoryRuleException(
+                    InventoryRuleCodes.SourceGrainMismatch,
+                    "Bu kaynak bu türde başka ayrıntı düzeyinde (bütün/satır) karşılandı; aynı miktar iki kez sayılmaz.");
+            }
+
+            if (earlier.Source.LineId == movement.Source.LineId)
+            {
+                throw new InventoryRuleException(
+                    InventoryRuleCodes.DuplicateSource, "Bu kaynak bu türde zaten bir hareket doğurdu.");
+            }
+        }
+    }
+
+    /// <summary>A received label must hold no stock before the receipt, in any bucket.</summary>
+    private void RequireNoStockBeforeReceipt(StockMovement movement)
+    {
+        foreach (var labelId in movement.Lines.Select(line => line.Position.LabelId).Distinct())
+        {
+            if (balances.Any(entry => entry.Key.LabelId == labelId && entry.Value != 0m))
+            {
+                throw new InventoryRuleException(
+                    InventoryRuleCodes.LabelAlreadyInStock,
+                    "Stok taşıyan bir etiket yeniden giriş alamaz; bir parça bir kez gelir.");
+            }
+        }
     }
 
     /// <summary>

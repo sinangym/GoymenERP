@@ -9,6 +9,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { attemptStoreKey, recallAttempt } from './unresolvedAttemptStore'
+import { ORGANIZATION_CAPABILITY, workCenterListPath } from './capabilities'
+import { WORK_CENTER_LOCATION_TEXT } from './workCenterLocationFilter'
 import {
   COMPANY_A,
   COMPANY_B,
@@ -132,6 +134,39 @@ describe('the card', () => {
     })
     renderAt(PATH)
     expect(await screen.findByText('Beklenmeyen yanıt — lokasyon')).toBeTruthy()
+  })
+})
+
+describe('the back destination', () => {
+  it('uses the canonical location list for a direct entry', async () => {
+    stub()
+    renderAt(PATH)
+
+    await screen.findByText('OSM-H0')
+    const back = within(screen.getByRole('navigation', { name: 'Geri' })).getByRole('link', {
+      name: /Organizasyon/,
+    })
+    expect(back.getAttribute('href')).toBe('/ayarlar/organizasyon')
+  })
+
+  it('ignores an untrusted origin from another context', async () => {
+    stub()
+    const { router } = renderAt(PATH)
+    await screen.findByText('OSM-H0')
+
+    await router.navigate(PATH, {
+      state: {
+        ns: 'another-company::generation',
+        from: 'javascript:alert(1)',
+      },
+    })
+
+    await waitFor(() => {
+      const back = within(screen.getByRole('navigation', { name: 'Geri' })).getByRole('link', {
+        name: /Organizasyon/,
+      })
+      expect(back.getAttribute('href')).toBe('/ayarlar/organizasyon')
+    })
   })
 })
 
@@ -871,5 +906,62 @@ describe('recovery after a fresh capability generation', () => {
     await waitFor(() => expect(commandCalls(recorded)).toHaveLength(2))
     expect(commandCalls(recorded)[1].headers['Idempotency-Key']).toBe(originalKey)
     expect(recallAttempt(STORE_KEY)).toBeNull() // resolved by the 204
+  })
+})
+
+
+describe('HYBRID-05 location-bound work-center action', () => {
+  it('offers the exact canonical filter only with the existing work-center capability', async () => {
+    stub({ capabilities: [...READ_CAPABILITIES, ORGANIZATION_CAPABILITY.workCentersList] })
+    renderAt(PATH)
+    const link = await screen.findByRole('link', { name: WORK_CENTER_LOCATION_TEXT.action })
+    expect(link.getAttribute('href')).toBe(workCenterListPath(LOC_H0))
+  })
+
+  it('keeps the card readable without that capability and never probes work centers', async () => {
+    const { recorded } = stub({ capabilities: READ_CAPABILITIES })
+    renderAt(PATH)
+    await screen.findByText('OSM-H0')
+    expect(screen.queryByRole('link', { name: WORK_CENTER_LOCATION_TEXT.action })).toBeNull()
+    expect(requestsFor(recorded, '/organization/work-centers')).toEqual([])
+  })
+
+  it('refuses a valid-shaped response describing a different location', async () => {
+    stub({
+      capabilities: [...READ_CAPABILITIES, ORGANIZATION_CAPABILITY.workCentersList],
+      detail: [() => json(location('44444444-4444-4444-4444-444444444444', SITE_OSM, 'OTHER', 'Other'))],
+    })
+    renderAt(PATH)
+    await screen.findByText('Beklenmeyen yanıt — lokasyon')
+    expect(screen.queryByText('Other')).toBeNull()
+    expect(screen.queryByRole('link', { name: WORK_CENTER_LOCATION_TEXT.action })).toBeNull()
+  })
+
+  it('restores only the same location filter when returning from a filtered row', async () => {
+    stub({ capabilities: [...READ_CAPABILITIES, ORGANIZATION_CAPABILITY.workCentersList] })
+    const { router, queryClient } = renderAt(PATH)
+    await screen.findByText('OSM-H0')
+    const ns = queryClient.getQueryCache().getAll()
+      .find((entry) => entry.queryKey[2] === 'organization-location')?.queryKey[0]
+    expect(typeof ns).toBe('string')
+    await router.navigate(PATH, { state: { ns, from: 'work-centers', locationId: LOC_H0 } })
+    await waitFor(() => expect(within(screen.getByRole('navigation', { name: 'Geri' }))
+      .getByRole('link', { name: /İş Merkezleri/ }).getAttribute('href')).toBe(workCenterListPath(LOC_H0)))
+  })
+
+  it('drops the old-company action when the next company cannot read that location', async () => {
+    installFetch({
+      capabilities: [...READ_CAPABILITIES, ORGANIZATION_CAPABILITY.workCentersList],
+      respond: (url, init) => url.includes('/organization/locations/')
+        ? new Headers(init?.headers).get('X-Company-Id') === COMPANY_A
+          ? json(location(LOC_H0, SITE_OSM, 'OSM-H0', 'Hol-0')) : problem(404)
+        : undefined,
+    })
+    renderAt(PATH)
+    await screen.findByRole('link', { name: WORK_CENTER_LOCATION_TEXT.action })
+    await userEvent.selectOptions(screen.getByRole('combobox'), COMPANY_B)
+    await screen.findByText('Bulunamadı — lokasyon')
+    expect(screen.queryByRole('link', { name: WORK_CENTER_LOCATION_TEXT.action })).toBeNull()
+    expect(screen.queryByText('OSM-H0')).toBeNull()
   })
 })

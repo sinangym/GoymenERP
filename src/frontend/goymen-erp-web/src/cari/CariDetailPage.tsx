@@ -18,9 +18,14 @@ import { fetchCounterpartyDetail } from './detailApi'
 import { PARTY_KIND, PROBLEM_CODE, problemCodeOf } from './contract'
 import { API_BASE, isCommandContractReady } from './clientContract'
 import { LEGACY_ROLE_HEADING, NO_COMMERCIAL_ROLE_DETAIL, rolesText } from './roleText'
-import { CARI_ACCOUNT_STATUS_TEXT as STATUS, CARI_CARD_TEXT as CARD } from './cariCommandText'
+import {
+  CARI_ACCOUNT_STATUS_TEXT as STATUS,
+  CARI_CARD_TEXT as CARD,
+  CARI_CONTRACT_REFUSAL_TEXT as CONTRACT_REFUSAL,
+} from './cariCommandText'
 import { CARI_CONTROL_CAPABILITY, targetIsActive } from './accountStatusContract'
 import { AccountStatusControl, AccountStatusRecoveryNotice } from './AccountStatusControl'
+import { CariCompanyRelationships } from './CariCompanyRelationships'
 import { useAccountStatusFlow, type AccountStatusApplied } from './useAccountStatusFlow'
 import type { CounterpartyDetail } from './detailContract'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
@@ -37,11 +42,6 @@ const CONTRACT_PROBLEM_CODES = new Set<string>([
   PROBLEM_CODE.clientContractRequired,
   PROBLEM_CODE.clientContractUnsupported,
 ])
-
-const CONTRACT_REFUSAL_TITLE = 'Uyumlu istemci gerekli'
-const CONTRACT_REFUSAL_DETAIL =
-  'Bu cari işlemi desteklenen istemci sözleşmesi ile yeniden açılmalıdır. ' +
-  'Sayfayı yenileyin; bekleyen bir işlemi otomatik tekrarlamayın.'
 
 const KIND_LABEL: Record<number, string> = {
   [PARTY_KIND.LegalEntity]: 'Tüzel kişi',
@@ -91,8 +91,8 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
    * A status change the server APPLIED (204), waiting for the fresh read it owes.
    *
    * The 204 has no body, so nothing about the record's new state is known until that
-   * read LANDS — `baseline` is the detail query's `dataUpdatedAt` at the moment of the
-   * 204, and only a later stamp counts. A read that is paused (offline) or that fails
+   * read LANDS — `baseline` is the detail query's own READ COUNT at the moment of the
+   * 204, and only a higher count counts. A read that is paused (offline) or that fails
    * leaves the cached data exactly where it was, and that data is NOT the fresh read,
    * however settled the query looks (Dirac #250 P2-2). While it is pending the action
    * is closed and the screen says so; the retry it offers is the read's, never the write.
@@ -104,8 +104,8 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
   /** The last adopted result, shown until the next window opens. */
   const [saved, setSaved] = useState<AccountStatusApplied | null>(null)
 
-  const query = useQuery({
-    queryKey: [
+  const detailQueryKey = useMemo(
+    () => [
       namespace ?? 'no-context',
       // Entry-scoped for the same reason as C-01: a Back within the stale window
       // must not paint the previous entry's record while its authorization is
@@ -114,6 +114,10 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
       'counterparty-detail',
       partyId ?? '',
     ],
+    [namespace, entryGeneration, partyId],
+  )
+  const query = useQuery({
+    queryKey: detailQueryKey,
     enabled: namespace !== null && singleCompanyContext && (partyId ?? '').length > 0,
     queryFn: async ({ signal }) => {
       const snapshot = boundary.capture()
@@ -142,16 +146,28 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
    * control reports the success; this effect closes the pending state once the detail
    * read has actually landed, and leaves it open (read recovery) while it has not.
    */
-  const readStamp = query.dataUpdatedAt
+  /**
+   * How many results THIS query has taken — the query's own monotonic counter, never a
+   * clock. `dataUpdatedAt` is `Date.now()`, so two reads that land inside the same
+   * millisecond carry the same stamp and a stamp comparison then reads as "no read
+   * landed at all": the 204 above stayed pending forever and the screen waited for a
+   * read that had already arrived. A count cannot collide with itself.
+   *
+   * It lives on the query's STATE, not on the observer's result, so it is read from the
+   * client rather than off `query`. The render that reads it is guaranteed: a read that
+   * lands moves `fetchStatus` below through fetching -> idle, and that one IS part of
+   * the result this component tracks.
+   */
+  const readCount = queryClient.getQueryState(detailQueryKey)?.dataUpdateCount ?? 0
   const onApplied = useCallback(
     (applied: AccountStatusApplied) => {
       setSaved(null)
-      setPendingAdopt({ applied, baseline: readStamp })
+      setPendingAdopt({ applied, baseline: readCount })
       if (namespace !== null) {
         void queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] === namespace })
       }
     },
-    [namespace, queryClient, readStamp],
+    [namespace, queryClient, readCount],
   )
   const onBeginNewAttempt = useCallback(() => setSaved(null), [])
   const readOutcomeType = query.data?.type ?? null
@@ -159,11 +175,11 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
   useEffect(() => {
     if (pendingAdopt === null || fetchStatus !== 'idle') return
     // Settled, but on the SAME data the 204 was issued against: not the fresh read.
-    if (readStamp <= pendingAdopt.baseline || readOutcomeType !== 'ok-single') return
+    if (readCount <= pendingAdopt.baseline || readOutcomeType !== 'ok-single') return
     // oxlint-disable-next-line react/set-state-in-effect -- adopts the fresh read a definite 204 owes, once
     setSaved(pendingAdopt.applied)
     setPendingAdopt(null)
-  }, [pendingAdopt, fetchStatus, readStamp, readOutcomeType])
+  }, [pendingAdopt, fetchStatus, readCount, readOutcomeType])
 
   /**
    * The action's whole state — attempt, window, reason, dirty scope — lives HERE, above
@@ -185,7 +201,7 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
     companyId: activeCompanyId,
     namespace,
     detail: readyDetail,
-    readStamp,
+    readCount,
     refetch: query.refetch,
     // Computed each render: the slot moves when the detail read records itself, and
     // that read is what re-renders this card.
@@ -222,9 +238,9 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
         <BackToList />
         <div role="alert" data-state="client-contract">
           <p>
-            <strong>{CONTRACT_REFUSAL_TITLE}</strong>
+            <strong>{CONTRACT_REFUSAL.title}</strong>
           </p>
-          <p>{CONTRACT_REFUSAL_DETAIL}</p>
+          <p>{CONTRACT_REFUSAL.detail}</p>
         </div>
         {/**
           * An unresolved status attempt keeps its recovery HERE too. "Sayfayı yenileyin"
@@ -437,11 +453,32 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
           />
         ) : null}
       </section>
+
+      {/**
+        * Offered only where the actor can see more than one company: with one, the panel
+        * could only ever repeat the section above. Closed until asked for, so opening the
+        * card still sends exactly one read, bound to the active company.
+        */}
+      {directory.length > 1 && namespace !== null && activeCompanyId !== null ? (
+        <CariCompanyRelationships
+          partyId={detail.id}
+          namespace={namespace}
+          entryGeneration={entryGeneration}
+          activeCompanyId={activeCompanyId}
+          directory={directory}
+        />
+      ) : null}
     </section>
   )
 }
 
 function BackToList() {
+  // GUARDED for the same reason as CariBackLink, and it is a SECOND site reaching the same route
+  // from a different file — which is why the slice enumerated every navigation into a Cari route
+  // instead of fixing the one that was noticed. C-03 is published ahead of C-01, so without this
+  // the card would offer a return to a route the shell has not mounted.
+  const shell = useShellState()
+  if (!hasCapability(shell, CAPABILITY.cariPartiesList)) return null
   return (
     // A distinct accessible name on purpose. The nav already has a link called
     // "Cari Kartlar"; two links with the same name on one page are ambiguous to

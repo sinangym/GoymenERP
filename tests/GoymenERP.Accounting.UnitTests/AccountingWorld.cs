@@ -16,6 +16,20 @@ internal sealed class AccountingWorld
     public static readonly Guid Closer = Guid.NewGuid();
     public static readonly DateTimeOffset ClosedAt = new(2026, 9, 18, 12, 0, 0, TimeSpan.Zero);
 
+    /// <summary>Ö4: the period's preparer and the other person who approves its opening.</summary>
+    public static readonly Guid Preparer = Guid.NewGuid();
+    public static readonly Guid Approver = Guid.NewGuid();
+    public static readonly DateTimeOffset PreparedAt = new(2026, 8, 31, 9, 0, 0, TimeSpan.Zero);
+    public static readonly DateTimeOffset ApprovedAt = new(2026, 8, 31, 10, 0, 0, TimeSpan.Zero);
+
+    /// <summary>An open period: proposed by <see cref="Preparer"/>, approved by <see cref="Approver"/> (Ö4).</summary>
+    public static AccountingPeriod Opened(Guid company, DateOnly startsOn, DateOnly endsOn)
+    {
+        var period = AccountingPeriod.Propose(Guid.NewGuid(), company, startsOn, endsOn, Preparer, PreparedAt);
+        period.Approve(Approver, ApprovedAt);
+        return period;
+    }
+
     public Guid Company { get; } = Guid.NewGuid();
     public Guid OtherCompany { get; } = Guid.NewGuid();
     public Guid Currency { get; } = Guid.NewGuid();
@@ -29,7 +43,7 @@ internal sealed class AccountingWorld
     {
         DebitAccount = new AccountRef(Company, Guid.NewGuid());
         CreditAccount = new AccountRef(Company, Guid.NewGuid());
-        OpenPeriod = new AccountingPeriod(Guid.NewGuid(), Company, new DateOnly(2026, 9, 1), new DateOnly(2026, 9, 30));
+        OpenPeriod = Opened(Company, new DateOnly(2026, 9, 1), new DateOnly(2026, 9, 30));
         Ledger = new SourcePostingLedger(Company);
     }
 
