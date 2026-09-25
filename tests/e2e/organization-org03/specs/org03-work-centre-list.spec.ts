@@ -120,3 +120,66 @@ test('ORG03-03 a reader holding the location name as well gets the link, and it 
   await expect(page).toHaveURL(new RegExp(`${WORK_CENTRE_LIST_ROUTE}$`))
   await expect(page.getByRole('table')).toBeVisible()
 })
+
+
+test('ORG03-04 location card opens the exact authorized work-center subset and safely restores/clears it', async ({ page }) => {
+  await signInAs(page, READER_ACTOR)
+  await page.goto('/')
+  const entry = navEntry(page)
+  await expect(entry).toBeVisible({ timeout: 30_000 })
+  const listAnswer = page.waitForResponse((response) => response.request().method() === 'GET'
+    && new URL(response.url()).pathname === '/api/v1/organization/work-centers')
+  await entry.click()
+  const initial = await listAnswer
+  expect(initial.status()).toBe(200)
+  const rows = await initial.json() as readonly {
+    readonly id: string; readonly locationId: string; readonly code: string; readonly canOpenLocationDetail: boolean
+  }[]
+  expect(Array.isArray(rows)).toBe(true)
+  expect(rows).toHaveLength(SEEDED_WORK_CENTRE_CODES.length)
+  const selected = rows.find((row) => row.canOpenLocationDetail)
+  expect(selected).toBeDefined()
+  if (!selected) throw new Error('Existing ORG03 reader has no openable seeded location')
+  const locationId = selected.locationId
+  const expected = rows.filter((row) => row.locationId === locationId)
+  expect(expected.length).toBeGreaterThan(0)
+  expect(expected.length).toBeLessThan(rows.length)
+  const locationRoute = `${LOCATION_LIST_ROUTE}/lokasyon/${locationId}`
+  const filteredRoute = `${WORK_CENTRE_LIST_ROUTE}?locationId=${locationId}`
+  await page.getByRole('row').filter({ has: page.getByText(selected.code, { exact: true }) })
+    .getByRole('link', { name: 'Lokasyon kartını aç' }).click()
+  await expect(page).toHaveURL(new RegExp(`${locationRoute}$`))
+  const action = page.getByRole('link', { name: 'Bu lokasyondaki iş merkezleri', exact: true })
+  await expect(action).toHaveAttribute('href', filteredRoute)
+  const filteredAnswer = page.waitForResponse((response) => response.request().method() === 'GET'
+    && new URL(response.url()).pathname === '/api/v1/organization/work-centers')
+  await action.click()
+  const read = await filteredAnswer
+  expect(read.status()).toBe(200)
+  expect(new URL(read.url()).search).toBe('') // The filter is not an invented server API.
+  const currentRows = await read.json() as typeof rows
+  expect(currentRows.map((row) => row.id).sort()).toEqual(rows.map((row) => row.id).sort())
+  const table = page.getByRole('table')
+  await expect(table.getByRole('row')).toHaveCount(expected.length + 1)
+  for (const row of rows) {
+    await expect(table.getByText(row.code, { exact: true })).toHaveCount(row.locationId === locationId ? 1 : 0)
+  }
+  await table.getByRole('link', { name: 'Lokasyon kartını aç' }).first().click()
+  await expect(page).toHaveURL(new RegExp(`${locationRoute}$`))
+  const back = page.getByRole('navigation', { name: 'Geri' }).getByRole('link', { name: /İş Merkezleri/ })
+  await expect(back).toHaveAttribute('href', filteredRoute)
+  await back.click()
+  await expect(page.getByRole('table').getByRole('row')).toHaveCount(expected.length + 1)
+  await page.getByRole('link', { name: 'Filtreyi temizle', exact: true }).click()
+  await expect(page).toHaveURL(new RegExp(`${WORK_CENTRE_LIST_ROUTE}$`))
+  await expect(page.getByRole('table').getByRole('row')).toHaveCount(rows.length + 1)
+
+  const probes: string[] = []
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname === '/api/v1/organization/work-centers') probes.push(request.url())
+  })
+  await page.goto(`${WORK_CENTRE_LIST_ROUTE}?locationId=${locationId}&locationId=${locationId}`)
+  await expect(page.getByText('Beklenmeyen yanıt — lokasyon filtresi', { exact: true })).toBeVisible()
+  await expect(page.getByRole('table')).toHaveCount(0)
+  expect(probes).toEqual([])
+})

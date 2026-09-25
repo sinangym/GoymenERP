@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router'
 import { parseAmountInput } from '../finance/decimalText'
@@ -26,6 +26,24 @@ type LineForm = { readonly accountId: string; readonly side: NormalJournalSide; 
 
 export function NormalJournalDraftCreatePage() {
   const shell = useShellState()
+  const key = contextKey(shell)
+  if (key === null) {
+    return <StateBlock state={{ kind: 'initial-loading' }} subject="muhasebe şirket bağlamı" />
+  }
+  const namespace = contextKeyString(key)
+  return <NormalJournalDraftCreate key={`${namespace ?? 'none'}:${shell.routeEntryGeneration}`} />
+}
+
+function NormalJournalDraftCreate() {
+  const shell = useShellState()
+  const boundary = useAuthBoundary()
+  const mountedRef = useRef(true)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
   const companyId = shell.activeContext?.companyId ?? null
   const single = shell.activeContext?.scopeMode === 'single' && companyId !== null
   const [sourceId, setSourceId] = useState('')
@@ -47,7 +65,13 @@ export function NormalJournalDraftCreatePage() {
   const send = async (next: NormalJournalCommandSnapshot) => {
     setSnapshot(next)
     setOutcome(null)
-    setOutcome(await sendNormalJournalCommand(companyId, next))
+    const security = boundary.capture()
+    const answer = await sendNormalJournalCommand(companyId, next)
+    if (answer.type === 'failed') {
+      if (answer.failure.kind === 'unauthenticated') boundary.report(401, security)
+      if (answer.failure.kind === 'forbidden') boundary.report(403, security)
+    }
+    if (mountedRef.current) setOutcome(answer)
   }
 
   const submit = (event: React.FormEvent) => {
@@ -107,12 +131,19 @@ export function NormalJournalDraftPage({ mode }: { readonly mode: 'own' | 'appro
   const key = contextKey(shell)
   const namespace = key === null ? null : contextKeyString(key)
   const { draftId = '' } = useParams()
-  return <NormalJournalDraftDetail key={`${namespace ?? 'none'}:${draftId}:${mode}`} draftId={draftId} mode={mode} />
+  return <NormalJournalDraftDetail key={`${namespace ?? 'none'}:${shell.routeEntryGeneration}:${draftId}:${mode}`} draftId={draftId} mode={mode} />
 }
 
 function NormalJournalDraftDetail({ draftId, mode }: { readonly draftId: string; readonly mode: 'own' | 'approve' }) {
   const shell = useShellState()
   const boundary = useAuthBoundary()
+  const mountedRef = useRef(true)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
   const companyId = shell.activeContext?.companyId ?? null
   const single = shell.activeContext?.scopeMode === 'single' && companyId !== null
   const [periodId, setPeriodId] = useState('')
@@ -142,7 +173,13 @@ function NormalJournalDraftDetail({ draftId, mode }: { readonly draftId: string;
     setSnapshot(next)
     setOutcome(null)
     try {
-      setOutcome(await sendNormalJournalCommand(companyId, next))
+      const security = boundary.capture()
+      const answer = await sendNormalJournalCommand(companyId, next)
+      if (answer.type === 'failed') {
+        if (answer.failure.kind === 'unauthenticated') boundary.report(401, security)
+        if (answer.failure.kind === 'forbidden') boundary.report(403, security)
+      }
+      if (mountedRef.current) setOutcome(answer)
     } finally {
       inFlight.current = false
     }

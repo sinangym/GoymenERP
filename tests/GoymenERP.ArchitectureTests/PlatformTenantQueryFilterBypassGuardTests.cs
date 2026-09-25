@@ -133,7 +133,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         {
             // accounting
             ["tools/relational_inventory/accounting.txt"] =
-                "960437ec7cb458503c14a3b5fdf6aa29204a614136208a7d728e781c9f3ab885",
+                "2d1b1df4ccfef1e4360c298263051c6f9a72301f785d42eb77f85f7f05184457",
 
             // counterparty
             ["tools/relational_inventory/counterparty.txt"] =
@@ -157,7 +157,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // manufacturing
             ["tools/relational_inventory/manufacturing.txt"] =
-                "840d37fdfed0c75d7f2d57066e7db85333e0f46b03f55918ec38b9dd7c17bfc7",
+                "ef13047b4db55139a11c67e66e5e92e21d998968b8ece96d1f0d8faae276b9a3",
 
             // organization
             ["tools/relational_inventory/organization.txt"] =
@@ -272,6 +272,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string ReviewedFinanceOpenItemSourceAdmissionServicePath =
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
         + "FinanceOpenItemSourceAdmissionService.cs";
+    private const string ReviewedManufacturingInventoryInputIssueHostPath =
+        "src/backend/GoymenERP.Api/ManufacturingRuntime/ManufacturingInventoryInputIssueHost.cs";
+    private const string ReviewedManufacturingInventoryReturnOutputHostPath =
+        "src/backend/GoymenERP.Api/ManufacturingRuntime/ManufacturingInventoryReturnOutputHost.cs";
     private static readonly IReadOnlyDictionary<string, (string ContextTypeName, int ExpectedCount)>
         ReviewedRuntimeContextConstructions =
             new Dictionary<string, (string ContextTypeName, int ExpectedCount)>(StringComparer.Ordinal)
@@ -280,7 +284,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 [ReviewedInventoryGoodsReceiptParticipantPath] = ("InventoryDbContext", 1),
                 [ReviewedInventoryManufacturingRealizationParticipantPath] = ("InventoryDbContext", 1),
                 [ReviewedPurchaseAcceptanceParticipantPath] = ("PurchasingDbContext", 3),
-                [ReviewedFinanceOpenItemSourceAdmissionServicePath] = ("FinanceDbContext", 1)
+                [ReviewedFinanceOpenItemSourceAdmissionServicePath] = ("FinanceDbContext", 1),
+                [ReviewedManufacturingInventoryInputIssueHostPath] = ("ManufacturingDbContext", 1)
             };
     private const string ReviewedManualBankPaymentServicePath =
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
@@ -427,6 +432,27 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                             ["Microsoft.Data.SqlClient"] = 1,
                             ["DbConnection"] = 3
                         }),
+                // MFG inventory realization: the API host opens the Inventory transaction connection and
+                // constructs exactly one ManufacturingDbContext over it. The exact fingerprint and three
+                // API counts keep this reviewed bridge narrower than a general direct-database exemption.
+                [ReviewedManufacturingInventoryInputIssueHostPath] =
+                    new(
+                        "a57effbe5e99d90659e785cbb5ae601f78ca592cd65db6986d9a1a7d8a07419b",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1,
+                            ["GetDbConnection"] = 1
+                        }),
+                // Return/output uses the same reviewed borrowed-transaction boundary but obtains both the
+                // Inventory connection and current parent-label truth before constructing one Manufacturing context.
+                [ReviewedManufacturingInventoryReturnOutputHostPath] =
+                    new(
+                        "05d4636176e6ee04bd4fca106c9f9c3771fd27ce1ea52f8aed1f1cc6ffad543f",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1,
+                            ["GetDbConnection"] = 2
+                        }),
                 // INV-2 (#293): the SqlClient namespace only to recognise a unique-key violation
                 // (SqlException 2601/2627) after SaveChanges, as the Idempotency terminal store does.
                 // No connection, command or raw SQL. Re-fingerprinted for #333 (#324 P3-1): a lot/label
@@ -471,7 +497,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Accounting.Infrastructure/"
                  + "AccountingModuleExtensions.cs"] =
                     new(
-                        "1f412f0f590beefcd97af20fa484d02fd1f641f2c4d228976bfffdbe27eeb8f2",
+                        "e165e9022ef082f582da10433fcbe1e096bf15764bcbdc176bf99c4d6690ae3f",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,

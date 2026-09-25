@@ -26,7 +26,9 @@
  * is guessed and no read hides the draft. The reference reads are bound to `sales.drafts.create` on the
  * server, so an actor without that grant is told the names cannot be read, and nothing is asked.
  *
- * No allocation, shipment, invoice or money tab: none exists for a draft.
+ * An approved order may consume Inventory's existing physical-allocation surface when the shell
+ * publishes its write capability. Inventory remains the owner: create/release and every reopen are
+ * read from its server truth; this page creates no stock movement or local allocation projection.
  */
 
 import { useContext, useRef, useState } from 'react'
@@ -73,6 +75,8 @@ import { StateBlock } from '../shell/StateBlock'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { SalesDraftCommercialRevisionForm } from './SalesDraftCommercialRevisionForm'
 import { SalesDraftRevisionHistory } from './SalesDraftRevisionHistory'
+import { SalesDraftAllocationPanel } from './SalesDraftAllocationPanel'
+import { INVENTORY_PHYSICAL_ALLOCATION_WRITE_CAPABILITY } from '../inventory/capabilities'
 import styles from './SalesPages.module.css'
 
 const orUnknown = (value: string | null) => value ?? T.unknown
@@ -131,6 +135,19 @@ export function SalesDraftDetailPage() {
           />
         ) : null
       }
+      allocations={
+        namespace !== null && companyId !== null ? (
+          <SalesDraftAllocationPanel
+            enabled={outcome.data.draft.approvalState === APPROVAL_STATE.approved
+              && hasCapability(shell, INVENTORY_PHYSICAL_ALLOCATION_WRITE_CAPABILITY)}
+            companyId={companyId}
+            namespace={namespace}
+            routeEntryGeneration={shell.routeEntryGeneration}
+            salesOrderId={outcome.data.draft.id}
+            lines={outcome.data.lines}
+          />
+        ) : null
+      }
       commands={
         companyId === null ? null : (
           <ApprovalCommands
@@ -164,6 +181,7 @@ export function DraftView({
   delivery = null,
   commercialActions = null,
   revisionHistory = null,
+  allocations = null,
 }: {
   readonly detail: DraftDetail
   readonly backLink: React.ReactNode
@@ -172,6 +190,7 @@ export function DraftView({
   readonly delivery?: React.ReactNode
   readonly commercialActions?: React.ReactNode
   readonly revisionHistory?: React.ReactNode
+  readonly allocations?: React.ReactNode
 }) {
   const { draft, approval } = detail
   const withdrawn = draft.approvalState === APPROVAL_STATE.withdrawn
@@ -296,6 +315,7 @@ export function DraftView({
           <LineView key={line.lineId} line={line} />
         ))}
       </section>
+      {allocations}
       {revisionHistory}
     </article>
   )

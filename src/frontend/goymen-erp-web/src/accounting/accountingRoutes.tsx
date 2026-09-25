@@ -17,6 +17,7 @@ import { PeriodsPage } from './PeriodsPage'
 import { PeriodProposePage } from './PeriodProposePage'
 import { JournalDetailPage, JournalsPage } from './JournalPages'
 import { PostingQueuesPage } from './PostingQueuesPage'
+import { TrialBalancePage } from './TrialBalancePage'
 import {
   NormalJournalDraftCreatePage,
   NormalJournalDraftPage,
@@ -56,5 +57,9 @@ export const accountingRoutes: RouteObject[] = [
   {
     path: ACCOUNTING_ROUTE.postingQueues.slice(1),
     element: gate(ACCOUNTING_CAPABILITY.postingQueues, <PostingQueuesPage />),
+  },
+  {
+    path: ACCOUNTING_ROUTE.trialBalance.slice(1),
+    element: gate(ACCOUNTING_CAPABILITY.trialBalance, <TrialBalancePage />),
   },
 ]

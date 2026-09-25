@@ -9,10 +9,11 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { screen, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import {
   COMPANY_A,
+  COMPANY_B,
   LOC_H0,
   LOC_H1,
   READ_CAPABILITIES,
@@ -28,7 +29,8 @@ import {
   requestsFor,
   workCenter,
 } from './testHarness'
-import { ORGANIZATION_CAPABILITY, ORGANIZATION_NAV_LABEL, ORGANIZATION_ROUTE } from './capabilities'
+import { ORGANIZATION_CAPABILITY, ORGANIZATION_NAV_LABEL, ORGANIZATION_ROUTE, workCenterListPath } from './capabilities'
+import { WORK_CENTER_LOCATION_TEXT } from './workCenterLocationFilter'
 
 const PATH = ORGANIZATION_ROUTE[ORGANIZATION_CAPABILITY.workCentersList]
 
@@ -195,5 +197,141 @@ describe('ORG-03 work centre list', () => {
   it('carries a nav label, because a screen reachable from nowhere is not reachable (K5)', () => {
     expect(ORGANIZATION_NAV_LABEL[ORGANIZATION_CAPABILITY.workCentersList]).toBe('İş Merkezleri')
     expect(PATH).toBe('/ayarlar/organizasyon/is-merkezleri')
+  })
+})
+
+
+describe('HYBRID-05 exact location-filtered list', () => {
+  it('filters only the complete decoded result and retains passive matching rows', async () => {
+    const recorded = installFetch({ capabilities: WORK_CENTERS_ONLY_CAPABILITIES, respond: respondWith([
+      workCenter(WC_PAINT, LOC_H0, 'BY-01', 'Boya'),
+      workCenter(WC_SLIT, LOC_H1, 'DL-02', 'Dilme'),
+      workCenter(WC_UNKNOWN_KIND, LOC_H0, 'BY-OLD', 'Eski boya', { isActive: false }),
+    ]) })
+    renderAt(workCenterListPath(LOC_H0))
+    const table = await screen.findByRole('table')
+    expect(within(table).getByText('BY-01')).toBeTruthy()
+    expect(within(table).getByText('BY-OLD')).toBeTruthy()
+    expect(within(table).getByText('Pasif')).toBeTruthy()
+    expect(within(table).queryByText('DL-02')).toBeNull()
+    expect(within(table).getAllByRole('row')).toHaveLength(3)
+    expect(requestsFor(recorded, '/organization/work-centers')).toHaveLength(1)
+    expect(requestsFor(recorded, '/organization/work-centers')[0].url).not.toContain('locationId')
+    expect(requestsFor(recorded, '/organization/locations')).toEqual([])
+  })
+
+  it('distinguishes an empty filtered result from a full-list absence', async () => {
+    installFetch({ capabilities: WORK_CENTERS_ONLY_CAPABILITIES,
+      respond: respondWith([workCenter(WC_SLIT, LOC_H1, 'DL-02', 'Dilme')]) })
+    renderAt(workCenterListPath(LOC_H0))
+    await screen.findByText('Sonuç yok — bu lokasyondaki iş merkezleri')
+    expect(screen.queryByRole('table')).toBeNull()
+    expect(screen.getByRole('link', { name: WORK_CENTER_LOCATION_TEXT.clear }).getAttribute('href')).toBe(PATH)
+  })
+
+  it.each(['', 'not-an-id', '00000000-0000-0000-0000-000000000000', `${LOC_H0}&locationId=${LOC_H1}`])(
+    'rejects malformed or duplicate filter %s before any work-center read', async (value) => {
+      const recorded = installFetch({ capabilities: WORK_CENTERS_ONLY_CAPABILITIES,
+        respond: respondWith([workCenter(WC_PAINT, LOC_H0, 'BY-01', 'Boya')]) })
+      renderAt(`${PATH}?locationId=${value}`)
+      await screen.findByText('Beklenmeyen yanıt — lokasyon filtresi')
+      expect(requestsFor(recorded, '/organization/work-centers')).toEqual([])
+      expect(screen.queryByRole('table')).toBeNull()
+      expect(screen.getByRole('link', { name: WORK_CENTER_LOCATION_TEXT.clear }).getAttribute('href')).toBe(PATH)
+    },
+  )
+
+  it('clears only the UI filter without rereading or broadening the authorized server set', async () => {
+    const recorded = installFetch({ capabilities: WORK_CENTERS_ONLY_CAPABILITIES, respond: respondWith([
+      workCenter(WC_PAINT, LOC_H0, 'BY-01', 'Boya'), workCenter(WC_SLIT, LOC_H1, 'DL-02', 'Dilme'),
+    ]) })
+    const { router } = renderAt(workCenterListPath(LOC_H0), { retainCache: true })
+    await screen.findByText('BY-01')
+    expect(screen.queryByText('DL-02')).toBeNull()
+    await userEvent.click(screen.getByRole('link', { name: WORK_CENTER_LOCATION_TEXT.clear }))
+    expect(await screen.findByText('DL-02')).toBeTruthy()
+    expect(router.state.location.pathname).toBe(PATH)
+    expect(router.state.location.search).toBe('')
+    expect(requestsFor(recorded, '/organization/work-centers')).toHaveLength(1)
+  })
+
+  it('keeps the exact filter through list -> same location -> back', async () => {
+    installFetch({ capabilities: [...READ_CAPABILITIES, ORGANIZATION_CAPABILITY.workCentersList],
+      respond: (url) => {
+        if (url.includes('/organization/work-centers')) return json([
+          workCenter(WC_PAINT, LOC_H0, 'BY-01', 'Boya', { canOpenLocationDetail: true }),
+          workCenter(WC_SLIT, LOC_H1, 'DL-02', 'Dilme', { canOpenLocationDetail: true }),
+        ])
+        if (url.includes(`/organization/locations/${LOC_H0}`)) return json(location(LOC_H0, SITE_OSM, 'OSM-H0', 'Hol-0'))
+        return undefined
+      } })
+    const { router } = renderAt(workCenterListPath(LOC_H0))
+    await userEvent.click(await screen.findByRole('link', { name: 'Lokasyon kartını aç' }))
+    await screen.findByText('OSM-H0')
+    const back = within(screen.getByRole('navigation', { name: 'Geri' })).getByRole('link', { name: /İş Merkezleri/ })
+    expect(back.getAttribute('href')).toBe(workCenterListPath(LOC_H0))
+    await userEvent.click(back)
+    await screen.findByText('BY-01')
+    expect(screen.queryByText('DL-02')).toBeNull()
+    expect(router.state.location.search).toBe(`?locationId=${LOC_H0}`)
+  })
+
+  it('does not mount the filtered view when the work-center capability is absent', async () => {
+    const recorded = installFetch({ capabilities: READ_CAPABILITIES,
+      respond: respondWith([workCenter(WC_PAINT, LOC_H0, 'BY-01', 'Boya')]) })
+    renderAt(workCenterListPath(LOC_H0))
+    await screen.findByRole('alert')
+    expect(screen.queryByText('BY-01')).toBeNull()
+    expect(screen.queryByRole('link', { name: WORK_CENTER_LOCATION_TEXT.clear })).toBeNull()
+    expect(requestsFor(recorded, '/organization/work-centers')).toEqual([])
+  })
+
+  it('loses rows and filter controls when capability is revoked before a new route entry', async () => {
+    const grants = [...WORK_CENTERS_ONLY_CAPABILITIES]
+    const recorded = installFetch({ capabilities: grants,
+      respond: respondWith([workCenter(WC_PAINT, LOC_H0, 'BY-01', 'Boya')]) })
+    const { router } = renderAt(workCenterListPath(LOC_H0), { retainCache: true })
+    await screen.findByText('BY-01')
+    grants.length = 0
+    await act(() => router.navigate('/unknown-synthetic-route'))
+    await act(() => router.navigate(workCenterListPath(LOC_H0)))
+    await screen.findByRole('alert')
+    expect(screen.queryByText('BY-01')).toBeNull()
+    expect(screen.queryByRole('link', { name: WORK_CENTER_LOCATION_TEXT.clear })).toBeNull()
+    expect(requestsFor(recorded, '/organization/work-centers')).toHaveLength(1)
+  })
+
+  it('ignores a late company-A answer after switching to company B', async () => {
+    installFetch({ capabilities: WORK_CENTERS_ONLY_CAPABILITIES, respond: respondWith([]) })
+    const normalFetch = globalThis.fetch
+    let complete: (value: Response) => void = () => { throw new Error('Deferred read was not started') }
+    const delayed = new Promise<Response>((resolve) => { complete = resolve })
+    const calls: string[] = []
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url.includes('/organization/work-centers')) {
+        const company = new Headers(init?.headers).get('X-Company-Id') ?? ''
+        calls.push(company)
+        if (company === COMPANY_A) return delayed
+      }
+      return normalFetch(input, init)
+    }))
+    renderAt(workCenterListPath(LOC_H0), { retainCache: true })
+    await waitFor(() => expect(calls).toContain(COMPANY_A))
+    await userEvent.selectOptions(screen.getByRole('combobox'), COMPANY_B)
+    await screen.findByText('Sonuç yok — bu lokasyondaki iş merkezleri')
+    await act(async () => { complete(json([workCenter(WC_PAINT, LOC_H0, 'OLD-A', 'Eski şirket')])) })
+    expect(calls).toContain(COMPANY_B)
+    expect(screen.queryByText('OLD-A')).toBeNull()
+    expect(screen.queryByRole('table')).toBeNull()
+  })
+
+  it.each([401, 403])('never exposes rows after the real auth boundary receives %s', async (status) => {
+    installFetch({ capabilities: WORK_CENTERS_ONLY_CAPABILITIES,
+      respond: (url) => url.includes('/organization/work-centers') ? json({ status }, status) : undefined })
+    renderAt(workCenterListPath(LOC_H0))
+    await screen.findByRole('alert')
+    expect(screen.queryByRole('table')).toBeNull()
+    expect(screen.queryByRole('link', { name: WORK_CENTER_LOCATION_TEXT.clear })).toBeNull()
   })
 })

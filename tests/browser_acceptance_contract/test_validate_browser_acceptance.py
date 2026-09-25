@@ -125,6 +125,25 @@ class WorkflowTests(unittest.TestCase):
             validator.SUITE_IDENTITY_PERMISSIONS["fin01"],
         )
 
+    def test_s04_identity_permissions_include_the_allocation_fixture_axis(self):
+        self.assertEqual(
+            (
+                "sales.drafts.create",
+                "sales.drafts.read",
+                "sales.orders.approve",
+                "counterparty.parties.read",
+                "counterparty.parties.update.basic",
+                "product.operational-selection.read",
+                "sales.orders.price.read",
+                "sales.orders.price.write",
+                "inventory.opening-stock.record",
+                "inventory.labels.read",
+                "inventory.balances.read",
+                "inventory.physical-allocation.write",
+            ),
+            validator.SUITE_IDENTITY_PERMISSIONS["s04"],
+        )
+
     def test_pur01_identity_permissions_are_the_creator_owner_reads_and_existing_approval_axis(self):
         self.assertEqual(
             (

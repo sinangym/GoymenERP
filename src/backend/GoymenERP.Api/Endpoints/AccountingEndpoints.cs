@@ -24,9 +24,12 @@ public static class AccountingEndpoints
     private const int MaximumIdempotencyKeyLength = 128;
     private const int MaximumCursorLength = 512;
 
+    private static readonly HashSet<string> TrialBalanceQueryNames =
+        new(StringComparer.Ordinal) { "fromAccountingDate", "throughAccountingDate", "currencyId" };
+
     private static readonly string[] BadRequestCodes = [AccountingApiCodes.RequestInvalid];
 
-    private static readonly string[] ConflictCodes =
+    private static readonly string[] PeriodConflictCodes =
     [
         AccountingApiCodes.IdempotencyConflict,
         AccountingApiCodes.VersionConflict,
@@ -34,12 +37,17 @@ public static class AccountingEndpoints
         AccountingStoreCodes.PeriodPreparerConflict,
         AccountingStoreCodes.PeriodOverlap,
         AccountingStoreCodes.ConcurrentChange,
+    ];
+
+    private static readonly string[] NormalJournalConflictCodes =
+    [
+        .. PeriodConflictCodes,
         NormalJournalDraftStoreCodesV1.ContentConflict,
         NormalJournalDraftStoreCodesV1.NotPending,
         NormalJournalDraftStoreCodesV1.PostingConflict,
     ];
 
-    private static readonly string[] UnprocessableCodes =
+    private static readonly string[] PeriodUnprocessableCodes =
     [
         AccountingErrorCodes.PeriodNotProposed,
         AccountingErrorCodes.PeriodNotOpen,
@@ -47,6 +55,11 @@ public static class AccountingEndpoints
         AccountingErrorCodes.PeriodInvalid,
         AccountingErrorCodes.InvalidReference,
         AccountingStoreCodes.ValueDoesNotFit,
+    ];
+
+    private static readonly string[] NormalJournalUnprocessableCodes =
+    [
+        .. PeriodUnprocessableCodes,
         AccountingErrorCodes.CompanyMismatch,
         AccountingErrorCodes.JournalTooFewLines,
         AccountingErrorCodes.JournalLineInvalid,
@@ -173,6 +186,25 @@ public static class AccountingEndpoints
             .Produces<JournalDetailV1>(StatusCodes.Status200OK)
             .WithReadProblems(notFound: true);
 
+        group.MapGet("/trial-balance", async (
+                AccountingTrialBalanceServiceV1 service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response.Headers);
+                if (!TryReadTrialBalanceRequest(httpContext.Request.Query, out var request, out var field))
+                {
+                    return Problem(StatusCodes.Status400BadRequest, AccountingApiCodes.RequestInvalid, field);
+                }
+
+                return ToHttpResult(httpContext, await service.ReadAsync(request, cancellationToken), null);
+            })
+            .RequireCompanyContext()
+            .RequireAuthorization(AccountingPermissionManifestV1.JournalsRead)
+            .WithName("GetAccountingTrialBalanceV1")
+            .Produces<TrialBalanceReportV1>(StatusCodes.Status200OK)
+            .WithReadProblems(notFound: false);
+
         group.MapPost("/normal-journal-drafts", async (
                 CreateNormalJournalDraftRequestV1 request,
                 NormalJournalDraftPublicServiceV1 service,
@@ -187,7 +219,7 @@ public static class AccountingEndpoints
             .WithName("CreateAccountingNormalJournalDraftV1")
             .Accepts<CreateNormalJournalDraftRequestV1>("application/json")
             .Produces<NormalJournalDraftViewV1>(StatusCodes.Status201Created)
-            .WithWriteProblems(notFound: false);
+            .WithWriteProblems(notFound: false, normalJournal: true);
 
         group.MapGet("/normal-journal-drafts/{draftId:guid}", async (
                 Guid draftId,
@@ -218,7 +250,7 @@ public static class AccountingEndpoints
             .WithName("ApproveAccountingNormalJournalDraftV1")
             .Accepts<ApproveNormalJournalDraftRequestV1>("application/json")
             .Produces<NormalJournalDraftViewV1>(StatusCodes.Status200OK)
-            .WithWriteProblems(notFound: true);
+            .WithWriteProblems(notFound: true, normalJournal: true);
 
         group.MapGet("/posting-queues", async (
                 AccountingApiService service,
@@ -246,14 +278,17 @@ public static class AccountingEndpoints
         return notFound ? builder.ProducesErpCodeLessNotFound() : builder;
     }
 
-    private static RouteHandlerBuilder WithWriteProblems(this RouteHandlerBuilder builder, bool notFound)
+    private static RouteHandlerBuilder WithWriteProblems(this RouteHandlerBuilder builder, bool notFound,
+        bool normalJournal = false)
     {
+        var conflictCodes = normalJournal ? NormalJournalConflictCodes : PeriodConflictCodes;
+        var unprocessableCodes = normalJournal ? NormalJournalUnprocessableCodes : PeriodUnprocessableCodes;
         builder
             .ProducesErpBadRequest(BadRequestCodes)
             .AllowsCodeLessErpBadRequestBody()
             .ProducesErpUnsupportedMediaType()
-            .ProducesErpConflict(ConflictCodes)
-            .ProducesErpUnprocessableEntity(UnprocessableCodes)
+            .ProducesErpConflict(conflictCodes)
+            .ProducesErpUnprocessableEntity(unprocessableCodes)
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
         return notFound ? builder.ProducesErpCodeLessNotFound() : builder;
@@ -273,6 +308,52 @@ public static class AccountingEndpoints
         return ToHttpResult(httpContext, result, result.Resource is { } resource && location is not null
             ? location(resource)
             : null);
+    }
+
+    private static bool TryReadTrialBalanceRequest(
+        IQueryCollection query,
+        out TrialBalanceRequestV1 request,
+        out string field)
+    {
+        request = default!;
+        field = "request";
+        if (query.Any(pair => !TrialBalanceQueryNames.Contains(pair.Key) || pair.Value.Count != 1))
+        {
+            return false;
+        }
+
+        field = "accountingDate";
+        if (!TryReadExactDate(query, "fromAccountingDate", out var fromAccountingDate)
+            || !TryReadExactDate(query, "throughAccountingDate", out var throughAccountingDate)
+            || throughAccountingDate < fromAccountingDate)
+        {
+            return false;
+        }
+
+        Guid? currencyId = null;
+        if (query.TryGetValue("currencyId", out var currencyValues))
+        {
+            field = "currencyId";
+            if (!Guid.TryParseExact(currencyValues[0], "D", out var parsedCurrencyId)
+                || parsedCurrencyId == Guid.Empty)
+            {
+                return false;
+            }
+
+            currencyId = parsedCurrencyId;
+        }
+
+        request = new TrialBalanceRequestV1(fromAccountingDate, throughAccountingDate, currencyId);
+        return true;
+    }
+
+    private static bool TryReadExactDate(IQueryCollection query, string name, out DateOnly value)
+    {
+        value = default;
+        return query.TryGetValue(name, out var values)
+               && values.Count == 1
+               && DateOnly.TryParseExact(values[0], "yyyy-MM-dd", CultureInfo.InvariantCulture,
+                   DateTimeStyles.None, out value);
     }
 
     private static IResult ToHttpResult<T>(HttpContext httpContext, AccountingApiResult<T> result, string? location)

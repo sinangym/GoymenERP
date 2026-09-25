@@ -65,4 +65,13 @@ describe('normal journal commands', () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ code: 'accounting_normal_journal_draft_not_pending' }), { status: 409 })))
     expect(await sendNormalJournalCommand(COMPANY, approve)).toEqual({ type: 'failed', failure: { kind: 'not-pending' } })
   })
+
+  it.each([
+    ['accounting_concurrent_change', 'concurrent-change'],
+    ['accounting_normal_journal_draft_content_conflict', 'content-conflict'],
+  ] as const)('classifies documented 409 code %s as %s', async (code, kind) => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ code }), { status: 409 })))
+    const approve = { operation: 'approve' as const, idempotencyKey: 'key-3', draftId: DRAFT, expectedVersion: 1, periodId: SOURCE }
+    expect(await sendNormalJournalCommand(COMPANY, approve)).toEqual({ type: 'failed', failure: { kind } })
+  })
 })
