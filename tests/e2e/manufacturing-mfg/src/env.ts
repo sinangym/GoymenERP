@@ -40,6 +40,7 @@ export interface MfgRolls {
   readonly planCreate: MfgRollSeed
   readonly planReplay: MfgRollSeed
   readonly planRefusal: MfgRollSeed
+  readonly outputUi: MfgRollSeed
 }
 
 export interface MfgOutputSeed {
@@ -135,6 +136,7 @@ export function readEnvironment(): MfgEnvironment {
       planCreate: roll('planCreate'),
       planReplay: roll('planReplay'),
       planRefusal: roll('planRefusal'),
+      outputUi: roll('outputUi'),
     },
     output: {
       productId: text(raw, 'outputProductId', true),

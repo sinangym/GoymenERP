@@ -27,7 +27,12 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useParams } from 'react-router'
-import { fetchMassBalance, fetchOrder } from './api'
+import {
+  fetchManufacturingOutputLocations,
+  fetchManufacturingOutputProducts,
+  fetchMassBalance,
+  fetchOrder,
+} from './api'
 import { closeOrder, recordFact, type FactFailure, type FactUnknown } from './commandApi'
 import { fetchInventoryLabelDetail } from '../inventory/labelDetailApi'
 import type { InventoryLabelDetail } from '../inventory/labelDetailContract'
@@ -41,6 +46,8 @@ import {
   type FactKind,
   type FactSnapshot,
   type MassBalanceView,
+  type ManufacturingOutputLocationCandidate,
+  type ManufacturingOutputProductCandidate,
   type ProductionOrderView,
   type RollBalance,
 } from './contract'
@@ -75,6 +82,7 @@ import {
   MASS_BALANCE_HEADING,
   MASS_BALANCE_HELP,
   ORDER_STATUS_LABEL,
+  OUTPUT_INVENTORY_TEXT,
   OUTPUT_CLASS_LABEL,
   REMAINING_UNAVAILABLE,
   REPLAYED_DETAIL,
@@ -202,6 +210,8 @@ function OrderDetail({ namespace }: { readonly namespace: string | null }) {
       {canRecord ? (
         <FactSection
           order={order}
+          namespace={namespace ?? 'no-context'}
+          routeEntryGeneration={shell.routeEntryGeneration}
           companyId={activeCompanyId ?? ''}
           canReadInventoryLabel={canReadInventoryLabel}
           storeKey={storeKey}
@@ -567,6 +577,16 @@ interface FormValues {
   readonly kg: string
   /** `datetime-local` value, read as the browser's local time and sent as UTC. */
   readonly occurredAt: string
+  readonly outputClass: '' | (typeof OUTPUT_CLASSES)[number]
+  readonly productId: string
+  readonly locationId: string
+  readonly labelCode: string
+  readonly heatNumber: string
+  readonly coilNumber: string
+  readonly requiredDocuments: string
+  readonly initialBlock: '' | 'Free' | 'Blocked'
+  readonly productSearch: string
+  readonly locationSearch: string
 }
 
 const EMPTY_FORM: FormValues = {
@@ -574,6 +594,16 @@ const EMPTY_FORM: FormValues = {
   parentRollId: '',
   kg: '',
   occurredAt: '',
+  outputClass: '',
+  productId: '',
+  locationId: '',
+  labelCode: '',
+  heatNumber: '',
+  coilNumber: '',
+  requiredDocuments: '',
+  initialBlock: '',
+  productSearch: '',
+  locationSearch: '',
 }
 
 function formFromSnapshot(snapshot: FactSnapshot): FormValues {
@@ -584,7 +614,33 @@ function formFromSnapshot(snapshot: FactSnapshot): FormValues {
     parentRollId: snapshot.parentRollId,
     kg: snapshot.kg,
     occurredAt: local,
+    outputClass: snapshot.kind === 'outputs' ? snapshot.outputClass : '',
+    productId: snapshot.kind === 'outputs' ? snapshot.productId : '',
+    locationId: snapshot.kind === 'outputs' ? snapshot.locationId : '',
+    labelCode: snapshot.kind === 'outputs' ? snapshot.labelCode : '',
+    heatNumber: snapshot.kind === 'outputs' ? (snapshot.heatNumber ?? '') : '',
+    coilNumber: snapshot.kind === 'outputs' ? (snapshot.coilNumber ?? '') : '',
+    requiredDocuments: snapshot.kind === 'outputs' ? snapshot.requiredDocuments.join('\n') : '',
+    initialBlock: snapshot.kind === 'outputs' ? snapshot.initialBlock : '',
+    productSearch: '',
+    locationSearch: '',
   }
+}
+
+function factTiming(value: string): { readonly occurredAtUtc: string; readonly effectiveOn: string } | null {
+  const milliseconds = value.length === 0 ? Number.NaN : new Date(value).getTime()
+  if (Number.isNaN(milliseconds)) return null
+  const occurredAtUtc = new Date(milliseconds).toISOString()
+  return { occurredAtUtc, effectiveOn: occurredAtUtc.slice(0, 10) }
+}
+
+function cleanOptional(value: string): string | null {
+  const cleaned = value.trim()
+  return cleaned.length === 0 ? null : cleaned
+}
+
+function documents(value: string): readonly string[] {
+  return value.split(/\r?\n/).map((item) => item.trim()).filter((item) => item.length > 0)
 }
 
 function isCompanyOwned(detail: InventoryLabelDetail, companyId: string): boolean {
@@ -600,6 +656,8 @@ function restored(storeKey: string | null): FactAttempt {
 
 function FactSection({
   order,
+  namespace,
+  routeEntryGeneration,
   companyId,
   canReadInventoryLabel,
   storeKey,
@@ -607,6 +665,8 @@ function FactSection({
   onRefresh,
 }: {
   readonly order: ProductionOrderView
+  readonly namespace: string
+  readonly routeEntryGeneration: number
   readonly companyId: string
   readonly canReadInventoryLabel: boolean
   readonly storeKey: string | null
@@ -626,7 +686,11 @@ function FactSection({
 
   const unresolved = isUnresolved(attempt)
   const returnSelected = form.kind === 'input-returns'
-  const needsInventoryState = returnSelected && canReadInventoryLabel
+  const outputSelected = form.kind === 'outputs'
+  const outputEnabled = canReadInventoryLabel
+  const needsInventoryState = (returnSelected || outputSelected) && canReadInventoryLabel
+  const timing = factTiming(form.occurredAt)
+  const effectiveOn = timing?.effectiveOn ?? null
   const labelQuery = useQuery({
     queryKey: ['manufacturing-parent-label', companyId, form.parentRollId],
     enabled: needsInventoryState && form.parentRollId.length > 0,
@@ -646,10 +710,43 @@ function FactSection({
         : classifyOutcome(labelQuery.data ?? { type: 'malformed' })) as RemoteViewState<InventoryLabelDetail>
   const companyOwned = labelState?.kind === 'ready' && isCompanyOwned(labelState.data, companyId)
 
+  const productQuery = useQuery({
+    queryKey: [namespace, routeEntryGeneration, 'manufacturing-output-products', effectiveOn, form.productSearch],
+    enabled: outputSelected && outputEnabled && effectiveOn !== null,
+    queryFn: async ({ signal }) => {
+      const security = boundary.capture()
+      const outcome = await fetchManufacturingOutputProducts(companyId, effectiveOn ?? '', form.productSearch, signal)
+      if (outcome.type === 'http' && (outcome.status === 401 || outcome.status === 403)) {
+        boundary.report(outcome.status, security)
+      }
+      return outcome
+    },
+  })
+  const locationQuery = useQuery({
+    queryKey: [namespace, routeEntryGeneration, 'manufacturing-output-locations', form.locationSearch],
+    enabled: outputSelected && outputEnabled,
+    queryFn: async ({ signal }) => {
+      const security = boundary.capture()
+      const outcome = await fetchManufacturingOutputLocations(companyId, form.locationSearch, signal)
+      if (outcome.type === 'http' && (outcome.status === 401 || outcome.status === 403)) {
+        boundary.report(outcome.status, security)
+      }
+      return outcome
+    },
+  })
+  const products = productQuery.data?.type === 'ok-single' ? productQuery.data.data : null
+  const locations = locationQuery.data?.type === 'ok-single' ? locationQuery.data.data : null
+  const selectedProduct: ManufacturingOutputProductCandidate | undefined = products?.items.find(
+    (item) => item.productId === form.productId,
+  )
+  const selectedLocation: ManufacturingOutputLocationCandidate | undefined = locations?.items.find(
+    (item) => item.locationId === form.locationId,
+  )
+
   const busy = attempt.phase === 'submitting'
   const closed = order.status === 'Closed'
 
-  const dirty = unresolved || form.kg.length > 0 || form.parentRollId.length > 0 || form.occurredAt.length > 0
+  const dirty = unresolved || Object.entries(form).some(([key, value]) => key !== 'kind' && value.length > 0)
   useEffect(() => {
     shellDispatch({ type: dirty ? 'DIRTY_SET' : 'DIRTY_CLEAR', scope: DIRTY_SCOPE })
   }, [dirty, shellDispatch])
@@ -671,7 +768,8 @@ function FactSection({
 
   const refetchLabel = labelQuery.refetch
   const refreshReads = useCallback(async (snapshot: FactSnapshot) => {
-    if ((snapshot.kind !== 'input-issues' && snapshot.kind !== 'input-returns') || !canReadInventoryLabel) {
+    if ((snapshot.kind !== 'input-issues' && snapshot.kind !== 'input-returns' && snapshot.kind !== 'outputs')
+      || !canReadInventoryLabel) {
       await onRefresh()
       return
     }
@@ -690,7 +788,7 @@ function FactSection({
       }
       dispatch({ type: 'SETTLE', outcome, idempotencyKey: snapshot.idempotencyKey })
       if (outcome.type === 'applied') {
-        setForm((current) => ({ ...current, kg: '' }))
+        setForm((current) => ({ ...current, kg: '', labelCode: current.kind === 'outputs' ? '' : current.labelCode }))
         await refreshReads(snapshot)
       } else if (
         outcome.type === 'failed' &&
@@ -710,11 +808,15 @@ function FactSection({
     // A submit refused here mints NO id and NO key: nothing was attempted.
     if (form.parentRollId.length === 0) return setError(ROLL_REQUIRED)
     if (!isKilogramText(form.kg)) return setError(KG_FORMAT_ERROR)
-    if (returnSelected && !canReadInventoryLabel) return
+    if ((returnSelected || outputSelected) && !canReadInventoryLabel) return
     if (needsInventoryState && labelState?.kind !== 'ready') return setError(INPUT_INVENTORY_TEXT.loadingRequired)
     if (needsInventoryState && !companyOwned) return setError(INPUT_INVENTORY_TEXT.companyOwnedRequired)
-    const at = form.occurredAt.length === 0 ? Number.NaN : new Date(form.occurredAt).getTime()
-    if (Number.isNaN(at)) return setError(TIME_REQUIRED)
+    if (timing === null) return setError(TIME_REQUIRED)
+    if (outputSelected && form.outputClass === '') return setError(OUTPUT_INVENTORY_TEXT.classRequired)
+    if (outputSelected && selectedProduct === undefined) return setError(OUTPUT_INVENTORY_TEXT.productRequired)
+    if (outputSelected && selectedLocation === undefined) return setError(OUTPUT_INVENTORY_TEXT.locationRequired)
+    if (outputSelected && form.labelCode.trim().length === 0) return setError(OUTPUT_INVENTORY_TEXT.labelRequired)
+    if (outputSelected && form.initialBlock === '') return setError(OUTPUT_INVENTORY_TEXT.blockRequired)
     setError(null)
     const common = {
       factId: newId(),
@@ -722,7 +824,7 @@ function FactSection({
       expectedVersion: order.version,
       parentRollId: form.parentRollId,
       kg: form.kg,
-      occurredAtUtc: new Date(at).toISOString(),
+      occurredAtUtc: timing.occurredAtUtc,
     }
     const snapshot: FactSnapshot = form.kind === 'input-issues'
       ? { ...common, kind: form.kind, movementId: newId(), expectedParentLabelVersion: null }
@@ -733,7 +835,29 @@ function FactSection({
             movementId: newId(),
             expectedParentLabelVersion: labelState?.kind === 'ready' ? labelState.data.labelVersion : '',
           }
-        : { ...common, kind: form.kind, movementId: null, expectedParentLabelVersion: null }
+        : form.kind === 'outputs'
+          ? {
+              ...common,
+              kind: form.kind,
+              movementId: newId(),
+              expectedParentLabelVersion: labelState?.kind === 'ready' ? labelState.data.labelVersion : '',
+              outputClass: form.outputClass as (typeof OUTPUT_CLASSES)[number],
+              productId: selectedProduct?.productId ?? '',
+              expectedProductVersion: selectedProduct?.productVersion ?? '',
+              lotId: newId(),
+              labelId: newId(),
+              labelCode: form.labelCode.trim(),
+              heatNumber: cleanOptional(form.heatNumber),
+              coilNumber: cleanOptional(form.coilNumber),
+              requiredDocuments: documents(form.requiredDocuments),
+              ownerKind: 'Company',
+              ownerId: companyId,
+              custodianKind: 'Company',
+              custodianId: companyId,
+              locationId: selectedLocation?.locationId ?? '',
+              initialBlock: form.initialBlock as 'Free' | 'Blocked',
+            }
+          : { ...common, kind: form.kind, movementId: null, expectedParentLabelVersion: null }
     dispatch({ type: 'SUBMIT', snapshot })
     void send(snapshot, 0)
   }
@@ -756,12 +880,17 @@ function FactSection({
       <h2 id="mfg-facts-heading">Gerçekleşme kaydı</h2>
       {closed ? <p className={styles.help}>{CLOSED_ORDER_TEXT}</p> : null}
 
-      <AttemptNotice attempt={attempt} refreshing={refreshing || labelQuery.isFetching} noticeRef={noticeRef} />
+      <AttemptNotice
+        attempt={attempt}
+        refreshing={refreshing || labelQuery.isFetching || productQuery.isFetching || locationQuery.isFetching}
+        noticeRef={noticeRef}
+      />
 
       <form className={styles.section} onSubmit={submit} noValidate aria-describedby="mfg-fact-help">
         <fieldset className={styles.kinds} disabled={frozen}>
           <legend className={styles.help}>Olgu türü</legend>
-          {FACT_KINDS.filter((kind) => kind !== 'input-returns' || canReadInventoryLabel).map((kind) => (
+          {FACT_KINDS.filter((kind) =>
+            (kind !== 'input-returns' && kind !== 'outputs') || canReadInventoryLabel).map((kind) => (
             <label key={kind}>
               <input
                 type="radio"
@@ -823,6 +952,138 @@ function FactSection({
             />
           </div>
         </div>
+        {outputSelected ? (
+          <section aria-labelledby="mfg-output-heading" className={styles.section} data-testid="company-output-form">
+            <h3 id="mfg-output-heading">Şirket malı çıktı etiketi</h3>
+            <p className={styles.help}>{OUTPUT_INVENTORY_TEXT.customerOwnedBlocked}</p>
+            <div className={styles.form}>
+              <div className={styles.control}>
+                <label htmlFor="mfg-output-class">Çıktı sınıfı</label>
+                <select
+                  id="mfg-output-class"
+                  value={form.outputClass}
+                  disabled={frozen}
+                  onChange={(event) => update({
+                    outputClass: event.target.value as FormValues['outputClass'],
+                  })}
+                >
+                  <option value="">Seçin</option>
+                  {OUTPUT_CLASSES.map((outputClass) => (
+                    <option key={outputClass} value={outputClass}>{OUTPUT_CLASS_LABEL[outputClass]}</option>
+                  ))}
+                </select>
+              </div>
+              <div className={styles.control}>
+                <label htmlFor="mfg-output-product-search">Ürün ara</label>
+                <input
+                  id="mfg-output-product-search"
+                  value={form.productSearch}
+                  disabled={frozen}
+                  onChange={(event) => update({ productSearch: event.target.value, productId: '' })}
+                />
+              </div>
+              <div className={styles.control}>
+                <label htmlFor="mfg-output-product">Ürün</label>
+                <select
+                  id="mfg-output-product"
+                  value={form.productId}
+                  disabled={frozen || products === null}
+                  onChange={(event) => update({ productId: event.target.value })}
+                >
+                  <option value="">Seçin</option>
+                  {products?.items.map((product) => (
+                    <option key={product.productId} value={product.productId}>
+                      {product.code} — {product.name} · {product.stockUnitCode}
+                    </option>
+                  ))}
+                </select>
+                {effectiveOn === null ? <span className={styles.help}>Önce geçerli çıktı zamanını girin.</span> : null}
+                {productQuery.isFetching ? <span role="status">{OUTPUT_INVENTORY_TEXT.productLoading}</span> : null}
+                {productQuery.data !== undefined && productQuery.data.type !== 'ok-single'
+                  ? <span role="alert">{OUTPUT_INVENTORY_TEXT.productUnavailable}</span> : null}
+                {products?.searchWindowFull ? <span className={styles.help}>Daha fazla eşleşme var; aramayı daraltın.</span> : null}
+              </div>
+              <div className={styles.control}>
+                <label htmlFor="mfg-output-location-search">Lokasyon ara</label>
+                <input
+                  id="mfg-output-location-search"
+                  value={form.locationSearch}
+                  disabled={frozen}
+                  onChange={(event) => update({ locationSearch: event.target.value, locationId: '' })}
+                />
+              </div>
+              <div className={styles.control}>
+                <label htmlFor="mfg-output-location">Lokasyon</label>
+                <select
+                  id="mfg-output-location"
+                  value={form.locationId}
+                  disabled={frozen || locations === null}
+                  onChange={(event) => update({ locationId: event.target.value })}
+                >
+                  <option value="">Seçin</option>
+                  {locations?.items.map((location) => (
+                    <option key={location.locationId} value={location.locationId}>
+                      {location.siteCode} / {location.locationCode} — {location.locationName}
+                    </option>
+                  ))}
+                </select>
+                {locationQuery.isFetching ? <span role="status">{OUTPUT_INVENTORY_TEXT.locationLoading}</span> : null}
+                {locationQuery.data !== undefined && locationQuery.data.type !== 'ok-single'
+                  ? <span role="alert">{OUTPUT_INVENTORY_TEXT.locationUnavailable}</span> : null}
+                {locations?.searchWindowFull ? <span className={styles.help}>Daha fazla eşleşme var; aramayı daraltın.</span> : null}
+              </div>
+              <div className={styles.control}>
+                <label htmlFor="mfg-output-label-code">Yeni etiket kodu</label>
+                <input
+                  id="mfg-output-label-code"
+                  value={form.labelCode}
+                  disabled={frozen}
+                  onChange={(event) => update({ labelCode: event.target.value })}
+                />
+              </div>
+              <div className={styles.control}>
+                <label htmlFor="mfg-output-heat">Döküm no (opsiyonel)</label>
+                <input
+                  id="mfg-output-heat"
+                  value={form.heatNumber}
+                  disabled={frozen}
+                  onChange={(event) => update({ heatNumber: event.target.value })}
+                />
+              </div>
+              <div className={styles.control}>
+                <label htmlFor="mfg-output-coil">Rulo no (opsiyonel)</label>
+                <input
+                  id="mfg-output-coil"
+                  value={form.coilNumber}
+                  disabled={frozen}
+                  onChange={(event) => update({ coilNumber: event.target.value })}
+                />
+              </div>
+              <div className={styles.control}>
+                <label htmlFor="mfg-output-documents">Belge referansları (satır başına)</label>
+                <textarea
+                  id="mfg-output-documents"
+                  value={form.requiredDocuments}
+                  disabled={frozen}
+                  onChange={(event) => update({ requiredDocuments: event.target.value })}
+                />
+              </div>
+              <div className={styles.control}>
+                <label htmlFor="mfg-output-block">İlk stok durumu</label>
+                <select
+                  id="mfg-output-block"
+                  value={form.initialBlock}
+                  disabled={frozen}
+                  onChange={(event) => update({ initialBlock: event.target.value as FormValues['initialBlock'] })}
+                >
+                  <option value="">Seçin</option>
+                  <option value="Free">Serbest</option>
+                  <option value="Blocked">Blokeli</option>
+                </select>
+              </div>
+            </div>
+          </section>
+        ) : null}
         {labelState !== null ? (
           <ParentLabelState state={labelState} companyOwned={companyOwned} onRetry={() => void labelQuery.refetch()} />
         ) : null}

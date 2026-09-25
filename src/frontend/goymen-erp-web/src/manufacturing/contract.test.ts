@@ -7,6 +7,8 @@ import { describe, expect, it } from 'vitest'
 import {
   closeBody,
   decodeMassBalance,
+  decodeManufacturingOutputLocationCandidates,
+  decodeManufacturingOutputProductCandidates,
   decodeOrder,
   decodeOrderList,
   decodePlan,
@@ -184,6 +186,87 @@ describe('factBody', () => {
       kg: '10.5',
       occurredAtUtc: '2026-09-18T09:00:00.000Z',
     })
+  })
+
+  it('freezes every explicit company-output identity and version into the strict output body', () => {
+    expect(factBody({
+      ...base,
+      kind: 'outputs',
+      expectedParentLabelVersion: '8',
+      outputClass: 'GoodProduct',
+      productId: 'a0000000-0000-4000-8000-000000000001',
+      expectedProductVersion: '12',
+      lotId: 'a0000000-0000-4000-8000-000000000002',
+      labelId: 'a0000000-0000-4000-8000-000000000003',
+      labelCode: 'OUT-1',
+      heatNumber: null,
+      coilNumber: 'C-1',
+      requiredDocuments: ['CERT-1'],
+      ownerKind: 'Company',
+      ownerId: 'a0000000-0000-4000-8000-000000000004',
+      custodianKind: 'Company',
+      custodianId: 'a0000000-0000-4000-8000-000000000004',
+      locationId: 'a0000000-0000-4000-8000-000000000005',
+      initialBlock: 'Blocked',
+    })).toEqual({
+      outputId: base.factId,
+      expectedVersion: 3,
+      parentRollId: ROLL_1,
+      expectedParentLabelVersion: '8',
+      outputClass: 'GoodProduct',
+      productId: 'a0000000-0000-4000-8000-000000000001',
+      expectedProductVersion: '12',
+      lotId: 'a0000000-0000-4000-8000-000000000002',
+      labelId: 'a0000000-0000-4000-8000-000000000003',
+      labelCode: 'OUT-1',
+      heatNumber: null,
+      coilNumber: 'C-1',
+      requiredDocuments: ['CERT-1'],
+      ownerKind: 'Company',
+      ownerId: 'a0000000-0000-4000-8000-000000000004',
+      custodianKind: 'Company',
+      custodianId: 'a0000000-0000-4000-8000-000000000004',
+      locationId: 'a0000000-0000-4000-8000-000000000005',
+      initialBlock: 'Blocked',
+      movementId: base.movementId,
+      kg: '10.5',
+      occurredAtUtc: '2026-09-18T09:00:00.000Z',
+    })
+  })
+})
+
+describe('output selector contracts', () => {
+  const product = {
+    productId: 'a0000000-0000-4000-8000-000000000001',
+    productVersion: '12',
+    code: 'PRD-12',
+    name: 'Galvaniz bant',
+    stockUnitCode: 'kg',
+  }
+  const location = {
+    locationId: 'a0000000-0000-4000-8000-000000000002',
+    locationCode: 'HOL-1',
+    locationName: 'Üretim holü',
+    siteId: 'a0000000-0000-4000-8000-000000000003',
+    siteCode: 'OSM',
+    siteName: 'Osmangazi',
+  }
+
+  it('accepts only exact bounded Product and Organization projections', () => {
+    expect(decodeManufacturingOutputProductCandidates({ items: [product], searchWindowFull: false }))
+      .toEqual({ items: [product], searchWindowFull: false })
+    expect(decodeManufacturingOutputLocationCandidates({ items: [location], searchWindowFull: true }))
+      .toEqual({ items: [location], searchWindowFull: true })
+  })
+
+  it('fails closed on duplicate ids, noncanonical versions and extra owner fields', () => {
+    expect(decodeManufacturingOutputProductCandidates({ items: [product, product], searchWindowFull: false })).toBeNull()
+    expect(decodeManufacturingOutputProductCandidates({
+      items: [{ ...product, productVersion: '01' }], searchWindowFull: false,
+    })).toBeNull()
+    expect(decodeManufacturingOutputLocationCandidates({
+      items: [{ ...location, companyId: 'a0000000-0000-4000-8000-000000000004' }], searchWindowFull: false,
+    })).toBeNull()
   })
 })
 

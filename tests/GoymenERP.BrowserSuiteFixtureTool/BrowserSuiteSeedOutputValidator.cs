@@ -17,6 +17,18 @@ internal static class BrowserSuiteSeedOutputValidator
             var isGuid = Guid.TryParseExact(value, "D", out var guid)
                          && guid != Guid.Empty
                          && string.Equals(value, guid.ToString("D"), StringComparison.Ordinal);
+            if (string.Equals(suite, "mfg", StringComparison.Ordinal)
+                && IsManufacturingScalarKey(key))
+            {
+                if (!IsSuiteSpecificScalar(suite, key, value))
+                {
+                    throw new InvalidOperationException(
+                        $"Seed output '{key}' must match its exact Manufacturing scalar contract.");
+                }
+
+                continue;
+            }
+
             if (!isGuid && !actors.Contains(value) && !IsSuiteSpecificScalar(suite, key, value))
             {
                 throw new InvalidOperationException(
@@ -91,6 +103,7 @@ internal static class BrowserSuiteSeedOutputValidator
                 "planCreateRollCode" => value == "SYN-MFG-ROLL-7",
                 "planReplayRollCode" => value == "SYN-MFG-ROLL-8",
                 "planRefusalRollCode" => value == "SYN-MFG-ROLL-9",
+                "outputUiRollCode" => value == "SYN-MFG-ROLL-10",
                 "outputProductVersion" => IsPositiveDecimal(value),
                 "outputRequiredDocuments" => value == "[]",
                 "outputOwnerKind" or "outputCustodianKind" => value == "Company",
@@ -116,6 +129,13 @@ internal static class BrowserSuiteSeedOutputValidator
             _ => false,
         };
     }
+
+    private static bool IsManufacturingScalarKey(string key) => key is
+        "issueRollCode" or "replayRollCode" or "conflictRollCode" or "listRollCode"
+        or "closeRollCode" or "planCreateRollCode" or "planReplayRollCode"
+        or "planRefusalRollCode" or "outputUiRollCode" or "outputProductVersion"
+        or "outputRequiredDocuments" or "outputOwnerKind" or "outputCustodianKind"
+        or "outputInitialBlock";
 
     private static bool IsPositiveDecimal(string value)
     {

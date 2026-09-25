@@ -216,6 +216,7 @@ builder.Services.AddManufacturingModule(
 builder.Services.AddScoped<IManufacturingInventoryOutputAdmission, ManufacturingInventoryOutputAdmission>();
 builder.Services.AddScoped<IManufacturingInventoryInputIssuePortV1, ManufacturingInventoryInputIssueHost>();
 builder.Services.AddScoped<IManufacturingInventoryReturnOutputPortV1, ManufacturingInventoryReturnOutputHost>();
+builder.Services.AddScoped<IManufacturingOutputSelectionV1, ManufacturingOutputSelectionReader>();
 builder.Services.AddSalesModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(

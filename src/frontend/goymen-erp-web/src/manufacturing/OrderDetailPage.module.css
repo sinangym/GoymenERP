@@ -133,7 +133,8 @@
   color: #334155;
 }
 .form input,
-.form select {
+.form select,
+.form textarea {
   font: inherit;
   padding: 6px 8px;
   border: 1px solid #cbd5e1;
@@ -141,6 +142,7 @@
 }
 .form input:focus-visible,
 .form select:focus-visible,
+.form textarea:focus-visible,
 .actions button:focus-visible {
   outline: 2px solid #0b6fe8;
   outline-offset: 2px;

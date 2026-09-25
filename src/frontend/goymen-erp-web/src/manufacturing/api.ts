@@ -11,10 +11,14 @@
 
 import {
   decodeMassBalance,
+  decodeManufacturingOutputLocationCandidates,
+  decodeManufacturingOutputProductCandidates,
   decodeOrder,
   decodeOrderList,
   decodePlan,
   type MassBalanceView,
+  type ManufacturingOutputLocationCandidates,
+  type ManufacturingOutputProductCandidates,
   type OrderListView,
   type OrderStatus,
   type ProductionOrderView,
@@ -32,6 +36,68 @@ export function devHeaders(): Record<string, string> {
 }
 
 export const MANUFACTURING_BASE = `${API_BASE}/manufacturing`
+const OUTPUT_CANDIDATE_LIMIT = 25
+
+async function outputReference<T>(
+  companyId: string,
+  path: string,
+  decode: (value: unknown) => T | null,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<T>> {
+  let response: Response
+  try {
+    response = await fetch(`${MANUFACTURING_BASE}/references/${path}`, {
+      headers: { ...devHeaders(), 'X-Company-Id': companyId },
+      cache: 'no-store',
+      signal,
+    })
+  } catch {
+    if (signal?.aborted) return { type: 'fence-stale' }
+    return navigator.onLine ? { type: 'network-error' } : { type: 'offline' }
+  }
+  let body: unknown = null
+  try {
+    body = await response.json()
+  } catch {
+    if (signal?.aborted) return { type: 'fence-stale' }
+  }
+  if (response.status !== 200) return { type: 'http', status: response.status, body }
+  const decoded = decode(body)
+  return decoded === null ? { type: 'malformed' } : { type: 'ok-single', data: decoded }
+}
+
+export function fetchManufacturingOutputProducts(
+  companyId: string,
+  effectiveOn: string,
+  q = '',
+  signal?: AbortSignal,
+): Promise<ViewOutcome<ManufacturingOutputProductCandidates>> {
+  const query = new URLSearchParams({ effectiveOn, limit: String(OUTPUT_CANDIDATE_LIMIT) })
+  const search = q.trim()
+  if (search.length > 0) query.set('q', search)
+  return outputReference(
+    companyId,
+    `output-products?${query.toString()}`,
+    decodeManufacturingOutputProductCandidates,
+    signal,
+  )
+}
+
+export function fetchManufacturingOutputLocations(
+  companyId: string,
+  q = '',
+  signal?: AbortSignal,
+): Promise<ViewOutcome<ManufacturingOutputLocationCandidates>> {
+  const query = new URLSearchParams({ limit: String(OUTPUT_CANDIDATE_LIMIT) })
+  const search = q.trim()
+  if (search.length > 0) query.set('q', search)
+  return outputReference(
+    companyId,
+    `output-locations?${query.toString()}`,
+    decodeManufacturingOutputLocationCandidates,
+    signal,
+  )
+}
 
 /**
  * `GET /api/v1/manufacturing/orders/{orderId}` — the order rebuilt from its stored facts.
