@@ -12,6 +12,8 @@ using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Manufacturing.Domain.Common;
 using GoymenERP.Modules.Manufacturing.Domain.Orders;
 using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence;
+using GoymenERP.Modules.Organization.Application.Contracts;
+using GoymenERP.Modules.Product.Application.Contracts;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
@@ -23,16 +25,46 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
     public async Task Manufacturing_return_and_output_commit_once_and_replay_after_the_order_advances()
     {
         await using var run = await StartManufacturingInventoryRunAsync();
-        var seed = await PrepareIssuedOrderAsync(run, "SYN-MFG-RETURN-OUTPUT", 100m);
+        var customer = Guid.NewGuid();
+        var seed = await PrepareIssuedOrderAsync(run, "SYN-MFG-RETURN-OUTPUT", 100m,
+            StockPartyKind.Counterparty, customer, StockPartyKind.Company, CompanyA);
+        Assert.Equal((StockPartyKind.Counterparty, customer, StockPartyKind.Company, CompanyA),
+            (seed.OwnerKind, seed.OwnerId, seed.CustodianKind, seed.CustodianId));
         var authority = new ManufacturingHostAuthority(GrantedManufacturingScope());
-        var admission = new ManufacturingOutputAdmission();
+        var admission = new ManufacturingInventoryOutputAdmission(
+            new ManufacturingOutputProducts(), new ManufacturingOutputLocations(seed.LocationId));
         await using var scope = ReturnOutputHostScope.Create(run, authority, admission);
         var returned = ReturnCommand(seed, 10m);
         var returnedMetadata = ManufacturingHostMetadata(run, "return-commit");
 
         var returnResult = await scope.Host.ReturnAsync(returned, returnedMetadata);
-        var output = OutputCommand(seed, returnResult.OrderVersion, returnResult.ParentLabelVersion, 80m);
+        var outputSeed = seed with
+        {
+            OrderVersion = returnResult.OrderVersion,
+            ParentLabelVersion = returnResult.ParentLabelVersion,
+        };
+        var output = OutputCommand(outputSeed, returnResult.OrderVersion, returnResult.ParentLabelVersion, 80m);
         var outputMetadata = ManufacturingHostMetadata(run, "output-commit");
+        var wrongOwner = output with { OwnerKind = StockPartyKind.Company, OwnerId = CompanyA };
+        var wrongOwnerMetadata = ManufacturingHostMetadata(run, "output-wrong-owner");
+        var wrongOwnerError = await Assert.ThrowsAsync<InventoryManufacturingRealizationException>(() =>
+            scope.Host.DeclareOutputAsync(wrongOwner, wrongOwnerMetadata));
+        Assert.Equal((409, InventoryManufacturingRealizationCodesV1.ParentLabelContextConflict),
+            (wrongOwnerError.Status, wrongOwnerError.Code));
+        await AssertNoOutputEffectAsync(run, outputSeed, wrongOwner, wrongOwnerMetadata.CorrelationId);
+
+        var wrongCustodian = output with
+        {
+            CustodianKind = StockPartyKind.Counterparty,
+            CustodianId = customer,
+        };
+        var wrongCustodianMetadata = ManufacturingHostMetadata(run, "output-wrong-custodian");
+        var wrongCustodianError = await Assert.ThrowsAsync<InventoryManufacturingRealizationException>(() =>
+            scope.Host.DeclareOutputAsync(wrongCustodian, wrongCustodianMetadata));
+        Assert.Equal((409, InventoryManufacturingRealizationCodesV1.ParentLabelContextConflict),
+            (wrongCustodianError.Status, wrongCustodianError.Code));
+        await AssertNoOutputEffectAsync(run, outputSeed, wrongCustodian, wrongCustodianMetadata.CorrelationId);
+
         var outputResult = await scope.Host.DeclareOutputAsync(output, outputMetadata);
 
         Assert.Equal(ManufacturingWriteOutcome.Recorded, await scope.Store.RecordWorkInProgressAsync(
@@ -55,7 +87,6 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         Assert.Equal(4, returnResult.ParentLabelVersion);
         Assert.Equal(4, outputResult.ParentLabelVersion);
         Assert.Equal(2, outputResult.LabelVersion);
-        Assert.Equal(4, admission.Calls);
         Assert.Equal(5L, await run.ScalarAsync<long>(
             "SELECT Version FROM manufacturing.Orders WHERE Id = @id", ("@id", seed.OrderId)));
         Assert.Equal(1, await run.ScalarAsync<int>(
@@ -66,6 +97,13 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
             "SELECT COUNT(*) FROM inventory.Movements WHERE Id = @id", ("@id", returned.MovementId)));
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM inventory.Movements WHERE Id = @id", ("@id", output.MovementId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.MovementLines WHERE MovementId = @movement "
+            + "AND OwnerKind = @ownerKind AND OwnerId = @ownerId "
+            + "AND CustodianKind = @custodianKind AND CustodianId = @custodianId",
+            ("@movement", output.MovementId), ("@ownerKind", (int)StockPartyKind.Counterparty),
+            ("@ownerId", customer), ("@custodianKind", (int)StockPartyKind.Company),
+            ("@custodianId", CompanyA)));
         Assert.Equal(10m, await run.ScalarAsync<decimal>(
             "SELECT QuantityKg FROM inventory.Balances WHERE LabelId = @id AND Block = 1",
             ("@id", seed.ParentLabelId)));
@@ -186,8 +224,20 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
     }
 
     private static async Task<ReturnOutputSeed> PrepareIssuedOrderAsync(Run run, string code, decimal quantity)
+        => await PrepareIssuedOrderAsync(run, code, quantity,
+            StockPartyKind.Company, CompanyA, StockPartyKind.Company, CompanyA);
+
+    private static async Task<ReturnOutputSeed> PrepareIssuedOrderAsync(
+        Run run,
+        string code,
+        decimal quantity,
+        StockPartyKind ownerKind,
+        Guid ownerId,
+        StockPartyKind custodianKind,
+        Guid custodianId)
     {
-        var parent = await SeedManufacturingParentAsync(run, code, quantity);
+        var parent = await SeedManufacturingParentAsync(run, code, quantity,
+            ownerKind, ownerId, custodianKind, custodianId);
         var authority = new ManufacturingHostAuthority(GrantedManufacturingScope());
         await using var issueScope = ManufacturingHostScope.Create(run, CompanyA, authority);
         var issue = await SeedManufacturingOrderAsync(
@@ -195,7 +245,12 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         var issued = await issueScope.Host.IssueAsync(issue, ManufacturingHostMetadata(run, "prepare-issued-order"));
         return new ReturnOutputSeed(
             issue.OrderId, issue.ParentLabelId, issued.OrderVersion, issued.ParentLabelVersion,
-            parent.LocationId, issue.OccurredAtUtc);
+            Enum.Parse<StockPartyKind>(issued.ParentPosition.OwnerKind, ignoreCase: false),
+            issued.ParentPosition.OwnerId,
+            Enum.Parse<StockPartyKind>(issued.ParentPosition.CustodianKind, ignoreCase: false),
+            issued.ParentPosition.CustodianId,
+            issued.ParentPosition.LocationId,
+            issue.OccurredAtUtc);
     }
 
     private static ManufacturingInventoryInputReturnCommand ReturnCommand(ReturnOutputSeed seed, decimal quantity) =>
@@ -218,10 +273,10 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         "SYN-HEAT",
         "SYN-COIL",
         [],
-        StockPartyKind.Company,
-        CompanyA,
-        StockPartyKind.Company,
-        CompanyA,
+        seed.OwnerKind,
+        seed.OwnerId,
+        seed.CustodianKind,
+        seed.CustodianId,
         seed.LocationId,
         BlockState.Free,
         Guid.NewGuid(),
@@ -376,8 +431,51 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         Guid ParentLabelId,
         long OrderVersion,
         long ParentLabelVersion,
+        StockPartyKind OwnerKind,
+        Guid OwnerId,
+        StockPartyKind CustodianKind,
+        Guid CustodianId,
         Guid LocationId,
         DateTimeOffset OccurredAtUtc);
+
+    private sealed class ManufacturingOutputProducts : IProductStockEligibilityV1
+    {
+        public Task<ProductStockEligibilityV1> EvaluateAsync(
+            ProductStockSelectionV1 selection,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(new ProductStockEligibilityV1(
+                new ProductStockSnapshotV1(
+                    selection.ProductId,
+                    selection.ExpectedProductVersion,
+                    "SYN-MFG-OUTPUT",
+                    "Sentetik üretim çıktısı",
+                    new ProductSalesUnitProfileV1(
+                        CompanyA,
+                        Guid.Parse("77000000-0000-0000-0000-000000000001"),
+                        Guid.Parse("77000000-0000-0000-0000-000000000002"),
+                        "1"),
+                    selection.EffectiveOn),
+                []));
+        }
+    }
+
+    private sealed class ManufacturingOutputLocations(Guid expectedLocationId)
+        : IOrganizationLocationStatusReaderV1
+    {
+        public Task<OrganizationLocationStatusV1?> ReadAsync(
+            Guid companyId,
+            Guid locationId,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult<OrganizationLocationStatusV1?>(
+                companyId == CompanyA && locationId == expectedLocationId
+                    ? new OrganizationLocationStatusV1(locationId, true, false)
+                    : null);
+        }
+    }
 
     private sealed class SyntheticReturnOutputFailure : Exception;
     private sealed class SyntheticOutputAdmissionFailure : Exception;
