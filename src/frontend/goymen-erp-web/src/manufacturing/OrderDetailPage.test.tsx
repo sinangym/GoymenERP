@@ -212,7 +212,6 @@ describe('order balances', () => {
         () =>
           json(
             order({
-              process: 'ColdRolling',
               rolls: [
                 roll(ROLL_1, {
                   issuedKg: '1000.125',
@@ -235,7 +234,6 @@ describe('order balances', () => {
     expect(within(row).getByText('Fark var')).toBeTruthy()
     expect(screen.getByTestId('cost-status').textContent).toContain('Hesaplanmadı')
     expect(screen.getByTestId('remaining-target').textContent).toContain('Planda beyan edilmiş bir hedef yok')
-    expect(screen.getByText('ColdRolling', { exact: true })).toBeTruthy()
     expect(screen.getByRole('columnheader', { name: 'Açıklanamayan fark' })).toBeTruthy()
   })
 
