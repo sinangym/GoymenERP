@@ -276,7 +276,6 @@ public sealed class MfgBrowserSeed : IBrowserSuiteFixture
             ["workCenterId"] = workCenterId.ToString("D"),
             ["orderId"] = OrderId.ToString("D"),
             ["rollId"] = ParentRollId.ToString("D"),
-            ["rollCode"] = ParentRollCode,
             ["issueRollId"] = IssueRoll.LabelId.ToString("D"),
             ["issueRollCode"] = IssueRoll.Code,
             ["replayRollId"] = ReplayRoll.LabelId.ToString("D"),

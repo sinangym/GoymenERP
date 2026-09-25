@@ -139,6 +139,49 @@ public sealed class BrowserSuiteHostEnvelopeTests
     }
 
     [Fact]
+    public void Mfg_output_validation_accepts_only_its_closed_fixture_scalar_contract()
+    {
+        BrowserSuiteSeedOutputValidator.Validate(
+            "mfg",
+            new Dictionary<string, string>
+            {
+                ["issueRollCode"] = "SYN-MFG-ROLL-2",
+                ["replayRollCode"] = "SYN-MFG-ROLL-3",
+                ["conflictRollCode"] = "SYN-MFG-ROLL-4",
+                ["listRollCode"] = "SYN-MFG-ROLL-5",
+                ["closeRollCode"] = "SYN-MFG-ROLL-6",
+                ["planCreateRollCode"] = "SYN-MFG-ROLL-7",
+                ["planReplayRollCode"] = "SYN-MFG-ROLL-8",
+                ["planRefusalRollCode"] = "SYN-MFG-ROLL-9",
+                ["outputProductVersion"] = "2",
+                ["outputRequiredDocuments"] = "[]",
+                ["outputOwnerKind"] = "Company",
+                ["outputCustodianKind"] = "Company",
+                ["outputInitialBlock"] = "Free",
+            },
+            new HashSet<string>(StringComparer.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("issueRollCode", "SYN-MFG-ROLL-3")]
+    [InlineData("planRefusalRollCode", "SYN-MFG-ROLL-10")]
+    [InlineData("outputProductVersion", "02")]
+    [InlineData("outputRequiredDocuments", "[\"MTC\"]")]
+    [InlineData("outputOwnerKind", "Counterparty")]
+    [InlineData("outputCustodianKind", "company")]
+    [InlineData("outputInitialBlock", "Blocked")]
+    [InlineData("unexpected", "SYN-MFG-ROLL-2")]
+    public void Mfg_output_validation_rejects_values_outside_its_closed_fixture_scalar_contract(
+        string key,
+        string value)
+    {
+        Assert.Throws<InvalidOperationException>(() => BrowserSuiteSeedOutputValidator.Validate(
+            "mfg",
+            new Dictionary<string, string> { [key] = value },
+            new HashSet<string>(StringComparer.Ordinal)));
+    }
+
+    [Fact]
     public void A_normal_application_host_does_not_register_product_technical_fixture_services()
     {
         WithoutProcessEnvelope(() =>

@@ -62,7 +62,6 @@ export interface MfgSeed {
   readonly workCenterId: string
   readonly orderId: string
   readonly rollId: string
-  readonly rollCode: string
   readonly rolls: MfgRolls
   readonly output: MfgOutputSeed
 }
@@ -127,7 +126,6 @@ export function readEnvironment(): MfgEnvironment {
     workCenterId: text(raw, 'workCenterId', true),
     orderId: text(raw, 'orderId', true),
     rollId: text(raw, 'rollId', true),
-    rollCode: text(raw, 'rollCode'),
     rolls: {
       issue: roll('issue'),
       replay: roll('replay'),

@@ -79,6 +79,26 @@ internal static class BrowserSuiteSeedOutputValidator
             };
         }
 
+        if (string.Equals(suite, "mfg", StringComparison.Ordinal))
+        {
+            return key switch
+            {
+                "issueRollCode" => value == "SYN-MFG-ROLL-2",
+                "replayRollCode" => value == "SYN-MFG-ROLL-3",
+                "conflictRollCode" => value == "SYN-MFG-ROLL-4",
+                "listRollCode" => value == "SYN-MFG-ROLL-5",
+                "closeRollCode" => value == "SYN-MFG-ROLL-6",
+                "planCreateRollCode" => value == "SYN-MFG-ROLL-7",
+                "planReplayRollCode" => value == "SYN-MFG-ROLL-8",
+                "planRefusalRollCode" => value == "SYN-MFG-ROLL-9",
+                "outputProductVersion" => IsPositiveDecimal(value),
+                "outputRequiredDocuments" => value == "[]",
+                "outputOwnerKind" or "outputCustodianKind" => value == "Company",
+                "outputInitialBlock" => value == "Free",
+                _ => false,
+            };
+        }
+
         if (!string.Equals(suite, "pur01", StringComparison.Ordinal))
         {
             return false;
