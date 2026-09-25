@@ -78,6 +78,46 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
     ];
 
     [SqlServerFact]
+    public async Task Output_selectors_publish_owner_backed_product_version_and_active_location_under_facts_authority()
+    {
+        await using var run = await Run.StartAsync();
+        var user = await run.GrantAsync(TestUsers.CompanyA, CompanyA,
+            ErpPermissions.ManufacturingFactsRecord,
+            ErpPermissions.ProductOperationalSelectionRead);
+        using var client = run.ClientFor(user, CompanyA);
+
+        using var productsResponse = await client.GetAsync(
+            $"{Base}/references/output-products?effectiveOn=2026-09-25&q={Uri.EscapeDataString(run.ProductFixture.Code)}&limit=25");
+        Assert.Equal(HttpStatusCode.OK, productsResponse.StatusCode);
+        Assert.True(productsResponse.Headers.CacheControl is { Private: true, NoStore: true });
+        var products = (await productsResponse.Content
+            .ReadFromJsonAsync<ManufacturingOutputProductCandidatesV1>())!;
+        var product = Assert.Single(products.Items);
+        Assert.Equal((run.ProductFixture.ProductId, run.ProductFixture.ProductVersion,
+                run.ProductFixture.Code, run.ProductFixture.Name, "kg"),
+            (product.ProductId, product.ProductVersion, product.Code, product.Name, product.StockUnitCode));
+
+        using var locationsResponse = await client.GetAsync($"{Base}/references/output-locations?limit=25");
+        Assert.Equal(HttpStatusCode.OK, locationsResponse.StatusCode);
+        Assert.True(locationsResponse.Headers.CacheControl is { Private: true, NoStore: true });
+        var locations = (await locationsResponse.Content
+            .ReadFromJsonAsync<ManufacturingOutputLocationCandidatesV1>())!;
+        Assert.NotEmpty(locations.Items);
+        Assert.All(locations.Items, location =>
+        {
+            Assert.NotEqual(Guid.Empty, location.LocationId);
+            Assert.NotEqual(Guid.Empty, location.SiteId);
+            Assert.False(string.IsNullOrWhiteSpace(location.LocationCode));
+            Assert.False(string.IsNullOrWhiteSpace(location.SiteCode));
+        });
+
+        var locationIds = locations.Items.Select(item => item.LocationId).ToArray();
+        Assert.Equal(locationIds.Length, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM organization.Locations WHERE CompanyId = @c AND IsActive = 1 AND IsExternal = 0 AND Id IN (SELECT value FROM OPENJSON(@ids) WITH (value uniqueidentifier '$'))",
+            ("@c", CompanyA), ("@ids", JsonSerializer.Serialize(locationIds))));
+    }
+
+    [SqlServerFact]
     public async Task Each_locked_organization_process_persists_reopens_and_snapshots_into_its_order()
     {
         await using var run = await Run.StartAsync();
@@ -1086,7 +1126,7 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
                 .EnsureAsync(CancellationToken.None);
         }
 
-        private ProductStockCandidateFixtureOutput ProductFixture { get; set; } = null!;
+        public ProductStockCandidateFixtureOutput ProductFixture { get; private set; } = null!;
 
         private InventoryStoreScope InventoryStore(Guid writer)
         {

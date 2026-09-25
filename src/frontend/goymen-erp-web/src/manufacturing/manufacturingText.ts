@@ -34,12 +34,15 @@ export const FACT_KIND_LABEL: Record<FactKind, string> = {
   'input-issues': 'Girdi çıkışı',
   'input-returns': 'Kullanılmayan girdi iadesi',
   'wip-measurements': 'WIP ölçümü',
+  outputs: 'Şirket malı üretim çıktısı',
 }
 
 export const FACT_KIND_HELP: Record<FactKind, string> = {
   'input-issues': 'Ana rulodan üretime verilen kütle.',
   'input-returns': 'Çıkıp kullanılmayan ve geri dönen kütle; çıkandan fazla olamaz.',
   'wip-measurements': 'Rulonun üzerindeki yarı işlenmiş kütlenin son okuması; öncekinden sonra olmalı.',
+  outputs:
+    'Yeni ürün etiketi ve stok hareketi aynı işlemde kaydedilir. Bu yol yalnız şirket malı ve şirket gözetimindeki çıktı içindir.',
 }
 
 export const COST_STATUS_TEXT = 'Hesaplanmadı'
@@ -72,6 +75,20 @@ export const KG_FORMAT_ERROR = 'Kilogram biçimi geçersiz: işaretsiz, nokta il
 export const ROLL_REQUIRED = 'Bir ana rulo seçin.'
 export const TIME_REQUIRED = 'Olgunun zamanını girin.'
 export const CLOSED_ORDER_TEXT = 'Emir kapalı; yeni gerçekleşme kaydedilmez.'
+
+export const OUTPUT_INVENTORY_TEXT = {
+  productRequired: 'Sunucunun doğruladığı bir stok ürünü seçin.',
+  locationRequired: 'Sunucunun doğruladığı aktif bir lokasyon seçin.',
+  classRequired: 'Çıktı sınıfını seçin.',
+  labelRequired: 'Yeni çıktı etiket kodunu girin.',
+  blockRequired: 'İlk stok durumunu açıkça seçin; ekran varsayılan seçmez.',
+  productLoading: 'Ürün seçenekleri yükleniyor…',
+  locationLoading: 'Lokasyon seçenekleri yükleniyor…',
+  productUnavailable: 'Ürün seçenekleri okunamadı. Tekrar deneyin.',
+  locationUnavailable: 'Lokasyon seçenekleri okunamadı. Tekrar deneyin.',
+  customerOwnedBlocked:
+    'Müşteri malı/fason çıktı, Manufacturing kapsamlı Cari seçim ve doğrulama sözleşmesi gelene kadar kapalıdır.',
+} as const
 
 export const INPUT_INVENTORY_TEXT = {
   heading: 'Ana rulo Inventory durumu',

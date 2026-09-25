@@ -54,10 +54,11 @@ public sealed class MfgBrowserSeed : IBrowserSuiteFixture
     private static readonly ParentRollFixture PlanCreateRoll = Roll(7);
     private static readonly ParentRollFixture PlanReplayRoll = Roll(8);
     private static readonly ParentRollFixture PlanRefusalRoll = Roll(9);
+    private static readonly ParentRollFixture OutputUiRoll = Roll(10);
     private static readonly ParentRollFixture[] CaseRolls =
     [
         IssueRoll, ReplayRoll, ConflictRoll, ListRoll, CloseRoll,
-        PlanCreateRoll, PlanReplayRoll, PlanRefusalRoll,
+        PlanCreateRoll, PlanReplayRoll, PlanRefusalRoll, OutputUiRoll,
     ];
 
     private const string ManufacturingPath = "/api/v1/manufacturing";
@@ -292,6 +293,8 @@ public sealed class MfgBrowserSeed : IBrowserSuiteFixture
             ["planReplayRollCode"] = PlanReplayRoll.Code,
             ["planRefusalRollId"] = PlanRefusalRoll.LabelId.ToString("D"),
             ["planRefusalRollCode"] = PlanRefusalRoll.Code,
+            ["outputUiRollId"] = OutputUiRoll.LabelId.ToString("D"),
+            ["outputUiRollCode"] = OutputUiRoll.Code,
             ["outputProductId"] = closeRoll.GetProperty("productId").GetGuid().ToString("D"),
             ["outputProductVersion"] = product.ProductVersion,
             ["outputRequiredDocuments"] = closeRoll.GetProperty("requiredDocuments").GetRawText(),

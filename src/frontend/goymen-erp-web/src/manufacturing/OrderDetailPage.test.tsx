@@ -31,6 +31,7 @@ import {
 
 const PATH = `/uretim/emir/${ORDER}`
 const PRODUCT = 'e0000000-0000-4000-8000-000000000010'
+const NEW_PRODUCT = 'e0000000-0000-4000-8000-000000000014'
 const LOT = 'e0000000-0000-4000-8000-000000000011'
 const LOCATION = 'e0000000-0000-4000-8000-000000000012'
 const INVENTORY_RECORDER_CAPABILITIES = [...RECORDER_CAPABILITIES, INVENTORY_STOCK_POSITIONS_CAPABILITY]
@@ -85,23 +86,52 @@ function stub(
   options: {
     reads?: Array<() => Response>
     commands?: Array<() => Response>
-    capabilities?: readonly string[]
+    capabilities?: readonly string[] | (() => readonly string[])
     /** GDC-BAL/1 reads (BAL slice 2), answered on their own so they never consume an order read. */
     balances?: Array<() => Response>
     labels?: Array<() => Response>
+    products?: Array<() => Response | Promise<Response>>
+    locations?: Array<() => Response | Promise<Response>>
   } = {},
 ): Scenario {
   const reads = options.reads ?? [() => json(order())]
   const commands = options.commands ?? [() => json(order({ version: 2 }))]
   const balances = options.balances ?? [() => json(massBalance())]
   const labels = options.labels ?? [() => json(labelDetail())]
+  const products = options.products ?? [() => json({
+    items: [{ productId: PRODUCT, productVersion: '12', code: 'PRD-12', name: 'Galvaniz bant', stockUnitCode: 'kg' }],
+    searchWindowFull: false,
+  })]
+  const locations = options.locations ?? [() => json({
+    items: [{
+      locationId: LOCATION,
+      locationCode: 'HOL-1',
+      locationName: 'Üretim holü',
+      siteId: 'e0000000-0000-4000-8000-000000000013',
+      siteCode: 'OSM',
+      siteName: 'Osmangazi',
+    }],
+    searchWindowFull: false,
+  })]
   let readIndex = 0
   let commandIndex = 0
   let balanceIndex = 0
   let labelIndex = 0
+  let productIndex = 0
+  let locationIndex = 0
   const recorded = installFetch({
     capabilities: options.capabilities,
     respond: (url, init) => {
+      if (url.includes('/manufacturing/references/output-products')) {
+        const respond = products[Math.min(productIndex, products.length - 1)]
+        productIndex += 1
+        return respond()
+      }
+      if (url.includes('/manufacturing/references/output-locations')) {
+        const respond = locations[Math.min(locationIndex, locations.length - 1)]
+        locationIndex += 1
+        return respond()
+      }
       if (url.includes(`/inventory/labels/${ROLL_1}/detail`)) {
         const respond = labels[Math.min(labelIndex, labels.length - 1)]
         labelIndex += 1
@@ -141,11 +171,23 @@ async function fillFact(
   await user.type(time, '2026-09-18T09:30')
 }
 
+async function openOutputSelectors(
+  user: ReturnType<typeof userEvent.setup>,
+  occurredAt = '2026-09-25T00:30',
+) {
+  await user.click(screen.getByLabelText('Şirket malı üretim çıktısı'))
+  await user.type(screen.getByLabelText('Zaman'), occurredAt)
+}
+
 const posts = (recorded: RecordedRequest[]) => requestsFor(recorded, '/manufacturing/orders/', 'POST')
 const reads = (recorded: RecordedRequest[]) =>
   requestsFor(recorded, `/manufacturing/orders/${ORDER}`, 'GET').filter((request) => !request.url.endsWith('/mass-balance'))
 const balanceReads = (recorded: RecordedRequest[]) => requestsFor(recorded, `/manufacturing/orders/${ORDER}/mass-balance`, 'GET')
 const labelReads = (recorded: RecordedRequest[]) => requestsFor(recorded, `/inventory/labels/${ROLL_1}/detail`, 'GET')
+const productReads = (recorded: RecordedRequest[]) =>
+  requestsFor(recorded, '/manufacturing/references/output-products', 'GET')
+const locationReads = (recorded: RecordedRequest[]) =>
+  requestsFor(recorded, '/manufacturing/references/output-locations', 'GET')
 
 /** The roll's row in the roll-balance table (the mass-balance panel has a row per roll too). */
 async function rollRow(): Promise<HTMLElement> {
@@ -337,7 +379,7 @@ describe('fact forms', () => {
     expect(screen.getByLabelText('Zaman')).toBeTruthy()
     expect(screen.getByLabelText('WIP ölçümü')).toBeTruthy()
     expect(screen.queryByLabelText('Kullanılmayan girdi iadesi')).toBeNull()
-    expect(screen.queryByLabelText('Çıktı bildirimi')).toBeNull()
+    expect(screen.queryByLabelText('Şirket malı üretim çıktısı')).toBeNull()
   })
 
   it('sends one frozen fact with its own key and id, then shows the RE-READ order', async () => {
@@ -451,6 +493,172 @@ describe('fact forms', () => {
     expect(returned.body).not.toHaveProperty('factId')
     const row = await rollRow()
     expect(within(row).getByText('50')).toBeTruthy()
+  })
+
+  it('selects server-backed Product and Organization facts and records one company-owned output atomically', async () => {
+    const user = userEvent.setup()
+    const { recorded } = stub({
+      capabilities: INVENTORY_RECORDER_CAPABILITIES,
+      reads: [
+        () => json(order({
+          version: 2,
+          rolls: [roll(ROLL_1, { issuedKg: '100', netIssuedKg: '100', unexplainedKg: '100' })],
+        })),
+        () => json(order({
+          version: 3,
+          rolls: [roll(ROLL_1, {
+            issuedKg: '100', netIssuedKg: '100',
+            outputsKg: { GoodProduct: '40', SecondQuality: '0', UsableRemnant: '0', Scrap: '0', ProcessLoss: '0' },
+            unexplainedKg: '60', isFullyAccounted: false,
+          })],
+        })),
+      ],
+      labels: [() => json(labelDetail('8', '900')), () => json(labelDetail('9', '900'))],
+      commands: [() => json(order({ version: 3 }))],
+    })
+    renderAt(PATH)
+    await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+
+    await user.click(screen.getByLabelText('Şirket malı üretim çıktısı'))
+    await user.selectOptions(screen.getByLabelText('Ana rulo'), ROLL_1)
+    const time = screen.getByLabelText('Zaman')
+    await user.type(time, '2026-09-25T00:30')
+    await waitFor(() => expect(labelReads(recorded)).toHaveLength(1))
+    await waitFor(() => expect(productReads(recorded)).toHaveLength(1))
+    await waitFor(() => expect(locationReads(recorded)).toHaveLength(1))
+
+    await user.selectOptions(screen.getByLabelText('Çıktı sınıfı'), 'GoodProduct')
+    await user.selectOptions(screen.getByLabelText('Ürün'), PRODUCT)
+    await user.selectOptions(screen.getByLabelText('Lokasyon'), LOCATION)
+    await user.type(screen.getByLabelText('Yeni etiket kodu'), 'OUT-40')
+    await user.type(screen.getByLabelText('Rulo no (opsiyonel)'), 'COIL-40')
+    await user.type(screen.getByLabelText('Belge referansları (satır başına)'), 'CERT-1{enter}CERT-2')
+    await user.selectOptions(screen.getByLabelText('İlk stok durumu'), 'Blocked')
+    await user.type(screen.getByLabelText('Kütle (kg)'), '40')
+    await user.click(screen.getByRole('button', { name: 'Kaydet' }))
+
+    expect(await screen.findByText('Kaydedildi')).toBeTruthy()
+    const output = posts(recorded).find((request) => request.url.endsWith('/outputs'))!
+    expect(output.headers['X-Company-Id']).toBe(COMPANY_A)
+    expect(output.body).toMatchObject({
+      expectedVersion: 2,
+      parentRollId: ROLL_1,
+      expectedParentLabelVersion: '8',
+      outputClass: 'GoodProduct',
+      productId: PRODUCT,
+      expectedProductVersion: '12',
+      labelCode: 'OUT-40',
+      heatNumber: null,
+      coilNumber: 'COIL-40',
+      requiredDocuments: ['CERT-1', 'CERT-2'],
+      ownerKind: 'Company',
+      ownerId: COMPANY_A,
+      custodianKind: 'Company',
+      custodianId: COMPANY_A,
+      locationId: LOCATION,
+      initialBlock: 'Blocked',
+      kg: '40',
+    })
+    const ids = ['outputId', 'movementId', 'lotId', 'labelId']
+      .map((name) => (output.body as Record<string, string>)[name])
+    expect(new Set(ids).size).toBe(4)
+    expect(ids.every((id) => /^[0-9a-f-]{36}$/.test(id))).toBe(true)
+    expect(output.body).not.toHaveProperty('companyId')
+    const selectedEffectiveOn = new URL(productReads(recorded)[0].url, 'http://local.test')
+      .searchParams.get('effectiveOn')
+    expect(selectedEffectiveOn).toBe((output.body as { occurredAtUtc: string }).occurredAtUtc.slice(0, 10))
+    await waitFor(() => expect(reads(recorded)).toHaveLength(2))
+    await waitFor(() => expect(labelReads(recorded)).toHaveLength(2))
+  })
+
+  it('re-reads output selectors after route re-entry inside the production stale window', async () => {
+    const user = userEvent.setup()
+    const { recorded } = stub({ capabilities: INVENTORY_RECORDER_CAPABILITIES })
+    const { router } = renderAt(PATH, { staleTime: 30_000 })
+    await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+
+    await openOutputSelectors(user)
+    await waitFor(() => expect(productReads(recorded)).toHaveLength(1))
+
+    await router.navigate('/')
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Gerçekleşme kaydı' })).toBeNull())
+    await router.navigate(PATH)
+    await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+    await openOutputSelectors(user)
+
+    await waitFor(() => expect(productReads(recorded)).toHaveLength(2))
+  })
+
+  it('removes cached output selectors when the fact capability is revoked before re-entry', async () => {
+    const user = userEvent.setup()
+    let capabilities: readonly string[] = INVENTORY_RECORDER_CAPABILITIES
+    const { recorded } = stub({ capabilities: () => capabilities })
+    const { router } = renderAt(PATH, { staleTime: 30_000 })
+    await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+    await openOutputSelectors(user)
+    await screen.findByRole('option', { name: /PRD-12/ })
+
+    await router.navigate('/')
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Gerçekleşme kaydı' })).toBeNull())
+    capabilities = READER_CAPABILITIES
+    await router.navigate(PATH)
+    await screen.findByRole('region', { name: 'Ana rulo dengesi (kg)' })
+
+    expect(screen.queryByRole('heading', { name: 'Gerçekleşme kaydı' })).toBeNull()
+    expect(screen.queryByRole('option', { name: /PRD-12/ })).toBeNull()
+    expect(productReads(recorded)).toHaveLength(1)
+  })
+
+  it('ignores a selector answer that arrives after a newer route entry has loaded', async () => {
+    const user = userEvent.setup()
+    let releaseOld: (response: Response) => void = () => undefined
+    const oldAnswer = new Promise<Response>((resolve) => {
+      releaseOld = resolve
+    })
+    const { recorded } = stub({
+      capabilities: INVENTORY_RECORDER_CAPABILITIES,
+      products: [
+        () => oldAnswer,
+        () => json({
+          items: [{
+            productId: NEW_PRODUCT,
+            productVersion: '13',
+            code: 'PRD-13',
+            name: 'Yeni yetkili ürün',
+            stockUnitCode: 'kg',
+          }],
+          searchWindowFull: false,
+        }),
+      ],
+    })
+    const { router } = renderAt(PATH, { staleTime: 30_000 })
+    await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+    await openOutputSelectors(user)
+    await waitFor(() => expect(productReads(recorded)).toHaveLength(1))
+
+    await router.navigate('/')
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Gerçekleşme kaydı' })).toBeNull())
+    await router.navigate(PATH)
+    await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+    await openOutputSelectors(user)
+    await screen.findByRole('option', { name: /PRD-13/ })
+
+    releaseOld(json({
+      items: [{
+        productId: PRODUCT,
+        productVersion: '12',
+        code: 'PRD-12',
+        name: 'Eski giriş ürünü',
+        stockUnitCode: 'kg',
+      }],
+      searchWindowFull: false,
+    }))
+    await oldAnswer
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(screen.queryByRole('option', { name: /PRD-12/ })).toBeNull()
+    expect(screen.getByRole('option', { name: /PRD-13/ })).toBeTruthy()
+    expect(productReads(recorded)).toHaveLength(2)
   })
 
   it('keeps customer/fason ownership fail-closed and sends no input command', async () => {

@@ -1,11 +1,12 @@
 /**
  * The bounded fact commands currently exposed by the order screen:
- * `input-issues` · `input-returns` · `wip-measurements`.
+ * `input-issues` · `input-returns` · `wip-measurements` · company-owned `outputs`.
  *
  * Wire facts, all from the merged MFG-API (#313) endpoint and its README:
  *
- *  - input issue/return use their strict Inventory realization request; WIP keeps
- *    `RecordFactRequestV1`. No body carries company or a predicted version;
+ *  - input issue/return/output use their strict Inventory realization request; WIP keeps
+ *    `RecordFactRequestV1`. Output owner/custodian are explicit Company facts from the active
+ *    context; no body carries a predicted version;
  *  - headers: `X-Company-Id`, one `Idempotency-Key`. The transport never mints or rotates
  *    the key — the caller owns it, one per frozen snapshot;
  *  - success is EXACTLY 200 with the order view as it was when the command was first

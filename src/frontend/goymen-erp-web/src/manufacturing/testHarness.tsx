@@ -209,7 +209,7 @@ function resetCompanyPreference(): void {
 
 export interface HarnessOptions {
   /** Capability ids the SERVER grants. Defaults to the recorder's. */
-  readonly capabilities?: readonly string[]
+  readonly capabilities?: readonly string[] | (() => readonly string[])
   /** Feature-endpoint responder. Return undefined to fall through to a 404. */
   readonly respond?: (url: string, init: RequestInit | undefined) => Response | Promise<Response> | undefined
 }
@@ -246,7 +246,7 @@ export function installFetch(options: HarnessOptions = {}): RecordedRequest[] {
         return json({
           contractVersion: SHELL_CAPABILITY_CONTRACT_VERSION,
           generation: 'mfg-cap-gen-1',
-          capabilities,
+          capabilities: typeof capabilities === 'function' ? capabilities() : capabilities,
         })
       }
       return (await options.respond?.(url, init)) ?? problem(404)
@@ -268,9 +268,11 @@ function routes(): RouteObject[] {
   ]
 }
 
-export function renderAt(path: string) {
+export function renderAt(path: string, options: { readonly staleTime?: number } = {}) {
   const router = createMemoryRouter(routes(), { initialEntries: [path] })
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0, staleTime: options.staleTime ?? 0 } },
+  })
   const view = render(
     <ShellProvider queryClient={queryClient}>
       <RouterProvider router={router} />
