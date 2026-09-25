@@ -76,10 +76,50 @@ public sealed partial class LogisticsInstructionServiceTests
     {
         var (world, runner, id, line) = await LoadedWorldAsync();
         runner.Stock.AllocationFault = fault;
+        var request = Shipment();
         var refusal = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() =>
-            world.Service(runner).RecordShipmentAsync(id, line, Shipment(), Metadata("ship-1")));
-        Assert.Equal((status, code, 0), (refusal.Status, refusal.Code, runner.Commits));
+            world.Service(runner).RecordShipmentAsync(id, line, request, Metadata("ship-1")));
+        Assert.Equal((status, code), (refusal.Status, refusal.Code));
+        if (status == 409)
+        {
+            var replay = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() =>
+                world.Service(runner).RecordShipmentAsync(id, line, request, Metadata("ship-1", correlation: "retry")));
+            var mismatch = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() =>
+                world.Service(runner).RecordShipmentAsync(id, line, request with { Quantity = "1" }, Metadata("ship-1", correlation: "changed")));
+            Assert.True(replay.IsReplay);
+            Assert.Equal(LogisticsProblemCodesV1.SameKeyPayloadMismatch, mismatch.Code);
+            Assert.Single(world.Store.Refusals);
+            Assert.Equal(1, runner.Commits);
+        }
+        else
+        {
+            Assert.Empty(world.Store.Refusals);
+            Assert.Equal(0, runner.Commits);
+        }
         Assert.Empty(runner.Stock.Requests);
+        Assert.Equal("4", (await world.Service().GetInstructionDetailAsync(id)).Instruction.Version);
+    }
+
+    [Fact]
+    public async Task Inventory_terminal_conflict_is_recorded_replayed_and_changed_payload_is_refused()
+    {
+        var (world, runner, id, line) = await LoadedWorldAsync();
+        runner.Stock.TerminalFailureCode = "inventory_allocation_version_conflict";
+        var request = Shipment();
+
+        var refusal = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() =>
+            world.Service(runner).RecordShipmentAsync(id, line, request, Metadata("inventory-refusal")));
+        var replay = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() =>
+            world.Service(runner).RecordShipmentAsync(id, line, request, Metadata("inventory-refusal", correlation: "retry")));
+        var mismatch = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() =>
+            world.Service(runner).RecordShipmentAsync(id, line, request with { Quantity = "1" }, Metadata("inventory-refusal", correlation: "changed")));
+
+        Assert.Equal((409, "inventory_allocation_version_conflict", false), (refusal.Status, refusal.Code, refusal.IsReplay));
+        Assert.Equal((409, "inventory_allocation_version_conflict", true), (replay.Status, replay.Code, replay.IsReplay));
+        Assert.Equal(LogisticsProblemCodesV1.SameKeyPayloadMismatch, mismatch.Code);
+        Assert.Single(world.Store.Refusals);
+        Assert.Empty(runner.Stock.Requests);
+        Assert.Equal((1, 1), (runner.ShipmentRuns, runner.Commits));
         Assert.Equal("4", (await world.Service().GetInstructionDetailAsync(id)).Instruction.Version);
     }
 
@@ -107,6 +147,21 @@ public sealed partial class LogisticsInstructionServiceTests
         Assert.Equal((403, 0), (refusal.Status, runner.Commits));
         Assert.Single(runner.Stock.Requests);
         // The API-host real-SQL suite must additionally prove rollback of the staged Inventory + Logistics rows.
+    }
+
+    [Fact]
+    public async Task Inventory_allocation_authority_lost_after_stock_staging_never_reaches_commit()
+    {
+        var (world, runner, id, line) = await LoadedWorldAsync();
+        runner.Stock.AfterStage = () => world.Authority.DeniedPermission =
+            LogisticsRealizationDependenciesV1.InventoryPhysicalAllocationWritePermission;
+
+        var refusal = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() =>
+            world.Service(runner).RecordShipmentAsync(id, line, Shipment(), Metadata("ship-inventory-fence")));
+
+        Assert.Equal((403, 0), (refusal.Status, runner.Commits));
+        Assert.Single(runner.Stock.Requests);
+        // The fake runner has no rollback-capable DbContext; real host rollback is pinned by L04-05 SQL effects.
     }
 
     [Fact]
@@ -218,12 +273,21 @@ public sealed partial class LogisticsInstructionServiceTests
         public List<LogisticsShipmentStockRequestV1> Requests { get; } = [];
         public string? AllocationFault { get; set; }
         public bool ForceReplay { get; set; }
+        public string? TerminalFailureCode { get; set; }
         public Action? AfterStage { get; set; }
 
         public Task<LogisticsShipmentAllocationV1?> FindAllocationAsync(Guid salesOrderId, Guid salesOrderLineId, Guid allocationId,
-            CancellationToken cancellationToken = default) => Task.FromResult<LogisticsShipmentAllocationV1?>(AllocationFault == "missing" ? null :
+            CancellationToken cancellationToken = default)
+        {
+            if (TerminalFailureCode is not null)
+            {
+                throw new LogisticsInstructionServiceException(409, TerminalFailureCode);
+            }
+
+            return Task.FromResult<LogisticsShipmentAllocationV1?>(AllocationFault == "missing" ? null :
                 new(AllocationFault == "company" ? Guid.NewGuid() : Company, allocationId, Label, salesOrderId,
                     AllocationFault == "order-line" ? Guid.NewGuid() : salesOrderLineId, AllocationFault == "product" ? Guid.NewGuid() : Product));
+        }
 
         public Task<LogisticsShipmentStockResultV1> StageAsync(LogisticsShipmentStockRequestV1 request, LogisticsWriteEnvelope envelope,
             CancellationToken cancellationToken = default)

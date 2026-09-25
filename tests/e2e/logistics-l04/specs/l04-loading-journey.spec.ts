@@ -39,6 +39,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test, type Page, type Response } from '@playwright/test'
+import sql from 'mssql'
 import { readEnvironment } from '../src/env.js'
 
 const env = readEnvironment()
@@ -56,6 +57,8 @@ const {
   instructionId,
   blockedLineId,
   openLineId,
+  shipmentAllocationId,
+  shipmentLabelId,
 } = env.seed
 const INSTRUCTIONS_PATH = '/api/v1/logistics/loading-instructions'
 const APPROVED_LINES_PATH = `${INSTRUCTIONS_PATH}/approved-order-lines`
@@ -81,7 +84,13 @@ interface LineReading {
 interface InstructionReading {
   readonly instruction: { readonly id: string; readonly status: string; readonly version: string; readonly lineCount: number }
   readonly lines: readonly LineReading[]
-  readonly shares: readonly { readonly shareId: string; readonly lineId: string; readonly quantity: string }[]
+  readonly shares: readonly {
+    readonly shareId: string
+    readonly lineId: string
+    readonly kind: string
+    readonly quantity: string
+    readonly sourceShipmentId: string | null
+  }[]
 }
 
 /** The instruction the browser created in L04-01; every later case runs on it. */
@@ -384,7 +393,119 @@ test('L04-04 on the seeded instruction the blocked line refuses a load and the o
   expect(after.lines.find((line) => line.lineId === openLineId)?.loaded).toBe('1')
 })
 
-test('L04-05 the reader reads and cannot create or record; the preparer has nothing under the other company', async ({ page }) => {
+test('L04-05 shipment consumes one allocation and one stock exit; reopen replay and delivery add no Inventory effect', async ({ page }) => {
+  await signInAs(page, loaderActor)
+  if (createdId === '') createdId = recallCreatedId()
+  await openDetail(page, createdId)
+  const before = await readInstruction(page, loaderActor, createdId)
+  const line = before.lines[0]
+  expect(Number(line.loaded)).toBe(3.5)
+
+  const allocationPath = `/api/v1/inventory/physical-allocations?salesOrderId=${draftId}&salesOrderLineId=${approvedLineId}&limit=100`
+  const allocationBefore = await page.request.get(`${env.apiBaseUrl}${allocationPath}`, {
+    headers: { [DEVELOPMENT_USER_HEADER]: loaderActor, 'X-Company-Id': companyId },
+  })
+  expect(allocationBefore.status()).toBe(200)
+  expect(await allocationBefore.json()).toMatchObject({ items: [{ allocation: {
+    allocationId: shipmentAllocationId, labelId: shipmentLabelId, status: 'Active', version: '1', remainingKg: '2',
+  } }] })
+
+  const pool = await new sql.ConnectionPool(env.sqlConnection).connect()
+  try {
+    const effects = async (movementId?: string) => {
+      const result = await pool.request()
+        .input('companyId', sql.UniqueIdentifier, companyId)
+        .input('labelId', sql.UniqueIdentifier, shipmentLabelId)
+        .input('allocationId', sql.UniqueIdentifier, shipmentAllocationId)
+        .input('movementId', sql.UniqueIdentifier, movementId ?? '00000000-0000-0000-0000-000000000000')
+        .query(`
+          SELECT
+            (SELECT COUNT(*) FROM inventory.Allocations WHERE CompanyId=@companyId AND Id=@allocationId AND LabelId=@labelId) AS allocations,
+            (SELECT COUNT(*) FROM inventory.Allocations WHERE CompanyId=@companyId AND Id=@allocationId
+               AND Status=2 AND Version=2 AND RemainingKg=0) AS consumed,
+            (SELECT COUNT(DISTINCT movement.Id)
+               FROM inventory.Movements movement
+               INNER JOIN inventory.MovementLines movementLine
+                 ON movementLine.CompanyId=movement.CompanyId AND movementLine.MovementId=movement.Id
+              WHERE movement.CompanyId=@companyId AND movementLine.LabelId=@labelId) AS movements,
+            (SELECT COUNT(*) FROM inventory.Movements WHERE CompanyId=@companyId AND Id=@movementId) AS shipmentMovement`)
+      return result.recordset[0] as { allocations: number; consumed: number; movements: number; shipmentMovement: number }
+    }
+
+    expect(await effects()).toEqual({ allocations: 1, consumed: 0, movements: 1, shipmentMovement: 0 })
+
+    const shipmentPath = `${INSTRUCTIONS_PATH}/${createdId}/lines/${line.lineId}/shipments`
+    const attempts: { readonly key: string | null; readonly body: string | null }[] = []
+    page.on('request', (request) => {
+      if (request.method() === 'POST' && new URL(request.url()).pathname === shipmentPath) {
+        attempts.push({ key: request.headers()['idempotency-key'] ?? null, body: request.postData() })
+      }
+    })
+    let withheldStatus: number | null = null
+    await page.route(`**${shipmentPath}`, async (route) => {
+      if (withheldStatus !== null) return route.fallback()
+      const response = await route.fetch({ headers: { ...route.request().headers(), 'x-development-user': loaderActor } })
+      withheldStatus = response.status()
+      await route.abort('failed')
+    })
+
+    const shipment = page.getByTestId('shipment-1')
+    await expect(shipment).toBeVisible()
+    await shipment.locator('#shipment-1-allocation').selectOption(shipmentAllocationId)
+    await shipment.locator('#shipment-1-quantity').fill('2')
+    await shipment.getByTestId('shipment-1-submit').click()
+    await expect(page.getByTestId('shipment-1-notice')).toContainText('sonucu alınamadı')
+    expect(withheldStatus).toBe(200)
+    expect(attempts).toHaveLength(1)
+    const shipmentBody = JSON.parse(attempts[0].body ?? '{}') as { shipmentId: string; movementId: string }
+
+    const recorded = await readInstruction(page, loaderActor, createdId)
+    const shipped = recorded.shares.find((share) => share.kind === 'Shipped' && share.shareId === shipmentBody.shipmentId)
+    expect(shipped).toMatchObject({ lineId: line.lineId, quantity: '2', sourceShipmentId: null })
+    expect(await effects(shipmentBody.movementId)).toEqual({ allocations: 1, consumed: 1, movements: 2, shipmentMovement: 1 })
+
+    await page.goto(LIST_ROUTE)
+    await openDetail(page, createdId)
+    const replayAnswer = page.waitForResponse((response) => response.request().method() === 'POST'
+      && new URL(response.url()).pathname === shipmentPath)
+    await page.getByRole('button', { name: 'Aynı işlemi tekrar dene' }).click()
+    const replay = await replayAnswer
+    expect(replay.status()).toBe(200)
+    expect(replay.headers()['idempotency-replayed']).toBe('true')
+    expect(attempts).toHaveLength(2)
+    expect(attempts[1]).toEqual(attempts[0])
+    expect(await effects(shipmentBody.movementId)).toEqual({ allocations: 1, consumed: 1, movements: 2, shipmentMovement: 1 })
+
+    await page.goto(LIST_ROUTE)
+    await openDetail(page, createdId)
+    const inventoryCalls: string[] = []
+    page.on('request', (request) => {
+      if (new URL(request.url()).pathname.startsWith('/api/v1/inventory/')) inventoryCalls.push(request.url())
+    })
+    const delivery = page.getByTestId('delivery-1')
+    await delivery.locator('#delivery-1-source').selectOption(shipmentBody.shipmentId)
+    await delivery.locator('#delivery-1-quantity').fill('1.5')
+    const deliveryAnswer = page.waitForResponse((response) => response.request().method() === 'POST'
+      && new URL(response.url()).pathname.endsWith(`/lines/${line.lineId}/deliveries`))
+    await delivery.getByTestId('delivery-1-submit').click()
+    const delivered = await deliveryAnswer
+    expect(delivered.status()).toBe(200)
+    expect((await delivered.request().postDataJSON()) as { sourceShipmentId: string }).toMatchObject({ sourceShipmentId: shipmentBody.shipmentId })
+    expect(inventoryCalls).toEqual([])
+    expect(await effects(shipmentBody.movementId)).toEqual({ allocations: 1, consumed: 1, movements: 2, shipmentMovement: 1 })
+
+    await page.goto(LIST_ROUTE)
+    await openDetail(page, createdId)
+    const final = await readInstruction(page, loaderActor, createdId)
+    expect(final.shares.find((share) => share.kind === 'Delivered')).toMatchObject({
+      lineId: line.lineId, quantity: '1.5', sourceShipmentId: shipmentBody.shipmentId,
+    })
+  } finally {
+    await pool.close()
+  }
+})
+
+test('L04-06 the reader reads and cannot create or record; the preparer has nothing under the other company', async ({ page }) => {
   await signInAs(page, readerActor)
   // Playwright restarts the worker after a failed case, which drops the module-level `createdId`: recover the id L04-01
   // wrote down (the stable mark), then prove it is a real instruction of this company before asserting on it.
