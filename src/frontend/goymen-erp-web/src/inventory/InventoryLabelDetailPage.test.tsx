@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useNavigate, useParams } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { InventoryLabelDetailPage } from './InventoryLabelDetailPage'
-import type { InventoryLabelDetail } from './labelDetailContract'
+import type { InventoryLabelDetailWithMovementTimeline } from './labelDetailContract'
 import type { ViewOutcome } from '../shell/uiState'
 import { productDetailPath } from '../product/capabilities'
 import { inventoryLabelDetailPath } from './labelDetailRoute'
@@ -17,6 +17,7 @@ const PARTY = '55555555-5555-5555-5555-555555555555'
 const LOCATION = '66666666-6666-6666-6666-666666666666'
 const SOURCE_LABEL = '77777777-7777-7777-7777-777777777777'
 const TRANSFORMATION = '88888888-8888-8888-8888-888888888888'
+const MOVEMENT = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
 const OTHER_COMPANY = '99999999-9999-9999-9999-999999999999'
 const clients: QueryClient[] = []
 const api = vi.hoisted(() => ({ detail: vi.fn() }))
@@ -39,7 +40,7 @@ vi.mock('../shell/shellState', () => ({
 vi.mock('../shell/useAuthBoundary', () => ({
   useAuthBoundary: () => ({ capture: () => ({ generation: scenario.generation }), report: scenario.report }),
 }))
-function fixture(): InventoryLabelDetail {
+function fixture(): InventoryLabelDetailWithMovementTimeline {
   return {
     labelVersion: '3',
     identity: {
@@ -64,6 +65,17 @@ function fixture(): InventoryLabelDetail {
         transformationId: TRANSFORMATION, kind: 'Split', occurredAtUtc: '2026-09-24T07:59:00Z',
         sourceLabelId: SOURCE_LABEL, sourceCode: 'LBL-090', sourceLabelVersion: '2', sourceQuantityKg: '1250.5',
         outputLabelId: LABEL, outputCode: 'LBL-100', outputLabelVersion: '3', outputQuantityKg: '1250.5',
+      }],
+    },
+    movementTimeline: {
+      labelId: LABEL, windowFull: false,
+      entries: [{
+        movementId: MOVEMENT, kind: 'Receipt', occurredAtUtc: '2026-09-24T07:58:00Z',
+        sourceKind: 'inventory.opening-count', sourceId: TRANSFORMATION, sourceLineId: SOURCE_LABEL,
+        sourceGrain: 'Line',
+        lines: [{ sequence: 1, direction: 'In', ownerKind: 'Company', ownerId: PARTY,
+          custodianKind: 'Company', custodianId: PARTY, locationId: LOCATION,
+          productId: PRODUCT, block: 'Free', quantityKg: '1250.5' }],
       }],
     },
   }
@@ -99,10 +111,13 @@ describe('InventoryLabelDetailPage', () => {
     mount(); await ready()
     expect(screen.getByText(LABEL)).not.toBeNull()
     expect(screen.getByText(PRODUCT)).not.toBeNull()
-    expect(screen.getAllByText(LOCATION)).toHaveLength(2)
-    expect(screen.getByText('1250.5 kg')).not.toBeNull()
+    expect(screen.getAllByText(LOCATION)).toHaveLength(3)
+    expect(screen.getByText('1250.5 kg', { selector: 'dd' })).not.toBeNull()
     expect(screen.getByText('1200 kg', { selector: 'td' })).not.toBeNull()
     expect(screen.getByRole('heading', { name: 'Soy ağacı' })).not.toBeNull()
+    expect(screen.getByRole('heading', { name: 'Stok hareketleri' })).not.toBeNull()
+    expect(screen.getByText('inventory.opening-count')).not.toBeNull()
+    expect(screen.getByText('1250.5 kg', { selector: 'td' })).not.toBeNull()
     expect(screen.getByRole('link', { name: 'LBL-090' }).getAttribute('href')).toBe(inventoryLabelDetailPath(SOURCE_LABEL))
     expect(screen.getByRole('link', { name: 'LBL-100' }).getAttribute('href')).toBe(inventoryLabelDetailPath(LABEL))
     expect(screen.getByText('Gerekli belgeler: MTC')).not.toBeNull()
@@ -141,7 +156,7 @@ describe('InventoryLabelDetailPage', () => {
   })
   it('does not show an old cached Product link while a new entry is being read', async () => {
     const view = mount(); await ready()
-    let resolve!: (result: ViewOutcome<InventoryLabelDetail>) => void
+    let resolve!: (result: ViewOutcome<InventoryLabelDetailWithMovementTimeline>) => void
     api.detail.mockImplementationOnce(() => new Promise((done) => { resolve = done }))
     scenario.generation += 1; view.refresh()
     expect(productLink()).toBeNull(); expect(screen.queryByText(PRODUCT)).toBeNull()
@@ -149,7 +164,7 @@ describe('InventoryLabelDetailPage', () => {
     await act(async () => resolve({ type: 'ok-single', data: fixture() })); await ready()
   })
   it('does not resurrect a delayed reply from the previous company', async () => {
-    let resolve!: (result: ViewOutcome<InventoryLabelDetail>) => void
+    let resolve!: (result: ViewOutcome<InventoryLabelDetailWithMovementTimeline>) => void
     api.detail.mockImplementationOnce(() => new Promise((done) => { resolve = done }))
     const view = mount(); await waitFor(() => expect(api.detail).toHaveBeenCalledTimes(1))
     scenario.companyId = OTHER_COMPANY; scenario.namespace = 'SENTETIK-b'
@@ -173,6 +188,7 @@ describe('InventoryLabelDetailPage', () => {
     { ...fixture(), identity: { ...fixture().identity, labelId: LOT } },
     { ...fixture(), balances: { ...fixture().balances, labelId: LOT } },
     { ...fixture(), genealogy: { ...fixture().genealogy, labelId: LOT } },
+    { ...fixture(), movementTimeline: { ...fixture().movementTimeline, labelId: LOT } },
   ])('does not derive a link from mismatched loaded identities', async (data) => {
     api.detail.mockResolvedValue({ type: 'ok-single', data }); mount()
     await screen.findByText('Beklenmeyen yanıt — etiket'); expect(productLink()).toBeNull()

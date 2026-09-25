@@ -6,7 +6,9 @@ using GoymenERP.Modules.Inventory.Domain;
 using GoymenERP.Modules.Inventory.Domain.Balances;
 using GoymenERP.Modules.Inventory.Domain.Labels;
 using GoymenERP.Modules.Inventory.Domain.Lots;
+using GoymenERP.Modules.Inventory.Domain.Movements;
 using GoymenERP.Modules.Inventory.Domain.Quantities;
+using GoymenERP.Modules.Inventory.Domain.Stock;
 
 namespace GoymenERP.Modules.Inventory.Infrastructure;
 
@@ -14,7 +16,8 @@ internal sealed record InventoryLabelDetailRecord(
     long Version,
     MaterialLabel Label,
     MaterialLot Lot,
-    IReadOnlyList<StockBalance> Balances);
+    IReadOnlyList<StockBalance> Balances,
+    InventoryLabelMovementTimelineV1 MovementTimeline);
 
 internal interface IInventoryLabelDetailReader
 {
@@ -65,7 +68,8 @@ internal sealed class InventoryLabelDetailService(
             () => source.ReadAsync(scope.CompanyId, labelId, cancellationToken),
             scope,
             cancellationToken);
-        if (confirmation is null || confirmation.Version != record.Version)
+        if (confirmation is null || confirmation.Version != record.Version
+            || !SameMovementTimeline(record.MovementTimeline, confirmation.MovementTimeline))
         {
             throw Error(409, InventoryLabelDetailCodesV1.ReadConflict);
         }
@@ -95,7 +99,8 @@ internal sealed class InventoryLabelDetailService(
             || record.Balances.Any(balance => balance.Position.CompanyId != companyId
                 || balance.Position.LabelId != label.Id
                 || balance.Position.ProductId != label.ProductId)
-            || !ValidGenealogy(genealogy, label))
+            || !ValidGenealogy(genealogy, label)
+            || !ValidMovementTimeline(record.MovementTimeline, label))
         {
             throw Error(503, InventoryLabelDetailCodesV1.Unavailable);
         }
@@ -107,7 +112,8 @@ internal sealed class InventoryLabelDetailService(
                 record.Version.ToString(CultureInfo.InvariantCulture),
                 InventoryReadModelsV1.LabelView(label, record.Lot),
                 InventoryReadModelsV1.Balances(label.Id, record.Balances),
-                genealogy);
+                genealogy,
+                record.MovementTimeline);
         }
         catch (InventoryRuleException exception)
         {
@@ -254,6 +260,113 @@ internal sealed class InventoryLabelDetailService(
         && string.Equals(left.LabelCode, right.LabelCode, StringComparison.Ordinal)
         && left.WindowFull == right.WindowFull
         && left.Edges.SequenceEqual(right.Edges);
+
+    private static bool SameMovementTimeline(
+        InventoryLabelMovementTimelineV1? left,
+        InventoryLabelMovementTimelineV1? right) =>
+        left is not null && right is not null
+        && left.Entries is not null && right.Entries is not null
+        && left.LabelId == right.LabelId
+        && left.WindowFull == right.WindowFull
+        && left.Entries.Count == right.Entries.Count
+        && left.Entries.Zip(right.Entries).All(pair =>
+            pair.First is not null && pair.Second is not null
+            && pair.First.Lines is not null && pair.Second.Lines is not null
+            && pair.First with { Lines = [] } == pair.Second with { Lines = [] }
+            && pair.First.Lines.SequenceEqual(pair.Second.Lines));
+
+    private static bool ValidMovementTimeline(
+        InventoryLabelMovementTimelineV1? timeline,
+        MaterialLabel label)
+    {
+        if (timeline is null || timeline.LabelId != label.Id
+            || timeline.Entries is null || timeline.Entries.Count > 100)
+        {
+            return false;
+        }
+
+        var movementIds = new HashSet<Guid>();
+        DateTimeOffset? previous = null;
+        foreach (var movement in timeline.Entries)
+        {
+            if (movement is null || movement.MovementId == Guid.Empty || !movementIds.Add(movement.MovementId)
+                || movement.OccurredAtUtc.Offset != TimeSpan.Zero
+                || previous is not null && movement.OccurredAtUtc > previous
+                || !Enum.TryParse<StockMovementKind>(movement.Kind, out var kind) || !Enum.IsDefined(kind)
+                || string.IsNullOrWhiteSpace(movement.SourceKind)
+                || movement.SourceKind.Length > StockSourceReference.MaximumKindLength
+                || !string.Equals(movement.SourceKind, movement.SourceKind.Trim(), StringComparison.Ordinal)
+                || movement.SourceId == Guid.Empty
+                || !Enum.TryParse<StockSourceGrain>(movement.SourceGrain, out var grain) || !Enum.IsDefined(grain)
+                || (grain == StockSourceGrain.Whole) != (movement.SourceLineId is null)
+                || movement.SourceLineId == Guid.Empty
+                || movement.Lines is null || movement.Lines.Count == 0)
+            {
+                return false;
+            }
+
+            previous = movement.OccurredAtUtc;
+            var sequences = new HashSet<int>();
+            foreach (var line in movement.Lines)
+            {
+                if (line is null || line.Sequence <= 0 || !sequences.Add(line.Sequence)
+                    || !Enum.TryParse<StockDirection>(line.Direction, out var direction) || !Enum.IsDefined(direction)
+                    || !Enum.TryParse<StockPartyKind>(line.OwnerKind, out var ownerKind) || !Enum.IsDefined(ownerKind)
+                    || !Enum.TryParse<StockPartyKind>(line.CustodianKind, out var custodianKind)
+                    || !Enum.IsDefined(custodianKind)
+                    || line.OwnerId == Guid.Empty || line.CustodianId == Guid.Empty
+                    || line.LocationId == Guid.Empty || line.ProductId != label.ProductId
+                    || !Enum.TryParse<BlockState>(line.Block, out var block) || !Enum.IsDefined(block)
+                    || !CanonicalQuantity(line.QuantityKg)
+                    || kind is StockMovementKind.Receipt or StockMovementKind.Return && direction != StockDirection.In
+                    || kind == StockMovementKind.Issue && (direction != StockDirection.Out || block == BlockState.Blocked))
+                {
+                    return false;
+                }
+            }
+
+            if (!movement.Lines.Select(line => line.Sequence).SequenceEqual(
+                    movement.Lines.Select(line => line.Sequence).Order()))
+            {
+                return false;
+            }
+
+            if (kind is StockMovementKind.Block or StockMovementKind.Release
+                && !ValidBlockChange(kind, movement.Lines))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool ValidBlockChange(
+        StockMovementKind kind,
+        IReadOnlyList<InventoryLabelMovementLineV1> lines)
+    {
+        if (lines.Count != 2)
+        {
+            return false;
+        }
+
+        var fromLines = lines.Where(line => line.Direction == nameof(StockDirection.Out)).ToArray();
+        var toLines = lines.Where(line => line.Direction == nameof(StockDirection.In)).ToArray();
+        if (fromLines.Length != 1 || toLines.Length != 1)
+        {
+            return false;
+        }
+
+        var from = fromLines[0];
+        var to = toLines[0];
+        var fromBlock = kind == StockMovementKind.Block ? nameof(BlockState.Free) : nameof(BlockState.Blocked);
+        var toBlock = kind == StockMovementKind.Block ? nameof(BlockState.Blocked) : nameof(BlockState.Free);
+        return from.Block == fromBlock && to.Block == toBlock
+            && from.OwnerKind == to.OwnerKind && from.OwnerId == to.OwnerId
+            && from.CustodianKind == to.CustodianKind && from.CustodianId == to.CustodianId
+            && from.LocationId == to.LocationId && from.ProductId == to.ProductId
+            && from.QuantityKg == to.QuantityKg;
+    }
 
     private static bool CanonicalQuantity(string value)
     {

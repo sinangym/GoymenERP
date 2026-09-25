@@ -2,7 +2,7 @@ import type { ViewOutcome } from '../shell/uiState'
 import { API_BASE, inventoryHeaders } from './api'
 import {
   decodeInventoryLabelDetail,
-  type InventoryLabelDetail,
+  type InventoryLabelDetailWithMovementTimeline,
 } from './labelDetailContract'
 
 async function bodyOf(response: Response): Promise<unknown> {
@@ -13,7 +13,7 @@ export async function fetchInventoryLabelDetail(
   companyId: string,
   labelId: string,
   signal?: AbortSignal,
-): Promise<ViewOutcome<InventoryLabelDetail>> {
+): Promise<ViewOutcome<InventoryLabelDetailWithMovementTimeline>> {
   const path = `${API_BASE}/inventory/labels/${encodeURIComponent(labelId)}/detail`
   try {
     const response = await fetch(path, { headers: inventoryHeaders(companyId), cache: 'no-store', signal })
