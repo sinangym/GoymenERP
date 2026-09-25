@@ -471,6 +471,35 @@ public static partial class ErpOpenApiContract
                     .Order(StringComparer.Ordinal)
                     .ToArray());
 
+        var isManufacturingInventoryRealizationOperation = operation.OperationId is
+            "IssueManufacturingInputV1"
+            or "ReturnManufacturingInputV1"
+            or "DeclareManufacturingOutputV1";
+        if (!isManufacturingInventoryRealizationOperation
+            && problemCodesByStatus.TryGetValue(
+                StatusCodes.Status400BadRequest,
+                out var badRequestCodes))
+        {
+            problemCodesByStatus[StatusCodes.Status400BadRequest] = badRequestCodes
+                .Where(code => code != GoymenERP.Modules.Inventory.Application
+                                   .InventoryManufacturingRealizationCodesV1.InvalidRequest
+                               && code != GoymenERP.Modules.Inventory.Application
+                                   .InventoryManufacturingRealizationCodesV1.InvalidVersion
+                               && code != GoymenERP.Modules.Inventory.Application
+                                   .InventoryManufacturingRealizationCodesV1.InvalidQuantity)
+                .ToArray();
+        }
+        else if (isManufacturingInventoryRealizationOperation)
+        {
+            problemCodesByStatus[StatusCodes.Status409Conflict] = problemCodesByStatus
+                .GetValueOrDefault(StatusCodes.Status409Conflict, [])
+                .Append(GoymenERP.Api.ManufacturingRuntime
+                    .ManufacturingInventoryInputIssueHostCodes.IncompleteRealization)
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)
+                .ToArray();
+        }
+
         AddHeaderParameter(
             operation,
             CorrelationHeaderName,

@@ -20721,9 +20721,6 @@
             "x-erp-problem-codes": [
               "company_context_invalid",
               "correlation_metadata_invalid",
-              "inventory_manufacturing_realization_invalid_request",
-              "inventory_manufacturing_realization_quantity_invalid",
-              "inventory_manufacturing_realization_version_invalid",
               "manufacturing_request_invalid"
             ],
             "x-erp-empty-body-possible": true
@@ -21130,9 +21127,6 @@
             "x-erp-problem-codes": [
               "company_context_invalid",
               "correlation_metadata_invalid",
-              "inventory_manufacturing_realization_invalid_request",
-              "inventory_manufacturing_realization_quantity_invalid",
-              "inventory_manufacturing_realization_version_invalid",
               "manufacturing_request_invalid"
             ],
             "x-erp-empty-body-possible": true
@@ -21748,9 +21742,6 @@
             "x-erp-problem-codes": [
               "company_context_invalid",
               "correlation_metadata_invalid",
-              "inventory_manufacturing_realization_invalid_request",
-              "inventory_manufacturing_realization_quantity_invalid",
-              "inventory_manufacturing_realization_version_invalid",
               "manufacturing_request_invalid"
             ],
             "x-erp-empty-body-possible": true
@@ -22108,9 +22099,6 @@
             "x-erp-problem-codes": [
               "company_context_invalid",
               "correlation_metadata_invalid",
-              "inventory_manufacturing_realization_invalid_request",
-              "inventory_manufacturing_realization_quantity_invalid",
-              "inventory_manufacturing_realization_version_invalid",
               "manufacturing_request_invalid"
             ]
           },
@@ -22428,6 +22416,7 @@
               "inventory_manufacturing_realization_idempotency_conflict",
               "manufacturing_concurrent_change",
               "manufacturing_fact_id_conflict",
+              "manufacturing_inventory_realization_incomplete",
               "manufacturing_order_id_conflict",
               "manufacturing_plan_id_conflict",
               "manufacturing_version_conflict"
@@ -22833,6 +22822,7 @@
               "inventory_manufacturing_realization_idempotency_conflict",
               "manufacturing_concurrent_change",
               "manufacturing_fact_id_conflict",
+              "manufacturing_inventory_realization_incomplete",
               "manufacturing_order_id_conflict",
               "manufacturing_plan_id_conflict",
               "manufacturing_version_conflict"
@@ -23168,9 +23158,6 @@
             "x-erp-problem-codes": [
               "company_context_invalid",
               "correlation_metadata_invalid",
-              "inventory_manufacturing_realization_invalid_request",
-              "inventory_manufacturing_realization_quantity_invalid",
-              "inventory_manufacturing_realization_version_invalid",
               "manufacturing_request_invalid"
             ],
             "x-erp-empty-body-possible": true
@@ -23643,6 +23630,7 @@
               "inventory_manufacturing_realization_idempotency_conflict",
               "manufacturing_concurrent_change",
               "manufacturing_fact_id_conflict",
+              "manufacturing_inventory_realization_incomplete",
               "manufacturing_order_id_conflict",
               "manufacturing_plan_id_conflict",
               "manufacturing_version_conflict"
@@ -23978,9 +23966,6 @@
             "x-erp-problem-codes": [
               "company_context_invalid",
               "correlation_metadata_invalid",
-              "inventory_manufacturing_realization_invalid_request",
-              "inventory_manufacturing_realization_quantity_invalid",
-              "inventory_manufacturing_realization_version_invalid",
               "manufacturing_request_invalid"
             ],
             "x-erp-empty-body-possible": true

@@ -1048,6 +1048,12 @@ public sealed partial class OpenApiContractGenerationTests
         InventoryManufacturingRealizationCodesV1.InvalidQuantity,
     ];
 
+    private static readonly string[] ManufacturingInventoryRealizationConflictCodes =
+    [
+        .. ManufacturingConflictCodes,
+        "manufacturing_inventory_realization_incomplete",
+    ];
+
     private static readonly string[] ManufacturingUnprocessableCodes =
     [
         "manufacturing_duplicate_roll_in_plan", "manufacturing_input_already_issued",
@@ -1129,28 +1135,28 @@ public sealed partial class OpenApiContractGenerationTests
             ["UpdateCounterpartyContactInformationV1:404"] = ["not_found"],
             ["UpdateCounterpartyContactInformationV1:409"] =
                 ["client_contract_required", "client_contract_unsupported", "idempotency_conflict", "version_conflict"],
-            ["SaveManufacturingPlanV1:400"] = ManufacturingBadRequestCodes,
+            ["SaveManufacturingPlanV1:400"] = ["manufacturing_request_invalid"],
             ["SaveManufacturingPlanV1:409"] =
                 [.. ManufacturingConflictCodes, "inventory_label_version_conflict", "inventory_parent_roll_read_conflict"],
             ["SaveManufacturingPlanV1:422"] =
                 [.. ManufacturingUnprocessableCodes, "inventory_parent_roll_context_required", "inventory_parent_roll_no_physical_position"],
-            ["ApproveManufacturingPlanV1:400"] = ManufacturingBadRequestCodes,
+            ["ApproveManufacturingPlanV1:400"] = ["manufacturing_request_invalid"],
             ["ApproveManufacturingPlanV1:409"] = ManufacturingConflictCodes,
             ["ApproveManufacturingPlanV1:422"] = ManufacturingUnprocessableCodes,
-            ["CreateManufacturingOrderV1:400"] = ManufacturingBadRequestCodes,
+            ["CreateManufacturingOrderV1:400"] = ["manufacturing_request_invalid"],
             ["CreateManufacturingOrderV1:409"] = ManufacturingConflictCodes,
             ["CreateManufacturingOrderV1:422"] = ManufacturingUnprocessableCodes,
             ["IssueManufacturingInputV1:400"] = ManufacturingBadRequestCodes,
-            ["IssueManufacturingInputV1:409"] = ManufacturingConflictCodes,
+            ["IssueManufacturingInputV1:409"] = ManufacturingInventoryRealizationConflictCodes,
             ["IssueManufacturingInputV1:422"] = ManufacturingUnprocessableCodes,
             ["ReturnManufacturingInputV1:400"] = ManufacturingBadRequestCodes,
-            ["ReturnManufacturingInputV1:409"] = ManufacturingConflictCodes,
+            ["ReturnManufacturingInputV1:409"] = ManufacturingInventoryRealizationConflictCodes,
             ["ReturnManufacturingInputV1:422"] = ManufacturingUnprocessableCodes,
-            ["RecordManufacturingWorkInProgressV1:400"] = ManufacturingBadRequestCodes,
+            ["RecordManufacturingWorkInProgressV1:400"] = ["manufacturing_request_invalid"],
             ["RecordManufacturingWorkInProgressV1:409"] = ManufacturingConflictCodes,
             ["RecordManufacturingWorkInProgressV1:422"] = ManufacturingUnprocessableCodes,
             ["DeclareManufacturingOutputV1:400"] = ManufacturingBadRequestCodes,
-            ["DeclareManufacturingOutputV1:409"] = ManufacturingConflictCodes,
+            ["DeclareManufacturingOutputV1:409"] = ManufacturingInventoryRealizationConflictCodes,
             ["DeclareManufacturingOutputV1:422"] = ManufacturingUnprocessableCodes,
             ["GetSalesOrderDraftsV1:400"] = ["invalid_cursor", "validation_failed"],
             ["CreateSalesOrderDraftV1:400"] = ["command_metadata_invalid", "validation_failed"],
@@ -1219,8 +1225,8 @@ public sealed partial class OpenApiContractGenerationTests
             ["ApproveAccountingNormalJournalDraftV1:422"] = ["accounting_company_mismatch", "accounting_invalid_reference", "accounting_journal_line_invalid", "accounting_journal_too_few_lines", "accounting_journal_unbalanced", "accounting_period_already_closed", "accounting_period_closed", "accounting_period_does_not_cover_date", "accounting_period_invalid", "accounting_period_not_open", "accounting_period_not_proposed", "accounting_value_does_not_fit"],
             // MFG-ORD: the list refuses a bad page size, cursor or status on the field; the close is a
             // write like the others, and adds manufacturing_unexplained_difference to the shared 422 list.
-            ["ListManufacturingOrdersV1:400"] = ManufacturingBadRequestCodes,
-            ["CloseManufacturingOrderV1:400"] = ManufacturingBadRequestCodes,
+            ["ListManufacturingOrdersV1:400"] = ["manufacturing_request_invalid"],
+            ["CloseManufacturingOrderV1:400"] = ["manufacturing_request_invalid"],
             ["CloseManufacturingOrderV1:409"] = ManufacturingConflictCodes,
             ["CloseManufacturingOrderV1:422"] = ManufacturingUnprocessableCodes,
             ["GetLogisticsApprovedOrderLinesV1:400"] = ["invalid_cursor", "validation_failed"],
