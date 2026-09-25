@@ -47,6 +47,15 @@ public static class AccountingEndpoints
         NormalJournalDraftStoreCodesV1.PostingConflict,
     ];
 
+    private static readonly string[] JournalReversalConflictCodes =
+    [
+        .. PeriodConflictCodes,
+        AccountingJournalReversalPolicyCodesV1.NotPending,
+        AccountingJournalReversalPolicyCodesV1.VersionConflict,
+        AccountingJournalReversalStoreCodesV1.ContentConflict,
+        AccountingJournalReversalStoreCodesV1.PostingConflict,
+    ];
+
     private static readonly string[] PeriodUnprocessableCodes =
     [
         AccountingErrorCodes.PeriodNotProposed,
@@ -252,6 +261,38 @@ public static class AccountingEndpoints
             .Produces<NormalJournalDraftViewV1>(StatusCodes.Status200OK)
             .WithWriteProblems(notFound: true, normalJournal: true);
 
+        group.MapPost("/journal-reversal-proposals", async (
+                ProposeAccountingJournalReversalRequestV1 request,
+                AccountingJournalReversalPublicServiceV1 service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            await WriteAsync(httpContext,
+                key => service.ProposeAsync(request, key, cancellationToken)))
+            .RequireCompanyContext()
+            .RequireAuthorization(AccountingJournalReversalPermissionNamesV1.Propose)
+            .WithIdempotencyContract(StatusCodes.Status201Created)
+            .WithName("ProposeAccountingJournalReversalV1")
+            .Accepts<ProposeAccountingJournalReversalRequestV1>("application/json")
+            .Produces<AccountingJournalReversalProposalViewV1>(StatusCodes.Status201Created)
+            .WithWriteProblems(notFound: false, journalReversal: true);
+
+        group.MapPost("/journal-reversal-proposals/{proposalId:guid}/approval", async (
+                Guid proposalId,
+                ApproveAccountingJournalReversalRequestV1 request,
+                AccountingJournalReversalPublicServiceV1 service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            await WriteAsync(httpContext,
+                key => service.ApproveAsync(proposalId, request, key, cancellationToken)))
+            .RequireCompanyContext()
+            .RequireAuthorization(AccountingJournalReversalPermissionNamesV1.Approve)
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status404NotFound,
+                StatusCodes.Status409Conflict)
+            .WithName("ApproveAccountingJournalReversalV1")
+            .Accepts<ApproveAccountingJournalReversalRequestV1>("application/json")
+            .Produces<AccountingJournalReversalProposalViewV1>(StatusCodes.Status200OK)
+            .WithWriteProblems(notFound: true, journalReversal: true);
+
         group.MapGet("/posting-queues", async (
                 AccountingApiService service,
                 HttpContext httpContext,
@@ -279,9 +320,11 @@ public static class AccountingEndpoints
     }
 
     private static RouteHandlerBuilder WithWriteProblems(this RouteHandlerBuilder builder, bool notFound,
-        bool normalJournal = false)
+        bool normalJournal = false, bool journalReversal = false)
     {
-        var conflictCodes = normalJournal ? NormalJournalConflictCodes : PeriodConflictCodes;
+        var conflictCodes = journalReversal
+            ? JournalReversalConflictCodes
+            : normalJournal ? NormalJournalConflictCodes : PeriodConflictCodes;
         var unprocessableCodes = normalJournal ? NormalJournalUnprocessableCodes : PeriodUnprocessableCodes;
         builder
             .ProducesErpBadRequest(BadRequestCodes)

@@ -39,8 +39,8 @@ public sealed class AccountingJournalReversalLifecycleV1Tests
 
         var result = await service.ApproveAsync(Proposal, 1, "maker-approval-key");
 
-        Assert.Equal(AccountingApiStatus.Unprocessable, result.Status);
-        Assert.Equal(AccountingJournalReversalPolicyCodesV1.MakerCheckerRequired, result.Code);
+        Assert.Equal(AccountingApiStatus.Denied, result.Status);
+        Assert.Null(result.Code);
         Assert.Equal(0, store.ReversalsWritten);
         Assert.Equal(AccountingJournalReversalProposalStatusV1.Pending, store.Proposal!.Status);
     }
