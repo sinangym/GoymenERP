@@ -4,6 +4,7 @@ import {
   decodeInventoryLabelBalances,
   decodeInventoryLabelGenealogy,
   decodeInventoryLabelIdentity,
+  decodeInventoryLabelMovementTimeline,
 } from './labelDetailContract'
 
 const COMPANY = '11111111-1111-1111-1111-111111111111'
@@ -16,6 +17,7 @@ const LOCATION = '77777777-7777-7777-7777-777777777777'
 const SOURCE_LABEL = '88888888-8888-8888-8888-888888888888'
 const TRANSFORMATION = '99999999-9999-9999-9999-999999999999'
 const OUTPUT_LABEL = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+const MOVEMENT = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
 
 function identity() {
   return {
@@ -56,16 +58,35 @@ function genealogy() {
   }
 }
 
+function movementTimeline() {
+  return {
+    labelId: LABEL, windowFull: false,
+    entries: [{
+      movementId: MOVEMENT, kind: 'Receipt', occurredAtUtc: '2026-09-24T07:58:00Z',
+      sourceKind: 'inventory.opening-count', sourceId: TRANSFORMATION, sourceLineId: OUTPUT_LABEL,
+      sourceGrain: 'Line',
+      lines: [{
+        sequence: 1, direction: 'In', ownerKind: 'Company', ownerId: OWNER,
+        custodianKind: 'Company', custodianId: CUSTODIAN, locationId: LOCATION,
+        productId: PRODUCT, block: 'Free', quantityKg: '1250.5',
+      }],
+    }],
+  }
+}
+
 describe('Inventory label detail contract', () => {
   it('decodes the exact existing identity and balance contracts and binds them to the requested scope', () => {
     const decodedIdentity = decodeInventoryLabelIdentity(identity())
     const decodedBalances = decodeInventoryLabelBalances(balances())
     const decodedGenealogy = decodeInventoryLabelGenealogy(genealogy(), LABEL, 'LBL-100')
+    const decodedTimeline = decodeInventoryLabelMovementTimeline(movementTimeline(), LABEL)
     expect(decodedIdentity).not.toBeNull()
     expect(decodedBalances).not.toBeNull()
     expect(decodedGenealogy).not.toBeNull()
-    expect(combineInventoryLabelDetail('3', decodedIdentity!, decodedBalances!, decodedGenealogy!, COMPANY, LABEL)).toEqual({
+    expect(decodedTimeline).not.toBeNull()
+    expect(combineInventoryLabelDetail('3', decodedIdentity!, decodedBalances!, decodedGenealogy!, decodedTimeline!, COMPANY, LABEL)).toEqual({
       labelVersion: '3', identity: decodedIdentity, balances: decodedBalances, genealogy: decodedGenealogy,
+      movementTimeline: decodedTimeline,
     })
   })
 
@@ -75,13 +96,14 @@ describe('Inventory label detail contract', () => {
     const decodedIdentity = decodeInventoryLabelIdentity(identity())!
     const decodedBalances = decodeInventoryLabelBalances(balances())!
     const decodedGenealogy = decodeInventoryLabelGenealogy(genealogy(), LABEL, 'LBL-100')!
-    expect(combineInventoryLabelDetail('3', decodedIdentity, decodedBalances, decodedGenealogy, OWNER, LABEL)).toBeNull()
-    expect(combineInventoryLabelDetail('3', decodedIdentity, decodedBalances, decodedGenealogy, COMPANY, OWNER)).toBeNull()
+    const decodedTimeline = decodeInventoryLabelMovementTimeline(movementTimeline(), LABEL)!
+    expect(combineInventoryLabelDetail('3', decodedIdentity, decodedBalances, decodedGenealogy, decodedTimeline, OWNER, LABEL)).toBeNull()
+    expect(combineInventoryLabelDetail('3', decodedIdentity, decodedBalances, decodedGenealogy, decodedTimeline, COMPANY, OWNER)).toBeNull()
     expect(combineInventoryLabelDetail('3', decodedIdentity, {
       ...decodedBalances,
       positions: [{ ...decodedBalances.positions[0], productId: OWNER }],
-    }, decodedGenealogy, COMPANY, LABEL)).toBeNull()
-    expect(combineInventoryLabelDetail('03', decodedIdentity, decodedBalances, decodedGenealogy, COMPANY, LABEL)).toBeNull()
+    }, decodedGenealogy, decodedTimeline, COMPANY, LABEL)).toBeNull()
+    expect(combineInventoryLabelDetail('03', decodedIdentity, decodedBalances, decodedGenealogy, decodedTimeline, COMPANY, LABEL)).toBeNull()
     expect(decodeInventoryLabelGenealogy({ ...genealogy(), leakedActor: 'x' }, LABEL, 'LBL-100')).toBeNull()
     expect(decodeInventoryLabelGenealogy({ ...genealogy(), labelId: OWNER }, LABEL, 'LBL-100')).toBeNull()
     expect(decodeInventoryLabelGenealogy({ ...genealogy(), labelCode: 'LBL-X' }, LABEL, 'LBL-100')).toBeNull()
@@ -93,6 +115,24 @@ describe('Inventory label detail contract', () => {
         ...genealogy().edges[0], transformationId: OWNER, sourceLabelId: CUSTODIAN, outputLabelId: LOCATION,
       }],
     }, LABEL, 'LBL-100')).toBeNull()
+  })
+
+  it('fails closed for malformed, unsorted or cross-product movement history', () => {
+    expect(decodeInventoryLabelMovementTimeline({ ...movementTimeline(), leaked: true }, LABEL)).toBeNull()
+    expect(decodeInventoryLabelMovementTimeline({ ...movementTimeline(), labelId: OWNER }, LABEL)).toBeNull()
+    expect(decodeInventoryLabelMovementTimeline({ ...movementTimeline(), entries: [{
+      ...movementTimeline().entries[0], sourceGrain: 'Whole', sourceLineId: OUTPUT_LABEL,
+    }] }, LABEL)).toBeNull()
+    expect(decodeInventoryLabelMovementTimeline({ ...movementTimeline(), entries: [{
+      ...movementTimeline().entries[0], kind: 'Issue', lines: movementTimeline().entries[0].lines,
+    }] }, LABEL)).toBeNull()
+    const decodedIdentity = decodeInventoryLabelIdentity(identity())!
+    const decodedBalances = decodeInventoryLabelBalances(balances())!
+    const decodedGenealogy = decodeInventoryLabelGenealogy(genealogy(), LABEL, 'LBL-100')!
+    const wrongProduct = decodeInventoryLabelMovementTimeline({ ...movementTimeline(), entries: [{
+      ...movementTimeline().entries[0], lines: [{ ...movementTimeline().entries[0].lines[0], productId: OWNER }],
+    }] }, LABEL)!
+    expect(combineInventoryLabelDetail('3', decodedIdentity, decodedBalances, decodedGenealogy, wrongProduct, COMPANY, LABEL)).toBeNull()
   })
 
   it('fails closed for impossible or internally inconsistent transformation groups', () => {
