@@ -46,4 +46,42 @@ public sealed class AccountingJournalReversalEndpointContractTests
         Assert.Contains(503, statuses);
         Assert.Equal(hasNotFound, statuses.Contains(404));
     }
+
+    [Theory]
+    [InlineData("ProposeAccountingJournalReversalV1", false)]
+    [InlineData("ApproveAccountingJournalReversalV1", true)]
+    public async Task Public_routes_declare_only_their_reachable_unprocessable_codes(
+        string endpointName,
+        bool approval)
+    {
+        await using var factory = new GoymenErpApiFactory();
+        using var client = factory.CreateClient();
+        using var health = await client.GetAsync("/health/live");
+        health.EnsureSuccessStatusCode();
+
+        var endpoint = factory.Services.GetServices<EndpointDataSource>()
+            .SelectMany(source => source.Endpoints)
+            .OfType<RouteEndpoint>()
+            .Single(candidate => candidate.Metadata.GetMetadata<IEndpointNameMetadata>()?.EndpointName == endpointName);
+        var metadata = endpoint.Metadata.Single(item =>
+            item.GetType().Name == "ErpProblemCodeMetadata"
+            && (int)item.GetType().GetProperty("StatusCode")!.GetValue(item)! == 422);
+        var codes = Assert.IsAssignableFrom<IReadOnlyList<string>>(
+            metadata.GetType().GetProperty("Codes")!.GetValue(metadata));
+
+        Assert.Equal(approval
+            ?
+            [
+                "accounting_invalid_reference",
+                "accounting_reversal_of_reversal",
+                "accounting_period_closed",
+                "accounting_period_does_not_cover_date",
+                "accounting_period_not_found",
+            ]
+            :
+            [
+                "accounting_period_not_found",
+                "accounting_journal_reversal_source_journal_not_found",
+            ], codes);
+    }
 }

@@ -56,13 +56,19 @@ public static class AccountingEndpoints
         AccountingJournalReversalStoreCodesV1.PostingConflict,
     ];
 
-    private static readonly string[] JournalReversalUnprocessableCodes =
+    private static readonly string[] JournalReversalProposalUnprocessableCodes =
+    [
+        AccountingStoreCodes.PeriodNotFound,
+        AccountingJournalReversalStoreCodesV1.SourceJournalNotFound,
+    ];
+
+    private static readonly string[] JournalReversalApprovalUnprocessableCodes =
     [
         AccountingErrorCodes.InvalidReference,
         AccountingErrorCodes.ReversalOfReversal,
         AccountingErrorCodes.PeriodClosed,
         AccountingErrorCodes.PeriodDoesNotCover,
-        AccountingJournalReversalStoreCodesV1.SourceJournalNotFound,
+        AccountingStoreCodes.PeriodNotFound,
     ];
 
     private static readonly string[] PeriodUnprocessableCodes =
@@ -300,7 +306,7 @@ public static class AccountingEndpoints
             .WithName("ApproveAccountingJournalReversalV1")
             .Accepts<ApproveAccountingJournalReversalRequestV1>("application/json")
             .Produces<AccountingJournalReversalProposalViewV1>(StatusCodes.Status200OK)
-            .WithWriteProblems(notFound: true, journalReversal: true);
+            .WithWriteProblems(notFound: true, journalReversal: true, journalReversalApproval: true);
 
         group.MapGet("/posting-queues", async (
                 AccountingApiService service,
@@ -329,13 +335,15 @@ public static class AccountingEndpoints
     }
 
     private static RouteHandlerBuilder WithWriteProblems(this RouteHandlerBuilder builder, bool notFound,
-        bool normalJournal = false, bool journalReversal = false)
+        bool normalJournal = false, bool journalReversal = false, bool journalReversalApproval = false)
     {
         var conflictCodes = journalReversal
             ? JournalReversalConflictCodes
             : normalJournal ? NormalJournalConflictCodes : PeriodConflictCodes;
         var unprocessableCodes = journalReversal
-            ? JournalReversalUnprocessableCodes
+            ? journalReversalApproval
+                ? JournalReversalApprovalUnprocessableCodes
+                : JournalReversalProposalUnprocessableCodes
             : normalJournal ? NormalJournalUnprocessableCodes : PeriodUnprocessableCodes;
         builder
             .ProducesErpBadRequest(BadRequestCodes)

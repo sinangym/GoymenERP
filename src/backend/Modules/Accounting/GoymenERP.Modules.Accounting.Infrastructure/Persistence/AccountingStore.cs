@@ -544,6 +544,15 @@ public sealed class AccountingStore(
                 "Bu şirketin terslenecek kaynak fişi yok.");
         }
 
+        var periodExists = await dbContext.Periods.AsNoTracking().AnyAsync(
+            row => row.CompanyId == proposal.CompanyId && row.Id == proposal.PeriodId,
+            cancellationToken);
+        if (!periodExists)
+        {
+            throw Refused(AccountingStoreCodes.PeriodNotFound,
+                "Bu şirketin ters kayıt dönem kaydı yok.");
+        }
+
         var row = ToReversalProposalRow(proposal);
         dbContext.JournalReversalProposals.Add(row);
         await freshAuthorityFence(cancellationToken);
