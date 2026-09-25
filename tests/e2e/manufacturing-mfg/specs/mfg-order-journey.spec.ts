@@ -148,6 +148,7 @@ test.describe('MFG order screen (real API, real SQL)', () => {
       const arranged = await arrangeOpenOrder(env, env.seed.rolls.process[process], workCenter.id)
 
       await openOrder(page, arranged.orderId)
+      await expect(page.getByText(process, { exact: true })).toBeVisible()
       await fillIssue(page, arranged.rollId, '1000')
       const issuePost = page.waitForRequest((request) =>
         request.url().endsWith(`/orders/${arranged.orderId}/input-issues`) && request.method() === 'POST')
@@ -200,6 +201,7 @@ test.describe('MFG order screen (real API, real SQL)', () => {
       await context.unroute('**/api/v1/**')
       await asActor(context, env.seed.closerActor, rewritten)
       await openOrder(page, arranged.orderId)
+      await expect(page.getByText(process, { exact: true })).toBeVisible()
       const closeResponse = page.waitForResponse((response) =>
         response.url().endsWith(`/orders/${arranged.orderId}/close`) && response.request().method() === 'POST')
       await page.getByRole('button', { name: 'Emri kapat', exact: true }).click()
