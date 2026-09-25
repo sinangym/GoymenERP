@@ -172,9 +172,16 @@ public sealed class InventoryReadApiSqlServerRelationalAcceptanceTests
             Assert.False(all.SearchWindowFull);
             var foreignOwner = Assert.Single(all.Items, i => i.LabelId == customer.Id);
             Assert.False(foreignOwner.DraftSelectable);
-            Assert.All(foreignOwner.Positions, p => Assert.Equal("Counterparty", p.OwnerKind));
+            Assert.NotEmpty(foreignOwner.Positions);
+            var customerPosition = foreignOwner.Positions[0];
+            Assert.Equal(("Counterparty", "Company", CompanyA),
+                (customerPosition.OwnerKind, customerPosition.CustodianKind, customerPosition.CustodianId));
+            Assert.NotEqual(Guid.Empty, customerPosition.OwnerId);
+            Assert.All(foreignOwner.Positions, position =>
+                Assert.Equal((customerPosition.OwnerKind, customerPosition.OwnerId,
+                        customerPosition.CustodianKind, customerPosition.CustodianId),
+                    (position.OwnerKind, position.OwnerId, position.CustodianKind, position.CustodianId)));
             await ParentRollRefused(service.ValidateAsync(new(customer.Id, "3")), 422, InventoryParentRollCodesV1.ContextRequired);
-            var customerPosition = Assert.Single(foreignOwner.Positions);
             var customerContext = new InventoryParentRollPositionContextV1(
                 StockPartyKind.Counterparty, customerPosition.OwnerId,
                 StockPartyKind.Company, customerPosition.CustodianId);
