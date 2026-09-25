@@ -42,7 +42,7 @@ export async function recordGoodsReceipt(detail: PurchaseOrderDetail, lineId: st
     })
     const body = await bodyOf(response)
     if (response.status >= 500) return { type: 'unknown' }
-    if (response.status !== 200) {
+    if (response.status !== 201) {
       if (response.status >= 200 && response.status < 300) return { type: 'unknown' }
       const code = typeof body === 'object' && body !== null && 'code' in body && typeof body.code === 'string' ? body.code : null
       return { type: 'failed', status: response.status, code }

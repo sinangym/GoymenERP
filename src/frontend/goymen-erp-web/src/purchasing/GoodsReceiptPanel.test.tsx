@@ -3,6 +3,7 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { GoodsReceiptPanel } from './GoodsReceiptPanel'
+import { recordGoodsReceipt } from './goodsReceiptApi'
 import { resetReceiptAttemptsForTests } from './goodsReceiptAttempt'
 import { decodeGoodsReceiptPage, decodeGoodsReceiptResponse, receiptQuantityInput, type GoodsReceipt, type GoodsReceiptRequest } from './goodsReceiptContract'
 import { GOODS_RECEIPT_TEXT as T } from './goodsReceiptText'
@@ -38,7 +39,7 @@ function fixture(unknownFirst = false) {
       const payload = JSON.parse(init.body as string) as GoodsReceiptRequest
       if (receipts.length === 0) receipts.push(recorded(payload))
       if (unknownFirst && posts.length === 1) return json({}, 503)
-      return json({ receipt: receipts[0], isReplay: posts.length > 1, originalCorrelationId: 'original' }, 200, posts.length > 1)
+      return json({ receipt: receipts[0], isReplay: posts.length > 1, originalCorrelationId: 'original' }, 201, posts.length > 1)
     }
     if (url.endsWith('goods-receipt-options')) return json({ source: { companyId: COMPANY, purchaseOrderId: ORDER,
       purchaseOrderLineId: LINE, purchaseOrderVersion: '3', productId: PRODUCT, productVersion: '7', unitId: UNIT, effectiveOn: '2026-09-25' },
@@ -100,6 +101,29 @@ describe('Purchasing goods receipt consumer, synthetic NOT_ENV', () => {
     expect(server.posts[1]).toEqual(server.posts[0])
     await screen.findByText(new RegExp(T.replayed))
     expect(server.receipts).toHaveLength(1)
+  })
+  it('accepts only an exact, identity-bound 201 response and preserves replay state', async () => {
+    const payload: GoodsReceiptRequest = { expectedPurchaseOrderVersion: '3', expectedProductVersion: '7', acceptanceId: LOCATION,
+      acceptedQuantity: '2', measuredQuantityKg: '1.9', locationId: LOCATION, lotId: LINE, labelId: UNIT, labelCode: 'SYNTHETIC',
+      heatNumber: null, coilNumber: null, movementId: PRODUCT, occurredAtUtc: '2026-09-25T10:00:00Z' }
+    const response = { receipt: recorded(payload), isReplay: true, originalCorrelationId: 'original' }
+    vi.stubGlobal('fetch', vi.fn(async () => json(response, 201, true)))
+    expect(await recordGoodsReceipt(detail, LINE, payload, 'same-key')).toEqual({ type: 'applied', response })
+  })
+  it.each([
+    ['legacy 200 success', 200, 'matching'],
+    ['malformed 201 success', 201, 'malformed'],
+    ['wrong-identity 201 success', 201, 'wrong-identity'],
+  ] as const)('keeps %s unresolved', async (_name, status, shape) => {
+    const payload: GoodsReceiptRequest = { expectedPurchaseOrderVersion: '3', expectedProductVersion: '7', acceptanceId: LOCATION,
+      acceptedQuantity: '2', measuredQuantityKg: '1.9', locationId: LOCATION, lotId: LINE, labelId: UNIT, labelCode: 'SYNTHETIC',
+      heatNumber: null, coilNumber: null, movementId: PRODUCT, occurredAtUtc: '2026-09-25T10:00:00Z' }
+    const matching = { receipt: recorded(payload), isReplay: false, originalCorrelationId: 'original' }
+    const body = shape === 'malformed' ? {} : shape === 'wrong-identity'
+      ? { ...matching, receipt: { ...matching.receipt, acceptanceId: ORDER } }
+      : matching
+    vi.stubGlobal('fetch', vi.fn(async () => json(body, status)))
+    expect(await recordGoodsReceipt(detail, LINE, payload, 'same-key')).toEqual({ type: 'unknown' })
   })
   it('refuses a new Blocked receipt but preserves the immutable Blocked state on a matching historical replay', () => {
     const request: GoodsReceiptRequest = { expectedPurchaseOrderVersion: '3', expectedProductVersion: '7', acceptanceId: LOCATION,
