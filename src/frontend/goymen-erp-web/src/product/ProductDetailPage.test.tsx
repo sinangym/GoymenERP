@@ -357,8 +357,13 @@ describe('activation control', () => {
   })
 
   it('posts the exact card version with one key and paints only the canonical Active response', async () => {
+    let historyReads = 0
     const { calls } = installFetch({
       capabilities: WITH_ACTIVATION,
+      onHistory: () => {
+        historyReads += 1
+        return json({ productId: PRODUCT_1, entries: [], truncated: false })
+      },
       onActivate: () =>
         json(
           mutation({
@@ -372,6 +377,7 @@ describe('activation control', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Ürünü aktifleştir' }))
     await waitFor(() => expect(screen.getByText('Ürün aktifleştirildi.')).toBeTruthy())
     expect(screen.getByText('Aktif')).toBeTruthy()
+    await waitFor(() => expect(historyReads).toBeGreaterThanOrEqual(2))
 
     const request = calls.find((call) => call.url.endsWith(`/products/${PRODUCT_1}/activation`))
     expect(request?.method).toBe('POST')
