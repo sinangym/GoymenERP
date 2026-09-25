@@ -207,6 +207,62 @@ describe('sendFinanceAllocationCommand', () => {
     expect(first.body).toBe(second.body)
   })
 
+  it.each([
+    ['AbortError', new DOMException('Response body stream aborted', 'AbortError')],
+    ['TypeError', new TypeError('Response body stream failed')],
+  ])('keeps a body-read %s unresolved without aborting the caller signal', async (_name, error) => {
+    const controller = new AbortController()
+    const interruptedResponse = {
+      status: 200,
+      json: vi.fn().mockRejectedValue(error),
+    } as unknown as Response
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(interruptedResponse)
+      .mockResolvedValueOnce(response(200, commandResult('Succeeded', allocation('Released', '2'), true)))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const firstResult = await sendFinanceAllocationCommand(snapshot, controller.signal)
+    const secondResult = await sendFinanceAllocationCommand(snapshot, controller.signal)
+
+    expect(controller.signal.aborted).toBe(false)
+    expect(firstResult).toMatchObject({
+      kind: 'settlement',
+      settlement: { type: 'unknown', reason: 'no-reply' },
+    })
+    expect(secondResult).toMatchObject({
+      kind: 'settlement',
+      settlement: {
+        type: 'succeeded',
+        replayed: true,
+        resource: {
+          id: ALLOCATION_ID,
+          sourceId: SOURCE_ID,
+          openItemId: OPEN_ITEM_ID,
+          status: 'Released',
+        },
+      },
+    })
+    const first = fetchMock.mock.calls[0]?.[1] as RequestInit
+    const second = fetchMock.mock.calls[1]?.[1] as RequestInit
+    expect(first.headers).toEqual(second.headers)
+    expect(first.body).toBe(second.body)
+  })
+
+  it('keeps fully received invalid JSON terminally malformed', async () => {
+    const invalidJsonResponse = {
+      status: 200,
+      json: vi.fn().mockRejectedValue(new SyntaxError('Unexpected token')),
+    } as unknown as Response
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(invalidJsonResponse))
+
+    const result = await sendFinanceAllocationCommand(snapshot)
+
+    expect(result).toMatchObject({
+      kind: 'settlement',
+      settlement: { type: 'unknown', reason: 'malformed' },
+    })
+  })
+
   it('rejects status and command-outcome disagreement as malformed', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response(200, commandResult('VersionConflict'))))
     const result = await sendFinanceAllocationCommand(snapshot)

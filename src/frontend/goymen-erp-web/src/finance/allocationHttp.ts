@@ -58,6 +58,14 @@ function unavailable(snapshot: FinanceAllocationWireSnapshot): FinanceAllocation
   }
 }
 
+function isUnresolvedBodyRead(error: unknown): boolean {
+  if (error instanceof TypeError) return true
+  return typeof error === 'object'
+    && error !== null
+    && 'name' in error
+    && error.name === 'AbortError'
+}
+
 export async function sendFinanceAllocationCommand(
   snapshot: FinanceAllocationWireSnapshot,
   signal?: AbortSignal,
@@ -108,8 +116,8 @@ export async function sendFinanceAllocationCommand(
   let body: unknown
   try {
     body = await response.json()
-  } catch {
-    return signal?.aborted ? noReply(snapshot) : malformed(snapshot)
+  } catch (error) {
+    return signal?.aborted || isUnresolvedBodyRead(error) ? noReply(snapshot) : malformed(snapshot)
   }
 
   const decoded = decodeFinanceAllocationCommandResult(body, binding.companyId)
