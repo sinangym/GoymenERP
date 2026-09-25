@@ -122,8 +122,16 @@ public sealed class LogisticsPersistenceModelTests
         Assert.Equal("logistics.deliveries.record", LogisticsPermissionManifestV1.DeliveriesRecord);
         Assert.Equal(5, LogisticsPermissionManifestV1.Names.Distinct(StringComparer.Ordinal).Count());
         // Master v3 §27.8: L-02 is the instruction list, L-03 the new/edit workspace; the detail is a view of one L-02 row.
-        Assert.Equal(["L-03", "L-02-DETAIL", "L-02-DETAIL", "L-02-DETAIL", "L-02"],
-            declarations.OrderBy(declaration => declaration.CapabilityId, StringComparer.Ordinal).Select(declaration => declaration.ScreenId).ToArray());
+        Assert.Equal(
+            [
+                ("logistics.deliveries.record", "L-02-DETAIL"),
+                ("logistics.instructions.create", "L-03"),
+                ("logistics.instructions.detail", "L-02-DETAIL"),
+                ("logistics.instructions.list", "L-02"),
+                ("logistics.shipments.record", "L-02-DETAIL"),
+            ],
+            declarations.OrderBy(declaration => declaration.CapabilityId, StringComparer.Ordinal)
+                .Select(declaration => (declaration.CapabilityId, declaration.ScreenId)).ToArray());
         var shipment = declarations.Single(item => item.CapabilityId == LogisticsShellCapabilityProvider.ShipmentCapabilityId);
         Assert.Equal(LogisticsShellCapabilityProvider.DetailCapabilityId, shipment.ParentCapabilityId);
         Assert.Equal([LogisticsPermissionManifestV1.InstructionsRead, LogisticsPermissionManifestV1.ShipmentsRecord,
