@@ -166,6 +166,16 @@ class SeedSourceTests(unittest.TestCase):
         self.assertNotIn("ConfigureServices", host)
         self.assertNotIn("ConfigureTestServices", host)
 
+    def test_the_runner_materializes_the_existing_product_runtime_before_owner_fixtures(self):
+        runner = (TOOL / "BrowserSuiteFixtureTool.cs").read_text(encoding="utf-8")
+        start = runner.index("using (host.CreateClient())")
+        initialize = runner.index("await host.Services.InitializeProductRuntimeAsync(CancellationToken.None);")
+        seed = runner.index("outputs = await fixture.SeedAsync(context, CancellationToken.None);")
+        self.assertLess(start, initialize)
+        self.assertLess(initialize, seed)
+        self.assertNotIn("ProductDbContext", runner)
+        self.assertNotIn("MigrateAsync", runner)
+
     def test_only_the_runner_opens_the_fixture_writer_gate(self):
         # Decision W1: the BrowserSuiteFixture:* keys come only from the runner's host settings.
         host = (TOOL / "BrowserSuiteHost.cs").read_text(encoding="utf-8")
