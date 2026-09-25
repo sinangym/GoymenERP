@@ -28,12 +28,14 @@ internal sealed class InventoryParentRollService(ICompanyContext company, ICurre
         CancellationToken cancellationToken = default)
     {
         var scope = await RequireAsync(null, cancellationToken);
-        if (query is null || query.Limit is < 1 or > 100 || query.Q?.Length > MaterialLabel.MaximumCodeLength)
+        if (query is null || query.Limit is < 1 or > 100 || query.Q?.Length > MaterialLabel.MaximumCodeLength
+            || query.PositionContext is not null && !IsValid(query.PositionContext))
             throw Error(400, InventoryParentRollCodesV1.InvalidQuery);
         var source = reader ?? throw Error(503, InventoryParentRollCodesV1.Unavailable);
         var window = await FencedAsync(() => source.SearchAsync(scope.CompanyId, query.Q?.Trim() ?? "",
             query.Limit, cancellationToken), scope, cancellationToken);
-        return new([.. window.Records.Select(record => View(record, scope.CompanyId))], window.HasMore);
+        return new([.. window.Records.Select(record => View(record, scope.CompanyId, query.PositionContext))],
+            window.HasMore);
     }
 
     public async Task<InventoryParentRollReferenceV1> ValidateAsync(InventoryParentRollSelectionV1 selection,
@@ -42,6 +44,8 @@ internal sealed class InventoryParentRollService(ICompanyContext company, ICurre
         var scope = await RequireAsync(null, cancellationToken);
         if (selection is null || selection.LabelId == Guid.Empty)
             throw Error(404, InventoryParentRollCodesV1.InvalidReference);
+        if (selection.PositionContext is not null && !IsValid(selection.PositionContext))
+            throw Error(422, InventoryParentRollCodesV1.ContextRequired);
         if (!long.TryParse(selection.ExpectedLabelVersion, NumberStyles.None, CultureInfo.InvariantCulture,
             out var expected) || expected <= 0 || expected.ToString(CultureInfo.InvariantCulture) != selection.ExpectedLabelVersion)
             throw Error(400, InventoryParentRollCodesV1.InvalidVersion);
@@ -51,12 +55,13 @@ internal sealed class InventoryParentRollService(ICompanyContext company, ICurre
         if (record is null || record.Label.CompanyId != scope.CompanyId || record.Label.Id != selection.LabelId)
             throw Error(404, InventoryParentRollCodesV1.InvalidReference);
         if (record.Version != expected) throw Error(409, InventoryParentRollCodesV1.VersionConflict);
-        var view = View(record, scope.CompanyId);
+        var view = View(record, scope.CompanyId, selection.PositionContext);
         if (!view.DraftSelectable) throw Error(422, view.DraftRefusalCode!);
         return view;
     }
 
-    private static InventoryParentRollReferenceV1 View(InventoryParentRollRecord record, Guid companyId)
+    private static InventoryParentRollReferenceV1 View(InventoryParentRollRecord record, Guid companyId,
+        InventoryParentRollPositionContextV1? context)
     {
         var label = record.Label;
         if (label.CompanyId != companyId || record.Lot.CompanyId != companyId || record.Version <= 0
@@ -68,15 +73,32 @@ internal sealed class InventoryParentRollService(ICompanyContext company, ICurre
         try { _ = StockLedger.FromStoredBalances(record.Balances); }
         catch (InventoryRuleException) { throw Error(503, InventoryParentRollCodesV1.Unavailable); }
         var balances = InventoryReadModelsV1.Balances(label.Id, record.Balances);
-        var refusal = balances.Positions.Count == 0 ? InventoryParentRollCodesV1.NoPhysicalPosition
-            : balances.Positions.Any(p => p.OwnerKind != nameof(StockPartyKind.Company) || p.OwnerId != companyId)
-                ? InventoryParentRollCodesV1.ContextRequired : null;
+        var refusal = balances.Positions.Count == 0
+            ? InventoryParentRollCodesV1.NoPhysicalPosition
+            : context is null
+                ? balances.Positions.Any(p =>
+                    p.OwnerKind != nameof(StockPartyKind.Company) || p.OwnerId != companyId)
+                    ? InventoryParentRollCodesV1.ContextRequired
+                    : null
+                : balances.Positions.Any(position => !Matches(position, context))
+                    ? InventoryParentRollCodesV1.ContextRequired
+                    : null;
         return new(companyId, label.Id, record.Version.ToString(CultureInfo.InvariantCulture), label.Code,
             label.ProductId, new(record.Lot.Id, record.Lot.HeatNumber, record.Lot.CoilNumber), label.HeatNumber,
             label.CoilNumber, label.DocumentStatus.ToString(), [.. label.RequiredDocuments.Order(StringComparer.Ordinal)],
             [.. label.AttachedDocuments.Order(StringComparer.Ordinal)], balances.PhysicalKg, balances.FreeKg,
             balances.BlockedKg, balances.Positions, refusal is null, refusal, ProductionUseRequiresRevalidation: true);
     }
+
+    private static bool Matches(InventoryPositionV1 position, InventoryParentRollPositionContextV1 context) =>
+        string.Equals(position.OwnerKind, context.OwnerKind.ToString(), StringComparison.Ordinal)
+        && position.OwnerId == context.OwnerId
+        && string.Equals(position.CustodianKind, context.CustodianKind.ToString(), StringComparison.Ordinal)
+        && position.CustodianId == context.CustodianId;
+
+    private static bool IsValid(InventoryParentRollPositionContextV1 context) =>
+        Enum.IsDefined(context.OwnerKind) && context.OwnerId != Guid.Empty
+        && Enum.IsDefined(context.CustodianKind) && context.CustodianId != Guid.Empty;
 
     private async Task<T> FencedAsync<T>(Func<Task<T>> read, Scope scope, CancellationToken ct)
     {

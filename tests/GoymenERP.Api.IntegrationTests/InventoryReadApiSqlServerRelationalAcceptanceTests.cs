@@ -174,6 +174,24 @@ public sealed class InventoryReadApiSqlServerRelationalAcceptanceTests
             Assert.False(foreignOwner.DraftSelectable);
             Assert.All(foreignOwner.Positions, p => Assert.Equal("Counterparty", p.OwnerKind));
             await ParentRollRefused(service.ValidateAsync(new(customer.Id, "3")), 422, InventoryParentRollCodesV1.ContextRequired);
+            var customerPosition = Assert.Single(foreignOwner.Positions);
+            var customerContext = new InventoryParentRollPositionContextV1(
+                StockPartyKind.Counterparty, customerPosition.OwnerId,
+                StockPartyKind.Company, customerPosition.CustodianId);
+            var contextual = await service.SearchAsync(new("SYN-R13", 100, customerContext));
+            var contextualCustomer = Assert.Single(contextual.Items, i => i.LabelId == customer.Id);
+            Assert.True(contextualCustomer.DraftSelectable);
+            Assert.Null(contextualCustomer.DraftRefusalCode);
+            var contextualOwn = Assert.Single(contextual.Items, i => i.LabelId == own.Id);
+            Assert.False(contextualOwn.DraftSelectable);
+            Assert.Equal(InventoryParentRollCodesV1.ContextRequired, contextualOwn.DraftRefusalCode);
+            var validatedCustomer = await service.ValidateAsync(new(customer.Id, "3", customerContext));
+            Assert.Equal((customer.Id, true, (string?)null),
+                (validatedCustomer.LabelId, validatedCustomer.DraftSelectable,
+                    validatedCustomer.DraftRefusalCode));
+            await ParentRollRefused(service.ValidateAsync(new(customer.Id, "3",
+                    customerContext with { OwnerId = Guid.NewGuid() })),
+                422, InventoryParentRollCodesV1.ContextRequired);
             await ParentRollRefused(service.ValidateAsync(new(own.Id, "2")), 409, InventoryParentRollCodesV1.VersionConflict);
         });
         Assert.Equal(before, await run.EffectsAsync());

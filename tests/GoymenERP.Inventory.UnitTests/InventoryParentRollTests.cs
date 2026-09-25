@@ -84,6 +84,46 @@ public sealed class InventoryParentRollTests
     }
 
     [Fact]
+    public async Task Authorized_customer_context_selects_only_the_exact_stored_owner_and_custodian()
+    {
+        var world = new World();
+        world.Reader.Record = Record(customer: true);
+        var position = Assert.Single(world.Reader.Record.Balances).Position;
+        var context = new InventoryParentRollPositionContextV1(
+            position.Owner.Kind, position.Owner.Id, position.Custodian.Kind, position.Custodian.Id);
+
+        var candidate = Assert.Single((await world.Service().SearchAsync(new(PositionContext: context))).Items);
+        Assert.True(candidate.DraftSelectable);
+        Assert.Null(candidate.DraftRefusalCode);
+        var validated = await world.Service().ValidateAsync(
+            new(candidate.LabelId, candidate.LabelVersion, context));
+        Assert.True(validated.DraftSelectable);
+
+        var wrongOwner = context with { OwnerId = Guid.NewGuid() };
+        var wrongCustodian = context with { CustodianId = Guid.NewGuid() };
+        Assert.Equal(InventoryParentRollCodesV1.ContextRequired,
+            Assert.Single((await world.Service().SearchAsync(new(PositionContext: wrongOwner))).Items)
+                .DraftRefusalCode);
+        await Refused(world.Service().ValidateAsync(
+            new(candidate.LabelId, candidate.LabelVersion, wrongCustodian)), 422,
+            InventoryParentRollCodesV1.ContextRequired);
+    }
+
+    [Fact]
+    public async Task Malformed_context_is_refused_before_any_owner_read()
+    {
+        var world = new World();
+        var invalid = new InventoryParentRollPositionContextV1(
+            StockPartyKind.Counterparty, Guid.Empty, StockPartyKind.Company, Company);
+
+        await Refused(world.Service().SearchAsync(new(PositionContext: invalid)), 400,
+            InventoryParentRollCodesV1.InvalidQuery);
+        await Refused(world.Service().ValidateAsync(new(world.Reader.Record!.Label.Id, "3", invalid)), 422,
+            InventoryParentRollCodesV1.ContextRequired);
+        Assert.Equal(0, world.Reader.Reads);
+    }
+
+    [Fact]
     public async Task Empty_label_does_not_invent_owner_location_or_stock()
     {
         var world = new World();
