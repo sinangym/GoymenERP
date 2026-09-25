@@ -111,13 +111,14 @@ public sealed class AccountingJournalReversalServiceV1(
             idempotencyKey,
             request,
             AccountingApiStatus.Created,
-            async (metadata, actor) =>
+            async (metadata, actor, boundCompany, boundActorId) =>
             {
                 var proposal = AccountingJournalReversalPolicyV1.Propose(
-                    companyContext.CompanyId, actor, request, timeProvider.GetUtcNow());
+                    boundCompany, actor, request, timeProvider.GetUtcNow());
                 var (stored, outcome) = await proposals.CreateAsync(
                     proposal,
-                    token => FenceAsync(AccountingJournalReversalPermissionNamesV1.Propose, actor, token),
+                    token => FenceAsync(AccountingJournalReversalPermissionNamesV1.Propose,
+                        boundCompany, actor, boundActorId, token),
                     metadata,
                     cancellationToken);
                 return new AccountingApiResult<AccountingJournalReversalProposalViewV1>(
@@ -144,13 +145,14 @@ public sealed class AccountingJournalReversalServiceV1(
             idempotencyKey,
             new { proposalId, expectedVersion },
             AccountingApiStatus.Ok,
-            async (metadata, actor) =>
+            async (metadata, actor, boundCompany, boundActorId) =>
             {
                 var stored = await proposals.ApproveAndReverseAsync(
                     proposalId,
                     expectedVersion,
                     actor,
-                    token => FenceAsync(AccountingJournalReversalPermissionNamesV1.Approve, actor, token),
+                    token => FenceAsync(AccountingJournalReversalPermissionNamesV1.Approve,
+                        boundCompany, actor, boundActorId, token),
                     metadata,
                     cancellationToken);
                 return new AccountingApiResult<AccountingJournalReversalProposalViewV1>(
@@ -166,7 +168,7 @@ public sealed class AccountingJournalReversalServiceV1(
         string idempotencyKey,
         object canonicalRequest,
         AccountingApiStatus successStatus,
-        Func<AccountingCommandMetadata, Guid, Task<AccountingApiResult<T>>> write,
+        Func<AccountingCommandMetadata, Guid, Guid, string, Task<AccountingApiResult<T>>> write,
         Func<object, T> view,
         CancellationToken cancellationToken)
         where T : class
@@ -183,24 +185,34 @@ public sealed class AccountingJournalReversalServiceV1(
         }
 
         var companyId = companyContext.CompanyId;
-        var scope = await authority.RevalidatePermissionScopeAsync(permission, companyId, cancellationToken);
-        if (!scope.IsGranted || !scope.IsCompanyWide || !HasContext())
+        var actorId = currentUser.UserId!;
+        if (!ContextMatches(companyId, actor, actorId))
         {
             return Denied<T>();
         }
 
-        var actorId = currentUser.UserId!;
+        var scope = await authority.RevalidatePermissionScopeAsync(permission, companyId, cancellationToken);
+        if (!scope.IsGranted || !scope.IsCompanyWide || !ContextMatches(companyId, actor, actorId))
+        {
+            return Denied<T>();
+        }
+
         var keyHash = AccountingApiService.Sha256(idempotencyKey.Trim());
         var requestHash = AccountingApiService.Sha256(
             commandName + "|" + JsonSerializer.Serialize(canonicalRequest, Json));
-        if (await commands.FindCommandAsync(commandName, keyHash, cancellationToken) is { } prior)
+        var prior = await commands.FindCommandAsync(commandName, keyHash, cancellationToken);
+        if (!ContextMatches(companyId, actor, actorId))
+        {
+            return Denied<T>();
+        }
+
+        if (prior is not null)
         {
             return Answer<T>(prior, actorId, requestHash);
         }
 
         var second = await authority.RevalidatePermissionScopeAsync(permission, companyId, cancellationToken);
-        if (!second.IsGranted || !second.IsCompanyWide || !HasContext()
-            || !string.Equals(currentUser.UserId, actorId, StringComparison.Ordinal))
+        if (!second.IsGranted || !second.IsCompanyWide || !ContextMatches(companyId, actor, actorId))
         {
             return Denied<T>();
         }
@@ -227,7 +239,11 @@ public sealed class AccountingJournalReversalServiceV1(
         AccountingApiResult<T> result;
         try
         {
-            result = await write(metadata, actor);
+            result = await write(metadata, actor, companyId, actorId);
+            if (!ContextMatches(companyId, actor, actorId))
+            {
+                return Denied<T>();
+            }
         }
         catch (AccountingJournalReversalAuthorityDeniedException)
         {
@@ -305,10 +321,15 @@ public sealed class AccountingJournalReversalServiceV1(
         }
     }
 
-    private async Task FenceAsync(string permission, Guid actor, CancellationToken cancellationToken)
+    private async Task FenceAsync(
+        string permission,
+        Guid companyId,
+        Guid actor,
+        string actorId,
+        CancellationToken cancellationToken)
     {
-        var scope = await authority.RevalidatePermissionScopeAsync(permission, companyContext.CompanyId, cancellationToken);
-        if (!scope.IsGranted || !scope.IsCompanyWide || !HasContext() || ActorGuid() != actor)
+        var scope = await authority.RevalidatePermissionScopeAsync(permission, companyId, cancellationToken);
+        if (!scope.IsGranted || !scope.IsCompanyWide || !ContextMatches(companyId, actor, actorId))
         {
             throw new AccountingJournalReversalAuthorityDeniedException();
         }
@@ -321,6 +342,13 @@ public sealed class AccountingJournalReversalServiceV1(
 
     private Guid? ActorGuid() =>
         Guid.TryParse(currentUser.UserId, out var actor) && actor != Guid.Empty ? actor : null;
+
+    private bool ContextMatches(Guid companyId, Guid actor, string actorId) =>
+        HasContext()
+        && companyContext.CompanyId == companyId
+        && currentUser.CanAccessCompany(companyId)
+        && string.Equals(currentUser.UserId, actorId, StringComparison.Ordinal)
+        && ActorGuid() == actor;
 
     private AccountingCommandRecord Record<T>(
         string commandName,
