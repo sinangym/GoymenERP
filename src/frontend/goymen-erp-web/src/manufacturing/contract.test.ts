@@ -135,27 +135,55 @@ describe('factBody', () => {
   const base: FactSnapshot = {
     kind: 'input-issues',
     factId: 'f0000000-0000-4000-8000-000000000001',
+    movementId: 'f0000000-0000-4000-8000-000000000002',
+    expectedParentLabelVersion: null,
     idempotencyKey: 'k',
     expectedVersion: 3,
     parentRollId: ROLL_1,
     kg: '10.5',
     occurredAtUtc: '2026-09-18T09:00:00.000Z',
-    outputClass: null,
   }
 
-  it('names exactly the request fields: no company, no key, kilograms as text', () => {
+  it('names exactly the strict issue fields: no company, no key, kilograms as text', () => {
     expect(factBody(base)).toEqual({
+      issueId: base.factId,
+      expectedVersion: 3,
+      parentRollId: ROLL_1,
+      movementId: base.movementId,
+      kg: '10.5',
+      occurredAtUtc: '2026-09-18T09:00:00.000Z',
+    })
+  })
+
+  it('freezes the fresh parent-label version only into a strict return', () => {
+    expect(factBody({
+      ...base,
+      kind: 'input-returns',
+      expectedParentLabelVersion: '8',
+    })).toEqual({
+      returnId: base.factId,
+      expectedVersion: 3,
+      parentRollId: ROLL_1,
+      expectedParentLabelVersion: '8',
+      movementId: base.movementId,
+      kg: '10.5',
+      occurredAtUtc: '2026-09-18T09:00:00.000Z',
+    })
+  })
+
+  it('keeps WIP on RecordFactRequestV1 without an Inventory movement', () => {
+    expect(factBody({
+      ...base,
+      kind: 'wip-measurements',
+      movementId: null,
+      expectedParentLabelVersion: null,
+    })).toEqual({
       factId: base.factId,
       expectedVersion: 3,
       parentRollId: ROLL_1,
       kg: '10.5',
       occurredAtUtc: '2026-09-18T09:00:00.000Z',
     })
-  })
-
-  it('adds the output class only to an output', () => {
-    expect(factBody({ ...base, kind: 'outputs', outputClass: 'Scrap' })).toMatchObject({ outputClass: 'Scrap' })
-    expect(factBody({ ...base, kind: 'wip-measurements', outputClass: 'Scrap' })).not.toHaveProperty('outputClass')
   })
 })
 

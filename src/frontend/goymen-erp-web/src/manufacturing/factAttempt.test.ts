@@ -7,12 +7,13 @@ import type { FactSnapshot } from './contract'
 const SNAPSHOT: FactSnapshot = {
   kind: 'input-issues',
   factId: 'f1',
+  movementId: 'm1',
+  expectedParentLabelVersion: null,
   idempotencyKey: 'key-1',
   expectedVersion: 1,
   parentRollId: 'r1',
   kg: '10',
   occurredAtUtc: '2026-09-18T09:00:00.000Z',
-  outputClass: null,
 }
 
 function run(...events: Parameters<typeof factAttemptReducer>[1][]): FactAttempt {

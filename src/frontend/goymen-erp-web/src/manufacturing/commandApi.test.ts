@@ -9,14 +9,15 @@ import type { FactSnapshot } from './contract'
 import { COMPANY_A, ORDER, ROLL_1, json, problem } from './testHarness'
 
 const SNAPSHOT: FactSnapshot = {
-  kind: 'outputs',
+  kind: 'input-issues',
   factId: 'f0000000-0000-4000-8000-000000000001',
+  movementId: 'f0000000-0000-4000-8000-000000000002',
+  expectedParentLabelVersion: null,
   idempotencyKey: 'key-1',
   expectedVersion: 4,
   parentRollId: ROLL_1,
   kg: '900.5',
   occurredAtUtc: '2026-09-18T09:00:00.000Z',
-  outputClass: 'GoodProduct',
 }
 
 function answer(response: Response | (() => never)) {
@@ -34,16 +35,16 @@ describe('recordFact', () => {
     const fetchMock = answer(json({}, 200))
     await recordFact(COMPANY_A, ORDER, SNAPSHOT)
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
-    expect(url).toBe(`/api/v1/manufacturing/orders/${ORDER}/outputs`)
+    expect(url).toBe(`/api/v1/manufacturing/orders/${ORDER}/input-issues`)
     expect(init.method).toBe('POST')
     expect(init.headers).toMatchObject({ 'Idempotency-Key': 'key-1', 'X-Company-Id': COMPANY_A })
     expect(JSON.parse(init.body as string)).toEqual({
-      factId: SNAPSHOT.factId,
+      issueId: SNAPSHOT.factId,
       expectedVersion: 4,
       parentRollId: ROLL_1,
+      movementId: SNAPSHOT.movementId,
       kg: '900.5',
       occurredAtUtc: SNAPSHOT.occurredAtUtc,
-      outputClass: 'GoodProduct',
     })
   })
 
@@ -65,6 +66,14 @@ describe('recordFact', () => {
   it.each([
     [problem(409, { code: 'idempotency_conflict' }), { kind: 'idempotency-conflict' }],
     [problem(409, { code: 'manufacturing_concurrent_change' }), { kind: 'concurrent-change' }],
+    [
+      problem(409, { code: 'inventory_manufacturing_parent_label_version_conflict' }),
+      { kind: 'label-version-conflict' },
+    ],
+    [
+      problem(409, { code: 'inventory_manufacturing_input_return_exceeds_issued' }),
+      { kind: 'rule', code: 'inventory_manufacturing_input_return_exceeds_issued' },
+    ],
     [
       problem(409, { code: 'manufacturing_fact_id_conflict' }),
       { kind: 'id-conflict', code: 'manufacturing_fact_id_conflict' },

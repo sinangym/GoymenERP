@@ -34,14 +34,12 @@ export const FACT_KIND_LABEL: Record<FactKind, string> = {
   'input-issues': 'Girdi çıkışı',
   'input-returns': 'Kullanılmayan girdi iadesi',
   'wip-measurements': 'WIP ölçümü',
-  outputs: 'Çıktı bildirimi',
 }
 
 export const FACT_KIND_HELP: Record<FactKind, string> = {
   'input-issues': 'Ana rulodan üretime verilen kütle.',
   'input-returns': 'Çıkıp kullanılmayan ve geri dönen kütle; çıkandan fazla olamaz.',
   'wip-measurements': 'Rulonun üzerindeki yarı işlenmiş kütlenin son okuması; öncekinden sonra olmalı.',
-  outputs: 'Rulodan çıkan kütle, beş sınıftan biriyle.',
 }
 
 export const COST_STATUS_TEXT = 'Hesaplanmadı'
@@ -73,8 +71,18 @@ export const KG_FORMAT_HELP = 'Nokta ile ondalık, işaretsiz (ör. 1250.5). Ond
 export const KG_FORMAT_ERROR = 'Kilogram biçimi geçersiz: işaretsiz, nokta ile ondalık bir sayı girin.'
 export const ROLL_REQUIRED = 'Bir ana rulo seçin.'
 export const TIME_REQUIRED = 'Olgunun zamanını girin.'
-export const CLASS_REQUIRED = 'Bir çıktı sınıfı seçin.'
 export const CLOSED_ORDER_TEXT = 'Emir kapalı; yeni gerçekleşme kaydedilmez.'
+
+export const INPUT_INVENTORY_TEXT = {
+  heading: 'Ana rulo Inventory durumu',
+  version: 'Etiket sürümü',
+  physical: 'Fiziksel',
+  free: 'Serbest',
+  blocked: 'Blokeli',
+  loadingRequired: 'Ana rulonun güncel Inventory durumu okunmadan bu işlem gönderilemez.',
+  companyOwnedRequired:
+    'Bu adım yalnız şirketin kendi malı ve kendi gözetimindeki ana rulo için kullanılabilir.',
+} as const
 
 /** MFG-02 order list. Column names are the summary's own fields; no figure is invented for a column. */
 export const ORDER_LIST_TEXT = {
@@ -153,6 +161,12 @@ const RULE_TEXT: Record<string, string> = {
   manufacturing_kilogram_profile_invalid: 'Şirketin kg profili geçersiz.',
   manufacturing_kilogram_profile_company_mismatch: 'kg profili bu şirkete ait değil.',
   settings_unit_profile_not_found: 'Şirketin onaylı bir kg profili yok.',
+  inventory_manufacturing_parent_label_not_releasable: 'Ana rulo üretime verilebilir durumda değil.',
+  inventory_manufacturing_parent_label_context_conflict:
+    'Ana rulo bu şirketin kendi malı ve kendi gözetiminde değil.',
+  inventory_manufacturing_physical_stock_insufficient: 'Ana ruloda istenen kütle kadar serbest fiziksel stok yok.',
+  inventory_manufacturing_parent_input_not_issued: 'Bu ana rulo için önce bir girdi çıkışı kaydedilmelidir.',
+  inventory_manufacturing_input_return_exceeds_issued: 'İade, bu rulodan net çıkan kütleyi aşamaz.',
 }
 
 export function failureText(failure: FactFailure): string {
@@ -173,6 +187,8 @@ export function failureText(failure: FactFailure): string {
       return 'Bu işlem anahtarı başka bir istekle kullanılmış. Yeni bir gönderim olarak yeniden deneyin.'
     case 'concurrent-change':
       return 'Aynı anda başka bir kayıt işlendi; bu olgu kaydedilmedi. Emir yeniden okundu; yeniden gönderin.'
+    case 'label-version-conflict':
+      return 'Ana rulo etiketi siz formu doldururken değişti. Emir ve etiket yeniden okundu; değerleri kontrol edin.'
     case 'id-conflict':
       return `Bu olgu kimliği başka bir içerikle kayıtlı (${failure.code}). Yeni bir gönderim olarak yeniden deneyin.`
     case 'rule':

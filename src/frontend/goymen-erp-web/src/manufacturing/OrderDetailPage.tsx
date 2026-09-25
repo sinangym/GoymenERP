@@ -29,6 +29,8 @@ import { useQuery } from '@tanstack/react-query'
 import { useParams } from 'react-router'
 import { fetchMassBalance, fetchOrder } from './api'
 import { closeOrder, recordFact, type FactFailure, type FactUnknown } from './commandApi'
+import { fetchInventoryLabelDetail } from '../inventory/labelDetailApi'
+import type { InventoryLabelDetail } from '../inventory/labelDetailContract'
 import {
   FACT_KINDS,
   OUTPUT_CLASSES,
@@ -38,7 +40,6 @@ import {
   type FactKind,
   type FactSnapshot,
   type MassBalanceView,
-  type OutputClass,
   type ProductionOrderView,
   type RollBalance,
 } from './contract'
@@ -60,7 +61,6 @@ import {
   ACTUAL_UNIT_KG_NOTE,
   APPLIED_DETAIL,
   APPLIED_TITLE,
-  CLASS_REQUIRED,
   CLOSED_ORDER_TEXT,
   CLOSE_TEXT,
   COST_STATUS_TEXT,
@@ -70,6 +70,7 @@ import {
   FACT_KIND_LABEL,
   KG_FORMAT_ERROR,
   KG_FORMAT_HELP,
+  INPUT_INVENTORY_TEXT,
   MASS_BALANCE_HEADING,
   MASS_BALANCE_HELP,
   ORDER_STATUS_LABEL,
@@ -563,7 +564,6 @@ interface FormValues {
   readonly kg: string
   /** `datetime-local` value, read as the browser's local time and sent as UTC. */
   readonly occurredAt: string
-  readonly outputClass: OutputClass | ''
 }
 
 const EMPTY_FORM: FormValues = {
@@ -571,7 +571,6 @@ const EMPTY_FORM: FormValues = {
   parentRollId: '',
   kg: '',
   occurredAt: '',
-  outputClass: '',
 }
 
 function formFromSnapshot(snapshot: FactSnapshot): FormValues {
@@ -582,8 +581,13 @@ function formFromSnapshot(snapshot: FactSnapshot): FormValues {
     parentRollId: snapshot.parentRollId,
     kg: snapshot.kg,
     occurredAt: local,
-    outputClass: snapshot.outputClass ?? '',
   }
+}
+
+function isCompanyOwned(detail: InventoryLabelDetail, companyId: string): boolean {
+  return detail.balances.positions.length > 0 && detail.balances.positions.every((position) =>
+    position.ownerKind === 'Company' && position.ownerId === companyId &&
+    position.custodianKind === 'Company' && position.custodianId === companyId)
 }
 
 function restored(storeKey: string | null): FactAttempt {
@@ -615,6 +619,26 @@ function FactSection({
   const [error, setError] = useState<string | null>(null)
   const noticeRef = useRef<HTMLDivElement>(null)
 
+  const needsInventoryState = form.kind === 'input-issues' || form.kind === 'input-returns'
+  const labelQuery = useQuery({
+    queryKey: ['manufacturing-parent-label', companyId, form.parentRollId],
+    enabled: needsInventoryState && form.parentRollId.length > 0,
+    queryFn: async ({ signal }) => {
+      const security = boundary.capture()
+      const outcome = await fetchInventoryLabelDetail(companyId, form.parentRollId, signal)
+      if (outcome.type === 'http' && (outcome.status === 401 || outcome.status === 403)) {
+        boundary.report(outcome.status, security)
+      }
+      return outcome
+    },
+  })
+  const labelState = !needsInventoryState || form.parentRollId.length === 0
+    ? null
+    : (labelQuery.isPending
+        ? { kind: 'initial-loading' }
+        : classifyOutcome(labelQuery.data ?? { type: 'malformed' })) as RemoteViewState<InventoryLabelDetail>
+  const companyOwned = labelState?.kind === 'ready' && isCompanyOwned(labelState.data, companyId)
+
   const unresolved = isUnresolved(attempt)
   const busy = attempt.phase === 'submitting'
   const closed = order.status === 'Closed'
@@ -639,6 +663,15 @@ function FactSection({
     if (phase === 'applied' || phase === 'failed' || phase === 'unknown') noticeRef.current?.focus()
   }, [phase])
 
+  const refetchLabel = labelQuery.refetch
+  const refreshReads = useCallback(async (snapshot: FactSnapshot) => {
+    if (snapshot.kind === 'wip-measurements') {
+      await onRefresh()
+      return
+    }
+    await Promise.all([onRefresh(), refetchLabel()])
+  }, [onRefresh, refetchLabel])
+
   const send = useCallback(
     async (snapshot: FactSnapshot, resends: number) => {
       // RESERVE FIRST, synchronously, before the request can be in flight.
@@ -652,44 +685,51 @@ function FactSection({
       dispatch({ type: 'SETTLE', outcome, idempotencyKey: snapshot.idempotencyKey })
       if (outcome.type === 'applied') {
         setForm((current) => ({ ...current, kg: '' }))
-        await onRefresh()
+        await refreshReads(snapshot)
       } else if (
         outcome.type === 'failed' &&
-        (outcome.failure.kind === 'version-conflict' || outcome.failure.kind === 'concurrent-change')
+        (outcome.failure.kind === 'version-conflict' || outcome.failure.kind === 'label-version-conflict' ||
+          outcome.failure.kind === 'concurrent-change')
       ) {
-        // The order moved on: read it again; the typed values stay for a new submit.
-        await onRefresh()
+        // An owner record moved on: read both owner states again; typed values stay for a new submit.
+        await refreshReads(snapshot)
       }
     },
-    [boundary, companyId, onRefresh, order.orderId, storeKey],
+    [boundary, companyId, order.orderId, refreshReads, storeKey],
   )
 
-  const submit = useCallback(
-    (event: React.FormEvent) => {
-      event.preventDefault()
-      if (busy || unresolved || closed) return
-      // A submit refused here mints NO id and NO key: nothing was attempted.
-      if (form.parentRollId.length === 0) return setError(ROLL_REQUIRED)
-      if (!isKilogramText(form.kg)) return setError(KG_FORMAT_ERROR)
-      if (form.kind === 'outputs' && form.outputClass === '') return setError(CLASS_REQUIRED)
-      const at = form.occurredAt.length === 0 ? Number.NaN : new Date(form.occurredAt).getTime()
-      if (Number.isNaN(at)) return setError(TIME_REQUIRED)
-      setError(null)
-      const snapshot: FactSnapshot = {
-        kind: form.kind,
-        factId: newId(),
-        idempotencyKey: newId(),
-        expectedVersion: order.version,
-        parentRollId: form.parentRollId,
-        kg: form.kg,
-        occurredAtUtc: new Date(at).toISOString(),
-        outputClass: form.kind === 'outputs' ? (form.outputClass as OutputClass) : null,
-      }
-      dispatch({ type: 'SUBMIT', snapshot })
-      void send(snapshot, 0)
-    },
-    [busy, closed, form, order.version, send, unresolved],
-  )
+  const submit = (event: React.FormEvent) => {
+    event.preventDefault()
+    if (busy || unresolved || closed) return
+    // A submit refused here mints NO id and NO key: nothing was attempted.
+    if (form.parentRollId.length === 0) return setError(ROLL_REQUIRED)
+    if (!isKilogramText(form.kg)) return setError(KG_FORMAT_ERROR)
+    if (needsInventoryState && labelState?.kind !== 'ready') return setError(INPUT_INVENTORY_TEXT.loadingRequired)
+    if (needsInventoryState && !companyOwned) return setError(INPUT_INVENTORY_TEXT.companyOwnedRequired)
+    const at = form.occurredAt.length === 0 ? Number.NaN : new Date(form.occurredAt).getTime()
+    if (Number.isNaN(at)) return setError(TIME_REQUIRED)
+    setError(null)
+    const common = {
+      factId: newId(),
+      idempotencyKey: newId(),
+      expectedVersion: order.version,
+      parentRollId: form.parentRollId,
+      kg: form.kg,
+      occurredAtUtc: new Date(at).toISOString(),
+    }
+    const snapshot: FactSnapshot = form.kind === 'input-issues'
+      ? { ...common, kind: form.kind, movementId: newId(), expectedParentLabelVersion: null }
+      : form.kind === 'input-returns'
+        ? {
+            ...common,
+            kind: form.kind,
+            movementId: newId(),
+            expectedParentLabelVersion: labelState?.kind === 'ready' ? labelState.data.labelVersion : '',
+          }
+        : { ...common, kind: form.kind, movementId: null, expectedParentLabelVersion: null }
+    dispatch({ type: 'SUBMIT', snapshot })
+    void send(snapshot, 0)
+  }
 
   const resend = useCallback(() => {
     if (attempt.phase !== 'unknown') return
@@ -709,7 +749,7 @@ function FactSection({
       <h2 id="mfg-facts-heading">Gerçekleşme kaydı</h2>
       {closed ? <p className={styles.help}>{CLOSED_ORDER_TEXT}</p> : null}
 
-      <AttemptNotice attempt={attempt} refreshing={refreshing} noticeRef={noticeRef} />
+      <AttemptNotice attempt={attempt} refreshing={refreshing || labelQuery.isFetching} noticeRef={noticeRef} />
 
       <form className={styles.section} onSubmit={submit} noValidate aria-describedby="mfg-fact-help">
         <fieldset className={styles.kinds} disabled={frozen}>
@@ -749,24 +789,6 @@ function FactSection({
               ))}
             </select>
           </div>
-          {form.kind === 'outputs' ? (
-            <div className={styles.control}>
-              <label htmlFor="mfg-fact-output-class">Çıktı sınıfı</label>
-              <select
-                id="mfg-fact-output-class"
-                value={form.outputClass}
-                disabled={frozen}
-                onChange={(event) => update({ outputClass: event.target.value as OutputClass | '' })}
-              >
-                <option value="">Seçin</option>
-                {OUTPUT_CLASSES.map((outputClass) => (
-                  <option key={outputClass} value={outputClass}>
-                    {OUTPUT_CLASS_LABEL[outputClass]}
-                  </option>
-                ))}
-              </select>
-            </div>
-          ) : null}
           <div className={styles.control}>
             <label htmlFor="mfg-fact-kg">Kütle (kg)</label>
             <input
@@ -794,6 +816,9 @@ function FactSection({
             />
           </div>
         </div>
+        {labelState !== null ? (
+          <ParentLabelState state={labelState} companyOwned={companyOwned} onRetry={() => void labelQuery.refetch()} />
+        ) : null}
         {error !== null ? (
           <p className={styles.error} role="alert">
             {error}
@@ -805,12 +830,45 @@ function FactSection({
               Aynı olguyu yeniden gönder
             </button>
           ) : (
-            <button type="submit" disabled={frozen}>
+            <button type="submit" disabled={frozen || (needsInventoryState && (!companyOwned || labelState?.kind !== 'ready'))}>
               {busy ? 'Gönderiliyor…' : 'Kaydet'}
             </button>
           )}
         </div>
       </form>
+    </section>
+  )
+}
+
+function ParentLabelState({
+  state,
+  companyOwned,
+  onRetry,
+}: {
+  readonly state: RemoteViewState<InventoryLabelDetail>
+  readonly companyOwned: boolean
+  readonly onRetry: () => void
+}) {
+  if (state.kind !== 'ready') {
+    return (
+      <section aria-labelledby="mfg-parent-label-heading" className={styles.section}>
+        <h3 id="mfg-parent-label-heading">{INPUT_INVENTORY_TEXT.heading}</h3>
+        <StateBlock state={state} subject="ana rulo Inventory durumu" onRetry={onRetry} />
+      </section>
+    )
+  }
+  const detail = state.data
+  return (
+    <section aria-labelledby="mfg-parent-label-heading" className={styles.section} data-testid="parent-label-state">
+      <h3 id="mfg-parent-label-heading">{INPUT_INVENTORY_TEXT.heading}</h3>
+      <dl>
+        <div><dt>Etiket</dt><dd className={styles.mono}>{detail.identity.code}</dd></div>
+        <div><dt>{INPUT_INVENTORY_TEXT.version}</dt><dd>{detail.labelVersion}</dd></div>
+        <div><dt>{INPUT_INVENTORY_TEXT.physical}</dt><dd>{detail.balances.physicalKg} kg</dd></div>
+        <div><dt>{INPUT_INVENTORY_TEXT.free}</dt><dd>{detail.balances.freeKg} kg</dd></div>
+        <div><dt>{INPUT_INVENTORY_TEXT.blocked}</dt><dd>{detail.balances.blockedKg} kg</dd></div>
+      </dl>
+      {!companyOwned ? <p role="alert" className={styles.noticeWarn}>{INPUT_INVENTORY_TEXT.companyOwnedRequired}</p> : null}
     </section>
   )
 }

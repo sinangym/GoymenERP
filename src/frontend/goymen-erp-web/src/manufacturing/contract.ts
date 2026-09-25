@@ -341,18 +341,16 @@ export function decodeOrder(body: unknown): ProductionOrderView | null {
   }
 }
 
-/** The four fact commands of the order, by route segment. */
-export const FACT_KINDS = ['input-issues', 'input-returns', 'wip-measurements', 'outputs'] as const
+/**
+ * The realization commands this screen can complete without inventing output ownership or block policy.
+ * Output remains a server contract, but its selection flow is gated on the separate InitialBlock and
+ * Counterparty decisions.
+ */
+export const FACT_KINDS = ['input-issues', 'input-returns', 'wip-measurements'] as const
 
 export type FactKind = (typeof FACT_KINDS)[number]
 
-/**
- * One fact as the caller froze it at submit. `factId` and the Idempotency-Key are chosen
- * once per snapshot: re-sending an unresolved snapshot sends both unchanged, so the
- * server answers it as the same command (ADR-011) and the same fact (R3).
- */
-export interface FactSnapshot {
-  readonly kind: FactKind
+interface FactSnapshotBase {
   readonly factId: string
   readonly idempotencyKey: string
   readonly expectedVersion: number
@@ -360,21 +358,49 @@ export interface FactSnapshot {
   readonly kg: string
   /** ISO-8601 UTC (`Z`): the server requires a UTC fact time. */
   readonly occurredAtUtc: string
-  /** Only for `outputs`. */
-  readonly outputClass: OutputClass | null
 }
 
-/** The request body exactly as `RecordFactRequestV1` / `DeclareOutputRequestV1` name it. */
+/**
+ * One fact as the caller froze it at submit. Every owner id, movement id, label version and
+ * Idempotency-Key is chosen/read once and re-sent unchanged after an unknown outcome.
+ */
+export type FactSnapshot =
+  | (FactSnapshotBase & {
+      readonly kind: 'input-issues'
+      readonly movementId: string
+      readonly expectedParentLabelVersion: null
+    })
+  | (FactSnapshotBase & {
+      readonly kind: 'input-returns'
+      readonly movementId: string
+      readonly expectedParentLabelVersion: string
+    })
+  | (FactSnapshotBase & {
+      readonly kind: 'wip-measurements'
+      readonly movementId: null
+      readonly expectedParentLabelVersion: null
+    })
+
+/** The exact strict request body selected by the route segment. */
 export function factBody(snapshot: FactSnapshot): Record<string, unknown> {
-  const body: Record<string, unknown> = {
-    factId: snapshot.factId,
+  const common = {
     expectedVersion: snapshot.expectedVersion,
     parentRollId: snapshot.parentRollId,
     kg: snapshot.kg,
     occurredAtUtc: snapshot.occurredAtUtc,
   }
-  if (snapshot.kind === 'outputs') body.outputClass = snapshot.outputClass
-  return body
+  if (snapshot.kind === 'input-issues') {
+    return { issueId: snapshot.factId, ...common, movementId: snapshot.movementId }
+  }
+  if (snapshot.kind === 'input-returns') {
+    return {
+      returnId: snapshot.factId,
+      ...common,
+      expectedParentLabelVersion: snapshot.expectedParentLabelVersion,
+      movementId: snapshot.movementId,
+    }
+  }
+  return { factId: snapshot.factId, ...common }
 }
 
 // ---- GDC-BAL/1: `GET /api/v1/manufacturing/orders/{orderId}/mass-balance` (MassBalanceViewV1) ----------------
