@@ -263,6 +263,11 @@ test('S04-06 authorized allocation saves, closes, reopens, releases and reopens 
     await signInAs(page, preparerActor)
     await openDraft(page)
     await expect(state(page)).toHaveText('Onaylı')
+    // S-04 linked effects: Inventory's server count, never an assumed 0; loading is named as not readable.
+    const linkedAllocation = page.getByTestId(`sales-linked-allocation-line-${allocationLineId}`)
+    await expect(linkedAllocation).toHaveAttribute('data-state', 'ready')
+    await expect(linkedAllocation).toContainText('aktif tahsis 0')
+    await expect(page.getByTestId('sales-linked-loading')).toContainText('Sales ekranından henüz okunamıyor')
     const line = page.getByTestId(`sales-allocation-line-${allocationLineId}`)
     await expect(line).toBeVisible()
     await line.getByLabel('Etiket kimliği').fill(allocationLabelId)
@@ -284,6 +289,7 @@ test('S04-06 authorized allocation saves, closes, reopens, releases and reopens 
     await page.locator(`a[href="${DETAIL_ROUTE}"]`).click()
     const reopened = page.getByTestId(`sales-allocation-${created.allocationId}`)
     await expect(reopened.getByText('Aktif')).toBeVisible()
+    await expect(page.getByTestId(`sales-linked-allocation-line-${allocationLineId}`)).toContainText('aktif tahsis 1')
 
     const reopenedLine = page.getByTestId(`sales-allocation-line-${allocationLineId}`)
     await reopenedLine.getByLabel('Serbest bırakma nedeni').fill('SENTETIK s04 tahsis serbest')
@@ -300,6 +306,7 @@ test('S04-06 authorized allocation saves, closes, reopens, releases and reopens 
     const finalRow = page.getByTestId(`sales-allocation-${created.allocationId}`)
     await expect(finalRow.getByText('Serbest bırakıldı')).toBeVisible()
     await expect(finalRow.getByRole('button', { name: 'Tahsis serbest bırak' })).toHaveCount(0)
+    await expect(page.getByTestId(`sales-linked-allocation-line-${allocationLineId}`)).toContainText('aktif tahsis 0')
 
     const fresh = await page.request.get(`${env.apiBaseUrl}/api/v1/inventory/physical-allocations?salesOrderId=${draftId}&salesOrderLineId=${allocationLineId}&limit=100`, {
       headers: { [DEVELOPMENT_USER_HEADER]: preparerActor, 'X-Company-Id': companyId },
