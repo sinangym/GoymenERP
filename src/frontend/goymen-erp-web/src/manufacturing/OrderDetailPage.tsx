@@ -210,6 +210,8 @@ function OrderDetail({ namespace }: { readonly namespace: string | null }) {
       {canRecord ? (
         <FactSection
           order={order}
+          namespace={namespace ?? 'no-context'}
+          routeEntryGeneration={shell.routeEntryGeneration}
           companyId={activeCompanyId ?? ''}
           canReadInventoryLabel={canReadInventoryLabel}
           storeKey={storeKey}
@@ -625,11 +627,11 @@ function formFromSnapshot(snapshot: FactSnapshot): FormValues {
   }
 }
 
-function utcDate(value: string): string | null {
+function factTiming(value: string): { readonly occurredAtUtc: string; readonly effectiveOn: string } | null {
   const milliseconds = value.length === 0 ? Number.NaN : new Date(value).getTime()
-  // `datetime-local` is the user's local business date. Converting it to UTC before taking the
-  // date can silently move a midnight event to the preceding or following eligibility day.
-  return Number.isNaN(milliseconds) ? null : value.slice(0, 10)
+  if (Number.isNaN(milliseconds)) return null
+  const occurredAtUtc = new Date(milliseconds).toISOString()
+  return { occurredAtUtc, effectiveOn: occurredAtUtc.slice(0, 10) }
 }
 
 function cleanOptional(value: string): string | null {
@@ -654,6 +656,8 @@ function restored(storeKey: string | null): FactAttempt {
 
 function FactSection({
   order,
+  namespace,
+  routeEntryGeneration,
   companyId,
   canReadInventoryLabel,
   storeKey,
@@ -661,6 +665,8 @@ function FactSection({
   onRefresh,
 }: {
   readonly order: ProductionOrderView
+  readonly namespace: string
+  readonly routeEntryGeneration: number
   readonly companyId: string
   readonly canReadInventoryLabel: boolean
   readonly storeKey: string | null
@@ -683,7 +689,8 @@ function FactSection({
   const outputSelected = form.kind === 'outputs'
   const outputEnabled = canReadInventoryLabel
   const needsInventoryState = (returnSelected || outputSelected) && canReadInventoryLabel
-  const effectiveOn = utcDate(form.occurredAt)
+  const timing = factTiming(form.occurredAt)
+  const effectiveOn = timing?.effectiveOn ?? null
   const labelQuery = useQuery({
     queryKey: ['manufacturing-parent-label', companyId, form.parentRollId],
     enabled: needsInventoryState && form.parentRollId.length > 0,
@@ -704,7 +711,7 @@ function FactSection({
   const companyOwned = labelState?.kind === 'ready' && isCompanyOwned(labelState.data, companyId)
 
   const productQuery = useQuery({
-    queryKey: ['manufacturing-output-products', companyId, effectiveOn, form.productSearch],
+    queryKey: [namespace, routeEntryGeneration, 'manufacturing-output-products', effectiveOn, form.productSearch],
     enabled: outputSelected && outputEnabled && effectiveOn !== null,
     queryFn: async ({ signal }) => {
       const security = boundary.capture()
@@ -716,7 +723,7 @@ function FactSection({
     },
   })
   const locationQuery = useQuery({
-    queryKey: ['manufacturing-output-locations', companyId, form.locationSearch],
+    queryKey: [namespace, routeEntryGeneration, 'manufacturing-output-locations', form.locationSearch],
     enabled: outputSelected && outputEnabled,
     queryFn: async ({ signal }) => {
       const security = boundary.capture()
@@ -804,8 +811,7 @@ function FactSection({
     if ((returnSelected || outputSelected) && !canReadInventoryLabel) return
     if (needsInventoryState && labelState?.kind !== 'ready') return setError(INPUT_INVENTORY_TEXT.loadingRequired)
     if (needsInventoryState && !companyOwned) return setError(INPUT_INVENTORY_TEXT.companyOwnedRequired)
-    const at = form.occurredAt.length === 0 ? Number.NaN : new Date(form.occurredAt).getTime()
-    if (Number.isNaN(at)) return setError(TIME_REQUIRED)
+    if (timing === null) return setError(TIME_REQUIRED)
     if (outputSelected && form.outputClass === '') return setError(OUTPUT_INVENTORY_TEXT.classRequired)
     if (outputSelected && selectedProduct === undefined) return setError(OUTPUT_INVENTORY_TEXT.productRequired)
     if (outputSelected && selectedLocation === undefined) return setError(OUTPUT_INVENTORY_TEXT.locationRequired)
@@ -818,7 +824,7 @@ function FactSection({
       expectedVersion: order.version,
       parentRollId: form.parentRollId,
       kg: form.kg,
-      occurredAtUtc: new Date(at).toISOString(),
+      occurredAtUtc: timing.occurredAtUtc,
     }
     const snapshot: FactSnapshot = form.kind === 'input-issues'
       ? { ...common, kind: form.kind, movementId: newId(), expectedParentLabelVersion: null }

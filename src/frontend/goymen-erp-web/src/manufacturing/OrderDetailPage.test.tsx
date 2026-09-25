@@ -31,6 +31,7 @@ import {
 
 const PATH = `/uretim/emir/${ORDER}`
 const PRODUCT = 'e0000000-0000-4000-8000-000000000010'
+const NEW_PRODUCT = 'e0000000-0000-4000-8000-000000000014'
 const LOT = 'e0000000-0000-4000-8000-000000000011'
 const LOCATION = 'e0000000-0000-4000-8000-000000000012'
 const INVENTORY_RECORDER_CAPABILITIES = [...RECORDER_CAPABILITIES, INVENTORY_STOCK_POSITIONS_CAPABILITY]
@@ -85,12 +86,12 @@ function stub(
   options: {
     reads?: Array<() => Response>
     commands?: Array<() => Response>
-    capabilities?: readonly string[]
+    capabilities?: readonly string[] | (() => readonly string[])
     /** GDC-BAL/1 reads (BAL slice 2), answered on their own so they never consume an order read. */
     balances?: Array<() => Response>
     labels?: Array<() => Response>
-    products?: Array<() => Response>
-    locations?: Array<() => Response>
+    products?: Array<() => Response | Promise<Response>>
+    locations?: Array<() => Response | Promise<Response>>
   } = {},
 ): Scenario {
   const reads = options.reads ?? [() => json(order())]
@@ -168,6 +169,14 @@ async function fillFact(
   const time = screen.getByLabelText('Zaman')
   await user.clear(time)
   await user.type(time, '2026-09-18T09:30')
+}
+
+async function openOutputSelectors(
+  user: ReturnType<typeof userEvent.setup>,
+  occurredAt = '2026-09-25T00:30',
+) {
+  await user.click(screen.getByLabelText('Şirket malı üretim çıktısı'))
+  await user.type(screen.getByLabelText('Zaman'), occurredAt)
 }
 
 const posts = (recorded: RecordedRequest[]) => requestsFor(recorded, '/manufacturing/orders/', 'POST')
@@ -517,7 +526,6 @@ describe('fact forms', () => {
     await waitFor(() => expect(labelReads(recorded)).toHaveLength(1))
     await waitFor(() => expect(productReads(recorded)).toHaveLength(1))
     await waitFor(() => expect(locationReads(recorded)).toHaveLength(1))
-    expect(productReads(recorded)[0].url).toContain('effectiveOn=2026-09-25')
 
     await user.selectOptions(screen.getByLabelText('Çıktı sınıfı'), 'GoodProduct')
     await user.selectOptions(screen.getByLabelText('Ürün'), PRODUCT)
@@ -556,8 +564,101 @@ describe('fact forms', () => {
     expect(new Set(ids).size).toBe(4)
     expect(ids.every((id) => /^[0-9a-f-]{36}$/.test(id))).toBe(true)
     expect(output.body).not.toHaveProperty('companyId')
+    const selectedEffectiveOn = new URL(productReads(recorded)[0].url, 'http://local.test')
+      .searchParams.get('effectiveOn')
+    expect(selectedEffectiveOn).toBe((output.body as { occurredAtUtc: string }).occurredAtUtc.slice(0, 10))
     await waitFor(() => expect(reads(recorded)).toHaveLength(2))
     await waitFor(() => expect(labelReads(recorded)).toHaveLength(2))
+  })
+
+  it('re-reads output selectors after route re-entry inside the production stale window', async () => {
+    const user = userEvent.setup()
+    const { recorded } = stub({ capabilities: INVENTORY_RECORDER_CAPABILITIES })
+    const { router } = renderAt(PATH, { staleTime: 30_000 })
+    await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+
+    await openOutputSelectors(user)
+    await waitFor(() => expect(productReads(recorded)).toHaveLength(1))
+
+    await router.navigate('/')
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Gerçekleşme kaydı' })).toBeNull())
+    await router.navigate(PATH)
+    await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+    await openOutputSelectors(user)
+
+    await waitFor(() => expect(productReads(recorded)).toHaveLength(2))
+  })
+
+  it('removes cached output selectors when the fact capability is revoked before re-entry', async () => {
+    const user = userEvent.setup()
+    let capabilities: readonly string[] = INVENTORY_RECORDER_CAPABILITIES
+    const { recorded } = stub({ capabilities: () => capabilities })
+    const { router } = renderAt(PATH, { staleTime: 30_000 })
+    await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+    await openOutputSelectors(user)
+    await screen.findByRole('option', { name: /PRD-12/ })
+
+    await router.navigate('/')
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Gerçekleşme kaydı' })).toBeNull())
+    capabilities = READER_CAPABILITIES
+    await router.navigate(PATH)
+    await screen.findByRole('region', { name: 'Ana rulo dengesi (kg)' })
+
+    expect(screen.queryByRole('heading', { name: 'Gerçekleşme kaydı' })).toBeNull()
+    expect(screen.queryByRole('option', { name: /PRD-12/ })).toBeNull()
+    expect(productReads(recorded)).toHaveLength(1)
+  })
+
+  it('ignores a selector answer that arrives after a newer route entry has loaded', async () => {
+    const user = userEvent.setup()
+    let releaseOld: (response: Response) => void = () => undefined
+    const oldAnswer = new Promise<Response>((resolve) => {
+      releaseOld = resolve
+    })
+    const { recorded } = stub({
+      capabilities: INVENTORY_RECORDER_CAPABILITIES,
+      products: [
+        () => oldAnswer,
+        () => json({
+          items: [{
+            productId: NEW_PRODUCT,
+            productVersion: '13',
+            code: 'PRD-13',
+            name: 'Yeni yetkili ürün',
+            stockUnitCode: 'kg',
+          }],
+          searchWindowFull: false,
+        }),
+      ],
+    })
+    const { router } = renderAt(PATH, { staleTime: 30_000 })
+    await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+    await openOutputSelectors(user)
+    await waitFor(() => expect(productReads(recorded)).toHaveLength(1))
+
+    await router.navigate('/')
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Gerçekleşme kaydı' })).toBeNull())
+    await router.navigate(PATH)
+    await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+    await openOutputSelectors(user)
+    await screen.findByRole('option', { name: /PRD-13/ })
+
+    releaseOld(json({
+      items: [{
+        productId: PRODUCT,
+        productVersion: '12',
+        code: 'PRD-12',
+        name: 'Eski giriş ürünü',
+        stockUnitCode: 'kg',
+      }],
+      searchWindowFull: false,
+    }))
+    await oldAnswer
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(screen.queryByRole('option', { name: /PRD-12/ })).toBeNull()
+    expect(screen.getByRole('option', { name: /PRD-13/ })).toBeTruthy()
+    expect(productReads(recorded)).toHaveLength(2)
   })
 
   it('keeps customer/fason ownership fail-closed and sends no input command', async () => {
