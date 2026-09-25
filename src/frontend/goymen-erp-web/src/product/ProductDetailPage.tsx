@@ -156,9 +156,15 @@ export function ProductDetailPage() {
           <ProductActivationAction
             key={card.product.id}
             card={card}
-            onActivated={(activated) =>
+            onActivated={(activated) => {
               queryClient.setQueryData(queryKey, { type: 'ok-single', data: activated })
-            }
+              void queryClient.invalidateQueries({
+                queryKey: [namespace, entryGeneration, 'product-history', activated.product.id],
+              })
+              void queryClient.invalidateQueries({
+                queryKey: [namespace, entryGeneration, 'products'],
+              })
+            }}
             onReload={() => void query.refetch()}
           />
         ) : null
