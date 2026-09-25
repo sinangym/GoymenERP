@@ -39,6 +39,26 @@ public sealed record WorkCenterSummary(
     bool IsActive,
     bool CanOpenLocationDetail);
 
+/// <summary>
+/// ORG-04 — one work center's read-only card (W1-ORG / AV-01, Business #66 5702892195). The work-centre row's
+/// facts plus the record's own <paramref name="Version"/>, kept lossless for a later stale check and never a
+/// command authority here (the card writes nothing). No capacity, shift, load, ownership or location label: the
+/// Organization record carries none, and a location's name is its own read.
+/// </summary>
+/// <param name="CanOpenLocationDetail">
+/// The same answer as <see cref="WorkCenterSummary.CanOpenLocationDetail"/>, computed by the same predicate: true
+/// exactly when <c>GET /organization/locations/{LocationId}</c> would answer 200 for this caller.
+/// </param>
+public sealed record WorkCenterDetail(
+    Guid Id,
+    Guid LocationId,
+    string Code,
+    string Name,
+    string Kind,
+    bool IsActive,
+    long Version,
+    bool CanOpenLocationDetail);
+
 public sealed record PageResult<T>(
     IReadOnlyList<T> Items,
     int Page,

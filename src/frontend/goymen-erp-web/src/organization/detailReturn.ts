@@ -1,4 +1,4 @@
-import { ORGANIZATION_CAPABILITY, ORGANIZATION_ROUTE } from './capabilities'
+import { ORGANIZATION_CAPABILITY, ORGANIZATION_ROUTE, workCenterListPath } from './capabilities'
 
 export const DETAIL_ORIGIN = {
   locations: 'locations',
@@ -63,4 +63,51 @@ export function workCenterDetailReturn(
   return namespace === null
     ? undefined
     : { ns: namespace, from: DETAIL_ORIGIN.workCenters }
+}
+
+/** Lowercase canonical id, the form the Organization routes emit (the work-centre filter's own rule). */
+const CANONICAL_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+const NIL_ID = '00000000-0000-0000-0000-000000000000'
+
+/** The ORG-03 origin an ORG-04 card may honour: the list, optionally narrowed to one location. */
+export interface WorkCenterCardOrigin {
+  readonly ns: string
+  readonly from: typeof DETAIL_ORIGIN.workCenters
+  readonly locationId?: string
+}
+
+/**
+ * ORG-04: the list origin the card was opened with, or undefined.
+ *
+ * Router state is caller-controlled, so only the exact tokens the ORG-03 list writes are honoured — the plain
+ * `{ ns, from }` and the filtered `{ ns, from, locationId }` with a canonical id — and only under the CURRENT
+ * committed context. Anything else (another context's token, an extra key, a path) is ignored rather than
+ * interpreted: the card then returns to the whole list.
+ */
+export function workCenterCardOrigin(state: unknown, namespace: string | null): WorkCenterCardOrigin | undefined {
+  if (namespace === null || typeof state !== 'object' || state === null || Array.isArray(state)) return undefined
+  const value = state as Record<string, unknown>
+  const keys = Object.keys(value)
+  if (value.ns !== namespace || value.from !== DETAIL_ORIGIN.workCenters) return undefined
+  if (keys.length === 2 && keys.every((key) => key === 'ns' || key === 'from')) {
+    return { ns: namespace, from: DETAIL_ORIGIN.workCenters }
+  }
+  if (
+    keys.length === 3 &&
+    keys.every((key) => key === 'ns' || key === 'from' || key === 'locationId') &&
+    typeof value.locationId === 'string' &&
+    CANONICAL_ID.test(value.locationId) &&
+    value.locationId !== NIL_ID
+  ) {
+    return { ns: namespace, from: DETAIL_ORIGIN.workCenters, locationId: value.locationId }
+  }
+  return undefined
+}
+
+/** Where the ORG-04 card's back link goes: the list it came from, with its location filter restored. */
+export function workCenterCardBackTarget(origin: WorkCenterCardOrigin | undefined): DetailBackTarget {
+  const list = TARGETS[DETAIL_ORIGIN.workCenters]
+  return origin?.locationId === undefined
+    ? list
+    : { path: workCenterListPath(origin.locationId), label: list.label }
 }

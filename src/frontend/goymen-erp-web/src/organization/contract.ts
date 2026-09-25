@@ -169,6 +169,29 @@ export function decodeWorkCenters(raw: unknown): readonly WorkCenterSummary[] | 
   return workCenters
 }
 
+/**
+ * ORG-04 — `GET /api/v1/organization/work-centers/{id}` (`WorkCenterDetail`): the ORG-03 row's own record plus
+ * its `version`. Read-only: the version is kept lossless for a later stale check and is never sent back from
+ * this screen, which has no command.
+ */
+export interface WorkCenterDetail extends WorkCenterSummary {
+  /** Same rule as `LocationSummary.version`: an exactly-representable integer >= 1, or the answer is malformed. */
+  readonly version: number
+}
+
+/**
+ * Fails closed like every decoder here, and adds the one cross-field rule a card needs: the answer must be the
+ * record the route asked for. A 200 carrying another id is not "a card", it is a wrong answer.
+ */
+export function decodeWorkCenterDetail(raw: unknown, requestedId: string): WorkCenterDetail | null {
+  const row = decodeWorkCenter(raw)
+  if (row === null || !isRecord(raw)) return null
+  const { version } = raw
+  if (!isSafeVersion(version)) return null
+  if (row.id.toLowerCase() !== requestedId.toLowerCase()) return null
+  return { ...row, version }
+}
+
 /** The 409 body's `conflict` extension (`ErpVersionConflictContract`). */
 export interface VersionConflict {
   readonly expectedVersion: number

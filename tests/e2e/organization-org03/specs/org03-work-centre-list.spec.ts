@@ -35,6 +35,13 @@ const SEEDED_WORK_CENTRE_CODES = ['WC-PAINT', 'WC-TUBE', 'WC-SLIT', 'WC-CR', 'WC
 /** The sentence the screen shows in place of the link when the server says the card is out of reach. */
 const CLOSED_LOCATION_TEXT = 'Lokasyon kartı bu yetkiyle açılamıyor'
 
+/** The location link's own name, so a count never includes ORG-04's work-centre card links. */
+const LOCATION_LINK = 'Lokasyon kartını aç'
+
+/** ORG-04: each row's code opens its own work-centre card, on the same grant as the list. */
+const CARD_LINK = /^İş merkezi kartını aç: /
+const WORK_CENTRE_CARD_API = /^\/api\/v1\/organization\/work-centers\/[0-9a-f-]{36}$/
+
 async function signInAs(page: Page, actor: string): Promise<void> {
   await page.setExtraHTTPHeaders({ [DEVELOPMENT_USER_HEADER]: actor })
 }
@@ -72,8 +79,10 @@ test('ORG03-01 a work-centre-only reader reaches the screen FROM THE SIDEBAR, an
   // closed row would also be true if the others wrongly linked.
   await expect(table.getByText(CLOSED_LOCATION_TEXT)).toHaveCount(SEEDED_WORK_CENTRE_CODES.length)
   // And the screen draws no location link at all — the inverse of the same fact, so a renamed sentence
-  // cannot make the first assertion pass vacuously.
-  await expect(table.getByRole('link')).toHaveCount(0)
+  // cannot make the first assertion pass vacuously. (ORG-04's card links are the row's own record, on the
+  // same work-centre grant, so they are counted apart.)
+  await expect(table.getByRole('link', { name: LOCATION_LINK })).toHaveCount(0)
+  await expect(table.getByRole('link', { name: CARD_LINK })).toHaveCount(SEEDED_WORK_CENTRE_CODES.length)
 })
 
 test('ORG03-02 the same reader has NO location list to reach it from: ORG-01 is neither in the sidebar nor openable', async ({ page }) => {
@@ -107,9 +116,9 @@ test('ORG03-03 a reader holding the location name as well gets the link, and it 
   // The other end of the pair: with the location name, every row links and none carries the closed
   // sentence. Both directions again, so neither can pass by the screen simply rendering nothing.
   await expect(table.getByText(CLOSED_LOCATION_TEXT)).toHaveCount(0)
-  await expect(table.getByRole('link')).toHaveCount(SEEDED_WORK_CENTRE_CODES.length)
+  await expect(table.getByRole('link', { name: LOCATION_LINK })).toHaveCount(SEEDED_WORK_CENTRE_CODES.length)
 
-  await table.getByRole('link').first().click()
+  await table.getByRole('link', { name: LOCATION_LINK }).first().click()
   // ORG-02 opened for real — the link is not merely present, it resolves through the real API.
   await expect(page).toHaveURL(/\/ayarlar\/organizasyon\/lokasyon\/[0-9a-f-]{36}$/, { timeout: 30_000 })
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible({ timeout: 30_000 })
@@ -182,4 +191,83 @@ test('ORG03-04 location card opens the exact authorized work-center subset and s
   await expect(page.getByText('Beklenmeyen yanıt — lokasyon filtresi', { exact: true })).toBeVisible()
   await expect(page.getByRole('table')).toHaveCount(0)
   expect(probes).toEqual([])
+})
+
+test('ORG04-01 a work-centre-only reader opens a row card, sees its record and a closed location, and returns', async ({ page }) => {
+  await signInAs(page, WORK_CENTERS_ONLY_ACTOR)
+  const locationProbes: string[] = []
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname.startsWith('/api/v1/organization/locations')) locationProbes.push(request.url())
+  })
+  await page.goto('/')
+  const entry = navEntry(page)
+  await expect(entry).toBeVisible({ timeout: 30_000 })
+  const listAnswer = page.waitForResponse((response) => response.request().method() === 'GET'
+    && new URL(response.url()).pathname === '/api/v1/organization/work-centers')
+  await entry.click()
+  const rows = await (await listAnswer).json() as readonly {
+    readonly id: string; readonly code: string; readonly name: string; readonly isActive: boolean
+    readonly canOpenLocationDetail: boolean
+  }[]
+  const selected = rows.find((row) => row.code === 'WC-SLIT')
+  expect(selected).toBeDefined()
+  if (!selected) throw new Error('The seeded WC-SLIT work centre is missing')
+
+  const cardAnswer = page.waitForResponse((response) => response.request().method() === 'GET'
+    && WORK_CENTRE_CARD_API.test(new URL(response.url()).pathname))
+  await page.getByRole('table').getByRole('link', { name: `İş merkezi kartını aç: ${selected.code}` }).click()
+  const card = await cardAnswer
+  expect(card.status()).toBe(200)
+  expect(new URL(card.url()).pathname).toBe(`/api/v1/organization/work-centers/${selected.id}`)
+  const body = await card.json() as Record<string, unknown>
+  // The card is the listed row plus its version, read by the same scope predicate.
+  expect(body).toMatchObject({
+    id: selected.id,
+    code: selected.code,
+    name: selected.name,
+    isActive: selected.isActive,
+    canOpenLocationDetail: false,
+  })
+  expect(typeof body.version).toBe('number')
+
+  await expect(page).toHaveURL(new RegExp(`${WORK_CENTRE_LIST_ROUTE}/${selected.id}$`))
+  await expect(page.getByRole('heading', { level: 1, name: 'İş merkezi' })).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByText(selected.code, { exact: true })).toBeVisible()
+  await expect(page.getByText(CLOSED_LOCATION_TEXT)).toBeVisible()
+  await expect(page.getByRole('link', { name: LOCATION_LINK })).toHaveCount(0)
+  // No probe: the card never asks for a location it was told it cannot open.
+  expect(locationProbes).toEqual([])
+
+  const back = page.getByRole('navigation', { name: 'Geri' }).getByRole('link', { name: /İş Merkezleri/ })
+  await expect(back).toHaveAttribute('href', WORK_CENTRE_LIST_ROUTE)
+  await back.click()
+  await expect(page).toHaveURL(new RegExp(`${WORK_CENTRE_LIST_ROUTE}$`))
+  await expect(page.getByRole('table')).toBeVisible()
+})
+
+test('ORG04-02 a reader with the location read goes list -> card -> location card -> back to the work-centre list', async ({ page }) => {
+  await signInAs(page, READER_ACTOR)
+  await page.goto('/')
+  const entry = navEntry(page)
+  await expect(entry).toBeVisible({ timeout: 30_000 })
+  await entry.click()
+  const table = page.getByRole('table')
+  await expect(table).toBeVisible({ timeout: 30_000 })
+
+  await table.getByRole('link', { name: `İş merkezi kartını aç: WC-PAINT` }).click()
+  await expect(page.getByRole('heading', { level: 1, name: 'İş merkezi' })).toBeVisible({ timeout: 30_000 })
+  const location = page.getByRole('link', { name: LOCATION_LINK })
+  await expect(location).toHaveAttribute('href', /\/ayarlar\/organizasyon\/lokasyon\/[0-9a-f-]{36}$/)
+  const locationAnswer = page.waitForResponse((response) => response.request().method() === 'GET'
+    && /^\/api\/v1\/organization\/locations\/[0-9a-f-]{36}$/.test(new URL(response.url()).pathname))
+  await location.click()
+  expect((await locationAnswer).status()).toBe(200)
+  await expect(page).toHaveURL(/\/ayarlar\/organizasyon\/lokasyon\/[0-9a-f-]{36}$/, { timeout: 30_000 })
+
+  // The location card's own back link (#434) returns to the work-centre list the journey started from.
+  const back = page.getByRole('navigation', { name: 'Geri' }).getByRole('link', { name: /İş Merkezleri/ })
+  await expect(back).toHaveAttribute('href', WORK_CENTRE_LIST_ROUTE)
+  await back.click()
+  await expect(page).toHaveURL(new RegExp(`${WORK_CENTRE_LIST_ROUTE}$`))
+  await expect(page.getByRole('table')).toBeVisible()
 })
