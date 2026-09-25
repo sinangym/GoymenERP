@@ -183,6 +183,7 @@ export interface HarnessConfig {
   readonly onOptions?: (url: string) => Response | Promise<Response>
   readonly onCreate?: (attempt: number, body: string | null) => Response | Promise<Response>
   readonly onEdit?: (attempt: number, body: string | null) => Response | Promise<Response>
+  readonly onActivate?: (attempt: number, body: string | null) => Response | Promise<Response>
 }
 
 /**
@@ -195,6 +196,7 @@ export function installFetch(config: HarnessConfig = {}) {
   const calls: RecordedCall[] = []
   let createAttempts = 0
   let editAttempts = 0
+  let activationAttempts = 0
 
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString()
@@ -237,6 +239,17 @@ export function installFetch(config: HarnessConfig = {}) {
         )
       }
       if (method === 'POST') {
+        if (/\/products\/[^/?]+\/activation/.test(url)) {
+          activationAttempts += 1
+          return (
+            (await config.onActivate?.(activationAttempts, body)) ??
+            json(
+              mutation({
+                card: productCard({ product: productCore({ lifecycle: 'Active', version: '8' }) }),
+              }),
+            )
+          )
+        }
         createAttempts += 1
         return (await config.onCreate?.(createAttempts, body)) ?? json(mutation(), 201)
       }

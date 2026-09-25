@@ -15,14 +15,17 @@
  * Not pulled in, per §9: physical stock/lot, price, accounting detail.
  */
 
-import { useQuery } from '@tanstack/react-query'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router'
-import { fetchProductCard, fetchProductHistory } from './api'
-import { PRODUCT_ROLE, UNIT_ROLE, isComplete, type ProductCard } from './contract'
+import { activateProduct, fetchProductCard, fetchProductHistory } from './api'
+import type { ActivateProductPayload } from './api'
+import { PRODUCT_ROLE, UNIT_ROLE, isComplete, type ProductCard, type ProductMutationResult } from './contract'
 import {
   COMPLETENESS_LABEL,
   COMPLETENESS_UNKNOWN_LABEL,
   PENDING_REFERENCE_NOTE,
+  PRODUCT_ACTIVATION_TEXT,
   PRODUCT_DETAIL_TEXT,
   PRODUCT_HISTORY_TEXT,
   ROLE_LABEL,
@@ -37,15 +40,32 @@ import {
   lifecycleMeaning,
 } from './productText'
 import {
+  PRODUCT_ACTIVATE_CAPABILITY,
   PRODUCT_CAPABILITY,
   PRODUCT_CAPABILITY_ROUTE,
   productEditPath,
 } from './capabilities'
 import { classifyOutcome } from '../shell/uiState'
-import { useShellState } from '../shell/shellContext'
+import { useShellDispatch, useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
 import { StateBlock } from '../shell/StateBlock'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
+import {
+  generateAttemptKey,
+  isOutcomeStillUnknown,
+  liveSnapshot,
+  nextState,
+  type AttemptSnapshot,
+  type AttemptState,
+} from './commandAttempt'
+import {
+  activationScope,
+  attemptBindingFor,
+  forgetAttempt,
+  recallAttempt,
+  rememberAttempt,
+} from './pendingAttempt'
+import { UnresolvedExitGuard } from './UnresolvedExitGuard'
 import styles from './ProductDetailPage.module.css'
 
 function formatInstant(value: string): string {
@@ -61,11 +81,13 @@ export function ProductDetailPage() {
   const namespace = key === null ? null : contextKeyString(key)
   const origin = shell.activeContext?.companyId ?? null
   const boundary = useAuthBoundary()
+  const queryClient = useQueryClient()
   const entryGeneration = shell.routeEntryGeneration
   const canReturnToList = hasCapability(shell, PRODUCT_CAPABILITY.productsList)
 
+  const queryKey = [namespace ?? 'no-context', entryGeneration, 'product-card', productId ?? ''] as const
   const query = useQuery({
-    queryKey: [namespace ?? 'no-context', entryGeneration, 'product-card', productId ?? ''],
+    queryKey,
     enabled: namespace !== null && origin !== null && productId !== undefined && productId.length > 0,
     queryFn: async ({ signal }) => {
       const snapshot = boundary.capture()
@@ -108,6 +130,7 @@ export function ProductDetailPage() {
     hasCapability(shell, PRODUCT_CAPABILITY.productsEdit) &&
     card.product.lifecycle.known &&
     card.product.lifecycle.value === 'Draft'
+  const canActivate = hasCapability(shell, PRODUCT_ACTIVATE_CAPABILITY)
 
   return (
     <ProductCardView
@@ -128,7 +151,166 @@ export function ProductDetailPage() {
           </Link>
         ) : null
       }
+      activationControl={
+        canActivate ? (
+          <ProductActivationAction
+            key={card.product.id}
+            card={card}
+            onActivated={(activated) =>
+              queryClient.setQueryData(queryKey, { type: 'ok-single', data: activated })
+            }
+            onReload={() => void query.refetch()}
+          />
+        ) : null
+      }
     />
+  )
+}
+
+type ActivationAttempt = AttemptState<ActivateProductPayload, ProductMutationResult>
+const PRODUCT_ACTIVATION_DIRTY_SCOPE = 'product.activation'
+
+function ProductActivationAction({
+  card,
+  onActivated,
+  onReload,
+}: {
+  readonly card: ProductCard
+  readonly onActivated: (card: ProductCard) => void
+  readonly onReload: () => void
+}) {
+  const shell = useShellState()
+  const dispatch = useShellDispatch()
+  const boundary = useAuthBoundary()
+  const origin = shell.activeContext?.companyId ?? null
+  const binding = useMemo(
+    () => attemptBindingFor(shell, activationScope(card.product.id)),
+    [shell, card.product.id],
+  )
+  const [attempt, setAttempt] = useState<ActivationAttempt>(
+    () => recallAttempt<ActivateProductPayload, ProductMutationResult>(binding) ?? { phase: 'idle' },
+  )
+  const attemptRef = useRef(attempt)
+  useEffect(() => {
+    attemptRef.current = attempt
+  }, [attempt])
+
+  const unresolved = isOutcomeStillUnknown(attempt)
+  useEffect(() => {
+    dispatch({ type: unresolved ? 'DIRTY_SET' : 'DIRTY_CLEAR', scope: PRODUCT_ACTIVATION_DIRTY_SCOPE })
+  }, [dispatch, unresolved])
+  useEffect(
+    () => () => dispatch({ type: 'DIRTY_CLEAR', scope: PRODUCT_ACTIVATION_DIRTY_SCOPE }),
+    [dispatch],
+  )
+  useEffect(() => {
+    if (attempt.phase === 'completed') rememberAttempt(binding, attempt)
+  }, [attempt, binding])
+
+  const send = useCallback(
+    async (snapshot: AttemptSnapshot<ActivateProductPayload>) => {
+      const previous = attemptRef.current
+      const inFlight: ActivationAttempt = { phase: 'submitting', snapshot }
+      rememberAttempt(binding, inFlight)
+      setAttempt(inFlight)
+      const securitySnapshot = boundary.capture()
+      const result = await activateProduct(card.product.id, snapshot.payload, {
+        idempotencyKey: snapshot.key,
+        origin: { companyId: snapshot.origin },
+      })
+      const next = nextState(snapshot, result, previous)
+      rememberAttempt(binding, next, false)
+      if (result.type === 'http') boundary.report(result.status, securitySnapshot)
+      setAttempt(next)
+      if (next.phase === 'completed') onActivated(next.result.card)
+    },
+    [binding, boundary, card.product.id, onActivated],
+  )
+
+  function startOrRetry() {
+    const pending = liveSnapshot(attempt)
+    if (pending !== null) {
+      void send(pending)
+      return
+    }
+    if (origin === null) return
+    void send({
+      key: generateAttemptKey(),
+      payload: { expectedVersion: card.product.version },
+      origin,
+      namespace: binding?.key ?? '',
+    })
+  }
+
+  let content: React.ReactNode = null
+  if (attempt.phase === 'completed') {
+    content = (
+      <p className={styles.activationSuccess} role="status">
+        {PRODUCT_ACTIVATION_TEXT.success}
+        {attempt.result.isReplay ? ` ${PRODUCT_ACTIVATION_TEXT.replayed}` : ''}
+      </p>
+    )
+  } else if (unresolved && attempt.phase !== 'submitting') {
+    content = (
+      <div className={styles.activationError} role="alert" data-testid="product-activation-unknown">
+        <strong>{PRODUCT_ACTIVATION_TEXT.unknownTitle}</strong>
+        <span>{PRODUCT_ACTIVATION_TEXT.unknownDetail}</span>
+        <button type="button" className={styles.activateButton} onClick={startOrRetry}>
+          {PRODUCT_ACTIVATION_TEXT.retrySameAttempt}
+        </button>
+      </div>
+    )
+  } else if (attempt.phase === 'failed') {
+    const message =
+      attempt.failure === 'stale-version'
+        ? `${PRODUCT_ACTIVATION_TEXT.staleTitle}. ${PRODUCT_ACTIVATION_TEXT.staleDetail}`
+        : attempt.failure === 'lifecycle-conflict'
+          ? `${PRODUCT_ACTIVATION_TEXT.lifecycleTitle}. ${PRODUCT_ACTIVATION_TEXT.lifecycleDetail}`
+          : attempt.failure === 'not-found'
+            ? PRODUCT_ACTIVATION_TEXT.notFound
+            : attempt.failure === 'forbidden'
+              ? PRODUCT_ACTIVATION_TEXT.forbidden
+              : attempt.failure === 'unauthenticated'
+                ? PRODUCT_ACTIVATION_TEXT.unauthenticated
+                : PRODUCT_ACTIVATION_TEXT.failed
+    content = (
+      <div className={styles.activationError} role="alert">
+        <span>{message}</span>
+        <button type="button" className={styles.activateButton} onClick={onReload}>
+          {PRODUCT_ACTIVATION_TEXT.refresh}
+        </button>
+      </div>
+    )
+  } else if (card.product.lifecycle.known && card.product.lifecycle.value === 'Draft') {
+    content = (
+      <div className={styles.activationAction}>
+        <span>{PRODUCT_ACTIVATION_TEXT.globalImpact}</span>
+        <button
+          type="button"
+          className={styles.activateButton}
+          disabled={attempt.phase === 'submitting'}
+          onClick={startOrRetry}
+        >
+          {attempt.phase === 'submitting'
+            ? PRODUCT_ACTIVATION_TEXT.submitting
+            : PRODUCT_ACTIVATION_TEXT.submit}
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <>
+      {content}
+      <UnresolvedExitGuard
+        active={unresolved}
+        title={PRODUCT_ACTIVATION_TEXT.unsavedTitle}
+        detail={PRODUCT_ACTIVATION_TEXT.unsavedDetail}
+        stayLabel={PRODUCT_ACTIVATION_TEXT.unsavedStay}
+        leaveLabel={PRODUCT_ACTIVATION_TEXT.unsavedLeave}
+        onLeave={() => forgetAttempt(binding)}
+      />
+    </>
   )
 }
 
@@ -223,11 +405,13 @@ function ProductCardView({
   history,
   backLink,
   editLink,
+  activationControl,
 }: {
   readonly card: ProductCard
   readonly history: React.ReactNode
   readonly backLink: React.ReactNode
   readonly editLink: React.ReactNode
+  readonly activationControl: React.ReactNode
 }) {
   const { product, references } = card
   // Single source: the card's own `completeness` is a compatibility projection of
@@ -245,18 +429,9 @@ function ProductCardView({
             {product.name}
           </h1>
         </div>
-        {/*
-          WHERE AN ACTIVATE / DEACTIVATE CONTROL WOULD GO, and the rule it must
-          follow. There is none today: the contract includes no activation command
-          ("No activation command is included") and §6.6 keeps it fail-closed.
-
-          When one is added it must be CLOSED for a lifecycle this build could not
-          read, with the reason said out loud — an action whose meaning depends on
-          the current state cannot be offered against a state we declined to
-          interpret.
-        */}
         <div className={styles.lifecycle}>
           {editLink}
+          {activationControl}
           <span
             className={styles.badge}
             data-lifecycle={product.lifecycle.known ? product.lifecycle.value : 'unknown'}

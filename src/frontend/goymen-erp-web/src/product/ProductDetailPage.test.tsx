@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, screen, waitFor, within } from '@testing-library/react'
-import { PRODUCT_CAPABILITY } from './capabilities'
+import userEvent from '@testing-library/user-event'
+import { PRODUCT_ACTIVATE_CAPABILITY, PRODUCT_CAPABILITY } from './capabilities'
 import { resetPendingAttempts } from './pendingAttempt'
 import {
   COMPANY_A,
@@ -9,6 +10,7 @@ import {
   PRODUCT_1,
   installFetch,
   json,
+  mutation,
   productCard,
   productCore,
   references,
@@ -324,5 +326,118 @@ describe('edit entry point', () => {
     renderProductApp(PATH)
     await cardVisible()
     expect(screen.queryByRole('link', { name: 'Düzenle' })).toBeNull()
+  })
+})
+
+describe('activation control', () => {
+  const WITH_ACTIVATION = [...DETAIL_ONLY, PRODUCT_ACTIVATE_CAPABILITY]
+
+  it('appears only with its child capability and only for a known Draft', async () => {
+    installFetch({ capabilities: DETAIL_ONLY })
+    const first = renderProductApp(PATH)
+    await cardVisible()
+    expect(screen.queryByRole('button', { name: 'Ürünü aktifleştir' })).toBeNull()
+    first.unmount()
+    cleanup()
+
+    installFetch({ capabilities: WITH_ACTIVATION })
+    const second = renderProductApp(PATH)
+    await cardVisible()
+    expect(screen.getByRole('button', { name: 'Ürünü aktifleştir' })).toBeTruthy()
+    second.unmount()
+    cleanup()
+
+    installFetch({
+      capabilities: WITH_ACTIVATION,
+      onCard: () => json(productCard({ product: productCore({ lifecycle: 'Active' }) })),
+    })
+    renderProductApp(PATH)
+    await cardVisible()
+    expect(screen.queryByRole('button', { name: 'Ürünü aktifleştir' })).toBeNull()
+  })
+
+  it('posts the exact card version with one key and paints only the canonical Active response', async () => {
+    const { calls } = installFetch({
+      capabilities: WITH_ACTIVATION,
+      onActivate: () =>
+        json(
+          mutation({
+            card: productCard({ product: productCore({ lifecycle: 'Active', version: '8' }) }),
+          }),
+        ),
+    })
+    renderProductApp(PATH)
+    await cardVisible()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Ürünü aktifleştir' }))
+    await waitFor(() => expect(screen.getByText('Ürün aktifleştirildi.')).toBeTruthy())
+    expect(screen.getByText('Aktif')).toBeTruthy()
+
+    const request = calls.find((call) => call.url.endsWith(`/products/${PRODUCT_1}/activation`))
+    expect(request?.method).toBe('POST')
+    expect(request?.companyId).toBe(COMPANY_A)
+    expect(request?.idempotencyKey).toMatch(/^[0-9a-f]{32}$/)
+    expect(JSON.parse(request?.body ?? '{}')).toEqual({ expectedVersion: '7' })
+  })
+
+  it('retries an unknown outcome with the same payload, origin and idempotency key', async () => {
+    const { calls } = installFetch({
+      capabilities: WITH_ACTIVATION,
+      onActivate: (attempt) => {
+        if (attempt === 1) throw new TypeError('connection dropped')
+        return json(
+          mutation({
+            card: productCard({ product: productCore({ lifecycle: 'Active', version: '8' }) }),
+            isReplay: true,
+          }),
+        )
+      },
+    })
+    renderProductApp(PATH)
+    await cardVisible()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Ürünü aktifleştir' }))
+    await waitFor(() => expect(screen.getByTestId('product-activation-unknown')).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: 'Aynı aktivasyonu tekrar dene' }))
+    await waitFor(() => expect(screen.getByText(/ikinci bir değişiklik uygulanmadı/)).toBeTruthy())
+
+    const requests = calls.filter((call) => call.url.endsWith(`/products/${PRODUCT_1}/activation`))
+    expect(requests).toHaveLength(2)
+    expect(requests[1].idempotencyKey).toBe(requests[0].idempotencyKey)
+    expect(requests[1].companyId).toBe(requests[0].companyId)
+    expect(requests[1].body).toBe(requests[0].body)
+  })
+
+  it('stops on a stale version and requires a fresh card instead of rebasing', async () => {
+    const { calls } = installFetch({
+      capabilities: WITH_ACTIVATION,
+      onActivate: () => json({ code: 'version_conflict', currentVersion: '8' }, 409),
+    })
+    renderProductApp(PATH)
+    await cardVisible()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Ürünü aktifleştir' }))
+    await waitFor(() => expect(screen.getByText(/Ürün siz bakarken değişti/)).toBeTruthy())
+    expect(screen.queryByText('Ürün aktifleştirildi.')).toBeNull()
+    expect(calls.filter((call) => call.url.endsWith(`/products/${PRODUCT_1}/activation`))).toHaveLength(1)
+  })
+
+  it('re-fences the control after a forbidden activation response', async () => {
+    const capabilities = [...WITH_ACTIVATION]
+    installFetch({
+      capabilities,
+      onActivate: () => {
+        capabilities.splice(capabilities.indexOf(PRODUCT_ACTIVATE_CAPABILITY), 1)
+        return json({ code: 'forbidden' }, 403)
+      },
+    })
+    renderProductApp(PATH)
+    await cardVisible()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Ürünü aktifleştir' }))
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Ürünü aktifleştir' })).toBeNull(),
+    )
+    expect(screen.queryByText('Ürün aktifleştirildi.')).toBeNull()
   })
 })
