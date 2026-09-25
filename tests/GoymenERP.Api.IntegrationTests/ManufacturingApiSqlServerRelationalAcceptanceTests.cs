@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using GoymenERP.Api.ProductRuntime;
 using GoymenERP.Api.Security;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
@@ -10,6 +11,7 @@ using GoymenERP.Modules.Identity.Domain.Assignments;
 using GoymenERP.Modules.Identity.Domain.Roles;
 using GoymenERP.Modules.Identity.Domain.Users;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
+using GoymenERP.Modules.Identity.Infrastructure.Services;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Domain.Labels;
 using GoymenERP.Modules.Inventory.Domain.Lots;
@@ -869,7 +871,18 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
         {
             var baseConnectionString = Environment.GetEnvironmentVariable(
                 SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
-            var factory = new SqlServerRelationalApiFactory(baseConnectionString);
+            var databaseName = $"goymen_erp_ci_{Guid.NewGuid():N}";
+            var databaseConnectionString = new SqlConnectionStringBuilder(baseConnectionString)
+            {
+                InitialCatalog = databaseName,
+            }.ConnectionString;
+            // Output admission exercises Product's real stock eligibility against this same isolated database.
+            var factory = new SqlServerRelationalApiFactory(baseConnectionString, services =>
+            {
+                services.RemoveAll<ProductRuntimeOptions>();
+                services.AddSingleton(new ProductRuntimeOptions(databaseConnectionString,
+                    new ProductPilotIssuerBinding(Guid.NewGuid(), Guid.NewGuid()), new byte[32]));
+            }, databaseName: databaseName);
             var run = new Run(baseConnectionString, factory);
             // The host migrates Organization first and Manufacturing after it.
             using var client = factory.CreateClient();
