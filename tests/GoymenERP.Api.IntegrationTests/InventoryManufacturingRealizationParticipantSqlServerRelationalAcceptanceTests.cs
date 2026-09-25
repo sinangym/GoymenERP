@@ -182,13 +182,25 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             issued.QuantityKg,
             issued.IsReplay,
             issued.OriginalCorrelationId), new JsonSerializerOptions(JsonSerializerDefaults.Web));
-        await using (var context = run.Context(CompanyA))
+        // Build the pre-snapshot compatibility fixture at the storage boundary. ResultJson is
+        // immutable to normal Inventory writes, so routing this setup through DbContext would
+        // correctly trip the production write guard before the replay path can be exercised.
+        await using (var connection = new SqlConnection(run.Factory.DatabaseConnectionString))
         {
-            var stored = await context.Commands.SingleAsync(row =>
-                row.CommandName == InventoryManufacturingRealizationContractV1.InputIssueCommandName
-                && row.TargetId == issue.IssueId);
-            stored.ResultJson = legacyResultJson;
-            await context.SaveChangesAsync();
+            await connection.OpenAsync();
+            await using var command = new SqlCommand("""
+                UPDATE inventory.Commands
+                SET ResultJson = @resultJson
+                WHERE CompanyId = @companyId
+                  AND CommandName = @commandName
+                  AND TargetId = @targetId;
+                """, connection);
+            command.Parameters.AddWithValue("@resultJson", legacyResultJson);
+            command.Parameters.AddWithValue("@companyId", CompanyA);
+            command.Parameters.AddWithValue("@commandName",
+                InventoryManufacturingRealizationContractV1.InputIssueCommandName);
+            command.Parameters.AddWithValue("@targetId", issue.IssueId);
+            Assert.Equal(1, await command.ExecuteNonQueryAsync());
         }
 
         var replay = await CommitIssueAsync(run, issue,
