@@ -97,7 +97,13 @@ export async function arrangeOpenOrder(env: MfgEnvironment, roll: MfgRollSeed): 
 }
 
 /** Issues physical parent-roll stock through the strict Manufacturing/Inventory realization route. */
-export async function issueThroughApi(env: MfgEnvironment, arranged: ArrangedOrder, expectedVersion: number, kg: string) {
+export async function issueThroughApi(
+  env: MfgEnvironment,
+  arranged: ArrangedOrder,
+  expectedVersion: number,
+  kg: string,
+  occurredAtUtc = new Date().toISOString(),
+) {
   const api = await apiAs(env, env.seed.recorderActor)
   try {
     return await post(api, `/orders/${arranged.orderId}/input-issues`, {
@@ -106,31 +112,7 @@ export async function issueThroughApi(env: MfgEnvironment, arranged: ArrangedOrd
       expectedVersion,
       parentRollId: arranged.rollId,
       kg,
-      occurredAtUtc: new Date().toISOString(),
-    }, 200)
-  } finally {
-    await api.dispose()
-  }
-}
-
-/**
- * Another writer's WIP reading moves only the Manufacturing order version under the page. It leaves
- * the Inventory parent-label version unchanged, isolating the order-version conflict this case proves.
- */
-export async function recordWipThroughApi(
-  env: MfgEnvironment,
-  arranged: ArrangedOrder,
-  expectedVersion: number,
-  kg: string,
-) {
-  const api = await apiAs(env, env.seed.recorderActor)
-  try {
-    return await post(api, `/orders/${arranged.orderId}/wip-measurements`, {
-      factId: randomUUID(),
-      expectedVersion,
-      parentRollId: arranged.rollId,
-      kg,
-      occurredAtUtc: '2026-09-18T09:35:00.000Z',
+      occurredAtUtc,
     }, 200)
   } finally {
     await api.dispose()

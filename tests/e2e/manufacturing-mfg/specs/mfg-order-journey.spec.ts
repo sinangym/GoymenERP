@@ -20,7 +20,6 @@ import {
   issueThroughApi,
   readMassBalance,
   readOrder,
-  recordWipThroughApi,
 } from '../src/arrange.js'
 import { readEnvironment } from '../src/env.js'
 
@@ -82,6 +81,13 @@ async function fillIssue(page: Page, rollId: string, kg: string) {
   // Exact names: a label query is a substring match by default, and "Ana rulo" also names the
   // balances section ("Ana rulo dengesi (kg)").
   await page.getByRole('radio', { name: 'Girdi çıkışı', exact: true }).check()
+  await page.getByRole('combobox', { name: 'Ana rulo', exact: true }).selectOption(rollId)
+  await kgField(page).fill(kg)
+  await page.getByLabel('Zaman', { exact: true }).fill('2026-09-18T09:30')
+}
+
+async function fillWip(page: Page, rollId: string, kg: string) {
+  await page.getByRole('radio', { name: 'WIP ölçümü', exact: true }).check()
   await page.getByRole('combobox', { name: 'Ana rulo', exact: true }).selectOption(rollId)
   await kgField(page).fill(kg)
   await page.getByLabel('Zaman', { exact: true }).fill('2026-09-18T09:30')
@@ -168,28 +174,28 @@ test.describe('MFG order screen (real API, real SQL)', () => {
     const answered = watchAnswers(page)
 
     await openOrder(page, arranged.orderId)
-    await fillIssue(page, arranged.rollId, '50')
-    // Another writer records first through the real API; the page still holds the old version.
-    const moved = await recordWipThroughApi(env, arranged, arranged.version, '10')
+    await fillWip(page, arranged.rollId, '5')
+    // Another writer issues this roll through the real API; the page still holds the old order version.
+    const moved = await issueThroughApi(env, arranged, arranged.version, '10', '2026-09-18T09:25:00.000Z')
     const posts: Request[] = []
     page.on('request', (request) => {
       if (FACT_RE.test(request.url()) && request.method() === 'POST') posts.push(request)
     })
     await page.getByRole('button', { name: 'Kaydet', exact: true }).click()
     await expect(page.getByText(/Emir siz formu doldururken değişti/)).toBeVisible()
-    await expect(issuedCell(page, arranged.rollId)).toHaveText('0')
+    await expect(issuedCell(page, arranged.rollId)).toHaveText('10')
 
     await page.getByRole('button', { name: 'Kaydet', exact: true }).click()
     await expect(page.getByText('Kaydedildi', { exact: true })).toBeVisible()
-    await expect(issuedCell(page, arranged.rollId)).toHaveText('50')
+    await expect(issuedCell(page, arranged.rollId)).toHaveText('10')
     expect(posts).toHaveLength(2)
     expect(posts[1].postDataJSON()).toMatchObject({ expectedVersion: moved.version })
     expect(posts[1].headers()['idempotency-key']).not.toBe(posts[0].headers()['idempotency-key'])
 
     const stored = await readOrder(env, arranged.orderId)
     expect((stored.rolls as Array<{ issuedKg: string; workInProgressKg: string }>)[0]).toMatchObject({
-      issuedKg: '50',
-      workInProgressKg: '10',
+      issuedKg: '10',
+      workInProgressKg: '5',
     })
     expectEveryAnswerRewritten(answered, rewritten)
   })
