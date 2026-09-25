@@ -1,4 +1,5 @@
 using System.Data.Common;
+using System.Text.Json;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Domain.Labels;
@@ -9,6 +10,7 @@ using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 using GoymenERP.Modules.Settings.Application;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 
@@ -155,6 +157,57 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             ("@movement", output.MovementId), ("@ownerKind", (int)StockPartyKind.Counterparty),
             ("@ownerId", customer), ("@custodianKind", (int)StockPartyKind.Company),
             ("@custodianId", CompanyA)));
+    }
+
+    [SqlServerFact]
+    public async Task Manufacturing_issue_replays_pre_position_snapshot_v1_result_from_immutable_movement()
+    {
+        await using var run = await Run.StartAsync();
+        var customer = Guid.NewGuid();
+        var parent = await SeedManufacturingParentAsync(run, "SYN-MFG-LEGACY-ISSUE", 100m,
+            StockPartyKind.Counterparty, customer, StockPartyKind.Company, CompanyA);
+        var orderId = Guid.NewGuid();
+        var issue = IssueRequest(orderId, parent.Label.Id, "2", "30");
+        var metadata = ManufacturingMetadata(run, "legacy-result-issue");
+        var issued = await CommitIssueAsync(run, issue, metadata);
+
+        var legacyResultJson = JsonSerializer.Serialize(new LegacyInputIssueResultV1(
+            issued.CompanyId,
+            issued.ManufacturingOrderId,
+            issued.IssueId,
+            issued.ManufacturingOrderVersion,
+            issued.ParentLabelId,
+            issued.ParentLabelVersion,
+            issued.MovementId,
+            issued.QuantityKg,
+            issued.IsReplay,
+            issued.OriginalCorrelationId), new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        await using (var context = run.Context(CompanyA))
+        {
+            var stored = await context.Commands.SingleAsync(row =>
+                row.CommandName == InventoryManufacturingRealizationContractV1.InputIssueCommandName
+                && row.TargetId == issue.IssueId);
+            stored.ResultJson = legacyResultJson;
+            await context.SaveChangesAsync();
+        }
+
+        var replay = await CommitIssueAsync(run, issue,
+            metadata with { CorrelationId = "manufacturing-legacy-result-retry" });
+
+        Assert.True(replay.IsReplay);
+        Assert.Equal(metadata.CorrelationId, replay.OriginalCorrelationId);
+        Assert.Equal(new InventoryManufacturingPositionSnapshotV1(
+            StockPartyKind.Counterparty, customer, StockPartyKind.Company, CompanyA, parent.LocationId),
+            replay.ParentPosition);
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Movements WHERE Id = @id", ("@id", issue.MovementId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.MovementLines WHERE MovementId = @id", ("@id", issue.MovementId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Commands WHERE TargetId = @id", ("@id", issue.IssueId)));
+        Assert.Equal(70m, await run.ScalarAsync<decimal>(
+            "SELECT SUM(QuantityKg) FROM inventory.Balances WHERE LabelId = @label",
+            ("@label", parent.Label.Id)));
     }
 
     [SqlServerFact]
@@ -435,6 +488,18 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         Guid OwnerId,
         StockPartyKind CustodianKind,
         Guid CustodianId);
+
+    private sealed record LegacyInputIssueResultV1(
+        Guid CompanyId,
+        Guid ManufacturingOrderId,
+        Guid IssueId,
+        string ManufacturingOrderVersion,
+        Guid ParentLabelId,
+        string ParentLabelVersion,
+        Guid MovementId,
+        string QuantityKg,
+        bool IsReplay,
+        string OriginalCorrelationId);
 
     private sealed class UnavailableSettings : ISettingsPrerequisiteProvider
     {
