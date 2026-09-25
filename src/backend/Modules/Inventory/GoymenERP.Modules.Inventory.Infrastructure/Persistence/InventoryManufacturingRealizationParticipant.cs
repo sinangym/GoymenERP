@@ -111,8 +111,15 @@ public sealed class InventoryManufacturingRealizationParticipant
             EnsureReplay(existing, metadata, payloadHash);
             var replay = JsonSerializer.Deserialize<InventoryManufacturingInputIssueResultV1>(existing.ResultJson, Json)
                 ?? throw Refused(503, InventoryManufacturingRealizationCodesV1.Unavailable);
-            EnsurePositionSnapshot(replay.ParentPosition);
-            return replay with { IsReplay = true, OriginalCorrelationId = existing.CorrelationId };
+            var replayPosition = replay.ParentPosition
+                ?? await RecoverInputIssuePositionAsync(request, replay, quantity, cancellationToken);
+            EnsurePositionSnapshot(replayPosition);
+            return replay with
+            {
+                ParentPosition = replayPosition,
+                IsReplay = true,
+                OriginalCorrelationId = existing.CorrelationId,
+            };
         }
 
         var parent = await LoadParentAsync(request.ParentLabelId, request.ExpectedParentLabelVersion,
@@ -360,6 +367,69 @@ public sealed class InventoryManufacturingRealizationParticipant
                 select line.QuantityKg)
             .SumAsync(cancellationToken);
         return new InputTrace(positions[0], issueRows.Sum(row => row.QuantityKg), returned);
+    }
+
+    private async Task<InventoryManufacturingPositionSnapshotV1> RecoverInputIssuePositionAsync(
+        InventoryManufacturingInputIssueRequestV1 request,
+        InventoryManufacturingInputIssueResultV1 replay,
+        Kilograms quantity,
+        CancellationToken cancellationToken)
+    {
+        // manufacturing.input.issue.v1 results written before ParentPosition was added still point
+        // to the immutable Inventory movement that owns the exact physical context. Recover only
+        // from that fact; never infer a Company-owned position or rewrite the accepted result.
+        if (replay.CompanyId != companyId
+            || replay.CompanyId != request.CompanyId
+            || replay.ManufacturingOrderId != request.ManufacturingOrderId
+            || replay.IssueId != request.IssueId
+            || replay.ManufacturingOrderVersion != request.ManufacturingOrderVersionAfter
+            || replay.ParentLabelId != request.ParentLabelId
+            || replay.MovementId != request.MovementId
+            || !string.Equals(replay.QuantityKg, quantity.ToString(), StringComparison.Ordinal))
+        {
+            throw Refused(503, InventoryManufacturingRealizationCodesV1.Unavailable);
+        }
+
+        var movement = await context.Movements.AsNoTracking().SingleOrDefaultAsync(row =>
+            row.CompanyId == companyId
+            && row.Id == request.MovementId
+            && row.Kind == (int)StockMovementKind.Issue
+            && row.SourceKind == InventoryManufacturingRealizationContractV1.InputIssueSourceKind
+            && row.SourceId == request.ManufacturingOrderId
+            && row.SourceLineId == request.IssueId
+            && row.SourceGrain == (int)StockSourceGrain.Line,
+            cancellationToken);
+        if (movement is null)
+        {
+            throw Refused(503, InventoryManufacturingRealizationCodesV1.Unavailable);
+        }
+
+        var lines = await context.MovementLines.AsNoTracking()
+            .Where(row => row.CompanyId == companyId && row.MovementId == movement.Id)
+            .ToListAsync(cancellationToken);
+        if (lines.Count != 1)
+        {
+            throw Refused(503, InventoryManufacturingRealizationCodesV1.Unavailable);
+        }
+
+        var line = lines[0];
+        if (line.Direction != (int)StockDirection.Out
+            || line.LabelId != request.ParentLabelId
+            || line.ProductId == Guid.Empty
+            || line.Block != (int)BlockState.Free
+            || line.QuantityKg != quantity.Value)
+        {
+            throw Refused(503, InventoryManufacturingRealizationCodesV1.Unavailable);
+        }
+
+        var snapshot = new InventoryManufacturingPositionSnapshotV1(
+            (StockPartyKind)line.OwnerKind,
+            line.OwnerId,
+            (StockPartyKind)line.CustodianKind,
+            line.CustodianId,
+            line.LocationId);
+        EnsurePositionSnapshot(snapshot);
+        return snapshot;
     }
 
     private void ValidateStoredPositions(MaterialLabel label, IReadOnlyList<BalanceRow> rows)
