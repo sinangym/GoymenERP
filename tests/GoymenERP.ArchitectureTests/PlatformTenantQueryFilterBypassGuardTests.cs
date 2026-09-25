@@ -669,7 +669,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // one reviewed provider connection; exact source/count drift remains fail-closed.
                 [ReviewedInventoryManufacturingRealizationParticipantPath] =
                     new(
-                        "cb51cef12828c78d9147ec6d89017f1b65310de9bd379035f0d43d5667740862",
+                        "17e9470ae55608ed80d032be48976468aacbe64da7907779642929e2ae814c82",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,
