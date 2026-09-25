@@ -67,7 +67,7 @@ export function isOpaqueVersion(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0
 }
 
-function isInstant(value: unknown): value is string {
+export function isInstant(value: unknown): value is string {
   if (typeof value !== 'string' || value.length > 64) return false
   if (!/^\d{4}-\d{2}-\d{2}T.+(?:Z|[+-]\d{2}:\d{2})$/.test(value)) return false
   return !Number.isNaN(Date.parse(value))
@@ -152,6 +152,43 @@ export interface SourceDetail {
   readonly reversesSourceId: string | null
   readonly unallocated: UnallocatedView
 }
+
+export type ReversalProposalStatus = 'Pending' | 'Approved' | 'Rejected'
+
+export interface ReversalProposalView {
+  readonly id: string
+  readonly originalSourceId: string
+  readonly occurredOn: string
+  readonly reason: string
+  readonly status: ReversalProposalStatus
+  readonly proposedBy: string
+  readonly proposedAtUtc: string
+  readonly decidedBy: string | null
+  readonly decidedAtUtc: string | null
+  readonly decisionReason: string | null
+  readonly reversalSourceId: string | null
+  readonly version: string
+}
+
+export interface ReversalProposalPage {
+  readonly items: readonly ReversalProposalView[]
+}
+
+export type ReversalProposalCommandResult =
+  | {
+      readonly outcome: 'Succeeded'
+      readonly resource: ReversalProposalView
+      readonly isReplay: boolean
+      readonly originalCorrelationId: string
+      readonly issues: readonly ValidationIssue[]
+    }
+  | {
+      readonly outcome: 'Unavailable' | 'Denied' | 'ValidationFailed' | 'VersionConflict' | 'IdempotencyConflict'
+      readonly resource: null
+      readonly isReplay: boolean
+      readonly originalCorrelationId: string
+      readonly issues: readonly ValidationIssue[]
+    }
 
 export interface SourcePage {
   readonly companyId: string
@@ -335,6 +372,87 @@ export function decodeSourceDetailFor(sourceId: string): (value: unknown, compan
   }
 }
 
+const REVERSAL_PROPOSAL_KEYS = [
+  'id', 'originalSourceId', 'occurredOn', 'reason', 'status', 'proposedBy', 'proposedAtUtc',
+  'decidedBy', 'decidedAtUtc', 'decisionReason', 'reversalSourceId', 'version',
+] as const
+
+export function decodeReversalProposal(value: unknown): Decoded<ReversalProposalView> {
+  if (!isRecord(value) || !hasExactKeys(value, REVERSAL_PROPOSAL_KEYS)) return FAIL
+  if (
+    !isBoundUuid(value.id) ||
+    !isBoundUuid(value.originalSourceId) ||
+    typeof value.occurredOn !== 'string' || !isDateOnly(value.occurredOn) ||
+    typeof value.reason !== 'string' || value.reason.trim() !== value.reason || value.reason.length === 0 ||
+    !['Pending', 'Approved', 'Rejected'].includes(value.status as string) ||
+    typeof value.proposedBy !== 'string' || value.proposedBy.length === 0 ||
+    !isInstant(value.proposedAtUtc) ||
+    !(value.decidedBy === null || (typeof value.decidedBy === 'string' && value.decidedBy.length > 0)) ||
+    !(value.decidedAtUtc === null || isInstant(value.decidedAtUtc)) ||
+    !(value.decisionReason === null || (typeof value.decisionReason === 'string' && value.decisionReason.length > 0)) ||
+    !(value.reversalSourceId === null || isBoundUuid(value.reversalSourceId)) ||
+    typeof value.version !== 'string' || value.version.trim() !== value.version || value.version.length === 0
+  ) return FAIL
+
+  const status = value.status as ReversalProposalStatus
+  const pendingShape = value.decidedBy === null && value.decidedAtUtc === null
+    && value.decisionReason === null && value.reversalSourceId === null
+  const approvedShape = value.decidedBy !== null && value.decidedAtUtc !== null
+    && value.decisionReason === null && value.reversalSourceId !== null
+  const rejectedShape = value.decidedBy !== null && value.decidedAtUtc !== null
+    && value.decisionReason !== null && value.reversalSourceId === null
+  if ((status === 'Pending' && !pendingShape) || (status === 'Approved' && !approvedShape)
+    || (status === 'Rejected' && !rejectedShape)) return FAIL
+
+  return ok({
+    id: value.id as string,
+    originalSourceId: value.originalSourceId as string,
+    occurredOn: value.occurredOn as string,
+    reason: value.reason,
+    status,
+    proposedBy: value.proposedBy,
+    proposedAtUtc: value.proposedAtUtc as string,
+    decidedBy: value.decidedBy as string | null,
+    decidedAtUtc: value.decidedAtUtc as string | null,
+    decisionReason: value.decisionReason as string | null,
+    reversalSourceId: value.reversalSourceId as string | null,
+    version: value.version,
+  })
+}
+
+export function decodeReversalProposalPage(value: unknown): Decoded<ReversalProposalPage> {
+  if (!isRecord(value) || !hasExactKeys(value, ['items']) || !Array.isArray(value.items)) return FAIL
+  const items: ReversalProposalView[] = []
+  for (const raw of value.items) {
+    const decoded = decodeReversalProposal(raw)
+    if (!decoded.ok) return FAIL
+    items.push(decoded.value)
+  }
+  return ok({ items })
+}
+
+export function decodeReversalProposalCommandResult(value: unknown): Decoded<ReversalProposalCommandResult> {
+  if (!isRecord(value) || !hasExactKeys(value,
+    ['outcome', 'resource', 'isReplay', 'originalCorrelationId', 'issues'])) return FAIL
+  if (typeof value.outcome !== 'string' || !COMMAND_OUTCOMES.includes(value.outcome)
+    || typeof value.isReplay !== 'boolean' || typeof value.originalCorrelationId !== 'string'
+    || (value.isReplay && value.originalCorrelationId.length === 0) || !Array.isArray(value.issues)) return FAIL
+  const issues: ValidationIssue[] = []
+  for (const raw of value.issues) {
+    if (!isRecord(raw) || !hasExactKeys(raw, ['field', 'code'])
+      || typeof raw.field !== 'string' || typeof raw.code !== 'string' || raw.code.length === 0) return FAIL
+    issues.push({ field: raw.field, code: raw.code })
+  }
+  const common = { isReplay: value.isReplay, originalCorrelationId: value.originalCorrelationId, issues }
+  if (value.outcome === 'Succeeded') {
+    const resource = decodeReversalProposal(value.resource)
+    return resource.ok ? ok({ outcome: 'Succeeded', resource: resource.value, ...common }) : FAIL
+  }
+  if (value.resource !== null) return FAIL
+  return ok({ outcome: value.outcome as Exclude<ReversalProposalCommandResult['outcome'], 'Succeeded'>,
+    resource: null, ...common })
+}
+
 export function decodeSourcePage(value: unknown, companyId: string): Decoded<SourcePage> {
   if (!isRecord(value) || !hasExactKeys(value, ['companyId', 'items', 'nextCursor'])) return FAIL
   if (value.companyId !== companyId || !Array.isArray(value.items)) return FAIL
@@ -413,7 +531,9 @@ export function decodeCommandResult(value: unknown, companyId: string): Decoded<
     !COMMAND_OUTCOMES.includes(value.outcome) ||
     typeof value.isReplay !== 'boolean' ||
     typeof value.originalCorrelationId !== 'string' ||
-    value.originalCorrelationId.length === 0 ||
+    // A replay names the first attempt's correlation. A status-only answer (403 Denied, 503
+    // Unavailable, restated by the HTTP port) carries none, and is still a definite outcome.
+    (value.isReplay && value.originalCorrelationId.length === 0) ||
     !Array.isArray(value.issues)
   ) {
     return FAIL
@@ -469,6 +589,24 @@ export interface ReverseRequest {
   readonly sourceId: string
   readonly expectedVersion: string
   readonly occurredOn: string
+  readonly reason: string
+}
+
+export interface ProposeReversalRequest {
+  readonly sourceId: string
+  readonly expectedVersion: string
+  readonly occurredOn: string
+  readonly reason: string
+}
+
+export interface ApproveReversalRequest {
+  readonly proposalId: string
+  readonly expectedVersion: string
+}
+
+export interface RejectReversalRequest {
+  readonly proposalId: string
+  readonly expectedVersion: string
   readonly reason: string
 }
 

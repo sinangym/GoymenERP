@@ -50,17 +50,19 @@ describe('createDraft — 201 first commit vs 200 replay', () => {
     expect(calls[0].init.body as string).not.toMatch(/companyId|version|state/)
   })
 
-  it('200 with isReplay=true is the same attempt replayed', async () => {
-    respond(200, replayResponseRaw)
+  it('201 with Idempotency-Replayed and isReplay=true is the same attempt replayed', async () => {
+    respond(201, replayResponseRaw, { 'Idempotency-Replayed': 'true', Location: `/api/v1/sales/drafts/${DRAFT}` })
     const outcome = await createDraft(REQUEST, CONTEXT)
     expect(outcome.type === 'succeeded' && outcome.data.isReplay).toBe(true)
   })
 
   it.each([
-    ['201 claiming a replay', 201, replayResponseRaw],
-    ['200 claiming a first commit', 200, createResponseRaw],
-  ])('%s is not success: the draft may exist, so the outcome is unknown', async (_, status, body) => {
-    respond(status, body)
+    ['201 claiming a replay without the header', 201, replayResponseRaw, {}],
+    ['201 with the replay header claiming a first commit', 201, createResponseRaw, { 'Idempotency-Replayed': 'true' }],
+    ['200 claiming a first commit', 200, createResponseRaw, {}],
+    ['200 with the replay header', 200, replayResponseRaw, { 'Idempotency-Replayed': 'true' }],
+  ])('%s is not success: the draft may exist, so the outcome is unknown', async (_, status, body, headers) => {
+    respond(status, body, headers)
     expect((await createDraft(REQUEST, CONTEXT)).type).toBe('malformed')
   })
 

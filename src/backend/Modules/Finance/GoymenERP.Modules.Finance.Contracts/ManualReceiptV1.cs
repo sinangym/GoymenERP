@@ -32,22 +32,84 @@ public sealed record DraftSaveRequest(Guid? DraftId, string? ExpectedVersion, Re
 public sealed record RecordRequest(Guid DraftId, string ExpectedVersion);
 // Original amount/currency/account are resolved from the source, never supplied for reversal.
 public sealed record ReverseRequest(Guid SourceId, string ExpectedVersion, DateOnly OccurredOn, string Reason);
+
+/// <summary>
+/// FIN-T06/B1-B2 command that opens a persistent reversal proposal. The requested
+/// occurrence date belongs to the future reversal event; it never changes the
+/// original receipt's occurrence date or accounting period.
+/// </summary>
+public sealed record ProposeReversalRequest(
+    Guid SourceId,
+    string ExpectedVersion,
+    DateOnly OccurredOn,
+    string Reason);
+
+/// <summary>FIN-T06/B1 checker command. The service must refuse the proposal's maker.</summary>
+public sealed record ApproveReversalRequest(Guid ProposalId, string ExpectedVersion);
+
+/// <summary>FIN-T06/B1 checker command. Rejection is audited separately from approval.</summary>
+public sealed record RejectReversalRequest(Guid ProposalId, string ExpectedVersion, string Reason);
+
+[JsonConverter(typeof(JsonStringEnumConverter<ReversalProposalStatus>))]
+public enum ReversalProposalStatus
+{
+    Pending = 0,
+    Approved = 1,
+    Rejected = 2
+}
+
+/// <summary>
+/// Persistent FIN-T06 proposal projection. <paramref name="ReversalSourceId"/> is
+/// populated only after approval creates the immutable reversing source/event.
+/// </summary>
+public sealed record ReversalProposalView(
+    Guid Id,
+    Guid OriginalSourceId,
+    DateOnly OccurredOn,
+    string Reason,
+    ReversalProposalStatus Status,
+    string ProposedBy,
+    DateTimeOffset ProposedAtUtc,
+    string? DecidedBy,
+    DateTimeOffset? DecidedAtUtc,
+    string? DecisionReason,
+    Guid? ReversalSourceId,
+    string Version);
 public sealed record SourceListRequest(string? Cursor);
 public sealed record SourceDetailRequest(Guid SourceId);
 
-public enum FinanceAction { ReadBankAccounts, ReadSources, ReadAmount, SaveDraft, Record, Reverse }
+// D4 (#66 5749046401) adds ProposeBankAccountIbanChange and ApproveBankAccountIbanChange. They are
+// separate ACTIONS — they carry their own idempotency records and audit envelopes — but they map onto
+// the EXISTING finance.bank-account.propose/.approve permission NAMES, because D4 says the changed
+// value "Ö4 öneren≠onaylayan sürecine girer": the same dual control, applied to a change. Minting new
+// permission names would be granting authority nobody approved.
+public enum FinanceAction
+{
+    ReadBankAccounts, ReadSources, ReadAmount, SaveDraft, Record, Reverse, ProposeReversal, ApproveReversal,
+    ProposeBankAccount, ApproveBankAccount,
+    ProposeBankAccountIbanChange, ApproveBankAccountIbanChange,
+    SaveManualBankPaymentDraft, ReadManualBankPayments,
+    ApproveManualBankPayment, RecordManualBankPayment,
+    WriteAllocation,
+}
 public enum PermissionDecision { Unavailable, Denied, Allowed }
 
 public enum ReadOutcome { Unavailable, Denied, NotFound, Found }
+// String names on the wire, in the generated OpenAPI schema as in FinanceJson (FIN-T04b; the FE decodes names).
+[JsonConverter(typeof(JsonStringEnumConverter<CommandOutcome>))]
 public enum CommandOutcome { Unavailable, Denied, ValidationFailed, VersionConflict, IdempotencyConflict, Succeeded }
+[JsonConverter(typeof(JsonStringEnumConverter<SourceStage>))]
 public enum SourceStage { Draft, Recorded, Reversed }
+[JsonConverter(typeof(JsonStringEnumConverter<AmountDisclosure>))]
 public enum AmountDisclosure { Unavailable, Redacted, Visible }
+[JsonConverter(typeof(JsonStringEnumConverter<AllocationKnowledge>))]
 public enum AllocationKnowledge { Unavailable, Known }
 public sealed record AmountView(AmountDisclosure Disclosure, MoneyText? Money);
 public sealed record UnallocatedView(AllocationKnowledge Knowledge, AmountView Amount);
 public sealed record BankAccountView(Guid Id, Guid CompanyId, Guid CurrencyId, string DisplayName,
     bool IsActive, bool IsUsableForReceipt, string Version);
-public sealed record PartyAccountEligibility(Guid PartyId, Guid CompanyAccountId, Guid CompanyId, bool IsActive);
+public sealed record PartyAccountEligibility(Guid PartyId, Guid CompanyAccountId, Guid CompanyId, bool IsActive,
+    DraftPartyLabel? Label = null, bool IsPartyActive = false);
 public sealed record SourceSummary(Guid Id, Guid CompanyId, string SourceNumber, string Version,
     SourceStage Stage, Guid PartyId, Guid CompanyAccountId, Guid TreasuryAccountId, Guid CurrencyId,
     DateOnly OccurredOn, DateOnly? ValueOn, AmountView Amount);

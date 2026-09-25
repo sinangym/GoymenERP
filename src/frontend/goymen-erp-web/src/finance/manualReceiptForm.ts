@@ -14,14 +14,14 @@
  *    typed id — the caller supplies an already chosen, authorized pair;
  *  - DERIVED: `money.currencyId` is the picked bank account's currency. Spec §2 "Hesap/
  *    işlem parası aynı"; a separate currency picker would only create mismatches;
- *  - SERVER-OWNED, NEVER TYPED: `profile` (profileId + version). Required by the request,
- *    but no Finance read in #258 returns one for a NEW draft. An existing draft's detail
- *    carries its profile, so an update can reuse it; a create without one stays closed;
+ *  - SERVER-OWNED, NEVER TYPED: `profile` (profileId + version) and its approved scale, from
+ *    the published draft read context (#261) for the exact bank/party/account/date — for a
+ *    create AND an update, so a changed date never reuses an older profile;
  *  - NOT SENT: company and actor (bound by the authenticated host), scale, direction,
  *    unallocated amount, period, approval.
  */
 
-import { amountInputFromWire, parseAmountInput, type AmountInputError } from './decimalText'
+import { amountInputFromWire, fractionDigits, parseAmountInput, type AmountInputError } from './decimalText'
 import { isDateOnly } from './dateOnly'
 import type {
   BankAccountView,
@@ -65,7 +65,7 @@ export interface ReceiptParty {
   readonly companyAccountId: string
 }
 
-export type FieldError = AmountInputError | 'date-format' | 'bank-account-ineligible'
+export type FieldError = AmountInputError | 'date-format' | 'bank-account-ineligible' | 'scale-exceeded'
 
 export type FieldErrors = Readonly<Partial<Record<keyof ManualReceiptFields, FieldError>>>
 
@@ -86,6 +86,8 @@ export function buildDraftSaveRequest(
     readonly identity: DraftIdentity
     readonly profile: ProfileReference
     readonly bankAccounts: readonly BankAccountView[]
+    /** Approved fraction-digit limit from the draft read context, when known. Never used to round. */
+    readonly scale?: number
   },
 ): DraftSaveBuild {
   const errors: Partial<Record<keyof ManualReceiptFields, FieldError>> = {}
@@ -96,6 +98,7 @@ export function buildDraftSaveRequest(
 
   const amount = parseAmountInput(fields.amount)
   if (!amount.ok) errors.amount = amount.error
+  else if (context.scale !== undefined && fractionDigits(amount.wire) > context.scale) errors.amount = 'scale-exceeded'
 
   const occurredOn = fields.occurredOn.trim()
   if (occurredOn.length === 0) errors.occurredOn = 'required'

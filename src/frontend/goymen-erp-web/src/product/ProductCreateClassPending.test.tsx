@@ -29,6 +29,7 @@ const GROUP_BORU = 'aaaaaaa1-0000-0000-0000-000000000002'
 const CLASS_PIPE = 'cccccccc-0000-0000-0000-000000000002'
 const CLASS_OTHER = 'cccccccc-0000-0000-0000-000000000003'
 const FAMILY_FRESH = 'bbbbbbb1-0000-0000-0000-000000000002'
+const TEMPLATE_FRESH = '81000000-0000-4000-8000-000000000004'
 
 const CHECKING_HOLD = 'Sınıf/aile seçenekleri doğrulanıyor; tamamlanınca kaydedebilirsiniz.'
 const CHECKING_FIELD = 'Seçenekler doğrulanıyor…'
@@ -119,7 +120,21 @@ describe('a chosen class while its scoped reference read is out', () => {
 
     await act(async () => {
       held.resolve(
-        json(referenceOptions({ classId: CLASS_FLAT, families: [{ id: FAMILY_FRESH, displayName: 'Taze aile' }] })),
+        json(referenceOptions({
+          classId: CLASS_FLAT,
+          families: [{ id: FAMILY_FRESH, displayName: 'Taze aile' }],
+          templates: [{ id: TEMPLATE_FRESH, version: '1', displayName: 'Taze aile şablonu', fields: [] }],
+          familyFacts: [{
+            id: FAMILY_FRESH,
+            code: 'FRESH',
+            displayName: 'Taze aile',
+            cins: 'Metal',
+            tur: 'Sac',
+            tip: 'Düz',
+            templateId: TEMPLATE_FRESH,
+            templateVersion: '1',
+          }],
+        })),
       )
     })
     await waitFor(() => screen.getByRole('option', { name: 'Taze aile' }))

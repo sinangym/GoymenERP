@@ -1,11 +1,13 @@
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Product.Application;
 using GoymenERP.Modules.Product.Application.Contracts;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Modules.Product.Infrastructure.Persistence;
 
 /// <summary>The read side for the eventual host service; it grants no command capability.</summary>
 public sealed class ProductReader(ProductReadStore store, ProductCursorCodec cursors,
-    IGroupSharedMasterAuthorizationService authority)
+    IGroupSharedMasterAuthorizationService authority, ISettingsUnitIdentityCatalogV1? units = null)
 {
     public Task<ProductPage> GetPageAsync(ProductListQuery query, CancellationToken cancellationToken) =>
         ReadAsync(async context =>
@@ -27,7 +29,16 @@ public sealed class ProductReader(ProductReadStore store, ProductCursorCodec cur
             if (row is null) return null;
             var groups = await store.ReadCodeGroupsAsync(context, cancellationToken);
             var label = groups.SingleOrDefault(group => group.Id == row.GroupId)?.Name;
-            return new(ProductDraftView.FromProduct(row.RestoreProduct(), new(label, null, null, null)), row.RestoreReferences());
+            var product = row.RestoreProduct();
+            var references = row.RestoreReferences();
+            // PRD-CARD-1: the names a reopened card shows come from the released registry, resolved here. With no
+            // release (Q6) they stay null and the screen shows "unavailable"; nothing is guessed from an id.
+            var definition = await store.ReadFamilyDefinitionAsync(context, cancellationToken);
+            var labels = ProductCardPresentation.Labels(label, definition, product.FamilyId, references);
+            IReadOnlyList<UnitIdentityV1> identities = units is null ? [] : await units.ListAsync(cancellationToken);
+            labels = ProductCardPresentation.WithUnitLabels(labels, references.Units,
+                identities.ToDictionary(identity => identity.UnitId, identity => identity.Code));
+            return new(ProductDraftView.FromProduct(product, labels), references);
         }, cancellationToken);
 
     public Task<IReadOnlyList<ProductCodeGroup>> GetCodeGroupsAsync(CancellationToken cancellationToken) =>
@@ -42,9 +53,26 @@ public sealed class ProductReader(ProductReadStore store, ProductCursorCodec cur
             if (!groups.Any(group => group.Id == query.GroupId))
                 throw new ProductValidationException([new("groupId", "invalid_reference")]);
             // ClassId is echoed only as the requested filter, never as a verified
-            // catalogue entry. All five unavailable sources remain explicit.
-            return new ProductReferenceOptions(query.GroupId, query.ClassId, [], [], [], [], [],
-                ["classes", "families", "units", "trackingPolicies", "templates"]);
+            // catalogue entry. Families and templates come from a well-formed released
+            // registry (PRD-FAM-1); units are Settings' company-independent identities
+            // (PRD-UNIT-1; the source has no display name, so the code is shown). What
+            // is not available stays listed as such, as do classes and tracking policies.
+            var definition = await store.ReadFamilyDefinitionAsync(context, cancellationToken);
+            IReadOnlyList<UnitIdentityV1> identities = units is null ? [] : await units.ListAsync(cancellationToken);
+            var unavailable = new List<string> { "classes" };
+            if (definition is null) unavailable.Add("families");
+            if (identities.Count == 0) unavailable.Add("units");
+            unavailable.Add("trackingPolicies");
+            if (definition is null) unavailable.Add("templates");
+
+            return new ProductReferenceOptions(query.GroupId, query.ClassId, [],
+                [.. (definition?.Families ?? []).Select(family => new ProductReferenceOption(family.Id, family.Name))],
+                [.. identities.Select(identity => new ProductUnitOption(identity.UnitId, identity.Code, identity.Code, identity.IsKilogram))],
+                [],
+                [.. ProductCardPresentation.Templates(definition)],
+                unavailable,
+                [.. ProductCardPresentation.FamilyFacts(definition)],
+                [.. ProductCardPresentation.Dictionaries(definition)]);
         }, cancellationToken);
 
     private async Task<T> ReadAsync<T>(Func<GroupSharedMasterReadContext, Task<T>> read, CancellationToken cancellationToken)

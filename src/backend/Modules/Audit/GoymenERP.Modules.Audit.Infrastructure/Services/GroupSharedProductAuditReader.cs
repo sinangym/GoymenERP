@@ -18,8 +18,12 @@ public sealed class GroupSharedProductAuditReader(IServiceScopeFactory scopes,
         await using var scope = scopes.CreateAsyncScope();
         var database = scope.ServiceProvider.GetRequiredService<AuditDbContext>();
         database.BindGroupSharedRead(before, productId);
+        // Version order is the semantic tie-breaker. Event ids are random and cannot decide
+        // which adjacent Product version is newer when two commits share a clock tick. Keeping
+        // the version before the final stable id tie-breaker also preserves the correct cutoff set.
         var rows = await database.AuditEvents.AsNoTracking().OrderByDescending(x => x.OccurredAtUtc)
-            .ThenByDescending(x => x.Id).Take(limit).ToListAsync(cancellationToken);
+            .ThenByDescending(x => x.EntityVersionAfter).ThenByDescending(x => x.Id)
+            .Take(limit).ToListAsync(cancellationToken);
         var after = await AuthorizeAsync(cancellationToken);
         if (after.LocalActorId != before.LocalActorId || after.OriginCompanyId != before.OriginCompanyId
             || after.AuthorityRevision != before.AuthorityRevision)

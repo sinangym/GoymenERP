@@ -1,7 +1,9 @@
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Product.Application;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Product.Domain.Products;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace GoymenERP.Modules.Product.Infrastructure.Persistence;
 
@@ -11,8 +13,30 @@ public sealed record ProductListPosition(Guid Id, string? Text, DateTimeOffset? 
 public sealed record ProductStoredPage(IReadOnlyList<ProductStoredRecord> Items, ProductListPosition? Next);
 
 /// <summary>Product-only relational reads; the application caller rechecks current authority before releasing results.</summary>
-public sealed class ProductReadStore(ProductDbContext context)
+public sealed class ProductReadStore(ProductDbContext context, ILogger<ProductReadStore>? logger = null)
+    : IProductSalesRecordReader
 {
+    public async Task<ProductStoredRecord?> ReadForSalesSelectionAsync(ProductSalesReadScope scope, Guid productId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(scope);
+        var row = await context.Products.AsNoTracking().SingleOrDefaultAsync(product => product.Id == productId, cancellationToken);
+        return row?.ToRecord();
+    }
+
+    /// <summary>
+    /// The released family definition when it is well formed; null when none is released or the release
+    /// is malformed (a read of options is not the place to fail: the catalogue is simply unavailable). A
+    /// malformed release is logged with its code (#334 P3-1); a missing one is the normal state and is not.
+    /// </summary>
+    public Task<ProductFamilyDefinitionV2?> ReadFamilyDefinitionAsync(GroupSharedMasterReadContext authority,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(authority);
+        return ProductFamilyReleaseRead.WellFormedAsync(new SqlProductFamilyDefinitionSource(context), logger,
+            nameof(ProductReadStore), cancellationToken);
+    }
+
     public async Task<ProductStoredRecord?> ReadByIdAsync(GroupSharedMasterReadContext authority, Guid id,
         CancellationToken cancellationToken)
     {

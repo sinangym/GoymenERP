@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace GoymenERP.Modules.Product.Application.Contracts;
 
 /// <summary>
@@ -16,7 +18,22 @@ public interface IProductService
         string idempotencyKey, CancellationToken cancellationToken);
     Task<ProductMutationResponse> EditDraftAsync(Guid id, EditProductDraftRequest request,
         string idempotencyKey, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// DEC-PRD-010: approves a Draft card for firm use (Draft -> Active) at the version the approver
+    /// read. Needs the global Product <c>Activate</c> authority; replay and races follow the same
+    /// command boundary as the draft writes.
+    /// </summary>
+    Task<ProductMutationResponse> ActivateAsync(Guid id, ActivateProductRequest request,
+        string idempotencyKey, CancellationToken cancellationToken);
 }
+
+/// <summary>
+/// The approval body: only the version the approver read. The card is the route's; an unknown member
+/// (a lifecycle, a company, anything else) is refused at binding, as for the draft requests.
+/// </summary>
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record ActivateProductRequest([property: JsonRequired] string ExpectedVersion);
 
 public sealed record ProductPage(IReadOnlyList<ProductDraftView> Items, string? NextCursor);
 public sealed record ProductListQuery(string? Q = null, string? Lifecycle = null,
@@ -27,11 +44,44 @@ public sealed record ProductListQuery(string? Q = null, string? Lifecycle = null
 public sealed record ProductReferenceQuery(Guid GroupId, Guid? ClassId = null);
 public sealed record ProductReferenceOption(Guid Id, string DisplayName);
 public sealed record ProductUnitOption(Guid Id, string DisplayName, string Symbol, bool IsKilogram);
-public sealed record ProductTemplateOption(Guid Id, string Version, string DisplayName);
+/// <summary>
+/// A released template and, since PRD-CARD-1, ITS OWN fields: the form renders exactly these, in this order,
+/// and no field the release does not state. A field's <see cref="ProductTemplateFieldOption.Dictionary"/> names
+/// the entry list in <see cref="ProductReferenceOptions.Dictionaries"/>.
+/// </summary>
+public sealed record ProductTemplateOption(Guid Id, string Version, string DisplayName,
+    IReadOnlyList<ProductTemplateFieldOption>? Fields = null);
+
+/// <summary>
+/// One field of a released template as the release states it. <paramref name="Kind"/> is
+/// <c>measureMillimetre</c> (a number &gt; 0 with at most three decimals, Ö2) or <c>dictionaryReference</c>
+/// (a code of <paramref name="Dictionary"/>). A field with <paramref name="AppliesWhenField"/> applies only
+/// while that field holds <paramref name="AppliesWhenCode"/>; a <paramref name="ParentField"/> entry must be
+/// the parent of this one. Nothing here is Product's own choice.
+/// </summary>
+public sealed record ProductTemplateFieldOption(string Key, string Kind, string? Role, bool Required,
+    string? Dictionary, bool AllowsCandidate, string? AppliesWhenField, string? AppliesWhenCode, string? ParentField);
+
+/// <summary>One controlled dictionary of the release, with its entries in code order.</summary>
+public sealed record ProductDictionaryOption(string Name, IReadOnlyList<ProductDictionaryEntryOption> Entries);
+
+/// <summary>
+/// One controlled value. <paramref name="Status"/> is <c>approved</c> or <c>candidate</c>: a candidate is shown
+/// as a candidate, carries no invented meaning and never satisfies a required field.
+/// <paramref name="IsExplicitNone"/> marks the stated "none" (Kaplamasız), which is a value, not a gap.
+/// </summary>
+public sealed record ProductDictionaryEntryOption(string Code, string DisplayName, string Status,
+    string? ParentCode, bool IsExplicitNone, decimal? MassGm2);
+
+/// <summary>A released family with the facts it fixes for every card of it (never typed on a card).</summary>
+public sealed record ProductFamilyFactsOption(Guid Id, string Code, string DisplayName, string Cins, string Tur,
+    string Tip, Guid? TemplateId, string? TemplateVersion);
 public sealed record ProductReferenceOptions(Guid GroupId, Guid? ClassId,
     IReadOnlyList<ProductReferenceOption> Classes, IReadOnlyList<ProductReferenceOption> Families,
     IReadOnlyList<ProductUnitOption> Units, IReadOnlyList<ProductReferenceOption> TrackingPolicies,
-    IReadOnlyList<ProductTemplateOption> Templates, IReadOnlyList<string> UnavailableCatalogs);
+    IReadOnlyList<ProductTemplateOption> Templates, IReadOnlyList<string> UnavailableCatalogs,
+    IReadOnlyList<ProductFamilyFactsOption>? FamilyFacts = null,
+    IReadOnlyList<ProductDictionaryOption>? Dictionaries = null);
 
 public sealed record ProductMutationResponse(ProductCardView Card, bool IsReplay);
 

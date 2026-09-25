@@ -107,3 +107,7 @@
   padding: 6px 8px;
   border-bottom: 1px solid #e3e7ef;
 }
+
+.term {
+  font-weight: 600;
+}

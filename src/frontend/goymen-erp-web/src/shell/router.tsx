@@ -17,7 +17,15 @@ import { CariCreatePage } from '../cari/CariCreatePage'
 import { CariLinkWorkspacePage } from '../cari/CariLinkWorkspacePage'
 import { CariDetailPage } from '../cari/CariDetailPage'
 import { CariContactEditPage } from '../cari/CariContactEditPage'
+import { productRoutes } from '../product/productRoutes'
 import { organizationRoutes } from '../organization/organizationRoutes'
+import { salesRoutes } from '../sales/salesRoutes'
+import { manufacturingRoutes } from '../manufacturing/manufacturingRoutes'
+import { financeRoutes } from '../finance/financeRoutes'
+import { accountingRoutes } from '../accounting/accountingRoutes'
+import { logisticsRoutes } from '../logistics/logisticsRoutes'
+import { purchasingRoutes } from '../purchasing/purchasingRoutes'
+import { inventoryRoutes } from '../inventory/inventoryRoutes'
 import { StateBlock } from './StateBlock'
 
 export const shellRoutes: RouteObject[] = [
@@ -100,17 +108,81 @@ export const shellRoutes: RouteObject[] = [
         ),
       },
       /**
+       * The Product lane's own routes, declared in `src/product/productRoutes.tsx` and
+       * mounted here by the shared-integration owner.
+       *
+       * Declared BEFORE the catch-all by convention, not because react-router needs it: the
+       * pinned version (8.3.1) ranks routes by score, not declaration order. A static
+       * segment outscores `path: '*'`, which also carries a splat penalty, so `/urun` wins
+       * wherever it sits; order only breaks ties between equal scores. No render can tell
+       * the two orders apart, so `featureRouteAccess.test.tsx` pins this order
+       * structurally and proves reachability separately by rendering the routes. Each entry is
+       * gated on its own capability exactly like the Cari ones, and that file declares
+       * `/urun/yeni` and `/urun/:productId/duzenle` ahead of `/urun/:productId`, so no
+       * static segment is ever read as a product id. The create and edit entries also
+       * carry a pending-attempt observer OUTSIDE their gate; it renders nothing, fetches
+       * nothing and discloses nothing, so an ungranted route still shows only the
+       * neutral not-found block.
+       */
+      ...productRoutes,
+      /**
        * The Organization lane's own routes, declared in
        * `src/organization/organizationRoutes.tsx` and mounted here by the
        * shared-integration owner.
        *
-       * BEFORE the catch-all, and that is not a style preference: `path: '*'` matches
-       * everything, so a route registered after it can never be reached. Each entry is
+       * Declared BEFORE the catch-all by the same convention as the Product routes above:
+       * react-router 8.3.1 ranks by score, so the catch-all cannot shadow these wherever they
+       * sit. `featureRouteAccess.test.tsx` renders them for reachability and pins the order
+       * structurally. Each entry is
        * gated on its own capability exactly like the Cari ones, and that file fixes the
        * segment order itself — the card's static `lokasyon` segment sits ahead of
        * `:locationId`, so no static segment is read as a record id.
        */
       ...organizationRoutes,
+      /**
+       * The Sales lane's own routes, declared in `src/sales/salesRoutes.tsx` (list, `yeni`, then
+       * `:draftId`) and mounted here by the shared-integration owner (S03 handoff), before the
+       * catch-all. Each is wrapped in `CapabilityRoute`: an unpublished capability reads nothing.
+       */
+      ...salesRoutes,
+      /**
+       * The Manufacturing lane's own routes, declared in
+       * `src/manufacturing/manufacturingRoutes.tsx` and mounted here by the shared-integration
+       * owner (MFG-UI handoff). Each is wrapped in `CapabilityRoute`: the capability is published
+       * (MFG-UI-F), so a route opens only for an actor the registry grants it; for anyone else it
+       * renders the neutral not-found block and reads nothing.
+       */
+      ...manufacturingRoutes,
+      /**
+       * The Finance lane's own routes, declared in `src/finance/financeRoutes.tsx` (receipt list, `yeni`,
+       * `:sourceId`; bank-account list and `yeni`) and mounted here by the shared-integration owner
+       * (FIN-UI-1b handoff), before the catch-all. Each is wrapped in `CapabilityRoute`: the declarations
+       * are published (FIN-UI-1c), so a route opens only for an actor the registry grants it; for anyone
+       * else it closes onto the neutral not-found block.
+       */
+      ...financeRoutes,
+      /**
+       * The Accounting lane's own routes, declared in `src/accounting/accountingRoutes.tsx` (the static
+       * `donemler/yeni` ahead of every parameter route) and mounted here by the shared-integration owner
+       * (ACC-V0b handoff), before the catch-all. Each is wrapped in `CapabilityRoute`: every Accounting
+       * declaration is staged until the acc01 acceptance, so each route closes onto the neutral
+       * not-found block and reads nothing.
+       */
+      ...accountingRoutes,
+      /**
+       * The Logistics lane's own routes, declared in `src/logistics/logisticsRoutes.tsx` (list, `yeni`, then
+       * `:instructionId`) and mounted here by the shared-integration owner (LOG-4b handoff), before the
+       * catch-all. Each is wrapped in `CapabilityRoute`: while the declarations are staged (until the l04
+       * suite), every Logistics route closes onto the neutral not-found block and reads nothing.
+      */
+      ...logisticsRoutes,
+      /**
+       * Purchasing owns the P-03 list/detail and P-04 create route table. Its static `yeni` entry
+       * precedes `:orderId` inside the owner table, and every entry keeps its own capability gate.
+       * The approve child remains a control inside detail and has no route entry here.
+       */
+      ...purchasingRoutes,
+      ...inventoryRoutes,
       {
         /**
          * Catch-all. Without it react-router renders its own error boundary —

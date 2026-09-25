@@ -24,10 +24,30 @@ import {
 import styles from './AppShell.module.css'
 
 /** Every capability the frontend can actually mount, in nav order. */
-const NAV_CAPABILITIES: readonly CapabilityId[] = [
+/** Exported for `navEntryPointInvariant.test.ts`: the nav list and the label table must agree. */
+export const NAV_CAPABILITIES: readonly CapabilityId[] = [
   CAPABILITY.cariPartiesList,
-  CAPABILITY.cariPartiesCreate,
+  /**
+   * `cariPartiesCreate` is deliberately ABSENT, and it is the one removal here that is a decision
+   * rather than a layout fact: K5 (Sinan, 20 Eylül 2026, #66 5748258299) makes creation a single
+   * authorised "Yeni …" action INSIDE the relevant list and names cari among the modules whose
+   * parallel sidebar-create must not be duplicated. C-01 carries that action from this change on,
+   * so the route keeps exactly one entry point — the invariant `TEKNIK_TUZAKLAR §8` states, whose
+   * CHOICE clause K5 narrowed.
+   *
+   * The two moves are in ONE change on purpose: `navEntryPointInvariant.test.ts` warns that
+   * removing an entry without adding its replacement produces a screen reachable from nowhere,
+   * which is the MFG-02 condition that file exists to catch.
+   */
   CAPABILITY.cariAccountsLink,
+  /**
+   * K5 gives Product exactly one sidebar entry: the list. Create remains a mounted,
+   * separately authorised route reached through the list's single create action; the
+   * 360 and editor likewise stay route-only. Product capabilities still come from the
+   * global Product authority, never from a company permission.
+   */
+  CAPABILITY.productItemsList,
+  CAPABILITY.financeManualBankPaymentsList,
   /**
    * Listed together with the route that serves it, on purpose: a nav entry whose route
    * is not mounted is a link to the not-found block. It still renders only where the
@@ -36,6 +56,64 @@ const NAV_CAPABILITIES: readonly CapabilityId[] = [
    * row, never from the sidebar.
    */
   CAPABILITY.organizationSitesList,
+  /**
+   * ORG-03. The sidebar is not one option among several here, it is the ONLY one: the
+   * route stands on `organization.work-centers.read` alone, so a holder of that and not
+   * `organization.locations.read` never opens ORG-01 and could never be linked from it.
+   * Nothing else renders only where the server granted it, as ever.
+   */
+  CAPABILITY.organizationWorkCentersList,
+  /**
+   * Listed together with the routes that serve them (S03). Each renders only where the server's
+   * snapshot carries the capability; the 360 is reached from a row, never from the sidebar.
+   */
+  CAPABILITY.salesDraftsList,
+  CAPABILITY.salesDraftsCreate,
+  /**
+   * MFG-02, listed with the route that serves it (MFG-ORD). It renders only where the server's
+   * snapshot carries the capability; the order detail is reached from a list row, never the sidebar.
+   *
+   * It was MISSING until now, and the gap was invisible: the capability, its route and its label all
+   * existed and `manufacturingMountDrift` asserted the label — but nothing asserted that any nav entry
+   * NAMED it, and nothing in the tree links to `/uretim/emirler`. So a delivered screen could only be
+   * opened by typing the URL, and the order detail sat behind a list nobody could reach (#363 review,
+   * P3-3). The lesson is in the case beside this file: assert the LINK, not the label it would use.
+   */
+  CAPABILITY.manufacturingOrdersList,
+  /**
+   * Listed together with the routes that serve them (FIN-UI-1b / FIN-T06). Each renders only where
+   * the server's snapshot carries the capability; the new draft, the detail and the propose screen
+   * have none. The reversal checker queue is a separate work list and therefore has its own entry.
+   */
+  CAPABILITY.financeReceiptsList,
+  CAPABILITY.financeReceiptsReverseApprove,
+  CAPABILITY.financeBankAccountsList,
+  /**
+   * Listed together with the routes that serve them (ACC-V0b). Each renders only where the server's
+   * snapshot carries the capability — staged until the acc01 acceptance — and the propose screen and
+   * the journal detail are reached from their own list, never from the sidebar.
+   */
+  CAPABILITY.accountingPeriodsList,
+  CAPABILITY.accountingJournalsList,
+  CAPABILITY.accountingPostingQueues,
+  CAPABILITY.inventoryOpeningStockRecord,
+  CAPABILITY.inventoryStockPositionsList,
+  /**
+   * Listed together with the routes that serve them (LOG-4b). Each renders only where the server's
+   * snapshot carries the capability (staged until the l04 suite); the detail is reached from a row.
+   */
+  // The L-03 creation screen is NOT here: the L-02 list carries its own primary link, and the rule
+  // is exactly one entry point per creation route (coordinator, 19 September 2026). Two links with
+  // the same accessible name to one route is what l04's strict-mode violation found, and a screen
+  // reader announces it twice.
+  CAPABILITY.logisticsInstructionsList,
+  /**
+   * P-01 and P-03 are Purchasing's two list entries. Their create actions live inside their lists
+   * under K5, and each detail is reached from a row. Submit and approve are controls inside their
+   * respective details, never routes or navigation items.
+   */
+  CAPABILITY.purchasingRequestsList,
+  CAPABILITY.purchasingOrdersList,
 ]
 
 export function AppShell() {

@@ -23,24 +23,40 @@
 
 import {
   CREATED_STATUS,
+  REPLAY_HEADER,
   OWNER_REFERENCE_FIELDS,
-  REPLAY_STATUS,
   REV_0,
   SALES_DRAFT_PATH,
+  STATE_COMMAND_STATUS,
+  decodeContactInformationOptions,
+  decodeCurrencyOptions,
   decodeDraftDetail,
   decodeDraftMutation,
   decodeDraftPage,
+  decodeDraftRevisions,
   decodeProblem,
+  salesDraftCommercialRevisionPath,
+  salesDraftCommandPath,
   salesDraftDetailPath,
+  salesDraftRevisionsPath,
+  type ApprovalState,
+  type ContactInformationOptions,
+  type CurrencyOption,
   type DeliverySlice,
   type DraftCreateRequest,
+  type DraftCommercialRevisionRequest,
   type DraftDetail,
   type DraftMutation,
   type DraftPage,
+  type DraftRevisions,
+  type DraftStateCommand,
+  type DraftStateCommandRequest,
   type OwnerReference,
 } from './contract'
 import type { OrderCommandOutcome } from './orderAttempt'
 import type { ViewOutcome } from '../shell/uiState'
+import type { OrderDraftOptions } from './orderDraftForm'
+import { isReferenceId } from './wirePrimitives'
 
 export const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '/api/v1'
 const DEV_USER = (import.meta.env.VITE_DEV_USER as string | undefined) ?? 'company-a-user'
@@ -54,7 +70,12 @@ function headers(companyId: string): Record<string, string> {
 }
 
 type Raw =
-  | { readonly status: number; readonly body: unknown; readonly location: string | null }
+  | {
+      readonly status: number
+      readonly body: unknown
+      readonly location: string | null
+      readonly replayed: boolean
+    }
   | { readonly failure: 'aborted' | 'offline' | 'unreachable' }
 
 async function request(path: string, init: RequestInit, signal: AbortSignal | undefined): Promise<Raw> {
@@ -73,7 +94,12 @@ async function request(path: string, init: RequestInit, signal: AbortSignal | un
     if (signal?.aborted) return { failure: 'aborted' }
     body = null
   }
-  return { status: response.status, body, location: response.headers.get('Location') }
+  return {
+    status: response.status,
+    body,
+    location: response.headers.get('Location'),
+    replayed: response.headers.get(REPLAY_HEADER) === 'true',
+  }
 }
 
 /* ── Reads ────────────────────────────────────────────────────────────────── */
@@ -91,9 +117,12 @@ export async function fetchDraftPage(
   cursor: string | null,
   companyId: string,
   signal?: AbortSignal,
+  approvalState: ApprovalState | null = null,
 ): Promise<ViewOutcome<DraftPage>> {
   const params = new URLSearchParams({ pageSize: String(PAGE_SIZE) })
   if (cursor !== null) params.set('cursor', cursor)
+  // SALES-A1: an exact approval state narrows the list on the server; no client-side filtering.
+  if (approvalState !== null) params.set('approvalState', approvalState)
   const raw = await request(`${SALES_DRAFT_PATH}?${params.toString()}`, { headers: headers(companyId) }, signal)
   if ('failure' in raw) return readFailure(raw.failure)
   if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
@@ -114,6 +143,231 @@ export async function fetchDraftDetail(
   const detail = decodeDraftDetail(raw.body, draftId)
   if (detail === null || detail.draft.companyId !== companyId) return { type: 'malformed' }
   return { type: 'ok-single', data: detail }
+}
+
+/** Read-only history: authority and company filtering remain on the existing server endpoint. */
+export async function fetchDraftRevisions(
+  draftId: string,
+  companyId: string,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<DraftRevisions>> {
+  const raw = await request(salesDraftRevisionsPath(draftId), { headers: headers(companyId) }, signal)
+  if ('failure' in raw) return readFailure(raw.failure)
+  if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
+  // Unlike detail, this wire has no company/id member to compare. Keep the read
+  // tied to its request and context namespace; never fabricate a response binding.
+  const history = decodeDraftRevisions(raw.body)
+  return history === null ? { type: 'malformed' } : { type: 'ok-single', data: history }
+}
+
+/* ── Reference options (S03) ─────────────────────────────────────────────── */
+
+/**
+ * The Sales reference routes on main: `/sales/references/accounts` is a LIST (the Cari owner's
+ * authorized party accounts, bound to `sales.drafts.create`); `/sales/references/currency` and
+ * `/sales/references/product` VALIDATE one chosen id for a business date and offer no list. So only
+ * the accounts options can be read from the real API. SALES-A2a adds the currency and contact lists;
+ * Product E1 adds the bounded product candidate search consumed by the create form.
+ */
+export const SALES_REFERENCE_ACCOUNTS_PATH = '/sales/references/accounts'
+
+export type AccountOption = OrderDraftOptions['accounts'][number]
+
+export type AccountOptionsOutcome =
+  | { readonly type: 'ready'; readonly accounts: readonly AccountOption[]; readonly nextCursor: string | null }
+  | { readonly type: 'http'; readonly status: number; readonly code: string | null }
+  | { readonly type: 'network' }
+  | { readonly type: 'malformed' }
+
+/** What the accounts read was asked for: the server's own search (`q`, ≤200 runes, matched server-side) and its cursor. */
+export interface AccountQuery {
+  readonly q?: string
+  readonly cursor?: string
+}
+
+function decodeAccountOptions(value: unknown, companyId: string): { readonly accounts: readonly AccountOption[]; readonly nextCursor: string | null } | null {
+  if (typeof value !== 'object' || value === null) return null
+  const o = value as Record<string, unknown>
+  if (o.companyId !== companyId || !Array.isArray(o.accounts)) return null
+  if (o.nextCursor !== null && o.nextCursor !== undefined && typeof o.nextCursor !== 'string') return null
+  const accounts: AccountOption[] = []
+  for (const item of o.accounts) {
+    if (typeof item !== 'object' || item === null) return null
+    const a = item as Record<string, unknown>
+    if (!isReferenceId(a.partyId) || !isReferenceId(a.companyAccountId)) return null
+    if (typeof a.label !== 'string' || a.label.trim() === '' || a.label.length > 400) return null
+    accounts.push({ partyId: a.partyId, companyAccountId: a.companyAccountId, label: a.label })
+  }
+  return { accounts, nextCursor: typeof o.nextCursor === 'string' && o.nextCursor.length > 0 ? o.nextCursor : null }
+}
+
+/** The first page of the Cari owner's authorized accounts for the form's customer select; never a default. */
+export async function fetchAccountOptions(companyId: string, signal?: AbortSignal, query: AccountQuery = {}): Promise<AccountOptionsOutcome> {
+  // One page of the Cari owner's authorized accounts. `q` is the API's own search, sent as typed (trimmed) and matched
+  // by the SERVER; `cursor` is the previous page's, sent back unchanged. The client filters nothing itself (#361: a
+  // company with more than one page of customers could not reach the rest from the first page alone).
+  const params = new URLSearchParams({ pageSize: String(PAGE_SIZE) })
+  const q = query.q?.trim() ?? ''
+  if (q !== '') params.set('q', q)
+  if (query.cursor !== undefined && query.cursor !== '') params.set('cursor', query.cursor)
+  const raw = await request(`${SALES_REFERENCE_ACCOUNTS_PATH}?${params.toString()}`, { headers: headers(companyId) }, signal)
+  if ('failure' in raw) return { type: 'network' }
+  if (raw.status !== 200) {
+    const problem = decodeProblem(raw.body, raw.status)
+    return { type: 'http', status: raw.status, code: problem?.code ?? null }
+  }
+  const page = decodeAccountOptions(raw.body, companyId)
+  return page === null ? { type: 'malformed' } : { type: 'ready', accounts: page.accounts, nextCursor: page.nextCursor }
+}
+
+/* ── SALES-A2a: the two LIST reads of the create form's selects ───────────── */
+
+/**
+ * `/sales/references/currencies` LISTS the company's currencies usable for a sales draft on a business
+ * date (the Settings owner's candidates, each revalidated by the Sales owner); `/sales/references/
+ * contact-information` LISTS the Cari owner's active delivery addresses and contact persons of one party
+ * account. Both are bound to `sales.drafts.create` on the server. Products still have no list (E1).
+ */
+export const SALES_REFERENCE_CURRENCIES_PATH = '/sales/references/currencies'
+export const SALES_REFERENCE_CONTACT_INFORMATION_PATH = '/sales/references/contact-information'
+export const SALES_REFERENCE_PRODUCTS_PATH = '/sales/references/products'
+
+/** One shape for every reference list read: the real answer, never a default. */
+export type ReferenceListOutcome<T> =
+  | { readonly type: 'ready'; readonly data: T }
+  | { readonly type: 'http'; readonly status: number; readonly code: string | null }
+  | { readonly type: 'network' }
+  | { readonly type: 'malformed' }
+
+async function readReferenceList<T>(
+  path: string,
+  companyId: string,
+  decode: (body: unknown) => T | null,
+  signal: AbortSignal | undefined,
+): Promise<ReferenceListOutcome<T>> {
+  const raw = await request(path, { headers: headers(companyId) }, signal)
+  if ('failure' in raw) return { type: 'network' }
+  if (raw.status !== 200) {
+    const problem = decodeProblem(raw.body, raw.status)
+    return { type: 'http', status: raw.status, code: problem?.code ?? null }
+  }
+  const data = decode(raw.body)
+  return data === null ? { type: 'malformed' } : { type: 'ready', data }
+}
+
+export type CurrencyOptionsOutcome = ReferenceListOutcome<readonly CurrencyOption[]>
+
+/** The currencies usable on `effectiveOn` (the form's business date); an empty list is "none", not an error. */
+export function fetchCurrencyOptions(effectiveOn: string, companyId: string, signal?: AbortSignal): Promise<CurrencyOptionsOutcome> {
+  const params = new URLSearchParams({ effectiveOn })
+  return readReferenceList(
+    `${SALES_REFERENCE_CURRENCIES_PATH}?${params.toString()}`,
+    companyId,
+    (body) => decodeCurrencyOptions(body, companyId, effectiveOn),
+    signal,
+  )
+}
+
+export type ContactInformationOutcome = ReferenceListOutcome<ContactInformationOptions>
+
+/** The chosen account's active addresses and contacts; empty lists mean the owner lists none. */
+export function fetchContactInformationOptions(
+  partyId: string,
+  companyAccountId: string,
+  companyId: string,
+  signal?: AbortSignal,
+): Promise<ContactInformationOutcome> {
+  const params = new URLSearchParams({ partyId, companyAccountId })
+  return readReferenceList(
+    `${SALES_REFERENCE_CONTACT_INFORMATION_PATH}?${params.toString()}`,
+    companyId,
+    (body) => decodeContactInformationOptions(body, companyId, partyId, companyAccountId),
+    signal,
+  )
+}
+
+export type ProductOption = OrderDraftOptions['products'][number]
+
+export interface ProductOffer {
+  readonly items: readonly ProductOption[]
+  /** True means only the bounded search window was returned, not that more items are definitely usable. */
+  readonly searchWindowFull: boolean
+}
+
+export type ProductOptionsOutcome = ReferenceListOutcome<ProductOffer>
+
+const PRODUCT_CANDIDATE_LIMIT = 25
+const isOwnerVersion = (value: unknown): value is string =>
+  typeof value === 'string' && /^[1-9]\d*$/u.test(value)
+const isCandidateText = (value: unknown): value is string =>
+  typeof value === 'string' && value.trim() !== '' && value.length <= 400
+const hasExactMembers = (value: Record<string, unknown>, expected: readonly string[]) =>
+  Object.keys(value).length === expected.length && expected.every((name) => Object.hasOwn(value, name))
+
+function decodeProductOffer(value: unknown): ProductOffer | null {
+  if (typeof value !== 'object' || value === null) return null
+  const root = value as Record<string, unknown>
+  if (!hasExactMembers(root, ['items', 'searchWindowFull']) || !Array.isArray(root.items) || typeof root.searchWindowFull !== 'boolean') return null
+  const products: ProductOption[] = []
+  const productIds = new Set<string>()
+  for (const item of root.items) {
+    if (typeof item !== 'object' || item === null) return null
+    const product = item as Record<string, unknown>
+    if (!hasExactMembers(product, ['productId', 'productVersion', 'code', 'name', 'orderUnits'])) return null
+    if (!isReferenceId(product.productId) || productIds.has(product.productId) || !isOwnerVersion(product.productVersion)) return null
+    if (!isCandidateText(product.code) || !isCandidateText(product.name) || !Array.isArray(product.orderUnits)) return null
+    const units: ProductOption['orderUnits'][number][] = []
+    const unitIds = new Set<string>()
+    for (const itemUnit of product.orderUnits) {
+      if (typeof itemUnit !== 'object' || itemUnit === null) return null
+      const unit = itemUnit as Record<string, unknown>
+      if (!hasExactMembers(unit, ['unitId', 'code', 'profileId', 'profileVersion'])) return null
+      if (!isReferenceId(unit.unitId) || unitIds.has(unit.unitId) || !isCandidateText(unit.code)) return null
+      if (!isReferenceId(unit.profileId) || !isOwnerVersion(unit.profileVersion)) return null
+      unitIds.add(unit.unitId)
+      units.push({
+        unitId: unit.unitId,
+        code: unit.code,
+        label: unit.code,
+        profileId: unit.profileId,
+        profileVersion: unit.profileVersion,
+      })
+    }
+    productIds.add(product.productId)
+    products.push({
+      productId: product.productId,
+      productVersion: product.productVersion,
+      code: product.code,
+      name: product.name,
+      label: `${product.code} — ${product.name}`,
+      orderUnits: units,
+    })
+  }
+  return { items: products, searchWindowFull: root.searchWindowFull }
+}
+
+/** Product owner's bounded operational candidates for this company/date/search. Save-time exact validation remains separate. */
+export async function fetchProductOptions(
+  effectiveOn: string,
+  companyId: string,
+  signal?: AbortSignal,
+  q = '',
+): Promise<ProductOptionsOutcome> {
+  const params = new URLSearchParams({ effectiveOn, limit: String(PRODUCT_CANDIDATE_LIMIT) })
+  const search = q.trim()
+  if (search !== '') params.set('q', search)
+  const raw = await request(
+    `${SALES_REFERENCE_PRODUCTS_PATH}?${params.toString()}`,
+    { headers: headers(companyId), cache: 'no-store' },
+    signal,
+  )
+  if ('failure' in raw) return { type: 'network' }
+  if (raw.status !== 200) {
+    const problem = decodeProblem(raw.body, raw.status)
+    return { type: 'http', status: raw.status, code: problem?.code ?? null }
+  }
+  const data = decodeProductOffer(raw.body)
+  return data === null ? { type: 'malformed' } : { type: 'ready', data }
 }
 
 /* ── Create ───────────────────────────────────────────────────────────────── */
@@ -213,19 +467,116 @@ export async function createDraft(
     if (raw.failure === 'offline') return { type: 'offline' }
     return { type: 'network-error' }
   }
-  if (raw.status !== CREATED_STATUS && raw.status !== REPLAY_STATUS) {
+  if (raw.status !== CREATED_STATUS) {
+    // Any other 2xx is outside the contract: the draft may exist, so the outcome is unknown.
+    if (raw.status >= 200 && raw.status < 300) return { type: 'malformed' }
     return { type: 'http', status: raw.status, problem: decodeProblem(raw.body, raw.status) }
   }
   const mutation = decodeDraftMutation(raw.body)
   if (
     mutation === null ||
-    // 201 is the first commit, 200 the replay of the same accepted attempt. A
-    // disagreement means this client cannot say which one happened.
-    mutation.isReplay !== (raw.status === REPLAY_STATUS) ||
+    // 201 both times; the replay of the same accepted attempt carries Idempotency-Replayed and
+    // says so in the body. A disagreement means this client cannot say which one happened.
+    mutation.isReplay !== raw.replayed ||
     !describesAttempt(mutation, payload, context.companyId) ||
-    (raw.status === CREATED_STATUS &&
-      raw.location !== null &&
+    (raw.location !== null &&
       !raw.location.endsWith(`/api/v1${salesDraftDetailPath(mutation.detail.draft.id)}`))
+  ) {
+    return { type: 'malformed' }
+  }
+  return { type: 'succeeded', data: mutation }
+}
+
+/* ── SALES-A1: internal approval commands ─────────────────────────────────── */
+
+export interface CommandContext {
+  readonly idempotencyKey: string
+  /** The company frozen with the attempt, not whatever the shell holds at retry time. */
+  readonly companyId: string
+  /** The draft the command was sent for; an answer about another record is not this command's. */
+  readonly draftId: string
+}
+
+/**
+ * One state command (submission / approval / rejection): 200 with the draft after the transition
+ * is the pinned success; the same key again is 200 + `Idempotency-Replayed`, told apart by the
+ * header and `isReplay` agreeing. The answer must describe THIS draft under THIS company, or the
+ * outcome is unknown and the key is kept (the transition may have been recorded).
+ */
+export async function sendDraftCommand(
+  command: DraftStateCommand,
+  payload: DraftStateCommandRequest,
+  context: CommandContext,
+  signal?: AbortSignal,
+): Promise<OrderCommandOutcome<DraftMutation>> {
+  const raw = await request(
+    salesDraftCommandPath(context.draftId, command),
+    {
+      method: 'POST',
+      headers: {
+        ...headers(context.companyId),
+        'Content-Type': 'application/json',
+        'Idempotency-Key': context.idempotencyKey,
+      },
+      body: JSON.stringify(payload),
+    },
+    signal,
+  )
+  if ('failure' in raw) {
+    if (raw.failure === 'aborted') return { type: 'aborted' }
+    if (raw.failure === 'offline') return { type: 'offline' }
+    return { type: 'network-error' }
+  }
+  if (raw.status !== STATE_COMMAND_STATUS) {
+    if (raw.status >= 200 && raw.status < 300) return { type: 'malformed' }
+    return { type: 'http', status: raw.status, problem: decodeProblem(raw.body, raw.status) }
+  }
+  const mutation = decodeDraftMutation(raw.body)
+  if (
+    mutation === null ||
+    mutation.isReplay !== raw.replayed ||
+    mutation.detail.draft.id !== context.draftId ||
+    mutation.detail.draft.companyId !== context.companyId
+  ) {
+    return { type: 'malformed' }
+  }
+  return { type: 'succeeded', data: mutation }
+}
+
+/** K3 commercial revision: the same keyed-attempt and strict response rules as every Sales mutation. */
+export async function sendDraftCommercialRevision(
+  payload: DraftCommercialRevisionRequest,
+  context: CommandContext,
+  signal?: AbortSignal,
+): Promise<OrderCommandOutcome<DraftMutation>> {
+  const raw = await request(
+    salesDraftCommercialRevisionPath(context.draftId),
+    {
+      method: 'POST',
+      headers: {
+        ...headers(context.companyId),
+        'Content-Type': 'application/json',
+        'Idempotency-Key': context.idempotencyKey,
+      },
+      body: JSON.stringify(payload),
+    },
+    signal,
+  )
+  if ('failure' in raw) {
+    if (raw.failure === 'aborted') return { type: 'aborted' }
+    if (raw.failure === 'offline') return { type: 'offline' }
+    return { type: 'network-error' }
+  }
+  if (raw.status !== STATE_COMMAND_STATUS) {
+    if (raw.status >= 200 && raw.status < 300) return { type: 'malformed' }
+    return { type: 'http', status: raw.status, problem: decodeProblem(raw.body, raw.status) }
+  }
+  const mutation = decodeDraftMutation(raw.body)
+  if (
+    mutation === null ||
+    mutation.isReplay !== raw.replayed ||
+    mutation.detail.draft.id !== context.draftId ||
+    mutation.detail.draft.companyId !== context.companyId
   ) {
     return { type: 'malformed' }
   }

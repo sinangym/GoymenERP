@@ -23,12 +23,19 @@ public sealed partial class OpenApiContractGenerationTests
         new("get", "/api/v1/products/{id}", "GetProductV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json"),
             ParameterValues: ["path:id:true:type:string;format:uuid"]),
+        new("get", "/api/v1/products/{id}/history", "GetProductHistoryV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json"),
+            ParameterValues: ["path:id:true:type:string;format:uuid"]),
         new("post", "/api/v1/products", "CreateProductDraftV1",
             AuthenticatedResponses("201:application/json", "400:application/problem+json", "409:application/problem+json", "415:", "503:application/problem+json"),
             "#/components/schemas/CreateProductDraftRequest"),
         new("patch", "/api/v1/products/{id}/draft", "EditProductDraftV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:", "503:application/problem+json"),
             "#/components/schemas/EditProductDraftRequest", ["path:id:true:type:string;format:uuid"]),
+        // DEC-PRD-010 (#329): the Draft -> Active card approval.
+        new("post", "/api/v1/products/{id}/activation", "ActivateProductV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:", "503:application/problem+json"),
+            "#/components/schemas/ActivateProductRequest", ["path:id:true:type:string;format:uuid"]),
     ];
 
     private static readonly IReadOnlyDictionary<string, string> ProductSuccessSchemas = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -37,8 +44,10 @@ public sealed partial class OpenApiContractGenerationTests
         ["GetProductCodeGroupsV1"] = "array:ProductCodeGroup",
         ["GetProductReferenceOptionsV1"] = "ref:ProductReferenceOptions",
         ["GetProductV1"] = "ref:ProductCardView",
+        ["GetProductHistoryV1"] = "ref:ProductHistoryView",
         ["CreateProductDraftV1"] = "ref:ProductMutationResponse",
         ["EditProductDraftV1"] = "ref:ProductMutationResponse",
+        ["ActivateProductV1"] = "ref:ProductMutationResponse",
     };
 
     private static bool IsProductOperation(string id) => ProductSuccessSchemas.ContainsKey(id);
@@ -95,7 +104,8 @@ public sealed partial class OpenApiContractGenerationTests
                     ? ["company_context_invalid", "correlation_metadata_invalid", "invalid_cursor", "validation_failed"]
                     : ["company_context_invalid", "correlation_metadata_invalid", "validation_failed"],
                 401 => ["authentication_required"], 404 => ["not_found"],
-                409 => expected.Method == "patch" ? ["idempotency_conflict", "lifecycle_conflict", "version_conflict"] : ["idempotency_conflict"],
+                409 => expected.OperationId is "EditProductDraftV1" or "ActivateProductV1"
+                    ? ["idempotency_conflict", "lifecycle_conflict", "version_conflict"] : ["idempotency_conflict"],
                 500 => ["internal_error"], 503 => ["product_write_contention"], _ => [],
             };
             Assert.Equal(codes.Length > 0, response.Value.TryGetProperty("x-erp-problem-codes", out var actualCodes));
@@ -113,6 +123,14 @@ public sealed partial class OpenApiContractGenerationTests
             ["ProductPage"] = ObjectSchema(["items", "nextCursor"], ("items", "type:array;items:ref:ProductDraftView"), ("nextCursor", "type:null|string")),
             ["ProductCodeGroup"] = ObjectSchema(["id", "name", "prefix"], ("id", "type:string;format:uuid"), ("name", "type:string"), ("prefix", "type:string")),
             ["ProductMutationResponse"] = ObjectSchema(["card", "isReplay"], ("card", "ref:ProductCardView"), ("isReplay", "type:boolean")),
+            ["ProductHistoryView"] = ObjectSchema(["productId", "entries", "truncated"],
+                ("productId", "type:string;format:uuid"), ("entries", "type:array;items:ref:ProductHistoryEntryView"),
+                ("truncated", "type:boolean")),
+            ["ProductHistoryEntryView"] = ObjectSchema(["eventId", "operation", "occurredAtUtc", "versionBefore", "versionAfter", "reason", "changedFields"],
+                ("eventId", "type:string;format:uuid"), ("operation", "type:string"),
+                ("occurredAtUtc", "type:string;format:date-time"), ("versionBefore", "type:null|string"),
+                ("versionAfter", "type:string"), ("reason", "type:string"),
+                ("changedFields", "type:array;items:type:string")),
             ["ProductCardView"] = ObjectSchema(["product", "references"], ("product", "ref:ProductDraftView"), ("references", "ref:ProductReferences"), ("completeness", "ref:ProductCompletenessView")),
             ["ProductDraftView"] = ObjectSchema(["id", "code", "name", "groupId", "classId", "familyId", "roles", "lifecycle", "version", "createdAtUtc", "updatedAtUtc", "labels", "completeness"],
                 ("id", "type:string;format:uuid"), ("code", "type:string"), ("name", "type:string"), ("groupId", "type:string;format:uuid"),
@@ -124,7 +142,11 @@ public sealed partial class OpenApiContractGenerationTests
             ["ProductRoleView"] = ObjectSchema(["value", "provenance"], ("value", "type:boolean|null"), ("provenance", "type:string")),
             ["ProductCompletenessView"] = ObjectSchema(["evaluation", "missingFields"], ("evaluation", "type:string"), ("missingFields", "type:array;items:type:string")),
             ["ProductReferenceLabels"] = ObjectSchema(["group", "class", "family", "primaryStockUnit"],
-                ("group", "type:null|string"), ("class", "type:null|string"), ("family", "type:null|string"), ("primaryStockUnit", "type:null|string")),
+                ("group", "type:null|string"), ("class", "type:null|string"), ("family", "type:null|string"), ("primaryStockUnit", "type:null|string"),
+                ("template", "type:null|string"), ("familyFacts", "oneOf:ref:ProductFamilyFactsLabels|type:null"),
+                ("attributes", "type:null|object"), ("units", "type:null|object")),
+            ["ProductFamilyFactsLabels"] = ObjectSchema(["cins", "tur", "tip"],
+                ("cins", "type:string"), ("tur", "type:string"), ("tip", "type:string")),
             ["ProductReferences"] = ObjectSchema([], ("templateId", "type:null|string;format:uuid"), ("templateVersion", "type:null|string"),
                 ("attributes", "type:null|object"), ("units", "oneOf:ref:ProductUnitReferences|type:null"), ("trackingPolicyId", "type:null|string;format:uuid")),
             ["ProductUnitReferences"] = ObjectSchema([], new[] { "stock", "purchase", "sales", "price", "production", "package" }.Select(name => (name, "type:null|string;format:uuid")).ToArray()),
@@ -132,10 +154,25 @@ public sealed partial class OpenApiContractGenerationTests
                 ("groupId", "type:string;format:uuid"), ("classId", "type:null|string;format:uuid"),
                 ("classes", "type:array;items:ref:ProductReferenceOption"), ("families", "type:array;items:ref:ProductReferenceOption"),
                 ("units", "type:array;items:ref:ProductUnitOption"), ("trackingPolicies", "type:array;items:ref:ProductReferenceOption"),
-                ("templates", "type:array;items:ref:ProductTemplateOption"), ("unavailableCatalogs", "type:array;items:type:string")),
+                ("templates", "type:array;items:ref:ProductTemplateOption"), ("unavailableCatalogs", "type:array;items:type:string"),
+                ("familyFacts", "type:array|null;items:ref:ProductFamilyFactsOption"),
+                ("dictionaries", "type:array|null;items:ref:ProductDictionaryOption")),
             ["ProductReferenceOption"] = ObjectSchema(["id", "displayName"], ("id", "type:string;format:uuid"), ("displayName", "type:string")),
             ["ProductUnitOption"] = ObjectSchema(["id", "displayName", "symbol", "isKilogram"], ("id", "type:string;format:uuid"), ("displayName", "type:string"), ("symbol", "type:string"), ("isKilogram", "type:boolean")),
-            ["ProductTemplateOption"] = ObjectSchema(["id", "version", "displayName"], ("id", "type:string;format:uuid"), ("version", "type:string"), ("displayName", "type:string")),
+            ["ProductTemplateOption"] = ObjectSchema(["id", "version", "displayName"], ("id", "type:string;format:uuid"), ("version", "type:string"), ("displayName", "type:string"),
+                ("fields", "type:array|null;items:ref:ProductTemplateFieldOption")),
+            ["ProductTemplateFieldOption"] = ObjectSchema(["key", "kind", "role", "required", "dictionary", "allowsCandidate", "appliesWhenField", "appliesWhenCode", "parentField"],
+                ("key", "type:string"), ("kind", "type:string"), ("role", "type:null|string"), ("required", "type:boolean"),
+                ("dictionary", "type:null|string"), ("allowsCandidate", "type:boolean"), ("appliesWhenField", "type:null|string"),
+                ("appliesWhenCode", "type:null|string"), ("parentField", "type:null|string")),
+            ["ProductDictionaryOption"] = ObjectSchema(["name", "entries"], ("name", "type:string"),
+                ("entries", "type:array;items:ref:ProductDictionaryEntryOption")),
+            ["ProductDictionaryEntryOption"] = ObjectSchema(["code", "displayName", "status", "parentCode", "isExplicitNone", "massGm2"],
+                ("code", "type:string"), ("displayName", "type:string"), ("status", "type:string"), ("parentCode", "type:null|string"),
+                ("isExplicitNone", "type:boolean"), ("massGm2", "type:null|number|string;format:double")),
+            ["ProductFamilyFactsOption"] = ObjectSchema(["id", "code", "displayName", "cins", "tur", "tip", "templateId", "templateVersion"],
+                ("id", "type:string;format:uuid"), ("code", "type:string"), ("displayName", "type:string"), ("cins", "type:string"),
+                ("tur", "type:string"), ("tip", "type:string"), ("templateId", "type:null|string;format:uuid"), ("templateVersion", "type:null|string")),
         };
         AssertComponentSchemaMatrix(schemas, expected);
         var queue = new Queue<string>(ProductSuccessSchemas.Values.Select(value => value[(value.IndexOf(':') + 1)..]));
@@ -147,10 +184,19 @@ public sealed partial class OpenApiContractGenerationTests
         }
         Assert.Equal(expected.Keys.Order(StringComparer.Ordinal), reachable.Order(StringComparer.Ordinal));
         AssertPositiveIntegerStringVersion(schemas, "ProductDraftView");
+        var historyEntry = schemas.GetProperty("ProductHistoryEntryView").GetProperty("properties");
+        foreach (var field in new[] { "versionBefore", "versionAfter" })
+        {
+            var version = historyEntry.GetProperty(field);
+            Assert.Equal(1, version.GetProperty("minLength").GetInt32());
+            Assert.Equal(19, version.GetProperty("maxLength").GetInt32());
+            Assert.Equal(ErpOpenApiContract.PositiveIntegerStringPattern, version.GetProperty("pattern").GetString());
+        }
         AssertRequestSchema(schemas.GetProperty("CreateProductDraftRequest"), ["name", "groupId"], ["classId", "familyId", "roles", "references"],
             ["name", "groupId", "classId", "familyId", "roles", "references"]);
         AssertRequestSchema(schemas.GetProperty("EditProductDraftRequest"), ["expectedVersion", "changes", "reason"], [], ["expectedVersion", "changes", "reason"]);
-        foreach (var name in new[] { "CreateProductDraftRequest", "EditProductDraftRequest", "ProductDraftChanges", "ProductReferenceChanges", "ProductUnitChanges", "ProductRoleInputs", "ProductRoleInput" })
+        AssertRequestSchema(schemas.GetProperty("ActivateProductRequest"), ["expectedVersion"], [], ["expectedVersion"]);
+        foreach (var name in new[] { "CreateProductDraftRequest", "EditProductDraftRequest", "ActivateProductRequest", "ProductDraftChanges", "ProductReferenceChanges", "ProductUnitChanges", "ProductRoleInputs", "ProductRoleInput" })
             Assert.False(schemas.GetProperty(name).GetProperty("additionalProperties").GetBoolean());
         var changes = schemas.GetProperty("ProductDraftChanges");
         Assert.Equal(1, changes.GetProperty("minProperties").GetInt32());
@@ -163,10 +209,14 @@ public sealed partial class OpenApiContractGenerationTests
             Assert.Equal("#/components/schemas/" + target, Assert.Single(schemas.GetProperty(optional).GetProperty("allOf").EnumerateArray()).GetProperty("$ref").GetString());
         Assert.Equal("object", Assert.Single(schemas.GetProperty("OptionalOfIReadOnlyDictionaryOfstringAndJsonElement").GetProperty("allOf").EnumerateArray()).GetProperty("type").GetString());
         Assert.Equal(2, schemas.GetProperty("ProductRoleInput").GetProperty("oneOf").GetArrayLength());
-        var version = schemas.GetProperty("EditProductDraftRequest").GetProperty("properties").GetProperty("expectedVersion");
-        Assert.Equal("string", version.GetProperty("type").GetString());
-        Assert.Equal(19, version.GetProperty("maxLength").GetInt32());
-        Assert.Equal(ErpOpenApiContract.PositiveIntegerStringPattern, version.GetProperty("pattern").GetString());
+        foreach (var request in new[] { "EditProductDraftRequest", "ActivateProductRequest" })
+        {
+            var version = schemas.GetProperty(request).GetProperty("properties").GetProperty("expectedVersion");
+            Assert.Equal("string", version.GetProperty("type").GetString());
+            Assert.Equal(1, version.GetProperty("minLength").GetInt32());
+            Assert.Equal(19, version.GetProperty("maxLength").GetInt32());
+            Assert.Equal(ErpOpenApiContract.PositiveIntegerStringPattern, version.GetProperty("pattern").GetString());
+        }
         var problem = schemas.GetProperty("ProductRuntimeProblemContract");
         Assert.Equal(["status", "title", "type"], problem.GetProperty("required").EnumerateArray().Select(value => value.GetString()).Order(StringComparer.Ordinal));
         Assert.False(problem.GetProperty("properties").TryGetProperty("conflict", out _));

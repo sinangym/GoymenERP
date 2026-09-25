@@ -29,6 +29,8 @@ function gate(capability: SalesCapabilityId, children: ReactNode) {
 export const salesRoutes: RouteObject[] = [
   { path: SALES_ROUTE.list.slice(1), element: gate(SALES_CAPABILITY.draftsList, <SalesDraftListPage />) },
   // Static `yeni` before `:draftId`, so it is never read as a record id.
+  // The create form reads its options from the real Sales reference routes (S03): the context's
+  // default source is the real one; a test or an isolated screen provides its own.
   { path: SALES_ROUTE.create.slice(1), element: gate(SALES_CAPABILITY.draftsCreate, <SalesDraftCreatePage />) },
   { path: SALES_ROUTE.detail.slice(1), element: gate(SALES_CAPABILITY.draftsDetail, <SalesDraftDetailPage />) },
 ]

@@ -11,7 +11,20 @@
     "c01:ci": "playwright test",
     "c01:local": "playwright test --reporter=list",
     "sab:ci": "playwright test --config playwright.sab.config.ts",
-    "activation:ci": "playwright test --config playwright.activation.config.ts"
+    "activation:ci": "playwright test --config playwright.activation.config.ts",
+    "browser:smoke:ci": "playwright test --config playwright.browser-smoke.config.ts",
+    "browser:c03:ci": "playwright test --config playwright.cari-c03.config.ts",
+    "browser:s03:ci": "playwright test --config playwright.sales-s03.config.ts",
+    "browser:u02:ci": "playwright test --config playwright.product-u02.config.ts",
+    "browser:mfg:ci": "playwright test --config playwright.browser-mfg.config.ts",
+    "browser:fin01:ci": "playwright test --config playwright.finance-fin01.config.ts",
+    "browser:s04:ci": "playwright test --config playwright.sales-s04.config.ts",
+    "browser:acc01:ci": "playwright test --config playwright.accounting-acc01.config.ts",
+    "browser:l04:ci": "playwright test --config playwright.logistics-l04.config.ts",
+    "browser:pur01:ci": "playwright test --config playwright.purchasing-pur01.config.ts",
+    "browser:r14:ci": "playwright test --config playwright.inventory-r14.config.ts",
+    "browser:org03:ci": "playwright test --config playwright.organization-org03.config.ts",
+    "browser:c02:ci": "playwright test --config playwright.cari-c02.config.ts"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",

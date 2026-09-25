@@ -95,6 +95,29 @@ public sealed class Product
         Version = nextVersion;
     }
 
+    /// <summary>
+    /// DEC-PRD-010: a Draft card is approved for firm use. Only Draft becomes Active, at the version
+    /// the approver read. Completeness is not a precondition here (no source makes it one); the
+    /// operational eligibility reads still judge the whole card at the moment of use.
+    /// </summary>
+    public void Activate(long expectedVersion, DateTimeOffset now)
+    {
+        if (expectedVersion != Version)
+        {
+            throw new ProductVersionConflictException(expectedVersion, Version);
+        }
+
+        if (Lifecycle != ProductLifecycle.Draft)
+        {
+            throw new InvalidOperationException("Yalnız taslak ürün kartı onaylanabilir.");
+        }
+
+        var nextVersion = checked(Version + 1);
+        Lifecycle = ProductLifecycle.Active;
+        UpdatedAtUtc = now.ToUniversalTime();
+        Version = nextVersion;
+    }
+
     private static void PreserveDerived(ProductRoleState before, ProductRoleState after)
     {
         if (before.Provenance == ProductRoleProvenance.Derived && before != after)

@@ -18,9 +18,20 @@ export const SALES_CAPABILITY = {
   draftsDetail: 'sales.drafts.detail',
   /** S-03 yeni satış siparişi taslağı. */
   draftsCreate: 'sales.drafts.create',
+  /**
+   * SALES-A1: the approve / reject CONTROL on the S-04 detail (a control of `draftsDetail`, not a
+   * route: the shell publishes it only to an actor holding `sales.orders.approve` beside the read).
+   * The submit button follows `draftsCreate`. The route of this control is the detail's own.
+   */
+  ordersApprove: 'sales.orders.approve',
 } as const
 
-export type SalesCapabilityId = (typeof SALES_CAPABILITY)[keyof typeof SALES_CAPABILITY]
+/** K3: the commercial-revision CONTROL on S-04; separate from every routed Sales screen. */
+export const SALES_PRICE_WRITE_CAPABILITY = 'sales.orders.price.write' as const
+
+export type SalesCapabilityId =
+  | (typeof SALES_CAPABILITY)[keyof typeof SALES_CAPABILITY]
+  | typeof SALES_PRICE_WRITE_CAPABILITY
 
 export const SALES_ROUTE = {
   list: '/satis/siparisler',

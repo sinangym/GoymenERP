@@ -66,6 +66,9 @@ public sealed record GroupSharedAuditEventEnvelope(
                 && EntityVersionBefore is null && EntityVersionAfter == 1,
             "DraftBasicEdit" => EventType == "product.draft.basic-edited.v1" && PermissionCode == "product.draft.edit"
                 && EntityVersionBefore is >= 1 and < long.MaxValue && EntityVersionAfter == EntityVersionBefore + 1,
+            // #329 (DEC-PRD-010): the card approval raises the version by one, like the draft edit.
+            "Activate" => EventType == "product.card.activated.v1" && PermissionCode == "product.card.activate"
+                && EntityVersionBefore is >= 1 and < long.MaxValue && EntityVersionAfter == EntityVersionBefore + 1,
             _ => false,
         };
         if (!validOperation) throw new ArgumentException("The Product audit operation/version transition is invalid.");

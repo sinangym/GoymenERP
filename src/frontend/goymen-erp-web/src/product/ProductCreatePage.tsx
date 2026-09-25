@@ -8,17 +8,24 @@
  * Deliberately absent, each for a stated reason:
  *  - a product CODE field: the server mints it from the group's prefix, and the
  *    admin manual-code exception is a later explicit command;
- *  - `references` (template + version, attributes, the six units, tracking policy):
- *    §19.6 and the coordinator keep attribute/unit completeness in the NEXT slice;
+ *  - tracking policy: no accepted write adapter. Technical attributes and stock/sales
+ *    units come from the released reference-options read (PRD-CARD-1);
  *  - activation: the contract includes no activation command;
- *  - AI drafting and duplicate-similarity warnings: both need a server surface that
+ *  - AI drafting and technical-attribute similarity: both need a server surface that
  *    does not exist. Exact collisions are still handled — from the server's answer.
+ *
+ * Name matches (§10.2, CASE-PRD-U02-014) ARE shown: after the name field is left (or the
+ * form is submitted), the server's own list search for that name is read and its matches
+ * are listed as a warning to compare against. It never blocks the save, and no similarity
+ * measure is invented here — only exact equality after Turkish case folding is labelled
+ * "aynı ad", as a reading aid over the server's result. The server matches the term in
+ * the name OR the code/alias, so the panel says exactly that.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
-import { createProductDraft, fetchCodeGroups, fetchReferenceOptions } from './api'
+import { SEARCH_MAX, createProductDraft, fetchCodeGroups, fetchProducts, fetchReferenceOptions } from './api'
 import type { CreateProductDraftPayload } from './api'
 import {
   PRODUCT_PROBLEM_CODE,
@@ -26,6 +33,7 @@ import {
   productFieldErrorsOf,
   type ProductCodeGroup,
   type ProductMutationResult,
+  type ProductPage,
   type ProductReferenceOptions,
   type ProductRoleName,
 } from './contract'
@@ -80,8 +88,89 @@ import {
   type AttemptBinding,
 } from './pendingAttempt'
 import styles from './ProductCreatePage.module.css'
+import { ProductTechnicalFields } from './ProductTechnicalFields'
+import { technicalDraft } from './technicalForm'
 
 type CreateAttempt = AttemptState<CreateProductDraftPayload, ProductMutationResult>
+
+/** Shorter terms match too broadly to be a useful warning. A reading choice, not a rule. */
+const NAME_MATCH_MIN = 2
+const NAME_MATCH_PAGE = 20
+
+// eslint-disable-next-line no-control-regex -- matching control characters is the point
+const NAME_CONTROL_RE = /[\u0000-\u001F\u007F-\u009F]/g
+
+/**
+ * The checked name: control characters removed and trimmed, the way the server trims a
+ * stored name and a search term. It is NOT bounded here — the list search sends only the
+ * first `SEARCH_MAX` characters, but "aynı ad" compares the whole name. Inner whitespace
+ * is kept: the server keeps it in stored names and in `q`, so collapsing it would claim
+ * matches the server never returns and hide the identically spaced one it does.
+ */
+function nameMatchTerm(name: string): string {
+  return name.replace(NAME_CONTROL_RE, '').trim()
+}
+
+function foldName(name: string): string {
+  return name.toLocaleLowerCase('tr-TR')
+}
+
+/** The shown result's id, for the name field's `aria-describedby`. */
+const NAME_MATCH_ID = 'product-name-match-check'
+
+/**
+ * The server's matches for the checked name, as a WARNING. It renders INSIDE a polite
+ * live region that is already on the page, so the result is announced as an update
+ * without interrupting typing or taking focus from the form.
+ */
+function NameMatches({
+  term,
+  outcome,
+  canOpenDetail,
+}: {
+  readonly term: string
+  readonly outcome: ViewOutcome<ProductPage> | undefined
+  readonly canOpenDetail: boolean
+}) {
+  let body: React.ReactNode
+  if (outcome === undefined || outcome.type === 'fence-stale') {
+    body = <p>{PRODUCT_CREATE_TEXT.nameMatchesChecking}</p>
+  } else if (outcome.type === 'ok-single') {
+    const { items, nextCursor } = outcome.data
+    if (items.length === 0) {
+      body = <p>{PRODUCT_CREATE_TEXT.nameMatchesNone}</p>
+    } else {
+      const folded = foldName(term)
+      body = (
+        <>
+          <p className={styles.errorSummaryTitle}>{PRODUCT_CREATE_TEXT.nameMatchesTitle}</p>
+          <p>{PRODUCT_CREATE_TEXT.nameMatchesDetail}</p>
+          <ul data-testid="product-name-matches">
+            {items.map((item) => (
+              <li key={item.id}>
+                {canOpenDetail ? (
+                  <Link to={productDetailPath(item.id)}>{item.code}</Link>
+                ) : (
+                  <span>{item.code}</span>
+                )}{' '}
+                {item.name}
+                {foldName(item.name) === folded ? ` (${PRODUCT_CREATE_TEXT.nameMatchesSameName})` : null}
+              </li>
+            ))}
+          </ul>
+          {nextCursor !== null ? <p>{PRODUCT_CREATE_TEXT.nameMatchesMore}</p> : null}
+        </>
+      )
+    }
+  } else {
+    body = <p>{PRODUCT_CREATE_TEXT.nameMatchesFailed}</p>
+  }
+  return (
+    <div id={NAME_MATCH_ID} className={styles.note} data-testid="product-name-match-check">
+      {body}
+    </div>
+  )
+}
 
 /**
  * The shell's dirty scope for this screen.
@@ -299,6 +388,35 @@ function ProductCreateForm({
     (optionsQuery.isPlaceholderData && optionsQuery.data?.type === 'ok-single'
       ? optionsQuery.data.data.classes
       : [])
+
+  /**
+   * The name the match check runs for: set when the name field is LEFT, not on every
+   * keystroke, so typing does not fire a read per letter. Only with the list
+   * capability — the check is a list read, and a create-only actor has no business
+   * provoking a list refusal that would close the screen it is working in.
+   */
+  const [checkedName, setCheckedName] = useState('')
+  const canCheckNames = hasCapability(shell, PRODUCT_CAPABILITY.productsList)
+  /**
+   * Shown only while the field still holds the checked name: once it is edited, that
+   * result describes another name, and nothing has been checked for this one yet.
+   */
+  const showNameMatches =
+    canCheckNames && checkedName.length >= NAME_MATCH_MIN && nameMatchTerm(values.name) === checkedName
+  const nameMatchesQuery = useQuery({
+    queryKey: [namespace ?? 'no-context', entryGeneration, 'product-name-matches', checkedName],
+    enabled: canCheckNames && namespace !== null && origin !== null && checkedName.length >= NAME_MATCH_MIN,
+    queryFn: async ({ signal }) => {
+      const snapshot = boundary.capture()
+      const outcome = await fetchProducts(
+        { q: checkedName.slice(0, SEARCH_MAX), sort: 'name', pageSize: NAME_MATCH_PAGE },
+        { companyId: origin as string },
+        signal,
+      )
+      if (outcome.type === 'http') boundary.report(outcome.status, snapshot)
+      return outcome
+    },
+  })
   const classIds = useMemo(() => (options?.classes ?? []).map((entry) => entry.id), [options])
   const familyIds = useMemo(() => (options?.families ?? []).map((entry) => entry.id), [options])
   /**
@@ -331,12 +449,12 @@ function ProductCreateForm({
    * a confusing error rather than as a field that simply reset.
    */
   function chooseGroup(groupId: string) {
-    setValues((current) => ({ ...current, groupId, classId: '', familyId: '' }))
+    setValues((current) => ({ ...current, groupId, classId: '', familyId: '', technical: technicalDraft() }))
     setChosenClass(null)
     setReferenceHold(false)
   }
   function chooseClass(classId: string) {
-    setValues((current) => ({ ...current, classId, familyId: '' }))
+    setValues((current) => ({ ...current, classId, familyId: '', technical: technicalDraft() }))
     setChosenClass(shownClasses.find((entry) => entry.id === classId) ?? null)
     setReferenceHold(false)
   }
@@ -420,6 +538,9 @@ function ProductCreateForm({
     event.preventDefault()
     if (frozen || !canCreate || origin === null) return
     setSubmitted(true)
+    // An Enter-submit never leaves the name field: check the name being sent, too. The
+    // check is still only a warning — the send below does not wait for it.
+    setCheckedName(nameMatchTerm(values.name))
 
     /**
      * A chosen class or family cannot be judged while its read is out or failed. The save
@@ -428,14 +549,25 @@ function ProductCreateForm({
      * references taken as they are. Nothing chosen: an incomplete Draft saves as before.
      */
     if (referencesChosen && referencesUnsettled) {
-      const others = validateCreateForm(values, groupIds, [values.classId], [values.familyId])
+      const others = validateCreateForm(
+        {
+          name: values.name,
+          groupId: values.groupId,
+          classId: values.classId,
+          familyId: values.familyId,
+          roles: values.roles,
+        },
+        groupIds,
+        [values.classId],
+        [values.familyId],
+      )
       setErrors(others.ok ? {} : others.errors)
       setReferenceHold(true)
       return
     }
     setReferenceHold(false)
 
-    const validation = validateCreateForm(values, groupIds, classIds, familyIds)
+    const validation = validateCreateForm(values, groupIds, classIds, familyIds, options)
     if (!validation.ok) {
       /**
        * A client-side rejection mints NO key: nothing was sent, so there is nothing
@@ -673,17 +805,29 @@ function ProductCreateForm({
             maxLength={250}
             disabled={frozen}
             aria-invalid={errors.name !== undefined || undefined}
-            aria-describedby={`${CREATE_FIELD.name}-hint${
+            aria-describedby={`${CREATE_FIELD.name}-hint${showNameMatches ? ` ${NAME_MATCH_ID}` : ''}${
               errors.name !== undefined ? ` ${CREATE_FIELD.name}-error` : ''
             }`}
             ref={(el) => {
               fieldRefs.current[CREATE_FIELD.name] = el
             }}
             onChange={(event) => setValues((v) => ({ ...v, name: event.target.value }))}
+            onBlur={() => setCheckedName(nameMatchTerm(values.name))}
           />
           <p id={`${CREATE_FIELD.name}-hint`} className={styles.hint}>
             {PRODUCT_CREATE_TEXT.nameHint}
           </p>
+          {canCheckNames ? (
+            <div role="status" aria-live="polite" data-testid="product-name-match-live">
+              {showNameMatches ? (
+                <NameMatches
+                  term={checkedName}
+                  outcome={nameMatchesQuery.data}
+                  canOpenDetail={canOpenDetail}
+                />
+              ) : null}
+            </div>
+          ) : null}
           {errors.name !== undefined ? (
             <p id={`${CREATE_FIELD.name}-error`} className={styles.fieldError}>
               {errors.name}
@@ -809,7 +953,8 @@ function ProductCreateForm({
             ref={(el) => {
               fieldRefs.current[CREATE_FIELD.familyId] = el
             }}
-            onChange={(event) => setValues((v) => ({ ...v, familyId: event.target.value }))}
+            onChange={(event) => setValues((v) => ({ ...v, familyId: event.target.value,
+              technical: { ...(v.technical ?? technicalDraft()), attributes: {}, attributesChanged: event.target.value !== '' } }))}
           >
             <option value="">{PRODUCT_CREATE_TEXT.chooseNone}</option>
             {(classStale ? [] : (options?.families ?? [])).map((entry) => (
@@ -839,6 +984,11 @@ function ProductCreateForm({
           a deliberate "no" would be the same state, which is the collapse the
           contract's tagged role input exists to prevent.
         */}
+        <ProductTechnicalFields familyId={values.familyId} options={options} value={values.technical}
+          fieldRef={el => { fieldRefs.current.references = el }}
+          frozen={frozen} onChange={technical => setValues(v => ({ ...v, technical }))}
+          errors={attempt.phase === 'failed' ? attempt.fieldErrors : undefined} />
+        {errors.references ? <p role="alert">{errors.references}</p> : null}
         <fieldset
           className={styles.roles}
           ref={(el) => {

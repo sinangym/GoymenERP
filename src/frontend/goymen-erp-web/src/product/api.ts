@@ -9,6 +9,7 @@
  *   GET   /api/v1/products/{id}         → ProductCardView (404 not_found)
  *   POST  /api/v1/products              → 201 ProductMutationResponse
  *   PATCH /api/v1/products/{id}/draft   → 200 ProductMutationResponse
+ *   GET   /api/v1/products/{id}/history → ProductHistoryView (module contract; host endpoint requested)
  *
  * The transport carries no business logic and invents no field:
  *  - `X-Company-Id` on EVERY Product request, from the shell's committed context.
@@ -34,6 +35,7 @@
 import {
   decodeCodeGroupList,
   decodeProductCard,
+  decodeProductHistory,
   decodeProductMutation,
   decodeProductPage,
   decodeReferenceOptions,
@@ -41,6 +43,7 @@ import {
   type CompletenessEvaluation,
   type ProductCard,
   type ProductCodeGroup,
+  type ProductHistory,
   type ProductLifecycle,
   type ProductMutationResult,
   type ProductPage,
@@ -217,6 +220,26 @@ export async function fetchProductCard(
 }
 
 /**
+ * U-01 Product 360 change history, `GET /api/v1/products/{id}/history`.
+ *
+ * Bound to `productId` like the card. A 404 here, once the card itself has loaded,
+ * means the history read is not available on this server — the caller must not
+ * turn it into "this product does not exist".
+ */
+export async function fetchProductHistory(
+  productId: string,
+  origin: ProductOrigin,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<ProductHistory>> {
+  const result = await rawRead(`/products/${encodeURIComponent(productId)}/history`, origin, signal)
+  if ('failure' in result) return failureOutcome(result.failure)
+  if (result.status !== 200) return { type: 'http', status: result.status, body: result.body }
+  const history = decodeProductHistory(result.body, productId)
+  if (history === null) return { type: 'malformed' }
+  return { type: 'ok-single', data: history }
+}
+
+/**
  * The authorized code groups a Draft may be created under.
  *
  * §19.3 requires a REAL reference with a known prefix rule: "Sihirli/fake
@@ -287,11 +310,10 @@ export type ProductRoleWrites = Partial<Readonly<Record<ProductRoleName, Product
  *    `JsonUnmappedMemberHandling.Disallow` would reject them outright;
  *  - `expectedVersion` — README: "Create has no expectedVersion";
  *  - `companyId` — §15;
- *  - `references` — the source accepts them, but every member is a UUID into a
- *    catalogue this client has no read for. Sending an invented one is exactly what
- *    §19.3 forbids, so the first slice sends none.
+ * Technical references use the released Product reference-options read; no id is invented.
  */
 export interface CreateProductDraftPayload {
+  readonly references?: ProductReferenceWrite
   readonly name: string
   readonly groupId: string
   readonly classId?: string | null
@@ -308,10 +330,19 @@ export interface CreateProductDraftPayload {
  * "name/roles/reference container and attribute/unit collections cannot be null".
  */
 export interface ProductDraftChanges {
+  readonly references?: ProductReferenceWrite
   readonly name?: string
   readonly classId?: string | null
   readonly familyId?: string | null
   readonly roles?: ProductRoleWrites
+}
+
+/** Omitted members are preserved on PATCH; null clears only a nullable member. */
+export interface ProductReferenceWrite {
+  readonly templateId?: string | null
+  readonly templateVersion?: string | null
+  readonly attributes?: Readonly<Record<string, unknown>>
+  readonly units?: { readonly stock?: string | null; readonly purchase?: string | null; readonly sales?: string | null }
 }
 
 /**

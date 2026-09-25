@@ -58,13 +58,12 @@ export const CAPABILITY = {
    * than assumed, and a drift test pins the two together once the Product source is in
    * the same tree.
    *
-   * WHAT LISTING IT DOES NOT DO, and it matters more here than for the Cari ids: the
-   * server publishes no `product.*` capability at all yet. `ProductPermissionManifestV1`
-   * publishes permission NAMES, which is not a capability registry — `IShellCapabilityProvider`
-   * is still implemented only for Counterparty. So these four grant nothing, mount nothing
-   * and render no nav entry; `CapabilityRoute` closes an ungranted route onto the same
-   * neutral not-found block any unknown path gets. That is the intended state until
-   * Backend publishes the Product registry, not a gap.
+   * WHAT LISTING IT DOES NOT DO, and it matters more here than for the Cari ids: listing an
+   * id grants nothing. Since #316 the server's `ProductShellCapabilityProvider` publishes these
+   * four, and the shell grants each one only from the actor's global Product authority (explicit
+   * Product master assignments, never a company role). An actor without that authority gets
+   * none of them: no mount and no nav entry, and `CapabilityRoute` closes an ungranted route onto
+   * the same neutral not-found block any unknown path gets.
    */
   productItemsList: 'product.items.list',
   /**
@@ -123,6 +122,110 @@ export const CAPABILITY = {
    * that is a fact about who holds them, not an argument for one id.
    */
   organizationLocationsDetail: 'organization.locations.detail',
+  /**
+   * ORG-03 the authorized work-centre list. Route `/ayarlar/organizasyon/is-merkezleri`,
+   * owner the Organization lane.
+   *
+   * ITS OWN PERMISSION, and that is the whole point of the slice rather than a detail:
+   * the route stands on `organization.work-centers.read` ALONE. ORG-01 stands on
+   * `organization.locations.read`, so a user holding work centres and not locations has
+   * no link into ORG-01 at all — there is nowhere to put a work-centre entry except the
+   * sidebar. The reverse holds too: holding the location screens does not reach here.
+   *
+   * It renders only where the server's snapshot carries the id, and the backend provider
+   * does not declare it yet (four declarations on main today). So this entry is the
+   * shell saying it HAS an implementation, not that anyone may see it — the same staged
+   * shape `organizationSitesList` had before #246 published it.
+   */
+  organizationWorkCentersList: 'organization.work-centers.list',
+  /** S-02 sales order draft list. Route `/satis/siparisler`, owner the Sales lane (SİPARİŞ). */
+  salesDraftsList: 'sales.drafts.list',
+  /** S-04 Sales order 360, one draft. Route `/satis/siparisler/:draftId`. A SEPARATE grant from the list. */
+  salesDraftsDetail: 'sales.drafts.detail',
+  /** S-03 new sales order draft. Route `/satis/siparisler/yeni`. A SEPARATE grant from reading. */
+  salesDraftsCreate: 'sales.drafts.create',
+  /** MFG-02 the company's production orders (MFG-ORD). Route `/uretim/emirler`. */
+  manufacturingOrdersList: 'manufacturing.orders.list',
+  /**
+   * MFG-01 production order (technical sub-view, MFG-UI D1). Route `/uretim/emir/:orderId`.
+   *
+   * `manufacturing.orders.facts` and `manufacturing.orders.close` are CONTROLS inside that screen
+   * (read with `hasCapability`, the `organization.locations.status` precedent), not routes, so
+   * neither is in this table.
+   */
+  manufacturingOrdersDetail: 'manufacturing.orders.detail',
+  /** Create a Draft plan. Route `/uretim/plan/yeni`; reached from the order list under K5. */
+  manufacturingPlansCreate: 'manufacturing.plans.create',
+  /** Reopen one stored plan. Route `/uretim/plan/:planId`; reached after create or by record link. */
+  manufacturingPlansDetail: 'manufacturing.plans.detail',
+  /** F-02 manual-receipt draft list. Route `/finans/tahsilatlar`, owner the Finance lane (FİNANS). */
+  financeReceiptsList: 'finance.receipts.list',
+  /** F-02 new draft, entered from a Cari account (`?partyId&companyAccountId`). Route `/finans/tahsilatlar/yeni`. */
+  financeReceiptsDraft: 'finance.receipts.draft',
+  /** F-02 one draft. Route `/finans/tahsilatlar/:sourceId`. A SEPARATE grant from the list. */
+  financeReceiptsDetail: 'finance.receipts.detail',
+  /** FIN-T06 pending reversal checker queue. Route `/finans/ters-kayit-onaylari`. */
+  financeReceiptsReverseApprove: 'finance.receipts.reverse.approve',
+  /** F-04 bank-account master. Route `/finans/banka-hesaplari`. */
+  financeBankAccountsList: 'finance.bank-accounts.list',
+  /**
+   * F-04 propose a bank account. Route `/finans/banka-hesaplari/yeni`.
+   *
+   * `finance.bank-accounts.approve` is deliberately NOT here: it is a control of the F-04 list (the
+   * provider's `ParentCapabilityId`), not a route, so it belongs in no route registry. The list checks
+   * it itself, and the server refuses a self-approval anyway.
+   */
+  financeBankAccountsPropose: 'finance.bank-accounts.propose',
+  /** R47 manual outgoing bank-payment list. */
+  financeManualBankPaymentsList: 'finance.manual-bank-payments.list',
+  /** R47 create route, entered with an explicit owner-reference context. */
+  financeManualBankPaymentsCreate: 'finance.manual-bank-payments.create',
+  /** R47 one manual outgoing bank payment. */
+  financeManualBankPaymentsDetail: 'finance.manual-bank-payments.detail',
+  /** M-07 Muhasebe Dönemleri. Route `/muhasebe/donemler`, owner the Accounting lane (FİNANS). */
+  accountingPeriodsList: 'accounting.periods.list',
+  /** M-07 propose a period opening. Route `/muhasebe/donemler/yeni`. A SEPARATE grant from reading. */
+  accountingPeriodsPropose: 'accounting.periods.propose',
+  /**
+   * M-04 Muhasebe Fişleri, read-only. Route `/muhasebe/fisler`.
+   *
+   * `accounting.periods.approve` (Ö4) and `accounting.periods.close` (Ö5) are CONTROLS of the M-07
+   * list (the provider's `ParentCapabilityId`), not routes, so neither is in these tables; the list
+   * reads them with `hasCapability` and the server refuses a self-approval regardless.
+   */
+  accountingJournalsList: 'accounting.journals.list',
+  /** M-04-DETAIL one journal, read-only. Route `/muhasebe/fisler/:journalId`. A SEPARATE grant from the list. */
+  accountingJournalsDetail: 'accounting.journals.detail',
+  /** ACC-V1 normal journal create, own-draft reopen and narrow approval routes. */
+  accountingNormalDraftCreate: 'accounting.normal-journal-drafts.create',
+  accountingNormalDraftDetail: 'accounting.normal-journal-drafts.detail',
+  accountingNormalDraftApprove: 'accounting.normal-journal-drafts.approve',
+  /** M-01 Muhasebe Kontrol Merkezi — the posting queues, read-only. Route `/muhasebe/kontrol`. */
+  accountingPostingQueues: 'accounting.posting-queues',
+  /** M-06 Mizan — posted-journal aggregates, read-only. Route `/muhasebe/mizan`. */
+  accountingTrialBalance: 'accounting.trial-balance',
+  /** INV-OPEN-2 opening-stock workspace. Home, create and detail share this existing permission. */
+  inventoryOpeningStockRecord: 'inventory.opening-stock.record',
+  /** ST-01 bounded, company-scoped physical stock-position read. */
+  inventoryStockPositionsList: 'inventory.stock-positions.list',
+  /** L-02 loading-instruction list. Route `/lojistik/yukleme-talimatlari`, owner the Sales/Logistics lane (SİPARİŞ). */
+  logisticsInstructionsList: 'logistics.instructions.list',
+  /** L-03 new loading instruction. Route `/lojistik/yukleme-talimatlari/yeni`. A SEPARATE grant from reading. */
+  logisticsInstructionsCreate: 'logistics.instructions.create',
+  /** L-02-DETAIL one instruction. Route `/lojistik/yukleme-talimatlari/:instructionId`. A SEPARATE grant from the list. */
+  logisticsInstructionsDetail: 'logistics.instructions.detail',
+  /** P-01 purchase-request list. Route `/satinalma/talepler`, owner the Purchasing lane. */
+  purchasingRequestsList: 'purchasing.requests.list',
+  /** P-01 new request. Route `/satinalma/talepler/yeni`; reached from the list under K5. */
+  purchasingRequestsCreate: 'purchasing.requests.create',
+  /** P-01-DETAIL one purchase request. Route `/satinalma/talepler/:requestId`. */
+  purchasingRequestsDetail: 'purchasing.requests.detail',
+  /** P-03 purchase-order list. Route `/satinalma/siparisler`, owner the Purchasing lane. */
+  purchasingOrdersList: 'purchasing.orders.list',
+  /** P-04 new purchase order. Route `/satinalma/siparisler/yeni`; staged until a real Product candidate source exists. */
+  purchasingOrdersCreate: 'purchasing.orders.create',
+  /** P-03-DETAIL one purchase order. Route `/satinalma/siparisler/:orderId`. */
+  purchasingOrdersDetail: 'purchasing.orders.detail',
 } as const
 
 export type CapabilityId = (typeof CAPABILITY)[keyof typeof CAPABILITY]
@@ -150,26 +253,135 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   // rule the Cari and Ürün routes already follow. The Organization lane fixes that
   // shape in `organizationRoutes.tsx` rather than leaving it to this consumer.
   [CAPABILITY.organizationLocationsDetail]: '/ayarlar/organizasyon/lokasyon/:locationId',
+  // A STATIC sibling of the list, not a child of the card: `/ayarlar/organizasyon` and
+  // `/ayarlar/organizasyon/is-merkezleri` differ by a static segment, and neither can match the
+  // card's `lokasyon/:locationId` — no url matches two of the three (#172 P1-2).
+  [CAPABILITY.organizationWorkCentersList]: '/ayarlar/organizasyon/is-merkezleri',
+  [CAPABILITY.salesDraftsList]: '/satis/siparisler',
+  // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as a draft id.
+  [CAPABILITY.salesDraftsCreate]: '/satis/siparisler/yeni',
+  [CAPABILITY.salesDraftsDetail]: '/satis/siparisler/:draftId',
+  // Static before the parameter route, the /cari/yeni rule: 'emirler' must never be read as an
+  // order id. The lane orders its own route table the same way.
+  [CAPABILITY.manufacturingOrdersList]: '/uretim/emirler',
+  [CAPABILITY.manufacturingOrdersDetail]: '/uretim/emir/:orderId',
+  // Static before the parameter route: `yeni` must never be read as a plan id.
+  [CAPABILITY.manufacturingPlansCreate]: '/uretim/plan/yeni',
+  [CAPABILITY.manufacturingPlansDetail]: '/uretim/plan/:planId',
+  [CAPABILITY.financeReceiptsList]: '/finans/tahsilatlar',
+  // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as a source id.
+  [CAPABILITY.financeReceiptsDraft]: '/finans/tahsilatlar/yeni',
+  [CAPABILITY.financeReceiptsDetail]: '/finans/tahsilatlar/:sourceId',
+  [CAPABILITY.financeReceiptsReverseApprove]: '/finans/ters-kayit-onaylari',
+  [CAPABILITY.financeBankAccountsList]: '/finans/banka-hesaplari',
+  [CAPABILITY.financeBankAccountsPropose]: '/finans/banka-hesaplari/yeni',
+  [CAPABILITY.financeManualBankPaymentsList]: '/finans/odemeler',
+  [CAPABILITY.financeManualBankPaymentsCreate]: '/finans/odemeler/yeni',
+  [CAPABILITY.financeManualBankPaymentsDetail]: '/finans/odemeler/:paymentId',
+  [CAPABILITY.accountingPeriodsList]: '/muhasebe/donemler',
+  // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as a period id.
+  [CAPABILITY.accountingPeriodsPropose]: '/muhasebe/donemler/yeni',
+  [CAPABILITY.accountingJournalsList]: '/muhasebe/fisler',
+  [CAPABILITY.accountingJournalsDetail]: '/muhasebe/fisler/:journalId',
+  [CAPABILITY.accountingNormalDraftCreate]: '/muhasebe/normal-fisler/yeni',
+  [CAPABILITY.accountingNormalDraftDetail]: '/muhasebe/normal-fisler/:draftId',
+  [CAPABILITY.accountingNormalDraftApprove]: '/muhasebe/normal-fis-onay/:draftId',
+  [CAPABILITY.accountingPostingQueues]: '/muhasebe/kontrol',
+  [CAPABILITY.accountingTrialBalance]: '/muhasebe/mizan',
+  [CAPABILITY.inventoryOpeningStockRecord]: '/stok/acilis',
+  [CAPABILITY.inventoryStockPositionsList]: '/stok/pozisyonlar',
+  [CAPABILITY.logisticsInstructionsList]: '/lojistik/yukleme-talimatlari',
+  // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as an instruction id.
+  [CAPABILITY.logisticsInstructionsCreate]: '/lojistik/yukleme-talimatlari/yeni',
+  [CAPABILITY.logisticsInstructionsDetail]: '/lojistik/yukleme-talimatlari/:instructionId',
+  [CAPABILITY.purchasingRequestsList]: '/satinalma/talepler',
+  // K5 keeps creation inside the P-01 list. Static `yeni` must never be read as a request id.
+  [CAPABILITY.purchasingRequestsCreate]: '/satinalma/talepler/yeni',
+  [CAPABILITY.purchasingRequestsDetail]: '/satinalma/talepler/:requestId',
+  [CAPABILITY.purchasingOrdersList]: '/satinalma/siparisler',
+  // Static before the parameter route: `yeni` must never be read as an order id. The route remains
+  // mounted but unavailable while the owner declaration is staged.
+  [CAPABILITY.purchasingOrdersCreate]: '/satinalma/siparisler/yeni',
+  [CAPABILITY.purchasingOrdersDetail]: '/satinalma/siparisler/:orderId',
 }
 
 /** Nav label per capability. Only rendered when the server granted the capability. */
 export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   [CAPABILITY.cariPartiesList]: 'Cari Kartlar',
-  [CAPABILITY.cariPartiesCreate]: 'Yeni Cari',
+  // No nav entry, and this one is a DECISION rather than the usual "reached from a row": K5 (Sinan,
+  // 20 Eylül 2026, #66 5748258299) puts creation inside the relevant list as a single authorised
+  // "Yeni …" action and names cari among the modules whose parallel sidebar-create must not be
+  // duplicated. C-01 carries that action now. The entry is removed and the list's link is added in
+  // the SAME change, because removing one without the other is the MFG-02 condition
+  // `navEntryPointInvariant.test.ts` exists to catch.
+  [CAPABILITY.cariPartiesCreate]: '',
   [CAPABILITY.cariAccountsLink]: 'Cariyi Şirkete Bağla',
   // No nav entry: the detail is reached from a row, never from the sidebar.
   [CAPABILITY.cariPartiesDetail]: '',
   // Nor this one: it is reached from the card of the record it edits.
   [CAPABILITY.cariAccountsContactUpdate]: '',
   [CAPABILITY.productItemsList]: 'Ürünler',
-  [CAPABILITY.productItemsCreate]: 'Yeni Ürün',
-  // Nor these two, for the same reason as the Cari detail: the 360 is reached from a row
-  // and the editor from the card it edits, never from the sidebar. So `NAV_CAPABILITIES`
-  // gains two Product entries when the routes are mounted, not four.
+  // K5: create is reached through the list's single action, never from the sidebar.
+  [CAPABILITY.productItemsCreate]: '',
+  // The 360 is reached from a row and the editor from the card it edits. Therefore
+  // `NAV_CAPABILITIES` gains exactly one Product entry when the routes are mounted.
   [CAPABILITY.productItemsDetail]: '',
   [CAPABILITY.productItemsEdit]: '',
   [CAPABILITY.organizationSitesList]: 'Organizasyon',
   // Nor this one: the card is reached from a location row, never from the sidebar. So
   // `NAV_CAPABILITIES` gains exactly ONE Organization entry when the routes are mounted.
   [CAPABILITY.organizationLocationsDetail]: '',
+  // ORG-03 DOES get one: its only entry point is the sidebar, because a holder of
+  // work-centers.read without locations.read never reaches ORG-01 to be linked from it.
+  // So Organization's sidebar goes from one entry to two — a list each, no card, no control.
+  [CAPABILITY.organizationWorkCentersList]: 'İş Merkezleri',
+  [CAPABILITY.salesDraftsList]: 'Sipariş Taslakları',
+  [CAPABILITY.salesDraftsCreate]: 'Yeni Sipariş Taslağı',
+  // Nor this one: the 360 is reached from a list row, never from the sidebar.
+  [CAPABILITY.salesDraftsDetail]: '',
+  [CAPABILITY.manufacturingOrdersList]: 'Üretim emirleri',
+  // Nor this one: an order is opened from the list or by its id, never from the sidebar. So
+  // `NAV_CAPABILITIES` gains exactly ONE Manufacturing entry.
+  [CAPABILITY.manufacturingOrdersDetail]: '',
+  // K5: creation is reached from the order list; detail is reached from the saved plan result.
+  [CAPABILITY.manufacturingPlansCreate]: '',
+  [CAPABILITY.manufacturingPlansDetail]: '',
+  [CAPABILITY.financeReceiptsList]: 'Tahsilat Taslakları',
+  [CAPABILITY.financeReceiptsReverseApprove]: 'Ters Kayıt Onayları',
+  [CAPABILITY.financeBankAccountsList]: 'Banka Hesapları',
+  // None of these three: the new draft is entered from a Cari account, the detail from a list row and
+  // the propose screen from the F-04 list, never from the sidebar.
+  [CAPABILITY.financeReceiptsDraft]: '',
+  [CAPABILITY.financeReceiptsDetail]: '',
+  [CAPABILITY.financeBankAccountsPropose]: '',
+  [CAPABILITY.financeManualBankPaymentsList]: 'Giden Ödemeler',
+  [CAPABILITY.financeManualBankPaymentsCreate]: '',
+  [CAPABILITY.financeManualBankPaymentsDetail]: '',
+  [CAPABILITY.accountingPeriodsList]: 'Muhasebe Dönemleri',
+  [CAPABILITY.accountingJournalsList]: 'Muhasebe Fişleri',
+  [CAPABILITY.accountingPostingQueues]: 'Muhasebe Kontrol',
+  // Staged until the actual M-06 browser acceptance; no sidebar publication yet.
+  [CAPABILITY.accountingTrialBalance]: '',
+  [CAPABILITY.inventoryOpeningStockRecord]: 'Stok Açılışı',
+  [CAPABILITY.inventoryStockPositionsList]: 'Stok / Malzeme Pozisyonu',
+  // Not these two: a period is proposed from the M-07 list and a journal opened from a row.
+  [CAPABILITY.accountingPeriodsPropose]: '',
+  [CAPABILITY.accountingJournalsDetail]: '',
+  [CAPABILITY.accountingNormalDraftCreate]: '',
+  [CAPABILITY.accountingNormalDraftDetail]: '',
+  [CAPABILITY.accountingNormalDraftApprove]: '',
+  [CAPABILITY.logisticsInstructionsList]: 'Yükleme Talimatları',
+  // Neither of these two: the new-instruction screen is reached from the L-02 list's own primary
+  // link (one entry point per creation route, the Finance and Accounting precedent), and an
+  // instruction is opened from a list row — never from the sidebar.
+  [CAPABILITY.logisticsInstructionsCreate]: '',
+  [CAPABILITY.logisticsInstructionsDetail]: '',
+  [CAPABILITY.purchasingRequestsList]: 'Satın alma talepleri',
+  // K5: create is reached through the list's single action; detail is reached from a row.
+  [CAPABILITY.purchasingRequestsCreate]: '',
+  [CAPABILITY.purchasingRequestsDetail]: '',
+  [CAPABILITY.purchasingOrdersList]: 'Satın alma siparişleri',
+  // P-04 is staged and, once published, is reached from the list. The detail is reached from a row.
+  [CAPABILITY.purchasingOrdersCreate]: '',
+  [CAPABILITY.purchasingOrdersDetail]: '',
 }

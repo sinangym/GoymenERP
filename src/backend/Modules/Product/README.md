@@ -207,7 +207,7 @@ actor, origin and authority revision. The host must supply signing material and 
 technical lifetime. No key is committed, generated as a production default or registered
 in the host. Reference labels outside the available code-group catalogue remain null.
 
-`ProductCodeOnlyReferenceCatalog` validates the actual SQL code group for the minimum
+`ProductRegistryReferenceCatalog` (formerly `ProductCodeOnlyReferenceCatalog`) validates the actual SQL code group for the minimum
 Draft. Missing optional class/family/unit/template/tracking values remain permitted;
 supplied references without an accepted catalogue adapter fail validation. The read
 options endpoint explicitly lists all five catalogues as unavailable, rather than
@@ -246,3 +246,255 @@ version_conflict; counter concurrency and unique-key races remain whole-attempt
 host retries, with a fresh resolver after rollback. Borrowed SQL handles alone are
 not evidence of audit/idempotency atomicity. Public persistence and real SQL execution
 remain closed until the #104 source/schema gate and shared implementation are accepted.
+
+## Sales eligibility runtime (operational selection)
+
+`ProductSalesEligibilityService` implements `IProductSalesEligibilityV1` (#255 port) for an
+operational Sales selection. It is not the global master read and borrows no global Product
+grant. K-1(a) (Sinan's decision, Business #66 5719251344): it requires an authenticated actor
+with access to the server-resolved company AND the narrow `product.operational-selection.read`
+permission for that same company, measured through the central fresh-authority port
+`IErpAuthorityRevalidationService` (#276) for the freshly read company and never from request
+data. The consuming module's own selector permission is still
+required on its side (Sales keeps a default-deny binding).
+
+What each of those three means in one request, measured rather than assumed:
+
+- **Company and actor are live.** They are re-read on every fenced revalidation, so a change
+  mid-flight turns the result in hand into 403.
+- **The permission is measured again at every fence.** The service asks the central
+  revalidation port (#276), which re-reads the stored authority and replaces the request's
+  cached answer. A grant revoked by another request while this one is in flight is therefore
+  seen at the next fence and turns the result in hand into 403; it cannot come back later in the
+  same request. This closes the per-request limit measured in #265 5719822744. The price is one
+  authority read per fence (five for a full evaluation). The answer is used as the cached path
+  uses it (`PermissionScope.IsGranted`); this service decides no scope semantics. A grant added
+  mid-request is seen the same way; it opens nothing the stored authority does not say.
+- **The guarantee is per awaited read.** A read's result, success or failure, is released only
+  after the check at that point. Values derived locally afterwards — preconditions, the
+  order-unit comparison, the restore integrity fault, the final snapshot — are returned
+  without a further check; the window after the last fence cannot be closed here.
+
+The narrow name is declared in `ProductPermissionManifestV1` and registered centrally in
+`ErpPermissions` (#277) — registered, not granted: no seeded role or assignment carries it. This
+slice does not touch `ErpPermissions`, the Identity seed, the shell capability manifest, DI/host
+wiring or OpenAPI. Granting it is a human's step; until then every caller is denied — the
+decision's default-closed rule, not an implicit grant.
+
+Order and outcomes:
+
+| Step | Outcome |
+|---|---|
+| Scope missing/foreign | `ProductOperationException` 403 `product_access_denied`, before any read |
+| Narrow selection permission missing for the server company | `ProductOperationException` 403 `product_access_denied`, before any read; same code, no separate signal |
+| Company or actor changed during any read | `ProductOperationException` 403 `product_access_denied`, replacing that read's result or failure |
+| Permission revoked while the request is in flight | `ProductOperationException` 403 `product_access_denied` at the next fence, replacing the result or failure in hand (re-measured through #276's port) |
+| Null selection from a caller without the permission | `ProductOperationException` 403 `product_access_denied`: the gate runs before the argument is looked at |
+| Stored record cannot be restored | `InvalidOperationException` |
+| Product missing / empty id | error `productId invalid_reference` |
+| Draft or Inactive, unknown/false sellable, stale version, missing stock/sales unit | `ProductSalesPreconditions` errors |
+| Order unit is not the Product's own sales unit | error `orderUnitId unsupported_order_unit` |
+| Family-required rules | `IProductFamilyRequirementPolicyV1`. GDC band/coil (`ProductFamilyRequirementPolicyV2`, PRD-FAM-1) returns its field errors; a card of any other family, or missing authorised data, is 503 `product_family_policy_unavailable`; a null answer or a malformed definition is 503 `product_family_policy_invalid` |
+| Stock/sales unit profile inactive, not effective on the date, or stock not kilogram | error `references.units.stock` / `references.units.sales` `invalid_reference` |
+| Settings provider failure | `SettingsPrerequisiteException` with the provider's code (`settings_access_denied`, `settings_provider_unavailable`, …); `settings_profile_invalid` only for malformed, foreign or self-contradictory profile data |
+| All pass | `ProductSalesSnapshotV1` with the owner's exact profile ids/versions; order unit = sales unit |
+
+### Error channel
+
+The channel is part of the port contract (`IProductSalesEligibilityV1` documents it and
+`ProductSalesEligibilityServiceTests` pins it). A result with `Errors` is the owner's answer about
+this selection; an exception is not.
+
+Codes that arrive in `Errors` at this base:
+
+| Field | Codes |
+|---|---|
+| `productId` | `invalid_reference`, `lifecycle_conflict`, `not_sellable` |
+| `expectedProductVersion` | `version_conflict`, `invalid_version` |
+| `references.units.stock`, `references.units.sales` | `invalid_reference` (binding missing, or the owner's profile cannot be used on `EffectiveOn`) |
+| `orderUnitId` | `invalid_reference`, `unsupported_order_unit` |
+| `references.attributes.{fieldId}` (GDC band/coil) | `required`, `family_invalid_value`, `family_precision_exceeded`, `family_not_controlled` |
+| `references.units.stock`, `references.units.sales` (GDC band/coil) | `required`; `family_unit_path_mismatch` (sales only) |
+
+- `version_conflict` and `lifecycle_conflict` arrive in `Errors`; neither is thrown, and
+  Product.Domain's `ProductVersionConflictException` never crosses this read path.
+- Several errors can arrive together and their order carries no precedence. The consumer maps
+  them; Product does not publish a separate unit code.
+- `SettingsPrerequisiteException` reaches the consumer unchanged, after the same company/actor
+  fence as every other read: Product neither reinterprets nor renames a Settings code (including
+  `settings_unit_profile_not_found`). A profile the owner does return but that cannot be used on
+  `EffectiveOn` is an answer about this selection, so it is an error, not this exception.
+- How a consumer turns these channels and codes into its own public answers is that consumer's
+  contract, not Product's. For Sales it is defined in `src/backend/Modules/Sales/REFERENCE_READ_V1.md`
+  (and `CONTRACT_V1.md`); this README does not restate it.
+- `InvalidOperationException` (corrupt stored record) and `OperationCanceledException` are not
+  owner outcomes; the platform handles them.
+
+Fail-closed limits at this base, not policy choices:
+
+- The first family's rules are accepted and implemented; its **data** is not there yet. See
+  "GDC band/coil family policy" below: until the authorised family, template-field and
+  dictionary source exists, the shipped definition source answers 503 ("veri eksik"), so an
+  otherwise valid Active selection is still never usable. No other family is accepted, and
+  nothing here infers one.
+- No offered-unit or conversion policy is accepted (U-08), so only the sales unit is offered.
+- Approval (Draft -> Active) exists since the activation slice below; until a person holds the
+  global `Activate` grant, real rows stay Draft and are rejected with `lifecycle_conflict`.
+- The runtime is not yet composed in the API host. Host wiring (DI, the reviewed-source
+  fingerprint and its composition test) is the central writer's; the name is registered (#277)
+  and a real grant is a human gate. Until then the Sales product
+  read never reaches this runtime: with its default binding (no product selector permission) it
+  answers 403 before looking for a runtime, and only once that permission is bound would a
+  missing runtime answer 503 `product_provider_unavailable`. K-1(a) is not complete until the
+  code, the independent reviews and CI are done; this slice is the Product-side part.
+
+Candidate/offered-unit enumeration for a company user is not implemented: without an accepted
+family policy its only honest answer would be 503.
+
+## Stock eligibility runtime (T07, operational selection for a stock operation)
+
+`ProductStockEligibilityService` implements `IProductStockEligibilityV1`, the owner's answer to "may this Product at this version be stocked on this date, and under which stock-unit profile?" It follows the sales port's pattern and channels. Only the stock rules are asked:
+
+`IProductStockCandidatesV1` is the bounded selector source for the same operation. It searches only
+Active stored cards, then releases only exact `IProductStockEligibilityV1` positives together with
+the Settings-owned stock unit code/profile identity. It adds no commercial role, conversion,
+availability, reservation or allocation rule; `SearchWindowFull` describes the examined stored
+window rather than an exhaustive availability claim.
+
+| Rule | Source | Answer |
+|---|---|---|
+| Only an Active card | DEC-PRD-010 ("a draft card cannot be used in a definitive transaction") | `productId` `lifecycle_conflict` |
+| The expected version | port pattern | `expectedProductVersion` `version_conflict` / `invalid_version` |
+| A stock unit binding exists, and its Settings profile is usable on the date **and kilogram** | DEC-PRD-007 ("the main stock quantity is kg") | `references.units.stock` `invalid_reference` |
+| The card's family-required policy | as for sales: a card is a valid card of its family or not | the policy's own field errors; `503` while the family's data is missing |
+| **No role** | no source ties stocking to Purchasable / Sellable / ProductionInput / ProductionOutput | nothing is invented; a card that is not sellable can still be stocked |
+
+- **Not read.** The sales unit and the sales role are sales' questions; for stock they are neither checked nor read. A family whose accepted rules require a sales binding still refuses a card without one, through the family policy (the GDC band/coil rule does).
+- **Authority.** The same narrow `product.operational-selection.read` permission, measured afresh through `IErpAuthorityRevalidationService` before anything is read and after every awaited read: four measurements for a full evaluation. The refusal is the one `product_access_denied` 403. Inventory's own permission is still required on Inventory's side.
+- **Code.** The fence code is repeated from the sales runtime on purpose, so the reviewed sales runtime is not touched. Merging the two is a later refactor with its own review.
+- **Not wired yet.** The host registration is a central step, together with C3. The port is **not registered** and no Inventory command calls it yet.
+- **Tests.** `ProductStockEligibilityServiceTests` reuses the sales tests' synthetic world.
+
+## Shell capabilities (the normal screens)
+
+`ProductShellCapabilityProvider` publishes Product's four screens to the shell, so an actor holding the global Product authority reaches them in the normal runtime:
+
+| Capability | Route | Screen | Granted by (global Product authority) |
+|---|---|---|---|
+| `product.items.list` | `/urun` | U-01 | `Read` |
+| `product.items.detail` | `/urun/:productId` | U-01-360 | `Read` |
+| `product.items.create` | `/urun/yeni` | U-02 | `DraftCreate` |
+| `product.items.edit` | `/urun/:productId/duzenle` | U-02-EDIT | `DraftBasicEdit` |
+
+- **No company permission and no new permission name.** The central registry accepts a Product capability only with its exact operation, owner `PRODUCT`, single-company context and no company permission. The shell grants it from the explicit global Product assignments, the same authority every Product API call already enforces.
+- **Unconfigured means nothing is shown.** Without the Product runtime configuration there is no Product authority, so no screen is granted.
+- **C-01 stays list-only.** The disposable C-01 browser stack replaces the providers and remains Counterparty list-only.
+- **Evidence.** A registry test, a host test, the C-01 activation test and a real-SQL grant/revoke test through the real provider. The browser evidence comes with the U-02 suite (BROWSER-CI stage 2).
+
+## GDC band/coil family policy (first accepted family)
+
+Source: Business #265 5722701085 (Sinan Ö1/Ö2 of 2026-09-18, #66 5722637822). The rule set is
+accepted; `ProductFamilyRequirementPolicyV2` encodes it exactly over the released family definition (PRD-FAM-1):
+
+| Rule | Field | Answer when broken |
+|---|---|---|
+| Nominal thickness > 0 mm, at most 3 decimals | `references.attributes.{thickness field}` | missing/null → `required`; not a number or ≤ 0 → `family_invalid_value`; 4th decimal → `family_precision_exceeded` (refused, never rounded) |
+| Nominal width > 0 mm, at most 3 decimals | `references.attributes.{width field}` | same |
+| Controlled quality | `references.attributes.{quality field}` | missing/null → `required`; not an owner-listed reference → `family_not_controlled` |
+| Controlled coating status; "kaplamasız" is a valid stated status, unknown/null is not | `references.attributes.{coating field}` | missing/null → `required`; not listed → `family_not_controlled` |
+| kg→kg, no conversion: the sales unit is the stock unit | `references.units.stock`, `references.units.sales` | a missing binding → `required` (never a silent pass); different units → `family_unit_path_mismatch` on `references.units.sales` |
+
+- Colour is meaningful only for a painted family; nothing is required of this one.
+- Every broken rule is reported together; order carries no precedence.
+- Draft/Inactive, the sellable role, the Settings profiles (stock must be kilogram) and the
+  authority fences stay the eligibility read's: a positive answer needs all of them together.
+- **The released family definition (PRD-FAM-1).** Families, the template version bound to them and
+  the controlled dictionaries come from the Product-owned registry (`product.Families`,
+  `product.Templates`, `product.TemplateFamilies`, `product.TemplateFields`,
+  `product.DictionaryEntries`) through `IProductFamilyDefinitionSourceV2` /
+  `SqlProductFamilyDefinitionSource`. The field keys and roles are data, not code: the rule set
+  needs one required, unconditional field for each of thickness, width, quality and coating, and
+  the coating dictionary states exactly one explicit "none" (Kaplamasız). Cins/Tür/Tip are fixed
+  by the family (#66 5739827887), never typed on a card.
+- **No release, no answer.** With an empty registry every evaluation is 503
+  `product_family_policy_unavailable` (as the unavailable source it replaced), draft save refuses
+  any family and template (`invalid_reference`), and reference options keep `families` and
+  `templates` unavailable. Nothing is seeded; the first release is loaded only by the decided route
+  (Business Q6) and every row carries its `SourceRef`. A release that IS loaded but malformed
+  (`product_family_policy_invalid`) reads the same way on the draft and options paths (fail-closed), but
+  the options read logs a warning with the code (#334 P3-1), so an operator fault does not look like "no
+  release" until an eligibility call reveals it; a missing release is the normal state and is not logged.
+- **Candidates.** A dictionary entry is Approved or Candidate. A candidate (a Göymen commercial code
+  without an established meaning, or a web/standard suggestion) is held without an invented meaning
+  or mass and never satisfies a controlled field: `family_value_candidate`. Only a field that takes
+  candidates (the optional sub-quality) may hold one, and only under its own parent grade
+  (`family_value_parent_mismatch`).
+- **Applicability.** A designation applies with the zinc coating and a colour with the painted one;
+  supplied elsewhere they are `family_field_not_applicable`. Whether a designation is required with
+  zinc is open (not required). A non-role field may be released with an EMPTY dictionary while its
+  values are undecided (Business 5740811346: colour applies with the painted coating, no colour value
+  is activated): the release stays well formed, the field refuses every value
+  (`family_not_controlled`), and when it is required its cards stay closed (`required`). A role
+  field's dictionary still needs an approved entry.
+- The card must be bound to its family's template version (`references.templateId` missing →
+  `required`, another template or version → `family_template_mismatch`); an attribute the template
+  does not have is `family_field_unknown`.
+- A card of another family, or with no family, is 503 `product_family_policy_unavailable`, never
+  "no errors". A malformed release (a family in no or two templates, a missing or optional role
+  field, no or two explicit "none" values, a candidate "none", an unknown dictionary, a condition
+  on an unknown or unapproved code, a parent code that does not exist, a non-positive mass,
+  duplicate codes, blank sources) is 503 `product_family_policy_invalid` as a whole.
+- **Draft save** checks only the template binding and the attribute keys, with the closed v1 draft
+  codes (`invalid_reference`): a Draft may be incomplete or hold a candidate. The family policy's
+  own codes (`ProductFamilyPolicyCodesV1`) answer when a card is judged for operational use; Sales
+  maps them like any Product field error.
+- A card names a released family or none: `FK_Products_Families_FamilyId` (no card held a family
+  before the registry). The registry migration's Down refuses (51044) while any Product or registry
+  row exists: forward fix.
+- **Units (PRD-UNIT-1, U-08 minimal).** A global card's unit reference is the Settings unit
+  IDENTITY: company-independent, "kg is kg in every company" (`SettingsUnitIdentitiesV1`), read through
+  Settings' `ISettingsUnitIdentityCatalogV1`. At save, the stock unit must be the kilogram identity
+  (Ö1 kg→kg) and the sales unit any known identity; the family policy keeps sales = stock. Only the
+  stock and sales roles are open; purchase, price, production and package stay `invalid_reference`
+  until their own decision. Whether a company may use the unit is its PROFILE, checked at eligibility
+  (`ProductUnitProfileAdapter`), fail-closed: a well-formed profile that cannot be used on the date (inactive,
+  outside its window, not kilogram for stock) is the field error `references.units.stock` /
+  `references.units.sales` `invalid_reference`; a company WITHOUT such a profile gets the Settings answer
+  passed through as a `SettingsPrerequisiteException`, never a field error — `settings_provider_unavailable`
+  (no approved source for the company) or `settings_unit_profile_not_found` (a source without the unit) —
+  and consumers map those themselves (#335 P3-1). No unit, conversion or factor is added; reference options list the identities (the code
+  is shown, as the source has no display name). Without the Settings catalogue every unit is refused,
+  as before.
+
+```powershell
+dotnet test tests/GoymenERP.Product.UnitTests/GoymenERP.Product.UnitTests.csproj --filter FullyQualifiedName~ProductSalesEligibilityServiceTests
+```
+
+## Card approval (Draft -> Active, DEC-PRD-010)
+
+Card: #66 5735046942, approved by the coordinator. DEC-PRD-010 (KİLİTLİ): a Draft card is not used in a
+firm transaction; "Stok/planlama rolü onaylayabilir; yetki ayarlanabilir."
+
+| Rule | Where |
+|---|---|
+| Only Draft becomes Active, at the version the approver read; one version up; every card value kept | `Product.Activate`, `ProductRow.ApplyActivation` |
+| A stale version is `409 version_conflict`; a card that is not a Draft is `409 lifecycle_conflict`; an unknown card `404`; an Active card is not edited as a draft (`409 lifecycle_conflict`) | `ProductDraftOperation` |
+| Authority is the global Product operation `Activate`, measured fresh on every attempt and again before commit (a revocation in flight is `403`, nothing written); no company permission | `ProductCommandGateway`, the host runner |
+| `POST /api/v1/products/{id}/activation` with `{expectedVersion}` and `Idempotency-Key`: the same key and request replays the stored `200` with `Idempotency-Replayed` and the first correlation; another request under the key is `409 idempotency_conflict`; two racing callers of one key leave one transition, the loser replays it | the shared command boundary (`product.card.activate.v1`) |
+| One canonical audit event `product.card.activated.v1`, before/after card, in the same transaction | the host's audit session |
+
+- **No completeness precondition.** No source makes one; the eligibility reads (sales/stock) still judge
+  the whole card at the moment of use, and without the GDC family data they stay `503`.
+- **Not here:** maker != checker (not in the sources), Excel import, deactivation (Active -> Inactive),
+  bulk approval, the UI and its shell control (the registry's global-Product table and control rule are
+  central; they come with the U-01-360 control slice), the role mapping and any grant (a human decision).
+- **ADR-011 §7 terminal replay** of a refusal (stale version, not found) is not stored by the shared
+  Product command boundary: only a success is a terminal there, as for the draft writes. A retried refusal
+  is computed again (and still refused). This slice does not change the shared boundary.
+
+**Central (CARİ), before this compiles:** `GroupSharedMasterOperation.Activate` (BuildingBlocks); Identity
+`ProductMasterOperation.Activate = 4`, the `CK_ProductMasterAssignments_Operation` migration and the explicit
+mapping in `SqlProductMasterAuthorizationService` (its allowlist admits `Activate` and its default branch
+becomes an explicit case — today `_ => DraftBasicEdit` would read an Activate check as a DraftBasicEdit grant);
+`UnconfiguredProductService.ActivateAsync` in `ProductRuntimeExtensions`; guard pins; the relational
+verifier's five `ProductActivationSqlServerRelationalAcceptanceTests` names; OpenAPI (`ActivateProductV1`).

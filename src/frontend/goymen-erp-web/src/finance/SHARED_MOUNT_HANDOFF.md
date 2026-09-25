@@ -1,54 +1,56 @@
 # Finance → shared shell mount handoff (single package)
 
-Owner of this file: CLAUDE-FRONTEND-FINANS (`src/finance/**`).
-Recipient: the existing shared shell/router owner, via the coordinator. Nothing here is
-applied to a shared file by this lane.
+Owner of this file: FİNANS (`src/finance/**`). Recipient: the shared shell/router owner (CARİ), via
+the coordinator. Nothing here is applied to a shared file by this lane.
 
-Status: **BLOCKED ON TWO BACKEND PUBLICATIONS — do not mount yet.** The screens exist and
-are component-tested; mounting today would only render a fail-closed block.
+Status: **MOUNTED (FIN-UI-1b, #332); provider 1.1 ready for central authority integration.**
+1. `FinanceShellCapabilityProvider` now has nine published declarations (`ImplementationAvailable: true`):
+   six routes and three controls.
+2. The HTTP port covers every Finance route (`./httpPort.ts`). Record and reversal proposal are controls
+   of the receipt detail; reversal approval has its own checker route.
 
-## What exists in `src/finance/**` (source #258 @fb482de, #254 @6f0cd10)
+The historical FIN-UI-1c run (#332, run 35444049175) covered the earlier six-declaration provider. It is not
+evidence for the provider 1.1 additions. The shared-shell owner must bind the reviewed 1.1 authority first;
+fresh SQL/browser/CI evidence remains separate. A route or control opens only for an actor holding all of its
+narrow permissions; declarations do not grant them.
+
+## What exists in `src/finance/**`
 
 | Export | File | Purpose |
 |---|---|---|
-| `FinanceSourceList({ onOpen })` | `FinanceSourceList.tsx` | Authorized source list, cursor paged |
-| `FinanceSourceDetail({ sourceId })` | `FinanceSourceDetail.tsx` | Detail + Record (Draft) / Reverse (Recorded), separate commands |
-| `ManualReceiptDraftForm({ party, profile, draft?, onSaved? })` | `ManualReceiptDraftForm.tsx` | FS0 bank reader + FS1 draft save |
-| `FinancePortProvider({ port })` | `financePort.tsx` | Injects the transport; absent → `service-unavailable` |
+| `financeRoutes` | `financeRoutes.tsx` | The six routes, each in `CapabilityRoute` + `FinancePortProvider` (HTTP) |
+| `FINANCE_CAPABILITY`, `FINANCE_ROUTE` | `capabilities.ts` | The provider's ids and paths (pinned by `FinanceShellCapabilityProviderTests`) |
+| `BankAccountsPage` / `BankAccountProposePage` | `BankAccountsPage.tsx` / `BankAccountProposePage.tsx` | F-04 list (+ approval control) / propose |
+| `ReceiptListPage` / `ReceiptDraftPage` / `ReceiptDetailPage` | `ReceiptPages.tsx` | F-02 list / new draft (entered from a Cari account) / one draft |
 
-Company, actor, session and fence come from the existing `useShellState`/`contextKey`;
-read states use `shell/StateBlock`. No shared file is imported for writing.
+## The mount change (shell owner, one serial change)
 
-## Blockers (exact)
+1. `src/shell/capabilities.ts` — keep the six ROUTE ids with their paths, exactly as `FINANCE_ROUTE`:
 
-1. **No Finance shell capability provider.** #258 publishes no capability ids or route
-   declarations. The shell registry must not get invented ids. Needed from Finance Backend:
-   the provider's capability ids for list / detail / draft (and whether record/reverse are
-   route or control capabilities).
-2. **No HTTP mapping for `FinanceReceiptPort`.** #258 is a module port contract: no routes,
-   methods, status mapping, `Idempotency-Key`/replay header names or platform 403 code.
-   The HTTP adapter (module-owned, `src/finance/**`) is written once published.
+   | Capability id | Route |
+   |---|---|
+   | `finance.receipts.list` | `/finans/tahsilatlar` |
+   | `finance.receipts.draft` | `/finans/tahsilatlar/yeni` (static, before `:sourceId`) |
+   | `finance.receipts.detail` | `/finans/tahsilatlar/:sourceId` |
+   | `finance.receipts.reverse.approve` | `/finans/ters-kayit-onaylari` |
+   | `finance.bank-accounts.list` | `/finans/banka-hesaplari` |
+   | `finance.bank-accounts.propose` | `/finans/banka-hesaplari/yeni` |
 
-Also open, not mount-blocking: a server source for a NEW draft's `ProfileReference`
-(no Finance read returns one), a currency display code, and a party display name for the
-list; the Cari → "Tahsilat taslağı" entry that supplies `party` is a later cross-lane item.
+   These are controls, not routes, and belong in no route registry:
+   `finance.bank-accounts.approve` (F-04 list), `finance.receipts.record` (F-02 detail), and
+   `finance.receipts.reverse.propose` (F-02 detail). Their pages check them with `hasCapability`.
+2. `src/shell/router.tsx` — import and spread `financeRoutes` before the catch-all.
+3. `src/shell/AppShell.tsx` — nav entries for `finance.receipts.list` ("Tahsilat Taslakları") and
+   `finance.bank-accounts.list` ("Banka Hesapları"). No nav entry for the new-draft route (it is
+   entered from a Cari account with `?partyId=&companyAccountId=`), the detail, or the propose route
+   (linked from the F-04 list).
+4. `src/shell/financeMountDrift.test.ts` — the `salesMountDrift.test.ts` pattern: shell ids ==
+   `FINANCE_ROUTE` keys' ids, routes/labels equal, the control id not a route.
 
-## The mount change, once 1 and 2 land (shell owner, one serial change)
-
-1. `src/shell/capabilities.ts` — add the Finance ids exactly as the provider publishes them,
-   their routes and nav label(s).
-2. `src/shell/router.tsx` — import and spread `financeRoutes` (to be added in
-   `src/finance/financeRoutes.tsx` by this lane, each page wrapped in `CapabilityRoute` and
-   `FinancePortProvider` with the HTTP adapter) before the catch-all.
-3. `src/shell/AppShell.tsx` — one nav entry for the list capability.
-4. `src/shell/financeMountDrift.test.ts` — same pattern as `organizationMountDrift.test.ts`:
-   shell ids == `FINANCE_ROUTE` keys, routes/labels equal, control-only ids not routes.
-
-Serialize with the pending Product router spread and the Sipariş lane; two lanes must not
-edit `router.tsx` in parallel.
+Serialize with the other lanes' mounts; two lanes must not edit `router.tsx` in parallel.
 
 ## Evidence boundary
 
-Component/DOM tests with a recording port and real pending promises (SENTETIK/NOT_ENV).
-Not API, SQL, provider/profile/period readiness, browser or ENV acceptance. UI port 29173
-is a reservation only; nothing was started.
+Component/DOM tests use a recording port and real pending promises (SENTETIK/NOT_ENV); HTTP mapping
+tests use a stubbed `fetch`. They are not API, SQL or browser evidence. Provider 1.1 still requires the
+central authority integration and fresh labelled acceptance evidence.

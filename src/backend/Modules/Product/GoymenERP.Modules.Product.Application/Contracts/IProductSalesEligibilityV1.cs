@@ -5,6 +5,54 @@ namespace GoymenERP.Modules.Product.Application.Contracts;
 /// authority and revalidate lifecycle, roles and family-required references against
 /// the real owners. A previous selection is not authorization for a Sales command.
 /// No runtime implementation or permission mapping is provided by this contract.
+///
+/// <para><b>Error channel.</b> Which outcome arrives how is part of the contract; a
+/// consumer maps channels and codes, never exception messages.</para>
+///
+/// <para><b>Result with <c>Errors</c></b> (and a null snapshot): the owner's answer about
+/// THIS selection. Codes at this base:</para>
+/// <list type="bullet">
+/// <item><c>productId</c>: <c>invalid_reference</c> (empty id, missing or mismatched
+/// Product), <c>lifecycle_conflict</c> (any non-Active Product, including a Draft that was
+/// never selectable), <c>not_sellable</c>.</item>
+/// <item><c>expectedProductVersion</c>: <c>version_conflict</c> (the stored version moved
+/// on), <c>invalid_version</c>.</item>
+/// <item><c>references.units.stock</c> / <c>references.units.sales</c>:
+/// <c>invalid_reference</c> — the binding is missing, or the owner's Settings profile is
+/// inactive, not effective on <c>EffectiveOn</c>, or (stock only) not kilogram.</item>
+/// <item><c>orderUnitId</c>: <c>invalid_reference</c> (empty), <c>unsupported_order_unit</c>.</item>
+/// <item>Field errors returned by the accepted family-required policy. The first one, GDC
+/// band/coil (<c>ProductFamilyRequirementPolicyV2</c>), answers on
+/// <c>references.attributes.{fieldId}</c> with <c>required</c>, <c>family_invalid_value</c>,
+/// <c>family_precision_exceeded</c> or <c>family_not_controlled</c>, and on
+/// <c>references.units.stock</c> / <c>references.units.sales</c> with <c>required</c> (a missing
+/// binding) or, on sales, <c>family_unit_path_mismatch</c>
+/// (<c>ProductFamilyPolicyCodesV1</c>).</item>
+/// </list>
+/// <para>Several errors may arrive together; their order carries no precedence. Conflicts
+/// are field errors: <c>version_conflict</c> and <c>lifecycle_conflict</c> are never thrown.</para>
+///
+/// <para><b>Exceptions</b>, which are not answers about the selection:</para>
+/// <list type="bullet">
+/// <item><c>ProductOperationException</c> 403 <c>product_access_denied</c>: no server scope,
+/// the caller lacks the narrow operational product-selection permission for the
+/// server-resolved company, or the company or actor changed during any read; it replaces
+/// whatever that read produced. One code for all of them: which it was is not disclosed. A
+/// permission revoked while the request is in flight is seen at the next fence: an
+/// implementation measures it afresh there (the central revalidation port) rather than
+/// relying on the request's cached view.</item>
+/// <item><c>ProductOperationException</c> 503 <c>product_family_policy_unavailable</c> /
+/// <c>product_family_policy_invalid</c>: no accepted family policy covers the card's family,
+/// its authorised data is missing, or the policy or its data is malformed.</item>
+/// <item><c>SettingsPrerequisiteException</c>: the Settings provider's own codes pass through
+/// (<c>settings_access_denied</c>, <c>settings_provider_unavailable</c>, …);
+/// <c>settings_profile_invalid</c> only for malformed, foreign or self-contradictory profile
+/// data.</item>
+/// <item><c>InvalidOperationException</c>: a stored Product record that cannot be restored.</item>
+/// <item><c>OperationCanceledException</c> on cancellation.</item>
+/// </list>
+/// <para><c>ProductVersionConflictException</c> (Product.Domain) is never thrown on this read
+/// path: no Domain command runs, and a stale version is the <c>version_conflict</c> error.</para>
 /// </summary>
 public interface IProductSalesEligibilityV1
 {

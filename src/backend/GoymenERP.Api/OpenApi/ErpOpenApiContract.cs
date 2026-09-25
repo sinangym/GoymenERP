@@ -6,6 +6,7 @@ using GoymenERP.Modules.Counterparty.Application.Contracts;
 using GoymenERP.Modules.Counterparty.Domain.Accounts;
 using GoymenERP.Modules.Counterparty.Domain.Parties;
 using GoymenERP.Modules.Organization.Application.Contracts;
+using GoymenERP.Modules.Sales.Application.Contracts;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.OpenApi;
@@ -66,7 +67,8 @@ public static partial class ErpOpenApiContract
         + "forbidden|internal_error|service_unavailable|validation_failed|"
         + "command_metadata_invalid|invalid_cursor|not_found|already_linked|"
         + "version_conflict|idempotency_conflict|client_contract_required|"
-        + "client_contract_unsupported)$";
+        + "client_contract_unsupported|product_selection_changed|unsupported_currency|"
+        + "unsupported_product|unsupported_unit)$";
 
     public static IServiceCollection AddErpOpenApi(this IServiceCollection services)
     {
@@ -96,6 +98,14 @@ public static partial class ErpOpenApiContract
             options.AddSchemaTransformer((schema, context, _) =>
             {
                 ApplyContactInformationSchema(schema, context.JsonTypeInfo.Type);
+                if (context.JsonTypeInfo.Type == typeof(SalesDraftLineCommercialV1))
+                {
+                    schema.Required ??= new HashSet<string>();
+                    schema.Required.Add("unitPrice");
+                    schema.Required.Add("priceUnitId");
+                    schema.Required.Add("discountPercent");
+                }
+
                 if (context.JsonTypeInfo.Type == typeof(CreateCounterparty))
                 {
                     schema.Required?.Remove("tradeName");
@@ -358,6 +368,23 @@ public static partial class ErpOpenApiContract
             "application/problem+json");
     }
 
+    public static RouteHandlerBuilder ProducesErpUnprocessableEntity(
+        this RouteHandlerBuilder builder,
+        params string[] stableCodes)
+    {
+        if (stableCodes.Length == 0)
+        {
+            throw new InvalidOperationException(
+                "Coded 422 OpenAPI responses require at least one stable code.");
+        }
+
+        builder.Produces<ErpProblemDetailsContract>(
+            StatusCodes.Status422UnprocessableEntity,
+            "application/problem+json");
+        AddProblemCodeMetadata(builder, StatusCodes.Status422UnprocessableEntity, stableCodes);
+        return builder;
+    }
+
     public static RouteHandlerBuilder ProducesErpConflict(
         this RouteHandlerBuilder builder,
         params string[] stableCodes)
@@ -412,7 +439,8 @@ public static partial class ErpOpenApiContract
     }
 
     public static RouteHandlerBuilder ProducesErpServiceUnavailable(
-        this RouteHandlerBuilder builder)
+        this RouteHandlerBuilder builder,
+        params string[] codes)
     {
         builder.Produces<ErpProblemDetailsContract>(
             StatusCodes.Status503ServiceUnavailable,
@@ -420,7 +448,7 @@ public static partial class ErpOpenApiContract
         AddProblemCodeMetadata(
             builder,
             StatusCodes.Status503ServiceUnavailable,
-            [ErpProblemCodes.ServiceUnavailable]);
+            [ErpProblemCodes.ServiceUnavailable, .. codes]);
         return builder;
     }
 
@@ -442,6 +470,35 @@ public static partial class ErpOpenApiContract
                     .Distinct(StringComparer.Ordinal)
                     .Order(StringComparer.Ordinal)
                     .ToArray());
+
+        var isManufacturingInventoryRealizationOperation = operation.OperationId is
+            "IssueManufacturingInputV1"
+            or "ReturnManufacturingInputV1"
+            or "DeclareManufacturingOutputV1";
+        if (!isManufacturingInventoryRealizationOperation
+            && problemCodesByStatus.TryGetValue(
+                StatusCodes.Status400BadRequest,
+                out var badRequestCodes))
+        {
+            problemCodesByStatus[StatusCodes.Status400BadRequest] = badRequestCodes
+                .Where(code => code != GoymenERP.Modules.Inventory.Application
+                                   .InventoryManufacturingRealizationCodesV1.InvalidRequest
+                               && code != GoymenERP.Modules.Inventory.Application
+                                   .InventoryManufacturingRealizationCodesV1.InvalidVersion
+                               && code != GoymenERP.Modules.Inventory.Application
+                                   .InventoryManufacturingRealizationCodesV1.InvalidQuantity)
+                .ToArray();
+        }
+        else if (isManufacturingInventoryRealizationOperation)
+        {
+            problemCodesByStatus[StatusCodes.Status409Conflict] = problemCodesByStatus
+                .GetValueOrDefault(StatusCodes.Status409Conflict, [])
+                .Append(GoymenERP.Api.ManufacturingRuntime
+                    .ManufacturingInventoryInputIssueHostCodes.IncompleteRealization)
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)
+                .ToArray();
+        }
 
         AddHeaderParameter(
             operation,
@@ -574,6 +631,65 @@ public static partial class ErpOpenApiContract
                 ParameterLocation.Query,
                 "entityId",
                 maximumLength: 128);
+        }
+
+        if (string.Equals(operation.OperationId, "GetSalesAccountReferencesV1", StringComparison.Ordinal))
+        {
+            SetNormalizedIntegerParameter(operation, ParameterLocation.Query, "pageSize", 1, 100);
+            SetStringLengthParameter(operation, ParameterLocation.Query, "q", null, 200);
+            SetStringLengthParameter(operation, ParameterLocation.Query, "cursor", 1, 8192);
+        }
+
+        if (string.Equals(operation.OperationId, "GetSalesProductReferenceV1", StringComparison.Ordinal))
+        {
+            SetStringLengthParameter(
+                operation, ParameterLocation.Query, "expectedProductVersion", 1, 128);
+        }
+
+        if (string.Equals(operation.OperationId, "GetAccountingTrialBalanceV1", StringComparison.Ordinal))
+        {
+            AddQueryParameter(operation, "fromAccountingDate",
+                new OpenApiSchema { Type = JsonSchemaType.String, Format = "date" },
+                "Inclusive first accounting date (yyyy-MM-dd).", required: true);
+            AddQueryParameter(operation, "throughAccountingDate",
+                new OpenApiSchema { Type = JsonSchemaType.String, Format = "date" },
+                "Inclusive last accounting date (yyyy-MM-dd).", required: true);
+            AddQueryParameter(operation, "currencyId",
+                new OpenApiSchema { Type = JsonSchemaType.String, Format = "uuid" },
+                "Optional non-empty currency identifier; currencies are never combined.");
+        }
+
+        if (string.Equals(
+                operation.OperationId,
+                GoymenERP.Modules.Inventory.Application.InventoryParentRollApiV1.GetCandidatesOperationId,
+                StringComparison.Ordinal))
+        {
+            AddInventoryParentRollCandidateParameters(operation);
+        }
+
+        if (string.Equals(
+                operation.OperationId,
+                GoymenERP.Modules.Inventory.Application.InventoryStockPositionApiV1.GetPositionsOperationId,
+                StringComparison.Ordinal))
+        {
+            AddInventoryParentRollCandidateParameters(operation);
+        }
+
+        if (string.Equals(operation.OperationId, "GetInventoryPhysicalAllocationsV1", StringComparison.Ordinal))
+        {
+            AddInventoryPhysicalAllocationReadParameters(operation);
+        }
+
+        if (operation.OperationId is "GetInventoryProductCandidatesV1"
+            or "GetManufacturingOutputProductCandidatesV1")
+        {
+            AddInventoryProductCandidateParameters(operation);
+        }
+
+        if (operation.OperationId is "GetInventoryLocationCandidatesV1"
+            or "GetManufacturingOutputLocationCandidatesV1")
+        {
+            AddInventoryLocationCandidateParameters(operation);
         }
 
 
@@ -900,6 +1016,82 @@ public static partial class ErpOpenApiContract
             JsonValue.Create("unicode-trim+nfc")!);
     }
 
+    private static void AddInventoryParentRollCandidateParameters(OpenApiOperation operation)
+    {
+        AddQueryParameter(
+            operation,
+            "q",
+            new OpenApiSchema { Type = JsonSchemaType.String },
+            "Optional label-code search; trimmed by the Inventory owner, at most 64 characters.");
+        SetCanonicalStringParameter(operation, ParameterLocation.Query, "q", maximumLength: 64);
+        AddQueryParameter(
+            operation,
+            "limit",
+            new OpenApiSchema
+            {
+                Type = JsonSchemaType.Integer,
+                Format = "int32",
+                Minimum = "1",
+                Maximum = "100",
+            },
+            "Maximum candidate rows; default 25, range 1..100.");
+    }
+
+    private static void AddInventoryPhysicalAllocationReadParameters(OpenApiOperation operation)
+    {
+        AddQueryParameter(
+            operation,
+            "salesOrderId",
+            new OpenApiSchema { Type = JsonSchemaType.String, Format = "uuid" },
+            "Required Sales order identifier.",
+            required: true);
+        AddQueryParameter(
+            operation,
+            "salesOrderLineId",
+            new OpenApiSchema { Type = JsonSchemaType.String, Format = "uuid" },
+            "Required Sales order line identifier.",
+            required: true);
+        AddQueryParameter(
+            operation,
+            "limit",
+            new OpenApiSchema
+            {
+                Type = JsonSchemaType.Integer,
+                Format = "int32",
+                Minimum = "1",
+                Maximum = "100",
+            },
+            "Maximum allocation rows; default 100, range 1..100.");
+    }
+
+    private static void AddInventoryProductCandidateParameters(OpenApiOperation operation)
+    {
+        AddQueryParameter(operation, "q", new OpenApiSchema { Type = JsonSchemaType.String },
+            "Optional Product code or name search.");
+        AddQueryParameter(operation, "effectiveOn",
+            new OpenApiSchema { Type = JsonSchemaType.String, Format = "date" },
+            "Required effective date in yyyy-MM-dd form.", required: true);
+        AddBoundedCandidateLimit(operation);
+    }
+
+    private static void AddInventoryLocationCandidateParameters(OpenApiOperation operation)
+    {
+        AddQueryParameter(operation, "q", new OpenApiSchema { Type = JsonSchemaType.String },
+            "Optional active location, site code or name search.");
+        AddBoundedCandidateLimit(operation);
+    }
+
+    private static void AddBoundedCandidateLimit(OpenApiOperation operation) =>
+        AddQueryParameter(operation, "limit",
+            new OpenApiSchema
+            {
+                Type = JsonSchemaType.Integer,
+                Format = "int32",
+                Minimum = "1",
+                Maximum = "100",
+            },
+            "Maximum candidate rows; default 25, range 1..100.");
+
     private static OpenApiSchema StringChoiceSchema(string pattern)
     {
         return new OpenApiSchema
@@ -914,7 +1106,8 @@ public static partial class ErpOpenApiContract
         string name,
         OpenApiSchema schema,
         string description,
-        bool explode = false)
+        bool explode = false,
+        bool required = false)
     {
         operation.Parameters ??= [];
         if (operation.Parameters.Any(parameter =>
@@ -929,7 +1122,7 @@ public static partial class ErpOpenApiContract
         {
             Name = name,
             In = ParameterLocation.Query,
-            Required = false,
+            Required = required,
             Description = description,
             Schema = schema,
             Style = ParameterStyle.Form,
@@ -1023,6 +1216,14 @@ public static partial class ErpOpenApiContract
             schema,
             NormalizedMaximumExtensionName,
             JsonValue.Create(maximum)!);
+    }
+
+    private static void SetStringLengthParameter(OpenApiOperation operation,
+        ParameterLocation location, string parameterName, int? minimum, int? maximum)
+    {
+        var schema = GetConcreteParameterSchema(operation, location, parameterName);
+        schema.MinLength = minimum;
+        schema.MaxLength = maximum;
     }
 
     private static OpenApiSchema GetConcreteParameterSchema(

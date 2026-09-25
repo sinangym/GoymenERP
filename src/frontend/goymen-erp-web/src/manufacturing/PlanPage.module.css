@@ -1,0 +1,33 @@
+.page { display: flex; flex-direction: column; gap: 1.25rem; padding: 1.5rem; color: #16231d; }
+.page h1, .page h2, .page p { margin-top: 0; }
+.header { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 1rem; }
+.header h1 { margin: 0; font-family: Georgia, 'Times New Roman', serif; font-size: clamp(1.65rem, 4vw, 2.35rem); }
+.eyebrow { margin: 0 0 .25rem; color: #8a5319; font-size: .75rem; font-weight: 800; letter-spacing: .13em; }
+.form { display: grid; gap: 1rem; max-width: 68rem; }
+.form fieldset { display: grid; gap: .75rem; border: 1px solid #b8c8bb; border-radius: .8rem; background: #fff; padding: 1rem; }
+.form legend { padding: 0 .35rem; color: #294535; font-weight: 800; }
+.form input, .form select { width: 100%; border: 1px solid #9cae9f; border-radius: .45rem; background: #fffdf5; padding: .6rem .7rem; font: inherit; }
+.formGrid { display: grid; grid-template-columns: minmax(10rem, 15rem) minmax(0, 1fr); align-items: center; gap: .75rem 1rem; }
+.searchRow, .actions { display: flex; flex-wrap: wrap; align-items: center; gap: .7rem; }
+.actions button, .primaryLink { border: 1px solid #236442; border-radius: .45rem; background: #236442; color: #fff; padding: .55rem .9rem; font: inherit; font-weight: 700; cursor: pointer; text-decoration: none; }
+.actions button:disabled { cursor: progress; opacity: .65; }
+.secondary { border: 1px solid #63766b; border-radius: .45rem; background: #fff; color: #294535; padding: .5rem .85rem; text-decoration: none; }
+.tableWrap { overflow-x: auto; border: 1px solid #d7ddd8; border-radius: .8rem; background: #fff; }
+.table { width: 100%; border-collapse: collapse; }
+.table th, .table td { border-top: 1px solid #e4e9e5; padding: .65rem .8rem; text-align: left; vertical-align: top; }
+.table thead th { background: #edf4ee; color: #294535; font-size: .8rem; }
+.table input { min-width: 8rem; }
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); margin: 0; border: 1px solid #d7ddd8; border-radius: .8rem; overflow: hidden; background: #d7ddd8; gap: 1px; }
+.facts div { min-width: 0; padding: .85rem 1rem; background: #fff; }
+.facts dt { color: #607267; font-size: .78rem; margin-bottom: .3rem; }
+.facts dd { margin: 0; overflow-wrap: anywhere; }
+.note { border-left: 4px solid #ce7a25; background: #fff3dc; padding: .8rem 1rem; color: #5f4a2f; }
+.commandCard { max-width: 54rem; border: 1px solid #b8c8bb; border-radius: .8rem; background: #fff; padding: 1rem; }
+.commandCard h2 { margin-bottom: .75rem; }
+.error { color: #a51d2d; font-weight: 700; }
+.success { color: #176336; font-weight: 700; }
+.warningCard, .successCard { max-width: 54rem; border: 1px solid #d5a04d; border-radius: .8rem; padding: 1rem; background: #fff7e7; }
+.successCard { border-color: #8fbd9d; background: #f2faf4; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .86rem; }
+.muted { color: #607267; }
+@media (max-width: 640px) { .page { padding: 1rem; } .formGrid { grid-template-columns: 1fr; } }

@@ -12,7 +12,7 @@ public sealed record ProductDraftWriteResult
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
-    internal ProductDraftWriteResult(ProductCardView? before, ProductCardView after, string reason)
+    internal ProductDraftWriteResult(ProductCardView? before, ProductCardView after, string reason, string? eventType = null)
     {
         Response = new(after, false);
         StatusCode = before is null ? 201 : 200;
@@ -23,7 +23,7 @@ public sealed record ProductDraftWriteResult
         BeforeJson = before is null ? "{}" : JsonSerializer.Serialize(before, Json);
         AfterJson = JsonSerializer.Serialize(after, Json);
         Reason = reason;
-        EventType = before is null ? "product.draft.created.v1" : "product.draft.basic-edited.v1";
+        EventType = eventType ?? (before is null ? "product.draft.created.v1" : "product.draft.basic-edited.v1");
     }
 
     public ProductMutationResponse Response { get; }

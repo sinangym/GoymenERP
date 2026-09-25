@@ -1,0 +1,95 @@
+# MFG (`browser:mfg`) — the suite's closed-list API extension (BROWSER-CI stage 2, a2 part 2).
+#
+# Owner: ORGANİZASYON (Manufacturing owner; suite owner). Validated with the merged model by
+# tools/validate_browser_acceptance.py once the central writer registers the `mfg` suite
+# (SUITES / SUITE_PROFILES `normal` since MFG-UI-F, first `mfg-staged`; SUITE_API_EXTENSIONS["mfg"] = Product issuer +
+# actors + identity, SUITE_IDENTITY_PERMISSIONS["mfg"] = the closed names below). The Product issuer is the existing
+# disposable u02 identity rebound to this suite without an actor, role, assignment or grant; it enables the Product
+# runtime and the gated fixed candidate used by Inventory's real opening-count command.
+#
+# Three synthetic actors after the canonical two, each with its Identity user, a synthetic role and a
+# company-wide assignment in GDC (the company whose approved kilogram profile the real Settings
+# provider answers). Company-wide because MFG-API requires a company-wide grant (K-1). Disposable test
+# database only: no production user, role or permission.
+#   mfg-recorder: the Manufacturing writes/reads plus the exact Organization, Inventory and Product reads/command
+#                 required by the real plan-create screen and its real opening-stock parent-roll fixture
+#   mfg-reader:   orders.read (sees the balances, no form: card D3)
+#   mfg-closer:   orders.read + orders.close (MFG-ORD: closing is its own authority — it records no fact)
+services:
+  api:
+    environment:
+      ProductRuntime__IssuerLocalUserId: b2000000-0000-4000-8000-000000000201
+      ProductRuntime__IssuerExternalIdentityId: b2100000-0000-4000-8000-000000000201
+      BootstrapIdentity__Users__2__UserId: mfg-recorder
+      BootstrapIdentity__Users__2__DisplayName: SENTETIK MFG Recorder
+      BootstrapIdentity__Users__3__UserId: mfg-reader
+      BootstrapIdentity__Users__3__DisplayName: SENTETIK MFG Reader
+      IdentitySeed__Users__5__Id: b2000000-0000-4000-8000-00000000f001
+      IdentitySeed__Users__5__DisplayName: SENTETIK MFG Recorder
+      IdentitySeed__Users__5__ExternalIdentities__0__Id: b2100000-0000-4000-8000-00000000f001
+      IdentitySeed__Users__5__ExternalIdentities__0__Issuer: "urn:goymen:development-bootstrap"
+      IdentitySeed__Users__5__ExternalIdentities__0__Subject: mfg-recorder
+      IdentitySeed__Users__6__Id: b2000000-0000-4000-8000-00000000f002
+      IdentitySeed__Users__6__DisplayName: SENTETIK MFG Reader
+      IdentitySeed__Users__6__ExternalIdentities__0__Id: b2100000-0000-4000-8000-00000000f002
+      IdentitySeed__Users__6__ExternalIdentities__0__Issuer: "urn:goymen:development-bootstrap"
+      IdentitySeed__Users__6__ExternalIdentities__0__Subject: mfg-reader
+      IdentitySeed__Roles__5__Id: b3000000-0000-4000-8000-00000000f001
+      IdentitySeed__Roles__5__Code: BROWSER_MFG_RECORDER
+      IdentitySeed__Roles__5__Name: SENTETIK MFG Recorder
+      IdentitySeed__Roles__5__IsSystem: "false"
+      IdentitySeed__Roles__5__Permissions__0: manufacturing.plans.write
+      IdentitySeed__Roles__5__Permissions__1: manufacturing.plans.approve
+      IdentitySeed__Roles__5__Permissions__2: manufacturing.orders.create
+      IdentitySeed__Roles__5__Permissions__3: manufacturing.facts.record
+      IdentitySeed__Roles__5__Permissions__4: manufacturing.orders.read
+      IdentitySeed__Roles__5__Permissions__5: manufacturing.plans.read
+      IdentitySeed__Roles__5__Permissions__6: organization.work-centers.read
+      IdentitySeed__Roles__5__Permissions__7: inventory.labels.read
+      IdentitySeed__Roles__5__Permissions__8: inventory.balances.read
+      IdentitySeed__Roles__5__Permissions__9: inventory.opening-stock.record
+      IdentitySeed__Roles__5__Permissions__10: product.operational-selection.read
+      IdentitySeed__Roles__6__Id: b3000000-0000-4000-8000-00000000f002
+      IdentitySeed__Roles__6__Code: BROWSER_MFG_READER
+      IdentitySeed__Roles__6__Name: SENTETIK MFG Reader
+      IdentitySeed__Roles__6__IsSystem: "false"
+      IdentitySeed__Roles__6__Permissions__0: manufacturing.orders.read
+      IdentitySeed__Assignments__7__Id: b4000000-0000-4000-8000-00000000f001
+      IdentitySeed__Assignments__7__UserId: b2000000-0000-4000-8000-00000000f001
+      IdentitySeed__Assignments__7__RoleId: b3000000-0000-4000-8000-00000000f001
+      IdentitySeed__Assignments__7__CompanyId: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__7__ValidFromUtc: "2026-01-01T00:00:00+00:00"
+      IdentitySeed__Assignments__7__Scopes__0__Type: Company
+      IdentitySeed__Assignments__7__Scopes__0__Id: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__8__Id: b4000000-0000-4000-8000-00000000f002
+      IdentitySeed__Assignments__8__UserId: b2000000-0000-4000-8000-00000000f002
+      IdentitySeed__Assignments__8__RoleId: b3000000-0000-4000-8000-00000000f002
+      IdentitySeed__Assignments__8__CompanyId: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__8__ValidFromUtc: "2026-01-01T00:00:00+00:00"
+      IdentitySeed__Assignments__8__Scopes__0__Type: Company
+      IdentitySeed__Assignments__8__Scopes__0__Id: 10000000-0000-0000-0000-000000000001
+      BootstrapIdentity__Users__4__UserId: mfg-closer
+      BootstrapIdentity__Users__4__DisplayName: SENTETIK MFG Closer
+      IdentitySeed__Users__7__Id: b2000000-0000-4000-8000-00000000f003
+      IdentitySeed__Users__7__DisplayName: SENTETIK MFG Closer
+      IdentitySeed__Users__7__ExternalIdentities__0__Id: b2100000-0000-4000-8000-00000000f003
+      IdentitySeed__Users__7__ExternalIdentities__0__Issuer: "urn:goymen:development-bootstrap"
+      IdentitySeed__Users__7__ExternalIdentities__0__Subject: mfg-closer
+      IdentitySeed__Users__8__Id: b2000000-0000-4000-8000-000000000201
+      IdentitySeed__Users__8__DisplayName: SENTETIK browser-suite:mfg Product issuer
+      IdentitySeed__Users__8__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000201
+      IdentitySeed__Users__8__ExternalIdentities__0__Issuer: "urn:goymen:development-bootstrap"
+      IdentitySeed__Users__8__ExternalIdentities__0__Subject: mfg-issuer
+      IdentitySeed__Roles__7__Id: b3000000-0000-4000-8000-00000000f003
+      IdentitySeed__Roles__7__Code: BROWSER_MFG_CLOSER
+      IdentitySeed__Roles__7__Name: SENTETIK MFG Closer
+      IdentitySeed__Roles__7__IsSystem: "false"
+      IdentitySeed__Roles__7__Permissions__0: manufacturing.orders.read
+      IdentitySeed__Roles__7__Permissions__1: manufacturing.orders.close
+      IdentitySeed__Assignments__9__Id: b4000000-0000-4000-8000-00000000f003
+      IdentitySeed__Assignments__9__UserId: b2000000-0000-4000-8000-00000000f003
+      IdentitySeed__Assignments__9__RoleId: b3000000-0000-4000-8000-00000000f003
+      IdentitySeed__Assignments__9__CompanyId: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__9__ValidFromUtc: "2026-01-01T00:00:00+00:00"
+      IdentitySeed__Assignments__9__Scopes__0__Type: Company
+      IdentitySeed__Assignments__9__Scopes__0__Id: 10000000-0000-0000-0000-000000000001

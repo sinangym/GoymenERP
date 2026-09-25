@@ -79,6 +79,51 @@ export const LOCATIONS_ONLY_CAPABILITIES = [
   ORGANIZATION_CAPABILITY.locationStatus,
 ]
 
+/**
+ * ORG-03 only — the work-centre list and NOTHING else.
+ *
+ * A set of its own rather than a line added to `READ_CAPABILITIES`, because this is the
+ * INTERESTING configuration: the caller may read work centres and may NOT read locations,
+ * which is exactly when `canOpenLocationDetail` has work to do. `READ_CAPABILITIES` holds
+ * the location grants, so it cannot express that case.
+ *
+ * It is worth recording what this set is NOT evidence of, since an earlier version of this
+ * comment got it wrong. It does not say the seeded ORGANIZATION_READER role lacks
+ * `organization.work-centers.read`. That role DOES carry it (`Seed/identity-seed.json`),
+ * along with `organization.locations.read` — which is also why no seeded role can express
+ * the configuration above, and why a work-centres-only actor has to be synthetic.
+ *
+ * The rule the earlier comment was reaching for still stands: a test fixture must not
+ * assert role CONTENT, because nobody looks for a permission-policy claim inside one. But
+ * "the lane cannot know" was the wrong reason for it — the answer was in the repository
+ * and was checkable.
+ */
+export const WORK_CENTERS_ONLY_CAPABILITIES = [ORGANIZATION_CAPABILITY.workCentersList]
+
+export const WC_PAINT = '88888888-8888-8888-8888-888888888888'
+export const WC_SLIT = 'aaaaaaaa-1111-1111-1111-111111111111'
+export const WC_UNKNOWN_KIND = 'bbbbbbbb-2222-2222-2222-222222222222'
+
+export function workCenter(
+  id: string,
+  locationId: string,
+  code: string,
+  name: string,
+  overrides: { kind?: string; isActive?: boolean; canOpenLocationDetail?: boolean } = {},
+) {
+  return {
+    id,
+    locationId,
+    code,
+    name,
+    kind: overrides.kind ?? 'Paint',
+    isActive: overrides.isActive ?? true,
+    // No default that flatters the screen: a fixture that always opened the card would
+    // never exercise the closed branch, which is the branch that protects scope.
+    canOpenLocationDetail: overrides.canOpenLocationDetail ?? false,
+  }
+}
+
 export function site(id: string, code: string, name: string, type = 'Factory', isActive = true) {
   return { id, code, name, type, isActive }
 }

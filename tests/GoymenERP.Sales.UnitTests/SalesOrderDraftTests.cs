@@ -1,0 +1,557 @@
+using GoymenERP.Modules.Sales.Domain;
+using GoymenERP.Modules.Sales.Domain.Drafts;
+using GoymenERP.Modules.Sales.Domain.Quantities;
+
+namespace GoymenERP.Sales.UnitTests;
+
+/// <summary>
+/// SALES-P1 (T03): a sales order draft is born Draft / Rev.0 with 1–500 lines; every line carries
+/// what the Product and Settings owners answered for this company and business date; Ö2 holds on
+/// every quantity; the delivery plan never exceeds the line. Every identity here is synthetic.
+/// </summary>
+public sealed class SalesOrderDraftTests
+{
+    private static readonly DateTimeOffset T0 = new(2026, 9, 18, 14, 0, 0, TimeSpan.FromHours(3));
+    private static readonly DateOnly Day = new(2026, 9, 18);
+    private static readonly Guid Company = Guid.Parse("11111111-1111-4111-8111-111111111111");
+    private static readonly Guid OtherCompany = Guid.Parse("22222222-2222-4222-8222-222222222222");
+    private static readonly Guid Party = Guid.Parse("33333333-3333-4333-8333-333333333333");
+    private static readonly Guid Account = Guid.Parse("44444444-4444-4444-8444-444444444444");
+    private static readonly Guid Currency = Guid.Parse("55555555-5555-4555-8555-555555555555");
+    private static readonly Guid KgUnit = Guid.Parse("66666666-6666-4666-8666-666666666666");
+    private static readonly Guid KgProfile = Guid.Parse("77777777-7777-4777-8777-777777777777");
+    private static readonly Guid PieceUnit = Guid.Parse("88888888-8888-4888-8888-888888888888");
+    private static readonly Guid Product = Guid.Parse("99999999-9999-4999-8999-999999999999");
+
+    private static string CodeOf(Action action) => Assert.Throws<SalesRuleException>(action).Code;
+
+    private static SalesDraftHeader Header() => new(Party, Account, Currency, Day);
+
+    private static MoneyProfileSnapshot Money(Guid? company = null, DateOnly? effectiveOn = null, string? operation = null,
+        bool isActive = true, DateOnly? effectiveFrom = null, DateOnly? effectiveThrough = null, int scale = 2) =>
+        new(company ?? Company, Currency, operation ?? SalesOrderDraft.MoneyOperation,
+            Guid.Parse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"), "3", effectiveOn ?? Day, isActive,
+            effectiveFrom ?? new DateOnly(2026, 9, 1), effectiveThrough, scale);
+
+    [Fact]
+    public void An_inactive_or_out_of_window_money_profile_is_refused_and_the_last_window_day_is_in_effect()
+    {
+        // CARİ #306 P3-R1: the Settings port's validity obligation on the money side, as on the unit side.
+        Assert.Equal(SalesRuleCodes.MoneyProfileNotInEffect,
+            CodeOf(() => SalesOrderDraft.Create(Guid.NewGuid(), Company, "SO-1", Header(), Money(isActive: false), T0)));
+        Assert.Equal(SalesRuleCodes.MoneyProfileNotInEffect,
+            CodeOf(() => SalesOrderDraft.Create(Guid.NewGuid(), Company, "SO-1", Header(), Money(effectiveFrom: Day.AddDays(1)), T0)));
+        Assert.Equal(SalesRuleCodes.MoneyProfileNotInEffect,
+            CodeOf(() => SalesOrderDraft.Create(Guid.NewGuid(), Company, "SO-1", Header(), Money(effectiveThrough: Day.AddDays(-1)), T0)));
+        Assert.Throws<ArgumentException>(() => SalesOrderDraft.Create(Guid.NewGuid(), Company, "SO-1", Header(), Money(scale: -1), T0));
+        Assert.Throws<ArgumentException>(() => SalesOrderDraft.Create(Guid.NewGuid(), Company, "SO-1", Header(),
+            Money(effectiveFrom: Day, effectiveThrough: Day.AddDays(-1)), T0));
+
+        var draft = SalesOrderDraft.Create(Guid.NewGuid(), Company, "SO-1", Header(), Money(effectiveFrom: Day, effectiveThrough: Day), T0);
+        Assert.Equal((true, 2), (draft.Money.IsActive, draft.Money.Scale));
+    }
+
+    private static readonly DateOnly From = new(2026, 9, 1);
+
+    private static UnitProfileSnapshot KgUnitProfile(int profileScale = 3, Guid? company = null, bool isActive = true,
+        DateOnly? effectiveFrom = null, DateOnly? effectiveThrough = null) =>
+        new(company ?? Company, KgUnit, "kg", "weight", KgProfile, "4", true, profileScale, Math.Min(profileScale, 3),
+            isActive, effectiveFrom ?? From, effectiveThrough);
+
+    private static UnitProfileSnapshot PieceUnitProfile() =>
+        new(Company, PieceUnit, "pcs", "count", Guid.Parse("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"), "1", false, 0, 0, true, From, null);
+
+    private static ProductSnapshot Snapshot(UnitProfileSnapshot orderUnit, DateOnly? effectiveOn = null, Guid? bindingCompany = null)
+    {
+        var binding = new UnitBindingSnapshot(bindingCompany ?? Company, orderUnit.UnitId, orderUnit.ProfileId, orderUnit.ProfileVersion);
+        return new ProductSnapshot(Product, "7", "GDC-001", "Sentetik bant", effectiveOn ?? Day, binding, binding, binding);
+    }
+
+    private static SalesDraftLineInput Line(decimal quantity, string? text = null, UnitProfileSnapshot? unit = null,
+        IReadOnlyList<DeliverySliceInput>? slices = null, ProductSnapshot? product = null, Guid? lineId = null,
+        CommercialDraftFields? commercial = null, string? note = null)
+    {
+        var orderUnit = unit ?? KgUnitProfile();
+        return new SalesDraftLineInput(lineId ?? Guid.NewGuid(), product ?? Snapshot(orderUnit), orderUnit,
+            text ?? quantity.ToString(System.Globalization.CultureInfo.InvariantCulture), quantity,
+            RequestedDeliverySlices: slices, Commercial: commercial, Note: note);
+    }
+
+    private static SalesOrderDraft Draft() => SalesOrderDraft.Create(Guid.NewGuid(), Company, "SO-2026-000001", Header(), Money(), T0);
+
+    [Fact]
+    public void A_draft_is_born_as_draft_rev0_version1_with_its_company_customer_currency_and_money_profile()
+    {
+        var draft = Draft();
+        Assert.Equal((SalesDraftKind.Order, SalesDraftState.Draft, 0, 1L), (draft.Kind, draft.State, draft.Revision, draft.Version));
+        Assert.Equal((Company, Party, Account, Currency, Day), (draft.CompanyId, draft.Header.PartyId, draft.Header.CompanyAccountId, draft.Header.CurrencyId, draft.Header.BusinessDate));
+        Assert.Equal("SO-2026-000001", draft.DocumentNo);
+        Assert.Equal((Currency, SalesOrderDraft.MoneyOperation), (draft.Money.CurrencyId, draft.Money.Operation));
+        Assert.Empty(draft.Lines);
+        Assert.Equal(T0.ToUniversalTime(), draft.CreatedAtUtc);
+        Assert.Equal(SalesRuleCodes.DraftWithoutLines, CodeOf(draft.RequireStorable));
+    }
+
+    [Fact]
+    public void Creation_needs_real_identities_a_complete_money_profile_of_this_company_and_well_formed_references()
+    {
+        Assert.Throws<ArgumentException>(() => SalesOrderDraft.Create(Guid.NewGuid(), Company, " ", Header(), Money(), T0));
+        Assert.Throws<ArgumentException>(() => SalesOrderDraft.Create(Guid.NewGuid(), Company, "SO-1", Header() with { PartyId = Guid.Empty }, Money(), T0));
+        Assert.Throws<ArgumentException>(() => SalesOrderDraft.Create(Guid.NewGuid(), Company, "SO-1", Header() with { CompanyAccountId = Guid.Empty }, Money(), T0));
+        Assert.Throws<ArgumentException>(() => SalesOrderDraft.Create(Guid.NewGuid(), Company, "SO-1", Header(), Money() with { CurrencyId = Guid.NewGuid() }, T0));
+        Assert.Throws<ArgumentException>(() => SalesOrderDraft.Create(Guid.NewGuid(), Company, "SO-1", Header() with { Contact = new OwnerReference(Guid.Empty, "1") }, Money(), T0));
+        Assert.Throws<ArgumentNullException>(() => SalesOrderDraft.Create(Guid.NewGuid(), Company, "SO-1", Header(), null!, T0));
+        Assert.Equal(SalesRuleCodes.SnapshotCompanyMismatch,
+            CodeOf(() => SalesOrderDraft.Create(Guid.NewGuid(), Company, "SO-1", Header(), Money(OtherCompany), T0)));
+        // The money profile is the business date's (ÜRÜN #306 P3-2): another date is another answer.
+        Assert.Equal(SalesRuleCodes.SnapshotDateMismatch,
+            CodeOf(() => SalesOrderDraft.Create(Guid.NewGuid(), Company, "SO-1", Header(), Money(effectiveOn: Day.AddDays(1)), T0)));
+        // The money profile is the Sales draft operation's answer (Business #254 5654539215; Finance pattern).
+        Assert.Equal("sales.order-draft.v1", SalesOrderDraft.MoneyOperation);
+        Assert.Equal(SalesRuleCodes.SnapshotOperationMismatch,
+            CodeOf(() => SalesOrderDraft.Create(Guid.NewGuid(), Company, "SO-1", Header(), Money(operation: "finance.manual-bank-receipt.v1"), T0)));
+        Assert.Equal(SalesRuleCodes.NoteTooLong,
+            CodeOf(() => SalesOrderDraft.Create(Guid.NewGuid(), Company, "SO-1", Header() with { Note = new string('x', 4001) }, Money(), T0)));
+    }
+
+    [Fact]
+    public void A_line_keeps_the_owners_snapshots_the_exact_quantity_and_the_clients_text()
+    {
+        var draft = Draft();
+        var line = draft.AddLine(1, Line(12.500m, "12.500"), T0);
+
+        Assert.Equal((1, Product, "7", KgUnit, 3, 3), (line.LineNo, line.Product.ProductId, line.Product.ProductVersion, line.OrderUnit.UnitId, line.OrderUnit.ProfileScale, line.OrderUnit.Scale));
+        Assert.Equal(Quantity.Of(12.5m, QuantityUnit.Kilogram), line.Quantity);
+        Assert.Equal("12.500", line.QuantityText);
+        Assert.Equal(CommercialDraftFields.None, line.Commercial);
+        Assert.Empty(line.RequestedDeliverySlices);
+        Assert.Equal(Quantity.Of(12.5m, QuantityUnit.Kilogram), line.UnplannedQuantity);
+        Assert.Equal(2, draft.Version);
+        Assert.Single(draft.Lines);
+        draft.RequireStorable();
+    }
+
+    [Fact]
+    public void Every_mutation_names_the_version_it_read()
+    {
+        var draft = Draft();
+        var stale = Assert.Throws<SalesVersionConflictException>(() => draft.AddLine(2, Line(1m), T0));
+        Assert.Equal((SalesRuleCodes.VersionConflict, 2L, 1L), (stale.Code, stale.ExpectedVersion, stale.CurrentVersion));
+        Assert.Empty(draft.Lines);
+        draft.AddLine(1, Line(1m), T0);
+        Assert.Throws<SalesVersionConflictException>(() => draft.AddLine(1, Line(1m), T0));
+        Assert.Equal((1, 2L), (draft.Lines.Count, draft.Version));
+    }
+
+    [Theory]
+    [InlineData(3, "1.0005")]
+    [InlineData(2, "1.005")]
+    [InlineData(5, "1.0004")]
+    public void More_decimals_than_the_applied_scale_are_refused_never_rounded(int profileScale, string text)
+    {
+        // Ö2: the profile may narrow the kilogram precision, never widen it past 3.
+        var draft = Draft();
+        var value = decimal.Parse(text, System.Globalization.CultureInfo.InvariantCulture);
+        Assert.Equal(SalesRuleCodes.QuantityScaleExceeded,
+            CodeOf(() => draft.AddLine(1, Line(value, text, KgUnitProfile(profileScale)), T0)));
+        Assert.Empty(draft.Lines);
+        Assert.Equal(1, draft.Version);
+    }
+
+    [Fact]
+    public void The_applied_scale_is_derived_from_the_profile_and_a_snapshot_cannot_widen_it()
+    {
+        // ÜRÜN #306 P3-1: a snapshot saying Scale 3 over a profile of 1, or 5 over Ö2's 3, is malformed, not a permission.
+        var draft = Draft();
+        Assert.Equal(1, SalesOrderDraft.AppliedScale(KgUnitProfile(1)));
+        Assert.Equal(3, SalesOrderDraft.AppliedScale(KgUnitProfile(5)));
+        Assert.Equal(0, SalesOrderDraft.AppliedScale(PieceUnitProfile() with { ProfileScale = 2, Scale = 0 }));
+        var widened = KgUnitProfile(1) with { Scale = 3 };
+        Assert.Throws<ArgumentException>(() => draft.AddLine(1, Line(1.25m, "1.25", widened, product: Snapshot(widened)), T0));
+        var beyondCap = KgUnitProfile(5) with { Scale = 5 };
+        Assert.Throws<ArgumentException>(() => draft.AddLine(1, Line(1m, "1", beyondCap, product: Snapshot(beyondCap)), T0));
+        Assert.Empty(draft.Lines);
+        Assert.Equal(1, draft.Version);
+    }
+
+    [Theory]
+    [InlineData("12.51")]
+    [InlineData("12,5")]
+    [InlineData(" 12.5")]
+    [InlineData("")]
+    public void The_quantity_text_must_be_the_quantity(string text)
+    {
+        // ÜRÜN #306 P3-3: the text is kept verbatim, but it is bound to the value it names.
+        var draft = Draft();
+        Assert.Throws<ArgumentException>(() => draft.AddLine(1, Line(12.5m, text), T0));
+        Assert.Empty(draft.Lines);
+    }
+
+    [Fact]
+    public void An_inactive_or_out_of_window_unit_profile_is_refused_and_the_last_window_day_is_in_effect()
+    {
+        // CARİ #306 P2-2: the Settings port's validity obligation, enforced where the snapshot is consumed (PUR-3's rule).
+        var draft = Draft();
+        Assert.Equal(SalesRuleCodes.UnitProfileNotInEffect,
+            CodeOf(() => draft.AddLine(1, Line(1m, unit: KgUnitProfile(isActive: false), product: Snapshot(KgUnitProfile())), T0)));
+        Assert.Equal(SalesRuleCodes.UnitProfileNotInEffect,
+            CodeOf(() => draft.AddLine(1, Line(1m, unit: KgUnitProfile(effectiveFrom: Day.AddDays(1)), product: Snapshot(KgUnitProfile())), T0)));
+        Assert.Equal(SalesRuleCodes.UnitProfileNotInEffect,
+            CodeOf(() => draft.AddLine(1, Line(1m, unit: KgUnitProfile(effectiveThrough: Day.AddDays(-1)), product: Snapshot(KgUnitProfile())), T0)));
+        Assert.Throws<ArgumentException>(() => draft.AddLine(1, Line(1m, unit: KgUnitProfile(effectiveFrom: Day, effectiveThrough: Day.AddDays(-1)), product: Snapshot(KgUnitProfile())), T0));
+        Assert.Empty(draft.Lines);
+
+        draft.AddLine(1, Line(1m, unit: KgUnitProfile(effectiveFrom: Day, effectiveThrough: Day), product: Snapshot(KgUnitProfile())), T0);
+        Assert.Single(draft.Lines);
+    }
+
+    [Fact]
+    public void Only_a_weight_or_count_dimension_has_a_rule_and_the_kilogram_flag_must_agree()
+    {
+        // Sales invents no unit: a profile of another dimension is refused by code, never mapped to pieces.
+        var draft = Draft();
+        var volume = KgUnitProfile() with { DimensionCode = "volume", IsKilogram = false, ProfileScale = 0, Scale = 0 };
+        Assert.Equal(SalesRuleCodes.UnitUnsupported, CodeOf(() => draft.AddLine(1, Line(1m, unit: volume, product: Snapshot(volume)), T0)));
+        var contradiction = KgUnitProfile() with { DimensionCode = "count" };
+        Assert.Throws<ArgumentException>(() => draft.AddLine(1, Line(1m, unit: contradiction, product: Snapshot(contradiction)), T0));
+        Assert.Empty(draft.Lines);
+    }
+
+    [Fact]
+    public void Trailing_zeros_are_not_precision_and_pieces_are_whole()
+    {
+        var draft = Draft();
+        var kg = draft.AddLine(1, Line(12.5000m, "12.5000", KgUnitProfile(1)), T0);
+        Assert.Equal(12.5m, kg.Quantity.Value);
+        var pieces = draft.AddLine(2, Line(20m, "20", PieceUnitProfile()), T0);
+        Assert.Equal(Quantity.Of(20m, QuantityUnit.Piece), pieces.Quantity);
+        Assert.Equal(SalesRuleCodes.QuantityScaleExceeded, CodeOf(() => draft.AddLine(3, Line(20.5m, "20.5", PieceUnitProfile()), T0)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => draft.AddLine(3, Line(0m, "0"), T0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => draft.AddLine(3, Line(-1m, "-1"), T0));
+    }
+
+    [Fact]
+    public void A_snapshot_of_another_company_another_date_or_another_order_unit_is_refused_by_code()
+    {
+        var draft = Draft();
+        var unit = KgUnitProfile();
+        Assert.Equal(SalesRuleCodes.SnapshotCompanyMismatch,
+            CodeOf(() => draft.AddLine(1, Line(1m, unit: KgUnitProfile(company: OtherCompany), product: Snapshot(unit)), T0)));
+        Assert.Equal(SalesRuleCodes.SnapshotCompanyMismatch,
+            CodeOf(() => draft.AddLine(1, Line(1m, product: Snapshot(unit, bindingCompany: OtherCompany)), T0)));
+        Assert.Equal(SalesRuleCodes.SnapshotDateMismatch,
+            CodeOf(() => draft.AddLine(1, Line(1m, product: Snapshot(unit, effectiveOn: Day.AddDays(-1))), T0)));
+        // The selected order unit must be the unit the Product owner binds as the order unit.
+        Assert.Equal(SalesRuleCodes.ProductUnitMismatch,
+            CodeOf(() => draft.AddLine(1, Line(1m, unit: PieceUnitProfile(), product: Snapshot(unit)), T0)));
+        Assert.Equal(SalesRuleCodes.ProductUnitMismatch,
+            CodeOf(() => draft.AddLine(1, Line(1m, unit: KgUnitProfile(), product: Snapshot(KgUnitProfile() with { ProfileVersion = "5" })), T0)));
+        Assert.Empty(draft.Lines);
+        Assert.Equal(1, draft.Version);
+    }
+
+    [Fact]
+    public void Delivery_slices_are_same_unit_unique_positive_and_never_more_than_the_line()
+    {
+        // #257: 1000 = 400 + 600 leaves 0; 400 + 700 is refused; 400 + 400 leaves 200 unplanned, never delivered.
+        var draft = Draft();
+        DeliverySliceInput Slice(decimal kg, Guid? unit = null, Guid? id = null, string? text = null) =>
+            new(id ?? Guid.NewGuid(), unit ?? KgUnit, text ?? kg.ToString(System.Globalization.CultureInfo.InvariantCulture), kg, Day.AddDays(7));
+
+        var exact = draft.AddLine(1, Line(1000m, slices: [Slice(400m), Slice(600m)]), T0);
+        Assert.True(exact.UnplannedQuantity.IsZero);
+        var partial = draft.AddLine(2, Line(1000m, slices: [Slice(400m), Slice(400m)]), T0);
+        Assert.Equal(Quantity.Of(200m, QuantityUnit.Kilogram), partial.UnplannedQuantity);
+        Assert.Equal(2, partial.RequestedDeliverySlices.Count);
+
+        Assert.Equal("400", partial.RequestedDeliverySlices[0].QuantityText);
+        // CARİ #306 P2-3: a slice's text is stored and bound to its value like the line's.
+        Assert.Throws<ArgumentException>(() => draft.AddLine(3, Line(1000m, slices: [Slice(400m, text: "400.5")]), T0));
+        Assert.Equal(SalesRuleCodes.SlicesExceedQuantity, CodeOf(() => draft.AddLine(3, Line(1000m, slices: [Slice(400m), Slice(700m)]), T0)));
+        Assert.Equal(SalesRuleCodes.SliceUnitMismatch, CodeOf(() => draft.AddLine(3, Line(1000m, slices: [Slice(400m, unit: PieceUnit)]), T0)));
+        var id = Guid.NewGuid();
+        Assert.Equal(SalesRuleCodes.DuplicateSliceId, CodeOf(() => draft.AddLine(3, Line(1000m, slices: [Slice(400m, id: id), Slice(100m, id: id)]), T0)));
+        Assert.Equal(SalesRuleCodes.QuantityScaleExceeded, CodeOf(() => draft.AddLine(3, Line(1000m, slices: [Slice(0.0005m)]), T0)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => draft.AddLine(3, Line(1000m, slices: [Slice(0m)]), T0));
+        Assert.Throws<ArgumentException>(() => draft.AddLine(3, Line(1000m, slices: [Slice(1m, id: Guid.Empty)]), T0));
+        Assert.Equal((2, 3L), (draft.Lines.Count, draft.Version));
+    }
+
+    [Fact]
+    public void Commercial_fields_are_kept_as_text_and_the_price_unit_pairing_is_enforced()
+    {
+        var draft = Draft();
+        var priced = draft.AddLine(1, Line(1m, commercial: new CommercialDraftFields("12.50", KgUnit, "0")), T0);
+        Assert.Equal(("12.50", KgUnit, "0"), (priced.Commercial.UnitPrice, priced.Commercial.PriceUnitId, priced.Commercial.DiscountPercent));
+        Assert.Equal(SalesRuleCodes.PriceUnitPairing, CodeOf(() => draft.AddLine(2, Line(1m, commercial: new CommercialDraftFields("12.50", null, null)), T0)));
+        Assert.Equal(SalesRuleCodes.PriceUnitPairing, CodeOf(() => draft.AddLine(2, Line(1m, commercial: new CommercialDraftFields(null, KgUnit, null)), T0)));
+        // K3 (ASSUMPTION-SALESP-1): a discount is a percentage OF a price; without one it is refused, not kept.
+        Assert.Equal(SalesRuleCodes.DiscountWithoutPrice, CodeOf(() => draft.AddLine(2, Line(1m, commercial: new CommercialDraftFields(null, null, "5")), T0)));
+    }
+
+    [Fact]
+    public void A_unit_price_is_exact_text_within_the_money_profiles_scale_and_zero_is_an_explicit_price()
+    {
+        // K3 (Sinan 5748258299): mathematical validity only — the approved money scale (2 here), never a
+        // rounding, never a minimum. "0" is a price the caller wrote; null is not a price at all.
+        var draft = Draft();
+        Assert.Equal(SalesRuleCodes.PriceScaleExceeded, CodeOf(() => draft.AddLine(1, Line(1m, commercial: new CommercialDraftFields("12.505", KgUnit, null)), T0)));
+        Assert.Equal("12.50", draft.AddLine(1, Line(1m, commercial: new CommercialDraftFields("12.50", KgUnit, null)), T0).Commercial.UnitPrice);
+        Assert.Equal("0", draft.AddLine(2, Line(1m, commercial: new CommercialDraftFields("0", KgUnit, null)), T0).Commercial.UnitPrice);
+        Assert.Equal("0.00", draft.AddLine(3, Line(1m, commercial: new CommercialDraftFields("0.00", KgUnit, null)), T0).Commercial.UnitPrice);
+        Assert.Equal(1, draft.Lines[0].LineNo);
+        Assert.Equal(3, draft.Lines.Count);
+        Assert.Equal((0, 2, 3), (SalesOrderDraft.DecimalPlaces("12"), SalesOrderDraft.DecimalPlaces("12.50"), SalesOrderDraft.DecimalPlaces("0.000")));
+
+        // A wider approved scale admits the wider text as it is (nothing is normalised to the scale).
+        var wide = SalesOrderDraft.Create(Guid.NewGuid(), Company, "SO-2026-000002", Header(), Money(scale: 4), T0);
+        Assert.Equal("12.5050", wide.AddLine(1, Line(1m, commercial: new CommercialDraftFields("12.5050", KgUnit, null)), T0).Commercial.UnitPrice);
+    }
+
+    [Fact]
+    public void The_price_unit_is_one_of_the_product_owners_three_unit_bindings()
+    {
+        // K3 / ASSUMPTION-SALESP-2: the real source of a price unit is the product owner's stock, sales or
+        // order binding; any other id is refused, never mapped to a guessed unit.
+        var draft = Draft();
+        var orderUnit = KgUnitProfile();
+        var stock = new UnitBindingSnapshot(Company, PieceUnit, Guid.Parse("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"), "1");
+        var order = new UnitBindingSnapshot(Company, orderUnit.UnitId, orderUnit.ProfileId, orderUnit.ProfileVersion);
+        var product = new ProductSnapshot(Product, "7", "GDC-001", "Sentetik bant", Day, stock, order, order);
+        Assert.Equal(PieceUnit, draft.AddLine(1, Line(1m, product: product, commercial: new CommercialDraftFields("3", PieceUnit, null)), T0).Commercial.PriceUnitId);
+        Assert.Equal(KgUnit, draft.AddLine(2, Line(1m, product: product, commercial: new CommercialDraftFields("3", KgUnit, null)), T0).Commercial.PriceUnitId);
+        Assert.Equal(SalesRuleCodes.PriceUnitUnsupported,
+            CodeOf(() => draft.AddLine(3, Line(1m, product: product, commercial: new CommercialDraftFields("3", Guid.NewGuid(), null)), T0)));
+    }
+
+    [Fact]
+    public void A_discount_is_a_percentage_within_0_and_100_kept_as_text_with_no_threshold_invented()
+    {
+        // K3 / D5: 0 and 100 are the arithmetic bounds of a percentage; no maximum discount, margin floor or
+        // minimum price exists before a price list, so 100 is admitted and nothing between 0 and 100 is refused.
+        var draft = Draft();
+        Assert.Equal("0", draft.AddLine(1, Line(1m, commercial: new CommercialDraftFields("12.50", KgUnit, "0")), T0).Commercial.DiscountPercent);
+        Assert.Equal("100", draft.AddLine(2, Line(1m, commercial: new CommercialDraftFields("12.50", KgUnit, "100")), T0).Commercial.DiscountPercent);
+        Assert.Equal("12.345678", draft.AddLine(3, Line(1m, commercial: new CommercialDraftFields("12.50", KgUnit, "12.345678")), T0).Commercial.DiscountPercent);
+        Assert.Equal(SalesRuleCodes.DiscountOutOfRange, CodeOf(() => draft.AddLine(4, Line(1m, commercial: new CommercialDraftFields("12.50", KgUnit, "100.01")), T0)));
+        Assert.Equal(SalesRuleCodes.DiscountOutOfRange, CodeOf(() => draft.AddLine(4, Line(1m, commercial: new CommercialDraftFields("12.50", KgUnit, "1000")), T0)));
+        // Lexical first: a text with more than three integer digits is out of range before any conversion could overflow.
+        Assert.False(SalesOrderDraft.IsPercent("99999999999999999999999999999999999999999"));
+        Assert.True(SalesOrderDraft.IsPercent("000100"));
+    }
+
+    // ---- K3 Head B: the commercial revision ----------------------------------------------------------
+
+    private static SalesOrderDraft PricedDraft(out SalesOrderDraftLine first, out SalesOrderDraftLine second)
+    {
+        var draft = Draft();
+        first = draft.AddLine(1, Line(1m, commercial: new CommercialDraftFields("12.50", KgUnit, "5")), T0);
+        second = draft.AddLine(2, Line(2m), T0);
+        return draft;
+    }
+
+    private static LineCommercialInput Input(SalesOrderDraftLine line, string? price, Guid? unit, string? discount) =>
+        new(line.Id, new CommercialDraftFields(price, unit, discount));
+
+    [Fact]
+    public void A_revision_before_any_approval_replaces_the_fields_and_archives_nothing()
+    {
+        var draft = PricedDraft(out var first, out var second);
+
+        var archived = draft.ReviseCommercial(3, [Input(first, "13.00", KgUnit, null), Input(second, "1", KgUnit, "10")], "pricer", T0.AddMinutes(1));
+
+        Assert.Null(archived);
+        Assert.Empty(draft.ArchivedRevisions);
+        Assert.Equal((0, 4L, InternalApprovalState.Preparing), (draft.Revision, draft.Version, draft.ApprovalState));
+        Assert.Equal(("13.00", KgUnit, null), (first.Commercial.UnitPrice, first.Commercial.PriceUnitId, first.Commercial.DiscountPercent));
+        Assert.Equal(("1", KgUnit, "10"), (second.Commercial.UnitPrice, second.Commercial.PriceUnitId, second.Commercial.DiscountPercent));
+        // A rejected draft is open the same way.
+        draft.Submit(4, "prep", T0);
+        draft.Reject(5, "mgr", "no", T0);
+        Assert.Null(draft.ReviseCommercial(6, [Input(first, "14", KgUnit, null), Input(second, null, null, null)], "pricer", T0));
+        Assert.Equal((0, 7L, InternalApprovalState.Rejected), (draft.Revision, draft.Version, draft.ApprovalState));
+    }
+
+    [Fact]
+    public void A_revision_of_an_approved_draft_archives_the_approved_snapshot_first_then_advances_and_reenters_preparation()
+    {
+        var draft = PricedDraft(out var first, out var second);
+        draft.Submit(3, "prep", T0);
+        draft.Approve(4, "mgr", T0.AddMinutes(1));
+        var approvedFacts = draft.Approval;
+
+        var archived = draft.ReviseCommercial(5, [Input(first, "13.00", KgUnit, "5"), Input(second, null, null, null)], "pricer", T0.AddMinutes(2));
+
+        // The snapshot is the approved revision AS IT WAS: Rev.0, its facts, its money profile, the OLD values.
+        Assert.NotNull(archived);
+        Assert.Equal((0, approvedFacts, draft.Money.ProfileId, draft.Money.ProfileVersion, draft.Money.Scale, "pricer"),
+            (archived.Revision, archived.Approval, archived.MoneyProfileId, archived.MoneyProfileVersion, archived.MoneyScale, archived.ArchivedBy));
+        Assert.Equal(T0.AddMinutes(2).ToUniversalTime(), archived.ArchivedAtUtc);
+        Assert.Equal([(first.Id, 1, "1", "12.50", KgUnit, "5"), (second.Id, 2, "2", null, null, null)],
+            archived.Lines.Select(line => (line.LineId, line.LineNo, line.QuantityText, line.Commercial.UnitPrice, line.Commercial.PriceUnitId, line.Commercial.DiscountPercent)));
+        Assert.Same(archived, Assert.Single(draft.ArchivedRevisions));
+        // The draft went on: Rev.1, preparing, no approval facts, the NEW values, one version step.
+        Assert.Equal((1, 6L, InternalApprovalState.Preparing, ApprovalFacts.None), (draft.Revision, draft.Version, draft.ApprovalState, draft.Approval));
+        Assert.Equal("13.00", first.Commercial.UnitPrice);
+        Assert.True(draft.LinesAreOpen);
+        // It re-enters approval as any preparing draft, and a second approved change archives Rev.1 beside Rev.0.
+        draft.Submit(6, "prep", T0);
+        draft.Approve(7, "mgr", T0);
+        var again = draft.ReviseCommercial(8, [Input(first, "12.00", KgUnit, "5"), Input(second, null, null, null)], "pricer", T0);
+        Assert.Equal((1, "13.00"), (again!.Revision, again.Lines[0].Commercial.UnitPrice));
+        Assert.Equal([0, 1], draft.ArchivedRevisions.Select(item => item.Revision));
+        Assert.Equal(2, draft.Revision);
+    }
+
+    [Fact]
+    public void A_pending_draft_a_mismatched_line_list_and_a_change_of_nothing_are_refused_and_change_nothing()
+    {
+        var draft = PricedDraft(out var first, out var second);
+        draft.Submit(3, "prep", T0);
+        Assert.Equal(SalesRuleCodes.StateConflict,
+            CodeOf(() => draft.ReviseCommercial(4, [Input(first, "13", KgUnit, null), Input(second, null, null, null)], "pricer", T0)));
+        draft.Reject(4, "mgr", null, T0);
+
+        // Every current line exactly once: a missing line, an extra line and a duplicate are one refusal.
+        Assert.Equal(SalesRuleCodes.RevisionLinesMismatch, CodeOf(() => draft.ReviseCommercial(5, [Input(first, "13", KgUnit, null)], "pricer", T0)));
+        Assert.Equal(SalesRuleCodes.RevisionLinesMismatch, CodeOf(() => draft.ReviseCommercial(5,
+            [Input(first, "13", KgUnit, null), Input(second, null, null, null), new(Guid.NewGuid(), CommercialDraftFields.None)], "pricer", T0)));
+        Assert.Equal(SalesRuleCodes.RevisionLinesMismatch, CodeOf(() => draft.ReviseCommercial(5,
+            [Input(first, "13", KgUnit, null), Input(first, "14", KgUnit, null)], "pricer", T0)));
+        // The same values again change nothing: refused, so an approval is never discarded for nothing (ASSUMPTION-SALESP-5).
+        Assert.Equal(SalesRuleCodes.RevisionNoChange, CodeOf(() => draft.ReviseCommercial(5,
+            [Input(first, "12.50", KgUnit, "5"), Input(second, null, null, null)], "pricer", T0)));
+        // The commercial rules apply per line and the refusal names the line.
+        var scale = Assert.Throws<SalesRuleException>(() => draft.ReviseCommercial(5,
+            [Input(first, "13", KgUnit, null), Input(second, "1.005", KgUnit, null)], "pricer", T0));
+        Assert.Equal((SalesRuleCodes.PriceScaleExceeded, second.Id), (scale.Code, scale.LineId));
+        Assert.Throws<SalesVersionConflictException>(() => draft.ReviseCommercial(4, [Input(first, "13", KgUnit, null), Input(second, null, null, null)], "pricer", T0));
+        Assert.Throws<ArgumentException>(() => draft.ReviseCommercial(5, [Input(first, "13", KgUnit, null), Input(second, null, null, null)], " ", T0));
+
+        Assert.Equal((0, 5L, "12.50", InternalApprovalState.Rejected), (draft.Revision, draft.Version, first.Commercial.UnitPrice, draft.ApprovalState));
+        Assert.Empty(draft.ArchivedRevisions);
+    }
+
+    [Fact]
+    public void The_store_restores_the_revision_number_and_the_archived_history_in_order_and_refuses_a_history_that_does_not_fit()
+    {
+        var draft = PricedDraft(out var first, out _);
+        var facts = new ApprovalFacts("prep", T0, "mgr", T0, null);
+        ApprovedRevisionSnapshot Snapshot(int revision) => new(revision, facts, draft.Money.ProfileId, draft.Money.ProfileVersion, 2, T0, "pricer",
+            [new RevisionLineSnapshot(first.Id, 1, first.Product.ProductId, "7", KgUnit, "1", new CommercialDraftFields("12.50", KgUnit, null))]);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => draft.RestoreRevision(-1));
+        draft.RestoreRevision(2);
+        Assert.Throws<InvalidOperationException>(() => draft.RestoreArchivedRevision(Snapshot(1)));   // a gap: Rev.0 first
+        draft.RestoreArchivedRevision(Snapshot(0));
+        Assert.Throws<InvalidOperationException>(() => draft.RestoreArchivedRevision(Snapshot(0)));   // a repeat
+        Assert.Throws<InvalidOperationException>(() => draft.RestoreArchivedRevision(Snapshot(2)));   // not older than the current revision
+        draft.RestoreArchivedRevision(Snapshot(1));
+        Assert.Equal([0, 1], draft.ArchivedRevisions.Select(item => item.Revision));
+        Assert.Throws<InvalidOperationException>(() => draft.RestoreArchivedRevision(
+            Snapshot(2) with { Revision = 2, Approval = facts with { DecidedBy = null } }));
+
+        // K3 Head B: the archived history raises the version floor the approval restore checks — three steps per archived
+        // revision (its submission, its approval, the write that archived it) on top of the lines' version (1 + 2 lines = 3):
+        // a Preparing draft with two archived revisions below 9 is refused; at 9 it restores. The real-SQL revision case is
+        // what found this (a revised draft re-read by the store failed the pre-K3 exact check).
+        Assert.Throws<InvalidOperationException>(() => draft.RestoreApproval(InternalApprovalState.Preparing, ApprovalFacts.None, 8, T0));
+        draft.RestoreApproval(InternalApprovalState.Preparing, ApprovalFacts.None, 9, T0);
+        Assert.Equal((9L, InternalApprovalState.Preparing, 2), (draft.Version, draft.ApprovalState, draft.Revision));
+    }
+
+    /// <summary>
+    /// ORG (#374 P3): the history invariant is Revision == archived count, and the read layer must hold BOTH bounds.
+    /// The archive restore pins the lower one (Rev.0 first, each below the current revision); this pins the upper one:
+    /// a stored header at Revision 3 beside a single archived row is refused at the approval restore — a silently short
+    /// history is the failure the read layer exists to refuse — while Revision 1 beside that row restores.
+    /// </summary>
+    [Fact]
+    public void A_stored_revision_number_above_the_archived_count_is_refused_not_restored_short()
+    {
+        var facts = new ApprovalFacts("prep", T0, "mgr", T0, null);
+        ApprovedRevisionSnapshot Snapshot(SalesOrderDraft of, SalesOrderDraftLine line) => new(0, facts, of.Money.ProfileId, of.Money.ProfileVersion, 2, T0, "pricer",
+            [new RevisionLineSnapshot(line.Id, 1, line.Product.ProductId, "7", KgUnit, "1", new CommercialDraftFields("12.50", KgUnit, null))]);
+
+        var tooHigh = PricedDraft(out var firstOfHigh, out _);
+        tooHigh.RestoreRevision(3);
+        tooHigh.RestoreArchivedRevision(Snapshot(tooHigh, firstOfHigh));
+        Assert.Throws<InvalidOperationException>(() => tooHigh.RestoreApproval(InternalApprovalState.Preparing, ApprovalFacts.None, 12, T0));
+        Assert.Equal((3, 1, 3L), (tooHigh.Revision, tooHigh.ArchivedRevisions.Count, tooHigh.Version));
+
+        var exact = PricedDraft(out var firstOfExact, out _);
+        exact.RestoreRevision(1);
+        exact.RestoreArchivedRevision(Snapshot(exact, firstOfExact));
+        exact.RestoreApproval(InternalApprovalState.Preparing, ApprovalFacts.None, 6, T0);
+        Assert.Equal((1, 1, 6L), (exact.Revision, exact.ArchivedRevisions.Count, exact.Version));
+
+        // FİNANS (#374 review, P3): the order is an invariant, not a convention. Restored the other way round the floor
+        // would read an archived count of 0 and a wrong stored version would clear it with no symptom — so the revision
+        // number and the archived history REFUSE to be restored after the approval axis, and the draft stays as it was.
+        // (The right order is the "exact" draft just above; this is the wrong one, on a fresh draft.)
+        var reordered = PricedDraft(out var firstOfReordered, out _);
+        reordered.RestoreApproval(InternalApprovalState.Preparing, ApprovalFacts.None, 3, T0);
+        Assert.Throws<InvalidOperationException>(() => reordered.RestoreRevision(1));
+        Assert.Throws<InvalidOperationException>(() => reordered.RestoreArchivedRevision(Snapshot(reordered, firstOfReordered)));
+        Assert.Equal((0, 0, 3L), (reordered.Revision, reordered.ArchivedRevisions.Count, reordered.Version));
+    }
+
+    [Fact]
+    public void Line_identity_note_and_count_bounds_are_held_by_the_aggregate()
+    {
+        var draft = Draft();
+        var id = Guid.NewGuid();
+        draft.AddLine(1, Line(1m, lineId: id), T0);
+        Assert.Equal(SalesRuleCodes.DuplicateLineId, CodeOf(() => draft.AddLine(2, Line(1m, lineId: id), T0)));
+        Assert.Throws<ArgumentException>(() => draft.AddLine(2, Line(1m, lineId: Guid.Empty), T0));
+        Assert.Equal(SalesRuleCodes.NoteTooLong, CodeOf(() => draft.AddLine(2, Line(1m, note: new string('n', 4001)), T0)));
+        Assert.Throws<ArgumentNullException>(() => draft.AddLine(2, null!, T0));
+
+        for (var i = 2; i <= SalesOrderDraft.MaximumLines; i++)
+        {
+            draft.AddLine(draft.Version, Line(1m), T0);
+        }
+
+        Assert.Equal(SalesOrderDraft.MaximumLines, draft.Lines.Count);
+        Assert.Equal(SalesRuleCodes.TooManyLines, CodeOf(() => draft.AddLine(draft.Version, Line(1m), T0)));
+        Assert.Equal(SalesOrderDraft.MaximumLines + 1L, draft.Version);
+    }
+
+    [Fact]
+    public void The_views_cannot_be_used_to_bypass_the_rules()
+    {
+        var draft = Draft();
+        var line = draft.AddLine(1, Line(1m, slices: [new DeliverySliceInput(Guid.NewGuid(), KgUnit, "1", 1m, Day)]), T0);
+        var before = draft.Version;
+        Assert.False(draft.Lines is List<SalesOrderDraftLine>);
+        Assert.False(line.RequestedDeliverySlices is List<DeliverySlice>);
+        Assert.Throws<NotSupportedException>(() => ((IList<SalesOrderDraftLine>)draft.Lines).Add(line));
+        Assert.Throws<NotSupportedException>(() => ((IList<DeliverySlice>)line.RequestedDeliverySlices).Clear());
+        Assert.Single(draft.Lines);
+        Assert.Single(line.RequestedDeliverySlices);
+        Assert.Equal(before, draft.Version);
+    }
+
+    [Fact]
+    public void The_line_level_guard_is_a_second_authority_and_reports_itself_as_such()
+    {
+        var unit = KgUnitProfile();
+        var slices = new[] { new DeliverySlice(Guid.NewGuid(), Quantity.Of(2m, QuantityUnit.Kilogram), "2", Day) };
+        Assert.Equal(SalesRuleCodes.InternalInvariant, CodeOf(() => new SalesOrderDraftLine(Guid.NewGuid(), 1, Snapshot(unit), unit,
+            Quantity.Of(1m, QuantityUnit.Kilogram), "1", null, null, CommercialDraftFields.None, slices)));
+        Assert.Equal(SalesRuleCodes.InternalInvariant, CodeOf(() => new SalesOrderDraftLine(Guid.NewGuid(), 1, Snapshot(unit), unit,
+            Quantity.Zero(QuantityUnit.Kilogram), "0", null, null, CommercialDraftFields.None, [])));
+    }
+
+    [Fact]
+    public void Every_rule_code_is_distinct_and_in_the_sales_namespace()
+    {
+        var codes = typeof(SalesRuleCodes).GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+            .Where(field => field.IsLiteral && field.FieldType == typeof(string))
+            .Select(field => (string)field.GetRawConstantValue()!)
+            .ToArray();
+        Assert.NotEmpty(codes);
+        Assert.Equal(codes.Length, codes.Distinct(StringComparer.Ordinal).Count());
+        Assert.All(codes, code => Assert.StartsWith("sales_", code, StringComparison.Ordinal));
+    }
+}

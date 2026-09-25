@@ -30,6 +30,48 @@
       "target": "src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/GoymenERP.Modules.Idempotency.Infrastructure.csproj",
       "adr": "docs/adr/ADR-CARI-001-counterparty-atomic-command-integration.md",
       "reason": "Counterparty business write, audit insert and command result share one EF SaveChanges and SQL transaction."
+    },
+    {
+      "source": "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/GoymenERP.Modules.Inventory.Infrastructure.csproj",
+      "target": "src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/GoymenERP.Modules.Audit.Infrastructure.csproj",
+      "adr": "docs/adr/ADR-009-audit-and-correlation.md",
+      "reason": "Audit insert and Inventory label/movement/balance writes share one EF SaveChanges and SQL transaction (INV-2, #293; same pattern as Organization)."
+    },
+    {
+      "source": "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/GoymenERP.Modules.Accounting.Infrastructure.csproj",
+      "target": "src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/GoymenERP.Modules.Audit.Infrastructure.csproj",
+      "adr": "docs/adr/ADR-009-audit-and-correlation.md",
+      "reason": "Audit insert and Accounting ledger writes share one EF SaveChanges and SQL transaction (ACC-3, #298; same pattern as Organization)."
+    },
+    {
+      "source": "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/GoymenERP.Modules.Finance.Infrastructure.csproj",
+      "target": "src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/GoymenERP.Modules.Audit.Infrastructure.csproj",
+      "adr": "docs/adr/ADR-009-audit-and-correlation.md",
+      "reason": "Audit insert and Finance receipt-draft writes share one EF SaveChanges and SQL transaction (FIN-T04a, #305; same pattern as Organization)."
+    },
+    {
+      "source": "src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/GoymenERP.Modules.Manufacturing.Infrastructure.csproj",
+      "target": "src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/GoymenERP.Modules.Audit.Infrastructure.csproj",
+      "adr": "docs/adr/ADR-009-audit-and-correlation.md",
+      "reason": "Audit insert and Manufacturing writes share one EF SaveChanges and SQL transaction (MFG-5 (#303); same pattern as Organization)."
+    },
+    {
+      "source": "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/GoymenERP.Modules.Sales.Infrastructure.csproj",
+      "target": "src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/GoymenERP.Modules.Audit.Infrastructure.csproj",
+      "adr": "docs/adr/ADR-009-audit-and-correlation.md",
+      "reason": "Audit insert and Sales writes share one EF SaveChanges and SQL transaction (SALES-P2 (#315); same pattern as Organization)."
+    },
+    {
+      "source": "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/GoymenERP.Modules.Logistics.Infrastructure.csproj",
+      "target": "src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/GoymenERP.Modules.Audit.Infrastructure.csproj",
+      "adr": "docs/adr/ADR-009-audit-and-correlation.md",
+      "reason": "Audit insert and Logistics loading-instruction writes share one EF SaveChanges and SQL transaction (LOG-4a (#350); same pattern as Organization)."
+    },
+    {
+      "source": "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/GoymenERP.Modules.Purchasing.Infrastructure.csproj",
+      "target": "src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/GoymenERP.Modules.Audit.Infrastructure.csproj",
+      "adr": "docs/adr/ADR-009-audit-and-correlation.md",
+      "reason": "Audit insert and Purchasing request/order writes share one EF SaveChanges and SQL transaction (PUR-4a; same pattern as Organization)."
     }
   ]
 }

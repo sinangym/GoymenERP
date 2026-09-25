@@ -16,11 +16,11 @@ public sealed partial class ShellCapabilityRegistryTests
         var registry = new ShellCapabilityRegistry(
             [provider],
             new ShellCapabilityAuthorityCatalog(
-                [ShellCapabilityRegistryAuthorities.CounterpartyListCreateLinkAndDetailV15]));
+                [ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetail]));
 
         Assert.Equal(4, registry.Registrations.Count);
         Assert.Equal(
-            ShellCapabilityRegistryAuthorities.CounterpartyListCreateLinkAndDetailV15,
+            ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetail,
             registry.Revision);
         var registration = Assert.Single(
             registry.Registrations,
@@ -54,7 +54,7 @@ public sealed partial class ShellCapabilityRegistryTests
         Assert.Equal(
             [ErpPermissions.CounterpartyPartiesRead],
             registration.Declaration.RequiredPermissions);
-        Assert.False(registration.Declaration.ImplementationAvailable);
+        Assert.True(registration.Declaration.ImplementationAvailable);
 
         var createRegistration = Assert.Single(
             registry.Registrations,
@@ -85,7 +85,7 @@ public sealed partial class ShellCapabilityRegistryTests
         Assert.Equal(
             [ErpPermissions.CounterpartyPartiesCreate],
             createRegistration.Declaration.RequiredPermissions);
-        Assert.False(createRegistration.Declaration.ImplementationAvailable);
+        Assert.True(createRegistration.Declaration.ImplementationAvailable);
 
         var linkRegistration = Assert.Single(
             registry.Registrations,
@@ -150,7 +150,7 @@ public sealed partial class ShellCapabilityRegistryTests
         Assert.Equal(
             [ErpPermissions.CounterpartyPartiesRead],
             detailRegistration.Declaration.RequiredPermissions);
-        Assert.False(detailRegistration.Declaration.ImplementationAvailable);
+        Assert.True(detailRegistration.Declaration.ImplementationAvailable);
     }
 
     [Fact]
@@ -339,12 +339,15 @@ public sealed partial class ShellCapabilityRegistryTests
     [Fact]
     public void UnknownPermissionMalformedIdentityAndPermissionlessAvailability_AreRejected()
     {
+        // Must stay unregistered, or the unknown-permission declaration below would be accepted.
+        const string unregisteredPermission = "unknown.permission";
+        Assert.DoesNotContain(unregisteredPermission, ErpPermissions.All);
         var unknownPermission = Declaration(
             "owner.a.read",
             "OWNER-A-ROUTE",
             "/owner/a",
             "OWNER-A-01",
-            requiredPermissions: ["unknown.permission"]);
+            requiredPermissions: [unregisteredPermission]);
         var malformedCapability = Declaration(
             "Owner A Read",
             "OWNER-A-ROUTE",

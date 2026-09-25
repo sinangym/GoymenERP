@@ -53,7 +53,11 @@ public sealed class ErpAuthorizationServiceTests
             dbContext,
             new FakeCurrentUser(userId, companyId));
 
-        var scope = await service.GetPermissionScopeAsync("unknown.permission", companyId);
+        // Must stay unregistered: a registration would turn this into a real grant check.
+        const string unregisteredPermission = "unknown.permission";
+        Assert.DoesNotContain(unregisteredPermission, ErpPermissions.All);
+
+        var scope = await service.GetPermissionScopeAsync(unregisteredPermission, companyId);
 
         Assert.Equal(PermissionScope.Denied, scope);
     }

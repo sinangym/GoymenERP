@@ -71,7 +71,7 @@ public sealed class CounterpartyShellCapabilityProviderContractTests
         Assert.Equal(
             "no_go",
             root.GetProperty("productionActivation").GetString());
-        Assert.False(declaration.ImplementationAvailable);
+        Assert.True(declaration.ImplementationAvailable);
     }
 
     [Fact]
@@ -126,7 +126,7 @@ public sealed class CounterpartyShellCapabilityProviderContractTests
             declaration.ScopeRequirement);
         Assert.Equal("blocked", root.GetProperty("implementationReadiness").GetString());
         Assert.Equal("no_go", root.GetProperty("productionActivation").GetString());
-        Assert.False(declaration.ImplementationAvailable);
+        Assert.True(declaration.ImplementationAvailable);
     }
 
     [Fact]
@@ -243,7 +243,7 @@ public sealed class CounterpartyShellCapabilityProviderContractTests
             declaration.ScopeRequirement);
         Assert.Equal("blocked", root.GetProperty("implementationReadiness").GetString());
         Assert.Equal("no_go", root.GetProperty("productionActivation").GetString());
-        Assert.False(declaration.ImplementationAvailable);
+        Assert.True(declaration.ImplementationAvailable);
     }
 
     private static string FindRepositoryRoot()

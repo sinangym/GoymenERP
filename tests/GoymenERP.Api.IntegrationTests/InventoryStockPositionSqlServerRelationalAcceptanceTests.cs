@@ -1,0 +1,110 @@
+using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.Modules.Inventory.Infrastructure;
+using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
+
+namespace GoymenERP.Api.IntegrationTests;
+
+public sealed partial class InventorySqlServerRelationalAcceptanceTests
+{
+    [SqlServerFact]
+    public async Task Stock_position_read_reports_physical_allocation_and_available_components_from_real_SQL()
+    {
+        await using var run = await Run.StartAsync();
+        var source = await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-ST01-COMPONENTS", 100m);
+        await using (var write = run.Store(CompanyA))
+        {
+            await write.Store.CreateAsync(AllocationRequest(source, "30"), Metadata(run));
+        }
+
+        var before = await AllocationEffectCountsAsync(run);
+        await using var context = run.Context(CompanyA);
+        var result = await StockPositions(context, CompanyA).SearchAsync(new("SYN-ST01", 25));
+
+        var item = Assert.Single(result.Items);
+        Assert.Equal((CompanyA, source.LabelId, source.ProductId, "100", "100", "0", "30", "70"),
+            (item.CompanyId, item.LabelId, item.ProductId, item.PhysicalKg, item.FreePhysicalKg,
+                item.BlockedPhysicalKg, item.ActiveAllocationKg, item.AvailableKg));
+        Assert.Equal(("Company", CompanyA, "Company", CompanyA),
+            (item.OwnerKind, item.OwnerId, item.CustodianKind, item.CustodianId));
+        Assert.False(result.SearchWindowFull);
+        Assert.Equal(before, await AllocationEffectCountsAsync(run));
+    }
+
+    [SqlServerFact]
+    public async Task Stock_position_search_is_bounded_and_never_leaks_another_companys_rows()
+    {
+        await using var run = await Run.StartAsync();
+        var first = await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-ST01-A", 10m);
+        var second = await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-ST01-B", 20m);
+        await SeedFreePhysicalSourceAsync(run, CompanyB, "SYN-ST01-FOREIGN", 30m);
+
+        await using var companyA = run.Context(CompanyA);
+        var firstPage = await StockPositions(companyA, CompanyA).SearchAsync(new("SYN-ST01", 1));
+        Assert.True(firstPage.SearchWindowFull);
+        Assert.Equal(first.LabelId, Assert.Single(firstPage.Items).LabelId);
+
+        var all = await StockPositions(companyA, CompanyA).SearchAsync(new("SYN-ST01", 100));
+        Assert.False(all.SearchWindowFull);
+        Assert.Equal([first.LabelId, second.LabelId], all.Items.Select(item => item.LabelId));
+        Assert.All(all.Items, item => Assert.Equal(CompanyA, item.CompanyId));
+        Assert.DoesNotContain(all.Items, item => item.LabelCode.Contains("FOREIGN", StringComparison.Ordinal));
+    }
+
+    [SqlServerFact]
+    public async Task Stock_position_read_fails_closed_when_active_allocations_exceed_the_stored_free_bucket()
+    {
+        await using var run = await Run.StartAsync();
+        var source = await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-ST01-CORRUPT", 100m);
+        await using (var write = run.Store(CompanyA))
+        {
+            await write.Store.CreateAsync(AllocationRequest(source, "80"), Metadata(run));
+        }
+
+        await ExecuteAsync(run,
+            "UPDATE inventory.Allocations SET AllocatedKg = 120, RemainingKg = 120 WHERE LabelId = @label AND Status = 1",
+            ("@label", source.LabelId));
+        await using var context = run.Context(CompanyA);
+
+        var exception = await Assert.ThrowsAsync<InventoryStockPositionException>(() =>
+            StockPositions(context, CompanyA).SearchAsync(new("SYN-ST01-CORRUPT", 25)));
+
+        Assert.Equal((503, InventoryStockPositionCodesV1.Unavailable),
+            (exception.StatusCode, exception.Code));
+    }
+
+    private static InventoryStockPositionService StockPositions(InventoryDbContext context, Guid companyId)
+    {
+        var company = new CompanyContext();
+        company.Set(companyId);
+        return new InventoryStockPositionService(
+            company,
+            new StockPositionUser(companyId),
+            new StockPositionAuthority(),
+            new SqlInventoryStockPositionReader(context));
+    }
+
+    private sealed class StockPositionUser(Guid companyId) : ICurrentUser
+    {
+        public bool IsAuthenticated => true;
+        public string? UserId => "stock-position-reader";
+        public IReadOnlySet<Guid> AllowedCompanyIds { get; } = new HashSet<Guid> { companyId };
+        public bool CanAccessCompany(Guid requestedCompanyId) => requestedCompanyId == companyId;
+    }
+
+    private sealed class StockPositionAuthority : IErpAuthorityRevalidationService
+    {
+        public Task<PermissionScope> RevalidatePermissionScopeAsync(
+            string permission,
+            Guid companyId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new PermissionScope(
+                permission is ErpPermissions.InventoryLabelsRead or ErpPermissions.InventoryBalancesRead,
+                true,
+                new HashSet<string>(),
+                new HashSet<Guid>(),
+                new HashSet<Guid>(),
+                new HashSet<Guid>()));
+    }
+}

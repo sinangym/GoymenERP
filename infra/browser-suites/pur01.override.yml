@@ -1,0 +1,81 @@
+# PUR-01 Purchasing order acceptance. Three disposable actors are appended to the canonical development
+# identities and exist only in the per-run SQL database. The creator can create/read and carries the two
+# owner-read permissions the real Purchasing command already requires; the approver can read/approve and
+# the reader can only read. The existing Product runtime's synthetic issuer binding enables its owned
+# migrations before the gated fixture runs; its Identity user is not a Bootstrap actor and has no role,
+# assignment or permission. Every actor assignment is company-wide in GDC. No production role,
+# permission or user is changed.
+services:
+  api:
+    environment:
+      ProductRuntime__IssuerLocalUserId: b2000000-0000-4000-8000-000000000201
+      ProductRuntime__IssuerExternalIdentityId: b2100000-0000-4000-8000-000000000201
+      BootstrapIdentity__Users__2__UserId: pur01-approver
+      BootstrapIdentity__Users__2__DisplayName: SENTETIK browser-suite:pur01 Purchasing approver
+      BootstrapIdentity__Users__3__UserId: pur01-reader
+      BootstrapIdentity__Users__3__DisplayName: SENTETIK browser-suite:pur01 Purchasing reader
+      BootstrapIdentity__Users__4__UserId: pur01-creator
+      BootstrapIdentity__Users__4__DisplayName: SENTETIK browser-suite:pur01 Purchasing creator
+      IdentitySeed__Users__5__Id: b2000000-0000-4000-8000-000000000601
+      IdentitySeed__Users__5__DisplayName: SENTETIK browser-suite:pur01 Purchasing approver
+      IdentitySeed__Users__5__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000601
+      IdentitySeed__Users__5__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
+      IdentitySeed__Users__5__ExternalIdentities__0__Subject: pur01-approver
+      IdentitySeed__Users__6__Id: b2000000-0000-4000-8000-000000000602
+      IdentitySeed__Users__6__DisplayName: SENTETIK browser-suite:pur01 Purchasing reader
+      IdentitySeed__Users__6__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000602
+      IdentitySeed__Users__6__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
+      IdentitySeed__Users__6__ExternalIdentities__0__Subject: pur01-reader
+      IdentitySeed__Users__7__Id: b2000000-0000-4000-8000-000000000603
+      IdentitySeed__Users__7__DisplayName: SENTETIK browser-suite:pur01 Purchasing creator
+      IdentitySeed__Users__7__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000603
+      IdentitySeed__Users__7__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
+      IdentitySeed__Users__7__ExternalIdentities__0__Subject: pur01-creator
+      IdentitySeed__Users__8__Id: b2000000-0000-4000-8000-000000000201
+      IdentitySeed__Users__8__DisplayName: SENTETIK browser-suite:pur01 Product issuer
+      IdentitySeed__Users__8__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000201
+      IdentitySeed__Users__8__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
+      IdentitySeed__Users__8__ExternalIdentities__0__Subject: pur01-issuer
+      IdentitySeed__Roles__5__Id: b3000000-0000-4000-8000-000000000601
+      IdentitySeed__Roles__5__Code: BROWSER_PUR01_APPROVER
+      IdentitySeed__Roles__5__Name: SENTETIK browser-suite:pur01 Purchasing approver
+      IdentitySeed__Roles__5__IsSystem: "false"
+      IdentitySeed__Roles__5__Permissions__0: purchasing.orders.read
+      IdentitySeed__Roles__5__Permissions__1: purchasing.orders.approve
+      IdentitySeed__Roles__6__Id: b3000000-0000-4000-8000-000000000602
+      IdentitySeed__Roles__6__Code: BROWSER_PUR01_READER
+      IdentitySeed__Roles__6__Name: SENTETIK browser-suite:pur01 Purchasing reader
+      IdentitySeed__Roles__6__IsSystem: "false"
+      IdentitySeed__Roles__6__Permissions__0: purchasing.orders.read
+      IdentitySeed__Roles__7__Id: b3000000-0000-4000-8000-000000000603
+      IdentitySeed__Roles__7__Code: BROWSER_PUR01_CREATOR
+      IdentitySeed__Roles__7__Name: SENTETIK browser-suite:pur01 Purchasing creator
+      IdentitySeed__Roles__7__IsSystem: "false"
+      IdentitySeed__Roles__7__Permissions__0: purchasing.orders.create
+      IdentitySeed__Roles__7__Permissions__1: purchasing.orders.read
+      IdentitySeed__Roles__7__Permissions__2: counterparty.parties.read
+      IdentitySeed__Roles__7__Permissions__3: product.operational-selection.read
+      IdentitySeed__Assignments__7__Id: b4000000-0000-4000-8000-000000000601
+      IdentitySeed__Assignments__7__UserId: b2000000-0000-4000-8000-000000000601
+      IdentitySeed__Assignments__7__RoleId: b3000000-0000-4000-8000-000000000601
+      IdentitySeed__Assignments__7__CompanyId: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__7__ValidFromUtc: "2026-01-01T00:00:00+00:00"
+      IdentitySeed__Assignments__7__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
+      IdentitySeed__Assignments__7__Scopes__0__Type: Company
+      IdentitySeed__Assignments__7__Scopes__0__Id: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__8__Id: b4000000-0000-4000-8000-000000000602
+      IdentitySeed__Assignments__8__UserId: b2000000-0000-4000-8000-000000000602
+      IdentitySeed__Assignments__8__RoleId: b3000000-0000-4000-8000-000000000602
+      IdentitySeed__Assignments__8__CompanyId: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__8__ValidFromUtc: "2026-01-01T00:00:00+00:00"
+      IdentitySeed__Assignments__8__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
+      IdentitySeed__Assignments__8__Scopes__0__Type: Company
+      IdentitySeed__Assignments__8__Scopes__0__Id: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__9__Id: b4000000-0000-4000-8000-000000000603
+      IdentitySeed__Assignments__9__UserId: b2000000-0000-4000-8000-000000000603
+      IdentitySeed__Assignments__9__RoleId: b3000000-0000-4000-8000-000000000603
+      IdentitySeed__Assignments__9__CompanyId: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__9__ValidFromUtc: "2026-01-01T00:00:00+00:00"
+      IdentitySeed__Assignments__9__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
+      IdentitySeed__Assignments__9__Scopes__0__Type: Company
+      IdentitySeed__Assignments__9__Scopes__0__Id: 10000000-0000-0000-0000-000000000001

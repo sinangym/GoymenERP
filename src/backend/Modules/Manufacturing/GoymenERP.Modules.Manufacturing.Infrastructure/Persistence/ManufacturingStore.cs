@@ -1,0 +1,888 @@
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.Modules.Audit.Application.Contracts;
+using GoymenERP.Modules.Manufacturing.Application;
+using GoymenERP.Modules.Manufacturing.Domain.Common;
+using GoymenERP.Modules.Manufacturing.Domain.Orders;
+using GoymenERP.Modules.Manufacturing.Domain.Plans;
+using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore;
+
+namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence;
+
+/// <summary>
+/// The Manufacturing store of the server-resolved company (MFG-5). Every write is one save: the
+/// plan or order change, the facts it adds, the new version and its audit event commit together or
+/// not at all.
+/// <list type="bullet">
+/// <item><b>Company:</b> a record of any other company than the resolved context is refused before
+/// anything is read (<see cref="ManufacturingStoreCodes.CompanyContextMismatch"/>); every read runs
+/// under the tenant filter.</item>
+/// <item><b>Rules:</b> the domain decides. A plan or order is rebuilt from its stored facts through
+/// the same methods that recorded them, then the requested change is applied to it: the version
+/// fence, fact identity, roll binding, return bound, latest WIP reading and the MFG-4 close rule
+/// all hold against stored data exactly as in memory.</item>
+/// <item><b>Replay (R3):</b> a plan, order or fact id is its idempotency identity. The same id with
+/// the same canonical content (masses normalised, times in UTC) is a replay with no second effect
+/// and no version change; with another content it is refused.</item>
+/// <item><b>Race:</b> every change bumps the plan's or order's version (a concurrency token), so two
+/// writers that read the same order cannot both commit; the loser gets
+/// <see cref="ManufacturingStoreCodes.ConcurrentChange"/>, nothing of it is stored, and it may retry.</item>
+/// <item><b>Audit:</b> ADR-009 envelope from <see cref="ManufacturingCommandMetadata"/>, in the same save.</item>
+/// </list>
+/// </summary>
+public sealed class ManufacturingStore(
+    ManufacturingDbContext dbContext,
+    ICompanyContext companyContext,
+    IAuditEventCollector auditEvents,
+    TimeProvider timeProvider) : IManufacturingPlanStore, IManufacturingOrderStore, IManufacturingCommandLog
+{
+    private const string PlanEntityType = "Manufacturing.ProductionPlan";
+    private const string OrderEntityType = "Manufacturing.ProductionOrder";
+    private const int ActorMaximumLength = 128;
+    // The list page bound, as Sales' draft list (#257): a default the caller may keep and a maximum it cannot pass.
+    private const int DefaultPageSize = 50;
+    private const int MaximumPageSize = 100;
+    // The exclusive bound of a decimal(18,3) column (15 integer digits): every such column — the masses and the
+    // plan's band widths alike — refuses a value at or above it before the save (FİNANS #342 INFO-3: a neutral name).
+    private const decimal Decimal18Scale3Limit = 1_000_000_000_000_000m;
+
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+
+    public async Task<ManufacturingWriteOutcome> SavePlanAsync(ProductionPlan plan, ManufacturingCommandMetadata metadata,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        RequireMetadata(metadata);
+        RequireCompany(plan.CompanyId);
+        if (plan.Status != PlanStatus.Draft)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanNotDraft,
+                "Yalnız taslak plan kaydedilir; onay ayrı bir yazmadır.");
+        }
+
+        RequireFits(plan.Inputs.Select(input => input.PlannedMass).Concat(plan.Target is { } t ? [t.Mass] : [])
+            .Concat(plan.Spec?.WindingTargetKg is { } winding ? [winding] : []));
+        // A band width is a decimal(18,3) millimetre: beyond the column it is refused, never cut.
+        if (plan.Spec is { } widths && widths.Lines.Any(line => line.BandWidthMm >= Decimal18Scale3Limit))
+        {
+            throw Refused(ManufacturingStoreCodes.ValueDoesNotFit, "Bant eni kayıt sütununa sığmıyor.");
+        }
+
+        var payloadHash = PlanHash(plan);
+        var existing = await dbContext.Plans.AsNoTracking().SingleOrDefaultAsync(row => row.Id == plan.Id, cancellationToken);
+        if (existing is not null)
+        {
+            return string.Equals(existing.PayloadHash, payloadHash, StringComparison.Ordinal)
+                ? ManufacturingWriteOutcome.Replayed
+                : throw Refused(ManufacturingStoreCodes.PlanIdConflict, "Aynı plan kimliği farklı içerikle verildi.");
+        }
+
+        var now = timeProvider.GetUtcNow();
+        dbContext.Plans.Add(new PlanRow
+        {
+            Id = plan.Id,
+            CompanyId = plan.CompanyId,
+            WorkCenterId = plan.WorkCenterId,
+            Process = (int)plan.Process,
+            Status = (int)plan.Status,
+            TargetBasis = plan.Target is null ? null : (int)plan.Target.Basis,
+            TargetKg = plan.Target?.Mass.Value,
+            WindingTargetKg = plan.Spec?.WindingTargetKg?.Value,
+            Version = plan.Version,
+            PayloadHash = payloadHash,
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now,
+        });
+        var sequence = 0;
+        foreach (var input in plan.Inputs)
+        {
+            dbContext.PlanInputs.Add(new PlanInputRow
+            {
+                CompanyId = plan.CompanyId,
+                PlanId = plan.Id,
+                ParentRollId = input.ParentRollId,
+                Sequence = ++sequence,
+                PlannedKg = input.PlannedMass.Value,
+                ExpectedLabelVersion = input.ExpectedLabelVersion,
+            });
+        }
+
+        // MFG-6: the slitting spec is plan content, stored in the same save.
+        var lineSequence = 0;
+        foreach (var line in plan.Spec?.Lines ?? Array.Empty<SlitLine>())
+        {
+            dbContext.PlanSlitLines.Add(new PlanSlitLineRow
+            {
+                CompanyId = plan.CompanyId,
+                PlanId = plan.Id,
+                Sequence = ++lineSequence,
+                BandWidthMm = line.BandWidthMm,
+                BandCount = line.Count,
+            });
+        }
+
+        Audit(metadata, plan.CompanyId, PlanEntityType, plan.Id, "manufacturing.plan.created.v1", "Create",
+            versionBefore: null, versionAfter: plan.Version, before: "{}", after: PlanAudit(plan), "Üretim planı kaydı");
+        Complete(metadata, companyId: plan.CompanyId, plan);
+        await SaveAsync(cancellationToken);
+        return ManufacturingWriteOutcome.Recorded;
+    }
+
+    public async Task<ProductionPlan> ApprovePlanAsync(Guid planId, long expectedVersion, Guid approvedByUserId,
+        DateTimeOffset approvedAt, ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default)
+    {
+        RequireMetadata(metadata);
+        var companyId = RequireResolvedCompany();
+        var row = await dbContext.Plans.SingleOrDefaultAsync(candidate => candidate.Id == planId, cancellationToken)
+            ?? throw Refused(ManufacturingStoreCodes.PlanNotFound, "Bu şirketin böyle bir planı yok.");
+        var plan = await RestorePlanAsync(row, cancellationToken);
+        var before = PlanAudit(plan);
+        var versionBefore = plan.Version;
+
+        // The domain decides: the version fence first, then "only a draft is approved".
+        plan.Approve(expectedVersion, approvedByUserId, approvedAt);
+
+        row.Status = (int)plan.Status;
+        row.ApprovedByUserId = plan.ApprovedByUserId;
+        row.ApprovedAtUtc = plan.ApprovedAtUtc;
+        row.Version = plan.Version;
+        row.UpdatedAtUtc = timeProvider.GetUtcNow();
+        Audit(metadata, companyId, PlanEntityType, plan.Id, "manufacturing.plan.approved.v1", "Approve",
+            versionBefore, plan.Version, before, PlanAudit(plan), "Üretim planı onayı");
+        Complete(metadata, companyId, plan);
+        await SaveAsync(cancellationToken);
+        return plan;
+    }
+
+    public async Task<ProductionPlan?> FindPlanAsync(Guid planId, CancellationToken cancellationToken = default)
+    {
+        RequireResolvedCompany();
+        var row = await dbContext.Plans.AsNoTracking().SingleOrDefaultAsync(candidate => candidate.Id == planId, cancellationToken);
+        return row is null ? null : await RestorePlanAsync(row, cancellationToken);
+    }
+
+    public async Task<ManufacturingWriteOutcome> CreateOrderAsync(Guid orderId, Guid planId,
+        ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default)
+    {
+        RequireMetadata(metadata);
+        var companyId = RequireResolvedCompany();
+        var existing = await dbContext.Orders.AsNoTracking().SingleOrDefaultAsync(row => row.Id == orderId, cancellationToken);
+        if (existing is not null)
+        {
+            return existing.PlanId == planId
+                ? ManufacturingWriteOutcome.Replayed
+                : throw Refused(ManufacturingStoreCodes.OrderIdConflict, "Aynı emir kimliği başka bir plan için verildi.");
+        }
+
+        var planRow = await dbContext.Plans.AsNoTracking().SingleOrDefaultAsync(row => row.Id == planId, cancellationToken)
+            ?? throw Refused(ManufacturingStoreCodes.PlanNotFound, "Bu şirketin böyle bir planı yok.");
+        var plan = await RestorePlanAsync(planRow, cancellationToken);
+
+        // The domain decides: only an approved plan becomes an order.
+        var order = ProductionOrder.FromApprovedPlan(orderId, plan);
+
+        var now = timeProvider.GetUtcNow();
+        dbContext.Orders.Add(new OrderRow
+        {
+            Id = order.Id,
+            CompanyId = order.CompanyId,
+            PlanId = order.PlanId,
+            WorkCenterId = order.WorkCenterId,
+            Process = (int)order.Process,
+            Status = (int)order.Status,
+            TargetBasis = order.Target is null ? null : (int)order.Target.Basis,
+            TargetKg = order.Target?.Mass.Value,
+            Version = order.Version,
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now,
+        });
+        var sequence = 0;
+        foreach (var input in order.PlannedInputs)
+        {
+            dbContext.OrderInputs.Add(new OrderInputRow
+            {
+                CompanyId = order.CompanyId,
+                OrderId = order.Id,
+                ParentRollId = input.ParentRollId,
+                Sequence = ++sequence,
+                PlannedKg = input.PlannedMass.Value,
+                ExpectedLabelVersion = input.ExpectedLabelVersion,
+            });
+        }
+
+        Audit(metadata, companyId, OrderEntityType, order.Id, "manufacturing.order.created.v1", "Create",
+            versionBefore: null, versionAfter: order.Version, before: "{}",
+            after: JsonSerializer.Serialize(new
+            {
+                order.Id,
+                order.PlanId,
+                order.WorkCenterId,
+                rolls = order.PlannedInputs.Count,
+                inputs = order.PlannedInputs.Select(input => new
+                {
+                    input.ParentRollId,
+                    kg = input.PlannedMass.Value,
+                    input.ExpectedLabelVersion,
+                }),
+            }, Json),
+            "Üretim emri kaydı");
+        Complete(metadata, companyId, order);
+        await SaveAsync(cancellationToken);
+        return ManufacturingWriteOutcome.Recorded;
+    }
+
+    public Task<ManufacturingWriteOutcome> IssueInputAsync(Guid orderId, long expectedVersion, Guid issueId,
+        Guid parentRollId, Kilograms mass, DateTimeOffset issuedAt, ManufacturingCommandMetadata metadata,
+        CancellationToken cancellationToken = default) =>
+        RecordFactAsync(orderId, FactKind.InputIssue, issueId, parentRollId, mass, issuedAt, outputClass: null, metadata,
+            order =>
+            {
+                var fact = order.IssueInput(expectedVersion, issueId, parentRollId, mass, issuedAt);
+                return (fact.IssuedAtUtc, (CostStatus?)null);
+            },
+            "manufacturing.input.issued.v1", cancellationToken);
+
+    public Task<ManufacturingWriteOutcome> ReturnUnusedInputAsync(Guid orderId, long expectedVersion, Guid returnId,
+        Guid parentRollId, Kilograms mass, DateTimeOffset returnedAt, ManufacturingCommandMetadata metadata,
+        CancellationToken cancellationToken = default) =>
+        RecordFactAsync(orderId, FactKind.InputReturn, returnId, parentRollId, mass, returnedAt, outputClass: null, metadata,
+            order =>
+            {
+                var fact = order.ReturnUnusedInput(expectedVersion, returnId, parentRollId, mass, returnedAt);
+                return (fact.ReturnedAtUtc, (CostStatus?)null);
+            },
+            "manufacturing.input.returned.v1", cancellationToken);
+
+    public Task<ManufacturingWriteOutcome> DeclareOutputAsync(Guid orderId, long expectedVersion, Guid outputId,
+        Guid parentRollId, OutputClass outputClass, Kilograms mass, DateTimeOffset declaredAt,
+        ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+        RecordFactAsync(orderId, FactKind.OutputDeclaration, outputId, parentRollId, mass, declaredAt, outputClass, metadata,
+            order =>
+            {
+                var fact = order.DeclareOutput(expectedVersion, outputId, parentRollId, outputClass, mass, declaredAt);
+                return (fact.DeclaredAtUtc, (CostStatus?)fact.Cost.Status);
+            },
+            "manufacturing.output.declared.v1", cancellationToken);
+
+    public Task<ManufacturingWriteOutcome> RecordWorkInProgressAsync(Guid orderId, long expectedVersion,
+        Guid measurementId, Guid parentRollId, Kilograms mass, DateTimeOffset measuredAt,
+        ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+        RecordFactAsync(orderId, FactKind.WipMeasurement, measurementId, parentRollId, mass, measuredAt, outputClass: null,
+            metadata,
+            order =>
+            {
+                var fact = order.RecordWorkInProgress(expectedVersion, measurementId, parentRollId, mass, measuredAt);
+                return (fact.MeasuredAtUtc, (CostStatus?)null);
+            },
+            "manufacturing.wip.measured.v1", cancellationToken);
+
+    public async Task CloseOrderAsync(Guid orderId, long expectedVersion, Guid closedByUserId, DateTimeOffset closedAt,
+        ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default)
+    {
+        RequireMetadata(metadata);
+        var companyId = RequireResolvedCompany();
+        var row = await dbContext.Orders.SingleOrDefaultAsync(candidate => candidate.Id == orderId, cancellationToken)
+            ?? throw Refused(ManufacturingStoreCodes.OrderNotFound, "Bu şirketin böyle bir emri yok.");
+        var order = await RestoreOrderAsync(row, cancellationToken);
+        var versionBefore = order.Version;
+
+        // The domain decides (MFG-4): each roll on its own; remaining WIP stays; any unexplained
+        // difference refuses the close.
+        order.Close(expectedVersion, closedByUserId, closedAt);
+
+        row.Status = (int)order.Status;
+        row.ClosedByUserId = order.ClosedByUserId;
+        row.ClosedAtUtc = order.ClosedAtUtc;
+        row.Version = order.Version;
+        row.UpdatedAtUtc = timeProvider.GetUtcNow();
+        Audit(metadata, companyId, OrderEntityType, order.Id, "manufacturing.order.closed.v1", "Close",
+            versionBefore, order.Version, before: JsonSerializer.Serialize(new { status = "Open" }, Json),
+            after: JsonSerializer.Serialize(new
+            {
+                status = "Closed",
+                balances = order.PlannedInputs.Select(input => order.BalanceOf(input.ParentRollId)).Select(balance => new
+                {
+                    balance.ParentRollId,
+                    issued = balance.Issued.Value,
+                    returned = balance.Returned.Value,
+                    workInProgress = balance.WorkInProgress.Value,
+                    unexplained = balance.Unexplained,
+                }),
+            }, Json),
+            "Üretim emri kapanışı");
+        // ADR-011 §6: the close's command record commits with the close itself and its audit event.
+        Complete(metadata, companyId, order);
+        await SaveAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// One page of this company's orders from the order rows and their input snapshot: no fact is
+    /// read and no balance is computed (a balance is the order read's answer, roll by roll). The
+    /// ordering is the stored createdAtUtc and id, so a page is stable while orders are added.
+    /// </summary>
+    public async Task<ManufacturingOrderPage> ListOrdersAsync(int pageSize, string? cursor, OrderStatus? status,
+        CancellationToken cancellationToken = default)
+    {
+        var companyId = RequireResolvedCompany();
+        if (pageSize is < 1 or > MaximumPageSize)
+        {
+            throw new ArgumentOutOfRangeException(nameof(pageSize), pageSize,
+                $"Sayfa boyutu 1–{MaximumPageSize} olmalıdır (varsayılan {DefaultPageSize}).");
+        }
+
+        var query = dbContext.Orders.AsNoTracking();
+        if (status is { } requested)
+        {
+            if (!Enum.IsDefined(requested))
+            {
+                throw new ArgumentOutOfRangeException(nameof(status), requested, "Tanımsız emir durumu.");
+            }
+
+            var statusValue = (int)requested;
+            query = query.Where(row => row.Status == statusValue);
+        }
+
+        if (cursor is not null)
+        {
+            var (createdAtUtc, id) = ListCursor.Decode(cursor, companyId);
+            query = query.Where(row => row.CreatedAtUtc < createdAtUtc
+                || (row.CreatedAtUtc == createdAtUtc && row.Id.CompareTo(id) < 0));
+        }
+
+        var rows = await query
+            .OrderByDescending(row => row.CreatedAtUtc).ThenByDescending(row => row.Id)
+            .Take(pageSize + 1)
+            .ToListAsync(cancellationToken);
+        var hasMore = rows.Count > pageSize;
+        var page = hasMore ? rows.Take(pageSize).ToList() : rows;
+        if (page.Count == 0)
+        {
+            return new ManufacturingOrderPage([], null);
+        }
+
+        var ids = page.Select(row => row.Id).ToArray();
+        var inputs = await dbContext.OrderInputs.AsNoTracking()
+            .Where(input => ids.Contains(input.OrderId))
+            .GroupBy(input => input.OrderId)
+            .Select(group => new { OrderId = group.Key, Count = group.Count(), PlannedKg = group.Sum(input => input.PlannedKg) })
+            .ToListAsync(cancellationToken);
+
+        var summaries = new List<ManufacturingOrderSummary>(page.Count);
+        foreach (var row in page)
+        {
+            var snapshot = inputs.SingleOrDefault(input => input.OrderId == row.Id);
+            if (snapshot is null)
+            {
+                // An order always has its own input snapshot; without one the row is not summarised.
+                throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                    "Kayıtlı emrin planlanan girdi anlık görüntüsü yok.");
+            }
+
+            summaries.Add(new ManufacturingOrderSummary(row.Id, row.CompanyId, row.PlanId, row.WorkCenterId,
+                (ManufacturingProcess)row.Process, (OrderStatus)row.Status, row.Version, snapshot.Count,
+                new Kilograms(snapshot.PlannedKg), (TargetBasis?)row.TargetBasis,
+                row.TargetKg is { } targetKg ? new Kilograms(targetKg) : null, row.CreatedAtUtc, row.ClosedByUserId,
+                row.ClosedAtUtc));
+        }
+
+        var last = page.LastOrDefault();
+        return new ManufacturingOrderPage(summaries,
+            hasMore && last is not null ? ListCursor.Encode(companyId, last.CreatedAtUtc, last.Id) : null);
+    }
+
+    public async Task<ProductionOrder?> FindOrderAsync(Guid orderId, CancellationToken cancellationToken = default)
+    {
+        RequireResolvedCompany();
+        // A read that meets a write committing between the order row and its facts reads again.
+        for (var attempt = 1; ; attempt++)
+        {
+            var row = await dbContext.Orders.AsNoTracking()
+                .SingleOrDefaultAsync(candidate => candidate.Id == orderId, cancellationToken);
+            if (row is null)
+            {
+                return null;
+            }
+
+            try
+            {
+                return await RestoreOrderAsync(row, cancellationToken);
+            }
+            catch (ManufacturingStoreException exception)
+                when (exception.Code == ManufacturingStoreCodes.ConcurrentChange && attempt < 3)
+            {
+            }
+        }
+    }
+
+    private async Task<ManufacturingWriteOutcome> RecordFactAsync(Guid orderId, FactKind kind, Guid factId,
+        Guid parentRollId, Kilograms mass, DateTimeOffset occurredAt, OutputClass? outputClass,
+        ManufacturingCommandMetadata metadata, Func<ProductionOrder, (DateTimeOffset OccurredAtUtc, CostStatus? Cost)> apply,
+        string eventType, CancellationToken cancellationToken)
+    {
+        RequireMetadata(metadata);
+        var companyId = RequireResolvedCompany();
+        RequireFits([mass]);
+
+        // A replay is recognised before the version fence: the same fact again is answered even
+        // after the order has moved on, and never changes the version.
+        var kindValue = (int)kind;
+        var payloadHash = FactHash(kind, orderId, parentRollId, mass, occurredAt, outputClass);
+        var existing = await dbContext.Facts.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.Kind == kindValue && row.Id == factId, cancellationToken);
+        if (existing is not null)
+        {
+            return string.Equals(existing.PayloadHash, payloadHash, StringComparison.Ordinal)
+                ? ManufacturingWriteOutcome.Replayed
+                : throw Refused(ManufacturingStoreCodes.FactIdConflict, "Aynı olgu kimliği farklı içerikle verildi.");
+        }
+
+        var row = await dbContext.Orders.SingleOrDefaultAsync(candidate => candidate.Id == orderId, cancellationToken)
+            ?? throw Refused(ManufacturingStoreCodes.OrderNotFound, "Bu şirketin böyle bir emri yok.");
+        var order = await RestoreOrderAsync(row, cancellationToken);
+        var versionBefore = order.Version;
+
+        // The domain decides; nothing below runs for a refused fact.
+        var (occurredAtUtc, cost) = apply(order);
+
+        var now = timeProvider.GetUtcNow();
+        dbContext.Facts.Add(new FactRow
+        {
+            CompanyId = companyId,
+            Kind = kindValue,
+            Id = factId,
+            OrderId = orderId,
+            ParentRollId = parentRollId,
+            MassKg = mass.Value,
+            OccurredAtUtc = occurredAtUtc,
+            OutputClass = outputClass is null ? null : (int)outputClass.Value,
+            CostStatus = cost is null ? null : (int)cost.Value,
+            PayloadHash = payloadHash,
+            RecordedAtUtc = now,
+            RecordedBy = metadata.ActorId.Trim(),
+            CorrelationId = metadata.CorrelationId.Trim(),
+        });
+        row.Version = order.Version;
+        row.UpdatedAtUtc = now;
+        Audit(metadata, companyId, OrderEntityType, orderId, eventType, "Record", versionBefore, order.Version,
+            before: "{}",
+            after: JsonSerializer.Serialize(new
+            {
+                kind = kind.ToString(),
+                factId,
+                parentRollId,
+                massKg = mass.Value,
+                occurredAtUtc,
+                outputClass = outputClass?.ToString(),
+                cost = cost?.ToString(),
+                payloadHash,
+            }, Json),
+            "Üretim gerçekleşme olgusu");
+        Complete(metadata, companyId, order);
+        await SaveAsync(cancellationToken);
+        return ManufacturingWriteOutcome.Recorded;
+    }
+
+    public async Task<ManufacturingCommandRecord?> FindCommandAsync(string commandName, string idempotencyKeyHash,
+        CancellationToken cancellationToken = default)
+    {
+        RequireResolvedCompany();
+        var row = await dbContext.Commands.AsNoTracking().SingleOrDefaultAsync(
+            candidate => candidate.CommandName == commandName && candidate.IdempotencyKeyHash == idempotencyKeyHash,
+            cancellationToken);
+        return row is null
+            ? null
+            : new ManufacturingCommandRecord(row.CommandName, row.IdempotencyKeyHash, row.ActorId, row.RequestHash,
+                row.ResultJson, row.OriginalCorrelationId);
+    }
+
+    public async Task RecordCommandAsync(ManufacturingCommandRecord record, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(record);
+        AddCommand(RequireResolvedCompany(), record);
+        await SaveAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// ADR-011 §6: the completed command's record joins the business change and its audit event in
+    /// the same save. Without a completion (a caller outside the HTTP surface) nothing is added.
+    /// </summary>
+    private void Complete(ManufacturingCommandMetadata metadata, Guid companyId, object result)
+    {
+        if (metadata.Completion is { } completion)
+        {
+            AddCommand(companyId, completion(result));
+        }
+    }
+
+    private void AddCommand(Guid companyId, ManufacturingCommandRecord record) =>
+        dbContext.Commands.Add(new CommandRow
+        {
+            CompanyId = companyId,
+            CommandName = record.CommandName,
+            IdempotencyKeyHash = record.IdempotencyKeyHash,
+            ActorId = record.ActorId,
+            RequestHash = record.RequestHash,
+            ResultJson = record.ResultJson,
+            OriginalCorrelationId = record.OriginalCorrelationId,
+            RecordedAtUtc = timeProvider.GetUtcNow(),
+        });
+
+    private async Task<ProductionPlan> RestorePlanAsync(PlanRow row, CancellationToken cancellationToken)
+    {
+        var inputs = await dbContext.PlanInputs.AsNoTracking()
+            .Where(input => input.PlanId == row.Id)
+            .OrderBy(input => input.Sequence)
+            .ToListAsync(cancellationToken);
+        var lines = await dbContext.PlanSlitLines.AsNoTracking()
+            .Where(line => line.PlanId == row.Id)
+            .OrderBy(line => line.Sequence)
+            .ToListAsync(cancellationToken);
+        return ProductionPlan.Restore(row.Id, row.CompanyId, row.WorkCenterId, (ManufacturingProcess)row.Process,
+            inputs.Select(input => new PlannedInput(input.ParentRollId, new Kilograms(input.PlannedKg),
+                input.ExpectedLabelVersion)),
+            Target(row.TargetBasis, row.TargetKg), row.ApprovedByUserId, row.ApprovedAtUtc, row.Version,
+            Spec(lines, row.WindingTargetKg));
+    }
+
+    private async Task<ProductionOrder> RestoreOrderAsync(OrderRow row, CancellationToken cancellationToken)
+    {
+        var inputs = await dbContext.OrderInputs.AsNoTracking()
+            .Where(input => input.OrderId == row.Id)
+            .OrderBy(input => input.Sequence)
+            .ToListAsync(cancellationToken);
+        var facts = await dbContext.Facts.AsNoTracking()
+            .Where(fact => fact.OrderId == row.Id)
+            .ToListAsync(cancellationToken);
+        IEnumerable<FactRow> Of(FactKind kind) => facts.Where(fact => fact.Kind == (int)kind);
+
+        try
+        {
+            return RestoreOrder(row, inputs, Of);
+        }
+        catch (ManufacturingRuleException exception) when (exception.Code == ManufacturingRuleCodes.StoredRecordInvalid)
+        {
+            // Under read-committed snapshot each statement reads its own committed state: a writer
+            // that commits between the order row and its facts leaves facts newer than the row's
+            // version. That is a concurrent change, not a broken record; only an unchanged order
+            // that still fails to rebuild is invalid.
+            var current = await dbContext.Orders.AsNoTracking()
+                .Where(candidate => candidate.Id == row.Id)
+                .Select(candidate => (long?)candidate.Version)
+                .SingleOrDefaultAsync(cancellationToken);
+            if (current != row.Version)
+            {
+                throw Refused(ManufacturingStoreCodes.ConcurrentChange,
+                    "Emir okunurken başka bir yazma kaydedildi; hiçbir şey kaydedilmedi.", exception);
+            }
+
+            throw;
+        }
+    }
+
+    private static ProductionOrder RestoreOrder(OrderRow row, IReadOnlyList<OrderInputRow> inputs,
+        Func<FactKind, IEnumerable<FactRow>> Of) =>
+        ProductionOrder.Restore(
+            row.Id, row.PlanId, row.CompanyId, row.WorkCenterId, (ManufacturingProcess)row.Process,
+            Target(row.TargetBasis, row.TargetKg),
+            inputs.Select(input => new PlannedInput(input.ParentRollId, new Kilograms(input.PlannedKg),
+                input.ExpectedLabelVersion)),
+            Of(FactKind.InputIssue).Select(fact => new InputIssue(fact.Id, fact.ParentRollId, new Kilograms(fact.MassKg),
+                fact.OccurredAtUtc)),
+            Of(FactKind.InputReturn).Select(fact => new InputReturn(fact.Id, fact.ParentRollId, new Kilograms(fact.MassKg),
+                fact.OccurredAtUtc)),
+            Of(FactKind.OutputDeclaration).Select(fact => new OutputDeclaration(fact.Id, fact.ParentRollId,
+                (OutputClass)(fact.OutputClass ?? 0), new Kilograms(fact.MassKg), fact.OccurredAtUtc, Cost(fact.CostStatus))),
+            Of(FactKind.WipMeasurement).Select(fact => new WipMeasurement(fact.Id, fact.ParentRollId, new Kilograms(fact.MassKg),
+                fact.OccurredAtUtc)),
+            row.ClosedByUserId, row.ClosedAtUtc, row.Version);
+
+    /// <summary>
+    /// A plan has a slitting spec exactly when it has slit lines; a winding target without lines is a
+    /// stored record the domain cannot have produced, and is refused, not repaired.
+    /// </summary>
+    private static SlittingSpec? Spec(IReadOnlyList<PlanSlitLineRow> lines, decimal? windingTargetKg)
+    {
+        if (lines.Count == 0)
+        {
+            return windingTargetKg is null
+                ? null
+                : throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                    "Kayıtlı sarım hedefi dilme satırı olmadan var olamaz.");
+        }
+
+        return new SlittingSpec(lines.Select(line => new SlitLine(line.BandWidthMm, line.BandCount)),
+            windingTargetKg is { } target ? new Kilograms(target) : null);
+    }
+
+    private static ProductionTarget? Target(int? basis, decimal? kilograms) =>
+        basis is null && kilograms is null
+            ? null
+            : new ProductionTarget((TargetBasis)(basis ?? 0), new Kilograms(kilograms ?? 0m));
+
+    private static CostResult Cost(int? status) => (CostStatus?)status switch
+    {
+        CostStatus.NotCalculated => CostResult.NotCalculated,
+        CostStatus.WaitingPolicy => CostResult.WaitingPolicy,
+        // A known cost cannot be built in this slice; a stored one is not what the domain wrote.
+        _ => throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+            "Kayıtlı çıktının maliyet durumu bu dilimde üretilemez."),
+    };
+
+    /// <summary>
+    /// The canonical content of a plan: company, work center, process, target and inputs in their
+    /// order; masses normalised so 5.00 kg and 5 kg are one content.
+    /// </summary>
+    internal static string PlanHash(ProductionPlan plan)
+    {
+        var builder = new StringBuilder("manufacturing.plan.v1|");
+        builder.Append(plan.CompanyId.ToString("D")).Append('|')
+            .Append(plan.WorkCenterId.ToString("D")).Append('|')
+            .Append((int)plan.Process).Append('|')
+            .Append(plan.Target is null ? "-" : $"{(int)plan.Target.Basis}:{Canonical(plan.Target.Mass.Value)}").Append('|');
+        foreach (var input in plan.Inputs)
+        {
+            builder.Append(input.ParentRollId.ToString("D")).Append(':').Append(Canonical(input.PlannedMass.Value));
+            if (input.ExpectedLabelVersion is { } expectedLabelVersion)
+            {
+                builder.Append('@').Append(expectedLabelVersion.ToString(CultureInfo.InvariantCulture));
+            }
+
+            builder.Append(';');
+        }
+
+        // MFG-6: only a plan WITH a slitting spec extends the canonical content, so every plan stored before
+        // it keeps its hash (and its replay identity) unchanged.
+        if (plan.Spec is { } spec)
+        {
+            builder.Append("|slitting.v1|")
+                .Append(spec.WindingTargetKg is { } winding ? Canonical(winding.Value) : "-").Append('|');
+            foreach (var line in spec.Lines)
+            {
+                builder.Append(Canonical(line.BandWidthMm)).Append('x')
+                    .Append(line.Count.ToString(CultureInfo.InvariantCulture)).Append(';');
+            }
+        }
+
+        return Hash(builder.ToString());
+    }
+
+    /// <summary>
+    /// The canonical content of a fact: kind, order, parent roll, normalised mass, the instant in
+    /// UTC and, for an output, its class.
+    /// </summary>
+    internal static string FactHash(FactKind kind, Guid orderId, Guid parentRollId, Kilograms mass, DateTimeOffset occurredAt,
+        OutputClass? outputClass) =>
+        Hash(string.Join('|',
+            "manufacturing.fact.v1",
+            ((int)kind).ToString(CultureInfo.InvariantCulture),
+            orderId.ToString("D"),
+            parentRollId.ToString("D"),
+            Canonical(mass.Value),
+            occurredAt.UtcDateTime.ToString("O", CultureInfo.InvariantCulture),
+            outputClass is null ? "-" : ((int)outputClass.Value).ToString(CultureInfo.InvariantCulture)));
+
+    private static string Canonical(decimal value) =>
+        (value / 1.0000000000000000000000000000m).ToString(CultureInfo.InvariantCulture);
+
+    private static string Hash(string canonical) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
+
+    private static string PlanAudit(ProductionPlan plan) => plan.Spec is { } spec
+        // MFG-6: a plan with a slitting spec carries it in its audit; a plan without one keeps the MFG-5 shape.
+        ? JsonSerializer.Serialize(new
+        {
+            plan.Id,
+            plan.WorkCenterId,
+            process = plan.Process.ToString(),
+            status = plan.Status.ToString(),
+            target = plan.Target is null ? null : new { basis = plan.Target.Basis.ToString(), kg = plan.Target.Mass.Value },
+            inputs = plan.Inputs.Select(input => new
+            {
+                input.ParentRollId,
+                kg = input.PlannedMass.Value,
+                input.ExpectedLabelVersion,
+            }),
+            slitting = new
+            {
+                lines = spec.Lines.Select(line => new { bandWidthMm = line.BandWidthMm, count = line.Count }),
+                windingTargetKg = spec.WindingTargetKg?.Value,
+            },
+            plan.ApprovedByUserId,
+            plan.ApprovedAtUtc,
+        }, Json)
+        : JsonSerializer.Serialize(new
+    {
+        plan.Id,
+        plan.WorkCenterId,
+        process = plan.Process.ToString(),
+        status = plan.Status.ToString(),
+        target = plan.Target is null ? null : new { basis = plan.Target.Basis.ToString(), kg = plan.Target.Mass.Value },
+        inputs = plan.Inputs.Select(input => new
+        {
+            input.ParentRollId,
+            kg = input.PlannedMass.Value,
+            input.ExpectedLabelVersion,
+        }),
+        plan.ApprovedByUserId,
+        plan.ApprovedAtUtc,
+    }, Json);
+
+    private async Task SaveAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException exception)
+        {
+            throw Refused(ManufacturingStoreCodes.ConcurrentChange,
+                "Aynı plan ya da emir başka bir yazmayla değişti; hiçbir şey kaydedilmedi.", exception);
+        }
+        catch (DbUpdateException exception) when (exception.InnerException is SqlException sql)
+        {
+            // A unique key lost to another writer, or a plan naming a work center that is not this
+            // company's (the composite foreign key, 547). Anything else stays the database's error.
+            var code = sql.Number switch
+            {
+                2601 or 2627 => ManufacturingStoreCodes.ConcurrentChange,
+                547 when sql.Message.Contains("FK_Plans_WorkCenters_CompanyId_WorkCenterId", StringComparison.Ordinal)
+                    => ManufacturingStoreCodes.WorkCenterNotFound,
+                _ => null,
+            };
+            if (code is null)
+            {
+                throw;
+            }
+
+            throw Refused(code, code == ManufacturingStoreCodes.WorkCenterNotFound
+                ? "Plan bu şirketin bir iş merkezine bağlı değil; hiçbir şey kaydedilmedi."
+                : "Kalıcı tekillik kuralı başka bir yazmanın lehine sonuçlandı; hiçbir şey kaydedilmedi.", exception);
+        }
+    }
+
+    private void Audit(ManufacturingCommandMetadata metadata, Guid companyId, string entityType, Guid entityId,
+        string eventType, string operation, long? versionBefore, long? versionAfter, string before, string after,
+        string reason)
+    {
+        auditEvents.Enqueue(new AuditEventDraft(
+            companyId,
+            eventType,
+            entityType,
+            entityId.ToString("D"),
+            operation,
+            versionBefore,
+            versionAfter,
+            AuditActorTypes.User,
+            metadata.ActorId,
+            metadata.PermissionCode,
+            metadata.RoleCodes,
+            before,
+            after,
+            reason,
+            ApprovalContextJson: null,
+            AuditAiInvolvement.None,
+            AiContextJson: null,
+            metadata.SourceChannel,
+            metadata.ClientIpAddress,
+            metadata.UserAgent,
+            metadata.CorrelationId,
+            metadata.CausationId,
+            metadata.IdempotencyKey));
+    }
+
+    private void RequireCompany(Guid companyId)
+    {
+        if (!companyContext.IsResolved || companyContext.CompanyId != companyId)
+        {
+            throw Refused(ManufacturingStoreCodes.CompanyContextMismatch, "Kayıt aktif şirket bağlamının şirketine ait değil.");
+        }
+    }
+
+    private Guid RequireResolvedCompany()
+    {
+        if (!companyContext.IsResolved || companyContext.CompanyId == Guid.Empty)
+        {
+            throw Refused(ManufacturingStoreCodes.CompanyContextMismatch, "Aktif şirket bağlamı olmadan üretim kaydı okunmaz.");
+        }
+
+        return companyContext.CompanyId;
+    }
+
+    private static void RequireMetadata(ManufacturingCommandMetadata metadata)
+    {
+        ArgumentNullException.ThrowIfNull(metadata);
+        if (string.IsNullOrWhiteSpace(metadata.ActorId) || string.IsNullOrWhiteSpace(metadata.PermissionCode)
+            || string.IsNullOrWhiteSpace(metadata.CorrelationId) || string.IsNullOrWhiteSpace(metadata.IdempotencyKey)
+            || string.IsNullOrWhiteSpace(metadata.SourceChannel) || metadata.RoleCodes is null)
+        {
+            throw new ArgumentException("Üretim yazması aktör, izin, correlation, idempotency ve kanal bilgisi ister.", nameof(metadata));
+        }
+
+        if (metadata.ActorId.Trim().Length > ActorMaximumLength || metadata.CorrelationId.Trim().Length > ActorMaximumLength)
+        {
+            throw Refused(ManufacturingStoreCodes.ValueDoesNotFit, "Aktör ya da correlation değeri kayıt alanına sığmıyor.");
+        }
+    }
+
+    private static void RequireFits(IEnumerable<Kilograms> masses)
+    {
+        // Not a production policy: the stored column is decimal(18,3). Kilograms already refuse a
+        // fourth decimal (Ö2); a mass with more integer digits than the column holds is refused,
+        // never cut by the database.
+        if (masses.Any(mass => mass.Value >= Decimal18Scale3Limit))
+        {
+            throw Refused(ManufacturingStoreCodes.ValueDoesNotFit, "Kütle kayıt alanına sığmıyor; kesilmez, reddedilir.");
+        }
+    }
+
+    private static ManufacturingStoreException Refused(string code, string message, Exception? inner = null) =>
+        new ManufacturingStoreException(code, message, inner);
+
+    /// <summary>
+    /// The opaque order-list cursor, as Sales' draft cursor (#257): the last row's ordering key,
+    /// bound to the company that read it and to this ordering. A malformed cursor, another company's
+    /// or another ordering's is <see cref="ManufacturingStoreCodes.ListCursorInvalid"/> — never a
+    /// silent restart at the first page.
+    /// </summary>
+    internal static class ListCursor
+    {
+        private const string Ordering = "createdAtUtc desc, id desc";
+
+        public static string Encode(Guid companyId, DateTimeOffset createdAtUtc, Guid id) =>
+            Convert.ToBase64String(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(
+                new Payload(companyId, Ordering, createdAtUtc.UtcDateTime.ToString("O", CultureInfo.InvariantCulture), id), Json)))
+                .TrimEnd('=').Replace('+', '-').Replace('/', '_');
+
+        public static (DateTimeOffset CreatedAtUtc, Guid Id) Decode(string cursor, Guid companyId)
+        {
+            Payload? payload;
+            try
+            {
+                var padded = cursor.Replace('-', '+').Replace('_', '/');
+                padded = padded.PadRight(padded.Length + ((4 - (padded.Length % 4)) % 4), '=');
+                payload = JsonSerializer.Deserialize<Payload>(Encoding.UTF8.GetString(Convert.FromBase64String(padded)), Json);
+            }
+            catch (Exception exception) when (exception is FormatException or JsonException or DecoderFallbackException)
+            {
+                throw Refused(ManufacturingStoreCodes.ListCursorInvalid, "Liste imleci çözülemedi.", exception);
+            }
+
+            if (payload is null || payload.Company != companyId
+                || !string.Equals(payload.Ordering, Ordering, StringComparison.Ordinal) || payload.Id == Guid.Empty
+                || !DateTimeOffset.TryParseExact(payload.CreatedAtUtc, "O", CultureInfo.InvariantCulture,
+                    DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var createdAtUtc))
+            {
+                throw Refused(ManufacturingStoreCodes.ListCursorInvalid,
+                    "Liste imleci bu şirketin ve bu sıralamanın imleci değil.");
+            }
+
+            return (createdAtUtc, payload.Id);
+        }
+
+        private sealed record Payload(Guid Company, string Ordering, string CreatedAtUtc, Guid Id);
+    }
+}

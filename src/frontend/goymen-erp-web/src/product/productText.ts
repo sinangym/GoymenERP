@@ -9,7 +9,10 @@
 
 import {
   PRODUCT_ROLE,
+  isHistoryField,
   type CompletenessEvaluation,
+  type HistoryField,
+  type HistoryOperationValue,
   type ProductFieldCode,
   type ProductLifecycle,
   type ProductLifecycleValue,
@@ -176,7 +179,7 @@ export function fieldErrorText(code: string): string {
  * would pull an unfinished decision forward rather than complete this one.
  */
 export const PENDING_REFERENCE_NOTE =
-  'Şablon, nitelikler, birim rolleri ve takip politikası bu dilimde düzenlenmiyor; sonraki dilimde aile bazlı tamlık çalışmasıyla birlikte gelecek.'
+  'Teknik alanlar yayımlanmış aile şablonundan gelir. Takip politikası henüz düzenlenemez; eksik taslak kullanıma onaylanmış ürün anlamına gelmez.'
 
 /**
  * A catalogue the server could not read. Distinct from an empty one: README —
@@ -286,6 +289,20 @@ export const PRODUCT_CREATE_TEXT = {
   codeNote: 'Ürün kodunu sunucu, seçilen kod grubunun ön ekinden üretir. Kod kayıttan sonra görünür.',
   nameLabel: 'Ürün adı',
   nameHint: 'Ad her iki Göymen şirketinde ortaktır.',
+  /**
+   * §10.2 / CASE-PRD-U02-014: a name match WARNS and lets the person compare; it never
+   * blocks or merges. The matches are the server's own search result for the typed
+   * name, not a similarity score this client made up.
+   */
+  // The server matches the term in the name OR the code/alias; the title says so.
+  nameMatchesChecking: 'Adında veya kodunda bu ifade geçen ürünler aranıyor…',
+  nameMatchesTitle: 'Adında veya kodunda bu ifade geçen ürünler var',
+  nameMatchesDetail:
+    'Kaydı engellemez. Aynı ürünü ikinci kez oluşturmadığınızı kontrol edin; kod çakışması ayrıca sunucuda reddedilir.',
+  nameMatchesSameName: 'aynı ad',
+  nameMatchesMore: 'Daha fazla eşleşme var; tamamı için ürün listesinde arayın.',
+  nameMatchesNone: 'Sunucu aramasında bu adı içeren ürün yok.',
+  nameMatchesFailed: 'Benzer ad kontrolü yapılamadı. Bu, kaydı engellemez.',
   groupLabel: 'Kod grubu',
   groupHint: 'Ürün kodu bu grubun ön ekinden üretilir ve sonradan değişmez.',
   classLabel: 'Ürün sınıfı',
@@ -445,3 +462,61 @@ export const PRODUCT_EDIT_TEXT = {
     nothingChanged: 'Değişen bir alan yok.',
   },
 } as const
+
+/* ── Change history (U-01 §9 item 6) ──────────────────────────────────────── */
+
+export const PRODUCT_HISTORY_TEXT = {
+  heading: 'Değişiklik geçmişi',
+  loading: 'Değişiklik geçmişi yükleniyor…',
+  /**
+   * 404 AFTER the card loaded: the history read is not served here. Saying "not
+   * found" would contradict the card the user is looking at.
+   */
+  unavailable: 'Değişiklik geçmişi bu ortamda henüz okunamıyor.',
+  failed: 'Değişiklik geçmişi okunamadı.',
+  malformed: 'Sunucudan gelen değişiklik geçmişi beklenen biçimde değil; gösterilmedi.',
+  retry: 'Tekrar dene',
+  reason: 'Gerekçe',
+  changedFields: 'Değişen alanlar',
+  noTrackedChange: 'İzlenen alanlarda değişiklik görünmüyor.',
+  truncated: 'Yalnız son 50 değişiklik gösteriliyor.',
+  /** The wire carries no actor; say so instead of leaving the reader to wonder. */
+  actorNote: 'Değişikliği yapan kişi bu görünümde gösterilmez.',
+  unknownOperation: 'Tanınmayan değişiklik türü',
+  unknownField: 'Tanınmayan alan',
+} as const
+
+export function historyOperationLabel(operation: HistoryOperationValue): string {
+  if (!operation.known) return `${PRODUCT_HISTORY_TEXT.unknownOperation} (${operation.raw})`
+  if (operation.value === 'DraftCreate') return 'Taslak oluşturuldu'
+  return operation.value === 'Activate' ? 'Ürün aktifleştirildi' : 'Temel bilgiler düzenlendi'
+}
+
+export function historyVersionText(before: string | null, after: string): string {
+  return before === null ? `Sürüm ${after}` : `Sürüm ${before} → ${after}`
+}
+
+const HISTORY_FIELD_LABEL: Record<HistoryField, string> = {
+  name: 'Ürün adı',
+  classId: 'Sınıf',
+  familyId: 'Aile',
+  lifecycle: 'Durum',
+  'roles.purchasable': `Rol: ${ROLE_LABEL.purchasable}`,
+  'roles.sellable': `Rol: ${ROLE_LABEL.sellable}`,
+  'roles.productionInput': `Rol: ${ROLE_LABEL.productionInput}`,
+  'roles.productionOutput': `Rol: ${ROLE_LABEL.productionOutput}`,
+  'references.templateId': 'Şablon',
+  'references.templateVersion': 'Şablon sürümü',
+  'references.attributes': 'Teknik nitelikler',
+  'references.units.stock': UNIT_ROLE_LABEL.stock,
+  'references.units.purchase': UNIT_ROLE_LABEL.purchase,
+  'references.units.sales': UNIT_ROLE_LABEL.sales,
+  'references.units.price': UNIT_ROLE_LABEL.price,
+  'references.units.production': UNIT_ROLE_LABEL.production,
+  'references.units.package': UNIT_ROLE_LABEL.package,
+  'references.trackingPolicyId': 'Takip politikası',
+}
+
+export function historyFieldLabel(field: string): string {
+  return isHistoryField(field) ? HISTORY_FIELD_LABEL[field] : `${PRODUCT_HISTORY_TEXT.unknownField} (${field})`
+}

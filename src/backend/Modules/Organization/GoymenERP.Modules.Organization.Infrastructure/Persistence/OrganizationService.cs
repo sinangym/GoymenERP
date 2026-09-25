@@ -151,6 +151,34 @@ internal sealed class OrganizationService(
                     && siteIds.Contains(location.SiteId)));
         }
 
+        // ORG-03 row eligibility (#66 5700319744): a row offers its location card only when
+        // the caller may read THAT location. It is answered by the very predicate the card
+        // read uses (`GetLocationAsync` → `ApplyLocationScope` on `locations.read`), so
+        // "the row links" and "the card answers 200" cannot disagree. Without the
+        // permission there is nothing to evaluate and no location query is issued.
+        var locationScope = await authorizationService.GetPermissionScopeAsync(
+            ErpPermissions.OrganizationLocationsRead,
+            companyContext.CompanyId,
+            cancellationToken);
+        if (!locationScope.IsGranted)
+        {
+            return await query
+                .OrderBy(x => x.Code)
+                .Select(x => new WorkCenterSummary(
+                    x.Id,
+                    x.LocationId,
+                    x.Code,
+                    x.Name,
+                    x.Kind.ToString(),
+                    x.IsActive,
+                    false))
+                .ToListAsync(cancellationToken);
+        }
+
+        var openableLocationIds = ApplyLocationScope(
+                dbContext.Locations.AsNoTracking(),
+                locationScope)
+            .Select(location => location.Id);
         return await query
             .OrderBy(x => x.Code)
             .Select(x => new WorkCenterSummary(
@@ -159,7 +187,8 @@ internal sealed class OrganizationService(
                 x.Code,
                 x.Name,
                 x.Kind.ToString(),
-                x.IsActive))
+                x.IsActive,
+                openableLocationIds.Contains(x.LocationId)))
             .ToListAsync(cancellationToken);
     }
 

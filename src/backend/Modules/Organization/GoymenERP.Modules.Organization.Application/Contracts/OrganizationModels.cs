@@ -24,13 +24,20 @@ public sealed record LocationSummary(
     bool IsActive,
     long Version);
 
+/// <param name="CanOpenLocationDetail">
+/// Whether the caller's current <c>organization.locations.read</c> scope reaches THIS
+/// row's location — true exactly when <c>GET /organization/locations/{LocationId}</c>
+/// would answer 200 for the same caller. It is the caller's own authority over a row it
+/// already sees, never a scope list, so it discloses nothing beyond that row.
+/// </param>
 public sealed record WorkCenterSummary(
     Guid Id,
     Guid LocationId,
     string Code,
     string Name,
     string Kind,
-    bool IsActive);
+    bool IsActive,
+    bool CanOpenLocationDetail);
 
 public sealed record PageResult<T>(
     IReadOnlyList<T> Items,

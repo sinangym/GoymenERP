@@ -41,8 +41,27 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + "OpenApiDocumentGenerationMode.cs";
     private const string OpenApiStartupPath =
         "src/backend/GoymenERP.Api/Program.cs";
+    // Re-fingerprinted for MFG-UI (#323) on top of FIN-UI-1a (#325), BROWSER-CI a2 part 2 (#330), SALES-API
+    // (#321) and PRD-UNIT-1 (#335): the staged Finance and Manufacturing shell providers registered before the
+    // shell authority is chosen (C+O+P+S+F+M row), beside #330's one call to
+    // C01E2eFixtureWriterActivation.Configure and #335's one singleton registration of Settings' unit-identity
+    // catalog. Re-fingerprinted for INV-OPEN-1 part 2: two scoped host ports of the opening command
+    // (Organization's location module read, Product's stock eligibility). No OpenAPI-generation, network or
+    // hosted-service surface of the startup source changed otherwise.
+    // Re-fingerprinted for LOG-4a: the Logistics module (the Cari customer port, AddLogisticsModule, its endpoints
+    // and initializer after Organization) and its staged shell provider before the authority is chosen.
+    // Re-fingerprinted for PUR-4a: the Purchasing module (the Cari supplier port, AddPurchasingModule, its endpoints
+    // and initializer after Organization) and its staged shell provider before the authority is chosen.
+    // Re-fingerprinted for ACC-V0a: the Accounting module (AddAccountingModule, its endpoints and initializer after
+    // Organization); no shell provider (ACC-V0b).
+    // Re-fingerprinted for FIN-T05: the two scoped host registrations of the record period rule (the Accounting
+    // period-status port and the occurredOn rule) placed before AddFinanceServices, and then TWICE MORE for
+    // COMMENT-ONLY edits beside them. The comment edits changed no registration, no generation mode, no network
+    // and no hosted-service surface — and they moved this fingerprint anyway, because a content hash has no
+    // opinion about whether a change is semantic. Any edit to a pinned file, comment included, is re-pinned in
+    // the same push.
     private const string ReviewedOpenApiStartupFingerprint =
-        "d937f1d3607d6a7e49da592da77dfd91ce655f199fbc88b66e18ab0ed18134fa";
+        "e3008f69f6f492101d541df3fd21df7dc75d8b018016400ef54807e555fee003";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedIdentityReconcilerPath =
@@ -74,20 +93,92 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         "0a5d40cdf5b24b687eb6acbf6f96d4b70d050a24e9268498aa6a12007bb9e525";
     private const string SqlServerRcsiIntegrationProjectPath =
         "tests/GoymenERP.Api.IntegrationTests/GoymenERP.Api.IntegrationTests.csproj";
+    // Re-fingerprinted for #391: two linked Compile items (the browser-suite runner's BrowserSuiteHost.cs
+    // and its closed seed-output validator, both for BrowserSuiteHostEnvelopeTests), after the module SQL
+    // acceptance ProjectReferences. Publish target and discovery contract unchanged.
     private const string ReviewedSqlServerRcsiIntegrationProjectFingerprint =
-        "ab69dc2cd05e0221e603ad9374f6ccdb5ca41003582251581a370e74305ca042";
+        "75e674d2a4e3508decae12b1ca492acc18ea44ddd56f53265c3c684fa670d634";
     private const string SqlServerRcsiRelationalAcceptancePath =
         "tests/GoymenERP.Api.IntegrationTests/"
         + "SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests.cs";
     private const string SqlServerRcsiVerifierPath =
         "tools/verify_rcsi_relational_acceptance.py";
+    // Re-fingerprinted for the per-module relational inventory: the broad test list moved out of the
+    // verifier into tools/relational_inventory/<module>.txt (pinned below, one entry per file); the
+    // verifier loads it fail-closed, checks every test's executions in the TRX and prints one line per
+    // module. The move kept main's exact set and totals (146 / 153 at #326); the counts now come from the
+    // files, so adding a test changes only its module file and that file's pin.
+    // Re-fingerprinted for LOG-4a: the Logistics module joins INVENTORY_MODULES and the class prefixes
+    // (tools/relational_inventory/logistics.txt, pinned below).
+    // Re-fingerprinted for PUR-4a: the Purchasing module joins INVENTORY_MODULES and the class prefixes
+    // (tools/relational_inventory/purchasing.txt, pinned below).
     private const string ReviewedSqlServerRcsiVerifierFingerprint =
-        "e619dd4bc1dbc5db0d06701ca3479814682e4ec3e3384a4a411151719380f44e";
+        "184a6093519b2a79b1eb59cdead7d5b821e995c8216300de499457bad8bcbc66";
     private const string SqlServerRcsiVerifierTestsPath =
         "tests/rcsi_relational_acceptance_verifier/"
         + "test_verify_rcsi_relational_acceptance.py";
+    // Re-fingerprinted for the per-module inventory: count literals replaced by totals computed from
+    // the files, every listed test mandatory, loader and TRX rules tested, the synthetic run's verdict
+    // captured instead of printed.
+    // Re-fingerprinted for LOG-4a: a Logistics class maps to its own module.
+    // Re-fingerprinted for PUR-4a: a Purchasing class maps to its own module.
     private const string ReviewedSqlServerRcsiVerifierTestsFingerprint =
-        "2306be3f642beb148e86ad59103c851376775b2354477238f9a86adec6fee120";
+        "49fdbe2e1fcaf14f3d61524cce652d0b70a92b93a0c3aa9a28a4456b676ca9bc";
+    // The broad relational inventory, one file per module (see RelationalInventoryDirectory). Each
+    // pin is its own paragraph so that two modules re-pinning their own files change lines that are
+    // not adjacent and combine cleanly; a file's owner is its module, the pin line is central.
+    private const string RelationalInventoryDirectory = "tools/relational_inventory";
+    private static readonly IReadOnlyDictionary<string, string> ReviewedRelationalInventoryFingerprints =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            // accounting
+            ["tools/relational_inventory/accounting.txt"] =
+                "2d1b1df4ccfef1e4360c298263051c6f9a72301f785d42eb77f85f7f05184457",
+
+            // counterparty
+            ["tools/relational_inventory/counterparty.txt"] =
+                "d48699c522a9e01c908834bacc8f6cb3778bd910cae257dc5addffd6ae55b229",
+
+            // finance
+            ["tools/relational_inventory/finance.txt"] =
+                "b18c13d9b748c59722987ab1cd62d3d68381c77495f46ba09b7266e6885e411d",
+
+            // identity
+            ["tools/relational_inventory/identity.txt"] =
+                "b159330c2eeb6da40a314137d478fcd7251cd5937732d2557817bd1440a6c6b9",
+
+            // inventory
+            ["tools/relational_inventory/inventory.txt"] =
+                "fbc435f7d97ad5297f08eb1b416141c9fff18df244d46459042dfa0c870a4453",
+
+            // logistics
+            ["tools/relational_inventory/logistics.txt"] =
+                "97b79f9e068a4660a52f68062f0b03ec018a662eb5fe7d57f744a41963f983a9",
+
+            // manufacturing
+            ["tools/relational_inventory/manufacturing.txt"] =
+                "ccd039cf70abfa0dc14fb52009f94a8d1d5ad68a1abe0bd7c4d658c0879d8d19",
+
+            // organization
+            ["tools/relational_inventory/organization.txt"] =
+                "ff9e4dea662002bcbba7e4f72c99b8f04a5766640126dbcb376cd4106a09f21b",
+
+            // platform
+            ["tools/relational_inventory/platform.txt"] =
+                "5bc60202f358f060e50b8453d1e6077d608c110f7b9e2cd061da061aec61f344",
+
+            // product
+            ["tools/relational_inventory/product.txt"] =
+                "d7dbec7ff39d9a487be2ecfae3ee3188a1e7b16dc8d695fb8e9a98952b0c991e",
+
+            // purchasing
+            ["tools/relational_inventory/purchasing.txt"] =
+                "cc672732f572babb9161403ca6eea3181b7996bc8346df1b1813edcaadd1d161",
+
+            // sales
+            ["tools/relational_inventory/sales.txt"] =
+                "16fa5110756788cb8beae6556eff16e7015c6fbc42e4dbabcb7a7a9bd1bb94ff",
+        };
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
         "91a665e6e8982e5a9b66f5d16a14d9fc4d7f98d63775de959a8cc6b2dea2b018";
@@ -114,28 +205,113 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
              + "GoymenERP.Modules.Organization.Infrastructure/Persistence/"
              + "OrganizationDbContext.cs"] =
                 "198fddce9a2fd4552850c2d1545b96b0030411d5d256a70ee932cf5173be2ff2",
+            // SALES-P2 (#315): company-scoped like Organization; every tenant row and AuditEvent carries the
+            // CompanyId filter. A standard entry, not an exception.
+            ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/"
+             + "Persistence/SalesDbContext.cs"] =
+                "2ce870a4b7ed0ee3f42d502e634b0dbd65e0965c7e5eef6c12bcb05a24290101",
+            // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
+            // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
+            ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
+             + "Persistence/LogisticsDbContext.cs"] =
+                "836402675ced5dcb6fc4bc09e54f26fc318268d8d0acfb92bb0fd58e194d6479",
+            // PUR-4a: company-scoped like Organization; every tenant row (requests and their lines, orders and their
+            // lines, attempts) and AuditEvent carries the CompanyId filter. A standard entry, not an exception.
+            ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
+             + "Persistence/PurchasingDbContext.cs"] =
+                "95abb41f658aca490334bfedd7b8829bf9b22007b99d6c59a4feb357ddff1d30",
+            // Re-measured for MFG-API (#313): the ADR-011 command log (CommandRecords) is mapped here, company-
+            // scoped with the CompanyId filter like every other tenant row.
+            // MFG-5 (#303): company-scoped like Organization; every tenant row and AuditEvent carries the
+            // CompanyId filter. A standard entry, not an exception.
+            ["src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/"
+             + "Persistence/ManufacturingDbContext.cs"] =
+                "409f9d51466a63c0485f6cb89b20f283a55adff0a0cebb9b6c44c5b94a616a92",
+            // FIN-T04a (#305): company-scoped like Organization; every tenant row and AuditEvent
+            // carries the CompanyId filter. A standard entry, not an exception.
+            ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
+             + "Persistence/FinanceDbContext.cs"] =
+            "4bd806094224b2369c80a9a5cb62ce2d5c3085f307d2990cb2119e5fc9aae5bd",
+            // ACC-3 (#298): company-scoped like Organization; every tenant row and AuditEvent
+            // carries the CompanyId filter. A standard entry, not an exception.
+            // Re-measured for ACC-V0a: the ADR-011 command log (Commands) is mapped here, company-scoped with the
+            // CompanyId filter like every other tenant row; the period's preparer/approver columns. ACC-V1 adds
+            // company-scoped normal journal draft headers/lines and immutable lifecycle evidence.
+            ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/"
+             + "Persistence/AccountingDbContext.cs"] =
+                "c7f271106ceb8f91cf6150735244d9d1fde70077607eaf7740f27aa8128e03e4",
+            // INV-2 (#293, ADR-INV-001 option A): company-scoped like Organization; every tenant
+            // row and AuditEvent carries the CompanyId filter. A standard entry, not an exception.
+            ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
+             + "Persistence/InventoryDbContext.cs"] =
+                "d1c8996fe121f5f6d06103aa2b1d1b4881a7480b72e9e06e42d48dd166aa191d",
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "Persistence/ProductDbContext.cs"] =
-                "a25322e5924213ccdf3241e0d1ff4cc15f5d6be168345894eaba3f6b77204812",
+                "0ba53cfdf07084818f737c9f21b2ce4a04a44f5fe89603a89f31791c5b4871da",
             ["src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/"
              + "Persistence/GroupSharedCommandDbContext.cs"] =
-                "8049fa3a764b3695a477be42aa585c70268601871927429e33674ac860635d08"
+                "6fe01949b839e3005d33c3aa00c02982add6a1af63482005b43b277b95c5dfc3"
         };
 
     // Accepted module initializers own one exact Migrate/EnsureCreated provider branch each.
     // The Identity reconciler owns one parameterized row/range-lock query. The shared RCSI
     // readiness probe owns one reviewed read-only command. Exact source fingerprints and API
     // counts keep these from becoming general database bypass exemptions.
+    private const string ReviewedInventoryDefiniteShipmentParticipantPath =
+        "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
+        + "Persistence/InventoryDefiniteShipmentParticipant.cs";
+    private const string ReviewedInventoryGoodsReceiptParticipantPath =
+        "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
+        + "Persistence/InventoryGoodsReceiptParticipant.cs";
+    private const string ReviewedInventoryManufacturingRealizationParticipantPath =
+        "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
+        + "Persistence/InventoryManufacturingRealizationParticipant.cs";
+    private const string ReviewedPurchaseAcceptanceParticipantPath =
+        "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
+        + "Persistence/PurchaseAcceptanceParticipant.cs";
+    private const string ReviewedFinanceOpenItemSourceAdmissionServicePath =
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
+        + "FinanceOpenItemSourceAdmissionService.cs";
+    private const string ReviewedManufacturingInventoryInputIssueHostPath =
+        "src/backend/GoymenERP.Api/ManufacturingRuntime/ManufacturingInventoryInputIssueHost.cs";
+    private const string ReviewedManufacturingInventoryReturnOutputHostPath =
+        "src/backend/GoymenERP.Api/ManufacturingRuntime/ManufacturingInventoryReturnOutputHost.cs";
+    private static readonly IReadOnlyDictionary<string, (string ContextTypeName, int ExpectedCount)>
+        ReviewedRuntimeContextConstructions =
+            new Dictionary<string, (string ContextTypeName, int ExpectedCount)>(StringComparer.Ordinal)
+            {
+                [ReviewedInventoryDefiniteShipmentParticipantPath] = ("InventoryDbContext", 1),
+                [ReviewedInventoryGoodsReceiptParticipantPath] = ("InventoryDbContext", 1),
+                [ReviewedInventoryManufacturingRealizationParticipantPath] = ("InventoryDbContext", 1),
+                [ReviewedPurchaseAcceptanceParticipantPath] = ("PurchasingDbContext", 3),
+                [ReviewedFinanceOpenItemSourceAdmissionServicePath] = ("FinanceDbContext", 1),
+                [ReviewedManufacturingInventoryInputIssueHostPath] = ("ManufacturingDbContext", 2),
+                [ReviewedManufacturingInventoryReturnOutputHostPath] = ("ManufacturingDbContext", 1)
+            };
+    private const string ReviewedManualBankPaymentServicePath =
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
+        + "ManualBankPaymentService.cs";
+
     private static readonly IReadOnlyDictionary<string, ReviewedRuntimeDatabaseBypassSource>
         ReviewedRuntimeDatabaseBypassSources =
             new Dictionary<string, ReviewedRuntimeDatabaseBypassSource>(StringComparer.Ordinal)
             {
+                // Re-measured for C3: the Product owner's sales and stock eligibility runtimes are composed
+                // here (no new database capability; MigrateAsync stays 2).
+                // Re-measured for #316 on top of C3: ProductShellCapabilityProvider is registered here (a
+                // singleton shell provider; no new database capability, MigrateAsync stays 2).
+                // Re-measured for Inventory opening stock: the bounded Product stock-candidate reader/service are
+                // DI-only additions over the existing Product read store; no new database capability, MigrateAsync stays 2.
+                // Re-measured for Product history: the scoped Audit-owner adapter and Product history reader are
+                // read-only DI additions; no new database capability, MigrateAsync stays 2.
                 ["src/backend/GoymenERP.Api/ProductRuntime/ProductRuntimeExtensions.cs"] =
-                    new("e89e8869bed6d7706781ee3c86f09bc59963d0ef26da32c7e06d63449ae8ef27",
+                    new("b43d6443ee83f27694f9a9f1adbdf555b869f20a96da657d01b3d571367fca86",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["MigrateAsync"] = 2 }),
+                // Re-measured for PRD-UNIT-1: the Product participant gets Settings' unit-identity catalog
+                // (GetService; unregistered stays fail-closed). SqlClient/SqlConnection counts unchanged.
                 ["src/backend/GoymenERP.Api/ProductRuntime/ProductSqlCommandRunner.cs"] =
-                    new("a7b69d45b14f11c63c12f67b44bed0588dad1e549f7022804e03cc296285fdca",
+                    new("36ee56a13d31b3c4aea130b801db15b983768eacfc2f5827047059ead463ed36",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Microsoft.Data.SqlClient"] = 1, ["SqlConnection"] = 1 }),
                 ["src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/Services/GroupSharedAuditSession.cs"] =
@@ -163,8 +339,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
                  + "Persistence/ProductDraftParticipant.cs"] =
+                    // Re-measured for PRD-UNIT-1 (ÜRÜN): unit identities are resolved through Settings'
+                    // catalog; System.Data.Common/DbConnection counts unchanged.
                     new(
-                        "9273f2b058ad8f9863504a5f1f5a4c2605431559d0e001c19793135aaf3a238d",
+                        "f59d7bbd85559638482f4caf718bff0bd5e596fc259424d8ac12553ba4f0d815",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,
@@ -182,8 +360,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 ["src/backend/Modules/Identity/"
                  + "GoymenERP.Modules.Identity.Infrastructure/IdentityModuleExtensions.cs"] =
+                    // Re-fingerprinted for the D2 active-role reader registration: the same scoped
+                    // authorization service now also exposes a permission-independent role view.
+                    // The database startup surface below is unchanged, which is what the API
+                    // counts hold.
                     new(
-                        "6a938e96c3a23333bf94e4b15a4c5630305176c7acde8e001cf701cde00355e4",
+                        "3d2b7ad072a7e98976c9dc0d1e51a732c848db35c12c7bde71ab09995cfd23b6",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -215,15 +397,326 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         {
                             ["FromSqlInterpolated"] = 1
                         }),
+                // OrganizationModuleExtensions re-fingerprinted for the location module read registration: one
+                // AddScoped line; its Migrate/EnsureCreated branch is unchanged.
                 ["src/backend/Modules/Organization/"
                  + "GoymenERP.Modules.Organization.Infrastructure/"
                  + "OrganizationModuleExtensions.cs"] =
                     new(
-                        "e19705b2bb98278cb7aa7e510be3f646f721c54aa69e78993657071cebaf9ce6",
+                        "e7f5cdb7b539c704650fa655d6dac858378fff6272eaf848d5243a9528de7c2f",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
                             ["MigrateAsync"] = 1
+                        }),
+                // INV-2 (#293): InitializeInventoryModuleAsync's one provider branch, as Organization.
+                ["src/backend/Modules/Inventory/"
+                 + "GoymenERP.Modules.Inventory.Infrastructure/"
+                 + "InventoryModuleExtensions.cs"] =
+                    new(
+                        "037d6cfcbf4576b7cc961a54e0cbfe0cb79c1eaa8275b59f969e7cd0beb362a5",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["EnsureCreatedAsync"] = 1,
+                            ["MigrateAsync"] = 1
+                        }),
+                // LOG-5: the enlisted participant uses the host transaction's connection and
+                // explicitly constructs one InventoryDbContext over that exact connection. The
+                // source fingerprint and API counts keep this narrower than a general runtime
+                // context-construction or direct-database exemption.
+                [ReviewedInventoryDefiniteShipmentParticipantPath] =
+                    new(
+                        "fff2ff64a35fe04824e76aaa89d0c05afe3850cfce8cd4461fb7bfa1afe0e3b9",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["System.Data.Common"] = 1,
+                            ["Microsoft.Data.SqlClient"] = 1,
+                            ["DbConnection"] = 3
+                        }),
+                // MFG inventory realization: the API host opens the Inventory transaction connection and
+                // constructs exactly one ManufacturingDbContext over it. The exact fingerprint and three
+                // API counts keep this reviewed bridge narrower than a general direct-database exemption.
+                [ReviewedManufacturingInventoryInputIssueHostPath] =
+                    new(
+                        "f1b5bb4384fd389d603b317dc20f86c415997ed1513c636d44517e4ceecec57f",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1,
+                            ["GetDbConnection"] = 1
+                        }),
+                // Return/output uses the same reviewed borrowed-transaction boundary but obtains both the
+                // Inventory connection and current parent-label truth before constructing one Manufacturing context.
+                [ReviewedManufacturingInventoryReturnOutputHostPath] =
+                    new(
+                        "91e00eebf5d7499a8fe5f1e3d950d0a2d6188f50fa906d4410e750ef9d3b7688",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1,
+                            ["GetDbConnection"] = 2
+                        }),
+                // INV-2 (#293): the SqlClient namespace only to recognise a unique-key violation
+                // (SqlException 2601/2627) after SaveChanges, as the Idempotency terminal store does.
+                // No connection, command or raw SQL. Re-fingerprinted for #333 (#324 P3-1): a lot/label
+                // primary-key collision reads, tenant-filtered and AsNoTracking, whether this company holds
+                // the id (retry) or not (conflict); still no connection, command or raw SQL. Re-fingerprinted
+                // for INV-OPEN-1 (T07 = A): the opening count is written through the same tenant-filtered
+                // context in one save; SqlClient count unchanged (1).
+                // INV-OPEN-1 part 2: the opening-count command reads through the tenant-filtered context and uses
+                // the SqlClient namespace only to recognise a unique-key violation (SqlException 2601/2627) in a
+                // catch filter, as the other module stores do. No connection, command or raw SQL.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/InventoryOpeningCommandService.cs"] =
+                    new(
+                        "3c4f8e7cac8ed19b0416e3ae4d9e945e14aec07eeae53960806bdbcdccfd3e50",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1
+                        }),
+                // Re-fingerprinted for ÜRÜN's P3 follow-up: the colliding lot/label id is read from the
+                // key error itself (SqlException.Errors 2601/2627); SqlClient count unchanged (1).
+                // Re-fingerprinted for INV-OPEN-1 part 2 on top of #341: the opening count's PK collision
+                // uses the same key-error read ('PK_OpeningCounts'); SqlClient count unchanged (1).
+                ["src/backend/Modules/Inventory/"
+                 + "GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryStore.cs"] =
+                    new(
+                        "12716da734992fa1e4a9396c3d85a4c9bbeae21e7cebd086388c4e4de1fb415e",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1
+                        }),
+                ["src/backend/Modules/Inventory/"
+                 + "GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryStore.Allocations.cs"] =
+                    new(
+                        "dbf561ee8660c90cd6374799598eb159338884032871cb8f496360745111589a",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1
+                        }),
+                // ACC-3 (#298): the Accounting initializer's one provider branch, as Organization.
+                // Re-fingerprinted for ACC-V1: normal-journal lifecycle services are registered;
+                // Ensure/Migrate counts remain unchanged.
+                ["src/backend/Modules/Accounting/"
+                 + "GoymenERP.Modules.Accounting.Infrastructure/"
+                 + "AccountingModuleExtensions.cs"] =
+                    new(
+                        "e165e9022ef082f582da10433fcbe1e096bf15764bcbdc176bf99c4d6690ae3f",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["EnsureCreatedAsync"] = 1,
+                            ["MigrateAsync"] = 1
+                        }),
+                // ACC-3 (#298): the SqlClient namespace only to recognise a unique-key violation
+                // (SqlException 2601/2627) after SaveChanges, as InventoryStore and the Idempotency
+                // terminal store do. No connection, command or raw SQL. Re-fingerprinted for ACC-V1: the normal
+                // journal draft lifecycle persists through EF and carries a late create-authority fence;
+                // SqlClient count remains unchanged (1).
+                ["src/backend/Modules/Accounting/"
+                 + "GoymenERP.Modules.Accounting.Infrastructure/Persistence/AccountingStore.cs"] =
+                    new(
+                        "0f6e98dbb774cfa6d07e7f7e5e251ab200d25af2478a35f0376cedfe5fdee736",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1
+                        }),
+                // FIN-T04a (#305): the Finance initializer's one provider branch, as Organization.
+                ["src/backend/Modules/Finance/"
+                 + "GoymenERP.Modules.Finance.Infrastructure/"
+                 + "FinanceModuleExtensions.cs"] =
+                    new(
+                        "dd3869e1245925031441e77b0f77c3a2897a119e9d8062a388cf8776ce08a41a",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["EnsureCreatedAsync"] = 1,
+                            ["MigrateAsync"] = 1
+                        }),
+                // FIN-T04a (#305): the SqlClient namespace only to recognise a unique-key violation
+                // (SqlException 2601/2627) after SaveChanges, as InventoryStore and AccountingStore
+                // do; here in the draft service, which is the module's only writer. No connection,
+                // command or raw SQL.
+                ["src/backend/Modules/Finance/"
+                 + "GoymenERP.Modules.Finance.Infrastructure/ReceiptDraftService.cs"] =
+                    new(
+                        "cbfe6e681ed27f97e02bb421d9a7bae8ede57206544ae1a5ac38fb9a84314f72",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1
+                        }),
+                // R47: the manual-payment writer references SqlException only to classify SQL
+                // unique-key races after SaveChanges. Exact fingerprint/API count keeps this from
+                // authorizing a connection, command, raw SQL or a DbContext construction.
+                [ReviewedManualBankPaymentServicePath] =
+                    new(
+                        "b9b6ee9afb8083ccbbe5098ac020481f20df7a9a515d2f2dbf4a892a8ff3c1ff",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1
+                        }),
+                // F-03: allocation writes stay on the tenant-filtered FinanceDbContext. SqlClient is
+                // referenced only to classify 2601/2627 races after SaveChanges; there is no direct
+                // connection, command or raw SQL surface.
+                ["src/backend/Modules/Finance/"
+                 + "GoymenERP.Modules.Finance.Infrastructure/FinanceAllocationService.cs"] =
+                    new(
+                        "c4520eee191baaca06faadc0e30fe720384bdad9903636fe02dd111737bde4bf",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1
+                        }),
+                // F-03 source admission uses the tenant-filtered FinanceDbContext. SqlClient is
+                // referenced only to classify 2601/2627 races after SaveChanges; there is no direct
+                // connection, command, raw SQL or query-filter bypass surface.
+                [ReviewedFinanceOpenItemSourceAdmissionServicePath] =
+                    new(
+                        "6811c3396e99bf54f0a686c11b1f6436df8df46bf004eacdc4e29e421b7b5250",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1
+                        }),
+                // FS0 (#312): the bank-account master is the module's second writer; the SqlClient
+                // namespace only to recognise a unique-key violation (SqlException 2601/2627) after
+                // SaveChanges, as ReceiptDraftService does. No connection, command or raw SQL.
+                ["src/backend/Modules/Finance/"
+                 + "GoymenERP.Modules.Finance.Infrastructure/FinanceBankAccountService.cs"] =
+                    new(
+                        "dfa5d4d6015d24d6fe1095c4b61e05b4ada96de0d900ecb2068855384d821ac8",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1
+                        }),
+                // FIN-T06: the reversal workflow is the module's third writer. SqlClient is used only
+                // to recognise unique-key violations (2601/2627) after SaveChanges; there is no
+                // connection, command, raw SQL or query-filter bypass.
+                ["src/backend/Modules/Finance/"
+                 + "GoymenERP.Modules.Finance.Infrastructure/ReversalProposalService.cs"] =
+                    new(
+                        "5c391ebb303e5e031e2c912b777a9b934446177e797e1e226fed7d74e4268f76",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1
+                        }),
+                // MFG-5 (#303): the Manufacturing initializer's one provider branch, as Organization.
+                // Re-measured for MFG-API (#313): the command surface registrations (mass verifier and
+                // command service); the one provider branch is unchanged (EnsureCreated 1, Migrate 1).
+                ["src/backend/Modules/Manufacturing/"
+                 + "GoymenERP.Modules.Manufacturing.Infrastructure/"
+                 + "ManufacturingModuleExtensions.cs"] =
+                    new(
+                        "d60752e602b2d92805f18bd0e5c214bf469eec3f4004331b628ae4bfd78213c6",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["EnsureCreatedAsync"] = 1,
+                            ["MigrateAsync"] = 1
+                        }),
+                // MFG-5 (#303): the SqlClient namespace only to recognise a unique-key violation
+                // (SqlException 2601/2627) after SaveChanges, as the other module stores do. No
+                // connection, command or raw SQL.
+                // Re-measured for MFG-API (#313): the same single SqlClient use now also recognises 547 on the
+                // named composite work-center FK (manufacturing_work_center_not_found); still recognition only,
+                // no connection, command or raw SQL. Re-fingerprinted for MFG-BAL: the Decimal18Scale3Limit rename
+                // (FİNANS #342 INFO-3: one neutral name for every decimal(18,3) column bound); SqlClient count
+                // unchanged (1).
+                ["src/backend/Modules/Manufacturing/"
+                 + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.cs"] =
+                    new(
+                        "e88d303e66c0842524612f8d2c11f0ed6fcc4ecefc2d687764adb7f45853555a",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1
+                        }),
+                // LOG-4a: the Logistics initializer's one provider branch, as Sales.
+                ["src/backend/Modules/Logistics/"
+                 + "GoymenERP.Modules.Logistics.Infrastructure/"
+                 + "LogisticsModuleExtensions.cs"] =
+                    new(
+                        "b90a7ee47d22d2aa1b3fce3e16750fa24d2cc3646751e02ab800bf7735858fb4",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["EnsureCreatedAsync"] = 1,
+                            ["MigrateAsync"] = 1
+                        }),
+                // LOG-4a: the SqlClient namespace only to recognise a unique-key violation (SqlException
+                // 2601/2627) after SaveChanges, as the Sales store does. No connection, command or raw SQL.
+                ["src/backend/Modules/Logistics/"
+                 + "GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsStore.cs"] =
+                    new(
+                        "aee284d99947f3ff94794d1e5df7e9843fbb769cfb3afd334ec892f410f204be",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1
+                        }),
+                // PUR-4a: the Purchasing initializer's one provider branch, as Sales.
+                ["src/backend/Modules/Purchasing/"
+                 + "GoymenERP.Modules.Purchasing.Infrastructure/"
+                 + "PurchasingModuleExtensions.cs"] =
+                    new(
+                        "14630a513905377c489f2a1f4f6b22f1173903730fc55df6fe9fff78edffc0c9",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["EnsureCreatedAsync"] = 1,
+                            ["MigrateAsync"] = 1
+                        }),
+                // R16/P04: reviewed provider participants. Exact source and provider-boundary token counts are
+                // pinned; changes require a fresh source review rather than broadening this allowlist.
+                [ReviewedInventoryGoodsReceiptParticipantPath] =
+                    new(
+                        "b736dfb2da68a30e43383bbd00f35713de283aff446770ae30383356eaceea02",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["System.Data.Common"] = 1,
+                            ["Microsoft.Data.SqlClient"] = 1,
+                            ["DbConnection"] = 3
+                        }),
+                // R17: the Manufacturing realization participant owns one Inventory transaction and
+                // one reviewed provider connection; exact source/count drift remains fail-closed.
+                [ReviewedInventoryManufacturingRealizationParticipantPath] =
+                    new(
+                        "12f01ded4665766d47dfd3a88711a439fc3055ce8784bfe317d55aa58e91fae1",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["System.Data.Common"] = 1,
+                            ["Microsoft.Data.SqlClient"] = 1,
+                            ["DbConnection"] = 3
+                        }),
+                [ReviewedPurchaseAcceptanceParticipantPath] =
+                    new(
+                        "c1932860818df6628368bee24a17a3e48d892c6f513313d953e94adf0e39358d",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["System.Data.Common"] = 1,
+                            ["Microsoft.Data.SqlClient"] = 1,
+                            ["DbConnection"] = 3
+                        }),
+                // PUR-4a: the SqlClient namespace only to recognise a unique-key violation (SqlException
+                // 2601/2627) after SaveChanges, as the Sales store does. No connection, command or raw SQL.
+                ["src/backend/Modules/Purchasing/"
+                 + "GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.cs"] =
+                    new(
+                        "36aea9f4b51ff348de16e93b30d424172e8fa829c7ca09ee06f7d6c721a8ee2d",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1
+                        }),
+                // SALES-P2 (#315): the Sales initializer's one provider branch, as Organization.
+                ["src/backend/Modules/Sales/"
+                 + "GoymenERP.Modules.Sales.Infrastructure/"
+                 + "SalesModuleExtensions.cs"] =
+                    new(
+                        "2b706e85f34cfc7475dda51469c66d039996c79796b8452630cb0688c444b49e",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["EnsureCreatedAsync"] = 1,
+                            ["MigrateAsync"] = 1
+                        }),
+                // SALES-P2 (#315): the SqlClient namespace only to recognise a unique-key violation
+                // (SqlException 2601/2627) after SaveChanges, as the other module stores do. No
+                // connection, command or raw SQL. Re-fingerprinted for SALES-A1: the approval commands
+                // (one save each, attempts keyed per command); SqlClient count unchanged.
+                ["src/backend/Modules/Sales/"
+                 + "GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.cs"] =
+                    new(
+                        "d6206c9718b9240333dda81e088c07fac11f079fb2352d06ccb26a623597039d",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1
                         })
             };
 
@@ -257,7 +750,51 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "OrganizationDesignTimeDbContextFactory.cs"] =
                     new(
                         "OrganizationDbContext",
-                        "d02da60cb32fdd67dceeae4cc0b1936c562d06ef10021f5b9cd1b9c686cc6626")
+                        "d02da60cb32fdd67dceeae4cc0b1936c562d06ef10021f5b9cd1b9c686cc6626"),
+                ["src/backend/Modules/Inventory/"
+                 + "GoymenERP.Modules.Inventory.Infrastructure/Persistence/"
+                 + "InventoryDesignTimeDbContextFactory.cs"] =
+                    new(
+                        "InventoryDbContext",
+                        "14f56a93a57e7eb18db82a535b0867da7692e858aaaaca397e32f57f062dc204"),
+                ["src/backend/Modules/Accounting/"
+                 + "GoymenERP.Modules.Accounting.Infrastructure/Persistence/"
+                 + "AccountingDesignTimeDbContextFactory.cs"] =
+                    new(
+                        "AccountingDbContext",
+                        "646f93b9f56cfb49f005359fe52e625d4079b0da9071276c37cd2d126c3f3a6c"),
+                ["src/backend/Modules/Finance/"
+                 + "GoymenERP.Modules.Finance.Infrastructure/Persistence/"
+                 + "FinanceDesignTimeDbContextFactory.cs"] =
+                    new(
+                        "FinanceDbContext",
+                        "1fc2f7b4c3f1d44064f532f8cc27607ffd09ce24b7fee8e32250714a8a6390ce"),
+                ["src/backend/Modules/Manufacturing/"
+                 + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/"
+                 + "ManufacturingDesignTimeDbContextFactory.cs"] =
+                    new(
+                        "ManufacturingDbContext",
+                        "d69368bd24c02978808ff616f5462784bc05608eb5836e800920f64e0cf5d6a6"),
+                ["src/backend/Modules/Sales/"
+                 + "GoymenERP.Modules.Sales.Infrastructure/Persistence/"
+                 + "SalesDesignTimeDbContextFactory.cs"] =
+                    new(
+                        "SalesDbContext",
+                        "22edbd5646b4bb67b6502a07b06696e750a915995b71298d951fe4483b283ceb"),
+                // LOG-4a: the Logistics design-time factory (migrations only), as Sales.
+                ["src/backend/Modules/Logistics/"
+                 + "GoymenERP.Modules.Logistics.Infrastructure/Persistence/"
+                 + "LogisticsDesignTimeDbContextFactory.cs"] =
+                    new(
+                        "LogisticsDbContext",
+                        "65969060034c72a61e8c88be2bb64207820931ee84974fa51d3955a1e8576004"),
+                // PUR-4a: the Purchasing design-time factory (migrations only), as Sales.
+                ["src/backend/Modules/Purchasing/"
+                 + "GoymenERP.Modules.Purchasing.Infrastructure/Persistence/"
+                 + "PurchasingDesignTimeDbContextFactory.cs"] =
+                    new(
+                        "PurchasingDbContext",
+                        "1f18bc244888b237e6de9884f761bb54139c4da11e2446b4cdfac0e9d5d844d6")
             };
 
     // Migration data/raw SQL operations are deployment-time DDL/DML, not runtime global-query-
@@ -266,8 +803,144 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         ReviewedMigrationMutationSources =
             new Dictionary<string, ReviewedMigrationMutationSource>(StringComparer.Ordinal)
             {
+                // Manufacturing input label versions are durable; Down uses one reviewed statement
+                // to refuse downgrade while any trusted accepted version remains.
+                ["src/backend/Modules/Manufacturing/"
+                 + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/Migrations/"
+                 + "20260924210000_AddManufacturingInputLabelVersions.cs"] =
+                    new(
+                        "6ed747c9211a2809fdc8f96e2f2d239292d3609a35abad397a09d2dd5a29699c",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // Purchasing acceptance history is durable; Down uses one reviewed statement to refuse
+                // downgrade while any acceptance share exists.
+                ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
+                 + "Persistence/Migrations/20260924102017_AddPurchaseAcceptanceParticipant.cs"] =
+                    new(
+                        "8d1988632ec1be7042cfd1eda10677b468be20cdb060677bfaca508a3b09ad19",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // Manufacturing process expansion uses one reviewed DDL statement in this exact migration.
+                ["src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/"
+                 + "Persistence/Migrations/20260924150000_ExpandManufacturingProcesses.cs"] =
+                    new(
+                        "631d6b751b5c01ad166935e802c1e80ed5a601d087dc3eab1f7c74b01d57528e",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // SALES-A1: the Down's only raw SQL is the refusal (51045) while any draft left Preparing or any
+                // state-command attempt carries a DraftId (the pre-A1 unique index could not be restored);
+                // forward fix, no approval fact or attempt is dropped.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20260919120000_AddDraftApproval.cs"] =
+                    new("d5aa478dc70559fa55e54df47a2fc6703a4677b1db4caab425fbe9b3ea10e89c",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // SALES-P Head B: the Down's only raw SQL is Sales' module refusal (51049) while any archived approved
+                // revision is stored — Sinan's K3 says the previous approved snapshot is not deleted, so a rollback that
+                // would drop those rows is refused. Reviewed rather than inventoried: the THROW precedes both DropTables,
+                // an empty DraftRevisions rolls back freely, and 51049 is used by no other module (counted across
+                // src/backend). Forward fix, the AddDraftApproval (51045) pattern.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20260920073846_AddDraftRevisions.cs"] =
+                    new("d2ec4a9b1f6fbe736ee18da1898ded863cfc3486c8bcb6b81923d6ec9ea893bf",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // SALES-D2: the Down's only raw SQL refuses rollback while any withdrawn draft exists;
+                // the refusal precedes the constraint replacement, so no withdrawal trail is discarded.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20260921090000_AddDraftWithdrawal.cs"] =
+                    new("df0b7eb737a3eeaeaed7ff3f9c9166ed3d0ad713486d0186e5eb8a8942e5117d",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // SALES-D2: the Down's only raw SQL refuses rollback while a terminal mutation refusal is linked
+                // to a draft. The refusal runs before replacing the outcome constraint, so no durable refusal
+                // identity is erased; environments containing one require a forward fix.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20260922120000_LinkMutationRefusalsToDrafts.cs"] =
+                    new("b34e318fa4e27a6f30b23a19d7370fd5783c7d7ece01204f36337b11cebbcc91",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // ACC-V0a: the Down's only raw SQL is Accounting's module refusal (51048, coordinator-assigned) while any
+                // period or command row exists (the preparer/approver columns are NOT NULL facts of Ö4); forward fix.
+                ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/Migrations/20260919140000_AddPeriodApproval.cs"] =
+                    new("e1e6fe554c5b58ea381316b99d17dd2fd64dd73780e0a475e849715b28ac42f9",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // ACC-V1: Down refuses with Accounting's existing 51048 forward-fix signal while any normal
+                // journal draft or line exists; the refusal precedes both destructive DropTable operations.
+                ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/Migrations/20260924122703_AddNormalJournalDrafts.cs"] =
+                    new("487ed66a9cdd2a4810b2cde704e1270bd0371b7aa2ad9017e186bb0b673337ee",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // FIN-T05: the Down's only raw SQL is Finance's module refusal (51051) while any money event
+                // exists or any draft has left Stage 0 — so a rollback can drop neither a money fact nor the
+                // trace of a record. Reviewed rather than assumed: the THROW precedes every Drop in the Down,
+                // and 51051 is used by no other module. Forward fix; nothing is deleted.
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20260920090000_AddMoneyEvents.cs"] =
+                    new("5af1d703aca150af6ca748c57b42e9f088cec37aaa3841116e31016a35a72eed",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // R47: Down refuses before its first destructive operation while a manual payment,
+                // outgoing money fact or command target exists. Empty schemas can still roll back.
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20260923213000_AddManualBankPayments.cs"] =
+                    new("2ab197f7060b5bb166f8ab9dd5aef6b22fc870c42ea400d28073561faa1418b9",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // F-03: Down refuses before destructive rollback while an allocation, open item or
+                // source-allocation state exists. Empty schemas can still roll back; populated ones
+                // require an explicit forward fix.
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20260924113000_AddFinanceAllocations.cs"] =
+                    new("431c95117e3a0216d30a3341ffd72b58e6274be9b938ecd671f6a725d9f2cc67",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // MFG-6 slice 2: the Down's only raw SQL is Manufacturing's module refusal (51047) while any plan
+                // slitting spec is stored; forward fix, no spec is dropped.
+                ["src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/Migrations/20260919130000_AddPlanSlittingSpecs.cs"] =
+                    new("2c9558291e1159f12ec838b7ab8d0a9e468630e384b0777896473a5f3c336f51",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // INV-OPEN-1 part 2: each Down's only raw SQL is the Inventory refusal (51046) while an opening
+                // count, its posted stock or a command record exists; forward fix, no row is dropped.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20260919120000_AddOpeningCounts.cs"] =
+                    new("85e41efd96d2e38d19db1ac6bc22fd761203937119e9af44c0c9bb68a2c7d2a9",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20260919140000_AddInventoryCommands.cs"] =
+                    new("450f545cc1ce2e303794dbf0a80566f18bef41cba222366603e3e35288dbe69d",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // LOG-5: Down refuses with Inventory's 51047 forward-fix signal while a definite
+                // shipment effect exists; the refusal precedes every destructive rollback step.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20260924001222_AddInventoryDefiniteShipmentRuntime.cs"] =
+                    new("3b696ed5dff4a414c00e939b5921b2d2d5f30d865627d4ce7b1c0019a6f3835d",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20260924013338_AddInventoryPhysicalAllocationLifecycle.cs"] =
+                    new("5452302167c69f77c89c1cd44e3c4d90639df7bb4020e15f54a01309bd18e3a0",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // Label genealogy is durable; Down uses one reviewed statement to refuse
+                // schema mutation after any transformation has been recorded.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20260924095845_AddInventoryLabelGenealogy.cs"] =
+                    new("7ab6813aed35a31711887f953a98f54e975553a5c7bb380f521482d1e6e6d2c2",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // R17: Down refuses before dropping manufacturing-return state while durable facts exist.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20260924193000_AddInventoryManufacturingReturn.cs"] =
+                    new("a75260a68cb041c3c3f1bb63141e6ef719a4a556391bfa43b0c1f1aef4fd7c34",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
                 ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/Persistence/Migrations/20260912175128_InitialProductDrafts.cs"] =
                     new("09b167e9837c486f8487bc8a30518d37a98ee90d6cea5842a40df6fd7c7e00f8",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // PRD-FAM-1 (#334): the Down's only raw SQL is Product's existing rollback refusal (51044)
+                // while any card or registry row exists; forward fix, no row is dropped. Re-measured for
+                // ORG #2 P3-1 (CK_TemplateFields_Candidate in Up); the Down is unchanged.
+                ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/Persistence/Migrations/20260919100000_AddProductFamilyRegistry.cs"] =
+                    new("8a7f1a3e29cf5c1855797ccf2008bf09789e141ef76ab9169201789e415fe649",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Persistence/Migrations/20260912175120_AddExplicitProductAssignments.cs"] =
@@ -276,6 +949,15 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         { ["Sql"] = 1 }),
                 ["src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/Persistence/Migrations/20260912175124_InitialGroupSharedTerminals.cs"] =
                     new("ed1ef07eb88ee1ea324479d5ab498d213ecf3cfdba4cf5ab4eae49292c4dc4c7",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // #329: each Down's only raw SQL is the module's existing rollback refusal (51042/51043).
+                ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Persistence/Migrations/20260918230000_AllowProductActivateAssignments.cs"] =
+                    new("7b5ca37647eb351caa33e1dcc24b5c726e9d732ab2b4e4e434e5c285d4f2dd30",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                ["src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/Persistence/Migrations/20260918230100_AllowProductActivateTerminals.cs"] =
+                    new("4716d015c2cd1a883d84d95589654f2d57077c06c8c641f2f148234453138c15",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 ["src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/Persistence/Migrations/20260912173914_AddGlobalProductAuditSubject.cs"] =
@@ -1189,6 +1871,22 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         Assert.NotEqual(
             ReviewedSqlServerRcsiVerifierFingerprint,
             ComputeReviewedSourceFingerprint(verifierSource + "\n# discovery bypass"));
+        var relationalInventoryEntries = Directory.GetFileSystemEntries(Path.Combine(
+                repositoryRoot,
+                RelationalInventoryDirectory.Replace('/', Path.DirectorySeparatorChar)))
+            .Select(entry => RelationalInventoryDirectory + "/" + Path.GetFileName(entry))
+            .Order(StringComparer.Ordinal);
+        Assert.Equal(
+            ReviewedRelationalInventoryFingerprints.Keys.Order(StringComparer.Ordinal),
+            relationalInventoryEntries);
+        foreach (var (inventoryPath, inventoryFingerprint) in ReviewedRelationalInventoryFingerprints)
+        {
+            Assert.Equal(
+                (inventoryPath, inventoryFingerprint),
+                (inventoryPath, ComputeReviewedSourceFingerprint(File.ReadAllText(Path.Combine(
+                    repositoryRoot,
+                    inventoryPath.Replace('/', Path.DirectorySeparatorChar))))));
+        }
         Assert.Equal(
             ReviewedSqlServerRcsiToolTestsProjectFingerprint,
             ComputeReviewedSourceFingerprint(toolTestsProjectSource));
@@ -4698,10 +5396,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             || Regex.Matches(
                 relationalAcceptanceSource,
                 Regex.Escape("[SqlServerFact]"),
-                RegexOptions.CultureInvariant).Count != 10)
+                RegexOptions.CultureInvariant).Count != 14)
         {
             errors.Add(
-                "RCSI relational discovery must retain the reviewed class name and ten tests.");
+                "RCSI relational discovery must retain the reviewed class name and fourteen tests.");
         }
 
         if (Regex.Matches(
@@ -5306,7 +6004,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         GetLineNumber(searchableSource, construction.Index)));
             }
 
-            if (!ReviewedPlatformContextFactories.ContainsKey(normalizedPath))
+            if (!ReviewedPlatformContextFactories.ContainsKey(normalizedPath)
+                && !string.Equals(
+                    normalizedPath,
+                    ReviewedInventoryDefiniteShipmentParticipantPath,
+                    StringComparison.Ordinal))
             {
                 var reviewedTypes = ReviewedContextTypeIdentifierRegex()
                     .Matches(searchableSource)
@@ -5329,19 +6031,60 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
         foreach (var construction in constructions)
         {
-            var authorized = ReviewedPlatformContextFactories.TryGetValue(
-                                 construction.RepositoryPath,
-                                 out var factory)
-                             && string.Equals(
-                                 construction.ContextTypeName,
-                                 factory.ContextTypeName,
-                                 StringComparison.Ordinal);
+            var authorizedByDesignTimeFactory = ReviewedPlatformContextFactories.TryGetValue(
+                                  construction.RepositoryPath,
+                                  out var factory)
+                              && string.Equals(
+                                  construction.ContextTypeName,
+                                  factory.ContextTypeName,
+                                  StringComparison.Ordinal);
+            var authorizedByReviewedRuntimeParticipant =
+                ReviewedRuntimeContextConstructions.TryGetValue(
+                    construction.RepositoryPath,
+                    out var runtimeConstruction)
+                && string.Equals(
+                    construction.ContextTypeName,
+                    runtimeConstruction.ContextTypeName,
+                    StringComparison.Ordinal)
+                && sources.TryGetValue(construction.RepositoryPath, out var runtimeSource)
+                && ReviewedRuntimeDatabaseBypassSources.TryGetValue(
+                    construction.RepositoryPath,
+                    out var reviewedRuntimeSource)
+                && string.Equals(
+                    ComputeReviewedSourceFingerprint(runtimeSource),
+                    reviewedRuntimeSource.ReviewedFingerprint,
+                    StringComparison.Ordinal);
+            var authorized = authorizedByDesignTimeFactory || authorizedByReviewedRuntimeParticipant;
             if (!authorized)
             {
                 errors.Add(
                     "Unauthorized reviewed platform DbContext construction "
                     + $"'{construction.ContextTypeName}' at "
                     + $"{construction.RepositoryPath}:{construction.LineNumber}");
+            }
+        }
+
+        foreach (var (participantPath, reviewedConstruction) in ReviewedRuntimeContextConstructions)
+        {
+            if (!sources.ContainsKey(participantPath))
+                continue;
+
+            var participantConstructions = constructions.Count(construction =>
+                string.Equals(
+                    construction.RepositoryPath,
+                    participantPath,
+                    StringComparison.Ordinal)
+                && string.Equals(
+                    construction.ContextTypeName,
+                    reviewedConstruction.ContextTypeName,
+                    StringComparison.Ordinal));
+            if (participantConstructions != reviewedConstruction.ExpectedCount)
+            {
+                errors.Add(
+                    $"Expected exactly {reviewedConstruction.ExpectedCount} "
+                    + $"'{reviewedConstruction.ContextTypeName}' construction(s) in reviewed "
+                    + $"runtime participant {participantPath}, "
+                    + $"but found {participantConstructions}.");
             }
         }
 
@@ -5501,6 +6244,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
         const string initializerGuard =
             "if (!isOpenApiDocumentGeneration\n"
+            + "    && databaseStartupMode == DatabaseStartupMode.Initialize\n"
             + "    && (app.Environment.IsDevelopment() || app.Environment.IsEnvironment(\"Testing\")))";
         var normalizedProgram = programSource.Replace("\r\n", "\n", StringComparison.Ordinal);
         var guardIndex = normalizedProgram.IndexOf(initializerGuard, StringComparison.Ordinal);
@@ -6133,13 +6877,14 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         @"(?<![\p{L}\p{Nd}_])new\s+"
         + @"(?:global\s*::\s*)?(?:@?[\p{L}_][\p{L}\p{Nd}_]*\s*\.\s*)*@?"
         + @"(?<type>AuditDbContext|CommandExecutionDbContext|IdentityDbContext|"
-        + @"OrganizationDbContext)(?![\p{L}\p{Nd}_])\s*\(",
+        + @"OrganizationDbContext|InventoryDbContext|AccountingDbContext|FinanceDbContext|ManufacturingDbContext|SalesDbContext|LogisticsDbContext|PurchasingDbContext)(?![\p{L}\p{Nd}_])\s*\(",
         RegexOptions.CultureInvariant)]
     private static partial Regex ReviewedContextConstructionRegex();
 
     [GeneratedRegex(
         @"(?<![\p{L}\p{Nd}_])@?(?<type>AuditDbContext|CommandExecutionDbContext|"
-        + @"IdentityDbContext|OrganizationDbContext)(?![\p{L}\p{Nd}_])",
+        + @"IdentityDbContext|OrganizationDbContext|InventoryDbContext|AccountingDbContext|FinanceDbContext|ManufacturingDbContext|SalesDbContext|LogisticsDbContext|PurchasingDbContext)"
+        + @"(?![\p{L}\p{Nd}_])",
         RegexOptions.CultureInvariant)]
     private static partial Regex ReviewedContextTypeIdentifierRegex();
 
@@ -6153,7 +6898,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + @"(?<alias>@?[\p{L}_][\p{L}\p{Nd}_]*)\s*=\s*"
         + @"(?:global\s*::\s*)?(?:@?[\p{L}_][\p{L}\p{Nd}_]*\s*\.\s*)*@?"
         + @"(?<type>AuditDbContext|CommandExecutionDbContext|IdentityDbContext|"
-        + @"OrganizationDbContext)(?![\p{L}\p{Nd}_])\s*;",
+        + @"OrganizationDbContext|InventoryDbContext|AccountingDbContext|FinanceDbContext|ManufacturingDbContext|SalesDbContext|LogisticsDbContext|PurchasingDbContext)(?![\p{L}\p{Nd}_])\s*;",
         RegexOptions.CultureInvariant)]
     private static partial Regex ReviewedContextTypeAliasRegex();
 
@@ -6162,7 +6907,14 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + @"AuditDesignTimeDbContextFactory|"
         + @"CommandExecutionDesignTimeDbContextFactory|"
         + @"IdentityDesignTimeDbContextFactory|"
-        + @"OrganizationDesignTimeDbContextFactory)(?![\p{L}\p{Nd}_])",
+        + @"OrganizationDesignTimeDbContextFactory|"
+        + @"InventoryDesignTimeDbContextFactory|"
+        + @"AccountingDesignTimeDbContextFactory|"
+        + @"FinanceDesignTimeDbContextFactory|"
+        + @"ManufacturingDesignTimeDbContextFactory|"
+        + @"SalesDesignTimeDbContextFactory|"
+        + @"LogisticsDesignTimeDbContextFactory|"
+        + @"PurchasingDesignTimeDbContextFactory)(?![\p{L}\p{Nd}_])",
         RegexOptions.CultureInvariant)]
     private static partial Regex ReviewedDesignTimeFactoryIdentifierRegex();
 

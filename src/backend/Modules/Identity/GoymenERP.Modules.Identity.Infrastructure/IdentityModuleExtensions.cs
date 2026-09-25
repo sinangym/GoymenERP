@@ -18,7 +18,8 @@ public static class IdentityModuleExtensions
 {
     public static IServiceCollection AddIdentityModule(
         this IServiceCollection services,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        bool enableAuthorizationSnapshotDatabaseReadiness = true)
     {
         var provider = configuration["DB_PROVIDER"] ?? "SqlServer";
         if (!string.Equals(provider, "SqlServer", StringComparison.OrdinalIgnoreCase))
@@ -52,17 +53,33 @@ public static class IdentityModuleExtensions
                 connectionString,
                 sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", "identity")));
         services.AddScoped<IExternalIdentityResolver, ExternalIdentityResolver>();
-        services.AddScoped<IErpAuthorizationService, ErpAuthorizationService>();
+        // One instance per scope behind all three ports: a revalidation has to refresh the very
+        // cache the cached path reads, while active-role reads deliberately bypass permission
+        // membership and the cache.
+        services.AddScoped<ErpAuthorizationService>();
+        services.AddScoped<IErpAuthorizationService>(
+            provider => provider.GetRequiredService<ErpAuthorizationService>());
+        services.AddScoped<IErpAuthorityRevalidationService>(
+            provider => provider.GetRequiredService<ErpAuthorizationService>());
+        services.AddScoped<IActiveRoleCodeReader>(
+            provider => provider.GetRequiredService<ErpAuthorizationService>());
         services.TryAddSingleton<IAuthorizationSnapshotReadObserver,
             NullAuthorizationSnapshotReadObserver>();
+        services.TryAddSingleton<IPermissionScopeReadObserver,
+            NullPermissionScopeReadObserver>();
         services.AddScoped<IIdentityProfileService, IdentityProfileService>();
         services.AddScoped<ISystemRolePermissionReconciler, SystemRolePermissionReconciler>();
         services.AddScoped<IdentityDataSeeder>();
         services.AddSingleton(rcsiBinding);
         services.AddSingleton<SqlServerRcsiReadinessProbe>();
+        services.AddSingleton<IIdentityAuthorizationDatabaseReadiness,
+            IdentityAuthorizationDatabaseReadiness>();
         if (!OpenApiDocumentGenerationMode.IsActive)
         {
-            services.AddHostedService<AuthorizationSnapshotDatabaseReadinessService>();
+            if (enableAuthorizationSnapshotDatabaseReadiness)
+            {
+                services.AddHostedService<AuthorizationSnapshotDatabaseReadinessService>();
+            }
         }
 
         return services;
@@ -89,13 +106,18 @@ public static class IdentityModuleExtensions
     }
 }
 
-internal sealed class AuthorizationSnapshotDatabaseReadinessService(
+public interface IIdentityAuthorizationDatabaseReadiness
+{
+    Task EnsureReadyAsync(CancellationToken cancellationToken = default);
+}
+
+internal sealed class IdentityAuthorizationDatabaseReadiness(
     IServiceScopeFactory scopeFactory,
     SqlServerRcsiReadinessProbe readinessProbe,
     SqlServerRcsiReadinessBinding readinessBinding)
-    : IHostedService
+    : IIdentityAuthorizationDatabaseReadiness
 {
-    public async Task StartAsync(CancellationToken cancellationToken)
+    public async Task EnsureReadyAsync(CancellationToken cancellationToken = default)
     {
         await using var scope = scopeFactory.CreateAsyncScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
@@ -114,6 +136,14 @@ internal sealed class AuthorizationSnapshotDatabaseReadinessService(
                 SqlServerRcsiReadinessPolicy.GetStartupFailureMessage(evidence));
         }
     }
+}
+
+internal sealed class AuthorizationSnapshotDatabaseReadinessService(
+    IIdentityAuthorizationDatabaseReadiness readiness)
+    : IHostedService
+{
+    public Task StartAsync(CancellationToken cancellationToken) =>
+        readiness.EnsureReadyAsync(cancellationToken);
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }

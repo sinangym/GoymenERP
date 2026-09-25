@@ -1,0 +1,216 @@
+using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.BuildingBlocks.Observability;
+using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Audit.Application.Contracts;
+using GoymenERP.Modules.Finance.Contracts;
+using GoymenERP.Modules.Finance.Infrastructure.Persistence;
+using GoymenERP.Modules.Settings.Application;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+
+namespace GoymenERP.Modules.Finance.Infrastructure;
+
+/// <summary>
+/// Finance's persistence and service registration (FIN-T04b). The host calls
+/// <see cref="AddFinancePersistence"/> (with Audit's interceptor through its
+/// <c>configureDbContext</c>), <see cref="AddFinanceServices"/> and
+/// <see cref="InitializeFinancePersistenceAsync"/>; that wiring is the central writer's.
+/// </summary>
+public static class FinanceModuleExtensions
+{
+    public static IServiceCollection AddFinancePersistence(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        Action<IServiceProvider, DbContextOptionsBuilder>? configureDbContext = null)
+    {
+        var provider = configuration["DB_PROVIDER"] ?? "SqlServer";
+        if (!string.Equals(provider, "SqlServer", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException($"Desteklenmeyen veritabanı sağlayıcısı: {provider}");
+        }
+
+        var connectionString = configuration["DB_CONNECTION_STRING"]
+            ?? configuration.GetConnectionString("GoymenErp");
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            throw new InvalidOperationException(
+                "SQL Server bağlantı dizesi DB_CONNECTION_STRING secret/env değeriyle tanımlanmalıdır.");
+        }
+
+        services.AddDbContext<FinanceDbContext>((serviceProvider, options) =>
+        {
+            options.UseSqlServer(
+                connectionString,
+                sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", FinanceDbContext.Schema));
+            configureDbContext?.Invoke(serviceProvider, options);
+        });
+        services.TryAddSingleton(TimeProvider.System);
+        return services;
+    }
+
+    /// <summary>
+    /// FIN-T04b: the real Finance services behind the HTTP surface, replacing the host's unavailable
+    /// permission port and bank reader. Every piece is per request (scoped):
+    /// <list type="bullet">
+    /// <item><see cref="FinancePermissionPort"/>: fresh #276 measurements of the Finance names;</item>
+    /// <item><see cref="FinanceBankAccountService"/>: the persisted bank-account reader and master (FS0;
+    /// FIN-UI-1), each write audited with the roles of its own permission;</item>
+    /// <item><see cref="ReceiptDraftService"/>: the draft service, bound to the Finance money operation
+    /// key, audited with the roles that granted the save.</item>
+    /// </list>
+    /// Needs <see cref="AddFinancePersistence"/>, Audit's collector, the Settings provider and the
+    /// Finance party-account port from the host. Without a Settings candidate reader the currency
+    /// answer stays unavailable, never a default.
+    /// </summary>
+    public static IServiceCollection AddFinanceServices(this IServiceCollection services)
+    {
+        services.AddScoped<FinancePermissionPort>();
+        services.AddScoped<IFinancePermissionPort>(provider => provider.GetRequiredService<FinancePermissionPort>());
+        // The services are built by the factories below, so no registration statement of this module names
+        // the company context: the host's scoped ICompanyContext is resolved, never registered, here.
+        services.AddScoped(CreateBankAccountService);
+        services.AddScoped<IFinanceBankAccountReader>(provider => provider.GetRequiredService<FinanceBankAccountService>());
+        services.AddScoped<IFinanceBankAccountMaster>(provider => provider.GetRequiredService<FinanceBankAccountService>());
+        services.AddScoped<IManualReceiptService>(CreateReceiptDraftService);
+        services.TryAddScoped<IManualBankPaymentDocumentValidationPort,
+            UnavailableManualBankPaymentDocumentValidationPort>();
+        services.AddScoped<IManualBankPaymentService>(CreateManualBankPaymentService);
+        services.AddScoped(CreateReversalProposalService);
+        services.AddScoped<IReversalProposalService>(provider =>
+            provider.GetRequiredService<ReversalProposalService>());
+        services.AddScoped<IFinanceAllocationService>(CreateAllocationService);
+        // FIN-T05: the Record's period gate. K1 (#66 5748258299) answered it — occurredOn decides — but the rule
+        // that maps the date reads Accounting's period port, which this module cannot see. So the HOST registers
+        // OccurredOnFinanceRecordPeriodRule before calling this method and the TryAdd below then does nothing;
+        // a composition that registers none still gets the undecided rule, which refuses every Record rather
+        // than guessing a period.
+        services.TryAddSingleton<IFinanceRecordPeriodRule, UndecidedFinanceRecordPeriodRule>();
+        services.AddScoped<IFinanceReversalAllocationGate, FinanceAllocationReversalGate>();
+        services.TryAddSingleton(TimeProvider.System);
+        return services;
+    }
+
+    private static FinanceBankAccountService CreateBankAccountService(IServiceProvider provider)
+    {
+        var companyContext = provider.GetRequiredService<ICompanyContext>();
+        var currentUser = provider.GetRequiredService<ICurrentUser>();
+        var permissions = provider.GetRequiredService<FinancePermissionPort>();
+        return new FinanceBankAccountService(
+            provider.GetRequiredService<FinanceDbContext>(),
+            companyContext,
+            currentUser,
+            permissions,
+            provider.GetService<ISettingsMoneyCandidateReader>()
+                ?? new UnavailableSettingsPrerequisiteProvider(companyContext, currentUser),
+            provider.GetRequiredService<IAuditEventCollector>(),
+            new FinanceBankAccountEnvelopes(
+                Envelope(provider, ErpPermissions.FinanceBankAccountPropose, permissions, FinanceAction.ProposeBankAccount),
+                Envelope(provider, ErpPermissions.FinanceBankAccountApprove, permissions, FinanceAction.ApproveBankAccount)),
+            provider.GetRequiredService<TimeProvider>());
+    }
+
+    private static ReceiptDraftService CreateReceiptDraftService(IServiceProvider provider)
+    {
+        var permissions = provider.GetRequiredService<FinancePermissionPort>();
+        return new ReceiptDraftService(
+            provider.GetRequiredService<FinanceDbContext>(),
+            provider.GetRequiredService<ICompanyContext>(),
+            provider.GetRequiredService<ICurrentUser>(),
+            permissions,
+            provider.GetRequiredService<IFinanceBankAccountReader>(),
+            provider.GetRequiredService<IFinancePartyAccountPort>(),
+            provider.GetRequiredService<ISettingsPrerequisiteProvider>(),
+            provider.GetRequiredService<IAuditEventCollector>(),
+            new FinanceReceiptDraftBinding(FinanceMoneyOperations.ManualBankReceiptV1),
+            Envelope(provider, FinancePermissionNames.DraftSave, permissions, FinanceAction.SaveDraft),
+            provider.GetRequiredService<TimeProvider>(),
+            Envelope(provider, FinancePermissionNames.Record, permissions, FinanceAction.Record),
+            provider.GetRequiredService<IFinanceRecordPeriodRule>());
+    }
+
+    private static ReversalProposalService CreateReversalProposalService(IServiceProvider provider)
+    {
+        var permissions = provider.GetRequiredService<FinancePermissionPort>();
+        return new ReversalProposalService(
+            provider.GetRequiredService<FinanceDbContext>(),
+            provider.GetRequiredService<ICompanyContext>(),
+            provider.GetRequiredService<ICurrentUser>(),
+            permissions,
+            provider.GetRequiredService<IFinanceRecordPeriodRule>(),
+            provider.GetRequiredService<IFinanceReversalAllocationGate>(),
+            provider.GetRequiredService<IAuditEventCollector>(),
+            new FinanceReversalEnvelopes(
+                Envelope(provider, FinancePermissionNames.ReversePropose, permissions,
+                    FinanceAction.ProposeReversal),
+                Envelope(provider, FinancePermissionNames.ReverseApprove, permissions,
+                    FinanceAction.ApproveReversal)),
+            provider.GetRequiredService<TimeProvider>());
+    }
+
+    private static ManualBankPaymentService CreateManualBankPaymentService(IServiceProvider provider)
+    {
+        var permissions = provider.GetRequiredService<FinancePermissionPort>();
+        return new ManualBankPaymentService(
+            provider.GetRequiredService<FinanceDbContext>(),
+            provider.GetRequiredService<ICompanyContext>(),
+            provider.GetRequiredService<ICurrentUser>(),
+            permissions,
+            provider.GetRequiredService<IFinancePartyAccountPort>(),
+            provider.GetRequiredService<IManualBankPaymentDocumentValidationPort>(),
+            provider.GetRequiredService<ISettingsPrerequisiteProvider>(),
+            provider.GetRequiredService<IFinanceRecordPeriodRule>(),
+            provider.GetRequiredService<IAuditEventCollector>(),
+            new ManualBankPaymentBinding(FinanceMoneyOperations.ManualBankPaymentV1),
+            new ManualBankPaymentAuditEnvelopes(
+                Envelope(provider, FinancePermissionNames.ManualBankPaymentDraftSave, permissions,
+                    FinanceAction.SaveManualBankPaymentDraft),
+                Envelope(provider, FinancePermissionNames.ManualBankPaymentApprove, permissions,
+                    FinanceAction.ApproveManualBankPayment),
+                Envelope(provider, FinancePermissionNames.ManualBankPaymentRecord, permissions,
+                    FinanceAction.RecordManualBankPayment)),
+            provider.GetRequiredService<TimeProvider>());
+    }
+
+    private static FinanceAllocationService CreateAllocationService(IServiceProvider provider)
+    {
+        var permissions = provider.GetRequiredService<FinancePermissionPort>();
+        return new FinanceAllocationService(
+            provider.GetRequiredService<FinanceDbContext>(),
+            provider.GetRequiredService<ICompanyContext>(),
+            provider.GetRequiredService<ICurrentUser>(),
+            permissions,
+            provider.GetRequiredService<IAuditEventCollector>(),
+            Envelope(provider, FinancePermissionNames.AllocationWrite, permissions, FinanceAction.WriteAllocation),
+            provider.GetRequiredService<TimeProvider>());
+    }
+
+    /// <summary>The ADR-009 envelope of the request: the permission that authorizes the write and its roles.</summary>
+    private static FinanceAuditEnvelope Envelope(IServiceProvider provider, string permissionCode,
+        FinancePermissionPort permissions, FinanceAction action)
+    {
+        var correlation = provider.GetRequiredService<ICorrelationContext>();
+        return new FinanceAuditEnvelope(permissionCode, permissions.RoleCodesOf(action), correlation.SourceChannel,
+            correlation.ClientIpAddress, correlation.UserAgent);
+    }
+
+    /// <summary>Applies Finance's migrations. Its foreign keys need Organization's tables first.</summary>
+    public static async Task InitializeFinancePersistenceAsync(
+        this IServiceProvider services,
+        CancellationToken cancellationToken = default)
+    {
+        await using var scope = services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<FinanceDbContext>();
+
+        if (dbContext.Database.IsRelational())
+        {
+            await dbContext.Database.MigrateAsync(cancellationToken);
+        }
+        else
+        {
+            await dbContext.Database.EnsureCreatedAsync(cancellationToken);
+        }
+    }
+}

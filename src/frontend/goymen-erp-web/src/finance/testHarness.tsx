@@ -15,39 +15,102 @@
 import { act, render } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Fragment, useEffect, useReducer, type ReactNode } from 'react'
+import { MemoryRouter } from 'react-router'
 import { ShellDispatchContext, ShellStateContext } from '../shell/shellContext'
 import { initialShellState, shellReducer, type ShellEvent, type ShellState } from '../shell/shellState'
-import { FinancePortProvider } from './financePort'
+import { clearReversalAttemptStore, FinancePortProvider } from './financePort'
 import type { FinanceReceiptPort, FinanceScope, PortReply } from './port'
-import type { DraftSaveRequest, RecordRequest, ReverseRequest } from './contract'
+import type { HttpReadReply } from './http'
+import type { DraftContextRequest } from './draftContext'
+import type {
+  ApproveReversalRequest,
+  DraftSaveRequest,
+  ProposeReversalRequest,
+  RecordRequest,
+  RejectReversalRequest,
+  ReverseRequest,
+} from './contract'
+import type { BankAccountApprovalBody, BankAccountProposeRequest } from './bankAccountContract'
+import type {
+  ApproveManualBankPaymentRequest,
+  ManualBankPaymentDraftSaveRequest,
+  RecordManualBankPaymentRequest,
+} from './manualBankPaymentContract'
 import { clearAttemptStore } from './receiptCommand'
-import { EXAMPLE_BANK, EXAMPLE_COMPANY, EXAMPLE_CURRENCY, NEGATIVE_EXAMPLE, NORMAL_EXAMPLE } from './contractExamples'
+import { clearBankAttemptStore } from './bankAccountCommand'
+import { DRAFT_CONTEXT_EXAMPLE, EXAMPLE_BANK, EXAMPLE_COMPANY, EXAMPLE_CURRENCY, NEGATIVE_EXAMPLE, NORMAL_EXAMPLE } from './contractExamples'
 
 export const COMPANY_A = EXAMPLE_COMPANY
 export const COMPANY_B = 'bbbbbbbb-0000-4000-8000-000000000002'
 export const ACTOR = '99999999-9999-4999-8999-999999999999'
 
-export function shellFor(companyId: string, revision = 1): ShellState {
+export function shellFor(companyId: string, revision = 1, capabilities: readonly string[] = []): ShellState {
   return {
     ...initialShellState,
     phase: 'idle',
-    activeContext: { userId: ACTOR, scopeMode: 'single', companyId, capabilityGeneration: 'finance-gen-1', capabilities: [] },
+    activeContext: {
+      userId: ACTOR,
+      scopeMode: 'single',
+      companyId,
+      capabilityGeneration: 'finance-gen-1',
+      capabilities: [...capabilities],
+    },
     committedContextRevision: revision,
     sessionEpoch: 1,
     bootstrappedSessionEpoch: 1,
   }
 }
 
-type CommandName = 'draftSave' | 'record' | 'reverse'
-type ReadName = 'listBankAccounts' | 'listSources' | 'sourceDetail'
+type CommandName =
+  | 'draftSave'
+  | 'record'
+  | 'reverse'
+  | 'proposeReversal'
+  | 'approveReversal'
+  | 'rejectReversal'
+  | 'proposeBankAccount'
+  | 'approveBankAccount'
+  | 'proposeBankAccountIbanChange'
+  | 'approveBankAccountIbanChange'
+  | 'saveManualBankPaymentDraft'
+  | 'approveManualBankPayment'
+  | 'recordManualBankPayment'
+type ReadName =
+  | 'listBankAccounts'
+  | 'listSources'
+  | 'sourceDetail'
+  | 'draftContext'
+  | 'listBankAccountMaster'
+  | 'bankAccountCurrencyCandidates'
+  | 'pendingReversals'
+  | 'reversalProposal'
+  | 'listManualBankPayments'
+  | 'manualBankPaymentDetail'
 
 export interface CommandCall {
   readonly method: CommandName
   readonly scope: FinanceScope
   readonly key: string
-  readonly request: DraftSaveRequest | RecordRequest | ReverseRequest
+  /** The body; for an approval `{ accountId, body }`. */
+  readonly request:
+    | DraftSaveRequest
+    | RecordRequest
+    | ReverseRequest
+    | ProposeReversalRequest
+    | ApproveReversalRequest
+    | RejectReversalRequest
+    | BankAccountProposeRequest
+    | ManualBankPaymentDraftSaveRequest
+    | ApproveManualBankPaymentRequest
+    | RecordManualBankPaymentRequest
+    | ApprovalCall
   resolve(reply: PortReply): Promise<void>
   reject(): Promise<void>
+}
+
+export interface ApprovalCall {
+  readonly accountId: string
+  readonly body: BankAccountApprovalBody
 }
 
 export interface ReadCall {
@@ -56,7 +119,11 @@ export interface ReadCall {
   readonly request: unknown
 }
 
-export type ReadResponder = (method: ReadName, scope: FinanceScope, request: unknown) => PortReply
+export type ReadResponder = (
+  method: ReadName,
+  scope: FinanceScope,
+  request: unknown,
+) => PortReply | HttpReadReply | Promise<PortReply | HttpReadReply>
 
 export function body(value: unknown): PortReply {
   return { kind: 'body', body: value }
@@ -74,7 +141,7 @@ export function recordingPort(respond: ReadResponder) {
 
   const command =
     (method: CommandName) =>
-    (scope: FinanceScope, key: string, request: DraftSaveRequest | RecordRequest | ReverseRequest) =>
+    (scope: FinanceScope, key: string, request: CommandCall['request']) =>
       new Promise<PortReply>((resolvePromise, rejectPromise) => {
         commands.push({
           method,
@@ -99,12 +166,31 @@ export function recordingPort(respond: ReadResponder) {
   }
 
   const port: FinanceReceiptPort = {
-    listBankAccounts: read('listBankAccounts'),
-    listSources: read('listSources'),
-    sourceDetail: read('sourceDetail'),
+    listManualBankPayments: read('listManualBankPayments') as FinanceReceiptPort['listManualBankPayments'],
+    manualBankPaymentDetail: read('manualBankPaymentDetail') as FinanceReceiptPort['manualBankPaymentDetail'],
+    saveManualBankPaymentDraft: command('saveManualBankPaymentDraft'),
+    approveManualBankPayment: command('approveManualBankPayment'),
+    recordManualBankPayment: command('recordManualBankPayment'),
+    listBankAccounts: read('listBankAccounts') as FinanceReceiptPort['listBankAccounts'],
+    listSources: read('listSources') as FinanceReceiptPort['listSources'],
+    sourceDetail: read('sourceDetail') as FinanceReceiptPort['sourceDetail'],
+    draftContext: read('draftContext') as FinanceReceiptPort['draftContext'],
     draftSave: command('draftSave'),
     record: command('record'),
     reverse: command('reverse'),
+    proposeReversal: command('proposeReversal'),
+    approveReversal: command('approveReversal'),
+    rejectReversal: command('rejectReversal'),
+    pendingReversals: read('pendingReversals') as FinanceReceiptPort['pendingReversals'],
+    reversalProposal: read('reversalProposal') as FinanceReceiptPort['reversalProposal'],
+    listBankAccountMaster: read('listBankAccountMaster') as FinanceReceiptPort['listBankAccountMaster'],
+    bankAccountCurrencyCandidates: read('bankAccountCurrencyCandidates') as FinanceReceiptPort['bankAccountCurrencyCandidates'],
+    proposeBankAccount: command('proposeBankAccount'),
+    approveBankAccount: (scope, key, accountId, approval) => command('approveBankAccount')(scope, key, { accountId, body: approval }),
+    proposeBankAccountIbanChange: (scope, key, accountId, body) =>
+      command('proposeBankAccountIbanChange')(scope, key, { accountId, body }),
+    approveBankAccountIbanChange: (scope, key, accountId, body) =>
+      command('approveBankAccountIbanChange')(scope, key, { accountId, body }),
   }
   return { port, commands, reads }
 }
@@ -134,11 +220,12 @@ function ControlledShell({ initial, children }: { readonly initial: ShellState; 
   )
 }
 
-function tree(ui: ReactNode, port: FinanceReceiptPort | null, shell: ShellState, queryClient: QueryClient) {
+function tree(ui: ReactNode, port: FinanceReceiptPort | null, shell: ShellState, queryClient: QueryClient, router: boolean) {
+  const content = port === null ? ui : <FinancePortProvider port={port}>{ui}</FinancePortProvider>
   return (
     <QueryClientProvider client={queryClient}>
       <ControlledShell initial={shell}>
-        {port === null ? ui : <FinancePortProvider port={port}>{ui}</FinancePortProvider>}
+        {router ? <MemoryRouter>{content}</MemoryRouter> : content}
       </ControlledShell>
     </QueryClientProvider>
   )
@@ -146,21 +233,24 @@ function tree(ui: ReactNode, port: FinanceReceiptPort | null, shell: ShellState,
 
 export function renderFinance(
   ui: ReactNode,
-  options: { readonly port: FinanceReceiptPort | null; readonly shell?: ShellState },
+  options: { readonly port: FinanceReceiptPort | null; readonly shell?: ShellState; readonly router?: boolean },
 ) {
   clearAttemptStore()
+  clearReversalAttemptStore()
+  clearBankAttemptStore()
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })
   const shell = options.shell ?? shellFor(COMPANY_A)
   let generation = 0
   const keyed = (node: ReactNode) => <Fragment key={generation}>{node}</Fragment>
-  const view = render(tree(keyed(ui), options.port, shell, queryClient))
+  const router = options.router ?? false
+  const view = render(tree(keyed(ui), options.port, shell, queryClient, router))
   /**
    * Unmount the Finance subtree and mount `next` in its place while the SHELL stays mounted
    * — what a route change or a closed gate does in the app. Cleanups reach the live shell.
    */
   const remount = (next: ReactNode) => {
     generation += 1
-    view.rerender(tree(keyed(next), options.port, shell, queryClient))
+    view.rerender(tree(keyed(next), options.port, shell, queryClient, router))
   }
   return { ...view, queryClient, remount }
 }
@@ -204,6 +294,20 @@ export function bankAccount(companyId: string, overrides: Json = {}): Json {
   }
 }
 
+export function bankAccountCard(overrides: Json = {}): Json {
+  return {
+    bankName: 'SENTETIK Banka',
+    accountType: 'SENTETIK Vadesiz',
+    branchName: null,
+    branchCode: null,
+    iban: 'TR330006100519786457841326',
+    accountNumber: null,
+    moneyEligibility: 'Eligible',
+    pendingIbanChange: null,
+    ...overrides,
+  }
+}
+
 export function bankPage(companyId: string, items: readonly Json[] = [bankAccount(companyId)]): Json {
   return { companyId, items }
 }
@@ -219,6 +323,31 @@ export function sourceDetail(companyId: string, overrides: { source?: Json } & J
     source: sourceSummary(companyId, source ?? {}),
     ...rest,
   }
+}
+
+/** A 200 draft read context answering `request` in `companyId` (verbatim #261 example shape). */
+export function draftContextBody(companyId: string, request: DraftContextRequest, overrides: Json = {}): Json {
+  const example = DRAFT_CONTEXT_EXAMPLE.response
+  return {
+    ...example,
+    companyId,
+    occurredOn: request.occurredOn,
+    bankAccount: { ...example.bankAccount, id: request.treasuryAccountId, companyId },
+    currency: {
+      ...example.currency,
+      profile: { ...example.currency.profile, effectiveFrom: request.occurredOn },
+    },
+    party: { ...example.party, partyId: request.partyId, companyAccountId: request.companyAccountId },
+    ...overrides,
+  }
+}
+
+export function contextOk(body: unknown): HttpReadReply {
+  return { kind: 'ok', body }
+}
+
+export function contextStatus(status: number): HttpReadReply {
+  return { kind: 'status', status }
 }
 
 export function succeeded(resource: Json, isReplay = false): PortReply {
