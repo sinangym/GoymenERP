@@ -1,6 +1,7 @@
 using GoymenERP.Api.Contracts;
 using GoymenERP.Api.Endpoints;
 using GoymenERP.Api.Errors;
+using GoymenERP.Api.ManufacturingRuntime;
 using GoymenERP.Api.Multitenancy;
 using GoymenERP.Api.Observability;
 using GoymenERP.Api.OpenApi;
@@ -25,6 +26,7 @@ using GoymenERP.Modules.Finance.Infrastructure.Shell;
 using GoymenERP.Modules.Idempotency.Infrastructure;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Infrastructure;
+using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Logistics.Application.Contracts;
 using GoymenERP.Modules.Logistics.Infrastructure;
 using GoymenERP.Modules.Logistics.Infrastructure.Shell;
@@ -210,6 +212,10 @@ builder.Services.AddManufacturingModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(
         services.GetRequiredService<AuditSaveChangesInterceptor>()));
+// MFG realization v1: the host composes the approved Manufacturing ports with their API-owned adapters.
+builder.Services.AddScoped<IManufacturingInventoryOutputAdmission, ManufacturingInventoryOutputAdmission>();
+builder.Services.AddScoped<IManufacturingInventoryInputIssuePortV1, ManufacturingInventoryInputIssueHost>();
+builder.Services.AddScoped<IManufacturingInventoryReturnOutputPortV1, ManufacturingInventoryReturnOutputHost>();
 builder.Services.AddSalesModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(
