@@ -4,6 +4,7 @@ using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Domain.Balances;
 using GoymenERP.Modules.Inventory.Domain.Labels;
 using GoymenERP.Modules.Inventory.Domain.Lots;
+using GoymenERP.Modules.Inventory.Domain.Movements;
 using GoymenERP.Modules.Inventory.Domain.Quantities;
 using GoymenERP.Modules.Inventory.Domain.Stock;
 using GoymenERP.Modules.Inventory.Infrastructure;
@@ -41,6 +42,27 @@ public sealed class InventoryLabelDetailTests
         ], world.Authority.Calls);
         Assert.Equal(2, world.Reader.Reads);
         Assert.Equal(2, world.Genealogy.Reads);
+    }
+
+    [Fact]
+    public async Task Detail_returns_the_bounded_newest_first_movement_timeline()
+    {
+        var world = new World();
+        var label = world.Reader.Record!.Label;
+        var newer = Movement(label, DateTimeOffset.Parse("2026-09-25T06:01:00Z"));
+        var older = Movement(label, DateTimeOffset.Parse("2026-09-25T06:00:00Z"));
+        world.Reader.Record = world.Reader.Record with
+        {
+            MovementTimeline = new(label.Id, [newer, older], true),
+        };
+
+        var result = await world.Service().GetAsync(label.Id);
+
+        Assert.True(result.MovementTimeline.WindowFull);
+        Assert.Equal([newer.MovementId, older.MovementId],
+            result.MovementTimeline.Entries.Select(entry => entry.MovementId));
+        Assert.Equal("Receipt", result.MovementTimeline.Entries[0].Kind);
+        Assert.Equal("12.5", Assert.Single(result.MovementTimeline.Entries[0].Lines).QuantityKg);
     }
 
     [Fact]
@@ -162,6 +184,24 @@ public sealed class InventoryLabelDetailTests
             genealogyChanged.Genealogy.Result! with { WindowFull = true };
         await Refused(genealogyChanged.Service().GetAsync(genealogyChanged.Reader.Record!.Label.Id), 409,
             InventoryLabelDetailCodesV1.ReadConflict);
+
+        var movementChanged = new World();
+        var movementLabel = movementChanged.Reader.Record!.Label;
+        movementChanged.Genealogy.During = () => movementChanged.Reader.Record = movementChanged.Reader.Record! with
+        {
+            MovementTimeline = new(movementLabel.Id, [Movement(movementLabel, DateTimeOffset.UtcNow)], false),
+        };
+        await Refused(movementChanged.Service().GetAsync(movementLabel.Id), 409,
+            InventoryLabelDetailCodesV1.ReadConflict);
+
+        var malformedMovement = new World();
+        var malformedLabel = malformedMovement.Reader.Record!.Label;
+        malformedMovement.Reader.Record = malformedMovement.Reader.Record with
+        {
+            MovementTimeline = new(Guid.NewGuid(), [Movement(malformedLabel, DateTimeOffset.UtcNow)], false),
+        };
+        await Refused(malformedMovement.Service().GetAsync(malformedLabel.Id), 503,
+            InventoryLabelDetailCodesV1.Unavailable);
     }
 
     [Fact]
@@ -290,7 +330,8 @@ public sealed class InventoryLabelDetailTests
             Guid.NewGuid(),
             label,
             BlockState.Free);
-        return new(3, label, lot, [new StockBalance(position, Kilograms.Positive(10.125m))]);
+        return new(3, label, lot, [new StockBalance(position, Kilograms.Positive(10.125m))],
+            new InventoryLabelMovementTimelineV1(label.Id, [], false));
     }
 
     private static InventoryLabelGenealogyEdgeV1 Edge(
@@ -312,6 +353,26 @@ public sealed class InventoryLabelDetailTests
         $"LBL-{output:N}",
         "1",
         outputQuantityKg);
+
+    private static InventoryLabelMovementV1 Movement(MaterialLabel label, DateTimeOffset occurredAt) => new(
+        Guid.NewGuid(),
+        nameof(StockMovementKind.Receipt),
+        occurredAt,
+        "inventory.opening-count",
+        Guid.NewGuid(),
+        Guid.NewGuid(),
+        nameof(StockSourceGrain.Line),
+        [new InventoryLabelMovementLineV1(
+            1,
+            nameof(StockDirection.In),
+            nameof(StockPartyKind.Company),
+            Company,
+            nameof(StockPartyKind.Company),
+            Company,
+            Guid.NewGuid(),
+            label.ProductId,
+            nameof(BlockState.Free),
+            "12.5")]);
 
     private sealed class World
     {
