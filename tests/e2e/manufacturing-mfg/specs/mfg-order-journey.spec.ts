@@ -149,7 +149,10 @@ test.describe('MFG order screen (real API, real SQL)', () => {
 
       await openOrder(page, arranged.orderId)
       await expect(page.getByText(process, { exact: true })).toBeVisible()
-      await fillIssue(page, arranged.rollId, '1000')
+      // Keep part of the company-owned parent label at its source position while recording the
+      // derived output. A full issue legitimately leaves no company-owned position for the UI's
+      // Inventory ownership admission to prove.
+      await fillIssue(page, arranged.rollId, '500')
       const issuePost = page.waitForRequest((request) =>
         request.url().endsWith(`/orders/${arranged.orderId}/input-issues`) && request.method() === 'POST')
       const issueResponse = page.waitForResponse((response) =>
@@ -159,7 +162,7 @@ test.describe('MFG order screen (real API, real SQL)', () => {
       expect((await issuePost).postDataJSON()).toMatchObject({
         expectedVersion: arranged.version,
         parentRollId: arranged.rollId,
-        kg: '1000',
+        kg: '500',
       })
       await expect(page.getByText('Kaydedildi', { exact: true })).toBeVisible()
 
@@ -180,7 +183,7 @@ test.describe('MFG order screen (real API, real SQL)', () => {
         .fill(`SYN-MFG-${process.toUpperCase()}-${arranged.orderId.replaceAll('-', '')}`)
       await page.getByRole('combobox', { name: 'İlk stok durumu', exact: true })
         .selectOption(env.seed.output.initialBlock)
-      await kgField(page).fill('1000')
+      await kgField(page).fill('500')
 
       const outputPost = page.waitForRequest((request) =>
         request.url().endsWith(`/orders/${arranged.orderId}/outputs`) && request.method() === 'POST')
@@ -194,7 +197,7 @@ test.describe('MFG order screen (real API, real SQL)', () => {
         outputClass: 'GoodProduct',
         productId: env.seed.output.productId,
         locationId: env.seed.output.locationId,
-        kg: '1000',
+        kg: '500',
       })
       await expect(page.getByText('Kaydedildi', { exact: true })).toBeVisible()
 
@@ -218,8 +221,8 @@ test.describe('MFG order screen (real API, real SQL)', () => {
         version: 4,
         rolls: [{
           parentRollId: arranged.rollId,
-          issuedKg: '1000',
-          outputsKg: { GoodProduct: '1000' },
+          issuedKg: '500',
+          outputsKg: { GoodProduct: '500' },
           unexplainedKg: '0',
           isFullyAccounted: true,
         }],
