@@ -19,7 +19,7 @@ namespace GoymenERP.Api.Endpoints;
 /// Location (and again on the same attempt, with the replay headers, ADR-011 §4); POST issue and POST
 /// load → 200 with the instruction after the transition; a recorded terminal refusal (409) replays with
 /// the same headers (§7). Problems carry <c>code</c>, <c>correlationId</c> and field <c>errors</c>;
-/// platform 401/403/404 and every 503 stay code-less. Definite shipment and delivery have no route (D3, LOG-5).
+/// platform 401/403/404 and every 503 stay code-less. Definite shipment and delivery use the line-scoped routes mapped below (D3, LOG-5).
 /// </summary>
 public static class LogisticsEndpoints
 {
