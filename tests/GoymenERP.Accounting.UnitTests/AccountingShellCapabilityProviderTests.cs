@@ -13,15 +13,16 @@ namespace GoymenERP.Accounting.UnitTests;
 public sealed class AccountingShellCapabilityProviderTests
 {
     [Fact]
-    public void Only_accepted_screens_are_published_and_the_journal_detail_and_trial_balance_stay_staged()
+    public void The_journal_detail_and_trial_balance_are_published_and_the_reversal_actions_stay_staged()
     {
         var declarations = new AccountingShellCapabilityProvider().GetDeclarations();
 
-        Assert.Equal(11, declarations.Count);
-        // ACC-V0c: the flip publishes exactly what the acc01 acceptance walked — the period list, its propose
-        // screen, the approve and close controls, the M-04 list and the M-01 queues.
+        Assert.Equal(13, declarations.Count);
+        // ACC-V0c published what acc01 walked; the ACC-V1 reversal slice adds the journal DETAIL and M-06, whose real
+        // read routes exist and which acc01 ACC01-09 walks over the synthetic posted-journal fixture.
         Assert.Equal(
             [
+                AccountingShellCapabilityProvider.JournalDetailCapabilityId,
                 AccountingShellCapabilityProvider.JournalListCapabilityId,
                 AccountingShellCapabilityProvider.NormalDraftApproveCapabilityId,
                 AccountingShellCapabilityProvider.NormalDraftCreateCapabilityId,
@@ -31,17 +32,18 @@ public sealed class AccountingShellCapabilityProviderTests
                 AccountingShellCapabilityProvider.PeriodListCapabilityId,
                 AccountingShellCapabilityProvider.PeriodProposeCapabilityId,
                 AccountingShellCapabilityProvider.PostingQueuesCapabilityId,
+                AccountingShellCapabilityProvider.TrialBalanceCapabilityId,
             ],
             declarations.Where(declaration => declaration.ImplementationAvailable)
                 .Select(declaration => declaration.CapabilityId).Order(StringComparer.Ordinal).ToArray());
-        // The journal DETAIL is the one route acc01 never opened (its seed writes nothing and no flow produces a
-        // journal before ACC-V1), so it stays closed until a slice accepts it.
-        var detail = Assert.Single(declarations,
-            item => item.CapabilityId == AccountingShellCapabilityProvider.JournalDetailCapabilityId);
-        Assert.False(detail.ImplementationAvailable);
-        var trialBalance = Assert.Single(declarations,
-            item => item.CapabilityId == AccountingShellCapabilityProvider.TrialBalanceCapabilityId);
-        Assert.False(trialBalance.ImplementationAvailable);
+        // The reversal PROPOSE control is not browser-walked yet, and the APPROVAL screen has no reopen read yet.
+        Assert.All(
+            new[]
+            {
+                AccountingShellCapabilityProvider.JournalReversalProposeCapabilityId,
+                AccountingShellCapabilityProvider.JournalReversalApproveCapabilityId,
+            },
+            id => Assert.False(Assert.Single(declarations, item => item.CapabilityId == id).ImplementationAvailable));
     }
 
     [Fact]
@@ -75,11 +77,18 @@ public sealed class AccountingShellCapabilityProviderTests
                 ShellCapabilityRoutePrecedence.Static, [AccountingPermissionManifestV1.PostingQueuesRead]),
             ("accounting.trial-balance", "accounting.trial-balance", "/muhasebe/mizan", "M-06",
                 ShellCapabilityRoutePrecedence.Static, [AccountingPermissionManifestV1.JournalsRead]),
+            ("accounting.journal-reversals.propose", "accounting.journals.detail", "/muhasebe/fisler/:journalId", "M-04-DETAIL",
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
+                [AccountingPermissionManifestV1.JournalsRead, AccountingJournalReversalPermissionNamesV1.Propose]),
+            ("accounting.journal-reversals.approve", "accounting.journal-reversals.approve", "/muhasebe/ters-kayit-onay/:proposalId",
+                "M-04-REVERSAL-APPROVE", ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
+                [AccountingJournalReversalPermissionNamesV1.Approve]),
         ];
 
         Assert.Equal(expected.Select(item => item.Capability).Order(StringComparer.Ordinal), byId.Keys.Order(StringComparer.Ordinal));
         var ownerPermissions = AccountingPermissionManifestV1.All
             .Concat(NormalJournalPermissionNamesV1.All)
+            .Concat([AccountingJournalReversalPermissionNamesV1.Propose, AccountingJournalReversalPermissionNamesV1.Approve])
             .ToHashSet(StringComparer.Ordinal);
 
         foreach (var item in expected)
@@ -115,7 +124,34 @@ public sealed class AccountingShellCapabilityProviderTests
                 control.RequiredPermissions.ToHashSet(StringComparer.Ordinal));
         }
 
-        Assert.Equal(2, declarations.Count(item => item.ParentCapabilityId is not null));
+        Assert.Equal(3, declarations.Count(item => item.ParentCapabilityId is not null));
+    }
+
+    [Fact]
+    public void The_reversal_proposal_is_a_control_of_the_journal_detail_and_the_approval_its_own_route()
+    {
+        var declarations = new AccountingShellCapabilityProvider().GetDeclarations();
+        var detail = Assert.Single(declarations,
+            item => item.CapabilityId == AccountingShellCapabilityProvider.JournalDetailCapabilityId);
+        var propose = Assert.Single(declarations,
+            item => item.CapabilityId == AccountingShellCapabilityProvider.JournalReversalProposeCapabilityId);
+        Assert.Equal(detail.CapabilityId, propose.ParentCapabilityId);
+        Assert.Equal(propose with
+            {
+                CapabilityId = detail.CapabilityId,
+                ParentCapabilityId = null,
+                RequiredPermissions = detail.RequiredPermissions,
+                ImplementationAvailable = detail.ImplementationAvailable,
+            },
+            detail);
+        Assert.Superset(detail.RequiredPermissions.ToHashSet(StringComparer.Ordinal),
+            propose.RequiredPermissions.ToHashSet(StringComparer.Ordinal));
+        // Maker ≠ checker at the declaration level too: proposing never carries the approve name and vice versa.
+        Assert.DoesNotContain(AccountingJournalReversalPermissionNamesV1.Approve, propose.RequiredPermissions);
+        var approve = Assert.Single(declarations,
+            item => item.CapabilityId == AccountingShellCapabilityProvider.JournalReversalApproveCapabilityId);
+        Assert.Null(approve.ParentCapabilityId);
+        Assert.Equal([AccountingJournalReversalPermissionNamesV1.Approve], approve.RequiredPermissions);
     }
 
     [Fact]
@@ -123,7 +159,7 @@ public sealed class AccountingShellCapabilityProviderTests
     {
         var routes = new AccountingShellCapabilityProvider().GetDeclarations().Where(item => item.ParentCapabilityId is null).ToArray();
 
-        Assert.Equal(["M-01", "M-04", "M-04-APPROVE", "M-04-DETAIL", "M-04-DRAFT", "M-04-NEW", "M-06", "M-07", "M-07-NEW"], routes.Select(item => item.ScreenId).Order(StringComparer.Ordinal));
+        Assert.Equal(["M-01", "M-04", "M-04-APPROVE", "M-04-DETAIL", "M-04-DRAFT", "M-04-NEW", "M-04-REVERSAL-APPROVE", "M-06", "M-07", "M-07-NEW"], routes.Select(item => item.ScreenId).Order(StringComparer.Ordinal));
     }
 
     [Fact]

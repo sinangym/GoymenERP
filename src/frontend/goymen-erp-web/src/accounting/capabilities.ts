@@ -35,6 +35,10 @@ export const ACCOUNTING_CAPABILITY = {
   postingQueues: 'accounting.posting-queues',
   /** M-06 Mizan — posted journal aggregates, read-only. */
   trialBalance: 'accounting.trial-balance',
+  /** ACC-V1 — the reversal proposal control of the journal detail (not a route; propose only, never approve). */
+  journalReversalPropose: 'accounting.journal-reversals.propose',
+  /** ACC-V1 — approve ANOTHER person's pending reversal proposal (maker ≠ checker). */
+  journalReversalApprove: 'accounting.journal-reversals.approve',
 } as const
 
 export type AccountingCapabilityId = (typeof ACCOUNTING_CAPABILITY)[keyof typeof ACCOUNTING_CAPABILITY]
@@ -50,6 +54,7 @@ export const ACCOUNTING_ROUTE = {
   normalDraftApprove: '/muhasebe/normal-fis-onay/:draftId',
   postingQueues: '/muhasebe/kontrol',
   trialBalance: '/muhasebe/mizan',
+  journalReversalApprove: '/muhasebe/ters-kayit-onay/:proposalId',
 } as const
 
 export const journalDetailPath = (journalId: string) => `/muhasebe/fisler/${encodeURIComponent(journalId)}`
@@ -62,3 +67,6 @@ export const normalDraftApprovalPath = (draftId: string) =>
 
 export const periodJournalsPath = (periodId: string) =>
   `/muhasebe/fisler?${new URLSearchParams({ periodId }).toString()}`
+
+export const journalReversalApprovalPath = (proposalId: string) =>
+  `/muhasebe/ters-kayit-onay/${encodeURIComponent(proposalId)}`
