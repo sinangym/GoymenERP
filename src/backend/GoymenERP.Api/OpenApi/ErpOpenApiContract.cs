@@ -680,12 +680,14 @@ public static partial class ErpOpenApiContract
             AddInventoryPhysicalAllocationReadParameters(operation);
         }
 
-        if (string.Equals(operation.OperationId, "GetInventoryProductCandidatesV1", StringComparison.Ordinal))
+        if (operation.OperationId is "GetInventoryProductCandidatesV1"
+            or "GetManufacturingOutputProductCandidatesV1")
         {
             AddInventoryProductCandidateParameters(operation);
         }
 
-        if (string.Equals(operation.OperationId, "GetInventoryLocationCandidatesV1", StringComparison.Ordinal))
+        if (operation.OperationId is "GetInventoryLocationCandidatesV1"
+            or "GetManufacturingOutputLocationCandidatesV1")
         {
             AddInventoryLocationCandidateParameters(operation);
         }

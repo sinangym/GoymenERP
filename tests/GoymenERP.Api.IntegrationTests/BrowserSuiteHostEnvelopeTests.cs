@@ -153,6 +153,8 @@ public sealed class BrowserSuiteHostEnvelopeTests
                 ["planCreateRollCode"] = "SYN-MFG-ROLL-7",
                 ["planReplayRollCode"] = "SYN-MFG-ROLL-8",
                 ["planRefusalRollCode"] = "SYN-MFG-ROLL-9",
+                ["outputUiRollId"] = "10000000-0000-0000-0000-000000000015",
+                ["outputUiRollCode"] = "SYN-MFG-ROLL-10",
                 ["outputProductVersion"] = "2",
                 ["outputRequiredDocuments"] = "[]",
                 ["outputOwnerKind"] = "Company",
@@ -165,6 +167,7 @@ public sealed class BrowserSuiteHostEnvelopeTests
     [Theory]
     [InlineData("issueRollCode", "SYN-MFG-ROLL-3")]
     [InlineData("planRefusalRollCode", "SYN-MFG-ROLL-10")]
+    [InlineData("outputUiRollCode", "SYN-MFG-ROLL-11")]
     [InlineData("outputProductVersion", "02")]
     [InlineData("outputRequiredDocuments", "[\"MTC\"]")]
     [InlineData("outputOwnerKind", "Counterparty")]
@@ -178,7 +181,19 @@ public sealed class BrowserSuiteHostEnvelopeTests
         Assert.Throws<InvalidOperationException>(() => BrowserSuiteSeedOutputValidator.Validate(
             "mfg",
             new Dictionary<string, string> { [key] = value },
-            new HashSet<string>(StringComparer.Ordinal)));
+                    new HashSet<string>(StringComparer.Ordinal)));
+    }
+
+    [Theory]
+    [InlineData("10000000-0000-0000-0000-000000000015")]
+    [InlineData("mfg-recorder")]
+    public void Mfg_output_validation_does_not_accept_guid_or_actor_fallback_for_output_ui_code(
+        string value)
+    {
+        Assert.Throws<InvalidOperationException>(() => BrowserSuiteSeedOutputValidator.Validate(
+            "mfg",
+            new Dictionary<string, string> { ["outputUiRollCode"] = value },
+            new HashSet<string>(["mfg-recorder"], StringComparer.Ordinal)));
     }
 
     [Fact]

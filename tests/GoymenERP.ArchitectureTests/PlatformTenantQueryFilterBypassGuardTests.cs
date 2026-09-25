@@ -61,7 +61,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // opinion about whether a change is semantic. Any edit to a pinned file, comment included, is re-pinned in
     // the same push.
     private const string ReviewedOpenApiStartupFingerprint =
-        "b50292815cda1ab53eccaf297a2097475c4451d92636242e87f09ec508d47078";
+        "e3008f69f6f492101d541df3fd21df7dc75d8b018016400ef54807e555fee003";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedIdentityReconcilerPath =

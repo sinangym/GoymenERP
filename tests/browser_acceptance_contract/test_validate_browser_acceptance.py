@@ -111,14 +111,16 @@ class WorkflowTests(unittest.TestCase):
             "planReplayRollCode": "SYN-MFG-ROLL-8",
             "planRefusalRollId": "10000000-0000-0000-0000-000000000012",
             "planRefusalRollCode": "SYN-MFG-ROLL-9",
-            "outputProductId": "10000000-0000-0000-0000-000000000013",
+            "outputUiRollId": "10000000-0000-0000-0000-000000000013",
+            "outputUiRollCode": "SYN-MFG-ROLL-10",
+            "outputProductId": "10000000-0000-0000-0000-000000000014",
             "outputProductVersion": "1",
             "outputRequiredDocuments": "[]",
             "outputOwnerKind": "Company",
             "outputOwnerId": company_id,
             "outputCustodianKind": "Company",
             "outputCustodianId": company_id,
-            "outputLocationId": "10000000-0000-0000-0000-000000000014",
+            "outputLocationId": "10000000-0000-0000-0000-000000000015",
             "outputInitialBlock": "Free",
         }
 
@@ -145,6 +147,7 @@ class WorkflowTests(unittest.TestCase):
     def test_mfg_fixture_output_rejects_noncanonical_values(self):
         invalid_values = {
             "issueRollCode": "SYN-MFG-ROLL-02",
+            "outputUiRollCode": "SYN-MFG-ROLL-11",
             "outputProductVersion": "0",
             "outputRequiredDocuments": "[ ]",
             "outputOwnerKind": "Counterparty",
@@ -171,6 +174,7 @@ class WorkflowTests(unittest.TestCase):
         scalar_keys = {
             "issueRollCode", "replayRollCode", "conflictRollCode", "listRollCode",
             "closeRollCode", "planCreateRollCode", "planReplayRollCode", "planRefusalRollCode",
+            "outputUiRollCode",
             "outputProductVersion", "outputRequiredDocuments", "outputOwnerKind",
             "outputCustodianKind", "outputInitialBlock",
         }

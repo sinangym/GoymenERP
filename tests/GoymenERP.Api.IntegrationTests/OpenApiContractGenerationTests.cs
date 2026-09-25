@@ -224,6 +224,25 @@ public sealed partial class OpenApiContractGenerationTests
                 "query:orderUnitId:true:type:string;format:uuid",
                 "query:effectiveOn:true:type:string;format:date",
             ]),
+        new("get", "/api/v1/manufacturing/references/output-products",
+            "GetManufacturingOutputProductCandidatesV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json",
+                "503:application/problem+json"),
+            ParameterValues:
+            [
+                "query:q:false:type:string",
+                "query:effectiveOn:true:type:string;format:date",
+                "query:limit:false:type:integer;format:int32",
+            ]),
+        new("get", "/api/v1/manufacturing/references/output-locations",
+            "GetManufacturingOutputLocationCandidatesV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json",
+                "503:application/problem+json"),
+            ParameterValues:
+            [
+                "query:q:false:type:string",
+                "query:limit:false:type:integer;format:int32",
+            ]),
         new("post", "/api/v1/manufacturing/plans", "SaveManufacturingPlanV1",
             AuthenticatedResponses("201:application/json", "400:application/problem+json", "404:application/problem+json", "415:", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
             "#/components/schemas/SavePlanRequestV1"),
@@ -512,6 +531,10 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetSalesCurrencyReferenceV1"] = "ref:SalesCurrencyReferenceV1",
             ["GetSalesProductReferenceV1"] = "ref:SalesProductReferenceV1",
             ["GetSalesProductCandidatesV1"] = "ref:ProductSalesCandidatesV1",
+            ["GetManufacturingOutputProductCandidatesV1"] =
+                "ref:ManufacturingOutputProductCandidatesV1",
+            ["GetManufacturingOutputLocationCandidatesV1"] =
+                "ref:ManufacturingOutputLocationCandidatesV1",
             ["SaveManufacturingPlanV1"] = "ref:PlanViewV1",
             ["GetManufacturingPlanV1"] = "ref:PlanViewV1",
             ["ApproveManufacturingPlanV1"] = "ref:PlanViewV1",
@@ -626,6 +649,8 @@ public sealed partial class OpenApiContractGenerationTests
         "GetSalesCurrencyReferenceV1",
         "GetSalesProductReferenceV1",
         "GetSalesProductCandidatesV1",
+        "GetManufacturingOutputProductCandidatesV1",
+        "GetManufacturingOutputLocationCandidatesV1",
         "SaveManufacturingPlanV1",
         "GetManufacturingPlanV1",
         "ApproveManufacturingPlanV1",
@@ -1108,6 +1133,10 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetSalesProductReferenceV1:409"] = ["product_selection_changed"],
             ["GetSalesProductReferenceV1:422"] = ["unsupported_product", "unsupported_unit"],
             ["GetSalesProductCandidatesV1:400"] = ["validation_failed"],
+            ["GetManufacturingOutputProductCandidatesV1:400"] =
+                [GoymenERP.Modules.Manufacturing.Application.ManufacturingOutputSelectionCodesV1.InvalidQuery],
+            ["GetManufacturingOutputLocationCandidatesV1:400"] =
+                [GoymenERP.Modules.Manufacturing.Application.ManufacturingOutputSelectionCodesV1.InvalidQuery],
             ["GetPurchasingProductCandidatesV1:400"] = ["validation_failed"],
             ["GetCounterpartyCompanyAccountLinkCandidatesV1:409"] =
                 ["client_contract_required", "client_contract_unsupported"],
@@ -1892,6 +1921,29 @@ public sealed partial class OpenApiContractGenerationTests
                     ["field", "code"],
                     ("field", "type:string"),
                     ("code", "type:string")),
+                ["ManufacturingOutputProductCandidatesV1"] = ObjectSchema(
+                    ["items", "searchWindowFull"],
+                    ("items", "type:array;items:ref:ManufacturingOutputProductCandidateV1"),
+                    ("searchWindowFull", "type:boolean")),
+                ["ManufacturingOutputProductCandidateV1"] = ObjectSchema(
+                    ["productId", "productVersion", "code", "name", "stockUnitCode"],
+                    ("productId", "type:string;format:uuid"),
+                    ("productVersion", "type:string"),
+                    ("code", "type:string"),
+                    ("name", "type:string"),
+                    ("stockUnitCode", "type:string")),
+                ["ManufacturingOutputLocationCandidatesV1"] = ObjectSchema(
+                    ["items", "searchWindowFull"],
+                    ("items", "type:array;items:ref:ManufacturingOutputLocationCandidateV1"),
+                    ("searchWindowFull", "type:boolean")),
+                ["ManufacturingOutputLocationCandidateV1"] = ObjectSchema(
+                    ["locationId", "locationCode", "locationName", "siteId", "siteCode", "siteName"],
+                    ("locationId", "type:string;format:uuid"),
+                    ("locationCode", "type:string"),
+                    ("locationName", "type:string"),
+                    ("siteId", "type:string;format:uuid"),
+                    ("siteCode", "type:string"),
+                    ("siteName", "type:string")),
                 ["OrderViewV1"] = ObjectSchema(
                     ["orderId", "companyId", "planId", "workCenterId", "process", "status", "version", "target", "remainingTarget", "rolls", "costStatus", "closedByUserId", "closedAtUtc"],
                     ("orderId", "type:string;format:uuid"),
@@ -3318,9 +3370,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(118, operations.Count);
+        Assert.Equal(120, operations.Count);
         Assert.Equal(
-            118,
+            120,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());
