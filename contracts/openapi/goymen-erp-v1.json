@@ -32184,11 +32184,10 @@
             },
             "x-erp-problem-codes": [
               "accounting_invalid_reference",
-              "accounting_period_already_closed",
-              "accounting_period_invalid",
-              "accounting_period_not_open",
-              "accounting_period_not_proposed",
-              "accounting_value_does_not_fit"
+              "accounting_journal_reversal_source_journal_not_found",
+              "accounting_period_closed",
+              "accounting_period_does_not_cover_date",
+              "accounting_reversal_of_reversal"
             ]
           },
           "503": {
@@ -32523,11 +32522,10 @@
             },
             "x-erp-problem-codes": [
               "accounting_invalid_reference",
-              "accounting_period_already_closed",
-              "accounting_period_invalid",
-              "accounting_period_not_open",
-              "accounting_period_not_proposed",
-              "accounting_value_does_not_fit"
+              "accounting_journal_reversal_source_journal_not_found",
+              "accounting_period_closed",
+              "accounting_period_does_not_cover_date",
+              "accounting_reversal_of_reversal"
             ]
           },
           "503": {
