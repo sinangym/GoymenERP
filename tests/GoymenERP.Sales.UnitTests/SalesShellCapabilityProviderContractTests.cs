@@ -81,10 +81,12 @@ public sealed class SalesShellCapabilityProviderContractTests
         // K3 P2 (Sinan 5748258299; D5 5749046401): the SEPARATE, NARROW price-read name — the draft read does not confer it,
         // and it confers nothing adjacent (no cost, margin, bank or Finance read).
         Assert.Equal("sales.orders.price.read", SalesPermissionManifestV1.OrdersPriceRead);
-        Assert.Equal(5, SalesPermissionManifestV1.Names.Count);
+        // DEC-SAL-003: the SEPARATE planning/shipping name; the create, approve and price names do not confer it.
+        Assert.Equal("sales.orders.delivery-schedule.write", SalesPermissionManifestV1.OrdersDeliveryScheduleWrite);
+        Assert.Equal((7, 6), (SalesPermissionManifestV1.Version, SalesPermissionManifestV1.Names.Count));
         Assert.Equal(new SalesDraftServiceBindings(),
             new SalesDraftServiceBindings(SalesPermissionManifestV1.DraftsCreate, SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersApprove,
-                SalesPermissionManifestV1.OrdersPriceWrite, SalesPermissionManifestV1.OrdersPriceRead));
+                SalesPermissionManifestV1.OrdersPriceWrite, SalesPermissionManifestV1.OrdersPriceRead, SalesPermissionManifestV1.OrdersDeliveryScheduleWrite));
     }
 
     private static string FindRepositoryRoot()

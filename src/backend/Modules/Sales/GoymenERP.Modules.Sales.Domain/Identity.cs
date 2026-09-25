@@ -102,6 +102,17 @@ public static class SalesRuleCodes
     /// <summary>A commercial revision that changes no value is refused: an approval is never discarded for nothing (ASSUMPTION-SALESP-5).</summary>
     public const string RevisionNoChange = "sales_revision_no_change";
 
+    /// <summary>DEC-SAL-003: a delivery-schedule update must name every current line exactly once and no other line.</summary>
+    public const string ScheduleLinesMismatch = "sales_schedule_lines_mismatch";
+    /// <summary>
+    /// DEC-SAL-003 dates-only scope: a delivery-schedule update names each line's CURRENT slices exactly (same ids,
+    /// none added or removed); the quantities are not re-split. Re-splitting is not in the decision's text and is not
+    /// invented here.
+    /// </summary>
+    public const string ScheduleSlicesMismatch = "sales_schedule_slices_mismatch";
+    /// <summary>A delivery-schedule update that changes no date is refused: no empty audited change is recorded.</summary>
+    public const string ScheduleNoChange = "sales_schedule_no_change";
+
     public const string TooManySlices = "sales_too_many_slices";
     public const string DuplicateSliceId = "sales_duplicate_slice_id";
     public const string SliceUnitMismatch = "sales_slice_unit_mismatch";

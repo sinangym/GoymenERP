@@ -34,8 +34,11 @@ import {
   decodeDraftMutation,
   decodeDraftPage,
   decodeDraftRevisions,
+  decodeDeliverySchedules,
   decodeProblem,
   salesDraftCommercialRevisionPath,
+  salesDraftDeliverySchedulePath,
+  salesDraftDeliverySchedulesPath,
   salesDraftCommandPath,
   salesDraftDetailPath,
   salesDraftRevisionsPath,
@@ -45,6 +48,8 @@ import {
   type DeliverySlice,
   type DraftCreateRequest,
   type DraftCommercialRevisionRequest,
+  type DraftDeliveryScheduleRequest,
+  type DeliverySchedules,
   type DraftDetail,
   type DraftMutation,
   type DraftPage,
@@ -157,6 +162,19 @@ export async function fetchDraftRevisions(
   // Unlike detail, this wire has no company/id member to compare. Keep the read
   // tied to its request and context namespace; never fabricate a response binding.
   const history = decodeDraftRevisions(raw.body)
+  return history === null ? { type: 'malformed' } : { type: 'ok-single', data: history }
+}
+
+/** DEC-SAL-003: the schedule history, read-only under the draft read; company filtering stays on the server. */
+export async function fetchDraftDeliverySchedules(
+  draftId: string,
+  companyId: string,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<DeliverySchedules>> {
+  const raw = await request(salesDraftDeliverySchedulesPath(draftId), { headers: headers(companyId) }, signal)
+  if ('failure' in raw) return readFailure(raw.failure)
+  if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
+  const history = decodeDeliverySchedules(raw.body)
   return history === null ? { type: 'malformed' } : { type: 'ok-single', data: history }
 }
 
@@ -551,6 +569,49 @@ export async function sendDraftCommercialRevision(
 ): Promise<OrderCommandOutcome<DraftMutation>> {
   const raw = await request(
     salesDraftCommercialRevisionPath(context.draftId),
+    {
+      method: 'POST',
+      headers: {
+        ...headers(context.companyId),
+        'Content-Type': 'application/json',
+        'Idempotency-Key': context.idempotencyKey,
+      },
+      body: JSON.stringify(payload),
+    },
+    signal,
+  )
+  if ('failure' in raw) {
+    if (raw.failure === 'aborted') return { type: 'aborted' }
+    if (raw.failure === 'offline') return { type: 'offline' }
+    return { type: 'network-error' }
+  }
+  if (raw.status !== STATE_COMMAND_STATUS) {
+    if (raw.status >= 200 && raw.status < 300) return { type: 'malformed' }
+    return { type: 'http', status: raw.status, problem: decodeProblem(raw.body, raw.status) }
+  }
+  const mutation = decodeDraftMutation(raw.body)
+  if (
+    mutation === null ||
+    mutation.isReplay !== raw.replayed ||
+    mutation.detail.draft.id !== context.draftId ||
+    mutation.detail.draft.companyId !== context.companyId
+  ) {
+    return { type: 'malformed' }
+  }
+  return { type: 'succeeded', data: mutation }
+}
+
+/**
+ * DEC-SAL-003: the delivery-schedule update — the commercial revision's keyed-attempt and strict response rules. Success is
+ * the draft after the change, of this draft and this company, with the replay header and `isReplay` agreeing.
+ */
+export async function sendDraftDeliverySchedule(
+  payload: DraftDeliveryScheduleRequest,
+  context: CommandContext,
+  signal?: AbortSignal,
+): Promise<OrderCommandOutcome<DraftMutation>> {
+  const raw = await request(
+    salesDraftDeliverySchedulePath(context.draftId),
     {
       method: 'POST',
       headers: {

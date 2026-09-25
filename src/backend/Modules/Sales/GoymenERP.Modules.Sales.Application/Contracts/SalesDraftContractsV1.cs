@@ -59,6 +59,39 @@ public sealed record SalesDraftLineCommercialV1(Guid LineId, string? UnitPrice =
 /// </summary>
 public sealed record SalesDraftCommercialRevisionRequest(string ExpectedVersion, IReadOnlyList<SalesDraftLineCommercialV1> Lines);
 
+/// <summary>DEC-SAL-003: one existing slice's new requested delivery date, addressed by its client slice id.</summary>
+public sealed record SalesDraftSliceScheduleV1(Guid SliceId, DateOnly RequestedDeliveryDate);
+
+/// <summary>
+/// DEC-SAL-003: one line's new delivery dates — the line's own date (explicit null = none) and a date for EVERY slice the
+/// line already carries (an empty list for a line without slices). Dates only: no quantity, unit or new slice.
+/// </summary>
+public sealed record SalesDraftLineScheduleV1(Guid LineId, DateOnly? RequestedDeliveryDate, IReadOnlyList<SalesDraftSliceScheduleV1> Slices);
+
+/// <summary>
+/// DEC-SAL-003: POST …/{id}/delivery-schedule — the expected concurrency version, the header's requested delivery date
+/// (explicit null = none) and EVERY line exactly once with its dates. Strict: every member present, no other member.
+/// </summary>
+public sealed record SalesDraftDeliveryScheduleRequest(
+    string ExpectedVersion, DateOnly? RequestedDeliveryDate, IReadOnlyList<SalesDraftLineScheduleV1> Lines);
+
+/// <summary>A slice as it stood in one delivery schedule: identity, (unchanged) quantity text and date.</summary>
+public sealed record SalesDraftSliceScheduleViewV1(Guid SliceId, string Quantity, DateOnly RequestedDeliveryDate);
+
+/// <summary>A line's dates in one delivery schedule.</summary>
+public sealed record SalesDraftLineScheduleViewV1(Guid LineId, int LineNo, DateOnly? RequestedDeliveryDate,
+    IReadOnlyList<SalesDraftSliceScheduleViewV1> Slices);
+
+/// <summary>
+/// DEC-SAL-003 ("auditlidir"): one delivery schedule of the draft. Schedule 0 is the draft as created (<c>changedBy</c> and
+/// <c>changedAtUtc</c> null: nobody changed it); every later one is a recorded change with its actor and time.
+/// </summary>
+public sealed record SalesDraftDeliveryScheduleV1(int ScheduleNo, string? ChangedBy, DateTimeOffset? ChangedAtUtc,
+    DateOnly? RequestedDeliveryDate, IReadOnlyList<SalesDraftLineScheduleViewV1> Lines);
+
+/// <summary>GET …/{id}/delivery-schedules: schedule 0 then every recorded change, oldest first; under the draft read.</summary>
+public sealed record SalesOrderDraftDeliverySchedulesResponse(IReadOnlyList<SalesDraftDeliveryScheduleV1> Items);
+
 /// <summary>
 /// K3 P2 (Sinan 5748258299): whether the caller may see a line's commercial fields. NEVER null, and that is the
 /// load-bearing part: an absent price is indistinguishable from a price of nothing and from a price the caller is
@@ -162,6 +195,12 @@ public static class SalesDraftApiV1
     public const string CommercialRevisionPath = "/api/v1/sales/drafts/{id}/commercial-revision";
     public const string RevisionsPath = "/api/v1/sales/drafts/{id}/revisions";
 
+    // DEC-SAL-003: the delivery-schedule update (200 with the detail after the change; same-key replay 200 +
+    // `Idempotency-Replayed`) and the read of the schedule history. The detail wire is unchanged: it carries the
+    // CURRENT dates; the history lives on its own route so the S-04 decoder (exact members) keeps working.
+    public const string DeliverySchedulePath = "/api/v1/sales/drafts/{id}/delivery-schedule";
+    public const string DeliverySchedulesPath = "/api/v1/sales/drafts/{id}/delivery-schedules";
+
     /// <summary>The wire text of a revision number (<c>Rev.0</c>, <c>Rev.1</c>, …).</summary>
     public static string RevisionText(int revision) => $"Rev.{revision.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
 }
@@ -243,6 +282,36 @@ public static class SalesDraftJson
                 throw new JsonException("Invalid line fields.");
             if (line.UnitPrice is not null) RequireDecimalShape(line.UnitPrice, positive: false);
             if (line.DiscountPercent is not null) RequireDecimalShape(line.DiscountPercent, positive: false);
+        }
+
+        return request;
+    }
+
+    /// <summary>
+    /// DEC-SAL-003: the strict body of a delivery-schedule update — the expected version as on every state command, the
+    /// header date present (null allowed), and 1..500 lines each named once, each with its slices named once (at most
+    /// 500). The domain decides the rest (every current line and exactly its current slices, the no-change refusal).
+    /// </summary>
+    public static SalesDraftDeliveryScheduleRequest ReadDeliverySchedule(string json)
+    {
+        var request = JsonSerializer.Deserialize<SalesDraftDeliveryScheduleRequest>(json, Options)
+            ?? throw new JsonException("Request body is required.");
+        if (string.IsNullOrEmpty(request.ExpectedVersion) || request.ExpectedVersion.Length > 19
+            || !Regex.IsMatch(request.ExpectedVersion, "\\A[1-9][0-9]*\\z"))
+            throw new JsonException("Invalid expected version.");
+        if (request.Lines is null || request.Lines.Count is < 1 or > 500)
+            throw new JsonException("Invalid schedule lines.");
+        var ids = new HashSet<Guid>();
+        foreach (var line in request.Lines)
+        {
+            if (line is null || line.LineId == Guid.Empty || !ids.Add(line.LineId) || line.Slices is null || line.Slices.Count > 500)
+                throw new JsonException("Invalid schedule line.");
+            var sliceIds = new HashSet<Guid>();
+            foreach (var slice in line.Slices)
+            {
+                if (slice is null || slice.SliceId == Guid.Empty || !sliceIds.Add(slice.SliceId))
+                    throw new JsonException("Invalid schedule slice.");
+            }
         }
 
         return request;

@@ -135,12 +135,24 @@ export interface RecordedCall {
   readonly body: string | null
 }
 
+/** DEC-SAL-003: a valid history holding only schedule 0 (the draft as created, nobody changed it). */
+export const ORIGINAL_SCHEDULE = {
+  items: [{
+    scheduleNo: 0, changedBy: null, changedAtUtc: null, requestedDeliveryDate: null,
+    lines: [{ lineId: '00000000-0000-4000-8000-000000000001', lineNo: 1, requestedDeliveryDate: null, slices: [] }],
+  }],
+}
+
 export interface HarnessConfig {
   readonly capabilities?: readonly string[]
   readonly onList?: (url: string, companyId: string | null) => Response | Promise<Response>
   readonly onDetail?: (url: string, companyId: string | null) => Response | Promise<Response>
   readonly onRevisions?: (url: string, companyId: string | null) => Response | Promise<Response>
   readonly onCreate?: (attempt: number, call: RecordedCall) => Response | Promise<Response>
+  /** DEC-SAL-003: GET `/sales/drafts/{id}/delivery-schedules`; default: schedule 0 only (nothing changed). */
+  readonly onDeliverySchedules?: (url: string, companyId: string | null) => Response | Promise<Response>
+  /** DEC-SAL-003: a POST on `/sales/drafts/{id}/delivery-schedule`. */
+  readonly onDeliverySchedule?: (call: RecordedCall) => Response | Promise<Response>
   /** SALES-A1: a POST on `/sales/drafts/{id}/(submission|approval|rejection)`. */
   readonly onCommand?: (command: string, call: RecordedCall) => Response | Promise<Response>
 }
@@ -172,6 +184,13 @@ export function installFetch(config: HarnessConfig = {}) {
       }
       if (url.includes('/sales/drafts')) {
         const command = /\/sales\/drafts\/[^/?]+\/(submission|approval|rejection|withdrawal)$/.exec(url)?.[1]
+        if (call.method === 'POST' && /\/sales\/drafts\/[^/?]+\/delivery-schedule$/.test(url)) {
+          if (config.onDeliverySchedule === undefined) throw new Error('unexpected delivery-schedule update')
+          return config.onDeliverySchedule(call)
+        }
+        if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/delivery-schedules$/.test(url)) {
+          return config.onDeliverySchedules?.(url, call.companyId) ?? json(ORIGINAL_SCHEDULE)
+        }
         if (call.method === 'POST' && command !== undefined) {
           if (config.onCommand === undefined) throw new Error(`unexpected ${command}`)
           return config.onCommand(command, call)

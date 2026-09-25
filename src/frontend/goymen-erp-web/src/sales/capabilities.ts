@@ -29,9 +29,16 @@ export const SALES_CAPABILITY = {
 /** K3: the commercial-revision CONTROL on S-04; separate from every routed Sales screen. */
 export const SALES_PRICE_WRITE_CAPABILITY = 'sales.orders.price.write' as const
 
+/**
+ * DEC-SAL-003: the planner's delivery-schedule update CONTROL on S-04 (dates only, no re-approval, audited). The shell
+ * publishes it only to an actor holding `sales.orders.delivery-schedule.write` beside the read.
+ */
+export const SALES_DELIVERY_SCHEDULE_WRITE_CAPABILITY = 'sales.orders.delivery-schedule.write' as const
+
 export type SalesCapabilityId =
   | (typeof SALES_CAPABILITY)[keyof typeof SALES_CAPABILITY]
   | typeof SALES_PRICE_WRITE_CAPABILITY
+  | typeof SALES_DELIVERY_SCHEDULE_WRITE_CAPABILITY
 
 export const SALES_ROUTE = {
   list: '/satis/siparisler',

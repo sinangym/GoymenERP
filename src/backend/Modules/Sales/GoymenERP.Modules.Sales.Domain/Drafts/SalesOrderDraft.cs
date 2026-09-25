@@ -185,7 +185,23 @@ public sealed class SalesOrderDraft
     /// </summary>
     public long Version { get; private set; } = 1;
 
-    public SalesDraftHeader Header { get; }
+    /// <summary>The header facts; only its requested delivery date may move, through <see cref="RescheduleDelivery"/> (DEC-SAL-003).</summary>
+    public SalesDraftHeader Header { get; private set; }
+
+    private readonly List<DeliveryScheduleSnapshot> deliverySchedules = [];
+
+    /// <summary>Schedule 0: the delivery dates as the draft was created; captured before the first recorded change.</summary>
+    private DeliveryScheduleSnapshot? originalSchedule;
+
+    /// <summary>
+    /// DEC-SAL-003: the recorded delivery-schedule changes, oldest first (schedule 1, 2, ...); empty until a planner moved a
+    /// date. Each holds the complete dates after its change; the draft's current dates are the last one's.
+    /// </summary>
+    public IReadOnlyList<DeliveryScheduleSnapshot> DeliverySchedules => deliverySchedules.AsReadOnly();
+
+    /// <summary>The schedule history as shown: schedule 0 (as created) followed by every recorded change.</summary>
+    public IReadOnlyList<DeliveryScheduleSnapshot> DeliveryScheduleHistory =>
+        [originalSchedule ?? CurrentSchedule(0, null, null), .. deliverySchedules];
 
     public MoneyProfileSnapshot Money { get; }
 
@@ -579,6 +595,154 @@ public sealed class SalesOrderDraft
         return archived;
     }
 
+    /// <summary>
+    /// DEC-SAL-003 (KILITLI): "Termin üst bilgi, satır ve miktar dilimleriyle izlenir; termin güncellemesi planlama/sevkiyat
+    /// rolündedir ve yeniden onay gerektirmez, ancak auditlidir." A planner moves the requested delivery dates of the
+    /// header, of every line and of every slice the line already carries.
+    /// <list type="bullet">
+    /// <item><b>No re-approval:</b> the approval axis, its facts and the commercial revision do not move; only the
+    /// concurrency version advances (one step), so consumers keyed on the revision (loading, allocation) are untouched.</item>
+    /// <item><b>Dates only:</b> every current line is named exactly once and, for each, exactly its current slice ids; no
+    /// slice is added, removed or re-split, no quantity changes. Re-splitting is not in the decision's text; it is a
+    /// technical scope limit here, not a policy.</item>
+    /// <item><b>Any state but Withdrawn:</b> the decision names no state; a withdrawn draft is terminal at every mutation
+    /// entry (D2). A change that moves no date is refused (nothing empty is recorded).</item>
+    /// </list>
+    /// Returns the recorded schedule (the complete dates after the change) for the store to append.
+    /// </summary>
+    public DeliveryScheduleSnapshot RescheduleDelivery(long expectedVersion, DateOnly? requestedDeliveryDate,
+        IReadOnlyList<LineScheduleInput> inputs, string actorId, DateTimeOffset now)
+    {
+        RequireVersion(expectedVersion);
+        var actor = RequireActor(actorId);
+        ArgumentNullException.ThrowIfNull(inputs);
+        if (State != SalesDraftState.Draft)
+        {
+            throw new SalesRuleException(SalesRuleCodes.DraftNotDraft, "Yalnız taslak değiştirilebilir.");
+        }
+
+        if (ApprovalState == InternalApprovalState.Withdrawn)
+        {
+            throw StateConflict("Geri çekilmiş taslağın termini değiştirilmez.");
+        }
+
+        if (inputs.Count != lines.Count || inputs.Any(input => input is null)
+            || inputs.Select(input => input.LineId).Distinct().Count() != inputs.Count
+            || inputs.Any(input => lines.All(line => line.Id != input.LineId)))
+        {
+            throw new SalesRuleException(SalesRuleCodes.ScheduleLinesMismatch,
+                "Termin güncellemesi taslağın her satırını tam bir kez adlandırır; başka satır adlandıramaz.");
+        }
+
+        var plan = new List<(SalesOrderDraftLine Line, DateOnly? Date, Dictionary<Guid, DateOnly> Slices)>(inputs.Count);
+        foreach (var input in inputs)
+        {
+            var line = lines.Single(candidate => candidate.Id == input.LineId);
+            if (input.Slices is null)
+            {
+                throw new ArgumentException("Termin güncellemesi her satır için dilim listesi ister (boş olabilir).", nameof(inputs));
+            }
+
+            var sliceDates = new Dictionary<Guid, DateOnly>(input.Slices.Count);
+            foreach (var slice in input.Slices)
+            {
+                if (slice is null || !sliceDates.TryAdd(slice.SliceId, slice.RequestedDeliveryDate))
+                {
+                    throw new SalesRuleException(SalesRuleCodes.ScheduleSlicesMismatch,
+                        "Termin güncellemesi satırın her dilimini tam bir kez adlandırır.", line.Id);
+                }
+            }
+
+            if (sliceDates.Count != line.RequestedDeliverySlices.Count
+                || line.RequestedDeliverySlices.Any(slice => !sliceDates.ContainsKey(slice.SliceId)))
+            {
+                throw new SalesRuleException(SalesRuleCodes.ScheduleSlicesMismatch,
+                    "Termin güncellemesi yalnız tarihleri değiştirir: satırın mevcut dilimleri aynen adlandırılır; dilim eklenmez, silinmez, bölünmez.",
+                    line.Id);
+            }
+
+            plan.Add((line, input.RequestedDeliveryDate, sliceDates));
+        }
+
+        var unchanged = Header.RequestedDeliveryDate == requestedDeliveryDate
+            && plan.All(entry => entry.Line.RequestedDeliveryDate == entry.Date
+                && entry.Line.RequestedDeliverySlices.All(slice => entry.Slices[slice.SliceId] == slice.RequestedDeliveryDate));
+        if (unchanged)
+        {
+            throw new SalesRuleException(SalesRuleCodes.ScheduleNoChange, "Termin güncellemesi hiçbir tarihi değiştirmiyor.");
+        }
+
+        originalSchedule ??= CurrentSchedule(0, null, null);
+        Header = Header with { RequestedDeliveryDate = requestedDeliveryDate };
+        foreach (var (line, date, sliceDates) in plan)
+        {
+            line.Reschedule(date, sliceDates);
+        }
+
+        var recorded = CurrentSchedule(deliverySchedules.Count + 1, actor, now.ToUniversalTime());
+        deliverySchedules.Add(recorded);
+        Touch(now);
+        return recorded;
+    }
+
+    /// <summary>
+    /// The store's rebuild of one recorded delivery schedule, oldest first, BEFORE the approval axis (its version floor
+    /// counts one step per schedule). The schedule must be the next number and name exactly the draft's lines and slices
+    /// (ids, positions, quantity texts); its dates are then the draft's current dates. A stored schedule that does not fit
+    /// is refused, not repaired.
+    /// </summary>
+    public void RestoreDeliverySchedule(DeliveryScheduleSnapshot schedule)
+    {
+        ArgumentNullException.ThrowIfNull(schedule);
+        RequireApprovalNotRestored();
+        if (schedule.ScheduleNo != deliverySchedules.Count + 1 || string.IsNullOrWhiteSpace(schedule.ChangedBy)
+            || schedule.ChangedAtUtc is null || schedule.Lines is null || schedule.Lines.Count != lines.Count)
+        {
+            throw new InvalidOperationException("Kayıtlı termin geçmişi taslakla uyuşmuyor.");
+        }
+
+        var plan = new List<(SalesOrderDraftLine Line, LineScheduleSnapshot Stored)>(lines.Count);
+        foreach (var line in lines)
+        {
+            var stored = schedule.Lines.SingleOrDefault(candidate => candidate?.LineId == line.Id);
+            if (stored is null || stored.LineNo != line.LineNo || stored.Slices is null
+                || stored.Slices.Count != line.RequestedDeliverySlices.Count)
+            {
+                throw new InvalidOperationException("Kayıtlı termin satırları taslağın satırlarıyla uyuşmuyor.");
+            }
+
+            for (var index = 0; index < line.RequestedDeliverySlices.Count; index++)
+            {
+                var slice = line.RequestedDeliverySlices[index];
+                var storedSlice = stored.Slices.SingleOrDefault(candidate => candidate?.SliceNo == index + 1);
+                if (storedSlice is null || storedSlice.SliceId != slice.SliceId
+                    || !string.Equals(storedSlice.QuantityText, slice.QuantityText, StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException("Kayıtlı termin dilimleri satırın dilimleriyle uyuşmuyor.");
+                }
+            }
+
+            plan.Add((line, stored));
+        }
+
+        originalSchedule ??= CurrentSchedule(0, null, null);
+        Header = Header with { RequestedDeliveryDate = schedule.RequestedDeliveryDate };
+        foreach (var (line, stored) in plan)
+        {
+            line.Reschedule(stored.RequestedDeliveryDate,
+                stored.Slices.ToDictionary(slice => slice.SliceId, slice => slice.RequestedDeliveryDate));
+        }
+
+        deliverySchedules.Add(schedule);
+    }
+
+    /// <summary>The draft's delivery dates as they stand now, as schedule <paramref name="scheduleNo"/>.</summary>
+    private DeliveryScheduleSnapshot CurrentSchedule(int scheduleNo, string? changedBy, DateTimeOffset? changedAtUtc) =>
+        new(scheduleNo, Header.RequestedDeliveryDate, changedBy, changedAtUtc,
+            [.. lines.Select(line => new LineScheduleSnapshot(line.Id, line.LineNo, line.RequestedDeliveryDate,
+                [.. line.RequestedDeliverySlices.Select((slice, index) =>
+                    new SliceScheduleSnapshot(slice.SliceId, index + 1, slice.QuantityText, slice.RequestedDeliveryDate))]))]);
+
     /// <summary>The store's rebuild of the stored revision number (no transition; a negative number is refused).</summary>
     /// <summary>
     /// D2: who created the draft, as stored — restored by the store (the envelope's actor at the create), never set by
@@ -710,7 +874,9 @@ public sealed class SalesOrderDraft
             _ => 2,
         };
         var archivedTransitions = checked(3L * archivedRevisions.Count);
-        var consistentVersion = storedVersion >= checked(Version + minimumTransitions + archivedTransitions);
+        // DEC-SAL-003: every recorded delivery-schedule change was exactly one step of its own (restored just before this).
+        var scheduleTransitions = (long)deliverySchedules.Count;
+        var consistentVersion = storedVersion >= checked(Version + minimumTransitions + archivedTransitions + scheduleTransitions);
         if (!consistentVersion)
         {
             throw new InvalidOperationException("Kayıtlı sürüm, satırların ve onay geçişlerinin hesabıyla uyuşmuyor.");

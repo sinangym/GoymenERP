@@ -467,6 +467,150 @@ public sealed class SalesDraftService(
         return index < 0 ? "lines" : $"lines[{index}].{member}";
     }
 
+    // ---- delivery schedule (DEC-SAL-003) ---------------------------------------------------------
+
+    /// <summary>
+    /// DEC-SAL-003 (KILITLI): "termin güncellemesi planlama/sevkiyat rolündedir ve yeniden onay gerektirmez, ancak
+    /// auditlidir." Moves the header's, every line's and every existing slice's requested delivery date under the
+    /// command's OWN name (<c>sales.orders.delivery-schedule.write</c>; a missing grant is a plain 403, never recorded).
+    /// The commercial revision's ordering, step for step: the fence (§5) → the expected version's shape → the key's
+    /// replay (§4/§7) → the store reads the draft and runs the last fence right before the mutation → one save (the
+    /// appended schedule, the header's version, the attempt, the audit event with the dates before and after). A stale
+    /// version or a withdrawn draft is the key's TERMINAL 409 (recorded, replayed); a line/slice mismatch or a no-change
+    /// update is a 422 on <c>lines</c> / <c>lines[i].slices</c>; a lost race answers the winner (§8). Nothing is measured
+    /// after the commit (S03). The approval axis and the commercial revision do not move.
+    /// </summary>
+    public async Task<SalesOrderDraftResponse> RescheduleDeliveryAsync(Guid draftId, SalesDraftDeliveryScheduleRequest request,
+        SalesCommandMetadata metadata, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(metadata);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var permission = bindings.DeliverySchedulePermission;
+        var scope = await RequireAsync(permission, cancellationToken);
+        if (!long.TryParse(request.ExpectedVersion, NumberStyles.None, CultureInfo.InvariantCulture, out var expectedVersion) || expectedVersion < 1)
+        {
+            throw new SalesDraftServiceException(400, "validation_failed", [new("expectedVersion", "validation_failed")]);
+        }
+
+        const string commandName = SalesDraftCommands.RescheduleDeliveryV1;
+        var requestHash = SalesDraftRequestHash.Compute(commandName, draftId, request);
+        var envelope = Envelope(scope, metadata, permission!);
+        var replay = await FindReplayAsync(scope, permission, envelope, requestHash, commandName, cancellationToken);
+        if (replay is not null)
+        {
+            return await ReplayedAsync(scope, replay, cancellationToken);
+        }
+
+        if (draftId == Guid.Empty)
+        {
+            throw new SalesDraftServiceException(404, "not_found");
+        }
+
+        var inputs = request.Lines
+            .Select(line => new LineScheduleInput(line.LineId, line.RequestedDeliveryDate,
+                [.. line.Slices.Select(slice => new SliceScheduleInput(slice.SliceId, slice.RequestedDeliveryDate))]))
+            .ToArray();
+        var audit = new SalesDraftStateAudit("sales.order-draft.delivery-rescheduled.v1", "RescheduleDelivery",
+            "Satış sipariş taslağının termin tarihleri güncellendi (DEC-SAL-003; yeniden onay gerekmez)");
+
+        SalesDraftStateResult? result;
+        try
+        {
+            result = await store.RescheduleDeliveryAsync(envelope, requestHash, commandName, draftId,
+                (draft, now) => draft.RescheduleDelivery(expectedVersion, request.RequestedDeliveryDate, inputs, scope.ActorId, now), audit,
+                async writeCancellationToken =>
+                {
+                    scope = await RequireStillAsync(scope, permission, writeCancellationToken);
+                }, cancellationToken);
+        }
+        catch (SalesVersionConflictException exception)
+        {
+            throw await TerminalAsync(scope, envelope, requestHash, new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.VersionConflict,
+                [new("expectedVersion", exception.Code)]), cancellationToken, commandName, draftId);
+        }
+        catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.StateConflict)
+        {
+            throw await TerminalAsync(scope, envelope, requestHash, new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.StateConflict,
+                [new("approvalState", exception.Code)]), cancellationToken, commandName, draftId);
+        }
+        catch (SalesRuleException exception)
+        {
+            throw new SalesDraftServiceException(422, "validation_failed", [new(ScheduleField(request, exception), exception.Code)]);
+        }
+        catch (ArgumentException)
+        {
+            throw new SalesDraftServiceException(400, "validation_failed");
+        }
+        catch (SalesDraftStoreException exception) when (exception.Code == SalesDraftStoreCodes.ConcurrentChange)
+        {
+            var won = await FindReplayAsync(scope, permission, envelope, requestHash, commandName, cancellationToken);
+            if (won is null)
+            {
+                throw Store(exception);
+            }
+
+            return await ReplayedAsync(scope, won, cancellationToken);
+        }
+        catch (SalesDraftStoreException exception)
+        {
+            throw Store(exception);
+        }
+
+        if (result is null)
+        {
+            throw new SalesDraftServiceException(404, "not_found");
+        }
+
+        return Response(scope, result.Draft, result.Outcome == SalesDraftWriteOutcome.Replayed, result.OriginalCorrelationId, await DiscloseAsync(scope, cancellationToken));
+    }
+
+    /// <summary>The field a schedule refusal is answered on: <c>lines[i].slices</c> for a line's slice mismatch (i = the line's index in THIS request), else <c>lines</c>.</summary>
+    private static string ScheduleField(SalesDraftDeliveryScheduleRequest request, SalesRuleException exception)
+    {
+        if (exception.Code != SalesRuleCodes.ScheduleSlicesMismatch || exception.LineId is not { } lineId)
+        {
+            return "lines";
+        }
+
+        var index = request.Lines.ToList().FindIndex(line => line.LineId == lineId);
+        return index < 0 ? "lines" : $"lines[{index}].slices";
+    }
+
+    /// <summary>DEC-SAL-003 ("auditlidir"): schedule 0 (as created) and every recorded change, oldest first, under the draft read; another company's draft is 404.</summary>
+    public async Task<SalesOrderDraftDeliverySchedulesResponse> GetDraftDeliverySchedulesAsync(Guid draftId, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var scope = await RequireAsync(bindings.ReadPermission, cancellationToken);
+        if (draftId == Guid.Empty)
+        {
+            throw new SalesDraftServiceException(404, "not_found");
+        }
+
+        SalesOrderDraft? draft;
+        try
+        {
+            draft = await GuardedAsync(scope, bindings.ReadPermission,
+                () => store.FindDraftAsync(draftId, cancellationToken), cancellationToken);
+        }
+        catch (SalesDraftStoreException exception)
+        {
+            throw Store(exception);
+        }
+
+        return draft is null
+            ? throw new SalesDraftServiceException(404, "not_found")
+            : new SalesOrderDraftDeliverySchedulesResponse([.. draft.DeliveryScheduleHistory.Select(ScheduleView)]);
+    }
+
+    private static SalesDraftDeliveryScheduleV1 ScheduleView(DeliveryScheduleSnapshot schedule) =>
+        new(schedule.ScheduleNo, schedule.ChangedBy, schedule.ChangedAtUtc, schedule.RequestedDeliveryDate,
+            [.. schedule.Lines.OrderBy(line => line.LineNo).Select(line => new SalesDraftLineScheduleViewV1(line.LineId, line.LineNo,
+                line.RequestedDeliveryDate,
+                [.. line.Slices.OrderBy(slice => slice.SliceNo)
+                    .Select(slice => new SalesDraftSliceScheduleViewV1(slice.SliceId, slice.QuantityText, slice.RequestedDeliveryDate))]))]);
+
     private async Task<SalesOrderDraftResponse> StateCommandAsync(Guid draftId, SalesDraftStateCommandRequest request,
         SalesCommandMetadata metadata, string commandName, string? permission,
         Action<SalesOrderDraft, string, long, DateTimeOffset> transition, SalesDraftStateAudit audit, CancellationToken cancellationToken)

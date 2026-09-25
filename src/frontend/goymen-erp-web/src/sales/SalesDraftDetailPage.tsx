@@ -76,6 +76,8 @@ import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { SalesDraftCommercialRevisionForm } from './SalesDraftCommercialRevisionForm'
 import { SalesDraftRevisionHistory } from './SalesDraftRevisionHistory'
 import { SalesDraftAllocationPanel } from './SalesDraftAllocationPanel'
+import { SalesDraftDeliveryScheduleForm } from './SalesDraftDeliveryScheduleForm'
+import { SalesDraftDeliveryScheduleHistory } from './SalesDraftDeliveryScheduleHistory'
 import { INVENTORY_PHYSICAL_ALLOCATION_WRITE_CAPABILITY } from '../inventory/capabilities'
 import styles from './SalesPages.module.css'
 
@@ -135,6 +137,26 @@ export function SalesDraftDetailPage() {
           />
         ) : null
       }
+      deliverySchedule={
+        companyId === null ? null : (
+          <SalesDraftDeliveryScheduleForm
+            key={`schedule:${namespace ?? ''}:${outcome.data.draft.id}`}
+            shell={shell}
+            detail={outcome.data}
+            companyId={companyId}
+            onRecorded={() => void queryClient.invalidateQueries({ queryKey })}
+          />
+        )
+      }
+      deliveryScheduleHistory={
+        namespace !== null && companyId !== null && outcome.data.draft.companyId === companyId ? (
+          <SalesDraftDeliveryScheduleHistory
+            key={`schedule-history:${namespace}:${shell.routeEntryGeneration}:${outcome.data.draft.id}`}
+            draftId={outcome.data.draft.id}
+            draftVersion={outcome.data.draft.version}
+          />
+        ) : null
+      }
       allocations={
         namespace !== null && companyId !== null ? (
           <SalesDraftAllocationPanel
@@ -182,6 +204,8 @@ export function DraftView({
   commercialActions = null,
   revisionHistory = null,
   allocations = null,
+  deliverySchedule = null,
+  deliveryScheduleHistory = null,
 }: {
   readonly detail: DraftDetail
   readonly backLink: React.ReactNode
@@ -191,6 +215,9 @@ export function DraftView({
   readonly commercialActions?: React.ReactNode
   readonly revisionHistory?: React.ReactNode
   readonly allocations?: React.ReactNode
+  /** DEC-SAL-003: the planner's delivery-date control (shell-gated) and the schedule history. */
+  readonly deliverySchedule?: React.ReactNode
+  readonly deliveryScheduleHistory?: React.ReactNode
 }) {
   const { draft, approval } = detail
   const withdrawn = draft.approvalState === APPROVAL_STATE.withdrawn
@@ -314,7 +341,9 @@ export function DraftView({
         {detail.lines.map((line) => (
           <LineView key={line.lineId} line={line} />
         ))}
+        {deliverySchedule}
       </section>
+      {deliveryScheduleHistory}
       {allocations}
       {revisionHistory}
     </article>

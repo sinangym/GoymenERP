@@ -28,6 +28,9 @@ export const SALES_DRAFT_PATH = '/sales/drafts'
 export const salesDraftDetailPath = (id: string) => `${SALES_DRAFT_PATH}/${encodeURIComponent(id)}`
 export const salesDraftCommercialRevisionPath = (id: string) => `${salesDraftDetailPath(id)}/commercial-revision`
 export const salesDraftRevisionsPath = (id: string) => `${salesDraftDetailPath(id)}/revisions`
+/** DEC-SAL-003: the delivery-schedule update (POST) and its history (GET). */
+export const salesDraftDeliverySchedulePath = (id: string) => `${salesDraftDetailPath(id)}/delivery-schedule`
+export const salesDraftDeliverySchedulesPath = (id: string) => `${salesDraftDetailPath(id)}/delivery-schedules`
 
 /**
  * `SalesDraftApiV1`: a first commit answers 201; the same accepted attempt answers 201 again with
@@ -82,6 +85,54 @@ export interface DraftLineCommercialRequest {
 export interface DraftCommercialRevisionRequest {
   readonly expectedVersion: string
   readonly lines: readonly DraftLineCommercialRequest[]
+}
+
+/**
+ * DEC-SAL-003 (`SalesDraftDeliveryScheduleRequest`): the planner's delivery-date update — every member present. The header
+ * and line dates may be null (none); every line of the draft exactly once, each with EVERY slice it already carries
+ * (dates only: no quantity, no new or removed slice). No re-approval follows; the server audits the change.
+ */
+export interface DraftSliceScheduleRequest {
+  readonly sliceId: string
+  readonly requestedDeliveryDate: string
+}
+
+export interface DraftLineScheduleRequest {
+  readonly lineId: string
+  readonly requestedDeliveryDate: string | null
+  readonly slices: readonly DraftSliceScheduleRequest[]
+}
+
+export interface DraftDeliveryScheduleRequest {
+  readonly expectedVersion: string
+  readonly requestedDeliveryDate: string | null
+  readonly lines: readonly DraftLineScheduleRequest[]
+}
+
+/** DEC-SAL-003 history: schedule 0 is the draft as created (nobody changed it); every later one is a recorded change. */
+export interface DeliveryScheduleSlice {
+  readonly sliceId: string
+  readonly quantity: string
+  readonly requestedDeliveryDate: string
+}
+
+export interface DeliveryScheduleLine {
+  readonly lineId: string
+  readonly lineNo: number
+  readonly requestedDeliveryDate: string | null
+  readonly slices: readonly DeliveryScheduleSlice[]
+}
+
+export interface DeliverySchedule {
+  readonly scheduleNo: number
+  readonly changedBy: string | null
+  readonly changedAtUtc: string | null
+  readonly requestedDeliveryDate: string | null
+  readonly lines: readonly DeliveryScheduleLine[]
+}
+
+export interface DeliverySchedules {
+  readonly items: readonly DeliverySchedule[]
 }
 
 /** `SalesDraftApprovalV1`: who submitted / decided and when; null until it happened. Facts, never derived. */
@@ -721,6 +772,55 @@ export function decodeDraftRevisions(value: unknown): DraftRevisions | null {
       archivedAtUtc: o.archivedAtUtc, archivedBy: o.archivedBy,
       moneyProfileId: o.moneyProfileId, moneyProfileVersion: o.moneyProfileVersion,
       moneyScale: o.moneyScale, lines,
+    })
+  }
+  return { items }
+}
+
+/**
+ * DEC-SAL-003: `SalesOrderDraftDeliverySchedulesResponse`, read exactly. Schedule 0 first (no actor, no time), then the
+ * recorded changes in ascending order without a gap, each attributed; every line once with its slices once. A body that
+ * does not fit is not shown as history.
+ */
+export function decodeDeliverySchedules(value: unknown): DeliverySchedules | null {
+  const response = exact(value, ['items'])
+  if (response === null || !Array.isArray(response.items) || response.items.length < 1) return null
+  const items: DeliverySchedule[] = []
+  for (const [index, entry] of response.items.entries()) {
+    const o = exact(entry, ['scheduleNo', 'changedBy', 'changedAtUtc', 'requestedDeliveryDate', 'lines'])
+    if (
+      o === null || o.scheduleNo !== index ||
+      !isNullable(o.changedBy, isRevisionActor) || !isNullable(o.changedAtUtc, isRevisionInstant) ||
+      (index === 0) !== (o.changedBy === null) || (o.changedBy === null) !== (o.changedAtUtc === null) ||
+      !isNullable(o.requestedDeliveryDate, isDateOnly) ||
+      !Array.isArray(o.lines) || o.lines.length < 1 || o.lines.length > LIMITS.lines
+    ) return null
+    const lines: DeliveryScheduleLine[] = []
+    const lineIds = new Set<string>()
+    for (const rawLine of o.lines) {
+      const l = exact(rawLine, ['lineId', 'lineNo', 'requestedDeliveryDate', 'slices'])
+      if (
+        l === null || !isRevisionId(l.lineId) || lineIds.has(l.lineId.toLowerCase()) ||
+        !isPositiveInt(l.lineNo, LIMITS.lines) || !isNullable(l.requestedDeliveryDate, isDateOnly) ||
+        !Array.isArray(l.slices) || l.slices.length > LIMITS.slices
+      ) return null
+      lineIds.add(l.lineId.toLowerCase())
+      const slices: DeliveryScheduleSlice[] = []
+      const sliceIds = new Set<string>()
+      for (const rawSlice of l.slices) {
+        const s = exact(rawSlice, ['sliceId', 'quantity', 'requestedDeliveryDate'])
+        if (
+          s === null || !isRevisionId(s.sliceId) || sliceIds.has(s.sliceId.toLowerCase()) ||
+          !isRevisionDecimal(s.quantity, true) || !isDateOnly(s.requestedDeliveryDate)
+        ) return null
+        sliceIds.add(s.sliceId.toLowerCase())
+        slices.push({ sliceId: s.sliceId, quantity: s.quantity, requestedDeliveryDate: s.requestedDeliveryDate })
+      }
+      lines.push({ lineId: l.lineId, lineNo: l.lineNo, requestedDeliveryDate: l.requestedDeliveryDate, slices })
+    }
+    items.push({
+      scheduleNo: o.scheduleNo, changedBy: o.changedBy, changedAtUtc: o.changedAtUtc,
+      requestedDeliveryDate: o.requestedDeliveryDate, lines,
     })
   }
   return { items }

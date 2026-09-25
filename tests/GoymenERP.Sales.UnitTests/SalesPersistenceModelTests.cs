@@ -33,6 +33,7 @@ public sealed class SalesPersistenceModelTests
                  {
                      typeof(DraftNumberRow), typeof(DraftRow), typeof(DraftLineRow), typeof(DraftDeliverySliceRow), typeof(DraftAttemptRow),
                      typeof(DraftRevisionRow), typeof(DraftRevisionLineRow),
+                     typeof(DraftDeliveryScheduleRow), typeof(DraftDeliveryScheduleDateRow),
                  })
         {
             var entity = context.Model.FindEntityType(type)!;
@@ -110,6 +111,7 @@ public sealed class SalesPersistenceModelTests
         using var context = Context();
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_InitialSales", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddAttemptOutcome", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddDeliverySchedules", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -138,6 +140,10 @@ public sealed class SalesPersistenceModelTests
     [InlineData("edit-revision")]
     [InlineData("delete-revision")]
     [InlineData("edit-revision-line")]
+    [InlineData("edit-schedule")]
+    [InlineData("delete-schedule")]
+    [InlineData("edit-schedule-date")]
+    [InlineData("delete-schedule-date")]
     public void Drafts_lines_slices_and_attempts_never_change_and_nothing_is_deleted(string fault)
     {
         using var context = Context();
@@ -169,6 +175,19 @@ public sealed class SalesPersistenceModelTests
                 break;
             case "edit-revision-line":
                 Attach(context, RevisionLine()).UnitPrice = "1";
+                break;
+            // DEC-SAL-003: a recorded delivery schedule is append-only — no column of it may change, nothing is deleted.
+            case "edit-schedule":
+                Attach(context, Schedule()).RequestedDeliveryDate = new DateOnly(2026, 11, 1);
+                break;
+            case "delete-schedule":
+                context.DraftDeliverySchedules.Remove(Attach(context, Schedule()));
+                break;
+            case "edit-schedule-date":
+                Attach(context, ScheduleDate()).RequestedDeliveryDate = new DateOnly(2026, 11, 1);
+                break;
+            case "delete-schedule-date":
+                context.DraftDeliveryScheduleDates.Remove(Attach(context, ScheduleDate()));
                 break;
             default:
                 Attach(context, new DraftNumberRow { CompanyId = CompanyA, Next = 2, Version = 1, UpdatedAtUtc = At }).CompanyId = CompanyB;
@@ -334,6 +353,53 @@ public sealed class SalesPersistenceModelTests
     {
         CompanyId = CompanyA, DraftId = Guid.NewGuid(), Revision = 0, LineNo = 1, LineId = Guid.NewGuid(), ProductId = Guid.NewGuid(), ProductVersion = "7",
         OrderUnitId = Guid.NewGuid(), QuantityText = "1", UnitPrice = "12.50", PriceUnitId = Guid.NewGuid(), DiscountPercent = null,
+    };
+
+    /// <summary>
+    /// DEC-SAL-003: a delivery-schedule change APPENDS a schedule and its dates and moves only the header's version and
+    /// UpdatedAtUtc (both admitted before this head); the existing line and slice rows are never rewritten, so the save
+    /// reaches the provider pipeline without widening what the guard admits.
+    /// </summary>
+    [Fact]
+    public void A_schedule_change_passes_the_write_guard_by_appending_rows_and_moving_only_the_headers_version()
+    {
+        using var context = Context();
+        var header = Attach(context, Draft());
+        header.Version = 2;
+        header.UpdatedAtUtc = At.AddMinutes(1);
+        context.DraftDeliverySchedules.Add(Schedule());
+        context.DraftDeliveryScheduleDates.Add(ScheduleDate());
+
+        Assert.Throws<GuardPassedException>(() => context.SaveChanges());
+    }
+
+    [Fact]
+    public void The_schedule_tables_are_keyed_by_draft_schedule_line_and_slice_and_bound_to_the_draft_and_its_lines()
+    {
+        using var context = Context();
+        var schedules = context.Model.FindEntityType(typeof(DraftDeliveryScheduleRow))!;
+        Assert.Equal(["CompanyId", "DraftId", "ScheduleNo"], schedules.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        Assert.Equal("DraftDeliverySchedules", schedules.GetTableName());
+        var dates = context.Model.FindEntityType(typeof(DraftDeliveryScheduleDateRow))!;
+        Assert.Equal(["CompanyId", "DraftId", "ScheduleNo", "LineNo", "SliceNo"], dates.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        Assert.Contains(dates.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(DraftDeliveryScheduleRow));
+        Assert.Contains(dates.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(DraftLineRow));
+        Assert.Contains(schedules.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(DraftRow));
+        var design = context.GetService<IDesignTimeModel>().Model;
+        Assert.Contains(design.FindEntityType(typeof(DraftDeliveryScheduleDateRow))!.GetCheckConstraints(),
+            constraint => constraint.Name == "CK_DraftDeliveryScheduleDates_Slice");
+    }
+
+    private static DraftDeliveryScheduleRow Schedule() => new()
+    {
+        CompanyId = CompanyA, DraftId = Guid.NewGuid(), ScheduleNo = 1, RequestedDeliveryDate = new DateOnly(2026, 10, 1),
+        ChangedBy = "synthetic-planner", ChangedAtUtc = At, DraftVersion = 2, CorrelationId = "synthetic-correlation",
+    };
+
+    private static DraftDeliveryScheduleDateRow ScheduleDate() => new()
+    {
+        CompanyId = CompanyA, DraftId = Guid.NewGuid(), ScheduleNo = 1, LineNo = 1, SliceNo = 1, SliceId = Guid.NewGuid(),
+        RequestedDeliveryDate = new DateOnly(2026, 10, 2),
     };
 
     private static DraftAttemptRow Attempt() => new()

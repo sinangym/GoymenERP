@@ -52,6 +52,9 @@ public static class SalesDraftCommands
     /// <summary>D2 (Sinan 5749046401): POST /api/v1/sales/drafts/{id}/withdrawal — Preparing/PendingApproval/Rejected → Withdrawn (terminal; nothing deleted).</summary>
     public const string WithdrawV1 = "sales.order-draft.withdraw.v1";
 
+    /// <summary>DEC-SAL-003: the delivery-schedule update (dates only, no re-approval, audited).</summary>
+    public const string RescheduleDeliveryV1 = "sales.order-draft.reschedule-delivery.v1";
+
     public static bool IsStateCommand(string commandName) =>
         commandName is SubmitV1 or ApproveV1 or RejectV1 or WithdrawV1;
 }
@@ -202,6 +205,17 @@ public interface ISalesOrderDraftStore
         Guid draftId, Func<SalesOrderDraft, DateTimeOffset, ApprovedRevisionSnapshot?> mutate, SalesDraftStateAudit audit,
         Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// DEC-SAL-003: the delivery-schedule update, one save. The same key rules as a state command; the domain decides
+    /// (expected version, state, every line and slice, the no-change refusal) and returns the recorded schedule, which
+    /// is APPENDED (schedule rows) beside the header's version, the attempt record and the audit event with the dates
+    /// before and after — or nothing at all. No existing line or slice row changes. <paramref name="beforeWrite"/> is
+    /// the caller's last fence, run after the draft is read and before the mutation.
+    /// </summary>
+    Task<SalesDraftStateResult?> RescheduleDeliveryAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+        Guid draftId, Func<SalesOrderDraft, DateTimeOffset, DeliveryScheduleSnapshot> mutate, SalesDraftStateAudit audit,
+        Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default);
+
     Task<SalesOrderDraft?> FindDraftAsync(Guid draftId, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -244,6 +258,15 @@ public static class SalesDraftRequestHash
         ArgumentNullException.ThrowIfNull(request);
         ArgumentException.ThrowIfNullOrWhiteSpace(commandName);
         return Hash(JsonSerializer.Serialize(new { command = commandName, draftId, request.ExpectedVersion, request.Lines }, SalesDraftJson.Options));
+    }
+
+    /// <summary>DEC-SAL-003: the canonical content of a delivery-schedule update (command, draft, version, header date and every line's dates, in order).</summary>
+    public static string Compute(string commandName, Guid draftId, SalesDraftDeliveryScheduleRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(commandName);
+        return Hash(JsonSerializer.Serialize(
+            new { command = commandName, draftId, request.ExpectedVersion, request.RequestedDeliveryDate, request.Lines }, SalesDraftJson.Options));
     }
 
     private static string Hash(string canonical) =>
