@@ -20,13 +20,14 @@ const balances = {
     locationId: LOCATION, productId: PRODUCT, block: 'Free', quantityKg: '10',
   }],
 }
+const genealogy = { labelId: LABEL, labelCode: 'LBL-100', edges: [], windowFull: false }
 
 describe('fetchInventoryLabelDetail', () => {
   beforeEach(() => vi.restoreAllMocks())
 
   it('reads both existing endpoints with one company fence and returns their bound result', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(new Response(JSON.stringify({ labelVersion: '3', identity, balances }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ labelVersion: '3', identity, balances, genealogy }), { status: 200 }))
 
     const result = await fetchInventoryLabelDetail(COMPANY, LABEL)
 
@@ -43,7 +44,7 @@ describe('fetchInventoryLabelDetail', () => {
   it('does not render a valid-looking response from another company', async () => {
     vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(new Response(JSON.stringify({
-        labelVersion: '3', identity: { ...identity, companyId: PARTY }, balances,
+        labelVersion: '3', identity: { ...identity, companyId: PARTY }, balances, genealogy,
       }), { status: 200 }))
     await expect(fetchInventoryLabelDetail(COMPANY, LABEL)).resolves.toEqual({ type: 'malformed' })
   })

@@ -414,7 +414,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Inventory.Infrastructure/"
                  + "InventoryModuleExtensions.cs"] =
                     new(
-                        "e9ff8599391584a4c60d3ecc4dd8c7afece6bba0c4100c5de84e1f6505db5ca0",
+                        "037d6cfcbf4576b7cc961a54e0cbfe0cb79c1eaa8275b59f969e7cd0beb362a5",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,

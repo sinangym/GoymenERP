@@ -2253,9 +2253,25 @@ public sealed partial class OpenApiContractGenerationTests
                     ("freeKg", "type:string"), ("blockedKg", "type:string"),
                     ("positions", "type:array;items:ref:InventoryPositionV1")),
                 ["InventoryLabelDetailV1"] = ObjectSchema(
-                    ["labelVersion", "identity", "balances"],
+                    ["labelVersion", "identity", "balances", "genealogy"],
                     ("labelVersion", "type:string"), ("identity", "ref:InventoryLabelViewV1"),
-                    ("balances", "ref:InventoryLabelBalancesV1")),
+                    ("balances", "ref:InventoryLabelBalancesV1"),
+                    ("genealogy", "ref:InventoryLabelGenealogyV1")),
+                ["InventoryLabelGenealogyV1"] = ObjectSchema(
+                    ["labelId", "labelCode", "edges", "windowFull"],
+                    ("labelId", "type:string;format:uuid"), ("labelCode", "type:string"),
+                    ("edges", "type:array;items:ref:InventoryLabelGenealogyEdgeV1"),
+                    ("windowFull", "type:boolean")),
+                ["InventoryLabelGenealogyEdgeV1"] = ObjectSchema(
+                    ["transformationId", "kind", "occurredAtUtc", "sourceLabelId", "sourceCode",
+                        "sourceLabelVersion", "sourceQuantityKg", "outputLabelId", "outputCode",
+                        "outputLabelVersion", "outputQuantityKg"],
+                    ("transformationId", "type:string;format:uuid"), ("kind", "type:string"),
+                    ("occurredAtUtc", "type:string;format:date-time"),
+                    ("sourceLabelId", "type:string;format:uuid"), ("sourceCode", "type:string"),
+                    ("sourceLabelVersion", "type:string"), ("sourceQuantityKg", "type:string"),
+                    ("outputLabelId", "type:string;format:uuid"), ("outputCode", "type:string"),
+                    ("outputLabelVersion", "type:string"), ("outputQuantityKg", "type:string")),
                 ["InventoryParentRollCandidatesV1"] = ObjectSchema(
                     ["items", "searchWindowFull"],
                     ("items", "type:array;items:ref:InventoryParentRollReferenceV1"),

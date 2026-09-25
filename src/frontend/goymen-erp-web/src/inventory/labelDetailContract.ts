@@ -49,10 +49,32 @@ export interface InventoryLabelBalances {
   readonly positions: readonly InventoryLabelPosition[]
 }
 
+export interface InventoryLabelGenealogyEdge {
+  readonly transformationId: string
+  readonly kind: 'Split' | 'Merge'
+  readonly occurredAtUtc: string
+  readonly sourceLabelId: string
+  readonly sourceCode: string
+  readonly sourceLabelVersion: string
+  readonly sourceQuantityKg: string
+  readonly outputLabelId: string
+  readonly outputCode: string
+  readonly outputLabelVersion: string
+  readonly outputQuantityKg: string
+}
+
+export interface InventoryLabelGenealogy {
+  readonly labelId: string
+  readonly labelCode: string
+  readonly edges: readonly InventoryLabelGenealogyEdge[]
+  readonly windowFull: boolean
+}
+
 export interface InventoryLabelDetail {
   readonly labelVersion: string
   readonly identity: InventoryLabelIdentity
   readonly balances: InventoryLabelBalances
+  readonly genealogy: InventoryLabelGenealogy
 }
 
 type JsonObject = Record<string, unknown>
@@ -98,17 +120,25 @@ function positiveQuantity(value: unknown): value is string {
   return quantity(value) && value !== '0'
 }
 
+function version(value: unknown): value is string {
+  return typeof value === 'string' && VERSION.test(value) && value.length <= 19 && BigInt(value) <= MAX_INT64
+}
+
 function decimalParts(value: string): readonly [bigint, number] {
   const [whole, fraction = ''] = value.split('.')
   return [BigInt(`${whole}${fraction}`), fraction.length]
 }
 
-function decimalSumEquals(total: string, values: readonly string[]): boolean {
-  const parts = [total, ...values].map(decimalParts)
+function decimalSumsEqual(left: readonly string[], right: readonly string[]): boolean {
+  const parts = [...left, ...right].map(decimalParts)
   const scale = Math.max(...parts.map(([, digits]) => digits))
   const scaled = ([units, digits]: readonly [bigint, number]) => units * (10n ** BigInt(scale - digits))
-  return scaled(parts[0]) === parts.slice(1).reduce((sum, value) => sum + scaled(value), 0n)
+  const sum = (values: readonly string[]) => values.map(decimalParts)
+    .reduce((total, value) => total + scaled(value), 0n)
+  return sum(left) === sum(right)
 }
+
+const decimalSumEquals = (total: string, values: readonly string[]): boolean => decimalSumsEqual([total], values)
 
 function document(value: unknown): InventoryLabelDocument | null {
   const source = record(value)
@@ -139,6 +169,73 @@ function position(value: unknown): InventoryLabelPosition | null {
     !guid(source.custodianId) || !guid(source.locationId) || !guid(source.productId) ||
     (source.block !== 'Free' && source.block !== 'Blocked') || !positiveQuantity(source.quantityKg)) return null
   return source as unknown as InventoryLabelPosition
+}
+
+function genealogyEdge(value: unknown): InventoryLabelGenealogyEdge | null {
+  const source = record(value)
+  if (source === null || !exact(source, [
+    'transformationId', 'kind', 'occurredAtUtc', 'sourceLabelId', 'sourceCode', 'sourceLabelVersion',
+    'sourceQuantityKg', 'outputLabelId', 'outputCode', 'outputLabelVersion', 'outputQuantityKg',
+  ]) || !guid(source.transformationId) || (source.kind !== 'Split' && source.kind !== 'Merge') ||
+    !instant(source.occurredAtUtc) || !guid(source.sourceLabelId) || !text(source.sourceCode) ||
+    !version(source.sourceLabelVersion) || !positiveQuantity(source.sourceQuantityKg) ||
+    !guid(source.outputLabelId) || !text(source.outputCode) || !version(source.outputLabelVersion) ||
+    !positiveQuantity(source.outputQuantityKg)) return null
+  return source as unknown as InventoryLabelGenealogyEdge
+}
+
+interface GenealogyLabelFacts {
+  readonly code: string
+  readonly version: string
+  readonly quantityKg: string
+}
+
+function sameGenealogyLabelFacts(
+  labels: Map<string, GenealogyLabelFacts>,
+  labelId: string,
+  code: string,
+  versionValue: string,
+  quantityKg: string,
+): boolean {
+  const existing = labels.get(labelId)
+  if (existing !== undefined) {
+    return existing.code === code && existing.version === versionValue && existing.quantityKg === quantityKg
+  }
+  labels.set(labelId, { code, version: versionValue, quantityKg })
+  return true
+}
+
+function validGenealogyTransformations(edges: readonly InventoryLabelGenealogyEdge[]): boolean {
+  const groups = new Map<string, InventoryLabelGenealogyEdge[]>()
+  for (const edge of edges) {
+    const group = groups.get(edge.transformationId)
+    if (group === undefined) groups.set(edge.transformationId, [edge])
+    else group.push(edge)
+  }
+
+  for (const group of groups.values()) {
+    const first = group[0]
+    const pairs = new Set<string>()
+    const sources = new Map<string, GenealogyLabelFacts>()
+    const outputs = new Map<string, GenealogyLabelFacts>()
+    for (const edge of group) {
+      const pair = `${edge.sourceLabelId}:${edge.outputLabelId}`
+      if (edge.kind !== first.kind || edge.occurredAtUtc !== first.occurredAtUtc || pairs.has(pair) ||
+        !sameGenealogyLabelFacts(sources, edge.sourceLabelId, edge.sourceCode,
+          edge.sourceLabelVersion, edge.sourceQuantityKg) ||
+        !sameGenealogyLabelFacts(outputs, edge.outputLabelId, edge.outputCode,
+          edge.outputLabelVersion, edge.outputQuantityKg)) return false
+      pairs.add(pair)
+    }
+    if ([...sources.keys()].some((labelId) => outputs.has(labelId)) ||
+      (first.kind === 'Split' && (sources.size !== 1 || outputs.size < 2)) ||
+      (first.kind === 'Merge' && (sources.size < 2 || outputs.size !== 1)) ||
+      !decimalSumsEqual(
+        [...sources.values()].map((facts) => facts.quantityKg),
+        [...outputs.values()].map((facts) => facts.quantityKg),
+      )) return false
+  }
+  return true
 }
 
 export function decodeInventoryLabelIdentity(value: unknown): InventoryLabelIdentity | null {
@@ -181,17 +278,45 @@ export function decodeInventoryLabelBalances(value: unknown): InventoryLabelBala
   return { ...(source as unknown as InventoryLabelBalances), positions: decoded }
 }
 
+export function decodeInventoryLabelGenealogy(
+  value: unknown,
+  expectedLabelId: string,
+  expectedLabelCode: string,
+): InventoryLabelGenealogy | null {
+  const source = record(value)
+  if (source === null || !exact(source, ['labelId', 'labelCode', 'edges', 'windowFull']) ||
+    source.labelId !== expectedLabelId || source.labelCode !== expectedLabelCode ||
+    !Array.isArray(source.edges) || typeof source.windowFull !== 'boolean') return null
+  const edges = source.edges.map(genealogyEdge)
+  if (edges.some((item) => item === null)) return null
+  const decoded = edges as InventoryLabelGenealogyEdge[]
+  if (!validGenealogyTransformations(decoded)) return null
+  const connected = new Set([expectedLabelId])
+  const remaining = [...decoded]
+  while (remaining.length > 0) {
+    const index = remaining.findIndex((edge) => connected.has(edge.sourceLabelId) || connected.has(edge.outputLabelId))
+    if (index < 0) return null
+    const [edge] = remaining.splice(index, 1)
+    connected.add(edge.sourceLabelId)
+    connected.add(edge.outputLabelId)
+  }
+  return { ...(source as unknown as InventoryLabelGenealogy), edges: decoded }
+}
+
 export function combineInventoryLabelDetail(
   labelVersion: string,
   identity: InventoryLabelIdentity,
   balances: InventoryLabelBalances,
+  genealogy: InventoryLabelGenealogy,
   expectedCompanyId: string,
   expectedLabelId: string,
 ): InventoryLabelDetail | null {
-  if (!VERSION.test(labelVersion) || labelVersion.length > 19 || BigInt(labelVersion) > MAX_INT64 ||
+  if (!version(labelVersion) ||
     identity.companyId !== expectedCompanyId || identity.labelId !== expectedLabelId ||
-    balances.labelId !== expectedLabelId || balances.positions.some((item) => item.productId !== identity.productId)) return null
-  return { labelVersion, identity, balances }
+    balances.labelId !== expectedLabelId || genealogy.labelId !== expectedLabelId ||
+    genealogy.labelCode !== identity.code ||
+    balances.positions.some((item) => item.productId !== identity.productId)) return null
+  return { labelVersion, identity, balances, genealogy }
 }
 
 export function decodeInventoryLabelDetail(
@@ -200,11 +325,21 @@ export function decodeInventoryLabelDetail(
   expectedLabelId: string,
 ): InventoryLabelDetail | null {
   const source = record(value)
-  if (source === null || !exact(source, ['labelVersion', 'identity', 'balances']) ||
+  if (source === null || !exact(source, ['labelVersion', 'identity', 'balances', 'genealogy']) ||
     typeof source.labelVersion !== 'string') return null
   const identity = decodeInventoryLabelIdentity(source.identity)
   const balances = decodeInventoryLabelBalances(source.balances)
-  return identity === null || balances === null
+  const genealogy = identity === null
     ? null
-    : combineInventoryLabelDetail(source.labelVersion, identity, balances, expectedCompanyId, expectedLabelId)
+    : decodeInventoryLabelGenealogy(source.genealogy, expectedLabelId, identity.code)
+  return identity === null || balances === null || genealogy === null
+    ? null
+    : combineInventoryLabelDetail(
+      source.labelVersion,
+      identity,
+      balances,
+      genealogy,
+      expectedCompanyId,
+      expectedLabelId,
+    )
 }

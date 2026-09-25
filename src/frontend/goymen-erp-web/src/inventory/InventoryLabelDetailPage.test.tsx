@@ -7,6 +7,7 @@ import { InventoryLabelDetailPage } from './InventoryLabelDetailPage'
 import type { InventoryLabelDetail } from './labelDetailContract'
 import type { ViewOutcome } from '../shell/uiState'
 import { productDetailPath } from '../product/capabilities'
+import { inventoryLabelDetailPath } from './labelDetailRoute'
 
 const COMPANY = '11111111-1111-1111-1111-111111111111'
 const LABEL = '22222222-2222-2222-2222-222222222222'
@@ -14,12 +15,14 @@ const PRODUCT = '33333333-3333-3333-3333-333333333333'
 const LOT = '44444444-4444-4444-4444-444444444444'
 const PARTY = '55555555-5555-5555-5555-555555555555'
 const LOCATION = '66666666-6666-6666-6666-666666666666'
+const SOURCE_LABEL = '77777777-7777-7777-7777-777777777777'
+const TRANSFORMATION = '88888888-8888-8888-8888-888888888888'
 const OTHER_COMPANY = '99999999-9999-9999-9999-999999999999'
 const clients: QueryClient[] = []
 const api = vi.hoisted(() => ({ detail: vi.fn() }))
 const scenario = vi.hoisted(() => ({
   companyId: '11111111-1111-1111-1111-111111111111', namespace: 'SENTETIK-a' as string | null,
-  generation: 1, canReadProduct: true, report: vi.fn(),
+  generation: 1, canReadProduct: true, canReadLabel: true, report: vi.fn(),
 }))
 vi.mock('./labelDetailApi', () => ({ fetchInventoryLabelDetail: api.detail }))
 vi.mock('../shell/shellContext', () => ({
@@ -29,7 +32,9 @@ vi.mock('../shell/shellContext', () => ({
 vi.mock('../shell/shellState', () => ({
   contextKey: () => scenario.namespace === null ? null : [scenario.namespace],
   contextKeyString: (key: readonly string[]) => key[0],
-  hasCapability: (_shell: unknown, capability: string) => capability === 'product.items.detail' && scenario.canReadProduct,
+  hasCapability: (_shell: unknown, capability: string) =>
+    (capability === 'product.items.detail' && scenario.canReadProduct) ||
+    (capability === 'inventory.stock-positions.list' && scenario.canReadLabel),
 }))
 vi.mock('../shell/useAuthBoundary', () => ({
   useAuthBoundary: () => ({ capture: () => ({ generation: scenario.generation }), report: scenario.report }),
@@ -52,6 +57,14 @@ function fixture(): InventoryLabelDetail {
         { ownerKind: 'Company', ownerId: PARTY, custodianKind: 'Company', custodianId: PARTY,
           locationId: LOCATION, productId: PRODUCT, block: 'Blocked', quantityKg: '50.5' },
       ],
+    },
+    genealogy: {
+      labelId: LABEL, labelCode: 'LBL-100', windowFull: false,
+      edges: [{
+        transformationId: TRANSFORMATION, kind: 'Split', occurredAtUtc: '2026-09-24T07:59:00Z',
+        sourceLabelId: SOURCE_LABEL, sourceCode: 'LBL-090', sourceLabelVersion: '2', sourceQuantityKg: '1250.5',
+        outputLabelId: LABEL, outputCode: 'LBL-100', outputLabelVersion: '3', outputQuantityKg: '1250.5',
+      }],
     },
   }
 }
@@ -76,7 +89,7 @@ const ready = () => screen.findByRole('heading', { name: 'LBL-100' })
 const productLink = () => screen.queryByRole('link', { name: 'Ürün kartı' })
 beforeEach(() => {
   scenario.companyId = COMPANY; scenario.namespace = 'SENTETIK-a'; scenario.generation = 1
-  scenario.canReadProduct = true; scenario.report.mockReset()
+  scenario.canReadProduct = true; scenario.canReadLabel = true; scenario.report.mockReset()
   api.detail.mockReset().mockResolvedValue({ type: 'ok-single', data: fixture() })
 })
 afterEach(() => { cleanup(); clients.splice(0).forEach((client) => client.clear()) })
@@ -89,6 +102,9 @@ describe('InventoryLabelDetailPage', () => {
     expect(screen.getAllByText(LOCATION)).toHaveLength(2)
     expect(screen.getByText('1250.5 kg')).not.toBeNull()
     expect(screen.getByText('1200 kg', { selector: 'td' })).not.toBeNull()
+    expect(screen.getByRole('heading', { name: 'Soy ağacı' })).not.toBeNull()
+    expect(screen.getByRole('link', { name: 'LBL-090' }).getAttribute('href')).toBe(inventoryLabelDetailPath(SOURCE_LABEL))
+    expect(screen.getByRole('link', { name: 'LBL-100' }).getAttribute('href')).toBe(inventoryLabelDetailPath(LABEL))
     expect(screen.getByText('Gerekli belgeler: MTC')).not.toBeNull()
     expect(api.detail).toHaveBeenCalledWith(COMPANY, LABEL, expect.any(AbortSignal))
   })
@@ -112,6 +128,12 @@ describe('InventoryLabelDetailPage', () => {
     scenario.canReadProduct = false; mount(); await ready()
     expect(productLink()).toBeNull(); expect(screen.getByText(PRODUCT)).toBeTruthy()
     expect(screen.getByText('Ürün kartı')).toBeTruthy()
+  })
+  it('keeps genealogy labels inert without the inventory label read capability', async () => {
+    scenario.canReadLabel = false; mount(); await ready()
+    expect(screen.queryByRole('link', { name: 'LBL-090' })).toBeNull()
+    expect(screen.queryByRole('link', { name: 'LBL-100' })).toBeNull()
+    expect(screen.getByRole('cell', { name: /^LBL-090/ })).toBeTruthy()
   })
   it('removes navigation immediately on a capability change without changing the label facts', async () => {
     const view = mount(); await ready(); scenario.canReadProduct = false; view.refresh()
@@ -150,6 +172,7 @@ describe('InventoryLabelDetailPage', () => {
     { ...fixture(), identity: { ...fixture().identity, companyId: OTHER_COMPANY } },
     { ...fixture(), identity: { ...fixture().identity, labelId: LOT } },
     { ...fixture(), balances: { ...fixture().balances, labelId: LOT } },
+    { ...fixture(), genealogy: { ...fixture().genealogy, labelId: LOT } },
   ])('does not derive a link from mismatched loaded identities', async (data) => {
     api.detail.mockResolvedValue({ type: 'ok-single', data }); mount()
     await screen.findByText('Beklenmeyen yanıt — etiket'); expect(productLink()).toBeNull()

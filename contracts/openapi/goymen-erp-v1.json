@@ -34597,7 +34597,8 @@
         "required": [
           "labelVersion",
           "identity",
-          "balances"
+          "balances",
+          "genealogy"
         ],
         "type": "object",
         "properties": {
@@ -34609,6 +34610,9 @@
           },
           "balances": {
             "$ref": "#/components/schemas/InventoryLabelBalancesV1"
+          },
+          "genealogy": {
+            "$ref": "#/components/schemas/InventoryLabelGenealogyV1"
           }
         }
       },
@@ -34625,6 +34629,88 @@
           "attachedAtUtc": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "InventoryLabelGenealogyEdgeV1": {
+        "required": [
+          "transformationId",
+          "kind",
+          "occurredAtUtc",
+          "sourceLabelId",
+          "sourceCode",
+          "sourceLabelVersion",
+          "sourceQuantityKg",
+          "outputLabelId",
+          "outputCode",
+          "outputLabelVersion",
+          "outputQuantityKg"
+        ],
+        "type": "object",
+        "properties": {
+          "transformationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "occurredAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "sourceLabelId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sourceCode": {
+            "type": "string"
+          },
+          "sourceLabelVersion": {
+            "type": "string"
+          },
+          "sourceQuantityKg": {
+            "type": "string"
+          },
+          "outputLabelId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "outputCode": {
+            "type": "string"
+          },
+          "outputLabelVersion": {
+            "type": "string"
+          },
+          "outputQuantityKg": {
+            "type": "string"
+          }
+        }
+      },
+      "InventoryLabelGenealogyV1": {
+        "required": [
+          "labelId",
+          "labelCode",
+          "edges",
+          "windowFull"
+        ],
+        "type": "object",
+        "properties": {
+          "labelId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "labelCode": {
+            "type": "string"
+          },
+          "edges": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InventoryLabelGenealogyEdgeV1"
+            }
+          },
+          "windowFull": {
+            "type": "boolean"
           }
         }
       },

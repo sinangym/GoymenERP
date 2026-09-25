@@ -16,13 +16,14 @@ public static class InventoryLabelDetailCodesV1
 }
 
 /// <summary>
-/// One current physical label and its position totals from the same versioned capture. Genealogy is
-/// deliberately absent until split/merge owns a stored lineage source (DEC-LBL-002/003).
+/// One current physical label, its position totals and its stored split/merge lineage from the same
+/// version-fenced capture (DEC-LBL-002/003, AT-038).
 /// </summary>
 public sealed record InventoryLabelDetailV1(
     string LabelVersion,
     InventoryLabelViewV1 Identity,
-    InventoryLabelBalancesV1 Balances);
+    InventoryLabelBalancesV1 Balances,
+    InventoryLabelGenealogyV1 Genealogy);
 
 public interface IInventoryLabelDetailsV1
 {
