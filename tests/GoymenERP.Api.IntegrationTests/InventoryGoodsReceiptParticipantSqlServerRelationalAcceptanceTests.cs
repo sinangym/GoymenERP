@@ -49,6 +49,8 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
                 connection, transaction, CompanyA);
             await using var inventoryParticipant = await InventoryGoodsReceiptParticipant.EnlistAsync(
                 connection, transaction, CompanyA, GoodsReceiptSettings(run));
+            Assert.Null(await inventoryParticipant.ReadReplayAsync(
+                acceptanceId, ReceiptMetadata(run, key, correlation)));
             purchasingResult = await purchasingParticipant.StageAsync(purchasing, GoodsReceiptPurchaseEnvelope(run, key, correlation));
             receipt = receipt with { PurchaseOrderVersionAfter = purchasingResult.PurchaseOrderVersion };
             inventoryResult = await inventoryParticipant.StageAsync(receipt, ReceiptMetadata(run, key, correlation));
@@ -66,6 +68,10 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         await AssertCommittedReceiptFactsAsync(
             run, seed, receipt, key, correlation, purchasingResult.PurchaseOrderVersion);
 
+        var reopened = await ReadGoodsReceiptSourceAsync(run, CompanyA, acceptanceId);
+        AssertGoodsReceiptSource(receipt, inventoryResult, reopened);
+        Assert.Null(await ReadGoodsReceiptSourceAsync(run, CompanyB, acceptanceId));
+
         await using (var connection = new SqlConnection(run.Factory.DatabaseConnectionString))
         {
             await connection.OpenAsync();
@@ -74,6 +80,9 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
                 connection, transaction, CompanyA);
             await using var inventoryParticipant = await InventoryGoodsReceiptParticipant.EnlistAsync(
                 connection, transaction, CompanyA, GoodsReceiptSettings(run));
+            var inventorySource = await inventoryParticipant.ReadReplayAsync(
+                acceptanceId, ReceiptMetadata(run, key, "goods-receipt-retry"));
+            AssertGoodsReceiptSource(receipt, inventoryResult, inventorySource);
             var purchasingReplay = await purchasingParticipant.StageAsync(
                 purchasing, GoodsReceiptPurchaseEnvelope(run, key, "goods-receipt-retry"));
             var inventoryReplay = await inventoryParticipant.StageAsync(
@@ -88,6 +97,22 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         }
 
         Assert.Equal(committed, await ReceiptEffectsAsync(run, seed, receipt, correlation));
+
+        var requiredDocumentsJson = await run.ScalarAsync<string>(
+            "SELECT RequiredDocumentsJson FROM inventory.Labels WHERE CompanyId = @company AND Id = @label",
+            ("@company", CompanyA), ("@label", receipt.LabelId));
+        try
+        {
+            await SetRequiredDocumentsJsonAsync(run, receipt.LabelId, "{}");
+            var unavailable = await Assert.ThrowsAsync<InventoryGoodsReceiptException>(() =>
+                ReadGoodsReceiptSourceAsync(run, CompanyA, acceptanceId));
+            Assert.Equal((503, InventoryGoodsReceiptCodesV1.Unavailable),
+                (unavailable.Status, unavailable.Code));
+        }
+        finally
+        {
+            await SetRequiredDocumentsJsonAsync(run, receipt.LabelId, requiredDocumentsJson);
+        }
     }
 
     [SqlServerFact]
@@ -147,6 +172,20 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
                 GoodsReceiptPurchaseRequest(seed, acceptanceId, "2"),
                 GoodsReceiptPurchaseEnvelope(run, key, "goods-receipt-conflict-retry"));
             Assert.True(purchasingReplay.IsReplay);
+            var actorConflict = await Assert.ThrowsAsync<InventoryGoodsReceiptException>(() =>
+                inventoryParticipant.ReadReplayAsync(
+                    acceptanceId,
+                    ReceiptMetadata(run, key, "goods-receipt-conflict-retry") with
+                    {
+                        ActorId = "another-inventory-receipt-user",
+                    }));
+            Assert.Equal((409, InventoryGoodsReceiptCodesV1.IdempotencyConflict),
+                (actorConflict.Status, actorConflict.Code));
+            var targetConflict = await Assert.ThrowsAsync<InventoryGoodsReceiptException>(() =>
+                inventoryParticipant.ReadReplayAsync(
+                    Guid.NewGuid(), ReceiptMetadata(run, key, "goods-receipt-conflict-retry")));
+            Assert.Equal((409, InventoryGoodsReceiptCodesV1.IdempotencyConflict),
+                (targetConflict.Status, targetConflict.Code));
             var conflict = await Assert.ThrowsAsync<InventoryGoodsReceiptException>(() =>
                 inventoryParticipant.StageAsync(
                     receipt with { QuantityKg = "1" },
@@ -250,6 +289,68 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         Assert.NotNull(approved);
         Assert.Equal(3L, approved.Order.Order.Version);
         return new GoodsReceiptAcceptanceSeed(orderId, lineId, approved.Order.Order.Version);
+    }
+
+    private static async Task<InventoryGoodsReceiptSourceV1?> ReadGoodsReceiptSourceAsync(
+        Run run, Guid companyId, Guid acceptanceId)
+    {
+        var company = new CompanyContext();
+        company.Set(companyId);
+        var options = new DbContextOptionsBuilder<InventoryDbContext>()
+            .UseSqlServer(run.Factory.DatabaseConnectionString,
+                sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", InventoryDbContext.Schema))
+            .Options;
+        await using var context = new InventoryDbContext(options, company);
+        var source = new InventoryGoodsReceiptSourceService(context, company);
+        return await source.ReadAsync(acceptanceId);
+    }
+
+    private static async Task SetRequiredDocumentsJsonAsync(Run run, Guid labelId, string json)
+    {
+        await using var connection = new SqlConnection(run.Factory.DatabaseConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE inventory.Labels
+            SET RequiredDocumentsJson = @json
+            WHERE CompanyId = @company AND Id = @label;
+            """;
+        command.Parameters.AddWithValue("@json", json);
+        command.Parameters.AddWithValue("@company", CompanyA);
+        command.Parameters.AddWithValue("@label", labelId);
+        Assert.Equal(1, await command.ExecuteNonQueryAsync());
+    }
+
+    private static void AssertGoodsReceiptSource(
+        InventoryGoodsReceiptRequestV1 expectedRequest,
+        InventoryGoodsReceiptResultV1 expectedResult,
+        InventoryGoodsReceiptSourceV1? actual)
+    {
+        Assert.NotNull(actual);
+        Assert.Equal(expectedRequest.CompanyId, actual.OriginalRequest.CompanyId);
+        Assert.Equal(expectedRequest.AcceptanceId, actual.OriginalRequest.AcceptanceId);
+        Assert.Equal(expectedRequest.PurchaseOrderId, actual.OriginalRequest.PurchaseOrderId);
+        Assert.Equal(expectedRequest.PurchaseOrderLineId, actual.OriginalRequest.PurchaseOrderLineId);
+        Assert.Equal(expectedRequest.PurchaseOrderVersionAfter, actual.OriginalRequest.PurchaseOrderVersionAfter);
+        Assert.Equal(expectedRequest.ProductId, actual.OriginalRequest.ProductId);
+        Assert.Equal(expectedRequest.ExpectedProductVersion, actual.OriginalRequest.ExpectedProductVersion);
+        Assert.Equal(expectedRequest.PurchaseUnitId, actual.OriginalRequest.PurchaseUnitId);
+        Assert.Equal(expectedRequest.LotId, actual.OriginalRequest.LotId);
+        Assert.Equal(expectedRequest.LabelId, actual.OriginalRequest.LabelId);
+        Assert.Equal(expectedRequest.LabelCode, actual.OriginalRequest.LabelCode);
+        Assert.Equal(expectedRequest.HeatNumber, actual.OriginalRequest.HeatNumber);
+        Assert.Equal(expectedRequest.CoilNumber, actual.OriginalRequest.CoilNumber);
+        Assert.Equal(expectedRequest.RequiredDocuments, actual.OriginalRequest.RequiredDocuments);
+        Assert.Equal(expectedRequest.OwnerKind, actual.OriginalRequest.OwnerKind);
+        Assert.Equal(expectedRequest.OwnerId, actual.OriginalRequest.OwnerId);
+        Assert.Equal(expectedRequest.CustodianKind, actual.OriginalRequest.CustodianKind);
+        Assert.Equal(expectedRequest.CustodianId, actual.OriginalRequest.CustodianId);
+        Assert.Equal(expectedRequest.LocationId, actual.OriginalRequest.LocationId);
+        Assert.Equal(expectedRequest.InitialBlock, actual.OriginalRequest.InitialBlock);
+        Assert.Equal(expectedRequest.MovementId, actual.OriginalRequest.MovementId);
+        Assert.Equal(expectedRequest.QuantityKg, actual.OriginalRequest.QuantityKg);
+        Assert.Equal(expectedRequest.OccurredAtUtc, actual.OriginalRequest.OccurredAtUtc);
+        Assert.Equal(expectedResult, actual.OriginalResult);
     }
 
     private static PurchaseAcceptanceStageRequestV1 GoodsReceiptPurchaseRequest(
