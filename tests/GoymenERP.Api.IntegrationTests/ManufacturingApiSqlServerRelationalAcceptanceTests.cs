@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using GoymenERP.Api.ProductRuntime;
 using GoymenERP.Api.Security;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
@@ -10,6 +11,7 @@ using GoymenERP.Modules.Identity.Domain.Assignments;
 using GoymenERP.Modules.Identity.Domain.Roles;
 using GoymenERP.Modules.Identity.Domain.Users;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
+using GoymenERP.Modules.Identity.Infrastructure.Services;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Domain.Labels;
 using GoymenERP.Modules.Inventory.Domain.Lots;
@@ -22,6 +24,9 @@ using GoymenERP.Modules.Manufacturing.Domain.Common;
 using GoymenERP.Modules.Manufacturing.Domain.Orders;
 using GoymenERP.Modules.Manufacturing.Domain.Plans;
 using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence;
+using GoymenERP.Modules.Product.Application.Contracts;
+using GoymenERP.Modules.Product.Infrastructure.Fixtures;
+using GoymenERP.Modules.Product.Infrastructure.Persistence;
 using GoymenERP.Modules.Settings.Application;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Data.SqlClient;
@@ -69,6 +74,7 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
         ErpPermissions.ManufacturingOrdersRead,
         ErpPermissions.InventoryLabelsRead,
         ErpPermissions.InventoryBalancesRead,
+        ErpPermissions.ProductOperationalSelectionRead,
     ];
 
     [SqlServerFact]
@@ -164,9 +170,9 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
         var order = (await orderResponse.Content.ReadFromJsonAsync<OrderViewV1>())!;
 
         order = await run.OkAsync(client, $"{Base}/orders/{orderId}/input-issues",
-            new RecordFactRequestV1(Guid.NewGuid(), order.Version, roll.Id, "1000.125", At));
+            Run.Issue(order.Version, roll.Id, "1000.125", At));
         order = await run.OkAsync(client, $"{Base}/orders/{orderId}/outputs",
-            new DeclareOutputRequestV1(Guid.NewGuid(), order.Version, roll.Id, "GoodProduct", "900.000", At.AddHours(1)));
+            await run.OutputAsync(client, order.Version, roll.Id, "GoodProduct", "900.000", At.AddHours(1)));
         order = await run.OkAsync(client, $"{Base}/orders/{orderId}/wip-measurements",
             new RecordFactRequestV1(Guid.NewGuid(), order.Version, roll.Id, "100.125", At.AddHours(2)));
 
@@ -334,7 +340,7 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
             Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"{Base}/orders/{orderId}")).StatusCode);
             // Company B has no approved kilogram source: the write stops at Settings (503), before the order is looked up.
             var fact = await client.PostWithKeyAsync($"{Base}/orders/{orderId}/input-issues",
-                new RecordFactRequestV1(Guid.NewGuid(), 1, roll, "10", At));
+                Run.Issue(1, roll, "10", At));
             Assert.Equal(HttpStatusCode.ServiceUnavailable, fact.StatusCode);
         }
 
@@ -368,7 +374,7 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
         using (var client = run.ClientFor(userA, CompanyA))
         {
             var issued = await run.OkAsync(client, $"{Base}/orders/{orderId}/input-issues",
-                new RecordFactRequestV1(Guid.NewGuid(), 1, roll, "100", At));
+                Run.Issue(1, roll, "100", At));
 
             // BAL-003 of the stored facts: 100 issued, nothing declared → 100 unaccounted; BAL-004/006 the engine's Unavailable.
             using var first = await client.GetAsync(path);
@@ -385,9 +391,9 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
 
             // Reopen after a new fact: the read follows the stored facts (60 good + 40 scrap → fully accounted).
             var good = await run.OkAsync(client, $"{Base}/orders/{orderId}/outputs",
-                new DeclareOutputRequestV1(Guid.NewGuid(), issued.Version, roll, "GoodProduct", "60", At.AddMinutes(1)));
+                await run.OutputAsync(client, issued.Version, roll, "GoodProduct", "60", At.AddMinutes(1)));
             await run.OkAsync(client, $"{Base}/orders/{orderId}/outputs",
-                new DeclareOutputRequestV1(Guid.NewGuid(), good.Version, roll, "Scrap", "40", At.AddMinutes(2)));
+                await run.OutputAsync(client, good.Version, roll, "Scrap", "40", At.AddMinutes(2)));
             var reopened = (await client.GetFromJsonAsync<MassBalanceViewV1>(path))!;
             Assert.Equal(new MassDifferenceViewV1("100", "100", "0", true), Assert.Single(reopened.Rolls).Difference);
 
@@ -486,12 +492,12 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
         using var client = run.ClientFor(userA, CompanyA);
         var factId = Guid.NewGuid();
 
-        var first = await run.OkAsync(client, $"{Base}/orders/{orderId}/input-issues",
-            new RecordFactRequestV1(factId, 1, roll, "500", At), "issue-key-1");
+        var issue = Run.Issue(1, roll, "500", At, factId);
+        var first = await run.OkAsync(client, $"{Base}/orders/{orderId}/input-issues", issue, "issue-key-1");
 
         // The version the caller read is gone: 409 with both versions.
         var stale = await client.PostWithKeyAsync($"{Base}/orders/{orderId}/input-returns",
-            new RecordFactRequestV1(Guid.NewGuid(), 1, roll, "1", At.AddHours(1)));
+            await run.ReturnAsync(client, 1, roll, "1", At.AddHours(1)));
         Assert.Equal(HttpStatusCode.Conflict, stale.StatusCode);
         var staleProblem = await Problem(stale);
         Assert.Equal((ManufacturingRuleCodes.VersionConflict, "1", "2"),
@@ -499,18 +505,18 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
 
         // The same fact id with other content under a new key: 409 (R3, the ledger's own identity).
         var reused = await client.PostWithKeyAsync($"{Base}/orders/{orderId}/input-issues",
-            new RecordFactRequestV1(factId, first.Version, roll, "501", At));
+            issue with { ExpectedVersion = first.Version, MovementId = Guid.NewGuid(), Kg = "501" });
         Assert.Equal((HttpStatusCode.Conflict, ManufacturingStoreCodes.FactIdConflict),
             (reused.StatusCode, (await Problem(reused)).Code));
         // The first key and request again (500.000 is 500): its stored answer (ADR-011).
         var again = await client.PostWithKeyAsync($"{Base}/orders/{orderId}/input-issues",
-            new RecordFactRequestV1(factId, 1, roll, "500.000", At), "issue-key-1");
+            issue with { Kg = "500.000" }, "issue-key-1");
         Assert.Equal(HttpStatusCode.OK, again.StatusCode);
         Assert.Equal("true", again.Headers.GetValues("Idempotency-Replayed").Single());
 
         // More decimals than the kilogram profile allows: refused, never rounded.
         var scale = await client.PostWithKeyAsync($"{Base}/orders/{orderId}/input-returns",
-            new RecordFactRequestV1(Guid.NewGuid(), first.Version, roll, "1.0001", At.AddHours(1)));
+            await run.ReturnAsync(client, first.Version, roll, "1.0001", At.AddHours(1)));
         Assert.Equal((HttpStatusCode.UnprocessableEntity, ManufacturingMassCodes.ScaleExceeded),
             (scale.StatusCode, (await Problem(scale)).Code));
 
@@ -597,7 +603,7 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
         await using var run = await Run.StartAsync();
         var userA = await run.GrantAsync(TestUsers.CompanyA, CompanyA, AllWrites);
         var (orderId, roll) = await run.OpenOrderAsync(userA);
-        var fact = new RecordFactRequestV1(Guid.NewGuid(), 1, roll, "250", At);
+        var fact = Run.Issue(1, roll, "250", At);
 
         // Both attempts are released together. Whatever the interleaving, the answer is the same:
         // one records, the other answers from its record (a replay before the write, or §8 after it).
@@ -632,11 +638,11 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
         using (var client = run.ClientFor(closer, CompanyA))
         {
             var issued = await run.OkAsync(client, $"{Base}/orders/{orderId}/input-issues",
-                new RecordFactRequestV1(Guid.NewGuid(), 1, roll, "1000", At));
+                Run.Issue(1, roll, "1000", At));
 
             // 600 of 1000 declared: the difference is unexplained, so the close is refused and nothing moves.
             var partial = await run.OkAsync(client, $"{Base}/orders/{orderId}/outputs",
-                new DeclareOutputRequestV1(Guid.NewGuid(), issued.Version, roll, "GoodProduct", "600", At.AddMinutes(1)));
+                await run.OutputAsync(client, issued.Version, roll, "GoodProduct", "600", At.AddMinutes(1)));
             using var refused = await client.PostWithKeyAsync($"{Base}/orders/{orderId}/close",
                 new CloseOrderRequestV1(partial.Version), "close-refused");
             Assert.Equal(HttpStatusCode.UnprocessableEntity, refused.StatusCode);
@@ -648,7 +654,7 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
 
             // A stale version is a TERMINAL refusal: recorded once, and the same key answers from it.
             var balanced = await run.OkAsync(client, $"{Base}/orders/{orderId}/outputs",
-                new DeclareOutputRequestV1(Guid.NewGuid(), partial.Version, roll, "Scrap", "400", At.AddMinutes(2)));
+                await run.OutputAsync(client, partial.Version, roll, "Scrap", "400", At.AddMinutes(2)));
             using var stale = await client.PostWithKeyAsync($"{Base}/orders/{orderId}/close",
                 new CloseOrderRequestV1(balanced.Version - 1), "close-stale");
             Assert.Equal(HttpStatusCode.Conflict, stale.StatusCode);
@@ -766,9 +772,9 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
 
             // The status filter follows the stored status: the closed order leaves the open list.
             var issued = await run.OkAsync(client, $"{Base}/orders/{firstOrder}/input-issues",
-                new RecordFactRequestV1(Guid.NewGuid(), 1, firstRoll, "1000", At));
+                Run.Issue(1, firstRoll, "1000", At));
             var declared = await run.OkAsync(client, $"{Base}/orders/{firstOrder}/outputs",
-                new DeclareOutputRequestV1(Guid.NewGuid(), issued.Version, firstRoll, "GoodProduct", "1000", At.AddMinutes(1)));
+                await run.OutputAsync(client, issued.Version, firstRoll, "GoodProduct", "1000", At.AddMinutes(1)));
             Assert.Equal(HttpStatusCode.OK, (await client.PostWithKeyAsync($"{Base}/orders/{firstOrder}/close",
                 new CloseOrderRequestV1(declared.Version), "close-list")).StatusCode);
 
@@ -865,7 +871,18 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
         {
             var baseConnectionString = Environment.GetEnvironmentVariable(
                 SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
-            var factory = new SqlServerRelationalApiFactory(baseConnectionString);
+            var databaseName = $"goymen_erp_ci_{Guid.NewGuid():N}";
+            var databaseConnectionString = new SqlConnectionStringBuilder(baseConnectionString)
+            {
+                InitialCatalog = databaseName,
+            }.ConnectionString;
+            // Output admission exercises Product's real stock eligibility against this same isolated database.
+            var factory = new SqlServerRelationalApiFactory(baseConnectionString, services =>
+            {
+                services.RemoveAll<ProductRuntimeOptions>();
+                services.AddSingleton(new ProductRuntimeOptions(databaseConnectionString,
+                    new ProductPilotIssuerBinding(Guid.NewGuid(), Guid.NewGuid()), new byte[32]));
+            }, databaseName: databaseName);
             var run = new Run(baseConnectionString, factory);
             // The host migrates Organization first and Manufacturing after it.
             using var client = factory.CreateClient();
@@ -874,6 +891,7 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
             // Idempotent when the host already applied Inventory's migrations.
             await using var inventory = run.InventoryContext(CompanyA);
             await inventory.Database.MigrateAsync();
+            await run.EnsureProductFixtureAsync();
             return run;
         }
 
@@ -892,6 +910,50 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
             ScalarAsync<Guid>(
                 "SELECT TOP (1) Id FROM organization.WorkCenters WHERE CompanyId = @c AND Kind = @kind ORDER BY Id",
                 ("@c", company), ("@kind", kind));
+
+        public static IssueInventoryInputRequestV1 Issue(
+            long expectedVersion,
+            Guid parentRollId,
+            string kg,
+            DateTimeOffset occurredAtUtc,
+            Guid? issueId = null,
+            Guid? movementId = null) =>
+            new(issueId ?? Guid.NewGuid(), expectedVersion, parentRollId, movementId ?? Guid.NewGuid(), kg,
+                occurredAtUtc);
+
+        public async Task<ReturnInventoryInputRequestV1> ReturnAsync(
+            HttpClient client,
+            long expectedVersion,
+            Guid parentRollId,
+            string kg,
+            DateTimeOffset occurredAtUtc) =>
+            new(Guid.NewGuid(), expectedVersion, parentRollId, await LabelVersionAsync(client, parentRollId),
+                Guid.NewGuid(), kg, occurredAtUtc);
+
+        public async Task<DeclareInventoryOutputRequestV1> OutputAsync(
+            HttpClient client,
+            long expectedVersion,
+            Guid parentRollId,
+            string outputClass,
+            string kg,
+            DateTimeOffset occurredAtUtc)
+        {
+            var location = await ScalarAsync<Guid>(
+                "SELECT TOP (1) Id FROM organization.Locations WHERE CompanyId = @c AND IsActive = 1 ORDER BY Id",
+                ("@c", CompanyA));
+            return new DeclareInventoryOutputRequestV1(
+                Guid.NewGuid(), expectedVersion, parentRollId, await LabelVersionAsync(client, parentRollId),
+                outputClass, ProductFixture.ProductId, ProductFixture.ProductVersion, Guid.NewGuid(), Guid.NewGuid(),
+                $"SYN-MFG-OUT-{Guid.NewGuid():N}", null, null, [], "Company", CompanyA, "Company", CompanyA,
+                location, "Free", Guid.NewGuid(), kg, occurredAtUtc);
+        }
+
+        private async Task<string> LabelVersionAsync(HttpClient client, Guid labelId)
+        {
+            using var response = await client.GetAsync($"/api/v1/inventory/labels/{labelId:D}/detail");
+            response.EnsureSuccessStatusCode();
+            return (await response.Content.ReadFromJsonAsync<InventoryLabelDetailV1>())!.LabelVersion;
+        }
 
         /// <summary>
         /// A real company-A Inventory label with a physical position. The version is read after the owner
@@ -991,6 +1053,40 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
                 .Options;
             return new InventoryDbContext(options, companyContext);
         }
+
+        private ProductDbContext ProductContext()
+        {
+            var options = new DbContextOptionsBuilder<ProductDbContext>()
+                .UseSqlServer(Factory.DatabaseConnectionString,
+                    sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", "product"))
+                .Options;
+            return new ProductDbContext(options);
+        }
+
+        private async Task EnsureProductFixtureAsync()
+        {
+            var companyContext = new CompanyContext();
+            companyContext.Set(CompanyA);
+            await using var context = ProductContext();
+            await context.Database.MigrateAsync();
+            var settings = new ApprovedSettingsPrerequisiteProvider(companyContext,
+                new FixedCurrentUser(Guid.NewGuid(), CompanyA));
+            var unitProfiles = new ProductUnitProfileAdapter(settings, companyContext);
+            var services = new ServiceCollection();
+            services.AddSingleton(context);
+            services.AddSingleton(unitProfiles);
+            services.AddProductTechnicalCardFixtureStore();
+            services.AddProductStockCandidateFixtureStore();
+            await using var provider = services.BuildServiceProvider();
+            await using var scope = provider.CreateAsyncScope();
+            await scope.ServiceProvider.GetRequiredService<IProductTechnicalCardFixtureStore>()
+                .EnsureAsync(CancellationToken.None);
+            context.ChangeTracker.Clear();
+            ProductFixture = await scope.ServiceProvider.GetRequiredService<IProductStockCandidateFixtureStore>()
+                .EnsureAsync(CancellationToken.None);
+        }
+
+        private ProductStockCandidateFixtureOutput ProductFixture { get; set; } = null!;
 
         private InventoryStoreScope InventoryStore(Guid writer)
         {

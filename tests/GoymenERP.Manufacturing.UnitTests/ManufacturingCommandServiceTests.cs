@@ -26,7 +26,106 @@ public sealed class ManufacturingCommandServiceTests
     private static readonly Guid Actor = Guid.Parse("a1000000-0000-0000-0000-00000000000a");
     private static readonly Guid WorkCenter = Guid.Parse("c1000000-0000-0000-0000-00000000000c");
     private static readonly Guid Roll = Guid.Parse("b1000000-0000-0000-0000-00000000000b");
+    private static readonly Guid Product = Guid.Parse("d1000000-0000-0000-0000-00000000000d");
+    private static readonly Guid Location = Guid.Parse("e1000000-0000-0000-0000-00000000000e");
     private static readonly DateTimeOffset At = new(2026, 9, 18, 10, 0, 0, TimeSpan.Zero);
+
+    [Fact]
+    public async Task Inventory_issue_forwards_separate_fact_and_movement_identities_and_returns_the_fresh_order()
+    {
+        var fixture = new Fixture();
+        var order = await fixture.ApprovedOrderAsync();
+        var issueId = Guid.NewGuid();
+        var movementId = Guid.NewGuid();
+
+        var result = await fixture.Service.IssueInventoryInputAsync(order.Id,
+            new IssueInventoryInputRequestV1(issueId, order.Version, Roll, movementId, "10.125", At),
+            "issue-inventory-1", Permission, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Ok, 2, false),
+            (result.Status, result.Resource?.Version, result.IsReplay));
+        var command = Assert.Single(fixture.InputIssues.Commands);
+        Assert.Equal((order.Id, issueId, Roll, movementId, 10.125m),
+            (command.OrderId, command.IssueId, command.ParentLabelId, command.MovementId, command.Quantity.Value));
+        Assert.Single(order.Issues);
+        Assert.Single(fixture.Store.Commands);
+    }
+
+    [Fact]
+    public async Task Inventory_return_forwards_the_fresh_parent_label_version_as_an_integer()
+    {
+        var fixture = new Fixture();
+        var order = await fixture.ApprovedOrderAsync();
+        order.IssueInput(order.Version, Guid.NewGuid(), Roll, new Kilograms(20m), At);
+        var returnId = Guid.NewGuid();
+        var movementId = Guid.NewGuid();
+
+        var result = await fixture.Service.ReturnInventoryInputAsync(order.Id,
+            new ReturnInventoryInputRequestV1(returnId, order.Version, Roll, "8", movementId, "2", At.AddMinutes(1)),
+            "return-inventory-1", Permission, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Ok, 3), (result.Status, result.Resource?.Version));
+        var command = Assert.Single(fixture.ReturnOutputs.Returns);
+        Assert.Equal((returnId, 8L, movementId, 2m),
+            (command.ReturnId, command.ExpectedParentLabelVersion, command.MovementId, command.Quantity.Value));
+        Assert.Single(order.Returns);
+    }
+
+    [Fact]
+    public async Task Inventory_output_forwards_every_explicit_identity_version_position_and_owner_fact()
+    {
+        var fixture = new Fixture();
+        var order = await fixture.ApprovedOrderAsync();
+        order.IssueInput(order.Version, Guid.NewGuid(), Roll, new Kilograms(20m), At);
+        var outputId = Guid.NewGuid();
+        var lotId = Guid.NewGuid();
+        var labelId = Guid.NewGuid();
+        var movementId = Guid.NewGuid();
+
+        var result = await fixture.Service.DeclareInventoryOutputAsync(order.Id,
+            new DeclareInventoryOutputRequestV1(outputId, order.Version, Roll, "8", "GoodProduct",
+                Product, "12", lotId, labelId, "LBL-OUT-1", "H-1", "C-1", ["quality-certificate"],
+                "Company", Company, "Company", Company, Location, "Free", movementId, "20", At.AddMinutes(1)),
+            "output-inventory-1", Permission, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Ok, 3), (result.Status, result.Resource?.Version));
+        var command = Assert.Single(fixture.ReturnOutputs.Outputs);
+        Assert.Equal((outputId, 8L, OutputClass.GoodProduct, Product, "12", lotId, labelId, movementId),
+            (command.OutputId, command.ExpectedParentLabelVersion, command.OutputClass, command.ProductId,
+                command.ExpectedProductVersion, command.LotId, command.LabelId, command.MovementId));
+        Assert.Equal(("Company", Company, "Company", Company, Location, "Free"),
+            (command.OwnerKind, command.OwnerId, command.CustodianKind, command.CustodianId,
+                command.LocationId, command.InitialBlock));
+        Assert.Single(order.Outputs);
+    }
+
+    [Fact]
+    public async Task Owner_port_version_refusal_keeps_its_code_and_versions_as_the_terminal_replay_answer()
+    {
+        var fixture = new Fixture();
+        var order = await fixture.ApprovedOrderAsync();
+        Assert.Equal("inventory_manufacturing_parent_label_version_conflict",
+            InventoryManufacturingRealizationCodesV1.LabelVersionConflict);
+        fixture.ReturnOutputs.Exception = new ManufacturingInventoryRealizationPortException(
+            ManufacturingApiStatus.Conflict, InventoryManufacturingRealizationCodesV1.LabelVersionConflict,
+            "expectedParentLabelVersion", 8, 9);
+
+        var request = new ReturnInventoryInputRequestV1(
+            Guid.NewGuid(), order.Version, Roll, "8", Guid.NewGuid(), "2", At);
+        var result = await fixture.Service.ReturnInventoryInputAsync(order.Id, request,
+            "return-inventory-conflict", Permission, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Conflict, InventoryManufacturingRealizationCodesV1.LabelVersionConflict,
+                "expectedParentLabelVersion", 8L, 9L),
+            (result.Status, result.Code, result.Field, result.ExpectedVersion, result.CurrentVersion));
+        Assert.Single(fixture.Store.Commands);
+
+        var replay = await fixture.Service.ReturnInventoryInputAsync(order.Id, request,
+            "return-inventory-conflict", Permission, CancellationToken.None);
+        Assert.Equal((ManufacturingApiStatus.Conflict,
+                InventoryManufacturingRealizationCodesV1.LabelVersionConflict, true),
+            (replay.Status, replay.Code, replay.IsReplay));
+    }
 
     [Theory]
     [InlineData("1e3")]
@@ -1062,9 +1161,12 @@ public sealed class ManufacturingCommandServiceTests
             Authority = new AuthorityPort(Calls) { Scope = Scope(companyWide: true, "PRODUCTION_OPERATOR") };
             ParentRolls = new ParentRollPort(Calls);
             WorkCenters = new WorkCenterPort(Calls);
+            InputIssues = new InputIssuePort(Store);
+            ReturnOutputs = new ReturnOutputPort(Store);
             Correlation = correlation;
             Service = new ManufacturingCommandService(Store, Store, Store, new ManufacturingMassVerifier(Settings), Authority,
-                company, User, correlation, new FixedTime(), ParentRolls, withWorkCenters ? WorkCenters : null);
+                company, User, correlation, new FixedTime(), ParentRolls, withWorkCenters ? WorkCenters : null,
+                InputIssues, ReturnOutputs);
         }
 
         public List<string> Calls { get; } = [];
@@ -1080,6 +1182,10 @@ public sealed class ManufacturingCommandServiceTests
         public ParentRollPort ParentRolls { get; }
 
         public WorkCenterPort WorkCenters { get; }
+
+        public InputIssuePort InputIssues { get; }
+
+        public ReturnOutputPort ReturnOutputs { get; }
 
         public User User { get; } = new();
 
@@ -1104,6 +1210,82 @@ public sealed class ManufacturingCommandServiceTests
             await Task.CompletedTask;
             return order;
         }
+    }
+
+    private sealed class InputIssuePort(FakeStore store) : IManufacturingInventoryInputIssuePortV1
+    {
+        public List<ManufacturingInventoryInputIssuePortCommandV1> Commands { get; } = [];
+
+        public Task<ManufacturingInventoryInputIssuePortResultV1> IssueAsync(
+            ManufacturingInventoryInputIssuePortCommandV1 command,
+            ManufacturingCommandMetadata metadata,
+            CancellationToken cancellationToken)
+        {
+            Commands.Add(command);
+            var order = store.Orders[command.OrderId];
+            order.IssueInput(command.ExpectedOrderVersion, command.IssueId, command.ParentLabelId,
+                command.Quantity, command.OccurredAtUtc);
+            Complete(store, metadata, order);
+            return Task.FromResult(new ManufacturingInventoryInputIssuePortResultV1(order.Version, 8, false));
+        }
+    }
+
+    private sealed class ReturnOutputPort(FakeStore store) : IManufacturingInventoryReturnOutputPortV1
+    {
+        public Exception? Exception { get; set; }
+
+        public List<ManufacturingInventoryInputReturnPortCommandV1> Returns { get; } = [];
+
+        public List<ManufacturingInventoryOutputPortCommandV1> Outputs { get; } = [];
+
+        public Task<ManufacturingInventoryInputReturnPortResultV1> ReturnAsync(
+            ManufacturingInventoryInputReturnPortCommandV1 command,
+            ManufacturingCommandMetadata metadata,
+            CancellationToken cancellationToken)
+        {
+            ThrowIfConfigured();
+            Returns.Add(command);
+            var order = store.Orders[command.OrderId];
+            order.ReturnUnusedInput(command.ExpectedOrderVersion, command.ReturnId, command.ParentLabelId,
+                command.Quantity, command.OccurredAtUtc);
+            Complete(store, metadata, order);
+            return Task.FromResult(new ManufacturingInventoryInputReturnPortResultV1(
+                order.Version, command.ExpectedParentLabelVersion + 1, false));
+        }
+
+        public Task<ManufacturingInventoryOutputPortResultV1> DeclareOutputAsync(
+            ManufacturingInventoryOutputPortCommandV1 command,
+            ManufacturingCommandMetadata metadata,
+            CancellationToken cancellationToken)
+        {
+            ThrowIfConfigured();
+            Outputs.Add(command);
+            var order = store.Orders[command.OrderId];
+            order.DeclareOutput(command.ExpectedOrderVersion, command.OutputId, command.ParentLabelId,
+                command.OutputClass, command.Quantity, command.OccurredAtUtc);
+            Complete(store, metadata, order);
+            return Task.FromResult(new ManufacturingInventoryOutputPortResultV1(
+                order.Version, command.ExpectedParentLabelVersion + 1, 1, false));
+        }
+
+        private void ThrowIfConfigured()
+        {
+            if (Exception is { } exception)
+            {
+                throw exception;
+            }
+        }
+    }
+
+    private static void Complete(FakeStore store, ManufacturingCommandMetadata metadata, ProductionOrder order)
+    {
+        if (metadata.Completion is not { } completion)
+        {
+            return;
+        }
+
+        var record = completion(order);
+        store.Commands.Add((record.CommandName, record.IdempotencyKeyHash), record);
     }
 
     private sealed class FixedTime : TimeProvider

@@ -18,10 +18,8 @@ import {
   decodeOrder,
   decodeOrderList,
   decodePlan,
-  factBody,
   FACT_KINDS,
   OUTPUT_CLASSES,
-  type FactSnapshot,
 } from './contract'
 import { MANUFACTURING_BASE } from './api'
 import { massBalance, order, orderList, orderSummary, plan, plannedInput, roll, ROLL_1 } from './testHarness'
@@ -65,6 +63,22 @@ function names(name: string): string[] {
   return Object.keys(schema(name).properties ?? {}).sort()
 }
 
+function requestSchemaName(pathName: string): string {
+  const operation = document.paths[pathName]?.post as {
+    readonly requestBody?: {
+      readonly content?: {
+        readonly 'application/json'?: { readonly schema?: { readonly $ref?: string } }
+      }
+    }
+  } | undefined
+  const reference = operation?.requestBody?.content?.['application/json']?.schema?.$ref
+  const prefix = '#/components/schemas/'
+  if (reference === undefined || !reference.startsWith(prefix)) {
+    throw new Error(`OpenAPI POST ${pathName} has no component request schema`)
+  }
+  return reference.slice(prefix.length)
+}
+
 describe('Manufacturing port ↔ canonical OpenAPI', () => {
   it('reads exactly the properties OrderViewV1 and its parts declare, all required', () => {
     expect(Object.keys(order()).sort()).toEqual(names('OrderViewV1'))
@@ -97,21 +111,65 @@ describe('Manufacturing port ↔ canonical OpenAPI', () => {
     ).not.toBeNull()
   })
 
-  it('sends exactly the properties the fact requests declare', () => {
-    const snapshot: FactSnapshot = {
-      kind: 'input-issues',
-      factId: 'f0000000-0000-4000-8000-000000000001',
-      idempotencyKey: 'k',
-      expectedVersion: 1,
-      parentRollId: ROLL_1,
-      kg: '1',
-      occurredAtUtc: '2026-09-18T09:00:00.000Z',
-      outputClass: null,
+  it('declares the exact strict inventory request schema for each realization route', () => {
+    const root = MANUFACTURING_BASE.replace(/^.*\/api\/v1/, '/api/v1')
+    const base = `${root}/orders/{orderId}`
+    const requests = [
+      {
+        kind: 'input-issues',
+        schemaName: 'IssueInventoryInputRequestV1',
+        properties: ['expectedVersion', 'issueId', 'kg', 'movementId', 'occurredAtUtc', 'parentRollId'],
+      },
+      {
+        kind: 'input-returns',
+        schemaName: 'ReturnInventoryInputRequestV1',
+        properties: [
+          'expectedParentLabelVersion',
+          'expectedVersion',
+          'kg',
+          'movementId',
+          'occurredAtUtc',
+          'parentRollId',
+          'returnId',
+        ],
+      },
+      {
+        kind: 'outputs',
+        schemaName: 'DeclareInventoryOutputRequestV1',
+        properties: [
+          'coilNumber',
+          'custodianId',
+          'custodianKind',
+          'expectedParentLabelVersion',
+          'expectedProductVersion',
+          'expectedVersion',
+          'heatNumber',
+          'initialBlock',
+          'kg',
+          'labelCode',
+          'labelId',
+          'locationId',
+          'lotId',
+          'movementId',
+          'occurredAtUtc',
+          'outputClass',
+          'outputId',
+          'ownerId',
+          'ownerKind',
+          'parentRollId',
+          'productId',
+          'requiredDocuments',
+        ],
+      },
+    ] as const
+
+    for (const request of requests) {
+      expect(requestSchemaName(`${base}/${request.kind}`), request.kind).toBe(request.schemaName)
+      expect(names(request.schemaName), request.schemaName).toEqual([...request.properties].sort())
+      expect([...(schema(request.schemaName).required ?? [])].sort(), request.schemaName).toEqual(
+        [...request.properties].sort(),
+      )
     }
-    expect(Object.keys(factBody(snapshot)).sort()).toEqual(names('RecordFactRequestV1'))
-    expect(Object.keys(factBody({ ...snapshot, kind: 'outputs', outputClass: 'Scrap' })).sort()).toEqual(
-      names('DeclareOutputRequestV1'),
-    )
   })
 
   it('calls routes the API declares: the order read, the plan read and one POST per fact kind', () => {

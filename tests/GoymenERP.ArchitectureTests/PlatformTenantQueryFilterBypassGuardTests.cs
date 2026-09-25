@@ -61,7 +61,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // opinion about whether a change is semantic. Any edit to a pinned file, comment included, is re-pinned in
     // the same push.
     private const string ReviewedOpenApiStartupFingerprint =
-        "4ce85ca6967aaaad85a2be6a7f88602041be319364927042fecd32b3052bfe21";
+        "b50292815cda1ab53eccaf297a2097475c4451d92636242e87f09ec508d47078";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedIdentityReconcilerPath =
@@ -285,7 +285,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 [ReviewedInventoryManufacturingRealizationParticipantPath] = ("InventoryDbContext", 1),
                 [ReviewedPurchaseAcceptanceParticipantPath] = ("PurchasingDbContext", 3),
                 [ReviewedFinanceOpenItemSourceAdmissionServicePath] = ("FinanceDbContext", 1),
-                [ReviewedManufacturingInventoryInputIssueHostPath] = ("ManufacturingDbContext", 1)
+                [ReviewedManufacturingInventoryInputIssueHostPath] = ("ManufacturingDbContext", 2),
+                [ReviewedManufacturingInventoryReturnOutputHostPath] = ("ManufacturingDbContext", 1)
             };
     private const string ReviewedManualBankPaymentServicePath =
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
@@ -437,7 +438,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // API counts keep this reviewed bridge narrower than a general direct-database exemption.
                 [ReviewedManufacturingInventoryInputIssueHostPath] =
                     new(
-                        "a57effbe5e99d90659e785cbb5ae601f78ca592cd65db6986d9a1a7d8a07419b",
+                        "f1b5bb4384fd389d603b317dc20f86c415997ed1513c636d44517e4ceecec57f",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1,
@@ -447,7 +448,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Inventory connection and current parent-label truth before constructing one Manufacturing context.
                 [ReviewedManufacturingInventoryReturnOutputHostPath] =
                     new(
-                        "05d4636176e6ee04bd4fca106c9f9c3771fd27ce1ea52f8aed1f1cc6ffad543f",
+                        "91e00eebf5d7499a8fe5f1e3d950d0a2d6188f50fa906d4410e750ef9d3b7688",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1,

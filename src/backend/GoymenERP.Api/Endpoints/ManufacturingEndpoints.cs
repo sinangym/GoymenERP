@@ -25,7 +25,13 @@ public static class ManufacturingEndpoints
     private const string IdempotencyHeaderName = "Idempotency-Key";
     private const int MaximumIdempotencyKeyLength = 128;
 
-    private static readonly string[] BadRequestCodes = [ManufacturingApiCodes.RequestInvalid];
+    private static readonly string[] BadRequestCodes =
+    [
+        ManufacturingApiCodes.RequestInvalid,
+        InventoryManufacturingRealizationCodesV1.InvalidRequest,
+        InventoryManufacturingRealizationCodesV1.InvalidVersion,
+        InventoryManufacturingRealizationCodesV1.InvalidQuantity,
+    ];
 
     private static readonly string[] ConflictCodes =
     [
@@ -35,6 +41,16 @@ public static class ManufacturingEndpoints
         ManufacturingStoreCodes.OrderIdConflict,
         ManufacturingStoreCodes.FactIdConflict,
         ManufacturingStoreCodes.ConcurrentChange,
+        InventoryManufacturingRealizationCodesV1.LabelVersionConflict,
+        InventoryManufacturingRealizationCodesV1.ParentLabelNotReleasable,
+        InventoryManufacturingRealizationCodesV1.ParentLabelContextConflict,
+        InventoryManufacturingRealizationCodesV1.PhysicalStockInsufficient,
+        InventoryManufacturingRealizationCodesV1.ParentInputNotIssued,
+        InventoryManufacturingRealizationCodesV1.ReturnExceedsIssued,
+        InventoryManufacturingRealizationCodesV1.OutputLabelAlreadyRegistered,
+        InventoryManufacturingRealizationCodesV1.OutputLotOrLabelConflict,
+        InventoryManufacturingRealizationCodesV1.IdempotencyConflict,
+        InventoryManufacturingRealizationCodesV1.ConcurrentChange,
     ];
 
     private static readonly string[] SavePlanConflictCodes =
@@ -133,13 +149,37 @@ public static class ManufacturingEndpoints
             .Produces<OrderViewV1>(StatusCodes.Status201Created)
             .WithWriteProblems(notFound: true);
 
-        MapFact(group, "/orders/{orderId:guid}/input-issues", "IssueManufacturingInputV1",
-            (service, orderId, request, key, cancellationToken) =>
-                service.IssueInputAsync(orderId, request, key, ErpPermissions.ManufacturingFactsRecord, cancellationToken));
-        MapFact(group, "/orders/{orderId:guid}/input-returns", "ReturnManufacturingInputV1",
-            (service, orderId, request, key, cancellationToken) =>
-                service.ReturnUnusedInputAsync(orderId, request, key, ErpPermissions.ManufacturingFactsRecord,
-                    cancellationToken));
+        group.MapPost("/orders/{orderId:guid}/input-issues", async (
+                Guid orderId,
+                IssueInventoryInputRequestV1 request,
+                ManufacturingCommandService service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            await WriteAsync(httpContext, key => service.IssueInventoryInputAsync(orderId, request, key,
+                ErpPermissions.ManufacturingFactsRecord, cancellationToken)))
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.ManufacturingFactsRecord)
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict)
+            .WithName("IssueManufacturingInputV1")
+            .Accepts<IssueInventoryInputRequestV1>("application/json")
+            .Produces<OrderViewV1>(StatusCodes.Status200OK)
+            .WithWriteProblems(notFound: true);
+
+        group.MapPost("/orders/{orderId:guid}/input-returns", async (
+                Guid orderId,
+                ReturnInventoryInputRequestV1 request,
+                ManufacturingCommandService service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            await WriteAsync(httpContext, key => service.ReturnInventoryInputAsync(orderId, request, key,
+                ErpPermissions.ManufacturingFactsRecord, cancellationToken)))
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.ManufacturingFactsRecord)
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict)
+            .WithName("ReturnManufacturingInputV1")
+            .Accepts<ReturnInventoryInputRequestV1>("application/json")
+            .Produces<OrderViewV1>(StatusCodes.Status200OK)
+            .WithWriteProblems(notFound: true);
         MapFact(group, "/orders/{orderId:guid}/wip-measurements", "RecordManufacturingWorkInProgressV1",
             (service, orderId, request, key, cancellationToken) =>
                 service.RecordWorkInProgressAsync(orderId, request, key, ErpPermissions.ManufacturingFactsRecord,
@@ -147,17 +187,17 @@ public static class ManufacturingEndpoints
 
         group.MapPost("/orders/{orderId:guid}/outputs", async (
                 Guid orderId,
-                DeclareOutputRequestV1 request,
+                DeclareInventoryOutputRequestV1 request,
                 ManufacturingCommandService service,
                 HttpContext httpContext,
                 CancellationToken cancellationToken) =>
-            await WriteAsync(httpContext, key => service.DeclareOutputAsync(orderId, request, key,
+            await WriteAsync(httpContext, key => service.DeclareInventoryOutputAsync(orderId, request, key,
                 ErpPermissions.ManufacturingFactsRecord, cancellationToken)))
             .RequireCompanyContext()
             .RequireAuthorization(ErpPermissions.ManufacturingFactsRecord)
             .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict)
             .WithName("DeclareManufacturingOutputV1")
-            .Accepts<DeclareOutputRequestV1>("application/json")
+            .Accepts<DeclareInventoryOutputRequestV1>("application/json")
             .Produces<OrderViewV1>(StatusCodes.Status200OK)
             .WithWriteProblems(notFound: true);
 
@@ -411,5 +451,8 @@ internal static class ManufacturingProblemCodes
         ManufacturingMassCodes.ProfileNotInEffect,
         ManufacturingMassCodes.ScaleExceeded,
         GoymenERP.Modules.Settings.Application.Contracts.V1.SettingsPrerequisiteCodesV1.UnitProfileNotFound,
+        InventoryOpeningCodesV1.ProductIneligible,
+        InventoryOpeningCodesV1.LocationNotFound,
+        InventoryOpeningCodesV1.LocationInactive,
     ];
 }
