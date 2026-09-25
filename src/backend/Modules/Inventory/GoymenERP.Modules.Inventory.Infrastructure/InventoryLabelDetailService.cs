@@ -169,7 +169,10 @@ internal sealed class InventoryLabelDetailService(
                 || first.Kind == nameof(InventoryLabelTransformationKind.Split)
                     && (sources.Count != 1 || outputs.Count < 2)
                 || first.Kind == nameof(InventoryLabelTransformationKind.Merge)
-                    && (sources.Count < 2 || outputs.Count != 1))
+                    && (sources.Count < 2 || outputs.Count != 1)
+                || !SameQuantityTotal(
+                    sources.Values.Select(facts => facts.QuantityKg),
+                    outputs.Values.Select(facts => facts.QuantityKg)))
             {
                 return false;
             }
@@ -212,6 +215,35 @@ internal sealed class InventoryLabelDetailService(
 
         labels.Add(labelId, facts);
         return true;
+    }
+
+    private static bool SameQuantityTotal(IEnumerable<string> sources, IEnumerable<string> outputs) =>
+        TryQuantityTotal(sources, out var sourceTotal)
+        && TryQuantityTotal(outputs, out var outputTotal)
+        && sourceTotal == outputTotal;
+
+    private static bool TryQuantityTotal(IEnumerable<string> values, out decimal total)
+    {
+        total = 0m;
+        try
+        {
+            foreach (var value in values)
+            {
+                if (!decimal.TryParse(value, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture,
+                        out var parsed))
+                {
+                    return false;
+                }
+
+                total = checked(total + parsed);
+            }
+
+            return true;
+        }
+        catch (OverflowException)
+        {
+            return false;
+        }
     }
 
     private static bool PositiveVersion(string value) =>

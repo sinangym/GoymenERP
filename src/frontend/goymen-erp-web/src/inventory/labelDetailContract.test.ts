@@ -47,7 +47,7 @@ function genealogy() {
     edges: [{
       transformationId: TRANSFORMATION, kind: 'Split', occurredAtUtc: '2026-09-24T07:59:00Z',
       sourceLabelId: SOURCE_LABEL, sourceCode: 'LBL-090', sourceLabelVersion: '2', sourceQuantityKg: '1250.5',
-      outputLabelId: LABEL, outputCode: 'LBL-100', outputLabelVersion: '3', outputQuantityKg: '1250.5',
+      outputLabelId: LABEL, outputCode: 'LBL-100', outputLabelVersion: '3', outputQuantityKg: '1000.5',
     }, {
       transformationId: TRANSFORMATION, kind: 'Split', occurredAtUtc: '2026-09-24T07:59:00Z',
       sourceLabelId: SOURCE_LABEL, sourceCode: 'LBL-090', sourceLabelVersion: '2', sourceQuantityKg: '1250.5',
@@ -105,6 +105,7 @@ describe('Inventory label detail contract', () => {
     expect(decode([first, { ...second, outputLabelId: SOURCE_LABEL }])).toBeNull()
     expect(decode([first, { ...second, occurredAtUtc: '2026-09-24T08:00:00Z' }])).toBeNull()
     expect(decode([first, { ...second, sourceQuantityKg: '1' }])).toBeNull()
+    expect(decode([first, { ...second, outputQuantityKg: '249.99' }])).toBeNull()
   })
 
   it('rejects negative quantities, non-positive positions and totals that do not match their positions', () => {

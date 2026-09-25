@@ -129,12 +129,16 @@ function decimalParts(value: string): readonly [bigint, number] {
   return [BigInt(`${whole}${fraction}`), fraction.length]
 }
 
-function decimalSumEquals(total: string, values: readonly string[]): boolean {
-  const parts = [total, ...values].map(decimalParts)
+function decimalSumsEqual(left: readonly string[], right: readonly string[]): boolean {
+  const parts = [...left, ...right].map(decimalParts)
   const scale = Math.max(...parts.map(([, digits]) => digits))
   const scaled = ([units, digits]: readonly [bigint, number]) => units * (10n ** BigInt(scale - digits))
-  return scaled(parts[0]) === parts.slice(1).reduce((sum, value) => sum + scaled(value), 0n)
+  const sum = (values: readonly string[]) => values.map(decimalParts)
+    .reduce((total, value) => total + scaled(value), 0n)
+  return sum(left) === sum(right)
 }
+
+const decimalSumEquals = (total: string, values: readonly string[]): boolean => decimalSumsEqual([total], values)
 
 function document(value: unknown): InventoryLabelDocument | null {
   const source = record(value)
@@ -225,7 +229,11 @@ function validGenealogyTransformations(edges: readonly InventoryLabelGenealogyEd
     }
     if ([...sources.keys()].some((labelId) => outputs.has(labelId)) ||
       (first.kind === 'Split' && (sources.size !== 1 || outputs.size < 2)) ||
-      (first.kind === 'Merge' && (sources.size < 2 || outputs.size !== 1))) return false
+      (first.kind === 'Merge' && (sources.size < 2 || outputs.size !== 1)) ||
+      !decimalSumsEqual(
+        [...sources.values()].map((facts) => facts.quantityKg),
+        [...outputs.values()].map((facts) => facts.quantityKg),
+      )) return false
   }
   return true
 }

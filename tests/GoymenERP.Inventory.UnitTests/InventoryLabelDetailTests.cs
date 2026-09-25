@@ -175,8 +175,10 @@ public sealed class InventoryLabelDetailTests
         split.Genealogy.Result = split.Genealogy.Result! with
         {
             Edges = [
-                Edge(splitSource, splitRoot, splitId, occurredAt: splitOccurredAt),
-                Edge(splitSource, Guid.NewGuid(), splitId, occurredAt: splitOccurredAt),
+                Edge(splitSource, splitRoot, splitId, occurredAt: splitOccurredAt,
+                    sourceQuantityKg: "2", outputQuantityKg: "1"),
+                Edge(splitSource, Guid.NewGuid(), splitId, occurredAt: splitOccurredAt,
+                    sourceQuantityKg: "2", outputQuantityKg: "1"),
             ],
         };
         Assert.Equal(2, (await split.Service().GetAsync(splitRoot)).Genealogy.Edges.Count);
@@ -188,8 +190,10 @@ public sealed class InventoryLabelDetailTests
         merge.Genealogy.Result = merge.Genealogy.Result! with
         {
             Edges = [
-                Edge(Guid.NewGuid(), mergeRoot, mergeId, nameof(InventoryLabelTransformationKind.Merge), mergeOccurredAt),
-                Edge(Guid.NewGuid(), mergeRoot, mergeId, nameof(InventoryLabelTransformationKind.Merge), mergeOccurredAt),
+                Edge(Guid.NewGuid(), mergeRoot, mergeId, nameof(InventoryLabelTransformationKind.Merge),
+                    mergeOccurredAt, outputQuantityKg: "2"),
+                Edge(Guid.NewGuid(), mergeRoot, mergeId, nameof(InventoryLabelTransformationKind.Merge),
+                    mergeOccurredAt, outputQuantityKg: "2"),
             ],
         };
         Assert.Equal(2, (await merge.Service().GetAsync(mergeRoot)).Genealogy.Edges.Count);
@@ -244,6 +248,19 @@ public sealed class InventoryLabelDetailTests
                 Edge(source, Guid.NewGuid(), transformationId, sourceQuantityKg: "2"),
             ];
         });
+        await RefusedGenealogy(world =>
+        {
+            var root = world.Reader.Record!.Label.Id;
+            var transformationId = Guid.NewGuid();
+            var occurredAt = DateTimeOffset.UtcNow;
+            var source = Guid.NewGuid();
+            return [
+                Edge(source, root, transformationId, occurredAt: occurredAt,
+                    sourceQuantityKg: "2", outputQuantityKg: "1"),
+                Edge(source, Guid.NewGuid(), transformationId, occurredAt: occurredAt,
+                    sourceQuantityKg: "2", outputQuantityKg: "0.5"),
+            ];
+        });
     }
 
     private static async Task RefusedGenealogy(
@@ -282,7 +299,8 @@ public sealed class InventoryLabelDetailTests
         Guid? transformationId = null,
         string kind = nameof(InventoryLabelTransformationKind.Split),
         DateTimeOffset? occurredAt = null,
-        string sourceQuantityKg = "1") => new(
+        string sourceQuantityKg = "1",
+        string outputQuantityKg = "1") => new(
         transformationId ?? Guid.NewGuid(),
         kind,
         occurredAt ?? DateTimeOffset.UtcNow,
@@ -293,7 +311,7 @@ public sealed class InventoryLabelDetailTests
         output,
         $"LBL-{output:N}",
         "1",
-        "1");
+        outputQuantityKg);
 
     private sealed class World
     {
