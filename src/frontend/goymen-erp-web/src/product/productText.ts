@@ -289,6 +289,20 @@ export const PRODUCT_CREATE_TEXT = {
   codeNote: 'Ürün kodunu sunucu, seçilen kod grubunun ön ekinden üretir. Kod kayıttan sonra görünür.',
   nameLabel: 'Ürün adı',
   nameHint: 'Ad her iki Göymen şirketinde ortaktır.',
+  /**
+   * §10.2 / CASE-PRD-U02-014: a name match WARNS and lets the person compare; it never
+   * blocks or merges. The matches are the server's own search result for the typed
+   * name, not a similarity score this client made up.
+   */
+  // The server matches the term in the name OR the code/alias; the title says so.
+  nameMatchesChecking: 'Adında veya kodunda bu ifade geçen ürünler aranıyor…',
+  nameMatchesTitle: 'Adında veya kodunda bu ifade geçen ürünler var',
+  nameMatchesDetail:
+    'Kaydı engellemez. Aynı ürünü ikinci kez oluşturmadığınızı kontrol edin; kod çakışması ayrıca sunucuda reddedilir.',
+  nameMatchesSameName: 'aynı ad',
+  nameMatchesMore: 'Daha fazla eşleşme var; tamamı için ürün listesinde arayın.',
+  nameMatchesNone: 'Sunucu aramasında bu adı içeren ürün yok.',
+  nameMatchesFailed: 'Benzer ad kontrolü yapılamadı. Bu, kaydı engellemez.',
   groupLabel: 'Kod grubu',
   groupHint: 'Ürün kodu bu grubun ön ekinden üretilir ve sonradan değişmez.',
   classLabel: 'Ürün sınıfı',
