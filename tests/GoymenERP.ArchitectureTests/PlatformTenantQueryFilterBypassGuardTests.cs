@@ -64,6 +64,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         "e3008f69f6f492101d541df3fd21df7dc75d8b018016400ef54807e555fee003";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
+    private const string ReviewedProductManufacturingTechnicalRegistrationPath =
+        "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
+        + "Persistence/ProductManufacturingTechnicalRuntimeRegistration.cs";
+    private const string ReviewedProductManufacturingTechnicalRegistrationFingerprint =
+        "b9621bcc24ef3dc36923c51ea2887902427a5e14f52f3da1cda09e68825dbdec";
     private const string ReviewedIdentityReconcilerPath =
         "src/backend/Modules/Identity/"
         + "GoymenERP.Modules.Identity.Infrastructure/Seeding/"
@@ -305,7 +310,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-measured for Product history: the scoped Audit-owner adapter and Product history reader are
                 // read-only DI additions; no new database capability, MigrateAsync stays 2.
                 ["src/backend/GoymenERP.Api/ProductRuntime/ProductRuntimeExtensions.cs"] =
-                    new("b43d6443ee83f27694f9a9f1adbdf555b869f20a96da657d01b3d571367fca86",
+                    new("f94c81990d714a710a77677e274e80f6d0129611693beec1ed94a52d3047f993",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["MigrateAsync"] = 2 }),
                 // Re-measured for PRD-UNIT-1: the Product participant gets Settings' unit-identity catalog
@@ -4972,6 +4977,29 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     errors.Add(
                         "SQL Server RCSI tool reflection surface left its exact reviewed "
                         + $"source fingerprint. Expected {reviewedFingerprint}, found "
+                        + $"{fingerprint}: {normalizedPath}");
+                }
+                else
+                {
+                    continue;
+                }
+            }
+
+            if (string.Equals(
+                    normalizedPath,
+                    ReviewedProductManufacturingTechnicalRegistrationPath,
+                    StringComparison.Ordinal))
+            {
+                var fingerprint = ComputeReviewedSourceFingerprint(source);
+                if (!string.Equals(
+                        fingerprint,
+                        ReviewedProductManufacturingTechnicalRegistrationFingerprint,
+                        StringComparison.Ordinal))
+                {
+                    errors.Add(
+                        "Product Manufacturing technical registration left its exact reviewed "
+                        + "source fingerprint. Expected "
+                        + $"{ReviewedProductManufacturingTechnicalRegistrationFingerprint}, found "
                         + $"{fingerprint}: {normalizedPath}");
                 }
                 else
