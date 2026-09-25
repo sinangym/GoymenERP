@@ -25,7 +25,13 @@ public static class ManufacturingEndpoints
     private const string IdempotencyHeaderName = "Idempotency-Key";
     private const int MaximumIdempotencyKeyLength = 128;
 
-    private static readonly string[] BadRequestCodes = [ManufacturingApiCodes.RequestInvalid];
+    private static readonly string[] BadRequestCodes =
+    [
+        ManufacturingApiCodes.RequestInvalid,
+        InventoryManufacturingRealizationCodesV1.InvalidRequest,
+        InventoryManufacturingRealizationCodesV1.InvalidVersion,
+        InventoryManufacturingRealizationCodesV1.InvalidQuantity,
+    ];
 
     private static readonly string[] ConflictCodes =
     [
@@ -35,6 +41,16 @@ public static class ManufacturingEndpoints
         ManufacturingStoreCodes.OrderIdConflict,
         ManufacturingStoreCodes.FactIdConflict,
         ManufacturingStoreCodes.ConcurrentChange,
+        InventoryManufacturingRealizationCodesV1.LabelVersionConflict,
+        InventoryManufacturingRealizationCodesV1.ParentLabelNotReleasable,
+        InventoryManufacturingRealizationCodesV1.ParentLabelContextConflict,
+        InventoryManufacturingRealizationCodesV1.PhysicalStockInsufficient,
+        InventoryManufacturingRealizationCodesV1.ParentInputNotIssued,
+        InventoryManufacturingRealizationCodesV1.ReturnExceedsIssued,
+        InventoryManufacturingRealizationCodesV1.OutputLabelAlreadyRegistered,
+        InventoryManufacturingRealizationCodesV1.OutputLotOrLabelConflict,
+        InventoryManufacturingRealizationCodesV1.IdempotencyConflict,
+        InventoryManufacturingRealizationCodesV1.ConcurrentChange,
     ];
 
     private static readonly string[] SavePlanConflictCodes =
@@ -435,5 +451,8 @@ internal static class ManufacturingProblemCodes
         ManufacturingMassCodes.ProfileNotInEffect,
         ManufacturingMassCodes.ScaleExceeded,
         GoymenERP.Modules.Settings.Application.Contracts.V1.SettingsPrerequisiteCodesV1.UnitProfileNotFound,
+        InventoryOpeningCodesV1.ProductIneligible,
+        InventoryOpeningCodesV1.LocationNotFound,
+        InventoryOpeningCodesV1.LocationInactive,
     ];
 }
