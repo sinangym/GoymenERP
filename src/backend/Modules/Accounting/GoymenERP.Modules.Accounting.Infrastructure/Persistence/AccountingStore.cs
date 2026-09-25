@@ -544,6 +544,17 @@ public sealed class AccountingStore(
                 "Bu şirketin terslenecek kaynak fişi yok.");
         }
 
+        // The period is admitted under the bound company before anything is staged: an unknown or other-company
+        // period must not become a durable pending proposal, audit or command that only approval would refuse.
+        var periodExists = await dbContext.Periods.AsNoTracking().AnyAsync(
+            row => row.CompanyId == proposal.CompanyId && row.Id == proposal.PeriodId,
+            cancellationToken);
+        if (!periodExists)
+        {
+            throw Refused(AccountingJournalReversalStoreCodesV1.PeriodNotFound,
+                "Bu şirketin ters kayıt için seçilen dönemi yok.");
+        }
+
         var row = ToReversalProposalRow(proposal);
         dbContext.JournalReversalProposals.Add(row);
         await freshAuthorityFence(cancellationToken);

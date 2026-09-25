@@ -22,8 +22,33 @@ public static class AccountingJournalReversalStoreCodesV1
 {
     public const string NotFound = "accounting_journal_reversal_proposal_not_found";
     public const string SourceJournalNotFound = "accounting_journal_reversal_source_journal_not_found";
+    public const string PeriodNotFound = "accounting_journal_reversal_period_not_found";
     public const string ContentConflict = "accounting_journal_reversal_proposal_content_conflict";
     public const string PostingConflict = "accounting_journal_reversal_posting_conflict";
+}
+
+/// <summary>
+/// Owner catalog of the 422 codes each reversal route can actually answer. The host publishes exactly these
+/// per route: propose never reaches the approval-time posting refusals, and approval never re-admits the source.
+/// </summary>
+public static class AccountingJournalReversalUnprocessableCodesV1
+{
+    /// <summary>Source journal and period are admitted under the bound company before anything is staged.</summary>
+    public static IReadOnlyList<string> Propose { get; } =
+    [
+        AccountingJournalReversalStoreCodesV1.SourceJournalNotFound,
+        AccountingJournalReversalStoreCodesV1.PeriodNotFound,
+    ];
+
+    /// <summary>The existing Accounting reversal/posting path refuses these while an approval is applied.</summary>
+    public static IReadOnlyList<string> Approve { get; } =
+    [
+        AccountingErrorCodes.InvalidReference,
+        AccountingErrorCodes.ReversalOfReversal,
+        AccountingErrorCodes.PeriodClosed,
+        AccountingErrorCodes.PeriodDoesNotCover,
+        AccountingStoreCodes.PeriodNotFound,
+    ];
 }
 
 public sealed record AccountingJournalReversalProposalViewV1(

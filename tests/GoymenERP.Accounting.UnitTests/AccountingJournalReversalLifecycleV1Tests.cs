@@ -94,6 +94,8 @@ public sealed class AccountingJournalReversalLifecycleV1Tests
 
         Assert.Equal(AccountingApiStatus.Unprocessable, result.Status);
         Assert.Equal(code, result.Code);
+        Assert.Contains(code, AccountingJournalReversalUnprocessableCodesV1.Approve);
+        Assert.DoesNotContain(code, AccountingJournalReversalUnprocessableCodesV1.Propose);
         Assert.Equal(0, store.ReversalsWritten);
         Assert.Equal(AccountingJournalReversalProposalStatusV1.Pending, store.Proposal!.Status);
     }
@@ -108,6 +110,63 @@ public sealed class AccountingJournalReversalLifecycleV1Tests
         Assert.Equal(AccountingApiStatus.Invalid, result.Status);
         Assert.Equal("expectedVersion", result.Field);
         Assert.Equal(0, store.ReversalsWritten);
+    }
+
+    [Theory]
+    [InlineData(AccountingJournalReversalStoreCodesV1.SourceJournalNotFound)]
+    [InlineData(AccountingJournalReversalStoreCodesV1.PeriodNotFound)]
+    public async Task Proposal_admission_refusals_are_unprocessable_and_leave_no_proposal_or_command(string code)
+    {
+        var store = new MemoryStore { AdmissionStoreFailureCode = code };
+        var service = Service(store, Maker, new FixedAuthority(Granted()));
+
+        var result = await service.ProposeAsync(Request(), $"admission-{code}");
+
+        Assert.Equal(AccountingApiStatus.Unprocessable, result.Status);
+        Assert.Equal(code, result.Code);
+        Assert.Null(result.Resource);
+        Assert.Null(store.Proposal);
+        Assert.Equal(0, store.ProposalsWritten);
+        Assert.Equal(0, store.CommandsRecorded);
+        Assert.Contains(code, AccountingJournalReversalUnprocessableCodesV1.Propose);
+        Assert.DoesNotContain(code, AccountingJournalReversalUnprocessableCodesV1.Approve);
+    }
+
+    [Fact]
+    public async Task Approval_time_missing_period_is_an_approve_route_unprocessable_answer()
+    {
+        var store = new MemoryStore(Pending()) { ApprovalStoreFailureCode = AccountingStoreCodes.PeriodNotFound };
+        var service = Service(store, Checker, new FixedAuthority(Granted()));
+
+        var result = await service.ApproveAsync(Proposal, 1, "approval-period-missing");
+
+        Assert.Equal(AccountingApiStatus.Unprocessable, result.Status);
+        Assert.Equal(AccountingStoreCodes.PeriodNotFound, result.Code);
+        Assert.Equal(0, store.ReversalsWritten);
+        Assert.Equal(AccountingJournalReversalProposalStatusV1.Pending, store.Proposal!.Status);
+        Assert.Contains(AccountingStoreCodes.PeriodNotFound, AccountingJournalReversalUnprocessableCodesV1.Approve);
+    }
+
+    [Fact]
+    public void Each_route_advertises_exactly_its_reachable_unprocessable_codes()
+    {
+        Assert.Equal(
+            [
+                AccountingJournalReversalStoreCodesV1.SourceJournalNotFound,
+                AccountingJournalReversalStoreCodesV1.PeriodNotFound,
+            ],
+            AccountingJournalReversalUnprocessableCodesV1.Propose);
+        Assert.Equal(
+            [
+                AccountingErrorCodes.InvalidReference,
+                AccountingErrorCodes.ReversalOfReversal,
+                AccountingErrorCodes.PeriodClosed,
+                AccountingErrorCodes.PeriodDoesNotCover,
+                AccountingStoreCodes.PeriodNotFound,
+            ],
+            AccountingJournalReversalUnprocessableCodesV1.Approve);
+        Assert.Empty(AccountingJournalReversalUnprocessableCodesV1.Propose
+            .Intersect(AccountingJournalReversalUnprocessableCodesV1.Approve, StringComparer.Ordinal));
     }
 
     private static AccountingJournalReversalServiceV1 Service(
@@ -155,6 +214,9 @@ public sealed class AccountingJournalReversalLifecycleV1Tests
         public int ProposalsWritten { get; private set; }
         public int ReversalsWritten { get; private set; }
         public string? ApprovalDomainFailureCode { get; init; }
+        public string? AdmissionStoreFailureCode { get; init; }
+        public string? ApprovalStoreFailureCode { get; init; }
+        public int CommandsRecorded => commands.Count;
 
         public async Task<(AccountingJournalReversalProposalV1 Proposal, AccountingWriteOutcome Outcome)> CreateAsync(
             AccountingJournalReversalProposalV1 proposal,
@@ -162,6 +224,11 @@ public sealed class AccountingJournalReversalLifecycleV1Tests
             AccountingCommandMetadata metadata,
             CancellationToken cancellationToken = default)
         {
+            if (AdmissionStoreFailureCode is { } admission)
+            {
+                throw new AccountingStoreException(admission, "Synthetic admission refusal.");
+            }
+
             await freshAuthorityFence(cancellationToken);
             Proposal = proposal;
             ProposalsWritten++;
@@ -185,6 +252,11 @@ public sealed class AccountingJournalReversalLifecycleV1Tests
             if (ApprovalDomainFailureCode is { } code)
             {
                 throw new AccountingDomainException(code, "Synthetic reversal refusal.");
+            }
+
+            if (ApprovalStoreFailureCode is { } storeCode)
+            {
+                throw new AccountingStoreException(storeCode, "Synthetic approval store refusal.");
             }
 
             var current = Proposal ?? throw new AccountingStoreException(
