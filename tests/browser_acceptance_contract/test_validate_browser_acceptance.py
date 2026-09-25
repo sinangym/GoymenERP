@@ -166,6 +166,47 @@ class WorkflowTests(unittest.TestCase):
                 with self.assertRaisesRegex(validator.ContractError, "seeded company"):
                     validator.seed_export("mfg", seed)
 
+    def test_mfg_fixture_output_rejects_cross_type_bypasses(self):
+        actor_keys = {"recorderActor", "readerActor", "closerActor"}
+        scalar_keys = {
+            "issueRollCode", "replayRollCode", "conflictRollCode", "listRollCode",
+            "closeRollCode", "planCreateRollCode", "planReplayRollCode", "planRefusalRollCode",
+            "outputProductVersion", "outputRequiredDocuments", "outputOwnerKind",
+            "outputCustodianKind", "outputInitialBlock",
+        }
+        identity_keys = set(self._mfg_seed()) - actor_keys - scalar_keys
+        guid_value = "30000000-0000-0000-0000-000000000001"
+        actor_value = "mfg-cross-type-actor"
+
+        for key in actor_keys:
+            seed = self._mfg_seed()
+            seed[key] = guid_value
+            with self.subTest(kind="actor-as-guid", key=key):
+                with self.assertRaisesRegex(validator.ContractError, "current-run actor"):
+                    validator.seed_export("mfg", seed)
+
+        for key in identity_keys:
+            seed = self._mfg_seed()
+            seed[key] = actor_value
+            with self.subTest(kind="guid-as-actor", key=key):
+                with self.assertRaisesRegex(validator.ContractError, "lowercase GUID"):
+                    validator.seed_export("mfg", seed)
+
+        for key in scalar_keys:
+            for value in (guid_value, actor_value):
+                seed = self._mfg_seed()
+                seed[key] = value
+                with self.subTest(kind="scalar-fallback", key=key, value=value):
+                    with self.assertRaises(validator.ContractError):
+                        validator.seed_export("mfg", seed)
+
+        seed = self._mfg_seed()
+        seed["companyId"] = actor_value
+        seed["outputOwnerId"] = actor_value
+        seed["outputCustodianId"] = actor_value
+        with self.assertRaisesRegex(validator.ContractError, "lowercase GUID"):
+            validator.seed_export("mfg", seed)
+
     def test_mfg_identity_is_the_real_plan_and_opening_stock_closed_list(self):
         self.assertTrue(validator.SUITE_API_EXTENSIONS["mfg"]["issuer"])
         self.assertEqual(
