@@ -2,6 +2,8 @@ using System.Text.Json.Serialization;
 
 namespace GoymenERP.Modules.Inventory.Application;
 
+/// <summary>The wire form is the name ("Split" / "Merge"), as the genealogy read already answers it.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<InventoryLabelTransformationKindV1>))]
 public enum InventoryLabelTransformationKindV1
 {
     Split = 1,

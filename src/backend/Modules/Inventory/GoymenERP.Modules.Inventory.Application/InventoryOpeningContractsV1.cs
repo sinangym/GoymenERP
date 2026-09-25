@@ -15,6 +15,13 @@ public static class InventoryPermissionManifestV1
 
     /// <summary>Create and explicitly release a physical stock allocation. Company-wide.</summary>
     public const string PhysicalAllocationWrite = "inventory.physical-allocation.write";
+
+    /// <summary>
+    /// Record one same-company label split or merge (R19, DEC-LBL-002/003). Company-wide. A separate
+    /// Inventory-owned command name (Business #66 5806047097): no read, opening, allocation, Sales or
+    /// Logistics permission implies it, and registering it grants nothing.
+    /// </summary>
+    public const string LabelTransformationRecord = "inventory.label-transformation.record";
 }
 
 /// <summary>The opening count as the client sends it: one physical count sheet of one location.</summary>

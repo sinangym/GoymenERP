@@ -15,6 +15,9 @@ public static class InventoryLabelGenealogyRegistration
         ArgumentNullException.ThrowIfNull(services);
         services.AddScoped<IInventoryLabelGenealogyWriterV1>(provider => provider.GetRequiredService<InventoryStore>());
         services.AddScoped<IInventoryLabelGenealogyReaderV1>(provider => provider.GetRequiredService<InventoryStore>());
+        // R19: the fenced user command over the writer. Its only dependencies are the platform's company
+        // context, current user and authority revalidation, which the host already registers.
+        services.AddScoped<IInventoryLabelTransformationCommandV1, InventoryLabelTransformationCommandService>();
         return services;
     }
 }
