@@ -124,6 +124,24 @@ public sealed partial class LogisticsInstructionServiceTests
     }
 
     [Fact]
+    public async Task Inventory_authority_lost_with_terminal_conflict_records_no_refusal_attempt()
+    {
+        var (world, runner, id, line) = await LoadedWorldAsync();
+        runner.Stock.BeforeTerminalFailure = () => world.Authority.DeniedPermission =
+            LogisticsRealizationDependenciesV1.InventoryPhysicalAllocationWritePermission;
+        runner.Stock.TerminalFailureCode = "inventory_allocation_version_conflict";
+
+        var refusal = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() =>
+            world.Service(runner).RecordShipmentAsync(id, line, Shipment(), Metadata("inventory-revoked-refusal")));
+
+        Assert.Equal(403, refusal.Status);
+        Assert.Empty(world.Store.Refusals);
+        Assert.Empty(runner.Stock.Requests);
+        Assert.Equal((1, 1, 0), (runner.ShipmentRuns, runner.DeliveryRuns, runner.Commits));
+        Assert.Equal("4", (await world.Service().GetInstructionDetailAsync(id)).Instruction.Version);
+    }
+
+    [Fact]
     public async Task Load_authority_does_not_substitute_for_separate_delivery_authority()
     {
         var (world, runner, id, line) = await LoadedWorldAsync();
@@ -274,6 +292,7 @@ public sealed partial class LogisticsInstructionServiceTests
         public string? AllocationFault { get; set; }
         public bool ForceReplay { get; set; }
         public string? TerminalFailureCode { get; set; }
+        public Action? BeforeTerminalFailure { get; set; }
         public Action? AfterStage { get; set; }
 
         public Task<LogisticsShipmentAllocationV1?> FindAllocationAsync(Guid salesOrderId, Guid salesOrderLineId, Guid allocationId,
@@ -281,6 +300,7 @@ public sealed partial class LogisticsInstructionServiceTests
         {
             if (TerminalFailureCode is not null)
             {
+                BeforeTerminalFailure?.Invoke();
                 throw new LogisticsInstructionServiceException(409, TerminalFailureCode);
             }
 

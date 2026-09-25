@@ -201,7 +201,7 @@ internal sealed class LogisticsRealizationTransactionRunner(
                         envelope.ClientIpAddress,
                         envelope.UserAgent),
                     cancellationToken);
-                return new LogisticsShipmentStockResultV1(
+                var staged = new LogisticsShipmentStockResultV1(
                     result.CompanyId,
                     result.ShipmentId,
                     result.AllocationId,
@@ -210,6 +210,12 @@ internal sealed class LogisticsRealizationTransactionRunner(
                     result.OutboxMessageId,
                     result.IsReplay,
                     result.OriginalCorrelationId);
+                if (services.GetService<ILogisticsRealizationStageObserver>() is { } observer)
+                {
+                    await observer.ObserveAsync(LogisticsRealizationStage.InventoryStaged, cancellationToken);
+                }
+
+                return staged;
             }
             catch (InventoryDefiniteShipmentException exception)
             {
@@ -225,4 +231,14 @@ internal sealed class LogisticsRealizationTransactionRunner(
             }
         }
     }
+}
+
+internal enum LogisticsRealizationStage
+{
+    InventoryStaged = 1,
+}
+
+internal interface ILogisticsRealizationStageObserver
+{
+    Task ObserveAsync(LogisticsRealizationStage stage, CancellationToken cancellationToken);
 }

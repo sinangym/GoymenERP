@@ -1,24 +1,34 @@
 using System.Net;
+using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
 using GoymenERP.Api.Endpoints;
+using GoymenERP.Api.LogisticsRuntime;
 using GoymenERP.Api.Security;
 using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
 using GoymenERP.Modules.Identity.Domain.Assignments;
 using GoymenERP.Modules.Identity.Domain.Roles;
 using GoymenERP.Modules.Identity.Domain.Users;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
+using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.Modules.Inventory.Domain.Allocations;
+using GoymenERP.Modules.Inventory.Domain.Stock;
+using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 using GoymenERP.Modules.Logistics.Application.Contracts;
 using GoymenERP.Modules.Logistics.Domain;
 using GoymenERP.Modules.Logistics.Domain.Loading;
 using GoymenERP.Modules.Logistics.Domain.Quantities;
 using GoymenERP.Modules.Logistics.Infrastructure.Persistence;
+using GoymenERP.Modules.Sales.Application.Contracts;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -279,7 +289,308 @@ public sealed class LogisticsInstructionSqlServerRelationalAcceptanceTests
         Assert.Equal(3L, await run.ScalarAsync<long>("SELECT Version FROM logistics.LoadingInstructions WHERE Id = @id", ("@id", id)));
     }
 
+    [SqlServerFact]
+    public async Task Inventory_terminal_conflict_after_write_authority_loss_rolls_back_both_owners_and_records_no_refusal()
+    {
+        await using var run = await Run.StartAsync();
+        var fixture = await SeedHostedShipmentAsync(run, "SYN-LOG5-TERMINAL-AUTH");
+        var grant = await GrantRealizationAsync(run, $"SYN-LOG5-terminal-{Guid.NewGuid():N}");
+        var revoker = new InventoryWriteRevoker(run.Factory, grant.RoleId);
+        var reads = new HostedAllocationReads(fixture, revoker.RevokeAsync);
+        await using var host = HostedShipmentHost(run, fixture, reads);
+        using var client = HostedClientFor(host, grant.Subject, CompanyA);
+        var request = CreateHostedShipmentRequest(fixture, expectedAllocationVersion: "2", "terminal-authority");
+        var before = await HostedEffectsAsync(run, fixture, request);
+
+        using var response = await client.SendAsync(request.Message);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.True(revoker.Revoked);
+        Assert.Equal(before, await HostedEffectsAsync(run, fixture, request));
+    }
+
+    [SqlServerFact]
+    public async Task Inventory_write_authority_revoked_after_staging_rolls_back_hosted_shipment_and_inventory_effects()
+    {
+        await using var run = await Run.StartAsync();
+        var fixture = await SeedHostedShipmentAsync(run, "SYN-LOG5-STAGED-AUTH");
+        var grant = await GrantRealizationAsync(run, $"SYN-LOG5-staged-{Guid.NewGuid():N}");
+        var revoker = new InventoryWriteRevoker(run.Factory, grant.RoleId);
+        var reads = new HostedAllocationReads(fixture);
+        await using var host = HostedShipmentHost(run, fixture, reads,
+            new RevokeInventoryWriteAfterStage(revoker));
+        using var client = HostedClientFor(host, grant.Subject, CompanyA);
+        var request = CreateHostedShipmentRequest(fixture, expectedAllocationVersion: "1", "staged-authority");
+        var before = await HostedEffectsAsync(run, fixture, request);
+
+        using var response = await client.SendAsync(request.Message);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.True(revoker.Revoked);
+        Assert.Equal(before, await HostedEffectsAsync(run, fixture, request));
+    }
+
     // ---- helpers --------------------------------------------------------------------------------
+
+    private static async Task<HostedShipmentFixture> SeedHostedShipmentAsync(Run run, string labelCode)
+    {
+        var owners = Owners.For(CompanyA);
+        var orderLineId = Guid.NewGuid();
+        var productId = Guid.NewGuid();
+        var allocationId = Guid.NewGuid();
+        var labelId = Guid.NewGuid();
+        var lotId = Guid.NewGuid();
+        var locationId = await run.ScalarAsync<Guid>(
+            "SELECT TOP (1) Id FROM organization.Locations WHERE CompanyId = @company ORDER BY Id",
+            ("@company", CompanyA));
+        var instruction = LoadingInstruction.Create(Guid.NewGuid(), CompanyA, owners.Party, owners.Account, T0);
+        instruction.AddLine(instruction.Version, Guid.NewGuid(), new SourceOrderLineRef(owners.Order, orderLineId, 1),
+            productId, KgUnit, allocationId, Kg(6m), T0);
+        StoredLoadingInstruction stored;
+        await using (var logistics = run.Store(CompanyA))
+        {
+            stored = (await logistics.Store.StoreInstructionAsync(run.Envelope($"seed-{labelCode}"), Hash(labelCode), Day,
+                () => instruction)).Instruction;
+            stored = (await logistics.Store.MutateInstructionAsync(run.Envelope($"issue-{labelCode}"), Hash($"issue-{labelCode}"),
+                LogisticsCommands.IssueV1, instruction.Id, (value, now) => value.Issue(stored.Instruction.Version, now), Issued))!.Instruction;
+            var lineId = Assert.Single(stored.Instruction.Lines).Id;
+            stored = (await logistics.Store.MutateInstructionAsync(run.Envelope($"load-{labelCode}"), Hash($"load-{labelCode}"),
+                LogisticsCommands.RecordLoadV1, instruction.Id,
+                (value, now) => value.RecordLoad(stored.Instruction.Version, Guid.NewGuid(), lineId, Kg(5m), MeasurementKind.Measured, now),
+                Loaded))!.Instruction;
+        }
+
+        var company = new CompanyContext();
+        company.Set(CompanyA);
+        await using (var inventory = new InventoryDbContext(new DbContextOptionsBuilder<InventoryDbContext>()
+            .UseSqlServer(run.Factory.DatabaseConnectionString,
+                sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", InventoryDbContext.Schema)).Options, company))
+        {
+            inventory.Lots.Add(new LotRow
+            {
+                Id = lotId, CompanyId = CompanyA, ProductId = productId, Version = 1,
+                CreatedAtUtc = T0, CreatedBy = run.Actor,
+            });
+            inventory.Labels.Add(new LabelRow
+            {
+                Id = labelId, CompanyId = CompanyA, Code = labelCode, ProductId = productId, LotId = lotId,
+                RequiredDocumentsJson = "[]", Version = 1, CreatedAtUtc = T0, UpdatedAtUtc = T0,
+            });
+            inventory.Balances.Add(new BalanceRow
+            {
+                Id = Guid.NewGuid(), CompanyId = CompanyA, OwnerKind = (int)StockPartyKind.Company, OwnerId = CompanyA,
+                CustodianKind = (int)StockPartyKind.Company, CustodianId = CompanyA, LocationId = locationId,
+                LabelId = labelId, ProductId = productId, Block = (int)BlockState.Free, QuantityKg = 10m,
+            });
+            inventory.Allocations.Add(new AllocationRow
+            {
+                Id = allocationId, CompanyId = CompanyA, OwnerKind = (int)StockPartyKind.Company, OwnerId = CompanyA,
+                CustodianKind = (int)StockPartyKind.Company, CustodianId = CompanyA, LocationId = locationId,
+                LabelId = labelId, Block = (int)BlockState.Free,
+                DemandKind = InventoryAllocationDemandKindsV1.SalesOrderLine, DemandId = owners.Order,
+                DemandLineId = orderLineId, DemandProductId = productId, DemandProductVersion = "7",
+                Reason = "Hosted Logistics authority rollback acceptance.", AllocatedKg = 5m, RemainingKg = 5m,
+                Status = (int)StockAllocationStatus.Active, Version = 1, CreatedAtUtc = T0, UpdatedAtUtc = T0,
+            });
+            await inventory.SaveChangesAsync();
+        }
+
+        var line = Assert.Single(stored.Instruction.Lines);
+        return new(stored.Instruction.Id, line.Id, stored.Instruction.Version, owners, orderLineId, productId,
+            allocationId, labelId, locationId);
+    }
+
+    private static async Task<RealizationGrant> GrantRealizationAsync(Run run, string subject)
+    {
+        await using var scope = run.Factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
+        var actorId = Guid.NewGuid();
+        var roleId = Guid.NewGuid();
+        db.Users.Add(new UserAccount(actorId, "Synthetic Logistics realization actor", null));
+        db.ExternalIdentities.Add(new ExternalIdentityLink(Guid.NewGuid(), actorId,
+            BootstrapIdentityOptions.Issuer, subject));
+        var role = new RoleDefinition(roleId, $"LOG5-AUTH-{roleId:N}", "Synthetic Logistics realization role", true);
+        role.AddPermission(ErpPermissions.LogisticsShipmentsRecord);
+        role.AddPermission(ErpPermissions.InventoryPhysicalAllocationWrite);
+        var assignment = new RoleAssignment(Guid.NewGuid(), actorId, roleId, CompanyA,
+            DateTimeOffset.UtcNow.AddMinutes(-1), null, approvedByUserId: null);
+        assignment.AddScope(AccessScopeType.Company, CompanyA);
+        db.Roles.Add(role);
+        db.RoleAssignments.Add(assignment);
+        await db.SaveChangesAsync();
+        return new(subject, roleId);
+    }
+
+    private static Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> HostedShipmentHost(
+        Run run,
+        HostedShipmentFixture fixture,
+        HostedAllocationReads reads,
+        ILogisticsRealizationStageObserver? observer = null) =>
+        run.Factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+        {
+            services.RemoveAll<ISalesOrderLineReferencePortV1>();
+            services.AddSingleton<ISalesOrderLineReferencePortV1>(new HostedSalesLine(fixture));
+            services.RemoveAll<IInventoryPhysicalAllocationReadsV1>();
+            services.AddSingleton<IInventoryPhysicalAllocationReadsV1>(reads);
+            if (observer is not null)
+            {
+                services.AddSingleton(observer);
+            }
+        }));
+
+    private static HttpClient HostedClientFor(
+        Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> host,
+        string subject,
+        Guid companyId)
+    {
+        var client = host.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Development-User", subject);
+        client.DefaultRequestHeaders.Add("X-Company-Id", companyId.ToString("D"));
+        return client;
+    }
+
+    private static HostedShipmentRequest CreateHostedShipmentRequest(
+        HostedShipmentFixture fixture,
+        string expectedAllocationVersion,
+        string suffix)
+    {
+        var shipmentId = Guid.NewGuid();
+        var movementId = Guid.NewGuid();
+        var correlation = $"SYN-LOG5-{suffix}-{Guid.NewGuid():N}";
+        var message = new HttpRequestMessage(HttpMethod.Post,
+            $"{LogisticsEndpoints.InstructionsPath}/{fixture.InstructionId:D}/lines/{fixture.LineId:D}/shipments")
+        {
+            Content = JsonContent.Create(new RecordShipmentRequest(
+                fixture.InstructionVersion.ToString(), shipmentId, fixture.AllocationId, expectedAllocationVersion,
+                "1", movementId, "2", T0.AddMinutes(10))),
+        };
+        message.Headers.Add("Idempotency-Key", $"SYN-LOG5-{suffix}");
+        message.Headers.Add("X-Correlation-Id", correlation);
+        return new(message, shipmentId, movementId, correlation);
+    }
+
+    private static async Task<HostedShipmentEffects> HostedEffectsAsync(
+        Run run,
+        HostedShipmentFixture fixture,
+        HostedShipmentRequest request) => new(
+        await run.ScalarAsync<long>("SELECT Version FROM logistics.LoadingInstructions WHERE Id = @id",
+            ("@id", fixture.InstructionId)),
+        await run.ScalarAsync<int>("SELECT COUNT(*) FROM logistics.LoadingShares WHERE InstructionId = @id",
+            ("@id", fixture.InstructionId)),
+        await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM logistics.LoadingAttempts WHERE InstructionId = @id AND CommandName = @command",
+            ("@id", fixture.InstructionId), ("@command", LogisticsCommands.RecordShipmentV1)),
+        await run.ScalarAsync<decimal>("SELECT RemainingKg FROM inventory.Allocations WHERE Id = @id",
+            ("@id", fixture.AllocationId)),
+        await run.ScalarAsync<long>("SELECT Version FROM inventory.Allocations WHERE Id = @id",
+            ("@id", fixture.AllocationId)),
+        await run.ScalarAsync<decimal>("SELECT QuantityKg FROM inventory.Balances WHERE LabelId = @id",
+            ("@id", fixture.LabelId)),
+        await run.ScalarAsync<long>("SELECT Version FROM inventory.Labels WHERE Id = @id",
+            ("@id", fixture.LabelId)),
+        await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Movements WHERE Id = @id",
+            ("@id", request.MovementId)),
+        await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Commands WHERE TargetId = @id",
+            ("@id", request.ShipmentId)),
+        await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.OutboxMessages WHERE CorrelationId = @correlation",
+            ("@correlation", request.CorrelationId)),
+        await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @correlation",
+            ("@correlation", request.CorrelationId)));
+
+    private sealed class InventoryWriteRevoker(SqlServerRelationalApiFactory factory, Guid roleId)
+    {
+        private int revoked;
+        public bool Revoked => Volatile.Read(ref revoked) != 0;
+
+        public async Task RevokeAsync()
+        {
+            if (Interlocked.Exchange(ref revoked, 1) != 0) return;
+            await using var scope = factory.Services.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
+            var permission = await db.RolePermissions.SingleAsync(value => value.RoleId == roleId
+                && value.PermissionCode == ErpPermissions.InventoryPhysicalAllocationWrite);
+            db.RolePermissions.Remove(permission);
+            await db.SaveChangesAsync();
+        }
+    }
+
+    private sealed class RevokeInventoryWriteAfterStage(InventoryWriteRevoker revoker)
+        : ILogisticsRealizationStageObserver
+    {
+        public Task ObserveAsync(LogisticsRealizationStage stage, CancellationToken cancellationToken)
+        {
+            Assert.Equal(LogisticsRealizationStage.InventoryStaged, stage);
+            return revoker.RevokeAsync();
+        }
+    }
+
+    private sealed class HostedAllocationReads(HostedShipmentFixture fixture, Func<Task>? afterRead = null)
+        : IInventoryPhysicalAllocationReadsV1
+    {
+        private int read;
+
+        public async Task<InventoryPhysicalAllocationReadsV1> SearchAsync(
+            InventoryPhysicalAllocationReadQueryV1 query,
+            CancellationToken cancellationToken = default)
+        {
+            Assert.Equal((fixture.Owners.Order, fixture.OrderLineId), (query.SalesOrderId, query.SalesOrderLineId));
+            if (afterRead is not null && Interlocked.Exchange(ref read, 1) == 0)
+            {
+                await afterRead();
+            }
+
+            var allocation = new InventoryPhysicalAllocationViewV1(
+                fixture.AllocationId, CompanyA, "1", "Active", fixture.LabelId, fixture.ProductId,
+                InventoryAllocationDemandKindsV1.SalesOrderLine, fixture.Owners.Order, fixture.OrderLineId,
+                "7", "5", "5", "Hosted Logistics authority rollback acceptance.", null, T0, T0);
+            return new([new InventoryPhysicalAllocationReadItemV1(allocation, "1")], false);
+        }
+    }
+
+    private sealed class HostedSalesLine(HostedShipmentFixture fixture) : ISalesOrderLineReferencePortV1
+    {
+        public Task<SalesOrderLineReferenceAnswerV1> GetApprovedLineAsync(
+            Guid orderId,
+            Guid lineId,
+            CancellationToken cancellationToken = default) => Task.FromResult(
+                new SalesOrderLineReferenceAnswerV1(SalesOrderLineReferenceOutcomeV1.Approved,
+                    new SalesOrderLineReferenceV1(CompanyA, fixture.Owners.Order, fixture.OrderLineId, 1,
+                        fixture.Owners.Party, fixture.Owners.Account, fixture.ProductId, "7", KgUnit, "6", 0, 4), null));
+
+        public Task<SalesApprovedLinePageV1> ListApprovedLinesAsync(
+            int pageSize,
+            string? cursor,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    private sealed record RealizationGrant(string Subject, Guid RoleId);
+    private sealed record HostedShipmentFixture(
+        Guid InstructionId,
+        Guid LineId,
+        long InstructionVersion,
+        Owners Owners,
+        Guid OrderLineId,
+        Guid ProductId,
+        Guid AllocationId,
+        Guid LabelId,
+        Guid LocationId);
+    private sealed record HostedShipmentRequest(
+        HttpRequestMessage Message,
+        Guid ShipmentId,
+        Guid MovementId,
+        string CorrelationId);
+    private sealed record HostedShipmentEffects(
+        long InstructionVersion,
+        int ShareCount,
+        int ShipmentAttemptCount,
+        decimal AllocationRemainingKg,
+        long AllocationVersion,
+        decimal BalanceQuantityKg,
+        long LabelVersion,
+        int MovementCount,
+        int CommandCount,
+        int OutboxCount,
+        int AuditCount);
 
     private static Quantity Kg(decimal value) => Quantity.Of(value, QuantityUnit.Kilogram);
 

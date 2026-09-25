@@ -207,10 +207,10 @@ public sealed partial class LogisticsInstructionService
         {
             await realization!.ExecuteDeliveryAsync(scope.CompanyId, async token =>
             {
-                await RequireStillAsync(scope, permission, token);
+                await RequireTerminalRealizationAuthorityAsync(scope, permission, command, token);
                 await store.RecordRefusalAsync(envelope, hash, command, terminal, token);
                 return true;
-            }, token => RequireStillAsync(scope, permission, token), cancellationToken);
+            }, token => RequireTerminalRealizationAuthorityAsync(scope, permission, command, token), cancellationToken);
         }
         catch (LogisticsStoreException exception) when (exception.Code == LogisticsStoreCodes.ConcurrentChange)
         {
@@ -220,6 +220,17 @@ public sealed partial class LogisticsInstructionService
         catch (LogisticsStoreException exception) { throw Store(exception); }
 
         throw new LogisticsInstructionServiceException(terminal.Status, terminal.Code, terminal.Errors);
+    }
+
+    private async Task RequireTerminalRealizationAuthorityAsync(Scope scope, string? permission, string command,
+        CancellationToken cancellationToken)
+    {
+        await RequireStillAsync(scope, permission, cancellationToken);
+        if (string.Equals(command, LogisticsCommands.RecordShipmentV1, StringComparison.Ordinal))
+        {
+            await RequireStillAsync(scope,
+                LogisticsRealizationDependenciesV1.InventoryPhysicalAllocationWritePermission, cancellationToken);
+        }
     }
 
     private static bool IsTerminalRealizationConflict(string code) =>
