@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Counterparty.Application.Contracts;
@@ -21,7 +22,7 @@ public sealed class CounterpartyManufacturingPartyAccountSourceV1(
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (!IsCurrent() || !IsCanonical(query))
+        if (!IsCurrent() || !TryCanonicalize(query, out var canonicalQuery))
         {
             return Search(CounterpartyManufacturingPartyAccountOutcomeV1.Denied);
         }
@@ -34,7 +35,7 @@ public sealed class CounterpartyManufacturingPartyAccountSourceV1(
             execution = await counterparties.GetAuthorizedPageAsync(
                 new CounterpartyReadRequest(
                     new CounterpartyPageQuery(
-                        query.Query,
+                        canonicalQuery.Query,
                         Kind: null,
                         ManufacturingRoles,
                         CounterpartyRoleMatch.Any,
@@ -42,8 +43,8 @@ public sealed class CounterpartyManufacturingPartyAccountSourceV1(
                         CounterpartyRecordState.All,
                         CounterpartySort.Code,
                         CounterpartySortDirection.Ascending,
-                        query.Limit,
-                        query.Cursor,
+                        canonicalQuery.Limit,
+                        canonicalQuery.Cursor,
                         IncludeCount: false),
                     actorId,
                     SessionBinding),
@@ -67,10 +68,14 @@ public sealed class CounterpartyManufacturingPartyAccountSourceV1(
             return Search(CounterpartyManufacturingPartyAccountOutcomeV1.Denied);
         }
 
-        if (execution.Result == CounterpartyPageResult.Forbidden
-            || execution.Result == CounterpartyPageResult.InvalidCursor)
+        if (execution.Result == CounterpartyPageResult.Forbidden)
         {
             return Search(CounterpartyManufacturingPartyAccountOutcomeV1.Denied);
+        }
+
+        if (execution.Result == CounterpartyPageResult.InvalidCursor)
+        {
+            return Search(CounterpartyManufacturingPartyAccountOutcomeV1.InvalidCursor);
         }
 
         if (execution.Result != CounterpartyPageResult.Succeeded || execution.Page is null)
@@ -209,11 +214,36 @@ public sealed class CounterpartyManufacturingPartyAccountSourceV1(
         && companyContext.CompanyId == companyId
         && string.Equals(currentUser.UserId, actorId, StringComparison.Ordinal);
 
-    private static bool IsCanonical(CounterpartyManufacturingPartyAccountSearchV1? query) =>
-        query is not null
-        && query.Limit is > 0 and <= MaximumLimit
-        && (query.Query is null || query.Query.Length > 0 && string.Equals(query.Query, query.Query.Trim(), StringComparison.Ordinal))
-        && (query.Cursor is null || query.Cursor.Length > 0 && string.Equals(query.Cursor, query.Cursor.Trim(), StringComparison.Ordinal));
+    private static bool TryCanonicalize(
+        CounterpartyManufacturingPartyAccountSearchV1? query,
+        out CounterpartyManufacturingPartyAccountSearchV1 canonical)
+    {
+        canonical = null!;
+        if (query is null
+            || query.Limit is <= 0 or > MaximumLimit
+            || query.Cursor is not null
+            && (query.Cursor.Length == 0 || !string.Equals(query.Cursor, query.Cursor.Trim(), StringComparison.Ordinal)))
+        {
+            return false;
+        }
+
+        string? normalizedQuery = null;
+        if (query.Query is not null)
+        {
+            normalizedQuery = query.Query.Trim().Normalize(NormalizationForm.FormC);
+            if (normalizedQuery.Length == 0)
+            {
+                normalizedQuery = null;
+            }
+            else if (normalizedQuery.EnumerateRunes().Count() > 200)
+            {
+                return false;
+            }
+        }
+
+        canonical = query with { Query = normalizedQuery };
+        return true;
+    }
 
     private static bool TryFormatVersion(long value, out string version)
     {

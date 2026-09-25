@@ -7,6 +7,7 @@ using GoymenERP.Modules.Counterparty.Infrastructure;
 using GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Primitives;
 
 namespace GoymenERP.Counterparty.UnitTests;
 
@@ -66,8 +67,6 @@ public sealed class CounterpartyManufacturingPartyAccountSourceV1Tests
     }
 
     [Theory]
-    [InlineData(" query", 25, null)]
-    [InlineData("query ", 25, null)]
     [InlineData("query", 0, null)]
     [InlineData("query", 101, null)]
     [InlineData("query", 25, " cursor")]
@@ -78,6 +77,40 @@ public sealed class CounterpartyManufacturingPartyAccountSourceV1Tests
 
         Assert.Equal(CounterpartyManufacturingPartyAccountOutcomeV1.Denied, answer.Outcome);
         Assert.Equal(0, read.PageCalls);
+    }
+
+    [Fact]
+    public async Task Search_TrimsAndNormalizesFormCBeforeOwnerRead()
+    {
+        var read = new ReadService();
+
+        var answer = await Create(read).SearchAuthorizedAsync(new("  Cafe\u0301  "));
+
+        Assert.Equal(CounterpartyManufacturingPartyAccountOutcomeV1.Found, answer.Outcome);
+        Assert.Equal("Café", read.LastRequest!.Query.Query);
+    }
+
+    [Fact]
+    public async Task Search_OverTwoHundredRunes_IsDeniedBeforeOwnerRead()
+    {
+        var read = new ReadService();
+        var tooLong = string.Concat(Enumerable.Repeat("😀", 201));
+
+        var answer = await Create(read).SearchAuthorizedAsync(new(tooLong));
+
+        Assert.Equal(CounterpartyManufacturingPartyAccountOutcomeV1.Denied, answer.Outcome);
+        Assert.Equal(0, read.PageCalls);
+    }
+
+    [Fact]
+    public async Task Search_InvalidCursor_RemainsDistinctFromDenied()
+    {
+        var read = new ReadService { Page = CounterpartyPageExecution.InvalidCursor() };
+
+        var answer = await Create(read).SearchAuthorizedAsync(new(null, Cursor: "tampered"));
+
+        Assert.Equal(CounterpartyManufacturingPartyAccountOutcomeV1.InvalidCursor, answer.Outcome);
+        Assert.Empty(answer.Items);
     }
 
     [Fact]
@@ -160,18 +193,12 @@ public sealed class CounterpartyManufacturingPartyAccountSourceV1Tests
     public void CounterpartyModule_OwnsTheScopedRegistration()
     {
         var services = new ServiceCollection();
-        var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["DB_PROVIDER"] = "SqlServer",
-                ["DB_CONNECTION_STRING"] = "Server=(local);Database=contract-only;Integrated Security=true;TrustServerCertificate=true",
-            })
-            .Build();
+        var configuration = new TestConfiguration();
 
         services.AddCounterpartyModule(configuration);
 
-        var descriptor = Assert.Single(services.Where(item =>
-            item.ServiceType == typeof(ICounterpartyManufacturingPartyAccountSourceV1)));
+        var descriptor = Assert.Single(services, item =>
+            item.ServiceType == typeof(ICounterpartyManufacturingPartyAccountSourceV1));
         Assert.Equal(ServiceLifetime.Scoped, descriptor.Lifetime);
         Assert.Equal(typeof(CounterpartyManufacturingPartyAccountSourceV1), descriptor.ImplementationType);
     }
@@ -181,8 +208,27 @@ public sealed class CounterpartyManufacturingPartyAccountSourceV1Tests
         CompanyContext? context = null,
         CurrentUser? user = null) => new(
             context ?? new CompanyContext(Company),
-            user ?? new CurrentUser("actor", [Company]),
+            user ?? new CurrentUser("actor", new HashSet<Guid> { Company }),
             read);
+
+    private sealed class TestConfiguration : IConfiguration
+    {
+        public string? this[string key]
+        {
+            get => key switch
+            {
+                "DB_PROVIDER" => "SqlServer",
+                "DB_CONNECTION_STRING" =>
+                    "Server=(local);Database=contract-only;Integrated Security=true;TrustServerCertificate=true",
+                _ => null,
+            };
+            set => throw new NotSupportedException();
+        }
+
+        public IEnumerable<IConfigurationSection> GetChildren() => [];
+        public IChangeToken GetReloadToken() => new CancellationChangeToken(CancellationToken.None);
+        public IConfigurationSection GetSection(string key) => throw new NotSupportedException();
+    }
 
     private sealed class ReadService : ICounterpartyReadService
     {

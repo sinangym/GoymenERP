@@ -23,6 +23,7 @@ public enum CounterpartyManufacturingPartyAccountOutcomeV1
     Denied = 1,
     NotFound = 2,
     Found = 3,
+    InvalidCursor = 4,
 }
 
 public sealed record CounterpartyManufacturingPartyAccountSearchV1(
