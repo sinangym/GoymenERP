@@ -3,6 +3,7 @@ using GoymenERP.Api.Endpoints;
 using GoymenERP.Api.Errors;
 using GoymenERP.Api.ManufacturingRuntime;
 using GoymenERP.Api.Multitenancy;
+using GoymenERP.Api.PurchasingRuntime;
 using GoymenERP.Api.Observability;
 using GoymenERP.Api.OpenApi;
 using GoymenERP.Api.ProductRuntime;
@@ -236,6 +237,11 @@ builder.Services.AddLogisticsModule(
 // so the service answers 503 product_eligibility_unavailable fail-closed until the owner registers it.
 builder.Services.AddScoped<IPurchasingPartyAccountPortV1, CounterpartyPurchasingPartyAccountPortV1>();
 builder.Services.AddScoped<IProductPurchaseEligibilityPortV1, ProductPurchaseEligibilityPort>();
+builder.Services.AddSingleton(new PurchasingServiceBindings(
+    GoodsReceiptPermission: ErpPermissions.PurchasingGoodsReceiptsRecord));
+builder.Services.AddScoped<PurchaseGoodsReceiptHost>();
+builder.Services.AddScoped<IPurchaseGoodsReceiptTransactionV1>(provider => provider.GetRequiredService<PurchaseGoodsReceiptHost>());
+builder.Services.AddScoped<IPurchaseGoodsReceiptReadsV1>(provider => provider.GetRequiredService<PurchaseGoodsReceiptHost>());
 builder.Services.AddPurchasingModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(

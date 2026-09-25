@@ -303,6 +303,9 @@ public static class ErpPermissions
     /// <inheritdoc cref="PurchasingOrdersCreate"/>
     public const string PurchasingOrdersApprove = "purchasing.orders.approve";
 
+    /// <summary>Records a physical receipt; registered separately from order create/read/approve and grants nothing.</summary>
+    public const string PurchasingGoodsReceiptsRecord = "purchasing.goods-receipts.record";
+
     /// <summary>
     /// ACC-V0a: the Accounting owner's names (AccountingPermissionManifestV1), the backend owners' technical mapping
     /// (Business #254 5654539215) recorded and confirmed by the coordinator (#66 5743488059). Each read is its own
@@ -381,6 +384,7 @@ public static class ErpPermissions
             PurchasingOrdersCreate,
             PurchasingOrdersRead,
             PurchasingOrdersApprove,
+            PurchasingGoodsReceiptsRecord,
             AccountingPeriodsRead,
             AccountingPeriodsPropose,
             AccountingPeriodsApprove,
@@ -451,6 +455,7 @@ public static class ErpPermissions
             PurchasingOrdersCreate,
             PurchasingOrdersRead,
             PurchasingOrdersApprove,
+            PurchasingGoodsReceiptsRecord,
             AccountingPeriodsRead,
             AccountingPeriodsPropose,
             AccountingPeriodsApprove,
