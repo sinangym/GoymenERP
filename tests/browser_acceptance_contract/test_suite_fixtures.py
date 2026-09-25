@@ -83,6 +83,16 @@ class FixtureListTests(unittest.TestCase):
             }),
             browser.SUITE_FIXTURE_OUTPUTS["s04"])
 
+    def test_l04_exports_the_shipment_allocation_and_label_tuple(self):
+        self.assertEqual(
+            frozenset({
+                "preparerActor", "loaderActor", "readerActor", "companyId", "otherCompanyId",
+                "customerPartyId", "companyAccountId", "draftId", "approvedLineId",
+                "instructionId", "blockedLineId", "openLineId", "shipmentAllocationId",
+                "shipmentLabelId",
+            }),
+            browser.SUITE_FIXTURE_OUTPUTS["l04"])
+
     def test_pur01_exports_the_separate_creator_supplier_and_existing_approval_axis(self):
         self.assertEqual(
             frozenset({

@@ -457,12 +457,13 @@ SUITE_FIXTURE_OUTPUTS: dict[str, frozenset[str]] = {
     # GDC's periods never appear there.
     "acc01": frozenset({"companyId", "companyBId", "preparerActor", "approverActor"}),
     # SİPARİŞ's Suites/L04 seed: the three actors, both companies, the customer (by id and name), the approved draft
-    # line, the instruction created and issued through the real API, and its open and gated-blocked lines.
+    # line, the instruction created and issued through the real API, its open and gated-blocked lines,
+    # and the shipment allocation/label created for the same disposable journey.
     # The customer's NAME is not exported: seed_export accepts only a GUID or an actor id, and the spec
     # asserts the deterministic SENTETIK label as a constant instead.
     "l04": frozenset({"preparerActor", "loaderActor", "readerActor", "companyId", "otherCompanyId", "customerPartyId",
                       "companyAccountId", "draftId", "approvedLineId", "instructionId", "blockedLineId",
-                      "openLineId"}),
+                      "openLineId", "shipmentAllocationId", "shipmentLabelId"}),
     # SATINALMA's Suites/PUR01 seed: the existing synthetic Draft approval axis plus the separate creator,
     # the real Cari-owned active Supplier account and Product's exact gated purchase-candidate tuple.
     "pur01": frozenset({"creatorActor", "approverActor", "readerActor", "companyId", "otherCompanyId",
