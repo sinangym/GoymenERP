@@ -87,6 +87,40 @@ public sealed class ManufacturingInventoryOutputAdmissionTests
         Assert.Empty(locations.Requests);
     }
 
+    [Fact]
+    public async Task Product_success_bound_to_another_company_is_fail_closed_before_location_read()
+    {
+        var products = new Products(Eligible(stockUnitCompanyId: Guid.NewGuid()));
+        var locations = new Locations(new OrganizationLocationStatusV1(Location, true, false));
+        var admission = new ManufacturingInventoryOutputAdmission(products, locations);
+
+        var error = await Assert.ThrowsAsync<ManufacturingInventoryRealizationPortException>(() =>
+            admission.ValidateAsync(Company, Command(), CancellationToken.None));
+
+        Assert.Equal((ManufacturingApiStatus.Unavailable, InventoryManufacturingRealizationCodesV1.Unavailable),
+            (error.Status, error.Code));
+        Assert.Empty(locations.Requests);
+    }
+
+    [Fact]
+    public async Task Product_success_with_errors_is_a_contradictory_owner_answer_and_fails_closed()
+    {
+        var success = Eligible();
+        var products = new Products(success with
+        {
+            Errors = [new ProductFieldError("expectedProductVersion", "version_conflict")],
+        });
+        var locations = new Locations(new OrganizationLocationStatusV1(Location, true, false));
+        var admission = new ManufacturingInventoryOutputAdmission(products, locations);
+
+        var error = await Assert.ThrowsAsync<ManufacturingInventoryRealizationPortException>(() =>
+            admission.ValidateAsync(Company, Command(), CancellationToken.None));
+
+        Assert.Equal((ManufacturingApiStatus.Unavailable, InventoryManufacturingRealizationCodesV1.Unavailable),
+            (error.Status, error.Code));
+        Assert.Empty(locations.Requests);
+    }
+
     [Theory]
     [InlineData(false, InventoryOpeningCodesV1.LocationNotFound)]
     [InlineData(true, InventoryOpeningCodesV1.LocationInactive)]
@@ -121,11 +155,12 @@ public sealed class ManufacturingInventoryOutputAdmissionTests
             (error.Status, error.Code));
     }
 
-    private static ProductStockEligibilityV1 Eligible() => new(
-        new ProductStockSnapshotV1(Product, "12", "P-12", "Ürün", StockUnit(), new DateOnly(2026, 9, 25)), []);
+    private static ProductStockEligibilityV1 Eligible(Guid? stockUnitCompanyId = null) => new(
+        new ProductStockSnapshotV1(Product, "12", "P-12", "Ürün", StockUnit(stockUnitCompanyId),
+            new DateOnly(2026, 9, 25)), []);
 
-    private static ProductSalesUnitProfileV1 StockUnit() => new(
-        Company,
+    private static ProductSalesUnitProfileV1 StockUnit(Guid? companyId = null) => new(
+        companyId ?? Company,
         Guid.Parse("40000000-0000-0000-0000-000000000004"),
         Guid.Parse("50000000-0000-0000-0000-000000000005"),
         "1");

@@ -64,7 +64,9 @@ internal sealed class ManufacturingInventoryOutputAdmission(
                 ManufacturingApiStatus.Unprocessable, InventoryOpeningCodesV1.ProductIneligible, "productId");
         }
 
-        if (product.Snapshot.ProductId != command.ProductId
+        if (product.Errors is null || product.Errors.Count != 0
+            || product.Snapshot.StockUnit.CompanyId != companyId
+            || product.Snapshot.ProductId != command.ProductId
             || !string.Equals(product.Snapshot.ProductVersion, command.ExpectedProductVersion, StringComparison.Ordinal)
             || product.Snapshot.EffectiveOn != effectiveOn)
         {

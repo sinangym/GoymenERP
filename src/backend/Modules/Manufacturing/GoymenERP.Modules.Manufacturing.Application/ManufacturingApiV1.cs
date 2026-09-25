@@ -1031,6 +1031,8 @@ public sealed partial class ManufacturingCommandService(
             || (result.Status == ManufacturingApiStatus.Conflict && result.Code == ManufacturingRuleCodes.VersionConflict)
             || (result.Status == ManufacturingApiStatus.Conflict
                 && result.Code == InventoryParentRollCodesV1.VersionConflict)
+            || (result.Status == ManufacturingApiStatus.Conflict
+                && result.Code == InventoryManufacturingRealizationCodesV1.LabelVersionConflict)
             || result.Status == successStatus;
         if (!terminal)
         {

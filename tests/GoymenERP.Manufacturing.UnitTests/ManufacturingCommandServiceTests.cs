@@ -104,22 +104,26 @@ public sealed class ManufacturingCommandServiceTests
     {
         var fixture = new Fixture();
         var order = await fixture.ApprovedOrderAsync();
+        Assert.Equal("inventory_manufacturing_parent_label_version_conflict",
+            InventoryManufacturingRealizationCodesV1.LabelVersionConflict);
         fixture.ReturnOutputs.Exception = new ManufacturingInventoryRealizationPortException(
-            ManufacturingApiStatus.Conflict, "inventory_label_version_conflict", "expectedParentLabelVersion", 8, 9);
+            ManufacturingApiStatus.Conflict, InventoryManufacturingRealizationCodesV1.LabelVersionConflict,
+            "expectedParentLabelVersion", 8, 9);
 
         var request = new ReturnInventoryInputRequestV1(
             Guid.NewGuid(), order.Version, Roll, "8", Guid.NewGuid(), "2", At);
         var result = await fixture.Service.ReturnInventoryInputAsync(order.Id, request,
             "return-inventory-conflict", Permission, CancellationToken.None);
 
-        Assert.Equal((ManufacturingApiStatus.Conflict, "inventory_label_version_conflict",
+        Assert.Equal((ManufacturingApiStatus.Conflict, InventoryManufacturingRealizationCodesV1.LabelVersionConflict,
                 "expectedParentLabelVersion", 8L, 9L),
             (result.Status, result.Code, result.Field, result.ExpectedVersion, result.CurrentVersion));
         Assert.Single(fixture.Store.Commands);
 
         var replay = await fixture.Service.ReturnInventoryInputAsync(order.Id, request,
             "return-inventory-conflict", Permission, CancellationToken.None);
-        Assert.Equal((ManufacturingApiStatus.Conflict, "inventory_label_version_conflict", true),
+        Assert.Equal((ManufacturingApiStatus.Conflict,
+                InventoryManufacturingRealizationCodesV1.LabelVersionConflict, true),
             (replay.Status, replay.Code, replay.IsReplay));
     }
 
