@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   combineInventoryLabelDetail,
   decodeInventoryLabelBalances,
+  decodeInventoryLabelGenealogy,
   decodeInventoryLabelIdentity,
 } from './labelDetailContract'
 
@@ -12,6 +13,9 @@ const LOT = '44444444-4444-4444-4444-444444444444'
 const OWNER = '55555555-5555-5555-5555-555555555555'
 const CUSTODIAN = '66666666-6666-6666-6666-666666666666'
 const LOCATION = '77777777-7777-7777-7777-777777777777'
+const SOURCE_LABEL = '88888888-8888-8888-8888-888888888888'
+const TRANSFORMATION = '99999999-9999-9999-9999-999999999999'
+const OUTPUT_LABEL = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
 
 function identity() {
   return {
@@ -37,14 +41,31 @@ function balances() {
   }
 }
 
+function genealogy() {
+  return {
+    labelId: LABEL, labelCode: 'LBL-100', windowFull: false,
+    edges: [{
+      transformationId: TRANSFORMATION, kind: 'Split', occurredAtUtc: '2026-09-24T07:59:00Z',
+      sourceLabelId: SOURCE_LABEL, sourceCode: 'LBL-090', sourceLabelVersion: '2', sourceQuantityKg: '1250.5',
+      outputLabelId: LABEL, outputCode: 'LBL-100', outputLabelVersion: '3', outputQuantityKg: '1000.5',
+    }, {
+      transformationId: TRANSFORMATION, kind: 'Split', occurredAtUtc: '2026-09-24T07:59:00Z',
+      sourceLabelId: SOURCE_LABEL, sourceCode: 'LBL-090', sourceLabelVersion: '2', sourceQuantityKg: '1250.5',
+      outputLabelId: OUTPUT_LABEL, outputCode: 'LBL-101', outputLabelVersion: '1', outputQuantityKg: '250',
+    }],
+  }
+}
+
 describe('Inventory label detail contract', () => {
   it('decodes the exact existing identity and balance contracts and binds them to the requested scope', () => {
     const decodedIdentity = decodeInventoryLabelIdentity(identity())
     const decodedBalances = decodeInventoryLabelBalances(balances())
+    const decodedGenealogy = decodeInventoryLabelGenealogy(genealogy(), LABEL, 'LBL-100')
     expect(decodedIdentity).not.toBeNull()
     expect(decodedBalances).not.toBeNull()
-    expect(combineInventoryLabelDetail('3', decodedIdentity!, decodedBalances!, COMPANY, LABEL)).toEqual({
-      labelVersion: '3', identity: decodedIdentity, balances: decodedBalances,
+    expect(decodedGenealogy).not.toBeNull()
+    expect(combineInventoryLabelDetail('3', decodedIdentity!, decodedBalances!, decodedGenealogy!, COMPANY, LABEL)).toEqual({
+      labelVersion: '3', identity: decodedIdentity, balances: decodedBalances, genealogy: decodedGenealogy,
     })
   })
 
@@ -53,13 +74,38 @@ describe('Inventory label detail contract', () => {
     expect(decodeInventoryLabelIdentity({ ...identity(), lot: { ...identity().lot, id: OWNER } })).toBeNull()
     const decodedIdentity = decodeInventoryLabelIdentity(identity())!
     const decodedBalances = decodeInventoryLabelBalances(balances())!
-    expect(combineInventoryLabelDetail('3', decodedIdentity, decodedBalances, OWNER, LABEL)).toBeNull()
-    expect(combineInventoryLabelDetail('3', decodedIdentity, decodedBalances, COMPANY, OWNER)).toBeNull()
+    const decodedGenealogy = decodeInventoryLabelGenealogy(genealogy(), LABEL, 'LBL-100')!
+    expect(combineInventoryLabelDetail('3', decodedIdentity, decodedBalances, decodedGenealogy, OWNER, LABEL)).toBeNull()
+    expect(combineInventoryLabelDetail('3', decodedIdentity, decodedBalances, decodedGenealogy, COMPANY, OWNER)).toBeNull()
     expect(combineInventoryLabelDetail('3', decodedIdentity, {
       ...decodedBalances,
       positions: [{ ...decodedBalances.positions[0], productId: OWNER }],
-    }, COMPANY, LABEL)).toBeNull()
-    expect(combineInventoryLabelDetail('03', decodedIdentity, decodedBalances, COMPANY, LABEL)).toBeNull()
+    }, decodedGenealogy, COMPANY, LABEL)).toBeNull()
+    expect(combineInventoryLabelDetail('03', decodedIdentity, decodedBalances, decodedGenealogy, COMPANY, LABEL)).toBeNull()
+    expect(decodeInventoryLabelGenealogy({ ...genealogy(), leakedActor: 'x' }, LABEL, 'LBL-100')).toBeNull()
+    expect(decodeInventoryLabelGenealogy({ ...genealogy(), labelId: OWNER }, LABEL, 'LBL-100')).toBeNull()
+    expect(decodeInventoryLabelGenealogy({ ...genealogy(), labelCode: 'LBL-X' }, LABEL, 'LBL-100')).toBeNull()
+    expect(decodeInventoryLabelGenealogy({ ...genealogy(), edges: [{ ...genealogy().edges[0], sourceLabelVersion: '02' }] }, LABEL, 'LBL-100')).toBeNull()
+    expect(decodeInventoryLabelGenealogy({ ...genealogy(), edges: [{ ...genealogy().edges[0], sourceLabelId: OWNER, outputLabelId: SOURCE_LABEL }] }, LABEL, 'LBL-100')).toBeNull()
+    expect(decodeInventoryLabelGenealogy({
+      ...genealogy(),
+      edges: [genealogy().edges[0], {
+        ...genealogy().edges[0], transformationId: OWNER, sourceLabelId: CUSTODIAN, outputLabelId: LOCATION,
+      }],
+    }, LABEL, 'LBL-100')).toBeNull()
+  })
+
+  it('fails closed for impossible or internally inconsistent transformation groups', () => {
+    const [first, second] = genealogy().edges
+    const decode = (edges: unknown[]) => decodeInventoryLabelGenealogy({ ...genealogy(), edges }, LABEL, 'LBL-100')
+
+    expect(decode([first])).toBeNull()
+    expect(decode([{ ...first, kind: 'Merge' }])).toBeNull()
+    expect(decode([first, first])).toBeNull()
+    expect(decode([first, { ...second, outputLabelId: SOURCE_LABEL }])).toBeNull()
+    expect(decode([first, { ...second, occurredAtUtc: '2026-09-24T08:00:00Z' }])).toBeNull()
+    expect(decode([first, { ...second, sourceQuantityKg: '1' }])).toBeNull()
+    expect(decode([first, { ...second, outputQuantityKg: '249.99' }])).toBeNull()
   })
 
   it('rejects negative quantities, non-positive positions and totals that do not match their positions', () => {

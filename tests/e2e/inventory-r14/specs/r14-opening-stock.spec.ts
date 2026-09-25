@@ -108,11 +108,15 @@ test('R14 records one real opening count, closes and reopens it, and preserves p
       readonly labelVersion: string
       readonly identity: { readonly labelId: string; readonly companyId: string; readonly productId: string; readonly code: string }
       readonly balances: { readonly labelId: string; readonly physicalKg: string }
+      readonly genealogy: { readonly labelId: string; readonly labelCode: string; readonly edges: readonly unknown[]; readonly windowFull: boolean }
     }
     expect(labelDetail.identity).toMatchObject({ labelId: actualLabelId, companyId, productId, code: LABEL })
     expect(labelDetail.balances).toMatchObject({ labelId: actualLabelId, physicalKg: '12.5' })
+    expect(labelDetail.genealogy).toEqual({ labelId: actualLabelId, labelCode: LABEL, edges: [], windowFull: false })
     await expect(page.getByRole('heading', { level: 1, name: LABEL, exact: true })).toBeVisible()
     await expect(page.getByText(actualLabelId, { exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { level: 2, name: 'Soy ağacı', exact: true })).toBeVisible()
+    await expect(page.getByText('Bu etiket için bölme veya birleştirme kaydı yok.', { exact: true })).toBeVisible()
 
     const productLink = page.getByRole('link', { name: 'Ürün kartı', exact: true })
     await expect(productLink).toHaveAttribute('href', `/urun/${productId}`)
@@ -133,9 +137,11 @@ test('R14 records one real opening count, closes and reopens it, and preserves p
       labelVersion: labelDetail.labelVersion,
       identity: { labelId: actualLabelId, companyId, productId, code: LABEL },
       balances: { labelId: actualLabelId, physicalKg: '12.5' },
+      genealogy: { labelId: actualLabelId, labelCode: LABEL, edges: [], windowFull: false },
     })
     await expect(page.getByRole('heading', { level: 1, name: LABEL, exact: true })).toBeVisible()
     await expect(page.getByText(actualLabelId, { exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { level: 2, name: 'Soy ağacı', exact: true })).toBeVisible()
 
     const stored = await pool.request()
       .input('companyId', sql.UniqueIdentifier, companyId)

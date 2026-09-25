@@ -4,6 +4,7 @@ using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Infrastructure;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 
 namespace GoymenERP.Api.IntegrationTests;
@@ -60,7 +61,10 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             (exception.StatusCode, exception.Code));
     }
 
-    private static InventoryLabelDetailService LabelDetails(InventoryDbContext context, Guid companyId)
+    private static InventoryLabelDetailService LabelDetails(
+        InventoryDbContext context,
+        Guid companyId,
+        IInventoryLabelGenealogyReaderV1? genealogy = null)
     {
         var company = new CompanyContext();
         company.Set(companyId);
@@ -68,7 +72,8 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             company,
             new LabelDetailUser(companyId),
             new LabelDetailAuthority(),
-            new SqlInventoryLabelDetailReader(context));
+            new SqlInventoryLabelDetailReader(context),
+            genealogy ?? new LabelDetailGenealogyReader(context));
     }
 
     private static async Task TouchLabelAsync(Run run, Guid labelId)
@@ -120,5 +125,20 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
                 new HashSet<Guid>(),
                 new HashSet<Guid>(),
                 new HashSet<Guid>()));
+    }
+
+    private sealed class LabelDetailGenealogyReader(InventoryDbContext context) : IInventoryLabelGenealogyReaderV1
+    {
+        public async Task<InventoryLabelGenealogyV1?> ReadAsync(
+            Guid labelId,
+            int limit = 100,
+            CancellationToken cancellationToken = default)
+        {
+            var label = await context.Labels.AsNoTracking()
+                .Where(row => row.Id == labelId)
+                .Select(row => new { row.Id, row.Code })
+                .SingleOrDefaultAsync(cancellationToken);
+            return label is null ? null : new(label.Id, label.Code, [], false);
+        }
     }
 }

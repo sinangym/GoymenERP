@@ -9,6 +9,7 @@ import { StateBlock } from '../shell/StateBlock'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { fetchInventoryLabelDetail } from './labelDetailApi'
 import type { InventoryLabelDetail } from './labelDetailContract'
+import { inventoryLabelDetailPath } from './labelDetailRoute'
 import styles from './inventory.module.css'
 
 export function InventoryLabelDetailPage() {
@@ -30,6 +31,7 @@ function InventoryLabelDetailView({ namespace, labelId }: {
   const shell = useShellState()
   const boundary = useAuthBoundary()
   const canReadProduct = hasCapability(shell, CAPABILITY.productItemsDetail)
+  const canReadLabel = hasCapability(shell, CAPABILITY.inventoryStockPositionsList)
   const companyId = shell.activeContext?.scopeMode === 'single' ? shell.activeContext.companyId : null
   const query = useQuery({
     queryKey: ['inventory-label-detail', namespace, labelId, shell.routeEntryGeneration],
@@ -53,8 +55,8 @@ function InventoryLabelDetailView({ namespace, labelId }: {
     return <main className={styles.page}><StateBlock state={state} subject="etiket" onRetry={() => void query.refetch()} /></main>
   }
 
-  const { labelVersion, identity, balances } = state.data
-  if (identity.companyId !== companyId || identity.labelId !== labelId || balances.labelId !== labelId) {
+  const { labelVersion, identity, balances, genealogy } = state.data
+  if (identity.companyId !== companyId || identity.labelId !== labelId || balances.labelId !== labelId || genealogy.labelId !== labelId) {
     return <main className={styles.page}><StateBlock state={{ kind: 'malformed-response' }} subject="etiket" onRetry={() => void query.refetch()} /></main>
   }
   return <main className={styles.page}>
@@ -94,6 +96,27 @@ function InventoryLabelDetailView({ namespace, labelId }: {
             <td>{position.quantityKg} kg</td>
           </tr>)}</tbody>
         </table></div>}
+    </section>
+
+    <section aria-labelledby="label-genealogy-heading">
+      <h2 id="label-genealogy-heading">Soy ağacı</h2>
+      {genealogy.edges.length === 0
+        ? <p>Bu etiket için bölme veya birleştirme kaydı yok.</p>
+        : <div className={styles.tableWrap}><table>
+          <thead><tr><th>İşlem</th><th>Tür</th><th>Zaman</th><th>Kaynak</th><th>Çıktı</th></tr></thead>
+          <tbody>{genealogy.edges.map((edge) => <tr key={`${edge.transformationId}:${edge.sourceLabelId}:${edge.outputLabelId}`}>
+            <td className={styles.mono}>…{edge.transformationId.slice(-8)}</td>
+            <td>{edge.kind === 'Split' ? 'Bölme' : 'Birleştirme'}</td>
+            <td>{edge.occurredAtUtc}</td>
+            <td>{canReadLabel
+              ? <Link to={inventoryLabelDetailPath(edge.sourceLabelId)}>{edge.sourceCode}</Link>
+              : edge.sourceCode}<br />{edge.sourceQuantityKg} kg · sürüm {edge.sourceLabelVersion}</td>
+            <td>{canReadLabel
+              ? <Link to={inventoryLabelDetailPath(edge.outputLabelId)}>{edge.outputCode}</Link>
+              : edge.outputCode}<br />{edge.outputQuantityKg} kg · sürüm {edge.outputLabelVersion}</td>
+          </tr>)}</tbody>
+        </table></div>}
+      {genealogy.windowFull ? <p>Daha eski soy ağacı kayıtları bu görünümde yer almıyor.</p> : null}
     </section>
 
     <section aria-labelledby="label-document-heading">
