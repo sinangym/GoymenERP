@@ -23,6 +23,14 @@ interface ParentRollCandidate {
   readonly draftSelectable: boolean
 }
 
+interface ParentLabelDetail {
+  readonly labelVersion: string
+  readonly identity: {
+    readonly productId: string
+    readonly requiredDocuments: readonly string[]
+  }
+}
+
 export async function apiAs(env: MfgEnvironment, actor: string): Promise<APIRequestContext> {
   return request.newContext({
     baseURL: env.apiBaseUrl,
@@ -119,11 +127,38 @@ export async function declareThroughApi(
 ): Promise<Record<string, unknown>> {
   const api = await apiAs(env, env.seed.recorderActor)
   try {
+    const detailResponse = await api.get(`/api/v1/inventory/labels/${arranged.rollId}/detail`)
+    const detailText = await detailResponse.text()
+    expect(detailResponse.status(), detailText).toBe(200)
+    const detail = JSON.parse(detailText) as ParentLabelDetail
+    expect(detail.labelVersion).toMatch(/^[1-9][0-9]*$/)
+    expect(detail.identity.productId).toBe(env.seed.output.productId)
+    expect(detail.identity.requiredDocuments).toEqual(env.seed.output.requiredDocuments)
+    const outputId = randomUUID()
+    const movementId = randomUUID()
+    const lotId = randomUUID()
+    const labelId = randomUUID()
     return await post(api, `/orders/${arranged.orderId}/outputs`, {
-      factId: randomUUID(),
+      outputId,
       expectedVersion,
       parentRollId: arranged.rollId,
+      expectedParentLabelVersion: detail.labelVersion,
       outputClass,
+      productId: env.seed.output.productId,
+      expectedProductVersion: env.seed.output.productVersion,
+      lotId,
+      labelId,
+      labelCode: `SYN-MFG-OUT-${labelId.replaceAll('-', '')}`,
+      heatNumber: null,
+      coilNumber: null,
+      requiredDocuments: env.seed.output.requiredDocuments,
+      ownerKind: env.seed.output.ownerKind,
+      ownerId: env.seed.output.ownerId,
+      custodianKind: env.seed.output.custodianKind,
+      custodianId: env.seed.output.custodianId,
+      locationId: env.seed.output.locationId,
+      initialBlock: env.seed.output.initialBlock,
+      movementId,
       kg,
       occurredAtUtc: new Date().toISOString(),
     }, 200)

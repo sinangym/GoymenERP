@@ -170,6 +170,38 @@ public sealed class MfgBrowserSeed : IBrowserSuiteFixture
             throw new InvalidOperationException("Inventory opening count did not answer every isolated MFG case roll.");
         }
 
+        // Publish output facts from the real close-case Inventory candidate. The browser must send
+        // these facts explicitly; it does not infer position policy from the parent or output class.
+        var closeCandidates = await context.GetJsonAsync(
+            RecorderActor,
+            CompanyGdc,
+            $"{ParentRollCandidatesPath}?q={CloseRoll.Code}&limit=25",
+            cancellationToken);
+        var closeRoll = closeCandidates.GetProperty("items").EnumerateArray()
+            .SingleOrDefault(candidate => candidate.GetProperty("labelId").GetGuid() == CloseRoll.LabelId);
+        var closePositions = closeRoll.ValueKind == JsonValueKind.Object
+            ? closeRoll.GetProperty("positions").EnumerateArray().ToArray()
+            : [];
+        if (closeRoll.ValueKind != JsonValueKind.Object
+            || closeRoll.GetProperty("productId").GetGuid() != product.ProductId
+            || closeRoll.GetProperty("physicalKg").GetString() != "1000"
+            || !closeRoll.GetProperty("draftSelectable").GetBoolean()
+            || closePositions.Length != 1)
+        {
+            throw new InvalidOperationException("The close-case Inventory roll did not expose one exact output position source.");
+        }
+        var outputPosition = closePositions[0];
+        if (outputPosition.GetProperty("ownerKind").GetString() != "Company"
+            || outputPosition.GetProperty("ownerId").GetGuid() != CompanyGdc
+            || outputPosition.GetProperty("custodianKind").GetString() != "Company"
+            || outputPosition.GetProperty("custodianId").GetGuid() != CompanyGdc
+            || outputPosition.GetProperty("locationId").GetGuid() != locationId
+            || outputPosition.GetProperty("productId").GetGuid() != product.ProductId
+            || outputPosition.GetProperty("block").GetString() != "Free")
+        {
+            throw new InvalidOperationException("The close-case Inventory roll position differs from the accepted fixture facts.");
+        }
+
         var candidates = await context.GetJsonAsync(
             RecorderActor,
             CompanyGdc,
@@ -261,6 +293,15 @@ public sealed class MfgBrowserSeed : IBrowserSuiteFixture
             ["planReplayRollCode"] = PlanReplayRoll.Code,
             ["planRefusalRollId"] = PlanRefusalRoll.LabelId.ToString("D"),
             ["planRefusalRollCode"] = PlanRefusalRoll.Code,
+            ["outputProductId"] = closeRoll.GetProperty("productId").GetGuid().ToString("D"),
+            ["outputProductVersion"] = product.ProductVersion,
+            ["outputRequiredDocuments"] = closeRoll.GetProperty("requiredDocuments").GetRawText(),
+            ["outputOwnerKind"] = outputPosition.GetProperty("ownerKind").GetString()!,
+            ["outputOwnerId"] = outputPosition.GetProperty("ownerId").GetGuid().ToString("D"),
+            ["outputCustodianKind"] = outputPosition.GetProperty("custodianKind").GetString()!,
+            ["outputCustodianId"] = outputPosition.GetProperty("custodianId").GetGuid().ToString("D"),
+            ["outputLocationId"] = outputPosition.GetProperty("locationId").GetGuid().ToString("D"),
+            ["outputInitialBlock"] = outputPosition.GetProperty("block").GetString()!,
         };
     }
 

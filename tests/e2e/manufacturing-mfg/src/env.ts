@@ -42,6 +42,18 @@ export interface MfgRolls {
   readonly planRefusal: MfgRollSeed
 }
 
+export interface MfgOutputSeed {
+  readonly productId: string
+  readonly productVersion: string
+  readonly requiredDocuments: readonly string[]
+  readonly ownerKind: string
+  readonly ownerId: string
+  readonly custodianKind: string
+  readonly custodianId: string
+  readonly locationId: string
+  readonly initialBlock: string
+}
+
 export interface MfgSeed {
   readonly recorderActor: string
   readonly readerActor: string
@@ -52,6 +64,7 @@ export interface MfgSeed {
   readonly rollId: string
   readonly rollCode: string
   readonly rolls: MfgRolls
+  readonly output: MfgOutputSeed
 }
 
 export interface MfgEnvironment {
@@ -76,6 +89,20 @@ function text(raw: Record<string, unknown>, field: string, guid = false): string
     throw new Error(`BROWSER_E2E_MFG_SEED field "${field}" is missing or malformed`)
   }
   return value.trim()
+}
+
+function stringList(raw: Record<string, unknown>, field: string): readonly string[] {
+  const serialized = text(raw, field)
+  let value: unknown
+  try {
+    value = JSON.parse(serialized)
+  } catch {
+    throw new Error(`BROWSER_E2E_MFG_SEED field "${field}" is malformed JSON`)
+  }
+  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string' || item.trim().length === 0)) {
+    throw new Error(`BROWSER_E2E_MFG_SEED field "${field}" is not a string array`)
+  }
+  return value
 }
 
 export function readEnvironment(): MfgEnvironment {
@@ -110,6 +137,17 @@ export function readEnvironment(): MfgEnvironment {
       planCreate: roll('planCreate'),
       planReplay: roll('planReplay'),
       planRefusal: roll('planRefusal'),
+    },
+    output: {
+      productId: text(raw, 'outputProductId', true),
+      productVersion: text(raw, 'outputProductVersion'),
+      requiredDocuments: stringList(raw, 'outputRequiredDocuments'),
+      ownerKind: text(raw, 'outputOwnerKind'),
+      ownerId: text(raw, 'outputOwnerId', true),
+      custodianKind: text(raw, 'outputCustodianKind'),
+      custodianId: text(raw, 'outputCustodianId', true),
+      locationId: text(raw, 'outputLocationId', true),
+      initialBlock: text(raw, 'outputInitialBlock'),
     },
   }
   // Three distinct authorities: recording a fact, reading, and closing (MFG-ORD).
