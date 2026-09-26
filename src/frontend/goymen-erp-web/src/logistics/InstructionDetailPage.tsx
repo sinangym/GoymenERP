@@ -15,7 +15,7 @@
  * After a recorded transition, and after a refusal that says the record moved (a stale version, a
  * state, the §13 cap, a block, a duplicate share), the detail is re-read — the answer is the server's.
  *
- * No shipment, delivery, stock, allocation or price: none of them exists on this screen (D3, LOG-5).
+ * LOG-5 adds independently capability-gated definite shipment and delivery; load remains non-physical.
  */
 
 import { useRef, useState } from 'react'
@@ -58,6 +58,7 @@ import { contextKey, contextKeyString, hasCapability, type ShellState } from '..
 import { StateBlock } from '../shell/StateBlock'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import styles from './LogisticsPages.module.css'
+import { RealizationCommands } from './RealizationCommands'
 
 export function InstructionDetailPage() {
   const shell = useShellState()
@@ -112,6 +113,8 @@ export function InstructionDetailPage() {
                 section, or the notice of the command that caused the version step would vanish with it. */}
             <IssueCommand key={`issue:${namespace ?? ''}:${detail.instruction.id}`} shell={shell} detail={detail} companyId={companyId} onRecorded={reread} />
             <LoadForm key={`load:${namespace ?? ''}:${detail.instruction.id}`} shell={shell} detail={detail} companyId={companyId} onRecorded={reread} />
+            <RealizationCommands key={`realization:${namespace ?? ''}:${shell.routeEntryGeneration}:${detail.instruction.id}`}
+              shell={shell} detail={detail} companyId={companyId} onRecorded={reread} />
           </>
         )
       }
@@ -194,6 +197,8 @@ export function InstructionView({
                 <th scope="col" className={styles.numeric}>{T.shipped}</th>
                 <th scope="col" className={styles.numeric}>{T.delivered}</th>
                 <th scope="col" className={styles.numeric}>{T.remainingToLoad}</th>
+                <th scope="col" className={styles.numeric}>{T.loadedNotShipped}</th>
+                <th scope="col" className={styles.numeric}>{T.shippedNotDelivered}</th>
               </tr>
             </thead>
             <tbody>
@@ -220,6 +225,8 @@ export function InstructionView({
                   <td className={styles.numeric}>{line.shipped}</td>
                   <td className={styles.numeric}>{line.delivered}</td>
                   <td className={styles.numeric} data-testid={`logistics-line-${line.lineNo}-remaining`}>{line.remainingToLoad}</td>
+                  <td className={styles.numeric} data-testid={`logistics-line-${line.lineNo}-loaded-not-shipped`}>{line.loadedNotShipped}</td>
+                  <td className={styles.numeric} data-testid={`logistics-line-${line.lineNo}-shipped-not-delivered`}>{line.shippedNotDelivered}</td>
                 </tr>
               ))}
             </tbody>

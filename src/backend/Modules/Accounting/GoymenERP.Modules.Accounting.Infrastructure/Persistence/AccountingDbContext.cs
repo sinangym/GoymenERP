@@ -49,6 +49,9 @@ public sealed class AccountingDbContext(DbContextOptions<AccountingDbContext> op
 
     internal DbSet<NormalJournalDraftLineRow> NormalJournalDraftLines => Set<NormalJournalDraftLineRow>();
 
+    internal DbSet<AccountingJournalReversalProposalRow> JournalReversalProposals =>
+        Set<AccountingJournalReversalProposalRow>();
+
     /// <summary>
     /// ACC-V0 (Ö4): the facts follow the status exactly. Proposed (3): the preparer only; Open (1): the
     /// preparer and an approval by SOMEONE ELSE; Closed (2): both plus the close.
@@ -79,6 +82,7 @@ public sealed class AccountingDbContext(DbContextOptions<AccountingDbContext> op
         ConfigureCommands(modelBuilder);
         ConfigureNormalJournalDrafts(modelBuilder);
         ConfigureNormalJournalDraftLines(modelBuilder);
+        ConfigureJournalReversalProposals(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -378,6 +382,49 @@ public sealed class AccountingDbContext(DbContextOptions<AccountingDbContext> op
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    private void ConfigureJournalReversalProposals(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<AccountingJournalReversalProposalRow>();
+        entity.ToTable("JournalReversalProposals", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_JournalReversalProposals_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [SourceJournalId] <> '00000000-0000-0000-0000-000000000000' AND [PeriodId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [ProposedByUserId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_JournalReversalProposals_Text", "LEN([Reason]) > 0");
+            table.HasCheckConstraint("CK_JournalReversalProposals_Version", "[Version] >= 1");
+            table.HasCheckConstraint("CK_JournalReversalProposals_Status",
+                "([Status] = 1 AND [ReversalJournalId] IS NULL AND [DecidedByUserId] IS NULL AND [DecidedAtUtc] IS NULL AND [DecisionReason] IS NULL) OR "
+                + "([Status] = 2 AND [ReversalJournalId] IS NOT NULL AND [DecidedByUserId] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND [DecisionReason] IS NULL) OR "
+                + "([Status] = 3 AND [ReversalJournalId] IS NULL AND [DecidedByUserId] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND LEN([DecisionReason]) > 0)");
+            table.HasCheckConstraint("CK_JournalReversalProposals_MakerChecker",
+                "[DecidedByUserId] IS NULL OR [DecidedByUserId] <> [ProposedByUserId]");
+        });
+        entity.HasKey(x => x.Id);
+        entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.TransactionDate).HasColumnType("date");
+        entity.Property(x => x.AccountingDate).HasColumnType("date");
+        entity.Property(x => x.ValueDate).HasColumnType("date");
+        entity.Property(x => x.Reason).HasMaxLength(1024).IsRequired();
+        entity.Property(x => x.DecisionReason).HasMaxLength(1024);
+        entity.Property(x => x.Version).IsConcurrencyToken();
+        entity.Property(x => x.RowVersion).IsRowVersion();
+        entity.HasIndex(x => new { x.CompanyId, x.Status, x.AccountingDate });
+        entity.HasIndex(x => new { x.CompanyId, x.SourceJournalId });
+        entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<JournalRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.SourceJournalId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<JournalRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.ReversalJournalId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     private void ApplyWriteGuards()
     {
         AccountingAuditEventTenantGuard.Validate(this, companyContext);
@@ -421,6 +468,11 @@ public sealed class AccountingDbContext(DbContextOptions<AccountingDbContext> op
                     NormalJournalDraftRow => [nameof(NormalJournalDraftRow.Status), nameof(NormalJournalDraftRow.ApprovedByUserId),
                         nameof(NormalJournalDraftRow.ApprovedAtUtc), nameof(NormalJournalDraftRow.PeriodId),
                         nameof(NormalJournalDraftRow.PostedJournalId), nameof(NormalJournalDraftRow.UpdatedAtUtc)],
+                    AccountingJournalReversalProposalRow => [nameof(AccountingJournalReversalProposalRow.Status),
+                        nameof(AccountingJournalReversalProposalRow.ReversalJournalId),
+                        nameof(AccountingJournalReversalProposalRow.DecidedByUserId),
+                        nameof(AccountingJournalReversalProposalRow.DecidedAtUtc),
+                        nameof(AccountingJournalReversalProposalRow.DecisionReason)],
                     _ => [],
                 };
                 var changed = entry.Properties

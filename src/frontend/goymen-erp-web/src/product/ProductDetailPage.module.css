@@ -58,6 +58,44 @@
   font-size: 0.88rem;
 }
 
+.activationAction,
+.activationError {
+  display: flex;
+  max-width: 34rem;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-end;
+  font-size: 0.82rem;
+  color: #3b4660;
+  text-align: right;
+}
+
+.activateButton {
+  padding: 6px 12px;
+  border: 1px solid #167549;
+  border-radius: 4px;
+  background: #167549;
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+}
+
+.activateButton:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.activationError {
+  color: #9b1c1c;
+}
+
+.activationSuccess {
+  margin: 0;
+  color: #167549;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
 .badge {
   display: inline-block;
   padding: 1px 8px;

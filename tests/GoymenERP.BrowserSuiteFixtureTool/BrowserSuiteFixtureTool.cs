@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using GoymenERP.Api.ProductRuntime;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -61,6 +62,11 @@ internal static partial class BrowserSuiteFixtureTool
                 {
                     // Creating the first client builds and starts the host (Program.cs as-is).
                 }
+
+                // Optional Product runtime schemas are not part of the normal host's core migration set.
+                // Materialize them through Product's existing initializer before any owner fixture uses
+                // Product-owned stores; the initializer is a no-op when that runtime is disabled.
+                await host.Services.InitializeProductRuntimeAsync(CancellationToken.None);
 
                 var actors = host.Services.GetRequiredService<IConfiguration>()
                     .GetSection("BootstrapIdentity:Users")

@@ -15,7 +15,7 @@ namespace GoymenERP.Logistics.UnitTests;
 /// mapping. SENTETIK / NOT_ENV. Registered platform names stand in for the Logistics names until the central
 /// catalogue knows them (the Sales tests' way).
 /// </summary>
-public sealed class LogisticsInstructionServiceTests
+public sealed partial class LogisticsInstructionServiceTests
 {
     private static readonly Guid Company = Guid.Parse("11111111-1111-4111-8111-111111111111");
     private static readonly Guid Party = Guid.Parse("33333333-3333-4333-8333-333333333333");
@@ -359,12 +359,12 @@ public sealed class LogisticsInstructionServiceTests
         public FakeStore Store { get; init; } = new();
         public LogisticsInstructionServiceBindings Bindings { get; set; } = new(CreatePermission, ReadPermission, CreatePermission);
 
-        public LogisticsInstructionService Service()
+        public LogisticsInstructionService Service(ILogisticsRealizationTransactionRunnerV1? runner = null)
         {
             var company = new CompanyContext();
             company.Set(Company);
             return new LogisticsInstructionService(company, User, Authority, new FixedCorrelation(), Accounts, OrderLines,
-                new LoadingUnitVerifier(Settings), Store, Bindings, TimeProvider.System);
+                new LoadingUnitVerifier(Settings), Store, Bindings, TimeProvider.System, runner);
         }
 
         public void ResetOwnerCalls()
@@ -386,6 +386,7 @@ public sealed class LogisticsInstructionServiceTests
     private sealed class FixedAuthority : IErpAuthorityRevalidationService
     {
         public bool Granted { get; set; } = true;
+        public string? DeniedPermission { get; set; }
         public int Calls { get; private set; }
         public string? LastPermission { get; private set; }
 
@@ -393,7 +394,7 @@ public sealed class LogisticsInstructionServiceTests
         {
             Calls++;
             LastPermission = permission;
-            return Task.FromResult(new PermissionScope(Granted, true, new HashSet<string>(["ROLE-A"], StringComparer.Ordinal),
+            return Task.FromResult(new PermissionScope(Granted && permission != DeniedPermission, true, new HashSet<string>(["ROLE-A"], StringComparer.Ordinal),
                 new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>()));
         }
     }
