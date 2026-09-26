@@ -129,7 +129,7 @@ internal static class C01E2eShellCapabilityActivation
                 typeof(ManufacturingShellCapabilityProvider), typeof(LogisticsShellCapabilityProvider),
                 typeof(PurchasingShellCapabilityProvider),
             },
-                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV12PublishedManufacturingV12PublishedLogisticsV11AndPublishedPurchasingV13),
+                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV12PublishedManufacturingV12PublishedLogisticsV11AndPublishedPurchasingV14),
         // ACC-V0b: Accounting's (staged) period, journal and posting-queue screens join the host set.
         (new[]
             {
@@ -138,7 +138,7 @@ internal static class C01E2eShellCapabilityActivation
                 typeof(ManufacturingShellCapabilityProvider), typeof(LogisticsShellCapabilityProvider),
                 typeof(PurchasingShellCapabilityProvider), typeof(AccountingShellCapabilityProvider),
             },
-                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV12PublishedManufacturingV12PublishedLogisticsV11PublishedPurchasingV13AndPublishedAccountingV12),
+                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV12PublishedManufacturingV12PublishedLogisticsV11PublishedPurchasingV14AndPublishedAccountingV12),
         (new[]
             {
                 typeof(OrganizationShellCapabilityProvider), typeof(ProductShellCapabilityProvider),
@@ -147,7 +147,7 @@ internal static class C01E2eShellCapabilityActivation
                 typeof(PurchasingShellCapabilityProvider), typeof(AccountingShellCapabilityProvider),
                 typeof(InventoryShellCapabilityProvider),
             },
-                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV12PublishedManufacturingV12PublishedLogisticsV11PublishedPurchasingV13PublishedAccountingV12AndPublishedInventoryV12),
+                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV12PublishedManufacturingV12PublishedLogisticsV11PublishedPurchasingV14PublishedAccountingV12AndPublishedInventoryV12),
     ];
 
     private static string NormalAuthority(IServiceCollection services)

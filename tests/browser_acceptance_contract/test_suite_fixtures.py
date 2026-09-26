@@ -96,7 +96,8 @@ class FixtureListTests(unittest.TestCase):
     def test_pur01_exports_the_separate_creator_supplier_and_existing_approval_axis(self):
         self.assertEqual(
             frozenset({
-                "creatorActor", "approverActor", "readerActor", "companyId", "otherCompanyId",
+                "creatorActor", "approverActor", "readerActor", "receiverActor", "stockReaderActor",
+                "companyId", "otherCompanyId",
                 "orderId", "lineId", "supplierPartyId", "companyAccountId", "productId",
                 "productVersion", "productUnitId", "productUnitProfileId",
                 "productUnitProfileVersion", "productCode", "productName",
@@ -589,7 +590,11 @@ class IssuerUserRuleTests(unittest.TestCase):
         self.assertEqual(self.LOCAL, environment[user + "Id"])
         self.assertEqual(self.EXTERNAL, environment[user + "ExternalIdentities__0__Id"])
         self.assertEqual("pur01-issuer", environment[user + "ExternalIdentities__0__Subject"])
-        self.assertFalse(any(key.startswith("IdentitySeed__Roles__8__") for key in environment))
+        # The issuer is an ungranted non-actor: no role is defined for it and (below) no assignment names it.
+        # (The earlier check tested for an absent Roles__8 index, conflating the issuer's USER index 8 with a
+        # role index; Roles__8 is now the disposable goods receiver, so the intent is stated directly.)
+        self.assertFalse(any(key.startswith("IdentitySeed__Roles__") and key.endswith("__Code")
+                             and "ISSUER" in value.upper() for key, value in environment.items()))
         self.assertFalse(any(value == self.LOCAL for key, value in environment.items()
                              if key.startswith("IdentitySeed__Assignments__")))
         self._validate(environment, suite="pur01")
