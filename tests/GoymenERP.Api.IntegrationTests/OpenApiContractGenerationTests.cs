@@ -467,6 +467,12 @@ public sealed partial class OpenApiContractGenerationTests
         new("post", "/api/v1/accounting/normal-journal-drafts/{draftId}/approval", "ApproveAccountingNormalJournalDraftV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
             "#/components/schemas/ApproveNormalJournalDraftRequestV1", ["path:draftId:true:type:string;format:uuid"]),
+        new("post", "/api/v1/accounting/journal-reversal-proposals", "ProposeAccountingJournalReversalV1",
+            AuthenticatedResponses("201:application/json", "400:application/problem+json", "415:", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/ProposeAccountingJournalReversalRequestV1"),
+        new("post", "/api/v1/accounting/journal-reversal-proposals/{proposalId}/approval", "ApproveAccountingJournalReversalV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/ApproveAccountingJournalReversalRequestV1", ["path:proposalId:true:type:string;format:uuid"]),
         new("get", "/api/v1/manufacturing/orders/{orderId}/mass-balance", "GetManufacturingOrderMassBalanceV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["path:orderId:true:type:string;format:uuid"]),
@@ -610,6 +616,8 @@ public sealed partial class OpenApiContractGenerationTests
             ["CreateAccountingNormalJournalDraftV1"] = "ref:NormalJournalDraftViewV1",
             ["GetAccountingNormalJournalDraftV1"] = "ref:NormalJournalDraftViewV1",
             ["ApproveAccountingNormalJournalDraftV1"] = "ref:NormalJournalDraftViewV1",
+            ["ProposeAccountingJournalReversalV1"] = "ref:AccountingJournalReversalProposalViewV1",
+            ["ApproveAccountingJournalReversalV1"] = "ref:AccountingJournalReversalProposalViewV1",
             ["GetManufacturingOrderMassBalanceV1"] = "ref:MassBalanceViewV1",
             ["ListManufacturingOrdersV1"] = "ref:OrderListViewV1",
             ["CloseManufacturingOrderV1"] = "ref:OrderViewV1",
@@ -721,6 +729,8 @@ public sealed partial class OpenApiContractGenerationTests
         "CreateAccountingNormalJournalDraftV1",
         "GetAccountingNormalJournalDraftV1",
         "ApproveAccountingNormalJournalDraftV1",
+        "ProposeAccountingJournalReversalV1",
+        "ApproveAccountingJournalReversalV1",
         "GetManufacturingOrderMassBalanceV1",
         "ListManufacturingOrdersV1",
         "CloseManufacturingOrderV1",
@@ -787,6 +797,8 @@ public sealed partial class OpenApiContractGenerationTests
         "CloseAccountingPeriodV1",
         "CreateAccountingNormalJournalDraftV1",
         "ApproveAccountingNormalJournalDraftV1",
+        "ProposeAccountingJournalReversalV1",
+        "ApproveAccountingJournalReversalV1",
         "CloseManufacturingOrderV1",
     ];
 
@@ -894,6 +906,8 @@ public sealed partial class OpenApiContractGenerationTests
                 ["CloseAccountingPeriodV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
                 ["CreateAccountingNormalJournalDraftV1"] = [StatusCodes.Status201Created],
                 ["ApproveAccountingNormalJournalDraftV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
+                ["ProposeAccountingJournalReversalV1"] = [StatusCodes.Status201Created],
+                ["ApproveAccountingJournalReversalV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
                 ["CloseManufacturingOrderV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
             };
 
@@ -969,6 +983,8 @@ public sealed partial class OpenApiContractGenerationTests
         "CloseAccountingPeriodV1",
         "CreateAccountingNormalJournalDraftV1",
         "ApproveAccountingNormalJournalDraftV1",
+        "ProposeAccountingJournalReversalV1",
+        "ApproveAccountingJournalReversalV1",
         "CloseManufacturingOrderV1",
         "GetLogisticsApprovedOrderLinesV1",
         "GetSalesContactInformationReferencesV1",
@@ -1022,6 +1038,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetAccountingJournalV1:404",
         "GetAccountingNormalJournalDraftV1:404",
         "ApproveAccountingNormalJournalDraftV1:404",
+        "ApproveAccountingJournalReversalV1:404",
         "GetManufacturingOrderMassBalanceV1:404",
         "CloseManufacturingOrderV1:404",
         "GetSalesContactInformationReferencesV1:404",
@@ -1031,6 +1048,8 @@ public sealed partial class OpenApiContractGenerationTests
     [
         "CreateAccountingNormalJournalDraftV1:400",
         "ApproveAccountingNormalJournalDraftV1:400",
+        "ProposeAccountingJournalReversalV1:400",
+        "ApproveAccountingJournalReversalV1:400",
         "GetAuditEventsV1:400",
         "SetOrganizationLocationActiveStateV1:400",
         "GetFinanceManualReceiptDraftContextV1:400",
@@ -1295,6 +1314,12 @@ public sealed partial class OpenApiContractGenerationTests
             ["ApproveAccountingNormalJournalDraftV1:400"] = ["accounting_request_invalid"],
             ["ApproveAccountingNormalJournalDraftV1:409"] = ["accounting_concurrent_change", "accounting_normal_journal_draft_content_conflict", "accounting_normal_journal_draft_not_pending", "accounting_normal_journal_draft_posting_conflict", "accounting_period_conflict", "accounting_period_overlap", "accounting_period_preparer_conflict", "accounting_version_conflict", "idempotency_conflict"],
             ["ApproveAccountingNormalJournalDraftV1:422"] = ["accounting_company_mismatch", "accounting_invalid_reference", "accounting_journal_line_invalid", "accounting_journal_too_few_lines", "accounting_journal_unbalanced", "accounting_period_already_closed", "accounting_period_closed", "accounting_period_does_not_cover_date", "accounting_period_invalid", "accounting_period_not_open", "accounting_period_not_proposed", "accounting_value_does_not_fit"],
+            ["ProposeAccountingJournalReversalV1:400"] = ["accounting_request_invalid"],
+            ["ProposeAccountingJournalReversalV1:409"] = ["accounting_concurrent_change", "accounting_journal_reversal_not_pending", "accounting_journal_reversal_posting_conflict", "accounting_journal_reversal_proposal_content_conflict", "accounting_journal_reversal_version_conflict", "accounting_period_conflict", "accounting_period_overlap", "accounting_period_preparer_conflict", "accounting_version_conflict", "idempotency_conflict"],
+            ["ProposeAccountingJournalReversalV1:422"] = ["accounting_journal_reversal_period_not_found", "accounting_journal_reversal_source_journal_not_found"],
+            ["ApproveAccountingJournalReversalV1:400"] = ["accounting_request_invalid"],
+            ["ApproveAccountingJournalReversalV1:409"] = ["accounting_concurrent_change", "accounting_journal_reversal_not_pending", "accounting_journal_reversal_posting_conflict", "accounting_journal_reversal_proposal_content_conflict", "accounting_journal_reversal_version_conflict", "accounting_period_conflict", "accounting_period_overlap", "accounting_period_preparer_conflict", "accounting_version_conflict", "idempotency_conflict"],
+            ["ApproveAccountingJournalReversalV1:422"] = ["accounting_invalid_reference", "accounting_period_closed", "accounting_period_does_not_cover_date", "accounting_period_not_found", "accounting_period_not_open", "accounting_reversal_of_reversal"],
             // MFG-ORD: the list refuses a bad page size, cursor or status on the field; the close is a
             // write like the others, and adds manufacturing_unexplained_difference to the shared 422 list.
             ["ListManufacturingOrdersV1:400"] = ["manufacturing_request_invalid"],
@@ -1420,6 +1445,24 @@ public sealed partial class OpenApiContractGenerationTests
                     ["items", "nextCursor"],
                     ("items", "type:array;items:ref:JournalSummaryV1"),
                     ("nextCursor", "type:null|string")),
+                ["AccountingJournalReversalProposalViewV1"] = ObjectSchema(
+                    ["proposalId", "companyId", "sourceJournalId", "reversalJournalId", "periodId", "transactionDate", "accountingDate", "valueDate", "reason", "proposedBy", "proposedAtUtc", "status", "decidedBy", "decidedAtUtc", "decisionReason", "version"],
+                    ("proposalId", "type:string;format:uuid"),
+                    ("companyId", "type:string;format:uuid"),
+                    ("sourceJournalId", "type:string;format:uuid"),
+                    ("reversalJournalId", "type:null|string;format:uuid"),
+                    ("periodId", "type:string;format:uuid"),
+                    ("transactionDate", "type:string;format:date"),
+                    ("accountingDate", "type:string;format:date"),
+                    ("valueDate", "type:null|string;format:date"),
+                    ("reason", "type:string"),
+                    ("proposedBy", "type:string;format:uuid"),
+                    ("proposedAtUtc", "type:string;format:date-time"),
+                    ("status", "type:string"),
+                    ("decidedBy", "type:null|string;format:uuid"),
+                    ("decidedAtUtc", "type:null|string;format:date-time"),
+                    ("decisionReason", "type:null|string"),
+                    ("version", "type:integer|string;format:int32")),
                 ["TrialBalanceCurrencyTotalV1"] = ObjectSchema(
                     ["currencyId", "debit", "credit", "isBalanced"],
                     ("currencyId", "type:string;format:uuid"),
@@ -2526,6 +2569,9 @@ public sealed partial class OpenApiContractGenerationTests
         ExpectedRequestComponentSchemas =
             new Dictionary<string, ComponentSchemaExpectation>(StringComparer.Ordinal)
             {
+                ["ApproveAccountingJournalReversalRequestV1"] = ObjectSchema(
+                    ["expectedVersion"],
+                    ("expectedVersion", "type:integer|string;format:int32")),
                 ["ApproveNormalJournalDraftRequestV1"] = ObjectSchema(
                     ["expectedVersion", "periodId"],
                     ("expectedVersion", "type:integer|string;format:int64"),
@@ -2543,6 +2589,15 @@ public sealed partial class OpenApiContractGenerationTests
                     ("accountingDate", "type:string;format:date"),
                     ("valueDate", "type:null|string;format:date"),
                     ("lines", "type:array;items:ref:CreateNormalJournalDraftLineRequestV1")),
+                ["ProposeAccountingJournalReversalRequestV1"] = ObjectSchema(
+                    ["proposalId", "sourceJournalId", "periodId", "transactionDate", "accountingDate", "valueDate", "reason"],
+                    ("proposalId", "type:string;format:uuid"),
+                    ("sourceJournalId", "type:string;format:uuid"),
+                    ("periodId", "type:string;format:uuid"),
+                    ("transactionDate", "type:string"),
+                    ("accountingDate", "type:string"),
+                    ("valueDate", "type:null|string"),
+                    ("reason", "type:string")),
                 ["CloseOrderRequestV1"] = ObjectSchema(
                     ["expectedVersion"],
                     ("expectedVersion", "type:integer|string;format:int64")),
@@ -3453,9 +3508,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(122, operations.Count);
+        Assert.Equal(124, operations.Count);
         Assert.Equal(
-            122,
+            124,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());

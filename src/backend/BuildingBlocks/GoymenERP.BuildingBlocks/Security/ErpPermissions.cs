@@ -346,6 +346,18 @@ public static class ErpPermissions
     /// <inheritdoc cref="AccountingNormalJournalDraftCreate"/>
     public const string AccountingNormalJournalDraftApprove = "accounting.normal-journal.draft.approve";
 
+    /// <summary>
+    /// ACC reversal proposal and approval actions. Registration makes the Accounting owner's exact
+    /// names measurable and grants nothing. Both are company-wide because a journal and its reversal
+    /// proposal belong to the server-resolved company and have no narrower scope dimension. They are
+    /// not Critical: command-time maker-checker is enforced by the Accounting lifecycle, while this
+    /// catalogue does not introduce a grant-time dual-control policy.
+    /// </summary>
+    public const string AccountingJournalReversePropose = "accounting.journal.reverse.propose";
+
+    /// <inheritdoc cref="AccountingJournalReversePropose"/>
+    public const string AccountingJournalReverseApprove = "accounting.journal.reverse.approve";
+
     public const string IdentityProfileRead = "identity.profile.read";
     public const string IdentityAccessRequest = "identity.access.request";
     public const string IdentityAccessApprove = "identity.access.approve";
@@ -397,6 +409,8 @@ public static class ErpPermissions
             AccountingPostingQueuesRead,
             AccountingNormalJournalDraftCreate,
             AccountingNormalJournalDraftApprove,
+            AccountingJournalReversePropose,
+            AccountingJournalReverseApprove,
             FinanceBankAccountRead,
             FinanceBankAccountPropose,
             FinanceBankAccountApprove,
@@ -469,6 +483,8 @@ public static class ErpPermissions
             AccountingPostingQueuesRead,
             AccountingNormalJournalDraftCreate,
             AccountingNormalJournalDraftApprove,
+            AccountingJournalReversePropose,
+            AccountingJournalReverseApprove,
             FinanceBankAccountRead,
             FinanceBankAccountPropose,
             FinanceBankAccountApprove,

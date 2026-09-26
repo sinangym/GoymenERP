@@ -138,7 +138,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         {
             // accounting
             ["tools/relational_inventory/accounting.txt"] =
-                "2d1b1df4ccfef1e4360c298263051c6f9a72301f785d42eb77f85f7f05184457",
+                "29310c4f63816e9045dd6f8423095d524afccfcdba362a8f89123dc385c6dbf3",
 
             // counterparty
             ["tools/relational_inventory/counterparty.txt"] =
@@ -244,7 +244,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // company-scoped normal journal draft headers/lines and immutable lifecycle evidence.
             ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/"
              + "Persistence/AccountingDbContext.cs"] =
-                "c7f271106ceb8f91cf6150735244d9d1fde70077607eaf7740f27aa8128e03e4",
+                "07b3ba990f40c00499d0ace1cd77e1a6643c865a589733fb3839242f9ed1151a",
             // INV-2 (#293, ADR-INV-001 option A): company-scoped like Organization; every tenant
             // row and AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
@@ -277,6 +277,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string ReviewedFinanceOpenItemSourceAdmissionServicePath =
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
         + "FinanceOpenItemSourceAdmissionService.cs";
+    private const string ReviewedAccountingStorePath =
+        "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/"
+        + "Persistence/AccountingStore.cs";
     private const string ReviewedManufacturingInventoryInputIssueHostPath =
         "src/backend/GoymenERP.Api/ManufacturingRuntime/ManufacturingInventoryInputIssueHost.cs";
     private const string ReviewedManufacturingInventoryReturnOutputHostPath =
@@ -290,6 +293,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 [ReviewedInventoryManufacturingRealizationParticipantPath] = ("InventoryDbContext", 1),
                 [ReviewedPurchaseAcceptanceParticipantPath] = ("PurchasingDbContext", 3),
                 [ReviewedFinanceOpenItemSourceAdmissionServicePath] = ("FinanceDbContext", 1),
+                [ReviewedAccountingStorePath] = ("AccountingDbContext", 2),
                 [ReviewedManufacturingInventoryInputIssueHostPath] = ("ManufacturingDbContext", 2),
                 [ReviewedManufacturingInventoryReturnOutputHostPath] = ("ManufacturingDbContext", 1)
             };
@@ -497,13 +501,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                             ["Microsoft.Data.SqlClient"] = 1
                         }),
                 // ACC-3 (#298): the Accounting initializer's one provider branch, as Organization.
-                // Re-fingerprinted for ACC-V1: normal-journal lifecycle services are registered;
+                // Re-fingerprinted for ACC reversal: its lifecycle and proposal store are registered;
                 // Ensure/Migrate counts remain unchanged.
                 ["src/backend/Modules/Accounting/"
                  + "GoymenERP.Modules.Accounting.Infrastructure/"
                  + "AccountingModuleExtensions.cs"] =
                     new(
-                        "e165e9022ef082f582da10433fcbe1e096bf15764bcbdc176bf99c4d6690ae3f",
+                        "49b2f9a5ab78048fc9db63293aef4379b0d1f65f361e28c731d90e7bba32dcdd",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -512,12 +516,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // ACC-3 (#298): the SqlClient namespace only to recognise a unique-key violation
                 // (SqlException 2601/2627) after SaveChanges, as InventoryStore and the Idempotency
                 // terminal store do. No connection, command or raw SQL. Re-fingerprinted for ACC-V1: the normal
-                // journal draft lifecycle persists through EF and carries a late create-authority fence;
-                // SqlClient count remains unchanged (1).
-                ["src/backend/Modules/Accounting/"
-                 + "GoymenERP.Modules.Accounting.Infrastructure/Persistence/AccountingStore.cs"] =
+                // journal draft and reversal lifecycles persist through EF and carry late authority fences;
+                // SqlClient count remains unchanged (1). Re-fingerprinted for the #464 K3 fix (#485): one company-bound
+                // EF read admits the reversal period before staging; no SQL, connection, context or filter bypass.
+                [ReviewedAccountingStorePath] =
                     new(
-                        "0f6e98dbb774cfa6d07e7f7e5e251ab200d25af2478a35f0376cedfe5fdee736",
+                        "9b6e088b496de1fc3c9e912e2d83397ef341e9eed6f54b79dfa1eb1c6deb8041",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -827,6 +831,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "20260924210000_AddManufacturingInputLabelVersions.cs"] =
                     new(
                         "6ed747c9211a2809fdc8f96e2f2d239292d3609a35abad397a09d2dd5a29699c",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // Accounting reversal history is durable; Down refuses rollback while any
+                // proposal remains instead of silently dropping lifecycle evidence.
+                ["src/backend/Modules/Accounting/"
+                 + "GoymenERP.Modules.Accounting.Infrastructure/Persistence/Migrations/"
+                 + "20260925061753_AddAccountingJournalReversalProposals.cs"] =
+                    new(
+                        "af5aad11127802f67c94eb261d644400844940b7be991d38b3a52df5a76d79bb",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 1
