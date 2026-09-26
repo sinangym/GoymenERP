@@ -19578,7 +19578,8 @@
               }
             },
             "x-erp-problem-codes": [
-              "inventory_allocation_invalid_reference"
+              "inventory_allocation_invalid_reference",
+              "inventory_allocation_owner_not_company"
             ]
           },
           "503": {
@@ -26982,6 +26983,7 @@
               "inventory_allocation_version_conflict",
               "inventory_definite_shipment_concurrent_change",
               "inventory_definite_shipment_idempotency_conflict",
+              "inventory_definite_shipment_owner_not_company",
               "inventory_label_not_releasable",
               "inventory_label_version_conflict",
               "inventory_physical_stock_insufficient",

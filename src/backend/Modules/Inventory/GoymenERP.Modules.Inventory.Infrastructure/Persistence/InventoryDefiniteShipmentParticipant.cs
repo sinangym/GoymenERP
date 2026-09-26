@@ -153,6 +153,15 @@ public sealed class InventoryDefiniteShipmentParticipant : IInventoryDefiniteShi
             throw Refused(503, InventoryDefiniteShipmentCodesV1.Unavailable);
         }
 
+        // An allocation stored before the Sales ownership gate (or any legacy row) may still name a position this
+        // company does not own and hold; a definite shipment never consumes one (#479 review P2-2).
+        // TODO(#66/5830378162): replace with the accepted customer-owned/fason rule once decided.
+        if (!InventorySalesOwnershipGuardV1.IsCompanyOwnedAndHeld(position.Owner.Kind, position.Owner.Id,
+                position.Custodian.Kind, position.Custodian.Id, companyId))
+        {
+            throw Refused(409, InventoryDefiniteShipmentCodesV1.OwnerNotCompany);
+        }
+
         if (!label.IsReleasableForProductionOrShipment)
         {
             throw Refused(409, InventoryDefiniteShipmentCodesV1.LabelNotReleasable);
