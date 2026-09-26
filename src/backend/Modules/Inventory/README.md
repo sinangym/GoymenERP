@@ -29,6 +29,15 @@ writers that observed the same label version cannot both over-allocate it. Creat
 idempotent, audited and versioned; neither writes a stock movement. Release preserves the row and its immutable
 demand/source facts, sets the remaining kg to zero and makes that remainder free again.
 
+An active allocation reserves its remaining kg against every other consumer (Master v3 §7.6 INV-003
+`Serbest Fiziki = Fiziki Mevcut − Aktif Satış Tahsisleri − …`; DEC-STK-004; Business #66/5778472429: active
+allocations are never assumed zero). The Manufacturing input issue
+(`InventoryManufacturingRealizationParticipant`) therefore takes only `StockAllocation.Unreserved` of the exact
+Free position (the position predicate creation deducts) and otherwise refuses with its existing
+409 `inventory_manufacturing_physical_stock_insufficient`, writing nothing; a recorded issue still replays. Only an
+explicit release frees reserved kg. The R13 parent-roll read is unchanged: its `UnblockedPhysicalKg` stays a block
+bucket, not availability.
+
 `ReservedUntilUtc` is optional input only. This predecessor neither invents the Settings default nor auto-releases
 expired allocations. It supports only the locked `sales.order-line` demand kind; future purchase/production/manual
 sources and source conversion are separate accepted slices. Rows created before this lifecycle remain readable with

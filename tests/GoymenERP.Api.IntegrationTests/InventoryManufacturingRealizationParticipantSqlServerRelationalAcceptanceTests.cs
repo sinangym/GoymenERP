@@ -203,6 +203,48 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             "SELECT COUNT(*) FROM inventory.Commands WHERE TargetId = @id", ("@id", issue.IssueId)));
         Assert.Equal(0, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM inventory.Movements WHERE Kind = 5 AND SourceId = @order", ("@order", orderId)));
+
+        // An active Sales physical allocation reserves its kg against a Manufacturing input issue (Master v3 §7.6
+        // INV-003, DEC-STK-004): of a 20 kg Free label with 15 kg allocated, only the unreserved 5 kg can be issued,
+        // the reservation is never consumed, and a recorded issue still replays after the label is fully reserved.
+        var reservedParent = await SeedManufacturingParentAsync(run, "SYN-MFG-PARENT-RESERVED", 20m);
+        InventoryPhysicalAllocationResultV1 reservation;
+        await using (var scope = run.Store(CompanyA))
+        {
+            reservation = await scope.Store.CreateAsync(AllocationRequest(
+                new PhysicalSource(reservedParent.Label.Id, reservedParent.Label.ProductId, 2), "15"), Metadata(run));
+        }
+
+        var reservedOrderId = Guid.NewGuid();
+        await AssertIssueRefusalAsync(run, IssueRequest(reservedOrderId, reservedParent.Label.Id, "3", "5.001"),
+            ManufacturingMetadata(run, "reserved-over"), 409,
+            InventoryManufacturingRealizationCodesV1.PhysicalStockInsufficient, ManufacturingSettings(run));
+        var unreservedIssue = IssueRequest(reservedOrderId, reservedParent.Label.Id, "3", "5");
+        var unreservedMetadata = ManufacturingMetadata(run, "reserved-fit");
+        var unreservedIssued = await CommitIssueAsync(run, unreservedIssue, unreservedMetadata);
+        Assert.Equal(("4", "5"), (unreservedIssued.ParentLabelVersion, unreservedIssued.QuantityKg));
+        await AssertIssueRefusalAsync(run, IssueRequest(reservedOrderId, reservedParent.Label.Id, "4", "0.001"),
+            ManufacturingMetadata(run, "reserved-none-left"), 409,
+            InventoryManufacturingRealizationCodesV1.PhysicalStockInsufficient, ManufacturingSettings(run));
+        var unreservedReplay = await CommitIssueAsync(run, unreservedIssue,
+            unreservedMetadata with { CorrelationId = "manufacturing-reserved-fit-retry" });
+        Assert.True(unreservedReplay.IsReplay);
+        Assert.Equal(unreservedMetadata.CorrelationId, unreservedReplay.OriginalCorrelationId);
+
+        Assert.Equal(15m, await run.ScalarAsync<decimal>(
+            "SELECT QuantityKg FROM inventory.Balances WHERE LabelId = @label AND Block = 1",
+            ("@label", reservedParent.Label.Id)));
+        Assert.Equal(4L, await run.ScalarAsync<long>(
+            "SELECT Version FROM inventory.Labels WHERE Id = @label", ("@label", reservedParent.Label.Id)));
+        Assert.Equal((1, 15m), (
+            await run.ScalarAsync<int>(
+                "SELECT Status FROM inventory.Allocations WHERE Id = @id", ("@id", reservation.Allocation.AllocationId)),
+            await run.ScalarAsync<decimal>(
+                "SELECT RemainingKg FROM inventory.Allocations WHERE Id = @id", ("@id", reservation.Allocation.AllocationId))));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Movements WHERE Kind = 2 AND SourceId = @order", ("@order", reservedOrderId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Commands WHERE TargetId = @id", ("@id", unreservedIssue.IssueId)));
     }
 
     [SqlServerFact]

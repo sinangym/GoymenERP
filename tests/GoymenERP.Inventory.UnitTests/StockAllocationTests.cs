@@ -126,6 +126,36 @@ public sealed class StockAllocationTests
             Kilograms.Positive(100m), Kilograms.Of(remaining), version, status));
     }
 
+    [Theory]
+    [InlineData(100, 0, 100)]
+    [InlineData(100, 60, 40)]
+    [InlineData(100, 99.999, 0.001)]
+    [InlineData(100, 100, 0)]
+    [InlineData(30, 45.5, 0)]
+    [InlineData(0, 0, 0)]
+    public void Unreserved_is_the_free_position_less_its_active_remainders_and_never_below_zero(
+        decimal freePhysical, decimal activelyAllocated, decimal expected)
+    {
+        var unreserved = StockAllocation.Unreserved(Kilograms.Of(freePhysical), Kilograms.Of(activelyAllocated));
+
+        Assert.Equal(expected, unreserved.Value);
+    }
+
+    [Fact]
+    public void Another_consumer_cannot_take_reserved_kilograms_but_a_release_makes_them_unreserved_again()
+    {
+        // A 100 kg Free label, 60 kg of it held by an active Sales allocation: another consumer fits in 40 kg only.
+        var allocation = Restore(remaining: 60m, version: 1);
+        var free = Kilograms.Of(100m);
+
+        Assert.True(Kilograms.Positive(40m) <= StockAllocation.Unreserved(free, allocation.Remaining));
+        Assert.False(Kilograms.Positive(40.001m) <= StockAllocation.Unreserved(free, allocation.Remaining));
+
+        allocation.Release(1);
+
+        Assert.Equal(100m, StockAllocation.Unreserved(free, allocation.Remaining).Value);
+    }
+
     private static StockAllocation Restore(decimal remaining, long version,
         StockAllocationStatus status = StockAllocationStatus.Active) =>
         StockAllocation.Restore(AllocationId, Position(), Kilograms.Positive(100m), Kilograms.Of(remaining), version, status);
