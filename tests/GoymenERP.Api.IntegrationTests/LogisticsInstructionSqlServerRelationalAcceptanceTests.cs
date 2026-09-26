@@ -531,9 +531,12 @@ public sealed class LogisticsInstructionSqlServerRelationalAcceptanceTests
             ("@id", fixture.InstructionId)),
         await run.ScalarAsync<int>("SELECT COUNT(*) FROM logistics.LoadingShares WHERE InstructionId = @id",
             ("@id", fixture.InstructionId)),
+        // Every shipment attempt in this run's disposable database: a recorded one names the instruction, a recorded
+        // terminal refusal never does (CK_LoadingAttempts_Outcome, ADR-011 §7: Outcome = 2 => InstructionId IS NULL).
+        // The seed stores only create/issue/load attempts, so this counts exactly the realization's shipment attempts.
         await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM logistics.LoadingAttempts WHERE InstructionId = @id AND CommandName = @command",
-            ("@id", fixture.InstructionId), ("@command", LogisticsCommands.RecordShipmentV1)),
+            "SELECT COUNT(*) FROM logistics.LoadingAttempts WHERE CommandName = @command",
+            ("@command", LogisticsCommands.RecordShipmentV1)),
         await run.ScalarAsync<decimal>("SELECT RemainingKg FROM inventory.Allocations WHERE Id = @id",
             ("@id", fixture.AllocationId)),
         await run.ScalarAsync<long>("SELECT Version FROM inventory.Allocations WHERE Id = @id",
