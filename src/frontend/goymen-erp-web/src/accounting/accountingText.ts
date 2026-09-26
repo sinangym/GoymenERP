@@ -182,6 +182,7 @@ const REVERSAL_CODE_TEXT: Readonly<Record<string, string>> = {
   accounting_reversal_of_reversal: 'Bir ters kayıt yeniden terslenemez.',
   accounting_period_closed: 'Seçilen dönem kapalı; ters kayıt açık bir döneme yapılmalı.',
   accounting_period_does_not_cover_date: 'Muhasebe tarihi seçilen dönemin içinde değil.',
+  accounting_period_not_open: 'Seçilen dönem henüz onaylanıp açılmadı; öneri beklemede kaldı.',
   accounting_period_not_found: 'Önerideki dönem artık bulunamıyor.',
 }
 

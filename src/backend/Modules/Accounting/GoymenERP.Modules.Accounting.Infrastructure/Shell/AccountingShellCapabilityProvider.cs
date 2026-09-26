@@ -33,7 +33,13 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Shell;
 public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "ACCOUNTING";
-    public const string OwnerContractVersion = "1.2";
+
+    /// <summary>
+    /// 1.3 (ACC-V1 reversal UI, phase 1; #478 review 5327037504): the declaration set changed — the journal detail and
+    /// M-06 are published, and the staged reversal propose control and approval route are declared — so the contract
+    /// version moves with it (the host registry's revision rows are re-derived centrally).
+    /// </summary>
+    public const string OwnerContractVersion = "1.3";
 
     public const string PeriodListScreenId = "M-07";
     public const string PeriodProposeScreenId = "M-07-NEW";

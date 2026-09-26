@@ -52,7 +52,8 @@ public sealed class AccountingShellCapabilityProviderTests
         var provider = new AccountingShellCapabilityProvider();
         var byId = provider.GetDeclarations().ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
 
-        Assert.Equal(("ACCOUNTING", "1.2"), (provider.Owner, provider.ContractVersion));
+        // 1.3: the reversal slice changed the declaration set (detail and M-06 published, reversal actions declared staged).
+        Assert.Equal(("ACCOUNTING", "1.3"), (provider.Owner, provider.ContractVersion));
         (string Capability, string Route, string Path, string Screen, ShellCapabilityRoutePrecedence Precedence, string[] Permissions)[] expected =
         [
             ("accounting.periods.list", "accounting.periods", "/muhasebe/donemler", "M-07", ShellCapabilityRoutePrecedence.Static,

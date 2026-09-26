@@ -13,6 +13,7 @@ import {
   sendJournalReversalCommand,
   type JournalReversalSnapshot,
 } from './journalReversalApi'
+import { reversalFailureText } from './accountingText'
 import {
   APPROVER,
   COMPANY_A,
@@ -133,6 +134,36 @@ describe('journal reversal transport', () => {
     expect(classifyJournalReversalFailure('approve', 409, {
       code: 'accounting_version_conflict', expectedVersion: '1', currentVersion: '2',
     })).toEqual({ kind: 'version-conflict', expectedVersion: 1, currentVersion: 2 })
+  })
+
+  it('mirrors the owner catalogs exactly, including approval into a period that is not open (#485)', () => {
+    // AccountingJournalReversalUnprocessableCodesV1.Propose / .Approve, route-exact and disjoint.
+    expect([...PROPOSE_RULE_CODES]).toEqual([
+      'accounting_journal_reversal_source_journal_not_found',
+      'accounting_journal_reversal_period_not_found',
+    ])
+    expect([...APPROVE_RULE_CODES]).toEqual([
+      'accounting_invalid_reference',
+      'accounting_reversal_of_reversal',
+      'accounting_period_closed',
+      'accounting_period_does_not_cover_date',
+      'accounting_period_not_open',
+      'accounting_period_not_found',
+    ])
+    expect([...APPROVE_RULE_CODES].filter((code) => PROPOSE_RULE_CODES.has(code))).toEqual([])
+  })
+
+  it('reads an approval into a not-yet-open period as the definite 422 rule, not UNKNOWN', async () => {
+    const notOpen = { code: 'accounting_period_not_open' }
+    expect(classifyJournalReversalFailure('approve', 422, notOpen)).toEqual({ kind: 'rule', code: notOpen.code })
+    // The propose route does not publish it: never guessed there.
+    expect(classifyJournalReversalFailure('propose', 422, notOpen)).toBeNull()
+    vi.stubGlobal('fetch', vi.fn(async () => problem(422, notOpen)))
+    const outcome = await sendJournalReversalCommand(COMPANY_A, {
+      operation: 'approve', idempotencyKey: 'SENTETIK-approve-not-open', proposalId: PROPOSAL, expectedVersion: 1,
+    })
+    expect(outcome).toEqual({ type: 'failed', failure: { kind: 'rule', code: 'accounting_period_not_open' } })
+    expect(reversalFailureText({ kind: 'rule', code: 'accounting_period_not_open' })).not.toMatch(/^Kural reddetti/)
   })
 
   it('approves with only the expected version in the body', async () => {

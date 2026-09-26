@@ -3,6 +3,7 @@ using GoymenERP.Modules.Accounting.Application;
 using GoymenERP.Modules.Accounting.Domain.Journals;
 using GoymenERP.Modules.Accounting.Domain.Posting;
 using GoymenERP.Modules.Accounting.Infrastructure.Persistence;
+using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -21,12 +22,32 @@ public static class AccountingPostedJournalFixtureStoreRegistration
 {
     /// <summary>
     /// Registers only this store. It needs <see cref="IAccountingOpenPeriodFixtureStore"/> (registered by
-    /// <c>AddAccountingOpenPeriodFixtureStore</c>) and the module's posting store, so the gated host calls both.
+    /// <c>AddAccountingOpenPeriodFixtureStore</c>), so the gated host calls both.
+    /// <para>
+    /// <paramref name="fixtureSettings"/>: the browser seed runs in a host scope with NO request user, and Settings
+    /// answers a money profile only to an authenticated user of the company. The gated host therefore passes the
+    /// disposable fixture identity's approved Settings provider (the s04 Product fixture precedent); the fixture's own
+    /// posting store then shares the scope's context, company, audit collector and clock and differs only in whose
+    /// Settings read checks the amount scale. Without it the module's posting store is used as registered.
+    /// </para>
     /// </summary>
-    public static IServiceCollection AddAccountingPostedJournalFixtureStore(this IServiceCollection services)
+    public static IServiceCollection AddAccountingPostedJournalFixtureStore(
+        this IServiceCollection services,
+        Func<IServiceProvider, ISettingsPrerequisiteProvider>? fixtureSettings = null)
     {
         ArgumentNullException.ThrowIfNull(services);
-        services.AddScoped<IAccountingPostedJournalFixtureStore, AccountingPostedJournalFixtureStore>();
+        services.AddScoped<IAccountingPostedJournalFixtureStore>(provider => new AccountingPostedJournalFixtureStore(
+            provider.GetRequiredService<AccountingDbContext>(),
+            provider.GetRequiredService<ICompanyContext>(),
+            provider.GetRequiredService<IAccountingOpenPeriodFixtureStore>(),
+            fixtureSettings is null
+                ? provider.GetRequiredService<IAccountingPostingStore>()
+                : new AccountingStore(
+                    provider.GetRequiredService<AccountingDbContext>(),
+                    provider.GetRequiredService<ICompanyContext>(),
+                    provider.GetRequiredService<IAuditEventCollector>(),
+                    provider.GetRequiredService<TimeProvider>(),
+                    new AccountingAmountScaleVerifier(fixtureSettings(provider)))));
         return services;
     }
 }
@@ -111,8 +132,21 @@ internal sealed class AccountingPostedJournalFixtureStore(
             throw Conflict();
         }
 
-        // The open-period fixture binds the company when it is unbound and refuses any other calendar.
-        await openPeriod.EnsureAsync(cancellationToken);
+        // Bound exactly as the open-period fixture binds an unbound context: to the fixture company, never another.
+        if (!companyContext.IsResolved)
+        {
+            companyContext.Set(AccountingPostedJournalFixture.CompanyId);
+        }
+
+        // A re-run finds its own journal. Posting it advanced the period's version, so the open-period fixture's
+        // "identical fresh period" check no longer describes the calendar; the proof of a re-run is the stored
+        // delivery's replay below, not a second period check. On a fresh ledger the period is ensured first, and the
+        // open-period fixture refuses any other calendar.
+        if (await postings.FindJournalAsync(AccountingPostedJournalFixture.JournalId, cancellationToken) is null)
+        {
+            await openPeriod.EnsureAsync(cancellationToken);
+        }
+
         if (!companyContext.IsResolved || companyContext.CompanyId != AccountingPostedJournalFixture.CompanyId)
         {
             throw Conflict();

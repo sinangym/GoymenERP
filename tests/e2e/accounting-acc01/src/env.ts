@@ -4,8 +4,11 @@
  * and never tests something else.
  *
  * `BROWSER_E2E_ACC01_SEED` (JSON) is written by the stage-2 seed step from
- * tests/GoymenERP.BrowserSuiteFixtureTool/Suites/ACC01, which WRITES NOTHING (fixture scope: it only reads the
- * period list through the real host as each actor, and fails on a non-empty database):
+ * tests/GoymenERP.BrowserSuiteFixtureTool/Suites/ACC01. Its ONE write is Accounting's fixed SENTETIK posted journal
+ * (with the fixed fin01 Open September period it posts into), through the owner's gated fixture port — the journal
+ * ACC01-09 opens; no Accounting HTTP route can post one. It then reads the period and journal lists through the real
+ * host as each actor and fails on anything else. The journal is read back by the suite from the real API, so it
+ * travels as no seed output:
  *
  *   companyId      — GDC, where both actors hold their Accounting grants
  *   companyBId     — GSP, where the preparer may read periods only (company isolation)

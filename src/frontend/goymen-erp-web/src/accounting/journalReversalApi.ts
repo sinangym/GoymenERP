@@ -35,11 +35,14 @@ export const PROPOSE_RULE_CODES: ReadonlySet<string> = new Set([
   'accounting_journal_reversal_source_journal_not_found',
   'accounting_journal_reversal_period_not_found',
 ])
+// #485: a proposal's period is admitted by identity only, so at approval it may still be proposed-not-approved
+// (`accounting_period_not_open`, 422 leaving the proposal Pending), closed or not covering the accounting date.
 export const APPROVE_RULE_CODES: ReadonlySet<string> = new Set([
   'accounting_invalid_reference',
   'accounting_reversal_of_reversal',
   'accounting_period_closed',
   'accounting_period_does_not_cover_date',
+  'accounting_period_not_open',
   'accounting_period_not_found',
 ])
 
