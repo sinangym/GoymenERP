@@ -90,6 +90,15 @@ export const OUTPUT_INVENTORY_TEXT = {
     'Çıktının sahip ve gözeten bilgisi, bu emrin ana rulo Inventory girdi çıkışından değişmeden alınır.',
   issuedOwnershipRequired:
     'Bu emir için ana rulonun tek ve eksiksiz Inventory girdi çıkışı sahipliği doğrulanmadan çıktı gönderilemez.',
+  issuedOwnershipTruncated:
+    'Ana rulonun hareket geçmişi bu görünümde kısaltılmış; bu emrin girdi çıkışı izi eksiksiz okunamadığı için ' +
+    'çıktının sahipliği doğrulanamıyor. Çıktı gönderilemez.',
+  issuedOwnershipHeading: 'Girdi çıkışından gelen sahiplik (değiştirilemez):',
+  owner: 'Sahip',
+  custodian: 'Gözeten',
+  partyThisCompany: 'Bu şirket',
+  partyCompany: 'Başka şirket',
+  partyCounterparty: 'Cari',
 } as const
 
 export const INPUT_INVENTORY_TEXT = {

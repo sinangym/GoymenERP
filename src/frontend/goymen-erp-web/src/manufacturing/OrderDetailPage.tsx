@@ -654,17 +654,27 @@ interface OutputOwnershipSnapshot {
   readonly custodianId: string
 }
 
+/**
+ * The output's owner/custodian, derived from this order's own immutable input-issue trace, or why it cannot be:
+ * the timeline was truncated (`windowFull`), so the trace cannot be proved complete; or the trace is missing or
+ * names more than one full position. Only `ready` lets an output be sent.
+ */
+type IssuedOwnership =
+  | { readonly kind: 'ready'; readonly snapshot: OutputOwnershipSnapshot }
+  | { readonly kind: 'truncated' }
+  | { readonly kind: 'unresolved' }
+
 function issuedOutputOwnership(
   detail: InventoryLabelDetailWithMovementTimeline,
   orderId: string,
-): OutputOwnershipSnapshot | null {
-  if (detail.movementTimeline.windowFull) return null
+): IssuedOwnership {
+  if (detail.movementTimeline.windowFull) return { kind: 'truncated' }
   const positions = detail.movementTimeline.entries
     .filter((entry) =>
       entry.kind === 'Issue' && entry.sourceKind === 'manufacturing.input-issue' &&
       entry.sourceId === orderId && entry.sourceGrain === 'Line' && entry.sourceLineId !== null)
     .flatMap((entry) => entry.lines.filter((line) => line.direction === 'Out'))
-  if (positions.length === 0) return null
+  if (positions.length === 0) return { kind: 'unresolved' }
   const distinct = new Map<string, (typeof positions)[number]>()
   for (const position of positions) {
     const key = JSON.stringify([
@@ -673,14 +683,69 @@ function issuedOutputOwnership(
     ])
     distinct.set(key, position)
   }
-  if (distinct.size !== 1) return null
+  if (distinct.size !== 1) return { kind: 'unresolved' }
   const [position] = distinct.values()
   return {
-    ownerKind: position.ownerKind,
-    ownerId: position.ownerId,
-    custodianKind: position.custodianKind,
-    custodianId: position.custodianId,
+    kind: 'ready',
+    snapshot: {
+      ownerKind: position.ownerKind,
+      ownerId: position.ownerId,
+      custodianKind: position.custodianKind,
+      custodianId: position.custodianId,
+    },
   }
+}
+
+/** Why an output cannot be sent yet, in the user's words; a truncated trace is named as truncated. */
+function ownershipRefusal(ownership: IssuedOwnership | null): string {
+  return ownership?.kind === 'truncated'
+    ? OUTPUT_INVENTORY_TEXT.issuedOwnershipTruncated
+    : OUTPUT_INVENTORY_TEXT.issuedOwnershipRequired
+}
+
+function partyLabel(kind: 'Company' | 'Counterparty', id: string, companyId: string): string {
+  if (kind === 'Company') {
+    return id === companyId ? OUTPUT_INVENTORY_TEXT.partyThisCompany : OUTPUT_INVENTORY_TEXT.partyCompany
+  }
+  return OUTPUT_INVENTORY_TEXT.partyCounterparty
+}
+
+/**
+ * The derived issued ownership, READ-ONLY: the output command carries exactly these values, and nothing on this
+ * screen can change them. Shown so the person sees whose material and whose custody the new label will record.
+ */
+function IssuedOwnershipFacts({
+  snapshot,
+  companyId,
+  testId,
+}: {
+  readonly snapshot: OutputOwnershipSnapshot
+  readonly companyId: string
+  readonly testId: string
+}) {
+  return (
+    <div data-testid={testId}>
+      <p className={styles.help}>{OUTPUT_INVENTORY_TEXT.issuedOwnershipHeading}</p>
+      <dl>
+        <div>
+          <dt>{OUTPUT_INVENTORY_TEXT.owner}</dt>
+          <dd>
+            {partyLabel(snapshot.ownerKind, snapshot.ownerId, companyId)}{' '}
+            <span className={styles.mono} data-party="owner" data-kind={snapshot.ownerKind}>{snapshot.ownerId}</span>
+          </dd>
+        </div>
+        <div>
+          <dt>{OUTPUT_INVENTORY_TEXT.custodian}</dt>
+          <dd>
+            {partyLabel(snapshot.custodianKind, snapshot.custodianId, companyId)}{' '}
+            <span className={styles.mono} data-party="custodian" data-kind={snapshot.custodianKind}>
+              {snapshot.custodianId}
+            </span>
+          </dd>
+        </div>
+      </dl>
+    </div>
+  )
 }
 
 function restored(storeKey: string | null): FactAttempt {
@@ -742,9 +807,10 @@ function FactSection({
     : (labelQuery.isPending
         ? { kind: 'initial-loading' }
         : classifyOutcome(labelQuery.data ?? { type: 'malformed' })) as RemoteViewState<InventoryLabelDetailWithMovementTimeline>
-  const outputOwnership = labelState?.kind === 'ready'
+  const issuedOwnership = labelState?.kind === 'ready'
     ? issuedOutputOwnership(labelState.data, order.orderId)
     : null
+  const outputOwnership = issuedOwnership?.kind === 'ready' ? issuedOwnership.snapshot : null
 
   const productQuery = useQuery({
     queryKey: [namespace, routeEntryGeneration, 'manufacturing-output-products', effectiveOn, form.productSearch],
@@ -846,7 +912,7 @@ function FactSection({
     if (!isKilogramText(form.kg)) return setError(KG_FORMAT_ERROR)
     if ((returnSelected || outputSelected) && !canReadInventoryLabel) return
     if (needsInventoryState && labelState?.kind !== 'ready') return setError(INPUT_INVENTORY_TEXT.loadingRequired)
-    if (outputSelected && outputOwnership === null) return setError(OUTPUT_INVENTORY_TEXT.issuedOwnershipRequired)
+    if (outputSelected && outputOwnership === null) return setError(ownershipRefusal(issuedOwnership))
     if (timing === null) return setError(TIME_REQUIRED)
     if (outputSelected && form.outputClass === '') return setError(OUTPUT_INVENTORY_TEXT.classRequired)
     if (outputSelected && selectedProduct === undefined) return setError(OUTPUT_INVENTORY_TEXT.productRequired)
@@ -989,9 +1055,12 @@ function FactSection({
           </div>
         </div>
         {outputSelected ? (
-          <section aria-labelledby="mfg-output-heading" className={styles.section} data-testid="company-output-form">
+          <section aria-labelledby="mfg-output-heading" className={styles.section} data-testid="output-form">
             <h3 id="mfg-output-heading">Üretim çıktısı etiketi</h3>
             <p className={styles.help}>{OUTPUT_INVENTORY_TEXT.issuedOwnershipHelp}</p>
+            {outputOwnership !== null
+              ? <IssuedOwnershipFacts snapshot={outputOwnership} companyId={companyId} testId="output-issued-ownership" />
+              : null}
             <div className={styles.form}>
               <div className={styles.control}>
                 <label htmlFor="mfg-output-class">Çıktı sınıfı</label>
@@ -1124,7 +1193,8 @@ function FactSection({
           <ParentLabelState
             state={labelState}
             outputSelected={outputSelected}
-            outputOwnership={outputOwnership}
+            issuedOwnership={issuedOwnership}
+            companyId={companyId}
             onRetry={() => void labelQuery.refetch()}
           />
         ) : null}
@@ -1156,12 +1226,14 @@ function FactSection({
 function ParentLabelState({
   state,
   outputSelected,
-  outputOwnership,
+  issuedOwnership,
+  companyId,
   onRetry,
 }: {
   readonly state: RemoteViewState<InventoryLabelDetailWithMovementTimeline>
   readonly outputSelected: boolean
-  readonly outputOwnership: OutputOwnershipSnapshot | null
+  readonly issuedOwnership: IssuedOwnership | null
+  readonly companyId: string
   readonly onRetry: () => void
 }) {
   if (state.kind !== 'ready') {
@@ -1183,8 +1255,15 @@ function ParentLabelState({
         <div><dt>{INPUT_INVENTORY_TEXT.free}</dt><dd>{detail.balances.freeKg} kg</dd></div>
         <div><dt>{INPUT_INVENTORY_TEXT.blocked}</dt><dd>{detail.balances.blockedKg} kg</dd></div>
       </dl>
-      {outputSelected && outputOwnership === null
-        ? <p role="alert" className={styles.noticeWarn}>{OUTPUT_INVENTORY_TEXT.issuedOwnershipRequired}</p>
+      {issuedOwnership?.kind === 'ready'
+        ? <IssuedOwnershipFacts
+          snapshot={issuedOwnership.snapshot}
+          companyId={companyId}
+          testId="parent-label-issued-ownership"
+        />
+        : null}
+      {outputSelected && issuedOwnership?.kind !== 'ready'
+        ? <p role="alert" className={styles.noticeWarn}>{ownershipRefusal(issuedOwnership)}</p>
         : null}
     </section>
   )

@@ -578,6 +578,12 @@ describe('fact forms', () => {
     await user.type(screen.getByLabelText('Belge referansları (satır başına)'), 'CERT-1{enter}CERT-2')
     await user.selectOptions(screen.getByLabelText('İlk stok durumu'), 'Blocked')
     await user.type(screen.getByLabelText('Kütle (kg)'), '40')
+    const ownership = within(screen.getByTestId('output-form')).getByTestId('output-issued-ownership')
+    expect([...ownership.querySelectorAll('[data-party]')].map((node) =>
+      [node.getAttribute('data-party'), node.getAttribute('data-kind'), node.textContent]))
+      .toEqual([['owner', 'Company', COMPANY_A], ['custodian', 'Company', COMPANY_A]])
+    expect(within(ownership).getAllByText(/^Bu şirket/)).toHaveLength(2)
+    expect(screen.queryByTestId('company-output-form')).toBeNull()
     await user.click(screen.getByRole('button', { name: 'Kaydet' }))
 
     expect(await screen.findByText('Kaydedildi')).toBeTruthy()
@@ -640,6 +646,23 @@ describe('fact forms', () => {
     await user.type(screen.getByLabelText('Yeni etiket kodu'), 'FASON-OUT-40')
     await user.selectOptions(screen.getByLabelText('İlk stok durumu'), 'Free')
     await user.type(screen.getByLabelText('Kütle (kg)'), '40')
+
+    // The derived ownership is SHOWN, read-only, in the output form and in the parent-label state: the owner is
+    // the Counterparty of this order's issue, the custodian this company. Nothing there can be edited.
+    const form = screen.getByTestId('output-form')
+    const shown = within(form).getByTestId('output-issued-ownership')
+    expect(within(shown).getByText('Sahip')).toBeTruthy()
+    expect(within(shown).getByText('Gözeten')).toBeTruthy()
+    expect(shown.querySelector('[data-party="owner"]')?.textContent).toBe(COMPANY_B)
+    expect(shown.querySelector('[data-party="owner"]')?.getAttribute('data-kind')).toBe('Counterparty')
+    expect(shown.querySelector('[data-party="custodian"]')?.textContent).toBe(COMPANY_A)
+    expect(shown.querySelector('[data-party="custodian"]')?.getAttribute('data-kind')).toBe('Company')
+    expect(within(shown).getByText(/^Cari/)).toBeTruthy()
+    expect(within(shown).getByText(/^Bu şirket/)).toBeTruthy()
+    expect(shown.querySelectorAll('input, select, textarea, button')).toHaveLength(0)
+    const parentState = screen.getByTestId('parent-label-state')
+    expect(within(parentState).getByTestId('parent-label-issued-ownership')
+      .querySelector('[data-party="owner"]')?.textContent).toBe(COMPANY_B)
     await user.click(screen.getByRole('button', { name: 'Kaydet' }))
 
     await waitFor(() => expect(posts(recorded)).toHaveLength(1))
@@ -653,10 +676,6 @@ describe('fact forms', () => {
   })
 
   it.each([
-    [
-      'truncated movement timeline',
-      () => labelDetail('7', '1000', COMPANY_B, COMPANY_A, 'Counterparty', 'Company', undefined, true),
-    ],
     [
       'no input issue for this order',
       () => labelDetail('7', '1000', COMPANY_B, COMPANY_A, 'Counterparty', 'Company', [
@@ -687,6 +706,29 @@ describe('fact forms', () => {
     await waitFor(() => expect(labelReads(recorded)).toHaveLength(1))
 
     expect(await screen.findByText(/tek ve eksiksiz Inventory girdi çıkışı sahipliği/)).toBeTruthy()
+    expect(screen.queryByTestId('output-issued-ownership')).toBeNull()
+    expect(screen.queryByTestId('parent-label-issued-ownership')).toBeNull()
+    expect((screen.getByRole('button', { name: 'Kaydet' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(posts(recorded)).toHaveLength(0)
+  })
+
+  it('names a truncated movement timeline as truncated and fails output closed', async () => {
+    const user = userEvent.setup()
+    const { recorded } = stub({
+      capabilities: INVENTORY_RECORDER_CAPABILITIES,
+      labels: [() => json(labelDetail('7', '1000', COMPANY_B, COMPANY_A, 'Counterparty', 'Company', undefined, true))],
+    })
+    renderAt(PATH)
+    await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+
+    await user.click(screen.getByLabelText('Üretim çıktısı'))
+    await user.selectOptions(screen.getByLabelText('Ana rulo'), ROLL_1)
+    await waitFor(() => expect(labelReads(recorded)).toHaveLength(1))
+
+    // The trace may exist beyond the window, so the reason is the truncation, not a missing issue.
+    expect(await screen.findByText(/hareket geçmişi bu görünümde kısaltılmış/)).toBeTruthy()
+    expect(screen.queryByText(/tek ve eksiksiz Inventory girdi çıkışı sahipliği/)).toBeNull()
+    expect(screen.queryByTestId('output-issued-ownership')).toBeNull()
     expect((screen.getByRole('button', { name: 'Kaydet' }) as HTMLButtonElement).disabled).toBe(true)
     expect(posts(recorded)).toHaveLength(0)
   })
