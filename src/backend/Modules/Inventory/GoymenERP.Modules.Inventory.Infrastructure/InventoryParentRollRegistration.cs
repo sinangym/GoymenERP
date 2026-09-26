@@ -14,6 +14,8 @@ public static class InventoryParentRollRegistration
         services.AddScoped<InventoryParentRollService>(CreateService);
         services.AddScoped<IInventoryParentRollCandidatesV1>(sp => sp.GetRequiredService<InventoryParentRollService>());
         services.AddScoped<IInventoryParentRollValidationV1>(sp => sp.GetRequiredService<InventoryParentRollService>());
+        services.AddScoped<IInventoryContextualParentRollReferencesV1>(
+            sp => sp.GetRequiredService<InventoryParentRollService>());
         return services;
     }
 

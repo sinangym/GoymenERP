@@ -228,6 +228,19 @@ public sealed class InventoryGoodsReceiptParticipant : IInventoryGoodsReceiptPar
         return result;
     }
 
+    public Task<InventoryGoodsReceiptSourceV1?> ReadReplayAsync(Guid acceptanceId,
+        InventoryCommandMetadata metadata, CancellationToken cancellationToken = default)
+    {
+        EnsureActive();
+        if (Volatile.Read(ref started) != 0)
+        {
+            throw new InvalidOperationException("The Inventory replay source must be read before staging.");
+        }
+
+        return InventoryGoodsReceiptSourceProjection.ReadReplayAsync(
+            context, companyId, acceptanceId, metadata, cancellationToken);
+    }
+
     private static InventoryGoodsReceiptException StoreRefusal(string code) => code switch
     {
         InventoryStoreCodes.LabelConflict or InventoryStoreCodes.LabelCodeTaken

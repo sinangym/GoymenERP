@@ -23,7 +23,40 @@ public sealed record InventoryLabelDetailV1(
     string LabelVersion,
     InventoryLabelViewV1 Identity,
     InventoryLabelBalancesV1 Balances,
-    InventoryLabelGenealogyV1 Genealogy);
+    InventoryLabelGenealogyV1 Genealogy,
+    InventoryLabelMovementTimelineV1 MovementTimeline);
+
+/// <summary>
+/// The bounded, newest-first physical movement history for one label. Cost and cross-module
+/// source details are deliberately not projected; the stable source identity is enough to audit
+/// which accepted Inventory event changed the label.
+/// </summary>
+public sealed record InventoryLabelMovementTimelineV1(
+    Guid LabelId,
+    IReadOnlyList<InventoryLabelMovementV1> Entries,
+    bool WindowFull);
+
+public sealed record InventoryLabelMovementV1(
+    Guid MovementId,
+    string Kind,
+    DateTimeOffset OccurredAtUtc,
+    string SourceKind,
+    Guid SourceId,
+    Guid? SourceLineId,
+    string SourceGrain,
+    IReadOnlyList<InventoryLabelMovementLineV1> Lines);
+
+public sealed record InventoryLabelMovementLineV1(
+    int Sequence,
+    string Direction,
+    string OwnerKind,
+    Guid OwnerId,
+    string CustodianKind,
+    Guid CustodianId,
+    Guid LocationId,
+    Guid ProductId,
+    string Block,
+    string QuantityKg);
 
 public interface IInventoryLabelDetailsV1
 {

@@ -109,14 +109,22 @@ test('R14 records one real opening count, closes and reopens it, and preserves p
       readonly identity: { readonly labelId: string; readonly companyId: string; readonly productId: string; readonly code: string }
       readonly balances: { readonly labelId: string; readonly physicalKg: string }
       readonly genealogy: { readonly labelId: string; readonly labelCode: string; readonly edges: readonly unknown[]; readonly windowFull: boolean }
+      readonly movementTimeline: { readonly labelId: string; readonly windowFull: boolean; readonly entries: readonly [{
+        readonly kind: string; readonly sourceKind: string; readonly lines: readonly [{ readonly direction: string; readonly quantityKg: string }]
+      }] }
     }
     expect(labelDetail.identity).toMatchObject({ labelId: actualLabelId, companyId, productId, code: LABEL })
     expect(labelDetail.balances).toMatchObject({ labelId: actualLabelId, physicalKg: '12.5' })
     expect(labelDetail.genealogy).toEqual({ labelId: actualLabelId, labelCode: LABEL, edges: [], windowFull: false })
+    expect(labelDetail.movementTimeline).toMatchObject({
+      labelId: actualLabelId, windowFull: false,
+      entries: [{ kind: 'Receipt', sourceKind: 'inventory.opening-count', lines: [{ direction: 'In', quantityKg: '12.5' }] }],
+    })
     await expect(page.getByRole('heading', { level: 1, name: LABEL, exact: true })).toBeVisible()
     await expect(page.getByText(actualLabelId, { exact: true })).toBeVisible()
     await expect(page.getByRole('heading', { level: 2, name: 'Soy ağacı', exact: true })).toBeVisible()
     await expect(page.getByText('Bu etiket için bölme veya birleştirme kaydı yok.', { exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { level: 2, name: 'Stok hareketleri', exact: true })).toBeVisible()
 
     const productLink = page.getByRole('link', { name: 'Ürün kartı', exact: true })
     await expect(productLink).toHaveAttribute('href', `/urun/${productId}`)
@@ -138,6 +146,10 @@ test('R14 records one real opening count, closes and reopens it, and preserves p
       identity: { labelId: actualLabelId, companyId, productId, code: LABEL },
       balances: { labelId: actualLabelId, physicalKg: '12.5' },
       genealogy: { labelId: actualLabelId, labelCode: LABEL, edges: [], windowFull: false },
+      movementTimeline: {
+        labelId: actualLabelId, windowFull: false,
+        entries: [{ kind: 'Receipt', sourceKind: 'inventory.opening-count', lines: [{ direction: 'In', quantityKg: '12.5' }] }],
+      },
     })
     await expect(page.getByRole('heading', { level: 1, name: LABEL, exact: true })).toBeVisible()
     await expect(page.getByText(actualLabelId, { exact: true })).toBeVisible()

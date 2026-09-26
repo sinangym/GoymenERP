@@ -111,19 +111,28 @@ internal static class ShellCapabilityRegistryAuthorities
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV11PublishedSalesV11PublishedFinanceV12AndPublishedManufacturingV12 =
         "sha256:7StLnZX1juCcpm-nhRWtn0SfF7NXcV-yBuSKGFQ_kK8";
 
-    // LOG-PUBLISH: ... + Logistics 1.0 PUBLISHED (the loading-instruction list L-02, new L-03 and detail L-02-DETAIL,
+    // LOG-PUBLISH: ... + Logistics 1.1 PUBLISHED (the loading-instruction routes plus shipment/delivery actions,
     // master v3 §27.8): the normal host (C+O+P+S(published)+F(published)+M(published)+L(published)). Computed by
     // the ComputeRevision reproduction and, independently, by ORG (DATA ONLY); pinned by test.
     // Re-measured for Manufacturing 1.2's two plan-detail controls; pinned by the integrated provider test.
-    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV11PublishedSalesV11PublishedFinanceV12PublishedManufacturingV12AndPublishedLogisticsV10 =
-        "sha256:T6PaoOfKyoeG6uN6B_NHtXaTwN4S7S6WqFHUHXZL7OI";
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV11PublishedSalesV11PublishedFinanceV12PublishedManufacturingV12AndPublishedLogisticsV11 =
+        "sha256:U0KByd99kTgkvvadygD0BrujLp-MkeBCfVA_R7WJ9t4";
 
-    // P01: ... + Purchasing 1.3, with the request list/create/detail/submit declarations published
-    // beside the existing order list/create/detail/approve declarations. Every declaration remains
+    // PUR-HOST: ... + Purchasing 1.4, with the goods-receipt child control published beside the
+    // request list/create/detail/submit and order list/create/detail/approve declarations. Every declaration remains
     // single-company; each child keeps its detail parent's route, context and scope. Derived from the
     // integrated provider tuple through ShellCapabilityRegistry.ComputeCandidateRevision and pinned by test.
-    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV11PublishedSalesV11PublishedFinanceV12PublishedManufacturingV12PublishedLogisticsV10AndPublishedPurchasingV13 =
-        "sha256:fC_yFkwsZNBUewTdgf9jbeCEaS2PC0J20QCaRxUFuDo";
+    // RE-MEASURED AT THE #478 FORWARD onto main c287128f: #478 carried Logistics 1.0 + Purchasing 1.4
+    // (sha256:YNbQJaOz…) and main carried Logistics 1.1 + Purchasing 1.3 (sha256:qLOHlF5W…); the merged host
+    // serves Logistics 1.1 + Purchasing 1.4, a third value in neither parent. Both earlier values are SUPERSEDED.
+    // Derived from the MERGE TREE's eight real providers by ComputeCandidateRevision (the pinning test's own
+    // computation), not chosen from either side. The Accounting and Inventory rows below follow the same rule.
+    // RE-MEASURED AT THE #466 FORWARD onto main 55bf0517: #466 carried Product 1.1 with Logistics 1.0 + Purchasing
+    // 1.3 and main carried Product 1.0 with Logistics 1.1 + Purchasing 1.4; the merged host serves Product 1.1 +
+    // Logistics 1.1 + Purchasing 1.4. The Logistics, Purchasing, Accounting and Inventory rows were derived by the
+    // same rule from the merge tree's real providers; the Product 1.1 rows before Logistics are #466's unchanged.
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV11PublishedSalesV11PublishedFinanceV12PublishedManufacturingV12PublishedLogisticsV11AndPublishedPurchasingV14 =
+        "sha256:A-8AxvpEFdhGkfIAZ6pqLWHDHJ0EXZI6n1MwULLzTDI";
 
     // ACC-V0b: ... + Accounting 1.0 STAGED (the period list M-07 and its propose screen, the approve and
     // close controls of that list, the journal list M-04 and its detail, the posting queues M-01): the normal
@@ -164,8 +173,8 @@ internal static class ShellCapabilityRegistryAuthorities
     // with Accounting staged (the old half), and the same ACC-V0c model placed back at Organization 1.0
     // reproduces this branch's own sha256:OOlEtnDx… (the new half, which no accepted constant covered).
     // ACC-V1: Accounting 1.1 adds the published normal-draft create, own-detail and approval routes.
-    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV11PublishedSalesV11PublishedFinanceV12PublishedManufacturingV12PublishedLogisticsV10PublishedPurchasingV13AndPublishedAccountingV12 =
-        "sha256:LAPAwQRUJ5ykv4qPhxT3jVQd-7cVJjTDr0ptEARg4rk";
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV11PublishedSalesV11PublishedFinanceV12PublishedManufacturingV12PublishedLogisticsV11PublishedPurchasingV14AndPublishedAccountingV12 =
+        "sha256:2TAUexSPY-Sf5uvi-YP3HTYxnMdlgadmycIwx9Zi3dk";
 
     // R14: Inventory 1.0 publishes one opening-stock workspace after the existing normal tuple.
     // The capability reuses the accepted company-wide permission; publication grants nothing.
@@ -175,8 +184,8 @@ internal static class ShellCapabilityRegistryAuthorities
     // ST-01 / S04 allocation: Inventory 1.2 publishes the stock-position read and its physical-allocation
     // child control beside the opening-stock workspace. The control preserves the parent's route/context/scope
     // and adds only the existing write permission; publication grants nothing.
-    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV11PublishedSalesV11PublishedFinanceV12PublishedManufacturingV12PublishedLogisticsV10PublishedPurchasingV13PublishedAccountingV12AndPublishedInventoryV12 =
-        "sha256:VoH5hqtVsaKzqJoSwqJya4zliaZ3FqQ5SrGajcumA0k";
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV11PublishedSalesV11PublishedFinanceV12PublishedManufacturingV12PublishedLogisticsV11PublishedPurchasingV14PublishedAccountingV12AndPublishedInventoryV12 =
+        "sha256:c0kNJqn4gnLe-Lq04L3G4E_61KhUoAYztE91FF80L08";
 
     internal const string CounterpartyV15PublishedListCreateAndDetail =
         "sha256:UBHnivzhe_dp5f7vU7dP5n7HG-P8XYBGhxvD_OjMSnw";

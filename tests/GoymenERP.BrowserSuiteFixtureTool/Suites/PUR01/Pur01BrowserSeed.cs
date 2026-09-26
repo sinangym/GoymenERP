@@ -12,12 +12,17 @@ namespace GoymenERP.BrowserSuiteFixtureTool.Suites.PUR01;
 /// pur01 writes one synthetic Draft order as the approval scenario precondition and opens one separate
 /// active Supplier account through the real Cari API for the P-04 create path. Approval, create,
 /// close/reopen, replay and every permission/company negative run through the real host and browser.
+/// The goods-receipt journey writes nothing here: its approved order is created and approved by the spec
+/// through the real commands. The seed only proves the capability split of the disposable receiver (the
+/// ONLY actor holding the receipt name) and the Inventory stock reader before the browser starts.
 /// </summary>
 public sealed class Pur01BrowserSeed : IBrowserSuiteFixture
 {
     public const string CreatorActor = "pur01-creator";
     public const string ApproverActor = "pur01-approver";
     public const string ReaderActor = "pur01-reader";
+    public const string ReceiverActor = "pur01-receiver";
+    public const string StockReaderActor = "pur01-stock-reader";
     public const string CariActor = "group-bootstrap-admin";
 
     public static readonly Guid CompanyGdc = Guid.Parse("10000000-0000-0000-0000-000000000001");
@@ -39,6 +44,8 @@ public sealed class Pur01BrowserSeed : IBrowserSuiteFixture
     private const string DetailCapability = "purchasing.orders.detail";
     private const string ApproveCapability = "purchasing.orders.approve";
     private const string CreateCapability = "purchasing.orders.create";
+    private const string GoodsReceiptCapability = "purchasing.goods-receipts.record";
+    private const string StockLabelCapability = "inventory.stock-positions.list";
     private const int SupplierRole = 2;
 
     public string Suite => "pur01";
@@ -155,27 +162,51 @@ public sealed class Pur01BrowserSeed : IBrowserSuiteFixture
         if (!creator.Contains(ListCapability, StringComparer.Ordinal)
             || !creator.Contains(DetailCapability, StringComparer.Ordinal)
             || !creator.Contains(CreateCapability, StringComparer.Ordinal)
-            || creator.Contains(ApproveCapability, StringComparer.Ordinal))
+            || creator.Contains(ApproveCapability, StringComparer.Ordinal)
+            || creator.Contains(GoodsReceiptCapability, StringComparer.Ordinal))
         {
-            throw new InvalidOperationException("The creator needs list/detail/create and must not receive approve.");
+            throw new InvalidOperationException("The creator needs list/detail/create and must not receive approve or goods receipt.");
         }
 
         string[] approver = await CapabilitiesAsync(context, ApproverActor, cancellationToken);
         if (!approver.Contains(ListCapability, StringComparer.Ordinal)
             || !approver.Contains(DetailCapability, StringComparer.Ordinal)
             || !approver.Contains(ApproveCapability, StringComparer.Ordinal)
-            || approver.Contains(CreateCapability, StringComparer.Ordinal))
+            || approver.Contains(CreateCapability, StringComparer.Ordinal)
+            || approver.Contains(GoodsReceiptCapability, StringComparer.Ordinal))
         {
-            throw new InvalidOperationException("The approver needs list/detail/approve and must not receive the staged create screen.");
+            throw new InvalidOperationException("The approver needs list/detail/approve and must not receive the staged create screen or goods receipt.");
         }
 
         string[] reader = await CapabilitiesAsync(context, ReaderActor, cancellationToken);
         if (!reader.Contains(ListCapability, StringComparer.Ordinal)
             || !reader.Contains(DetailCapability, StringComparer.Ordinal)
             || reader.Contains(ApproveCapability, StringComparer.Ordinal)
-            || reader.Contains(CreateCapability, StringComparer.Ordinal))
+            || reader.Contains(CreateCapability, StringComparer.Ordinal)
+            || reader.Contains(GoodsReceiptCapability, StringComparer.Ordinal))
         {
-            throw new InvalidOperationException("The reader needs list/detail only and must not receive approve/create.");
+            throw new InvalidOperationException("The reader needs list/detail only and must not receive approve/create/goods receipt.");
+        }
+
+        // The receipt command needs purchasing.goods-receipts.record; its detail screen and receipt history
+        // need purchasing.orders.read. Nothing else: no approve, no create, no Inventory screen.
+        string[] receiver = await CapabilitiesAsync(context, ReceiverActor, cancellationToken);
+        if (!receiver.Contains(ListCapability, StringComparer.Ordinal)
+            || !receiver.Contains(DetailCapability, StringComparer.Ordinal)
+            || !receiver.Contains(GoodsReceiptCapability, StringComparer.Ordinal)
+            || receiver.Contains(ApproveCapability, StringComparer.Ordinal)
+            || receiver.Contains(CreateCapability, StringComparer.Ordinal)
+            || receiver.Contains(StockLabelCapability, StringComparer.Ordinal))
+        {
+            throw new InvalidOperationException("The receiver needs list/detail/goods receipt only and must not receive approve, create or the Inventory label screen.");
+        }
+
+        // The Inventory label detail (inventory.labels.read + inventory.balances.read) with no Purchasing name at all.
+        string[] stockReader = await CapabilitiesAsync(context, StockReaderActor, cancellationToken);
+        if (!stockReader.Contains(StockLabelCapability, StringComparer.Ordinal)
+            || stockReader.Any(capability => capability.StartsWith("purchasing.", StringComparison.Ordinal)))
+        {
+            throw new InvalidOperationException("The stock reader needs the Inventory label screen only and no Purchasing capability.");
         }
 
         return new Dictionary<string, string>(StringComparer.Ordinal)
@@ -183,6 +214,8 @@ public sealed class Pur01BrowserSeed : IBrowserSuiteFixture
             ["creatorActor"] = CreatorActor,
             ["approverActor"] = ApproverActor,
             ["readerActor"] = ReaderActor,
+            ["receiverActor"] = ReceiverActor,
+            ["stockReaderActor"] = StockReaderActor,
             ["companyId"] = CompanyGdc.ToString("D"),
             ["otherCompanyId"] = CompanyOther.ToString("D"),
             ["orderId"] = OrderId.ToString("D"),

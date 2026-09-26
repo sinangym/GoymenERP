@@ -14,6 +14,13 @@ internal static class BrowserSuiteSeedOutputValidator
                 throw new InvalidOperationException($"Seed output key '{key}' is not a safe key.");
             }
 
+            if (string.Equals(suite, "mfg", StringComparison.Ordinal)
+                && key.StartsWith("process", StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"Seed output '{key}' is private to the deterministic Manufacturing fixture and must not widen the browser seed contract.");
+            }
+
             var isGuid = Guid.TryParseExact(value, "D", out var guid)
                          && guid != Guid.Empty
                          && string.Equals(value, guid.ToString("D"), StringComparison.Ordinal);
