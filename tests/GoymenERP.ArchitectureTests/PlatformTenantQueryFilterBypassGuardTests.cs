@@ -517,10 +517,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // (SqlException 2601/2627) after SaveChanges, as InventoryStore and the Idempotency
                 // terminal store do. No connection, command or raw SQL. Re-fingerprinted for ACC-V1: the normal
                 // journal draft and reversal lifecycles persist through EF and carry late authority fences;
-                // SqlClient count remains unchanged (1).
+                // SqlClient count remains unchanged (1). Re-fingerprinted for the #464 K3 fix (#485): one company-bound
+                // EF read admits the reversal period before staging; no SQL, connection, context or filter bypass.
                 [ReviewedAccountingStorePath] =
                     new(
-                        "eb25cfc688df1e5ab330d0d24319a812ef03515e2f25d2101b1b57449ca97761",
+                        "9b6e088b496de1fc3c9e912e2d83397ef341e9eed6f54b79dfa1eb1c6deb8041",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
