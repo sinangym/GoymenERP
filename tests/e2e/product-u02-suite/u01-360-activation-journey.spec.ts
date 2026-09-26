@@ -372,7 +372,7 @@ async function readUserId(pool: SqlPool, actor: string): Promise<string> {
     .input('issuer', sql.NVarChar(500), BOOTSTRAP_ISSUER)
     .input('subject', sql.NVarChar(500), actor)
     .query(`SELECT LOWER(CONVERT(nvarchar(36), e.UserId)) AS userId
-            FROM identity.ExternalIdentities AS e
+            FROM [identity].[ExternalIdentities] AS e
             WHERE e.Issuer = @issuer AND e.Subject = @subject`)
   expect(result.recordset, `exactly one Identity user for ${actor}`).toHaveLength(1)
   return result.recordset[0].userId as string
@@ -383,7 +383,7 @@ async function readActivateGrantees(pool: SqlPool): Promise<string[]> {
   const result = await pool.request()
     .input('operation', sql.Int, OPERATION.activate)
     .query(`SELECT LOWER(CONVERT(nvarchar(36), g.UserId)) AS userId
-            FROM identity.ProductMasterAssignments AS g
+            FROM [identity].[ProductMasterAssignments] AS g
             WHERE g.Operation = @operation AND g.IsActive = 1
             ORDER BY userId`)
   return (result.recordset as { userId: string }[]).map((row) => row.userId)
@@ -393,7 +393,7 @@ async function readOperations(pool: SqlPool, userId: string): Promise<number[]> 
   const result = await pool.request()
     .input('userId', sql.UniqueIdentifier, userId)
     .query(`SELECT g.Operation AS operation
-            FROM identity.ProductMasterAssignments AS g
+            FROM [identity].[ProductMasterAssignments] AS g
             WHERE g.UserId = @userId AND g.IsActive = 1
             ORDER BY g.Operation`)
   return (result.recordset as { operation: number }[]).map((row) => row.operation)
@@ -404,15 +404,15 @@ async function readEvidence(pool: SqlPool, productId: string): Promise<Activatio
     .input('productId', sql.UniqueIdentifier, productId)
     .input('entityId', sql.NVarChar(128), productId)
     .query(`SELECT
-              (SELECT p.Lifecycle FROM product.Products AS p WHERE p.Id = @productId) AS lifecycle,
-              (SELECT CONVERT(nvarchar(20), p.Version) FROM product.Products AS p WHERE p.Id = @productId) AS version,
-              (SELECT COUNT(*) FROM audit.AuditEvents AS a
+              (SELECT p.Lifecycle FROM [product].[Products] AS p WHERE p.Id = @productId) AS lifecycle,
+              (SELECT CONVERT(nvarchar(20), p.Version) FROM [product].[Products] AS p WHERE p.Id = @productId) AS version,
+              (SELECT COUNT(*) FROM [audit].[AuditEvents] AS a
                 WHERE a.SubjectKind = N'GroupSharedProduct' AND a.EntityType = N'Product.Product'
                   AND a.EntityId = @entityId) AS auditEvents,
-              (SELECT COUNT(*) FROM audit.AuditEvents AS a
+              (SELECT COUNT(*) FROM [audit].[AuditEvents] AS a
                 WHERE a.SubjectKind = N'GroupSharedProduct' AND a.EntityType = N'Product.Product'
                   AND a.EntityId = @entityId AND a.Operation = N'Activate') AS activations,
-              (SELECT COUNT(*) FROM idempotency.GroupSharedCommandTerminals AS t
+              (SELECT COUNT(*) FROM [idempotency].[GroupSharedCommandTerminals] AS t
                 WHERE t.Subject = 'Product' AND t.CommandName = 'product.card.activate.v1'
                   AND JSON_VALUE(t.ResponseJson, '$.card.product.id') = @entityId) AS activationTerminals`)
   return result.recordset[0] as ActivationEvidence
@@ -428,7 +428,7 @@ async function readActivationAudit(pool: SqlPool, productId: string): Promise<Ac
                    a.IdempotencyKeyHash AS keyHash,
                    CONVERT(nvarchar(20), a.EntityVersionBefore) AS versionBefore,
                    CONVERT(nvarchar(20), a.EntityVersionAfter) AS versionAfter
-            FROM audit.AuditEvents AS a
+            FROM [audit].[AuditEvents] AS a
             WHERE a.SubjectKind = N'GroupSharedProduct' AND a.EntityType = N'Product.Product'
               AND a.EntityId = @entityId AND a.Operation = N'Activate'`)
   return result.recordset as ActivationAudit[]
@@ -438,7 +438,7 @@ async function readTerminalsByKey(pool: SqlPool, hash: string): Promise<number> 
   const result = await pool.request()
     .input('keyHash', sql.VarChar(64), hash)
     .query(`SELECT COUNT(*) AS terminals
-            FROM idempotency.GroupSharedCommandTerminals AS t
+            FROM [idempotency].[GroupSharedCommandTerminals] AS t
             WHERE t.Subject = 'Product' AND t.CommandName = 'product.card.activate.v1'
               AND t.IdempotencyKeyHash = @keyHash`)
   return result.recordset[0].terminals as number
