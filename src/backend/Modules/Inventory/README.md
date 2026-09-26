@@ -44,7 +44,10 @@ company/product/version, then revalidate authority/company/actor immediately bef
 `GoymenERP.Modules.Inventory.Application.IInventoryParentRollCandidatesV1.SearchAsync` accepts
 `InventoryParentRollQueryV1(Q, Limit=25)` (label-code search, max64 characters, examined window1..100)
 and returns `Items/SearchWindowFull`. `IInventoryParentRollValidationV1.ValidateAsync` accepts
-`InventoryParentRollSelectionV1(LabelId, ExpectedLabelVersion)`. There is deliberately no PlannedKg:
+`InventoryParentRollSelectionV1(LabelId, ExpectedLabelVersion)`. These public contracts remain context-free.
+The separate in-process `IInventoryContextualParentRollReferencesV1` accepts only exact typed owner/custodian
+kind and ID after the consumer has authorized its commercial context; party roles/accounts/versions and
+location are not inputs. There is deliberately no PlannedKg:
 this read does not choose equality, partial-coil, upper-bound, reservation or availability policy.
 `AddInventoryParentRollReferences()` registers only these owner ports. Central owns HTTP/host publication.
 `InventoryParentRollApiV1` fixes that publication's owner contract at
@@ -57,6 +60,7 @@ document status/kinds, positions' owner/custodian/location, and lossless physica
 loading holds are not deducted. `ProductionUseRequiresRevalidation` is always true. Missing coil is not
 a type discriminator. Blocked/pending-document own-company stock can be a draft reference without being
 released for consumption. Other-owner stock remains visible with `DraftSelectable=false` and context-required;
+supplying its exact stored owner/custodian context makes it draft-selectable without granting use or reserving it;
 no stock means no invented owner/location and a nonselectable no-physical-position result.
 Existing INV-1 `StockLedger.FromStoredBalances` validates the stored state: a label's nonzero buckets
 share one physical place (owner/custodian/location/product), while Free/Blocked buckets remain separate.
