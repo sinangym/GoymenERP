@@ -8,9 +8,19 @@ import { contextKey, contextKeyString, hasCapability } from '../shell/shellState
 import { StateBlock } from '../shell/StateBlock'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { fetchInventoryLabelDetail } from './labelDetailApi'
-import type { InventoryLabelDetail } from './labelDetailContract'
+import type { InventoryLabelDetailWithMovementTimeline } from './labelDetailContract'
 import { inventoryLabelDetailPath } from './labelDetailRoute'
 import styles from './inventory.module.css'
+
+const MOVEMENT_KIND_TEXT = {
+  Receipt: 'Giriş',
+  Issue: 'Çıkış',
+  Block: 'Blokaj',
+  Release: 'Serbest bırakma',
+  Return: 'İade',
+} as const
+
+const DIRECTION_TEXT = { In: 'Giriş', Out: 'Çıkış' } as const
 
 export function InventoryLabelDetailPage() {
   const shell = useShellState()
@@ -46,7 +56,7 @@ function InventoryLabelDetailView({ namespace, labelId }: {
   })
   const state = (query.isPending
     ? { kind: 'initial-loading' }
-    : classifyOutcome(query.data ?? { type: 'malformed' })) as RemoteViewState<InventoryLabelDetail>
+    : classifyOutcome(query.data ?? { type: 'malformed' })) as RemoteViewState<InventoryLabelDetailWithMovementTimeline>
 
   if (companyId === null || namespace === null) {
     return <main className={styles.page}><StateBlock state={{ kind: 'no-authorized-company' }} subject="etiket" /></main>
@@ -55,8 +65,9 @@ function InventoryLabelDetailView({ namespace, labelId }: {
     return <main className={styles.page}><StateBlock state={state} subject="etiket" onRetry={() => void query.refetch()} /></main>
   }
 
-  const { labelVersion, identity, balances, genealogy } = state.data
-  if (identity.companyId !== companyId || identity.labelId !== labelId || balances.labelId !== labelId || genealogy.labelId !== labelId) {
+  const { labelVersion, identity, balances, genealogy, movementTimeline } = state.data
+  if (identity.companyId !== companyId || identity.labelId !== labelId || balances.labelId !== labelId ||
+    genealogy.labelId !== labelId || movementTimeline.labelId !== labelId) {
     return <main className={styles.page}><StateBlock state={{ kind: 'malformed-response' }} subject="etiket" onRetry={() => void query.refetch()} /></main>
   }
   return <main className={styles.page}>
@@ -96,6 +107,25 @@ function InventoryLabelDetailView({ namespace, labelId }: {
             <td>{position.quantityKg} kg</td>
           </tr>)}</tbody>
         </table></div>}
+    </section>
+
+    <section aria-labelledby="label-movement-heading">
+      <h2 id="label-movement-heading">Stok hareketleri</h2>
+      {movementTimeline.entries.length === 0
+        ? <p>Bu etiket için stok hareketi yok.</p>
+        : <div className={styles.tableWrap}><table>
+          <thead><tr><th>Zaman</th><th>Hareket</th><th>Kaynak</th><th>Yön</th><th>Konum</th><th>Durum</th><th>Miktar</th></tr></thead>
+          <tbody>{movementTimeline.entries.flatMap((movement) => movement.lines.map((line) => <tr key={`${movement.movementId}:${line.sequence}`}>
+            <td>{movement.occurredAtUtc}</td>
+            <td>{MOVEMENT_KIND_TEXT[movement.kind]}<br /><span className={styles.mono}>…{movement.movementId.slice(-8)}</span></td>
+            <td>{movement.sourceKind}<br /><span className={styles.mono}>…{movement.sourceId.slice(-8)}</span></td>
+            <td>{DIRECTION_TEXT[line.direction]}</td>
+            <td className={styles.mono}>{line.locationId}</td>
+            <td>{line.block}</td>
+            <td>{line.quantityKg} kg</td>
+          </tr>))}</tbody>
+        </table></div>}
+      {movementTimeline.windowFull ? <p>Daha eski stok hareketleri bu görünümde yer almıyor.</p> : null}
     </section>
 
     <section aria-labelledby="label-genealogy-heading">

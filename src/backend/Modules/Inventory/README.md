@@ -44,7 +44,10 @@ company/product/version, then revalidate authority/company/actor immediately bef
 `GoymenERP.Modules.Inventory.Application.IInventoryParentRollCandidatesV1.SearchAsync` accepts
 `InventoryParentRollQueryV1(Q, Limit=25)` (label-code search, max64 characters, examined window1..100)
 and returns `Items/SearchWindowFull`. `IInventoryParentRollValidationV1.ValidateAsync` accepts
-`InventoryParentRollSelectionV1(LabelId, ExpectedLabelVersion)`. There is deliberately no PlannedKg:
+`InventoryParentRollSelectionV1(LabelId, ExpectedLabelVersion)`. These public contracts remain context-free.
+The separate in-process `IInventoryContextualParentRollReferencesV1` accepts only exact typed owner/custodian
+kind and ID after the consumer has authorized its commercial context; party roles/accounts/versions and
+location are not inputs. There is deliberately no PlannedKg:
 this read does not choose equality, partial-coil, upper-bound, reservation or availability policy.
 `AddInventoryParentRollReferences()` registers only these owner ports. Central owns HTTP/host publication.
 `InventoryParentRollApiV1` fixes that publication's owner contract at
@@ -57,6 +60,7 @@ document status/kinds, positions' owner/custodian/location, and lossless physica
 loading holds are not deducted. `ProductionUseRequiresRevalidation` is always true. Missing coil is not
 a type discriminator. Blocked/pending-document own-company stock can be a draft reference without being
 released for consumption. Other-owner stock remains visible with `DraftSelectable=false` and context-required;
+supplying its exact stored owner/custodian context makes it draft-selectable without granting use or reserving it;
 no stock means no invented owner/location and a nonselectable no-physical-position result.
 Existing INV-1 `StockLedger.FromStoredBalances` validates the stored state: a label's nonzero buckets
 share one physical place (owner/custodian/location/product), while Free/Blocked buckets remain separate.
@@ -184,6 +188,27 @@ Notes carried from the #293 review (INFO; no change in this slice):
 - **Scope.** Reads are not filtered by site, so these permissions belong in `CompanyWideOnly` (central).
 - **Evidence and outcome.** The evidence is real SQL through the real host with synthetic grants and synthetic stock written through the store. It is **not a user outcome**: no real product card and no accepted opening stock source exist yet (plan §14 T07, Ö1).
 - **No write here.** The receipt (T07 write) waits for the opening-acceptance question on #66 (NEEDS-SINAN 5731613477). The lot record is the next section.
+
+### ST-04 movement timeline on the label detail
+
+`GET /api/v1/inventory/labels/{labelId}/detail` also returns `movementTimeline`: at most the
+newest 100 stored physical movements that contain the requested label, ordered by occurrence time.
+Each entry exposes only Inventory's immutable movement identity/kind/time, stable source identity
+and that label's own direction, owner, custodian, location, block and exact kg lines. Cost and
+source-module payloads are not disclosed. `windowFull=true` means older stored movements exist.
+
+The existing `inventory.labels.read` plus `inventory.balances.read` company-wide fence is reused;
+there is no new permission, route or grant. The detail service reads the bounded timeline twice,
+with fresh authority checks after every awaited owner read, and refuses `409
+inventory_label_detail_read_conflict` if the two captures differ. Unknown enum values, foreign
+product facts, malformed block/release pairs or non-canonical quantities fail closed as `503`.
+This is a read projection over existing `inventory.Movements`; it creates no movement and selects
+no transfer, return, correction or quality policy.
+
+This is the first ST-04 read slice, not the whole ST-04 card: the current ledger has Receipt,
+Issue, Block, Release and Return records. A distinct transfer or reversal record is shown only
+after its separately accepted Inventory writer and semantics exist; this reader does not infer
+either event from unrelated rows.
 
 ## T07 lot record: `MaterialLot`
 
