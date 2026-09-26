@@ -25,8 +25,9 @@ namespace GoymenERP.Accounting.UnitTests;
 /// race evidence is the SQL Server relational acceptance suite:
 /// <c>AccountingApiSqlServerRelationalAcceptanceTests.A_journal_reversal_proposal_is_pending_until_another_user_approves_one_linked_reversal</c>
 /// sends two approvals of one proposal at once (same key, and two keys) for several fresh proposals under whatever
-/// interleaving SQL Server produces, including save-time unique-index and version-token losses, and asserts one
-/// reversal journal, zero net effect and the declared answers.
+/// interleaving SQL Server produces, accepting any of the approve route's declared answers for the loser (a save-time
+/// unique-index or version-token loss among them, when it occurs), and asserts one reversal journal and zero net
+/// effect. It does not force any particular interleaving.
 /// </para>
 /// </summary>
 public sealed class AccountingJournalReversalStoreFollowUpV1Tests
