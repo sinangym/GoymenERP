@@ -68,6 +68,13 @@ public static class InventoryDefiniteShipmentCodesV1
     public const string AllocationInsufficient = "inventory_allocation_insufficient";
     public const string LabelNotReleasable = "inventory_label_not_releasable";
     public const string PhysicalStockInsufficient = "inventory_physical_stock_insufficient";
+
+    /// <summary>
+    /// The allocation's position is not owned AND held by this company (a customer-owned or fason-held piece);
+    /// a definite shipment never consumes it (<see cref="InventorySalesOwnershipGuardV1"/>).
+    /// </summary>
+    public const string OwnerNotCompany = "inventory_definite_shipment_owner_not_company";
+
     public const string IdempotencyConflict = "inventory_definite_shipment_idempotency_conflict";
     public const string ConcurrentChange = "inventory_definite_shipment_concurrent_change";
     public const string Unavailable = "inventory_definite_shipment_unavailable";
@@ -76,7 +83,7 @@ public static class InventoryDefiniteShipmentCodesV1
     public static IReadOnlySet<string> Status404Codes { get; } = Set(InvalidReference);
     public static IReadOnlySet<string> Status409Codes { get; } = Set(AllocationVersionConflict, LabelVersionConflict,
         AllocationState, AllocationLabelMismatch, AllocationInsufficient, LabelNotReleasable,
-        PhysicalStockInsufficient, IdempotencyConflict, ConcurrentChange);
+        PhysicalStockInsufficient, OwnerNotCompany, IdempotencyConflict, ConcurrentChange);
     public static IReadOnlySet<string> Status503Codes { get; } = Set(Unavailable);
 
     public static bool IsDefined(int status, string code) => status switch

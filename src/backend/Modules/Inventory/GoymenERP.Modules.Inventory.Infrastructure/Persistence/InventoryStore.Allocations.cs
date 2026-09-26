@@ -72,6 +72,14 @@ public sealed partial class InventoryStore
         }
 
         var source = freeRows[0];
+        // Sales-sourced reservation of another party's goods is refused (#479 review P2-2); no fason policy.
+        // TODO(#66/5830378162): replace with the accepted customer-owned/fason rule once decided.
+        if (!InventorySalesOwnershipGuardV1.IsCompanyOwnedAndHeld((StockPartyKind)source.OwnerKind, source.OwnerId,
+                (StockPartyKind)source.CustodianKind, source.CustodianId, companyId))
+        {
+            throw AllocationError(422, InventoryAllocationCodesV1.OwnerNotCompany);
+        }
+
         var activeAllocated = await dbContext.Allocations.AsNoTracking()
             .Where(row => row.LabelId == label.Id
                 && row.OwnerKind == source.OwnerKind && row.OwnerId == source.OwnerId
