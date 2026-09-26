@@ -9,22 +9,32 @@ public sealed partial class ShellCapabilityRegistryTests
 {
     private static ShellCapabilityDeclaration[] ProductDeclarations() =>
     [
-        ProductDeclaration("product.items.list", "/urun", "PRODUCT-TEST-LIST", GroupSharedMasterOperation.Read),
-        ProductDeclaration("product.items.detail", "/urun/:productId", "PRODUCT-TEST-DETAIL", GroupSharedMasterOperation.Read),
-        ProductDeclaration("product.items.create", "/urun/yeni", "PRODUCT-TEST-CREATE", GroupSharedMasterOperation.DraftCreate),
-        ProductDeclaration("product.items.edit", "/urun/:productId/duzenle", "PRODUCT-TEST-EDIT", GroupSharedMasterOperation.DraftBasicEdit),
+        ProductDeclaration("product.items.list", "product.list", "/urun", "U-01",
+            GroupSharedMasterOperation.Read),
+        ProductDeclaration("product.items.detail", "product.detail", "/urun/:productId", "U-01-360",
+            GroupSharedMasterOperation.Read),
+        ProductDeclaration("product.items.create", "product.create", "/urun/yeni", "U-02",
+            GroupSharedMasterOperation.DraftCreate),
+        ProductDeclaration("product.items.edit", "product.edit", "/urun/:productId/duzenle", "U-02-EDIT",
+            GroupSharedMasterOperation.DraftBasicEdit),
+        ProductDeclaration("product.items.activate", "product.detail", "/urun/:productId", "U-01-360",
+            GroupSharedMasterOperation.Activate, "product.items.detail"),
     ];
 
-    private static ShellCapabilityDeclaration ProductDeclaration(string id, string path, string fixtureViewId,
-        GroupSharedMasterOperation operation) => Declaration(id, id, path, fixtureViewId,
-            ShellCapabilityScopeRequirement.AnyGrantedScope, requiredPermissions: []) with { GlobalProductOperation = operation };
+    private static ShellCapabilityDeclaration ProductDeclaration(string id, string routeId, string path, string screenId,
+        GroupSharedMasterOperation operation, string? parentCapabilityId = null) => Declaration(id, routeId, path, screenId,
+            ShellCapabilityScopeRequirement.AnyGrantedScope, requiredPermissions: []) with
+            {
+                GlobalProductOperation = operation,
+                ParentCapabilityId = parentCapabilityId,
+            };
 
     [Fact]
     public void GlobalProductRegistry_RequiresExactAuthorityAndDoesNotChangeCompanyRevision()
     {
         var providers = new[] { Provider("PRODUCT", ProductDeclarations()) };
         Assert.Throws<InvalidOperationException>(() => new ShellCapabilityRegistry(providers));
-        Assert.Equal(4, AuthorizedRegistry(providers).Registrations.Count);
+        Assert.Equal(5, AuthorizedRegistry(providers).Registrations.Count);
         var companyProvider = new GoymenERP.Modules.Counterparty.Infrastructure.Shell.CounterpartyShellCapabilityProvider();
         Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetail,
             ShellCapabilityRegistry.ComputeCandidateRevision([companyProvider]));
@@ -62,9 +72,31 @@ public sealed partial class ShellCapabilityRegistryTests
     }
 
     [Theory]
+    [InlineData("parent")]
+    [InlineData("route")]
+    [InlineData("screen")]
+    [InlineData("precedence")]
+    [InlineData("availability")]
+    public void GlobalProductRegistry_RejectsActivationOutsideTheExactDetailControl(string change)
+    {
+        var declaration = ProductDeclarations()[4];
+        declaration = change switch
+        {
+            "parent" => declaration with { ParentCapabilityId = "product.items.list" },
+            "route" => declaration with { RouteId = "product.list" },
+            "screen" => declaration with { ScreenId = "U-01" },
+            "precedence" => declaration with { RoutePrecedence = ShellCapabilityRoutePrecedence.Static },
+            _ => declaration with { ImplementationAvailable = false },
+        };
+        Assert.Throws<InvalidOperationException>(() => ShellCapabilityRegistry.ComputeCandidateRevision(
+            [Provider("PRODUCT", [.. ProductDeclarations()[..4], declaration])]));
+    }
+
+    [Theory]
     [InlineData(GroupSharedMasterOperation.Read, "product.items.detail,product.items.list")]
     [InlineData(GroupSharedMasterOperation.DraftCreate, "product.items.create")]
     [InlineData(GroupSharedMasterOperation.DraftBasicEdit, "product.items.edit")]
+    [InlineData(GroupSharedMasterOperation.Activate, "product.items.activate")]
     public async Task GlobalProductSnapshot_OnlyExplicitOperationGrantEnablesItsCapabilities(
         GroupSharedMasterOperation allowed, string expected)
     {
@@ -90,11 +122,16 @@ public sealed partial class ShellCapabilityRegistryTests
         Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailAndOrganizationV11,
             ShellCapabilityRegistry.ComputeCandidateRevision(normal));
         var combined = AuthorizedRegistry([.. normal, Provider("PRODUCT", ProductDeclarations())]);
-        // Counterparty's four + Organization's five (ORG-03 joined) + Product's four.
-        Assert.Equal(13, combined.Registrations.Count);
-        Assert.Equal(4, combined.Registrations.Count(item => item.Declaration.GlobalProductOperation is not null));
-        Assert.Equal(2, combined.Registrations.Count(item => item.Declaration.ParentCapabilityId is not null));
-        Assert.All(combined.Registrations.Where(item => item.Declaration.ParentCapabilityId is not null),
+        // Counterparty's four + Organization's five (ORG-03 joined) + Product's five.
+        Assert.Equal(14, combined.Registrations.Count);
+        Assert.Equal(5, combined.Registrations.Count(item => item.Declaration.GlobalProductOperation is not null));
+        Assert.Equal(3, combined.Registrations.Count(item => item.Declaration.ParentCapabilityId is not null));
+        var activation = Assert.Single(combined.Registrations,
+            item => item.Declaration.CapabilityId == "product.items.activate");
+        Assert.Equal("product.items.detail", activation.Declaration.ParentCapabilityId);
+        Assert.Equal(GroupSharedMasterOperation.Activate, activation.Declaration.GlobalProductOperation);
+        Assert.All(combined.Registrations.Where(item => item.Declaration.ParentCapabilityId is not null
+                && item.Declaration.CapabilityId != "product.items.activate"),
             item => Assert.Null(item.Declaration.GlobalProductOperation));
         Assert.NotEqual(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailAndOrganizationV11, combined.Revision);
     }

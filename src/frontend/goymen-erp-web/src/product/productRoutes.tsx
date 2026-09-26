@@ -19,6 +19,7 @@ import type { RouteObject } from 'react-router'
 import { CapabilityRoute } from '../shell/CapabilityRoute'
 import type { CapabilityId } from '../shell/capabilities'
 import {
+  ActivationPendingAttemptScope,
   EditPendingAttemptScope,
   PendingAttemptDiscardObserver,
 } from './PendingAttemptDiscardObserver'
@@ -94,6 +95,10 @@ export const productRoutes: RouteObject[] = [
      * the frontend widening a grant the server kept separate.
      */
     path: PRODUCT_CAPABILITY_ROUTE[PRODUCT_CAPABILITY.productsDetail].slice(1),
-    element: gate(PRODUCT_CAPABILITY.productsDetail, <ProductDetailPage />),
+    element: (
+      <ActivationPendingAttemptScope>
+        {gate(PRODUCT_CAPABILITY.productsDetail, <ProductDetailPage />)}
+      </ActivationPendingAttemptScope>
+    ),
   },
 ]

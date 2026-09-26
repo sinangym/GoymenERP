@@ -10,9 +10,10 @@ import { ActorProbe } from '../cari-acceptance-009/src/lHarness'
  *    answers 201 and the screen prints the server's code, whose prefix is the fixture group's.
  *  - U02-FIX-02 the unauthorized actor (company-a-user: no Product master authority) is closed out of the
  *    Product screens and sends no Product request.
- *  - Product history is read from the real endpoint after closing and reopening the card. The fixture grants
- *    no Activate authority and the Product UI exposes no activation control, so a real Activate row remains
- *    explicitly NOT_RUN here; no synthetic grant or direct command is manufactured for this suite.
+ *  - Product history is read from the real endpoint after closing and reopening the card. The authorized actor
+ *    holds no Activate authority, so no Activate row is written here. The real activation (U-01-360, #466)
+ *    runs in u01-360-activation-journey.spec.ts as the disposable u02 activator, the only actor this run's
+ *    fixture grants Product master Activate (user decision 2026-09-27); no real user or seeded role holds it.
  *  - The fixture has one authorized company context. The history 404 and authority 403 boundaries run here;
  *    a cross-company history negative remains explicitly NOT_RUN rather than being faked with headers.
  *

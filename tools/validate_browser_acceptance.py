@@ -120,8 +120,10 @@ _ACTOR_KEY = re.compile(r"^BootstrapIdentity__Users__(0|[1-9][0-9]*)__(UserId|Di
 MAX_SUITE_ACTORS = 8
 SUITE_API_EXTENSIONS = {
     # U-02: the Product runtime's issuer binding, matching the suite seed's local user and
-    # external identity (ÜRÜN, #319 P3).
-    "u02": {"issuer": True, "actors": False, "identity": True},
+    # external identity (ÜRÜN, #319 P3). U-01-360 (#466, user decision 2026-09-27): one disposable
+    # activator actor (u02-activator) with its Identity user and a company membership only; its Product
+    # master Read + Activate grant is written by the gated seed writer, never by this override.
+    "u02": {"issuer": True, "actors": True, "identity": True},
     # ORG-03: extra synthetic development actors after the canonical two (ORG, #319 P3-1), and
     # since the browser slice, their Identity users and grants — no seeded role reads work centres
     # WITHOUT locations, which is exactly the user this suite exists to walk.
@@ -198,8 +200,11 @@ SUITE_IDENTITY_PERMISSIONS = {
     # the explanation. A closed list of two, therefore, with no per-actor subset to record.
     "c02": ("counterparty.parties.create", "counterparty.parties.read"),
     "org03": ("organization.work-centers.read", "organization.locations.read"),
-    # u02 seeds only the issuer's Identity user, which holds nothing (the issuer-user rule).
-    "u02": (),
+    # u02: the issuer's Identity user holds nothing (the issuer-user rule). The disposable activator's
+    # membership role carries only the baseline identity.profile.read, which no endpoint or shell
+    # capability uses: it establishes the fresh company membership Product authorization requires and
+    # opens nothing. Its Product authority is the seed's gated SYSTEM_ADMINISTRATOR-role grant (PRD-PERM-001 A).
+    "u02": ("identity.profile.read",),
     # SALES-A1 (coordinator): the approval and the draft's party read, for the v2b positive path.
     "s03": ("sales.drafts.create", "sales.drafts.read", "product.operational-selection.read",
             "counterparty.parties.read", "sales.orders.approve"),
@@ -425,7 +430,8 @@ def validate_suite_identity(suite: str, extra: dict, actor_ids: list[str]) -> No
 FIXTURE_TOOL_SUITES_DIRECTORY = "tests/GoymenERP.BrowserSuiteFixtureTool/Suites"
 SUITE_FIXTURE_OUTPUTS: dict[str, frozenset[str]] = {
     # ÜRÜN's Suites/U02 seed: the company, gated code group, fixed synthetic technical family and actors.
-    "u02": frozenset({"companyId", "codeGroupId", "technicalFamilyId", "authorizedActor", "unauthorizedActor"}),
+    "u02": frozenset({"companyId", "codeGroupId", "technicalFamilyId", "authorizedActor", "unauthorizedActor",
+                      "activatorActor"}),
     # ORG's Suites/MFG seed (#323 5735635840): the actors, the company, the seeded work centre (read
     # through the real Organization API) and the plan -> approval -> order it writes through the real API.
     # MFG-ORD adds the closer actor; the list and the close need no further seeded row.

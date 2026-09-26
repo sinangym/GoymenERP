@@ -1,6 +1,6 @@
 /**
- * The logical U-02 write attempt — framework-independent, shared by Draft create
- * and Draft basic edit.
+ * A logical Product write attempt — framework-independent, shared by Draft create,
+ * Draft basic edit and card activation.
  *
  * THE RULE, in one line: one idempotency key per submitted SNAPSHOT, never per click.
  *
