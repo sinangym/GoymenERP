@@ -33247,6 +33247,7 @@
               "accounting_period_closed",
               "accounting_period_does_not_cover_date",
               "accounting_period_not_found",
+              "accounting_period_not_open",
               "accounting_reversal_of_reversal"
             ]
           },

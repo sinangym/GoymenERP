@@ -1319,7 +1319,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["ProposeAccountingJournalReversalV1:422"] = ["accounting_journal_reversal_period_not_found", "accounting_journal_reversal_source_journal_not_found"],
             ["ApproveAccountingJournalReversalV1:400"] = ["accounting_request_invalid"],
             ["ApproveAccountingJournalReversalV1:409"] = ["accounting_concurrent_change", "accounting_journal_reversal_not_pending", "accounting_journal_reversal_posting_conflict", "accounting_journal_reversal_proposal_content_conflict", "accounting_journal_reversal_version_conflict", "accounting_period_conflict", "accounting_period_overlap", "accounting_period_preparer_conflict", "accounting_version_conflict", "idempotency_conflict"],
-            ["ApproveAccountingJournalReversalV1:422"] = ["accounting_invalid_reference", "accounting_period_closed", "accounting_period_does_not_cover_date", "accounting_period_not_found", "accounting_reversal_of_reversal"],
+            ["ApproveAccountingJournalReversalV1:422"] = ["accounting_invalid_reference", "accounting_period_closed", "accounting_period_does_not_cover_date", "accounting_period_not_found", "accounting_period_not_open", "accounting_reversal_of_reversal"],
             // MFG-ORD: the list refuses a bad page size, cursor or status on the field; the close is a
             // write like the others, and adds manufacturing_unexplained_difference to the shared 422 list.
             ["ListManufacturingOrdersV1:400"] = ["manufacturing_request_invalid"],
