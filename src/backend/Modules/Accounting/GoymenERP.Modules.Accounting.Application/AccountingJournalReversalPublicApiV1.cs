@@ -66,7 +66,10 @@ public sealed class AccountingJournalReversalPublicServiceV1(
             valueDate = parsedValueDate;
         }
 
-        if (string.IsNullOrWhiteSpace(request.Reason))
+        // The policy's own bound (trimmed, at most ReasonMaximumLength) is checked here too, so an over-long reason
+        // is this route's declared 400 accounting_request_invalid rather than the policy's internal code.
+        if (string.IsNullOrWhiteSpace(request.Reason)
+            || request.Reason.Trim().Length > AccountingJournalReversalPolicyV1.ReasonMaximumLength)
         {
             return Task.FromResult(Invalid("reason"));
         }
@@ -100,12 +103,17 @@ public sealed class AccountingJournalReversalPublicServiceV1(
             : lifecycle.ApproveAsync(proposalId, request.ExpectedVersion, idempotencyKey, cancellationToken);
     }
 
+    /// <summary>
+    /// An exact ISO calendar date that the policy accepts: <c>0001-01-01</c> is the default/minimum date the policy
+    /// refuses, so it is refused here with the route's declared 400 as well.
+    /// </summary>
     private static bool TryDate(string? text, out DateOnly value)
     {
         value = default;
         return text is not null
             && DateOnly.TryParseExact(text, "yyyy-MM-dd", CultureInfo.InvariantCulture,
-                DateTimeStyles.None, out value);
+                DateTimeStyles.None, out value)
+            && value != default;
     }
 
     private static AccountingApiResult<AccountingJournalReversalProposalViewV1> Invalid(string field) =>

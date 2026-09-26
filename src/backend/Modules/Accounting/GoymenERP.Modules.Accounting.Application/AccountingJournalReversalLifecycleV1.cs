@@ -40,13 +40,19 @@ public static class AccountingJournalReversalUnprocessableCodesV1
         AccountingJournalReversalStoreCodesV1.PeriodNotFound,
     ];
 
-    /// <summary>The existing Accounting reversal/posting path refuses these while an approval is applied.</summary>
+    /// <summary>
+    /// The existing Accounting reversal/posting path refuses these while an approval is applied. A proposal's period is
+    /// admitted by identity only, so at approval it can still be proposed-not-approved (PeriodNotOpen), closed or not
+    /// covering the accounting date; each is a 422 that leaves the proposal Pending. Whether propose-time admission
+    /// should already refuse such periods is an open policy question, not decided here.
+    /// </summary>
     public static IReadOnlyList<string> Approve { get; } =
     [
         AccountingErrorCodes.InvalidReference,
         AccountingErrorCodes.ReversalOfReversal,
         AccountingErrorCodes.PeriodClosed,
         AccountingErrorCodes.PeriodDoesNotCover,
+        AccountingErrorCodes.PeriodNotOpen,
         AccountingStoreCodes.PeriodNotFound,
     ];
 }
@@ -306,7 +312,8 @@ public sealed class AccountingJournalReversalServiceV1(
             AccountingErrorCodes.InvalidReference or
             AccountingErrorCodes.ReversalOfReversal or
             AccountingErrorCodes.PeriodClosed or
-            AccountingErrorCodes.PeriodDoesNotCover)
+            AccountingErrorCodes.PeriodDoesNotCover or
+            AccountingErrorCodes.PeriodNotOpen)
         {
             result = new AccountingApiResult<T>(AccountingApiStatus.Unprocessable, null, false, exception.Code);
         }

@@ -85,6 +85,7 @@ public sealed class AccountingJournalReversalLifecycleV1Tests
     [InlineData(AccountingErrorCodes.ReversalOfReversal)]
     [InlineData(AccountingErrorCodes.PeriodClosed)]
     [InlineData(AccountingErrorCodes.PeriodDoesNotCover)]
+    [InlineData(AccountingErrorCodes.PeriodNotOpen)]
     public async Task Reversal_domain_refusals_are_stable_unprocessable_answers(string code)
     {
         var store = new MemoryStore(Pending()) { ApprovalDomainFailureCode = code };
@@ -148,6 +149,29 @@ public sealed class AccountingJournalReversalLifecycleV1Tests
     }
 
     [Fact]
+    public async Task Approval_against_a_period_that_is_not_open_is_422_and_leaves_the_proposal_pending()
+    {
+        // Sales review 5326851870 P2-1: the proposal names a period that is still proposed (not approved). The posting
+        // path refuses it with accounting_period_not_open; the route answers that 422, not an unmapped 500.
+        var store = new MemoryStore(Pending()) { ApprovalDomainFailureCode = AccountingErrorCodes.PeriodNotOpen };
+        var service = Service(store, Checker, new FixedAuthority(Granted()));
+
+        var result = await service.ApproveAsync(Proposal, 1, "approval-period-not-open");
+        var again = await service.ApproveAsync(Proposal, 1, "approval-period-not-open");
+
+        Assert.Equal((AccountingApiStatus.Unprocessable, AccountingErrorCodes.PeriodNotOpen), (result.Status, result.Code));
+        Assert.Null(result.Resource);
+        Assert.Equal(0, store.ReversalsWritten);
+        Assert.Equal(AccountingJournalReversalProposalStatusV1.Pending, store.Proposal!.Status);
+        Assert.Equal(1, store.Proposal.Version);
+        // A 422 is not a terminal command answer: nothing is recorded, and the same key is evaluated afresh.
+        Assert.Equal(0, store.CommandsRecorded);
+        Assert.Equal((AccountingApiStatus.Unprocessable, AccountingErrorCodes.PeriodNotOpen), (again.Status, again.Code));
+        Assert.Contains(AccountingErrorCodes.PeriodNotOpen, AccountingJournalReversalUnprocessableCodesV1.Approve);
+        Assert.DoesNotContain(AccountingErrorCodes.PeriodNotOpen, AccountingJournalReversalUnprocessableCodesV1.Propose);
+    }
+
+    [Fact]
     public void Each_route_advertises_exactly_its_reachable_unprocessable_codes()
     {
         Assert.Equal(
@@ -162,6 +186,7 @@ public sealed class AccountingJournalReversalLifecycleV1Tests
                 AccountingErrorCodes.ReversalOfReversal,
                 AccountingErrorCodes.PeriodClosed,
                 AccountingErrorCodes.PeriodDoesNotCover,
+                AccountingErrorCodes.PeriodNotOpen,
                 AccountingStoreCodes.PeriodNotFound,
             ],
             AccountingJournalReversalUnprocessableCodesV1.Approve);

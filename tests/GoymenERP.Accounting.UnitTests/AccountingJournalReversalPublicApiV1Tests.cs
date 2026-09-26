@@ -40,6 +40,51 @@ public sealed class AccountingJournalReversalPublicApiV1Tests
         Assert.Null(lifecycle.Proposal);
     }
 
+    [Theory]
+    [InlineData("0001-01-01", "2026-09-26", null, "transactionDate")]
+    [InlineData("2026-09-25", "0001-01-01", null, "accountingDate")]
+    [InlineData("2026-09-25", "2026-09-26", "0001-01-01", "valueDate")]
+    public async Task Minimum_date_is_the_routes_declared_400_before_the_lifecycle(
+        string transactionDate,
+        string accountingDate,
+        string? valueDate,
+        string field)
+    {
+        // The policy refuses DateOnly default/minimum with its internal code; the public adapter answers it with the
+        // route's declared accounting_request_invalid instead (Org review 5326853074 P2-2).
+        var lifecycle = new CapturingLifecycle();
+        var service = new AccountingJournalReversalPublicServiceV1(lifecycle);
+
+        var result = await service.ProposeAsync(
+            Request(transactionDate, valueDate) with { AccountingDate = accountingDate }, "proposal-key");
+
+        Assert.Equal(AccountingApiStatus.Invalid, result.Status);
+        Assert.Equal(AccountingApiCodes.RequestInvalid, result.Code);
+        Assert.Equal(field, result.Field);
+        Assert.Null(lifecycle.Proposal);
+    }
+
+    [Fact]
+    public async Task Over_long_reason_is_the_routes_declared_400_and_the_exact_bound_passes()
+    {
+        var lifecycle = new CapturingLifecycle();
+        var service = new AccountingJournalReversalPublicServiceV1(lifecycle);
+        var bound = AccountingJournalReversalPolicyV1.ReasonMaximumLength;
+
+        var tooLong = await service.ProposeAsync(
+            Request() with { Reason = new string('r', bound + 1) }, "proposal-key-long");
+        Assert.Equal(AccountingApiStatus.Invalid, tooLong.Status);
+        Assert.Equal(AccountingApiCodes.RequestInvalid, tooLong.Code);
+        Assert.Equal("reason", tooLong.Field);
+        Assert.Null(lifecycle.Proposal);
+
+        // Surrounding whitespace is not counted, exactly as the policy trims before measuring.
+        var exact = await service.ProposeAsync(
+            Request() with { Reason = "  " + new string('r', bound) + "  " }, "proposal-key-exact");
+        Assert.Equal(AccountingApiStatus.Created, exact.Status);
+        Assert.NotNull(lifecycle.Proposal);
+    }
+
     [Fact]
     public async Task Approval_dto_forwards_only_proposal_version_and_idempotency_key()
     {

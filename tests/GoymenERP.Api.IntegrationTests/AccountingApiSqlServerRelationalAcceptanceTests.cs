@@ -6,6 +6,7 @@ using GoymenERP.Api.Security;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Accounting.Application;
+using GoymenERP.Modules.Accounting.Domain;
 using GoymenERP.Modules.Accounting.Domain.Journals;
 using GoymenERP.Modules.Accounting.Domain.Posting;
 using GoymenERP.Modules.Accounting.Infrastructure.Persistence;
@@ -332,6 +333,56 @@ public sealed class AccountingApiSqlServerRelationalAcceptanceTests
         Assert.Equal(2, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM accounting.Commands WHERE CommandName = @n",
             ("@n", AccountingJournalReversalCommandNamesV1.Propose)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM accounting.Commands WHERE CommandName = @n",
+            ("@n", AccountingJournalReversalCommandNamesV1.Approve)));
+
+        // Sales review 5326851870 P2-1: a proposal may name a company period that is only proposed (admission checks
+        // identity, not status). Its approval is refused by the posting path with accounting_period_not_open: a stable
+        // 422, never an unmapped 500; the proposal stays Pending v1 and no reversal journal, delivery or command exists.
+        var octoberId = Guid.NewGuid();
+        Assert.Equal(HttpStatusCode.Created, (await maker.SendAsync(Post(
+            PeriodsPath, "SENTETIK-reversal-october-propose", Guid.NewGuid().ToString("N"),
+            new ProposePeriodRequestV1(octoberId, new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 31))))).StatusCode);
+
+        Journal secondSource;
+        await using (var store = run.Store(CompanyA))
+        {
+            secondSource = (await store.Postings.ReceiveAsync(
+                Request(Guid.NewGuid(), "SENTETIK-reversal-second-source",
+                    new AccountRef(CompanyA, Guid.NewGuid()), new AccountRef(CompanyA, Guid.NewGuid()), 50m),
+                periodId,
+                run.Metadata())).Journal!;
+        }
+
+        var notOpenProposalId = Guid.NewGuid();
+        using (var proposedIntoProposal = await maker.SendAsync(Post(
+                   ReversalProposalsPath, "SENTETIK-reversal-not-open-propose", Guid.NewGuid().ToString("N"),
+                   new ProposeAccountingJournalReversalRequestV1(
+                       notOpenProposalId, secondSource.Id, octoberId, "2026-10-05", "2026-10-05", null,
+                       "SENTETIK onaysız döneme ters kayıt"))))
+        {
+            Assert.Equal(HttpStatusCode.Created, proposedIntoProposal.StatusCode);
+        }
+
+        using (var notOpen = await checker.SendAsync(ReversalApproval(
+                   notOpenProposalId, "SENTETIK-reversal-not-open-approve", 1)))
+        {
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, notOpen.StatusCode);
+            Assert.Equal(AccountingErrorCodes.PeriodNotOpen, Code(await Json(notOpen)));
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM accounting.JournalReversalProposals "
+            + "WHERE Id = @p AND Status = 1 AND Version = 1 AND ReversalJournalId IS NULL AND DecidedByUserId IS NULL",
+            ("@p", notOpenProposalId)));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM accounting.Journals WHERE CompanyId = @c AND LinkedJournalId = @s",
+            ("@c", CompanyA), ("@s", secondSource.Id)));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM accounting.Deliveries WHERE Consumer = N'accounting.journal-reversal-approval.v1' "
+            + "AND MessageId = @m",
+            ("@m", notOpenProposalId.ToString("D"))));
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM accounting.Commands WHERE CommandName = @n",
             ("@n", AccountingJournalReversalCommandNamesV1.Approve)));
