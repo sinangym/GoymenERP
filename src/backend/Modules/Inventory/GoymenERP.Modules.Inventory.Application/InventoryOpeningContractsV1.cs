@@ -18,8 +18,9 @@ public static class InventoryPermissionManifestV1
 
     /// <summary>
     /// Record one same-company label split or merge (R19, DEC-LBL-002/003). Company-wide. A separate
-    /// Inventory-owned command name (Business #66 5806047097): no read, opening, allocation, Sales or
-    /// Logistics permission implies it, and registering it grants nothing.
+    /// Inventory-owned command name, by analogy with the STK/T11 allocation separation of Business
+    /// #66 5806047097 (which ruled only on the allocation command, not on split/merge authority). The literal
+    /// is the owner's technical mapping; registration, classification and grants stay central and human.
     /// </summary>
     public const string LabelTransformationRecord = "inventory.label-transformation.record";
 }

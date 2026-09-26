@@ -1,12 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { recordLabelTransformation } from './labelTransformationApi'
 import {
+  DEFINITE_UNAVAILABLE_CODES,
   decodeLabelTransformationView,
   describesTransformation,
   gramsToKilograms,
+  hasDuplicateLabelCodes,
   isKilogramText,
   isLabelTransformationRequest,
   kilogramsToGrams,
+  sameLabelId,
   sumKilograms,
   transformationRefusalText,
   type LabelTransformationRequest,
@@ -70,6 +73,7 @@ describe('label transformation request shape', () => {
     ['one output split', { ...split, outputs: [split.outputs[0]] }],
     ['one source merge', { ...split, kind: 'Merge', outputs: [split.outputs[0]] }],
     ['duplicate codes', { ...split, outputs: [split.outputs[0], { ...split.outputs[1], code: 'LBL-100-A' }] }],
+    ['codes equal ignoring case', { ...split, outputs: [split.outputs[0], { ...split.outputs[1], code: 'lbl-100-a' }] }],
     ['output reuses source id', { ...split, outputs: [split.outputs[0], { ...split.outputs[1], labelId: SOURCE }] }],
     ['numeric version', { ...split, sources: [{ labelId: SOURCE, expectedLabelVersion: 3 }] }],
     ['non-UTC time', { ...split, occurredAtUtc: '2026-09-26T11:00:00+03:00' }],
@@ -97,6 +101,8 @@ describe('label transformation response', () => {
   })
   it('explains the writer refusals in Turkish and keeps unknown codes visible', () => {
     expect(transformationRefusalText(409, 'inventory_label_active_allocation_conflict')).toMatch(/aktif tahsis/)
+    expect(transformationRefusalText(503, 'inventory_permission_unregistered')).toMatch(/hiçbir şey kaydedilmedi/)
+    expect(transformationRefusalText(503, 'settings_provider_unavailable')).toMatch(/settings_provider_unavailable.*hiçbir şey kaydedilmedi/)
     expect(transformationRefusalText(403, null)).toMatch(/yetkiniz yok/)
     expect(transformationRefusalText(422, 'new_code')).toContain('new_code')
   })
@@ -132,11 +138,33 @@ describe('recordLabelTransformation', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ code: 'inventory_label_code_taken' }), { status: 409 })))
     expect(await recordLabelTransformation(split, { companyId: COMPANY, idempotencyKey: KEY }))
       .toEqual({ type: 'failed', status: 409, code: 'inventory_label_code_taken' })
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ code: 'inventory_permission_unregistered' }), { status: 503 })))
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 503 })))
+    expect(await recordLabelTransformation(split, { companyId: COMPANY, idempotencyKey: KEY }))
+      .toEqual({ type: 'unknown', reason: 'service-unavailable' })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ code: 'something_else' }), { status: 503 })))
     expect(await recordLabelTransformation(split, { companyId: COMPANY, idempotencyKey: KEY }))
       .toEqual({ type: 'unknown', reason: 'service-unavailable' })
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('offline')))
     expect((await recordLabelTransformation(split, { companyId: COMPANY, idempotencyKey: KEY })).type).toBe('unknown')
+  })
+})
+
+describe('definite pre-write 503s and case rules', () => {
+  it.each([...DEFINITE_UNAVAILABLE_CODES])('reports a coded 503 %s as a definite failure, nothing recorded', async (code) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ code }), { status: 503 })))
+    expect(await recordLabelTransformation(split, { companyId: COMPANY, idempotencyKey: KEY }))
+      .toEqual({ type: 'failed', status: 503, code })
+  })
+  it('never treats a coded 500 or 502 as definite', async () => {
+    for (const status of [500, 502]) {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ code: 'inventory_permission_unregistered' }), { status })))
+      expect((await recordLabelTransformation(split, { companyId: COMPANY, idempotencyKey: KEY })).type).toBe('unknown')
+    }
+  })
+  it('compares label codes and ids the way the writer does', () => {
+    expect(hasDuplicateLabelCodes(['K-1', 'k-1'])).toBe(true)
+    expect(hasDuplicateLabelCodes(['K-1', 'K-2'])).toBe(false)
+    expect(sameLabelId(SOURCE.toUpperCase(), SOURCE)).toBe(true)
   })
 })
 

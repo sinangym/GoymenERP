@@ -4,11 +4,13 @@ import { fetchStockPositions } from './api'
 import type { InventoryStockPosition, InventoryStockPositions } from './contract'
 import { recordLabelTransformation, type RecordLabelTransformationOutcome } from './labelTransformationApi'
 import {
+  hasDuplicateLabelCodes,
   isKilogramText,
   isLabelCode,
   isReason,
   kilogramsToGrams,
   REASON_MAX_LENGTH,
+  sameLabelId,
   sumKilograms,
   transformationRefusalText,
   type LabelTransformationKind,
@@ -63,6 +65,15 @@ type Candidates =
   | { readonly type: 'failed'; readonly message: string }
 
 const UNKNOWN_TEXT = 'Etiket dönüşümünün sonucu bilinmiyor. Aynı anahtar ve içerikle yeniden gönderin; yeni bir işlem başlatmayın.'
+const ABANDON_NOTE = 'Bırakırsanız etiket yeniden okunur. Önceki gönderim kaydedildiyse kaynak etiket artık tüketilmiş görünür; kaydedilmediyse yeni bir işlem başlatabilirsiniz (eski sürüm tekrar kullanılamaz).'
+
+function quantityError(index: number, raw: string): string {
+  const parsed = parseQuantityInput(raw)
+  if (!parsed.ok && parsed.error === 'ambiguous-separator') {
+    return `Çıktı ${index + 1}: "${raw.trim()}" belirsiz. Ondalık için virgül kullanın (örn. 1,250) veya binlik ayırıcı yazmayın (örn. 1250).`
+  }
+  return `Çıktı ${index + 1}: etiket kodu ve en fazla 3 ondalıklı, sıfırdan büyük kg zorunludur.`
+}
 
 function newId(): string { return globalThis.crypto.randomUUID() }
 function newOutput(): OutputDraft { return { id: newId(), code: '', quantityKg: '' } }
@@ -84,9 +95,11 @@ function candidateBlock(item: InventoryStockPosition): string | null {
  * Why a stock row cannot be merged into this label, judged only from facts both reads show. The server
  * still decides (document requirements, versions, allocations at the moment of the save).
  */
-function mergeRefusal(label: TransformableLabel, item: InventoryStockPosition): string | null {
+function mergeRefusal(label: TransformableLabel, item: InventoryStockPosition,
+  rows: readonly InventoryStockPosition[]): string | null {
   const position = label.positions[0]
-  if (item.labelId.toLowerCase() === label.labelId.toLowerCase()) return 'Bu etiketin kendisi'
+  if (sameLabelId(item.labelId, label.labelId)) return 'Bu etiketin kendisi'
+  if (rows.filter((row) => sameLabelId(row.labelId, item.labelId)).length > 1) return 'Birden fazla fiziksel pozisyonu var'
   if (item.productId !== label.productId || item.lot.id !== label.lotId ||
     item.heatNumber !== label.heatNumber || item.coilNumber !== label.coilNumber) return 'Farklı ürün, lot veya iz bilgisi'
   if (item.ownerKind !== position.ownerKind || item.ownerId !== position.ownerId ||
@@ -153,13 +166,15 @@ export function LabelTransformationPanel({ label, companyId, actorId, sessionEpo
     setAttempt({ phase: 'submitting', snapshot })
     const security = boundary.capture()
     const outcome = await recordLabelTransformation(snapshot.payload, { companyId, idempotencyKey: snapshot.idempotencyKey })
+    // A definite answer (applied or refused) settles the remembered attempt even when this view is gone, so a
+    // reopen does not ask for a same-key resend of a write that already committed or was refused.
+    if (outcome.type !== 'unknown') releasePendingTransformation(pendingKey, snapshot.idempotencyKey)
     if (generation !== commandGeneration.current) return
     inFlight.current = false
     if (outcome.type === 'unknown') {
       setAttempt({ phase: 'unknown', snapshot, reason: UNKNOWN_TEXT })
       return
     }
-    releasePendingTransformation(pendingKey, snapshot.idempotencyKey)
     if (outcome.type === 'failed') {
       if (outcome.status === 401 || outcome.status === 403) boundary.report(outcome.status, security)
       setAttempt({ phase: 'failed', message: transformationRefusalText(outcome.status, outcome.code) })
@@ -172,6 +187,16 @@ export function LabelTransformationPanel({ label, companyId, actorId, sessionEpo
     })
     onRecorded()
   }, [actorId, boundary, companyId, onRecorded, pendingKey])
+
+  // Safe for split/merge: the attempt carried the source label version, so a later attempt can never repeat a
+  // committed one (the writer refuses the stale version). The fresh reread shows which of the two happened.
+  function abandon(snapshot: PendingLabelTransformation) {
+    commandGeneration.current += 1
+    inFlight.current = false
+    releasePendingTransformation(pendingKey, snapshot.idempotencyKey)
+    setAttempt({ phase: 'idle' })
+    onRecorded()
+  }
 
   if (attempt.phase === 'completed') {
     const view = attempt.result.response
@@ -196,7 +221,11 @@ export function LabelTransformationPanel({ label, companyId, actorId, sessionEpo
       {attempt.phase === 'submitting'
         ? <p role="status">Kaydediliyor…</p>
         : <><p role="alert">{attempt.reason}</p>
-          <button type="button" onClick={() => void send(attempt.snapshot)}>Aynı anahtarla yeniden gönder</button></>}
+          <p>{ABANDON_NOTE}</p>
+          <div className={styles.actions}>
+            <button type="button" onClick={() => void send(attempt.snapshot)}>Aynı anahtarla yeniden gönder</button>
+            <button type="button" onClick={() => abandon(attempt.snapshot)}>Denemeyi bırak</button>
+          </div></>}
     </section>
   }
 
@@ -227,13 +256,13 @@ export function LabelTransformationPanel({ label, companyId, actorId, sessionEpo
         const quantityKg = parsedKilograms(output.quantityKg)
         const code = output.code.trim()
         if (!isLabelCode(code) || quantityKg === null) {
-          setFormError(`Çıktı ${index + 1}: etiket kodu ve en fazla 3 ondalıklı, sıfırdan büyük kg zorunludur.`)
+          setFormError(quantityError(index, output.quantityKg))
           return
         }
         built.push({ labelId: newId(), code, quantityKg })
       }
-      if (new Set(built.map((output) => output.code)).size !== built.length) {
-        setFormError('Çıktı etiket kodları birbirinden farklı olmalıdır.')
+      if (hasDuplicateLabelCodes(built.map((output) => output.code))) {
+        setFormError('Çıktı etiket kodları birbirinden farklı olmalıdır (büyük/küçük harf farkı ayrı kod sayılmaz).')
         return
       }
       const total = sumKilograms(built.map((output) => output.quantityKg))
@@ -306,19 +335,20 @@ export function LabelTransformationPanel({ label, companyId, actorId, sessionEpo
         </div>
         {candidates.type === 'loading' ? <p role="status">Etiketler yükleniyor…</p> : candidates.type === 'failed' ? <p role="alert">{candidates.message}</p> : null}
         {candidates.type === 'ready' && candidateItems.length === 0 ? <p>Aramaya uyan stok yok.</p> : null}
-        {candidateItems.length > 0 ? <ul aria-label="Aday etiketler">{candidateItems.map((item) => {
-          const refusal = mergeRefusal(label, item)
-          const chosen = selected.some((entry) => entry.labelId === item.labelId)
-          return <li key={`${item.labelId}:${item.locationId}`}>
+        {candidateItems.length > 0 ? <ul aria-label="Aday etiketler">{candidateItems.map((item, index) => {
+          const refusal = mergeRefusal(label, item, candidateItems)
+          const chosen = selected.some((entry) => sameLabelId(entry.labelId, item.labelId))
+          return <li key={`${item.labelId}:${item.locationId}:${index}`}>
             <span className={styles.mono}>{item.labelCode}</span> · {item.physicalKg} kg{' '}
             {refusal !== null ? <span>({refusal})</span> : chosen
               ? <span>(seçildi)</span>
-              : <button type="button" onClick={() => setSelected((current) => [...current, item])}>Ekle: {item.labelCode}</button>}
+              : <button type="button" onClick={() => setSelected((current) =>
+                current.some((entry) => sameLabelId(entry.labelId, item.labelId)) ? current : [...current, item])}>Ekle: {item.labelCode}</button>}
           </li>
         })}</ul> : null}
         {selected.length > 0 ? <ul aria-label="Seçilen etiketler">{selected.map((item) => <li key={item.labelId}>
           {item.labelCode} · {item.physicalKg} kg{' '}
-          <button type="button" onClick={() => setSelected((current) => current.filter((entry) => entry.labelId !== item.labelId))}>Çıkar: {item.labelCode}</button>
+          <button type="button" onClick={() => setSelected((current) => current.filter((entry) => !sameLabelId(entry.labelId, item.labelId)))}>Çıkar: {item.labelCode}</button>
         </li>)}</ul> : null}
         <div className={styles.grid}>
           <label htmlFor="merge-code">Birleşik paket etiket kodu</label>

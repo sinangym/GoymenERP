@@ -1,5 +1,6 @@
 import { API_BASE, inventoryHeaders } from './api'
 import {
+  DEFINITE_UNAVAILABLE_CODES,
   decodeLabelTransformationView,
   describesTransformation,
   type LabelTransformationRequest,
@@ -26,8 +27,9 @@ function problemCode(body: unknown): string | null {
 /**
  * Sends one split/merge attempt. 201 is a new record; 200 is the stored answer to the same key and content
  * (`Idempotency-Replayed: true` + the original correlation). Any answer that does not describe exactly this
- * request, and any 5xx or transport failure, is UNKNOWN: the caller keeps the attempt and resends it with the
- * same key and payload — never with a new key.
+ * request, any code-less or other 5xx, and any transport failure, is UNKNOWN: the caller keeps the attempt and
+ * resends it with the same key and payload — never with a new key. A 503 carrying one of
+ * DEFINITE_UNAVAILABLE_CODES is raised before any write, so it is a DEFINITE failure: nothing was recorded.
  */
 export async function recordLabelTransformation(
   request: LabelTransformationRequest,
@@ -62,6 +64,10 @@ export async function recordLabelTransformation(
   }
   if ([400, 401, 403, 404, 409, 415, 422].includes(response.status)) {
     return { type: 'failed', status: response.status, code: problemCode(body) }
+  }
+  const unavailableCode = problemCode(body)
+  if (response.status === 503 && unavailableCode !== null && DEFINITE_UNAVAILABLE_CODES.has(unavailableCode)) {
+    return { type: 'failed', status: 503, code: unavailableCode }
   }
   return response.status >= 500
     ? { type: 'unknown', reason: 'service-unavailable' }

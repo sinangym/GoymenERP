@@ -114,6 +114,23 @@ export function sumKilograms(values: readonly string[]): string {
   return gramsToKilograms(values.reduce((total, value) => total + kilogramsToGrams(value), 0n))
 }
 
+/**
+ * The writer compares label codes case-insensitively (`StringComparer.OrdinalIgnoreCase`), so "K-1" and "k-1"
+ * are the same code there; the client uses the same rule so a duplicate is caught before sending.
+ */
+export function labelCodeKey(code: string): string {
+  return code.toUpperCase()
+}
+
+export function hasDuplicateLabelCodes(codes: readonly string[]): boolean {
+  return new Set(codes.map(labelCodeKey)).size !== codes.length
+}
+
+/** Label ids are GUIDs; the server may answer them in either case. */
+export function sameLabelId(left: string, right: string): boolean {
+  return left.toLowerCase() === right.toLowerCase()
+}
+
 export function isLabelCode(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0 && value === value.trim() &&
     value.length <= LABEL_CODE_MAX_LENGTH && !hasControl(value)
@@ -156,7 +173,7 @@ export function isLabelTransformationRequest(value: unknown): value is LabelTran
   const ids = [request.transformationId, ...typedSources.map((item) => item.labelId), ...typedOutputs.map((item) => item.labelId)]
     .map((id) => (id as string).toLowerCase())
   const codes = typedOutputs.map((item) => item.code)
-  return new Set(ids).size === ids.length && new Set(codes).size === codes.length
+  return new Set(ids).size === ids.length && !hasDuplicateLabelCodes(codes)
 }
 
 function guidList(value: unknown): value is string[] {
@@ -201,6 +218,24 @@ export function describesTransformation(
     sameIds(view.outputLabelIds, request.outputs.map((item) => item.labelId))
 }
 
+/**
+ * The coded 503s the command raises BEFORE any write (`InventoryLabelTransformationHttpCodesV1.Status503Codes`):
+ * the permission name is not registered, the stored label state cannot be read, or the company's Settings
+ * kilogram profile cannot be used. Nothing was recorded, so such an answer is a definite failure, not unknown.
+ * A code-less 503, or any other 5xx, stays unknown: it may have happened after the save.
+ */
+export const DEFINITE_UNAVAILABLE_CODES: ReadonlySet<string> = new Set([
+  'inventory_permission_unregistered',
+  'inventory_label_genealogy_unavailable',
+  'inventory_kg_profile_unusable',
+  'settings_provider_unavailable',
+  'settings_unit_profile_not_found',
+  'settings_profile_invalid',
+  'settings_access_denied',
+  'settings_decimal_invalid',
+  'settings_decimal_scale_exceeded',
+])
+
 const REFUSAL_TEXT: Readonly<Record<string, string>> = {
   validation_failed: 'İstek geçersiz: kaynak, çıktı kodu, kg veya gerekçe kurallara uymuyor.',
   idempotency_conflict: 'Bu gönderim anahtarı başka bir içerikle kullanılmış. Formu yeniden açıp tekrar deneyin.',
@@ -213,6 +248,9 @@ const REFUSAL_TEXT: Readonly<Record<string, string>> = {
   inventory_concurrent_change: 'Aynı etiket eşzamanlı değişti. Etiketi yeniden açıp tekrar deneyin.',
   inventory_kg_scale_exceeded: 'Bir kg değeri şirketin onaylı kg ondalık hassasiyetini aşıyor.',
   forbidden: 'Bu şirkette etiket bölme/birleştirme yetkiniz yok.',
+  inventory_permission_unregistered: 'Etiket bölme/birleştirme bu sunucuda henüz yayımlanmadı; hiçbir şey kaydedilmedi.',
+  inventory_label_genealogy_unavailable: 'Etiketin kayıtlı durumu okunamadı; hiçbir şey kaydedilmedi. Etiketi yeniden açın.',
+  inventory_kg_profile_unusable: 'Şirketin onaylı kg profili bu tarih için kullanılamıyor; hiçbir şey kaydedilmedi.',
   unauthenticated: 'Oturum doğrulanamadı.',
 }
 
@@ -220,5 +258,6 @@ export function transformationRefusalText(status: number, code: string | null): 
   if (code !== null && REFUSAL_TEXT[code] !== undefined) return REFUSAL_TEXT[code]
   if (status === 403) return REFUSAL_TEXT.forbidden
   if (status === 401) return REFUSAL_TEXT.unauthenticated
+  if (status === 503) return `Etiket dönüşümü şu an kullanılamıyor (${code ?? status}); hiçbir şey kaydedilmedi.`
   return `Etiket dönüşümü kaydedilmedi (${code ?? status}).`
 }

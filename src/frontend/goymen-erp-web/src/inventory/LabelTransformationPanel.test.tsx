@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -145,7 +145,7 @@ describe('LabelTransformationPanel on the label detail', () => {
     const user = userEvent.setup(); mount(); await panel()
     await fillSplit(user, [['LBL-X', '600.5'], ['LBL-X', '650']])
     await user.click(screen.getByRole('button', { name: 'Bölmeyi kaydet' }))
-    expect(await screen.findByText('Çıktı etiket kodları birbirinden farklı olmalıdır.')).toBeTruthy()
+    expect(await screen.findByText(/Çıktı etiket kodları birbirinden farklı olmalıdır/)).toBeTruthy()
     await user.clear(screen.getByLabelText('Çıktı 2 etiket kodu')); await user.type(screen.getByLabelText('Çıktı 2 etiket kodu'), 'LBL-Y')
     await user.clear(screen.getByLabelText('Çıktı 2 kg')); await user.type(screen.getByLabelText('Çıktı 2 kg'), '649,9999')
     await user.click(screen.getByRole('button', { name: 'Bölmeyi kaydet' }))
@@ -234,5 +234,96 @@ describe('LabelTransformationPanel on the label detail', () => {
     mount(); await panel()
     expect(screen.getByText(/tek bir fiziksel pozisyonda stoğu olmalı/)).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Bölmeyi kaydet' })).toBeNull()
+  })
+
+  it('settles the remembered attempt when a success lands after the panel is gone', async () => {
+    let resolve!: (value: unknown) => void
+    api.record.mockImplementationOnce(() => new Promise((done) => { resolve = done }))
+    const user = userEvent.setup(); const view = mount(); await panel()
+    await fillSplit(user, [['LBL-100-A', '600.5'], ['LBL-100-B', '650']])
+    await user.click(screen.getByRole('button', { name: 'Bölmeyi kaydet' }))
+    await screen.findByText('Kaydediliyor…')
+    expect(sessionStorage.length).toBe(1)
+    view.unmount()
+    await act(async () => resolve(applied(sentRequest())))
+    expect(sessionStorage.length).toBe(0)
+    mount(); await panel()
+    expect(screen.queryByText(/sonucu bilinmiyor/)).toBeNull()
+    expect(screen.getByRole('button', { name: 'Bölmeyi kaydet' })).toBeTruthy()
+  })
+
+  it('keeps an unknown attempt after unmount so the reopen still offers the same-key resend', async () => {
+    let resolve!: (value: unknown) => void
+    api.record.mockImplementationOnce(() => new Promise((done) => { resolve = done }))
+    const user = userEvent.setup(); const view = mount(); await panel()
+    await fillSplit(user, [['LBL-100-A', '600.5'], ['LBL-100-B', '650']])
+    await user.click(screen.getByRole('button', { name: 'Bölmeyi kaydet' }))
+    await screen.findByText('Kaydediliyor…')
+    view.unmount()
+    await act(async () => resolve({ type: 'unknown', reason: 'network-error' }))
+    expect(sessionStorage.length).toBe(1)
+  })
+
+  it('lets the person abandon an unknown attempt, rereads the label and reopens the form', async () => {
+    api.record.mockResolvedValueOnce({ type: 'unknown', reason: 'service-unavailable' })
+    const user = userEvent.setup(); mount(); await panel()
+    await fillSplit(user, [['LBL-100-A', '600.5'], ['LBL-100-B', '650']])
+    await user.click(screen.getByRole('button', { name: 'Bölmeyi kaydet' }))
+    await screen.findByText(/sonucu bilinmiyor/)
+    await user.click(screen.getByRole('button', { name: 'Denemeyi bırak' }))
+    expect(sessionStorage.length).toBe(0)
+    expect(screen.getByRole('button', { name: 'Bölmeyi kaydet' })).toBeTruthy()
+    await waitFor(() => expect(api.detail).toHaveBeenCalledTimes(2))
+    expect(api.record).toHaveBeenCalledTimes(1)
+  })
+
+  it('treats a coded pre-write 503 as definite: nothing recorded, form editable, no resend offered', async () => {
+    api.record.mockResolvedValueOnce({ type: 'failed', status: 503, code: 'inventory_permission_unregistered' })
+    const user = userEvent.setup(); mount(); await panel()
+    await fillSplit(user, [['LBL-100-A', '600.5'], ['LBL-100-B', '650']])
+    await user.click(screen.getByRole('button', { name: 'Bölmeyi kaydet' }))
+    expect(await screen.findByText(/henüz yayımlanmadı; hiçbir şey kaydedilmedi/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Aynı anahtarla yeniden gönder' })).toBeNull()
+    expect((screen.getByRole('button', { name: 'Bölmeyi kaydet' }) as HTMLButtonElement).disabled).toBe(false)
+    expect(sessionStorage.length).toBe(0)
+  })
+
+  it('refuses output codes that differ only by case, as the writer does', async () => {
+    const user = userEvent.setup(); mount(); await panel()
+    await fillSplit(user, [['K-1', '600.5'], ['k-1', '650']])
+    await user.click(screen.getByRole('button', { name: 'Bölmeyi kaydet' }))
+    expect(await screen.findByText(/birbirinden farklı olmalıdır/)).toBeTruthy()
+    expect(api.record).not.toHaveBeenCalled()
+  })
+
+  it('asks for a comma when a kg value is ambiguous', async () => {
+    const user = userEvent.setup(); mount(); await panel()
+    await fillSplit(user, [['LBL-100-A', '600.500'], ['LBL-100-B', '650']])
+    await user.click(screen.getByRole('button', { name: 'Bölmeyi kaydet' }))
+    expect(await screen.findByText(/"600.500" belirsiz. Ondalık için virgül kullanın/)).toBeTruthy()
+    expect(api.record).not.toHaveBeenCalled()
+  })
+
+  it('compares merge candidates by label id regardless of case and refuses multi-position labels', async () => {
+    const twice = '88888888-8888-8888-8888-888888888888'
+    api.positions.mockResolvedValue({ type: 'ok-single', data: { searchWindowFull: false, items: [
+      candidate({ labelId: LABEL.toUpperCase(), labelCode: 'LBL-100' }),
+      candidate({ labelId: twice, labelCode: 'LBL-TWO' }),
+      candidate({ labelId: twice.toUpperCase(), labelCode: 'LBL-TWO', locationId: PARTY }),
+      candidate(),
+    ] } })
+    const user = userEvent.setup(); mount(); await panel()
+    await user.click(screen.getByLabelText('Birleştir'))
+    await user.click(screen.getByRole('button', { name: 'Etiketleri getir' }))
+    const list = await screen.findByRole('list', { name: 'Aday etiketler' })
+    expect(within(list).getByText('(Bu etiketin kendisi)')).toBeTruthy()
+    expect(within(list).getAllByText('(Birden fazla fiziksel pozisyonu var)')).toHaveLength(2)
+    await user.click(within(list).getByRole('button', { name: 'Ekle: LBL-200' }))
+    api.positions.mockResolvedValue({ type: 'ok-single', data: { searchWindowFull: false, items: [
+      candidate({ labelId: OTHER.toUpperCase() }),
+    ] } })
+    await user.click(screen.getByRole('button', { name: 'Etiketleri getir' }))
+    await waitFor(() => expect(within(screen.getByRole('list', { name: 'Aday etiketler' })).getByText('(seçildi)')).toBeTruthy())
+    expect(within(screen.getByRole('list', { name: 'Seçilen etiketler' })).getAllByRole('listitem')).toHaveLength(1)
   })
 })
