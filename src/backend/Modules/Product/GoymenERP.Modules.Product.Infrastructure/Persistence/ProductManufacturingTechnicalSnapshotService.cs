@@ -10,6 +10,9 @@ namespace GoymenERP.Modules.Product.Infrastructure.Persistence;
 
 public sealed record ProductManufacturingTechnicalReadScope(Guid CompanyId, string ActorId);
 
+/// <summary>One measure as the snapshot reads it: exactly one of the value or a card-value field error.</summary>
+public sealed record ProductManufacturingMeasureReadV1(decimal? Millimetres, ProductFieldError? Error);
+
 public interface IProductManufacturingTechnicalRecordReader
 {
     Task<ProductStoredRecord?> ReadForManufacturingTechnicalSnapshotAsync(
@@ -33,6 +36,12 @@ public sealed class ProductManufacturingTechnicalSnapshotService(
     : IProductManufacturingTechnicalSnapshotV1
 {
     public const string UnavailableCode = "product_manufacturing_technical_snapshot_unavailable";
+
+    /// <summary>
+    /// 503: the released template does not name exactly one measure field for a role the snapshot publishes
+    /// (e.g. a later family without a thickness/width, or a duplicated role). A definition gap, never a card error.
+    /// </summary>
+    public const string MeasureUndefinedCode = "product_manufacturing_measure_undefined";
 
     public async Task<ProductManufacturingTechnicalSnapshotResultV1> ReadAsync(
         ProductManufacturingTechnicalSnapshotSelectionV1 selection,
@@ -78,16 +87,18 @@ public sealed class ProductManufacturingTechnicalSnapshotService(
             cancellationToken);
         if (!unit.IsUsable) return Rejected("references.units.stock", "invalid_reference");
 
-        var thickness = Measure(card.References, template, ProductTemplateFieldRolesV2.Thickness);
-        var width = Measure(card.References, template, ProductTemplateFieldRolesV2.Width);
+        var thickness = ReadMeasure(card.References, template, ProductTemplateFieldRolesV2.Thickness);
+        var width = ReadMeasure(card.References, template, ProductTemplateFieldRolesV2.Width);
+        ProductFieldError[] measureErrors = [.. new[] { thickness.Error, width.Error }.OfType<ProductFieldError>()];
+        if (measureErrors.Length > 0) return new(null, measureErrors);
         var profile = unit.Profile;
         var snapshot = new ProductManufacturingTechnicalSnapshotV1(
             card.Product.Id,
             card.Product.Version,
             new(family.Id, family.Code, family.SourceRef),
             new(template.Id, template.Version, template.Code, template.SourceRef),
-            thickness,
-            width,
+            thickness.Millimetres!.Value,
+            width.Millimetres!.Value,
             new(profile.CompanyId, profile.UnitId, profile.UnitCode, profile.Profile.ProfileId,
                 profile.Profile.Version.ToString(CultureInfo.InvariantCulture)),
             selection.EffectiveOn);
@@ -106,13 +117,40 @@ public sealed class ProductManufacturingTechnicalSnapshotService(
             references.Attributes, requireComplete: true)];
     }
 
-    private static decimal Measure(ProductReferences references, ProductTemplateV2 template, string role)
+    /// <summary>
+    /// The card's value for the one template field carrying <paramref name="role"/>, as the snapshot publishes it:
+    /// a positive JSON number of millimetres with at most
+    /// <see cref="ProductFamilyDefinitionRulesV2.MaximumMillimetreDecimals"/> decimals (Ö2), never rounded.
+    /// <list type="bullet">
+    /// <item>No field, or more than one field, with the role: 503 <see cref="MeasureUndefinedCode"/> (definition).</item>
+    /// <item>Missing or null card value: field error <see cref="ProductFamilyPolicyCodesV1.Required"/>.</item>
+    /// <item>Not a number, or not positive: field error <see cref="ProductFamilyPolicyCodesV1.InvalidValue"/>.</item>
+    /// <item>More than three decimals: field error <see cref="ProductFamilyPolicyCodesV1.PrecisionExceeded"/>.</item>
+    /// </list>
+    /// Card-value errors name <c>references.attributes.&lt;key&gt;</c>, the path the family validation already uses.
+    /// </summary>
+    public static ProductManufacturingMeasureReadV1 ReadMeasure(ProductReferences references, ProductTemplateV2 template,
+        string role)
     {
-        var field = template.Fields.Single(candidate => string.Equals(candidate.Role, role, StringComparison.Ordinal));
-        JsonElement value = references.Attributes![field.Key];
-        if (!value.TryGetDecimal(out var millimetres))
-            throw new ProductOperationException(ProductFamilyDefinitionRulesV2.InvalidDefinitionCode, 503);
-        return millimetres;
+        ArgumentNullException.ThrowIfNull(references);
+        ArgumentNullException.ThrowIfNull(template);
+        var fields = template.Fields
+            .Where(candidate => string.Equals(candidate.Role, role, StringComparison.Ordinal))
+            .Take(2)
+            .ToArray();
+        if (fields.Length != 1 || fields[0].Kind != ProductTemplateFieldKindV2.MeasureMillimetre)
+            throw new ProductOperationException(MeasureUndefinedCode, 503);
+
+        var path = ProductFamilyDefinitionRulesV2.Field(fields[0].Key);
+        if (references.Attributes is null || !references.Attributes.TryGetValue(fields[0].Key, out var value)
+            || value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+            return new(null, new(path, ProductFamilyPolicyCodesV1.Required));
+        if (value.ValueKind != JsonValueKind.Number || !value.TryGetDecimal(out var millimetres) || millimetres <= 0m)
+            return new(null, new(path, ProductFamilyPolicyCodesV1.InvalidValue));
+        if (decimal.Round(millimetres, ProductFamilyDefinitionRulesV2.MaximumMillimetreDecimals, MidpointRounding.ToZero)
+            != millimetres)
+            return new(null, new(path, ProductFamilyPolicyCodesV1.PrecisionExceeded));
+        return new(millimetres, null);
     }
 
     private static bool IsSynthetic(string sourceRevision) =>
