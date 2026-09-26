@@ -229,8 +229,8 @@ public static class LogisticsEndpoints
                 InventoryDefiniteShipmentCodesV1.AllocationVersionConflict, InventoryDefiniteShipmentCodesV1.LabelVersionConflict,
                 InventoryDefiniteShipmentCodesV1.AllocationState, InventoryDefiniteShipmentCodesV1.AllocationLabelMismatch,
                 InventoryDefiniteShipmentCodesV1.AllocationInsufficient, InventoryDefiniteShipmentCodesV1.LabelNotReleasable,
-                InventoryDefiniteShipmentCodesV1.PhysicalStockInsufficient, InventoryDefiniteShipmentCodesV1.IdempotencyConflict,
-                InventoryDefiniteShipmentCodesV1.ConcurrentChange)
+                InventoryDefiniteShipmentCodesV1.PhysicalStockInsufficient, InventoryDefiniteShipmentCodesV1.OwnerNotCompany,
+                InventoryDefiniteShipmentCodesV1.IdempotencyConflict, InventoryDefiniteShipmentCodesV1.ConcurrentChange)
             .ProducesErpUnprocessableEntity("validation_failed", LogisticsProblemCodesV1.UnsupportedUnit)
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();

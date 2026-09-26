@@ -444,7 +444,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // context-construction or direct-database exemption.
                 [ReviewedInventoryDefiniteShipmentParticipantPath] =
                     new(
-                        "fff2ff64a35fe04824e76aaa89d0c05afe3850cfce8cd4461fb7bfa1afe0e3b9",
+                        "f5869bb2657be3f7e33750d8154695a9ac5ec81fcae1b5f0fef7757d97b48e7e",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,
@@ -504,7 +504,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Inventory/"
                  + "GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryStore.Allocations.cs"] =
                     new(
-                        "dbf561ee8660c90cd6374799598eb159338884032871cb8f496360745111589a",
+                        "4eb75d0a7ba908d92a4582bc1676b7c0236bf14735a934aa733bfe519bdcd34a",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
