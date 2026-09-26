@@ -101,49 +101,70 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
             "SELECT COUNT(*) FROM inventory.Commands WHERE TargetId = @id", ("@id", legacy.IssueId)));
     }
 
+    /// <summary>
+    /// Fail-closed until NEEDS-SINAN #66/5830378162 decides the customer-owned / fason commercial-link grain
+    /// (<see cref="ManufacturingCustomerOwnedInputGuardV1"/>): a customer-owned parent and a company-owned parent in
+    /// third-party custody are both refused at the public issue port with the route's existing 409, inside the
+    /// owner transaction. Nothing is written by either module, a retry is refused again (no replay record exists),
+    /// and the parent label, its balance and the order stay exactly as they were.
+    /// </summary>
     [SqlServerFact]
-    public async Task Manufacturing_input_issue_carries_customer_owned_position_and_replays_the_same_snapshot()
+    public async Task Manufacturing_input_issue_refuses_a_customer_owned_or_third_party_custodied_parent_without_any_effect()
     {
         await using var run = await StartManufacturingInventoryRunAsync();
         var customer = Guid.NewGuid();
-        var parent = await SeedManufacturingParentAsync(
-            run,
-            "SYN-MFG-HOST-CUSTOMER",
-            100m,
-            StockPartyKind.Counterparty,
-            customer,
-            StockPartyKind.Company,
-            CompanyA);
         var authority = new ManufacturingHostAuthority(GrantedManufacturingScope());
         await using var scope = ManufacturingHostScope.Create(run, CompanyA, authority);
-        var command = await SeedManufacturingOrderAsync(run, scope.Store, parent.Label.Id,
-            expectedLabelVersion: 2, quantity: 25m);
-        var portCommand = new ManufacturingInventoryInputIssuePortCommandV1(
-            command.OrderId,
-            command.ExpectedOrderVersion,
-            command.IssueId,
-            command.ParentLabelId,
-            command.MovementId,
-            command.Quantity,
-            command.OccurredAtUtc);
         var port = (IManufacturingInventoryInputIssuePortV1)scope.Host;
-        var firstMetadata = ManufacturingHostMetadata(run, "customer-first");
 
-        var recorded = await port.IssueAsync(portCommand, firstMetadata, CancellationToken.None);
-        var replay = await port.IssueAsync(portCommand,
-            firstMetadata with { CorrelationId = $"mfg-host-customer-replay-{Guid.NewGuid():N}" },
-            CancellationToken.None);
+        foreach (var (code, ownerKind, ownerId, custodianKind, custodianId) in new[]
+        {
+            ("SYN-MFG-HOST-CUSTOMER", StockPartyKind.Counterparty, customer, StockPartyKind.Company, CompanyA),
+            ("SYN-MFG-HOST-THIRD-PARTY-CUSTODY", StockPartyKind.Company, CompanyA, StockPartyKind.Counterparty, customer),
+        })
+        {
+            var parent = await SeedManufacturingParentAsync(run, code, 100m,
+                ownerKind, ownerId, custodianKind, custodianId);
+            var command = await SeedManufacturingOrderAsync(run, scope.Store, parent.Label.Id,
+                expectedLabelVersion: 2, quantity: 25m);
+            var portCommand = new ManufacturingInventoryInputIssuePortCommandV1(
+                command.OrderId,
+                command.ExpectedOrderVersion,
+                command.IssueId,
+                command.ParentLabelId,
+                command.MovementId,
+                command.Quantity,
+                command.OccurredAtUtc);
+            var metadata = ManufacturingHostMetadata(run, $"refused-{code}");
 
-        var expected = new ManufacturingInventoryPositionSnapshotV1(
-            "Counterparty", customer, "Company", CompanyA, parent.LocationId);
-        Assert.False(recorded.IsReplay);
-        Assert.True(replay.IsReplay);
-        Assert.Equal(expected, recorded.ParentPosition);
-        Assert.Equal(recorded.ParentPosition, replay.ParentPosition);
-        Assert.Equal(1, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM inventory.Movements WHERE Id = @id", ("@id", command.MovementId)));
-        Assert.Equal(1, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM inventory.Commands WHERE TargetId = @id", ("@id", command.IssueId)));
+            var refused = await Assert.ThrowsAsync<ManufacturingInventoryRealizationPortException>(() =>
+                port.IssueAsync(portCommand, metadata, CancellationToken.None));
+            Assert.Equal(
+                (ManufacturingApiStatus.Conflict, InventoryManufacturingRealizationCodesV1.ParentLabelContextConflict),
+                (refused.Status, refused.Code));
+
+            // The same attempt again is refused again: the rollback left no command record to replay.
+            var retried = await Assert.ThrowsAsync<ManufacturingInventoryInputIssueHostException>(() =>
+                scope.Host.IssueAsync(command, metadata));
+            Assert.Equal(ManufacturingCustomerOwnedInputGuardV1.RefusalCode, retried.Code);
+
+            Assert.Equal(0, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM manufacturing.Facts WHERE Id = @id", ("@id", command.IssueId)));
+            Assert.Equal(1L, await run.ScalarAsync<long>(
+                "SELECT Version FROM manufacturing.Orders WHERE Id = @id", ("@id", command.OrderId)));
+            Assert.Equal(0, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM inventory.Movements WHERE Id = @id", ("@id", command.MovementId)));
+            Assert.Equal(0, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM inventory.Commands WHERE TargetId = @id", ("@id", command.IssueId)));
+            Assert.Equal(2L, await run.ScalarAsync<long>(
+                "SELECT Version FROM inventory.Labels WHERE Id = @label", ("@label", command.ParentLabelId)));
+            Assert.Equal(100m, await run.ScalarAsync<decimal>(
+                "SELECT SUM(QuantityKg) FROM inventory.Balances WHERE LabelId = @label",
+                ("@label", command.ParentLabelId)));
+            Assert.Equal(0, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @correlation",
+                ("@correlation", metadata.CorrelationId)));
+        }
     }
 
     [SqlServerFact]

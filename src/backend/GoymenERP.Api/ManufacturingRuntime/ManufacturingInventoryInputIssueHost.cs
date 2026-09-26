@@ -168,6 +168,15 @@ internal sealed class ManufacturingInventoryInputIssueHost(
                 parentPosition.CustodianId,
                 parentPosition.LocationId);
 
+            // Fail-closed until NEEDS-SINAN #66/5830378162 is decided (TODO there, in the guard): only the
+            // company's own, company-custodied position is issued. Refused inside the owner transaction, so the
+            // staged Inventory movement and the Manufacturing fact roll back together.
+            if (!ManufacturingCustomerOwnedInputGuardV1.Admits(companyId, manufacturingPosition))
+            {
+                throw new ManufacturingInventoryInputIssueHostException(
+                    ManufacturingCustomerOwnedInputGuardV1.RefusalCode);
+            }
+
             if (observer is not null)
             {
                 await observer(ManufacturingInventoryIssueStage.BeforeCommit, cancellationToken);

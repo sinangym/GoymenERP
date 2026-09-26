@@ -26,9 +26,14 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
     {
         await using var run = await StartManufacturingInventoryRunAsync();
         var customer = Guid.NewGuid();
-        var seed = await PrepareIssuedOrderAsync(run, "SYN-MFG-RETURN-OUTPUT", 100m,
-            StockPartyKind.Counterparty, customer, StockPartyKind.Company, CompanyA);
-        Assert.Equal((StockPartyKind.Counterparty, customer, StockPartyKind.Company, CompanyA),
+        // The issued parent is the company's own, company-custodied roll: the input-issue entry refuses any other
+        // position until NEEDS-SINAN #66/5830378162 is decided (ManufacturingCustomerOwnedInputGuardV1), so a
+        // customer-owned issue trace cannot be produced through the public path. The output is still bound to the
+        // exact issued position: a customer owner or a customer custodian on the output is refused below.
+        // TODO(#66/5830378162): once the decision enables customer-owned input, add the customer-owned
+        // return/output journey back here on top of the decided commercial link.
+        var seed = await PrepareIssuedOrderAsync(run, "SYN-MFG-RETURN-OUTPUT", 100m);
+        Assert.Equal((StockPartyKind.Company, CompanyA, StockPartyKind.Company, CompanyA),
             (seed.OwnerKind, seed.OwnerId, seed.CustodianKind, seed.CustodianId));
         var authority = new ManufacturingHostAuthority(GrantedManufacturingScope());
         var admission = new ManufacturingInventoryOutputAdmission(
@@ -45,7 +50,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         };
         var output = OutputCommand(outputSeed, returnResult.OrderVersion, returnResult.ParentLabelVersion, 80m);
         var outputMetadata = ManufacturingHostMetadata(run, "output-commit");
-        var wrongOwner = output with { OwnerKind = StockPartyKind.Company, OwnerId = CompanyA };
+        var wrongOwner = output with { OwnerKind = StockPartyKind.Counterparty, OwnerId = customer };
         var wrongOwnerMetadata = ManufacturingHostMetadata(run, "output-wrong-owner");
         var wrongOwnerError = await Assert.ThrowsAsync<InventoryManufacturingRealizationException>(() =>
             scope.Host.DeclareOutputAsync(wrongOwner, wrongOwnerMetadata));
@@ -101,8 +106,8 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
             "SELECT COUNT(*) FROM inventory.MovementLines WHERE MovementId = @movement "
             + "AND OwnerKind = @ownerKind AND OwnerId = @ownerId "
             + "AND CustodianKind = @custodianKind AND CustodianId = @custodianId",
-            ("@movement", output.MovementId), ("@ownerKind", (int)StockPartyKind.Counterparty),
-            ("@ownerId", customer), ("@custodianKind", (int)StockPartyKind.Company),
+            ("@movement", output.MovementId), ("@ownerKind", (int)StockPartyKind.Company),
+            ("@ownerId", CompanyA), ("@custodianKind", (int)StockPartyKind.Company),
             ("@custodianId", CompanyA)));
         Assert.Equal(10m, await run.ScalarAsync<decimal>(
             "SELECT QuantityKg FROM inventory.Balances WHERE LabelId = @id AND Block = 1",
