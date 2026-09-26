@@ -44,7 +44,10 @@ company/product/version, then revalidate authority/company/actor immediately bef
 `GoymenERP.Modules.Inventory.Application.IInventoryParentRollCandidatesV1.SearchAsync` accepts
 `InventoryParentRollQueryV1(Q, Limit=25)` (label-code search, max64 characters, examined window1..100)
 and returns `Items/SearchWindowFull`. `IInventoryParentRollValidationV1.ValidateAsync` accepts
-`InventoryParentRollSelectionV1(LabelId, ExpectedLabelVersion)`. There is deliberately no PlannedKg:
+`InventoryParentRollSelectionV1(LabelId, ExpectedLabelVersion)`. These public contracts remain context-free.
+The separate in-process `IInventoryContextualParentRollReferencesV1` accepts only exact typed owner/custodian
+kind and ID after the consumer has authorized its commercial context; party roles/accounts/versions and
+location are not inputs. There is deliberately no PlannedKg:
 this read does not choose equality, partial-coil, upper-bound, reservation or availability policy.
 `AddInventoryParentRollReferences()` registers only these owner ports. Central owns HTTP/host publication.
 `InventoryParentRollApiV1` fixes that publication's owner contract at
@@ -57,6 +60,7 @@ document status/kinds, positions' owner/custodian/location, and lossless physica
 loading holds are not deducted. `ProductionUseRequiresRevalidation` is always true. Missing coil is not
 a type discriminator. Blocked/pending-document own-company stock can be a draft reference without being
 released for consumption. Other-owner stock remains visible with `DraftSelectable=false` and context-required;
+supplying its exact stored owner/custodian context makes it draft-selectable without granting use or reserving it;
 no stock means no invented owner/location and a nonselectable no-physical-position result.
 Existing INV-1 `StockLedger.FromStoredBalances` validates the stored state: a label's nonzero buckets
 share one physical place (owner/custodian/location/product), while Free/Blocked buckets remain separate.
@@ -287,6 +291,27 @@ combined SQL message then carries two GUIDs. The colliding id is read from the n
 anything else is null and the answer stays the retryable `inventory_concurrent_change` — never a made-up
 conflict (`InventoryDuplicateKeyTests`; real SQL: company B offers A's lot and A's label in one call →
 `inventory_lot_conflict`).
+
+## T09 goods receipt immutable source and replay
+
+`IInventoryGoodsReceiptSourceV1` reopens one committed Purchasing acceptance from Inventory's
+company-filtered command, whole receipt movement, exact movement line, label and lot rows. It returns
+the original physical `InventoryGoodsReceiptRequestV1` together with the stored
+`InventoryGoodsReceiptResultV1`; a missing or foreign-company acceptance is the same `null`, while an
+incomplete or internally inconsistent graph is `inventory_goods_receipt_unavailable` (503). The
+ordinary read exposes no actor, idempotency key or payload hash and grants no authority: the Purchasing
+consumer keeps its existing read permission and fresh company/actor fences around the awaited call.
+
+For a retry, the already-enlisted `IInventoryGoodsReceiptParticipantV1.ReadReplayAsync` reads by the
+current idempotency key before `StageAsync`. It returns `null` on the first attempt, requires the stored
+actor and acceptance target on a committed key, and otherwise uses the existing
+`inventory_goods_receipt_idempotency_conflict` (409). The host compares its current physical request
+with `OriginalRequest` and still calls `StageAsync`; the participant's stored canonical payload hash is
+the final same-key replay fence. No new endpoint, permission, grant, table or migration is introduced.
+
+This source does not choose first-write receipt facts. In particular, the authorized server source for
+`RequiredDocuments` remains a Purchasing/Business contract dependency; a browser array, empty default
+or synthetic MTC fallback is not accepted as production input.
 
 ## dependency_wait
 

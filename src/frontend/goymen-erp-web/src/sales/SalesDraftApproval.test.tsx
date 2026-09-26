@@ -58,7 +58,11 @@ describe('S-04 approval facts', () => {
     expect(screen.getByTestId('sales-draft-version').textContent).toBe('9007199254740993')
     expect(screen.getByTestId('sales-approval-submitted-by').textContent).toBe(T.approval.notYet)
     expect(screen.getByTestId('sales-approval-decided-by').textContent).toBe(T.approval.notYet)
-    expect(screen.getByTestId('sales-approval-linked-effects').textContent).toBe(T.approval.linkedEffects)
+    // Without Inventory's allocation capability nothing is read and no number is shown; loading is never 0.
+    const effects = screen.getByTestId('sales-approval-linked-effects')
+    expect(within(effects).getByTestId('sales-linked-allocation').textContent).toBe(T.approval.linkedEffects.allocationNoAccess)
+    expect(within(effects).getByTestId('sales-linked-loading').textContent).toBe(T.approval.linkedEffects.loadingNotReadable)
+    expect(effects.textContent).not.toMatch(/\b0\b/)
     expect(screen.queryByTestId('sales-approval-reason')).toBeNull()
   })
 

@@ -74,6 +74,90 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.AccountingJournalReversalProposalRow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly>("AccountingDate")
+                        .HasColumnType("date");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("DecidedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("DecidedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("DecisionReason")
+                        .HasMaxLength(1024)
+                        .HasColumnType("nvarchar(1024)");
+
+                    b.Property<Guid>("PeriodId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("ProposedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("ProposedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(1024)
+                        .HasColumnType("nvarchar(1024)");
+
+                    b.Property<Guid?>("ReversalJournalId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("SourceJournalId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<DateOnly>("TransactionDate")
+                        .HasColumnType("date");
+
+                    b.Property<DateOnly?>("ValueDate")
+                        .HasColumnType("date");
+
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasAlternateKey("CompanyId", "Id");
+
+                    b.HasIndex("CompanyId", "ReversalJournalId");
+
+                    b.HasIndex("CompanyId", "SourceJournalId");
+
+                    b.HasIndex("CompanyId", "Status", "AccountingDate");
+
+                    b.ToTable("JournalReversalProposals", "accounting", t =>
+                        {
+                            t.HasCheckConstraint("CK_JournalReversalProposals_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [SourceJournalId] <> '00000000-0000-0000-0000-000000000000' AND [PeriodId] <> '00000000-0000-0000-0000-000000000000' AND [ProposedByUserId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_JournalReversalProposals_MakerChecker", "[DecidedByUserId] IS NULL OR [DecidedByUserId] <> [ProposedByUserId]");
+
+                            t.HasCheckConstraint("CK_JournalReversalProposals_Status", "([Status] = 1 AND [ReversalJournalId] IS NULL AND [DecidedByUserId] IS NULL AND [DecidedAtUtc] IS NULL AND [DecisionReason] IS NULL) OR ([Status] = 2 AND [ReversalJournalId] IS NOT NULL AND [DecidedByUserId] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND [DecisionReason] IS NULL) OR ([Status] = 3 AND [ReversalJournalId] IS NULL AND [DecidedByUserId] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND LEN([DecisionReason]) > 0)");
+
+                            t.HasCheckConstraint("CK_JournalReversalProposals_Text", "LEN([Reason]) > 0");
+
+                            t.HasCheckConstraint("CK_JournalReversalProposals_Version", "[Version] >= 1");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.DeliveryRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -796,6 +880,28 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence.Migrations
                     b.HasOne("GoymenERP.Modules.Accounting.Infrastructure.Persistence.OrganizationCompanyReference", null)
                         .WithMany()
                         .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.AccountingJournalReversalProposalRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Accounting.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Accounting.Infrastructure.Persistence.JournalRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "ReversalJournalId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("GoymenERP.Modules.Accounting.Infrastructure.Persistence.JournalRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "SourceJournalId")
+                        .HasPrincipalKey("CompanyId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

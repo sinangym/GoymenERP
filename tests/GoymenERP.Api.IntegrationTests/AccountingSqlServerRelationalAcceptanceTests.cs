@@ -1,4 +1,6 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.BuildingBlocks.Observability;
+using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Accounting.Application;
 using GoymenERP.Modules.Accounting.Domain;
 using GoymenERP.Modules.Accounting.Domain.Journals;
@@ -125,6 +127,156 @@ public sealed class AccountingSqlServerRelationalAcceptanceTests
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM accounting.Commands WHERE CommandName = @n AND CorrelationId = @c",
             ("@n", NormalJournalCommandNamesV1.ApproveDraft), ("@c", run.Correlation)));
+
+        // The approval race on real SQL Server, hosted in this inventoried normal-draft test so the central relational
+        // inventory (tools/relational_inventory/accounting.txt and its guard pin) stays unchanged.
+        await RacingNormalDraftApprovalsPostExactlyOneJournalAsync(run, period);
+    }
+
+    /// <summary>
+    /// #486 review follow-up: two approvals of one normal draft sent at once through the REAL owner lifecycle
+    /// (<see cref="NormalJournalDraftServiceV1"/>, its approval policy and <see cref="AccountingStore"/>) on SQL Server,
+    /// each in its own request scope, for five fresh drafts per shape. The interleaving is the database's, not the
+    /// test's: nothing is forced, and only interleaving-independent invariants are asserted, each message naming its
+    /// shape and iteration.
+    /// <list type="bullet">
+    /// <item><c>same-key</c> (same checker, key and expected version): both answers are 200 for the one approval, exactly
+    /// one of them the replay, both naming the draft's one posted journal; one new approve command row.</item>
+    /// <item><c>other-key</c> (same checker and expected version, two keys): exactly one 200, not a replay; the other is
+    /// accepted only as one of the approve route's declared 409s for a lost race (posting conflict, which also covers a
+    /// loss at the journal-id check; stale version; not pending; or a lost save's concurrent change). Any other answer,
+    /// in particular the undeclared <c>accounting_journal_id_taken</c> or a 500, fails the case.</item>
+    /// </list>
+    /// Either way exactly one journal is posted for the draft (and one original for its fact), with one delivery of its
+    /// message, the draft Approved v2 and linked to it, and exactly one posting's net effect on its accounts.
+    /// </summary>
+    private static async Task RacingNormalDraftApprovalsPostExactlyOneJournalAsync(Run run, Guid period)
+    {
+        string[] declaredLoserCodes =
+        [
+            NormalJournalDraftStoreCodesV1.PostingConflict,
+            AccountingApiCodes.VersionConflict,
+            NormalJournalDraftStoreCodesV1.NotPending,
+            AccountingStoreCodes.ConcurrentChange,
+        ];
+
+        for (var iteration = 1; iteration <= 5; iteration++)
+        {
+            foreach (var shape in new[] { "same-key", "other-key" })
+            {
+                var label = $"normal-draft approval race, shape {shape}, iteration {iteration}";
+                var draft = NormalDraft(run, $"normal-draft-race-{Guid.NewGuid():N}");
+                await using (var scope = run.Store(CompanyA))
+                {
+                    await scope.Drafts.CreateNormalDraftAsync(draft, static _ => Task.CompletedTask, Metadata(run));
+                }
+
+                var approvalsBefore = await run.ScalarAsync<int>(
+                    "SELECT COUNT(*) FROM accounting.Commands WHERE CommandName = @n",
+                    ("@n", NormalJournalCommandNamesV1.ApproveDraft));
+                var firstKey = $"normal-draft-race-a-{draft.Id:N}";
+                var secondKey = shape == "same-key" ? firstKey : $"normal-draft-race-b-{draft.Id:N}";
+                AccountingApiResult<NormalJournalDraftViewV1>[] answers;
+                await using (var first = run.Store(CompanyA))
+                await using (var second = run.Store(CompanyA))
+                {
+                    var firstLifecycle = Lifecycle(run, first, $"normal-draft-race-first-{iteration}");
+                    var secondLifecycle = Lifecycle(run, second, $"normal-draft-race-second-{iteration}");
+                    answers = await Task.WhenAll(
+                        Task.Run(() => firstLifecycle.ApproveAsync(draft.Id, 1, period, firstKey)),
+                        Task.Run(() => secondLifecycle.ApproveAsync(draft.Id, 1, period, secondKey)));
+                }
+
+                var seen = string.Join(", ", answers.Select(answer =>
+                    $"{answer.Status}/{answer.Code ?? "-"}/replay={answer.IsReplay}"));
+                var ok = answers.Where(answer => answer.Status == AccountingApiStatus.Ok).ToArray();
+                if (shape == "same-key")
+                {
+                    Assert.True(ok.Length == 2, $"{label}: both answers must be 200; saw {seen}");
+                    Assert.True(ok.Count(answer => answer.IsReplay) == 1, $"{label}: exactly one must be the replay; saw {seen}");
+                }
+                else
+                {
+                    Assert.True(ok.Length == 1 && !ok[0].IsReplay, $"{label}: exactly one fresh 200; saw {seen}");
+                    var loser = answers.Single(answer => answer.Status != AccountingApiStatus.Ok);
+                    Assert.True(
+                        loser.Status == AccountingApiStatus.Conflict && loser.Code is { } code
+                        && declaredLoserCodes.Contains(code, StringComparer.Ordinal),
+                        $"{label}: the loser must be a declared approve 409; saw {seen}");
+                }
+
+                foreach (var answer in ok)
+                {
+                    Assert.True(
+                        answer.Resource is { Status: "Approved", Version: 2 } view && view.PostedJournalId == draft.Id,
+                        $"{label}: every 200 names the draft's one posted journal, Approved v2; saw "
+                        + $"{answer.Resource?.Status}/v{answer.Resource?.Version}/{answer.Resource?.PostedJournalId}");
+                }
+
+                var journals = await run.ScalarAsync<int>(
+                    "SELECT COUNT(*) FROM accounting.Journals WHERE CompanyId = @c AND Id = @id",
+                    ("@c", CompanyA), ("@id", draft.Id));
+                Assert.True(journals == 1, $"{label}: one journal with the draft's id; found {journals}");
+                var originals = await run.ScalarAsync<int>(
+                    "SELECT COUNT(*) FROM accounting.Journals WHERE CompanyId = @c AND Kind = 1 AND SourceId = @s",
+                    ("@c", CompanyA), ("@s", draft.Request.Source.SourceId));
+                Assert.True(originals == 1, $"{label}: one original for the draft's fact; found {originals}");
+                var lines = await run.ScalarAsync<int>(
+                    "SELECT COUNT(*) FROM accounting.JournalLines WHERE CompanyId = @c AND JournalId = @id",
+                    ("@c", CompanyA), ("@id", draft.Id));
+                Assert.True(lines == 2, $"{label}: the posted journal has its two lines; found {lines}");
+                foreach (var line in draft.Request.Lines)
+                {
+                    var expected = line.Side == PostingSide.Debit ? line.Amount!.Value : -line.Amount!.Value;
+                    var net = await run.ScalarAsync<decimal>(
+                        "SELECT SUM(Debit - Credit) FROM accounting.JournalLines WHERE CompanyId = @c AND AccountId = @a",
+                        ("@c", CompanyA), ("@a", line.Account!.Value.AccountId));
+                    Assert.True(net == expected,
+                        $"{label}: account {line.MappingKey} moves by one posting ({expected}); found {net}");
+                }
+
+                var deliveries = await run.ScalarAsync<int>(
+                    "SELECT COUNT(*) FROM accounting.Deliveries WHERE CompanyId = @c AND Consumer = @k AND MessageId = @m",
+                    ("@c", CompanyA), ("@k", draft.Request.Consumer), ("@m", draft.Request.MessageId));
+                Assert.True(deliveries == 1, $"{label}: one delivery of the draft's message; found {deliveries}");
+                var approvedDraft = await run.ScalarAsync<int>(
+                    "SELECT COUNT(*) FROM accounting.NormalJournalDrafts "
+                    + "WHERE Id = @id AND Status = 2 AND Version = 2 AND PostedJournalId = @id AND ApprovedByUserId = @a",
+                    ("@id", draft.Id), ("@a", run.Actor));
+                Assert.True(approvedDraft == 1, $"{label}: the draft is Approved v2 and linked to its journal");
+                var recorded = await run.ScalarAsync<int>(
+                    "SELECT COUNT(*) FROM accounting.Commands WHERE CommandName = @n AND ResultJson LIKE @p",
+                    ("@n", NormalJournalCommandNamesV1.ApproveDraft), ("@p", $"%{draft.Id:D}%"));
+                Assert.True(recorded == 1, $"{label}: one recorded approval of the draft; found {recorded}");
+                if (shape == "same-key")
+                {
+                    var approvalsAfter = await run.ScalarAsync<int>(
+                        "SELECT COUNT(*) FROM accounting.Commands WHERE CommandName = @n",
+                        ("@n", NormalJournalCommandNamesV1.ApproveDraft));
+                    Assert.True(approvalsAfter == approvalsBefore + 1,
+                        $"{label}: one shared key records one command; {approvalsBefore} -> {approvalsAfter}");
+                }
+            }
+        }
+    }
+
+    /// <summary>The owner lifecycle of one request scope, bound to the run's actor with the narrow grants.</summary>
+    private static NormalJournalDraftServiceV1 Lifecycle(Run run, StoreScope scope, string correlation)
+    {
+        var companyContext = new CompanyContext();
+        companyContext.Set(CompanyA);
+        var user = new SyntheticActor(run.Actor, CompanyA);
+        var binding = new NormalJournalPermissionBindingV1();
+        var authority = new GrantedAuthority();
+        return new NormalJournalDraftServiceV1(
+            scope.Drafts,
+            scope.Commands,
+            new NormalJournalDraftApprovalPolicyV1(binding, authority, companyContext, user),
+            binding,
+            authority,
+            companyContext,
+            user,
+            new SyntheticCorrelation(correlation));
     }
 
     [SqlServerFact]
@@ -765,8 +917,48 @@ public sealed class AccountingSqlServerRelationalAcceptanceTests
         public IAccountingPeriodStore Periods => store;
         public IAccountingPostingStore Postings => store;
         public IAccountingNormalJournalDraftStore Drafts => store;
+        public IAccountingCommandLog Commands => store;
 
         public ValueTask DisposeAsync() => dbContext.DisposeAsync();
+    }
+
+    /// <summary>Grants the narrow normal-draft permissions company-wide (the race is about the store, not authority).</summary>
+    private sealed class GrantedAuthority : IErpAuthorityRevalidationService
+    {
+        public Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid companyId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new PermissionScope(true, true,
+                new HashSet<string>(["SYNTHETIC-ACCOUNTING-NORMAL-DRAFT"], StringComparer.Ordinal),
+                new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>()));
+    }
+
+    private sealed class SyntheticActor(Guid actor, Guid company) : ICurrentUser
+    {
+        public bool IsAuthenticated => true;
+
+        public string? UserId => actor.ToString("D");
+
+        public IReadOnlySet<Guid> AllowedCompanyIds { get; } = new HashSet<Guid> { company };
+
+        public bool CanAccessCompany(Guid companyId) => companyId == company;
+    }
+
+    private sealed class SyntheticCorrelation(string correlationId) : ICorrelationContext
+    {
+        public bool IsResolved => true;
+
+        public string CorrelationId => correlationId;
+
+        public string? CausationId => null;
+
+        public string SourceChannel => "Web";
+
+        public string? ClientIpAddress => null;
+
+        public string? UserAgent => null;
+
+        public void Set(string correlationId, string? causationId, string sourceChannel, string? clientIpAddress,
+            string? userAgent) => throw new NotSupportedException();
     }
 
     /// <summary>

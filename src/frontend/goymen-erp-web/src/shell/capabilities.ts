@@ -228,6 +228,9 @@ export const CAPABILITY = {
   purchasingOrdersDetail: 'purchasing.orders.detail',
 } as const
 
+/** U-01-360 action-only control. It is deliberately absent from route and nav catalogs. */
+export const PRODUCT_ACTIVATE_CAPABILITY = 'product.items.activate'
+
 export type CapabilityId = (typeof CAPABILITY)[keyof typeof CAPABILITY]
 
 /** Route path per capability, mirroring the backend route declaration. */

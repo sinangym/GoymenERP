@@ -46,6 +46,9 @@ export const PRODUCT_CAPABILITY = {
   productsEdit: 'product.items.edit',
 } as const
 
+/** U-01-360 child control. It shares the detail route and never creates a nav entry. */
+export const PRODUCT_ACTIVATE_CAPABILITY = 'product.items.activate'
+
 export type ProductCapabilityId = (typeof PRODUCT_CAPABILITY)[keyof typeof PRODUCT_CAPABILITY]
 
 /**

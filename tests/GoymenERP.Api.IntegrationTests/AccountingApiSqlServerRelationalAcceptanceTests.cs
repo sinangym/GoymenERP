@@ -6,6 +6,7 @@ using GoymenERP.Api.Security;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Accounting.Application;
+using GoymenERP.Modules.Accounting.Domain;
 using GoymenERP.Modules.Accounting.Domain.Journals;
 using GoymenERP.Modules.Accounting.Domain.Posting;
 using GoymenERP.Modules.Accounting.Infrastructure.Persistence;
@@ -37,6 +38,7 @@ public sealed class AccountingApiSqlServerRelationalAcceptanceTests
     private const string PeriodsPath = "/api/v1/accounting/periods";
     private const string JournalsPath = "/api/v1/accounting/journals";
     private const string QueuesPath = "/api/v1/accounting/posting-queues";
+    private const string ReversalProposalsPath = "/api/v1/accounting/journal-reversal-proposals";
     private const string Preparer = TestUsers.CompanyA;
     private const string Approver = TestUsers.CompanyAViewer;
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
@@ -58,6 +60,468 @@ public sealed class AccountingApiSqlServerRelationalAcceptanceTests
     ];
 
     private static readonly JsonSerializerOptions Web = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+
+    /// <summary>
+    /// ACC-V1 reversal over the public route and real SQL: the maker stores one pending proposal and
+    /// cannot approve it even while holding the narrow approval grant; another actor approves exactly
+    /// one linked reversal. Same-key retries answer from the command log and a changed expected version
+    /// under that key is a conflict without another proposal, journal, delivery, audit or command.
+    /// Two approvals of one proposal sent at once still post exactly one reversal (see
+    /// <see cref="RacingReversalApprovalsPostExactlyOneReversalAsync"/>).
+    /// </summary>
+    [SqlServerFact]
+    public async Task A_journal_reversal_proposal_is_pending_until_another_user_approves_one_linked_reversal()
+    {
+        await using var run = await Run.StartAsync();
+        await run.GrantAsync(Preparer, CompanyA,
+        [
+            .. PreparerGrants,
+            AccountingJournalReversalPermissionNamesV1.Propose,
+            AccountingJournalReversalPermissionNamesV1.Approve,
+        ]);
+        await run.GrantAsync(Approver, CompanyA,
+        [
+            .. ApproverGrants,
+            AccountingJournalReversalPermissionNamesV1.Approve,
+        ]);
+        using var maker = run.Client(Preparer, CompanyA);
+        using var checker = run.Client(Approver, CompanyA);
+
+        var periodId = Guid.NewGuid();
+        Assert.Equal(HttpStatusCode.Created, (await maker.SendAsync(Post(
+            PeriodsPath,
+            "SENTETIK-reversal-period-propose",
+            Guid.NewGuid().ToString("N"),
+            new ProposePeriodRequestV1(periodId, September1, September30)))).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await checker.SendAsync(
+            Approval(periodId, "SENTETIK-reversal-period-approve", 1))).StatusCode);
+
+        Journal sourceJournal;
+        await using (var store = run.Store(CompanyA))
+        {
+            var debit = new AccountRef(CompanyA, Guid.NewGuid());
+            var credit = new AccountRef(CompanyA, Guid.NewGuid());
+            sourceJournal = (await store.Postings.ReceiveAsync(
+                Request(Guid.NewGuid(), "SENTETIK-reversal-source", debit, credit, 100m),
+                periodId,
+                run.Metadata())).Journal!;
+        }
+
+        var unknownProposalId = Guid.NewGuid();
+        var unknownProposal = new ProposeAccountingJournalReversalRequestV1(
+            unknownProposalId, Guid.NewGuid(), periodId, "2026-09-23", "2026-09-24", null,
+            "SENTETIK bilinmeyen kaynak reddi");
+        using (var unknown = await maker.SendAsync(Post(
+                   ReversalProposalsPath, "SENTETIK-reversal-unknown-source", Guid.NewGuid().ToString("N"), unknownProposal)))
+        {
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, unknown.StatusCode);
+            Assert.Equal(AccountingJournalReversalStoreCodesV1.SourceJournalNotFound, Code(await Json(unknown)));
+        }
+
+        await run.GrantAsync(Preparer, CompanyB, AccountingJournalReversalPermissionNamesV1.Propose);
+        using (var companyBMaker = run.Client(Preparer, CompanyB))
+        {
+            var crossCompanyProposalId = Guid.NewGuid();
+            var crossCompanyProposal = new ProposeAccountingJournalReversalRequestV1(
+                crossCompanyProposalId, sourceJournal.Id, Guid.NewGuid(), "2026-09-23", "2026-09-24", null,
+                "SENTETIK şirketler arası kaynak reddi");
+            using var crossCompany = await companyBMaker.SendAsync(Post(
+                ReversalProposalsPath, "SENTETIK-reversal-cross-company-source", Guid.NewGuid().ToString("N"),
+                crossCompanyProposal));
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, crossCompany.StatusCode);
+            Assert.Equal(AccountingJournalReversalStoreCodesV1.SourceJournalNotFound, Code(await Json(crossCompany)));
+            Assert.Equal(0, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM accounting.JournalReversalProposals WHERE Id IN (@u, @x)",
+                ("@u", unknownProposalId), ("@x", crossCompanyProposalId)));
+        }
+
+        // The period is admitted under the bound company before staging: an unknown period and another
+        // company's real period are both refused with no proposal, audit or command left behind.
+        await run.GrantAsync(Preparer, CompanyB, AccountingPermissionManifestV1.PeriodsPropose);
+        var companyBPeriodId = Guid.NewGuid();
+        using (var companyBMaker = run.Client(Preparer, CompanyB))
+        {
+            Assert.Equal(HttpStatusCode.Created, (await companyBMaker.SendAsync(Post(
+                PeriodsPath,
+                "SENTETIK-reversal-company-b-period",
+                Guid.NewGuid().ToString("N"),
+                new ProposePeriodRequestV1(companyBPeriodId, September1, September30)))).StatusCode);
+        }
+
+        var unknownPeriodProposalId = Guid.NewGuid();
+        using (var unknownPeriod = await maker.SendAsync(Post(
+                   ReversalProposalsPath, "SENTETIK-reversal-unknown-period", Guid.NewGuid().ToString("N"),
+                   new ProposeAccountingJournalReversalRequestV1(
+                       unknownPeriodProposalId, sourceJournal.Id, Guid.NewGuid(), "2026-09-23", "2026-09-24", null,
+                       "SENTETIK bilinmeyen dönem reddi"))))
+        {
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, unknownPeriod.StatusCode);
+            Assert.Equal(AccountingJournalReversalStoreCodesV1.PeriodNotFound, Code(await Json(unknownPeriod)));
+        }
+
+        var crossCompanyPeriodProposalId = Guid.NewGuid();
+        using (var crossCompanyPeriod = await maker.SendAsync(Post(
+                   ReversalProposalsPath, "SENTETIK-reversal-cross-company-period", Guid.NewGuid().ToString("N"),
+                   new ProposeAccountingJournalReversalRequestV1(
+                       crossCompanyPeriodProposalId, sourceJournal.Id, companyBPeriodId, "2026-09-23", "2026-09-24",
+                       null, "SENTETIK şirketler arası dönem reddi"))))
+        {
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, crossCompanyPeriod.StatusCode);
+            Assert.Equal(AccountingJournalReversalStoreCodesV1.PeriodNotFound, Code(await Json(crossCompanyPeriod)));
+        }
+
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM accounting.JournalReversalProposals WHERE Id IN (@u, @x)",
+            ("@u", unknownPeriodProposalId), ("@x", crossCompanyPeriodProposalId)));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents "
+            + "WHERE EntityType = N'Accounting.JournalReversalProposal' AND EntityId IN (@u, @x)",
+            ("@u", unknownPeriodProposalId.ToString("D")), ("@x", crossCompanyPeriodProposalId.ToString("D"))));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM accounting.Commands WHERE CommandName = @n",
+            ("@n", AccountingJournalReversalCommandNamesV1.Propose)));
+
+        var proposalId = Guid.NewGuid();
+        var proposal = new ProposeAccountingJournalReversalRequestV1(
+            proposalId,
+            sourceJournal.Id,
+            periodId,
+            "2026-09-23",
+            "2026-09-24",
+            null,
+            "SENTETIK gerçek SQL ters kayıt gerekçesi");
+        var proposeCorrelation = Guid.NewGuid().ToString("N");
+        DateTimeOffset proposedAtUtc;
+
+        using (var proposed = await maker.SendAsync(Post(
+                   ReversalProposalsPath, "SENTETIK-reversal-propose", proposeCorrelation, proposal)))
+        {
+            Assert.Equal(HttpStatusCode.Created, proposed.StatusCode);
+            var view = await Json(proposed);
+            Assert.Equal((proposalId, sourceJournal.Id, "Pending", 1),
+                (view.GetProperty("proposalId").GetGuid(), view.GetProperty("sourceJournalId").GetGuid(),
+                    view.GetProperty("status").GetString(), view.GetProperty("version").GetInt32()));
+            Assert.Equal(JsonValueKind.Null, view.GetProperty("reversalJournalId").ValueKind);
+            proposedAtUtc = view.GetProperty("proposedAtUtc").GetDateTimeOffset();
+        }
+
+        using (var replayed = await maker.SendAsync(Post(
+                   ReversalProposalsPath, "SENTETIK-reversal-propose", Guid.NewGuid().ToString("N"), proposal)))
+        {
+            Assert.Equal(HttpStatusCode.Created, replayed.StatusCode);
+            AssertReplayOf(replayed, proposeCorrelation);
+            Assert.Equal(proposedAtUtc, (await Json(replayed)).GetProperty("proposedAtUtc").GetDateTimeOffset());
+        }
+
+        // A DIFFERENT idempotency key carrying the same proposal identity and business payload misses the
+        // command log, so it reaches the store's identity comparison: it answers the stored proposal (its
+        // server-owned ProposedAtUtc, not a new clock reading) as a replay and records its own command only.
+        var secondKeyCorrelation = Guid.NewGuid().ToString("N");
+        using (var secondKey = await maker.SendAsync(Post(
+                   ReversalProposalsPath, "SENTETIK-reversal-propose-second-key", secondKeyCorrelation, proposal)))
+        {
+            Assert.Equal(HttpStatusCode.Created, secondKey.StatusCode);
+            Assert.Equal("true", Assert.Single(secondKey.Headers.GetValues("Idempotency-Replayed")));
+            var view = await Json(secondKey);
+            Assert.Equal(proposedAtUtc, view.GetProperty("proposedAtUtc").GetDateTimeOffset());
+            Assert.Equal((proposalId, "Pending", 1),
+                (view.GetProperty("proposalId").GetGuid(), view.GetProperty("status").GetString(),
+                    view.GetProperty("version").GetInt32()));
+        }
+
+        using (var secondKeyAgain = await maker.SendAsync(Post(
+                   ReversalProposalsPath, "SENTETIK-reversal-propose-second-key", Guid.NewGuid().ToString("N"), proposal)))
+        {
+            Assert.Equal(HttpStatusCode.Created, secondKeyAgain.StatusCode);
+            AssertReplayOf(secondKeyAgain, secondKeyCorrelation);
+            Assert.Equal(proposedAtUtc, (await Json(secondKeyAgain)).GetProperty("proposedAtUtc").GetDateTimeOffset());
+        }
+
+        // The same identity with an altered immutable field under yet another key is a content conflict.
+        using (var altered = await maker.SendAsync(Post(
+                   ReversalProposalsPath, "SENTETIK-reversal-propose-altered", Guid.NewGuid().ToString("N"),
+                   proposal with { Reason = "SENTETIK değiştirilmiş gerekçe" })))
+        {
+            Assert.Equal(HttpStatusCode.Conflict, altered.StatusCode);
+            Assert.Equal(AccountingJournalReversalStoreCodesV1.ContentConflict, Code(await Json(altered)));
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents "
+            + "WHERE CompanyId = @c AND EntityType = N'Accounting.JournalReversalProposal' AND EntityId = @p",
+            ("@c", CompanyA), ("@p", proposalId.ToString("D"))));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM accounting.JournalReversalProposals "
+            + "WHERE Id = @p AND Reason = N'SENTETIK gerçek SQL ters kayıt gerekçesi'",
+            ("@p", proposalId)));
+
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM accounting.JournalReversalProposals "
+            + "WHERE Id = @p AND CompanyId = @c AND Status = 1 AND Version = 1 AND ReversalJournalId IS NULL",
+            ("@p", proposalId), ("@c", CompanyA)));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM accounting.JournalReversalProposals WHERE CompanyId = @c",
+            ("@c", CompanyB)));
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM accounting.Commands WHERE CommandName = @n",
+            ("@n", AccountingJournalReversalCommandNamesV1.Propose)));
+
+        using (var ownApproval = await maker.SendAsync(ReversalApproval(
+                   proposalId, "SENTETIK-reversal-own-approval", 1)))
+        {
+            Assert.Equal(HttpStatusCode.Forbidden, ownApproval.StatusCode);
+            Assert.Equal("forbidden", Code(await Json(ownApproval)));
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM accounting.JournalReversalProposals "
+            + "WHERE Id = @p AND Status = 1 AND Version = 1 AND DecidedByUserId IS NULL",
+            ("@p", proposalId)));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM accounting.Commands WHERE CommandName = @n",
+            ("@n", AccountingJournalReversalCommandNamesV1.Approve)));
+
+        var approvalCorrelation = Guid.NewGuid().ToString("N");
+        Guid reversalJournalId;
+        using (var approved = await checker.SendAsync(ReversalApproval(
+                   proposalId, "SENTETIK-reversal-approve", 1, approvalCorrelation)))
+        {
+            Assert.Equal(HttpStatusCode.OK, approved.StatusCode);
+            var view = await Json(approved);
+            reversalJournalId = view.GetProperty("reversalJournalId").GetGuid();
+            Assert.Equal((sourceJournal.Id, "Approved", 2),
+                (view.GetProperty("sourceJournalId").GetGuid(), view.GetProperty("status").GetString(),
+                    view.GetProperty("version").GetInt32()));
+            Assert.NotEqual(sourceJournal.Id, reversalJournalId);
+        }
+
+        using (var replayed = await checker.SendAsync(ReversalApproval(
+                   proposalId, "SENTETIK-reversal-approve", 1)))
+        {
+            Assert.Equal(HttpStatusCode.OK, replayed.StatusCode);
+            AssertReplayOf(replayed, approvalCorrelation);
+            Assert.Equal(reversalJournalId,
+                (await Json(replayed)).GetProperty("reversalJournalId").GetGuid());
+        }
+
+        using (var changedVersion = await checker.SendAsync(ReversalApproval(
+                   proposalId, "SENTETIK-reversal-approve", 2)))
+        {
+            Assert.Equal(HttpStatusCode.Conflict, changedVersion.StatusCode);
+            Assert.Equal(AccountingApiCodes.IdempotencyConflict, Code(await Json(changedVersion)));
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM accounting.JournalReversalProposals "
+            + "WHERE Id = @p AND CompanyId = @c AND Status = 2 AND Version = 2 "
+            + "AND SourceJournalId = @s AND ReversalJournalId = @r AND SourceJournalId <> ReversalJournalId",
+            ("@p", proposalId), ("@c", CompanyA), ("@s", sourceJournal.Id), ("@r", reversalJournalId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM accounting.Journals "
+            + "WHERE Id = @r AND CompanyId = @c AND Kind = 2 AND LinkedJournalId = @s",
+            ("@r", reversalJournalId), ("@c", CompanyA), ("@s", sourceJournal.Id)));
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM accounting.Journals WHERE CompanyId = @c AND Id IN (@s, @r)",
+            ("@c", CompanyA), ("@s", sourceJournal.Id), ("@r", reversalJournalId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM accounting.Deliveries "
+            + "WHERE CompanyId = @c AND Consumer = N'accounting.journal-reversal-approval.v1' "
+            + "AND MessageId = @m AND JournalId = @r",
+            ("@c", CompanyA), ("@m", proposalId.ToString("D")), ("@r", reversalJournalId)));
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents "
+            + "WHERE CompanyId = @c AND EntityType = N'Accounting.JournalReversalProposal' AND EntityId = @p",
+            ("@c", CompanyA), ("@p", proposalId.ToString("D"))));
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM accounting.Commands WHERE CommandName = @n",
+            ("@n", AccountingJournalReversalCommandNamesV1.Propose)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM accounting.Commands WHERE CommandName = @n",
+            ("@n", AccountingJournalReversalCommandNamesV1.Approve)));
+
+        // Sales review 5326851870 P2-1: a proposal may name a company period that is only proposed (admission checks
+        // identity, not status). Its approval is refused by the posting path with accounting_period_not_open: a stable
+        // 422, never an unmapped 500; the proposal stays Pending v1 and no reversal journal, delivery or command exists.
+        var octoberId = Guid.NewGuid();
+        Assert.Equal(HttpStatusCode.Created, (await maker.SendAsync(Post(
+            PeriodsPath, "SENTETIK-reversal-october-propose", Guid.NewGuid().ToString("N"),
+            new ProposePeriodRequestV1(octoberId, new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 31))))).StatusCode);
+
+        Journal secondSource;
+        await using (var store = run.Store(CompanyA))
+        {
+            secondSource = (await store.Postings.ReceiveAsync(
+                Request(Guid.NewGuid(), "SENTETIK-reversal-second-source",
+                    new AccountRef(CompanyA, Guid.NewGuid()), new AccountRef(CompanyA, Guid.NewGuid()), 50m),
+                periodId,
+                run.Metadata())).Journal!;
+        }
+
+        var notOpenProposalId = Guid.NewGuid();
+        using (var proposedIntoProposal = await maker.SendAsync(Post(
+                   ReversalProposalsPath, "SENTETIK-reversal-not-open-propose", Guid.NewGuid().ToString("N"),
+                   new ProposeAccountingJournalReversalRequestV1(
+                       notOpenProposalId, secondSource.Id, octoberId, "2026-10-05", "2026-10-05", null,
+                       "SENTETIK onaysız döneme ters kayıt"))))
+        {
+            Assert.Equal(HttpStatusCode.Created, proposedIntoProposal.StatusCode);
+        }
+
+        using (var notOpen = await checker.SendAsync(ReversalApproval(
+                   notOpenProposalId, "SENTETIK-reversal-not-open-approve", 1)))
+        {
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, notOpen.StatusCode);
+            Assert.Equal(AccountingErrorCodes.PeriodNotOpen, Code(await Json(notOpen)));
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM accounting.JournalReversalProposals "
+            + "WHERE Id = @p AND Status = 1 AND Version = 1 AND ReversalJournalId IS NULL AND DecidedByUserId IS NULL",
+            ("@p", notOpenProposalId)));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM accounting.Journals WHERE CompanyId = @c AND LinkedJournalId = @s",
+            ("@c", CompanyA), ("@s", secondSource.Id)));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM accounting.Deliveries WHERE Consumer = N'accounting.journal-reversal-approval.v1' "
+            + "AND MessageId = @m",
+            ("@m", notOpenProposalId.ToString("D"))));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM accounting.Commands WHERE CommandName = @n",
+            ("@n", AccountingJournalReversalCommandNamesV1.Approve)));
+
+        // #486 Org review P2-1: the approval race on real SQL Server, hosted in this inventoried reversal test so the
+        // central relational inventory (tools/relational_inventory/accounting.txt and its guard pin) stays unchanged.
+        await RacingReversalApprovalsPostExactlyOneReversalAsync(run, maker, periodId);
+    }
+
+    /// <summary>
+    /// #486 Org review P2-1: two approvals of one reversal proposal sent at once over the real host and SQL Server, for
+    /// five fresh proposals per shape. The interleaving is the database's, not the test's, so only the invariants are
+    /// asserted.
+    /// <list type="bullet">
+    /// <item>Same key, same checker, same expected version: both answers are 200 for the one approval, exactly one of
+    /// them the replay, both naming the same reversal journal; one approve command row carries the approval.</item>
+    /// <item>Two keys, same checker, same expected version: exactly one 200; the other is one of the approve route's
+    /// declared 409s (posting conflict, stale version, not pending, or a lost save's concurrent change).</item>
+    /// </list>
+    /// Either way exactly one reversal journal is linked to the source in SQL, the proposal is Approved v2 with one
+    /// delivery, and the source's accounts net to zero: the second approval has no money effect.
+    /// </summary>
+    private static async Task RacingReversalApprovalsPostExactlyOneReversalAsync(Run run, HttpClient maker, Guid periodId)
+    {
+        string[] declaredLoserCodes =
+        [
+            AccountingJournalReversalStoreCodesV1.PostingConflict,
+            AccountingApiCodes.VersionConflict,
+            AccountingJournalReversalPolicyCodesV1.NotPending,
+            AccountingStoreCodes.ConcurrentChange,
+        ];
+        using var first = run.Client(Approver, CompanyA);
+        using var second = run.Client(Approver, CompanyA);
+
+        for (var iteration = 0; iteration < 5; iteration++)
+        {
+            foreach (var sameKey in new[] { true, false })
+            {
+                var debit = new AccountRef(CompanyA, Guid.NewGuid());
+                var credit = new AccountRef(CompanyA, Guid.NewGuid());
+                Journal source;
+                await using (var store = run.Store(CompanyA))
+                {
+                    source = (await store.Postings.ReceiveAsync(
+                        Request(Guid.NewGuid(), $"SENTETIK-reversal-race-source-{Guid.NewGuid():N}", debit, credit, 25m),
+                        periodId,
+                        run.Metadata())).Journal!;
+                }
+
+                var proposalId = Guid.NewGuid();
+                using (var proposed = await maker.SendAsync(Post(
+                           ReversalProposalsPath, $"SENTETIK-reversal-race-propose-{proposalId:N}", Guid.NewGuid().ToString("N"),
+                           new ProposeAccountingJournalReversalRequestV1(
+                               proposalId, source.Id, periodId, "2026-09-23", "2026-09-24", null,
+                               "SENTETIK yarışan ters kayıt onayı"))))
+                {
+                    Assert.Equal(HttpStatusCode.Created, proposed.StatusCode);
+                }
+
+                var approvalsBefore = await run.ScalarAsync<int>(
+                    "SELECT COUNT(*) FROM accounting.Commands WHERE CommandName = @n",
+                    ("@n", AccountingJournalReversalCommandNamesV1.Approve));
+                var firstKey = $"SENTETIK-reversal-race-a-{proposalId:N}";
+                var secondKey = sameKey ? firstKey : $"SENTETIK-reversal-race-b-{proposalId:N}";
+                var answers = await Task.WhenAll(
+                    Task.Run(() => first.SendAsync(ReversalApproval(proposalId, firstKey, 1))),
+                    Task.Run(() => second.SendAsync(ReversalApproval(proposalId, secondKey, 1))));
+                var reversalJournalIds = new List<Guid>();
+                try
+                {
+                    if (sameKey)
+                    {
+                        Assert.All(answers, answer => Assert.Equal(HttpStatusCode.OK, answer.StatusCode));
+                        Assert.Single(answers, answer => answer.Headers.Contains("Idempotency-Replayed"));
+                    }
+                    else
+                    {
+                        var winner = Assert.Single(answers, answer => answer.StatusCode == HttpStatusCode.OK);
+                        Assert.False(winner.Headers.Contains("Idempotency-Replayed"));
+                        var loser = Assert.Single(answers, answer => answer.StatusCode != HttpStatusCode.OK);
+                        Assert.Equal(HttpStatusCode.Conflict, loser.StatusCode);
+                        Assert.Contains(Code(await Json(loser)), declaredLoserCodes);
+                    }
+
+                    foreach (var answer in answers.Where(answer => answer.StatusCode == HttpStatusCode.OK))
+                    {
+                        var view = await Json(answer);
+                        Assert.Equal((proposalId, source.Id, "Approved", 2),
+                            (view.GetProperty("proposalId").GetGuid(), view.GetProperty("sourceJournalId").GetGuid(),
+                                view.GetProperty("status").GetString(), view.GetProperty("version").GetInt32()));
+                        reversalJournalIds.Add(view.GetProperty("reversalJournalId").GetGuid());
+                    }
+                }
+                finally
+                {
+                    foreach (var answer in answers)
+                    {
+                        answer.Dispose();
+                    }
+                }
+
+                var reversalJournalId = Assert.Single(reversalJournalIds.Distinct());
+                Assert.Equal(1, await run.ScalarAsync<int>(
+                    "SELECT COUNT(*) FROM accounting.Journals WHERE CompanyId = @c AND Kind = 2 AND LinkedJournalId = @s",
+                    ("@c", CompanyA), ("@s", source.Id)));
+                Assert.Equal(1, await run.ScalarAsync<int>(
+                    "SELECT COUNT(*) FROM accounting.Journals "
+                    + "WHERE CompanyId = @c AND Id = @r AND Kind = 2 AND LinkedJournalId = @s",
+                    ("@c", CompanyA), ("@r", reversalJournalId), ("@s", source.Id)));
+                foreach (var account in new[] { debit.AccountId, credit.AccountId })
+                {
+                    Assert.Equal(0m, await run.ScalarAsync<decimal>(
+                        "SELECT SUM(Debit - Credit) FROM accounting.JournalLines WHERE CompanyId = @c AND AccountId = @a",
+                        ("@c", CompanyA), ("@a", account)));
+                }
+
+                Assert.Equal(1, await run.ScalarAsync<int>(
+                    "SELECT COUNT(*) FROM accounting.JournalReversalProposals "
+                    + "WHERE Id = @p AND Status = 2 AND Version = 2 AND ReversalJournalId = @r",
+                    ("@p", proposalId), ("@r", reversalJournalId)));
+                Assert.Equal(1, await run.ScalarAsync<int>(
+                    "SELECT COUNT(*) FROM accounting.Deliveries WHERE Consumer = N'accounting.journal-reversal-approval.v1' "
+                    + "AND MessageId = @m",
+                    ("@m", proposalId.ToString("D"))));
+                // One recorded approval of this proposal; under one shared key that is also the only new command row.
+                Assert.Equal(1, await run.ScalarAsync<int>(
+                    "SELECT COUNT(*) FROM accounting.Commands WHERE CommandName = @n AND ResultJson LIKE @p",
+                    ("@n", AccountingJournalReversalCommandNamesV1.Approve), ("@p", $"%{proposalId:D}%")));
+                if (sameKey)
+                {
+                    Assert.Equal(approvalsBefore + 1, await run.ScalarAsync<int>(
+                        "SELECT COUNT(*) FROM accounting.Commands WHERE CommandName = @n",
+                        ("@n", AccountingJournalReversalCommandNamesV1.Approve)));
+                }
+            }
+        }
+    }
 
     /// <summary>
     /// Ö4 and Ö5 over HTTP with every ADR-011 answer: a proposal replays; its preparer's approval is 403
@@ -358,6 +822,64 @@ public sealed class AccountingApiSqlServerRelationalAcceptanceTests
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM accounting.Periods WHERE Id = @p", ("@p", periodId)));
     }
 
+    [SqlServerFact]
+    public async Task The_reversal_proposal_migration_rolls_back_only_while_no_proposal_is_stored()
+    {
+        await using var run = await Run.StartAsync();
+        const string beforeReversalProposals = "20260924122703_AddNormalJournalDrafts";
+
+        await using (var context = run.Context(CompanyA))
+        {
+            await context.GetService<IMigrator>().MigrateAsync(beforeReversalProposals);
+            Assert.Equal(0, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM sys.tables WHERE [name] = N'JournalReversalProposals' AND [schema_id] = SCHEMA_ID(N'accounting')"));
+            await context.Database.MigrateAsync();
+        }
+
+        await run.GrantAsync(Preparer, CompanyA,
+        [
+            .. PreparerGrants,
+            AccountingJournalReversalPermissionNamesV1.Propose,
+        ]);
+        await run.GrantAsync(Approver, CompanyA, ApproverGrants);
+        using var maker = run.Client(Preparer, CompanyA);
+        using var checker = run.Client(Approver, CompanyA);
+        var periodId = Guid.NewGuid();
+        Assert.Equal(HttpStatusCode.Created, (await maker.SendAsync(Post(
+            PeriodsPath, "SENTETIK-reversal-down-period", Guid.NewGuid().ToString("N"),
+            new ProposePeriodRequestV1(periodId, September1, September30)))).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await checker.SendAsync(
+            Approval(periodId, "SENTETIK-reversal-down-period-approval", 1))).StatusCode);
+
+        Journal source;
+        await using (var store = run.Store(CompanyA))
+        {
+            source = (await store.Postings.ReceiveAsync(
+                Request(Guid.NewGuid(), "SENTETIK-reversal-down-source",
+                    new AccountRef(CompanyA, Guid.NewGuid()), new AccountRef(CompanyA, Guid.NewGuid()), 100m),
+                periodId, run.Metadata())).Journal!;
+        }
+
+        var proposalId = Guid.NewGuid();
+        Assert.Equal(HttpStatusCode.Created, (await maker.SendAsync(Post(
+            ReversalProposalsPath, "SENTETIK-reversal-down-proposal", Guid.NewGuid().ToString("N"),
+            new ProposeAccountingJournalReversalRequestV1(
+                proposalId, source.Id, periodId, "2026-09-23", "2026-09-24", null,
+                "SENTETIK rollback refusal proposal")))).StatusCode);
+
+        await using (var context = run.Context(CompanyA))
+        {
+            var error = await Assert.ThrowsAsync<SqlException>(() =>
+                context.GetService<IMigrator>().MigrateAsync(beforeReversalProposals));
+            Assert.Equal(51048, error.Number);
+            Assert.EndsWith("_AddAccountingJournalReversalProposals",
+                (await context.Database.GetAppliedMigrationsAsync()).Last(), StringComparison.Ordinal);
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM accounting.JournalReversalProposals WHERE Id = @p", ("@p", proposalId)));
+    }
+
     /// <summary>
     /// SİPARİŞ #354 P3-3: the same approval (same key, body and approver) sent twice at once. Whatever the interleaving
     /// (both miss the stored answer and one loses the save or the version, or one finds the other's record), both are
@@ -440,6 +962,14 @@ public sealed class AccountingApiSqlServerRelationalAcceptanceTests
     private static HttpRequestMessage Approval(Guid periodId, string key, long expectedVersion, string? correlation = null) =>
         Post($"{PeriodsPath}/{periodId:D}/approval", key, correlation ?? Guid.NewGuid().ToString("N"),
             new PeriodCommandRequestV1(expectedVersion));
+
+    private static HttpRequestMessage ReversalApproval(
+        Guid proposalId,
+        string key,
+        int expectedVersion,
+        string? correlation = null) =>
+        Post($"{ReversalProposalsPath}/{proposalId:D}/approval", key, correlation ?? Guid.NewGuid().ToString("N"),
+            new ApproveAccountingJournalReversalRequestV1(expectedVersion));
 
     private static HttpRequestMessage Close(Guid periodId, string key, long expectedVersion) =>
         Post($"{PeriodsPath}/{periodId:D}/close", key, Guid.NewGuid().ToString("N"), new PeriodCommandRequestV1(expectedVersion));

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, screen, waitFor, within } from '@testing-library/react'
-import { PRODUCT_CAPABILITY } from './capabilities'
+import userEvent from '@testing-library/user-event'
+import { PRODUCT_ACTIVATE_CAPABILITY, PRODUCT_CAPABILITY } from './capabilities'
 import { resetPendingAttempts } from './pendingAttempt'
 import {
   COMPANY_A,
@@ -9,6 +10,7 @@ import {
   PRODUCT_1,
   installFetch,
   json,
+  mutation,
   productCard,
   productCore,
   references,
@@ -324,5 +326,249 @@ describe('edit entry point', () => {
     renderProductApp(PATH)
     await cardVisible()
     expect(screen.queryByRole('link', { name: 'Düzenle' })).toBeNull()
+  })
+})
+
+describe('activation control', () => {
+  const WITH_ACTIVATION = [...DETAIL_ONLY, PRODUCT_ACTIVATE_CAPABILITY]
+
+  it('appears only with its child capability and only for a known Draft', async () => {
+    installFetch({ capabilities: DETAIL_ONLY })
+    const first = renderProductApp(PATH)
+    await cardVisible()
+    expect(screen.queryByRole('button', { name: 'Ürünü aktifleştir' })).toBeNull()
+    first.unmount()
+    cleanup()
+
+    installFetch({ capabilities: WITH_ACTIVATION })
+    const second = renderProductApp(PATH)
+    await cardVisible()
+    expect(screen.getByRole('button', { name: 'Ürünü aktifleştir' })).toBeTruthy()
+    second.unmount()
+    cleanup()
+
+    installFetch({
+      capabilities: WITH_ACTIVATION,
+      onCard: () => json(productCard({ product: productCore({ lifecycle: 'Active' }) })),
+    })
+    renderProductApp(PATH)
+    await cardVisible()
+    expect(screen.queryByRole('button', { name: 'Ürünü aktifleştir' })).toBeNull()
+  })
+
+  it('posts the exact card version with one key and shows Active only from the re-read card', async () => {
+    let historyReads = 0
+    let cardReads = 0
+    const { calls } = installFetch({
+      capabilities: WITH_ACTIVATION,
+      onCard: () => {
+        cardReads += 1
+        return json(
+          productCard({
+            product: productCore(cardReads === 1 ? {} : { lifecycle: 'Active', version: '8' }),
+          }),
+        )
+      },
+      onHistory: () => {
+        historyReads += 1
+        return json({ productId: PRODUCT_1, entries: [], truncated: false })
+      },
+      onActivate: () =>
+        json(
+          mutation({
+            card: productCard({ product: productCore({ lifecycle: 'Active', version: '8' }) }),
+          }),
+        ),
+    })
+    renderProductApp(PATH)
+    await cardVisible()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Ürünü aktifleştir' }))
+    await waitFor(() => expect(screen.getByText('Ürün aktifleştirildi.')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('Aktif')).toBeTruthy())
+    expect(cardReads).toBe(2)
+    await waitFor(() => expect(historyReads).toBeGreaterThanOrEqual(2))
+
+    const request = calls.find((call) => call.url.endsWith(`/products/${PRODUCT_1}/activation`))
+    expect(request?.method).toBe('POST')
+    expect(request?.companyId).toBe(COMPANY_A)
+    expect(request?.idempotencyKey).toMatch(/^[0-9a-f]{32}$/)
+    expect(JSON.parse(request?.body ?? '{}')).toEqual({ expectedVersion: '7' })
+  })
+
+  it('retries an unknown outcome with the same payload, origin and idempotency key', async () => {
+    const { calls } = installFetch({
+      capabilities: WITH_ACTIVATION,
+      onActivate: (attempt) => {
+        if (attempt === 1) throw new TypeError('connection dropped')
+        return json(
+          mutation({
+            card: productCard({ product: productCore({ lifecycle: 'Active', version: '8' }) }),
+            isReplay: true,
+          }),
+        )
+      },
+    })
+    renderProductApp(PATH)
+    await cardVisible()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Ürünü aktifleştir' }))
+    await waitFor(() => expect(screen.getByTestId('product-activation-unknown')).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: 'Aynı aktivasyonu tekrar dene' }))
+    await waitFor(() => expect(screen.getByText(/ikinci bir değişiklik uygulanmadı/)).toBeTruthy())
+
+    const requests = calls.filter((call) => call.url.endsWith(`/products/${PRODUCT_1}/activation`))
+    expect(requests).toHaveLength(2)
+    expect(requests[1].idempotencyKey).toBe(requests[0].idempotencyKey)
+    expect(requests[1].companyId).toBe(requests[0].companyId)
+    expect(requests[1].body).toBe(requests[0].body)
+  })
+
+  it('stops on a stale version and requires a fresh card instead of rebasing', async () => {
+    const { calls } = installFetch({
+      capabilities: WITH_ACTIVATION,
+      onActivate: () => json({ code: 'version_conflict', currentVersion: '8' }, 409),
+    })
+    renderProductApp(PATH)
+    await cardVisible()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Ürünü aktifleştir' }))
+    await waitFor(() => expect(screen.getByText(/Ürün siz bakarken değişti/)).toBeTruthy())
+    expect(screen.queryByText('Ürün aktifleştirildi.')).toBeNull()
+    expect(calls.filter((call) => call.url.endsWith(`/products/${PRODUCT_1}/activation`))).toHaveLength(1)
+  })
+
+  it('re-reads the card once after a confirmed activation and never paints the command card’s partial labels', async () => {
+    /**
+     * The real answers differ, and that difference is the point: the card read resolves
+     * every catalogue (class, family, template, facts, units), while the activation
+     * command's card carries the group label only (ProductDraftOperation.Card). A harness
+     * that answered both with the same labels could not tell a re-read from a paint.
+     */
+    const UNIT_KG = 'dddddddd-0000-0000-0000-000000000001'
+    const TEMPLATE = 'eeeeeeee-0000-0000-0000-000000000009'
+    const FULL_LABELS = {
+      group: 'Sac',
+      class: 'Yassı ürün',
+      family: 'Soğuk hadde',
+      primaryStockUnit: 'Kilogram',
+      template: 'Levha şablonu',
+      familyFacts: { cins: 'Çelik levha', tur: 'Soğuk haddelenmiş', tip: 'Rulo form' },
+      units: { stock: 'Kilogram', sales: 'Kilogram' },
+    }
+    const cardWith = (lifecycle: string, version: string, labels: Record<string, unknown>) =>
+      productCard({
+        product: productCore({ classId: CLASS_FLAT, familyId: FAMILY_FLAT, lifecycle, version, labels }),
+        references: references({
+          templateId: TEMPLATE,
+          templateVersion: '1',
+          units: { stock: UNIT_KG, purchase: null, sales: UNIT_KG, price: null, production: null, package: null },
+        }),
+      })
+    const expectFullLabels = () => {
+      expect(screen.getByTestId('product-class').textContent).toBe('Yassı ürün')
+      expect(screen.getByTestId('product-family').textContent).toBe('Soğuk hadde')
+      expect(screen.getByTestId('product-primary-stock-unit').textContent).toBe('Kilogram')
+      expect(screen.getByTestId('product-unit-stock').textContent).toBe('Kilogram')
+      expect(screen.getByTestId('product-unit-sales').textContent).toBe('Kilogram')
+      for (const text of ['Levha şablonu', 'Çelik levha', 'Soğuk haddelenmiş', 'Rulo form']) {
+        expect(screen.getByText(text)).toBeTruthy()
+      }
+      expect(screen.queryAllByText('ad okunamadı')).toHaveLength(0)
+    }
+
+    let cardReads = 0
+    let answerReRead: (response: Response) => void = () => undefined
+    const reRead = new Promise<Response>((resolve) => {
+      answerReRead = resolve
+    })
+    installFetch({
+      capabilities: WITH_ACTIVATION,
+      onCard: () => {
+        cardReads += 1
+        return cardReads === 1 ? json(cardWith('Draft', '7', FULL_LABELS)) : reRead
+      },
+      onActivate: () =>
+        json(
+          mutation({
+            card: cardWith('Active', '8', { group: 'Sac', class: null, family: null, primaryStockUnit: null }),
+          }),
+        ),
+    })
+    renderProductApp(PATH)
+    await cardVisible()
+    expectFullLabels()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Ürünü aktifleştir' }))
+    await waitFor(() => expect(screen.getByText('Ürün aktifleştirildi.')).toBeTruthy())
+    await waitFor(() => expect(cardReads).toBe(2))
+    // The confirmed answer is in, the re-read is not: the last server card stands, whole.
+    // No optimistic Active, and nothing from the command's partial card.
+    expect(screen.getByText('Taslak')).toBeTruthy()
+    expect(screen.queryByText('Aktif')).toBeNull()
+    expectFullLabels()
+
+    answerReRead(json(cardWith('Active', '8', FULL_LABELS)))
+    await waitFor(() => expect(screen.getByText('Aktif')).toBeTruthy())
+    expect(screen.getByText('Ürün aktifleştirildi.')).toBeTruthy()
+    expectFullLabels()
+    expect(cardReads).toBe(2)
+  })
+
+  it('after a stale refusal, "Kartı yenile" re-reads the card and offers activation again on the fresh version with a new key', async () => {
+    let cardReads = 0
+    const { calls } = installFetch({
+      capabilities: WITH_ACTIVATION,
+      onCard: () => {
+        cardReads += 1
+        return json(productCard({ product: productCore({ version: cardReads === 1 ? '7' : '8' }) }))
+      },
+      onActivate: (attempt) =>
+        attempt === 1
+          ? json({ code: 'version_conflict', expectedVersion: '7', currentVersion: '8' }, 409)
+          : json(mutation({ card: productCard({ product: productCore({ lifecycle: 'Active', version: '9' }) }) })),
+    })
+    const activations = () => calls.filter((call) => call.url.endsWith(`/products/${PRODUCT_1}/activation`))
+    renderProductApp(PATH)
+    await cardVisible()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Ürünü aktifleştir' }))
+    await waitFor(() => expect(screen.getByText(/Ürün siz bakarken değişti/)).toBeTruthy())
+    expect(screen.queryByRole('button', { name: 'Ürünü aktifleştir' })).toBeNull()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Kartı yenile' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Ürünü aktifleştir' })).toBeTruthy())
+    expect(cardReads).toBe(2)
+    expect(screen.queryByText(/Ürün siz bakarken değişti/)).toBeNull()
+    // The fresh card is offered, not acted on: nothing was re-sent or rebased on its own.
+    expect(activations()).toHaveLength(1)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Ürünü aktifleştir' }))
+    await waitFor(() => expect(screen.getByText('Ürün aktifleştirildi.')).toBeTruthy())
+    const [refused, fresh] = activations()
+    expect(activations()).toHaveLength(2)
+    expect(JSON.parse(refused.body ?? '{}')).toEqual({ expectedVersion: '7' })
+    expect(JSON.parse(fresh.body ?? '{}')).toEqual({ expectedVersion: '8' })
+    expect(fresh.idempotencyKey).toMatch(/^[0-9a-f]{32}$/)
+    expect(fresh.idempotencyKey).not.toBe(refused.idempotencyKey)
+  })
+
+  it('re-fences the control after a forbidden activation response', async () => {
+    const capabilities = [...WITH_ACTIVATION]
+    installFetch({
+      capabilities,
+      onActivate: () => {
+        capabilities.splice(capabilities.indexOf(PRODUCT_ACTIVATE_CAPABILITY), 1)
+        return json({ code: 'forbidden' }, 403)
+      },
+    })
+    renderProductApp(PATH)
+    await cardVisible()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Ürünü aktifleştir' }))
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Ürünü aktifleştir' })).toBeNull(),
+    )
+    expect(screen.queryByText('Ürün aktifleştirildi.')).toBeNull()
   })
 })

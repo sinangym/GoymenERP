@@ -2,6 +2,10 @@ export interface Pur01Seed {
   readonly creatorActor: string
   readonly approverActor: string
   readonly readerActor: string
+  /** Holds only purchasing.orders.read + purchasing.goods-receipts.record (the receipt command and its detail). */
+  readonly receiverActor: string
+  /** Holds only inventory.labels.read + inventory.balances.read (the Inventory label detail); no Purchasing name. */
+  readonly stockReaderActor: string
   readonly companyId: string
   readonly otherCompanyId: string
   readonly orderId: string
@@ -62,6 +66,8 @@ export function readEnvironment(): Pur01Environment {
     creatorActor: text(raw, 'creatorActor'),
     approverActor: text(raw, 'approverActor'),
     readerActor: text(raw, 'readerActor'),
+    receiverActor: text(raw, 'receiverActor'),
+    stockReaderActor: text(raw, 'stockReaderActor'),
     companyId: text(raw, 'companyId', true),
     otherCompanyId: text(raw, 'otherCompanyId', true),
     orderId: text(raw, 'orderId', true),
@@ -76,11 +82,19 @@ export function readEnvironment(): Pur01Environment {
     productCode: text(raw, 'productCode'),
     productName: text(raw, 'productName'),
   }
-  if (new Set([seed.creatorActor, seed.approverActor, seed.readerActor]).size !== 3) {
+  if (new Set([seed.creatorActor, seed.approverActor, seed.readerActor, seed.receiverActor, seed.stockReaderActor]).size !== 5) {
     throw new Error('BROWSER_E2E_PUR01_SEED binds one actor to multiple personas')
   }
   if (seed.companyId === seed.otherCompanyId) throw new Error('BROWSER_E2E_PUR01_SEED names the same company twice')
   if (!/^SYNPUR01-[1-9]\d*$/.test(seed.productCode)) throw new Error('BROWSER_E2E_PUR01_SEED productCode is not the gated fixture code')
   if (seed.productName !== 'SENTETIK browser-suite:pur01 purchase candidate') throw new Error('BROWSER_E2E_PUR01_SEED productName is not the gated fixture name')
   return { apiBaseUrl, testedCommit, seed }
+}
+
+/**
+ * The disposable run's SQL connection, supplied to every suite by browser-acceptance.yml. Only the goods-receipt
+ * journey reads it, for read-only effect counts; it is never logged or written to an artifact.
+ */
+export function readSqlConnection(): string {
+  return required('BROWSER_E2E_SQL_CONNECTION')
 }

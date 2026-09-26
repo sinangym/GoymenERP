@@ -27,7 +27,7 @@ namespace GoymenERP.Modules.Logistics.Application;
 /// recorded under the key and replayed. Nothing physical is written (D3): loads are shares, never stock.</item>
 /// </list>
 /// </summary>
-public sealed class LogisticsInstructionService(
+public sealed partial class LogisticsInstructionService(
     ICompanyContext companyContext,
     ICurrentUser currentUser,
     IErpAuthorityRevalidationService authority,
@@ -37,7 +37,8 @@ public sealed class LogisticsInstructionService(
     LoadingUnitVerifier units,
     ILogisticsInstructionStore store,
     LogisticsInstructionServiceBindings bindings,
-    TimeProvider timeProvider) : ILogisticsInstructionService
+    TimeProvider timeProvider,
+    ILogisticsRealizationTransactionRunnerV1? realization = null) : ILogisticsInstructionService, ILogisticsRealizationServiceV1
 {
     private const int DefaultPageSize = 50;
     private const int MaximumPageSize = 100;
