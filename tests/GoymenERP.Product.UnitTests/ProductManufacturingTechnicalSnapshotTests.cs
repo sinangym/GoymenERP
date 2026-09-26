@@ -195,6 +195,89 @@ public sealed class ProductManufacturingTechnicalSnapshotTests
         Assert.Single(scope.ServiceProvider.GetServices<IProductManufacturingTechnicalSnapshotV1>());
     }
 
+    [Theory]
+    [InlineData("absent")]
+    [InlineData("duplicated")]
+    [InlineData("not-a-measure")]
+    public void A_template_without_exactly_one_millimetre_field_for_the_role_is_a_named_503(string shape)
+    {
+        ProductTemplateFieldV2[] fields = shape switch
+        {
+            "absent" => [MeasureField("widthMm", ProductTemplateFieldRolesV2.Width)],
+            "duplicated" => [MeasureField("thicknessMm", ProductTemplateFieldRolesV2.Thickness),
+                MeasureField("thicknessAltMm", ProductTemplateFieldRolesV2.Thickness)],
+            _ => [new("thicknessMm", ProductTemplateFieldKindV2.DictionaryReference, ProductTemplateFieldRolesV2.Thickness,
+                true, "qualities", false, null, null, null)],
+        };
+        var references = MeasureReferences(("thicknessMm", JsonSerializer.SerializeToElement(1.25m)),
+            ("thicknessAltMm", JsonSerializer.SerializeToElement(1.5m)),
+            ("widthMm", JsonSerializer.SerializeToElement(1250m)));
+
+        var error = Assert.Throws<ProductOperationException>(() =>
+            ProductManufacturingTechnicalSnapshotService.ReadMeasure(references, MeasureTemplate(fields),
+                ProductTemplateFieldRolesV2.Thickness));
+
+        Assert.Equal((503, ProductManufacturingTechnicalSnapshotService.MeasureUndefinedCode),
+            (error.StatusCode, error.Code));
+        Assert.NotEqual(ProductFamilyDefinitionRulesV2.InvalidDefinitionCode, error.Code);
+    }
+
+    [Theory]
+    [InlineData("missing", ProductFamilyPolicyCodesV1.Required)]
+    [InlineData("null", ProductFamilyPolicyCodesV1.Required)]
+    [InlineData("no-attributes", ProductFamilyPolicyCodesV1.Required)]
+    [InlineData("text", ProductFamilyPolicyCodesV1.InvalidValue)]
+    [InlineData("zero", ProductFamilyPolicyCodesV1.InvalidValue)]
+    [InlineData("negative", ProductFamilyPolicyCodesV1.InvalidValue)]
+    [InlineData("four-decimals", ProductFamilyPolicyCodesV1.PrecisionExceeded)]
+    public void A_card_measure_the_snapshot_cannot_publish_is_a_card_value_field_error(string value, string code)
+    {
+        var template = MeasureTemplate([MeasureField("thicknessMm", ProductTemplateFieldRolesV2.Thickness, required: false)]);
+        var references = value switch
+        {
+            "missing" => MeasureReferences(),
+            "no-attributes" => new ProductReferences(TemplateId, "7"),
+            "null" => MeasureReferences(("thicknessMm", JsonSerializer.SerializeToElement<object?>(null))),
+            "text" => MeasureReferences(("thicknessMm", JsonSerializer.SerializeToElement("1.25"))),
+            "zero" => MeasureReferences(("thicknessMm", JsonSerializer.SerializeToElement(0m))),
+            "negative" => MeasureReferences(("thicknessMm", JsonSerializer.SerializeToElement(-1.25m))),
+            _ => MeasureReferences(("thicknessMm", JsonSerializer.SerializeToElement(1.2345m))),
+        };
+
+        var read = ProductManufacturingTechnicalSnapshotService.ReadMeasure(references, template,
+            ProductTemplateFieldRolesV2.Thickness);
+
+        Assert.Null(read.Millimetres);
+        Assert.Equal(new ProductFieldError("references.attributes.thicknessMm", code), read.Error);
+        Assert.NotEqual(ProductFamilyDefinitionRulesV2.InvalidDefinitionCode, read.Error!.Code);
+    }
+
+    [Theory]
+    [InlineData("1.25", "1.25")]
+    [InlineData("1.250", "1.25")]
+    [InlineData("0.001", "0.001")]
+    [InlineData("1250", "1250")]
+    public void A_positive_measure_with_at_most_three_decimals_is_published_exactly(string stored, string expected)
+    {
+        var template = MeasureTemplate([MeasureField("widthMm", ProductTemplateFieldRolesV2.Width)]);
+        var references = MeasureReferences(("widthMm", JsonSerializer.Deserialize<JsonElement>(stored)));
+
+        var read = ProductManufacturingTechnicalSnapshotService.ReadMeasure(references, template,
+            ProductTemplateFieldRolesV2.Width);
+
+        Assert.Null(read.Error);
+        Assert.Equal(decimal.Parse(expected, System.Globalization.CultureInfo.InvariantCulture), read.Millimetres);
+    }
+
+    private static ProductTemplateFieldV2 MeasureField(string key, string role, bool required = true) =>
+        new(key, ProductTemplateFieldKindV2.MeasureMillimetre, role, required, null, false, null, null, null);
+
+    private static ProductTemplateV2 MeasureTemplate(IReadOnlyList<ProductTemplateFieldV2> fields) =>
+        new(TemplateId, "7", "gdc-coil-v7", "GDC Coil v7", new HashSet<Guid> { FamilyId }, fields, "#66/5739827887");
+
+    private static ProductReferences MeasureReferences(params (string Key, JsonElement Value)[] attributes) =>
+        new(TemplateId, "7", attributes.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal));
+
     private static ProductSalesEligibilityServiceTests.World World(ProductStoredRecord? record = null) =>
         new() { Record = record ?? TechnicalRecord() };
 

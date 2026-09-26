@@ -33,10 +33,12 @@ public static class LogisticsCommands
     public const string CreateV1 = "logistics.loading-instruction.create.v1";
     public const string IssueV1 = "logistics.loading-instruction.issue.v1";
     public const string RecordLoadV1 = "logistics.loading-instruction.record-load.v1";
+    public const string RecordShipmentV1 = "logistics.loading-instruction.record-shipment.v1";
+    public const string RecordDeliveryV1 = "logistics.loading-instruction.record-delivery.v1";
 
-    public static bool IsMutation(string commandName) => commandName is IssueV1 or RecordLoadV1;
+    public static bool IsMutation(string commandName) => commandName is IssueV1 or RecordLoadV1 or RecordShipmentV1 or RecordDeliveryV1;
 
-    public static bool IsKnown(string commandName) => commandName is CreateV1 or IssueV1 or RecordLoadV1;
+    public static bool IsKnown(string commandName) => commandName == CreateV1 || IsMutation(commandName);
 }
 
 /// <summary>The stable refusal codes of the store, beside the domain's rule codes.</summary>

@@ -143,7 +143,8 @@ public sealed class PurchasingServiceException(int status, string code,
 public sealed record PurchasingServiceBindings(
     string? CreatePermission = PurchasingPermissionManifestV1.OrdersCreate,
     string? ReadPermission = PurchasingPermissionManifestV1.OrdersRead,
-    string? ApprovePermission = PurchasingPermissionManifestV1.OrdersApprove);
+    string? ApprovePermission = PurchasingPermissionManifestV1.OrdersApprove,
+    string? GoodsReceiptPermission = PurchasingPermissionManifestV1.GoodsReceiptsRecord);
 
 /// <summary>Constructed by the server, never bound from the request body.</summary>
 public sealed record PurchasingCommandMetadata(string IdempotencyKey, string CorrelationId, string? CausationId, DateTimeOffset RequestedAtUtc);
