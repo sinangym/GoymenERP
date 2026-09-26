@@ -207,14 +207,29 @@ public sealed class NormalJournalDraftServiceV1(
                         eligible.Code, eligible.Field, eligible.ExpectedVersion, eligible.CurrentVersion);
                 }
 
-                var record = await drafts.ApproveAndPostNormalDraftAsync(
-                    draftId,
-                    expectedVersion,
-                    periodId,
-                    actor,
-                    token => FenceAsync(permissions.ApprovePermission, actor, token),
-                    metadata,
-                    cancellationToken);
+                NormalJournalDraftRecordV1 record;
+                try
+                {
+                    record = await drafts.ApproveAndPostNormalDraftAsync(
+                        draftId,
+                        expectedVersion,
+                        periodId,
+                        actor,
+                        token => FenceAsync(permissions.ApprovePermission, actor, token),
+                        metadata,
+                        cancellationToken);
+                }
+                catch (AccountingStoreException exception) when (exception.Code == AccountingStoreCodes.JournalIdTaken)
+                {
+                    // The approval posts exactly one journal: the draft's own, whose id IS the draft id
+                    // (NormalJournalDraftV1.Id is its request's JournalId). "Taken" therefore means that journal already
+                    // exists, e.g. a racing approval committed it after this attempt read the ledger. That is the same
+                    // refusal the store reports as a posting conflict when it meets the delivery or the original first,
+                    // so it is answered as one (replay of this key's winner, else the route's declared 409).
+                    throw new AccountingStoreException(NormalJournalDraftStoreCodesV1.PostingConflict,
+                        exception.Message, exception);
+                }
+
                 return new AccountingApiResult<NormalJournalDraftViewV1>(AccountingApiStatus.Ok, View(record), false, null);
             },
             stored => View((NormalJournalDraftRecordV1)stored),

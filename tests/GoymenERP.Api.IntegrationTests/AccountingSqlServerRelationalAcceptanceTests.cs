@@ -143,8 +143,9 @@ public sealed class AccountingSqlServerRelationalAcceptanceTests
     /// <item><c>same-key</c> (same checker, key and expected version): both answers are 200 for the one approval, exactly
     /// one of them the replay, both naming the draft's one posted journal; one new approve command row.</item>
     /// <item><c>other-key</c> (same checker and expected version, two keys): exactly one 200, not a replay; the other is
-    /// accepted as any of the approve route's declared 409s for a lost race (posting conflict, stale version, not
-    /// pending, or a lost save's concurrent change).</item>
+    /// accepted only as one of the approve route's declared 409s for a lost race (posting conflict, which also covers a
+    /// loss at the journal-id check; stale version; not pending; or a lost save's concurrent change). Any other answer,
+    /// in particular the undeclared <c>accounting_journal_id_taken</c> or a 500, fails the case.</item>
     /// </list>
     /// Either way exactly one journal is posted for the draft (and one original for its fact), with one delivery of its
     /// message, the draft Approved v2 and linked to it, and exactly one posting's net effect on its accounts.

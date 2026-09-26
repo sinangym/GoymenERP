@@ -18,12 +18,14 @@ namespace GoymenERP.Accounting.UnitTests;
 /// approval policy and <see cref="AccountingStore"/> on the EF in-memory provider.
 /// <para>
 /// These tests are NOT race proof. The in-memory provider has no transactions, unique indexes or SQL isolation, so each
-/// case forces ONE deterministic interleaving (the loser parks at the store's first authority fence, after its draft
-/// read) to pin how that interleaving is answered. The real-SQL race evidence is the SQL Server relational acceptance
-/// case in <c>AccountingSqlServerRelationalAcceptanceTests.A_normal_draft_is_reopened_posted_once_and_a_late_fence_refusal_rolls_everything_back</c>:
+/// case forces ONE deterministic interleaving to pin how it is answered: the loser parks either at the store's first
+/// authority fence (after its draft read; it then meets the winner's delivery) or on the read right after its
+/// original-journal read (it then meets the winner's journal at the journal-id check). The real-SQL race evidence is
+/// the SQL Server relational acceptance case in
+/// <c>AccountingSqlServerRelationalAcceptanceTests.A_normal_draft_is_reopened_posted_once_and_a_late_fence_refusal_rolls_everything_back</c>:
 /// it sends two approvals of one draft at once (same key, and two keys) for several fresh drafts under whatever
-/// interleaving SQL Server produces, accepting any of the approve route's declared answers for the loser, and asserts
-/// one posted journal and one posting's net effect.
+/// interleaving SQL Server produces (it forces none), accepting for the loser only the approve route's declared 409s
+/// for a lost race, and asserts one posted journal and one posting's net effect.
 /// </para>
 /// </summary>
 public sealed class NormalJournalDraftApprovalRaceV1Tests
@@ -114,6 +116,109 @@ public sealed class NormalJournalDraftApprovalRaceV1Tests
         await book.AssertPostedOnceAsync(draft, winnerActor);
     }
 
+    /// <summary>
+    /// The second way to lose: A passes the store's delivery and original-journal reads while nothing is posted yet,
+    /// and parks on its very next read (the fact's posting-exception row, seeded so that the read materializes a row);
+    /// B approves and commits the draft's journal; A resumes, the ledger posts again, and the store's journal-id check
+    /// refuses A because the draft's journal id (the draft id) is now taken. The owner answers that exactly like a
+    /// posting conflict: the winner's replay under a binding key, otherwise the route's declared 409, never the
+    /// undeclared <c>accounting_journal_id_taken</c>.
+    /// </summary>
+    [Theory]
+    [InlineData("same-key")]
+    [InlineData("same-key-other-checker")]
+    [InlineData("other-key")]
+    public async Task A_racing_approval_that_loses_at_the_journal_id_check_answers_as_a_posting_conflict(string race)
+    {
+        var book = await Book.CreateAsync();
+        var draft = await book.CreateDraftAsync();
+        await book.QueueMappingExceptionForDraftFactAsync(draft);
+        const string loserKey = "id-check-draft-a";
+        var winnerKey = race == "other-key" ? "id-check-draft-b" : loserKey;
+        var winnerActor = race == "same-key" ? Checker : SecondChecker;
+
+        using var gate = new ExceptionReadGate();
+        var parked = Task.Run(() => book.ApproveAsync(Checker, draft.Id, loserKey, interceptor: gate));
+        await gate.Reached.Task.WaitAsync(GateTimeout);
+        var winner = await book.ApproveAsync(winnerActor, draft.Id, winnerKey, correlation: "id-check-winner");
+        gate.Release();
+        var loser = await parked.WaitAsync(GateTimeout);
+
+        Assert.Equal((AccountingApiStatus.Ok, false, draft.Id),
+            (winner.Status, winner.IsReplay, winner.Resource!.PostedJournalId!.Value));
+        if (race == "same-key")
+        {
+            Assert.Equal(
+                (AccountingApiStatus.Ok, true, "id-check-winner", draft.Id, "Approved", 2L),
+                (loser.Status, loser.IsReplay, loser.OriginalCorrelationId, loser.Resource!.PostedJournalId!.Value,
+                    loser.Resource.Status, loser.Resource.Version));
+        }
+        else
+        {
+            Assert.Equal(
+                (AccountingApiStatus.Conflict, NormalJournalDraftStoreCodesV1.PostingConflict, false),
+                (loser.Status, loser.Code, loser.IsReplay));
+            Assert.Null(loser.Resource);
+        }
+
+        Assert.NotEqual(AccountingStoreCodes.JournalIdTaken, loser.Code);
+        await book.AssertPostedOnceAsync(draft, winnerActor);
+        Assert.Equal(1, await book.ApprovalCommandCountAsync());
+    }
+
+    [Fact]
+    public async Task The_store_itself_reports_that_interleaving_as_journal_id_taken()
+    {
+        // Pins WHY the owner maps the code: the same interleaving, asked of the store directly, is refused with
+        // accounting_journal_id_taken (and nothing of the loser is saved).
+        var book = await Book.CreateAsync();
+        var draft = await book.CreateDraftAsync();
+        await book.QueueMappingExceptionForDraftFactAsync(draft);
+
+        using var gate = new ExceptionReadGate();
+        var parked = Task.Run(async () =>
+        {
+            await using var scope = book.Open(Checker, interceptor: gate);
+            await scope.Store.ApproveAndPostNormalDraftAsync(
+                draft.Id, 1, book.September, Checker, static _ => Task.CompletedTask, Metadata());
+        });
+        await gate.Reached.Task.WaitAsync(GateTimeout);
+        Assert.Equal(AccountingApiStatus.Ok, (await book.ApproveAsync(SecondChecker, draft.Id, "id-check-store")).Status);
+        gate.Release();
+
+        var refused = await Assert.ThrowsAsync<AccountingStoreException>(() => parked.WaitAsync(GateTimeout));
+        Assert.Equal(AccountingStoreCodes.JournalIdTaken, refused.Code);
+        await book.AssertPostedOnceAsync(draft, SecondChecker);
+    }
+
+    [Fact]
+    public async Task A_draft_whose_journal_id_another_posting_took_is_the_declared_409_and_is_not_recorded()
+    {
+        // No race: another fact was posted under the draft's journal id. Approval's posting is refused at the id check;
+        // the route answers its declared posting conflict (not the undeclared accounting_journal_id_taken), records
+        // nothing, and the draft stays pending.
+        var book = await Book.CreateAsync();
+        var draft = await book.CreateDraftAsync();
+        await book.PostOtherFactUnderJournalIdAsync(draft.Id);
+
+        var first = await book.ApproveAsync(Checker, draft.Id, "taken-id-draft");
+        var again = await book.ApproveAsync(Checker, draft.Id, "taken-id-draft");
+
+        foreach (var answer in new[] { first, again })
+        {
+            Assert.Equal(
+                (AccountingApiStatus.Conflict, NormalJournalDraftStoreCodesV1.PostingConflict, false),
+                (answer.Status, answer.Code, answer.IsReplay));
+            Assert.Null(answer.Resource);
+        }
+
+        Assert.Equal(0, await book.ApprovalCommandCountAsync());
+        var row = await book.DraftRowAsync(draft.Id);
+        Assert.Equal(((int)NormalJournalDraftStatusV1.Draft, 1L), (row.Status, row.Version));
+        Assert.Null(row.PostedJournalId);
+        Assert.Equal(1, await book.JournalCountAsync());
+    }
+
     [Fact]
     public async Task A_posting_conflict_without_a_racing_approval_stays_409_and_is_not_recorded()
     {
@@ -189,14 +294,24 @@ public sealed class NormalJournalDraftApprovalRaceV1Tests
             return book;
         }
 
-        public RequestScope Open(Guid actor, IErpAuthorityRevalidationService? authority = null, string? correlation = null)
+        public RequestScope Open(
+            Guid actor,
+            IErpAuthorityRevalidationService? authority = null,
+            string? correlation = null,
+            IInterceptor? interceptor = null)
         {
             var companyContext = new CompanyContext();
             companyContext.Set(Company);
-            var options = new DbContextOptionsBuilder<AccountingDbContext>()
+            var builder = new DbContextOptionsBuilder<AccountingDbContext>()
                 .UseInMemoryDatabase(database, root)
-                .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning))
-                .Options;
+                .ConfigureWarnings(warnings => warnings.Ignore(
+                    InMemoryEventId.TransactionIgnoredWarning, CoreEventId.ManyServiceProvidersCreatedWarning));
+            if (interceptor is not null)
+            {
+                builder.AddInterceptors(interceptor);
+            }
+
+            var options = builder.Options;
             var dbContext = new AccountingDbContext(options, companyContext);
             var store = new AccountingStore(dbContext, companyContext, new NullAuditCollector(), new FixedTimeProvider(Now),
                 new AccountingAmountScaleVerifier(SyntheticSettings.Scale(Company, 2)));
@@ -256,14 +371,55 @@ public sealed class NormalJournalDraftApprovalRaceV1Tests
             Assert.Equal(PostingOutcomeKind.Posted, outcome.Kind);
         }
 
+        /// <summary>
+        /// Another message of the draft's fact whose credit line has no mapping: it posts nothing and leaves an OPEN
+        /// posting-exception row for the fact, which the store reads right after its original-journal read.
+        /// </summary>
+        public async Task QueueMappingExceptionForDraftFactAsync(NormalJournalDraftV1 draft)
+        {
+            await using var scope = Open(Preparer);
+            var outcome = await scope.Store.ReceiveAsync(draft.Request with
+            {
+                MessageId = $"synthetic-unmapped-{Guid.NewGuid():N}",
+                JournalId = Guid.NewGuid(),
+                Lines =
+                [
+                    new ProposedLine("debit", Debit, PostingSide.Debit, Amount),
+                    new ProposedLine("credit", null, PostingSide.Credit, Amount),
+                ],
+            }, September, Metadata());
+            Assert.Equal(PostingOutcomeKind.ExceptionQueued, outcome.Kind);
+            Assert.Equal(0, await JournalCountAsync());
+        }
+
+        /// <summary>Posts ANOTHER fact (own source and message, other accounts) under the given journal id.</summary>
+        public async Task PostOtherFactUnderJournalIdAsync(Guid journalId)
+        {
+            await using var scope = Open(Preparer);
+            var outcome = await scope.Store.ReceiveAsync(new PostingRequest(
+                "synthetic-other-consumer",
+                $"synthetic-other-{Guid.NewGuid():N}",
+                journalId,
+                new SourceReference(Company, Guid.NewGuid(), "synthetic-other-purpose"),
+                "synthetic-rule-v1",
+                Guid.NewGuid(),
+                new PostingDates(new DateOnly(2026, 9, 24), new DateOnly(2026, 9, 24), null, Now),
+                [
+                    new ProposedLine("other-debit", new AccountRef(Company, Guid.NewGuid()), PostingSide.Debit, Amount),
+                    new ProposedLine("other-credit", new AccountRef(Company, Guid.NewGuid()), PostingSide.Credit, Amount),
+                ]), September, Metadata());
+            Assert.Equal((PostingOutcomeKind.Posted, journalId), (outcome.Kind, outcome.Journal!.Id));
+        }
+
         public async Task<AccountingApiResult<NormalJournalDraftViewV1>> ApproveAsync(
             Guid actor,
             Guid draftId,
             string idempotencyKey,
             IErpAuthorityRevalidationService? authority = null,
-            string? correlation = null)
+            string? correlation = null,
+            IInterceptor? interceptor = null)
         {
-            await using var scope = Open(actor, authority, correlation);
+            await using var scope = Open(actor, authority, correlation, interceptor);
             return await scope.Lifecycle.ApproveAsync(draftId, 1, September, idempotencyKey);
         }
 
@@ -355,6 +511,37 @@ public sealed class NormalJournalDraftApprovalRaceV1Tests
 
             return Granted();
         }
+    }
+
+    /// <summary>
+    /// Parks the first posting-exception row its context materializes (in the store's posting path, the read right after
+    /// the original-journal read and before the journal-id check) until <see cref="Release"/> is called. Materialization
+    /// runs on the reading thread, so the parked approval must run on its own thread.
+    /// </summary>
+    private sealed class ExceptionReadGate : IMaterializationInterceptor, IDisposable
+    {
+        private readonly ManualResetEventSlim released = new(false);
+        private int armed = 1;
+
+        public TaskCompletionSource Reached { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public void Release() => released.Set();
+
+        public object InitializedInstance(MaterializationInterceptionData materializationData, object entity)
+        {
+            if (entity is PostingExceptionRow && Interlocked.Exchange(ref armed, 0) == 1)
+            {
+                Reached.TrySetResult();
+                if (!released.Wait(GateTimeout))
+                {
+                    throw new TimeoutException("The parked approval was never released.");
+                }
+            }
+
+            return entity;
+        }
+
+        public void Dispose() => released.Dispose();
     }
 
     private sealed class FixedUser(Guid actor, Guid company) : ICurrentUser
