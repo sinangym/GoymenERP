@@ -1,6 +1,7 @@
 using GoymenERP.Api.Contracts;
 using GoymenERP.Api.Endpoints;
 using GoymenERP.Api.Errors;
+using GoymenERP.Api.LogisticsRuntime;
 using GoymenERP.Api.ManufacturingRuntime;
 using GoymenERP.Api.Multitenancy;
 using GoymenERP.Api.PurchasingRuntime;
@@ -228,6 +229,7 @@ builder.Services.AddScoped<InventoryPhysicalAllocationHostService>();
 // LOG-4a: the loading instruction's customer is the Cari owner's answer (the Sales party port's shape) and its
 // order lines are Sales's approved-line port (registered by the Sales module); nothing of either is copied.
 builder.Services.AddScoped<ILogisticsPartyAccountPortV1, CounterpartyLogisticsPartyAccountPortV1>();
+builder.Services.AddScoped<ILogisticsRealizationTransactionRunnerV1, LogisticsRealizationTransactionRunner>();
 builder.Services.AddLogisticsModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(

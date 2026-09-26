@@ -32,6 +32,15 @@ const constant = (name: string): string => {
   return match[1]
 }
 
+const declaration = (constantName: string): string => {
+  const marker = `new ShellCapabilityDeclaration(${constantName},`
+  const start = providerText.indexOf(marker)
+  if (start < 0) throw new Error(`the provider declares no ${constantName} capability`)
+  const end = providerText.indexOf('),', start)
+  if (end < 0) throw new Error(`the provider ${constantName} declaration is incomplete`)
+  return providerText.slice(start, end + 2)
+}
+
 describe('Logistics lane ↔ backend shell provider', () => {
   it('declares the same capability ids the provider does', () => {
     expect(constant('ListCapabilityId')).toBe(LOGISTICS_CAPABILITY.instructionsList)
@@ -50,9 +59,31 @@ describe('Logistics lane ↔ backend shell provider', () => {
 
   it('the provider publishes all three declarations after the accepted staged-profile journey', () => {
     // The declaration form ends with `)`; the provider's doc comment mentions the same words inside `<c>…</c>`.
-    expect(constant('OwnerContractVersion')).toBe('1.0')
+    expect(constant('OwnerContractVersion')).toBe('1.1')
     expect((providerText.match(/ImplementationAvailable: true\)/g) ?? []).length).toBe(3)
     expect(providerText).not.toMatch(/ImplementationAvailable: false\)/)
+  })
+
+  it('pins the shipment and delivery child controls to detail with separate authorities', () => {
+    expect(constant('ShipmentCapabilityId')).toBe('logistics.shipments.record')
+    expect(constant('DeliveryCapabilityId')).toBe('logistics.deliveries.record')
+    expect((providerText.match(/ParentCapabilityId: DetailCapabilityId/g) ?? []).length).toBe(2)
+
+    const shipment = declaration('ShipmentCapabilityId')
+    expect(shipment).toContain('DetailCapabilityId, DetailRoutePath, DetailScreenId')
+    expect(shipment).toContain('LogisticsPermissionManifestV1.InstructionsRead')
+    expect(shipment).toContain('LogisticsPermissionManifestV1.ShipmentsRecord')
+    expect(shipment).toContain('ErpPermissions.InventoryPhysicalAllocationWrite')
+    expect(shipment).toContain('ParentCapabilityId: DetailCapabilityId')
+    expect(shipment).not.toContain('LogisticsPermissionManifestV1.DeliveriesRecord')
+
+    const delivery = declaration('DeliveryCapabilityId')
+    expect(delivery).toContain('DetailCapabilityId, DetailRoutePath, DetailScreenId')
+    expect(delivery).toContain('LogisticsPermissionManifestV1.InstructionsRead')
+    expect(delivery).toContain('LogisticsPermissionManifestV1.DeliveriesRecord')
+    expect(delivery).toContain('ParentCapabilityId: DetailCapabilityId')
+    expect(delivery).not.toContain('LogisticsPermissionManifestV1.ShipmentsRecord')
+    expect(delivery).not.toContain('ErpPermissions.InventoryPhysicalAllocationWrite')
   })
 
   it('the detail link helper matches the mounted pattern and the detail has no nav entry', () => {

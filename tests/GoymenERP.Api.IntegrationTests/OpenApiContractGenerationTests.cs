@@ -394,6 +394,12 @@ public sealed partial class OpenApiContractGenerationTests
         new("post", "/api/v1/logistics/loading-instructions/{id}/lines/{lineId}/loads", "RecordLoadingInstructionLoadV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
             "#/components/schemas/RecordLoadRequest", ["path:id:true:type:string;format:uuid", "path:lineId:true:type:string;format:uuid"]),
+        new("post", "/api/v1/logistics/loading-instructions/{id}/lines/{lineId}/shipments", "RecordLoadingInstructionShipmentV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/RecordShipmentRequest", ["path:id:true:type:string;format:uuid", "path:lineId:true:type:string;format:uuid"]),
+        new("post", "/api/v1/logistics/loading-instructions/{id}/lines/{lineId}/deliveries", "RecordLoadingInstructionDeliveryV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/RecordDeliveryRequest", ["path:id:true:type:string;format:uuid", "path:lineId:true:type:string;format:uuid"]),
         new("get", "/api/v1/purchasing/requests", "GetPurchaseRequestsV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["query:pageSize:false:type:integer|string;format:int32;pattern:^-?(?:0|[1-9]\\d*)$", "query:cursor:false:type:string", "query:status:false:type:string"]),
@@ -471,6 +477,12 @@ public sealed partial class OpenApiContractGenerationTests
         new("post", "/api/v1/accounting/normal-journal-drafts/{draftId}/approval", "ApproveAccountingNormalJournalDraftV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
             "#/components/schemas/ApproveNormalJournalDraftRequestV1", ["path:draftId:true:type:string;format:uuid"]),
+        new("post", "/api/v1/accounting/journal-reversal-proposals", "ProposeAccountingJournalReversalV1",
+            AuthenticatedResponses("201:application/json", "400:application/problem+json", "415:", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/ProposeAccountingJournalReversalRequestV1"),
+        new("post", "/api/v1/accounting/journal-reversal-proposals/{proposalId}/approval", "ApproveAccountingJournalReversalV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/ApproveAccountingJournalReversalRequestV1", ["path:proposalId:true:type:string;format:uuid"]),
         new("get", "/api/v1/manufacturing/orders/{orderId}/mass-balance", "GetManufacturingOrderMassBalanceV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["path:orderId:true:type:string;format:uuid"]),
@@ -591,6 +603,8 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetLoadingInstructionV1"] = "ref:LoadingInstructionDetailView",
             ["IssueLoadingInstructionV1"] = "ref:LoadingInstructionResponse",
             ["RecordLoadingInstructionLoadV1"] = "ref:LoadingInstructionResponse",
+            ["RecordLoadingInstructionShipmentV1"] = "ref:LoadingInstructionResponse",
+            ["RecordLoadingInstructionDeliveryV1"] = "ref:LoadingInstructionResponse",
             ["GetPurchaseRequestsV1"] = "ref:PurchaseRequestListResponse",
             ["CreatePurchaseRequestV1"] = "ref:PurchaseRequestResponse",
             ["GetPurchaseRequestV1"] = "ref:PurchaseRequestDetailView",
@@ -615,6 +629,8 @@ public sealed partial class OpenApiContractGenerationTests
             ["CreateAccountingNormalJournalDraftV1"] = "ref:NormalJournalDraftViewV1",
             ["GetAccountingNormalJournalDraftV1"] = "ref:NormalJournalDraftViewV1",
             ["ApproveAccountingNormalJournalDraftV1"] = "ref:NormalJournalDraftViewV1",
+            ["ProposeAccountingJournalReversalV1"] = "ref:AccountingJournalReversalProposalViewV1",
+            ["ApproveAccountingJournalReversalV1"] = "ref:AccountingJournalReversalProposalViewV1",
             ["GetManufacturingOrderMassBalanceV1"] = "ref:MassBalanceViewV1",
             ["ListManufacturingOrdersV1"] = "ref:OrderListViewV1",
             ["CloseManufacturingOrderV1"] = "ref:OrderViewV1",
@@ -703,6 +719,8 @@ public sealed partial class OpenApiContractGenerationTests
         "GetLoadingInstructionV1",
         "IssueLoadingInstructionV1",
         "RecordLoadingInstructionLoadV1",
+        "RecordLoadingInstructionShipmentV1",
+        "RecordLoadingInstructionDeliveryV1",
         "GetPurchaseRequestsV1",
         "CreatePurchaseRequestV1",
         "GetPurchaseRequestV1",
@@ -727,6 +745,8 @@ public sealed partial class OpenApiContractGenerationTests
         "CreateAccountingNormalJournalDraftV1",
         "GetAccountingNormalJournalDraftV1",
         "ApproveAccountingNormalJournalDraftV1",
+        "ProposeAccountingJournalReversalV1",
+        "ApproveAccountingJournalReversalV1",
         "GetManufacturingOrderMassBalanceV1",
         "ListManufacturingOrdersV1",
         "CloseManufacturingOrderV1",
@@ -782,6 +802,8 @@ public sealed partial class OpenApiContractGenerationTests
         "CreateLoadingInstructionV1",
         "IssueLoadingInstructionV1",
         "RecordLoadingInstructionLoadV1",
+        "RecordLoadingInstructionShipmentV1",
+        "RecordLoadingInstructionDeliveryV1",
         "CreatePurchaseRequestV1",
         "SubmitPurchaseRequestV1",
         "CreatePurchaseOrderV1",
@@ -792,6 +814,8 @@ public sealed partial class OpenApiContractGenerationTests
         "CloseAccountingPeriodV1",
         "CreateAccountingNormalJournalDraftV1",
         "ApproveAccountingNormalJournalDraftV1",
+        "ProposeAccountingJournalReversalV1",
+        "ApproveAccountingJournalReversalV1",
         "CloseManufacturingOrderV1",
     ];
 
@@ -888,6 +912,8 @@ public sealed partial class OpenApiContractGenerationTests
                 ["CreateLoadingInstructionV1"] = [StatusCodes.Status201Created, StatusCodes.Status409Conflict],
                 ["IssueLoadingInstructionV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["RecordLoadingInstructionLoadV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
+                ["RecordLoadingInstructionShipmentV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
+                ["RecordLoadingInstructionDeliveryV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["CreatePurchaseRequestV1"] = [StatusCodes.Status201Created, StatusCodes.Status409Conflict],
                 ["SubmitPurchaseRequestV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["CreatePurchaseOrderV1"] = [StatusCodes.Status201Created, StatusCodes.Status409Conflict],
@@ -898,6 +924,8 @@ public sealed partial class OpenApiContractGenerationTests
                 ["CloseAccountingPeriodV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
                 ["CreateAccountingNormalJournalDraftV1"] = [StatusCodes.Status201Created],
                 ["ApproveAccountingNormalJournalDraftV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
+                ["ProposeAccountingJournalReversalV1"] = [StatusCodes.Status201Created],
+                ["ApproveAccountingJournalReversalV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
                 ["CloseManufacturingOrderV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
             };
 
@@ -959,6 +987,8 @@ public sealed partial class OpenApiContractGenerationTests
         "CreateLoadingInstructionV1",
         "IssueLoadingInstructionV1",
         "RecordLoadingInstructionLoadV1",
+        "RecordLoadingInstructionShipmentV1",
+        "RecordLoadingInstructionDeliveryV1",
         "GetPurchaseRequestsV1",
         "CreatePurchaseRequestV1",
         "SubmitPurchaseRequestV1",
@@ -972,6 +1002,8 @@ public sealed partial class OpenApiContractGenerationTests
         "CloseAccountingPeriodV1",
         "CreateAccountingNormalJournalDraftV1",
         "ApproveAccountingNormalJournalDraftV1",
+        "ProposeAccountingJournalReversalV1",
+        "ApproveAccountingJournalReversalV1",
         "CloseManufacturingOrderV1",
         "GetLogisticsApprovedOrderLinesV1",
         "GetSalesContactInformationReferencesV1",
@@ -1013,6 +1045,8 @@ public sealed partial class OpenApiContractGenerationTests
         "GetLoadingInstructionV1:404",
         "IssueLoadingInstructionV1:404",
         "RecordLoadingInstructionLoadV1:404",
+        "RecordLoadingInstructionShipmentV1:404",
+        "RecordLoadingInstructionDeliveryV1:404",
         "GetPurchaseRequestV1:404",
         "SubmitPurchaseRequestV1:404",
         "GetPurchaseOrderV1:404",
@@ -1026,6 +1060,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetAccountingJournalV1:404",
         "GetAccountingNormalJournalDraftV1:404",
         "ApproveAccountingNormalJournalDraftV1:404",
+        "ApproveAccountingJournalReversalV1:404",
         "GetManufacturingOrderMassBalanceV1:404",
         "CloseManufacturingOrderV1:404",
         "GetSalesContactInformationReferencesV1:404",
@@ -1035,6 +1070,8 @@ public sealed partial class OpenApiContractGenerationTests
     [
         "CreateAccountingNormalJournalDraftV1:400",
         "ApproveAccountingNormalJournalDraftV1:400",
+        "ProposeAccountingJournalReversalV1:400",
+        "ApproveAccountingJournalReversalV1:400",
         "GetAuditEventsV1:400",
         "SetOrganizationLocationActiveStateV1:400",
         "GetFinanceManualReceiptDraftContextV1:400",
@@ -1238,6 +1275,31 @@ public sealed partial class OpenApiContractGenerationTests
             ["RecordLoadingInstructionLoadV1:400"] = ["command_metadata_invalid", "validation_failed"],
             ["RecordLoadingInstructionLoadV1:409"] = ["concurrent_change", "logistics_duplicate_share_id", "logistics_instruction_state", "logistics_line_blocked", "logistics_load_exceeds_instructed", "same_key_payload_mismatch", "version_conflict"],
             ["RecordLoadingInstructionLoadV1:422"] = ["unsupported_unit", "validation_failed"],
+            ["RecordLoadingInstructionShipmentV1:400"] =
+            [
+                "command_metadata_invalid", "inventory_definite_shipment_invalid_request",
+                "inventory_definite_shipment_quantity_invalid", "inventory_definite_shipment_version_invalid",
+                "validation_failed",
+            ],
+            ["RecordLoadingInstructionShipmentV1:409"] =
+            [
+                "concurrent_change", "inventory_allocation_insufficient", "inventory_allocation_label_mismatch",
+                "inventory_allocation_state_conflict", "inventory_allocation_version_conflict",
+                "inventory_definite_shipment_concurrent_change", "inventory_definite_shipment_idempotency_conflict",
+                "inventory_label_not_releasable", "inventory_label_version_conflict",
+                "inventory_physical_stock_insufficient", "logistics_allocation_source_mismatch",
+                "logistics_duplicate_share_id", "logistics_instruction_state", "logistics_line_blocked",
+                "logistics_shipment_exceeds_loaded", "same_key_payload_mismatch", "version_conflict",
+            ],
+            ["RecordLoadingInstructionShipmentV1:422"] = ["unsupported_unit", "validation_failed"],
+            ["RecordLoadingInstructionDeliveryV1:400"] = ["command_metadata_invalid", "validation_failed"],
+            ["RecordLoadingInstructionDeliveryV1:409"] =
+            [
+                "concurrent_change", "logistics_delivery_exceeds_shipment", "logistics_duplicate_share_id",
+                "logistics_instruction_state", "logistics_shipment_source_invalid", "same_key_payload_mismatch",
+                "version_conflict",
+            ],
+            ["RecordLoadingInstructionDeliveryV1:422"] = ["unsupported_unit", "validation_failed"],
             ["GetPurchaseRequestsV1:400"] = ["invalid_cursor", "validation_failed"],
             ["CreatePurchaseRequestV1:400"] = ["command_metadata_invalid", "validation_failed"],
             ["CreatePurchaseRequestV1:409"] = ["concurrent_change", "same_key_payload_mismatch", "version_conflict"],
@@ -1279,6 +1341,12 @@ public sealed partial class OpenApiContractGenerationTests
             ["ApproveAccountingNormalJournalDraftV1:400"] = ["accounting_request_invalid"],
             ["ApproveAccountingNormalJournalDraftV1:409"] = ["accounting_concurrent_change", "accounting_normal_journal_draft_content_conflict", "accounting_normal_journal_draft_not_pending", "accounting_normal_journal_draft_posting_conflict", "accounting_period_conflict", "accounting_period_overlap", "accounting_period_preparer_conflict", "accounting_version_conflict", "idempotency_conflict"],
             ["ApproveAccountingNormalJournalDraftV1:422"] = ["accounting_company_mismatch", "accounting_invalid_reference", "accounting_journal_line_invalid", "accounting_journal_too_few_lines", "accounting_journal_unbalanced", "accounting_period_already_closed", "accounting_period_closed", "accounting_period_does_not_cover_date", "accounting_period_invalid", "accounting_period_not_open", "accounting_period_not_proposed", "accounting_value_does_not_fit"],
+            ["ProposeAccountingJournalReversalV1:400"] = ["accounting_request_invalid"],
+            ["ProposeAccountingJournalReversalV1:409"] = ["accounting_concurrent_change", "accounting_journal_reversal_not_pending", "accounting_journal_reversal_posting_conflict", "accounting_journal_reversal_proposal_content_conflict", "accounting_journal_reversal_version_conflict", "accounting_period_conflict", "accounting_period_overlap", "accounting_period_preparer_conflict", "accounting_version_conflict", "idempotency_conflict"],
+            ["ProposeAccountingJournalReversalV1:422"] = ["accounting_journal_reversal_period_not_found", "accounting_journal_reversal_source_journal_not_found"],
+            ["ApproveAccountingJournalReversalV1:400"] = ["accounting_request_invalid"],
+            ["ApproveAccountingJournalReversalV1:409"] = ["accounting_concurrent_change", "accounting_journal_reversal_not_pending", "accounting_journal_reversal_posting_conflict", "accounting_journal_reversal_proposal_content_conflict", "accounting_journal_reversal_version_conflict", "accounting_period_conflict", "accounting_period_overlap", "accounting_period_preparer_conflict", "accounting_version_conflict", "idempotency_conflict"],
+            ["ApproveAccountingJournalReversalV1:422"] = ["accounting_invalid_reference", "accounting_period_closed", "accounting_period_does_not_cover_date", "accounting_period_not_found", "accounting_period_not_open", "accounting_reversal_of_reversal"],
             // MFG-ORD: the list refuses a bad page size, cursor or status on the field; the close is a
             // write like the others, and adds manufacturing_unexplained_difference to the shared 422 list.
             ["ListManufacturingOrdersV1:400"] = ["manufacturing_request_invalid"],
@@ -1404,6 +1472,24 @@ public sealed partial class OpenApiContractGenerationTests
                     ["items", "nextCursor"],
                     ("items", "type:array;items:ref:JournalSummaryV1"),
                     ("nextCursor", "type:null|string")),
+                ["AccountingJournalReversalProposalViewV1"] = ObjectSchema(
+                    ["proposalId", "companyId", "sourceJournalId", "reversalJournalId", "periodId", "transactionDate", "accountingDate", "valueDate", "reason", "proposedBy", "proposedAtUtc", "status", "decidedBy", "decidedAtUtc", "decisionReason", "version"],
+                    ("proposalId", "type:string;format:uuid"),
+                    ("companyId", "type:string;format:uuid"),
+                    ("sourceJournalId", "type:string;format:uuid"),
+                    ("reversalJournalId", "type:null|string;format:uuid"),
+                    ("periodId", "type:string;format:uuid"),
+                    ("transactionDate", "type:string;format:date"),
+                    ("accountingDate", "type:string;format:date"),
+                    ("valueDate", "type:null|string;format:date"),
+                    ("reason", "type:string"),
+                    ("proposedBy", "type:string;format:uuid"),
+                    ("proposedAtUtc", "type:string;format:date-time"),
+                    ("status", "type:string"),
+                    ("decidedBy", "type:null|string;format:uuid"),
+                    ("decidedAtUtc", "type:null|string;format:date-time"),
+                    ("decisionReason", "type:null|string"),
+                    ("version", "type:integer|string;format:int32")),
                 ["TrialBalanceCurrencyTotalV1"] = ObjectSchema(
                     ["currencyId", "debit", "credit", "isBalanced"],
                     ("currencyId", "type:string;format:uuid"),
@@ -2561,6 +2647,9 @@ public sealed partial class OpenApiContractGenerationTests
         ExpectedRequestComponentSchemas =
             new Dictionary<string, ComponentSchemaExpectation>(StringComparer.Ordinal)
             {
+                ["ApproveAccountingJournalReversalRequestV1"] = ObjectSchema(
+                    ["expectedVersion"],
+                    ("expectedVersion", "type:integer|string;format:int32")),
                 ["ApproveNormalJournalDraftRequestV1"] = ObjectSchema(
                     ["expectedVersion", "periodId"],
                     ("expectedVersion", "type:integer|string;format:int64"),
@@ -2578,6 +2667,15 @@ public sealed partial class OpenApiContractGenerationTests
                     ("accountingDate", "type:string;format:date"),
                     ("valueDate", "type:null|string;format:date"),
                     ("lines", "type:array;items:ref:CreateNormalJournalDraftLineRequestV1")),
+                ["ProposeAccountingJournalReversalRequestV1"] = ObjectSchema(
+                    ["proposalId", "sourceJournalId", "periodId", "transactionDate", "accountingDate", "valueDate", "reason"],
+                    ("proposalId", "type:string;format:uuid"),
+                    ("sourceJournalId", "type:string;format:uuid"),
+                    ("periodId", "type:string;format:uuid"),
+                    ("transactionDate", "type:string"),
+                    ("accountingDate", "type:string"),
+                    ("valueDate", "type:null|string"),
+                    ("reason", "type:string")),
                 ["CloseOrderRequestV1"] = ObjectSchema(
                     ["expectedVersion"],
                     ("expectedVersion", "type:integer|string;format:int64")),
@@ -2659,6 +2757,24 @@ public sealed partial class OpenApiContractGenerationTests
                     ("loadId", "type:string;format:uuid"),
                     ("quantity", "type:string"),
                     ("measurement", "type:string")),
+                ["RecordShipmentRequest"] = ObjectSchema(
+                    ["expectedVersion", "shipmentId", "allocationId", "expectedAllocationVersion",
+                        "expectedLabelVersion", "movementId", "quantity", "occurredAtUtc"],
+                    ("expectedVersion", "type:string"),
+                    ("shipmentId", "type:string;format:uuid"),
+                    ("allocationId", "type:string;format:uuid"),
+                    ("expectedAllocationVersion", "type:string"),
+                    ("expectedLabelVersion", "type:string"),
+                    ("movementId", "type:string;format:uuid"),
+                    ("quantity", "type:string"),
+                    ("occurredAtUtc", "type:string;format:date-time")),
+                ["RecordDeliveryRequest"] = ObjectSchema(
+                    ["expectedVersion", "deliveryId", "sourceShipmentId", "quantity", "occurredAtUtc"],
+                    ("expectedVersion", "type:string"),
+                    ("deliveryId", "type:string;format:uuid"),
+                    ("sourceShipmentId", "type:string;format:uuid"),
+                    ("quantity", "type:string"),
+                    ("occurredAtUtc", "type:string;format:date-time")),
                 ["OpeningCountRequestV1"] = ObjectSchema(
                     ["countId", "locationId", "countedOn", "sheetReference", "lines"],
                     ("countId", "type:string;format:uuid"), ("locationId", "type:string;format:uuid"),
@@ -3485,9 +3601,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(123, operations.Count);
+        Assert.Equal(127, operations.Count);
         Assert.Equal(
-            123,
+            127,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());

@@ -43,7 +43,7 @@ public sealed class AccountingStore(
     IAuditEventCollector auditEvents,
     TimeProvider timeProvider,
     AccountingAmountScaleVerifier amounts) : IAccountingPeriodStore, IAccountingPostingStore, IAccountingCommandLog,
-    IAccountingNormalJournalDraftStore
+    IAccountingNormalJournalDraftStore, IAccountingJournalReversalProposalStoreV1
 {
     private const int Open = 1;
     private const int Resolved = 2;
@@ -55,6 +55,8 @@ public sealed class AccountingStore(
     private const string ExceptionEntityType = "Accounting.PostingException";
     private const string PendingEntityType = "Accounting.PendingValuation";
     private const string NormalDraftEntityType = "Accounting.NormalJournalDraft";
+    private const string ReversalProposalEntityType = "Accounting.JournalReversalProposal";
+    private const string ReversalApprovalConsumer = "accounting.journal-reversal-approval.v1";
     private const int MaximumPageSize = 100;
 
     private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
@@ -465,6 +467,16 @@ public sealed class AccountingStore(
         Guid reversalJournalId, PostingDates dates, Guid periodId, AccountingCommandMetadata metadata,
         CancellationToken cancellationToken = default)
     {
+        var outcome = await PrepareReversalAsync(consumer, messageId, reversedJournalId, reversalJournalId,
+            dates, periodId, metadata, cancellationToken);
+        await SaveAsync(cancellationToken);
+        return outcome;
+    }
+
+    private async Task<PostingOutcome> PrepareReversalAsync(string consumer, string messageId, Guid reversedJournalId,
+        Guid reversalJournalId, PostingDates dates, Guid periodId, AccountingCommandMetadata metadata,
+        CancellationToken cancellationToken)
+    {
         ArgumentNullException.ThrowIfNull(dates);
         RequireMetadata(metadata);
         var companyId = RequireResolvedCompany();
@@ -492,8 +504,149 @@ public sealed class AccountingStore(
         }
 
         AddDelivery(consumer, messageId, requestHash, outcome, metadata);
-        await SaveAsync(cancellationToken);
         return outcome;
+    }
+
+    public async Task<(AccountingJournalReversalProposalV1 Proposal, AccountingWriteOutcome Outcome)> CreateAsync(
+        AccountingJournalReversalProposalV1 proposal,
+        Func<CancellationToken, Task> freshAuthorityFence,
+        AccountingCommandMetadata metadata,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(proposal);
+        ArgumentNullException.ThrowIfNull(freshAuthorityFence);
+        RequireMetadata(metadata);
+        RequireCompany(proposal.CompanyId);
+
+        var existing = await dbContext.JournalReversalProposals.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.Id == proposal.ProposalId, cancellationToken);
+        if (existing is not null)
+        {
+            var restored = RestoreReversalProposal(existing);
+            if (!SameReversalProposalRequest(restored, proposal))
+            {
+                throw Refused(AccountingJournalReversalStoreCodesV1.ContentConflict,
+                    "Aynı ters kayıt teklif kimliği başka değişmez içerikle kaydedilmiş.");
+            }
+
+            await freshAuthorityFence(cancellationToken);
+            Complete(metadata, proposal.CompanyId, restored);
+            await SaveAsync(cancellationToken);
+            return (restored, AccountingWriteOutcome.Replayed);
+        }
+
+        var sourceExists = await dbContext.Journals.AsNoTracking().AnyAsync(
+            row => row.CompanyId == proposal.CompanyId && row.Id == proposal.SourceJournalId,
+            cancellationToken);
+        if (!sourceExists)
+        {
+            throw Refused(AccountingJournalReversalStoreCodesV1.SourceJournalNotFound,
+                "Bu şirketin terslenecek kaynak fişi yok.");
+        }
+
+        // The period is admitted under the bound company before anything is staged: an unknown or other-company
+        // period must not become a durable pending proposal, audit or command that only approval would refuse.
+        var periodExists = await dbContext.Periods.AsNoTracking().AnyAsync(
+            row => row.CompanyId == proposal.CompanyId && row.Id == proposal.PeriodId,
+            cancellationToken);
+        if (!periodExists)
+        {
+            throw Refused(AccountingJournalReversalStoreCodesV1.PeriodNotFound,
+                "Bu şirketin ters kayıt için seçilen dönemi yok.");
+        }
+
+        var row = ToReversalProposalRow(proposal);
+        dbContext.JournalReversalProposals.Add(row);
+        await freshAuthorityFence(cancellationToken);
+        Audit(metadata, proposal.CompanyId, ReversalProposalEntityType, proposal.ProposalId.ToString("D"),
+            "accounting.journal-reversal.proposed.v1", "Propose", null, proposal.Version, "{}",
+            ReversalProposalAudit(proposal), "Muhasebe fişi ters kayıt için ayrı onaya sunuldu");
+        Complete(metadata, proposal.CompanyId, proposal);
+        await SaveAsync(cancellationToken);
+        return (proposal, AccountingWriteOutcome.Recorded);
+    }
+
+    public async Task<AccountingJournalReversalProposalV1?> FindAsync(
+        Guid proposalId,
+        CancellationToken cancellationToken = default)
+    {
+        RequireResolvedCompany();
+        var row = await dbContext.JournalReversalProposals.AsNoTracking()
+            .SingleOrDefaultAsync(candidate => candidate.Id == proposalId, cancellationToken);
+        return row is null ? null : RestoreReversalProposal(row);
+    }
+
+    public async Task<AccountingJournalReversalProposalV1> ApproveAndReverseAsync(
+        Guid proposalId,
+        int expectedVersion,
+        Guid checkerId,
+        Func<CancellationToken, Task> freshAuthorityFence,
+        AccountingCommandMetadata metadata,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(freshAuthorityFence);
+        RequireMetadata(metadata);
+        var companyId = RequireResolvedCompany();
+        if (proposalId == Guid.Empty || expectedVersion <= 0 || checkerId == Guid.Empty)
+        {
+            throw new ArgumentException("Teklif, sürüm ve onaylayan kimliği zorunludur.", nameof(proposalId));
+        }
+
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            var row = await dbContext.JournalReversalProposals
+                .SingleOrDefaultAsync(candidate => candidate.Id == proposalId, cancellationToken)
+                ?? throw Refused(AccountingJournalReversalStoreCodesV1.NotFound,
+                    "Bu şirketin böyle bir ters kayıt teklifi yok.");
+            if (row.Version != expectedVersion)
+            {
+                throw new AccountingVersionConflictException(expectedVersion, row.Version);
+            }
+
+            var before = RestoreReversalProposal(row);
+            var reversalJournalId = Guid.NewGuid();
+            var decidedAtUtc = timeProvider.GetUtcNow();
+            var approved = AccountingJournalReversalPolicyV1.Approve(
+                before,
+                new DecideAccountingJournalReversalV1(proposalId, expectedVersion),
+                checkerId,
+                reversalJournalId,
+                decidedAtUtc);
+
+            await freshAuthorityFence(cancellationToken);
+            var outcome = await PrepareReversalAsync(
+                ReversalApprovalConsumer,
+                proposalId.ToString("D"),
+                before.SourceJournalId,
+                reversalJournalId,
+                new PostingDates(before.TransactionDate, before.AccountingDate, before.ValueDate, decidedAtUtc),
+                before.PeriodId,
+                metadata,
+                cancellationToken);
+            if (outcome.Kind != PostingOutcomeKind.Posted || outcome.Journal?.Id != reversalJournalId)
+            {
+                throw Refused(AccountingJournalReversalStoreCodesV1.PostingConflict,
+                    "Ters kayıt teklifi yeni ve tek bir ters fiş üretmedi.");
+            }
+
+            await freshAuthorityFence(cancellationToken);
+            ApplyReversalProposal(row, approved);
+            Audit(metadata, companyId, ReversalProposalEntityType, proposalId.ToString("D"),
+                "accounting.journal-reversal.approved.v1", "Approve", before.Version, approved.Version,
+                ReversalProposalAudit(before), ReversalProposalAudit(approved),
+                "Muhasebe fişi ters kayıt teklifi başka kullanıcı tarafından onaylandı");
+            Complete(metadata, companyId, approved);
+            await SaveAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return approved;
+        }
+        catch
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+            dbContext.ChangeTracker.Clear();
+            throw;
+        }
     }
 
     public async Task<PostingOutcome> CorrectAsync(string consumer, string messageId, Guid correctionId,
@@ -754,6 +907,85 @@ public sealed class AccountingStore(
                 .Select(line => new JournalLine(new AccountRef(line.CompanyId, line.AccountId), line.Debit, line.Credit)),
             row.LinkedJournalId))];
     }
+
+    private static AccountingJournalReversalProposalRow ToReversalProposalRow(
+        AccountingJournalReversalProposalV1 proposal) => new()
+        {
+            Id = proposal.ProposalId,
+            CompanyId = proposal.CompanyId,
+            SourceJournalId = proposal.SourceJournalId,
+            ReversalJournalId = proposal.ReversalJournalId,
+            PeriodId = proposal.PeriodId,
+            TransactionDate = proposal.TransactionDate,
+            AccountingDate = proposal.AccountingDate,
+            ValueDate = proposal.ValueDate,
+            Reason = proposal.Reason,
+            ProposedByUserId = proposal.ProposedBy,
+            ProposedAtUtc = proposal.ProposedAtUtc,
+            Status = (int)proposal.Status,
+            DecidedByUserId = proposal.DecidedBy,
+            DecidedAtUtc = proposal.DecidedAtUtc,
+            DecisionReason = proposal.DecisionReason,
+            Version = proposal.Version,
+        };
+
+    private static bool SameReversalProposalRequest(
+        AccountingJournalReversalProposalV1 stored,
+        AccountingJournalReversalProposalV1 requested) =>
+        stored.ProposalId == requested.ProposalId
+        && stored.CompanyId == requested.CompanyId
+        && stored.SourceJournalId == requested.SourceJournalId
+        && stored.PeriodId == requested.PeriodId
+        && stored.TransactionDate == requested.TransactionDate
+        && stored.AccountingDate == requested.AccountingDate
+        && stored.ValueDate == requested.ValueDate
+        && string.Equals(stored.Reason, requested.Reason, StringComparison.Ordinal)
+        && stored.ProposedBy == requested.ProposedBy;
+
+    private static AccountingJournalReversalProposalV1 RestoreReversalProposal(
+        AccountingJournalReversalProposalRow row) => new(
+        row.Id,
+        row.CompanyId,
+        row.SourceJournalId,
+        row.ReversalJournalId,
+        row.PeriodId,
+        row.TransactionDate,
+        row.AccountingDate,
+        row.ValueDate,
+        row.Reason,
+        row.ProposedByUserId,
+        row.ProposedAtUtc,
+        (AccountingJournalReversalProposalStatusV1)row.Status,
+        row.DecidedByUserId,
+        row.DecidedAtUtc,
+        row.DecisionReason,
+        row.Version);
+
+    private static void ApplyReversalProposal(
+        AccountingJournalReversalProposalRow row,
+        AccountingJournalReversalProposalV1 proposal)
+    {
+        row.ReversalJournalId = proposal.ReversalJournalId;
+        row.Status = (int)proposal.Status;
+        row.DecidedByUserId = proposal.DecidedBy;
+        row.DecidedAtUtc = proposal.DecidedAtUtc;
+        row.DecisionReason = proposal.DecisionReason;
+        row.Version = proposal.Version;
+    }
+
+    private static string ReversalProposalAudit(AccountingJournalReversalProposalV1 proposal) =>
+        JsonSerializer.Serialize(new
+        {
+            proposal.ProposalId,
+            proposal.SourceJournalId,
+            proposal.ReversalJournalId,
+            proposal.PeriodId,
+            proposal.AccountingDate,
+            status = proposal.Status.ToString(),
+            proposal.ProposedBy,
+            proposal.DecidedBy,
+            proposal.Version,
+        }, Json);
 
     private async Task AddJournalAsync(Journal journal, PeriodRow periodRow, Guid? correctionId,
         AccountingCommandMetadata metadata, CancellationToken cancellationToken)

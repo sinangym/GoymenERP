@@ -83,6 +83,16 @@ class FixtureListTests(unittest.TestCase):
             }),
             browser.SUITE_FIXTURE_OUTPUTS["s04"])
 
+    def test_l04_exports_the_shipment_allocation_and_label_tuple(self):
+        self.assertEqual(
+            frozenset({
+                "preparerActor", "loaderActor", "readerActor", "companyId", "otherCompanyId",
+                "customerPartyId", "companyAccountId", "draftId", "approvedLineId",
+                "instructionId", "blockedLineId", "openLineId", "shipmentAllocationId",
+                "shipmentLabelId",
+            }),
+            browser.SUITE_FIXTURE_OUTPUTS["l04"])
+
     def test_pur01_exports_the_separate_creator_supplier_and_existing_approval_axis(self):
         self.assertEqual(
             frozenset({
@@ -165,6 +175,16 @@ class SeedSourceTests(unittest.TestCase):
         self.assertIn('string.Equals(environment, "Testing", StringComparison.Ordinal)', host)
         self.assertNotIn("ConfigureServices", host)
         self.assertNotIn("ConfigureTestServices", host)
+
+    def test_the_runner_materializes_the_existing_product_runtime_before_owner_fixtures(self):
+        runner = (TOOL / "BrowserSuiteFixtureTool.cs").read_text(encoding="utf-8")
+        start = runner.index("using (host.CreateClient())")
+        initialize = runner.index("await host.Services.InitializeProductRuntimeAsync(CancellationToken.None);")
+        seed = runner.index("outputs = await fixture.SeedAsync(context, CancellationToken.None);")
+        self.assertLess(start, initialize)
+        self.assertLess(initialize, seed)
+        self.assertNotIn("ProductDbContext", runner)
+        self.assertNotIn("MigrateAsync", runner)
 
     def test_only_the_runner_opens_the_fixture_writer_gate(self):
         # Decision W1: the BrowserSuiteFixture:* keys come only from the runner's host settings.
@@ -573,6 +593,25 @@ class IssuerUserRuleTests(unittest.TestCase):
         self.assertFalse(any(value == self.LOCAL for key, value in environment.items()
                              if key.startswith("IdentitySeed__Assignments__")))
         self._validate(environment, suite="pur01")
+
+    def test_l04_binds_the_product_issuer_as_one_ungranted_non_actor(self):
+        path = ROOT / browser.SUITE_OVERRIDE_DIRECTORY / "l04.override.yml"
+        environment = {}
+        for line in path.read_text(encoding="utf-8").splitlines():
+            match = re.fullmatch(r"      ([A-Za-z0-9_]+): (.+)", line)
+            if match:
+                environment[match.group(1)] = match.group(2).strip('"')
+
+        user = "IdentitySeed__Users__10__"
+        self.assertEqual(self.LOCAL, environment["ProductRuntime__IssuerLocalUserId"])
+        self.assertEqual(self.EXTERNAL, environment["ProductRuntime__IssuerExternalIdentityId"])
+        self.assertEqual(self.LOCAL, environment[user + "Id"])
+        self.assertEqual(self.EXTERNAL, environment[user + "ExternalIdentities__0__Id"])
+        self.assertEqual("l04-issuer", environment[user + "ExternalIdentities__0__Subject"])
+        self.assertFalse(any(key.startswith("IdentitySeed__Roles__10__") for key in environment))
+        self.assertFalse(any(value == self.LOCAL for key, value in environment.items()
+                             if key.startswith("IdentitySeed__Assignments__")))
+        self._validate(environment, suite="l04")
 
     def test_every_rule_refuses_its_violation(self):
         user = "IdentitySeed__Users__5__"
