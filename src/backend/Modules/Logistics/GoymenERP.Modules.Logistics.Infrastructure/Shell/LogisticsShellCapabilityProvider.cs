@@ -1,4 +1,5 @@
 using GoymenERP.BuildingBlocks.Shell;
+using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Logistics.Application.Contracts;
 
 namespace GoymenERP.Modules.Logistics.Infrastructure.Shell;
@@ -22,7 +23,7 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Shell;
 public sealed class LogisticsShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "LOGISTICS";
-    public const string OwnerContractVersion = "1.0";
+    public const string OwnerContractVersion = "1.1";
 
     public const string ListCapabilityId = "logistics.instructions.list";
     public const string ListRoutePath = "/lojistik/yukleme-talimatlari";
@@ -33,6 +34,8 @@ public sealed class LogisticsShellCapabilityProvider : IShellCapabilityProvider
     public const string DetailCapabilityId = "logistics.instructions.detail";
     public const string DetailRoutePath = "/lojistik/yukleme-talimatlari/:instructionId";
     public const string DetailScreenId = "L-02-DETAIL";
+    public const string ShipmentCapabilityId = "logistics.shipments.record";
+    public const string DeliveryCapabilityId = "logistics.deliveries.record";
 
     public string Owner => OwnerId;
 
@@ -49,5 +52,16 @@ public sealed class LogisticsShellCapabilityProvider : IShellCapabilityProvider
         new ShellCapabilityDeclaration(DetailCapabilityId, DetailCapabilityId, DetailRoutePath, DetailScreenId,
             ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
             ShellCapabilityScopeRequirement.CompanyWide, [LogisticsPermissionManifestV1.InstructionsRead], ImplementationAvailable: true),
+        new ShellCapabilityDeclaration(ShipmentCapabilityId, DetailCapabilityId, DetailRoutePath, DetailScreenId,
+            ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
+            ShellCapabilityScopeRequirement.CompanyWide,
+            [LogisticsPermissionManifestV1.InstructionsRead, LogisticsPermissionManifestV1.ShipmentsRecord,
+                ErpPermissions.InventoryPhysicalAllocationWrite], ImplementationAvailable: true,
+            ParentCapabilityId: DetailCapabilityId),
+        new ShellCapabilityDeclaration(DeliveryCapabilityId, DetailCapabilityId, DetailRoutePath, DetailScreenId,
+            ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
+            ShellCapabilityScopeRequirement.CompanyWide,
+            [LogisticsPermissionManifestV1.InstructionsRead, LogisticsPermissionManifestV1.DeliveriesRecord],
+            ImplementationAvailable: true, ParentCapabilityId: DetailCapabilityId),
     ];
 }

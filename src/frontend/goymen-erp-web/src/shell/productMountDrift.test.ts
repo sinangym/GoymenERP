@@ -15,8 +15,18 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { CAPABILITY, CAPABILITY_ROUTE, CAPABILITY_NAV_LABEL } from './capabilities'
-import { PRODUCT_CAPABILITY, PRODUCT_CAPABILITY_ROUTE, PRODUCT_CAPABILITY_NAV_LABEL } from '../product/capabilities'
+import {
+  CAPABILITY,
+  CAPABILITY_ROUTE,
+  CAPABILITY_NAV_LABEL,
+  PRODUCT_ACTIVATE_CAPABILITY as SHELL_PRODUCT_ACTIVATE_CAPABILITY,
+} from './capabilities'
+import {
+  PRODUCT_ACTIVATE_CAPABILITY,
+  PRODUCT_CAPABILITY,
+  PRODUCT_CAPABILITY_ROUTE,
+  PRODUCT_CAPABILITY_NAV_LABEL,
+} from '../product/capabilities'
 import { NAV_CAPABILITIES } from './AppShell'
 
 describe('shell ↔ Product lane capability ids', () => {
@@ -25,6 +35,13 @@ describe('shell ↔ Product lane capability ids', () => {
     expect(CAPABILITY.productItemsDetail).toBe(PRODUCT_CAPABILITY.productsDetail)
     expect(CAPABILITY.productItemsCreate).toBe(PRODUCT_CAPABILITY.productsCreate)
     expect(CAPABILITY.productItemsEdit).toBe(PRODUCT_CAPABILITY.productsEdit)
+  })
+
+  it('pins activation as an action-only detail control without mounting another route or nav item', () => {
+    expect(SHELL_PRODUCT_ACTIVATE_CAPABILITY).toBe(PRODUCT_ACTIVATE_CAPABILITY)
+    expect(Object.values(CAPABILITY)).not.toContain(SHELL_PRODUCT_ACTIVATE_CAPABILITY)
+    expect(Object.keys(CAPABILITY_ROUTE)).not.toContain(SHELL_PRODUCT_ACTIVATE_CAPABILITY)
+    expect(NAV_CAPABILITIES).not.toContain(SHELL_PRODUCT_ACTIVATE_CAPABILITY)
   })
 
   it('mounts every id the Product lane declares, and no more', () => {

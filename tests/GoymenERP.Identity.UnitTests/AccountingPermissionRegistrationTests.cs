@@ -12,7 +12,7 @@ using Microsoft.Extensions.Options;
 namespace GoymenERP.Identity.UnitTests;
 
 /// <summary>
-/// ACC-V0a: the six Accounting names (the coordinator-confirmed technical mapping, #66 5743488059) are REGISTERED,
+/// The Accounting names, including the journal-reversal proposal and approval pair, are REGISTERED,
 /// not granted: the platform knows them, nothing hands them out, an actor without an explicit assignment is denied,
 /// a site-scoped assignment is denied (a period is company-wide), and only an explicitly, company-wide assigned
 /// synthetic actor is granted. The production grant is a human gate. Same shape as the Inventory registration.
@@ -31,6 +31,8 @@ public sealed class AccountingPermissionRegistrationTests
         ErpPermissions.AccountingPostingQueuesRead,
         ErpPermissions.AccountingNormalJournalDraftCreate,
         ErpPermissions.AccountingNormalJournalDraftApprove,
+        ErpPermissions.AccountingJournalReversePropose,
+        ErpPermissions.AccountingJournalReverseApprove,
     };
 
     [Fact]
@@ -44,6 +46,8 @@ public sealed class AccountingPermissionRegistrationTests
         Assert.Equal("accounting.posting-queues.read", ErpPermissions.AccountingPostingQueuesRead);
         Assert.Equal("accounting.normal-journal.draft.create", ErpPermissions.AccountingNormalJournalDraftCreate);
         Assert.Equal("accounting.normal-journal.draft.approve", ErpPermissions.AccountingNormalJournalDraftApprove);
+        Assert.Equal("accounting.journal.reverse.propose", ErpPermissions.AccountingJournalReversePropose);
+        Assert.Equal("accounting.journal.reverse.approve", ErpPermissions.AccountingJournalReverseApprove);
     }
 
     [Theory]

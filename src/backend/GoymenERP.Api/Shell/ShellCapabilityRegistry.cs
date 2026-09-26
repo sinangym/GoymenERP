@@ -193,13 +193,19 @@ public sealed partial class ShellCapabilityRegistry
                 "product.items.detail" => (GroupSharedMasterOperation.Read, "/urun/:productId"),
                 "product.items.create" => (GroupSharedMasterOperation.DraftCreate, "/urun/yeni"),
                 "product.items.edit" => (GroupSharedMasterOperation.DraftBasicEdit, "/urun/:productId/duzenle"),
+                "product.items.activate" => (GroupSharedMasterOperation.Activate, "/urun/:productId"),
                 _ => throw new InvalidOperationException("Unknown global Product capability."),
             };
+            var isActivationControl = declaration.CapabilityId == "product.items.activate";
             if (owner != "PRODUCT" || productOperation != expected.Item1
                 || declaration.RoutePath != expected.Item2 || permissions.Length != 0
-                || declaration.ParentCapabilityId is not null
+                || declaration.ParentCapabilityId != (isActivationControl ? "product.items.detail" : null)
                 || declaration.ContextRequirement != ShellCapabilityContextRequirement.SingleCompany
-                || declaration.ScopeRequirement != ShellCapabilityScopeRequirement.AnyGrantedScope)
+                || declaration.ScopeRequirement != ShellCapabilityScopeRequirement.AnyGrantedScope
+                || isActivationControl && (declaration.RouteId != "product.detail"
+                    || declaration.ScreenId != "U-01-360"
+                    || declaration.RoutePrecedence != ShellCapabilityRoutePrecedence.ParameterizedAfterStatic
+                    || !declaration.ImplementationAvailable))
                 throw new InvalidOperationException("Global Product capabilities require their exact operation and explicit origin, not company permissions.");
         }
         else if (declaration.CapabilityId.StartsWith("product.", StringComparison.Ordinal))

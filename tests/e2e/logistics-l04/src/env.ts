@@ -35,10 +35,13 @@ export interface L04Seed {
   readonly instructionId: string
   readonly blockedLineId: string
   readonly openLineId: string
+  readonly shipmentAllocationId: string
+  readonly shipmentLabelId: string
 }
 
 export interface L04Environment {
   readonly apiBaseUrl: string
+  readonly sqlConnection: string
   readonly testedCommit: string
   readonly seed: L04Seed
 }
@@ -84,6 +87,8 @@ export function readEnvironment(): L04Environment {
     instructionId: text(raw, 'instructionId', true),
     blockedLineId: text(raw, 'blockedLineId', true),
     openLineId: text(raw, 'openLineId', true),
+    shipmentAllocationId: text(raw, 'shipmentAllocationId', true),
+    shipmentLabelId: text(raw, 'shipmentLabelId', true),
   }
   if (new Set([seed.preparerActor, seed.loaderActor, seed.readerActor]).size !== 3) {
     throw new Error('BROWSER_E2E_L04_SEED binds the same actor to two roles')
@@ -91,5 +96,5 @@ export function readEnvironment(): L04Environment {
   if (seed.companyId === seed.otherCompanyId || seed.blockedLineId === seed.openLineId) {
     throw new Error('BROWSER_E2E_L04_SEED names the same company or line twice')
   }
-  return { apiBaseUrl, testedCommit, seed }
+  return { apiBaseUrl, sqlConnection: required('BROWSER_E2E_SQL_CONNECTION'), testedCommit, seed }
 }
