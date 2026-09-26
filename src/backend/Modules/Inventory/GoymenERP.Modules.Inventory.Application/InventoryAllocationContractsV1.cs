@@ -81,6 +81,12 @@ public static class InventoryAllocationCodesV1
     public const string AllocationVersionConflict = "inventory_allocation_version_conflict";
     public const string AllocationStateConflict = "inventory_allocation_state_conflict";
     public const string InsufficientFreeStock = "inventory_allocation_insufficient_free_stock";
+
+    /// <summary>
+    /// 422: the label's Free position is not owned AND held by this company (e.g. customer-owned or at a fason
+    /// supplier), so a Sales order line cannot reserve it (<see cref="InventorySalesOwnershipGuardV1"/>).
+    /// </summary>
+    public const string OwnerNotCompany = "inventory_allocation_owner_not_company";
     public const string ConcurrentChange = "inventory_concurrent_change";
     public const string ValueDoesNotFit = "inventory_value_does_not_fit";
 }

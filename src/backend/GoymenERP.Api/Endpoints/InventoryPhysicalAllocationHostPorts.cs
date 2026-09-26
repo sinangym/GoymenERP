@@ -203,7 +203,13 @@ public static class InventoryPhysicalAllocationHttpCodesV1
         InventoryAllocationCodesV1.AllocationStateConflict,
         InventoryAllocationCodesV1.ConcurrentChange);
 
-    public static IReadOnlySet<string> Status422Codes { get; } = Set(InventoryAllocationCodesV1.InvalidReference);
+    // The Sales ownership gate (InventorySalesOwnershipGuardV1) refuses only a NEW reservation, so only create
+    // declares inventory_allocation_owner_not_company; release keeps its single invalid-reference 422.
+    public static IReadOnlySet<string> CreateStatus422Codes { get; } = Set(
+        InventoryAllocationCodesV1.InvalidReference,
+        InventoryAllocationCodesV1.OwnerNotCompany);
+
+    public static IReadOnlySet<string> ReleaseStatus422Codes { get; } = Set(InventoryAllocationCodesV1.InvalidReference);
 
     private static IReadOnlySet<string> Set(params string[] codes) => codes.ToHashSet(StringComparer.Ordinal);
 }
