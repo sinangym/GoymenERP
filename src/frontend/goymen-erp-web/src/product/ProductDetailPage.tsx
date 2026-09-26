@@ -157,7 +157,17 @@ export function ProductDetailPage() {
             key={card.product.id}
             card={card}
             onActivated={(activated) => {
-              queryClient.setQueryData(queryKey, { type: 'ok-single', data: activated })
+              /**
+               * The command's answer CONFIRMS Active, but its card is the command's own
+               * projection: it carries the group label only (the owner resolves no other
+               * catalogue on a write). Painting it would turn every assigned class, family,
+               * template and unit into "ad okunamadı" / "atanmadı" — a false claim about a
+               * card just approved group-wide. So the answer is never written into the card;
+               * the card is RE-READ from its own endpoint, and Active appears when that
+               * server read says so. Until then the last server card stays as it was: no
+               * optimistic Active, and no partially labelled card.
+               */
+              void queryClient.invalidateQueries({ queryKey, exact: true })
               void queryClient.invalidateQueries({
                 queryKey: [namespace, entryGeneration, 'product-history', activated.product.id],
               })
@@ -165,7 +175,7 @@ export function ProductDetailPage() {
                 queryKey: [namespace, entryGeneration, 'products'],
               })
             }}
-            onReload={() => void query.refetch()}
+            onReload={() => query.refetch()}
           />
         ) : null
       }
@@ -183,7 +193,8 @@ function ProductActivationAction({
 }: {
   readonly card: ProductCard
   readonly onActivated: (card: ProductCard) => void
-  readonly onReload: () => void
+  /** Re-reads the card from its own endpoint; resolves once that read has answered. */
+  readonly onReload: () => Promise<unknown>
 }) {
   const shell = useShellState()
   const dispatch = useShellDispatch()
@@ -232,6 +243,22 @@ function ProductActivationAction({
     },
     [binding, boundary, card.product.id, onActivated],
   )
+
+  /**
+   * "Kartı yenile" after a DEFINITE refusal (a stale version, a lifecycle conflict, a
+   * rejected request). The refusal applied nothing and answered the card the person had
+   * read; once the card is re-read, that answer no longer describes what is on screen. So
+   * the control returns to idle over the FRESH card and the person decides again: a new
+   * press is a new attempt with a new key and the re-read version. Nothing is retried or
+   * rebased here. An attempt whose earlier outcome is still unknown never reaches this —
+   * it keeps its key behind the same-attempt retry.
+   */
+  async function reloadAfterRefusal() {
+    const refused = attemptRef.current
+    if (refused.phase !== 'failed' || refused.unresolvedSince !== undefined) return
+    await onReload()
+    if (attemptRef.current === refused) setAttempt({ phase: 'idle' })
+  }
 
   function startOrRetry() {
     const pending = liveSnapshot(attempt)
@@ -282,7 +309,7 @@ function ProductActivationAction({
     content = (
       <div className={styles.activationError} role="alert">
         <span>{message}</span>
-        <button type="button" className={styles.activateButton} onClick={onReload}>
+        <button type="button" className={styles.activateButton} onClick={() => void reloadAfterRefusal()}>
           {PRODUCT_ACTIVATION_TEXT.refresh}
         </button>
       </div>
