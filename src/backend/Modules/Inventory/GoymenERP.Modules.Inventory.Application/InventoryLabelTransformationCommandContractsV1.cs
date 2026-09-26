@@ -5,12 +5,13 @@ namespace GoymenERP.Modules.Inventory.Application;
 /// fresh Inventory-owned command authority, over the accepted #438 writer
 /// (<see cref="IInventoryLabelGenealogyWriterV1"/>).
 /// <para>
-/// The command authority is <see cref="InventoryPermissionManifestV1.LabelTransformationRecord"/>, a separate
-/// Inventory-owned name chosen BY ANALOGY with the STK/T11 separation of Business #66 5806047097. That ruling
-/// decided only the physical-allocation command (its own Inventory-owned name, reusing no Sales/Logistics
-/// permission); it did not rule on split/merge authority. The literal is the owner's technical mapping; its
-/// registration, classification (scope, Critical or not) and any grant stay with the central writer and the
-/// human gate, and nothing here registers or grants it. It is measured company-wide and fresh immediately before the
+/// The command authority is <see cref="InventoryPermissionManifestV1.LabelTransformationRecord"/>. Its provenance:
+/// the literal is the owner's technical mapping, confirmed by the coordinator (session decision 2026-09-27), and
+/// its only grant is a disposable R19 browser test actor in the per-run database — no real user, no seeded role;
+/// the real-user mapping stays with the persona card #66/5802952566. That it is a separate Inventory-owned name
+/// follows the STK/T11 separation of Business #66/5806047097 by ANALOGY only: that ruling decided the
+/// physical-allocation command, not split/merge authority. Nothing here registers or grants the name; that is
+/// the central writer's. It is measured company-wide and fresh immediately before the
 /// writer's single transaction; the writer's own reads, replay lookup and save are that one owner transaction.
 /// An unregistered name is a setup gap (503), never a grant. Nothing is measured after the commit.
 /// </para>
