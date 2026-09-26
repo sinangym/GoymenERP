@@ -16,7 +16,7 @@ namespace GoymenERP.Purchasing.UnitTests;
 /// Registered platform names stand in for the Purchasing names until the central catalogue knows them (the
 /// Sales / Logistics tests' way).
 /// </summary>
-public sealed class PurchasingServiceTests
+public sealed partial class PurchasingServiceTests
 {
     private static readonly Guid Company = Guid.Parse("11111111-1111-4111-8111-111111111111");
     private static readonly Guid Party = Guid.Parse("33333333-3333-4333-8333-333333333333");
@@ -381,12 +381,12 @@ public sealed class PurchasingServiceTests
         public FakeStore Store { get; init; } = new();
         public PurchasingServiceBindings Bindings { get; set; } = new(CreatePermission, ReadPermission, ApprovePermission);
 
-        public PurchasingService Service()
+        public PurchasingService Service(IPurchaseGoodsReceiptTransactionV1? receipts = null, IPurchaseGoodsReceiptReadsV1? reads = null)
         {
             var company = new CompanyContext();
             company.Set(Company);
             return new PurchasingService(company, User, Authority, new FixedCorrelation(), Accounts, ProductsPublished ? Products : null,
-                new PurchaseUnitVerifier(Settings), Store, Bindings, TimeProvider.System);
+                new PurchaseUnitVerifier(Settings), Store, Bindings, TimeProvider.System, receipts, reads);
         }
 
         public void ResetOwnerCalls()

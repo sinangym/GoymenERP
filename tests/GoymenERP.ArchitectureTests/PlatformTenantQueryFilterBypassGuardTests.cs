@@ -60,8 +60,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // and no hosted-service surface — and they moved this fingerprint anyway, because a content hash has no
     // opinion about whether a change is semantic. Any edit to a pinned file, comment included, is re-pinned in
     // the same push.
+    // Re-fingerprinted for the #478 forward onto main c287128f: Program.cs is the clean union of the reviewed
+    // PUR-HOST composition (#478, b66b1cca…) and main's reviewed LOG-HOST/#474-#485 composition (e6a57d52…).
     private const string ReviewedOpenApiStartupFingerprint =
-        "e6a57d52fd3a21f5145f30621b56e3dbb3bc094121a5ab58a70fb10248935725";
+        "588121e3020330252ab46669d87f9501e802f0114d705618936b266ef2d9711f";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -274,6 +276,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string ReviewedPurchaseAcceptanceParticipantPath =
         "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
         + "Persistence/PurchaseAcceptanceParticipant.cs";
+    private const string ReviewedPurchaseAcceptanceSourcePath =
+        "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
+        + "Persistence/PurchaseAcceptanceSource.cs";
+    private const string ReviewedPurchaseGoodsReceiptHostPath =
+        "src/backend/GoymenERP.Api/PurchasingRuntime/PurchaseGoodsReceiptHost.cs";
     private const string ReviewedFinanceOpenItemSourceAdmissionServicePath =
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
         + "FinanceOpenItemSourceAdmissionService.cs";
@@ -292,6 +299,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 [ReviewedInventoryGoodsReceiptParticipantPath] = ("InventoryDbContext", 1),
                 [ReviewedInventoryManufacturingRealizationParticipantPath] = ("InventoryDbContext", 1),
                 [ReviewedPurchaseAcceptanceParticipantPath] = ("PurchasingDbContext", 3),
+                [ReviewedPurchaseAcceptanceSourcePath] = ("PurchasingDbContext", 3),
+                [ReviewedPurchaseGoodsReceiptHostPath] = ("PurchasingDbContext", 3),
                 [ReviewedFinanceOpenItemSourceAdmissionServicePath] = ("FinanceDbContext", 1),
                 [ReviewedAccountingStorePath] = ("AccountingDbContext", 2),
                 [ReviewedManufacturingInventoryInputIssueHostPath] = ("ManufacturingDbContext", 2),
@@ -423,7 +432,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Inventory.Infrastructure/"
                  + "InventoryModuleExtensions.cs"] =
                     new(
-                        "037d6cfcbf4576b7cc961a54e0cbfe0cb79c1eaa8275b59f969e7cd0beb362a5",
+                        "2d9b9d1196f14313d66beba3dc9f88d3bfaa722aba61833f0eb0f1eef6394191",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -669,7 +678,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Purchasing.Infrastructure/"
                  + "PurchasingModuleExtensions.cs"] =
                     new(
-                        "14630a513905377c489f2a1f4f6b22f1173903730fc55df6fe9fff78edffc0c9",
+                        "8576c97f63a8a6ff92d21b05b50635997b192e7649d2b4523489258e10be04dc",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -679,13 +688,28 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // pinned; changes require a fresh source review rather than broadening this allowlist.
                 [ReviewedInventoryGoodsReceiptParticipantPath] =
                     new(
-                        "b736dfb2da68a30e43383bbd00f35713de283aff446770ae30383356eaceea02",
+                        "ba39f52d1b9b210f2eba12520e439be1ccdf0933b20e406104a534c50a26be6d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,
                             ["Microsoft.Data.SqlClient"] = 1,
                             ["DbConnection"] = 3
                         }),
+                // PUR-HOST: central composes the Purchasing and Inventory owner participants over one
+                // borrowed transaction. The exact source and two connection lookups keep the bridge narrow.
+                [ReviewedPurchaseGoodsReceiptHostPath] =
+                    new(
+                        "377d659c8faf8ee59fb711914c01bb3f330979ead6dc38ceaa7e7ab65b6111d6",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["GetDbConnection"] = 2
+                        }),
+                // Owner read projection remains tenant-filtered; an empty API set plus exact fingerprint
+                // authorizes only its three reviewed PurchasingDbContext constructions.
+                [ReviewedPurchaseAcceptanceSourcePath] =
+                    new(
+                        "cd8704f39608ab73d0557c397bc8c8b84ff5c11f65d54061bc93d1ee68cd7169",
+                        new Dictionary<string, int>(StringComparer.Ordinal)),
                 // R17: the Manufacturing realization participant owns one Inventory transaction and
                 // one reviewed provider connection; exact source/count drift remains fail-closed.
                 [ReviewedInventoryManufacturingRealizationParticipantPath] =

@@ -23,7 +23,7 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Shell;
 public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "PURCHASING";
-    public const string OwnerContractVersion = "1.3";
+    public const string OwnerContractVersion = "1.4";
 
     public const string RequestListCapabilityId = "purchasing.requests.list";
     public const string RequestListRoutePath = "/satinalma/talepler";
@@ -44,6 +44,7 @@ public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider
     public const string CreateScreenId = "P-04";
     public const string DetailCapabilityId = "purchasing.orders.detail";
     public const string ApproveCapabilityId = "purchasing.orders.approve";
+    public const string GoodsReceiptCapabilityId = "purchasing.goods-receipts.record";
     public const string DetailRoutePath = "/satinalma/siparisler/:orderId";
     public const string DetailScreenId = "P-03-DETAIL";
 
@@ -88,6 +89,12 @@ public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider
                 CapabilityId = ApproveCapabilityId,
                 ParentCapabilityId = DetailCapabilityId,
                 RequiredPermissions = [PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.OrdersApprove],
+            },
+            detail with
+            {
+                CapabilityId = GoodsReceiptCapabilityId,
+                ParentCapabilityId = DetailCapabilityId,
+                RequiredPermissions = [PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.GoodsReceiptsRecord],
             },
         ];
     }

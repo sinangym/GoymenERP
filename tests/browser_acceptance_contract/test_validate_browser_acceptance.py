@@ -301,6 +301,9 @@ class WorkflowTests(unittest.TestCase):
                 "purchasing.orders.create",
                 "counterparty.parties.read",
                 "product.operational-selection.read",
+                "purchasing.goods-receipts.record",
+                "inventory.labels.read",
+                "inventory.balances.read",
             ),
             validator.SUITE_IDENTITY_PERMISSIONS["pur01"],
         )
