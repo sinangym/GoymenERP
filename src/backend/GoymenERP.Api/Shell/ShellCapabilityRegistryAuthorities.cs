@@ -111,19 +111,19 @@ internal static class ShellCapabilityRegistryAuthorities
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV12AndPublishedManufacturingV12 =
         "sha256:BD816jdKKpcC-AmrO6l4Pyyhk1amI_ACfskA2Ut2teM";
 
-    // LOG-PUBLISH: ... + Logistics 1.0 PUBLISHED (the loading-instruction list L-02, new L-03 and detail L-02-DETAIL,
+    // LOG-PUBLISH: ... + Logistics 1.1 PUBLISHED (the loading-instruction routes plus shipment/delivery actions,
     // master v3 §27.8): the normal host (C+O+P+S(published)+F(published)+M(published)+L(published)). Computed by
     // the ComputeRevision reproduction and, independently, by ORG (DATA ONLY); pinned by test.
     // Re-measured for Manufacturing 1.2's two plan-detail controls; pinned by the integrated provider test.
-    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV12PublishedManufacturingV12AndPublishedLogisticsV10 =
-        "sha256:nxcrj7EqHzjajSSaInlw4oNfpKycIJcSGSdpfWbI7Hc";
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV12PublishedManufacturingV12AndPublishedLogisticsV11 =
+        "sha256:S0AgPqCyCO0ezzh52FdAddP1-F4TT5iHAMYXC1_ujpo";
 
     // P01: ... + Purchasing 1.3, with the request list/create/detail/submit declarations published
     // beside the existing order list/create/detail/approve declarations. Every declaration remains
     // single-company; each child keeps its detail parent's route, context and scope. Derived from the
     // integrated provider tuple through ShellCapabilityRegistry.ComputeCandidateRevision and pinned by test.
-    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV12PublishedManufacturingV12PublishedLogisticsV10AndPublishedPurchasingV13 =
-        "sha256:Zxut_iYaax8PIn0kH1pmvVhqnVhMO4aEUkswSx-5MDA";
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV12PublishedManufacturingV12PublishedLogisticsV11AndPublishedPurchasingV13 =
+        "sha256:qLOHlF5WZ44DJJ7cPHiTwxHebqe0qJ-3zx5AX_m80OI";
 
     // ACC-V0b: ... + Accounting 1.0 STAGED (the period list M-07 and its propose screen, the approve and
     // close controls of that list, the journal list M-04 and its detail, the posting queues M-01): the normal
@@ -164,8 +164,8 @@ internal static class ShellCapabilityRegistryAuthorities
     // with Accounting staged (the old half), and the same ACC-V0c model placed back at Organization 1.0
     // reproduces this branch's own sha256:OOlEtnDx… (the new half, which no accepted constant covered).
     // ACC-V1: Accounting 1.1 adds the published normal-draft create, own-detail and approval routes.
-    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV12PublishedManufacturingV12PublishedLogisticsV10PublishedPurchasingV13AndPublishedAccountingV12 =
-        "sha256:lCCWcI1bDxv6IaEKrP94u1Z7T6UAWtTlrie-0rNeQEA";
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV12PublishedManufacturingV12PublishedLogisticsV11PublishedPurchasingV13AndPublishedAccountingV12 =
+        "sha256:mRdB-r5SW8ZDBDWEDGJvgQmkFS_r2lesYxrIEaekrU8";
 
     // R14: Inventory 1.0 publishes one opening-stock workspace after the existing normal tuple.
     // The capability reuses the accepted company-wide permission; publication grants nothing.
@@ -175,8 +175,8 @@ internal static class ShellCapabilityRegistryAuthorities
     // ST-01 / S04 allocation: Inventory 1.2 publishes the stock-position read and its physical-allocation
     // child control beside the opening-stock workspace. The control preserves the parent's route/context/scope
     // and adds only the existing write permission; publication grants nothing.
-    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV12PublishedManufacturingV12PublishedLogisticsV10PublishedPurchasingV13PublishedAccountingV12AndPublishedInventoryV12 =
-        "sha256:VQpDsP6DgKcZlQOBYAWGW75nX1P9-mzyEsOV7kwM8mE";
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV12PublishedManufacturingV12PublishedLogisticsV11PublishedPurchasingV13PublishedAccountingV12AndPublishedInventoryV12 =
+        "sha256:SnZkYEqmOtXY7913h16S3lpSVAb1pIx6uLTedZ8u4zM";
 
     internal const string CounterpartyV15PublishedListCreateAndDetail =
         "sha256:UBHnivzhe_dp5f7vU7dP5n7HG-P8XYBGhxvD_OjMSnw";

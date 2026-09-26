@@ -45,6 +45,9 @@ import {
 } from './contract'
 import type { CommandOutcome } from './instructionAttempt'
 import type { ViewOutcome } from '../shell/uiState'
+import { decodeShipmentAllocations, deliveryPath, shipmentPath, SHIPMENT_ALLOCATIONS_PATH,
+  type RecordDeliveryRequest, type RecordShipmentRequest, type ShipmentAllocationPage } from './realizationContract'
+import type { InstructionLine } from './contract'
 
 export const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '/api/v1'
 const DEV_USER = (import.meta.env.VITE_DEV_USER as string | undefined) ?? 'company-a-user'
@@ -245,7 +248,7 @@ export interface CommandContext {
 
 async function sendTransition(
   path: string,
-  payload: IssueRequest | RecordLoadRequest,
+  payload: IssueRequest | RecordLoadRequest | RecordShipmentRequest | RecordDeliveryRequest,
   context: CommandContext,
   signal: AbortSignal | undefined,
 ): Promise<CommandOutcome<InstructionMutation>> {
@@ -299,4 +302,35 @@ export async function recordLoad(
     return { type: 'malformed' }
   }
   return outcome
+}
+
+export async function fetchShipmentAllocations(line: InstructionLine, companyId: string, signal?: AbortSignal): Promise<ViewOutcome<ShipmentAllocationPage>> {
+  const params = new URLSearchParams({ salesOrderId: line.sourceOrderId, salesOrderLineId: line.sourceOrderLineId, limit: '100' })
+  const raw = await request(`${SHIPMENT_ALLOCATIONS_PATH}?${params}`, { headers: headers(companyId) }, signal)
+  if ('failure' in raw) return readFailure(raw.failure)
+  if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
+  const data = decodeShipmentAllocations(raw.body, companyId, line)
+  return data === null ? { type: 'malformed' } : { type: 'ok-single', data }
+}
+
+export async function recordShipment(lineId: string, payload: RecordShipmentRequest, context: CommandContext,
+  signal?: AbortSignal): Promise<CommandOutcome<InstructionMutation>> {
+  const outcome = await sendTransition(shipmentPath(context.instructionId, lineId), payload, context, signal)
+  if (outcome.type !== 'succeeded') return outcome
+  const shares = outcome.data.detail.shares.filter((share) => share.shareId === payload.shipmentId)
+  const share = shares[0]
+  return shares.length !== 1 || share.kind !== 'Shipped' || share.lineId !== lineId || share.quantity !== payload.quantity
+    || share.measurement !== null || share.sourceShipmentId !== null || Date.parse(share.recordedAtUtc) !== Date.parse(payload.occurredAtUtc)
+    ? { type: 'malformed' } : outcome
+}
+
+export async function recordDelivery(lineId: string, payload: RecordDeliveryRequest, context: CommandContext,
+  signal?: AbortSignal): Promise<CommandOutcome<InstructionMutation>> {
+  const outcome = await sendTransition(deliveryPath(context.instructionId, lineId), payload, context, signal)
+  if (outcome.type !== 'succeeded') return outcome
+  const shares = outcome.data.detail.shares.filter((share) => share.shareId === payload.deliveryId)
+  const share = shares[0]
+  return shares.length !== 1 || share.kind !== 'Delivered' || share.lineId !== lineId || share.quantity !== payload.quantity
+    || share.measurement !== null || share.sourceShipmentId !== payload.sourceShipmentId
+    || Date.parse(share.recordedAtUtc) !== Date.parse(payload.occurredAtUtc) ? { type: 'malformed' } : outcome
 }
