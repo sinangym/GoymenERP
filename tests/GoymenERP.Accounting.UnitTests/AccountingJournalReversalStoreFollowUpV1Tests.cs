@@ -19,9 +19,14 @@ namespace GoymenERP.Accounting.UnitTests;
 /// approval-time period refusals and the propose bounds. Every test asserts the money effect itself (reversal
 /// journals linked to the source, net movement of the source's accounts), not only the answer.
 /// <para>
-/// The in-memory provider has no transactions, filtered unique indexes or SQL isolation. Every scenario here is refused
-/// before the store saves, or races on a read that precedes the winner's commit, so none depends on them; save-time
-/// uniqueness races stay with the SQL Server relational acceptance suite.
+/// The in-memory provider has no transactions, filtered unique indexes or SQL isolation, so these tests are NOT race
+/// proof. Each scenario is refused before the store saves, or (the racing-approval theory) forces ONE deterministic
+/// interleaving, a read that precedes the winner's commit, to pin the answer mapping of that interleaving. The real-SQL
+/// race evidence is the SQL Server relational acceptance suite:
+/// <c>AccountingApiSqlServerRelationalAcceptanceTests.A_journal_reversal_proposal_is_pending_until_another_user_approves_one_linked_reversal</c>
+/// sends two approvals of one proposal at once (same key, and two keys) for several fresh proposals under whatever
+/// interleaving SQL Server produces, including save-time unique-index and version-token losses, and asserts one
+/// reversal journal, zero net effect and the declared answers.
 /// </para>
 /// </summary>
 public sealed class AccountingJournalReversalStoreFollowUpV1Tests
