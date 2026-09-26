@@ -23,6 +23,7 @@ using GoymenERP.Modules.Logistics.Domain.Loading;
 using GoymenERP.Modules.Logistics.Domain.Quantities;
 using GoymenERP.Modules.Logistics.Infrastructure.Persistence;
 using GoymenERP.Modules.Sales.Application.Contracts;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Data.SqlClient;
@@ -49,7 +50,9 @@ public sealed class LogisticsInstructionSqlServerRelationalAcceptanceTests
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;
     private static readonly DateOnly Day = new(2026, 9, 19);
     private static readonly DateTimeOffset T0 = new(2026, 9, 19, 9, 0, 0, TimeSpan.Zero);
-    private static readonly Guid KgUnit = Guid.Parse("8a1d2c3b-4a59-4687-9a0b-1c2d3e4f5a93");
+    // The approved GDC kg identity (Ö1/Ö2): hosted shipment verifies the line unit against the real Settings
+    // catalog before Sales/Inventory/authority, so a synthetic unit id would answer 422 unsupported_unit first.
+    private static readonly Guid KgUnit = SettingsUnitIdentitiesV1.Kilogram;
     private static readonly LogisticsMutationAudit Issued = new("logistics.loading-instruction.issued.v1", "Issue", "SENTETIK yayımlandı");
     private static readonly LogisticsMutationAudit Loaded = new("logistics.loading-instruction.load-recorded.v1", "RecordLoad", "SENTETIK yüklendi");
 
@@ -606,7 +609,7 @@ public sealed class LogisticsInstructionSqlServerRelationalAcceptanceTests
             CancellationToken cancellationToken = default) => Task.FromResult(
                 new SalesOrderLineReferenceAnswerV1(SalesOrderLineReferenceOutcomeV1.Approved,
                     new SalesOrderLineReferenceV1(CompanyA, fixture.Owners.Order, fixture.OrderLineId, 1,
-                        fixture.Owners.Party, fixture.Owners.Account, fixture.ProductId, "7", KgUnit, "6", 0, 4), null));
+                        fixture.Owners.Party, fixture.Owners.Account, fixture.ProductId, "7", KgUnit, "6", 1, 4), null));
 
         public Task<SalesApprovedLinePageV1> ListApprovedLinesAsync(
             int pageSize,
