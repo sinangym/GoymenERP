@@ -285,6 +285,12 @@ public static class ErpPermissions
     /// <inheritdoc cref="LogisticsLoadingInstructionsCreate"/>
     public const string LogisticsLoadsRecord = "logistics.loads.record";
 
+    /// <inheritdoc cref="LogisticsLoadingInstructionsCreate"/>
+    public const string LogisticsShipmentsRecord = "logistics.shipments.record";
+
+    /// <inheritdoc cref="LogisticsLoadingInstructionsCreate"/>
+    public const string LogisticsDeliveriesRecord = "logistics.deliveries.record";
+
     /// <summary>
     /// PUR-4a (Business #66 5737790175: the purchase supply link of the core chain): the Purchasing owner's names
     /// (PurchasingPermissionManifestV1), the backend owners' technical mapping (Business #254 5654539215) recorded
@@ -302,6 +308,9 @@ public static class ErpPermissions
 
     /// <inheritdoc cref="PurchasingOrdersCreate"/>
     public const string PurchasingOrdersApprove = "purchasing.orders.approve";
+
+    /// <summary>Records a physical receipt; registered separately from order create/read/approve and grants nothing.</summary>
+    public const string PurchasingGoodsReceiptsRecord = "purchasing.goods-receipts.record";
 
     /// <summary>
     /// ACC-V0a: the Accounting owner's names (AccountingPermissionManifestV1), the backend owners' technical mapping
@@ -339,6 +348,18 @@ public static class ErpPermissions
 
     /// <inheritdoc cref="AccountingNormalJournalDraftCreate"/>
     public const string AccountingNormalJournalDraftApprove = "accounting.normal-journal.draft.approve";
+
+    /// <summary>
+    /// ACC reversal proposal and approval actions. Registration makes the Accounting owner's exact
+    /// names measurable and grants nothing. Both are company-wide because a journal and its reversal
+    /// proposal belong to the server-resolved company and have no narrower scope dimension. They are
+    /// not Critical: command-time maker-checker is enforced by the Accounting lifecycle, while this
+    /// catalogue does not introduce a grant-time dual-control policy.
+    /// </summary>
+    public const string AccountingJournalReversePropose = "accounting.journal.reverse.propose";
+
+    /// <inheritdoc cref="AccountingJournalReversePropose"/>
+    public const string AccountingJournalReverseApprove = "accounting.journal.reverse.approve";
 
     public const string IdentityProfileRead = "identity.profile.read";
     public const string IdentityAccessRequest = "identity.access.request";
@@ -378,9 +399,12 @@ public static class ErpPermissions
             LogisticsLoadingInstructionsCreate,
             LogisticsLoadingInstructionsRead,
             LogisticsLoadsRecord,
+            LogisticsShipmentsRecord,
+            LogisticsDeliveriesRecord,
             PurchasingOrdersCreate,
             PurchasingOrdersRead,
             PurchasingOrdersApprove,
+            PurchasingGoodsReceiptsRecord,
             AccountingPeriodsRead,
             AccountingPeriodsPropose,
             AccountingPeriodsApprove,
@@ -389,6 +413,8 @@ public static class ErpPermissions
             AccountingPostingQueuesRead,
             AccountingNormalJournalDraftCreate,
             AccountingNormalJournalDraftApprove,
+            AccountingJournalReversePropose,
+            AccountingJournalReverseApprove,
             FinanceBankAccountRead,
             FinanceBankAccountPropose,
             FinanceBankAccountApprove,
@@ -448,9 +474,12 @@ public static class ErpPermissions
             LogisticsLoadingInstructionsCreate,
             LogisticsLoadingInstructionsRead,
             LogisticsLoadsRecord,
+            LogisticsShipmentsRecord,
+            LogisticsDeliveriesRecord,
             PurchasingOrdersCreate,
             PurchasingOrdersRead,
             PurchasingOrdersApprove,
+            PurchasingGoodsReceiptsRecord,
             AccountingPeriodsRead,
             AccountingPeriodsPropose,
             AccountingPeriodsApprove,
@@ -459,6 +488,8 @@ public static class ErpPermissions
             AccountingPostingQueuesRead,
             AccountingNormalJournalDraftCreate,
             AccountingNormalJournalDraftApprove,
+            AccountingJournalReversePropose,
+            AccountingJournalReverseApprove,
             FinanceBankAccountRead,
             FinanceBankAccountPropose,
             FinanceBankAccountApprove,

@@ -1,7 +1,9 @@
+using System.Net.Http.Json;
 using System.Text.Json;
 using GoymenERP.Api.Shell;
 using GoymenERP.BrowserSuiteFixtureTool.Shared;
 using GoymenERP.Modules.Logistics.Infrastructure.Fixtures;
+using GoymenERP.Modules.Product.Infrastructure.Fixtures;
 using GoymenERP.Modules.Sales.Infrastructure.Fixtures;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.Extensions.DependencyInjection;
@@ -49,10 +51,11 @@ public sealed class L04BrowserSeed : IBrowserSuiteFixture
     // Synthetic owner snapshots the Sales fixture stores (no Product or Settings money answer is asked for them).
     private static readonly Guid CurrencyId = Guid.Parse("e4000000-0000-4000-8000-000000000401");
     private static readonly Guid MoneyProfileId = Guid.Parse("e5000000-0000-4000-8000-000000000401");
-    private static readonly Guid CoilProductId = Guid.Parse("e8000000-0000-4000-8000-000000000401");
-    // The REAL Settings kilogram unit (ApprovedUnitProfileCatalog.GdcKilogramV1): the Logistics create verifies it against the real profile.
-    private static readonly Guid KgUnitId = SettingsUnitIdentitiesV1.Kilogram;
-    private static readonly Guid KgProfileId = Guid.Parse("4a790fdc-2a6b-5126-835f-d3a13d28b71c");
+    private static readonly Guid OpeningCountId = Guid.Parse("e6000000-0000-4000-8000-000000000401");
+    private static readonly Guid OpeningLineId = Guid.Parse("e6100000-0000-4000-8000-000000000401");
+    private static readonly Guid ShipmentLabelId = Guid.Parse("e6200000-0000-4000-8000-000000000401");
+    private static readonly Guid ShipmentLotId = Guid.Parse("e6300000-0000-4000-8000-000000000401");
+    private static readonly Guid ShipmentAllocationId = Guid.Parse("e6400000-0000-4000-8000-000000000401");
 
     private static readonly DateOnly BusinessDate = new DateOnly(2026, 9, 19);
     private static readonly DateOnly EffectiveFrom = new DateOnly(2026, 9, 18);
@@ -62,6 +65,9 @@ public sealed class L04BrowserSeed : IBrowserSuiteFixture
     private const string DraftsPath = "/api/v1/sales/drafts";
     private const string InstructionsPath = "/api/v1/logistics/loading-instructions";
     private const string ApprovedLinesPath = InstructionsPath + "/approved-order-lines";
+    private const string OpeningCountsPath = "/api/v1/inventory/opening-counts";
+    private const string PhysicalAllocationsPath = "/api/v1/inventory/physical-allocations";
+    private const string OrganizationLocationsPath = "/api/v1/organization/locations?page=1&pageSize=100";
     private const string CapabilitiesPath = "/api/v1/shell/capabilities";
     private const string ListCapability = "logistics.instructions.list";
     private const string CreateCapability = "logistics.instructions.create";
@@ -73,6 +79,21 @@ public sealed class L04BrowserSeed : IBrowserSuiteFixture
         BrowserSuiteFixtureContext context,
         CancellationToken cancellationToken)
     {
+        await using (var registryScope = context.Services.CreateAsyncScope())
+        {
+            await registryScope.ServiceProvider.GetRequiredService<C01E2eProductTechnicalCardFixtureWriter>()
+                .EnsureAsync(cancellationToken);
+        }
+
+        ProductSalesCandidateFixtureOutput product;
+        await using (var productScope = context.Services.CreateAsyncScope())
+        {
+            product = await productScope.ServiceProvider.GetRequiredService<C01E2eProductSalesCandidateFixtureWriter>()
+                .EnsureAsync(cancellationToken);
+        }
+
+        string shipmentLabelVersion = await EnsureShipmentLabelAsync(context, product, cancellationToken);
+
         // 1) The customer, through the real Cari API.
         CariBrowserAccount customer = await CariBrowserSeed.OpenPartyWithAccountAsync(
             context, CariActor, CompanyGdc, "customer", "Yükleme müşterisi", CustomerRole, cancellationToken);
@@ -90,8 +111,8 @@ public sealed class L04BrowserSeed : IBrowserSuiteFixture
                     BusinessDate,
                     new SalesDraftFixtureOwners(customer.PartyId, customer.AccountId, CurrencyId, MoneyProfileId, EffectiveFrom),
                     [
-                        new SalesDraftFixtureLine(LineId, CoilProductId, "L04-COIL", ProductName,
-                            KgUnitId, KgProfileId, "kg", "weight", IsKilogram: true, Scale: 3, "6", 6m),
+                        new SalesDraftFixtureLine(LineId, product.ProductId, "L04-COIL", ProductName,
+                            product.UnitId, product.ProfileId, "kg", "weight", IsKilogram: true, Scale: 3, "6", 6m),
                     ],
                     context.Label("seed"),
                     context.IdempotencyKey("draft"),
@@ -121,6 +142,8 @@ public sealed class L04BrowserSeed : IBrowserSuiteFixture
             await context.PostJsonAsync(SalesApproverActor, CompanyGdc, $"{DraftsPath}/{DraftId:D}/approval",
                 new { expectedVersion = draftVersion.ToString(System.Globalization.CultureInfo.InvariantCulture) }, "approve", cancellationToken);
         }
+
+        await EnsureShipmentAllocationAsync(context, shipmentLabelVersion, cancellationToken);
 
         JsonElement approved = await context.GetJsonAsync(SalesApproverActor, CompanyGdc, $"{DraftsPath}/{DraftId:D}", cancellationToken);
         JsonElement approvedDraft = approved.GetProperty("draft");
@@ -171,7 +194,7 @@ public sealed class L04BrowserSeed : IBrowserSuiteFixture
         }
 
         // 3) The negatives' instruction: created and issued through the real Logistics API, then one line blocked by the fixture.
-        Guid instructionId = await EnsureInstructionAsync(context, customer, cancellationToken);
+        Guid instructionId = await EnsureInstructionAsync(context, customer, product.UnitId, cancellationToken);
         await using (AsyncServiceScope scope = context.Services.CreateAsyncScope())
         {
             LogisticsLineBlockFixtureOutcome block = await scope.ServiceProvider.GetRequiredService<C01E2eLogisticsLineBlockFixtureWriter>().BlockAsync(
@@ -232,11 +255,14 @@ public sealed class L04BrowserSeed : IBrowserSuiteFixture
             ["instructionId"] = instructionId.ToString("D"),
             ["blockedLineId"] = BlockedLineId.ToString("D"),
             ["openLineId"] = OpenLineId.ToString("D"),
+            ["shipmentAllocationId"] = ShipmentAllocationId.ToString("D"),
+            ["shipmentLabelId"] = ShipmentLabelId.ToString("D"),
         };
     }
 
     /// <summary>The seeded instruction through the real API: its create key replays on a re-run, so the id is stable.</summary>
-    private static async Task<Guid> EnsureInstructionAsync(BrowserSuiteFixtureContext context, CariBrowserAccount customer, CancellationToken cancellationToken)
+    private static async Task<Guid> EnsureInstructionAsync(BrowserSuiteFixtureContext context, CariBrowserAccount customer,
+        Guid unitId, CancellationToken cancellationToken)
     {
         JsonElement created = await context.PostJsonAsync(PreparerActor, CompanyGdc, InstructionsPath,
             new
@@ -246,8 +272,8 @@ public sealed class L04BrowserSeed : IBrowserSuiteFixture
                 effectiveOn = "2026-09-19",
                 lines = new[]
                 {
-                    new { lineId = OpenLineId, sourceOrderId = DraftId, sourceOrderLineId = LineId, unitId = KgUnitId, quantity = "4" },
-                    new { lineId = BlockedLineId, sourceOrderId = DraftId, sourceOrderLineId = LineId, unitId = KgUnitId, quantity = "2" },
+                    new { lineId = OpenLineId, sourceOrderId = DraftId, sourceOrderLineId = LineId, unitId, quantity = "4" },
+                    new { lineId = BlockedLineId, sourceOrderId = DraftId, sourceOrderLineId = LineId, unitId, quantity = "2" },
                 },
             },
             "instruction",
@@ -261,6 +287,78 @@ public sealed class L04BrowserSeed : IBrowserSuiteFixture
         }
 
         return instructionId;
+    }
+
+    private static async Task<string> EnsureShipmentLabelAsync(BrowserSuiteFixtureContext context,
+        ProductSalesCandidateFixtureOutput product, CancellationToken cancellationToken)
+    {
+        JsonElement locations = await context.GetJsonAsync(CariActor, CompanyGdc, OrganizationLocationsPath, cancellationToken);
+        Guid locationId = locations.GetProperty("items").EnumerateArray()
+            .Where(item => item.GetProperty("isActive").GetBoolean() && !item.GetProperty("isExternal").GetBoolean())
+            .OrderBy(item => item.GetProperty("code").GetString(), StringComparer.Ordinal)
+            .Select(item => item.GetProperty("id").GetGuid())
+            .FirstOrDefault();
+        if (locationId == Guid.Empty)
+        {
+            throw new InvalidOperationException("The l04 shipment prerequisite has no active non-external GDC location.");
+        }
+
+        JsonElement opening = await context.PostJsonAsync(LoaderActor, CompanyGdc, OpeningCountsPath, new
+        {
+            countId = OpeningCountId,
+            locationId,
+            countedOn = ProductSalesCandidateFixture.EffectiveOn,
+            sheetReference = context.Label("shipment opening"),
+            lines = new[]
+            {
+                new
+                {
+                    lineId = OpeningLineId,
+                    labelId = ShipmentLabelId,
+                    labelCode = "SYNL04-SHIP-LABEL-1",
+                    lotId = ShipmentLotId,
+                    heatNumber = (string?)null,
+                    coilNumber = (string?)null,
+                    productId = product.ProductId,
+                    productVersion = product.ProductVersion,
+                    quantityKg = "2",
+                },
+            },
+        }, "shipment-opening", cancellationToken);
+        JsonElement opened = opening.GetProperty("lines").EnumerateArray().Single();
+        if (opened.GetProperty("labelId").GetGuid() != ShipmentLabelId
+            || opened.GetProperty("productId").GetGuid() != product.ProductId
+            || opened.GetProperty("quantityKg").GetString() != "2")
+        {
+            throw new InvalidOperationException("The real opening command returned another l04 shipment prerequisite.");
+        }
+
+        JsonElement label = await context.GetJsonAsync(
+            LoaderActor, CompanyGdc, $"/api/v1/inventory/labels/{ShipmentLabelId:D}/detail", cancellationToken);
+        return label.GetProperty("labelVersion").GetString()
+            ?? throw new InvalidOperationException("The l04 shipment label version is missing.");
+    }
+
+    private static async Task EnsureShipmentAllocationAsync(BrowserSuiteFixtureContext context,
+        string labelVersion, CancellationToken cancellationToken)
+    {
+        JsonElement allocation = await context.PostJsonAsync(LoaderActor, CompanyGdc, PhysicalAllocationsPath, new
+        {
+            allocationId = ShipmentAllocationId,
+            salesOrderId = DraftId,
+            salesOrderLineId = LineId,
+            labelId = ShipmentLabelId,
+            expectedLabelVersion = labelVersion,
+            quantityKg = "2",
+            reason = context.Label("definite shipment allocation"),
+            reservedUntilUtc = (DateTimeOffset?)null,
+        }, "shipment-allocation", cancellationToken);
+        if (allocation.GetProperty("allocationId").GetGuid() != ShipmentAllocationId
+            || allocation.GetProperty("status").GetString() != "Active"
+            || allocation.GetProperty("remainingKg").GetString() != "2")
+        {
+            throw new InvalidOperationException("The real allocation command did not create the exact l04 shipment allocation.");
+        }
     }
 
     /// <summary>True when any object anywhere in the JSON tree has a customerName equal to the expected text.</summary>
