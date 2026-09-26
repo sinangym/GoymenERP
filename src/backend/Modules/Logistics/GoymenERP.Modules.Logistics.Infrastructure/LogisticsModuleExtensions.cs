@@ -48,7 +48,11 @@ public static class LogisticsModuleExtensions
         services.AddScoped<ILogisticsInstructionStore>(serviceProvider => serviceProvider.GetRequiredService<LogisticsStore>());
         services.AddScoped<LoadingUnitVerifier>();
         services.TryAddSingleton(new LogisticsInstructionServiceBindings());
-        services.AddScoped<ILogisticsInstructionService>(CreateInstructionService);
+        services.AddScoped(CreateInstructionService);
+        services.AddScoped<ILogisticsInstructionService>(serviceProvider =>
+            serviceProvider.GetRequiredService<LogisticsInstructionService>());
+        services.AddScoped<ILogisticsRealizationServiceV1>(serviceProvider =>
+            serviceProvider.GetRequiredService<LogisticsInstructionService>());
         return services;
     }
 
@@ -63,7 +67,8 @@ public static class LogisticsModuleExtensions
         serviceProvider.GetRequiredService<LoadingUnitVerifier>(),
         serviceProvider.GetRequiredService<ILogisticsInstructionStore>(),
         serviceProvider.GetRequiredService<LogisticsInstructionServiceBindings>(),
-        serviceProvider.GetRequiredService<TimeProvider>());
+        serviceProvider.GetRequiredService<TimeProvider>(),
+        serviceProvider.GetService<ILogisticsRealizationTransactionRunnerV1>());
 
     /// <summary>Applies Logistics's migrations. Its foreign keys need Organization's tables first.</summary>
     public static async Task InitializeLogisticsModuleAsync(this IServiceProvider services, CancellationToken cancellationToken = default)

@@ -147,6 +147,8 @@ export const INSTRUCTION_DETAIL_TEXT = {
   shipped: 'Sevk edilen',
   delivered: 'Teslim edilen',
   remainingToLoad: 'Yüklenecek kalan',
+  loadedNotShipped: 'Yüklenmiş, sevk bekleyen',
+  shippedNotDelivered: 'Sevk edilmiş, teslim bekleyen',
   blocked: 'Bloklu',
   sharesHeading: 'Paylar',
   noShares: 'Henüz pay kaydedilmedi.',
@@ -215,3 +217,24 @@ export function problemCodeText(code: string | null): string | null {
   if (code === null) return null
   return Object.hasOwn(PROBLEM_CODE_TEXT, code) ? PROBLEM_CODE_TEXT[code as LogisticsProblemCode] : null
 }
+
+export const REALIZATION_TEXT = {
+  shipment: 'Kesin sevk kaydet',
+  delivery: 'Teslim kaydet',
+  shipmentNote: 'Seçilen tahsis tüketilir ve tek fiziksel çıkış kaydedilir. Yükleme tek başına bu işlemi yapmaz.',
+  deliveryNote: 'Teslim, seçilen sevke bağlanır. Yeni stok çıkışı oluşturmaz; sevkin kalan miktarını aşamaz.',
+  allocation: 'Tahsis edilmiş etiket',
+  sourceShipment: 'Kaynak sevk',
+  quantity: 'Miktar (kg)',
+  remaining: 'Kalan',
+  line: 'Satır',
+  labelReference: 'Etiket ref.',
+  allocationReference: 'Tahsis ref.',
+  shipmentReference: 'Sevk ref.',
+  choose: 'Seçin',
+  invalid: 'Listeden geçerli bir kaynak seçin ve pozitif miktar girin.',
+  noAllocation: 'Bu sipariş satırında sevk edilebilir aktif tahsis bulunamadı.',
+  windowFull: 'Arama sınırına ulaşıldı; listede olmayan bir tahsisin bulunmadığı sonucuna varılamaz.',
+  noShipment: 'Bu satırda teslim bekleyen bir sevk yok.',
+  refresh: 'Kaynakları yenile',
+} as const
