@@ -56,14 +56,12 @@ public static class AccountingEndpoints
         AccountingJournalReversalStoreCodesV1.PostingConflict,
     ];
 
-    private static readonly string[] JournalReversalUnprocessableCodes =
-    [
-        AccountingErrorCodes.InvalidReference,
-        AccountingErrorCodes.ReversalOfReversal,
-        AccountingErrorCodes.PeriodClosed,
-        AccountingErrorCodes.PeriodDoesNotCover,
-        AccountingJournalReversalStoreCodesV1.SourceJournalNotFound,
-    ];
+    // Route-exact 422 catalogs are owned by Accounting (AccountingJournalReversalUnprocessableCodesV1).
+    private static readonly string[] JournalReversalProposeUnprocessableCodes =
+        [.. AccountingJournalReversalUnprocessableCodesV1.Propose];
+
+    private static readonly string[] JournalReversalApproveUnprocessableCodes =
+        [.. AccountingJournalReversalUnprocessableCodesV1.Approve];
 
     private static readonly string[] PeriodUnprocessableCodes =
     [
@@ -283,7 +281,8 @@ public static class AccountingEndpoints
             .WithName("ProposeAccountingJournalReversalV1")
             .Accepts<ProposeAccountingJournalReversalRequestV1>("application/json")
             .Produces<AccountingJournalReversalProposalViewV1>(StatusCodes.Status201Created)
-            .WithWriteProblems(notFound: false, journalReversal: true);
+            .WithWriteProblems(notFound: false, journalReversal: true,
+                journalReversalUnprocessableCodes: JournalReversalProposeUnprocessableCodes);
 
         group.MapPost("/journal-reversal-proposals/{proposalId:guid}/approval", async (
                 Guid proposalId,
@@ -300,7 +299,8 @@ public static class AccountingEndpoints
             .WithName("ApproveAccountingJournalReversalV1")
             .Accepts<ApproveAccountingJournalReversalRequestV1>("application/json")
             .Produces<AccountingJournalReversalProposalViewV1>(StatusCodes.Status200OK)
-            .WithWriteProblems(notFound: true, journalReversal: true);
+            .WithWriteProblems(notFound: true, journalReversal: true,
+                journalReversalUnprocessableCodes: JournalReversalApproveUnprocessableCodes);
 
         group.MapGet("/posting-queues", async (
                 AccountingApiService service,
@@ -329,13 +329,15 @@ public static class AccountingEndpoints
     }
 
     private static RouteHandlerBuilder WithWriteProblems(this RouteHandlerBuilder builder, bool notFound,
-        bool normalJournal = false, bool journalReversal = false)
+        bool normalJournal = false, bool journalReversal = false,
+        string[]? journalReversalUnprocessableCodes = null)
     {
         var conflictCodes = journalReversal
             ? JournalReversalConflictCodes
             : normalJournal ? NormalJournalConflictCodes : PeriodConflictCodes;
         var unprocessableCodes = journalReversal
-            ? JournalReversalUnprocessableCodes
+            ? journalReversalUnprocessableCodes
+                ?? throw new InvalidOperationException("A journal reversal route must name its exact 422 codes.")
             : normalJournal ? NormalJournalUnprocessableCodes : PeriodUnprocessableCodes;
         builder
             .ProducesErpBadRequest(BadRequestCodes)
