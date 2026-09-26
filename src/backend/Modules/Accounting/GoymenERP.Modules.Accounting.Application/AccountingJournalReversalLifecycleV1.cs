@@ -323,6 +323,18 @@ public sealed class AccountingJournalReversalServiceV1(
                 ? Answer<T>(winner, actorId, requestHash)
                 : new AccountingApiResult<T>(AccountingApiStatus.Conflict, null, false, exception.Code);
         }
+        catch (AccountingStoreException exception) when (
+            exception.Code == AccountingJournalReversalStoreCodesV1.PostingConflict
+            && string.Equals(commandName, AccountingJournalReversalCommandNamesV1.Approve, StringComparison.Ordinal))
+        {
+            // An approval that read the proposal pending while a racing approval of it committed is refused by the
+            // store (nothing of it is saved). When that winner answered under THIS key with the same actor and request,
+            // its recorded answer is this key's replay (ADR-011), exactly as for a lost save; otherwise it stays 409.
+            return await commands.FindCommandAsync(commandName, keyHash, cancellationToken) is { } winner
+                && Binds(winner, actorId, requestHash)
+                ? Answer<T>(winner, actorId, requestHash)
+                : new AccountingApiResult<T>(AccountingApiStatus.Conflict, null, false, exception.Code);
+        }
         catch (AccountingStoreException exception)
         {
             result = exception.Code switch
@@ -408,11 +420,15 @@ public sealed class AccountingJournalReversalServiceV1(
             JsonSerializer.Serialize(result with { IsReplay = false, OriginalCorrelationId = null }, Json),
             correlation.CorrelationId);
 
+    /// <summary>A recorded command answers this attempt only for the same actor and the same canonical request.</summary>
+    private static bool Binds(AccountingCommandRecord prior, string actorId, string requestHash) =>
+        string.Equals(prior.ActorId, actorId, StringComparison.Ordinal)
+        && string.Equals(prior.RequestHash, requestHash, StringComparison.Ordinal);
+
     private static AccountingApiResult<T> Answer<T>(AccountingCommandRecord prior, string actorId, string requestHash)
         where T : class
     {
-        if (!string.Equals(prior.ActorId, actorId, StringComparison.Ordinal)
-            || !string.Equals(prior.RequestHash, requestHash, StringComparison.Ordinal))
+        if (!Binds(prior, actorId, requestHash))
         {
             return new AccountingApiResult<T>(AccountingApiStatus.Conflict, null, false,
                 AccountingApiCodes.IdempotencyConflict);

@@ -170,14 +170,25 @@ public sealed class AccountingJournalReversalStoreFollowUpV1Tests
     }
 
     /// <summary>
-    /// Two approvals of one proposal at once, interleaved deterministically: A reads the pending proposal and stops at
-    /// its first in-store authority fence (after the read, before the posting); B, which found no stored answer for its
-    /// key, approves and commits the reversal; then A resumes on its earlier read.
+    /// Two approvals of one proposal at once, interleaved deterministically: A (the checker, key
+    /// <c>racing-approval-a</c>) reads the pending proposal and stops at its first in-store authority fence (after the
+    /// read, before the posting); B, which found no stored answer for its key, approves and commits the reversal; then A
+    /// resumes on its earlier read, and the store refuses A's posting because B's delivery for the proposal exists.
+    /// <list type="bullet">
+    /// <item><c>same-key</c>: B is the same checker with the same key and request, so B's recorded answer IS this key's
+    /// answer: A is its replay (200, B's reversal journal, B's correlation), as a lost save-time race already was.</item>
+    /// <item><c>same-key-other-checker</c>: B used A's key as another actor; that record does not bind A, so A keeps the
+    /// declared 409 posting conflict (and its retry is the key's idempotency conflict).</item>
+    /// <item><c>other-key</c>: nothing is recorded under A's key, so A keeps the 409 posting conflict (and its retry
+    /// meets the stale version).</item>
+    /// </list>
+    /// In every case exactly one reversal is posted and the second approval has no money effect.
     /// </summary>
     [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task Two_racing_approvals_of_one_proposal_post_exactly_one_reversal(bool sameKey)
+    [InlineData("same-key")]
+    [InlineData("same-key-other-checker")]
+    [InlineData("other-key")]
+    public async Task Two_racing_approvals_of_one_proposal_post_exactly_one_reversal(string race)
     {
         var book = await Book.CreateAsync();
         var source = await book.PostSourceAsync("SENTETIK-racing-approval-source");
@@ -185,8 +196,8 @@ public sealed class AccountingJournalReversalStoreFollowUpV1Tests
         Assert.Equal(AccountingApiStatus.Created,
             (await book.ProposeAsync(Maker, Proposal(proposalId, source.Id, book.September), "racing-propose")).Status);
         const string loserKey = "racing-approval-a";
-        var winnerKey = sameKey ? loserKey : "racing-approval-b";
-        var winnerActor = sameKey ? Checker : SecondChecker;
+        var winnerKey = race == "other-key" ? "racing-approval-b" : loserKey;
+        var winnerActor = race == "same-key" ? Checker : SecondChecker;
 
         // Calls 1 and 2 are the lifecycle's own revalidations; call 3 is the store's fence after it read the proposal.
         var gate = new GatedAuthority(gateAtCall: 3);
@@ -198,31 +209,44 @@ public sealed class AccountingJournalReversalStoreFollowUpV1Tests
 
         Assert.Equal((AccountingApiStatus.Ok, false, "Approved"), (winner.Status, winner.IsReplay, winner.Resource!.Status));
         var reversal = winner.Resource.ReversalJournalId!.Value;
-        // The resumed approval finds the winner's delivery for this proposal and refuses a second posting with the
-        // declared 409 posting conflict. Pinned as current behaviour: under the winner's own key it is NOT answered as
-        // the key's replay (unlike a save-time concurrent change); reported as a follow-up, and a retry replays.
-        Assert.Equal(
-            (AccountingApiStatus.Conflict, AccountingJournalReversalStoreCodesV1.PostingConflict, false),
-            (loser.Status, loser.Code, loser.IsReplay));
-        Assert.Null(loser.Resource);
+        if (race == "same-key")
+        {
+            Assert.Equal(
+                (AccountingApiStatus.Ok, true, "racing-winner", reversal, "Approved", 2),
+                (loser.Status, loser.IsReplay, loser.OriginalCorrelationId, loser.Resource!.ReversalJournalId!.Value,
+                    loser.Resource.Status, loser.Resource.Version));
+            Assert.Equal(Checker, loser.Resource.DecidedBy);
+        }
+        else
+        {
+            Assert.Equal(
+                (AccountingApiStatus.Conflict, AccountingJournalReversalStoreCodesV1.PostingConflict, false),
+                (loser.Status, loser.Code, loser.IsReplay));
+            Assert.Null(loser.Resource);
+        }
 
         Assert.Equal(reversal, Assert.Single(await book.ReversalsOfAsync(source.Id)));
         Assert.Equal(2, await book.JournalCountAsync());
         await book.AssertSourceAccountsNetAsync(0m);
         await book.AssertApprovedOnceAsync(proposalId, reversal, winnerActor);
+        // The replay and the 409 record nothing: the winner's command is the only approval command.
         Assert.Equal(1, await book.ApprovalCommandCountAsync());
 
-        // The loser's retry under its own key: the winner's replay when the key is shared, else the stale version.
+        // The loser's retry under its own key answers from the command log or the stored version.
         var retry = await book.ApproveAsync(Checker, proposalId, 1, loserKey);
-        if (sameKey)
+        switch (race)
         {
-            Assert.Equal(
-                (AccountingApiStatus.Ok, true, "racing-winner", reversal),
-                (retry.Status, retry.IsReplay, retry.OriginalCorrelationId, retry.Resource!.ReversalJournalId!.Value));
-        }
-        else
-        {
-            Assert.Equal((AccountingApiStatus.Conflict, AccountingApiCodes.VersionConflict), (retry.Status, retry.Code));
+            case "same-key":
+                Assert.Equal(
+                    (AccountingApiStatus.Ok, true, "racing-winner", reversal),
+                    (retry.Status, retry.IsReplay, retry.OriginalCorrelationId, retry.Resource!.ReversalJournalId!.Value));
+                break;
+            case "same-key-other-checker":
+                Assert.Equal((AccountingApiStatus.Conflict, AccountingApiCodes.IdempotencyConflict), (retry.Status, retry.Code));
+                break;
+            default:
+                Assert.Equal((AccountingApiStatus.Conflict, AccountingApiCodes.VersionConflict), (retry.Status, retry.Code));
+                break;
         }
 
         Assert.Equal(reversal, Assert.Single(await book.ReversalsOfAsync(source.Id)));
