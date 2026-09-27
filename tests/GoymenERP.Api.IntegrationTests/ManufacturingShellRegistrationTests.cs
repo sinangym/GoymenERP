@@ -32,7 +32,7 @@ public sealed class ManufacturingShellRegistrationTests
 
         var actual = ShellCapabilityRegistry.ComputeCandidateRevision(providers);
         Assert.True(
-            string.Equals(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV11PublishedSalesV11PublishedFinanceV12AndPublishedManufacturingV12, actual,
+            string.Equals(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV11PublishedSalesV11PublishedFinanceV12AndPublishedManufacturingV13, actual,
                 StringComparison.Ordinal),
             $"Manufacturing normal-host authority drifted. Actual: {actual}");
     }
@@ -45,7 +45,7 @@ public sealed class ManufacturingShellRegistrationTests
         var authority = C01E2eShellCapabilityActivation.Configure(services, new TestingEnvironment(),
             new ConfigurationBuilder().Build());
 
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV11PublishedSalesV11PublishedFinanceV12AndPublishedManufacturingV12,
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV11PublishedSalesV11PublishedFinanceV12AndPublishedManufacturingV13,
             authority);
         using var container = services.BuildServiceProvider();
         var registry = new ShellCapabilityRegistry(container.GetServices<IShellCapabilityProvider>(),
@@ -54,15 +54,16 @@ public sealed class ManufacturingShellRegistrationTests
             .Where(item => item.Owner == ManufacturingShellCapabilityProvider.OwnerId)
             .ToArray();
         // The order detail, its two controls (the fact forms and, MFG-ORD, the close) and the MFG-02 order
-        // list, published. A declaration still grants nothing: each route's service measures its own
-        // Manufacturing permission afresh, and the close measures its own name on top of the read.
-        Assert.Equal(8, manufacturing.Length);
+        // list, published, and (MFG-PLAN-LIST, 1.3) the saved-plan list. A declaration still grants nothing: each
+        // route's service measures its own Manufacturing permission afresh, and the close measures its own name on
+        // top of the read.
+        Assert.Equal(9, manufacturing.Length);
         string[] expected =
         [
             "manufacturing.orders.close", "manufacturing.orders.detail", "manufacturing.orders.facts",
             "manufacturing.orders.list",
             "manufacturing.plans.approve", "manufacturing.plans.create", "manufacturing.plans.detail",
-            "manufacturing.plans.order-create",
+            "manufacturing.plans.list", "manufacturing.plans.order-create",
         ];
         Assert.Equal(expected,
             manufacturing.Select(item => item.Declaration.CapabilityId).Order(StringComparer.Ordinal).ToArray());

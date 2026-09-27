@@ -198,6 +198,29 @@ public static class ManufacturingEndpoints
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
+        // MFG-PLAN-LIST: the company's plans, newest first, from the stored rows only — so a saved plan can be found
+        // and reopened after its screen was closed. The order list's rules and the plan read's grant
+        // (`manufacturing.plans.read`, company-wide); no engine answer, spec or roll label.
+        group.MapGet("/plans", async (
+                int? pageSize,
+                string? cursor,
+                string? status,
+                ManufacturingCommandService service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response.Headers);
+                return ToHttpResult(httpContext, await service.ListPlansAsync(pageSize, cursor, status, cancellationToken),
+                    location: null);
+            })
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.ManufacturingPlansRead)
+            .WithName("ListManufacturingPlansV1")
+            .Produces<PlanListViewV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest(BadRequestCodes)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
         group.MapPost("/orders", async (
                 CreateOrderRequestV1 request,
                 ManufacturingCommandService service,

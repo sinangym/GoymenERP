@@ -164,7 +164,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // manufacturing
             ["tools/relational_inventory/manufacturing.txt"] =
-                "6a1e2694175b425c4cddd702efcc6fe770d045ca0fe5396a9a433b1306594739",
+                "a72e63678da905388ee2e17d46ad3aed74b6ad8d6f6b0ee79fe47ca7b3cd9595",
 
             // organization
             ["tools/relational_inventory/organization.txt"] =
@@ -618,7 +618,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Manufacturing.Infrastructure/"
                  + "ManufacturingModuleExtensions.cs"] =
                     new(
-                        "d60752e602b2d92805f18bd0e5c214bf469eec3f4004331b628ae4bfd78213c6",
+                        "c7fc382b6a9c613d07133ae82a369985cbc3f96d365b1b87f9c340fed665267f",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -635,7 +635,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Manufacturing/"
                  + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.cs"] =
                     new(
-                        "e88d303e66c0842524612f8d2c11f0ed6fcc4ecefc2d687764adb7f45853555a",
+                        "cb4ee45788284b701901556a810358bef4fc2da9a26273e61c46354418a0b0de",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1

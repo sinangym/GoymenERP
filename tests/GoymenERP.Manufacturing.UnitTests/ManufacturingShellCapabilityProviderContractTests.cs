@@ -5,8 +5,8 @@ using GoymenERP.Modules.Manufacturing.Infrastructure.Shell;
 namespace GoymenERP.Manufacturing.UnitTests;
 
 /// <summary>
-/// The published Manufacturing shell provider (MFG-UI card D1–D3; MFG-UI-F; MFG-ORD): four routes — the
-/// order screen/list and plan create/detail — two controls on the order screen and two on plan detail. All eight
+/// The published Manufacturing shell provider (MFG-UI card D1–D3; MFG-UI-F; MFG-ORD; MFG-PLAN-LIST): five routes —
+/// the order screen/list and plan create/detail/list — two controls on the order screen and two on plan detail. All nine
 /// consumed ids and all routes stay pinned to <c>src/manufacturing/capabilities.ts</c>, so frontend drift is red here.
 /// company-wide scope, and <c>ImplementationAvailable: true</c> on all of them. Each control is its
 /// parent with only its id, parent and permissions changed, so the registry's control rule (same route,
@@ -24,8 +24,8 @@ public sealed class ManufacturingShellCapabilityProviderContractTests
         var provider = new ManufacturingShellCapabilityProvider();
         var declarations = provider.GetDeclarations();
 
-        Assert.Equal(("MANUFACTURING", "1.2"), (provider.Owner, provider.ContractVersion));
-        Assert.Equal(8, declarations.Count);
+        Assert.Equal(("MANUFACTURING", "1.3"), (provider.Owner, provider.ContractVersion));
+        Assert.Equal(9, declarations.Count);
         foreach (var declaration in declarations)
         {
             Assert.Contains($"'{declaration.CapabilityId}'", source);
@@ -68,6 +68,14 @@ public sealed class ManufacturingShellCapabilityProviderContractTests
             (planDetail.RouteId, planDetail.RoutePath, planDetail.ScreenId, planDetail.RoutePrecedence));
         Assert.Null(planDetail.ParentCapabilityId);
         Assert.Equal([ErpPermissions.ManufacturingPlansRead], planDetail.RequiredPermissions);
+
+        // MFG-PLAN-LIST: its own static route on the plan read's grant — never a plan id, never a new permission.
+        var planList = Assert.Single(declarations, item => item.CapabilityId == "manufacturing.plans.list");
+        Assert.Equal(
+            ("manufacturing.plan-list", "/uretim/planlar", "MFG-PLAN-LIST", ShellCapabilityRoutePrecedence.Static),
+            (planList.RouteId, planList.RoutePath, planList.ScreenId, planList.RoutePrecedence));
+        Assert.Null(planList.ParentCapabilityId);
+        Assert.Equal([ErpPermissions.ManufacturingPlansRead], planList.RequiredPermissions);
 
         // The controls: the same route as the order screen, its permission plus their own.
         AssertControl(declarations, detail, "manufacturing.orders.facts",
