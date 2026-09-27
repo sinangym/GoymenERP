@@ -394,7 +394,7 @@ public sealed class ManufacturingStore(
         var (headers, revisionInputs) = await ReadRevisionsAsync(row, cancellationToken);
         var history = new List<ManufacturingPlanRevision>(headers.Count + 1)
         {
-            new(0, 1, row.WorkCenterId,
+            new ManufacturingPlanRevision(0, 1, row.WorkCenterId,
                 [.. created.Select(input => new PlannedInput(input.ParentRollId, new Kilograms(input.PlannedKg),
                     input.ExpectedLabelVersion))],
                 Target(row.TargetBasis, row.TargetKg), Reason: null, RevisedBy: null, row.CreatedAtUtc),
