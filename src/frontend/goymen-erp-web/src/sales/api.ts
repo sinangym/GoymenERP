@@ -35,10 +35,12 @@ import {
   decodeDraftPage,
   decodeDraftRevisions,
   decodeDeliverySchedules,
+  decodeDeliveryProgress,
   decodeProblem,
   salesDraftCommercialRevisionPath,
   salesDraftDeliverySchedulePath,
   salesDraftDeliverySchedulesPath,
+  salesDraftDeliveryProgressPath,
   salesDraftCommandPath,
   salesDraftDetailPath,
   salesDraftRevisionsPath,
@@ -50,6 +52,7 @@ import {
   type DraftCommercialRevisionRequest,
   type DraftDeliveryScheduleRequest,
   type DeliverySchedules,
+  type DeliveryProgress,
   type DraftDetail,
   type DraftMutation,
   type DraftPage,
@@ -176,6 +179,22 @@ export async function fetchDraftDeliverySchedules(
   if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
   const history = decodeDeliverySchedules(raw.body)
   return history === null ? { type: 'malformed' } : { type: 'ok-single', data: history }
+}
+
+/**
+ * AT-024: the delivered / remaining quantities of `detail`'s lines, read-only under the draft read; the server reads
+ * them from the delivery owner (Logistics) afresh on every request. Data only when it describes exactly this detail.
+ */
+export async function fetchDraftDeliveryProgress(
+  detail: DraftDetail,
+  companyId: string,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<DeliveryProgress>> {
+  const raw = await request(salesDraftDeliveryProgressPath(detail.draft.id), { headers: headers(companyId) }, signal)
+  if ('failure' in raw) return readFailure(raw.failure)
+  if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
+  const progress = decodeDeliveryProgress(raw.body, detail)
+  return progress === null ? { type: 'malformed' } : { type: 'ok-single', data: progress }
 }
 
 /* ── Reference options (S03) ─────────────────────────────────────────────── */

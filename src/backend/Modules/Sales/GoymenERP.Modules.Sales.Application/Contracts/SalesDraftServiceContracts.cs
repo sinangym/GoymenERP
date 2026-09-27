@@ -62,6 +62,12 @@ public static class SalesDraftProblemCodesV1
     /// <summary>503: an owner answered a malformed value (another company, another unit, an empty identity).</summary>
     public const string ReferenceProviderInvalid = "reference_provider_invalid";
 
+    /// <summary>
+    /// 503 (AT-024): the delivery owner (Logistics) is not composed or cannot answer the order's recorded deliveries; the
+    /// delivered and remaining quantities are then not shown, never assumed zero. Code-less on the wire.
+    /// </summary>
+    public const string DeliveryProviderUnavailable = "delivery_provider_unavailable";
+
     /// <summary>503: the Sales permission name is not registered in the central catalogue yet (setup, not a refusal).</summary>
     public const string PermissionUnregistered = "permission_unregistered";
 

@@ -56,6 +56,11 @@ import {
   CONFLICT_TITLE,
   CONFLICT_TEXT,
   REFUSAL_TITLE,
+  COLLECTION_CHANNEL_LABEL,
+  POS_BEARER_LABEL,
+  POS_CUSTOMER_BEARER_PENDING,
+  POS_DETAIL,
+  POS_POSTING_PENDING,
   issueText,
   SOURCE_SUBJECT,
   financeRef,
@@ -64,7 +69,7 @@ import {
 import { WithCurrencyCodes, currencyShown } from './currencyCodes'
 import { isDateOnly } from './dateOnly'
 import { isFrozen, type AttemptState } from './receiptCommand'
-import { statusViewOf } from './sourceView'
+import { amountShown, amountText, statusViewOf } from './sourceView'
 import { SourceStatus } from './SourceStatus'
 import { CommandAttemptPanel } from './CommandAttemptPanel'
 import styles from './Finance.module.css'
@@ -169,6 +174,7 @@ export function FinanceSourceDetail({
         <SourceLinkFact term={DETAIL.reversedBy} sourceId={data.reversalSourceId} />
         <SourceLinkFact term={DETAIL.reverses} sourceId={data.reversesSourceId} />
       </dl>
+      {data.pos === null ? null : <PosFacts source={data} />}
 
       {recordDone ? (
         <p className={styles.notice} role="status">
@@ -188,6 +194,35 @@ export function FinanceSourceDetail({
         <ReverseAction command={reverse} source={data} onReread={detail.refetch} />
       ) : null}
     </div>
+  )
+}
+
+/**
+ * DEC-FIN-014: the three amounts kept apart — gross (the customer's debt closes at it), the bank's
+ * commission and the net the bank settles — each with the gross's own disclosure. What is not done
+ * yet is said, not implied: no journal until the chart of accounts is decided.
+ */
+function PosFacts({ source }: { readonly source: SourceDetail }) {
+  const pos = source.pos
+  if (pos === null) return null
+  return (
+    <section className={styles.summary} aria-label={POS_DETAIL.title} data-collection-channel="pos">
+      <dl className={styles.facts}>
+        <Fact term={POS_DETAIL.channel} value={COLLECTION_CHANNEL_LABEL.pos} />
+        <Fact term={POS_DETAIL.gross} value={amountText(amountShown(source.source.amount))} />
+        <Fact term={POS_DETAIL.commission} value={amountText(amountShown(pos.commission))} />
+        <Fact term={POS_DETAIL.bankNet} value={amountText(amountShown(pos.bankNet))} />
+        <Fact term={POS_DETAIL.bearer} value={POS_BEARER_LABEL[pos.commissionBearer]} />
+      </dl>
+      <p className={styles.notice} role="note">
+        {POS_POSTING_PENDING}
+      </p>
+      {pos.commissionBearer === 'Customer' ? (
+        <p className={styles.notice} role="note">
+          {POS_CUSTOMER_BEARER_PENDING}
+        </p>
+      ) : null}
+    </section>
   )
 }
 

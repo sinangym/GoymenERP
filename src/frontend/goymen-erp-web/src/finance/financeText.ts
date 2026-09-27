@@ -22,12 +22,16 @@ export const FIELD_LABEL: Readonly<Record<keyof ManualReceiptFields, string>> = 
   valueOn: 'Valör tarihi',
   bankReference: 'Banka referansı',
   description: 'Açıklama',
+  collectionChannel: 'Tahsilat şekli',
+  commissionAmount: 'Banka POS komisyonu',
+  commissionBearer: 'Komisyonu üstlenen',
 }
 
 export const FIELD_HINT: Readonly<Partial<Record<keyof ManualReceiptFields, string>>> = {
   amount: 'Ondalık için virgül kullanın; nokta veya binlik ayırıcı yazmayın. Para birimi banka hesabınınkidir.',
   valueOn: 'Bilinmiyorsa boş bırakın.',
   bankReference: 'Yoksa boş bırakın; banka tarafından doğrulanmış sayılmaz.',
+  commissionAmount: 'Bankanın kestiği komisyon; komisyon yoksa 0 yazın. Tutar alanıyla aynı para birimindedir.',
 }
 
 export const FIELD_ERROR: Readonly<Record<FieldError, string>> = {
@@ -37,7 +41,38 @@ export const FIELD_ERROR: Readonly<Record<FieldError, string>> = {
   'date-format': 'Geçerli bir tarih girin (YYYY-AA-GG).',
   'bank-account-ineligible': 'Bu banka hesabı tahsilat için kullanılamıyor.',
   'scale-exceeded': 'İzin verilenden fazla ondalık basamak var; tutar yuvarlanmaz, düzeltin.',
+  'commission-not-below-gross': 'Komisyon brüt tutardan küçük olmalıdır; banka neti sıfırdan büyük kalmalı.',
+  'bearer-required': 'Komisyonu kimin üstlendiğini seçin.',
 }
+
+// DEC-FIN-014 — müşteri POS tahsilatı. Tedarikçi POS yoktur; bu seçenek yalnız tahsilatta bulunur.
+export const COLLECTION_CHANNEL_LABEL = {
+  'bank-transfer': 'Banka havalesi / EFT',
+  pos: 'Müşteri POS (kredi kartı)',
+} as const
+export const POS_GROSS_LABEL = 'Brüt POS tutarı'
+export const POS_GROSS_HINT = 'Karttan çekilen brüt tutar. Müşterinin borcu bu tutarla kapanır.'
+export const POS_BANK_NET_PREVIEW = 'Bankaya geçecek net (hesaplanan)'
+export const POS_BANK_NET_PENDING = 'Brüt tutar ve komisyon girilince hesaplanır.'
+export const POS_BEARER_PLACEHOLDER = 'Seçin'
+export const POS_BEARER_LABEL = {
+  Company: 'Şirket (komisyon gideri)',
+  Customer: 'Müşteriye yansıtılacak',
+} as const
+export const POS_DETAIL = {
+  title: 'Müşteri POS tahsilatı',
+  channel: 'Tahsilat şekli',
+  gross: 'Brüt tutar (müşteri borcu bu tutarla kapanır)',
+  commission: 'Banka POS komisyonu',
+  bankNet: 'Bankaya geçecek net',
+  bearer: 'Komisyonu üstlenen',
+} as const
+/** What this record deliberately does NOT do yet, with the open decision that holds it. */
+export const POS_POSTING_PENDING =
+  'Muhasebe fişi (banka neti, komisyon gideri, müşteri alacağı) bu kayıttan henüz üretilmez: hesap planı kararı bekleniyor. Brüt, net ve komisyon ayrı saklanır.'
+export const POS_CUSTOMER_BEARER_PENDING =
+  'Komisyonun müşteriye yansıtılması ayrı bir belgeyle yapılır; bu kayıt müşterinin borcunu artırmaz.'
+
 
 export const BANK_ACCOUNT_PLACEHOLDER = 'Banka hesabı seçin'
 export const NO_USABLE_BANK_ACCOUNT = 'Bu şirkette tahsilata uygun banka hesabı yok.'
@@ -225,6 +260,10 @@ const ISSUE_TEXT: Readonly<Record<string, string>> = {
   concurrent_change: 'Bu kaynak başka bir işlemle değişti; güncel durumu yeniden okuyun.',
   idempotency_key_invalid: 'İşlem anahtarı geçersiz.',
   settings_money_profile_not_found: 'Seçilen para birimi için onaylı tutar profili yok.',
+  // DEC-FIN-014
+  pos_commission_invalid: 'POS komisyonu geçerli bir tutar değil (sıfır veya pozitif, yalnız rakam).',
+  pos_commission_not_below_gross: 'POS komisyonu brüt tutardan küçük olmalıdır.',
+  pos_commission_bearer_invalid: 'Komisyonu üstlenen taraf geçersiz.',
 }
 
 export function issueText(code: string): string {

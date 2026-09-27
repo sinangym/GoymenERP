@@ -40,6 +40,16 @@ internal sealed class ReceiptDraftRow : IFinanceTenantRow
     public int Stage { get; set; }
     public DateTimeOffset? RecordedAtUtc { get; set; }
     public string? RecordedBy { get; set; }
+
+    /// <summary>
+    /// DEC-FIN-014: a customer POS collection's facts, all three NULL (a bank transfer) or all three set
+    /// (<c>CK_ReceiptDrafts_Pos</c>). <see cref="AmountText"/> is then the GROSS card amount — the customer's debt closes
+    /// at it — and the commission and the bank net are kept apart from it, never subtracted from the customer credit.
+    /// The net is derived by the server (gross − commission), exact text; the bearer is <see cref="PosCommissionBearers"/>.
+    /// </summary>
+    public string? PosCommissionAmountText { get; set; }
+    public string? PosBankNetAmountText { get; set; }
+    public int? PosCommissionBearer { get; set; }
 }
 
 /// <summary>The stored stage of a manual receipt source.</summary>
@@ -74,6 +84,22 @@ internal sealed class MoneyEventRow : IFinanceTenantRow
     public DateTimeOffset RecordedAtUtc { get; set; }
     public string RecordedBy { get; set; } = string.Empty;
     public string CorrelationId { get; set; } = string.Empty;
+
+    /// <summary>
+    /// DEC-FIN-014: the POS facts of the source, copied into its ONE event (all NULL for a bank transfer). The customer
+    /// credit reads <see cref="AmountText"/> (gross); a bank inflow read takes <see cref="PosBankNetAmountText"/> when
+    /// set; the commission is its own fact. Still one row: a POS collection is not three money events.
+    /// </summary>
+    public string? PosCommissionAmountText { get; set; }
+    public string? PosBankNetAmountText { get; set; }
+    public int? PosCommissionBearer { get; set; }
+}
+
+/// <summary>The stored values of <c>PosCommissionBearer</c> (the contract enum's own values).</summary>
+internal static class PosCommissionBearers
+{
+    public const int Company = 1;
+    public const int Customer = 2;
 }
 
 /// <summary>The distinct recorded and reversing manual bank receipt money-event kinds.</summary>

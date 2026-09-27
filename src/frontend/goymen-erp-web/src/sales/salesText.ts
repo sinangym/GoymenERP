@@ -350,6 +350,21 @@ export const ORDER_DETAIL_TEXT = {
     slices: 'Dilimler (miktar → termin)',
     noSlices: 'Dilim yok',
   },
+  /** AT-024: delivered / remaining per line, read from Logistics' recorded deliveries; no tolerance is judged (OPEN-004). */
+  deliveryProgress: {
+    heading: 'Teslimat durumu',
+    note:
+      'Sevk ve teslim miktarları Lojistik modülünde kaydedilen kesin sevk ve teslimlerden okunur; sipariş her açıldığında yeniden okunur. ' +
+      'Kalan = sipariş − teslim edilen. Eksik/fazla teslim toleransı henüz karara bağlanmadığı için satır kapanışı ya da uyarı gösterilmez.',
+    subject: 'teslimat durumu',
+    caption: 'Satır bazında sipariş, sevk, teslim ve kalan miktar',
+    lineNo: 'Satır',
+    ordered: 'Sipariş',
+    shipped: 'Sevk edilen',
+    delivered: 'Teslim edilen',
+    remaining: 'Kalan',
+    excess: 'Fazla teslim',
+  },
   revision: 'Ticari revizyon',
   version: 'Kayıt sürümü',
   businessDate: 'Sipariş tarihi',
