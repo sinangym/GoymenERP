@@ -155,8 +155,9 @@ export const ISSUE_TEXT: Readonly<Record<string, string>> = {
 // Risk view (user decision 2026-09-27): facts only, no limit or warning (OPEN-010).
 export const RISK_TITLE = 'Çek/senet riski'
 export const RISK_NOTICE =
-  'Müşteri borcu çek/senet tahsil edildiğinde kapanır; risk durumu ayrıca izlenir. Yalnız olgular gösterilir: limit '
-  + 'veya uyarı eşiği yoktur (OPEN-010).'
+  'Müşteri borcu çek/senet tahsil edildiğinde kapanır; risk durumu ayrıca izlenir. Tablo seçilen günün resmidir: o güne '
+  + 'kadar alınmış çek/senetler, o gün geçerli durumlarıyla. Yalnız olgular gösterilir: limit veya uyarı eşiği yoktur '
+  + '(OPEN-010).'
 export const RISK_AS_OF = 'Tarih itibarıyla'
 export const RISK_EMPTY = 'Çek/senet riski yok.'
 export const RISK_UNAVAILABLE = 'Çek/senet riski şu anda alınamıyor.'

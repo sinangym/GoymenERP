@@ -606,9 +606,20 @@ public sealed class CustomerInstrumentService(
     /// <summary>
     /// DEC-FIN-016 risk tracking (user decision 2026-09-27): the customer's debt closes at collection, and the
     /// instruments' risk is tracked separately — per customer account and currency (and their total), the count and
-    /// face amount by risk state as of <see cref="CustomerInstrumentRiskRequest.AsOf"/>, and the open exposure. Read-only
-    /// under <c>ReadCustomerInstruments</c>, fenced before and after the read like the list; every amount only with a
-    /// fresh <c>ReadCustomerInstrumentAmount</c>. Facts only: no limit or warning (OPEN-010).
+    /// face amount by risk state, and the open exposure. Read-only under <c>ReadCustomerInstruments</c>, fenced before
+    /// and after the read like the list; every amount only with a fresh <c>ReadCustomerInstrumentAmount</c>. Facts
+    /// only: no limit or warning (OPEN-010).
+    /// <para>
+    /// POINT IN TIME (K3 5332370492 P2-1): the picture is the one ON <see cref="CustomerInstrumentRiskRequest.AsOf"/>.
+    /// Only instruments received on or before that day count, and each one's state is the status of its LAST movement
+    /// whose business date is on or before that day (every movement carries one: the receipt date, the status change's
+    /// <c>occurredOn</c>, the collection date; movement dates never decrease along the versions). A step recorded
+    /// later but dated earlier counts from its business date; the recording instant is not used.
+    /// </para>
+    /// <para>
+    /// Amounts are formatted at the currency's scale (P3-1): the approved Settings money profile of the currency on
+    /// that day; when Settings cannot answer for the day, the widest scale of the stored face values of that currency.
+    /// </para>
     /// </summary>
     public async Task<ReadResult<CustomerInstrumentRiskView>> RiskAuthorizedAsync(FinanceContext context,
         CustomerInstrumentRiskRequest request, CancellationToken cancellationToken)
@@ -634,16 +645,26 @@ public sealed class CustomerInstrumentService(
             return new ReadResult<CustomerInstrumentRiskView>(ReadOutcome.NotFound, null);
         }
 
-        var query = dbContext.CustomerInstruments.AsNoTracking();
+        var asOf = request.AsOf;
+        var instruments = dbContext.CustomerInstruments.AsNoTracking().Where(row => row.ReceivedOn <= asOf);
         if (request.PartyId is { } partyId && request.CompanyAccountId is { } accountId)
         {
-            query = query.Where(row => row.PartyId == partyId && row.CompanyAccountId == accountId);
+            instruments = instruments.Where(row => row.PartyId == partyId && row.CompanyAccountId == accountId);
         }
 
-        var facts = await query
-            .Select(row => new CustomerInstrumentRiskFact(row.PartyId, row.CompanyAccountId, row.CurrencyId, row.Status,
-                row.DueOn, row.AmountText))
+        // Each instrument's last movement on or before the day (no later movement of it dated on or before the day).
+        var movements = dbContext.CustomerInstrumentMovements.AsNoTracking();
+        var latest = movements.Where(movement => movement.OccurredOn <= asOf
+            && !movements.Any(later => later.InstrumentId == movement.InstrumentId && later.OccurredOn <= asOf
+                && later.Version > movement.Version));
+        var facts = await (
+                from instrument in instruments
+                join movement in latest on instrument.Id equals movement.InstrumentId
+                select new CustomerInstrumentRiskFact(instrument.PartyId, instrument.CompanyAccountId,
+                    instrument.CurrencyId, movement.ToStatus, instrument.DueOn, instrument.AmountText))
             .ToListAsync(cancellationToken);
+        // Settings is an owner read; the fresh re-check below comes after it, before anything is answered.
+        var scales = await ScalesAsync(context, facts, asOf, cancellationToken);
         var amount = await permissions.CheckAsync(context, FinanceAction.ReadCustomerInstrumentAmount, null, cancellationToken);
         var again = await permissions.CheckAsync(context, FinanceAction.ReadCustomerInstruments, null, cancellationToken);
         if (again != PermissionDecision.Allowed || !SameContext(context))
@@ -651,9 +672,48 @@ public sealed class CustomerInstrumentService(
             return new ReadResult<CustomerInstrumentRiskView>(ReadRefusal(again), null);
         }
 
-        var (customers, totals) = CustomerInstrumentRiskPolicy.Build(facts, request.AsOf, Disclosure(amount));
+        var (customers, totals) = CustomerInstrumentRiskPolicy.Build(facts, asOf, Disclosure(amount), scales);
         return new ReadResult<CustomerInstrumentRiskView>(ReadOutcome.Found, new CustomerInstrumentRiskView(
             context.CompanyId, request.AsOf, request.PartyId, request.CompanyAccountId, customers, totals));
+    }
+
+    /// <summary>
+    /// The display scale of each currency in the answer: its approved Settings profile's scale on the day (the same
+    /// operation the face values were judged by). Formatting only — never a refusal: if Settings cannot answer for the
+    /// day, the widest scale of the stored face values of that currency is used (a stored value never exceeded it).
+    /// </summary>
+    private async Task<IReadOnlyDictionary<Guid, int>> ScalesAsync(FinanceContext context,
+        IReadOnlyList<CustomerInstrumentRiskFact> facts, DateOnly asOf, CancellationToken cancellationToken)
+    {
+        var scales = new Dictionary<Guid, int>();
+        foreach (var currencyId in facts.Select(fact => fact.CurrencyId).Distinct())
+        {
+            var stored = facts.Where(fact => fact.CurrencyId == currencyId)
+                .Select(fact => FinanceExactDecimalText.TryParsePositive(fact.AmountText, out var value) ? value.Scale : 0)
+                .Max();
+            int? profileScale = null;
+            if (!string.IsNullOrWhiteSpace(binding.MoneyOperation))
+            {
+                try
+                {
+                    var profile = await settings.GetMoneyProfileAsync(currencyId, binding.MoneyOperation, asOf,
+                        cancellationToken);
+                    if (profile is { IsActive: true } && profile.CompanyId == context.CompanyId
+                        && profile.CurrencyId == currencyId && profile.Scale >= 0)
+                    {
+                        profileScale = profile.Scale;
+                    }
+                }
+                catch (SettingsPrerequisiteException)
+                {
+                    // Not answerable for this day (e.g. before the profile's effective date): the stored scale.
+                }
+            }
+
+            scales[currencyId] = Math.Max(profileScale ?? stored, stored);
+        }
+
+        return scales;
     }
 
     /// <summary>The canonical content of a command: its name and the exact contract JSON of the request.</summary>

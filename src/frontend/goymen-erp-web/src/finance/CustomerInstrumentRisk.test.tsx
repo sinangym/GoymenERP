@@ -59,7 +59,7 @@ describe('CustomerInstrumentRiskBlock', () => {
     expect(within(bucketRow(total, 'openExposure')).getAllByRole('cell').map((cell) => cell.textContent))
       .toEqual(['2', '2.200,00'])
     expect(within(bucketRow(total, 'returnedToCustomer')).getAllByRole('cell').map((cell) => cell.textContent))
-      .toEqual(['0', '0'])
+      .toEqual(['0', '0,00'])
     within(block).getByRole('rowheader', { name: 'Cari hesap ref. …00000006' })
     // No threshold or warning text: facts only (OPEN-010).
     expect(block.textContent).not.toMatch(/uyarı:|limit aşıld/i)

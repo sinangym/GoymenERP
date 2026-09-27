@@ -255,7 +255,9 @@ contract `GoymenERP.Modules.Finance.Contracts` (#258, #261). The contract's own 
   (`UX_CustomerInstruments_CollectionSource`), its version is the concurrency token, and ADR-011 replays the key: a
   replay, a stale retry or a race never credits the customer twice. At collection the owners are read again (bank
   account, party account, the Settings profile in effect on the collection date) and the period follows the
-  collection date (K1, the host's `occurredOn` rule). The face value is judged by the approved
+  collection date (K1, the host's `occurredOn` rule). The collection's receipt source is created already recorded at
+  version `1` (it never passed through a draft), so an F-03 allocation of it names `expectedSourceVersion: "1"`. The
+  face value is judged by the approved
   `finance.manual-bank-receipt.v1` profile, because collection records exactly such a receipt.
 - **HTTP.** `POST /api/v1/finance/customer-instruments` (receive), `POST …/{id}/status-changes`,
   `POST …/{id}/collection`, `GET …?cursor=` (newest received first), `GET …/{id}` (with the movements and the
@@ -278,11 +280,18 @@ contract `GoymenERP.Modules.Finance.Contracts` (#258, #261). The contract's own 
   one instrument (`?cekSenet=<id>`) with its facts, history and the server-offered next steps; a collected instrument
   links to its receipt source. No new route or shell capability.
 - **Risk view (user decision 2026-09-27, read-only).** `GET /api/v1/finance/customer-instruments/risk?asOf=YYYY-MM-DD`
-  (optionally `&partyId=&companyAccountId=`, both or neither, else 400; `asOf` exact ISO, else 400). Per customer account
-  and currency — and their total per currency (the company total, or the one customer's) — the count and exact face
-  sum by risk state as of `asOf`: in portfolio not yet due (due on or after `asOf`) / overdue (due before), at the bank
+  (optionally `&partyId=&companyAccountId=`, both or neither, else 400; `asOf` exact ISO, else 400). It is the picture
+  ON `asOf` (point in time, K3 5332370492 P2-1): only instruments received on or before `asOf` count, and each one's
+  state is the status of its last movement dated on or before `asOf`. Every movement carries a business date — the
+  receipt date, the status change's `occurredOn`, the collection date — so no transition falls back to the recording
+  instant; a step recorded later but dated earlier counts from its business date. Per customer account and currency —
+  and their total per currency (the company total, or the one customer's) — the count and exact face sum by risk
+  state on that day: in portfolio not yet due (due on or after `asOf`) / overdue (due before), at the bank
   for collection, dishonoured (karşılıksız / protestolu), returned, collected, plus the **open exposure** = received and
-  neither collected nor returned (portfolio + bank + dishonoured). Currencies are never added. Same read grant as the
+  neither collected nor returned (portfolio + bank + dishonoured). Currencies are never added. Every sum, an empty
+  bucket's zero included, is written at the currency scale (P3-1, e.g. `0.00`): the approved Settings profile's scale
+  for the currency on that day, or — when Settings cannot answer for the day — the widest scale of the stored face
+  values of that currency; a digit is never cut. Same read grant as the
   portfolio (`finance.customer-instrument.read`, no new name); every amount only with `.amount.read` (counts stay).
   Facts only: no limit, threshold or warning (OPEN-010 stays open); no money effect. Shown on the F-02 list under the
   portfolio (company view with per-customer lines) and on the new-receipt page for the entered customer account

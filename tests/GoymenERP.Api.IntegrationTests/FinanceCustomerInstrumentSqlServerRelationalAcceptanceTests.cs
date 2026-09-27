@@ -215,9 +215,11 @@ public sealed class FinanceCustomerInstrumentSqlServerRelationalAcceptanceTests
     }
 
     /// <summary>
-    /// DEC-FIN-016 risk tracking (user decision 2026-09-27) on a real SQL Server: the company-filtered projection is
-    /// bucketed by state and due date per customer account and currency, the open exposure excludes collected and
-    /// returned instruments, company B reads none of it, and without the amount grant every amount is withheld.
+    /// DEC-FIN-016 risk tracking (user decision 2026-09-27) on a real SQL Server: the company-filtered point-in-time
+    /// query (instruments received on or before the day, each with its last movement dated on or before it — the
+    /// correlated NOT EXISTS runs in SQL) is bucketed by state and due date per customer account and currency, at the
+    /// currency scale; on a PAST day an instrument received later is absent and one dishonoured, collected or returned
+    /// later is still open exposure; company B reads none of it; without the amount grant every amount is withheld.
     /// </summary>
     [SqlServerFact]
     public async Task The_risk_view_buckets_a_company_s_instruments_by_state_and_due_date_and_redacts_every_amount()
@@ -235,6 +237,15 @@ public sealed class FinanceCustomerInstrumentSqlServerRelationalAcceptanceTests
             SerialNumber = "SENTETIK-RISK-3", Money = new MoneyText("300.00", Currency),
         });
         await run.ReceiveAsync(other, Receive(other) with { SerialNumber = "SENTETIK-RISK-4" });
+        // Received after every day asked below: never counted.
+        await run.ReceiveAsync(owners, Receive(owners) with
+        {
+            SerialNumber = "SENTETIK-RISK-5", ReceivedOn = new DateOnly(2026, 10, 2), Money = new MoneyText("50.00", Currency),
+        });
+        var returned = await run.ReceiveAsync(owners, Receive(owners) with
+        {
+            SerialNumber = "SENTETIK-RISK-6", Money = new MoneyText("75.00", Currency),
+        });
         await using (var a = run.Instruments(CompanyA, owners))
         {
             Assert.Equal(CommandOutcome.Succeeded, (await a.Service.ChangeStatusAsync(a.Context, Key("risk-bounce"),
@@ -243,23 +254,42 @@ public sealed class FinanceCustomerInstrumentSqlServerRelationalAcceptanceTests
             Assert.Equal(CommandOutcome.Succeeded, (await a.Service.CollectAsync(a.Context, Key("risk-collect"),
                 new CustomerInstrumentCollectRequest(notDue.Id, "1", owners.Bank, new DateOnly(2026, 9, 27), null),
                 CancellationToken.None)).Outcome);
+            Assert.Equal(CommandOutcome.Succeeded, (await a.Service.ChangeStatusAsync(a.Context, Key("risk-return"),
+                new CustomerInstrumentStatusChangeRequest(returned.Id, "1", CustomerInstrumentTransition.ReturnToCustomer,
+                    new DateOnly(2026, 9, 30), null, null), CancellationToken.None)).Outcome);
         }
 
         var asOf = new DateOnly(2026, 10, 1);
         CustomerInstrumentRiskView company;
         CustomerInstrumentRiskView customer;
+        CustomerInstrumentRiskView past;
         await using (var reader = run.Instruments(CompanyA, owners))
         {
             company = (await reader.Service.RiskAuthorizedAsync(reader.Context,
                 new CustomerInstrumentRiskRequest(asOf, null, null), CancellationToken.None)).Resource!;
             customer = (await reader.Service.RiskAuthorizedAsync(reader.Context,
                 new CustomerInstrumentRiskRequest(asOf, owners.Party, owners.Account), CancellationToken.None)).Resource!;
+            past = (await reader.Service.RiskAuthorizedAsync(reader.Context,
+                new CustomerInstrumentRiskRequest(new DateOnly(2026, 9, 25), owners.Party, owners.Account),
+                CancellationToken.None)).Resource!;
         }
+
+        // K3 5332370492 P2-1, on 2026-09-25: RISK-5 (received 2026-10-02) is absent; RISK-1 (collected 09-27), RISK-3
+        // (dishonoured 09-26) and RISK-6 (returned 09-30) were all still in the portfolio; RISK-2 is due that very
+        // day, so not yet overdue.
+        var then = Assert.Single(past.Customers).Figures;
+        Assert.Equal((4, "1625.50"), (then.InPortfolioNotDue.Count, then.InPortfolioNotDue.Amount.Money!.Amount));
+        Assert.Equal((0, "0.00"), (then.InPortfolioOverdue.Count, then.InPortfolioOverdue.Amount.Money!.Amount));
+        Assert.Equal((0, "0.00"), (then.Dishonoured.Count, then.Dishonoured.Amount.Money!.Amount));
+        Assert.Equal((0, "0.00"), (then.Collected.Count, then.Collected.Amount.Money!.Amount));
+        Assert.Equal((0, "0.00"), (then.ReturnedToCustomer.Count, then.ReturnedToCustomer.Amount.Money!.Amount));
+        Assert.Equal((4, "1625.50"), (then.OpenExposure.Count, then.OpenExposure.Amount.Money!.Amount));
 
         Assert.Equal(2, company.Customers.Count);
         var mine = Assert.Single(customer.Customers).Figures;
         Assert.Equal((1, "250.50"), (mine.InPortfolioOverdue.Count, mine.InPortfolioOverdue.Amount.Money!.Amount));
-        Assert.Equal((0, "0"), (mine.InPortfolioNotDue.Count, mine.InPortfolioNotDue.Amount.Money!.Amount));
+        Assert.Equal((0, "0.00"), (mine.InPortfolioNotDue.Count, mine.InPortfolioNotDue.Amount.Money!.Amount));
+        Assert.Equal((1, "75.00"), (mine.ReturnedToCustomer.Count, mine.ReturnedToCustomer.Amount.Money!.Amount));
         Assert.Equal((1, "300.00"), (mine.Dishonoured.Count, mine.Dishonoured.Amount.Money!.Amount));
         Assert.Equal((1, "1000.00"), (mine.Collected.Count, mine.Collected.Amount.Money!.Amount));
         Assert.Equal((2, "550.50"), (mine.OpenExposure.Count, mine.OpenExposure.Amount.Money!.Amount));
@@ -286,7 +316,7 @@ public sealed class FinanceCustomerInstrumentSqlServerRelationalAcceptanceTests
                 Assert.Equal("Redacted", view.GetProperty("disclosure").GetString());
                 Assert.Equal(JsonValueKind.Null, view.GetProperty("money").ValueKind);
             });
-            string[] stored = ["1000.00", "250.50", "300.00", "550.50", "1550.50"];
+            string[] stored = ["1000.00", "250.50", "300.00", "75.00", "550.50", "1550.50"];
             Assert.DoesNotContain(ScalarTokens(document.RootElement), token => stored.Contains(token, StringComparer.Ordinal));
         }
 

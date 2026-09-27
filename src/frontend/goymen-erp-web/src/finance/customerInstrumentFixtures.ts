@@ -71,7 +71,7 @@ export function riskFigures(buckets: Partial<Record<string, Bucket>> = {}, curre
   ]
   const redacted = Object.values(buckets).some((bucket) => bucket?.amount === null)
   return Object.fromEntries(names.map((name) => {
-    const bucket = buckets[name] ?? { count: 0, amount: redacted ? null : '0' }
+    const bucket = buckets[name] ?? { count: 0, amount: redacted ? null : '0.00' }
     return [name, {
       count: bucket.count,
       amount: bucket.amount === null

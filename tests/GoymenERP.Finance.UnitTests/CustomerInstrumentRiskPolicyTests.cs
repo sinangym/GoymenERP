@@ -18,6 +18,7 @@ public sealed class CustomerInstrumentRiskPolicyTests
     private static readonly Guid Lira = Guid.Parse("c1000000-0000-4000-8000-000000000001");
     private static readonly Guid Dollar = Guid.Parse("c2000000-0000-4000-8000-000000000002");
     private static readonly DateOnly AsOf = new(2026, 10, 1);
+    private static readonly IReadOnlyDictionary<Guid, int> Scales = new Dictionary<Guid, int> { [Lira] = 2, [Dollar] = 3 };
 
     [Theory]
     [InlineData(CustomerInstrumentStatus.InPortfolio, "2026-10-01", CustomerInstrumentRiskState.InPortfolioNotDue)]
@@ -50,15 +51,16 @@ public sealed class CustomerInstrumentRiskPolicyTests
             Fact(PartyB, AccountB, Dollar, CustomerInstrumentStatus.Protested, "2026-12-01", "12.345"),
         };
 
-        var (customers, totals) = CustomerInstrumentRiskPolicy.Build(facts, AsOf, AmountDisclosure.Visible);
+        var (customers, totals) = CustomerInstrumentRiskPolicy.Build(facts, AsOf, AmountDisclosure.Visible, Scales);
 
         Assert.Equal(3, customers.Count);
         var a = Assert.Single(customers, line => line.PartyId == PartyA).Figures;
         Assert.Equal((1, "1000.00"), Read(a.InPortfolioNotDue));
-        Assert.Equal((1, "250.5"), Read(a.InPortfolioOverdue));
-        Assert.Equal((1, "300"), Read(a.AtBankForCollection));
+        // P3-1: every sum is written at the currency scale (2 for the lira here), never with fewer digits.
+        Assert.Equal((1, "250.50"), Read(a.InPortfolioOverdue));
+        Assert.Equal((1, "300.00"), Read(a.AtBankForCollection));
         Assert.Equal((1, "0.01"), Read(a.Dishonoured));
-        Assert.Equal((1, "90"), Read(a.ReturnedToCustomer));
+        Assert.Equal((1, "90.00"), Read(a.ReturnedToCustomer));
         Assert.Equal((1, "700.00"), Read(a.Collected));
         // Open exposure: everything received, not collected and not returned — 1000.00 + 250.5 + 300 + 0.01.
         Assert.Equal((4, "1550.51"), Read(a.OpenExposure));
@@ -70,7 +72,10 @@ public sealed class CustomerInstrumentRiskPolicyTests
         Assert.Equal((5, "6550.51"), Read(lira.OpenExposure));
         var dollar = Assert.Single(totals, total => total.CurrencyId == Dollar).Figures;
         Assert.Equal((1, "12.345"), Read(dollar.Dishonoured));
-        Assert.Equal((0, "0"), Read(dollar.Collected));
+        // An empty bucket is a zero at the currency scale ("0.000" for a scale-3 currency), not a bare "0".
+        Assert.Equal((0, "0.000"), Read(dollar.Collected));
+        Assert.Equal((0, "0.00"),
+            Read(Assert.Single(customers, line => line.PartyId == PartyB && line.CurrencyId == Lira).Figures.Collected));
         Assert.All(totals.SelectMany(Buckets).Concat(customers.SelectMany(line => Buckets(line.Figures))),
             bucket => Assert.Equal(AmountDisclosure.Visible, bucket.Amount.Disclosure));
     }
@@ -81,7 +86,8 @@ public sealed class CustomerInstrumentRiskPolicyTests
     public void Without_the_amount_grant_every_amount_is_withheld_and_only_counts_remain(AmountDisclosure disclosure)
     {
         var (customers, totals) = CustomerInstrumentRiskPolicy.Build(
-            [Fact(PartyA, AccountA, Lira, CustomerInstrumentStatus.InPortfolio, "2026-10-15", "1000.00")], AsOf, disclosure);
+            [Fact(PartyA, AccountA, Lira, CustomerInstrumentStatus.InPortfolio, "2026-10-15", "1000.00")], AsOf, disclosure,
+            Scales);
         using var document = JsonDocument.Parse(JsonSerializer.Serialize(
             new CustomerInstrumentRiskView(Guid.NewGuid(), AsOf, null, null, customers, totals), FinanceJson.CreateOptions()));
         var views = AmountViews(document.RootElement).ToList();
@@ -98,7 +104,18 @@ public sealed class CustomerInstrumentRiskPolicyTests
     public void An_unreadable_stored_amount_is_a_broken_invariant_not_a_zero() =>
         Assert.Throws<InvalidOperationException>(() => CustomerInstrumentRiskPolicy.Build(
             [Fact(PartyA, AccountA, Lira, CustomerInstrumentStatus.InPortfolio, "2026-10-15", "1,000")], AsOf,
-            AmountDisclosure.Visible));
+            AmountDisclosure.Visible, Scales));
+
+    [Fact]
+    public void A_sum_wider_than_the_display_scale_keeps_every_digit()
+    {
+        var (customers, _) = CustomerInstrumentRiskPolicy.Build(
+            [Fact(PartyA, AccountA, Dollar, CustomerInstrumentStatus.InPortfolio, "2026-10-15", "12.345")], AsOf,
+            AmountDisclosure.Visible, new Dictionary<Guid, int> { [Dollar] = 2 });
+        var figures = customers.Single().Figures;
+        Assert.Equal((1, "12.345"), Read(figures.InPortfolioNotDue));
+        Assert.Equal((0, "0.00"), Read(figures.Collected));
+    }
 
     private static CustomerInstrumentRiskFact Fact(Guid party, Guid account, Guid currency, CustomerInstrumentStatus status,
         string dueOn, string amount) => new(party, account, currency, (int)status, DateOnly.Parse(dueOn), amount);

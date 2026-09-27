@@ -368,8 +368,10 @@ public sealed class CustomerInstrumentServiceTests
     public async Task The_risk_view_follows_receipt_dishonour_and_collection_and_stays_in_its_company()
     {
         await using var run = new Run();
-        var asOf = new DateOnly(2026, 10, 1);
+        // After every step below: receipts 2026-09-20, dishonour 2026-09-25, collection 2026-10-16.
+        var asOf = new DateOnly(2026, 12, 1);
         var customer = new CustomerInstrumentRiskRequest(asOf, Party, Account);
+        var beforeDue = customer with { AsOf = new DateOnly(2026, 10, 1) };
 
         async Task<CustomerInstrumentRiskView> RiskAsync(CustomerInstrumentRiskRequest request, Guid? company = null)
         {
@@ -385,7 +387,7 @@ public sealed class CustomerInstrumentServiceTests
 
         var first = await run.ReceiveAsync(Receive());
         var second = await run.ReceiveAsync(Receive() with { SerialNumber = "SENTETIK-CEK-0002", Money = new MoneyText("700.00", Currency) });
-        var received = (await RiskAsync(customer)).Customers.Single().Figures;
+        var received = (await RiskAsync(beforeDue)).Customers.Single().Figures;
         Assert.Equal((2, "1700.00"), (received.InPortfolioNotDue.Count, received.InPortfolioNotDue.Amount.Money!.Amount));
         Assert.Equal((2, "1700.00"), (received.OpenExposure.Count, received.OpenExposure.Amount.Money!.Amount));
 
@@ -399,14 +401,29 @@ public sealed class CustomerInstrumentServiceTests
 
         var view = await RiskAsync(customer);
         var after = Assert.Single(view.Customers).Figures;
-        Assert.Equal((0, "0"), (after.InPortfolioNotDue.Count, after.InPortfolioNotDue.Amount.Money!.Amount));
+        // P3-1: an empty bucket is a zero at the currency scale.
+        Assert.Equal((0, "0.00"), (after.InPortfolioNotDue.Count, after.InPortfolioNotDue.Amount.Money!.Amount));
         Assert.Equal((1, "700.00"), (after.Dishonoured.Count, after.Dishonoured.Amount.Money!.Amount));
         Assert.Equal((1, "1000.00"), (after.Collected.Count, after.Collected.Amount.Money!.Amount));
         Assert.Equal((1, "700.00"), (after.OpenExposure.Count, after.OpenExposure.Amount.Money!.Amount));
         Assert.Equal(after, Assert.Single(view.Totals).Figures);
 
-        // Overdue follows the as-of date alone: a later date moves nothing collected, it only re-splits the portfolio.
-        Assert.Equal(after, (await RiskAsync(customer with { AsOf = new DateOnly(2026, 12, 1) })).Customers.Single().Figures);
+        // A later date after the last step changes nothing.
+        Assert.Equal(after, (await RiskAsync(customer with { AsOf = new DateOnly(2027, 1, 1) })).Customers.Single().Figures);
+
+        // POINT IN TIME (K3 5332370492 P2-1): the picture ON the day, from the dated history.
+        Assert.Empty((await RiskAsync(customer with { AsOf = new DateOnly(2026, 9, 19) })).Customers);
+        var onReceipt = (await RiskAsync(customer with { AsOf = new DateOnly(2026, 9, 22) })).Customers.Single().Figures;
+        Assert.Equal((2, "1700.00"), (onReceipt.InPortfolioNotDue.Count, onReceipt.InPortfolioNotDue.Amount.Money!.Amount));
+        Assert.Equal((0, "0.00"), (onReceipt.Dishonoured.Count, onReceipt.Dishonoured.Amount.Money!.Amount));
+        // Collected on 2026-10-16: on 2026-10-01 it was still in the portfolio, not yet due — and open exposure.
+        var beforeCollection = (await RiskAsync(beforeDue)).Customers.Single().Figures;
+        Assert.Equal((1, "1000.00"), (beforeCollection.InPortfolioNotDue.Count,
+            beforeCollection.InPortfolioNotDue.Amount.Money!.Amount));
+        Assert.Equal((1, "700.00"), (beforeCollection.Dishonoured.Count, beforeCollection.Dishonoured.Amount.Money!.Amount));
+        Assert.Equal((0, "0.00"), (beforeCollection.Collected.Count, beforeCollection.Collected.Amount.Money!.Amount));
+        Assert.Equal((2, "1700.00"), (beforeCollection.OpenExposure.Count,
+            beforeCollection.OpenExposure.Amount.Money!.Amount));
 
         // Company total (no scope) = this company's instruments only; another company sees none.
         Assert.Equal(after, Assert.Single((await RiskAsync(new CustomerInstrumentRiskRequest(asOf, null, null))).Totals).Figures);
@@ -443,6 +460,66 @@ public sealed class CustomerInstrumentServiceTests
         // Reading the risk has no money effect.
         await using var db = run.Context(Company);
         Assert.Single(await db.MoneyEvents.ToListAsync());
+    }
+
+    /// <summary>
+    /// K3 5332370492 P2-1, with a past date: an instrument received after the day is not counted; one collected,
+    /// dishonoured or returned after the day is still in the portfolio (open exposure) on that day; and the day's own
+    /// due split holds (due before the day = overdue, due on it = not yet due).
+    /// </summary>
+    [Fact]
+    public async Task The_risk_view_is_the_picture_on_a_past_day()
+    {
+        await using var run = new Run();
+        var dueEarly = await run.ReceiveAsync(Receive() with
+        {
+            SerialNumber = "SENTETIK-PIT-1", DueOn = new DateOnly(2026, 9, 24), Money = new MoneyText("100.00", Currency),
+        });
+        var dueOnDay = await run.ReceiveAsync(Receive() with
+        {
+            SerialNumber = "SENTETIK-PIT-2", DueOn = new DateOnly(2026, 9, 26), Money = new MoneyText("200.00", Currency),
+        });
+        var returnedLater = await run.ReceiveAsync(Receive() with
+        {
+            SerialNumber = "SENTETIK-PIT-3", DueOn = new DateOnly(2026, 11, 1), Money = new MoneyText("300.00", Currency),
+        });
+        await run.ReceiveAsync(Receive() with
+        {
+            SerialNumber = "SENTETIK-PIT-4", ReceivedOn = new DateOnly(2026, 9, 27), Money = new MoneyText("400.00", Currency),
+        });
+        await using (var clerk = run.Instruments("clerk", Company))
+        {
+            var day = new DateOnly(2026, 9, 28);
+            Assert.Equal(CommandOutcome.Succeeded, (await clerk.Service.ChangeStatusAsync(clerk.Context, Key("pit-bounce"),
+                Change(dueEarly.Id, "1", CustomerInstrumentTransition.Dishonour, null) with { OccurredOn = day },
+                CancellationToken.None)).Outcome);
+            Assert.Equal(CommandOutcome.Succeeded, (await clerk.Service.CollectAsync(clerk.Context, Key("pit-collect"),
+                Collect(dueOnDay.Id, "1") with { CollectedOn = day }, CancellationToken.None)).Outcome);
+            Assert.Equal(CommandOutcome.Succeeded, (await clerk.Service.ChangeStatusAsync(clerk.Context, Key("pit-return"),
+                Change(returnedLater.Id, "1", CustomerInstrumentTransition.ReturnToCustomer, null) with { OccurredOn = day },
+                CancellationToken.None)).Outcome);
+        }
+
+        await using var reader = run.Instruments("reader", Company);
+        var past = (await reader.Service.RiskAuthorizedAsync(reader.Context,
+            new CustomerInstrumentRiskRequest(new DateOnly(2026, 9, 26), null, null), CancellationToken.None)).Resource!;
+        var figures = Assert.Single(past.Totals).Figures;
+        // Received on 2026-09-27: not there yet. Dishonoured, collected and returned on 2026-09-28: still held.
+        Assert.Equal((1, "100.00"), (figures.InPortfolioOverdue.Count, figures.InPortfolioOverdue.Amount.Money!.Amount));
+        Assert.Equal((2, "500.00"), (figures.InPortfolioNotDue.Count, figures.InPortfolioNotDue.Amount.Money!.Amount));
+        Assert.Equal((0, "0.00"), (figures.Dishonoured.Count, figures.Dishonoured.Amount.Money!.Amount));
+        Assert.Equal((0, "0.00"), (figures.Collected.Count, figures.Collected.Amount.Money!.Amount));
+        Assert.Equal((0, "0.00"), (figures.ReturnedToCustomer.Count, figures.ReturnedToCustomer.Amount.Money!.Amount));
+        Assert.Equal((3, "600.00"), (figures.OpenExposure.Count, figures.OpenExposure.Amount.Money!.Amount));
+
+        var now = Assert.Single((await reader.Service.RiskAuthorizedAsync(reader.Context,
+            new CustomerInstrumentRiskRequest(new DateOnly(2026, 9, 28), null, null), CancellationToken.None)).Resource!.Totals)
+            .Figures;
+        Assert.Equal((1, "100.00"), (now.Dishonoured.Count, now.Dishonoured.Amount.Money!.Amount));
+        Assert.Equal((1, "200.00"), (now.Collected.Count, now.Collected.Amount.Money!.Amount));
+        Assert.Equal((1, "300.00"), (now.ReturnedToCustomer.Count, now.ReturnedToCustomer.Amount.Money!.Amount));
+        Assert.Equal((1, "400.00"), (now.InPortfolioNotDue.Count, now.InPortfolioNotDue.Amount.Money!.Amount));
+        Assert.Equal((2, "500.00"), (now.OpenExposure.Count, now.OpenExposure.Amount.Money!.Amount));
     }
 
     private static IEnumerable<JsonElement> AmountViews(JsonElement element)

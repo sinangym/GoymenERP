@@ -704,7 +704,7 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
     // After the receipt: still the customer's open exposure — the debt closes only at collection.
     await expect.poll(() => riskCells(page, 'inPortfolioNotDue'), { timeout: 30_000 }).toEqual(['1', '1.500,00'])
     await expect.poll(() => riskCells(page, 'openExposure')).toEqual(['1', '1.500,00'])
-    await expect.poll(() => riskCells(page, 'collected')).toEqual(['0', '0'])
+    await expect.poll(() => riskCells(page, 'collected')).toEqual(['0', '0,00'])
 
     // Close and reopen: a fresh navigation lists it on F-02 and opens it from the row.
     await page.goto('/finans/tahsilatlar')
@@ -743,7 +743,7 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
     // After the collection: out of the open exposure, counted as collected (company view on the portfolio page).
     await setRiskDate(page)
     await expect.poll(() => riskCells(page, 'collected'), { timeout: 30_000 }).toEqual(['1', '1.500,00'])
-    await expect.poll(() => riskCells(page, 'openExposure')).toEqual(['0', '0'])
+    await expect.poll(() => riskCells(page, 'openExposure')).toEqual(['0', '0,00'])
 
     // The same key and request again: the stored answer with the first correlation; a fresh key at the old version is
     // stale (409). Neither makes a second collection: the instrument names its one source, and the source one event.
@@ -834,6 +834,23 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
           inPortfolioNotDue: { count: 0 },
         },
       }],
+    })
+
+    // Point in time (K3 5332370492 P2-1): the day before both receipts shows nothing; every step here is dated
+    // 2026-09-18, so that day's picture already holds the collection and the dishonour.
+    const riskOn = async (asOf: string) => page.evaluate(async ({ day, partyId, companyAccountId, companyId }) => {
+      const query = new URLSearchParams({ asOf: day, partyId, companyAccountId })
+      const response = await fetch(`/api/v1/finance/customer-instruments/risk?${query.toString()}`,
+        { headers: { 'X-Company-Id': companyId } })
+      return { status: response.status, body: await response.json() as { readonly customers?: readonly unknown[] } }
+    }, { day: asOf, partyId: env.seed.partyId, companyAccountId: env.seed.companyAccountId, companyId: env.seed.companyId })
+    const dayBefore = await riskOn('2026-09-17')
+    expect(dayBefore.status).toBe(200)
+    expect(dayBefore.body.customers).toEqual([])
+    const receiptDay = await riskOn('2026-09-18')
+    expect(receiptDay.status).toBe(200)
+    expect(receiptDay.body).toMatchObject({
+      customers: [{ figures: { collected: { count: 1 }, dishonoured: { count: 1 }, openExposure: { count: 1 } } }],
     })
 
     await page.goto(`/finans/tahsilatlar?cekSenet=${instrumentId}`)
