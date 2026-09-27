@@ -287,3 +287,38 @@ describe('plan approval and order creation', () => {
     expect(requestsFor(recorded, '/manufacturing/orders', 'POST')).toHaveLength(0)
   })
 })
+
+describe('plan detail navigation', () => {
+  function stubPlan(capabilities: readonly string[]) {
+    return installFetch({
+      capabilities,
+      respond: (url, init) =>
+        url.endsWith(`/manufacturing/plans/${PLAN}`) && (init?.method ?? 'GET') === 'GET' ? json(plan()) : undefined,
+    })
+  }
+
+  it('links back to the plan list only for a holder of the plan-list capability', async () => {
+    const user = userEvent.setup()
+    stubPlan([MANUFACTURING_CAPABILITY.planDetail, MANUFACTURING_CAPABILITY.planList])
+    const { router } = renderAt(`/uretim/plan/${PLAN}`)
+
+    await screen.findByRole('heading', { name: 'Plan yeniden açıldı' })
+    const back = screen.getAllByRole('link', { name: '← Üretim planları' })
+    expect(back).toHaveLength(1)
+    expect(back[0].getAttribute('href')).toBe('/uretim/planlar')
+    // The order-list link beside it is unchanged.
+    expect(screen.getByRole('link', { name: '← Üretim emirleri' }).getAttribute('href')).toBe('/uretim/emirler')
+
+    await user.click(back[0])
+    await waitFor(() => expect(router.state.location.pathname).toBe('/uretim/planlar'))
+  })
+
+  it('draws no plan-list back link when the plan-list capability is absent', async () => {
+    stubPlan([MANUFACTURING_CAPABILITY.planDetail])
+    renderAt(`/uretim/plan/${PLAN}`)
+
+    await screen.findByRole('heading', { name: 'Plan yeniden açıldı' })
+    expect(screen.queryByRole('link', { name: '← Üretim planları' })).toBeNull()
+    expect(screen.getByRole('link', { name: '← Üretim emirleri' })).toBeTruthy()
+  })
+})

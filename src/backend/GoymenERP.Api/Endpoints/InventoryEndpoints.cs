@@ -83,8 +83,133 @@ public static class InventoryEndpoints
         endpoints.MapInventoryReferenceEndpoints();
         MapPhysicalAllocationEndpoints(group);
         MapOpeningCountEndpoints(group);
+        MapLabelTransformationEndpoint(endpoints);
         return endpoints;
     }
+
+    /// <summary>
+    /// R19 / AT-038: record one same-company label split or merge through the owner's fenced command
+    /// (<see cref="IInventoryLabelTransformationCommandV1"/>). The route policy and the command's own two fresh
+    /// company-wide measurements both demand <c>inventory.label-transformation.record</c>; actor, permission and
+    /// role codes are derived by the command, the host passes only the transport facts. ADR-011: one canonical
+    /// <c>Idempotency-Key</c>; 201 with the transformation view, 200 with the same view plus
+    /// <c>Idempotency-Replayed</c> and <c>Idempotency-Original-Correlation-Id</c> for the same key and content.
+    /// 401/403 are platform problems; 400/404/409/503 carry the owner's closed code
+    /// (<see cref="InventoryLabelTransformationHttpCodesV1"/>) and the correlation id; an owner answer outside
+    /// those sets is a code-less 503, and any other fault is the platform's 500.
+    /// </summary>
+    private static void MapLabelTransformationEndpoint(IEndpointRouteBuilder endpoints)
+    {
+        endpoints.MapPost(InventoryLabelTransformationApiV1.Path, async (
+                HttpContext httpContext,
+                IInventoryLabelTransformationCommandV1 command,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key) || !correlation.IsResolved)
+                {
+                    return LabelTransformationProblem(StatusCodes.Status400BadRequest,
+                        InventoryLabelGenealogyCodesV1.ValidationFailed, correlation);
+                }
+
+                if (!httpContext.Request.HasJsonContentType())
+                {
+                    return Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+                }
+
+                TransformInventoryLabelsV1? request;
+                try
+                {
+                    request = await JsonSerializer.DeserializeAsync<TransformInventoryLabelsV1>(
+                        httpContext.Request.Body, LabelTransformationJson, cancellationToken);
+                }
+                catch (JsonException)
+                {
+                    return LabelTransformationProblem(StatusCodes.Status400BadRequest,
+                        InventoryLabelGenealogyCodesV1.ValidationFailed, correlation);
+                }
+
+                if (request is null)
+                {
+                    return LabelTransformationProblem(StatusCodes.Status400BadRequest,
+                        InventoryLabelGenealogyCodesV1.ValidationFailed, correlation);
+                }
+
+                var transport = new InventoryCommandMetadata(
+                    currentUser.UserId ?? string.Empty,
+                    InventoryPermissionManifestV1.LabelTransformationRecord,
+                    [],
+                    correlation.CorrelationId,
+                    correlation.CausationId,
+                    key,
+                    correlation.SourceChannel,
+                    correlation.ClientIpAddress,
+                    correlation.UserAgent);
+                try
+                {
+                    var result = await command.RecordAsync(request, transport, cancellationToken);
+                    if (result.IsReplay)
+                    {
+                        ApplyReplayHeaders(httpContext, result.OriginalCorrelationId);
+                    }
+
+                    return Results.Json(result.Transformation, LabelTransformationJson,
+                        statusCode: result.IsReplay ? StatusCodes.Status200OK : StatusCodes.Status201Created);
+                }
+                catch (InventoryLabelGenealogyException exception)
+                {
+                    return LabelTransformationProblem(exception, correlation);
+                }
+            })
+            .WithName(InventoryLabelTransformationApiV1.RecordOperationId)
+            .WithTags("Inventory")
+            .WithMetadata(new PrivateNoStoreOnAuthorizationFailureMetadata())
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.InventoryLabelTransformationRecord)
+            .WithIdempotencyContract(StatusCodes.Status200OK)
+            .Accepts<TransformInventoryLabelsV1>("application/json")
+            .Produces<InventoryLabelTransformationViewV1>(StatusCodes.Status201Created)
+            .Produces<InventoryLabelTransformationViewV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest([.. InventoryLabelTransformationHttpCodesV1.Status400Codes.Order(StringComparer.Ordinal)])
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpNotFound([.. InventoryLabelTransformationHttpCodesV1.Status404Codes.Order(StringComparer.Ordinal)])
+            .ProducesErpConflict([.. InventoryLabelTransformationHttpCodesV1.Status409Codes.Order(StringComparer.Ordinal)])
+            .ProducesErpServiceUnavailable([.. InventoryLabelTransformationHttpCodesV1.Status503Codes.Order(StringComparer.Ordinal)])
+            .ProducesErpAuthenticatedProblems();
+    }
+
+    /// <summary>The owner's refusal as a problem: 401/403 code-less, a closed-set code with its correlation otherwise.</summary>
+    private static IResult LabelTransformationProblem(InventoryLabelGenealogyException exception, ICorrelationContext correlation)
+    {
+        var accepted = exception.Status switch
+        {
+            StatusCodes.Status400BadRequest => InventoryLabelTransformationHttpCodesV1.Status400Codes.Contains(exception.Code),
+            StatusCodes.Status401Unauthorized => exception.Code == InventoryLabelTransformationCommandCodesV1.Unauthenticated,
+            StatusCodes.Status403Forbidden => exception.Code == InventoryLabelTransformationCommandCodesV1.Forbidden,
+            StatusCodes.Status404NotFound => InventoryLabelTransformationHttpCodesV1.Status404Codes.Contains(exception.Code),
+            StatusCodes.Status409Conflict => InventoryLabelTransformationHttpCodesV1.Status409Codes.Contains(exception.Code),
+            StatusCodes.Status503ServiceUnavailable => InventoryLabelTransformationHttpCodesV1.Status503Codes.Contains(exception.Code),
+            _ => false,
+        };
+        if (!accepted)
+        {
+            return Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+
+        return exception.Status is StatusCodes.Status401Unauthorized or StatusCodes.Status403Forbidden
+            ? Results.Problem(statusCode: exception.Status)
+            : LabelTransformationProblem(exception.Status, exception.Code, correlation);
+    }
+
+    private static IResult LabelTransformationProblem(int status, string code, ICorrelationContext correlation) =>
+        Results.Problem(statusCode: status,
+            extensions: new Dictionary<string, object?>
+            {
+                ["code"] = code,
+                ["correlationId"] = correlation.IsResolved ? correlation.CorrelationId : null,
+            });
 
     private static void MapLabelDetailEndpoint(IEndpointRouteBuilder endpoints)
     {
@@ -461,7 +586,7 @@ public static class InventoryEndpoints
             .ProducesErpUnsupportedMediaType()
             .ProducesErpCodeLessNotFound()
             .ProducesErpConflict([.. InventoryPhysicalAllocationHttpCodesV1.CreateStatus409Codes.Order(StringComparer.Ordinal)])
-            .ProducesErpUnprocessableEntity([.. InventoryPhysicalAllocationHttpCodesV1.Status422Codes.Order(StringComparer.Ordinal)])
+            .ProducesErpUnprocessableEntity([.. InventoryPhysicalAllocationHttpCodesV1.CreateStatus422Codes.Order(StringComparer.Ordinal)])
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
@@ -541,7 +666,7 @@ public static class InventoryEndpoints
             .ProducesErpUnsupportedMediaType()
             .ProducesErpCodeLessNotFound()
             .ProducesErpConflict([.. InventoryPhysicalAllocationHttpCodesV1.ReleaseStatus409Codes.Order(StringComparer.Ordinal)])
-            .ProducesErpUnprocessableEntity([.. InventoryPhysicalAllocationHttpCodesV1.Status422Codes.Order(StringComparer.Ordinal)])
+            .ProducesErpUnprocessableEntity([.. InventoryPhysicalAllocationHttpCodesV1.ReleaseStatus422Codes.Order(StringComparer.Ordinal)])
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
     }
@@ -607,8 +732,9 @@ public static class InventoryEndpoints
             StatusCodes.Status409Conflict => (create
                 ? InventoryPhysicalAllocationHttpCodesV1.CreateStatus409Codes
                 : InventoryPhysicalAllocationHttpCodesV1.ReleaseStatus409Codes).Contains(exception.Code),
-            StatusCodes.Status422UnprocessableEntity =>
-                InventoryPhysicalAllocationHttpCodesV1.Status422Codes.Contains(exception.Code),
+            StatusCodes.Status422UnprocessableEntity => (create
+                ? InventoryPhysicalAllocationHttpCodesV1.CreateStatus422Codes
+                : InventoryPhysicalAllocationHttpCodesV1.ReleaseStatus422Codes).Contains(exception.Code),
             StatusCodes.Status503ServiceUnavailable => exception.Code == InventoryAllocationCodesV1.InvalidReference,
             _ => false,
         };
@@ -822,6 +948,7 @@ public static class InventoryEndpoints
     // JsonRequired); web defaults give camelCase names and ISO dates.
     private static readonly JsonSerializerOptions OpeningJson = new(JsonSerializerDefaults.Web);
     private static readonly JsonSerializerOptions AllocationJson = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions LabelTransformationJson = new(JsonSerializerDefaults.Web);
 
     private static IResult NotFound() =>
         Results.Problem(

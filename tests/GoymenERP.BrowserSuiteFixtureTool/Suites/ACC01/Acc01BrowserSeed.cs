@@ -1,15 +1,21 @@
+using System.Text.Json;
+using GoymenERP.Modules.Accounting.Infrastructure.Fixtures;
+
 namespace GoymenERP.BrowserSuiteFixtureTool.Suites.ACC01;
 
 /// <summary>
-/// The `acc01` seed (FİNANS, Accounting owner; ACC-V0b): the suite needs NO business data. Every period is
-/// proposed, approved and closed by the browser suite through the M-07 screen, and the journal and queue reads
-/// (M-04, M-01) are read-only views that Accounting's HTTP surface cannot fill. So this seed writes nothing:
-/// no SQL, no gated writer, no Accounting row, no audit event.
+/// The `acc01` seed (FİNANS, Accounting owner; ACC-V0b, ACC-V1 reversal UI phase 1). Every period the suite acts on is
+/// proposed, approved and closed by the browser suite through the M-07 screen and the real API. The ONE thing no
+/// Accounting HTTP route can produce is a posted journal, which ACC01-09 opens on the M-04 detail and totals on M-06:
+/// so the seed installs Accounting's fixed SENTETIK posted journal through its owner fixture port behind the runner's
+/// gate (<see cref="Acc01PostedJournalFixtureWriter"/>). That port first ensures the fixed fin01 Open period
+/// (September 2026) of GDC and then posts through Accounting's own posting path; no SQL, no grant, no caller-chosen row.
 /// <para>
-/// FIXTURE SCOPE. The seed only proves the stack is the one the suite expects, through the real host: it reads the
-/// M-07 period list as each suite actor in the companies its grants name (preparer and approver in GDC, the
-/// preparer also in GSP), so the run fails here — not in the browser — if a grant, a route or the Accounting
-/// module is missing, or if a fresh database already holds a period. Those reads are not audited.
+/// FIXTURE SCOPE. The seed then proves the stack is the one the suite expects, through the real host: the M-07 period
+/// list as each suite actor in the companies its grants name (preparer and approver in GDC: exactly the fixture period,
+/// open; the preparer in GSP: nothing), and the M-04 journal list and detail as the preparer (exactly the fixture
+/// journal). The run fails here — not in the browser — if a grant, a route, the gated port or the Accounting module is
+/// missing, or if the disposable database already held anything else. Those reads are not audited.
 /// </para>
 /// </summary>
 public sealed class Acc01BrowserSeed : IBrowserSuiteFixture
@@ -24,6 +30,7 @@ public sealed class Acc01BrowserSeed : IBrowserSuiteFixture
     public static readonly Guid CompanyGsp = Guid.Parse("10000000-0000-0000-0000-000000000002");
 
     private const string PeriodsPath = "/api/v1/accounting/periods";
+    private const string JournalsPath = "/api/v1/accounting/journals";
 
     public string Suite => "acc01";
 
@@ -31,23 +38,60 @@ public sealed class Acc01BrowserSeed : IBrowserSuiteFixture
         BrowserSuiteFixtureContext context,
         CancellationToken cancellationToken)
     {
+        if (AccountingPostedJournalFixture.CompanyId != CompanyGdc)
+        {
+            throw new InvalidOperationException("The acc01 posted-journal fixture is not GDC's.");
+        }
+
+        await new Acc01PostedJournalFixtureWriter(context.Services).EnsureAsync(cancellationToken);
+
         foreach (var (actor, company) in new[]
                  {
                      (PreparerActor, CompanyGdc), (ApproverActor, CompanyGdc), (PreparerActor, CompanyGsp),
                  })
         {
-            var page = await context.GetJsonAsync(actor, company, PeriodsPath, cancellationToken);
-            if (page.ValueKind != System.Text.Json.JsonValueKind.Object
-                || !page.TryGetProperty("items", out var items) || items.ValueKind != System.Text.Json.JsonValueKind.Array)
+            var periods = Items(await context.GetJsonAsync(actor, company, PeriodsPath, cancellationToken),
+                $"period list of {actor} in {company:D}");
+            if (company == CompanyGsp)
             {
-                throw new InvalidOperationException($"The Accounting period list did not answer {actor} in {company:D}.");
+                if (periods.GetArrayLength() != 0)
+                {
+                    throw new InvalidOperationException($"The disposable database already holds an Accounting period in {company:D}.");
+                }
+
+                continue;
             }
 
-            if (items.GetArrayLength() != 0)
+            if (periods.GetArrayLength() != 1
+                || periods[0].GetProperty("periodId").GetGuid() != AccountingPostedJournalFixture.PeriodId
+                || periods[0].GetProperty("companyId").GetGuid() != CompanyGdc
+                || periods[0].GetProperty("startsOn").GetString() != "2026-09-01"
+                || periods[0].GetProperty("endsOn").GetString() != "2026-09-30"
+                || periods[0].GetProperty("status").GetString() != "Open")
             {
                 throw new InvalidOperationException(
-                    $"The disposable database already holds an Accounting period in {company:D}; acc01 needs a fresh one.");
+                    $"The real period list did not answer {actor} exactly the fixture's open September period in GDC.");
             }
+        }
+
+        var journals = Items(await context.GetJsonAsync(PreparerActor, CompanyGdc, JournalsPath, cancellationToken),
+            "journal list of the preparer in GDC");
+        if (journals.GetArrayLength() != 1
+            || journals[0].GetProperty("journalId").GetGuid() != AccountingPostedJournalFixture.JournalId
+            || journals[0].GetProperty("kind").GetString() != "Original"
+            || journals[0].GetProperty("periodId").GetGuid() != AccountingPostedJournalFixture.PeriodId
+            || journals[0].GetProperty("lineCount").GetInt32() != 2
+            || journals[0].GetProperty("totalDebit").GetString() != journals[0].GetProperty("totalCredit").GetString())
+        {
+            throw new InvalidOperationException("The real journal list did not answer exactly the fixture's posted journal.");
+        }
+
+        var detail = await context.GetJsonAsync(PreparerActor, CompanyGdc,
+            $"{JournalsPath}/{AccountingPostedJournalFixture.JournalId:D}", cancellationToken);
+        if (detail.GetProperty("journal").GetProperty("journalId").GetGuid() != AccountingPostedJournalFixture.JournalId
+            || detail.GetProperty("lines").GetArrayLength() != 2)
+        {
+            throw new InvalidOperationException("The real journal read did not answer the fixture's two posted lines.");
         }
 
         return new Dictionary<string, string>(StringComparer.Ordinal)
@@ -57,5 +101,16 @@ public sealed class Acc01BrowserSeed : IBrowserSuiteFixture
             ["preparerActor"] = PreparerActor,
             ["approverActor"] = ApproverActor,
         };
+    }
+
+    private static JsonElement Items(JsonElement page, string what)
+    {
+        if (page.ValueKind != JsonValueKind.Object
+            || !page.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array)
+        {
+            throw new InvalidOperationException($"The Accounting {what} did not answer a page.");
+        }
+
+        return items;
     }
 }

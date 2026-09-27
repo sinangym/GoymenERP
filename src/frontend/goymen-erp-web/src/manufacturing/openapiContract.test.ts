@@ -22,7 +22,19 @@ import {
   OUTPUT_CLASSES,
 } from './contract'
 import { MANUFACTURING_BASE } from './api'
-import { massBalance, order, orderList, orderSummary, plan, plannedInput, roll, ROLL_1 } from './testHarness'
+import { decodePlanList } from './planListContract'
+import {
+  massBalance,
+  order,
+  orderList,
+  orderSummary,
+  plan,
+  plannedInput,
+  planList,
+  planSummary,
+  roll,
+  ROLL_1,
+} from './testHarness'
 
 interface Schema {
   readonly properties?: Record<string, unknown>
@@ -214,6 +226,33 @@ describe('Manufacturing port ↔ canonical OpenAPI', () => {
     const orders = `${MANUFACTURING_BASE.replace(/^.*\/api\/v1/, '/api/v1')}/orders`
     expect(document.paths[orders]).toHaveProperty('get')
     expect(document.paths[`${orders}/{orderId}/close`]).toHaveProperty('post')
+  })
+
+  it('reads exactly the properties PlanListViewV1 and PlanSummaryViewV1 declare, all required, on the list route', () => {
+    const page = planList([planSummary()], 'CURSOR-1')
+    expect(Object.keys(page).sort()).toEqual(names('PlanListViewV1'))
+    expect(Object.keys(page.plans[0] as object).sort()).toEqual(names('PlanSummaryViewV1'))
+    for (const name of ['PlanListViewV1', 'PlanSummaryViewV1']) {
+      expect([...(schema(name).required ?? [])].sort()).toEqual(names(name))
+    }
+    // Both statuses decode from the fixture the screen tests use, so the decoder reads these very names.
+    expect(decodePlanList(page)).not.toBeNull()
+    expect(
+      decodePlanList(planList([planSummary({ status: 'Approved', version: 2, approvedAtUtc: '2026-09-18T10:00:00.000Z' })])),
+    ).not.toBeNull()
+    const plans = `${MANUFACTURING_BASE.replace(/^.*\/api\/v1/, '/api/v1')}/plans`
+    const operation = document.paths[plans]?.get as
+      | {
+          readonly operationId?: string
+          readonly responses?: Record<string, { readonly content?: Record<string, { readonly schema?: { readonly $ref?: string } }> }>
+        }
+      | undefined
+    expect(operation?.operationId).toBe('ListManufacturingPlansV1')
+    expect(operation?.responses?.['200']?.content?.['application/json']?.schema?.$ref).toBe(
+      '#/components/schemas/PlanListViewV1',
+    )
+    // The save stays a POST on the same path: the list is the path's GET, not a replacement.
+    expect(document.paths[plans]).toHaveProperty('post')
   })
 
   it('knows the five output classes by the server names the domain uses', () => {

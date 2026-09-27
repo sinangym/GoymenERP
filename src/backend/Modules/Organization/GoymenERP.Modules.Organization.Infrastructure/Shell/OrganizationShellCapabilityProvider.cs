@@ -11,12 +11,15 @@ public sealed class OrganizationShellCapabilityProvider : IShellCapabilityProvid
     // older declarations too. That is why the accepted authority constants move in the same head: the
     // registry constructor throws when the computed revision is not an accepted one, so a head that
     // carried the declaration with the old constants would not start the API at all.
-    public const string OwnerContractVersion = "1.1";
+    // 1.1 -> 1.2 (ORG-04): the work-centre card. The same cascade as ORG-03: the owner contract version enters the
+    // canonical form of every registration, so the accepted authority constants move with it in the central round.
+    public const string OwnerContractVersion = "1.2";
     public const string ListCapabilityId = "organization.sites.list";
     public const string DetailCapabilityId = "organization.locations.detail";
     public const string SitesReadCapabilityId = "organization.sites.read";
     public const string StatusCapabilityId = "organization.locations.status";
     public const string WorkCenterListCapabilityId = "organization.work-centers.list";
+    public const string WorkCenterDetailCapabilityId = "organization.work-centers.detail";
 
     public string Owner => OwnerId;
     public string ContractVersion => OwnerContractVersion;
@@ -52,12 +55,22 @@ public sealed class OrganizationShellCapabilityProvider : IShellCapabilityProvid
             ShellCapabilityContextRequirement.SingleCompany,
             ShellCapabilityScopeRequirement.AnyGrantedScope,
             [ErpPermissions.OrganizationWorkCentersRead], ImplementationAvailable: true);
+        // ORG-04 stands on organization.work-centers.read alone, like ORG-03: the card is the list row's record, and
+        // the location link inside it is carried per record by CanOpenLocationDetail, never by this declaration.
+        var workCenterDetail = new ShellCapabilityDeclaration(
+            WorkCenterDetailCapabilityId, "organization.work-center-detail",
+            "/ayarlar/organizasyon/is-merkezleri/:workCenterId", "ORG-04",
+            ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
+            ShellCapabilityContextRequirement.SingleCompany,
+            ShellCapabilityScopeRequirement.AnyGrantedScope,
+            [ErpPermissions.OrganizationWorkCentersRead], ImplementationAvailable: true);
 
         return
         [
             list,
             detail,
             workCenters,
+            workCenterDetail,
             list with
             {
                 CapabilityId = SitesReadCapabilityId,

@@ -845,6 +845,135 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
         }
     }
 
+    /// <summary>
+    /// MFG-PLAN-LIST against real SQL: a saved plan is found again after its screen was closed. The list answers
+    /// this company's stored plans only, newest first, under the plan read's own grant; the cursor continues
+    /// exactly where the page stopped; a foreign or order-list cursor is refused on the cursor; the status filter
+    /// follows the stored approval; and the list is a read that stores nothing.
+    /// </summary>
+    [SqlServerFact]
+    public async Task The_plan_list_is_this_companys_stored_plans_newest_first_under_the_plan_read_grant()
+    {
+        await using var run = await Run.StartAsync();
+        var workCenter = await run.WorkCenterOfAsync(CompanyA);
+        var userA = await run.GrantAsync(TestUsers.CompanyA, CompanyA, [.. AllWrites, ErpPermissions.ManufacturingPlansRead]);
+        var userB = await run.GrantAsync(TestUsers.CompanyB, CompanyB, [.. AllWrites, ErpPermissions.ManufacturingPlansRead]);
+        var firstRoll = await run.StockedLabelAsync("SYN-MFG-PLAN-LIST-1");
+        var secondRoll = await run.StockedLabelAsync("SYN-MFG-PLAN-LIST-2");
+        var first = new SavePlanRequestV1(Guid.NewGuid(), workCenter,
+            [new PlannedInputRequestV1(firstRoll.Id, "1000.250", firstRoll.Version)], new TargetRequestV1("GoodOutputMass", "900"));
+        var second = new SavePlanRequestV1(Guid.NewGuid(), workCenter,
+            [new PlannedInputRequestV1(secondRoll.Id, "400", secondRoll.Version)], null);
+
+        using (var client = run.ClientFor(userA, CompanyA))
+        {
+            Assert.Equal(HttpStatusCode.Created, (await client.PostWithKeyAsync($"{Base}/plans", first)).StatusCode);
+            Assert.Equal(HttpStatusCode.Created, (await client.PostWithKeyAsync($"{Base}/plans", second)).StatusCode);
+            var auditBefore = await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType LIKE N'manufacturing.%'");
+            var commandsBefore = await run.ScalarAsync<int>("SELECT COUNT(*) FROM manufacturing.Commands");
+
+            using var response = await client.GetAsync($"{Base}/plans");
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.True(response.Headers.CacheControl is { Private: true, NoStore: true });
+            var page = (await response.Content.ReadFromJsonAsync<PlanListViewV1>())!;
+            Assert.Null(page.NextCursor);
+            // Both plans of this company, newest first. Separate API saves into a datetimeoffset(7) column, so
+            // their instants differ and the primary sort decides; asserted, not assumed.
+            Assert.Equal(2, page.Plans.Count);
+            Assert.NotEqual(page.Plans[0].CreatedAtUtc, page.Plans[1].CreatedAtUtc);
+            Assert.Equal([second.PlanId, first.PlanId], page.Plans.Select(row => row.PlanId));
+            var summary = page.Plans.Single(row => row.PlanId == first.PlanId);
+            // The stored row as text: one planned roll, the plan read's own kilogram normalisation, its target.
+            Assert.Equal((workCenter, "Slitting", "Draft", 1L, 1, "1000.25"),
+                (summary.WorkCenterId, summary.Process, summary.Status, summary.Version, summary.PlannedRollCount,
+                    summary.PlannedInputKg));
+            Assert.Equal(new TargetViewV1("GoodOutputMass", "900"), summary.Target);
+            Assert.Null(summary.ApprovedAtUtc);
+
+            // The row reopens the plan: the list's id and version are the plan read's.
+            var reopened = (await client.GetFromJsonAsync<PlanViewV1>($"{Base}/plans/{summary.PlanId}"))!;
+            Assert.Equal((summary.PlanId, summary.Status, summary.Version), (reopened.PlanId, reopened.Status, reopened.Version));
+
+            // One page at a time: the cursor continues where the page stopped, repeating and skipping nothing.
+            var one = (await client.GetFromJsonAsync<PlanListViewV1>($"{Base}/plans?pageSize=1"))!;
+            var oneId = Assert.Single(one.Plans).PlanId;
+            Assert.NotNull(one.NextCursor);
+            var two = (await client.GetFromJsonAsync<PlanListViewV1>(
+                $"{Base}/plans?pageSize=1&cursor={Uri.EscapeDataString(one.NextCursor!)}"))!;
+            Assert.Equal([second.PlanId, first.PlanId], new[] { oneId, Assert.Single(two.Plans).PlanId });
+            Assert.Null(two.NextCursor);
+
+            // A cursor that is not this company's plan-list cursor is refused on the cursor, never a first page:
+            // unreadable, another company's, and the order list's own cursor for this very company.
+            var foreignCursor = ManufacturingStore.ListCursor.Encode(
+                CompanyB, DateTimeOffset.UtcNow, Guid.NewGuid(), ManufacturingStore.ListCursor.PlanOrdering);
+            var orderCursor = ManufacturingStore.ListCursor.Encode(CompanyA, DateTimeOffset.UtcNow, Guid.NewGuid());
+            foreach (var cursor in new[] { "not-a-cursor", foreignCursor, orderCursor })
+            {
+                using var refused = await client.GetAsync($"{Base}/plans?cursor={Uri.EscapeDataString(cursor)}");
+                Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
+                Assert.Equal(ManufacturingApiCodes.RequestInvalid, (await Problem(refused)).Code);
+            }
+
+            // And the plan list's cursor is not an order-list cursor either.
+            using (var crossed = await client.GetAsync($"{Base}/orders?cursor={Uri.EscapeDataString(one.NextCursor!)}"))
+            {
+                Assert.Equal(HttpStatusCode.BadRequest, crossed.StatusCode);
+            }
+
+            using var badPage = await client.GetAsync($"{Base}/plans?pageSize=101");
+            Assert.Equal(HttpStatusCode.BadRequest, badPage.StatusCode);
+            using var badStatus = await client.GetAsync($"{Base}/plans?status=draft");
+            Assert.Equal(HttpStatusCode.BadRequest, badStatus.StatusCode);
+            using var orderStatus = await client.GetAsync($"{Base}/plans?status=Open");
+            Assert.Equal(HttpStatusCode.BadRequest, orderStatus.StatusCode);
+
+            // A list is a read: no audit event and no command record.
+            Assert.Equal(auditBefore, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType LIKE N'manufacturing.%'"));
+            Assert.Equal(commandsBefore, await run.ScalarAsync<int>("SELECT COUNT(*) FROM manufacturing.Commands"));
+
+            // The status filter follows the stored status: the approved plan leaves the draft list.
+            Assert.Equal(HttpStatusCode.OK, (await client.PostWithKeyAsync($"{Base}/plans/{first.PlanId}/approval",
+                new ApprovePlanRequestV1(1))).StatusCode);
+            var drafts = (await client.GetFromJsonAsync<PlanListViewV1>($"{Base}/plans?status=Draft"))!;
+            Assert.Equal(second.PlanId, Assert.Single(drafts.Plans).PlanId);
+            var approved = (await client.GetFromJsonAsync<PlanListViewV1>($"{Base}/plans?status=Approved"))!;
+            var approvedSummary = Assert.Single(approved.Plans);
+            Assert.Equal((first.PlanId, "Approved", 2L), (approvedSummary.PlanId, approvedSummary.Status, approvedSummary.Version));
+            Assert.NotNull(approvedSummary.ApprovedAtUtc);
+        }
+
+        // Company B's list is its own: another company's plan is in no page of it.
+        using (var client = run.ClientFor(userB, CompanyB))
+        {
+            var page = (await client.GetFromJsonAsync<PlanListViewV1>($"{Base}/plans"))!;
+            Assert.Empty(page.Plans);
+        }
+
+        // B's user naming company A is refused before anything is read.
+        using (var client = run.ClientFor(userB, CompanyA))
+        {
+            Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync($"{Base}/plans")).StatusCode);
+        }
+
+        // Every Manufacturing write and the order read do not add up to the plan read.
+        var writerWithoutRead = await run.GrantAsync(TestUsers.Unprovisioned, CompanyA, AllWrites);
+        using (var client = run.ClientFor(writerWithoutRead, CompanyA))
+        {
+            Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync($"{Base}/plans")).StatusCode);
+        }
+
+        // Without a company context nothing runs.
+        using (var client = run.Factory.CreateClient())
+        {
+            client.DefaultRequestHeaders.Add("X-Development-User", userA);
+            client.DefaultRequestHeaders.Add("X-Correlation-Id", Guid.NewGuid().ToString("N"));
+            Assert.Equal(HttpStatusCode.BadRequest, (await client.GetAsync($"{Base}/plans")).StatusCode);
+        }
+    }
+
     private static async Task<(string? Code, string? ExpectedVersion, string? CurrentVersion)> Problem(HttpResponseMessage response)
     {
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());

@@ -108,7 +108,7 @@ class FixtureListTests(unittest.TestCase):
     def test_r14_exports_the_recorder_fence_location_and_product_tuple(self):
         self.assertEqual(
             frozenset({
-                "recorderActor", "deniedActor", "arrangerActor", "companyId", "otherCompanyId",
+                "recorderActor", "deniedActor", "arrangerActor", "transformerActor", "companyId", "otherCompanyId",
                 "locationId", "productId", "productVersion", "productUnitId",
                 "productUnitProfileId", "productUnitProfileVersion", "productCode", "productName",
             }),

@@ -169,6 +169,26 @@ public static class OrganizationEndpoints
             .ProducesErpBadRequest()
             .ProducesErpAuthenticatedProblems();
 
+        // ORG-04 (W1-ORG / AV-01, Business #66 5702892195): one work center's read-only card, the location card's
+        // pattern. The work-centre read's own grant and scope; another company's, an out-of-scope and an unknown id
+        // are the same code-less 404, never a 403 that would confirm the row exists. A read: nothing is written.
+        group.MapGet("/work-centers/{id:guid}", async (
+                Guid id,
+                IOrganizationService service,
+                CancellationToken cancellationToken) =>
+        {
+            var workCenter = await service.GetWorkCenterAsync(id, cancellationToken);
+            return workCenter is null
+                ? NotFound()
+                : Results.Ok(workCenter);
+        }).RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.OrganizationWorkCentersRead)
+            .WithName("GetOrganizationWorkCenterV1")
+            .Produces<WorkCenterDetail>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpAuthenticatedProblems();
+
         return endpoints;
     }
 

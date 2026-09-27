@@ -15,6 +15,17 @@ public static class InventoryPermissionManifestV1
 
     /// <summary>Create and explicitly release a physical stock allocation. Company-wide.</summary>
     public const string PhysicalAllocationWrite = "inventory.physical-allocation.write";
+
+    /// <summary>
+    /// Record one same-company label split or merge (R19, DEC-LBL-002/003). Company-wide. The literal is the
+    /// owner's technical mapping, confirmed by the coordinator (technical names are not Sinan's to pick,
+    /// #66/5808295853 and #66/5811361336). Who holds it is the user's decision of 2026-09-27: only a disposable
+    /// R19 browser test actor in the per-run database, no real user and no seeded role; the real-user mapping
+    /// stays with the persona card #66/5802952566. A separate Inventory-owned name follows #66/5806047097 by
+    /// ANALOGY only: that ruling decided the STK/T11 physical-allocation command, not split/merge authority.
+    /// Registration and classification (company-wide, not Critical) are the central writer's.
+    /// </summary>
+    public const string LabelTransformationRecord = "inventory.label-transformation.record";
 }
 
 /// <summary>The opening count as the client sends it: one physical count sheet of one location.</summary>

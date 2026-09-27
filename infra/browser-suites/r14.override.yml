@@ -3,6 +3,9 @@
 # derived from the gated disposable Product master Read assignment created by the R14 fixture.
 # Denied retains only selector-read; arranger only Organization location-read. All are disposable GDC.
 # The Product issuer has no role, assignment or sign-in actor. No production grant or policy changes.
+# R19 split/merge (user decision 2026-09-27): the disposable r14-transformer is the ONLY holder of
+# inventory.label-transformation.record, beside the label/balance reads of its label detail. No real user and
+# no seeded role receives the name; the real-user mapping stays with persona #66/5802952566.
 services:
   api:
     environment:
@@ -14,6 +17,8 @@ services:
       BootstrapIdentity__Users__3__DisplayName: SENTETIK browser-suite:r14 Inventory denied actor
       BootstrapIdentity__Users__4__UserId: r14-arranger
       BootstrapIdentity__Users__4__DisplayName: SENTETIK browser-suite:r14 Organization arranger
+      BootstrapIdentity__Users__5__UserId: r14-transformer
+      BootstrapIdentity__Users__5__DisplayName: SENTETIK browser-suite:r14 Inventory label transformer
       IdentitySeed__Users__5__Id: b2000000-0000-4000-8000-000000000701
       IdentitySeed__Users__5__DisplayName: SENTETIK browser-suite:r14 Inventory recorder
       IdentitySeed__Users__5__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000701
@@ -34,6 +39,11 @@ services:
       IdentitySeed__Users__8__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000204
       IdentitySeed__Users__8__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
       IdentitySeed__Users__8__ExternalIdentities__0__Subject: r14-issuer
+      IdentitySeed__Users__9__Id: b2000000-0000-4000-8000-000000000704
+      IdentitySeed__Users__9__DisplayName: SENTETIK browser-suite:r14 Inventory label transformer
+      IdentitySeed__Users__9__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000704
+      IdentitySeed__Users__9__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
+      IdentitySeed__Users__9__ExternalIdentities__0__Subject: r14-transformer
       IdentitySeed__Roles__5__Id: b3000000-0000-4000-8000-000000000701
       IdentitySeed__Roles__5__Code: BROWSER_R14_RECORDER
       IdentitySeed__Roles__5__Name: SENTETIK browser-suite:r14 Inventory recorder
@@ -52,6 +62,13 @@ services:
       IdentitySeed__Roles__7__Name: SENTETIK browser-suite:r14 Organization arranger
       IdentitySeed__Roles__7__IsSystem: "false"
       IdentitySeed__Roles__7__Permissions__0: organization.locations.read
+      IdentitySeed__Roles__8__Id: b3000000-0000-4000-8000-000000000704
+      IdentitySeed__Roles__8__Code: BROWSER_R14_TRANSFORMER
+      IdentitySeed__Roles__8__Name: SENTETIK browser-suite:r14 Inventory label transformer
+      IdentitySeed__Roles__8__IsSystem: "false"
+      IdentitySeed__Roles__8__Permissions__0: inventory.labels.read
+      IdentitySeed__Roles__8__Permissions__1: inventory.balances.read
+      IdentitySeed__Roles__8__Permissions__2: inventory.label-transformation.record
       IdentitySeed__Assignments__7__Id: b4000000-0000-4000-8000-000000000701
       IdentitySeed__Assignments__7__UserId: b2000000-0000-4000-8000-000000000701
       IdentitySeed__Assignments__7__RoleId: b3000000-0000-4000-8000-000000000701
@@ -76,3 +93,11 @@ services:
       IdentitySeed__Assignments__9__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
       IdentitySeed__Assignments__9__Scopes__0__Type: Company
       IdentitySeed__Assignments__9__Scopes__0__Id: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__10__Id: b4000000-0000-4000-8000-000000000704
+      IdentitySeed__Assignments__10__UserId: b2000000-0000-4000-8000-000000000704
+      IdentitySeed__Assignments__10__RoleId: b3000000-0000-4000-8000-000000000704
+      IdentitySeed__Assignments__10__CompanyId: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__10__ValidFromUtc: "2026-01-01T00:00:00+00:00"
+      IdentitySeed__Assignments__10__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
+      IdentitySeed__Assignments__10__Scopes__0__Type: Company
+      IdentitySeed__Assignments__10__Scopes__0__Id: 10000000-0000-0000-0000-000000000001

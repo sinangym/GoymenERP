@@ -44,7 +44,8 @@ public sealed class C01E2eFixtureWriterActivationTests
             || descriptor.ServiceType == typeof(C01E2eProductSalesCandidateFixtureWriter)
             || descriptor.ServiceType == typeof(IProductSalesCandidateFixtureStore)
             || descriptor.ServiceType == typeof(C01E2eAccountingOpenPeriodFixtureWriter)
-            || descriptor.ServiceType == typeof(IAccountingOpenPeriodFixtureStore));
+            || descriptor.ServiceType == typeof(IAccountingOpenPeriodFixtureStore)
+            || descriptor.ServiceType == typeof(IAccountingPostedJournalFixtureStore));
     }
 
     [Fact]
@@ -70,6 +71,9 @@ public sealed class C01E2eFixtureWriterActivationTests
             descriptor.ServiceType == typeof(C01E2eAccountingOpenPeriodFixtureWriter));
         Assert.Single(services, descriptor =>
             descriptor.ServiceType == typeof(IAccountingOpenPeriodFixtureStore));
+        // acc01 ACC01-09: the posted-journal port, only behind the same gate.
+        Assert.Single(services, descriptor =>
+            descriptor.ServiceType == typeof(IAccountingPostedJournalFixtureStore));
     }
 
     public static TheoryData<string, string, string?> BrokenGates => new()
@@ -116,7 +120,8 @@ public sealed class C01E2eFixtureWriterActivationTests
             || descriptor.ServiceType == typeof(C01E2eProductSalesCandidateFixtureWriter)
             || descriptor.ServiceType == typeof(IProductSalesCandidateFixtureStore)
             || descriptor.ServiceType == typeof(C01E2eAccountingOpenPeriodFixtureWriter)
-            || descriptor.ServiceType == typeof(IAccountingOpenPeriodFixtureStore));
+            || descriptor.ServiceType == typeof(IAccountingOpenPeriodFixtureStore)
+            || descriptor.ServiceType == typeof(IAccountingPostedJournalFixtureStore));
         Assert.Throws<InvalidOperationException>(() =>
             new C01E2eProductMasterAssignmentFixtureWriter(environment, configuration, new RecordingStore()));
         Assert.Throws<InvalidOperationException>(() =>

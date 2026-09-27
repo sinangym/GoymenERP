@@ -9,7 +9,7 @@
  * block and `hasCapability` answers false. The frontend never mints a capability to open
  * its own screen, and the server re-authorizes every request regardless (ERP-000K §10.2).
  *
- * WHY EIGHT IDS. They map onto the permissions the server enforces separately
+ * WHY NINE IDS. They map onto the permissions the server enforces separately
  * (`ManufacturingEndpoints`):
  *
  *   manufacturing.orders.detail <- manufacturing.orders.read
@@ -20,6 +20,7 @@
  *   manufacturing.plans.detail  <- manufacturing.plans.read
  *   manufacturing.plans.approve <- manufacturing.plans.read + manufacturing.plans.approve
  *   manufacturing.plans.order-create <- manufacturing.plans.read + manufacturing.orders.create
+ *   manufacturing.plans.list    <- manufacturing.plans.read (MFG-PLAN-LIST: the plan read's own grant)
  *
  * Reading an order and recording a fact on it are different authorities, so a reader
  * sees the balances and NO form (card D3: without the capability the control is not
@@ -50,6 +51,8 @@ export const MANUFACTURING_CAPABILITY = {
   planApprove: 'manufacturing.plans.approve',
   /** Create one order from the Approved plan shown on the detail screen. Not a route — a control. */
   planOrderCreate: 'manufacturing.plans.order-create',
+  /** MFG-PLAN-LIST the company's saved plans, so a closed plan is found and reopened. Route `/uretim/planlar`. */
+  planList: 'manufacturing.plans.list',
 } as const
 
 export type ManufacturingCapabilityId =
@@ -61,17 +64,20 @@ export const MANUFACTURING_ROUTE: Record<string, string> = {
   [MANUFACTURING_CAPABILITY.planDetail]: '/uretim/plan/:planId',
   [MANUFACTURING_CAPABILITY.orderDetail]: '/uretim/emir/:orderId',
   [MANUFACTURING_CAPABILITY.orderList]: '/uretim/emirler',
+  [MANUFACTURING_CAPABILITY.planList]: '/uretim/planlar',
 }
 
 /**
  * Nav label per routed capability. The detail has none — an order is opened from the list or by
- * its id — and the list is the module's one sidebar entry.
+ * its id — and the order list is the module's one sidebar entry. The plan list has none either: it
+ * is reached from the order list and from the plan screens, so the sidebar keeps its one entry.
  */
 export const MANUFACTURING_NAV_LABEL: Record<string, string> = {
   [MANUFACTURING_CAPABILITY.orderDetail]: '',
   [MANUFACTURING_CAPABILITY.orderList]: 'Üretim emirleri',
   [MANUFACTURING_CAPABILITY.planCreate]: '',
   [MANUFACTURING_CAPABILITY.planDetail]: '',
+  [MANUFACTURING_CAPABILITY.planList]: '',
 }
 
 export function planCreatePath(): string {
@@ -85,6 +91,11 @@ export function planDetailPath(planId: string): string {
 /** Concrete path to one order. */
 export function orderDetailPath(orderId: string): string {
   return `/uretim/emir/${encodeURIComponent(orderId)}`
+}
+
+/** The plan list's own path. */
+export function planListPath(): string {
+  return MANUFACTURING_ROUTE[MANUFACTURING_CAPABILITY.planList]
 }
 
 /** The order list's own path. */

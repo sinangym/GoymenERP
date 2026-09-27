@@ -13,11 +13,13 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Shell;
 /// are controls of the M-07 list and keep its screen.
 /// </para>
 /// <para>
-/// <b>Published (ACC-V0c/ACC-V1), except the journal detail and M-06:</b> the declarations acceptance actually walked on the
-/// normal profile are <c>ImplementationAvailable: true</c> — the period list and its propose screen, the approve
-/// and close controls, the M-04 journal list and the M-01 queues. The journal DETAIL stays staged: acc01 opened
-/// no journal (its seed writes nothing and no flow produces one before ACC-V1), so nothing accepted that route.
-/// M-06 stays staged until its own real browser acceptance.
+/// <b>Published (ACC-V0c/ACC-V1):</b> the period list and its propose screen, the approve and close controls, the
+/// M-04 journal list, the M-01 queues, and — ACC-V1 reversal slice — the M-04 journal DETAIL and M-06 Mizan, whose
+/// real read routes (`GET /accounting/journals/{id}`, `GET /accounting/trial-balance`) and screens exist. Their
+/// browser walk is the acc01 reversal case (ACC01-09), which needs the synthetic posted-journal fixture; the flip is
+/// merge-gated on that hosted acceptance.
+/// <b>Staged:</b> the reversal PROPOSE control of the journal detail (the POST exists; not yet browser-walked) and the
+/// reversal APPROVAL route, which has no reopen read (`GET /accounting/journal-reversal-proposals/{id}`) yet.
 /// The staged-then-flip order is the FIN-UI-1c / MFG-UI-F pattern (card FIN-UI-1 §6). The approval
 /// and the close are controls of the period list (<c>ParentCapabilityId</c>), not routes, and keep the
 /// list's route, context and scope. A declaration grants nothing: each route's service measures its own
@@ -31,7 +33,13 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Shell;
 public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "ACCOUNTING";
-    public const string OwnerContractVersion = "1.2";
+
+    /// <summary>
+    /// 1.3 (ACC-V1 reversal UI, phase 1; #478 review 5327037504): the declaration set changed — the journal detail and
+    /// M-06 are published, and the staged reversal propose control and approval route are declared — so the contract
+    /// version moves with it (the host registry's revision rows are re-derived centrally).
+    /// </summary>
+    public const string OwnerContractVersion = "1.3";
 
     public const string PeriodListScreenId = "M-07";
     public const string PeriodProposeScreenId = "M-07-NEW";
@@ -77,6 +85,13 @@ public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
     public const string NormalDraftApproveRouteId = "accounting.normal-journal-drafts.approve";
     public const string NormalDraftApproveRoutePath = "/muhasebe/normal-fis-onay/:draftId";
 
+    // ACC-V1 journal reversal (#66/5827281417): propose and approve are two actions of two people.
+    public const string JournalReversalApproveScreenId = "M-04-REVERSAL-APPROVE";
+    public const string JournalReversalProposeCapabilityId = "accounting.journal-reversals.propose";
+    public const string JournalReversalApproveCapabilityId = "accounting.journal-reversals.approve";
+    public const string JournalReversalApproveRouteId = "accounting.journal-reversals.approve";
+    public const string JournalReversalApproveRoutePath = "/muhasebe/ters-kayit-onay/:proposalId";
+
     public string Owner => OwnerId;
 
     public string ContractVersion => OwnerContractVersion;
@@ -85,6 +100,9 @@ public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
     {
         var periods = Declaration(PeriodListCapabilityId, PeriodListRouteId, PeriodListRoutePath, PeriodListScreenId,
             ShellCapabilityRoutePrecedence.Static, [AccountingPermissionManifestV1.PeriodsRead], available: true);
+        var journalDetail = Declaration(JournalDetailCapabilityId, JournalDetailRouteId, JournalDetailRoutePath,
+            JournalDetailScreenId, ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
+            [AccountingPermissionManifestV1.JournalsRead], available: true);
         return
         [
             periods,
@@ -106,13 +124,26 @@ public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
             },
             Declaration(JournalListCapabilityId, JournalListRouteId, JournalListRoutePath, JournalListScreenId,
                 ShellCapabilityRoutePrecedence.Static, [AccountingPermissionManifestV1.JournalsRead], available: true),
-            // STILL STAGED (ACC-V0c): acc01 never opened a journal, because its seed writes nothing and no flow
-            // produces a journal before ACC-V1 — so this route has no acceptance to stand on. Publishing it would
-            // claim a screen nobody walked. It flips with the slice that first produces a journal, and the M-04
-            // list does not link into it while it is closed.
-            Declaration(JournalDetailCapabilityId, JournalDetailRouteId, JournalDetailRoutePath, JournalDetailScreenId,
-                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [AccountingPermissionManifestV1.JournalsRead],
-                available: false),
+            // ACC-V1 reversal slice: the detail flips with the slice that first produces a journal (the acc01
+            // synthetic posted-journal fixture, ACC01-09). Its real read route exists.
+            journalDetail,
+            // The reversal proposal is a CONTROL of the detail: its route, screen and scope, plus the propose name.
+            // Staged until acc01 walks it.
+            journalDetail with
+            {
+                CapabilityId = JournalReversalProposeCapabilityId,
+                ParentCapabilityId = JournalDetailCapabilityId,
+                RequiredPermissions =
+                [
+                    AccountingPermissionManifestV1.JournalsRead, AccountingJournalReversalPermissionNamesV1.Propose,
+                ],
+                ImplementationAvailable = false,
+            },
+            // Staged: the approval screen reopens a proposal by id, and the owner read it stands on
+            // (GET /accounting/journal-reversal-proposals/{id}) does not exist yet.
+            Declaration(JournalReversalApproveCapabilityId, JournalReversalApproveRouteId, JournalReversalApproveRoutePath,
+                JournalReversalApproveScreenId, ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
+                [AccountingJournalReversalPermissionNamesV1.Approve], available: false),
             Declaration(NormalDraftCreateCapabilityId, NormalDraftCreateRouteId, NormalDraftCreateRoutePath,
                 NormalDraftCreateScreenId, ShellCapabilityRoutePrecedence.Static,
                 [NormalJournalPermissionNamesV1.DraftCreate], available: true),
@@ -124,8 +155,9 @@ public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
                 [NormalJournalPermissionNamesV1.DraftApprove], available: true),
             Declaration(PostingQueuesCapabilityId, PostingQueuesRouteId, PostingQueuesRoutePath, PostingQueuesScreenId,
                 ShellCapabilityRoutePrecedence.Static, [AccountingPermissionManifestV1.PostingQueuesRead], available: true),
+            // M-06 Mizan: the real read route and screen exist (#456); walked by acc01 ACC01-09 over the fixture journal.
             Declaration(TrialBalanceCapabilityId, TrialBalanceRouteId, TrialBalanceRoutePath, TrialBalanceScreenId,
-                ShellCapabilityRoutePrecedence.Static, [AccountingPermissionManifestV1.JournalsRead], available: false),
+                ShellCapabilityRoutePrecedence.Static, [AccountingPermissionManifestV1.JournalsRead], available: true),
         ];
     }
 

@@ -100,6 +100,21 @@ export const LOCATIONS_ONLY_CAPABILITIES = [
  */
 export const WORK_CENTERS_ONLY_CAPABILITIES = [ORGANIZATION_CAPABILITY.workCentersList]
 
+/**
+ * ORG-04 — the work-centre list and its card, the pair the server publishes on `organization.work-centers.read`
+ * alone. No location grant: the configuration in which the card's location link must stay closed.
+ */
+export const WORK_CENTER_CARD_CAPABILITIES = [
+  ORGANIZATION_CAPABILITY.workCentersList,
+  ORGANIZATION_CAPABILITY.workCenterDetail,
+]
+
+/** ORG-04 + the location card: the configuration in which an openable location is a real link. */
+export const WORK_CENTER_CARD_WITH_LOCATION_CAPABILITIES = [
+  ...WORK_CENTER_CARD_CAPABILITIES,
+  ORGANIZATION_CAPABILITY.locationDetail,
+]
+
 export const WC_PAINT = '88888888-8888-8888-8888-888888888888'
 export const WC_SLIT = 'aaaaaaaa-1111-1111-1111-111111111111'
 export const WC_UNKNOWN_KIND = 'bbbbbbbb-2222-2222-2222-222222222222'
@@ -122,6 +137,17 @@ export function workCenter(
     // never exercise the closed branch, which is the branch that protects scope.
     canOpenLocationDetail: overrides.canOpenLocationDetail ?? false,
   }
+}
+
+/** A synthetic `WorkCenterDetail` (ORG-04): the row's record plus its version, in the server's JSON shape. */
+export function workCenterDetail(
+  id: string,
+  locationId: string,
+  code: string,
+  name: string,
+  overrides: { kind?: string; isActive?: boolean; canOpenLocationDetail?: boolean; version?: number } = {},
+) {
+  return { ...workCenter(id, locationId, code, name, overrides), version: overrides.version ?? 1 }
 }
 
 export function site(id: string, code: string, name: string, type = 'Factory', isActive = true) {
@@ -235,8 +261,14 @@ export interface HarnessOptions {
    * re-verification after a refence looks like.
    */
   readonly generations?: readonly string[]
-  /** Feature-endpoint responder. Return undefined to fall through to a 404. */
-  readonly respond?: (url: string, init: RequestInit | undefined) => Response | undefined
+  /**
+   * Feature-endpoint responder. Return undefined to fall through to a 404. A promise holds the answer until the
+   * test settles it; throwing (or rejecting) is a real transport failure, as `fetch` itself reports one.
+   */
+  readonly respond?: (
+    url: string,
+    init: RequestInit | undefined,
+  ) => Response | Promise<Response> | undefined
 }
 
 /**

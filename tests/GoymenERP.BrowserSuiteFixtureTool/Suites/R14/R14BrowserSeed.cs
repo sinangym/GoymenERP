@@ -11,12 +11,21 @@ namespace GoymenERP.BrowserSuiteFixtureTool.Suites.R14;
 /// R14 materializes Product's fixed stock candidate through its gated owner port, then resolves one
 /// active non-external GDC location through Organization's real public read. The opening count itself
 /// is never seeded: the browser records it through the real Inventory command.
+/// <para>
+/// R19 split/merge (user decision 2026-09-27): <c>inventory.label-transformation.record</c> is held ONLY by the
+/// disposable <see cref="TransformerActor"/> of this per-run database (its role comes from
+/// infra/browser-suites/r14.override.yml); no real user and no seeded role holds it. This seed writes nothing for
+/// it: the R19 spec arranges its source label through the recorder's real opening command. The read-back pins the
+/// capability split: only the transformer is offered the label-detail split/merge control (the recorder, the denied
+/// actor and the arranger are not), and it is not offered the opening workspace.
+/// </para>
 /// </summary>
 public sealed class R14BrowserSeed : IBrowserSuiteFixture
 {
     public const string RecorderActor = "r14-recorder";
     public const string DeniedActor = "r14-denied";
     public const string ArrangerActor = "r14-arranger";
+    public const string TransformerActor = "r14-transformer";
 
     public static readonly Guid CompanyGdc = Guid.Parse("10000000-0000-0000-0000-000000000001");
     public static readonly Guid CompanyOther = Guid.Parse("10000000-0000-0000-0000-000000000002");
@@ -42,6 +51,7 @@ public sealed class R14BrowserSeed : IBrowserSuiteFixture
     private const string OpeningCapability = "inventory.opening-stock.record";
     private const string LabelDetailCapability = "inventory.stock-positions.list";
     private const string ProductDetailCapability = "product.items.detail";
+    private const string LabelTransformationCapability = "inventory.label-transformation.record";
 
     public string Suite => "r14";
 
@@ -136,11 +146,25 @@ public sealed class R14BrowserSeed : IBrowserSuiteFixture
             throw new InvalidOperationException("The R14 capability split does not match recorder and denied actors.");
         }
 
+        string[] transformerCapabilities = await CapabilitiesAsync(context, TransformerActor, cancellationToken);
+        string[] arrangerCapabilities = await CapabilitiesAsync(context, ArrangerActor, cancellationToken);
+        if (!transformerCapabilities.Contains(LabelDetailCapability, StringComparer.Ordinal)
+            || !transformerCapabilities.Contains(LabelTransformationCapability, StringComparer.Ordinal)
+            || transformerCapabilities.Contains(OpeningCapability, StringComparer.Ordinal)
+            || recorderCapabilities.Contains(LabelTransformationCapability, StringComparer.Ordinal)
+            || deniedCapabilities.Contains(LabelTransformationCapability, StringComparer.Ordinal)
+            || arrangerCapabilities.Contains(LabelTransformationCapability, StringComparer.Ordinal))
+        {
+            throw new InvalidOperationException(
+                "Only the disposable R19 transformer may hold the label split/merge control, beside the label detail.");
+        }
+
         return new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["recorderActor"] = RecorderActor,
             ["deniedActor"] = DeniedActor,
             ["arrangerActor"] = ArrangerActor,
+            ["transformerActor"] = TransformerActor,
             ["companyId"] = CompanyGdc.ToString("D"),
             ["otherCompanyId"] = CompanyOther.ToString("D"),
             ["locationId"] = locationId.ToString("D"),

@@ -111,6 +111,19 @@ Not here: cost, search beyond the order list's status filter, Inventory movement
   - ADR-011: the success is recorded in the same save as the close and its audit event (§6, `manufacturing.order.close.v1`); a terminal not-found or version conflict is recorded on its own and replays (§7); the loser of a race on one key answers from the winner's record (§8). A closed order refuses a second close with `manufacturing_order_closed` — a replay of the first key is the first answer, never a second close.
   - `manufacturing.orders.close` is its own permission, registered centrally and granted by a human gate. Recording a fact does not close an order.
 
+### MFG-PLAN-LIST — the plan list (coordinator assignment, GOYMEN-CLAUDE-FULL-DELIVERY-20260926-V2)
+
+A saved plan could be reopened only through its URL: nothing listed the company's plans, so a Draft plan whose screen was closed was lost to its user. The plan list closes that gap with the MFG-ORD list's rules and the plan read's grant; it decides no policy.
+
+- **List** `GET /plans?pageSize&cursor&status` (`ListManufacturingPlansV1`, `manufacturing.plans.read`, company-wide). The stored rows only: plan, work center, process, status, version, planned roll count, planned input mass (lossless text), declared target, created and approved times.
+  - **No engine answer, no slitting spec, no roll label, no order.** One approved plan may open more than one order (#66 5728934213 is open), so the list claims no "converted" state; the order list answers the orders.
+  - Newest first (`createdAtUtc desc, id desc`), page size 1–100 (default 50), keyset cursor bound to the company and to the plan list's **own** ordering (`plans: createdAtUtc desc, id desc`). An unreadable cursor, another company's, or the order list's cursor is 400 on `cursor` — never a first page; the order list refuses a plan-list cursor the same way. The order list's own cursor is unchanged, so every order cursor already issued stays valid.
+  - `status` is a `PlanStatus` name exactly (`Draft` / `Approved`); anything else is 400 on `status`.
+  - `private, no-store`; a read that keeps meeting commits is a retryable 503; the list writes no audit event and no command record.
+- **Port:** `IManufacturingPlanListStore`, beside `IManufacturingPlanStore`, implemented by the one `ManufacturingStore` and passed to `ManufacturingCommandService` as an optional port like its other ports. The plan store's existing implementations are not widened. Without the port the answer is 503, never an empty page.
+- **Screen:** `manufacturing.plans.list` → `/uretim/planlar` (`MFG-PLAN-LIST`, static, `manufacturing.plans.read`); owner contract 1.2 → 1.3. A technical sub-view, like MFG-02; the canonical PR-02 has no locked reference. Every row opens the existing plan detail, where the existing approve and order-create controls continue the journey.
+- **No new permission, grant, migration, index or policy.** The accepted authority revision, the OpenAPI baseline and the shell route table are the central writer's round.
+
 ## MFG-UI — the order screen (approved card, D1–D5)
 
 - **Shell provider** `Infrastructure/Shell/ManufacturingShellCapabilityProvider`: `manufacturing.orders.detail` → `/uretim/emir/:orderId` (`manufacturing.orders.read`) and its control `manufacturing.orders.facts` (+ `manufacturing.facts.record`). Company-wide, single company.

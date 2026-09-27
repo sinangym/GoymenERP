@@ -393,6 +393,8 @@ public sealed class ShellCapabilityAcceptanceTests(
         OrganizationShellCapabilityProvider.StatusCapabilityId,
         OrganizationShellCapabilityProvider.ListCapabilityId,
         OrganizationShellCapabilityProvider.SitesReadCapabilityId,
+        // ORG-04: `organization.work-centers.detail` sorts before `.list`.
+        OrganizationShellCapabilityProvider.WorkCenterDetailCapabilityId,
         OrganizationShellCapabilityProvider.WorkCenterListCapabilityId,
     ];
 

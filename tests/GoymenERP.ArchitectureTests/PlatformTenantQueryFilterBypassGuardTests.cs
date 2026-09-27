@@ -62,8 +62,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // the same push.
     // Re-fingerprinted for the #478 forward onto main c287128f: Program.cs is the clean union of the reviewed
     // PUR-HOST composition (#478, b66b1cca…) and main's reviewed LOG-HOST/#474-#485 composition (e6a57d52…).
+    // Re-fingerprinted for R19 (#483): one added host line, builder.Services.AddInventoryLabelGenealogy(), and its
+    // comment (588121e3… -> ab4aa1be…); no other startup change.
     private const string ReviewedOpenApiStartupFingerprint =
-        "588121e3020330252ab46669d87f9501e802f0114d705618936b266ef2d9711f";
+        "ab4aa1be6235dd0b0de72dc933869790e430ba73c54b48f4cc30bb1e420efc2e";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -140,7 +142,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         {
             // accounting
             ["tools/relational_inventory/accounting.txt"] =
-                "29310c4f63816e9045dd6f8423095d524afccfcdba362a8f89123dc385c6dbf3",
+                "03817947a1e8f6352ca23eab78cdc2be4813ed54c5963c064e7bf371f9b4d4fc",
 
             // counterparty
             ["tools/relational_inventory/counterparty.txt"] =
@@ -156,7 +158,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // inventory
             ["tools/relational_inventory/inventory.txt"] =
-                "fbc435f7d97ad5297f08eb1b416141c9fff18df244d46459042dfa0c870a4453",
+                "d709faf1019cbc311f092d04182746694541c7490c5a9e37907473d064edd3c3",
 
             // logistics
             ["tools/relational_inventory/logistics.txt"] =
@@ -164,11 +166,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // manufacturing
             ["tools/relational_inventory/manufacturing.txt"] =
-                "ccd039cf70abfa0dc14fb52009f94a8d1d5ad68a1abe0bd7c4d658c0879d8d19",
+                "a72e63678da905388ee2e17d46ad3aed74b6ad8d6f6b0ee79fe47ca7b3cd9595",
 
             // organization
             ["tools/relational_inventory/organization.txt"] =
-                "ff9e4dea662002bcbba7e4f72c99b8f04a5766640126dbcb376cd4106a09f21b",
+                "6b504dac144f5a9264ae34969ca54275c608b3b5d74b77ac0b411e98d0225d35",
 
             // platform
             ["tools/relational_inventory/platform.txt"] =
@@ -444,7 +446,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // context-construction or direct-database exemption.
                 [ReviewedInventoryDefiniteShipmentParticipantPath] =
                     new(
-                        "fff2ff64a35fe04824e76aaa89d0c05afe3850cfce8cd4461fb7bfa1afe0e3b9",
+                        "f5869bb2657be3f7e33750d8154695a9ac5ec81fcae1b5f0fef7757d97b48e7e",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,
@@ -456,7 +458,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // API counts keep this reviewed bridge narrower than a general direct-database exemption.
                 [ReviewedManufacturingInventoryInputIssueHostPath] =
                     new(
-                        "f1b5bb4384fd389d603b317dc20f86c415997ed1513c636d44517e4ceecec57f",
+                        "7b8a0752f1800054ccfbac7bea62b93e6861e969e088092bdd3bdc2bc66b1be6",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1,
@@ -504,7 +506,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Inventory/"
                  + "GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryStore.Allocations.cs"] =
                     new(
-                        "dbf561ee8660c90cd6374799598eb159338884032871cb8f496360745111589a",
+                        "4eb75d0a7ba908d92a4582bc1676b7c0236bf14735a934aa733bfe519bdcd34a",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -618,7 +620,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Manufacturing.Infrastructure/"
                  + "ManufacturingModuleExtensions.cs"] =
                     new(
-                        "d60752e602b2d92805f18bd0e5c214bf469eec3f4004331b628ae4bfd78213c6",
+                        "c7fc382b6a9c613d07133ae82a369985cbc3f96d365b1b87f9c340fed665267f",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -635,7 +637,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Manufacturing/"
                  + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.cs"] =
                     new(
-                        "e88d303e66c0842524612f8d2c11f0ed6fcc4ecefc2d687764adb7f45853555a",
+                        "cb4ee45788284b701901556a810358bef4fc2da9a26273e61c46354418a0b0de",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -714,7 +716,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // one reviewed provider connection; exact source/count drift remains fail-closed.
                 [ReviewedInventoryManufacturingRealizationParticipantPath] =
                     new(
-                        "12f01ded4665766d47dfd3a88711a439fc3055ce8784bfe317d55aa58e91fae1",
+                        // Re-measured at the #479 forward onto main e1ffefe8: #479's customer-owned issue context
+                        // (17e9470a…) and #489's Sales-reservation deduction (a3d8f262…) combined; neither parent's value.
+                        "3f82b2eccdd7153921235a3c43937135e78f8c0c14ebe517ba831dd82bf080ed",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,

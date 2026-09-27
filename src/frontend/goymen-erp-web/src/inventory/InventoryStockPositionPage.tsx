@@ -51,6 +51,14 @@ function InventoryStockPositionView({
   readonly canOpenLocation: boolean
 }) {
   const boundary = useAuthBoundary()
+  // `useAuthBoundary` answers a new object on every render. Keyed on it, the initial-read effect below re-ran after
+  // EVERY render: it re-read the unfiltered list in a loop, and its cleanup aborted the label-code search just
+  // submitted, so a search never answered (R19 r14 run 36317283526). The read is keyed on the company alone; the
+  // boundary of the latest committed render is read from a ref when a request starts and when it answers.
+  const boundaryRef = useRef(boundary)
+  useEffect(() => {
+    boundaryRef.current = boundary
+  }, [boundary])
   const [q, setQ] = useState('')
   const [state, setState] = useState<State>({ type: 'loading' })
   const fence = useRef(createRequestFence())
@@ -58,18 +66,18 @@ function InventoryStockPositionView({
   const load = useCallback(async (search: string) => {
     if (companyId === null) return
     const token = fence.current.capture()
-    const security = boundary.capture()
+    const security = boundaryRef.current.capture()
     const outcome = await fetchStockPositions(companyId, search, token.signal)
     if (!fence.current.isCurrent(token)) return
     if (outcome.type === 'http' && (outcome.status === 401 || outcome.status === 403)) {
-      boundary.report(outcome.status, security)
+      boundaryRef.current.report(outcome.status, security)
     }
     setState(outcome.type === 'ok-single'
       ? { type: 'ready', data: outcome.data }
       : { type: 'failed', message: outcome.type === 'http'
         ? `Stok pozisyonları okunamadı (${outcome.status}).`
         : 'Stok pozisyonu kaynağına ulaşılamadı veya yanıt doğrulanamadı.' })
-  }, [boundary, companyId])
+  }, [companyId])
 
   useEffect(() => {
     const currentFence = fence.current

@@ -54,11 +54,24 @@ public sealed record InventoryManufacturingInputIssueResultV1(
     string ParentLabelVersion,
     Guid MovementId,
     string QuantityKg,
+    InventoryManufacturingPositionSnapshotV1 ParentPosition,
     bool IsReplay,
     string OriginalCorrelationId);
 
 /// <summary>
-/// An unused-input return adds stock to the same company-owned physical position and label that
+/// Inventory-owned physical context captured from the issued parent label. Callers cannot choose
+/// these values for an issue. A return uses the complete position; an output must inherit the
+/// owner and custodian while its explicit output location remains owner-validated by the host.
+/// </summary>
+public sealed record InventoryManufacturingPositionSnapshotV1(
+    StockPartyKind OwnerKind,
+    Guid OwnerId,
+    StockPartyKind CustodianKind,
+    Guid CustodianId,
+    Guid LocationId);
+
+/// <summary>
+/// An unused-input return adds stock to the same physical position and label that
 /// production consumed. It does not create a receipt, a new label, a reservation or a transfer.
 /// </summary>
 public sealed record InventoryManufacturingInputReturnRequestV1(
@@ -86,8 +99,9 @@ public sealed record InventoryManufacturingInputReturnResultV1(
 
 /// <summary>
 /// Explicit physical identity for one Manufacturing output. Inventory deliberately does not infer
-/// product, lot, location, ownership, custody, block state or required documents from the parent
-/// roll or output class. Those facts must come from an authorized host policy before enlistment.
+/// product, lot, location, block state or required documents from the parent roll or output class.
+/// The host supplies an explicit physical snapshot, and Inventory revalidates owner and custodian
+/// against the issued parent trace before recording the output.
 /// </summary>
 public sealed record InventoryManufacturingOutputRequestV1(
     Guid CompanyId,

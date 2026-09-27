@@ -29,6 +29,15 @@ writers that observed the same label version cannot both over-allocate it. Creat
 idempotent, audited and versioned; neither writes a stock movement. Release preserves the row and its immutable
 demand/source facts, sets the remaining kg to zero and makes that remainder free again.
 
+An active allocation reserves its remaining kg against every other consumer (Master v3 §7.6 INV-003
+`Serbest Fiziki = Fiziki Mevcut − Aktif Satış Tahsisleri − …`; DEC-STK-004; Business #66/5778472429: active
+allocations are never assumed zero). The Manufacturing input issue
+(`InventoryManufacturingRealizationParticipant`) therefore takes only `StockAllocation.Unreserved` of the exact
+Free position (the position predicate creation deducts) and otherwise refuses with its existing
+409 `inventory_manufacturing_physical_stock_insufficient`, writing nothing; a recorded issue still replays. Only an
+explicit release frees reserved kg. The R13 parent-roll read is unchanged: its `UnblockedPhysicalKg` stays a block
+bucket, not availability.
+
 `ReservedUntilUtc` is optional input only. This predecessor neither invents the Settings default nor auto-releases
 expired allocations. It supports only the locked `sales.order-line` demand kind; future purchase/production/manual
 sources and source conversion are separate accepted slices. Rows created before this lifecycle remain readable with
@@ -291,6 +300,18 @@ combined SQL message then carries two GUIDs. The colliding id is read from the n
 anything else is null and the answer stays the retryable `inventory_concurrent_change` — never a made-up
 conflict (`InventoryDuplicateKeyTests`; real SQL: company B offers A's lot and A's label in one call →
 `inventory_lot_conflict`).
+
+## T15 manufacturing realization — customer-owned physical context
+
+`InventoryManufacturingRealizationParticipant` chooses the input issue position from Inventory's single
+free parent-label balance; Manufacturing does not send an owner, custodian or location for that issue.
+The issue result returns the exact stored owner/custodian/location snapshot. An unused-input return posts
+back to that complete issued position. An output may use its separately authorized active output location,
+but its owner and custodian must exactly match the issued parent trace or Inventory refuses
+`inventory_manufacturing_parent_label_context_conflict`. This permits customer-owned/fason material without
+turning caller-supplied ownership into policy. Company filtering, expected label version, idempotent replay
+and the shared transaction remain unchanged; no permission, grant, reservation or Manufacturing policy is
+introduced here.
 
 ## T09 goods receipt immutable source and replay
 

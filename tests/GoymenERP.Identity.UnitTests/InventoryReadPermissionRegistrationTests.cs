@@ -30,6 +30,8 @@ public sealed class InventoryReadPermissionRegistrationTests
         ErpPermissions.InventoryOpeningStockRecord,
         // STK/T11: allocation create/release is its own command permission, never implied by these reads.
         ErpPermissions.InventoryPhysicalAllocationWrite,
+        // R19: label split/merge is its own command permission; its only grant is a disposable browser test actor.
+        ErpPermissions.InventoryLabelTransformationRecord,
     };
 
     [Fact]
@@ -39,6 +41,7 @@ public sealed class InventoryReadPermissionRegistrationTests
         Assert.Equal("inventory.balances.read", ErpPermissions.InventoryBalancesRead);
         Assert.Equal("inventory.opening-stock.record", ErpPermissions.InventoryOpeningStockRecord);
         Assert.Equal("inventory.physical-allocation.write", ErpPermissions.InventoryPhysicalAllocationWrite);
+        Assert.Equal("inventory.label-transformation.record", ErpPermissions.InventoryLabelTransformationRecord);
     }
 
     [Theory]
