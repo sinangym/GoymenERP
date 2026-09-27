@@ -359,6 +359,92 @@ public sealed class CustomerInstrumentServiceTests
         Assert.Single(await db.CustomerInstruments.ToListAsync());
     }
 
+    /// <summary>
+    /// User decision 2026-09-27: the customer's debt closes at collection, and the risk is tracked separately. The view
+    /// moves with the instrument: received → open exposure (not yet due), dishonoured → still open exposure, collected →
+    /// out of the exposure; one customer's scope, the company total, a half-named scope and another company.
+    /// </summary>
+    [Fact]
+    public async Task The_risk_view_follows_receipt_dishonour_and_collection_and_stays_in_its_company()
+    {
+        await using var run = new Run();
+        var asOf = new DateOnly(2026, 10, 1);
+        var customer = new CustomerInstrumentRiskRequest(asOf, Party, Account);
+
+        async Task<CustomerInstrumentRiskView> RiskAsync(CustomerInstrumentRiskRequest request, Guid? company = null)
+        {
+            await using var reader = run.Instruments("reader", company ?? Company);
+            var read = await reader.Service.RiskAuthorizedAsync(reader.Context, request, CancellationToken.None);
+            Assert.Equal(ReadOutcome.Found, read.Outcome);
+            return read.Resource!;
+        }
+
+        var empty = await RiskAsync(customer);
+        Assert.Empty(empty.Customers);
+        Assert.Empty(empty.Totals);
+
+        var first = await run.ReceiveAsync(Receive());
+        var second = await run.ReceiveAsync(Receive() with { SerialNumber = "SENTETIK-CEK-0002", Money = new MoneyText("700.00", Currency) });
+        var received = (await RiskAsync(customer)).Customers.Single().Figures;
+        Assert.Equal((2, "1700.00"), (received.InPortfolioNotDue.Count, received.InPortfolioNotDue.Amount.Money!.Amount));
+        Assert.Equal((2, "1700.00"), (received.OpenExposure.Count, received.OpenExposure.Amount.Money!.Amount));
+
+        await using (var clerk = run.Instruments("clerk", Company))
+        {
+            Assert.Equal(CommandOutcome.Succeeded, (await clerk.Service.ChangeStatusAsync(clerk.Context, Key("bounce"),
+                Change(second.Id, "1", CustomerInstrumentTransition.Dishonour, null), CancellationToken.None)).Outcome);
+            Assert.Equal(CommandOutcome.Succeeded, (await clerk.Service.CollectAsync(clerk.Context, Key("collect"),
+                Collect(first.Id, "1"), CancellationToken.None)).Outcome);
+        }
+
+        var view = await RiskAsync(customer);
+        var after = Assert.Single(view.Customers).Figures;
+        Assert.Equal((0, "0"), (after.InPortfolioNotDue.Count, after.InPortfolioNotDue.Amount.Money!.Amount));
+        Assert.Equal((1, "700.00"), (after.Dishonoured.Count, after.Dishonoured.Amount.Money!.Amount));
+        Assert.Equal((1, "1000.00"), (after.Collected.Count, after.Collected.Amount.Money!.Amount));
+        Assert.Equal((1, "700.00"), (after.OpenExposure.Count, after.OpenExposure.Amount.Money!.Amount));
+        Assert.Equal(after, Assert.Single(view.Totals).Figures);
+
+        // Overdue follows the as-of date alone: a later date moves nothing collected, it only re-splits the portfolio.
+        Assert.Equal(after, (await RiskAsync(customer with { AsOf = new DateOnly(2026, 12, 1) })).Customers.Single().Figures);
+
+        // Company total (no scope) = this company's instruments only; another company sees none.
+        Assert.Equal(after, Assert.Single((await RiskAsync(new CustomerInstrumentRiskRequest(asOf, null, null))).Totals).Figures);
+        Assert.Empty((await RiskAsync(new CustomerInstrumentRiskRequest(asOf, null, null), OtherCompany)).Customers);
+
+        await using (var reader = run.Instruments("reader", Company))
+        {
+            Assert.Equal(ReadOutcome.NotFound, (await reader.Service.RiskAuthorizedAsync(reader.Context,
+                new CustomerInstrumentRiskRequest(asOf, Party, null), CancellationToken.None)).Outcome);
+        }
+
+        await using (var denied = run.Instruments("reader", Company, new DenyAll()))
+        {
+            Assert.Equal(ReadOutcome.Denied, (await denied.Service.RiskAuthorizedAsync(denied.Context, customer,
+                CancellationToken.None)).Outcome);
+        }
+
+        // Without the amount grant: counts only; every amount view is Redacted with no money (parsed JSON).
+        await using (var blind = run.Instruments("reader", Company, new DenyAmount()))
+        {
+            var redacted = (await blind.Service.RiskAuthorizedAsync(blind.Context, new CustomerInstrumentRiskRequest(asOf, null, null),
+                CancellationToken.None)).Resource!;
+            using var document = JsonDocument.Parse(JsonSerializer.Serialize(redacted, FinanceJson.CreateOptions()));
+            var views = AmountViews(document.RootElement).ToList();
+            Assert.Equal(14, views.Count);
+            Assert.All(views, amountView =>
+            {
+                Assert.Equal("Redacted", amountView.GetProperty("disclosure").GetString());
+                Assert.Equal(JsonValueKind.Null, amountView.GetProperty("money").ValueKind);
+            });
+            Assert.Equal(1, redacted.Customers.Single().Figures.OpenExposure.Count);
+        }
+
+        // Reading the risk has no money effect.
+        await using var db = run.Context(Company);
+        Assert.Single(await db.MoneyEvents.ToListAsync());
+    }
+
     private static IEnumerable<JsonElement> AmountViews(JsonElement element)
     {
         if (element.ValueKind == JsonValueKind.Object)

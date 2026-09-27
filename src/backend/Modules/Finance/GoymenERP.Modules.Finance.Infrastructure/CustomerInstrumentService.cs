@@ -603,6 +603,59 @@ public sealed class CustomerInstrumentService(
             actions));
     }
 
+    /// <summary>
+    /// DEC-FIN-016 risk tracking (user decision 2026-09-27): the customer's debt closes at collection, and the
+    /// instruments' risk is tracked separately — per customer account and currency (and their total), the count and
+    /// face amount by risk state as of <see cref="CustomerInstrumentRiskRequest.AsOf"/>, and the open exposure. Read-only
+    /// under <c>ReadCustomerInstruments</c>, fenced before and after the read like the list; every amount only with a
+    /// fresh <c>ReadCustomerInstrumentAmount</c>. Facts only: no limit or warning (OPEN-010).
+    /// </summary>
+    public async Task<ReadResult<CustomerInstrumentRiskView>> RiskAuthorizedAsync(FinanceContext context,
+        CustomerInstrumentRiskRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!SameContext(context))
+        {
+            return new ReadResult<CustomerInstrumentRiskView>(ReadOutcome.Denied, null);
+        }
+
+        var read = await permissions.CheckAsync(context, FinanceAction.ReadCustomerInstruments, null, cancellationToken);
+        if (read != PermissionDecision.Allowed || !SameContext(context))
+        {
+            return new ReadResult<CustomerInstrumentRiskView>(ReadRefusal(read), null);
+        }
+
+        // One customer account names both ids; a half-named scope reads nothing.
+        if (request.PartyId is null != request.CompanyAccountId is null
+            || request.PartyId == Guid.Empty || request.CompanyAccountId == Guid.Empty)
+        {
+            return new ReadResult<CustomerInstrumentRiskView>(ReadOutcome.NotFound, null);
+        }
+
+        var query = dbContext.CustomerInstruments.AsNoTracking();
+        if (request.PartyId is { } partyId && request.CompanyAccountId is { } accountId)
+        {
+            query = query.Where(row => row.PartyId == partyId && row.CompanyAccountId == accountId);
+        }
+
+        var facts = await query
+            .Select(row => new CustomerInstrumentRiskFact(row.PartyId, row.CompanyAccountId, row.CurrencyId, row.Status,
+                row.DueOn, row.AmountText))
+            .ToListAsync(cancellationToken);
+        var amount = await permissions.CheckAsync(context, FinanceAction.ReadCustomerInstrumentAmount, null, cancellationToken);
+        var again = await permissions.CheckAsync(context, FinanceAction.ReadCustomerInstruments, null, cancellationToken);
+        if (again != PermissionDecision.Allowed || !SameContext(context))
+        {
+            return new ReadResult<CustomerInstrumentRiskView>(ReadRefusal(again), null);
+        }
+
+        var (customers, totals) = CustomerInstrumentRiskPolicy.Build(facts, request.AsOf, Disclosure(amount));
+        return new ReadResult<CustomerInstrumentRiskView>(ReadOutcome.Found, new CustomerInstrumentRiskView(
+            context.CompanyId, request.AsOf, request.PartyId, request.CompanyAccountId, customers, totals));
+    }
+
     /// <summary>The canonical content of a command: its name and the exact contract JSON of the request.</summary>
     internal static string PayloadHash<T>(string commandName, T request) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(

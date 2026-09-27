@@ -96,6 +96,7 @@ type ReadName =
   | 'manualBankPaymentDetail'
   | 'listCustomerInstruments'
   | 'customerInstrumentDetail'
+  | 'customerInstrumentRisk'
 
 export interface CommandCall {
   readonly method: CommandName
@@ -186,6 +187,7 @@ export function recordingPort(respond: ReadResponder) {
     recordManualBankPayment: command('recordManualBankPayment'),
     listCustomerInstruments: read('listCustomerInstruments') as FinanceReceiptPort['listCustomerInstruments'],
     customerInstrumentDetail: read('customerInstrumentDetail') as FinanceReceiptPort['customerInstrumentDetail'],
+    customerInstrumentRisk: read('customerInstrumentRisk') as FinanceReceiptPort['customerInstrumentRisk'],
     receiveCustomerInstrument: command('receiveCustomerInstrument'),
     changeCustomerInstrumentStatus: command('changeCustomerInstrumentStatus'),
     collectCustomerInstrument: command('collectCustomerInstrument'),

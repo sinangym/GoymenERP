@@ -15,6 +15,7 @@
  * | `proposeBankAccountIbanChange` | `POST …/{accountId}/iban-change` with `Idempotency-Key` (D4) |
  * | `approveBankAccountIbanChange` | `POST …/{accountId}/iban-change/approval` with `Idempotency-Key` (D4) |
  * | `listCustomerInstruments` / `customerInstrumentDetail` | `GET /finance/customer-instruments[/{id}]` (DEC-FIN-016) |
+ * | `customerInstrumentRisk` | `GET /finance/customer-instruments/risk?asOf=[&partyId&companyAccountId]` (read-only) |
  * | `receiveCustomerInstrument` | `POST /finance/customer-instruments` with `Idempotency-Key` (DEC-FIN-016) |
  * | `changeCustomerInstrumentStatus` | `POST …/{id}/status-changes` with `Idempotency-Key` (DEC-FIN-016) |
  * | `collectCustomerInstrument` | `POST …/{id}/collection` with `Idempotency-Key` (DEC-FIN-016, the money effect) |
@@ -165,6 +166,14 @@ export function createHttpFinancePort(): FinanceReceiptPort {
       if (request.cursor !== null) params.set('cursor', request.cursor)
       const query = params.toString()
       return read(`${API_BASE}${CUSTOMER_INSTRUMENTS_PATH}${query === '' ? '' : `?${query}`}`, scope, signal)
+    },
+    customerInstrumentRisk: (scope, request, signal) => {
+      const params = new URLSearchParams({ asOf: request.asOf })
+      if (request.partyId !== null && request.companyAccountId !== null) {
+        params.set('partyId', request.partyId)
+        params.set('companyAccountId', request.companyAccountId)
+      }
+      return read(`${API_BASE}${CUSTOMER_INSTRUMENTS_PATH}/risk?${params.toString()}`, scope, signal)
     },
     customerInstrumentDetail: (scope, instrumentId, signal) =>
       read(`${API_BASE}${CUSTOMER_INSTRUMENTS_PATH}/${encodeURIComponent(instrumentId)}`, scope, signal),

@@ -28,6 +28,7 @@ import type {
 import type {
   CustomerInstrumentCollectRequest,
   CustomerInstrumentReceiveRequest,
+  CustomerInstrumentRiskRequest,
   CustomerInstrumentStatusChangeRequest,
 } from './customerInstrumentContract'
 import type { DraftContextRequest } from './draftContext'
@@ -75,6 +76,8 @@ export interface FinanceReceiptPort {
   ): Promise<PortReply>
   /** DEC-FIN-016: `GET /finance/customer-instruments/{id}` → `ReadResult<CustomerInstrumentDetail>`. */
   customerInstrumentDetail(scope: FinanceScope, instrumentId: string, signal: AbortSignal): Promise<PortReply>
+  /** DEC-FIN-016 risk (read-only): `GET /finance/customer-instruments/risk?asOf=` → `ReadResult<CustomerInstrumentRiskView>`. */
+  customerInstrumentRisk(scope: FinanceScope, request: CustomerInstrumentRiskRequest, signal: AbortSignal): Promise<PortReply>
   /** DEC-FIN-016: receive into the portfolio → `CustomerInstrumentCommandResult`. No money effect. */
   receiveCustomerInstrument(
     scope: FinanceScope,

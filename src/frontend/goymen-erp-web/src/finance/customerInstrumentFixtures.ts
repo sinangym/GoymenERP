@@ -60,3 +60,40 @@ export function detailBody(
 ): Record<string, unknown> {
   return { instrument, movements, availableActions }
 }
+
+type Bucket = { readonly count: number; readonly amount: string | null }
+
+/** A risk figures body: `null` amount = redacted. Every other bucket is an empty visible zero. */
+export function riskFigures(buckets: Partial<Record<string, Bucket>> = {}, currencyId = INSTRUMENT_CURRENCY) {
+  const names = [
+    'inPortfolioNotDue', 'inPortfolioOverdue', 'atBankForCollection', 'dishonoured', 'returnedToCustomer', 'collected',
+    'openExposure',
+  ]
+  const redacted = Object.values(buckets).some((bucket) => bucket?.amount === null)
+  return Object.fromEntries(names.map((name) => {
+    const bucket = buckets[name] ?? { count: 0, amount: redacted ? null : '0' }
+    return [name, {
+      count: bucket.count,
+      amount: bucket.amount === null
+        ? { disclosure: 'Redacted', money: null }
+        : { disclosure: 'Visible', money: { amount: bucket.amount, currencyId } },
+    }]
+  }))
+}
+
+export function riskBody(
+  figures: Record<string, unknown>,
+  party: { readonly partyId: string; readonly companyAccountId: string } | null = null,
+  asOf = '2026-10-01',
+): Record<string, unknown> {
+  const partyId = party?.partyId ?? 'c5000000-0000-4000-8000-000000000005'
+  const companyAccountId = party?.companyAccountId ?? 'c6000000-0000-4000-8000-000000000006'
+  return {
+    companyId: INSTRUMENT_COMPANY,
+    asOf,
+    partyId: party?.partyId ?? null,
+    companyAccountId: party?.companyAccountId ?? null,
+    customers: [{ partyId, companyAccountId, currencyId: INSTRUMENT_CURRENCY, figures }],
+    totals: [{ currencyId: INSTRUMENT_CURRENCY, figures }],
+  }
+}

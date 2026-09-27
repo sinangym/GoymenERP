@@ -62,6 +62,7 @@ import { useFinanceBinding, useFinancePort, useFinanceRead } from './financePort
 import { NEXT_PAGE, PREVIOUS_PAGE } from './financeText'
 import type { FinanceReceiptPort, FinanceScope, PortReply } from './port'
 import { amountShown, amountText } from './sourceView'
+import { CustomerInstrumentRiskBlock } from './CustomerInstrumentRisk'
 import styles from './Finance.module.css'
 
 type Succeeded = Extract<CustomerInstrumentCommandResult, { outcome: 'Succeeded' }>
@@ -104,7 +105,8 @@ function useInstrumentCommand() {
     const result = decoded.value
     await queryClient.invalidateQueries({
       predicate: (query) => query.queryKey[1] === 'finance'
-        && (query.queryKey[2] === 'customer-instruments' || query.queryKey[2] === 'customer-instrument'),
+        && (query.queryKey[2] === 'customer-instruments' || query.queryKey[2] === 'customer-instrument'
+          || query.queryKey[2] === 'customer-instrument-risk'),
     })
     switch (result.outcome) {
       case 'Succeeded':
@@ -399,6 +401,8 @@ export function CustomerInstrumentPortfolio({
       <h2 id="finance-portfolio-title">{PORTFOLIO_TITLE}</h2>
       <p className={styles.notice}>{PORTFOLIO_NOTICE}</p>
       {body}
+      {/* User decision 2026-09-27: the debt closes at collection; the risk is tracked separately (company view). */}
+      <CustomerInstrumentRiskBlock party={null} />
       {selectedId === null ? null : (
         <CustomerInstrumentDetailPanel key={selectedId} instrumentId={selectedId} onClose={() => onSelect(null)} />
       )}

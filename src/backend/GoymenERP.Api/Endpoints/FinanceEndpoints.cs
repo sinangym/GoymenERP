@@ -263,6 +263,44 @@ public static class FinanceEndpoints
             .AllowsCodeLessErpBadRequestBody()
             .ProducesErpServiceUnavailable();
 
+        // DEC-FIN-016 risk tracking (user decision 2026-09-27): read-only facts per customer account and currency as of
+        // an exact ISO date; one customer account needs both ids. No money effect, no limit (OPEN-010).
+        endpoints.MapGet(CustomerInstrumentsPath + "/risk", async (
+                [FromQuery] DateOnly asOf,
+                [FromQuery] Guid? partyId,
+                [FromQuery] Guid? companyAccountId,
+                HttpContext httpContext,
+                ICustomerInstrumentService service,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                var rawAsOf = httpContext.Request.Query["asOf"];
+                if (rawAsOf.Count != 1 || !FinanceIsoDate.TryParse(rawAsOf[0], out var isoAsOf) || isoAsOf != asOf)
+                {
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                }
+
+                var result = await service.RiskAuthorizedAsync(Context(companyContext, currentUser, correlation),
+                    new CustomerInstrumentRiskRequest(asOf, partyId, companyAccountId), cancellationToken);
+                // The view has no "not found": the service answers NotFound only for a half-named customer scope.
+                return result.Outcome == ReadOutcome.NotFound
+                    ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                    : Read(result);
+            })
+            .WithName("GetFinanceCustomerInstrumentRiskV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .Produces<CustomerInstrumentRiskView>()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpServiceUnavailable();
+
         endpoints.MapGet(CustomerInstrumentsPath + "/{instrumentId:guid}", async (
                 Guid instrumentId,
                 HttpContext httpContext,

@@ -235,6 +235,9 @@ contract `GoymenERP.Modules.Finance.Contracts` (#258, #261). The contract's own 
 > DEC-FIN-016 (KILITLI, K1): "Çek ve senet durumları portföy, banka, teminat, ciro, tahsil, karşılıksız, iade/protesto ve
 > ters akışı kapsar." DEC-FIN-006: a cheque or note is a financial source on the same distribution engine (F-03).
 
+- **Customer credit timing = COLLECTION (user decision 2026-09-27).** The customer's debt closes only when the
+  instrument is collected; receiving it closes nothing. The instrument's payment / risk status is tracked SEPARATELY
+  (the risk view below), so the exposure a held cheque stands for is visible without being a money event.
 - **Shape.** Its own aggregate, `finance.CustomerInstruments` (kind `Cheque` | `PromissoryNote`, party + company
   account, serial, drawer, bank / branch — the bank is required for a cheque —, due date, receipt date, face value as
   exact text within the Settings profile's scale, currency, status) and the append-only
@@ -274,9 +277,19 @@ contract `GoymenERP.Modules.Finance.Contracts` (#258, #261). The contract's own 
   receives into the portfolio. The F-02 list shows the portfolio (hidden for an actor without its read grant) and opens
   one instrument (`?cekSenet=<id>`) with its facts, history and the server-offered next steps; a collected instrument
   links to its receipt source. No new route or shell capability.
+- **Risk view (user decision 2026-09-27, read-only).** `GET /api/v1/finance/customer-instruments/risk?asOf=YYYY-MM-DD`
+  (optionally `&partyId=&companyAccountId=`, both or neither, else 400; `asOf` exact ISO, else 400). Per customer account
+  and currency — and their total per currency (the company total, or the one customer's) — the count and exact face
+  sum by risk state as of `asOf`: in portfolio not yet due (due on or after `asOf`) / overdue (due before), at the bank
+  for collection, dishonoured (karşılıksız / protestolu), returned, collected, plus the **open exposure** = received and
+  neither collected nor returned (portfolio + bank + dishonoured). Currencies are never added. Same read grant as the
+  portfolio (`finance.customer-instrument.read`, no new name); every amount only with `.amount.read` (counts stay).
+  Facts only: no limit, threshold or warning (OPEN-010 stays open); no money effect. Shown on the F-02 list under the
+  portfolio (company view with per-customer lines) and on the new-receipt page for the entered customer account
+  ("Çek/senet riski"). The query is a company-filtered projection; the bucketing is `CustomerInstrumentRiskPolicy`.
 - **Not here, with the blocker that holds it:**
-  - "ciro" (endorsement to a supplier): WHEN the customer is credited for an instrument that is never collected, and
-    the supplier-side payment effect, are not decided (NEEDS-BUSINESS; this release credits at collection);
+  - "ciro" (endorsement to a supplier): the customer's credit is decided to come at collection (2026-09-27), so an
+    endorsed, never-collected instrument's credit moment and the supplier-side payment effect still need a decision;
   - "teminat" (to a bank as collateral): the risk/limit effect needs OPEN-010 (haircut / risk policy) and a credit
     facility master;
   - the reverse flow AFTER collection (a collected cheque coming back): FIN-T06 reverses only an original manual
@@ -317,6 +330,8 @@ contract `GoymenERP.Modules.Finance.Contracts` (#258, #261). The contract's own 
   checks, wire shape, payload hash, permission names), `CustomerInstrumentServiceTests.cs` (in memory: receive, reopen,
   deposit, collect once, replay / stale / other actor, F-03 closes the open item, FIN-T06 refuses the collection
   source, company fence, Web audit, parsed-JSON redaction) and `CustomerInstrumentPersistenceModelTests.cs` (model and
-  write guard); SQL: `FinanceCustomerInstrumentSqlServerRelationalAcceptanceTests` (journey, race, redaction, 51051) and
+  write guard), `CustomerInstrumentRiskPolicyTests.cs` (risk states, exact sums, exposure, redaction) and the service's
+  risk case; SQL: `FinanceCustomerInstrumentSqlServerRelationalAcceptanceTests` (journey, race, redaction, 51051, the
+  risk view) and
   HTTP on SQL: `FinanceCustomerInstrumentApiSqlServerRelationalAcceptanceTests`; browser: fin01 `FIN01-06`.
 - None of this is browser evidence (except fin01).

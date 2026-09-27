@@ -30,6 +30,7 @@ import {
 } from './financeText'
 import { ManualReceiptDraftForm } from './ManualReceiptDraftForm'
 import { CustomerInstrumentPortfolio, CustomerInstrumentReceiveForm } from './CustomerInstruments'
+import { CustomerInstrumentRiskBlock } from './CustomerInstrumentRisk'
 import styles from './Finance.module.css'
 
 /** DEC-FIN-016: how the customer pays on the new-receipt page — a bank / POS receipt draft, or a cheque / note. */
@@ -84,6 +85,8 @@ export function ReceiptDraftPage() {
           {instrument === 'transfer'
             ? <ManualReceiptDraftForm party={party} onSaved={setSaved} />
             : <CustomerInstrumentReceiveForm party={party} />}
+          {/* The customer's own cheque / note risk, beside the receipt entered from its account (facts only). */}
+          <CustomerInstrumentRiskBlock party={party} />
         </>
       )}
       {saved === null ? null : (

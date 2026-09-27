@@ -10,7 +10,7 @@
 
 import { isBoundUuid, isInstant, isOpaqueVersion, type AmountView, type Decoded, type MoneyText, type ValidationIssue } from './contract'
 import { isDateOnly } from './dateOnly'
-import { isPositiveDecimalText } from './decimalText'
+import { isNonNegativeDecimalText, isPositiveDecimalText } from './decimalText'
 
 export type CustomerInstrumentKind = 'Cheque' | 'PromissoryNote'
 export type CustomerInstrumentStatus =
@@ -310,5 +310,117 @@ export function decodeCustomerInstrumentCommandResult(
     outcome: value.outcome as Exclude<CustomerInstrumentCommandResult['outcome'], 'Succeeded'>,
     resource: null,
     ...common,
+  })
+}
+
+// ---------------------------------------------------------------------------------
+// Risk view (user decision 2026-09-27): the debt closes at collection; the risk is tracked separately, facts only.
+// ---------------------------------------------------------------------------------
+
+export interface CustomerInstrumentRiskBucket {
+  readonly count: number
+  readonly amount: AmountView
+}
+
+export const RISK_BUCKETS = [
+  'inPortfolioNotDue', 'inPortfolioOverdue', 'atBankForCollection', 'dishonoured', 'returnedToCustomer', 'collected',
+  'openExposure',
+] as const
+export type CustomerInstrumentRiskBucketName = (typeof RISK_BUCKETS)[number]
+export type CustomerInstrumentRiskFigures = Readonly<Record<CustomerInstrumentRiskBucketName, CustomerInstrumentRiskBucket>>
+
+export interface CustomerInstrumentRiskLine {
+  readonly partyId: string
+  readonly companyAccountId: string
+  readonly currencyId: string
+  readonly figures: CustomerInstrumentRiskFigures
+}
+
+export interface CustomerInstrumentRiskTotal {
+  readonly currencyId: string
+  readonly figures: CustomerInstrumentRiskFigures
+}
+
+export interface CustomerInstrumentRiskView {
+  readonly companyId: string
+  readonly asOf: string
+  readonly partyId: string | null
+  readonly companyAccountId: string | null
+  readonly customers: readonly CustomerInstrumentRiskLine[]
+  readonly totals: readonly CustomerInstrumentRiskTotal[]
+}
+
+export interface CustomerInstrumentRiskRequest {
+  readonly asOf: string
+  readonly partyId: string | null
+  readonly companyAccountId: string | null
+}
+
+function decodeRiskAmount(value: unknown, currencyId: string): AmountView | null {
+  if (!isRecord(value) || !hasExactKeys(value, ['disclosure', 'money'])) return null
+  if (value.disclosure === 'Visible') {
+    const money = value.money
+    if (!isRecord(money) || !hasExactKeys(money, ['amount', 'currencyId'])) return null
+    // A bucket may be empty: zero is a real sum here, never a placeholder.
+    if (!isNonNegativeDecimalText(money.amount) || money.currencyId !== currencyId) return null
+    return { disclosure: 'Visible', money: { amount: money.amount, currencyId } }
+  }
+  if ((value.disclosure === 'Redacted' || value.disclosure === 'Unavailable') && value.money === null) {
+    return { disclosure: value.disclosure, money: null }
+  }
+  return null
+}
+
+function decodeFigures(value: unknown, currencyId: string): CustomerInstrumentRiskFigures | null {
+  if (!isRecord(value) || !hasExactKeys(value, RISK_BUCKETS)) return null
+  const figures: Partial<Record<CustomerInstrumentRiskBucketName, CustomerInstrumentRiskBucket>> = {}
+  for (const name of RISK_BUCKETS) {
+    const bucket = value[name]
+    if (!isRecord(bucket) || !hasExactKeys(bucket, ['count', 'amount'])) return null
+    if (typeof bucket.count !== 'number' || !Number.isSafeInteger(bucket.count) || bucket.count < 0) return null
+    const amount = decodeRiskAmount(bucket.amount, currencyId)
+    // An empty bucket's visible sum is zero and a non-empty one's is not: the two facts must agree.
+    if (amount === null || (amount.disclosure === 'Visible' && (bucket.count === 0) !== !/[1-9]/.test(amount.money.amount))) {
+      return null
+    }
+    figures[name] = { count: bucket.count, amount }
+  }
+  return figures as CustomerInstrumentRiskFigures
+}
+
+export function decodeCustomerInstrumentRisk(value: unknown, companyId: string): Decoded<CustomerInstrumentRiskView> {
+  const keys = ['companyId', 'asOf', 'partyId', 'companyAccountId', 'customers', 'totals']
+  if (!isRecord(value) || !hasExactKeys(value, keys)) return FAIL
+  if (value.companyId !== companyId || !isDate(value.asOf) || !isNullableUuid(value.partyId)
+    || !isNullableUuid(value.companyAccountId) || (value.partyId === null) !== (value.companyAccountId === null)
+    || !Array.isArray(value.customers) || !Array.isArray(value.totals)) {
+    return FAIL
+  }
+  const customers: CustomerInstrumentRiskLine[] = []
+  for (const raw of value.customers) {
+    if (!isRecord(raw) || !hasExactKeys(raw, ['partyId', 'companyAccountId', 'currencyId', 'figures'])) return FAIL
+    if (!isBoundUuid(raw.partyId) || !isBoundUuid(raw.companyAccountId) || !isBoundUuid(raw.currencyId)) return FAIL
+    // A customer-scoped view carries only that customer.
+    if (value.partyId !== null && (raw.partyId !== value.partyId || raw.companyAccountId !== value.companyAccountId)) {
+      return FAIL
+    }
+    const figures = decodeFigures(raw.figures, raw.currencyId)
+    if (figures === null) return FAIL
+    customers.push({ partyId: raw.partyId, companyAccountId: raw.companyAccountId, currencyId: raw.currencyId, figures })
+  }
+  const totals: CustomerInstrumentRiskTotal[] = []
+  for (const raw of value.totals) {
+    if (!isRecord(raw) || !hasExactKeys(raw, ['currencyId', 'figures']) || !isBoundUuid(raw.currencyId)) return FAIL
+    const figures = decodeFigures(raw.figures, raw.currencyId)
+    if (figures === null) return FAIL
+    totals.push({ currencyId: raw.currencyId, figures })
+  }
+  return ok({
+    companyId,
+    asOf: value.asOf,
+    partyId: value.partyId,
+    companyAccountId: value.companyAccountId,
+    customers,
+    totals,
   })
 }

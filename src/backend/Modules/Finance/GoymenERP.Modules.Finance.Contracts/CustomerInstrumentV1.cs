@@ -168,6 +168,59 @@ public sealed record CustomerInstrumentCommandResult(
     string OriginalCorrelationId,
     IReadOnlyList<ValidationIssue> Issues);
 
+// DEC-FIN-016 risk tracking (user decision 2026-09-27): the customer's debt closes AT COLLECTION, and the instrument's
+// payment / risk status is tracked SEPARATELY as facts: per customer (and a total), the count and face amount by risk
+// state, and the open exposure = everything received and neither collected nor returned (in portfolio, at the bank,
+// dishonoured). Read-only, no money effect, no limit or warning threshold (OPEN-010 stays open).
+
+/// <summary>A received instrument's risk state as of a date: the status, with the portfolio split by its due date.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<CustomerInstrumentRiskState>))]
+public enum CustomerInstrumentRiskState
+{
+    /// <summary>In the portfolio and due on or after the as-of date.</summary>
+    InPortfolioNotDue = 1,
+
+    /// <summary>In the portfolio and its due date is before the as-of date.</summary>
+    InPortfolioOverdue = 2,
+    AtBankForCollection = 3,
+
+    /// <summary>Karşılıksız (cheque) or protestolu (note).</summary>
+    Dishonoured = 4,
+    ReturnedToCustomer = 5,
+    Collected = 6,
+}
+
+/// <summary>The risk view's scope: a date for the due split, and optionally one customer account (both ids or neither).</summary>
+public sealed record CustomerInstrumentRiskRequest(DateOnly AsOf, Guid? PartyId, Guid? CompanyAccountId);
+
+/// <summary>A count and the exact sum of face values, in the line's currency; the amount follows the amount grant.</summary>
+public sealed record CustomerInstrumentRiskBucket(int Count, AmountView Amount);
+
+/// <summary>Every risk state, plus the open exposure (not due + overdue + at bank + dishonoured).</summary>
+public sealed record CustomerInstrumentRiskFigures(
+    CustomerInstrumentRiskBucket InPortfolioNotDue,
+    CustomerInstrumentRiskBucket InPortfolioOverdue,
+    CustomerInstrumentRiskBucket AtBankForCollection,
+    CustomerInstrumentRiskBucket Dishonoured,
+    CustomerInstrumentRiskBucket ReturnedToCustomer,
+    CustomerInstrumentRiskBucket Collected,
+    CustomerInstrumentRiskBucket OpenExposure);
+
+/// <summary>One customer account in one currency (amounts of different currencies are never added).</summary>
+public sealed record CustomerInstrumentRiskLine(Guid PartyId, Guid CompanyAccountId, Guid CurrencyId,
+    CustomerInstrumentRiskFigures Figures);
+
+/// <summary>The total of the returned lines in one currency: the company total, or the one customer's.</summary>
+public sealed record CustomerInstrumentRiskTotal(Guid CurrencyId, CustomerInstrumentRiskFigures Figures);
+
+public sealed record CustomerInstrumentRiskView(
+    Guid CompanyId,
+    DateOnly AsOf,
+    Guid? PartyId,
+    Guid? CompanyAccountId,
+    IReadOnlyList<CustomerInstrumentRiskLine> Customers,
+    IReadOnlyList<CustomerInstrumentRiskTotal> Totals);
+
 /// <summary>
 /// The customer cheque / note portfolio (DEC-FIN-016 first release). Every read and command measures its own Finance
 /// permission afresh, replay included; a command answers the #258-style outcomes (ADR-011 idempotency, stale version).
@@ -188,6 +241,35 @@ public interface ICustomerInstrumentService
 
     Task<ReadResult<CustomerInstrumentDetail>> DetailAuthorizedAsync(FinanceContext context, Guid instrumentId,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The risk view (read-only, <c>ReadCustomerInstruments</c>; amounts only with <c>ReadCustomerInstrumentAmount</c>).
+    /// A request naming only one of the party / company account ids is NotFound (the endpoint's 400).
+    /// </summary>
+    Task<ReadResult<CustomerInstrumentRiskView>> RiskAuthorizedAsync(FinanceContext context,
+        CustomerInstrumentRiskRequest request, CancellationToken cancellationToken);
+}
+
+/// <summary>The risk state of one received instrument as of a date (pure).</summary>
+public static class CustomerInstrumentRisk
+{
+    public static CustomerInstrumentRiskState StateOf(CustomerInstrumentStatus status, DateOnly dueOn, DateOnly asOf) =>
+        status switch
+        {
+            CustomerInstrumentStatus.InPortfolio => dueOn < asOf
+                ? CustomerInstrumentRiskState.InPortfolioOverdue
+                : CustomerInstrumentRiskState.InPortfolioNotDue,
+            CustomerInstrumentStatus.AtBankForCollection => CustomerInstrumentRiskState.AtBankForCollection,
+            CustomerInstrumentStatus.Bounced or CustomerInstrumentStatus.Protested => CustomerInstrumentRiskState.Dishonoured,
+            CustomerInstrumentStatus.ReturnedToCustomer => CustomerInstrumentRiskState.ReturnedToCustomer,
+            CustomerInstrumentStatus.Collected => CustomerInstrumentRiskState.Collected,
+            _ => throw new ArgumentOutOfRangeException(nameof(status), status, "Unknown customer instrument status."),
+        };
+
+    /// <summary>Received and neither collected nor returned: the customer's debt it stands for is still open.</summary>
+    public static bool IsOpenExposure(CustomerInstrumentRiskState state) =>
+        state is CustomerInstrumentRiskState.InPortfolioNotDue or CustomerInstrumentRiskState.InPortfolioOverdue
+            or CustomerInstrumentRiskState.AtBankForCollection or CustomerInstrumentRiskState.Dishonoured;
 }
 
 /// <summary>DEC-FIN-016's first-release state machine and the receive checks. Pure; no owner, clock or database.</summary>

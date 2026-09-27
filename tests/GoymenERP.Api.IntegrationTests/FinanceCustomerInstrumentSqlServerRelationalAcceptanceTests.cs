@@ -214,6 +214,85 @@ public sealed class FinanceCustomerInstrumentSqlServerRelationalAcceptanceTests
         Assert.Equal("1000.00", await run.ScalarAsync<string>("SELECT AmountText FROM finance.MoneyEvents"));
     }
 
+    /// <summary>
+    /// DEC-FIN-016 risk tracking (user decision 2026-09-27) on a real SQL Server: the company-filtered projection is
+    /// bucketed by state and due date per customer account and currency, the open exposure excludes collected and
+    /// returned instruments, company B reads none of it, and without the amount grant every amount is withheld.
+    /// </summary>
+    [SqlServerFact]
+    public async Task The_risk_view_buckets_a_company_s_instruments_by_state_and_due_date_and_redacts_every_amount()
+    {
+        await using var run = await Run.StartAsync();
+        var owners = Owners.For(CompanyA);
+        var other = owners with { Party = Guid.NewGuid(), Account = Guid.NewGuid() };
+        var notDue = await run.ReceiveAsync(owners, Receive(owners) with { SerialNumber = "SENTETIK-RISK-1" });
+        await run.ReceiveAsync(owners, Receive(owners) with
+        {
+            SerialNumber = "SENTETIK-RISK-2", DueOn = new DateOnly(2026, 9, 25), Money = new MoneyText("250.50", Currency),
+        });
+        var bounced = await run.ReceiveAsync(owners, Receive(owners) with
+        {
+            SerialNumber = "SENTETIK-RISK-3", Money = new MoneyText("300.00", Currency),
+        });
+        await run.ReceiveAsync(other, Receive(other) with { SerialNumber = "SENTETIK-RISK-4" });
+        await using (var a = run.Instruments(CompanyA, owners))
+        {
+            Assert.Equal(CommandOutcome.Succeeded, (await a.Service.ChangeStatusAsync(a.Context, Key("risk-bounce"),
+                new CustomerInstrumentStatusChangeRequest(bounced.Id, "1", CustomerInstrumentTransition.Dishonour,
+                    new DateOnly(2026, 9, 26), null, null), CancellationToken.None)).Outcome);
+            Assert.Equal(CommandOutcome.Succeeded, (await a.Service.CollectAsync(a.Context, Key("risk-collect"),
+                new CustomerInstrumentCollectRequest(notDue.Id, "1", owners.Bank, new DateOnly(2026, 9, 27), null),
+                CancellationToken.None)).Outcome);
+        }
+
+        var asOf = new DateOnly(2026, 10, 1);
+        CustomerInstrumentRiskView company;
+        CustomerInstrumentRiskView customer;
+        await using (var reader = run.Instruments(CompanyA, owners))
+        {
+            company = (await reader.Service.RiskAuthorizedAsync(reader.Context,
+                new CustomerInstrumentRiskRequest(asOf, null, null), CancellationToken.None)).Resource!;
+            customer = (await reader.Service.RiskAuthorizedAsync(reader.Context,
+                new CustomerInstrumentRiskRequest(asOf, owners.Party, owners.Account), CancellationToken.None)).Resource!;
+        }
+
+        Assert.Equal(2, company.Customers.Count);
+        var mine = Assert.Single(customer.Customers).Figures;
+        Assert.Equal((1, "250.50"), (mine.InPortfolioOverdue.Count, mine.InPortfolioOverdue.Amount.Money!.Amount));
+        Assert.Equal((0, "0"), (mine.InPortfolioNotDue.Count, mine.InPortfolioNotDue.Amount.Money!.Amount));
+        Assert.Equal((1, "300.00"), (mine.Dishonoured.Count, mine.Dishonoured.Amount.Money!.Amount));
+        Assert.Equal((1, "1000.00"), (mine.Collected.Count, mine.Collected.Amount.Money!.Amount));
+        Assert.Equal((2, "550.50"), (mine.OpenExposure.Count, mine.OpenExposure.Amount.Money!.Amount));
+        var total = Assert.Single(company.Totals).Figures;
+        Assert.Equal((3, "1550.50"), (total.OpenExposure.Count, total.OpenExposure.Amount.Money!.Amount));
+
+        await using (var b = run.Instruments(CompanyB, owners))
+        {
+            var foreign = (await b.Service.RiskAuthorizedAsync(b.Context, new CustomerInstrumentRiskRequest(asOf, null, null),
+                CancellationToken.None)).Resource!;
+            Assert.Empty(foreign.Customers);
+            Assert.Empty(foreign.Totals);
+        }
+
+        await using (var blind = run.Instruments(CompanyA, owners, permissions: new DenyAmount()))
+        {
+            var redacted = await blind.Service.RiskAuthorizedAsync(blind.Context, new CustomerInstrumentRiskRequest(asOf, null, null),
+                CancellationToken.None);
+            using var document = JsonDocument.Parse(Serialize(redacted.Resource!));
+            var views = AmountViews(document.RootElement).ToList();
+            Assert.Equal(3 * 7, views.Count);
+            Assert.All(views, view =>
+            {
+                Assert.Equal("Redacted", view.GetProperty("disclosure").GetString());
+                Assert.Equal(JsonValueKind.Null, view.GetProperty("money").ValueKind);
+            });
+            string[] stored = ["1000.00", "250.50", "300.00", "550.50", "1550.50"];
+            Assert.DoesNotContain(ScalarTokens(document.RootElement), token => stored.Contains(token, StringComparer.Ordinal));
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.MoneyEvents"));
+    }
+
     /// <summary>DEC-FIN-016: a rollback never drops a customer's cheque, its history or its collection (Finance's 51051).</summary>
     [SqlServerFact]
     public async Task The_customer_instrument_migration_rolls_back_only_while_no_instrument_is_stored()
