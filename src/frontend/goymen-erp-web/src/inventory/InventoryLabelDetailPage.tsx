@@ -7,9 +7,14 @@ import { useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
 import { StateBlock } from '../shell/StateBlock'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
-import { INVENTORY_LABEL_TRANSFORMATION_CAPABILITY } from './capabilities'
+import {
+  INVENTORY_LABEL_TRANSFORMATION_CAPABILITY,
+  INVENTORY_STOCK_COUNT_APPROVE_CAPABILITY,
+  INVENTORY_STOCK_COUNT_RECORD_CAPABILITY,
+} from './capabilities'
 import { fetchInventoryLabelDetail } from './labelDetailApi'
 import { LabelTransformationPanel } from './LabelTransformationPanel'
+import { StockCountPanel } from './StockCountPanel'
 import type { InventoryLabelDetailWithMovementTimeline } from './labelDetailContract'
 import { inventoryLabelDetailPath } from './labelDetailRoute'
 import styles from './inventory.module.css'
@@ -20,6 +25,7 @@ const MOVEMENT_KIND_TEXT = {
   Block: 'Blokaj',
   Release: 'Serbest bırakma',
   Return: 'İade',
+  CountAdjustment: 'Sayım farkı',
 } as const
 
 const DIRECTION_TEXT = { In: 'Giriş', Out: 'Çıkış' } as const
@@ -45,6 +51,8 @@ function InventoryLabelDetailView({ namespace, labelId }: {
   const canReadProduct = hasCapability(shell, CAPABILITY.productItemsDetail)
   const canReadLabel = hasCapability(shell, CAPABILITY.inventoryStockPositionsList)
   const canTransform = hasCapability(shell, INVENTORY_LABEL_TRANSFORMATION_CAPABILITY)
+  const canRecordCount = hasCapability(shell, INVENTORY_STOCK_COUNT_RECORD_CAPABILITY)
+  const canApproveCount = hasCapability(shell, INVENTORY_STOCK_COUNT_APPROVE_CAPABILITY)
   const companyId = shell.activeContext?.scopeMode === 'single' ? shell.activeContext.companyId : null
   const actorId = shell.activeContext?.userId ?? null
   const query = useQuery({
@@ -166,6 +174,17 @@ function InventoryLabelDetailView({ namespace, labelId }: {
         sessionEpoch={shell.sessionEpoch}
         canOpenLabels={canReadLabel}
         onRecorded={() => void query.refetch()}
+      />
+      : null}
+
+    {canRecordCount || canApproveCount
+      ? <StockCountPanel
+        key={`${identity.labelId}:stock-count`}
+        label={{ labelId: identity.labelId, labelVersion, positions: balances.positions }}
+        companyId={companyId}
+        canRecord={canRecordCount}
+        canApprove={canApproveCount}
+        onChanged={() => void query.refetch()}
       />
       : null}
 

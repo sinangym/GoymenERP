@@ -66,6 +66,10 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
 
     internal DbSet<InventoryCommandRow> Commands => Set<InventoryCommandRow>();
 
+    internal DbSet<StockCountRow> StockCounts => Set<StockCountRow>();
+
+    internal DbSet<StockCountDecisionRow> StockCountDecisions => Set<StockCountDecisionRow>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -84,6 +88,7 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         ConfigureOutboxMessages(modelBuilder);
         ConfigureOpeningCounts(modelBuilder);
         ConfigureCommands(modelBuilder);
+        ConfigureStockCounts(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -283,7 +288,7 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
                 "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [SourceId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND ([SourceLineId] IS NULL OR [SourceLineId] <> '00000000-0000-0000-0000-000000000000')");
-            table.HasCheckConstraint("CK_Movements_Kind", "[Kind] BETWEEN 1 AND 5");
+            table.HasCheckConstraint("CK_Movements_Kind", "[Kind] BETWEEN 1 AND 6");
             table.HasCheckConstraint("CK_Movements_SourceKind", "LEN([SourceKind]) > 0");
             table.HasCheckConstraint("CK_Movements_Cost",
                 "([CostStatus] IN (1, 2) AND [CostAmount] IS NULL AND [CostCurrencyId] IS NULL) OR "
@@ -549,6 +554,74 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         command.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
             .OnDelete(DeleteBehavior.Restrict);
         command.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    /// <summary>
+    /// ST-05 / AT-037 (DEC-STK-007): a count of one stocked label at its stored position, and at most one decision
+    /// on it. A count names its company's label and location; an approval names the adjustment movement it posted
+    /// (both by (company, id)), a rejection none. Both are append-only: history is never deleted.
+    /// </summary>
+    private void ConfigureStockCounts(ModelBuilder modelBuilder)
+    {
+        var count = modelBuilder.Entity<StockCountRow>();
+        count.ToTable("StockCounts", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_StockCounts_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [OwnerId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [CustodianId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [ProductId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_StockCounts_State",
+                "[OwnerKind] IN (1, 2) AND [CustodianKind] IN (1, 2) AND [Block] IN (1, 2) AND [LabelVersion] >= 1 "
+                + "AND [BookKg] > 0 AND [CountedKg] >= 0");
+            table.HasCheckConstraint("CK_StockCounts_Text",
+                "LEN(LTRIM(RTRIM([Reason]))) > 0 AND LEN([PayloadHash]) = 64 AND LEN([RecordedBy]) > 0 "
+                + "AND LEN([CorrelationId]) > 0");
+        });
+        count.HasKey(x => x.Id);
+        count.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        count.Property(x => x.Id).ValueGeneratedNever();
+        count.Property(x => x.BookKg).HasPrecision(18, 3);
+        count.Property(x => x.CountedKg).HasPrecision(18, 3);
+        count.Property(x => x.Reason).HasMaxLength(1000).IsRequired();
+        count.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        count.Property(x => x.RecordedBy).HasMaxLength(128).IsRequired();
+        count.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        count.HasIndex(x => new { x.CompanyId, x.LabelId, x.RecordedAtUtc, x.Id });
+        count.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        LabelOf(count);
+        LocationOf(count);
+        count.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var decision = modelBuilder.Entity<StockCountDecisionRow>();
+        decision.ToTable("StockCountDecisions", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_StockCountDecisions_Decision",
+                "([Decision] = 1 AND [MovementId] IS NOT NULL "
+                + "AND [MovementId] <> '00000000-0000-0000-0000-000000000000') "
+                + "OR ([Decision] = 2 AND [MovementId] IS NULL)");
+            table.HasCheckConstraint("CK_StockCountDecisions_Text",
+                "LEN(LTRIM(RTRIM([Reason]))) > 0 AND LEN([PayloadHash]) = 64 AND LEN([DecidedBy]) > 0 "
+                + "AND LEN([CorrelationId]) > 0");
+        });
+        decision.HasKey(x => new { x.CompanyId, x.CountId });
+        decision.Property(x => x.Reason).HasMaxLength(1000).IsRequired();
+        decision.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        decision.Property(x => x.DecidedBy).HasMaxLength(128).IsRequired();
+        decision.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        decision.HasIndex(x => new { x.CompanyId, x.MovementId })
+            .IsUnique()
+            .HasFilter("[MovementId] IS NOT NULL");
+        decision.HasOne<StockCountRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.CountId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        decision.HasOne<MovementRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.MovementId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        decision.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
     /// <summary>A row of one label, bound by (company, label) so it can never name another company's label.</summary>

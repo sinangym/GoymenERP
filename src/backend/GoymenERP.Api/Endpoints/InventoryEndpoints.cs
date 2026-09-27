@@ -84,6 +84,7 @@ public static class InventoryEndpoints
         MapPhysicalAllocationEndpoints(group);
         MapOpeningCountEndpoints(group);
         MapLabelTransformationEndpoint(endpoints);
+        endpoints.MapInventoryStockCountEndpoints();
         return endpoints;
     }
 
@@ -210,6 +211,227 @@ public static class InventoryEndpoints
                 ["code"] = code,
                 ["correlationId"] = correlation.IsResolved ? correlation.CorrelationId : null,
             });
+
+    /// <summary>
+    /// ST-05 / AT-037 (DEC-STK-007): record a count of one stocked label, approve or reject its difference, and read
+    /// a label's counts. Mapped by <see cref="MapInventoryEndpoints"/>; the route policies name the registered
+    /// <see cref="ErpPermissions.InventoryStockCountRecord"/> and <see cref="ErpPermissions.InventoryStockCountApprove"/>
+    /// and the host wires <c>AddInventoryStockCounts()</c>. The two commands follow the R19
+    /// shape: one canonical <c>Idempotency-Key</c>; 201 with the count view, 200 with the same view plus
+    /// <c>Idempotency-Replayed</c> and <c>Idempotency-Original-Correlation-Id</c> for the same key and content;
+    /// 401/403 are platform problems; 400/404/409/503 carry the owner's closed code
+    /// (<see cref="InventoryStockCountHttpCodesV1"/>) and the correlation id; any other owner answer is a code-less
+    /// 503. The read reuses the ST-02 label-detail fence (labels.read + balances.read); a foreign or unknown label
+    /// is the same 404.
+    /// </summary>
+    public static IEndpointRouteBuilder MapInventoryStockCountEndpoints(this IEndpointRouteBuilder endpoints)
+    {
+        ArgumentNullException.ThrowIfNull(endpoints);
+        endpoints.MapPost(InventoryStockCountApiV1.Path, async (
+                HttpContext httpContext,
+                IInventoryStockCountCommandV1 command,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response);
+                var read = await ReadStockCountBodyAsync<RecordInventoryStockCountV1>(httpContext, correlation, cancellationToken);
+                if (read.Problem is not null)
+                {
+                    return read.Problem;
+                }
+
+                try
+                {
+                    var result = await command.RecordAsync(read.Request!,
+                        StockCountTransport(currentUser, correlation, read.Key, InventoryPermissionManifestV1.StockCountRecord),
+                        cancellationToken);
+                    return StockCountResult(httpContext, result);
+                }
+                catch (InventoryStockCountException exception)
+                {
+                    return StockCountProblem(exception, correlation, InventoryStockCountHttpCodesV1.RecordStatus404Codes,
+                        InventoryStockCountHttpCodesV1.RecordStatus409Codes);
+                }
+            })
+            .WithName(InventoryStockCountApiV1.RecordOperationId)
+            .WithTags("Inventory")
+            .WithMetadata(new PrivateNoStoreOnAuthorizationFailureMetadata())
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.InventoryStockCountRecord)
+            .WithIdempotencyContract(StatusCodes.Status200OK)
+            .Accepts<RecordInventoryStockCountV1>("application/json")
+            .Produces<InventoryStockCountViewV1>(StatusCodes.Status201Created)
+            .Produces<InventoryStockCountViewV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest([.. InventoryStockCountHttpCodesV1.Status400Codes.Order(StringComparer.Ordinal)])
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpNotFound([.. InventoryStockCountHttpCodesV1.RecordStatus404Codes.Order(StringComparer.Ordinal)])
+            .ProducesErpConflict([.. InventoryStockCountHttpCodesV1.RecordStatus409Codes.Order(StringComparer.Ordinal)])
+            .ProducesErpServiceUnavailable([.. InventoryStockCountHttpCodesV1.Status503Codes.Order(StringComparer.Ordinal)])
+            .ProducesErpAuthenticatedProblems();
+
+        endpoints.MapPost(StockCountDecisionRoute, async (
+                Guid countId,
+                HttpContext httpContext,
+                IInventoryStockCountCommandV1 command,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response);
+                var read = await ReadStockCountBodyAsync<DecideInventoryStockCountV1>(httpContext, correlation, cancellationToken);
+                if (read.Problem is not null)
+                {
+                    return read.Problem;
+                }
+
+                try
+                {
+                    var result = await command.DecideAsync(countId, read.Request!,
+                        StockCountTransport(currentUser, correlation, read.Key, InventoryPermissionManifestV1.StockCountApprove),
+                        cancellationToken);
+                    return StockCountResult(httpContext, result);
+                }
+                catch (InventoryStockCountException exception)
+                {
+                    return StockCountProblem(exception, correlation, InventoryStockCountHttpCodesV1.DecideStatus404Codes,
+                        InventoryStockCountHttpCodesV1.DecideStatus409Codes);
+                }
+            })
+            .WithName(InventoryStockCountApiV1.DecideOperationId)
+            .WithTags("Inventory")
+            .WithMetadata(new PrivateNoStoreOnAuthorizationFailureMetadata())
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.InventoryStockCountApprove)
+            .WithIdempotencyContract(StatusCodes.Status200OK)
+            .Accepts<DecideInventoryStockCountV1>("application/json")
+            .Produces<InventoryStockCountViewV1>(StatusCodes.Status201Created)
+            .Produces<InventoryStockCountViewV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest([.. InventoryStockCountHttpCodesV1.Status400Codes.Order(StringComparer.Ordinal)])
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpNotFound([.. InventoryStockCountHttpCodesV1.DecideStatus404Codes.Order(StringComparer.Ordinal)])
+            .ProducesErpConflict([.. InventoryStockCountHttpCodesV1.DecideStatus409Codes.Order(StringComparer.Ordinal)])
+            .ProducesErpServiceUnavailable([.. InventoryStockCountHttpCodesV1.Status503Codes.Order(StringComparer.Ordinal)])
+            .ProducesErpAuthenticatedProblems();
+
+        endpoints.MapGet(StockCountLabelRoute, async (
+                Guid labelId,
+                HttpContext httpContext,
+                IInventoryStockCountQueryV1 counts,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response);
+                try
+                {
+                    return Results.Json(await counts.GetAsync(labelId, cancellationToken), StockCountJson);
+                }
+                catch (InventoryStockCountException exception)
+                {
+                    return exception.Status switch
+                    {
+                        StatusCodes.Status401Unauthorized or StatusCodes.Status403Forbidden =>
+                            Results.Problem(statusCode: exception.Status),
+                        StatusCodes.Status404NotFound => LabelDetailProblem(StatusCodes.Status404NotFound),
+                        _ => LabelDetailProblem(StatusCodes.Status503ServiceUnavailable, InventoryStockCountCodesV1.Unavailable),
+                    };
+                }
+            })
+            .WithName(InventoryStockCountApiV1.LabelCountsOperationId)
+            .WithTags("Inventory")
+            .WithMetadata(new PrivateNoStoreOnAuthorizationFailureMetadata())
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.InventoryLabelsRead, ErpPermissions.InventoryBalancesRead)
+            .Produces<InventoryLabelStockCountsV1>(StatusCodes.Status200OK)
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable(InventoryStockCountCodesV1.Unavailable)
+            .ProducesErpAuthenticatedProblems();
+        return endpoints;
+    }
+
+    private static async Task<(T? Request, string Key, IResult? Problem)> ReadStockCountBodyAsync<T>(
+        HttpContext httpContext,
+        ICorrelationContext correlation,
+        CancellationToken cancellationToken)
+        where T : class
+    {
+        if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key) || !correlation.IsResolved)
+        {
+            return (null, string.Empty, LabelTransformationProblem(StatusCodes.Status400BadRequest,
+                InventoryStockCountCodesV1.ValidationFailed, correlation));
+        }
+
+        if (!httpContext.Request.HasJsonContentType())
+        {
+            return (null, key, Results.StatusCode(StatusCodes.Status415UnsupportedMediaType));
+        }
+
+        try
+        {
+            var request = await JsonSerializer.DeserializeAsync<T>(httpContext.Request.Body, StockCountJson, cancellationToken);
+            return request is null
+                ? (null, key, LabelTransformationProblem(StatusCodes.Status400BadRequest,
+                    InventoryStockCountCodesV1.ValidationFailed, correlation))
+                : (request, key, null);
+        }
+        catch (JsonException)
+        {
+            return (null, key, LabelTransformationProblem(StatusCodes.Status400BadRequest,
+                InventoryStockCountCodesV1.ValidationFailed, correlation));
+        }
+    }
+
+    private static InventoryCommandMetadata StockCountTransport(
+        ICurrentUser currentUser,
+        ICorrelationContext correlation,
+        string idempotencyKey,
+        string permission) => new(
+        currentUser.UserId ?? string.Empty,
+        permission,
+        [],
+        correlation.CorrelationId,
+        correlation.CausationId,
+        idempotencyKey,
+        correlation.SourceChannel,
+        correlation.ClientIpAddress,
+        correlation.UserAgent);
+
+    private static IResult StockCountResult(HttpContext httpContext, InventoryStockCountResultV1 result)
+    {
+        if (result.IsReplay)
+        {
+            ApplyReplayHeaders(httpContext, result.OriginalCorrelationId);
+        }
+
+        return Results.Json(result.Count, StockCountJson,
+            statusCode: result.IsReplay ? StatusCodes.Status200OK : StatusCodes.Status201Created);
+    }
+
+    /// <summary>The owner's refusal as a problem: 401/403 code-less, a closed-set code with its correlation otherwise.</summary>
+    private static IResult StockCountProblem(
+        InventoryStockCountException exception,
+        ICorrelationContext correlation,
+        IReadOnlySet<string> status404Codes,
+        IReadOnlySet<string> status409Codes)
+    {
+        var accepted = exception.Status switch
+        {
+            StatusCodes.Status400BadRequest => InventoryStockCountHttpCodesV1.Status400Codes.Contains(exception.Code),
+            StatusCodes.Status401Unauthorized => exception.Code == InventoryStockCountCodesV1.Unauthenticated,
+            StatusCodes.Status403Forbidden => exception.Code == InventoryStockCountCodesV1.Forbidden,
+            StatusCodes.Status404NotFound => status404Codes.Contains(exception.Code),
+            StatusCodes.Status409Conflict => status409Codes.Contains(exception.Code),
+            StatusCodes.Status503ServiceUnavailable => InventoryStockCountHttpCodesV1.Status503Codes.Contains(exception.Code),
+            _ => false,
+        };
+        if (!accepted)
+        {
+            return Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+
+        return exception.Status is StatusCodes.Status401Unauthorized or StatusCodes.Status403Forbidden
+            ? Results.Problem(statusCode: exception.Status)
+            : LabelTransformationProblem(exception.Status, exception.Code, correlation);
+    }
 
     private static void MapLabelDetailEndpoint(IEndpointRouteBuilder endpoints)
     {
@@ -949,6 +1171,11 @@ public static class InventoryEndpoints
     private static readonly JsonSerializerOptions OpeningJson = new(JsonSerializerDefaults.Web);
     private static readonly JsonSerializerOptions AllocationJson = new(JsonSerializerDefaults.Web);
     private static readonly JsonSerializerOptions LabelTransformationJson = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions StockCountJson = new(JsonSerializerDefaults.Web);
+
+    // The owner's templates with the route constraint the host always applies to identities.
+    private const string StockCountDecisionRoute = "/api/v1/inventory/stock-counts/{countId:guid}/decision";
+    private const string StockCountLabelRoute = "/api/v1/inventory/labels/{labelId:guid}/stock-counts";
 
     private static IResult NotFound() =>
         Results.Problem(
