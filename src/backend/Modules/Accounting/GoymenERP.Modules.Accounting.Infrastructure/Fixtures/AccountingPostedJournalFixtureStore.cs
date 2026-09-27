@@ -1,4 +1,5 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.Modules.Accounting.Application;
 using GoymenERP.Modules.Accounting.Domain.Journals;
 using GoymenERP.Modules.Accounting.Domain.Posting;
@@ -113,7 +114,8 @@ public static class AccountingPostedJournalFixture
         "sentetik-acc01-posted-journal",
         null,
         MessageId,
-        "Fixture");
+        // A closed Audit source-channel value: the gated, system-run fixture is System ("Fixture" is not one).
+        SourceChannels.System);
 }
 
 /// <summary>

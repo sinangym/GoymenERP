@@ -22,6 +22,25 @@ public sealed class AccountingPostedJournalFixtureStoreTests
 {
     private static readonly Guid OtherCompany = Guid.Parse("10000000-0000-0000-0000-000000000002");
 
+    // The fixture's command metadata is written to Audit, whose SourceChannel is a closed set; "Fixture" is not in it
+    // (acc01 run 36313248822 and the SQL suite refused it). The fakes above never reach Audit, so pin it here.
+    [Fact]
+    public void The_fixture_command_names_a_closed_audit_source_channel()
+    {
+        string[] audited =
+        [
+            GoymenERP.BuildingBlocks.Observability.SourceChannels.Web,
+            GoymenERP.BuildingBlocks.Observability.SourceChannels.Mobile,
+            GoymenERP.BuildingBlocks.Observability.SourceChannels.Import,
+            GoymenERP.BuildingBlocks.Observability.SourceChannels.Integration,
+            GoymenERP.BuildingBlocks.Observability.SourceChannels.AiAssisted,
+            GoymenERP.BuildingBlocks.Observability.SourceChannels.System,
+        ];
+        Assert.Contains(AccountingPostedJournalFixture.Metadata().SourceChannel, audited);
+        Assert.Equal(GoymenERP.BuildingBlocks.Observability.SourceChannels.System,
+            AccountingPostedJournalFixture.Metadata().SourceChannel);
+    }
+
     [Fact]
     public async Task Ensures_the_open_period_first_then_posts_the_fixed_request_through_the_posting_store()
     {
