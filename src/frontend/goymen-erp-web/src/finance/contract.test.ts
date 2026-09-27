@@ -182,6 +182,23 @@ describe('DEC-FIN-014 customer POS collection detail', () => {
     ['another currency', { commissionBearer: 'Company', commission: { disclosure: 'Visible', money: { amount: '25.5', currencyId: EXAMPLE_ACCOUNT } }, bankNet: visible('974.5') }],
   ])('refuses %s', (_label, pos) => expect(decodeSourceDetail(withPos(pos), A).ok).toBe(false))
 
+  it('a Record result without the amount grant decodes with a redacted known unallocated amount', () => {
+    const redacted = { disclosure: 'Redacted', money: null }
+    const decoded = decodeCommandResult({
+      outcome: 'Succeeded',
+      isReplay: true,
+      originalCorrelationId: 'SENTETIK-first',
+      issues: [],
+      resource: withPos({ commissionBearer: 'Company', commission: redacted, bankNet: redacted }, {
+        source: { stage: 'Recorded', amount: redacted },
+        recordedAtUtc: '2026-09-13T08:00:00Z',
+        unallocated: { knowledge: 'Known', amount: redacted },
+      }),
+    }, A)
+    expect(decoded.ok && decoded.value.outcome === 'Succeeded' && decoded.value.resource.unallocated)
+      .toEqual({ knowledge: 'Known', amount: redacted })
+  })
+
   it('a redacted gross carries redacted POS amounts and no digits', () => {
     const redacted = { disclosure: 'Redacted', money: null }
     const decoded = decodeSourceDetail(withPos({ commissionBearer: 'Customer', commission: redacted, bankNet: redacted },

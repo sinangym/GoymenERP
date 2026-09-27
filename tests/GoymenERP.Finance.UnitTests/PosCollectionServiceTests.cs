@@ -156,6 +156,64 @@ public sealed class PosCollectionServiceTests
             (replay.Resource!.Pos!.Commission.Disclosure, replay.Resource.Pos.BankNet.Disclosure));
     }
 
+    /// <summary>
+    /// K3 5330956606 P2-1: a recorder who holds Record but not ReadAmount gets no amount back from the record, its
+    /// replay or a detail read — not the gross in <c>source.amount</c>, not in <c>unallocated.amount</c>, not the
+    /// commission or the net. The stored facts themselves are whole.
+    /// </summary>
+    [Fact]
+    public async Task A_recorder_without_the_amount_grant_gets_no_amount_from_record_replay_or_detail()
+    {
+        await using var run = new Run();
+        CommandResult saved;
+        await using (var clerk = run.Receipts("clerk", Company))
+        {
+            saved = await clerk.Service.DraftSaveAsync(clerk.Context, Key("pos-save"),
+                Save("1000.00", new PosCollectionInput("25.50", PosCommissionBearer.Company)), CancellationToken.None);
+        }
+
+        var record = new RecordRequest(saved.Resource!.Source.Id, saved.Resource.Source.Version);
+        var answers = new List<CommandResult>();
+        await using (var recorder = run.Receipts("recorder", Company, new DenyAmount()))
+        {
+            answers.Add(await recorder.Service.RecordAsync(recorder.Context, Key("pos-record"), record, CancellationToken.None));
+            answers.Add(await recorder.Service.RecordAsync(recorder.Context, Key("pos-record"), record, CancellationToken.None));
+            var detail = await recorder.Service.DetailAuthorizedAsync(recorder.Context,
+                new SourceDetailRequest(record.DraftId), CancellationToken.None);
+            Assert.Equal(ReadOutcome.Found, detail.Outcome);
+            answers.Add(new CommandResult(CommandOutcome.Succeeded, detail.Resource, false, "detail", []));
+        }
+
+        Assert.Equal((false, true), (answers[0].IsReplay, answers[1].IsReplay));
+        foreach (var answer in answers)
+        {
+            var resource = answer.Resource!;
+            Assert.Equal((CommandOutcome.Succeeded, SourceStage.Recorded), (answer.Outcome, resource.Source.Stage));
+            Assert.Equal(new AmountView(AmountDisclosure.Redacted, null), resource.Source.Amount);
+            Assert.Equal(new UnallocatedView(AllocationKnowledge.Known, new AmountView(AmountDisclosure.Redacted, null)),
+                resource.Unallocated);
+            Assert.Equal((AmountDisclosure.Redacted, AmountDisclosure.Redacted),
+                (resource.Pos!.Commission.Disclosure, resource.Pos.BankNet.Disclosure));
+            var json = System.Text.Json.JsonSerializer.Serialize(answer, FinanceJson.CreateOptions());
+            Assert.DoesNotContain("1000", json, StringComparison.Ordinal);
+            Assert.DoesNotContain("25.50", json, StringComparison.Ordinal);
+            Assert.DoesNotContain("974.50", json, StringComparison.Ordinal);
+        }
+
+        await using var db = run.Context(Company);
+        var moneyEvent = Assert.Single(await db.MoneyEvents.ToListAsync());
+        Assert.Equal(("1000.00", "974.50"), (moneyEvent.AmountText, moneyEvent.PosBankNetAmountText));
+    }
+
+    [Fact]
+    public void Apply_refuses_a_POS_preparation_without_a_computable_net_instead_of_storing_a_bank_transfer()
+    {
+        var row = new ReceiptDraftRow();
+        var preparation = Save("1000.00", new PosCollectionInput("1000.00", PosCommissionBearer.Company)).Preparation;
+        Assert.Throws<InvalidOperationException>(() => ReceiptDraftService.Apply(row, preparation, DateTimeOffset.UtcNow, "clerk"));
+        Assert.Null(row.PosCommissionBearer);
+    }
+
     [Fact]
     public async Task A_refused_commission_stores_nothing_and_an_edit_back_to_bank_transfer_clears_the_POS_facts()
     {

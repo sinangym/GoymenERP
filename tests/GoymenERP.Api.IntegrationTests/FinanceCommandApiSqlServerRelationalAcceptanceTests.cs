@@ -718,6 +718,48 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.manual-receipt.recorded.v1' "
             + "AND EntityId = @s AND SourceChannel = N'Web'", ("@s", sourceId.ToString("D"))));
+
+        // K3 5330956606 P2-1: a recorder with Record but without amount read gets no amount back — not the gross in
+        // source.amount or unallocated.amount, not the commission or net — from the record, its replay or the detail.
+        await run.GrantAsync(Approver, CompanyA, FinancePermissionNames.DraftRead, FinancePermissionNames.Record,
+            "finance.bank-account.read");
+        using var blindRecorder = run.Client(Approver, CompanyA);
+        Guid secondId;
+        string secondVersion;
+        using (var saved = await clerk.SendAsync(Post(FinanceEndpoints.DraftsPath, "SENTETIK-pos-save-2",
+                   Guid.NewGuid().ToString("N"), body)))
+        {
+            Assert.Equal(HttpStatusCode.OK, saved.StatusCode);
+            var source = (await Json(saved)).GetProperty("resource").GetProperty("source");
+            secondId = source.GetProperty("id").GetGuid();
+            secondVersion = source.GetProperty("version").GetString()!;
+        }
+
+        var blindRecord = new RecordRequest(secondId, secondVersion);
+        var blindAnswers = new List<string>();
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            using var recorded = await blindRecorder.SendAsync(Post($"{FinanceEndpoints.ManualReceiptsPath}/{secondId:D}/record",
+                "SENTETIK-pos-record-blind", Guid.NewGuid().ToString("N"), blindRecord));
+            Assert.Equal(HttpStatusCode.OK, recorded.StatusCode);
+            var resource = (await Json(recorded)).GetProperty("resource");
+            Assert.Equal("Redacted", resource.GetProperty("unallocated").GetProperty("amount").GetProperty("disclosure").GetString());
+            blindAnswers.Add(resource.GetRawText());
+        }
+
+        using (var detail = await blindRecorder.GetAsync($"{FinanceEndpoints.ManualReceiptsPath}/{secondId:D}"))
+        {
+            Assert.Equal(HttpStatusCode.OK, detail.StatusCode);
+            blindAnswers.Add((await Json(detail)).GetRawText());
+        }
+
+        Assert.All(blindAnswers, answer =>
+        {
+            Assert.DoesNotContain("1000", answer, StringComparison.Ordinal);
+            Assert.DoesNotContain("25.50", answer, StringComparison.Ordinal);
+            Assert.DoesNotContain("974.50", answer, StringComparison.Ordinal);
+        });
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.MoneyEvents WHERE SourceId = @s", ("@s", secondId)));
     }
 
     private static void AssertPos(JsonElement detail, string bearer, string commission, string bankNet)

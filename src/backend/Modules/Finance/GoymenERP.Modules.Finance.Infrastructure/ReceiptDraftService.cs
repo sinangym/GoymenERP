@@ -764,7 +764,7 @@ public sealed class ReceiptDraftService(
         && companyContext.IsResolved && companyContext.CompanyId != Guid.Empty
         && companyContext.CompanyId == context.CompanyId && currentUser.CanAccessCompany(context.CompanyId);
 
-    private static void Apply(ReceiptDraftRow row, ReceiptPreparation preparation, DateTimeOffset now, string actor)
+    internal static void Apply(ReceiptDraftRow row, ReceiptPreparation preparation, DateTimeOffset now, string actor)
     {
         row.PartyId = preparation.PartyId;
         row.CompanyAccountId = preparation.CompanyAccountId;
@@ -777,9 +777,15 @@ public sealed class ReceiptDraftService(
         row.ValueOn = preparation.ValueOn;
         row.BankReference = preparation.BankReference;
         row.Description = preparation.Description;
-        // DEC-FIN-014: the validator already refused a commission that is not below the gross, so the net exists.
-        if (preparation.Pos is { } pos && PosCollectionRules.TryBankNet(preparation.Money.Amount, pos.CommissionAmount, out var net))
+        // DEC-FIN-014: the validator already refused a commission that is not below the gross, so the net exists. If
+        // it does not, that is a broken invariant, never a reason to store the collection as a bank transfer.
+        if (preparation.Pos is { } pos)
         {
+            if (!PosCollectionRules.TryBankNet(preparation.Money.Amount, pos.CommissionAmount, out var net))
+            {
+                throw new InvalidOperationException("POS tahsilatının banka neti hesaplanamadı; doğrulanmamış hazırlık kaydedilmez.");
+            }
+
             row.PosCommissionAmountText = pos.CommissionAmount;
             row.PosBankNetAmountText = net;
             row.PosCommissionBearer = (int)pos.CommissionBearer;
@@ -864,6 +870,11 @@ public sealed class ReceiptDraftService(
             Resource = detail with
             {
                 Source = detail.Source with { Amount = hidden },
+                // A known unallocated amount is an amount too (for a POS collection, the gross); an unknown one
+                // already carries no digits and stays Unavailable.
+                Unallocated = detail.Unallocated.Knowledge == AllocationKnowledge.Known
+                    ? detail.Unallocated with { Amount = hidden }
+                    : detail.Unallocated,
                 Pos = detail.Pos is { } pos ? pos with { Commission = hidden, BankNet = hidden } : null,
             },
         };

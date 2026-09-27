@@ -404,6 +404,23 @@ describe('FinanceSourceDetail — DEC-FIN-014 customer POS collection', () => {
       .toEqual([AMOUNT_REDACTED, AMOUNT_REDACTED, AMOUNT_REDACTED])
   })
 
+  it('a recorded POS collection read without the amount grant shows no gross, unallocated, commission or net', async () => {
+    // K3 5330956606 P2-1: the server now redacts unallocated.amount too; the screen shows it like any redacted amount.
+    const redacted = { disclosure: 'Redacted', money: null }
+    const detail = sourceDetail(COMPANY_A, {
+      source: { stage: 'Recorded', version: '9007199254740994', amount: redacted },
+      recordedAtUtc: '2026-09-13T08:00:00Z',
+      unallocated: { knowledge: 'Known', amount: redacted },
+      pos: { commissionBearer: 'Company', commission: redacted, bankNet: redacted },
+    })
+    const { port } = recordingPort(detailSequence(found(detail)))
+    renderFinance(<FinanceSourceDetail sourceId={EXAMPLE_SOURCE} />, { port })
+    await screen.findByText(POS_DETAIL.gross)
+    expect([factValue(UNALLOCATED_LABEL), factValue(POS_DETAIL.gross), factValue(POS_DETAIL.commission), factValue(POS_DETAIL.bankNet)])
+      .toEqual([AMOUNT_REDACTED, AMOUNT_REDACTED, AMOUNT_REDACTED, AMOUNT_REDACTED])
+    expect(document.body.textContent).not.toMatch(/1\.000|974|25,5/)
+  })
+
   it('three amounts that do not add up are not shown as money', async () => {
     const detail = { ...POS_RECORDED, pos: { commissionBearer: 'Company', commission: visible('25.5'), bankNet: visible('975') } }
     const { port } = recordingPort(detailSequence(found(detail)))
