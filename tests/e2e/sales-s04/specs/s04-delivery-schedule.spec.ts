@@ -11,7 +11,7 @@
  * NOTHING IS MOCKED OR INTERCEPTED. The arrangement (submit, approve) goes through the real API as the preparer and
  * the approver; the update itself is made in the browser by the planner. Every effect is proven twice: through the
  * real API as the acting actor, and through READ-ONLY SQL counts on the schedule, attempt and audit rows. Every
- * schema and column name in the SQL is bracketed (`[sales].[…]`, `[LineNo]` is a reserved word).
+ * schema, column and alias name in the SQL is bracketed (`[sales].[…]`, `[LineNo]` and the `lineNo` alias are reserved words).
  *
  * The cases are one serial journey on that draft, in file order:
  *   S04-DS-01 the planner moves the dates of the APPROVED order in the form; the server confirms, the order stays
@@ -183,17 +183,17 @@ async function readEffects(): Promise<ScheduleEffects> {
       .input('eventType', sql.NVarChar, RESCHEDULED_EVENT)
       .query<ScheduleEffects>(`SELECT
           (SELECT COUNT(*) FROM [sales].[DraftDeliverySchedules]
-             WHERE [CompanyId] = @companyId AND [DraftId] = @draftId) AS schedules,
+             WHERE [CompanyId] = @companyId AND [DraftId] = @draftId) AS [schedules],
           (SELECT COUNT(*) FROM [sales].[DraftDeliveryScheduleDates]
-             WHERE [CompanyId] = @companyId AND [DraftId] = @draftId) AS scheduleDates,
+             WHERE [CompanyId] = @companyId AND [DraftId] = @draftId) AS [scheduleDates],
           (SELECT COUNT(*) FROM [sales].[DraftAttempts]
              WHERE [CompanyId] = @companyId AND [DraftId] = @draftId AND [CommandName] = @command
-               AND [RefusalJson] IS NULL) AS recordedAttempts,
+               AND [RefusalJson] IS NULL) AS [recordedAttempts],
           (SELECT COUNT(*) FROM [sales].[DraftAttempts]
              WHERE [CompanyId] = @companyId AND [DraftId] = @draftId AND [CommandName] = @command
-               AND [RefusalJson] IS NOT NULL) AS refusedAttempts,
+               AND [RefusalJson] IS NOT NULL) AS [refusedAttempts],
           (SELECT COUNT(*) FROM [audit].[AuditEvents]
-             WHERE [CompanyId] = @companyId AND [EntityId] = @entityId AND [EventType] = @eventType) AS audits`)
+             WHERE [CompanyId] = @companyId AND [EntityId] = @entityId AND [EventType] = @eventType) AS [audits]`)
     return result.recordset[0]
   } finally {
     await pool.close()
@@ -210,17 +210,17 @@ async function readRecordedChange(): Promise<{
     const schedule = await pool.request()
       .input('companyId', sql.UniqueIdentifier, companyId)
       .input('draftId', sql.UniqueIdentifier, scheduleDraftId)
-      .query(`SELECT [ScheduleNo] AS scheduleNo,
-            CONVERT(char(10), [RequestedDeliveryDate], 23) AS requestedDeliveryDate,
-            [ChangedBy] AS changedBy, CAST([DraftVersion] AS nvarchar(20)) AS draftVersion
+      .query(`SELECT [ScheduleNo] AS [scheduleNo],
+            CONVERT(char(10), [RequestedDeliveryDate], 23) AS [requestedDeliveryDate],
+            [ChangedBy] AS [changedBy], CAST([DraftVersion] AS nvarchar(20)) AS [draftVersion]
           FROM [sales].[DraftDeliverySchedules]
           WHERE [CompanyId] = @companyId AND [DraftId] = @draftId
           ORDER BY [ScheduleNo]`)
     const dates = await pool.request()
       .input('companyId', sql.UniqueIdentifier, companyId)
       .input('draftId', sql.UniqueIdentifier, scheduleDraftId)
-      .query(`SELECT [ScheduleNo] AS scheduleNo, [LineNo] AS lineNo, [SliceNo] AS sliceNo,
-            CONVERT(char(10), [RequestedDeliveryDate], 23) AS requestedDeliveryDate
+      .query(`SELECT [ScheduleNo] AS [scheduleNo], [LineNo] AS [lineNo], [SliceNo] AS [sliceNo],
+            CONVERT(char(10), [RequestedDeliveryDate], 23) AS [requestedDeliveryDate]
           FROM [sales].[DraftDeliveryScheduleDates]
           WHERE [CompanyId] = @companyId AND [DraftId] = @draftId
           ORDER BY [ScheduleNo], [LineNo], [SliceNo]`)
