@@ -742,9 +742,10 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
             using var recorded = await blindRecorder.SendAsync(Post($"{FinanceEndpoints.ManualReceiptsPath}/{secondId:D}/record",
                 "SENTETIK-pos-record-blind", Guid.NewGuid().ToString("N"), blindRecord));
             Assert.Equal(HttpStatusCode.OK, recorded.StatusCode);
-            var resource = (await Json(recorded)).GetProperty("resource");
-            Assert.Equal("Redacted", resource.GetProperty("unallocated").GetProperty("amount").GetProperty("disclosure").GetString());
-            blindAnswers.Add(resource.GetRawText());
+            var answer = await Json(recorded);
+            Assert.Equal(attempt == 1, answer.GetProperty("isReplay").GetBoolean());
+            Assert.Equal("Recorded", answer.GetProperty("resource").GetProperty("source").GetProperty("stage").GetString());
+            blindAnswers.Add(answer.GetRawText());
         }
 
         using (var detail = await blindRecorder.GetAsync($"{FinanceEndpoints.ManualReceiptsPath}/{secondId:D}"))
@@ -753,13 +754,63 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
             blindAnswers.Add((await Json(detail)).GetRawText());
         }
 
+        // Precise, not by substring (company ids contain "1000"): every amount member of every answer is Redacted with
+        // no money, and no JSON string or number anywhere equals one of the stored decimals in any normal form.
+        string[] storedAmounts = ["1000.00", "1000", "1000.0", "25.50", "25.5", "974.50", "974.5"];
         Assert.All(blindAnswers, answer =>
         {
-            Assert.DoesNotContain("1000", answer, StringComparison.Ordinal);
-            Assert.DoesNotContain("25.50", answer, StringComparison.Ordinal);
-            Assert.DoesNotContain("974.50", answer, StringComparison.Ordinal);
+            using var document = JsonDocument.Parse(answer);
+            var root = document.RootElement;
+            var detail = root.TryGetProperty("resource", out var resource) && resource.ValueKind == JsonValueKind.Object
+                ? resource
+                : root;
+            AssertRedacted(detail.GetProperty("source").GetProperty("amount"));
+            AssertRedacted(detail.GetProperty("unallocated").GetProperty("amount"));
+            AssertRedacted(detail.GetProperty("pos").GetProperty("commission"));
+            AssertRedacted(detail.GetProperty("pos").GetProperty("bankNet"));
+            Assert.DoesNotContain(ScalarTokens(root), token => storedAmounts.Contains(token, StringComparer.Ordinal));
         });
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.MoneyEvents WHERE SourceId = @s", ("@s", secondId)));
+    }
+
+    private static void AssertRedacted(JsonElement amount)
+    {
+        Assert.Equal("Redacted", amount.GetProperty("disclosure").GetString());
+        Assert.Equal(JsonValueKind.Null, amount.GetProperty("money").ValueKind);
+    }
+
+    /// <summary>Every string and number value in the document, whole tokens only (no substring matching).</summary>
+    private static IEnumerable<string> ScalarTokens(JsonElement element)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                foreach (var property in element.EnumerateObject())
+                {
+                    foreach (var token in ScalarTokens(property.Value))
+                    {
+                        yield return token;
+                    }
+                }
+
+                break;
+            case JsonValueKind.Array:
+                foreach (var item in element.EnumerateArray())
+                {
+                    foreach (var token in ScalarTokens(item))
+                    {
+                        yield return token;
+                    }
+                }
+
+                break;
+            case JsonValueKind.String:
+                yield return element.GetString()!;
+                break;
+            case JsonValueKind.Number:
+                yield return element.GetRawText();
+                break;
+        }
     }
 
     private static void AssertPos(JsonElement detail, string bearer, string commission, string bankNet)
@@ -801,8 +852,10 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
             Assert.Equal(1, await run.ScalarAsync<int>(
                 "SELECT COUNT(*) FROM sys.columns WHERE object_id = OBJECT_ID(N'finance.Commands') "
                 + "AND name = N'ManualBankPaymentId'"));
-            Assert.EndsWith("_AddFinanceAllocations",
-                (await context.Database.GetAppliedMigrationsAsync()).Last(), StringComparison.Ordinal);
+            // The newest Finance migration is DEC-FIN-014's POS facts, applied right after F-03's allocations.
+            var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
+            Assert.EndsWith("_AddPosCollectionFacts", applied[^1], StringComparison.Ordinal);
+            Assert.EndsWith("_AddFinanceAllocations", applied[^2], StringComparison.Ordinal);
         }
         var account = await run.ApprovedBankAccountAsync(CompanyA);
         await run.GrantAsync(Proposer, CompanyA, ManualPaymentPreparerGrants);
