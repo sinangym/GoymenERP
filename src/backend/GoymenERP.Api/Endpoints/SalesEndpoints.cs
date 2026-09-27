@@ -351,6 +351,7 @@ public static class SalesEndpoints
         MapCommercialRevisionCommand(drafts);
         MapDeliveryScheduleCommand(drafts);
         MapDeliverySchedules(drafts);
+        MapDeliveryProgress(drafts);
         MapStateCommand(drafts, "/{id:guid}/submission", "SubmitSalesOrderDraftV1", allowReason: false,
             (service, id, body, metadata, cancellationToken) => service.SubmitDraftAsync(id, body, metadata, cancellationToken),
             unprocessableCodes: ["validation_failed"]);
@@ -535,6 +536,36 @@ public static class SalesEndpoints
         })
             .WithName("GetSalesOrderDraftDeliverySchedulesV1")
             .Produces<SalesOrderDraftDeliverySchedulesResponse>()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+    }
+
+    /// <summary>
+    /// AT-024: per line the delivered and remaining quantity, from the delivery owner's recorded deliveries (Logistics,
+    /// read through the Sales-declared port), under the draft read; another company's draft is 404. Read-only.
+    /// </summary>
+    private static void MapDeliveryProgress(RouteGroupBuilder drafts)
+    {
+        drafts.MapGet("/{id:guid}/delivery-progress", async (
+            Guid id,
+            HttpContext httpContext,
+            [FromServices] ISalesDraftService service,
+            ICorrelationContext correlation,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            try
+            {
+                return Results.Json(await service.GetDraftDeliveryProgressAsync(id, cancellationToken), SalesDraftJson.Options);
+            }
+            catch (SalesDraftServiceException exception)
+            {
+                return DraftProblem(exception, correlation);
+            }
+        })
+            .WithName("GetSalesOrderDraftDeliveryProgressV1")
+            .Produces<SalesOrderDraftDeliveryProgressResponse>()
             .ProducesErpCodeLessNotFound()
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();

@@ -28,7 +28,10 @@
  *   L04-03 loader: a load within the remainder; a load over it (409 cap); a stale second tab (409 version,
  *          re-read); the same load id under a new key (409 duplicate)
  *   L04-04 loader on the seeded instruction: the blocked line refuses (409), the open line takes a load
- *   L04-05 reader: list and detail open, no create route, a load is refused 403 and nothing is recorded;
+ *   L04-05 loader: a definite shipment (withheld answer, reopen, replay) and a partial delivery; AT-024: the Sales
+ *          order's S-04 "Teslimat durumu" read by a Sales reader shows nothing delivered before, the delivery after
+ *          reopen, and the same value after the delivery is replayed under its key (never counted twice)
+ *   L04-06 reader: list and detail open, no create route, a load is refused 403 and nothing is recorded;
  *          the preparer: Sales draft routes 403 while the price-free read answers the approved line with
  *          no price key anywhere;
  *          the preparer under the other company: the API answers nothing of GDC's instruction and publishes no
@@ -68,6 +71,13 @@ const LIST_ROUTE = '/lojistik/yukleme-talimatlari'
 const CREATE_ROUTE = `${LIST_ROUTE}/yeni`
 const DEVELOPMENT_USER_HEADER = 'X-Development-User'
 const DOCUMENT_NO = 'SENTETIK browser-suite:l04 SO-0001'
+// AT-024: the Sales side of the same order. The seed's Sales approver (infra/browser-suites/l04.override.yml,
+// BROWSER_L04_SALES_APPROVER: sales.orders.approve + sales.drafts.read, no create, no price) reads S-04; the actor id is
+// the override's deterministic subject (seed_export carries only the three Logistics actors), the customerName way.
+const SALES_READER_ACTOR = 'l04-sales-approver'
+const SALES_DETAIL_ROUTE = `/satis/siparisler/${draftId}`
+// The seeded approved draft has ONE line of "6" kg (L04BrowserSeed); only L04-05 ships (2) and delivers (1.5) on it.
+const ORDERED = '6'
 const PRODUCT_NAME = 'SENTETIK browser-suite:l04 rulo 1,25 × 1240'
 // Business 5743412166 (Sevkiyatçı rule): no price or finance word on these screens, in any language the app uses.
 const PRICE_WORDS = ['₺', 'TRY', 'fiyat', 'Fiyat', 'price', 'Price', 'unitPrice', 'tutar', 'Tutar', 'iskonto', 'İskonto', 'para birimi']
@@ -187,6 +197,33 @@ function keysOf(value: unknown, into: Set<string> = new Set()): Set<string> {
 async function expectNoPriceText(page: Page): Promise<void> {
   const text = await page.locator('main').innerText()
   for (const word of PRICE_WORDS) expect(text, `no price or finance word on the screen: "${word}"`).not.toContain(word)
+}
+
+/**
+ * AT-024: opens the Sales order's S-04 detail as the Sales reader in its OWN page and returns the "Teslimat durumu" row of
+ * its one line (line 1) once the real delivery-progress read answered 200. Every call is a fresh route entry (the section
+ * reads afresh on every open); `reload` additionally reloads the page and reads again — close → reopen.
+ */
+async function openSalesProgress(sales: Page, reload = false): Promise<void> {
+  const answered = sales.waitForResponse((response) => response.request().method() === 'GET'
+    && new URL(response.url()).pathname === `${SALES_DRAFTS_PATH}/${draftId}/delivery-progress`, { timeout: 30_000 })
+  if (reload) await sales.reload()
+  else await sales.goto(SALES_DETAIL_ROUTE)
+  await expect(sales.getByRole('heading', { level: 1, name: DOCUMENT_NO })).toBeVisible({ timeout: 30_000 })
+  expect((await answered).status(), 'the real delivery-progress read answers the Sales reader').toBe(200)
+  await expect(sales.getByTestId('sales-delivery-progress-line-1')).toBeVisible({ timeout: 30_000 })
+}
+
+/** The exact text of the five quantities of line 1 in S-04 "Teslimat durumu" (never parsed into numbers). */
+async function expectSalesProgress(sales: Page, expected: {
+  readonly shipped: string; readonly delivered: string; readonly remaining: string; readonly excess: string
+}): Promise<void> {
+  const row = sales.getByTestId('sales-delivery-progress-line-1')
+  await expect(row.locator('td').first()).toHaveText(ORDERED)
+  await expect(sales.getByTestId('sales-delivery-progress-line-1-shipped')).toHaveText(expected.shipped)
+  await expect(sales.getByTestId('sales-delivery-progress-line-1-delivered')).toHaveText(expected.delivered)
+  await expect(sales.getByTestId('sales-delivery-progress-line-1-remaining')).toHaveText(expected.remaining)
+  await expect(sales.getByTestId('sales-delivery-progress-line-1-excess')).toHaveText(expected.excess)
 }
 
 /** Fills and submits one load share on the line `lineId` through the ONE load form; returns the browser's answers on the loads route. */
@@ -393,7 +430,7 @@ test('L04-04 on the seeded instruction the blocked line refuses a load and the o
   expect(after.lines.find((line) => line.lineId === openLineId)?.loaded).toBe('1')
 })
 
-test('L04-05 shipment consumes one allocation and one stock exit; reopen replay and delivery add no Inventory effect', async ({ page }) => {
+test('L04-05 shipment consumes one allocation and one stock exit; reopen replay and delivery add no Inventory effect; the Sales order shows the delivery and its replay adds nothing (AT-024)', async ({ page }) => {
   await signInAs(page, loaderActor)
   if (createdId === '') createdId = recallCreatedId()
   await openDetail(page, createdId)
@@ -480,6 +517,12 @@ test('L04-05 shipment consumes one allocation and one stock exit; reopen replay 
     expect(attempts[1]).toEqual(attempts[0])
     expect(await effects(shipmentBody.movementId)).toEqual({ allocations: 1, consumed: 1, movements: 2, shipmentMovement: 1 })
 
+    // AT-024, before the delivery: the Sales reader's S-04 shows the definite shipment and nothing delivered yet.
+    const sales = await page.context().newPage()
+    await signInAs(sales, SALES_READER_ACTOR)
+    await openSalesProgress(sales)
+    await expectSalesProgress(sales, { shipped: '2', delivered: '0', remaining: ORDERED, excess: '0' })
+
     await page.goto(LIST_ROUTE)
     await openDetail(page, createdId)
     const inventoryCalls: string[] = []
@@ -504,6 +547,36 @@ test('L04-05 shipment consumes one allocation and one stock exit; reopen replay 
     expect(final.shares.find((share) => share.kind === 'Delivered')).toMatchObject({
       lineId: line.lineId, quantity: '1.5', sourceShipmentId: shipmentBody.shipmentId,
     })
+
+    // AT-024, after the delivery: the order opened again shows it (read afresh from Logistics), and so does a reload.
+    const deliveredAfter = { shipped: '2', delivered: '1.5', remaining: '4.5', excess: '0' }
+    await openSalesProgress(sales)
+    await expectSalesProgress(sales, deliveredAfter)
+    await openSalesProgress(sales, true)
+    await expectSalesProgress(sales, deliveredAfter)
+
+    // The SAME delivery again, exactly as the browser sent it (same key, same body) through the real route: the stored
+    // answer is replayed, no second share is appended, and the Sales order still shows 1.5 — never 3.
+    const deliveryRequest = delivered.request()
+    const deliveryKey = deliveryRequest.headers()['idempotency-key']
+    expect(deliveryKey, 'the browser sent the delivery under an Idempotency-Key').toBeTruthy()
+    const replayedDelivery = await page.request.post(`${env.apiBaseUrl}${new URL(delivered.url()).pathname}`, {
+      headers: {
+        [DEVELOPMENT_USER_HEADER]: loaderActor, 'X-Company-Id': companyId,
+        'Idempotency-Key': deliveryKey, 'Content-Type': 'application/json',
+      },
+      data: deliveryRequest.postData() ?? '',
+    })
+    expect(replayedDelivery.status()).toBe(200)
+    expect(replayedDelivery.headers()['idempotency-replayed']).toBe('true')
+    const afterReplay = await readInstruction(page, loaderActor, createdId)
+    expect(afterReplay.shares.filter((share) => share.kind === 'Delivered')).toHaveLength(1)
+    expect(afterReplay.instruction.version).toBe(final.instruction.version)
+    await openSalesProgress(sales)
+    await expectSalesProgress(sales, deliveredAfter)
+    await openSalesProgress(sales, true)
+    await expectSalesProgress(sales, deliveredAfter)
+    await sales.close()
   } finally {
     await pool.close()
   }

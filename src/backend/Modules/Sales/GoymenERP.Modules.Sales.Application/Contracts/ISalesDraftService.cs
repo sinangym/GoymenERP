@@ -41,6 +41,11 @@ public interface ISalesDraftService
         SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
     Task<SalesOrderDraftDeliverySchedulesResponse> GetDraftDeliverySchedulesAsync(Guid draftId,
         CancellationToken cancellationToken = default);
+
+    // AT-024 — per line the delivered and remaining quantity, from the delivery owner's recorded deliveries (Logistics,
+    // through ISalesOrderDeliveryReadPortV1), under the draft read; read-only, nothing is written.
+    Task<SalesOrderDraftDeliveryProgressResponse> GetDraftDeliveryProgressAsync(Guid draftId,
+        CancellationToken cancellationToken = default);
 }
 
 // Constructed by the server, never bound from the request body.
