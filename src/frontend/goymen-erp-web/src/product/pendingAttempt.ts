@@ -77,7 +77,7 @@ export interface AttemptBinding {
   readonly sessionEpoch: number
   readonly scopeMode: 'single' | 'group'
   readonly companyId: string | null
-  /** `product.create`, or `product.edit:<productId>`. */
+  /** `product.create`, `product.edit:<productId>`, or `product.activate:<productId>`. */
   readonly scope: string
   /** Canonical, collision-free string of the fields above (JSON of a string array). */
   readonly key: string
@@ -89,6 +89,10 @@ export function createScope(): string {
 
 export function editScope(productId: string): string {
   return `product.edit:${productId}`
+}
+
+export function activationScope(productId: string): string {
+  return `product.activate:${productId}`
 }
 
 /**

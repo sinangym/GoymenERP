@@ -13,7 +13,15 @@
  * belongs to a rewritten request.
  */
 
-import { expect, test, type BrowserContext, type Page, type Request, type Route } from '@playwright/test'
+import {
+  expect,
+  test,
+  type BrowserContext,
+  type Page,
+  type Request,
+  type Response,
+  type Route,
+} from '@playwright/test'
 import {
   apiAs,
   arrangeOpenOrder,
@@ -32,6 +40,31 @@ const CLOSE_RE = /\/api\/v1\/manufacturing\/orders\/[^/]+\/close$/
 const LIST_RE = /\/api\/v1\/manufacturing\/orders(\?|$)/
 const OUTPUT_PRODUCTS_RE = /\/api\/v1\/manufacturing\/references\/output-products\?/
 const OUTPUT_LOCATIONS_RE = /\/api\/v1\/manufacturing\/references\/output-locations\?/
+
+// The screen's own texts (src/manufacturing/manufacturingText.ts), asserted verbatim.
+const OUTPUT_FACT_KIND = 'Üretim çıktısı'
+const ISSUED_OWNERSHIP_HEADING = 'Girdi çıkışından gelen sahiplik (değiştirilemez):'
+const THIS_COMPANY = 'Bu şirket'
+/** Both refusals the screen shows while the issue trace has not proved one complete position. */
+const OWNERSHIP_REFUSAL_RE = /sahipliği doğrulanmadan çıktı gönderilemez|hareket geçmişi bu görünümde kısaltılmış/
+
+/** An Inventory movement line as the label detail read carries it (the fields this suite checks). */
+interface IssuedLine {
+  readonly direction: string
+  readonly ownerKind: string
+  readonly ownerId: string
+  readonly custodianKind: string
+  readonly custodianId: string
+}
+
+interface LabelMovement {
+  readonly kind: string
+  readonly sourceKind: string
+  readonly sourceId: string
+  readonly sourceLineId: string | null
+  readonly sourceGrain: string
+  readonly lines: readonly IssuedLine[]
+}
 
 /** Binds `actor` to every API request of this context and records which requests it rewrote. */
 async function asActor(
@@ -146,6 +179,66 @@ async function fillIssue(page: Page, rollId: string, kg: string) {
   await page.getByLabel('Zaman', { exact: true }).fill('2026-09-18T09:30')
 }
 
+function isLabelDetailRead(response: Response, rollId: string): boolean {
+  return response.request().method() === 'GET'
+    && new URL(response.url()).pathname === `/api/v1/inventory/labels/${rollId}/detail`
+}
+
+/** The page's own reads of the parent roll's Inventory label detail, in arrival order. */
+function watchLabelReads(page: Page, rollId: string): { readonly reads: Response[]; stop: () => void } {
+  const reads: Response[] = []
+  const watch = (response: Response) => {
+    if (isLabelDetailRead(response, rollId)) reads.push(response)
+  }
+  page.on('response', watch)
+  return { reads, stop: () => page.off('response', watch) }
+}
+
+/**
+ * This order's input-issue trace in a label detail read the page itself received: the Out lines of its
+ * `manufacturing.input-issue` Issue entries. The read must be complete (not truncated), or the screen could not
+ * derive an output ownership from it.
+ */
+async function issueTraceOf(read: Response, orderId: string): Promise<IssuedLine[]> {
+  expect(read.status(), 'the parent label detail read').toBe(200)
+  const body = await read.json() as {
+    movementTimeline: { windowFull: boolean; entries: LabelMovement[] }
+  }
+  expect(body.movementTimeline.windowFull, 'the issue trace must be complete').toBe(false)
+  return body.movementTimeline.entries
+    .filter((entry) => entry.kind === 'Issue' && entry.sourceKind === 'manufacturing.input-issue'
+      && entry.sourceId === orderId && entry.sourceGrain === 'Line' && entry.sourceLineId !== null)
+    .flatMap((entry) => entry.lines.filter((line) => line.direction === 'Out'))
+}
+
+/**
+ * The output's owner and custodian are derived from the order's own input-issue trace, shown read-only, and only
+ * then is the output submittable. The server trace must name this company as owner AND custodian, and the screen
+ * must show exactly that, with no refusal. Nothing on the screen is typed or predicted.
+ */
+async function expectIssuedCompanyOwnership(page: Page, trace: readonly IssuedLine[], companyId: string) {
+  expect(trace.length, 'the order has an input issue on this roll').toBeGreaterThan(0)
+  for (const line of trace) {
+    expect(line).toMatchObject({
+      ownerKind: 'Company', ownerId: companyId, custodianKind: 'Company', custodianId: companyId,
+    })
+  }
+
+  const ownership = page.getByTestId('output-issued-ownership')
+  await expect(ownership).toBeVisible()
+  await expect(ownership).toContainText(ISSUED_OWNERSHIP_HEADING)
+  for (const party of ['owner', 'custodian'] as const) {
+    const selector = `[data-party="${party}"]`
+    const value = ownership.locator(selector)
+    await expect(value).toHaveText(companyId)
+    await expect(value).toHaveAttribute('data-kind', 'Company')
+    // `has` is evaluated relative to each <dd>, so it takes the bare selector, not the chained locator.
+    await expect(ownership.locator('dd').filter({ has: page.locator(selector) })).toContainText(THIS_COMPANY)
+  }
+  await expect(page.getByText(OWNERSHIP_REFUSAL_RE)).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Kaydet', exact: true })).toBeEnabled()
+}
+
 async function fillWip(page: Page, rollId: string, kg: string) {
   await page.getByRole('radio', { name: 'WIP ölçümü', exact: true }).check()
   await page.getByRole('combobox', { name: 'Ana rulo', exact: true }).selectOption(rollId)
@@ -166,14 +259,16 @@ test.describe('MFG order screen (real API, real SQL)', () => {
 
       await openOrder(page, arranged.orderId)
       await expect(page.getByText(process, { exact: true })).toBeVisible()
-      // Keep part of the company-owned parent label at its source position while recording the
-      // derived output. A full issue legitimately leaves no company-owned position for the UI's
-      // Inventory ownership admission to prove.
+      // A partial issue of the company's own parent roll. The output's owner and custodian are then derived
+      // from this order's own input-issue trace on the roll (read from Inventory after the issue), not chosen.
       await fillIssue(page, arranged.rollId, '500')
       const issuePost = page.waitForRequest((request) =>
         request.url().endsWith(`/orders/${arranged.orderId}/input-issues`) && request.method() === 'POST')
       const issueResponse = page.waitForResponse((response) =>
         response.url().endsWith(`/orders/${arranged.orderId}/input-issues`) && response.request().method() === 'POST')
+      // The issue form reads no label; the roll's label is read after the recorded issue (and again for the output),
+      // so the latest read carries the issue's trace. Armed before the click so no read can be missed.
+      const labelReads = watchLabelReads(page, arranged.rollId)
       await page.getByRole('button', { name: 'Kaydet', exact: true }).click()
       expect((await issueResponse).status()).toBe(200)
       expect((await issuePost).postDataJSON()).toMatchObject({
@@ -187,9 +282,15 @@ test.describe('MFG order screen (real API, real SQL)', () => {
         OUTPUT_PRODUCTS_RE.test(response.url()) && response.request().method() === 'GET')
       const locations = page.waitForResponse((response) =>
         OUTPUT_LOCATIONS_RE.test(response.url()) && response.request().method() === 'GET')
-      await page.getByRole('radio', { name: 'Şirket malı üretim çıktısı', exact: true }).check()
+      await page.getByRole('radio', { name: OUTPUT_FACT_KIND, exact: true }).check()
       await page.getByRole('combobox', { name: 'Ana rulo', exact: true }).selectOption(arranged.rollId)
       await expect(page.getByTestId('parent-label-state')).toBeVisible()
+      // The ownership shown is the one in the page's own latest post-issue read of the roll's label.
+      await expect(page.getByTestId('output-issued-ownership')).toBeVisible()
+      labelReads.stop()
+      expect(labelReads.reads.length, 'the roll label is re-read after the issue').toBeGreaterThan(0)
+      await expectIssuedCompanyOwnership(page,
+        await issueTraceOf(labelReads.reads[labelReads.reads.length - 1], arranged.orderId), env.seed.companyId)
       await page.getByLabel('Zaman', { exact: true }).fill('2026-09-25T09:30')
       expect((await products).status()).toBe(200)
       expect((await locations).status()).toBe(200)
@@ -213,6 +314,11 @@ test.describe('MFG order screen (real API, real SQL)', () => {
         parentRollId: arranged.rollId,
         outputClass: 'GoodProduct',
         productId: env.seed.output.productId,
+        // Exactly the derived ownership the screen showed: the company's own, in its own custody.
+        ownerKind: 'Company',
+        ownerId: env.seed.companyId,
+        custodianKind: 'Company',
+        custodianId: env.seed.companyId,
         locationId: env.seed.output.locationId,
         kg: '500',
       })
@@ -355,8 +461,13 @@ test.describe('MFG order screen (real API, real SQL)', () => {
       OUTPUT_LOCATIONS_RE.test(response.url()) && response.request().method() === 'GET')
 
     await openOrder(page, arranged.orderId)
-    await page.getByRole('radio', { name: 'Şirket malı üretim çıktısı', exact: true }).check()
+    await page.getByRole('radio', { name: OUTPUT_FACT_KIND, exact: true }).check()
+    // No optimistic ownership: before the roll's Inventory trace is read, nothing is shown and nothing can be sent.
+    await expect(page.getByTestId('output-issued-ownership')).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Kaydet', exact: true })).toBeDisabled()
+    const labelRead = page.waitForResponse((response) => isLabelDetailRead(response, arranged.rollId))
     await page.getByRole('combobox', { name: 'Ana rulo', exact: true }).selectOption(arranged.rollId)
+    await expectIssuedCompanyOwnership(page, await issueTraceOf(await labelRead, arranged.orderId), env.seed.companyId)
     await page.getByLabel('Zaman', { exact: true }).fill('2026-09-25T09:30')
     expect((await products).status()).toBe(200)
     expect((await locations).status()).toBe(200)

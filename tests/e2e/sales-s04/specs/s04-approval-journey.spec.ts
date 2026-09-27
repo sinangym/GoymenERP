@@ -263,6 +263,17 @@ test('S04-06 authorized allocation saves, closes, reopens, releases and reopens 
     await signInAs(page, preparerActor)
     await openDraft(page)
     await expect(state(page)).toHaveText('Onaylı')
+    // S-04 linked effects: Inventory's server count, never an assumed 0; loading is named as not readable.
+    // Exact text (salesText.ts linkedEffects: `${lineLabel(lineNo)}: ${active(count)}`); the allocation line is
+    // the seed's first line (S04BrowserSeed adds the coil line first), so it renders as "Satır 1".
+    const linkedAllocation = page.getByTestId(`sales-linked-allocation-line-${allocationLineId}`)
+    const expectLinkedCount = async (count: number) => {
+      await expect(linkedAllocation).toHaveText(`Satır 1: aktif tahsis ${count}`)
+      await expect(linkedAllocation).toHaveAttribute('data-state', 'ready')
+    }
+    await expect(linkedAllocation).toHaveAttribute('data-state', 'ready')
+    await expectLinkedCount(0)
+    await expect(page.getByTestId('sales-linked-loading')).toContainText('Sales ekranından henüz okunamıyor')
     const line = page.getByTestId(`sales-allocation-line-${allocationLineId}`)
     await expect(line).toBeVisible()
     await line.getByLabel('Etiket kimliği').fill(allocationLabelId)
@@ -278,12 +289,15 @@ test('S04-06 authorized allocation saves, closes, reopens, releases and reopens 
     const created = await createdResponse.json() as { readonly allocationId: string; readonly status: string; readonly version: string }
     expect(created).toMatchObject({ status: 'Active', version: '1' })
     await expect(line.getByText('Aktif')).toBeVisible()
+    // In-page refresh: the panel's refetch of the shared query moves the linked count before any reopen.
+    await expectLinkedCount(1)
 
     await page.goto('/satis/siparisler')
     await expect(page.getByRole('heading', { level: 1, name: 'Satış siparişi taslakları' })).toBeVisible()
     await page.locator(`a[href="${DETAIL_ROUTE}"]`).click()
     const reopened = page.getByTestId(`sales-allocation-${created.allocationId}`)
     await expect(reopened.getByText('Aktif')).toBeVisible()
+    await expectLinkedCount(1)
 
     const reopenedLine = page.getByTestId(`sales-allocation-line-${allocationLineId}`)
     await reopenedLine.getByLabel('Serbest bırakma nedeni').fill('SENTETIK s04 tahsis serbest')
@@ -300,6 +314,7 @@ test('S04-06 authorized allocation saves, closes, reopens, releases and reopens 
     const finalRow = page.getByTestId(`sales-allocation-${created.allocationId}`)
     await expect(finalRow.getByText('Serbest bırakıldı')).toBeVisible()
     await expect(finalRow.getByRole('button', { name: 'Tahsis serbest bırak' })).toHaveCount(0)
+    await expectLinkedCount(0)
 
     const fresh = await page.request.get(`${env.apiBaseUrl}/api/v1/inventory/physical-allocations?salesOrderId=${draftId}&salesOrderLineId=${allocationLineId}&limit=100`, {
       headers: { [DEVELOPMENT_USER_HEADER]: preparerActor, 'X-Company-Id': companyId },

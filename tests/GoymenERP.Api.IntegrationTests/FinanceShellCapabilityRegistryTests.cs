@@ -76,6 +76,6 @@ public sealed class FinanceShellCapabilityRegistryTests
         ];
 
         Assert.Throws<InvalidOperationException>(() => new ShellCapabilityRegistry(providers,
-            new ShellCapabilityAuthorityCatalog([ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11AndProductV10])));
+            new ShellCapabilityAuthorityCatalog([ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11AndProductV11])));
     }
 }

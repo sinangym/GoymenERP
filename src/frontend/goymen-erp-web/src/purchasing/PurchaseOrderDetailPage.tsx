@@ -11,6 +11,8 @@ import { StateBlock } from '../shell/StateBlock'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { pendingApprovalKey, recallPendingApproval, releasePendingApproval, reservePendingApproval, type ApprovalSnapshot } from './pendingApprovalStore'
 import styles from './purchasing.module.css'
+import { GoodsReceiptPanel } from './GoodsReceiptPanel'
+import { PURCHASE_GOODS_RECEIPT_CAPABILITY } from './goodsReceiptContract'
 
 function newId(): string {
   if (typeof globalThis.crypto?.randomUUID === 'function') return globalThis.crypto.randomUUID()
@@ -110,5 +112,7 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
     <section><h2>Taahhüt satırları</h2><div className={styles.tableWrap}><table><thead><tr><th>No</th><th>Ürün</th><th>Birim</th><th>Sipariş</th><th>Teknik</th><th>Taahhüt</th><th>Kabul</th><th>Kalan</th></tr></thead><tbody>{lines.map((line) => <tr key={line.lineId}><td>{line.lineNo}</td><td className={styles.mono}>…{line.productId.slice(-8)}</td><td className={styles.mono}>…{line.unitId.slice(-8)}</td><td>{line.ordered}</td><td>{line.technical}</td><td>{line.committed}</td><td>{line.accepted}</td><td>{line.remaining}</td></tr>)}</tbody></table></div></section>
     {canApprove ? outcomeNotice : null}
     {canApprove && (order.status === 'Draft' || unresolved) ? <section className={styles.actionCard}><h2>Siparişi onayla</h2><p>Onay, talep satırı paylarını sunucuda yeniden ölçer. Fiyat veya stok hareketi üretmez.</p>{attempt.phase === 'unknown' ? <p role="alert" className={styles.warning}>Sonuç bilinmiyor. Yeni işlem başlatmadan aynı anahtar ve sürümle yeniden gönderin.</p> : null}<button type="button" disabled={attempt.phase === 'submitting'} onClick={() => void sendApproval(attempt.phase === 'unknown' ? attempt.snapshot : undefined)}>{attempt.phase === 'submitting' ? 'Gönderiliyor…' : attempt.phase === 'unknown' ? 'Aynı onayı yeniden gönder' : 'Onayla'}</button></section> : null}
+    {namespace === null ? null : <GoodsReceiptPanel enabled={hasCapability(shell, PURCHASE_GOODS_RECEIPT_CAPABILITY as never)}
+      binding={namespace} detail={state.data} onRecorded={() => void query.refetch()} />}
   </>)
 }

@@ -158,6 +158,8 @@ export const CAPABILITY = {
   manufacturingPlansCreate: 'manufacturing.plans.create',
   /** Reopen one stored plan. Route `/uretim/plan/:planId`; reached after create or by record link. */
   manufacturingPlansDetail: 'manufacturing.plans.detail',
+  /** MFG-PLAN-LIST the company's saved plans. Route `/uretim/planlar`; reached from the order list and plan detail. */
+  manufacturingPlansList: 'manufacturing.plans.list',
   /** F-02 manual-receipt draft list. Route `/finans/tahsilatlar`, owner the Finance lane (FİNANS). */
   financeReceiptsList: 'finance.receipts.list',
   /** F-02 new draft, entered from a Cari account (`?partyId&companyAccountId`). Route `/finans/tahsilatlar/yeni`. */
@@ -228,6 +230,9 @@ export const CAPABILITY = {
   purchasingOrdersDetail: 'purchasing.orders.detail',
 } as const
 
+/** U-01-360 action-only control. It is deliberately absent from route and nav catalogs. */
+export const PRODUCT_ACTIVATE_CAPABILITY = 'product.items.activate'
+
 export type CapabilityId = (typeof CAPABILITY)[keyof typeof CAPABILITY]
 
 /** Route path per capability, mirroring the backend route declaration. */
@@ -268,6 +273,8 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   // Static before the parameter route: `yeni` must never be read as a plan id.
   [CAPABILITY.manufacturingPlansCreate]: '/uretim/plan/yeni',
   [CAPABILITY.manufacturingPlansDetail]: '/uretim/plan/:planId',
+  // Its own static segment: `planlar` is never read as `/uretim/plan/:planId`.
+  [CAPABILITY.manufacturingPlansList]: '/uretim/planlar',
   [CAPABILITY.financeReceiptsList]: '/finans/tahsilatlar',
   // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as a source id.
   [CAPABILITY.financeReceiptsDraft]: '/finans/tahsilatlar/yeni',
@@ -346,6 +353,8 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   // K5: creation is reached from the order list; detail is reached from the saved plan result.
   [CAPABILITY.manufacturingPlansCreate]: '',
   [CAPABILITY.manufacturingPlansDetail]: '',
+  // MFG-PLAN-LIST: reached from the order list and plan detail, so the sidebar keeps ONE Manufacturing entry.
+  [CAPABILITY.manufacturingPlansList]: '',
   [CAPABILITY.financeReceiptsList]: 'Tahsilat Taslakları',
   [CAPABILITY.financeReceiptsReverseApprove]: 'Ters Kayıt Onayları',
   [CAPABILITY.financeBankAccountsList]: 'Banka Hesapları',

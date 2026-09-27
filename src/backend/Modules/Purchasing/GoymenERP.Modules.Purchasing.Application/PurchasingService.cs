@@ -31,7 +31,7 @@ namespace GoymenERP.Modules.Purchasing.Application;
 /// price (T28), no approval policy (§8), no re-approval after a breakdown (§8).</item>
 /// </list>
 /// </summary>
-public sealed class PurchasingService(
+public sealed partial class PurchasingService(
     ICompanyContext companyContext,
     ICurrentUser currentUser,
     IErpAuthorityRevalidationService authority,
@@ -41,7 +41,9 @@ public sealed class PurchasingService(
     PurchaseUnitVerifier units,
     IPurchasingStore store,
     PurchasingServiceBindings bindings,
-    TimeProvider timeProvider) : IPurchasingService
+    TimeProvider timeProvider,
+    IPurchaseGoodsReceiptTransactionV1? goodsReceipts = null,
+    IPurchaseGoodsReceiptReadsV1? receiptReads = null) : IPurchasingService, IPurchaseGoodsReceiptServiceV1
 {
     private const int DefaultPageSize = 50;
     private const int MaximumPageSize = 100;

@@ -13,11 +13,44 @@ namespace GoymenERP.Modules.Inventory.Application;
 /// </summary>
 public interface IInventoryGoodsReceiptParticipantV1 : IAsyncDisposable
 {
+    /// <summary>
+    /// Reads the immutable Inventory side of a committed same-key receipt before mutable owner
+    /// masters are consulted again. The participant remains single-use: the caller compares its
+    /// current physical fields with <see cref="InventoryGoodsReceiptSourceV1.OriginalRequest"/>
+    /// and then calls <see cref="StageAsync"/>, whose payload hash is still the final replay fence.
+    /// </summary>
+    Task<InventoryGoodsReceiptSourceV1?> ReadReplayAsync(
+        Guid acceptanceId,
+        InventoryCommandMetadata metadata,
+        CancellationToken cancellationToken = default);
+
     Task<InventoryGoodsReceiptResultV1> StageAsync(
         InventoryGoodsReceiptRequestV1 request,
         InventoryCommandMetadata metadata,
         CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// Inventory-owned, company-scoped source read for reopening one Purchasing acceptance. This port
+/// publishes no HTTP route and grants no authority. Its consumer must apply its existing Purchasing
+/// read permission and fresh company/actor fences around the awaited call. Missing and foreign-company
+/// sources are the same null result; an internally inconsistent committed source fails closed.
+/// </summary>
+public interface IInventoryGoodsReceiptSourceV1
+{
+    Task<InventoryGoodsReceiptSourceV1?> ReadAsync(
+        Guid acceptanceId,
+        CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// The original physical request reconstructed from Inventory's immutable command, receipt movement,
+/// line, label and lot rows, together with the original recorded result. No idempotency key, actor or
+/// payload hash is exposed by the ordinary reopen read.
+/// </summary>
+public sealed record InventoryGoodsReceiptSourceV1(
+    InventoryGoodsReceiptRequestV1 OriginalRequest,
+    InventoryGoodsReceiptResultV1 OriginalResult);
 
 /// <summary>
 /// Explicit physical facts for one accepted Purchasing line. Purchase quantity remains Purchasing's
@@ -117,8 +150,16 @@ public static class InventoryGoodsReceiptContractV1
     public static Kilograms Validate(InventoryGoodsReceiptRequestV1 request, InventoryCommandMetadata metadata,
         Guid enlistedCompanyId)
     {
-        ArgumentNullException.ThrowIfNull(request);
+        var quantity = ValidateRequest(request, enlistedCompanyId);
         ArgumentNullException.ThrowIfNull(metadata);
+        RequireMetadata(metadata);
+        return quantity;
+    }
+
+    /// <summary>Validates the physical request independently of the current command envelope.</summary>
+    public static Kilograms ValidateRequest(InventoryGoodsReceiptRequestV1 request, Guid enlistedCompanyId)
+    {
+        ArgumentNullException.ThrowIfNull(request);
         if (enlistedCompanyId == Guid.Empty || request.CompanyId == Guid.Empty
             || request.AcceptanceId == Guid.Empty || request.PurchaseOrderId == Guid.Empty
             || request.PurchaseOrderLineId == Guid.Empty || request.ProductId == Guid.Empty
@@ -146,7 +187,6 @@ public static class InventoryGoodsReceiptContractV1
             RequireToken(document, 64);
         }
 
-        RequireMetadata(metadata);
         if (string.IsNullOrEmpty(request.QuantityKg) || request.QuantityKg.Length > 40
             || request.QuantityKg.Any(character => !char.IsAsciiDigit(character) && character != '.')
             || !decimal.TryParse(request.QuantityKg, NumberStyles.AllowDecimalPoint,
@@ -165,6 +205,19 @@ public static class InventoryGoodsReceiptContractV1
         {
             throw Refused(400, InventoryGoodsReceiptCodesV1.InvalidQuantity);
         }
+    }
+
+    /// <summary>Validates the identity needed to look up a same-key replay without its payload.</summary>
+    public static void ValidateReplayLookup(Guid acceptanceId, InventoryCommandMetadata metadata,
+        Guid enlistedCompanyId)
+    {
+        ArgumentNullException.ThrowIfNull(metadata);
+        if (acceptanceId == Guid.Empty || enlistedCompanyId == Guid.Empty)
+        {
+            throw Refused(400, InventoryGoodsReceiptCodesV1.InvalidRequest);
+        }
+
+        RequireMetadata(metadata);
     }
 
     private static void RequireVersion(string value)

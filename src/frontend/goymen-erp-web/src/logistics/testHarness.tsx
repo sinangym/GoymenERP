@@ -140,6 +140,9 @@ export interface HarnessConfig {
   readonly onCreate?: (attempt: number, call: RecordedCall) => Response | Promise<Response>
   readonly onIssue?: (call: RecordedCall) => Response | Promise<Response>
   readonly onLoad?: (lineId: string, call: RecordedCall) => Response | Promise<Response>
+  readonly onShipment?: (lineId: string, call: RecordedCall) => Response | Promise<Response>
+  readonly onDelivery?: (lineId: string, call: RecordedCall) => Response | Promise<Response>
+  readonly onAllocations?: (call: RecordedCall) => Response | Promise<Response>
   /** The price-free approved-order-lines read the picker uses. */
   readonly onApprovedLines?: (url: string, companyId: string | null) => Response | Promise<Response>
 }
@@ -173,7 +176,17 @@ export function installFetch(config: HarnessConfig = {}) {
         if (config.onApprovedLines === undefined) throw new Error('unexpected approved-order-lines read')
         return config.onApprovedLines(url, call.companyId)
       }
+      if (url.includes('/inventory/physical-allocations')) {
+        if (config.onAllocations === undefined) throw new Error('unexpected allocation read')
+        return config.onAllocations(call)
+      }
       if (url.includes('/logistics/loading-instructions')) {
+        const realization = /\/lines\/([^/?]+)\/(shipments|deliveries)$/.exec(url)
+        if (call.method === 'POST' && realization !== null) {
+          const handle = realization[2] === 'shipments' ? config.onShipment : config.onDelivery
+          if (handle === undefined) throw new Error('unexpected realization')
+          return handle(decodeURIComponent(realization[1]), call)
+        }
         const load = /\/logistics\/loading-instructions\/[^/?]+\/lines\/([^/?]+)\/loads$/.exec(url)?.[1]
         if (call.method === 'POST' && load !== undefined) {
           if (config.onLoad === undefined) throw new Error('unexpected load')

@@ -20,7 +20,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// <summary>
 /// PUR-4a: the Purchasing owner's permission names are registered centrally with the same strings (company-wide
 /// only, not Critical, no grant; #66 5743488059), and nothing else is registered under <c>purchasing.</c>; the
-/// Purchasing 1.3 shell provider joins the host set with its own reviewed normal-host authority.
+/// Purchasing 1.4 shell provider joins the host set with its own reviewed normal-host authority.
 /// </summary>
 public sealed class PurchasingPermissionAndShellRegistrationTests
 {
@@ -28,6 +28,7 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
     [InlineData(PurchasingPermissionManifestV1.OrdersCreate, ErpPermissions.PurchasingOrdersCreate)]
     [InlineData(PurchasingPermissionManifestV1.OrdersRead, ErpPermissions.PurchasingOrdersRead)]
     [InlineData(PurchasingPermissionManifestV1.OrdersApprove, ErpPermissions.PurchasingOrdersApprove)]
+    [InlineData(PurchasingPermissionManifestV1.GoodsReceiptsRecord, ErpPermissions.PurchasingGoodsReceiptsRecord)]
     public void The_owner_name_is_the_registered_central_name(string ownerName, string centralName)
     {
         Assert.Equal(ownerName, centralName);
@@ -57,7 +58,7 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
 
         var actual = ShellCapabilityRegistry.ComputeCandidateRevision(providers);
         Assert.True(
-            string.Equals(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV12PublishedManufacturingV12PublishedLogisticsV10AndPublishedPurchasingV13, actual,
+            string.Equals(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV11PublishedSalesV11PublishedFinanceV12PublishedManufacturingV13PublishedLogisticsV11AndPublishedPurchasingV14, actual,
                 StringComparison.Ordinal),
             $"Purchasing normal-host authority drifted. Actual: {actual}");
     }
@@ -70,16 +71,17 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
         var authority = C01E2eShellCapabilityActivation.Configure(services, new TestingEnvironment(),
             new ConfigurationBuilder().Build());
 
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10PublishedSalesV11PublishedFinanceV12PublishedManufacturingV12PublishedLogisticsV10AndPublishedPurchasingV13, authority);
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV11PublishedSalesV11PublishedFinanceV12PublishedManufacturingV13PublishedLogisticsV11AndPublishedPurchasingV14, authority);
         using var container = services.BuildServiceProvider();
         var registry = new ShellCapabilityRegistry(container.GetServices<IShellCapabilityProvider>(),
             new ShellCapabilityAuthorityCatalog([authority]));
         var purchasing = registry.Registrations
             .Where(item => item.Owner == PurchasingShellCapabilityProvider.OwnerId)
             .ToArray();
-        Assert.Equal(8, purchasing.Length);
+        Assert.Equal(9, purchasing.Length);
         string[] published =
         [
+            PurchasingShellCapabilityProvider.GoodsReceiptCapabilityId,
             PurchasingShellCapabilityProvider.ApproveCapabilityId,
             PurchasingShellCapabilityProvider.CreateCapabilityId,
             PurchasingShellCapabilityProvider.DetailCapabilityId,
@@ -106,6 +108,16 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
         Assert.Equal(detail.RoutePath, approve.RoutePath);
         Assert.Equal(detail.ContextRequirement, approve.ContextRequirement);
         Assert.Equal(detail.ScopeRequirement, approve.ScopeRequirement);
+
+        var goodsReceipt = Assert.Single(purchasing,
+            item => item.Declaration.CapabilityId == PurchasingShellCapabilityProvider.GoodsReceiptCapabilityId).Declaration;
+        Assert.Equal(detail.CapabilityId, goodsReceipt.ParentCapabilityId);
+        Assert.Equal(detail.RoutePath, goodsReceipt.RoutePath);
+        Assert.Equal(detail.ContextRequirement, goodsReceipt.ContextRequirement);
+        Assert.Equal(detail.ScopeRequirement, goodsReceipt.ScopeRequirement);
+        Assert.Equal(
+            [PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.GoodsReceiptsRecord],
+            goodsReceipt.RequiredPermissions);
 
         var requestDetail = Assert.Single(purchasing,
             item => item.Declaration.CapabilityId == PurchasingShellCapabilityProvider.RequestDetailCapabilityId).Declaration;

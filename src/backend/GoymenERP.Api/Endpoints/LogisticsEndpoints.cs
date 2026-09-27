@@ -6,6 +6,7 @@ using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Counterparty.Application.Contracts;
+using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Logistics.Application.Contracts;
 using Microsoft.AspNetCore.Mvc;
 
@@ -18,7 +19,7 @@ namespace GoymenERP.Api.Endpoints;
 /// Location (and again on the same attempt, with the replay headers, ADR-011 §4); POST issue and POST
 /// load → 200 with the instruction after the transition; a recorded terminal refusal (409) replays with
 /// the same headers (§7). Problems carry <c>code</c>, <c>correlationId</c> and field <c>errors</c>;
-/// platform 401/403/404 and every 503 stay code-less. Definite shipment and delivery have no route (D3, LOG-5).
+/// platform 401/403/404 and every 503 stay code-less. Definite shipment and delivery use the line-scoped routes mapped below (D3, LOG-5).
 /// </summary>
 public static class LogisticsEndpoints
 {
@@ -171,7 +172,7 @@ public static class LogisticsEndpoints
         // body, 200 with the instruction after the transition, 200 + replay headers for the same key again.
         group.MapPost("/{id:guid}/issue", (Guid id, HttpContext httpContext, [FromServices] ILogisticsInstructionService service,
                 ICorrelationContext correlation, CancellationToken cancellationToken) =>
-            MutateAsync(httpContext, service, correlation, LogisticsJson.ReadIssue,
+            MutateAsync(httpContext, correlation, LogisticsJson.ReadIssue,
                 (body, metadata) => service.IssueInstructionAsync(id, body, metadata, cancellationToken), cancellationToken))
             .WithName("IssueLoadingInstructionV1")
             .WithIdempotencyContract(LogisticsApiV1.MutationStatus, StatusCodes.Status409Conflict)
@@ -189,7 +190,7 @@ public static class LogisticsEndpoints
 
         group.MapPost("/{id:guid}/lines/{lineId:guid}/loads", (Guid id, Guid lineId, HttpContext httpContext,
                 [FromServices] ILogisticsInstructionService service, ICorrelationContext correlation, CancellationToken cancellationToken) =>
-            MutateAsync(httpContext, service, correlation, LogisticsJson.ReadRecordLoad,
+            MutateAsync(httpContext, correlation, LogisticsJson.ReadRecordLoad,
                 (body, metadata) => service.RecordLoadAsync(id, lineId, body, metadata, cancellationToken), cancellationToken))
             .WithName("RecordLoadingInstructionLoadV1")
             .WithIdempotencyContract(LogisticsApiV1.MutationStatus, StatusCodes.Status409Conflict)
@@ -205,14 +206,62 @@ public static class LogisticsEndpoints
             .ProducesErpUnprocessableEntity("validation_failed", LogisticsProblemCodesV1.UnsupportedUnit)
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
+
+        group.MapPost("/{id:guid}/lines/{lineId:guid}/shipments", (Guid id, Guid lineId, HttpContext httpContext,
+                [FromServices] ILogisticsRealizationServiceV1 service, ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            MutateAsync(httpContext, correlation, LogisticsRealizationJson.ReadShipment,
+                (body, metadata) => service.RecordShipmentAsync(id, lineId, body, metadata, cancellationToken), cancellationToken))
+            .WithName("RecordLoadingInstructionShipmentV1")
+            .WithIdempotencyContract(LogisticsApiV1.MutationStatus, StatusCodes.Status409Conflict)
+            .Accepts<RecordShipmentRequest>("application/json")
+            .Produces<LoadingInstructionResponse>(LogisticsApiV1.MutationStatus)
+            .ProducesErpBadRequest("validation_failed", LogisticsProblemCodesV1.CommandMetadataInvalid,
+                InventoryDefiniteShipmentCodesV1.InvalidRequest, InventoryDefiniteShipmentCodesV1.InvalidVersion,
+                InventoryDefiniteShipmentCodesV1.InvalidQuantity)
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(LogisticsProblemCodesV1.VersionConflict, LogisticsProblemCodesV1.InstructionState,
+                LogisticsProblemCodesV1.LineBlocked, LogisticsProblemCodesV1.DuplicateShare,
+                LogisticsRealizationCodesV1.AllocationSourceMismatch, LogisticsRealizationCodesV1.ShipmentExceedsLoaded,
+                LogisticsProblemCodesV1.SameKeyPayloadMismatch, LogisticsProblemCodesV1.ConcurrentChange,
+                InventoryDefiniteShipmentCodesV1.AllocationVersionConflict, InventoryDefiniteShipmentCodesV1.LabelVersionConflict,
+                InventoryDefiniteShipmentCodesV1.AllocationState, InventoryDefiniteShipmentCodesV1.AllocationLabelMismatch,
+                InventoryDefiniteShipmentCodesV1.AllocationInsufficient, InventoryDefiniteShipmentCodesV1.LabelNotReleasable,
+                InventoryDefiniteShipmentCodesV1.PhysicalStockInsufficient, InventoryDefiniteShipmentCodesV1.OwnerNotCompany,
+                InventoryDefiniteShipmentCodesV1.IdempotencyConflict, InventoryDefiniteShipmentCodesV1.ConcurrentChange)
+            .ProducesErpUnprocessableEntity("validation_failed", LogisticsProblemCodesV1.UnsupportedUnit)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
+        group.MapPost("/{id:guid}/lines/{lineId:guid}/deliveries", (Guid id, Guid lineId, HttpContext httpContext,
+                [FromServices] ILogisticsRealizationServiceV1 service, ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            MutateAsync(httpContext, correlation, LogisticsRealizationJson.ReadDelivery,
+                (body, metadata) => service.RecordDeliveryAsync(id, lineId, body, metadata, cancellationToken), cancellationToken))
+            .WithName("RecordLoadingInstructionDeliveryV1")
+            .WithIdempotencyContract(LogisticsApiV1.MutationStatus, StatusCodes.Status409Conflict)
+            .Accepts<RecordDeliveryRequest>("application/json")
+            .Produces<LoadingInstructionResponse>(LogisticsApiV1.MutationStatus)
+            .ProducesErpBadRequest("validation_failed", LogisticsProblemCodesV1.CommandMetadataInvalid)
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(LogisticsProblemCodesV1.VersionConflict, LogisticsProblemCodesV1.InstructionState,
+                LogisticsProblemCodesV1.DuplicateShare, LogisticsRealizationCodesV1.DeliveryExceedsShipment,
+                LogisticsRealizationCodesV1.ShipmentSourceInvalid, LogisticsProblemCodesV1.SameKeyPayloadMismatch,
+                LogisticsProblemCodesV1.ConcurrentChange)
+            .ProducesErpUnprocessableEntity("validation_failed", LogisticsProblemCodesV1.UnsupportedUnit)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
         return endpoints;
     }
 
-    private static async Task<IResult> MutateAsync<TBody>(HttpContext httpContext, ILogisticsInstructionService service, ICorrelationContext correlation,
+    private static async Task<IResult> MutateAsync<TBody>(HttpContext httpContext, ICorrelationContext correlation,
         Func<string, TBody> read, Func<TBody, LogisticsCommandMetadata, Task<LoadingInstructionResponse>> command, CancellationToken cancellationToken)
         where TBody : class
     {
-        _ = service;
         SetPrivateNoStore(httpContext.Response);
         if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var idempotencyKey) || !correlation.IsResolved)
         {

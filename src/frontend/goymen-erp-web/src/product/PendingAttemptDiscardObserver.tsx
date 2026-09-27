@@ -34,6 +34,7 @@ import type { ShellState } from '../shell/shellState'
 import {
   armDiscard,
   attemptBindingFor,
+  activationScope,
   editScope,
   forgetAttempt,
   reconcileArmedDiscards,
@@ -83,6 +84,16 @@ export function EditPendingAttemptScope({ children }: { readonly children: React
   const { productId } = useParams()
   return (
     <PendingAttemptDiscardObserver scope={editScope(productId ?? '')}>
+      {children}
+    </PendingAttemptDiscardObserver>
+  )
+}
+
+/** The detail route also owns the record-scoped activation attempt. */
+export function ActivationPendingAttemptScope({ children }: { readonly children: ReactNode }) {
+  const { productId } = useParams()
+  return (
+    <PendingAttemptDiscardObserver scope={activationScope(productId ?? '')}>
       {children}
     </PendingAttemptDiscardObserver>
   )

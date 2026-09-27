@@ -8,6 +8,7 @@ const scenario = vi.hoisted(() => ({
   status: 'Draft' as 'Draft' | 'Approved',
   canApprove: true,
   canReadSourceRequest: true,
+  capabilities: [] as string[],
   sourceRequestId: null as string | null,
 }))
 const COMPANY = '22222222-2222-4222-8222-222222222222'
@@ -32,19 +33,28 @@ function summary() {
 
 vi.mock('../shell/shellContext', () => ({
   useShellState: () => ({
+    phase: 'idle',
     sessionEpoch: 1,
     routeEntryGeneration: 1,
-    activeContext: { userId: ACTOR, companyId: COMPANY, scopeMode: 'single', capabilities: [] },
+    pendingTarget: null,
+    activeContext: {
+      userId: ACTOR,
+      companyId: COMPANY,
+      scopeMode: 'single',
+      capabilityGeneration: 'published-v1',
+      capabilities: [
+        ...(scenario.canApprove ? ['purchasing.orders.approve'] : []),
+        ...(scenario.canReadSourceRequest ? ['purchasing.requests.detail'] : []),
+        ...scenario.capabilities,
+      ],
+    },
   }),
 }))
 
-vi.mock('../shell/shellState', () => ({
-  contextKey: () => ['fixture'],
-  contextKeyString: () => 'fixture',
-  hasCapability: (_shell: unknown, capability: string) => capability === 'purchasing.requests.detail'
-    ? scenario.canReadSourceRequest
-    : scenario.canApprove,
-}))
+vi.mock('../shell/shellState', async () => {
+  const actual = await vi.importActual<typeof import('../shell/shellState')>('../shell/shellState')
+  return { ...actual, contextKey: () => ['fixture'], contextKeyString: () => 'fixture' }
+})
 
 vi.mock('../shell/useAuthBoundary', () => ({
   useAuthBoundary: () => ({ capture: () => ({ token: 1 }), report: vi.fn() }),
@@ -68,6 +78,12 @@ vi.mock('./approvalApi', () => ({
   }),
 }))
 
+vi.mock('./GoodsReceiptPanel', () => ({
+  GoodsReceiptPanel: ({ enabled }: { readonly enabled: boolean }) => enabled
+    ? <section aria-label="Mal kabul paneli">Mal kabul</section>
+    : null,
+}))
+
 function LocationReceipt() {
   const location = useLocation()
   return <output aria-label="Navigation state">{JSON.stringify(location.state)}</output>
@@ -88,6 +104,7 @@ beforeEach(() => {
   scenario.status = 'Draft'
   scenario.canApprove = true
   scenario.canReadSourceRequest = true
+  scenario.capabilities = []
   scenario.sourceRequestId = null
   sessionStorage.clear()
 })
@@ -148,5 +165,24 @@ describe('PurchaseOrderDetailPage source-return hint', () => {
     renderDetail()
     expect(screen.getByText('Bağlı değil')).toBeTruthy()
     expect(screen.queryByRole('link')).toBeNull()
+  })
+})
+
+describe('PurchaseOrderDetailPage goods-receipt capability mount', () => {
+  it('shows the panel for the exact capability published by the backend', () => {
+    scenario.capabilities = ['purchasing.goods-receipts.record']
+    renderDetail()
+
+    expect(screen.getByRole('region', { name: 'Mal kabul paneli' })).toBeTruthy()
+  })
+
+  it.each([
+    { name: 'capability absent', capabilities: [] },
+    { name: 'unpublished legacy id', capabilities: ['purchasing.orders.goods-receipt'] },
+  ])('hides the panel when $name', ({ capabilities }) => {
+    scenario.capabilities = capabilities
+    renderDetail()
+
+    expect(screen.queryByRole('region', { name: 'Mal kabul paneli' })).toBeNull()
   })
 })
