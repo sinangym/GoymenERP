@@ -352,6 +352,9 @@ public static class SalesEndpoints
         MapDeliveryScheduleCommand(drafts);
         MapDeliverySchedules(drafts);
         MapDeliveryProgress(drafts);
+        MapCancellationImpact(drafts);
+        MapCancelCommand(drafts);
+        MapCancellation(drafts);
         MapStateCommand(drafts, "/{id:guid}/submission", "SubmitSalesOrderDraftV1", allowReason: false,
             (service, id, body, metadata, cancellationToken) => service.SubmitDraftAsync(id, body, metadata, cancellationToken),
             unprocessableCodes: ["validation_failed"]);
@@ -566,6 +569,140 @@ public static class SalesEndpoints
         })
             .WithName("GetSalesOrderDraftDeliveryProgressV1")
             .Produces<SalesOrderDraftDeliveryProgressResponse>()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+    }
+
+    /// <summary>
+    /// DEC-SAL-005: the impact preview of cancelling an approved order, under <c>sales.orders.cancel</c> (the service measures
+    /// it): every DEC-SAL-005 category read afresh from its owner's port, a category without an owner on main as "no source".
+    /// Read-only; another company's draft is 404.
+    /// </summary>
+    private static void MapCancellationImpact(RouteGroupBuilder drafts)
+    {
+        drafts.MapGet("/{id:guid}/cancellation-impact", async (
+            Guid id,
+            HttpContext httpContext,
+            [FromServices] ISalesDraftService service,
+            ICorrelationContext correlation,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            try
+            {
+                return Results.Json(await service.GetCancellationImpactAsync(id, cancellationToken), SalesDraftJson.Options);
+            }
+            catch (SalesDraftServiceException exception)
+            {
+                return DraftProblem(exception, correlation);
+            }
+        })
+            .WithName("GetSalesOrderDraftCancellationImpactV1")
+            .Produces<SalesOrderDraftCancellationImpactResponse>()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+    }
+
+    /// <summary>
+    /// DEC-SAL-005 / AT-007: cancel an approved order. The source-owned service enforces <c>sales.orders.cancel</c>, the
+    /// version, the state, the required reason, the preview token and the fail-closed impact (an active allocation or a loading
+    /// line refuses; nothing of another module is released). The route owns only the strict HTTP envelope (the delivery
+    /// schedule's) and never derives an impact, a role or an approval.
+    /// </summary>
+    private static void MapCancelCommand(RouteGroupBuilder drafts)
+    {
+        drafts.MapPost("/{id:guid}/cancellation", async (
+            Guid id,
+            HttpContext httpContext,
+            [FromServices] ISalesDraftService service,
+            ICorrelationContext correlation,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var idempotencyKey) || !correlation.IsResolved)
+            {
+                return DraftProblem(StatusCodes.Status400BadRequest, SalesDraftProblemCodesV1.CommandMetadataInvalid, correlation);
+            }
+
+            if (!httpContext.Request.HasJsonContentType())
+            {
+                return Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+            }
+
+            SalesDraftCancelRequest body;
+            try
+            {
+                using var reader = new StreamReader(httpContext.Request.Body, Encoding.UTF8);
+                body = SalesDraftJson.ReadCancel(await reader.ReadToEndAsync(cancellationToken));
+            }
+            catch (JsonException)
+            {
+                return DraftProblem(StatusCodes.Status400BadRequest, "validation_failed", correlation);
+            }
+
+            try
+            {
+                var response = await service.CancelDraftAsync(id, body,
+                    new SalesCommandMetadata(idempotencyKey, correlation.CorrelationId, correlation.CausationId, DateTimeOffset.UtcNow),
+                    cancellationToken);
+                if (response.IsReplay)
+                {
+                    ApplyReplayHeaders(httpContext, response.OriginalCorrelationId);
+                }
+
+                return Results.Json(response, SalesDraftJson.Options, statusCode: SalesDraftApiV1.StateCommandStatus);
+            }
+            catch (SalesDraftServiceException exception)
+            {
+                if (exception.IsReplay)
+                {
+                    ApplyReplayHeaders(httpContext, exception.OriginalCorrelationId
+                        ?? throw new InvalidOperationException("Replayed refusal without its original correlation."));
+                }
+
+                return DraftProblem(exception, correlation);
+            }
+        })
+            .WithName("CancelSalesOrderDraftV1")
+            .WithIdempotencyContract(SalesDraftApiV1.StateCommandStatus, StatusCodes.Status409Conflict)
+            .Accepts<SalesDraftCancelRequest>("application/json")
+            .Produces<SalesOrderDraftResponse>(SalesDraftApiV1.StateCommandStatus)
+            .ProducesErpBadRequest("validation_failed", SalesDraftProblemCodesV1.CommandMetadataInvalid)
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(SalesDraftProblemCodesV1.VersionConflict, SalesDraftProblemCodesV1.StateConflict,
+                SalesDraftProblemCodesV1.CancellationBlocked, SalesDraftProblemCodesV1.CancellationImpactChanged,
+                SalesDraftProblemCodesV1.SameKeyPayloadMismatch, SalesDraftProblemCodesV1.ConcurrentChange)
+            .ProducesErpUnprocessableEntity("validation_failed")
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+    }
+
+    /// <summary>AT-007: the recorded cancellation (or null) under the draft read; another company's draft is 404.</summary>
+    private static void MapCancellation(RouteGroupBuilder drafts)
+    {
+        drafts.MapGet("/{id:guid}/cancellation", async (
+            Guid id,
+            HttpContext httpContext,
+            [FromServices] ISalesDraftService service,
+            ICorrelationContext correlation,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            try
+            {
+                return Results.Json(await service.GetDraftCancellationAsync(id, cancellationToken), SalesDraftJson.Options);
+            }
+            catch (SalesDraftServiceException exception)
+            {
+                return DraftProblem(exception, correlation);
+            }
+        })
+            .WithName("GetSalesOrderDraftCancellationV1")
+            .Produces<SalesOrderDraftCancellationResponse>()
             .ProducesErpCodeLessNotFound()
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();

@@ -239,3 +239,22 @@ internal sealed class DraftDeliveryScheduleDateRow : ISalesTenantRow
     public Guid? SliceId { get; set; }
     public DateOnly? RequestedDeliveryDate { get; set; }
 }
+
+/// <summary>
+/// DEC-SAL-005 / AT-007: the recorded cancellation of an approved order (append-only, at most one per draft): the revision
+/// cancelled, who, when, why, the draft version it produced, and the impact preview the user confirmed (its token and each
+/// category's status, as JSON). Never modified, never deleted; the draft's other rows stay as they were.
+/// </summary>
+internal sealed class DraftCancellationRow : ISalesTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid DraftId { get; set; }
+    public int Revision { get; set; }
+    public string CancelledBy { get; set; } = string.Empty;
+    public DateTimeOffset CancelledAtUtc { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public long DraftVersion { get; set; }
+    public string ImpactToken { get; set; } = string.Empty;
+    public string ImpactJson { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}

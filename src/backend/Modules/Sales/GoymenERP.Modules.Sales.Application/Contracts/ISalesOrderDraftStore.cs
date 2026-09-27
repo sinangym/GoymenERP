@@ -55,6 +55,9 @@ public static class SalesDraftCommands
     /// <summary>DEC-SAL-003: the delivery-schedule update (dates only, no re-approval, audited).</summary>
     public const string RescheduleDeliveryV1 = "sales.order-draft.reschedule-delivery.v1";
 
+    /// <summary>DEC-SAL-005: POST /api/v1/sales/drafts/{id}/cancellation — an approved order's lifecycle Draft → Cancelled after its impact preview.</summary>
+    public const string CancelV1 = "sales.order-draft.cancel.v1";
+
     public static bool IsStateCommand(string commandName) =>
         commandName is SubmitV1 or ApproveV1 or RejectV1 or WithdrawV1;
 }
@@ -216,6 +219,19 @@ public interface ISalesOrderDraftStore
         Guid draftId, Func<SalesOrderDraft, DateTimeOffset, DeliveryScheduleSnapshot> mutate, SalesDraftStateAudit audit,
         Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// DEC-SAL-005: the cancellation of an approved order, one save. The same key rules as a state command (§3/§4/§7/§8);
+    /// <paramref name="beforeWrite"/> receives the draft as read (tracked header) and is the caller's last word before the
+    /// mutation — its fences and the impact preview read afresh from the owners, answered as the snapshot to keep; any
+    /// refusal it throws leaves nothing written. <paramref name="mutate"/> is the domain's <c>Cancel</c>. The store APPENDS the
+    /// cancellation row (who, when, why, the revision, the version produced, the impact the user confirmed) and moves the
+    /// header's lifecycle state and version together with the attempt record and the audit event — or nothing at all. No
+    /// line, revision, schedule or approval column changes. The command name must be <see cref="SalesDraftCommands.CancelV1"/>.
+    /// </summary>
+    Task<SalesDraftStateResult?> CancelDraftAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+        Guid draftId, Func<SalesOrderDraft, CancellationImpactSnapshot, DateTimeOffset, CancellationFacts> mutate, SalesDraftStateAudit audit,
+        Func<SalesOrderDraft, CancellationToken, Task<CancellationImpactSnapshot>> beforeWrite, CancellationToken cancellationToken = default);
+
     Task<SalesOrderDraft?> FindDraftAsync(Guid draftId, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -267,6 +283,15 @@ public static class SalesDraftRequestHash
         ArgumentException.ThrowIfNullOrWhiteSpace(commandName);
         return Hash(JsonSerializer.Serialize(
             new { command = commandName, draftId, request.ExpectedVersion, request.RequestedDeliveryDate, request.Lines }, SalesDraftJson.Options));
+    }
+
+    /// <summary>DEC-SAL-005: the canonical content of a cancellation (command, draft, version, reason as sent, the preview token).</summary>
+    public static string Compute(string commandName, Guid draftId, SalesDraftCancelRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(commandName);
+        return Hash(JsonSerializer.Serialize(
+            new { command = commandName, draftId, request.ExpectedVersion, request.Reason, request.ImpactToken }, SalesDraftJson.Options));
     }
 
     private static string Hash(string canonical) =>

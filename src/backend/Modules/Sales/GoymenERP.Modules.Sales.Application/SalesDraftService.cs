@@ -51,7 +51,9 @@ public sealed partial class SalesDraftService(
     SalesDraftServiceBindings bindings,
     TimeProvider timeProvider,
     ISalesPartyContactInformationPortV1? contactInformation = null,
-    ISalesOrderDeliveryReadPortV1? deliveries = null) : ISalesDraftService
+    ISalesOrderDeliveryReadPortV1? deliveries = null,
+    ISalesOrderAllocationReadPortV1? allocations = null,
+    ISalesOrderLoadingReadPortV1? loadings = null) : ISalesDraftService
 {
     private const int DefaultPageSize = 50;
     private const int MaximumPageSize = 100;

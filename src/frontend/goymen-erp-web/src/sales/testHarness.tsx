@@ -160,6 +160,12 @@ export interface HarnessConfig {
   readonly onDeliverySchedule?: (call: RecordedCall) => Response | Promise<Response>
   /** SALES-A1: a POST on `/sales/drafts/{id}/(submission|approval|rejection)`. */
   readonly onCommand?: (command: string, call: RecordedCall) => Response | Promise<Response>
+  /** DEC-SAL-005: GET `/sales/drafts/{id}/cancellation-impact` (read only when the user asks for the preview). */
+  readonly onCancellationImpact?: (url: string, companyId: string | null) => Response | Promise<Response>
+  /** DEC-SAL-005: a POST on `/sales/drafts/{id}/cancellation`. */
+  readonly onCancel?: (call: RecordedCall) => Response | Promise<Response>
+  /** AT-007: GET `/sales/drafts/{id}/cancellation`; default: no recorded cancellation. */
+  readonly onCancellation?: (url: string, companyId: string | null) => Response | Promise<Response>
 }
 
 export function installFetch(config: HarnessConfig = {}) {
@@ -194,6 +200,17 @@ export function installFetch(config: HarnessConfig = {}) {
         if (call.method === 'POST' && /\/sales\/drafts\/[^/?]+\/delivery-schedule$/.test(url)) {
           if (config.onDeliverySchedule === undefined) throw new Error('unexpected delivery-schedule update')
           return config.onDeliverySchedule(call)
+        }
+        if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/cancellation-impact$/.test(url)) {
+          if (config.onCancellationImpact === undefined) throw new Error('unexpected cancellation-impact read')
+          return config.onCancellationImpact(url, call.companyId)
+        }
+        if (/\/sales\/drafts\/[^/?]+\/cancellation$/.test(url)) {
+          if (call.method === 'POST') {
+            if (config.onCancel === undefined) throw new Error('unexpected cancellation')
+            return config.onCancel(call)
+          }
+          return config.onCancellation?.(url, call.companyId) ?? json({ cancellation: null })
         }
         if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/delivery-progress$/.test(url)) {
           return config.onDeliveryProgress?.(url, call.companyId) ?? nothingDelivered(details.get(url.replace(/\/delivery-progress$/, '')))

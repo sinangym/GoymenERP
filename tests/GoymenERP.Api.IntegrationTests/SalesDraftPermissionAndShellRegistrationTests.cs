@@ -40,6 +40,8 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
     // price names do not confer it. Company-wide and not Critical (the reason is on
     // ErpPermissions.SalesOrdersDeliveryScheduleWrite).
     [InlineData(SalesPermissionManifestV1.OrdersDeliveryScheduleWrite, ErpPermissions.SalesOrdersDeliveryScheduleWrite)]
+    // DEC-SAL-005 (central step, with the registration): [InlineData(SalesPermissionManifestV1.OrdersCancel,
+    // ErpPermissions.SalesOrdersCancel)] — its own name, company-wide; Critical only if the central writer classifies it.
     public void The_owner_name_is_the_registered_central_name(string ownerName, string centralName)
     {
         Assert.Equal(ownerName, centralName);
@@ -93,8 +95,12 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
         var registry = new ShellCapabilityRegistry(container.GetServices<IShellCapabilityProvider>(),
             new ShellCapabilityAuthorityCatalog([authority]));
         var sales = registry.Registrations.Where(item => item.Owner == SalesShellCapabilityProvider.OwnerId).ToArray();
-        // Three screens plus the SALES-A1 approve, SALES-P commercial-revision and DEC-SAL-003 delivery-schedule controls.
-        Assert.Equal(6, sales.Length);
+        // Three screens plus the SALES-A1 approve, SALES-P commercial-revision, DEC-SAL-003 delivery-schedule and DEC-SAL-005
+        // cancel controls.
+        Assert.Equal(7, sales.Length);
+        Assert.Equal(SalesShellCapabilityProvider.DetailCapabilityId,
+            Assert.Single(sales, item => item.Declaration.CapabilityId == SalesShellCapabilityProvider.CancelCapabilityId)
+                .Declaration.ParentCapabilityId);
         Assert.Equal(SalesShellCapabilityProvider.DetailCapabilityId,
             Assert.Single(sales, item => item.Declaration.CapabilityId == SalesShellCapabilityProvider.ApproveCapabilityId)
                 .Declaration.ParentCapabilityId);
