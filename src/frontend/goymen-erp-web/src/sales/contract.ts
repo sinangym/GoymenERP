@@ -31,6 +31,8 @@ export const salesDraftRevisionsPath = (id: string) => `${salesDraftDetailPath(i
 /** DEC-SAL-003: the delivery-schedule update (POST) and its history (GET). */
 export const salesDraftDeliverySchedulePath = (id: string) => `${salesDraftDetailPath(id)}/delivery-schedule`
 export const salesDraftDeliverySchedulesPath = (id: string) => `${salesDraftDetailPath(id)}/delivery-schedules`
+/** AT-024: per line the delivered and remaining quantity, read from the delivery owner's records (GET). */
+export const salesDraftDeliveryProgressPath = (id: string) => `${salesDraftDetailPath(id)}/delivery-progress`
 
 /**
  * `SalesDraftApiV1`: a first commit answers 201; the same accepted attempt answers 201 again with
@@ -133,6 +135,27 @@ export interface DeliverySchedule {
 
 export interface DeliverySchedules {
   readonly items: readonly DeliverySchedule[]
+}
+
+/**
+ * AT-024: one line's quantities as exact decimal text in the line's order unit — `ordered` (the line), `shipped` and
+ * `delivered` (the delivery owner's recorded totals), `remaining` (ordered − delivered, never below zero) and `excess`
+ * (delivered above the order). Facts only: no completion or tolerance state exists (OPEN-004 is open).
+ */
+export interface DeliveryProgressLine {
+  readonly lineId: string
+  readonly lineNo: number
+  readonly orderUnitId: string
+  readonly ordered: string
+  readonly shipped: string
+  readonly delivered: string
+  readonly remaining: string
+  readonly excess: string
+}
+
+export interface DeliveryProgress {
+  readonly draftVersion: string
+  readonly lines: readonly DeliveryProgressLine[]
 }
 
 /** `SalesDraftApprovalV1`: who submitted / decided and when; null until it happened. Facts, never derived. */
@@ -824,6 +847,37 @@ export function decodeDeliverySchedules(value: unknown): DeliverySchedules | nul
     })
   }
   return { items }
+}
+
+/**
+ * AT-024: `SalesOrderDraftDeliveryProgressResponse`, read exactly — and only as the progress OF `detail`: the same
+ * version, every line of the detail once in its order with its own order unit and quantity text. Decimal text stays
+ * text (never parsed into a JS number); `ordered` is positive, the others may be zero. A body that does not fit is not
+ * shown as quantities.
+ */
+export function decodeDeliveryProgress(value: unknown, detail: DraftDetail): DeliveryProgress | null {
+  const response = exact(value, ['draftVersion', 'lines'])
+  if (
+    response === null || response.draftVersion !== detail.draft.version ||
+    !Array.isArray(response.lines) || response.lines.length !== detail.lines.length
+  ) return null
+  const lines: DeliveryProgressLine[] = []
+  for (const [index, entry] of response.lines.entries()) {
+    const o = exact(entry, ['lineId', 'lineNo', 'orderUnitId', 'ordered', 'shipped', 'delivered', 'remaining', 'excess'])
+    const line = detail.lines[index]
+    if (
+      o === null || !isRevisionId(o.lineId) || o.lineId.toLowerCase() !== line.lineId.toLowerCase() ||
+      o.lineNo !== line.lineNo || !isRevisionId(o.orderUnitId) ||
+      o.orderUnitId.toLowerCase() !== line.orderUnitId.toLowerCase() || o.ordered !== line.quantity ||
+      !isRevisionDecimal(o.ordered, true) || !isRevisionDecimal(o.shipped, false) ||
+      !isRevisionDecimal(o.delivered, false) || !isRevisionDecimal(o.remaining, false) || !isRevisionDecimal(o.excess, false)
+    ) return null
+    lines.push({
+      lineId: o.lineId, lineNo: o.lineNo, orderUnitId: o.orderUnitId, ordered: o.ordered,
+      shipped: o.shipped, delivered: o.delivered, remaining: o.remaining, excess: o.excess,
+    })
+  }
+  return { draftVersion: response.draftVersion, lines }
 }
 
 /**

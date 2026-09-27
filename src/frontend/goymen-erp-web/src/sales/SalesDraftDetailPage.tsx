@@ -27,6 +27,11 @@
  * is guessed and no read hides the draft. The reference reads are bound to `sales.drafts.create` on the
  * server, so an actor without that grant is told the names cannot be read, and nothing is asked.
  *
+ * AT-024 — "Teslimat durumu": per line the shipped / delivered / remaining quantity as the server reads it from
+ * Logistics' recorded deliveries, afresh on every open (a delivery recorded there shows on the next open). Mounted for
+ * an order that is or was approved (approved now, or a revision above Rev.0): Logistics serves only approved lines, so
+ * a never-approved draft has nothing delivered. Facts only — no tolerance, completion or warning (OPEN-004 is open).
+ *
  * An approved order may consume Inventory's existing physical-allocation surface when the shell
  * publishes its write capability. Inventory remains the owner: create/release and every reopen are
  * read from its server truth; this page creates no stock movement or local allocation projection.
@@ -39,6 +44,7 @@ import { fetchDraftDetail, sendDraftCommand } from './api'
 import {
   APPROVAL_STATE,
   OWNER_REFERENCE_FIELDS,
+  REV_0,
   type ContactInformationOptions,
   type DraftDetail,
   type DraftLine,
@@ -79,6 +85,7 @@ import { SalesDraftRevisionHistory } from './SalesDraftRevisionHistory'
 import { SalesDraftAllocationPanel } from './SalesDraftAllocationPanel'
 import { SalesDraftDeliveryScheduleForm } from './SalesDraftDeliveryScheduleForm'
 import { SalesDraftDeliveryScheduleHistory } from './SalesDraftDeliveryScheduleHistory'
+import { SalesDraftDeliveryProgress } from './SalesDraftDeliveryProgress'
 import { SalesDraftLinkedEffects, SalesDraftLinkedEffectsUnbound } from './SalesDraftLinkedEffects'
 import { INVENTORY_PHYSICAL_ALLOCATION_WRITE_CAPABILITY } from '../inventory/capabilities'
 import styles from './SalesPages.module.css'
@@ -159,6 +166,15 @@ export function SalesDraftDetailPage() {
           />
         ) : null
       }
+      deliveryProgress={
+        namespace !== null && companyId !== null && outcome.data.draft.companyId === companyId
+          && (outcome.data.draft.approvalState === APPROVAL_STATE.approved || outcome.data.draft.revision !== REV_0) ? (
+          <SalesDraftDeliveryProgress
+            key={`delivery-progress:${namespace}:${shell.routeEntryGeneration}:${outcome.data.draft.id}`}
+            detail={outcome.data}
+          />
+        ) : null
+      }
       linkedEffects={
         namespace !== null && companyId !== null && outcome.data.draft.companyId === companyId ? (
           <SalesDraftLinkedEffects
@@ -221,6 +237,7 @@ export function DraftView({
   allocations = null,
   deliverySchedule = null,
   deliveryScheduleHistory = null,
+  deliveryProgress = null,
   linkedEffects = null,
 }: {
   readonly detail: DraftDetail
@@ -234,6 +251,8 @@ export function DraftView({
   /** DEC-SAL-003: the planner's delivery-date control (shell-gated) and the schedule history. */
   readonly deliverySchedule?: React.ReactNode
   readonly deliveryScheduleHistory?: React.ReactNode
+  /** AT-024: delivered / remaining per line from Logistics' recorded deliveries (null: not mounted). */
+  readonly deliveryProgress?: React.ReactNode
   /** The owners' linked effects; without a bound company nothing is read and no number is shown. */
   readonly linkedEffects?: React.ReactNode
 }) {
@@ -360,6 +379,7 @@ export function DraftView({
         {deliverySchedule}
       </section>
       {deliveryScheduleHistory}
+      {deliveryProgress}
       {allocations}
       {revisionHistory}
     </article>

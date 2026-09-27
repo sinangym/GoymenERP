@@ -180,6 +180,23 @@ planlama/sevkiyat rolündedir ve yeniden onay gerektirmez, ancak auditlidir."
 | Frontend | S-04 "Termin güncelle" behind the `sales.orders.delivery-schedule.write` control; the "Termin geçmişi" history under the detail read. |
 | Central step (not in this slice) | permission registration, the shell control declaration + authority re-measure, OpenAPI pin, guard fingerprints (SalesStore, SalesDbContext, the migration's reviewed `Sql`), relational inventory names, the s04 disposable actor grant (human decision). |
 
+## Delivered / remaining per line (AT-024)
+
+AT-024 (verbatim): "Kısmi teslimat sipariş kalanını doğru tutar." DEC-SAL-001 keeps fulfilment a separate axis of the
+order; the delivery facts are the delivery owner's (Logistics), never a Sales copy.
+
+| Concern | Rule |
+|---|---|
+| Source | `ISalesOrderDeliveryReadPortV1` (Sales-declared, `Contracts/ISalesOrderDeliveryReadPortV1.cs`), answered by Logistics (`LogisticsSalesOrderDeliveryReadPort`, registered in `AddLogisticsModule`): per Sales order line and unit, the SHIPPED and DELIVERED totals Logistics recorded over every instruction of the context company (the stored share totals, delivered ≤ shipped ≤ loaded ≤ instructed). Sales never reads Logistics tables; the port carries no authority (LOG-4 D6) and creates nothing. Not composed → 503 `delivery_provider_unavailable` (code-less on the wire), never an assumed zero. |
+| Route | `GET /api/v1/sales/drafts/{id}/delivery-progress` (`GetSalesOrderDraftDeliveryProgressV1`) under `sales.drafts.read`: `{draftVersion, lines[{lineId, lineNo, orderUnitId, ordered, shipped, delivered, remaining, excess}]}`, every line once in line order, exact decimal text in the order unit. Private, no-store; 404 code-less for an unknown or another company's draft (the owner is then never asked); 503 code-less. |
+| Arithmetic | `remaining` = ordered − delivered, never below zero; `excess` = delivered above the order, else 0. Ö2 in the order unit's own dimension — a total in another unit (no conversion), above the scale, negative or delivered above shipped is a malformed owner answer (503 `reference_provider_invalid`), so no wrong number is shown. A line only instructed/loaded (shipped 0) adds nothing. |
+| No tolerance | OPEN-004 (over/under-delivery tolerance) is open: no completion, warning, approval or "closed line" state is derived; the wire has no such member (pinned by a unit test). |
+| Fences / effects | The draft read is measured before, after the draft read and after the owner's answer; the read writes nothing in either module (no attempt, audit, share or version effect — pinned on real SQL). |
+| Replay | A replayed Logistics delivery (same key) is answered from its stored attempt and a repeated delivery id is the domain's duplicate refusal: neither appends a share, so neither is counted twice (real route, real SQL). |
+| Frontend | S-04 "Teslimat durumu" (`SalesDraftDeliveryProgress`): mounted for an order that is or was approved (Approved, or a revision above Rev.0 — Logistics serves only approved lines); read afresh on every open (`gcTime` 0) so a delivery recorded in Logistics shows on the next open; decoded only as the progress of THAT detail (version, lines, units, ordered text), else "unexpected answer", never numbers. |
+| Evidence | Unit: `SalesDraftServiceTests.DeliveryProgress` (Sales), `LogisticsSalesOrderDeliveryReadPortTests` (Logistics). HTTP: `SalesDraftHttpAcceptanceTests.Delivery_progress_is_a_private_read_…`. Real SQL + real host: `SalesDeliveryProgressSqlServerRelationalAcceptanceTests` (two cases). Frontend: `SalesDraftDeliveryProgress.test.tsx`. |
+| Central step (not in this slice) | OpenAPI op `GetSalesOrderDraftDeliveryProgressV1`; guard fingerprints of `SalesModuleExtensions.cs` and `LogisticsModuleExtensions.cs`; relational inventory `sales.txt` += the two SQL cases. No new permission, shell capability or host DI line. |
+
 ## Deliberate limits of this slice (not policy choices)
 
 - **No real positive create today.** #257 makes the currency mandatory and validated through the Settings money profile with the central owner's accepted Sales money operation identifier; the approved Settings provider answers **Unavailable** for money and that operation identifier does not exist, so a contract-faithful create is 503 with every real provider. Product eligibility is not host-registered (C3) and the GDC family data is missing (#300), so every line is 503 as well. Only the kilogram unit path is real (GDC kg). SALES-P2's real-SQL tests therefore prove the negative path with the real providers and the positive path only with **isolated synthetic owner sources**; no PR claims a positive runtime, and no currency, family, profile or grant is invented.

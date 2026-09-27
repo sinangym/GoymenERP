@@ -38,7 +38,7 @@ namespace GoymenERP.Modules.Sales.Application;
 /// the audit event.</item>
 /// </list>
 /// </summary>
-public sealed class SalesDraftService(
+public sealed partial class SalesDraftService(
     ICompanyContext companyContext,
     ICurrentUser currentUser,
     IErpAuthorityRevalidationService authority,
@@ -50,7 +50,8 @@ public sealed class SalesDraftService(
     ISalesOrderDraftStore store,
     SalesDraftServiceBindings bindings,
     TimeProvider timeProvider,
-    ISalesPartyContactInformationPortV1? contactInformation = null) : ISalesDraftService
+    ISalesPartyContactInformationPortV1? contactInformation = null,
+    ISalesOrderDeliveryReadPortV1? deliveries = null) : ISalesDraftService
 {
     private const int DefaultPageSize = 50;
     private const int MaximumPageSize = 100;
