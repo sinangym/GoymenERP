@@ -44849,11 +44849,7 @@
             "type": "boolean"
           },
           "version": {
-            "pattern": "^-?(?:0|[1-9]\\d*)$",
-            "type": [
-              "integer",
-              "string"
-            ],
+            "type": "integer",
             "format": "int64"
           },
           "canOpenLocationDetail": {
