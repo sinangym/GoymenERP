@@ -70,6 +70,16 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             Assert.Equal(2, genealogy.Edges.Select(edge => edge.TransformationId).Distinct().Count());
             Assert.Equal(["Merge", "Split"], genealogy.Edges.Select(edge => edge.Kind).Distinct().Order().ToArray());
 
+            // The read is the CONNECTED many-to-many genealogy (DEC-LBL-003), not only the edges that touch the label:
+            // the split source and a split child read the very same four edges as the merged label, each under its
+            // own identity.
+            foreach (var (member, code) in new[] { (source.LabelId, "SYN-GENEALOGY-SOURCE"), (splitA, "SYN-GENEALOGY-A") })
+            {
+                var view = (await scope.Store.ReadAsync(member))!;
+                Assert.Equal((member, code, false), (view.LabelId, view.LabelCode, view.WindowFull));
+                Assert.Equal(EdgeKeys(genealogy), EdgeKeys(view));
+            }
+
             var detail = await LabelDetails(scope.DbContext, CompanyA, scope.Store).GetAsync(merged);
             Assert.Equal((merged, "SYN-GENEALOGY-MERGED", 4, false),
                 (detail.Genealogy.LabelId, detail.Genealogy.LabelCode,
@@ -176,6 +186,10 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         Assert.Equal(3, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'inventory') AND name LIKE N'LabelTransformation%'"));
     }
+
+    /// <summary>One genealogy's edges as (transformation, source, output), in the reader's order.</summary>
+    private static (Guid Transformation, Guid Source, Guid Output)[] EdgeKeys(InventoryLabelGenealogyV1 genealogy) =>
+        [.. genealogy.Edges.Select(edge => (edge.TransformationId, edge.SourceLabelId, edge.OutputLabelId))];
 
     private static TransformInventoryLabelsV1 SplitRequest(
         Guid sourceLabelId,

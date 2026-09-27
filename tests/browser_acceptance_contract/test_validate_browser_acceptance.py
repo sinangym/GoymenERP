@@ -316,6 +316,8 @@ class WorkflowTests(unittest.TestCase):
                 "inventory.labels.read",
                 "inventory.balances.read",
                 "organization.locations.read",
+                # R19: held only by the disposable r14-transformer.
+                "inventory.label-transformation.record",
             ),
             validator.SUITE_IDENTITY_PERMISSIONS["r14"],
         )

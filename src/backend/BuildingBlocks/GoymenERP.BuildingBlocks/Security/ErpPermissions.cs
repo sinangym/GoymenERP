@@ -62,6 +62,19 @@ public static class ErpPermissions
     public const string InventoryPhysicalAllocationWrite = "inventory.physical-allocation.write";
 
     /// <summary>
+    /// R19 / AT-038: record one same-company label split or merge (DEC-LBL-002/003), the Inventory owner's
+    /// name (<c>InventoryPermissionManifestV1.LabelTransformationRecord</c>, same string). The literal is the
+    /// owner's technical mapping, confirmed by the coordinator (session decision 2026-09-27; technical names are
+    /// not Sinan's, #66/5808295853 and #66/5811361336); a separate Inventory-owned command name follows the
+    /// STK/T11 separation of #66/5806047097 by analogy only. Registration grants nothing: no seeded role and no
+    /// real user receives it; its only grant is a disposable R19 browser test actor in the per-run database, and
+    /// the real-user mapping stays with the persona card #66/5802952566. Company-wide only: the command names
+    /// labels of the server-resolved company and has no narrower scope dimension. Not Critical: no approved
+    /// source adds grant-time dual control for it.
+    /// </summary>
+    public const string InventoryLabelTransformationRecord = "inventory.label-transformation.record";
+
+    /// <summary>
     /// Finance bank-account master (FS0, #312): names are the Finance owner's technical mapping
     /// (Business #254 5654539215). Registering them makes them KNOWN, not granted: no role and no
     /// user receives them here, and who holds which is a human gate. All three are company-wide
@@ -396,6 +409,7 @@ public static class ErpPermissions
             InventoryBalancesRead,
             InventoryOpeningStockRecord,
             InventoryPhysicalAllocationWrite,
+            InventoryLabelTransformationRecord,
             LogisticsLoadingInstructionsCreate,
             LogisticsLoadingInstructionsRead,
             LogisticsLoadsRecord,
@@ -471,6 +485,7 @@ public static class ErpPermissions
             InventoryBalancesRead,
             InventoryOpeningStockRecord,
             InventoryPhysicalAllocationWrite,
+            InventoryLabelTransformationRecord,
             LogisticsLoadingInstructionsCreate,
             LogisticsLoadingInstructionsRead,
             LogisticsLoadsRecord,

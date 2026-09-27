@@ -7,7 +7,9 @@ import { useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
 import { StateBlock } from '../shell/StateBlock'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
+import { INVENTORY_LABEL_TRANSFORMATION_CAPABILITY } from './capabilities'
 import { fetchInventoryLabelDetail } from './labelDetailApi'
+import { LabelTransformationPanel } from './LabelTransformationPanel'
 import type { InventoryLabelDetailWithMovementTimeline } from './labelDetailContract'
 import { inventoryLabelDetailPath } from './labelDetailRoute'
 import styles from './inventory.module.css'
@@ -42,7 +44,9 @@ function InventoryLabelDetailView({ namespace, labelId }: {
   const boundary = useAuthBoundary()
   const canReadProduct = hasCapability(shell, CAPABILITY.productItemsDetail)
   const canReadLabel = hasCapability(shell, CAPABILITY.inventoryStockPositionsList)
+  const canTransform = hasCapability(shell, INVENTORY_LABEL_TRANSFORMATION_CAPABILITY)
   const companyId = shell.activeContext?.scopeMode === 'single' ? shell.activeContext.companyId : null
+  const actorId = shell.activeContext?.userId ?? null
   const query = useQuery({
     queryKey: ['inventory-label-detail', namespace, labelId, shell.routeEntryGeneration],
     enabled: namespace !== null && companyId !== null && labelId !== undefined,
@@ -148,6 +152,22 @@ function InventoryLabelDetailView({ namespace, labelId }: {
         </table></div>}
       {genealogy.windowFull ? <p>Daha eski soy ağacı kayıtları bu görünümde yer almıyor.</p> : null}
     </section>
+
+    {canTransform && actorId !== null
+      ? <LabelTransformationPanel
+        key={identity.labelId}
+        label={{
+          labelId: identity.labelId, labelVersion, code: identity.code, productId: identity.productId,
+          lotId: identity.lotId, heatNumber: identity.heatNumber, coilNumber: identity.coilNumber,
+          physicalKg: balances.physicalKg, positions: balances.positions,
+        }}
+        companyId={companyId}
+        actorId={actorId}
+        sessionEpoch={shell.sessionEpoch}
+        canOpenLabels={canReadLabel}
+        onRecorded={() => void query.refetch()}
+      />
+      : null}
 
     <section aria-labelledby="label-document-heading">
       <h2 id="label-document-heading">Belgeler ve basımlar</h2>

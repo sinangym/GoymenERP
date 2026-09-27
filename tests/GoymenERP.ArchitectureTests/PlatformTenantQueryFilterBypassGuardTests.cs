@@ -62,8 +62,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // the same push.
     // Re-fingerprinted for the #478 forward onto main c287128f: Program.cs is the clean union of the reviewed
     // PUR-HOST composition (#478, b66b1cca…) and main's reviewed LOG-HOST/#474-#485 composition (e6a57d52…).
+    // Re-fingerprinted for R19 (#483): one added host line, builder.Services.AddInventoryLabelGenealogy(), and its
+    // comment (588121e3… -> ab4aa1be…); no other startup change.
     private const string ReviewedOpenApiStartupFingerprint =
-        "588121e3020330252ab46669d87f9501e802f0114d705618936b266ef2d9711f";
+        "ab4aa1be6235dd0b0de72dc933869790e430ba73c54b48f4cc30bb1e420efc2e";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -156,7 +158,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // inventory
             ["tools/relational_inventory/inventory.txt"] =
-                "59549fccbce932a94334880dda3e76d1681edbe0893ed989502dd17a32704c63",
+                "d709faf1019cbc311f092d04182746694541c7490c5a9e37907473d064edd3c3",
 
             // logistics
             ["tools/relational_inventory/logistics.txt"] =
