@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { expect, test, type Page, type Response } from '@playwright/test'
+import { expect, test, type Page, type Request, type Response } from '@playwright/test'
 import sql from 'mssql'
 import { readEnvironment } from '../src/env'
 
@@ -129,6 +129,41 @@ async function openLabel(page: Page, labelId: string, code: string): Promise<Lab
   return (await response.json()) as LabelDetail
 }
 
+/**
+ * Opens ST-01 with a fresh navigation, waits for its one unfiltered read, submits a label-code search and returns
+ * the search's answer. ST-01 must read the company's list once and then exactly the submitted search: run
+ * 36317283526 caught it re-reading the list after every render, which aborted the search in flight.
+ */
+async function searchPositions(page: Page, q: string): Promise<Response> {
+  const reads: string[] = []
+  const onRequest = (request: Request) => {
+    const url = new URL(request.url())
+    if (request.method() === 'GET' && url.pathname === POSITIONS) reads.push(url.searchParams.get('q') ?? '')
+  }
+  page.on('request', onRequest)
+  try {
+    await page.goto('about:blank')
+    const initial = page.waitForResponse((response) => isCall(response, 'GET', POSITIONS)
+      && !new URL(response.url()).searchParams.has('q'))
+    await page.goto('/stok/pozisyonlar')
+    await expect(page.getByRole('heading', { level: 1, name: 'Stok / Malzeme Pozisyonu' })).toBeVisible({ timeout: 30_000 })
+    expect((await initial).status()).toBe(200)
+    const field = page.getByLabel('Etiket kodu', { exact: true })
+    await field.fill(q)
+    await expect(field).toHaveValue(q)
+    const answer = page.waitForResponse((response) => isCall(response, 'GET', POSITIONS)
+      && new URL(response.url()).searchParams.get('q') === q)
+    await page.getByRole('button', { name: 'Ara', exact: true }).click()
+    const response = await answer
+    expect(response.status()).toBe(200)
+    await expect(field).toHaveValue(q)
+    expect(reads).toEqual(['', q])
+    return response
+  } finally {
+    page.off('request', onRequest)
+  }
+}
+
 function genealogyRows(page: Page) {
   return page.getByRole('region', { name: 'Soy ağacı', exact: true }).getByRole('row')
 }
@@ -235,13 +270,7 @@ test('R19 splits a label in the browser, reopens exact children and genealogy, r
 
     // ── 3. The transformer opens the label from ST-01 and splits it 4 + 6 kg. ──────────────────────────────
     await signInAs(page, transformerActor)
-    await page.goto('/stok/pozisyonlar')
-    await expect(page.getByRole('heading', { level: 1, name: 'Stok / Malzeme Pozisyonu' })).toBeVisible({ timeout: 30_000 })
-    await page.getByLabel('Etiket kodu', { exact: true }).fill(SOURCE)
-    const sourceSearch = page.waitForResponse((response) => isCall(response, 'GET', POSITIONS)
-      && new URL(response.url()).searchParams.get('q') === SOURCE)
-    await page.getByRole('button', { name: 'Ara', exact: true }).click()
-    expect((await sourceSearch).status()).toBe(200)
+    await searchPositions(page, SOURCE)
     const sourceRead = page.waitForResponse((response) =>
       isCall(response, 'GET', `/api/v1/inventory/labels/${sourceId}/detail`))
     await page.getByRole('link', { name: SOURCE, exact: true }).click()
@@ -287,15 +316,7 @@ test('R19 splits a label in the browser, reopens exact children and genealogy, r
     expect(await journeyMassKg(pool)).toBe('10')
 
     // ── 4. Close and reopen: exact children, genealogy, no double quantity. ────────────────────────────────
-    await page.goto('about:blank')
-    await page.goto('/stok/pozisyonlar')
-    await expect(page.getByRole('heading', { level: 1, name: 'Stok / Malzeme Pozisyonu' })).toBeVisible({ timeout: 30_000 })
-    await page.getByLabel('Etiket kodu', { exact: true }).fill('SYNR19-')
-    const journeySearch = page.waitForResponse((response) => isCall(response, 'GET', POSITIONS)
-      && new URL(response.url()).searchParams.get('q') === 'SYNR19-')
-    await page.getByRole('button', { name: 'Ara', exact: true }).click()
-    const journeyResponse = await journeySearch
-    expect(journeyResponse.status()).toBe(200)
+    const journeyResponse = await searchPositions(page, 'SYNR19-')
     const listed = ((await journeyResponse.json()) as { readonly items: readonly { readonly labelCode: string; readonly physicalKg: string }[] })
       .items.map((item) => [item.labelCode, item.physicalKg]).sort()
     expect(listed).toEqual([[CHILD_A, '4'], [CHILD_B, '6']])
@@ -415,8 +436,12 @@ test('R19 splits a label in the browser, reopens exact children and genealogy, r
     const elsewhere = await page.request.post(`${env.apiBaseUrl}${TRANSFORMATIONS}`, {
       headers: commandHeaders(transformerActor, `r19-fence-elsewhere-${randomUUID()}`, otherCompanyId), data: mergedSplit,
     })
-    expect([403, 404]).toContain(elsewhere.status())
-    expect(await elsewhere.text()).not.toContain(MERGED)
+    // No membership in the other company: the company-context fence refuses before any read, a plain 403.
+    expect(elsewhere.status()).toBe(403)
+    const elsewhereBody = await elsewhere.text()
+    expect((JSON.parse(elsewhereBody) as { code?: string }).code).toBe('forbidden')
+    expect(elsewhereBody).not.toContain(MERGED)
+    expect(elsewhereBody).not.toContain(mergedId)
 
     expect(await effects(pool)).toEqual({ transformations: 2, commands: 2, audits: 2, labels: 4 })
     expect(await positiveBalances(pool)).toEqual({ [MERGED]: '10' })

@@ -11,7 +11,12 @@ const LABEL = '66666666-6666-4666-8666-666666666666'
 const LOT = '77777777-7777-4777-8777-777777777777'
 const PRODUCT = '88888888-8888-4888-8888-888888888888'
 const api = vi.hoisted(() => ({ positions: vi.fn() }))
-const auth = vi.hoisted(() => ({ capture: vi.fn(() => ({ token: 1 })), report: vi.fn() }))
+const auth = vi.hoisted(() => ({
+  capture: vi.fn(() => ({ token: 1 })),
+  report: vi.fn(),
+  /** The real `useAuthBoundary` answers a NEW `{ capture, report }` object on every render. */
+  freshPerRender: false,
+}))
 const shell = vi.hoisted(() => ({ capabilities: [] as string[] }))
 
 vi.mock('./api', async (importOriginal) => ({
@@ -32,7 +37,9 @@ vi.mock('../shell/shellState', () => ({
     capability: string,
   ) => state.activeContext?.capabilities?.includes(capability) ?? false,
 }))
-vi.mock('../shell/useAuthBoundary', () => ({ useAuthBoundary: () => auth }))
+vi.mock('../shell/useAuthBoundary', () => ({
+  useAuthBoundary: () => (auth.freshPerRender ? { capture: auth.capture, report: auth.report } : auth),
+}))
 
 const item = {
   companyId: COMPANY, labelId: LABEL, labelVersion: '3', labelCode: 'LBL-1', productId: PRODUCT,
@@ -45,6 +52,7 @@ const item = {
 
 beforeEach(() => {
   shell.capabilities = []
+  auth.freshPerRender = false
   api.positions.mockReset().mockResolvedValue({
     type: 'ok-single', data: { items: [item], searchWindowFull: false },
   })
@@ -97,6 +105,33 @@ describe('InventoryStockPositionPage', () => {
 
     await waitFor(() => expect(api.positions).toHaveBeenLastCalledWith(COMPANY, 'LBL', expect.any(AbortSignal)))
     expect(await screen.findByText(/Arama penceresi doldu/)).toBeTruthy()
+  })
+
+  it('reads once per company and keeps a search in flight when the auth boundary is a new object every render', async () => {
+    // R19 r14 run 36317283526: the real boundary is a fresh object per render. Keyed on it, the initial-read
+    // effect re-ran after every render: it re-read the unfiltered list in a loop, and its cleanup aborted the
+    // label-code search the user had just submitted, so the search never answered.
+    auth.freshPerRender = true
+    const user = userEvent.setup()
+    const signals: AbortSignal[] = []
+    api.positions.mockImplementation(async (_company: string, q: string, signal: AbortSignal) => {
+      signals.push(signal)
+      return { type: 'ok-single', data: { items: [item], searchWindowFull: q === 'LBL' } }
+    })
+    render(<MemoryRouter><InventoryStockPositionPage /></MemoryRouter>)
+    await screen.findByText('LBL-1')
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(api.positions).toHaveBeenCalledTimes(1)
+
+    await user.type(screen.getByLabelText('Etiket kodu'), 'LBL')
+    expect(api.positions).toHaveBeenCalledTimes(1)
+    await user.click(screen.getByRole('button', { name: 'Ara' }))
+
+    expect(await screen.findByText(/Arama penceresi doldu/)).toBeTruthy()
+    expect(api.positions).toHaveBeenCalledTimes(2)
+    expect(api.positions).toHaveBeenLastCalledWith(COMPANY, 'LBL', expect.any(AbortSignal))
+    expect(signals[1].aborted).toBe(false)
+    expect((screen.getByLabelText('Etiket kodu') as HTMLInputElement).value).toBe('LBL')
   })
 
   it('renders verified empty and failure states without mock stock', async () => {

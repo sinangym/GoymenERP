@@ -16,8 +16,8 @@ namespace GoymenERP.BrowserSuiteFixtureTool.Suites.R14;
 /// disposable <see cref="TransformerActor"/> of this per-run database (its role comes from
 /// infra/browser-suites/r14.override.yml); no real user and no seeded role holds it. This seed writes nothing for
 /// it: the R19 spec arranges its source label through the recorder's real opening command. The read-back pins the
-/// capability split: only the transformer is offered the label-detail split/merge control, and it is not offered
-/// the opening workspace.
+/// capability split: only the transformer is offered the label-detail split/merge control (the recorder, the denied
+/// actor and the arranger are not), and it is not offered the opening workspace.
 /// </para>
 /// </summary>
 public sealed class R14BrowserSeed : IBrowserSuiteFixture
@@ -147,11 +147,13 @@ public sealed class R14BrowserSeed : IBrowserSuiteFixture
         }
 
         string[] transformerCapabilities = await CapabilitiesAsync(context, TransformerActor, cancellationToken);
+        string[] arrangerCapabilities = await CapabilitiesAsync(context, ArrangerActor, cancellationToken);
         if (!transformerCapabilities.Contains(LabelDetailCapability, StringComparer.Ordinal)
             || !transformerCapabilities.Contains(LabelTransformationCapability, StringComparer.Ordinal)
             || transformerCapabilities.Contains(OpeningCapability, StringComparer.Ordinal)
             || recorderCapabilities.Contains(LabelTransformationCapability, StringComparer.Ordinal)
-            || deniedCapabilities.Contains(LabelTransformationCapability, StringComparer.Ordinal))
+            || deniedCapabilities.Contains(LabelTransformationCapability, StringComparer.Ordinal)
+            || arrangerCapabilities.Contains(LabelTransformationCapability, StringComparer.Ordinal))
         {
             throw new InvalidOperationException(
                 "Only the disposable R19 transformer may hold the label split/merge control, beside the label detail.");

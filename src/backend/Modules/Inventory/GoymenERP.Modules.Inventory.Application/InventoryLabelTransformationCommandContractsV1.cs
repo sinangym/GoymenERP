@@ -1,3 +1,5 @@
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
+
 namespace GoymenERP.Modules.Inventory.Application;
 
 /// <summary>
@@ -5,10 +7,11 @@ namespace GoymenERP.Modules.Inventory.Application;
 /// fresh Inventory-owned command authority, over the accepted #438 writer
 /// (<see cref="IInventoryLabelGenealogyWriterV1"/>).
 /// <para>
-/// The command authority is <see cref="InventoryPermissionManifestV1.LabelTransformationRecord"/>. Its provenance:
-/// the literal is the owner's technical mapping, confirmed by the coordinator (session decision 2026-09-27), and
-/// its only grant is a disposable R19 browser test actor in the per-run database — no real user, no seeded role;
-/// the real-user mapping stays with the persona card #66/5802952566. That it is a separate Inventory-owned name
+/// The command authority is <see cref="InventoryPermissionManifestV1.LabelTransformationRecord"/>. Its provenance
+/// has two parts. The literal is the owner's technical mapping, confirmed by the coordinator (technical names are
+/// not Sinan's to pick, #66/5808295853 and #66/5811361336). Who holds it is the user's decision of 2026-09-27:
+/// only a disposable R19 browser test actor in the per-run database, no real user and no seeded role; the
+/// real-user mapping stays with the persona card #66/5802952566. That it is a separate Inventory-owned name
 /// follows the STK/T11 separation of Business #66/5806047097 by ANALOGY only: that ruling decided the
 /// physical-allocation command, not split/merge authority. Nothing here registers or grants the name; that is
 /// the central writer's. It is measured company-wide and fresh immediately before the
@@ -72,14 +75,16 @@ public static class InventoryLabelTransformationHttpCodesV1
 
     /// <summary>
     /// The kilogram profile answers the writer reports while checking the company's approved scale are a
-    /// provider/setup state, not the caller's input, so the command answers them as 503.
+    /// provider/setup state, not the caller's input, so the command answers them as 503. The Settings owner
+    /// publishes a constant only for <see cref="SettingsPrerequisiteCodesV1.UnitProfileNotFound"/>; the other five
+    /// are its <see cref="SettingsPrerequisiteException"/> codes as it raises them, which it publishes as literals.
     /// </summary>
     public static IReadOnlySet<string> Status503Codes { get; } = Set(
         InventoryLabelTransformationCommandCodesV1.PermissionUnregistered,
         InventoryLabelGenealogyCodesV1.CorruptState,
         InventoryScaleCodes.ProfileUnusable,
         "settings_provider_unavailable",
-        "settings_unit_profile_not_found",
+        SettingsPrerequisiteCodesV1.UnitProfileNotFound,
         "settings_profile_invalid",
         "settings_access_denied",
         "settings_decimal_invalid",

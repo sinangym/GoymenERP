@@ -18,9 +18,9 @@ public static class InventoryPermissionManifestV1
 
     /// <summary>
     /// Record one same-company label split or merge (R19, DEC-LBL-002/003). Company-wide. The literal is the
-    /// owner's technical mapping, confirmed by the coordinator (session decision 2026-09-27; technical names are
-    /// not Sinan's to pick, #66/5808295853 and #66/5811361336). Its only grant is a disposable R19 browser test
-    /// actor in the per-run database: no real user and no seeded role receives it, and the real-user mapping
+    /// owner's technical mapping, confirmed by the coordinator (technical names are not Sinan's to pick,
+    /// #66/5808295853 and #66/5811361336). Who holds it is the user's decision of 2026-09-27: only a disposable
+    /// R19 browser test actor in the per-run database, no real user and no seeded role; the real-user mapping
     /// stays with the persona card #66/5802952566. A separate Inventory-owned name follows #66/5806047097 by
     /// ANALOGY only: that ruling decided the STK/T11 physical-allocation command, not split/merge authority.
     /// Registration and classification (company-wide, not Critical) are the central writer's.
