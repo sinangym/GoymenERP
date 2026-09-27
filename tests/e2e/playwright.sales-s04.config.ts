@@ -21,6 +21,11 @@ import { defineConfig, devices } from '@playwright/test'
  * product picker (E1) exists. The seed's central rows are CARİ's: Program.cs handler-factory arguments and
  * the ISalesPartyContactInformationPortV1 registration; SUITE_SEED_FIELDS["s04"] +8 in the validator.
  *
+ * DEC-SAL-003 (specs/s04-delivery-schedule.spec.ts, after the D2 persona file): the disposable planner, the ONLY holder
+ * of sales.orders.delivery-schedule.write in the run database (user decision 2026-09-27), moves the delivery dates of a
+ * separate seeded order after it is submitted and approved through the real API; replay, stale version and the 403 of
+ * every other s04 actor are proven through the real API and read-only SQL.
+ *
  * The contract (tests/e2e/browser-ci/README.md), no defaults. Retries 0 and forbidOnly; traces,
  * screenshots and video off (the C-01 artifact-privacy decision).
  */
@@ -38,7 +43,8 @@ const artifactsDir = required('BROWSER_E2E_ARTIFACTS_DIR')
 export default defineConfig({
   testDir: path.join(here, 'sales-s04', 'specs'),
   // SALES-A2a/S05: references and commercial revision remain in the one serial exact-head journey.
-  testMatch: /(^|[\\/])s04-(approval-journey|commercial-revision|d2-persona-withdrawal|references)\.spec\.ts$/,
+  // DEC-SAL-003: the delivery-schedule journey runs on its own seeded order (file order: after d2, before references).
+  testMatch: /(^|[\\/])s04-(approval-journey|commercial-revision|d2-persona-withdrawal|delivery-schedule|references)\.spec\.ts$/,
   fullyParallel: false,
   workers: 1,
   retries: 0,

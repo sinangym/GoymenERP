@@ -34,6 +34,13 @@ public interface ISalesDraftService
         SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
     Task<SalesOrderDraftRevisionsResponse> GetDraftRevisionsAsync(Guid draftId,
         CancellationToken cancellationToken = default);
+
+    // DEC-SAL-003 — the delivery-schedule update under `sales.orders.delivery-schedule.write` (dates only, no
+    // re-approval, audited), and the read of the schedule history (`sales.drafts.read`).
+    Task<SalesOrderDraftResponse> RescheduleDeliveryAsync(Guid draftId, SalesDraftDeliveryScheduleRequest request,
+        SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
+    Task<SalesOrderDraftDeliverySchedulesResponse> GetDraftDeliverySchedulesAsync(Guid draftId,
+        CancellationToken cancellationToken = default);
 }
 
 // Constructed by the server, never bound from the request body.

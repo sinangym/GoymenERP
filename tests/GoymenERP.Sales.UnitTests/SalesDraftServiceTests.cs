@@ -44,6 +44,8 @@ public sealed class SalesDraftServiceTests
     private const string PricePermission = ErpPermissions.CounterpartyAccountsCreate;
     /// <summary>K3 P2: the separate price READ name — a known stand-in, distinct from every other binding.</summary>
     private const string PriceReadPermission = ErpPermissions.CounterpartyAccountsStatusUpdate;
+    /// <summary>DEC-SAL-003: the separate delivery-schedule write name — a known stand-in, distinct from every other binding.</summary>
+    private const string SchedulePermission = ErpPermissions.CounterpartyPartiesUpdateBasic;
     [Fact]
     public async Task A_valid_request_is_stored_once_and_answered_as_the_wire_detail()
     {
@@ -348,6 +350,146 @@ public sealed class SalesDraftServiceTests
             Revision("5", new SalesDraftLineCommercialV1(lineId, "13.00", KgUnit, "5")), Metadata("k-r2")));
         Assert.Equal((422, "validation_failed", "lines", SalesRuleCodes.RevisionNoChange), (same.Status, same.Code, Assert.Single(same.Errors).Field, Assert.Single(same.Errors).Code));
         Assert.Single(world.Store.Archived);
+    }
+
+    // ---- DEC-SAL-003: the delivery-schedule update -----------------------------------------------------------------
+
+    private static SalesDraftDeliveryScheduleRequest Schedule(string version, DateOnly? header, params SalesDraftLineScheduleV1[] lines) =>
+        new(version, header, lines);
+
+    private static SalesDraftLineScheduleV1 SameDates(SalesOrderDraftLineDetail line, int shiftDays = 0) =>
+        new(line.LineId, line.RequestedDeliveryDate?.AddDays(shiftDays),
+            [.. (line.RequestedDeliverySlices ?? []).Select(slice => new SalesDraftSliceScheduleV1(slice.SliceId, slice.RequestedDeliveryDate.AddDays(shiftDays)))]);
+
+    [Fact]
+    public async Task An_approved_orders_dates_move_under_the_schedule_name_without_re_approval_are_read_back_and_a_resent_key_replays()
+    {
+        var world = new World();
+        var created = (await world.Service().CreateDraftAsync(Request(lines: 2), Metadata("k-1"))).Detail;
+        await world.Service().SubmitDraftAsync(created.Draft.Id, Command("3"), Metadata("k-submit"));
+        var approved = await world.Service().ApproveDraftAsync(created.Draft.Id, Command("4"), Metadata("k-approve"));
+        Assert.Equal(("Approved", "5"), (approved.Detail.Draft.ApprovalState, approved.Detail.Draft.Version));
+        world.Authority.Measured.Clear();
+
+        var request = Schedule("5", Day.AddDays(30), SameDates(created.Lines[0], 7), SameDates(created.Lines[1]) with { RequestedDeliveryDate = Day.AddDays(40) });
+        var moved = await world.Service().RescheduleDeliveryAsync(created.Draft.Id, request, Metadata("k-s1"));
+
+        // DEC-SAL-003: no re-approval — still Approved at Rev.0 with the same facts; one version step.
+        Assert.False(moved.IsReplay);
+        Assert.Equal(("Approved", SalesDraftApiV1.Rev0, "6"), (moved.Detail.Draft.ApprovalState, moved.Detail.Draft.Revision, moved.Detail.Draft.Version));
+        Assert.Equal(approved.Detail.Approval, moved.Detail.Approval);
+        Assert.Equal((Day.AddDays(30), Day.AddDays(40)), (moved.Detail.RequestedDeliveryDate, moved.Detail.Lines[1].RequestedDeliveryDate));
+        Assert.Equal([Day.AddDays(8), Day.AddDays(9)], moved.Detail.Lines[0].RequestedDeliverySlices!.Select(slice => slice.RequestedDeliveryDate));
+        Assert.Equal(["0.5", "0.5"], moved.Detail.Lines[0].RequestedDeliverySlices!.Select(slice => slice.Quantity));
+        // Measured under its OWN name (never the create, approve or price name), as its own transition with its audit event.
+        Assert.Contains(SchedulePermission, world.Authority.Measured);
+        Assert.DoesNotContain(ApprovePermission, world.Authority.Measured.Where(name => name != ReadPermission));
+        var transition = world.Store.Transitions.Single(item => item.Command == SalesDraftCommands.RescheduleDeliveryV1);
+        Assert.Equal((SchedulePermission, "sales.order-draft.delivery-rescheduled.v1", 5L, 6L),
+            (transition.Envelope.PermissionCode, transition.Audit.EventType, transition.VersionBefore, transition.VersionAfter));
+        // The history reads back schedule 0 (as created, nobody) and schedule 1 (the planner, the new dates).
+        var history = await world.Service().GetDraftDeliverySchedulesAsync(created.Draft.Id);
+        Assert.Equal([0, 1], history.Items.Select(item => item.ScheduleNo));
+        Assert.Equal(((string?)null, (DateOnly?)null), (history.Items[0].ChangedBy, history.Items[0].RequestedDeliveryDate));
+        Assert.Equal((Actor, (DateOnly?)Day.AddDays(30)), (history.Items[1].ChangedBy, history.Items[1].RequestedDeliveryDate));
+        Assert.Equal([Day.AddDays(1), Day.AddDays(2)], history.Items[0].Lines[0].Slices.Select(slice => slice.RequestedDeliveryDate));
+        // The SAME key resent is the replay of the stored result, never the "no change" refusal.
+        var replay = await world.Service().RescheduleDeliveryAsync(created.Draft.Id, request, Metadata("k-s1"));
+        Assert.True(replay.IsReplay);
+        Assert.Single(world.Store.Schedules);
+        // A DIFFERENT key with the dates the draft already has is the refusal on `lines`, and records nothing more.
+        var same = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().RescheduleDeliveryAsync(created.Draft.Id,
+            Schedule("6", Day.AddDays(30), SameDates(moved.Detail.Lines[0]), SameDates(moved.Detail.Lines[1])), Metadata("k-s2")));
+        Assert.Equal((422, "validation_failed", "lines", SalesRuleCodes.ScheduleNoChange), (same.Status, same.Code, Assert.Single(same.Errors).Field, Assert.Single(same.Errors).Code));
+        Assert.Single(world.Store.Schedules);
+    }
+
+    [Fact]
+    public async Task Without_the_schedule_name_it_is_403_before_the_draft_is_read_and_the_other_names_do_not_confer_it()
+    {
+        var world = new World();
+        var created = (await world.Service().CreateDraftAsync(Request(lines: 2), Metadata("k-1"))).Detail;
+        world.Authority.Denied.Add(SchedulePermission);
+
+        var forbidden = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().RescheduleDeliveryAsync(created.Draft.Id,
+            Schedule("3", Day.AddDays(30), SameDates(created.Lines[0]), SameDates(created.Lines[1])), Metadata("k-s1")));
+
+        Assert.Equal((403, "forbidden"), (forbidden.Status, forbidden.Code));
+        Assert.Empty(world.Store.Schedules);
+        Assert.DoesNotContain(world.Store.Transitions, item => item.Command == SalesDraftCommands.RescheduleDeliveryV1);
+    }
+
+    [Fact]
+    public async Task An_unregistered_delivery_schedule_name_fails_closed_503_and_the_production_name_is_registered()
+    {
+        // Central registration (ErpPermissions.SalesOrdersDeliveryScheduleWrite) made the production binding KNOWN; the
+        // fail-closed path for a name the catalogue does not know is kept with a synthetic name (the price-read precedent).
+        Assert.True(ErpPermissions.IsKnown(SalesPermissionManifestV1.OrdersDeliveryScheduleWrite));
+        var world = new World();
+        var created = (await world.Service().CreateDraftAsync(Request(lines: 2), Metadata("k-1"))).Detail;
+        world.Bindings = world.Bindings with { DeliverySchedulePermission = "sales.synthetic.unregistered" };
+
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().RescheduleDeliveryAsync(created.Draft.Id,
+            Schedule("3", Day.AddDays(30), SameDates(created.Lines[0]), SameDates(created.Lines[1])), Metadata("k-s1")));
+
+        // A name the central catalogue does not know yet is a setup gap (503), never a grant.
+        Assert.Equal((503, SalesDraftProblemCodesV1.PermissionUnregistered), (refused.Status, refused.Code));
+        Assert.Empty(world.Store.Schedules);
+    }
+
+    [Fact]
+    public async Task A_schedule_name_revoked_after_the_store_reads_is_refused_before_any_schedule_attempt_or_audit()
+    {
+        var world = new World();
+        var created = (await world.Service().CreateDraftAsync(Request(lines: 2), Metadata("k-1"))).Detail;
+        var attemptsBefore = world.Store.Attempts;
+        world.Store.OnStore = () => world.Authority.Denied.Add(SchedulePermission);
+
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().RescheduleDeliveryAsync(created.Draft.Id,
+            Schedule("3", Day.AddDays(30), SameDates(created.Lines[0]), SameDates(created.Lines[1])), Metadata("k-s1")));
+
+        Assert.Equal((403, "forbidden"), (refused.Status, refused.Code));
+        Assert.Equal((attemptsBefore, 0), (world.Store.Attempts, world.Store.Schedules.Count));
+    }
+
+    [Fact]
+    public async Task Line_and_slice_mismatches_are_422_on_their_field_and_a_withdrawn_or_stale_draft_is_the_keys_terminal_409()
+    {
+        var world = new World();
+        var created = (await world.Service().CreateDraftAsync(Request(lines: 2), Metadata("k-1"))).Detail;
+        var (first, second) = (created.Lines[0], created.Lines[1]);
+
+        var lines = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().RescheduleDeliveryAsync(created.Draft.Id,
+            Schedule("3", Day.AddDays(30), SameDates(first)), Metadata("k-s1")));
+        Assert.Equal((422, "lines", SalesRuleCodes.ScheduleLinesMismatch), (lines.Status, Assert.Single(lines.Errors).Field, Assert.Single(lines.Errors).Code));
+
+        // Dates only: dropping one of the first line's two slices is a re-split, refused on that line's index in THIS request.
+        var dropped = SameDates(first) with { Slices = [new SalesDraftSliceScheduleV1(first.RequestedDeliverySlices![0].SliceId, Day)] };
+        var slices = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().RescheduleDeliveryAsync(created.Draft.Id,
+            Schedule("3", Day.AddDays(30), SameDates(second), dropped), Metadata("k-s2")));
+        Assert.Equal((422, "lines[1].slices", SalesRuleCodes.ScheduleSlicesMismatch), (slices.Status, Assert.Single(slices.Errors).Field, Assert.Single(slices.Errors).Code));
+
+        // A stale version is terminal for the key and replays with the first correlation.
+        var stale = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().RescheduleDeliveryAsync(created.Draft.Id,
+            Schedule("2", Day.AddDays(30), SameDates(first), SameDates(second)), Metadata("k-s3")));
+        Assert.Equal((409, SalesDraftProblemCodesV1.VersionConflict, false), (stale.Status, stale.Code, stale.IsReplay));
+        var staleAgain = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().RescheduleDeliveryAsync(created.Draft.Id,
+            Schedule("2", Day.AddDays(30), SameDates(first), SameDates(second)), Metadata("k-s3")));
+        Assert.Equal((409, SalesDraftProblemCodesV1.VersionConflict, true), (staleAgain.Status, staleAgain.Code, staleAgain.IsReplay));
+
+        // A withdrawn draft: terminal state conflict on `approvalState`.
+        await world.Service().WithdrawDraftAsync(created.Draft.Id, Command("3"), Metadata("k-withdraw"));
+        var withdrawn = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().RescheduleDeliveryAsync(created.Draft.Id,
+            Schedule("4", Day.AddDays(30), SameDates(first), SameDates(second)), Metadata("k-s4")));
+        Assert.Equal((409, SalesDraftProblemCodesV1.StateConflict, "approvalState"), (withdrawn.Status, withdrawn.Code, Assert.Single(withdrawn.Errors).Field));
+        Assert.Empty(world.Store.Schedules);
+
+        // Malformed version and an unknown draft answer as the other commands do; the history of an unknown draft is 404.
+        Assert.Equal(400, (await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().RescheduleDeliveryAsync(created.Draft.Id,
+            Schedule("x", null, SameDates(first), SameDates(second)), Metadata("k-s5")))).Status);
+        Assert.Equal(404, (await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().RescheduleDeliveryAsync(Guid.NewGuid(),
+            Schedule("1", null, SameDates(first), SameDates(second)), Metadata("k-s6")))).Status);
+        Assert.Equal(404, (await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().GetDraftDeliverySchedulesAsync(Guid.NewGuid()))).Status);
     }
 
     [Fact]
@@ -1175,7 +1317,7 @@ public sealed class SalesDraftServiceTests
         public bool NoProducts { get; set; }
         public bool NoContactInformation { get; set; }
         public FixedActiveRoleCodeReader ActiveRoleCodes { get; } = new();
-        public SalesDraftServiceBindings Bindings { get; set; } = new(CreatePermission, ReadPermission, ApprovePermission, PricePermission, PriceReadPermission);
+        public SalesDraftServiceBindings Bindings { get; set; } = new(CreatePermission, ReadPermission, ApprovePermission, PricePermission, PriceReadPermission, SchedulePermission);
 
         public SalesDraftService Service()
         {
@@ -1428,6 +1570,20 @@ public sealed class SalesDraftServiceTests
             var result = await UpdateDraftStateAsyncCore(envelope, requestHash, commandName, draftId,
                 (draft, now) => archived = mutate(draft, now), audit, beforeWrite, cancellationToken);
             if (archived is not null) Archived.Add(archived);
+            return result;
+        }
+
+        public List<DeliveryScheduleSnapshot> Schedules { get; } = [];
+
+        public async Task<SalesDraftStateResult?> RescheduleDeliveryAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+            Guid draftId, Func<SalesOrderDraft, DateTimeOffset, DeliveryScheduleSnapshot> mutate, SalesDraftStateAudit audit,
+            Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default)
+        {
+            if (commandName != SalesDraftCommands.RescheduleDeliveryV1) throw new ArgumentException("wrong command", nameof(commandName));
+            DeliveryScheduleSnapshot? recorded = null;
+            var result = await UpdateDraftStateAsyncCore(envelope, requestHash, commandName, draftId,
+                (draft, now) => recorded = mutate(draft, now), audit, beforeWrite, cancellationToken);
+            if (recorded is not null) Schedules.Add(recorded);
             return result;
         }
 

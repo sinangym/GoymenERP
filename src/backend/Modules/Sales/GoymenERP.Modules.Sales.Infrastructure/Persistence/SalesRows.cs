@@ -206,3 +206,36 @@ internal sealed class DraftRevisionLineRow : ISalesTenantRow
     public Guid? PriceUnitId { get; set; }
     public string? DiscountPercent { get; set; }
 }
+
+/// <summary>
+/// DEC-SAL-003: one recorded delivery-schedule change of a draft (append-only). Schedule 0 is the draft's own rows as
+/// created and is never written here; a change is the next number, with who changed it, when, the draft version it
+/// produced and the header's requested date after it. Never modified, never deleted.
+/// </summary>
+internal sealed class DraftDeliveryScheduleRow : ISalesTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid DraftId { get; set; }
+    public int ScheduleNo { get; set; }
+    public DateOnly? RequestedDeliveryDate { get; set; }
+    public string ChangedBy { get; set; } = string.Empty;
+    public DateTimeOffset ChangedAtUtc { get; set; }
+    public long DraftVersion { get; set; }
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// DEC-SAL-003: the complete dates of one recorded schedule, one row per line (<see cref="SliceNo"/> 0: the line's own
+/// requested date, nullable) and one per existing slice (<see cref="SliceNo"/> &gt;= 1: the slice id and its date, the
+/// quantity untouched). Append-only; the existing line and slice rows are never rewritten.
+/// </summary>
+internal sealed class DraftDeliveryScheduleDateRow : ISalesTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid DraftId { get; set; }
+    public int ScheduleNo { get; set; }
+    public int LineNo { get; set; }
+    public int SliceNo { get; set; }
+    public Guid? SliceId { get; set; }
+    public DateOnly? RequestedDeliveryDate { get; set; }
+}

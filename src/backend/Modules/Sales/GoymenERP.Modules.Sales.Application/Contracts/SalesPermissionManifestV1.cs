@@ -12,7 +12,7 @@ namespace GoymenERP.Modules.Sales.Application.Contracts;
 /// </summary>
 public static class SalesPermissionManifestV1
 {
-    public const int Version = 6;
+    public const int Version = 7;
     public const string Subject = "Sales";
 
     /// <summary>POST /api/v1/sales/drafts, the reference reads of the draft form, and POST …/{id}/submission (SALES-A1: whoever may create a draft may send it for approval).</summary>
@@ -46,6 +46,18 @@ public static class SalesPermissionManifestV1
     /// </summary>
     public const string OrdersPriceRead = "sales.orders.price.read";
 
+    /// <summary>
+    /// DEC-SAL-003 (KILITLI): "termin güncellemesi planlama/sevkiyat rolündedir ve yeniden onay gerektirmez, ancak
+    /// auditlidir" — POST …/{id}/delivery-schedule, moving the requested delivery dates of the header, the lines and
+    /// their existing slices. A SEPARATE name because the decision gives the update to the planning/shipping role, not
+    /// to the draft's preparer or approver: the create, approve and price names do NOT confer it, and it confers none of
+    /// them (no approval, no price, no line or quantity change). The technical literal is the Sales owner's mapping
+    /// (Business #66 5808295853 / 5811361336: the owner names the literal); company-wide; registration and class are the
+    /// central writer's step; which persona holds it is a human gate.
+    /// </summary>
+    public const string OrdersDeliveryScheduleWrite = "sales.orders.delivery-schedule.write";
+
     public static IReadOnlySet<string> Names { get; } =
-        new[] { DraftsCreate, DraftsRead, OrdersApprove, OrdersPriceWrite, OrdersPriceRead }.ToFrozenSet(StringComparer.Ordinal);
+        new[] { DraftsCreate, DraftsRead, OrdersApprove, OrdersPriceWrite, OrdersPriceRead, OrdersDeliveryScheduleWrite }
+            .ToFrozenSet(StringComparer.Ordinal);
 }

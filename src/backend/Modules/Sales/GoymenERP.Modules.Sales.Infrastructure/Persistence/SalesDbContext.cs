@@ -79,6 +79,12 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
 
     internal DbSet<DraftRevisionLineRow> DraftRevisionLines => Set<DraftRevisionLineRow>();
 
+    /// <summary>DEC-SAL-003: the recorded delivery-schedule changes (append-only).</summary>
+    internal DbSet<DraftDeliveryScheduleRow> DraftDeliverySchedules => Set<DraftDeliveryScheduleRow>();
+
+    /// <summary>DEC-SAL-003: the complete dates of each recorded schedule (append-only).</summary>
+    internal DbSet<DraftDeliveryScheduleDateRow> DraftDeliveryScheduleDates => Set<DraftDeliveryScheduleDateRow>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -93,6 +99,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         ConfigureDraftDeliverySlices(modelBuilder);
         ConfigureDraftAttempts(modelBuilder);
         ConfigureDraftRevisions(modelBuilder);
+        ConfigureDraftDeliverySchedules(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -282,6 +289,46 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    // DEC-SAL-003: the recorded delivery-schedule changes and their dates — append-only history beside the draft.
+    private void ConfigureDraftDeliverySchedules(ModelBuilder modelBuilder)
+    {
+        var schedule = modelBuilder.Entity<DraftDeliveryScheduleRow>();
+        schedule.ToTable("DraftDeliverySchedules", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_DraftDeliverySchedules_Identity",
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [ScheduleNo] >= 1 AND [DraftVersion] >= 2 AND LEN([ChangedBy]) > 0 AND LEN([CorrelationId]) > 0");
+        });
+        schedule.HasKey(x => new { x.CompanyId, x.DraftId, x.ScheduleNo });
+        schedule.Property(x => x.RequestedDeliveryDate).HasColumnType("date");
+        schedule.Property(x => x.ChangedBy).HasMaxLength(128).IsRequired();
+        schedule.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        schedule.HasOne<DraftRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.DraftId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        schedule.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var date = modelBuilder.Entity<DraftDeliveryScheduleDateRow>();
+        date.ToTable("DraftDeliveryScheduleDates", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_DraftDeliveryScheduleDates_Position", "[LineNo] >= 1 AND [SliceNo] >= 0");
+            table.HasCheckConstraint("CK_DraftDeliveryScheduleDates_Slice",
+                "([SliceNo] = 0 AND [SliceId] IS NULL) "
+                + "OR ([SliceNo] >= 1 AND [SliceId] IS NOT NULL AND [SliceId] <> '00000000-0000-0000-0000-000000000000' AND [RequestedDeliveryDate] IS NOT NULL)");
+        });
+        date.HasKey(x => new { x.CompanyId, x.DraftId, x.ScheduleNo, x.LineNo, x.SliceNo });
+        date.Property(x => x.RequestedDeliveryDate).HasColumnType("date");
+        date.HasOne<DraftDeliveryScheduleRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.DraftId, x.ScheduleNo })
+            .HasPrincipalKey(x => new { x.CompanyId, x.DraftId, x.ScheduleNo })
+            .OnDelete(DeleteBehavior.Restrict);
+        date.HasOne<DraftLineRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.DraftId, x.LineNo })
+            .OnDelete(DeleteBehavior.Restrict);
+        date.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     // K3 Head B: the archived approved revisions and their lines — append-only history beside the draft.
     private void ConfigureDraftRevisions(ModelBuilder modelBuilder)
     {
@@ -370,6 +417,11 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                     // commercial columns may change, under a commercial revision; identity, product, unit and quantity
                     // columns stay immutable (the persistence test pins both halves).
                     DraftLineRow => [nameof(DraftLineRow.UnitPrice), nameof(DraftLineRow.PriceUnitId), nameof(DraftLineRow.DiscountPercent)],
+                    // DEC-SAL-003: the delivery schedule is APPEND-ONLY — a change adds a schedule and its dates and moves
+                    // only the header's version (the token) and UpdatedAtUtc, both already admitted above. Nothing of an
+                    // added schedule may change afterwards: no column is admitted.
+                    DraftDeliveryScheduleRow => [],
+                    DraftDeliveryScheduleDateRow => [],
                     _ => [],
                 };
                 var changed = entry.Properties

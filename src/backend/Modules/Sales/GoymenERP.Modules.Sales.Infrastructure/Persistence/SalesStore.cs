@@ -499,6 +499,177 @@ public sealed class SalesStore(
         return new SalesDraftStateResult(draft, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId.Trim());
     }
 
+    /// <summary>
+    /// DEC-SAL-003: the delivery-schedule update, one save — the commercial revision's key rules and shape. The header is
+    /// tracked (only its version and UpdatedAtUtc move; the guard admits nothing else); the domain decides and returns the
+    /// recorded schedule, which is APPENDED (one schedule row + one date row per line and per existing slice) together with
+    /// the attempt record and the audit event carrying the dates before and after — or nothing at all. No existing line or
+    /// slice row is touched: the dates as created stay as schedule 0.
+    /// </summary>
+    public async Task<SalesDraftStateResult?> RescheduleDeliveryAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+        Guid draftId, Func<SalesOrderDraft, DateTimeOffset, DeliveryScheduleSnapshot> mutate, SalesDraftStateAudit audit,
+        Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(mutate);
+        ArgumentNullException.ThrowIfNull(audit);
+        ArgumentNullException.ThrowIfNull(beforeWrite);
+        RequireEnvelope(envelope);
+        RequireHash(requestHash);
+        RequireCommand(commandName);
+        if (commandName != SalesDraftCommands.RescheduleDeliveryV1)
+        {
+            throw new ArgumentException("Yalnız termin güncellemesi komutu taslağın termin tarihlerini değiştirir.", nameof(commandName));
+        }
+
+        if (string.IsNullOrWhiteSpace(audit.EventType) || string.IsNullOrWhiteSpace(audit.Operation) || string.IsNullOrWhiteSpace(audit.Reason))
+        {
+            throw new ArgumentException("Termin komutunun audit olayı tür, işlem ve gerekçe ister.", nameof(audit));
+        }
+
+        var companyId = RequireResolvedCompany();
+        var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
+        var actorId = envelope.ActorId.Trim();
+        var attempt = await dbContext.DraftAttempts.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.CommandName == commandName && row.IdempotencyKeyHash == keyHash, cancellationToken);
+        if (attempt is not null)
+        {
+            if (!string.Equals(attempt.ActorId, actorId, StringComparison.Ordinal)
+                || !string.Equals(attempt.RequestHash, requestHash, StringComparison.Ordinal))
+            {
+                throw Refused(SalesDraftStoreCodes.SameKeyPayloadMismatch,
+                    "Aynı Idempotency-Key başka bir istekle geldi; ilk cevap bu isteğe verilmez.");
+            }
+
+            if (attempt.Outcome != AttemptOutcomeRecorded || attempt.DraftId is not { } recordedId)
+            {
+                throw Refused(SalesDraftStoreCodes.ConcurrentChange, "Bu anahtar kayıtlı bir terminal reddi taşıyor; tekrar aynı reddi alır.");
+            }
+
+            var stored = await FindDraftAsync(recordedId, cancellationToken)
+                ?? throw new InvalidOperationException("Kayıtlı deneme kaydının taslağı bulunamadı.");
+            return new SalesDraftStateResult(stored, SalesDraftWriteOutcome.Replayed, attempt.CorrelationId);
+        }
+
+        if (draftId == Guid.Empty)
+        {
+            return null;
+        }
+
+        var row = await dbContext.Drafts.SingleOrDefaultAsync(candidate => candidate.Id == draftId, cancellationToken);
+        if (row is null)
+        {
+            return null;
+        }
+
+        var draft = (await RestoreAsync([row], cancellationToken)).Single();
+        await beforeWrite(cancellationToken);
+        var before = Schedule(draft);
+        var versionBefore = draft.Version;
+        var revisionBefore = draft.Revision;
+        var approvalBefore = (draft.ApprovalState, draft.Approval);
+        var now = timeProvider.GetUtcNow();
+        var recorded = mutate(draft, now);
+        if (draft.Version != versionBefore + 1 || draft.Id != row.Id || draft.CompanyId != companyId
+            || draft.Revision != revisionBefore || (draft.ApprovalState, draft.Approval) != approvalBefore
+            || recorded is null || recorded.ScheduleNo != draft.DeliverySchedules.Count || recorded.ChangedBy is null
+            || recorded.ChangedAtUtc is null)
+        {
+            throw new InvalidOperationException("Termin güncellemesi tam olarak bir sürüm ilerletir; revizyonu ve onay eksenini değiştirmez.");
+        }
+
+        dbContext.DraftDeliverySchedules.Add(new DraftDeliveryScheduleRow
+        {
+            CompanyId = companyId,
+            DraftId = draft.Id,
+            ScheduleNo = recorded.ScheduleNo,
+            RequestedDeliveryDate = recorded.RequestedDeliveryDate,
+            ChangedBy = recorded.ChangedBy,
+            ChangedAtUtc = recorded.ChangedAtUtc.Value,
+            DraftVersion = draft.Version,
+            CorrelationId = envelope.CorrelationId.Trim(),
+        });
+        foreach (var line in recorded.Lines)
+        {
+            dbContext.DraftDeliveryScheduleDates.Add(new DraftDeliveryScheduleDateRow
+            {
+                CompanyId = companyId,
+                DraftId = draft.Id,
+                ScheduleNo = recorded.ScheduleNo,
+                LineNo = line.LineNo,
+                SliceNo = 0,
+                SliceId = null,
+                RequestedDeliveryDate = line.RequestedDeliveryDate,
+            });
+            foreach (var slice in line.Slices)
+            {
+                dbContext.DraftDeliveryScheduleDates.Add(new DraftDeliveryScheduleDateRow
+                {
+                    CompanyId = companyId,
+                    DraftId = draft.Id,
+                    ScheduleNo = recorded.ScheduleNo,
+                    LineNo = line.LineNo,
+                    SliceNo = slice.SliceNo,
+                    SliceId = slice.SliceId,
+                    RequestedDeliveryDate = slice.RequestedDeliveryDate,
+                });
+            }
+        }
+
+        row.Version = draft.Version;
+        row.UpdatedAtUtc = draft.UpdatedAtUtc;
+        dbContext.DraftAttempts.Add(new DraftAttemptRow
+        {
+            CompanyId = companyId,
+            CommandName = commandName,
+            IdempotencyKeyHash = keyHash,
+            RequestHash = requestHash,
+            ActorId = actorId,
+            Outcome = AttemptOutcomeRecorded,
+            DraftId = draft.Id,
+            CorrelationId = envelope.CorrelationId.Trim(),
+            RecordedAtUtc = now,
+        });
+        auditEvents.Enqueue(new AuditEventDraft(
+            companyId,
+            audit.EventType,
+            DraftEntityType,
+            draft.Id.ToString("D"),
+            audit.Operation,
+            EntityVersionBefore: versionBefore,
+            EntityVersionAfter: draft.Version,
+            AuditActorTypes.User,
+            envelope.ActorId,
+            envelope.PermissionCode,
+            envelope.RoleCodes,
+            JsonSerializer.Serialize(before, Json),
+            JsonSerializer.Serialize(Schedule(draft), Json),
+            audit.Reason,
+            ApprovalContextJson: null,
+            AuditAiInvolvement.None,
+            AiContextJson: null,
+            envelope.SourceChannel,
+            envelope.ClientIpAddress,
+            envelope.UserAgent,
+            envelope.CorrelationId,
+            envelope.CausationId,
+            envelope.IdempotencyKey));
+        await SaveAsync(cancellationToken);
+        return new SalesDraftStateResult(draft, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId.Trim());
+    }
+
+    /// <summary>The audit picture of a draft's delivery dates: the header's, every line's and every slice's (id, quantity, date).</summary>
+    private static object Schedule(SalesOrderDraft draft) => new
+    {
+        schedule = draft.DeliverySchedules.Count,
+        requestedDeliveryDate = draft.Header.RequestedDeliveryDate,
+        lines = draft.Lines.Select(line => new
+        {
+            line.LineNo,
+            line.RequestedDeliveryDate,
+            slices = line.RequestedDeliverySlices.Select(slice => new { slice.SliceId, slice.QuantityText, slice.RequestedDeliveryDate }).ToArray(),
+        }).ToArray(),
+    };
+
     /// <summary>The audit picture of a draft's commercial surface: revision, approval axis and every line's fields.</summary>
     private static object Commercial(SalesOrderDraft draft) => new
     {
@@ -573,6 +744,8 @@ public sealed class SalesStore(
         var slices = await dbContext.DraftDeliverySlices.AsNoTracking().Where(slice => ids.Contains(slice.DraftId)).ToListAsync(cancellationToken);
         var revisions = await dbContext.DraftRevisions.AsNoTracking().Where(revision => ids.Contains(revision.DraftId)).ToListAsync(cancellationToken);
         var revisionLines = await dbContext.DraftRevisionLines.AsNoTracking().Where(line => ids.Contains(line.DraftId)).ToListAsync(cancellationToken);
+        var schedules = await dbContext.DraftDeliverySchedules.AsNoTracking().Where(schedule => ids.Contains(schedule.DraftId)).ToListAsync(cancellationToken);
+        var scheduleDates = await dbContext.DraftDeliveryScheduleDates.AsNoTracking().Where(date => ids.Contains(date.DraftId)).ToListAsync(cancellationToken);
         var drafts = new List<SalesOrderDraft>(rows.Count);
         foreach (var row in rows)
         {
@@ -626,6 +799,28 @@ public sealed class SalesStore(
                     [.. revisionLines.Where(line => line.DraftId == row.Id && line.Revision == archived.Revision).OrderBy(line => line.LineNo)
                         .Select(line => new RevisionLineSnapshot(line.LineId, line.LineNo, line.ProductId, line.ProductVersion, line.OrderUnitId,
                             line.QuantityText, new CommercialDraftFields(line.UnitPrice, line.PriceUnitId, line.DiscountPercent)))]));
+            }
+
+            // DEC-SAL-003: every recorded delivery schedule, oldest first, BEFORE the approval axis (its version floor counts
+            // them). The last one's dates become the draft's current dates; a history that does not fit is refused.
+            foreach (var schedule in schedules.Where(schedule => schedule.DraftId == row.Id).OrderBy(schedule => schedule.ScheduleNo))
+            {
+                var dates = scheduleDates.Where(date => date.DraftId == row.Id && date.ScheduleNo == schedule.ScheduleNo).ToArray();
+                draft.RestoreDeliverySchedule(new DeliveryScheduleSnapshot(schedule.ScheduleNo, schedule.RequestedDeliveryDate,
+                    schedule.ChangedBy, schedule.ChangedAtUtc,
+                    [.. dates.Where(date => date.SliceNo == 0).OrderBy(date => date.LineNo).Select(date => new LineScheduleSnapshot(
+                        draft.Lines.SingleOrDefault(line => line.LineNo == date.LineNo)?.Id
+                            ?? throw new InvalidOperationException("Kayıtlı termin satırı taslakta yok."),
+                        date.LineNo,
+                        date.RequestedDeliveryDate,
+                        [.. dates.Where(slice => slice.LineNo == date.LineNo && slice.SliceNo >= 1).OrderBy(slice => slice.SliceNo)
+                            .Select(slice => new SliceScheduleSnapshot(
+                                slice.SliceId ?? throw new InvalidOperationException("Kayıtlı termin diliminin kimliği yok."),
+                                slice.SliceNo,
+                                draft.Lines.Single(line => line.LineNo == date.LineNo).RequestedDeliverySlices
+                                    .ElementAtOrDefault(slice.SliceNo - 1)?.QuantityText
+                                    ?? throw new InvalidOperationException("Kayıtlı termin dilimi satırda yok."),
+                                slice.RequestedDeliveryDate ?? throw new InvalidOperationException("Kayıtlı termin diliminin tarihi yok.")))]))]));
             }
 
             // SALES-A1: the stored approval axis, restored without a transition; the facts must fit the state.
@@ -742,7 +937,8 @@ public sealed class SalesStore(
     private static void RequireCommand(string commandName)
     {
         if (commandName is not (SalesDraftCommands.CreateV1 or SalesDraftCommands.SubmitV1 or SalesDraftCommands.ApproveV1
-            or SalesDraftCommands.RejectV1 or SalesDraftCommands.ReviseCommercialV1 or SalesDraftCommands.WithdrawV1))
+            or SalesDraftCommands.RejectV1 or SalesDraftCommands.ReviseCommercialV1 or SalesDraftCommands.WithdrawV1
+            or SalesDraftCommands.RescheduleDeliveryV1))
         {
             throw new ArgumentException("Bilinmeyen Sales komut adı.", nameof(commandName));
         }

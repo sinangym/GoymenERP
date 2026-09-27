@@ -107,3 +107,28 @@ public sealed record RevisionLineSnapshot(
 public sealed record ApprovedRevisionSnapshot(
     int Revision, ApprovalFacts Approval, Guid MoneyProfileId, string MoneyProfileVersion, int MoneyScale,
     DateTimeOffset ArchivedAtUtc, string ArchivedBy, IReadOnlyList<RevisionLineSnapshot> Lines);
+
+/// <summary>DEC-SAL-003: one slice's new requested delivery date, addressed by the slice id the line already carries.</summary>
+public sealed record SliceScheduleInput(Guid SliceId, DateOnly RequestedDeliveryDate);
+
+/// <summary>
+/// DEC-SAL-003: one line's new delivery dates — the line's own requested date (null = none) and a date for EACH of
+/// its current slices. Dates only: the slice ids and quantities stay as they are.
+/// </summary>
+public sealed record LineScheduleInput(Guid LineId, DateOnly? RequestedDeliveryDate, IReadOnlyList<SliceScheduleInput> Slices);
+
+/// <summary>A slice's dates in a delivery schedule: the stable identity, its position, its (unchanged) quantity text and the date.</summary>
+public sealed record SliceScheduleSnapshot(Guid SliceId, int SliceNo, string QuantityText, DateOnly RequestedDeliveryDate);
+
+/// <summary>A line's dates in a delivery schedule.</summary>
+public sealed record LineScheduleSnapshot(Guid LineId, int LineNo, DateOnly? RequestedDeliveryDate, IReadOnlyList<SliceScheduleSnapshot> Slices);
+
+/// <summary>
+/// DEC-SAL-003 ("termin güncellemesi planlama/sevkiyat rolündedir ve yeniden onay gerektirmez, ancak auditlidir"): the
+/// complete delivery dates of a draft after one recorded schedule change — the header's, every line's and every slice's —
+/// with who changed them and when. Schedule 0 is the draft as created (no actor, no time); each recorded change is the
+/// next number. Append-only: an earlier schedule is never rewritten.
+/// </summary>
+public sealed record DeliveryScheduleSnapshot(
+    int ScheduleNo, DateOnly? RequestedDeliveryDate, string? ChangedBy, DateTimeOffset? ChangedAtUtc,
+    IReadOnlyList<LineScheduleSnapshot> Lines);

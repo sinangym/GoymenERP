@@ -36,6 +36,10 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
     // catalogue accepting what the code will not honour. Not Critical (the reason is on
     // ErpPermissions.SalesOrdersPriceRead).
     [InlineData(SalesPermissionManifestV1.OrdersPriceRead, ErpPermissions.SalesOrdersPriceRead)]
+    // DEC-SAL-003: the delivery-date update. Its own name, given to the planning/shipping role; create, approve and the
+    // price names do not confer it. Company-wide and not Critical (the reason is on
+    // ErpPermissions.SalesOrdersDeliveryScheduleWrite).
+    [InlineData(SalesPermissionManifestV1.OrdersDeliveryScheduleWrite, ErpPermissions.SalesOrdersDeliveryScheduleWrite)]
     public void The_owner_name_is_the_registered_central_name(string ownerName, string centralName)
     {
         Assert.Equal(ownerName, centralName);
@@ -66,7 +70,7 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
         var actual = ShellCapabilityRegistry.ComputeCandidateRevision(providers);
         Assert.True(
             string.Equals(
-                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV12ProductV11AndPublishedSalesV11,
+                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV12ProductV11AndPublishedSalesV12,
                 actual,
                 StringComparison.Ordinal),
             $"Sales normal-host authority drifted. Actual: {actual}");
@@ -84,13 +88,13 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
         var authority = C01E2eShellCapabilityActivation.Configure(services, new TestingEnvironment(),
             new ConfigurationBuilder().Build());
 
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV12ProductV11AndPublishedSalesV11, authority);
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV12ProductV11AndPublishedSalesV12, authority);
         using var container = services.BuildServiceProvider();
         var registry = new ShellCapabilityRegistry(container.GetServices<IShellCapabilityProvider>(),
             new ShellCapabilityAuthorityCatalog([authority]));
         var sales = registry.Registrations.Where(item => item.Owner == SalesShellCapabilityProvider.OwnerId).ToArray();
-        // Three screens plus the SALES-A1 approve and SALES-P commercial-revision controls of the detail.
-        Assert.Equal(5, sales.Length);
+        // Three screens plus the SALES-A1 approve, SALES-P commercial-revision and DEC-SAL-003 delivery-schedule controls.
+        Assert.Equal(6, sales.Length);
         Assert.Equal(SalesShellCapabilityProvider.DetailCapabilityId,
             Assert.Single(sales, item => item.Declaration.CapabilityId == SalesShellCapabilityProvider.ApproveCapabilityId)
                 .Declaration.ParentCapabilityId);

@@ -247,11 +247,13 @@ SUITE_IDENTITY_PERMISSIONS = {
     # SALES-A1's approval axis: the preparer creates and reads, the approver approves and reads, the reader reads.
     # SALES-A2a: the preparer reaches the Cari owner's contact information through its OWN party read.
     # S05 adds the two separate price names to that same disposable preparer; no other actor gains them.
+    # DEC-SAL-003 (user decision 2026-09-27): the disposable s04-planner alone adds the delivery-schedule write
+    # name beside sales.drafts.read; no other s04 actor holds it.
     "s04": ("sales.drafts.create", "sales.drafts.read", "sales.orders.approve",
             "counterparty.parties.read", "counterparty.parties.update.basic",
             "product.operational-selection.read", "sales.orders.price.read", "sales.orders.price.write",
             "inventory.opening-stock.record", "inventory.labels.read", "inventory.balances.read",
-            "inventory.physical-allocation.write"),
+            "inventory.physical-allocation.write", "sales.orders.delivery-schedule.write"),
     # The six Accounting names. The preparer holds .approve on purpose — Ö4 must refuse its OWN proposal
     # although the grant is there — and holds periods.read alone in the second company; the approver holds
     # no journal or queue name, so those routes stay closed to it.
@@ -462,7 +464,8 @@ SUITE_FIXTURE_OUTPUTS: dict[str, frozenset[str]] = {
                       "ordinaryApproveDraftId", "ordinaryRejectDraftId", "withdrawalDraftId",
                       "productId", "productVersion", "productUnitId", "productUnitProfileId",
                       "productUnitProfileVersion", "productCode", "productName",
-                      "allocationLineId", "allocationLabelId", "allocationLabelVersion"}),
+                      "allocationLineId", "allocationLabelId", "allocationLabelVersion",
+                      "plannerActor", "scheduleDraftId"}),
     # FİNANS's Suites/ACC01 seed: the two actors and both companies. Periods are proposed, approved and closed
     # through the real API; since ACC-REV-UI phase 1 the seed also installs one fixed SENTETIK posted journal
     # (gated fixture writer, owner posting path) so ACC01-09 can open M-04 detail and read M-06. Its id is read

@@ -63,7 +63,8 @@ public sealed class SalesOrderDraftLine
     /// <summary>The quantity text exactly as the client sent it (#257: lossless text retained verbatim).</summary>
     public string QuantityText { get; }
 
-    public DateOnly? RequestedDeliveryDate { get; }
+    /// <summary>The line's requested delivery date; DEC-SAL-003 lets a delivery-schedule update move it (dates only).</summary>
+    public DateOnly? RequestedDeliveryDate { get; private set; }
 
     public string? Note { get; }
 
@@ -75,6 +76,26 @@ public sealed class SalesOrderDraftLine
 
     /// <summary>The requested delivery plan; empty means no slices planned, which is not a delivery.</summary>
     public IReadOnlyList<DeliverySlice> RequestedDeliverySlices => slices.AsReadOnly();
+
+    /// <summary>
+    /// DEC-SAL-003 (dates only): the line's date and the dates of its CURRENT slices, keyed by slice id. The caller (the
+    /// aggregate) has already checked that <paramref name="sliceDates"/> names exactly this line's slices; the slice ids,
+    /// order, quantities and texts stay as they were, so the plan's quantities are not re-split.
+    /// </summary>
+    internal void Reschedule(DateOnly? requestedDeliveryDate, IReadOnlyDictionary<Guid, DateOnly> sliceDates)
+    {
+        ArgumentNullException.ThrowIfNull(sliceDates);
+        if (sliceDates.Count != slices.Count || slices.Any(slice => !sliceDates.ContainsKey(slice.SliceId)))
+        {
+            throw new SalesRuleException(SalesRuleCodes.InternalInvariant, "Termin dilimleri satırın dilimleriyle uyuşmuyor (iç değişmez).");
+        }
+
+        RequestedDeliveryDate = requestedDeliveryDate;
+        for (var index = 0; index < slices.Count; index++)
+        {
+            slices[index] = slices[index] with { RequestedDeliveryDate = sliceDates[slices[index].SliceId] };
+        }
+    }
 
     /// <summary>What the plan does not cover: the ordered quantity minus the slices (never negative, never "delivered").</summary>
     public Quantity UnplannedQuantity =>

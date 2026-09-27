@@ -218,6 +218,22 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
             return Revisions(draftId);
         }
 
+        /// <summary>DEC-SAL-003: the delivery-schedule update and its history; this stub answers nothing it was not given.</summary>
+        public Func<Guid, SalesDraftDeliveryScheduleRequest, Task<SalesOrderDraftResponse>> Schedule { get; set; } =
+            (_, _) => throw new SalesDraftServiceException(404, "not_found");
+
+        public List<(Guid DraftId, SalesDraftDeliveryScheduleRequest Request, string Key)> ScheduleCalls { get; } = [];
+
+        public Task<SalesOrderDraftResponse> RescheduleDeliveryAsync(Guid draftId, SalesDraftDeliveryScheduleRequest request, SalesCommandMetadata metadata,
+            CancellationToken cancellationToken = default)
+        {
+            ScheduleCalls.Add((draftId, request, metadata.IdempotencyKey));
+            return Schedule(draftId, request);
+        }
+
+        public Task<SalesOrderDraftDeliverySchedulesResponse> GetDraftDeliverySchedulesAsync(Guid draftId, CancellationToken cancellationToken = default) =>
+            throw new SalesDraftServiceException(404, "not_found");
+
         public Task<SalesOrderDraftResponse> SubmitDraftAsync(Guid draftId, SalesDraftStateCommandRequest request, SalesCommandMetadata metadata,
             CancellationToken cancellationToken = default) => StateAsync("submit", draftId, request, metadata);
 

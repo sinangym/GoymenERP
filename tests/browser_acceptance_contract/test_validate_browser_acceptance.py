@@ -268,6 +268,8 @@ class WorkflowTests(unittest.TestCase):
                 "inventory.labels.read",
                 "inventory.balances.read",
                 "inventory.physical-allocation.write",
+                # DEC-SAL-003: held only by the disposable s04-planner.
+                "sales.orders.delivery-schedule.write",
             ),
             validator.SUITE_IDENTITY_PERMISSIONS["s04"],
         )
