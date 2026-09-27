@@ -320,6 +320,9 @@ class WorkflowTests(unittest.TestCase):
                 "organization.locations.read",
                 # R19: held only by the disposable r14-transformer.
                 "inventory.label-transformation.record",
+                # AT-037: record held only by r14-counter, approve only by r14-count-approver.
+                "inventory.stock-count.record",
+                "inventory.stock-count.approve",
             ),
             validator.SUITE_IDENTITY_PERMISSIONS["r14"],
         )

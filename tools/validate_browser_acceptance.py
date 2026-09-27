@@ -281,9 +281,12 @@ SUITE_IDENTITY_PERMISSIONS = {
     # and one Organization location reader.
     # R19 (user decision 2026-09-27): the disposable r14-transformer adds only the split/merge command name
     # beside the two label reads; no other r14 actor holds it.
+    # AT-037 (user decision 2026-09-27): the disposable r14-counter holds only stock-count.record and the
+    # disposable r14-count-approver only stock-count.approve, each beside the two label reads (maker != checker).
     "r14": ("inventory.opening-stock.record", "product.operational-selection.read",
             "inventory.labels.read", "inventory.balances.read",
-            "organization.locations.read", "inventory.label-transformation.record"),
+            "organization.locations.read", "inventory.label-transformation.record",
+            "inventory.stock-count.record", "inventory.stock-count.approve"),
 }
 
 
@@ -488,7 +491,8 @@ SUITE_FIXTURE_OUTPUTS: dict[str, frozenset[str]] = {
                         "productUnitProfileVersion", "productCode", "productName"}),
     # STOK's Suites/R14 seed: three actors, company fence, active Organization location and Product's
     # exact gated stock-candidate tuple. The browser creates the Inventory record itself.
-    "r14": frozenset({"recorderActor", "deniedActor", "arrangerActor", "transformerActor", "companyId",
+    "r14": frozenset({"recorderActor", "deniedActor", "arrangerActor", "transformerActor",
+                      "counterActor", "countApproverActor", "companyId",
                       "otherCompanyId",
                       "locationId", "productId", "productVersion", "productUnitId",
                       "productUnitProfileId", "productUnitProfileVersion", "productCode", "productName"}),

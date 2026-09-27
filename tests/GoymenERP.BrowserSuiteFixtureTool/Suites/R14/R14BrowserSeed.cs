@@ -19,6 +19,13 @@ namespace GoymenERP.BrowserSuiteFixtureTool.Suites.R14;
 /// capability split: only the transformer is offered the label-detail split/merge control (the recorder, the denied
 /// actor and the arranger are not), and it is not offered the opening workspace.
 /// </para>
+/// <para>
+/// AT-037 stock count (user decision 2026-09-27): <c>inventory.stock-count.record</c> is held ONLY by the disposable
+/// <see cref="CounterActor"/> and <c>inventory.stock-count.approve</c> ONLY by the disposable
+/// <see cref="CountApproverActor"/> — two different actors, so maker ≠ checker is a fact of the grants as well as
+/// of the command. This seed writes nothing for them; the read-back pins that each is offered exactly its own
+/// control beside the label detail and no other r14 actor is offered either.
+/// </para>
 /// </summary>
 public sealed class R14BrowserSeed : IBrowserSuiteFixture
 {
@@ -26,6 +33,8 @@ public sealed class R14BrowserSeed : IBrowserSuiteFixture
     public const string DeniedActor = "r14-denied";
     public const string ArrangerActor = "r14-arranger";
     public const string TransformerActor = "r14-transformer";
+    public const string CounterActor = "r14-counter";
+    public const string CountApproverActor = "r14-count-approver";
 
     public static readonly Guid CompanyGdc = Guid.Parse("10000000-0000-0000-0000-000000000001");
     public static readonly Guid CompanyOther = Guid.Parse("10000000-0000-0000-0000-000000000002");
@@ -52,6 +61,8 @@ public sealed class R14BrowserSeed : IBrowserSuiteFixture
     private const string LabelDetailCapability = "inventory.stock-positions.list";
     private const string ProductDetailCapability = "product.items.detail";
     private const string LabelTransformationCapability = "inventory.label-transformation.record";
+    private const string StockCountRecordCapability = "inventory.stock-count.record";
+    private const string StockCountApproveCapability = "inventory.stock-count.approve";
 
     public string Suite => "r14";
 
@@ -159,12 +170,32 @@ public sealed class R14BrowserSeed : IBrowserSuiteFixture
                 "Only the disposable R19 transformer may hold the label split/merge control, beside the label detail.");
         }
 
+        string[] counterCapabilities = await CapabilitiesAsync(context, CounterActor, cancellationToken);
+        string[] approverCapabilities = await CapabilitiesAsync(context, CountApproverActor, cancellationToken);
+        string[][] othersCapabilities =
+            [recorderCapabilities, deniedCapabilities, arrangerCapabilities, transformerCapabilities];
+        if (!counterCapabilities.Contains(LabelDetailCapability, StringComparer.Ordinal)
+            || !counterCapabilities.Contains(StockCountRecordCapability, StringComparer.Ordinal)
+            || counterCapabilities.Contains(StockCountApproveCapability, StringComparer.Ordinal)
+            || !approverCapabilities.Contains(LabelDetailCapability, StringComparer.Ordinal)
+            || !approverCapabilities.Contains(StockCountApproveCapability, StringComparer.Ordinal)
+            || approverCapabilities.Contains(StockCountRecordCapability, StringComparer.Ordinal)
+            || othersCapabilities.Any(capabilities =>
+                capabilities.Contains(StockCountRecordCapability, StringComparer.Ordinal)
+                || capabilities.Contains(StockCountApproveCapability, StringComparer.Ordinal)))
+        {
+            throw new InvalidOperationException(
+                "Only the disposable AT-037 counter may record and only the disposable count approver may decide a count.");
+        }
+
         return new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["recorderActor"] = RecorderActor,
             ["deniedActor"] = DeniedActor,
             ["arrangerActor"] = ArrangerActor,
             ["transformerActor"] = TransformerActor,
+            ["counterActor"] = CounterActor,
+            ["countApproverActor"] = CountApproverActor,
             ["companyId"] = CompanyGdc.ToString("D"),
             ["otherCompanyId"] = CompanyOther.ToString("D"),
             ["locationId"] = locationId.ToString("D"),
