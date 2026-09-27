@@ -2682,7 +2682,7 @@ public sealed partial class OpenApiContractGenerationTests
                     ("name", "type:string"),
                     ("kind", "type:string"),
                     ("isActive", "type:boolean"),
-                    ("version", "type:integer|string;format:int64"),
+                    ("version", "type:integer;format:int64"),
                     ("canOpenLocationDetail", "type:boolean")),
             };
 
