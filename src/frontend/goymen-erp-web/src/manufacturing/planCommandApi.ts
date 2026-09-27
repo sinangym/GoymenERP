@@ -74,7 +74,10 @@ function canonicalKilograms(value: string): string {
   return value.replace(/0+$/, '').replace(/\.$/, '')
 }
 
-function sameInputs(plan: ProductionPlanView, request: SavePlanRequest): boolean {
+function sameInputs(
+  plan: ProductionPlanView,
+  request: Pick<SavePlanRequest, 'inputs'> | Pick<RevisePlanRequest, 'inputs'>,
+): boolean {
   if (plan.inputs.length !== request.inputs.length) return false
   const remaining = [...plan.inputs]
   for (const sent of request.inputs) {
@@ -89,7 +92,10 @@ function sameInputs(plan: ProductionPlanView, request: SavePlanRequest): boolean
   return remaining.length === 0
 }
 
-function sameTarget(plan: ProductionPlanView, request: SavePlanRequest): boolean {
+function sameTarget(
+  plan: ProductionPlanView,
+  request: Pick<SavePlanRequest, 'target'> | Pick<RevisePlanRequest, 'target'>,
+): boolean {
   if (request.target === null) return plan.target === null
   return (
     plan.target?.basis === request.target.basis &&
@@ -183,6 +189,22 @@ export async function savePlan(
   }
 }
 
+/**
+ * MFG-PLAN-EDIT: the Draft plan's new content as a whole, at the version the detail read, with the user's reason.
+ * Every kept or added roll carries the label version the screen read for it; Inventory revalidates it.
+ */
+export interface RevisePlanRequest {
+  readonly expectedVersion: number
+  readonly workCenterId: string
+  readonly inputs: readonly {
+    readonly parentRollId: string
+    readonly plannedKg: string
+    readonly expectedLabelVersion: string
+  }[]
+  readonly target: { readonly basis: PlanTargetBasis; readonly kg: string } | null
+  readonly reason: string
+}
+
 export type PlanLifecycleSnapshot =
   | {
       readonly kind: 'approve'
@@ -193,6 +215,11 @@ export type PlanLifecycleSnapshot =
       readonly kind: 'create-order'
       readonly idempotencyKey: string
       readonly orderId: string
+    }
+  | {
+      readonly kind: 'revise'
+      readonly idempotencyKey: string
+      readonly request: RevisePlanRequest
     }
 
 export type PlanLifecycleOutcome<T> =
@@ -396,4 +423,45 @@ export async function createOrder(
     return { type: 'unknown', reason: 'undecodable' }
   }
   return { type: 'applied', resource: order, ...metadata }
+}
+
+/**
+ * MFG-PLAN-EDIT: revises the Draft at exactly the version the detail read (`POST /plans/{planId}/revision`). A 200 is
+ * trusted only when it describes THIS attempt — the plan, the company, a Draft one version on, the sent work center,
+ * inputs and target — otherwise the outcome stays unknown and the same frozen attempt may be sent again. The transport
+ * never rotates the key or retries itself.
+ */
+export async function revisePlan(
+  companyId: string,
+  planId: string,
+  snapshot: Extract<PlanLifecycleSnapshot, { kind: 'revise' }>,
+  signal?: AbortSignal,
+): Promise<PlanLifecycleOutcome<ProductionPlanView>> {
+  const result = await lifecycleRequest(
+    `${MANUFACTURING_BASE}/plans/${encodeURIComponent(planId)}/revision`,
+    companyId,
+    snapshot.idempotencyKey,
+    { ...snapshot.request },
+    200,
+    signal,
+  )
+  if (result.type === 'unknown') return result
+  if (result.response.status !== 200) return lifecycleFailure(result.response, result.body)
+  const metadata = replayMetadata(result.response.headers)
+  const plan = decodePlan(result.body)
+  const request = snapshot.request
+  if (
+    metadata === null ||
+    plan === null ||
+    plan.planId !== planId ||
+    plan.companyId !== companyId ||
+    plan.status !== 'Draft' ||
+    plan.version !== request.expectedVersion + 1 ||
+    plan.workCenterId !== request.workCenterId ||
+    !sameInputs(plan, request) ||
+    !sameTarget(plan, request)
+  ) {
+    return { type: 'unknown', reason: 'undecodable' }
+  }
+  return { type: 'applied', resource: plan, ...metadata }
 }

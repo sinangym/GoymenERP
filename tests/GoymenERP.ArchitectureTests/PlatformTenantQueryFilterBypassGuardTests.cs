@@ -170,8 +170,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 "81c1ff0b928c464dbe9c8378e1a95531ccabe2f6c9c9443d94f28e1f56763aed",
 
             // manufacturing
+            // MFG-PLAN-EDIT: +6 plan-revision SQL facts (a72e6367… -> 02711b6c…).
             ["tools/relational_inventory/manufacturing.txt"] =
-                "a72e63678da905388ee2e17d46ad3aed74b6ad8d6f6b0ee79fe47ca7b3cd9595",
+                "02711b6cffa15804383ef6c1b1d510a6d7af07e3c261b594a58243d35efa8133",
 
             // organization
             // ORG master edit: +2 OrganizationMasterDataSqlServerRelationalAcceptanceTests facts (6b504dac… -> 3bad6ad8…).
@@ -246,9 +247,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // scoped with the CompanyId filter like every other tenant row.
             // MFG-5 (#303): company-scoped like Organization; every tenant row and AuditEvent carries the
             // CompanyId filter. A standard entry, not an exception.
+            // Re-measured for MFG-PLAN-EDIT: the append-only PlanRevisions / PlanRevisionInputs tables, each with the
+            // same CompanyId query filter and a company-leading key and FK to the plan.
             ["src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/"
              + "Persistence/ManufacturingDbContext.cs"] =
-                "409f9d51466a63c0485f6cb89b20f283a55adff0a0cebb9b6c44c5b94a616a92",
+                "4f2265e7aa941aae91cd35b280f8ae327686d167dfd039110ea850e63ade2a42",
             // FIN-T04a (#305): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for DEC-FIN-014: nullable POS fact columns on ReceiptDrafts and MoneyEvents; no new table,
@@ -653,11 +656,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // MFG-5 (#303): the Manufacturing initializer's one provider branch, as Organization.
                 // Re-measured for MFG-API (#313): the command surface registrations (mass verifier and
                 // command service); the one provider branch is unchanged (EnsureCreated 1, Migrate 1).
+                // Re-fingerprinted for MFG-PLAN-EDIT: one scoped registration of the plan-revision store over the same
+                // ManufacturingStore; the provider branch and its token counts are unchanged.
                 ["src/backend/Modules/Manufacturing/"
                  + "GoymenERP.Modules.Manufacturing.Infrastructure/"
                  + "ManufacturingModuleExtensions.cs"] =
                     new(
-                        "c7fc382b6a9c613d07133ae82a369985cbc3f96d365b1b87f9c340fed665267f",
+                        "60fc1bdd7449ced2c19ab698d23b754e60a1fbe4c3da380c5dcff3dde3e23119",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -670,11 +675,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // named composite work-center FK (manufacturing_work_center_not_found); still recognition only,
                 // no connection, command or raw SQL. Re-fingerprinted for MFG-BAL: the Decimal18Scale3Limit rename
                 // (FİNANS #342 INFO-3: one neutral name for every decimal(18,3) column bound); SqlClient count
+                // unchanged (1). Re-fingerprinted for MFG-PLAN-EDIT: the Draft revision append and the history read,
+                // company-resolved through the filtered context; no connection, command or raw SQL; SqlClient count
                 // unchanged (1).
                 ["src/backend/Modules/Manufacturing/"
                  + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.cs"] =
                     new(
-                        "cb4ee45788284b701901556a810358bef4fc2da9a26273e61c46354418a0b0de",
+                        "4b36190fe08f10dffb809bf0d7bf2be8f8f4dbd2fa10caf790177c0428d12afe",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -1022,6 +1029,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // slitting spec is stored; forward fix, no spec is dropped.
                 ["src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/Migrations/20260919130000_AddPlanSlittingSpecs.cs"] =
                     new("2c9558291e1159f12ec838b7ab8d0a9e468630e384b0777896473a5f3c336f51",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // MFG-PLAN-EDIT: the Down's only raw SQL is Manufacturing's module refusal (51047) while any plan
+                // revision is stored; the THROW precedes both DropTables. Forward fix.
+                ["src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/Migrations/20260927180000_AddManufacturingPlanRevisions.cs"] =
+                    new("39a0d9bdb1ed7f19934491b4177708af32ef45fadf7c7ebbf1010fa372b6ec23",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // INV-OPEN-1 part 2: each Down's only raw SQL is the Inventory refusal (51046) while an opening

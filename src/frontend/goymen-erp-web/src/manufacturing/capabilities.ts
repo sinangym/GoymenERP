@@ -9,7 +9,7 @@
  * block and `hasCapability` answers false. The frontend never mints a capability to open
  * its own screen, and the server re-authorizes every request regardless (ERP-000K §10.2).
  *
- * WHY NINE IDS. They map onto the permissions the server enforces separately
+ * WHY TEN IDS. They map onto the permissions the server enforces separately
  * (`ManufacturingEndpoints`):
  *
  *   manufacturing.orders.detail <- manufacturing.orders.read
@@ -20,14 +20,15 @@
  *   manufacturing.plans.detail  <- manufacturing.plans.read
  *   manufacturing.plans.approve <- manufacturing.plans.read + manufacturing.plans.approve
  *   manufacturing.plans.order-create <- manufacturing.plans.read + manufacturing.orders.create
+ *   manufacturing.plans.edit    <- manufacturing.plans.read + manufacturing.plans.write (MFG-PLAN-EDIT: the plan save's grant)
  *   manufacturing.plans.list    <- manufacturing.plans.read (MFG-PLAN-LIST: the plan read's own grant)
  *
  * Reading an order and recording a fact on it are different authorities, so a reader
  * sees the balances and NO form (card D3: without the capability the control is not
  * drawn; the server enforces either way). Closing is a third authority: whoever may
  * record a fact does not thereby close the order, and the close button is a control of
- * the detail screen, drawn only for its own capability. Plan approval and order creation
- * follow the same child-control rule on plan detail.
+ * the detail screen, drawn only for its own capability. Plan approval, order creation and the
+ * Draft edit follow the same child-control rule on plan detail.
  *
  * This is a technical, functional sub-view (card D1). The canonical production screens
  * (PR-09/13/14/15) are `DECISION_ONLY_REFERENCE_MISSING`; nothing here is a locked
@@ -51,6 +52,8 @@ export const MANUFACTURING_CAPABILITY = {
   planApprove: 'manufacturing.plans.approve',
   /** Create one order from the Approved plan shown on the detail screen. Not a route — a control. */
   planOrderCreate: 'manufacturing.plans.order-create',
+  /** MFG-PLAN-EDIT: edit the Draft shown on the detail screen, with its history. Not a route — a control. */
+  planEdit: 'manufacturing.plans.edit',
   /** MFG-PLAN-LIST the company's saved plans, so a closed plan is found and reopened. Route `/uretim/planlar`. */
   planList: 'manufacturing.plans.list',
 } as const

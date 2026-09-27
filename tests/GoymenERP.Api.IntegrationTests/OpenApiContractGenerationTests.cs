@@ -297,6 +297,14 @@ public sealed partial class OpenApiContractGenerationTests
         new("post", "/api/v1/manufacturing/plans/{planId}/approval", "ApproveManufacturingPlanV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json", "404:application/problem+json"),
             "#/components/schemas/ApprovePlanRequestV1", ["path:planId:true:type:string;format:uuid"]),
+        // MFG-PLAN-EDIT: a Draft plan is revised under the plan write (the save's rules); its history under the plan read.
+        new("post", "/api/v1/manufacturing/plans/{planId}/revision", "ReviseManufacturingPlanV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/RevisePlanRequestV1", ["path:planId:true:type:string;format:uuid"]),
+        new("get", "/api/v1/manufacturing/plans/{planId}/revisions", "ListManufacturingPlanRevisionsV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json",
+                "503:application/problem+json"),
+            ParameterValues: ["path:planId:true:type:string;format:uuid"]),
         new("post", "/api/v1/manufacturing/orders", "CreateManufacturingOrderV1",
             AuthenticatedResponses("201:application/json", "400:application/problem+json", "415:", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json", "404:application/problem+json"),
             "#/components/schemas/CreateOrderRequestV1"),
@@ -652,6 +660,8 @@ public sealed partial class OpenApiContractGenerationTests
             ["SaveManufacturingPlanV1"] = "ref:PlanViewV1",
             ["GetManufacturingPlanV1"] = "ref:PlanViewV1",
             ["ApproveManufacturingPlanV1"] = "ref:PlanViewV1",
+            ["ReviseManufacturingPlanV1"] = "ref:PlanViewV1",
+            ["ListManufacturingPlanRevisionsV1"] = "ref:PlanRevisionListViewV1",
             ["CreateManufacturingOrderV1"] = "ref:OrderViewV1",
             ["IssueManufacturingInputV1"] = "ref:OrderViewV1",
             ["ReturnManufacturingInputV1"] = "ref:OrderViewV1",
@@ -797,6 +807,8 @@ public sealed partial class OpenApiContractGenerationTests
         "SaveManufacturingPlanV1",
         "GetManufacturingPlanV1",
         "ApproveManufacturingPlanV1",
+        "ReviseManufacturingPlanV1",
+        "ListManufacturingPlanRevisionsV1",
         "CreateManufacturingOrderV1",
         "IssueManufacturingInputV1",
         "ReturnManufacturingInputV1",
@@ -907,6 +919,7 @@ public sealed partial class OpenApiContractGenerationTests
         "SetCounterpartyCompanyAccountActiveStateV1",
         "SaveManufacturingPlanV1",
         "ApproveManufacturingPlanV1",
+        "ReviseManufacturingPlanV1",
         "CreateManufacturingOrderV1",
         "IssueManufacturingInputV1",
         "ReturnManufacturingInputV1",
@@ -997,6 +1010,7 @@ public sealed partial class OpenApiContractGenerationTests
                 ["SaveManufacturingPlanV1"] =
                     [StatusCodes.Status201Created, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
                 ["ApproveManufacturingPlanV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
+                ["ReviseManufacturingPlanV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
                 ["CreateManufacturingOrderV1"] = [StatusCodes.Status201Created, StatusCodes.Status404NotFound],
                 ["IssueManufacturingInputV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
                 ["ReturnManufacturingInputV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
@@ -1124,6 +1138,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetSalesProductCandidatesV1",
         "SaveManufacturingPlanV1",
         "ApproveManufacturingPlanV1",
+        "ReviseManufacturingPlanV1",
         "CreateManufacturingOrderV1",
         "IssueManufacturingInputV1",
         "ReturnManufacturingInputV1",
@@ -1226,6 +1241,8 @@ public sealed partial class OpenApiContractGenerationTests
         "SaveManufacturingPlanV1:404",
         "GetManufacturingPlanV1:404",
         "ApproveManufacturingPlanV1:404",
+        "ReviseManufacturingPlanV1:404",
+        "ListManufacturingPlanRevisionsV1:404",
         "CreateManufacturingOrderV1:404",
         "IssueManufacturingInputV1:404",
         "ReturnManufacturingInputV1:404",
@@ -1287,6 +1304,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetFinanceManualReceiptDraftContextV1:400",
         "SaveManufacturingPlanV1:400",
         "ApproveManufacturingPlanV1:400",
+        "ReviseManufacturingPlanV1:400",
         "CreateManufacturingOrderV1:400",
         "IssueManufacturingInputV1:400",
         "ReturnManufacturingInputV1:400",
@@ -1466,6 +1484,13 @@ public sealed partial class OpenApiContractGenerationTests
                 [.. ManufacturingConflictCodes, "inventory_label_version_conflict", "inventory_parent_roll_read_conflict"],
             ["SaveManufacturingPlanV1:422"] =
                 [.. ManufacturingUnprocessableCodes, "inventory_parent_roll_context_required", "inventory_parent_roll_no_physical_position"],
+            // MFG-PLAN-EDIT: the revision takes the save's rules and adds its three Draft-edit refusals.
+            ["ReviseManufacturingPlanV1:400"] = ["manufacturing_request_invalid"],
+            ["ReviseManufacturingPlanV1:409"] =
+                [.. ManufacturingConflictCodes, "inventory_label_version_conflict", "inventory_parent_roll_read_conflict"],
+            ["ReviseManufacturingPlanV1:422"] =
+                [.. ManufacturingUnprocessableCodes, "inventory_parent_roll_context_required", "inventory_parent_roll_no_physical_position",
+                    "manufacturing_plan_process_fixed", "manufacturing_plan_revision_no_change", "manufacturing_plan_slitting_spec_fixed"],
             ["ApproveManufacturingPlanV1:400"] = ["manufacturing_request_invalid"],
             ["ApproveManufacturingPlanV1:409"] = ManufacturingConflictCodes,
             ["ApproveManufacturingPlanV1:422"] = ManufacturingUnprocessableCodes,
@@ -1671,6 +1696,26 @@ public sealed partial class OpenApiContractGenerationTests
                     ("target", "oneOf:ref:TargetViewV1|type:null"),
                     ("createdAtUtc", "type:string;format:date-time"),
                     ("approvedAtUtc", "type:null|string;format:date-time")),
+                // MFG-PLAN-EDIT: every appended revision of a Draft plan, in order, with its reason and author.
+                ["PlanRevisionListViewV1"] = ObjectSchema(
+                    ["planId", "revisions"],
+                    ("planId", "type:string;format:uuid"),
+                    ("revisions", "type:array;items:ref:PlanRevisionViewV1")),
+                ["PlanRevisionViewV1"] = ObjectSchema(
+                    ["revision", "planVersion", "workCenterId", "inputs", "target", "reason", "revisedBy", "recordedAtUtc"],
+                    ("revision", "type:integer|string;format:int32"),
+                    ("planVersion", "type:integer|string;format:int64"),
+                    ("workCenterId", "type:string;format:uuid"),
+                    ("inputs", "type:array;items:ref:PlanRevisionInputViewV1"),
+                    ("target", "oneOf:ref:TargetViewV1|type:null"),
+                    ("reason", "type:null|string"),
+                    ("revisedBy", "type:null|string"),
+                    ("recordedAtUtc", "type:string;format:date-time")),
+                ["PlanRevisionInputViewV1"] = ObjectSchema(
+                    ["parentRollId", "plannedKg", "expectedLabelVersion"],
+                    ("parentRollId", "type:string;format:uuid"),
+                    ("plannedKg", "type:string"),
+                    ("expectedLabelVersion", "type:null|string")),
                 ["LogisticsApprovedOrderLinePage"] = ObjectSchema(
                     ["items", "nextCursor"],
                     ("items", "type:array;items:ref:LogisticsApprovedOrderLineView"),
@@ -3508,6 +3553,14 @@ public sealed partial class OpenApiContractGenerationTests
                     ("workCenterId", "type:string;format:uuid"),
                     ("inputs", "type:array|null;items:ref:PlannedInputRequestV1"),
                     ("target", "oneOf:ref:TargetRequestV1|type:null")),
+                // MFG-PLAN-EDIT: a Draft plan's revision names the version read and a reason; the process stays fixed.
+                ["RevisePlanRequestV1"] = ObjectSchema(
+                    ["expectedVersion", "workCenterId", "inputs", "target", "reason"],
+                    ("expectedVersion", "type:integer|string;format:int64"),
+                    ("workCenterId", "type:string;format:uuid"),
+                    ("inputs", "type:array|null;items:ref:PlannedInputRequestV1"),
+                    ("target", "oneOf:ref:TargetRequestV1|type:null"),
+                    ("reason", "type:null|string")),
                 ["TargetRequestV1"] = ObjectSchema(
                     ["basis", "kg"],
                     ("basis", "type:null|string"),
@@ -4145,9 +4198,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(148, operations.Count);
+        Assert.Equal(150, operations.Count);
         Assert.Equal(
-            148,
+            150,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());
