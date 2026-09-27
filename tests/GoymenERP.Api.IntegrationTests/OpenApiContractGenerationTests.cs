@@ -121,6 +121,10 @@ public sealed partial class OpenApiContractGenerationTests
             ["path:id:true:type:string;format:uuid"]),
         new("get", "/api/v1/organization/work-centers", "GetOrganizationWorkCentersV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json")),
+        // ORG-04: one work center's card, the location card's shape (code-less 404 for foreign/unknown/out-of-scope).
+        new("get", "/api/v1/organization/work-centers/{id}", "GetOrganizationWorkCenterV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json"),
+            ParameterValues: ["path:id:true:type:string;format:uuid"]),
         new("get", "/api/v1/identity/me", "GetCurrentIdentityV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json")),
         new("get", "/api/v1/counterparties", "GetCounterpartiesV1",
@@ -489,6 +493,10 @@ public sealed partial class OpenApiContractGenerationTests
         new("get", "/api/v1/manufacturing/orders", "ListManufacturingOrdersV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["query:pageSize:false:type:integer|string;format:int32;pattern:^-?(?:0|[1-9]\\d*)$", "query:cursor:false:type:string", "query:status:false:type:string"]),
+        // MFG-PLAN-LIST: the order list's rules, the plan read's grant.
+        new("get", "/api/v1/manufacturing/plans", "ListManufacturingPlansV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["query:pageSize:false:type:integer|string;format:int32;pattern:^-?(?:0|[1-9]\\d*)$", "query:cursor:false:type:string", "query:status:false:type:string"]),
         new("post", "/api/v1/manufacturing/orders/{orderId}/close", "CloseManufacturingOrderV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json", "404:application/problem+json"),
             "#/components/schemas/CloseOrderRequestV1", ["path:orderId:true:type:string;format:uuid"]),
@@ -537,6 +545,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetInventoryOpeningCountV1"] = "ref:OpeningCountViewV1",
             ["SetOrganizationLocationActiveStateV1"] = "none",
             ["GetOrganizationWorkCentersV1"] = "array:WorkCenterSummary",
+            ["GetOrganizationWorkCenterV1"] = "ref:WorkCenterDetail",
             ["GetCurrentIdentityV1"] = "ref:IdentityProfile",
             ["GetCounterpartiesV1"] = "ref:CounterpartyPage",
             ["GetCounterpartyCompanyAccountLinkCandidatesV1"] =
@@ -633,6 +642,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["ApproveAccountingJournalReversalV1"] = "ref:AccountingJournalReversalProposalViewV1",
             ["GetManufacturingOrderMassBalanceV1"] = "ref:MassBalanceViewV1",
             ["ListManufacturingOrdersV1"] = "ref:OrderListViewV1",
+            ["ListManufacturingPlansV1"] = "ref:PlanListViewV1",
             ["CloseManufacturingOrderV1"] = "ref:OrderViewV1",
             ["GetLogisticsApprovedOrderLinesV1"] = "ref:LogisticsApprovedOrderLinePage",
             ["GetSalesContactInformationReferencesV1"] = "ref:SalesContactInformationOptionsV1",
@@ -650,6 +660,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetOrganizationLocationV1",
         "SetOrganizationLocationActiveStateV1",
         "GetOrganizationWorkCentersV1",
+        "GetOrganizationWorkCenterV1",
         "GetInventoryLabelV1",
         "GetInventoryLabelBalancesV1",
         "GetInventoryLabelDetailV1",
@@ -749,6 +760,7 @@ public sealed partial class OpenApiContractGenerationTests
         "ApproveAccountingJournalReversalV1",
         "GetManufacturingOrderMassBalanceV1",
         "ListManufacturingOrdersV1",
+        "ListManufacturingPlansV1",
         "CloseManufacturingOrderV1",
         "GetLogisticsApprovedOrderLinesV1",
         "GetSalesContactInformationReferencesV1",
@@ -1013,6 +1025,7 @@ public sealed partial class OpenApiContractGenerationTests
     private static readonly HashSet<string> CodeLessProblemResponses =
     [
         "GetOrganizationLocationV1:404",
+        "GetOrganizationWorkCenterV1:404",
         "GetInventoryLabelV1:404",
         "GetInventoryLabelBalancesV1:404",
         "GetInventoryLabelDetailV1:404",
@@ -1166,10 +1179,10 @@ public sealed partial class OpenApiContractGenerationTests
             ["RecordInventoryOpeningCountV1:422"] = [.. InventoryOpeningCodesV1.Status422Codes.Order(StringComparer.Ordinal)],
             ["CreateInventoryPhysicalAllocationV1:400"] = [.. InventoryPhysicalAllocationHttpCodesV1.Status400Codes.Order(StringComparer.Ordinal)],
             ["CreateInventoryPhysicalAllocationV1:409"] = [.. InventoryPhysicalAllocationHttpCodesV1.CreateStatus409Codes.Order(StringComparer.Ordinal)],
-            ["CreateInventoryPhysicalAllocationV1:422"] = [.. InventoryPhysicalAllocationHttpCodesV1.Status422Codes.Order(StringComparer.Ordinal)],
+            ["CreateInventoryPhysicalAllocationV1:422"] = [.. InventoryPhysicalAllocationHttpCodesV1.CreateStatus422Codes.Order(StringComparer.Ordinal)],
             ["ReleaseInventoryPhysicalAllocationV1:400"] = [.. InventoryPhysicalAllocationHttpCodesV1.Status400Codes.Order(StringComparer.Ordinal)],
             ["ReleaseInventoryPhysicalAllocationV1:409"] = [.. InventoryPhysicalAllocationHttpCodesV1.ReleaseStatus409Codes.Order(StringComparer.Ordinal)],
-            ["ReleaseInventoryPhysicalAllocationV1:422"] = [.. InventoryPhysicalAllocationHttpCodesV1.Status422Codes.Order(StringComparer.Ordinal)],
+            ["ReleaseInventoryPhysicalAllocationV1:422"] = [.. InventoryPhysicalAllocationHttpCodesV1.ReleaseStatus422Codes.Order(StringComparer.Ordinal)],
             ["GetInventoryParentRollCandidatesV1:400"] = [InventoryParentRollCodesV1.InvalidQuery],
             ["GetInventoryParentRollCandidatesV1:409"] = [InventoryParentRollCodesV1.ReadConflict],
             ["GetInventoryStockPositionsV1:400"] = [InventoryStockPositionCodesV1.InvalidQuery],
@@ -1286,6 +1299,7 @@ public sealed partial class OpenApiContractGenerationTests
                 "concurrent_change", "inventory_allocation_insufficient", "inventory_allocation_label_mismatch",
                 "inventory_allocation_state_conflict", "inventory_allocation_version_conflict",
                 "inventory_definite_shipment_concurrent_change", "inventory_definite_shipment_idempotency_conflict",
+                "inventory_definite_shipment_owner_not_company",
                 "inventory_label_not_releasable", "inventory_label_version_conflict",
                 "inventory_physical_stock_insufficient", "logistics_allocation_source_mismatch",
                 "logistics_duplicate_share_id", "logistics_instruction_state", "logistics_line_blocked",
@@ -1350,6 +1364,7 @@ public sealed partial class OpenApiContractGenerationTests
             // MFG-ORD: the list refuses a bad page size, cursor or status on the field; the close is a
             // write like the others, and adds manufacturing_unexplained_difference to the shared 422 list.
             ["ListManufacturingOrdersV1:400"] = ["manufacturing_request_invalid"],
+            ["ListManufacturingPlansV1:400"] = ["manufacturing_request_invalid"],
             ["CloseManufacturingOrderV1:400"] = ["manufacturing_request_invalid"],
             ["CloseManufacturingOrderV1:409"] = ManufacturingConflictCodes,
             ["CloseManufacturingOrderV1:422"] = ManufacturingUnprocessableCodes,
@@ -1411,6 +1426,23 @@ public sealed partial class OpenApiContractGenerationTests
                     ("target", "oneOf:ref:TargetViewV1|type:null"),
                     ("createdAtUtc", "type:string;format:date-time"),
                     ("closedAtUtc", "type:null|string;format:date-time")),
+                // MFG-PLAN-LIST: the order list's page shape over stored plans; approvedAtUtc is null until approval.
+                ["PlanListViewV1"] = ObjectSchema(
+                    ["plans", "nextCursor"],
+                    ("plans", "type:array;items:ref:PlanSummaryViewV1"),
+                    ("nextCursor", "type:null|string")),
+                ["PlanSummaryViewV1"] = ObjectSchema(
+                    ["planId", "workCenterId", "process", "status", "version", "plannedRollCount", "plannedInputKg", "target", "createdAtUtc", "approvedAtUtc"],
+                    ("planId", "type:string;format:uuid"),
+                    ("workCenterId", "type:string;format:uuid"),
+                    ("process", "type:string"),
+                    ("status", "type:string"),
+                    ("version", "type:integer|string;format:int64"),
+                    ("plannedRollCount", "type:integer|string;format:int32"),
+                    ("plannedInputKg", "type:string"),
+                    ("target", "oneOf:ref:TargetViewV1|type:null"),
+                    ("createdAtUtc", "type:string;format:date-time"),
+                    ("approvedAtUtc", "type:null|string;format:date-time")),
                 ["LogisticsApprovedOrderLinePage"] = ObjectSchema(
                     ["items", "nextCursor"],
                     ("items", "type:array;items:ref:LogisticsApprovedOrderLineView"),
@@ -2641,6 +2673,17 @@ public sealed partial class OpenApiContractGenerationTests
                     ("kind", "type:string"),
                     ("isActive", "type:boolean"),
                     ("canOpenLocationDetail", "type:boolean")),
+                // ORG-04: the card adds the row version to the list row's fields.
+                ["WorkCenterDetail"] = ObjectSchema(
+                    ["id", "locationId", "code", "name", "kind", "isActive", "version", "canOpenLocationDetail"],
+                    ("id", "type:string;format:uuid"),
+                    ("locationId", "type:string;format:uuid"),
+                    ("code", "type:string"),
+                    ("name", "type:string"),
+                    ("kind", "type:string"),
+                    ("isActive", "type:boolean"),
+                    ("version", "type:integer;format:int64"),
+                    ("canOpenLocationDetail", "type:boolean")),
             };
 
     private static readonly IReadOnlyDictionary<string, ComponentSchemaExpectation>
@@ -3601,9 +3644,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(127, operations.Count);
+        Assert.Equal(129, operations.Count);
         Assert.Equal(
-            127,
+            129,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());

@@ -65,6 +65,17 @@ public sealed class StockAllocation
     public static StockAllocation Create(Guid id, StockPosition position, Kilograms quantity) =>
         new(id, position, quantity, quantity, 1, StockAllocationStatus.Active);
 
+    /// <summary>
+    /// The kilograms of one Free physical position that no active allocation holds, the only part another
+    /// consumer (a Manufacturing input issue) may take. Master v3 §7.6 / INV-003:
+    /// <c>Serbest Fiziki = Fiziki Mevcut − Aktif Satış Tahsisleri − …</c>; DEC-STK-004: an allocation never
+    /// exceeds free stock, so consuming its kilograms elsewhere would leave it unbacked. A reservation changes
+    /// only through its own explicit release (DEC-STK-005: no silent release). A stored state whose active
+    /// remainders already exceed the position is not repaired here: nothing of it is unreserved.
+    /// </summary>
+    public static Kilograms Unreserved(Kilograms freePhysical, Kilograms activelyAllocated) =>
+        activelyAllocated >= freePhysical ? Kilograms.Zero : Kilograms.Of(freePhysical.Value - activelyAllocated.Value);
+
     /// <summary>Consumes exactly the supplied kg; partiality is chosen by the owner request, not here.</summary>
     public void Consume(long expectedVersion, Guid labelId, Kilograms quantity)
     {

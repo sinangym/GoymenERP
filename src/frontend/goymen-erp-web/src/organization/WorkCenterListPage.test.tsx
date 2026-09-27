@@ -22,6 +22,7 @@ import {
   WC_SLIT,
   WC_UNKNOWN_KIND,
   WORK_CENTERS_ONLY_CAPABILITIES,
+  WORK_CENTER_CARD_CAPABILITIES,
   installFetch,
   json,
   location,
@@ -29,7 +30,13 @@ import {
   requestsFor,
   workCenter,
 } from './testHarness'
-import { ORGANIZATION_CAPABILITY, ORGANIZATION_NAV_LABEL, ORGANIZATION_ROUTE, workCenterListPath } from './capabilities'
+import {
+  ORGANIZATION_CAPABILITY,
+  ORGANIZATION_NAV_LABEL,
+  ORGANIZATION_ROUTE,
+  workCenterDetailPath,
+  workCenterListPath,
+} from './capabilities'
 import { WORK_CENTER_LOCATION_TEXT } from './workCenterLocationFilter'
 
 const PATH = ORGANIZATION_ROUTE[ORGANIZATION_CAPABILITY.workCentersList]
@@ -101,6 +108,33 @@ describe('ORG-03 work centre list', () => {
     // not need to, and a probe would turn a deliberate 404 into an existence oracle.
     expect(requestsFor(recorded, `/organization/locations/${LOC_H1}`)).toEqual([])
     expect(requestsFor(recorded, `/organization/locations/${LOC_H0}`)).toEqual([])
+  })
+
+  it('links each row to its own ORG-04 card only for the card capability, and asks for no card', async () => {
+    const rows = [
+      workCenter(WC_PAINT, LOC_H0, 'BY-01', 'Boya Hattı 1'),
+      workCenter(WC_SLIT, LOC_H1, 'DL-02', 'Dilme Hattı 2', { kind: 'Slitting' }),
+    ]
+    const recorded = installFetch({ capabilities: WORK_CENTER_CARD_CAPABILITIES, respond: respondWith(rows) })
+    renderAt(PATH)
+
+    const paint = await screen.findByRole('link', { name: 'İş merkezi kartını aç: BY-01' })
+    expect(paint.getAttribute('href')).toBe(workCenterDetailPath(WC_PAINT))
+    expect(screen.getByRole('link', { name: 'İş merkezi kartını aç: DL-02' }).getAttribute('href')).toBe(
+      workCenterDetailPath(WC_SLIT),
+    )
+    // Listing the rows reads no card: the card is read when it is opened, not to decorate the list.
+    expect(recorded.filter((request) => /\/organization\/work-centers\/[^/]+$/.test(request.url))).toEqual([])
+  })
+
+  it('shows the code without a card link when only the list is granted', async () => {
+    installFetch({
+      capabilities: WORK_CENTERS_ONLY_CAPABILITIES,
+      respond: respondWith([workCenter(WC_PAINT, LOC_H0, 'BY-01', 'Boya Hattı 1')]),
+    })
+    renderAt(PATH)
+    expect(await screen.findByText('BY-01')).toBeTruthy()
+    expect(screen.queryByRole('link', { name: /İş merkezi kartını aç/ })).toBeNull()
   })
 
   it('returns from an opened location card to this work-center list', async () => {

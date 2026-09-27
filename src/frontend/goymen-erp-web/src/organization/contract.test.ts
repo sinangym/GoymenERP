@@ -5,6 +5,7 @@ import {
   decodeSites,
   decodeVersionConflict,
   decodeWorkCenter,
+  decodeWorkCenterDetail,
   decodeWorkCenters,
   pageCount,
   versionToken,
@@ -269,5 +270,47 @@ describe('decodeWorkCenters', () => {
   it('rejects a body that is not an array at all', () => {
     expect(decodeWorkCenters({ items: [ROW] })).toBeNull()
     expect(decodeWorkCenters(null)).toBeNull()
+  })
+})
+
+describe('decodeWorkCenterDetail (ORG-04)', () => {
+  const WC = '88888888-8888-8888-8888-888888888888'
+  const card = {
+    id: WC,
+    locationId: LOC,
+    code: 'BY-01',
+    name: 'Boya Hattı 1',
+    kind: 'Paint',
+    isActive: false,
+    version: 3,
+    canOpenLocationDetail: false,
+  }
+
+  it('accepts the WorkCenterDetail shape for the requested record, version included', () => {
+    expect(decodeWorkCenterDetail(card, WC)).toEqual(card)
+    // The route id may arrive in either case; the record is the same.
+    expect(decodeWorkCenterDetail(card, WC.toUpperCase())).toEqual(card)
+  })
+
+  it('refuses another record, even a well-formed one', () => {
+    expect(decodeWorkCenterDetail(card, LOC)).toBeNull()
+  })
+
+  it.each([
+    ['a missing version', { version: undefined }],
+    ['a zero version', { version: 0 }],
+    ['a string version', { version: '3' }],
+    ['an unsafe version', { version: 2 ** 53 }],
+    ['a missing location flag', { canOpenLocationDetail: undefined }],
+    ['a string location flag', { canOpenLocationDetail: 'true' }],
+    ['a malformed location id', { locationId: 'not-an-id' }],
+    ['an empty code', { code: ' ' }],
+  ])('fails closed for %s', (_case, override) => {
+    expect(decodeWorkCenterDetail({ ...card, ...override }, WC)).toBeNull()
+  })
+
+  it('fails closed for a non-object body', () => {
+    expect(decodeWorkCenterDetail(null, WC)).toBeNull()
+    expect(decodeWorkCenterDetail([card], WC)).toBeNull()
   })
 })

@@ -2,6 +2,15 @@ export const PHYSICAL_ALLOCATIONS_PATH = '/inventory/physical-allocations' as co
 
 export type AllocationStatus = 'Active' | 'Consumed' | 'Released'
 
+/**
+ * Declared 422 `x-erp-problem-codes` of `POST /api/v1/inventory/physical-allocations`
+ * (contracts/openapi/goymen-erp-v1.json). The UI branches on the code, never on server text.
+ */
+export const CREATE_ALLOCATION_422_CODES = {
+  invalidReference: 'inventory_allocation_invalid_reference',
+  ownerNotCompany: 'inventory_allocation_owner_not_company',
+} as const
+
 export interface PhysicalAllocation {
   readonly allocationId: string
   readonly companyId: string

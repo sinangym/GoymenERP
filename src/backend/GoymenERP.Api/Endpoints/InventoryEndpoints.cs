@@ -461,7 +461,7 @@ public static class InventoryEndpoints
             .ProducesErpUnsupportedMediaType()
             .ProducesErpCodeLessNotFound()
             .ProducesErpConflict([.. InventoryPhysicalAllocationHttpCodesV1.CreateStatus409Codes.Order(StringComparer.Ordinal)])
-            .ProducesErpUnprocessableEntity([.. InventoryPhysicalAllocationHttpCodesV1.Status422Codes.Order(StringComparer.Ordinal)])
+            .ProducesErpUnprocessableEntity([.. InventoryPhysicalAllocationHttpCodesV1.CreateStatus422Codes.Order(StringComparer.Ordinal)])
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
@@ -541,7 +541,7 @@ public static class InventoryEndpoints
             .ProducesErpUnsupportedMediaType()
             .ProducesErpCodeLessNotFound()
             .ProducesErpConflict([.. InventoryPhysicalAllocationHttpCodesV1.ReleaseStatus409Codes.Order(StringComparer.Ordinal)])
-            .ProducesErpUnprocessableEntity([.. InventoryPhysicalAllocationHttpCodesV1.Status422Codes.Order(StringComparer.Ordinal)])
+            .ProducesErpUnprocessableEntity([.. InventoryPhysicalAllocationHttpCodesV1.ReleaseStatus422Codes.Order(StringComparer.Ordinal)])
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
     }
@@ -607,8 +607,9 @@ public static class InventoryEndpoints
             StatusCodes.Status409Conflict => (create
                 ? InventoryPhysicalAllocationHttpCodesV1.CreateStatus409Codes
                 : InventoryPhysicalAllocationHttpCodesV1.ReleaseStatus409Codes).Contains(exception.Code),
-            StatusCodes.Status422UnprocessableEntity =>
-                InventoryPhysicalAllocationHttpCodesV1.Status422Codes.Contains(exception.Code),
+            StatusCodes.Status422UnprocessableEntity => (create
+                ? InventoryPhysicalAllocationHttpCodesV1.CreateStatus422Codes
+                : InventoryPhysicalAllocationHttpCodesV1.ReleaseStatus422Codes).Contains(exception.Code),
             StatusCodes.Status503ServiceUnavailable => exception.Code == InventoryAllocationCodesV1.InvalidReference,
             _ => false,
         };

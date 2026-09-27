@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router'
 import { fetchPlan } from './api'
-import { MANUFACTURING_CAPABILITY, orderDetailPath, orderListPath } from './capabilities'
+import { MANUFACTURING_CAPABILITY, orderDetailPath, orderListPath, planListPath } from './capabilities'
 import {
   approvePlan,
   createOrder,
@@ -78,6 +78,8 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
   const canApprove = hasCapability(shell, MANUFACTURING_CAPABILITY.planApprove)
   const canCreateOrder = hasCapability(shell, MANUFACTURING_CAPABILITY.planOrderCreate)
   const canOpenOrder = hasCapability(shell, MANUFACTURING_CAPABILITY.orderDetail)
+  // MFG-PLAN-LIST: back to the saved plans, only where the list itself is published to this actor.
+  const canOpenPlanList = hasCapability(shell, MANUFACTURING_CAPABILITY.planList)
   const storeKey = pendingPlanLifecycleKey(shell.sessionEpoch, actorId, companyId, planId)
   const recalled = recallPendingPlanLifecycle(storeKey)
   const [attempt, setAttempt] = useState<Attempt>(() => recalled === null
@@ -219,7 +221,10 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
           <p className={styles.eyebrow}>ÜRETİM PLANI</p>
           <h1 id="manufacturing-plan-heading">Plan yeniden açıldı</h1>
         </div>
-        <Link to={orderListPath()}>← Üretim emirleri</Link>
+        <div>
+          {canOpenPlanList ? <Link to={planListPath()}>← Üretim planları</Link> : null}{' '}
+          <Link to={orderListPath()}>← Üretim emirleri</Link>
+        </div>
       </header>
       <dl className={styles.facts}>
         <div><dt>Plan</dt><dd className={styles.mono}>{plan.planId}</dd></div>

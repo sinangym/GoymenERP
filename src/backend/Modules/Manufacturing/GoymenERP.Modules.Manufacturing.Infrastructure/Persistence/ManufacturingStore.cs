@@ -38,7 +38,8 @@ public sealed class ManufacturingStore(
     ManufacturingDbContext dbContext,
     ICompanyContext companyContext,
     IAuditEventCollector auditEvents,
-    TimeProvider timeProvider) : IManufacturingPlanStore, IManufacturingOrderStore, IManufacturingCommandLog
+    TimeProvider timeProvider)
+    : IManufacturingPlanStore, IManufacturingPlanListStore, IManufacturingOrderStore, IManufacturingCommandLog
 {
     private const string PlanEntityType = "Manufacturing.ProductionPlan";
     private const string OrderEntityType = "Manufacturing.ProductionOrder";
@@ -163,6 +164,83 @@ public sealed class ManufacturingStore(
         RequireResolvedCompany();
         var row = await dbContext.Plans.AsNoTracking().SingleOrDefaultAsync(candidate => candidate.Id == planId, cancellationToken);
         return row is null ? null : await RestorePlanAsync(row, cancellationToken);
+    }
+
+    /// <summary>
+    /// One page of this company's plans from the plan rows and their planned inputs (MFG-PLAN-LIST), the order
+    /// list's pattern: no plan is rebuilt and nothing is computed. The ordering is the stored createdAtUtc and
+    /// id, so a page is stable while plans are added; an approval changes neither, so a plan never moves pages.
+    /// </summary>
+    public async Task<ManufacturingPlanPage> ListPlansAsync(int pageSize, string? cursor, PlanStatus? status,
+        CancellationToken cancellationToken = default)
+    {
+        var companyId = RequireResolvedCompany();
+        if (pageSize is < 1 or > MaximumPageSize)
+        {
+            throw new ArgumentOutOfRangeException(nameof(pageSize), pageSize,
+                $"Sayfa boyutu 1–{MaximumPageSize} olmalıdır (varsayılan {DefaultPageSize}).");
+        }
+
+        var query = dbContext.Plans.AsNoTracking();
+        if (status is { } requested)
+        {
+            if (!Enum.IsDefined(requested))
+            {
+                throw new ArgumentOutOfRangeException(nameof(status), requested, "Tanımsız plan durumu.");
+            }
+
+            var statusValue = (int)requested;
+            query = query.Where(row => row.Status == statusValue);
+        }
+
+        if (cursor is not null)
+        {
+            var (createdAtUtc, id) = ListCursor.Decode(cursor, companyId, ListCursor.PlanOrdering);
+            query = query.Where(row => row.CreatedAtUtc < createdAtUtc
+                || (row.CreatedAtUtc == createdAtUtc && row.Id.CompareTo(id) < 0));
+        }
+
+        var rows = await query
+            .OrderByDescending(row => row.CreatedAtUtc).ThenByDescending(row => row.Id)
+            .Take(pageSize + 1)
+            .ToListAsync(cancellationToken);
+        var hasMore = rows.Count > pageSize;
+        var page = hasMore ? rows.Take(pageSize).ToList() : rows;
+        if (page.Count == 0)
+        {
+            return new ManufacturingPlanPage([], null);
+        }
+
+        var ids = page.Select(row => row.Id).ToArray();
+        var inputs = await dbContext.PlanInputs.AsNoTracking()
+            .Where(input => ids.Contains(input.PlanId))
+            .GroupBy(input => input.PlanId)
+            .Select(group => new { PlanId = group.Key, Count = group.Count(), PlannedKg = group.Sum(input => input.PlannedKg) })
+            .ToListAsync(cancellationToken);
+
+        var summaries = new List<ManufacturingPlanSummary>(page.Count);
+        foreach (var row in page)
+        {
+            var planned = inputs.SingleOrDefault(input => input.PlanId == row.Id);
+            if (planned is null)
+            {
+                // A plan always has at least one planned input; without one the row is not summarised.
+                throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                    "Kayıtlı planın planlanan girdisi yok.");
+            }
+
+            summaries.Add(new ManufacturingPlanSummary(row.Id, row.CompanyId, row.WorkCenterId,
+                (ManufacturingProcess)row.Process, (PlanStatus)row.Status, row.Version, planned.Count,
+                new Kilograms(planned.PlannedKg), (TargetBasis?)row.TargetBasis,
+                row.TargetKg is { } targetKg ? new Kilograms(targetKg) : null, row.CreatedAtUtc, row.ApprovedByUserId,
+                row.ApprovedAtUtc));
+        }
+
+        var last = page.LastOrDefault();
+        return new ManufacturingPlanPage(summaries,
+            hasMore && last is not null
+                ? ListCursor.Encode(companyId, last.CreatedAtUtc, last.Id, ListCursor.PlanOrdering)
+                : null);
     }
 
     public async Task<ManufacturingWriteOutcome> CreateOrderAsync(Guid orderId, Guid planId,
@@ -850,14 +928,27 @@ public sealed class ManufacturingStore(
     /// </summary>
     internal static class ListCursor
     {
-        private const string Ordering = "createdAtUtc desc, id desc";
+        /// <summary>The order list's ordering, unchanged since MFG-ORD: every order cursor already issued stays valid.</summary>
+        internal const string Ordering = "createdAtUtc desc, id desc";
+
+        /// <summary>
+        /// The plan list's ordering (MFG-PLAN-LIST). The same keys over another table, so it is named apart: a plan
+        /// cursor is refused by the order list and an order cursor by the plan list, never read as the other's page.
+        /// </summary>
+        internal const string PlanOrdering = "plans: createdAtUtc desc, id desc";
 
         public static string Encode(Guid companyId, DateTimeOffset createdAtUtc, Guid id) =>
+            Encode(companyId, createdAtUtc, id, Ordering);
+
+        public static string Encode(Guid companyId, DateTimeOffset createdAtUtc, Guid id, string ordering) =>
             Convert.ToBase64String(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(
-                new Payload(companyId, Ordering, createdAtUtc.UtcDateTime.ToString("O", CultureInfo.InvariantCulture), id), Json)))
+                new Payload(companyId, ordering, createdAtUtc.UtcDateTime.ToString("O", CultureInfo.InvariantCulture), id), Json)))
                 .TrimEnd('=').Replace('+', '-').Replace('/', '_');
 
-        public static (DateTimeOffset CreatedAtUtc, Guid Id) Decode(string cursor, Guid companyId)
+        public static (DateTimeOffset CreatedAtUtc, Guid Id) Decode(string cursor, Guid companyId) =>
+            Decode(cursor, companyId, Ordering);
+
+        public static (DateTimeOffset CreatedAtUtc, Guid Id) Decode(string cursor, Guid companyId, string ordering)
         {
             Payload? payload;
             try
@@ -872,7 +963,7 @@ public sealed class ManufacturingStore(
             }
 
             if (payload is null || payload.Company != companyId
-                || !string.Equals(payload.Ordering, Ordering, StringComparison.Ordinal) || payload.Id == Guid.Empty
+                || !string.Equals(payload.Ordering, ordering, StringComparison.Ordinal) || payload.Id == Guid.Empty
                 || !DateTimeOffset.TryParseExact(payload.CreatedAtUtc, "O", CultureInfo.InvariantCulture,
                     DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var createdAtUtc))
             {

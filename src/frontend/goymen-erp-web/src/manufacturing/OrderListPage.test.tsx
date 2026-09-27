@@ -116,6 +116,25 @@ describe('order list', () => {
     expect(screen.queryByRole('link', { name: 'Yeni üretim planı' })).toBeNull()
   })
 
+  it('links to the plan list exactly once, only for the plan-list capability', async () => {
+    stub({ capabilities: [...LIST_CAPABILITIES, MANUFACTURING_CAPABILITY.planList] })
+    renderAt(PATH)
+    await screen.findByRole('row', { name: new RegExp(ORDER.slice(-8)) })
+    // The plan list has no sidebar entry: this in-list link is the only way to it from here.
+    const links = screen.getAllByRole('link', { name: 'Üretim planları' })
+    expect(links).toHaveLength(1)
+    expect(links[0].getAttribute('href')).toBe('/uretim/planlar')
+  })
+
+  it('draws no plan-list link when the plan-list capability is absent', async () => {
+    stub({ capabilities: [...LIST_CAPABILITIES, MANUFACTURING_CAPABILITY.planCreate] })
+    renderAt(PATH)
+    await screen.findByRole('row', { name: new RegExp(ORDER.slice(-8)) })
+    // Holding plan create does not imply the list: the create link is there, the list link is not.
+    expect(screen.getByRole('link', { name: 'Yeni üretim planı' })).toBeTruthy()
+    expect(screen.queryByRole('link', { name: 'Üretim planları' })).toBeNull()
+  })
+
   it('sends the server’s own cursor back unchanged and appends the next page once', async () => {
     const user = userEvent.setup()
     const { recorded } = stub({
