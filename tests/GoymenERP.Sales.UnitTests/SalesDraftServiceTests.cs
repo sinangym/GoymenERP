@@ -18,7 +18,7 @@ namespace GoymenERP.Sales.UnitTests;
 /// platform names, so the fence itself is exercised; the real Sales names join the catalogue with
 /// the central writer's step. Every identity is SENTETIK / NOT_ENV.
 /// </summary>
-public sealed class SalesDraftServiceTests
+public sealed partial class SalesDraftServiceTests
 {
     private static readonly Guid Company = Guid.Parse("11111111-1111-4111-8111-111111111111");
     private static readonly Guid Party = Guid.Parse("33333333-3333-4333-8333-333333333333");
@@ -1316,6 +1316,8 @@ public sealed class SalesDraftServiceTests
         public FakeStore Store { get; init; } = new();
         public bool NoProducts { get; set; }
         public bool NoContactInformation { get; set; }
+        /// <summary>AT-024: the delivery owner's read port; null = not composed.</summary>
+        public ISalesOrderDeliveryReadPortV1? Deliveries { get; set; }
         public FixedActiveRoleCodeReader ActiveRoleCodes { get; } = new();
         public SalesDraftServiceBindings Bindings { get; set; } = new(CreatePermission, ReadPermission, ApprovePermission, PricePermission, PriceReadPermission, SchedulePermission);
 
@@ -1324,7 +1326,7 @@ public sealed class SalesDraftServiceTests
             var company = new CompanyContext();
             company.Set(Company);
             return new SalesDraftService(company, User, Authority, ActiveRoleCodes, new FixedCorrelation(), Accounts, Settings,
-                NoProducts ? null : Products, Store, Bindings, TimeProvider.System, NoContactInformation ? null : ContactInformation);
+                NoProducts ? null : Products, Store, Bindings, TimeProvider.System, NoContactInformation ? null : ContactInformation, Deliveries);
         }
 
         public void ResetOwnerCalls()

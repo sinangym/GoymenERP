@@ -79,7 +79,10 @@ public static class SalesModuleExtensions
         serviceProvider.GetRequiredService<TimeProvider>(),
         // SALES-A2a: the Cari contact-information port is the host's registration (central); until it is
         // registered a draft naming a delivery address or contact is 503, never stored unvalidated.
-        serviceProvider.GetService<ISalesPartyContactInformationPortV1>());
+        serviceProvider.GetService<ISalesPartyContactInformationPortV1>(),
+        // AT-024: the delivery owner's read port, registered by that owner's module (Logistics); until it is, the
+        // delivered / remaining read is 503, never an assumed zero.
+        serviceProvider.GetService<ISalesOrderDeliveryReadPortV1>());
 
     /// <summary>Applies Sales's migrations. Its foreign keys need Organization's tables first.</summary>
     public static async Task InitializeSalesModuleAsync(

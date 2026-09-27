@@ -4,8 +4,9 @@
 # the LOG-5 Product fixture; the issuer is not an actor and has no role, assignment, permission or grant).
 #  - Five suite actors appended to the canonical two BootstrapIdentity users (indices 2..6). The browser
 #    suite signs in as the first three on the AUTHORIZED web (X-Development-User, the s03/s04 way); the two
-#    Sales actors exist only for the seed (they submit and approve the seeded draft through the real Sales
-#    API, Ö4: never the same one). The Cari customer is opened by the canonical group-bootstrap-admin (the
+#    Sales actors exist for the seed (they submit and approve the seeded draft through the real Sales
+#    API, Ö4: never the same one); AT-024 also signs in as l04-sales-approver, with its existing
+#    sales.drafts.read only, to read the order's delivery progress on S-04 — no grant is added. The Cari customer is opened by the canonical group-bootstrap-admin (the
 #    fin01 way). The canonical users hold no Logistics permission and are not used by the suite.
 #  - Each actor's Identity user, one role and one company-wide assignment in GDC through the real
 #    IdentityDataSeeder (decision 1), continuing the built-in seed's indices (Users 5, Roles 5,
@@ -14,7 +15,7 @@
 #    read (GET …/loading-instructions/approved-order-lines, under the create name; Sinan §4 #66 5738113623:
 #    the Sevkiyatçı sees orders but never prices — the preparer holds NO Sales grant, and holds the Cari party
 #    read so the customer resolves by NAME: ASSUMPTION-LOG4B-3 below), the loader records
-#    loads, the reader only reads. The two Sales actors (seed only) hold the Sales names.
+#    loads, the reader only reads. The two Sales actors (seed, plus the AT-024 S-04 read) hold the Sales names.
 #    The shell publishes the Logistics list/detail to all three and the new-instruction screen to the
 #    preparer only. Nothing else is granted, no system role is touched.
 # Every value is synthetic (SENTETIK browser-suite:l04 …) and exists only in the run's disposable

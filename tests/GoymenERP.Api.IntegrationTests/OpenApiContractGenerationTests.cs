@@ -378,6 +378,10 @@ public sealed partial class OpenApiContractGenerationTests
         new("get", "/api/v1/sales/drafts/{id}/delivery-schedules", "GetSalesOrderDraftDeliverySchedulesV1",
             AuthenticatedResponses("200:application/json", "404:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["path:id:true:type:string;format:uuid"]),
+        // AT-024: delivered and remaining quantity per line, read afresh from the delivery owner (Logistics).
+        new("get", "/api/v1/sales/drafts/{id}/delivery-progress", "GetSalesOrderDraftDeliveryProgressV1",
+            AuthenticatedResponses("200:application/json", "404:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["path:id:true:type:string;format:uuid"]),
         new("post", "/api/v1/finance/bank-accounts", "ProposeFinanceBankAccountV1",
             AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json", "400:application/problem+json", "415:", "503:application/problem+json"),
             "#/components/schemas/BankAccountProposeRequest"),
@@ -615,6 +619,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetSalesOrderDraftRevisionsV1"] = "ref:SalesOrderDraftRevisionsResponse",
             ["RescheduleSalesOrderDraftDeliveryV1"] = "ref:SalesOrderDraftResponse",
             ["GetSalesOrderDraftDeliverySchedulesV1"] = "ref:SalesOrderDraftDeliverySchedulesResponse",
+            ["GetSalesOrderDraftDeliveryProgressV1"] = "ref:SalesOrderDraftDeliveryProgressResponse",
             ["ProposeFinanceBankAccountV1"] = "ref:BankAccountCommandResult",
             ["ApproveFinanceBankAccountV1"] = "ref:BankAccountCommandResult",
             ["ProposeFinanceBankAccountIbanChangeV1"] = "ref:BankAccountCommandResult",
@@ -736,6 +741,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetSalesOrderDraftRevisionsV1",
         "RescheduleSalesOrderDraftDeliveryV1",
         "GetSalesOrderDraftDeliverySchedulesV1",
+        "GetSalesOrderDraftDeliveryProgressV1",
         "ProposeFinanceBankAccountV1",
         "ApproveFinanceBankAccountV1",
         "ProposeFinanceBankAccountIbanChangeV1",
@@ -1012,6 +1018,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetSalesOrderDraftRevisionsV1",
         "RescheduleSalesOrderDraftDeliveryV1",
         "GetSalesOrderDraftDeliverySchedulesV1",
+        "GetSalesOrderDraftDeliveryProgressV1",
         "ProposeFinanceBankAccountV1",
         "ApproveFinanceBankAccountV1",
         "ProposeFinanceBankAccountIbanChangeV1",
@@ -1081,6 +1088,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetSalesOrderDraftRevisionsV1:404",
         "RescheduleSalesOrderDraftDeliveryV1:404",
         "GetSalesOrderDraftDeliverySchedulesV1:404",
+        "GetSalesOrderDraftDeliveryProgressV1:404",
         "GetLoadingInstructionV1:404",
         "IssueLoadingInstructionV1:404",
         "RecordLoadingInstructionLoadV1:404",
@@ -1953,6 +1961,20 @@ public sealed partial class OpenApiContractGenerationTests
                     ("sliceId", "type:string;format:uuid"),
                     ("quantity", "type:string"),
                     ("requestedDeliveryDate", "type:string;format:date")),
+                ["SalesOrderDraftDeliveryProgressResponse"] = ObjectSchema(
+                    ["draftVersion", "lines"],
+                    ("draftVersion", "type:string"),
+                    ("lines", "type:array;items:ref:SalesDraftLineDeliveryProgressV1")),
+                ["SalesDraftLineDeliveryProgressV1"] = ObjectSchema(
+                    ["lineId", "lineNo", "orderUnitId", "ordered", "shipped", "delivered", "remaining", "excess"],
+                    ("lineId", "type:string;format:uuid"),
+                    ("lineNo", "type:integer|string;format:int32"),
+                    ("orderUnitId", "type:string;format:uuid"),
+                    ("ordered", "type:string"),
+                    ("shipped", "type:string"),
+                    ("delivered", "type:string"),
+                    ("remaining", "type:string"),
+                    ("excess", "type:string")),
                 ["SalesOrderDraftDetailView"] = ObjectSchema(
                     ["draft", "requestedDeliveryDate", "note", "lines", "deliveryAddress", "contact", "responsible", "paymentTerms", "sourceStrategy", "package", "approval", "isOwnDraft", "isOwnDecisionRestricted"],
                     ("draft", "ref:SalesOrderDraftSummaryView"),
@@ -3733,9 +3755,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(132, operations.Count);
+        Assert.Equal(133, operations.Count);
         Assert.Equal(
-            132,
+            133,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());
