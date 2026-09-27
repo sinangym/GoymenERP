@@ -29,6 +29,7 @@ describe('shell ↔ Manufacturing lane capability ids', () => {
     expect(CAPABILITY.manufacturingOrdersList).toBe(MANUFACTURING_CAPABILITY.orderList)
     expect(CAPABILITY.manufacturingPlansCreate).toBe(MANUFACTURING_CAPABILITY.planCreate)
     expect(CAPABILITY.manufacturingPlansDetail).toBe(MANUFACTURING_CAPABILITY.planDetail)
+    expect(CAPABILITY.manufacturingPlansList).toBe(MANUFACTURING_CAPABILITY.planList)
   })
 
   it('mounts every ROUTE the lane declares, and neither control', () => {
@@ -72,6 +73,29 @@ describe('shell ↔ Manufacturing lane capability ids', () => {
       MANUFACTURING_ROUTE[MANUFACTURING_CAPABILITY.planDetail],
     )
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.manufacturingPlansDetail]).toBe('')
+    // MFG-PLAN-LIST: its own route and no sidebar entry (reached from the order list and plan detail).
+    expect(CAPABILITY_ROUTE[CAPABILITY.manufacturingPlansList]).toBe(
+      MANUFACTURING_ROUTE[MANUFACTURING_CAPABILITY.planList],
+    )
+    expect(CAPABILITY_NAV_LABEL[CAPABILITY.manufacturingPlansList]).toBe(
+      MANUFACTURING_NAV_LABEL[MANUFACTURING_CAPABILITY.planList],
+    )
+    expect(CAPABILITY_NAV_LABEL[CAPABILITY.manufacturingPlansList]).toBe('')
+  })
+
+  it('never reads the static plan-list path as a plan id, nor a plan path as the list', () => {
+    expect(
+      matchPath(
+        CAPABILITY_ROUTE[CAPABILITY.manufacturingPlansDetail],
+        CAPABILITY_ROUTE[CAPABILITY.manufacturingPlansList],
+      ),
+    ).toBeNull()
+    expect(
+      matchPath(
+        CAPABILITY_ROUTE[CAPABILITY.manufacturingPlansList],
+        planDetailPath('7b1c0f2e-0000-4a00-8000-000000000003'),
+      ),
+    ).toBeNull()
   })
 
   it('never reads the static plan-create path as a plan id', () => {

@@ -489,6 +489,10 @@ public sealed partial class OpenApiContractGenerationTests
         new("get", "/api/v1/manufacturing/orders", "ListManufacturingOrdersV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["query:pageSize:false:type:integer|string;format:int32;pattern:^-?(?:0|[1-9]\\d*)$", "query:cursor:false:type:string", "query:status:false:type:string"]),
+        // MFG-PLAN-LIST: the order list's rules, the plan read's grant.
+        new("get", "/api/v1/manufacturing/plans", "ListManufacturingPlansV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["query:pageSize:false:type:integer|string;format:int32;pattern:^-?(?:0|[1-9]\\d*)$", "query:cursor:false:type:string", "query:status:false:type:string"]),
         new("post", "/api/v1/manufacturing/orders/{orderId}/close", "CloseManufacturingOrderV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json", "404:application/problem+json"),
             "#/components/schemas/CloseOrderRequestV1", ["path:orderId:true:type:string;format:uuid"]),
@@ -633,6 +637,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["ApproveAccountingJournalReversalV1"] = "ref:AccountingJournalReversalProposalViewV1",
             ["GetManufacturingOrderMassBalanceV1"] = "ref:MassBalanceViewV1",
             ["ListManufacturingOrdersV1"] = "ref:OrderListViewV1",
+            ["ListManufacturingPlansV1"] = "ref:PlanListViewV1",
             ["CloseManufacturingOrderV1"] = "ref:OrderViewV1",
             ["GetLogisticsApprovedOrderLinesV1"] = "ref:LogisticsApprovedOrderLinePage",
             ["GetSalesContactInformationReferencesV1"] = "ref:SalesContactInformationOptionsV1",
@@ -749,6 +754,7 @@ public sealed partial class OpenApiContractGenerationTests
         "ApproveAccountingJournalReversalV1",
         "GetManufacturingOrderMassBalanceV1",
         "ListManufacturingOrdersV1",
+        "ListManufacturingPlansV1",
         "CloseManufacturingOrderV1",
         "GetLogisticsApprovedOrderLinesV1",
         "GetSalesContactInformationReferencesV1",
@@ -1351,6 +1357,7 @@ public sealed partial class OpenApiContractGenerationTests
             // MFG-ORD: the list refuses a bad page size, cursor or status on the field; the close is a
             // write like the others, and adds manufacturing_unexplained_difference to the shared 422 list.
             ["ListManufacturingOrdersV1:400"] = ["manufacturing_request_invalid"],
+            ["ListManufacturingPlansV1:400"] = ["manufacturing_request_invalid"],
             ["CloseManufacturingOrderV1:400"] = ["manufacturing_request_invalid"],
             ["CloseManufacturingOrderV1:409"] = ManufacturingConflictCodes,
             ["CloseManufacturingOrderV1:422"] = ManufacturingUnprocessableCodes,
@@ -3602,7 +3609,7 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(127, operations.Count);
+        Assert.Equal(128, operations.Count);
         Assert.Equal(
             127,
             operations.Select(operation => operation.OperationId)
