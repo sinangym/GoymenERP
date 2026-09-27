@@ -1226,7 +1226,12 @@ public sealed class ManufacturingCommandServiceTests
             order.IssueInput(command.ExpectedOrderVersion, command.IssueId, command.ParentLabelId,
                 command.Quantity, command.OccurredAtUtc);
             Complete(store, metadata, order);
-            return Task.FromResult(new ManufacturingInventoryInputIssuePortResultV1(order.Version, 8, false));
+            return Task.FromResult(new ManufacturingInventoryInputIssuePortResultV1(
+                order.Version,
+                8,
+                new ManufacturingInventoryPositionSnapshotV1(
+                    "Company", Company, "Company", Company, Guid.NewGuid()),
+                false));
         }
     }
 

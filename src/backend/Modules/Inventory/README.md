@@ -301,6 +301,18 @@ anything else is null and the answer stays the retryable `inventory_concurrent_c
 conflict (`InventoryDuplicateKeyTests`; real SQL: company B offers A's lot and A's label in one call →
 `inventory_lot_conflict`).
 
+## T15 manufacturing realization — customer-owned physical context
+
+`InventoryManufacturingRealizationParticipant` chooses the input issue position from Inventory's single
+free parent-label balance; Manufacturing does not send an owner, custodian or location for that issue.
+The issue result returns the exact stored owner/custodian/location snapshot. An unused-input return posts
+back to that complete issued position. An output may use its separately authorized active output location,
+but its owner and custodian must exactly match the issued parent trace or Inventory refuses
+`inventory_manufacturing_parent_label_context_conflict`. This permits customer-owned/fason material without
+turning caller-supplied ownership into policy. Company filtering, expected label version, idempotent replay
+and the shared transaction remain unchanged; no permission, grant, reservation or Manufacturing policy is
+introduced here.
+
 ## T09 goods receipt immutable source and replay
 
 `IInventoryGoodsReceiptSourceV1` reopens one committed Purchasing acceptance from Inventory's

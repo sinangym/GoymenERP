@@ -156,7 +156,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // inventory
             ["tools/relational_inventory/inventory.txt"] =
-                "fbc435f7d97ad5297f08eb1b416141c9fff18df244d46459042dfa0c870a4453",
+                "59549fccbce932a94334880dda3e76d1681edbe0893ed989502dd17a32704c63",
 
             // logistics
             ["tools/relational_inventory/logistics.txt"] =
@@ -164,7 +164,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // manufacturing
             ["tools/relational_inventory/manufacturing.txt"] =
-                "ccd039cf70abfa0dc14fb52009f94a8d1d5ad68a1abe0bd7c4d658c0879d8d19",
+                "6a1e2694175b425c4cddd702efcc6fe770d045ca0fe5396a9a433b1306594739",
 
             // organization
             ["tools/relational_inventory/organization.txt"] =
@@ -456,7 +456,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // API counts keep this reviewed bridge narrower than a general direct-database exemption.
                 [ReviewedManufacturingInventoryInputIssueHostPath] =
                     new(
-                        "f1b5bb4384fd389d603b317dc20f86c415997ed1513c636d44517e4ceecec57f",
+                        "7b8a0752f1800054ccfbac7bea62b93e6861e969e088092bdd3bdc2bc66b1be6",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1,
@@ -714,7 +714,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // one reviewed provider connection; exact source/count drift remains fail-closed.
                 [ReviewedInventoryManufacturingRealizationParticipantPath] =
                     new(
-                        "a3d8f262da953a0d25f93e4e5cc693a902fd690eb79c001396d7d21257ad7229",
+                        // Re-measured at the #479 forward onto main e1ffefe8: #479's customer-owned issue context
+                        // (17e9470a…) and #489's Sales-reservation deduction (a3d8f262…) combined; neither parent's value.
+                        "3f82b2eccdd7153921235a3c43937135e78f8c0c14ebe517ba831dd82bf080ed",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,
