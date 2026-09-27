@@ -506,8 +506,10 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
                 "SELECT [definition] FROM sys.check_constraints WHERE [name] = N'CK_Orders_Enums' "
                 + "AND [parent_object_id] = OBJECT_ID(N'[manufacturing].[Orders]')"));
             await context.Database.MigrateAsync();
-            Assert.EndsWith("_AddManufacturingInputLabelVersions",
-                (await context.Database.GetAppliedMigrationsAsync()).Last(), StringComparison.Ordinal);
+            // MFG-PLAN-EDIT: the plan-revision migration is now the newest; the chain is pinned in order.
+            var reapplied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
+            Assert.EndsWith("_AddManufacturingPlanRevisions", reapplied[^1], StringComparison.Ordinal);
+            Assert.EndsWith("_AddManufacturingInputLabelVersions", reapplied[^2], StringComparison.Ordinal);
             Assert.Equal(expandedPlanConstraint, await run.ScalarAsync<string>(
                 "SELECT [definition] FROM sys.check_constraints WHERE [name] = N'CK_Plans_Enums' "
                 + "AND [parent_object_id] = OBJECT_ID(N'[manufacturing].[Plans]')"));
@@ -527,8 +529,9 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
                 (await run.ScalarAsync<int>("SELECT Process FROM manufacturing.Plans WHERE Id = @id", ("@id", plan.Id)),
                     await run.ScalarAsync<int>("SELECT Process FROM manufacturing.Orders WHERE Id = @id", ("@id", orderId))));
             await context.Database.MigrateAsync();
-            Assert.EndsWith("_AddManufacturingInputLabelVersions",
-                (await context.Database.GetAppliedMigrationsAsync()).Last(), StringComparison.Ordinal);
+            var reapplied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
+            Assert.EndsWith("_AddManufacturingPlanRevisions", reapplied[^1], StringComparison.Ordinal);
+            Assert.EndsWith("_AddManufacturingInputLabelVersions", reapplied[^2], StringComparison.Ordinal);
         }
 
         Assert.Equal((1, 1),
