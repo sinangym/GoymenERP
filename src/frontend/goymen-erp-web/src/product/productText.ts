@@ -276,6 +276,32 @@ export const PRODUCT_DETAIL_TEXT = {
     'Birim referansları sunucudan kimlik olarak gelir; birim düzenleme sonraki dilimdedir.',
 } as const
 
+export const PRODUCT_ACTIVATION_TEXT = {
+  submit: 'Ürünü aktifleştir',
+  submitting: 'Aktifleştiriliyor…',
+  globalImpact:
+    'Aktifleştirme ürün kartını grup genelinde kesin işlemlerde kullanılabilir duruma getirir.',
+  success: 'Ürün aktifleştirildi.',
+  replayed: 'Bu aktivasyon daha önce işlenmişti; ikinci bir değişiklik uygulanmadı.',
+  staleTitle: 'Ürün siz bakarken değişti',
+  staleDetail: 'Aktivasyon uygulanmadı. Güncel kartı okuyup yeniden değerlendirin.',
+  lifecycleTitle: 'Ürün artık taslak değil',
+  lifecycleDetail: 'Aktivasyon yalnız taslak ürüne uygulanabilir.',
+  notFound: 'Ürün artık bu bağlamda görünmüyor.',
+  forbidden: 'Bu ürünü aktifleştirme yetkiniz yok.',
+  unauthenticated: 'Oturum sonlandı; aktivasyon uygulanmadı.',
+  failed: 'Aktivasyon uygulanmadı. Kartı yenileyip yeniden deneyin.',
+  unknownTitle: 'Aktivasyon sonucu doğrulanamadı',
+  unknownDetail:
+    'İşlem uygulanmış olabilir. Aynı işlem anahtarıyla tekrar deneyerek sonucu güvenle doğrulayın.',
+  retrySameAttempt: 'Aynı aktivasyonu tekrar dene',
+  refresh: 'Kartı yenile',
+  unsavedTitle: 'Sonucu bilinmeyen aktivasyon var',
+  unsavedDetail: 'Sayfadan ayrılırsanız bu işlemin aynı anahtarla doğrulanması yarıda kalır.',
+  unsavedStay: 'Sayfada kal',
+  unsavedLeave: 'İşlemi bırak',
+} as const
+
 export const PRODUCT_CREATE_TEXT = {
   title: 'Yeni ürün',
   /**

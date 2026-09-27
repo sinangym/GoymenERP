@@ -9,6 +9,7 @@ using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Domain;
+using GoymenERP.Modules.Inventory.Domain.Allocations;
 using GoymenERP.Modules.Inventory.Domain.Balances;
 using GoymenERP.Modules.Inventory.Domain.Costing;
 using GoymenERP.Modules.Inventory.Domain.Labels;
@@ -326,7 +327,28 @@ public sealed class InventoryManufacturingRealizationParticipant
         }
 
         var row = free[0];
-        if (row.QuantityKg < quantity.Value)
+        // An active allocation (a Sales order line's physical reservation) holds its remaining kg of this exact
+        // Free position against every other consumer: the issue may take only the unreserved rest, the same
+        // position predicate allocation creation deducts. The label version fence (LoadParentAsync, and the
+        // version bump both writers save) serializes this read with a concurrent allocation.
+        var reservedKg = await context.Allocations.AsNoTracking()
+            .Where(allocation => allocation.LabelId == label.Id
+                && allocation.OwnerKind == row.OwnerKind && allocation.OwnerId == row.OwnerId
+                && allocation.CustodianKind == row.CustodianKind && allocation.CustodianId == row.CustodianId
+                && allocation.LocationId == row.LocationId && allocation.Block == (int)BlockState.Free
+                && allocation.Status == (int)StockAllocationStatus.Active)
+            .SumAsync(allocation => (decimal?)allocation.RemainingKg, cancellationToken) ?? 0m;
+        Kilograms unreserved;
+        try
+        {
+            unreserved = StockAllocation.Unreserved(Kilograms.Of(row.QuantityKg), Kilograms.Of(reservedKg));
+        }
+        catch (InventoryRuleException)
+        {
+            throw Refused(503, InventoryManufacturingRealizationCodesV1.Unavailable);
+        }
+
+        if (unreserved < quantity)
         {
             throw Refused(409, InventoryManufacturingRealizationCodesV1.PhysicalStockInsufficient);
         }

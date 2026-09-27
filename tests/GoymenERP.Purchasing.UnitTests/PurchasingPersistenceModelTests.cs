@@ -141,8 +141,8 @@ public sealed class PurchasingPersistenceModelTests
     public void The_request_and_order_screens_and_their_controls_are_published()
     {
         var declarations = new PurchasingShellCapabilityProvider().GetDeclarations();
-        Assert.Equal("1.3", PurchasingShellCapabilityProvider.OwnerContractVersion);
-        Assert.Equal(8, declarations.Count);
+        Assert.Equal("1.4", PurchasingShellCapabilityProvider.OwnerContractVersion);
+        Assert.Equal(9, declarations.Count);
         Assert.All(declarations, declaration => Assert.True(declaration.ImplementationAvailable));
         var byId = declarations.ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
         Assert.Equal(PurchasingShellCapabilityProvider.RequestListRoutePath,
@@ -172,11 +172,18 @@ public sealed class PurchasingPersistenceModelTests
         Assert.Equal([PurchasingPermissionManifestV1.OrdersRead], byId[PurchasingShellCapabilityProvider.ListCapabilityId].RequiredPermissions);
         Assert.Equal(PurchasingShellCapabilityProvider.DetailCapabilityId,
             declarations.Single(item => item.CapabilityId == PurchasingShellCapabilityProvider.ApproveCapabilityId).ParentCapabilityId);
+        var goodsReceipt = byId[PurchasingShellCapabilityProvider.GoodsReceiptCapabilityId];
+        Assert.Equal(
+            (PurchasingShellCapabilityProvider.DetailRoutePath, PurchasingShellCapabilityProvider.DetailScreenId,
+                PurchasingShellCapabilityProvider.DetailCapabilityId),
+            (goodsReceipt.RoutePath, goodsReceipt.ScreenId, goodsReceipt.ParentCapabilityId));
+        Assert.Equal([PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.GoodsReceiptsRecord],
+            goodsReceipt.RequiredPermissions);
         Assert.Equal(byId[PurchasingShellCapabilityProvider.DetailCapabilityId].ContextRequirement,
             byId[PurchasingShellCapabilityProvider.ApproveCapabilityId].ContextRequirement);
         Assert.All(declarations, declaration =>
             Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, declaration.ContextRequirement));
-        Assert.Equal(3, PurchasingPermissionManifestV1.Names.Count);
+        Assert.Equal(4, PurchasingPermissionManifestV1.Names.Count);
         // Master v3 §27.3: P-03 is the order list, P-04 the new/edit form; the detail is a view of one P-03 row (the F-02-DETAIL precedent).
         Assert.Equal(PurchasingShellCapabilityProvider.ListScreenId, byId[PurchasingShellCapabilityProvider.ListCapabilityId].ScreenId);
         Assert.Equal(PurchasingShellCapabilityProvider.CreateScreenId, byId[PurchasingShellCapabilityProvider.CreateCapabilityId].ScreenId);

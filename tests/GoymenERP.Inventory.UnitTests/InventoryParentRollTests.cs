@@ -7,12 +7,34 @@ using GoymenERP.Modules.Inventory.Domain.Lots;
 using GoymenERP.Modules.Inventory.Domain.Quantities;
 using GoymenERP.Modules.Inventory.Domain.Stock;
 using GoymenERP.Modules.Inventory.Infrastructure;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.Inventory.UnitTests;
 
 public sealed class InventoryParentRollTests
 {
     private static readonly Guid Company = Guid.Parse("10000000-0000-0000-0000-000000000001");
+
+    [Fact]
+    public void Owner_registration_exposes_one_service_through_public_and_contextual_ports()
+    {
+        var world = new World();
+        var services = new ServiceCollection();
+        services.AddSingleton<ICompanyContext>(world.Context);
+        services.AddSingleton<ICurrentUser>(world.User);
+        services.AddSingleton<IErpAuthorityRevalidationService>(world.Authority);
+        services.AddInventoryParentRollReferences();
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+
+        var candidates = scope.ServiceProvider.GetRequiredService<IInventoryParentRollCandidatesV1>();
+        var validation = scope.ServiceProvider.GetRequiredService<IInventoryParentRollValidationV1>();
+        var contextual = scope.ServiceProvider.GetRequiredService<IInventoryContextualParentRollReferencesV1>();
+
+        Assert.Same(candidates, validation);
+        Assert.Same(candidates, contextual);
+        Assert.Single(scope.ServiceProvider.GetServices<IInventoryContextualParentRollReferencesV1>());
+    }
 
     [Theory]
     [InlineData("owner")]
@@ -81,6 +103,50 @@ public sealed class InventoryParentRollTests
         Assert.Equal("Counterparty", Assert.Single(item.Positions).OwnerKind);
         Assert.Equal(InventoryParentRollCodesV1.ContextRequired, item.DraftRefusalCode);
         await Refused(world.Service().ValidateAsync(new(item.LabelId, item.LabelVersion)), 422, item.DraftRefusalCode!);
+    }
+
+    [Fact]
+    public async Task Authorized_customer_context_selects_only_the_exact_stored_owner_and_custodian()
+    {
+        var world = new World();
+        world.Reader.Record = Record(customer: true);
+        var position = Assert.Single(world.Reader.Record.Balances).Position;
+        var context = new InventoryParentRollPositionContextV1(
+            position.Owner.Kind, position.Owner.Id, position.Custodian.Kind, position.Custodian.Id);
+
+        IInventoryContextualParentRollReferencesV1 contextual = world.Service();
+        var candidate = Assert.Single((await contextual.SearchAsync(new(context))).Items);
+        Assert.True(candidate.DraftSelectable);
+        Assert.Null(candidate.DraftRefusalCode);
+        var selection = new InventoryContextualParentRollSelectionV1(
+            candidate.LabelId, candidate.LabelVersion, context);
+        var validated = await contextual.ValidateAsync(selection);
+        Assert.True(validated.DraftSelectable);
+        Assert.Equivalent(validated, await contextual.ValidateAsync(selection), strict: true);
+
+        var wrongOwner = context with { OwnerId = Guid.NewGuid() };
+        var wrongCustodian = context with { CustodianId = Guid.NewGuid() };
+        Assert.Equal(InventoryParentRollCodesV1.ContextRequired,
+            Assert.Single((await contextual.SearchAsync(new(wrongOwner))).Items)
+                .DraftRefusalCode);
+        await Refused(contextual.ValidateAsync(
+            new(candidate.LabelId, candidate.LabelVersion, wrongCustodian)), 422,
+            InventoryParentRollCodesV1.ContextRequired);
+    }
+
+    [Fact]
+    public async Task Malformed_context_is_refused_before_any_owner_read()
+    {
+        var world = new World();
+        var invalid = new InventoryParentRollPositionContextV1(
+            StockPartyKind.Counterparty, Guid.Empty, StockPartyKind.Company, Company);
+
+        IInventoryContextualParentRollReferencesV1 contextual = world.Service();
+        await Refused(contextual.SearchAsync(new(invalid)), 400,
+            InventoryParentRollCodesV1.InvalidQuery);
+        await Refused(contextual.ValidateAsync(new(world.Reader.Record!.Label.Id, "3", invalid)), 422,
+            InventoryParentRollCodesV1.ContextRequired);
+        Assert.Equal(0, world.Reader.Reads);
     }
 
     [Fact]

@@ -283,8 +283,11 @@ class SuiteExtensionTests(unittest.TestCase):
             ("org03", ISSUER, "may not set"),
             ("u02", actors("u02", 1), "may not add development actors"),
         )
+        # Since U-01-360 (#466) no suite has actors=False any more; u02 is modelled without actors here so
+        # the refusal branch for a suite whose list does not allow actors stays exercised.
+        no_actor_u02 = {"u02": dict(browser.SUITE_API_EXTENSIONS["u02"], actors=False)}
         for suite, extra, message in cases:
-            with self.subTest(suite=suite):
+            with self.subTest(suite=suite), mock.patch.dict(browser.SUITE_API_EXTENSIONS, no_actor_u02):
                 with self.assertRaisesRegex(browser.ContractError, message):
                     browser.validate_suite_compose(extended(suite, extra), suite, COMMIT, PROJECT)
 

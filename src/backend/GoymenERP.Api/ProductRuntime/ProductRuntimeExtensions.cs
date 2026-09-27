@@ -67,6 +67,8 @@ public static class ProductRuntimeExtensions
         });
         services.AddScoped<ProductReader>();
         services.AddScoped<ProductService>();
+        services.AddProductManufacturingTechnicalSnapshot(provider =>
+            provider.GetRequiredService<ProductRuntimeOptions>().IsEnabled);
         services.AddScoped<IProductDraftCommandRunner, ProductSqlCommandRunner>();
         services.TryAddSingleton<IProductCommandAttemptObserver, NullProductCommandAttemptObserver>();
         services.AddScoped<IProductService>(provider => provider.GetRequiredService<ProductRuntimeOptions>().IsEnabled

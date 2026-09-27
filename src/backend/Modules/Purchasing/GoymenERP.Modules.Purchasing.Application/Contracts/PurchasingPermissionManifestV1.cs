@@ -23,5 +23,8 @@ public static class PurchasingPermissionManifestV1
     /// <summary>Approve a Draft purchase order (Draft → Approved); the commitment becomes expected supply.</summary>
     public const string OrdersApprove = "purchasing.orders.approve";
 
-    public static readonly IReadOnlyList<string> Names = [OrdersCreate, OrdersRead, OrdersApprove];
+    /// <summary>Record one physical goods receipt against an approved purchase-order line.</summary>
+    public const string GoodsReceiptsRecord = "purchasing.goods-receipts.record";
+
+    public static readonly IReadOnlyList<string> Names = [OrdersCreate, OrdersRead, OrdersApprove, GoodsReceiptsRecord];
 }
