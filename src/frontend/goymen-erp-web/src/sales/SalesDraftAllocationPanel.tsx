@@ -10,6 +10,7 @@ import {
   type AllocationMutationOutcome,
 } from './allocationApi'
 import {
+  CREATE_ALLOCATION_422_CODES,
   isGuid,
   isPositiveVersion,
   type AllocationScope,
@@ -47,6 +48,14 @@ export function SalesDraftAllocationPanel(props: SalesDraftAllocationPanelProps)
         {...props} line={line} />)}
     </section>
   )
+}
+
+function httpRefusalText(status: number, code: string | null): string {
+  if (status === 409) return T.conflict
+  if (status === 401 || status === 403) return T.forbidden
+  // Definite refusal: the label's Free position is not both owned and held by the company.
+  if (status === 422 && code === CREATE_ALLOCATION_422_CODES.ownerNotCompany) return T.ownerNotCompany
+  return T.failed
 }
 
 function AllocationLine({ companyId, namespace, routeEntryGeneration, salesOrderId, line }: SalesDraftAllocationPanelProps & {
@@ -110,7 +119,7 @@ function AllocationLine({ companyId, namespace, routeEntryGeneration, salesOrder
       setAttemptRevision((value) => value + 1)
       boundary.report(outcome.status, authSnapshot)
       if (outcome.status === 409) await refresh()
-      setNotice({ tone: 'error', text: outcome.status === 409 ? T.conflict : outcome.status === 401 || outcome.status === 403 ? T.forbidden : T.failed })
+      setNotice({ tone: 'error', text: httpRefusalText(outcome.status, outcome.code) })
       return
     }
     if (outcome.type === 'unknown') setNotice({ tone: 'unknown', text: T.unknown })
