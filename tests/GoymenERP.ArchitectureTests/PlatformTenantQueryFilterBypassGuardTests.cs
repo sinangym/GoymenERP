@@ -149,8 +149,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 "d48699c522a9e01c908834bacc8f6cb3778bd910cae257dc5addffd6ae55b229",
 
             // finance
+            // DEC-FIN-014: +3 POS collection SQL facts (b18c13d9… -> 7af8ecf1…).
             ["tools/relational_inventory/finance.txt"] =
-                "b18c13d9b748c59722987ab1cd62d3d68381c77495f46ba09b7266e6885e411d",
+                "7af8ecf15bf83c1a0456dea0305ecbe6dbb317c289058be25a5c821a3f82501e",
 
             // identity
             ["tools/relational_inventory/identity.txt"] =
@@ -242,9 +243,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 "409f9d51466a63c0485f6cb89b20f283a55adff0a0cebb9b6c44c5b94a616a92",
             // FIN-T04a (#305): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
+            // Re-measured for DEC-FIN-014: nullable POS fact columns on ReceiptDrafts and MoneyEvents; no new table,
+            // query filter or key.
             ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
              + "Persistence/FinanceDbContext.cs"] =
-            "4bd806094224b2369c80a9a5cb62ce2d5c3085f307d2990cb2119e5fc9aae5bd",
+            "f19915191d13640197d5b80d79e7ce5f85a2681a634c3ff9352fde0852aa9474",
             // ACC-3 (#298): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for ACC-V0a: the ADR-011 command log (Commands) is mapped here, company-scoped with the
@@ -556,10 +559,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // (SqlException 2601/2627) after SaveChanges, as InventoryStore and AccountingStore
                 // do; here in the draft service, which is the module's only writer. No connection,
                 // command or raw SQL.
+                // Re-fingerprinted for DEC-FIN-014: the POS facts (gross, commission, server-computed bank net,
+                // bearer) travel on the same draft save and record; SqlClient count unchanged. K3 5330956606: the
+                // unallocated amount is redacted like every other amount for an actor without amount read.
                 ["src/backend/Modules/Finance/"
                  + "GoymenERP.Modules.Finance.Infrastructure/ReceiptDraftService.cs"] =
                     new(
-                        "cbfe6e681ed27f97e02bb421d9a7bae8ede57206544ae1a5ac38fb9a84314f72",
+                        "ae3f59d79bb2701efd45434eb242f7177bba28d346c2ad95d6fd2f0db4a26585",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -970,6 +976,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // require an explicit forward fix.
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20260924113000_AddFinanceAllocations.cs"] =
                     new("431c95117e3a0216d30a3341ffd72b58e6274be9b938ecd671f6a725d9f2cc67",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // DEC-FIN-014: the Down's only raw SQL is Finance's module refusal (51051) while any POS fact is
+                // stored on a draft or money event; the THROW precedes every DropColumn. Forward fix.
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20260927120000_AddPosCollectionFacts.cs"] =
+                    new("9741c5fbb341827f77056fa578b0ec8403144990066b40c38d5bcdd48d1da23e",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // MFG-6 slice 2: the Down's only raw SQL is Manufacturing's module refusal (51047) while any plan

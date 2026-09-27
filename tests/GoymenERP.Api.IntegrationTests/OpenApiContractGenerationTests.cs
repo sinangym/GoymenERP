@@ -2165,7 +2165,15 @@ public sealed partial class OpenApiContractGenerationTests
                     ("recordedAtUtc", "type:null|string;format:date-time"),
                     ("reversalSourceId", "type:null|string;format:uuid"),
                     ("reversesSourceId", "type:null|string;format:uuid"),
-                    ("unallocated", "ref:UnallocatedView")),
+                    ("unallocated", "ref:UnallocatedView"),
+                    // DEC-FIN-014: gross closes the debt; the bank net and commission are shown apart.
+                    ("pos", "oneOf:ref:PosCollectionView|type:null")),
+                ["PosCollectionView"] = ObjectSchema(
+                    ["commissionBearer", "commission", "bankNet"],
+                    ("commissionBearer", "ref:PosCommissionBearer"),
+                    ("commission", "ref:AmountView"),
+                    ("bankNet", "ref:AmountView")),
+                ["PosCommissionBearer"] = ScalarSchema("enum:Company|Customer"),
                 ["SourcePage"] = ObjectSchema(
                     ["companyId", "items", "nextCursor"],
                     ("companyId", "type:string;format:uuid"),
@@ -3064,7 +3072,13 @@ public sealed partial class OpenApiContractGenerationTests
                     ("occurredOn", "type:string;format:date"),
                     ("valueOn", "type:null|string;format:date"),
                     ("bankReference", "type:null|string"),
-                    ("description", "type:null|string")),
+                    ("description", "type:null|string"),
+                    // DEC-FIN-014: optional customer POS facts; absent keeps the bank-transfer request byte-identical.
+                    ("pos", "oneOf:ref:PosCollectionInput|type:null")),
+                ["PosCollectionInput"] = ObjectSchema(
+                    ["commissionAmount", "commissionBearer"],
+                    ("commissionAmount", "type:string"),
+                    ("commissionBearer", "ref:PosCommissionBearer")),
                 // FIN-T05: Record names the draft it makes definitive and the version it expects.
                 // Neither property is nullable, unlike DraftSaveRequest's — a save may create, a
                 // record may only act on something that already exists at a known version.

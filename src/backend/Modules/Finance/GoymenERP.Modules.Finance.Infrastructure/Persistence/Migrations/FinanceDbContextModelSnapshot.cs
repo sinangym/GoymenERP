@@ -737,6 +737,17 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
             b.Property<Guid>("PartyId")
                 .HasColumnType("uniqueidentifier");
 
+            b.Property<string>("PosBankNetAmountText")
+                .IsUnicode(false)
+                .HasColumnType("varchar(max)");
+
+            b.Property<string>("PosCommissionAmountText")
+                .IsUnicode(false)
+                .HasColumnType("varchar(max)");
+
+            b.Property<int?>("PosCommissionBearer")
+                .HasColumnType("int");
+
             b.Property<string>("ProfileId")
                 .IsRequired()
                 .HasMaxLength(36)
@@ -780,6 +791,10 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
                 t.HasCheckConstraint(
                     "CK_MoneyEvents_Kind",
                     "[Kind] IN (1, 2)");
+
+                t.HasCheckConstraint(
+                    "CK_MoneyEvents_Pos",
+                    "([PosCommissionAmountText] IS NULL AND [PosBankNetAmountText] IS NULL AND [PosCommissionBearer] IS NULL) OR ([PosCommissionAmountText] IS NOT NULL AND LEN([PosCommissionAmountText]) > 0 AND [PosBankNetAmountText] IS NOT NULL AND LEN([PosBankNetAmountText]) > 0 AND [PosCommissionBearer] IN (1, 2))");
 
                 t.HasCheckConstraint(
                     "CK_MoneyEvents_Text",
@@ -897,6 +912,17 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
             b.Property<Guid>("PartyId")
                 .HasColumnType("uniqueidentifier");
 
+            b.Property<string>("PosBankNetAmountText")
+                .IsUnicode(false)
+                .HasColumnType("varchar(max)");
+
+            b.Property<string>("PosCommissionAmountText")
+                .IsUnicode(false)
+                .HasColumnType("varchar(max)");
+
+            b.Property<int?>("PosCommissionBearer")
+                .HasColumnType("int");
+
             b.Property<string>("ProfileId")
                 .IsRequired()
                 .HasMaxLength(36)
@@ -950,6 +976,10 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
                 t.HasCheckConstraint(
                     "CK_ReceiptDrafts_Identity",
                     "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [PartyId] <> '00000000-0000-0000-0000-000000000000' AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' AND [TreasuryAccountId] <> '00000000-0000-0000-0000-000000000000' AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000'");
+
+                t.HasCheckConstraint(
+                    "CK_ReceiptDrafts_Pos",
+                    "([PosCommissionAmountText] IS NULL AND [PosBankNetAmountText] IS NULL AND [PosCommissionBearer] IS NULL) OR ([PosCommissionAmountText] IS NOT NULL AND LEN([PosCommissionAmountText]) > 0 AND [PosBankNetAmountText] IS NOT NULL AND LEN([PosBankNetAmountText]) > 0 AND [PosCommissionBearer] IN (1, 2))");
 
                 t.HasCheckConstraint(
                     "CK_ReceiptDrafts_Stage",

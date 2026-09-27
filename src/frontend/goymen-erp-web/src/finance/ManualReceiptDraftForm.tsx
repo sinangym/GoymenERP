@@ -15,6 +15,11 @@
  *
  * Without a ready context the form stays closed and says why — it never invents a profile,
  * a currency code or a scale.
+ *
+ * DEC-FIN-014: "Tahsilat şekli" switches the same draft to a customer POS collection. The amount
+ * becomes the GROSS card amount; commission and bearer are asked for; the bank net is previewed
+ * (exact, never rounded) and derived again by the server. No journal is claimed: the posting waits
+ * for the chart of accounts, and the screen says so on the detail.
  */
 
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
@@ -32,14 +37,24 @@ import {
   FIELD_ERROR,
   FIELD_HINT,
   FIELD_LABEL,
+  COLLECTION_CHANNEL_LABEL,
   NO_USABLE_BANK_ACCOUNT,
   PARTY_LABEL,
   PARTY_LABEL_PENDING,
+  POS_BANK_NET_PENDING,
+  POS_BANK_NET_PREVIEW,
+  POS_BEARER_LABEL,
+  POS_BEARER_PLACEHOLDER,
+  POS_CUSTOMER_BEARER_PENDING,
+  POS_GROSS_HINT,
+  POS_GROSS_LABEL,
   SAVE_DRAFT,
   amountLabelFor,
   scaleHintFor,
 } from './financeText'
+import { formatDecimalTextTr } from './decimalText'
 import {
+  bankNetPreview,
   buildDraftSaveRequest,
   emptyManualReceiptFields,
   fieldsFromDraft,
@@ -53,7 +68,10 @@ import styles from './Finance.module.css'
 
 const FIELD_ORDER: readonly (keyof ManualReceiptFields)[] = [
   'treasuryAccountId',
+  'collectionChannel',
   'amount',
+  'commissionAmount',
+  'commissionBearer',
   'occurredOn',
   'valueOn',
   'bankReference',
@@ -130,10 +148,19 @@ export function ManualReceiptDraftForm({
     command.submit({ operation: 'draft-save', body: built.request })
   }
 
+  const pos = fields.collectionChannel === 'pos'
   const hintFor = (name: keyof ManualReceiptFields): string | null => {
-    if (name === 'amount' && context !== null) return `${FIELD_HINT.amount ?? ''} ${scaleHintFor(context.currency.profile.scale)}`.trim()
-    return FIELD_HINT[name] ?? null
+    const base = name === 'amount' && pos ? `${POS_GROSS_HINT} ${FIELD_HINT.amount ?? ''}`.trim() : (FIELD_HINT[name] ?? null)
+    if ((name === 'amount' || (name === 'commissionAmount' && pos)) && context !== null) {
+      return `${base ?? ''} ${scaleHintFor(context.currency.profile.scale)}`.trim()
+    }
+    return base
   }
+  const currencyCode = context?.currency.displayCode ?? null
+  const amountLabel = pos
+    ? currencyCode === null ? POS_GROSS_LABEL : `${POS_GROSS_LABEL} (${currencyCode})`
+    : amountLabelFor(currencyCode)
+  const netPreview = bankNetPreview(fields)
 
   const bind = (name: keyof ManualReceiptFields) => ({
     id: `finance-${name}`,
@@ -199,7 +226,43 @@ export function ManualReceiptDraftForm({
         </select>,
       )}
       {row('occurredOn', <input {...bind('occurredOn')} type="date" />)}
-      {row('amount', <input {...bind('amount')} inputMode="decimal" autoComplete="off" />, amountLabelFor(context?.currency.displayCode ?? null))}
+      {row(
+        'collectionChannel',
+        <select {...bind('collectionChannel')}>
+          <option value="bank-transfer">{COLLECTION_CHANNEL_LABEL['bank-transfer']}</option>
+          <option value="pos">{COLLECTION_CHANNEL_LABEL.pos}</option>
+        </select>,
+      )}
+      {row('amount', <input {...bind('amount')} inputMode="decimal" autoComplete="off" />, amountLabel)}
+      {pos ? (
+        <fieldset className={styles.form} data-collection-channel="pos">
+          <legend>{COLLECTION_CHANNEL_LABEL.pos}</legend>
+          {row('commissionAmount', <input {...bind('commissionAmount')} inputMode="decimal" autoComplete="off" />)}
+          {row(
+            'commissionBearer',
+            <select {...bind('commissionBearer')}>
+              <option value="">{POS_BEARER_PLACEHOLDER}</option>
+              <option value="Company">{POS_BEARER_LABEL.Company}</option>
+              <option value="Customer">{POS_BEARER_LABEL.Customer}</option>
+            </select>,
+          )}
+          <div className={styles.field}>
+            <span className={styles.term} id="finance-bank-net-preview-label">
+              {POS_BANK_NET_PREVIEW}
+            </span>
+            <p aria-labelledby="finance-bank-net-preview-label" data-bank-net-preview={netPreview === null ? 'pending' : 'ready'}>
+              {netPreview === null
+                ? POS_BANK_NET_PENDING
+                : `${formatDecimalTextTr(netPreview) ?? POS_BANK_NET_PENDING}${currencyCode === null ? '' : ` ${currencyCode}`}`}
+            </p>
+          </div>
+          {fields.commissionBearer === 'Customer' ? (
+            <p className={styles.hint} role="note">
+              {POS_CUSTOMER_BEARER_PENDING}
+            </p>
+          ) : null}
+        </fieldset>
+      ) : null}
       {row('valueOn', <input {...bind('valueOn')} type="date" />)}
       {row('bankReference', <input {...bind('bankReference')} autoComplete="off" />)}
       {row('description', <textarea {...bind('description')} rows={3} />)}

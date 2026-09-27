@@ -191,6 +191,45 @@ contract `GoymenERP.Modules.Finance.Contracts` (#258, #261). The contract's own 
   or statement read (FIN-T05b), no legacy direct reversal, no number series (Q2: the source shows its id). FIN-T06's
   governed proposal/checker flow is separate from direct reversal.
 
+## DEC-FIN-014: customer POS collection (first-release "müşteri POS tahsilatı")
+
+> DEC-FIN-014 (KILITLI, K1): customer POS exists, supplier POS does not; the customer's debt closes at the GROSS
+> amount; the bank net and the commission are tracked separately; who bears the commission is decided per transaction.
+
+- **Shape.** A POS collection is the same manual receipt source (F-02), not a new source type: the draft/record
+  routes, the ADR-011 command names, the permission names (`finance.manual-receipt.*`, Ö4's one routine recorder)
+  and the shell controls are unchanged. `ReceiptPreparation` gains an optional `pos` (`commissionAmount`,
+  `commissionBearer` = `Company` | `Customer`); `SourceDetail` gains an optional `pos` (`commissionBearer`,
+  `commission`, `bankNet`, both amounts under the gross's own disclosure). Both are omitted from the JSON when null,
+  so a bank transfer keeps the exact #258 wire shape and the same payload hash, and every stored command result
+  still replays.
+- **Money.** `money.amount` is the GROSS and stays the source amount: F-03 distributes from it and the customer's
+  open item closes at it. The commission is exact text within the Settings profile's scale (zero allowed, never
+  rounded) and strictly below the gross; the bank net is DERIVED by the server (gross − commission) and never
+  accepted from the caller. Refusals: `pos_commission_invalid`, `settings_decimal_scale_exceeded`,
+  `pos_commission_not_below_gross`, `pos_commission_bearer_invalid` (field `pos.commissionAmount` /
+  `pos.commissionBearer`), each a 422 that stores nothing.
+- **One money event.** Record copies the three POS facts into the source's ONE `MoneyEvents` row (a customer credit
+  read takes `AmountText`; a bank inflow read takes `PosBankNetAmountText`). A reversal copies them to the reversing
+  source and event. `CK_ReceiptDrafts_Pos` / `CK_MoneyEvents_Pos`: all three NULL or all three set.
+- **Migration** `20260927120000_AddPosCollectionFacts`: nullable columns plus the two checks; no row is rewritten.
+  Down refuses with Finance's `THROW 51051` while any POS fact is stored.
+- **Detail read (F-03 follow-up).** A recorded source's `unallocated` is now its F-03 allocation state when one
+  exists (it used to be the whole source amount even after an allocation).
+- **Audit.** The record event names `channel` (`BankTransfer` | `Pos`) and the bearer, never an amount; the source
+  channel is the host's (Web over HTTP).
+- **Screen.** F-02's draft form has "Tahsilat şekli" (Banka havalesi / EFT | Müşteri POS); POS asks for the
+  commission and the bearer and previews the net. The detail shows gross / commission / net / bearer apart.
+- **Not here, with the blocker that holds it:**
+  - the journal (bank net / commission expense / customer gross): chart of accounts NEEDS-BUSINESS 5740501573 and
+    voucher approval 5740501655 (ACC-V1); the detail says so;
+  - applying a `Customer` bearer (charging the customer): a charge is an open item, and in the first release open
+    items come only from approved official invoice installments (OPEN-016, DEC-FIN-005); recorded, not applied;
+  - a cash (kasa) collection: no cash-box master is decided (the treasury account is the FS0 bank account);
+  - a customer-role check on the party: the Finance party port carries no role; POS is structurally incoming-only
+    (the outgoing payment contract has no POS member), which is what "tedarikçi POS yoktur" requires;
+  - POS terminal, commission rate, settlement batch or bank statement matching: not decided (OPEN-016).
+
 ## Validation
 
 - `tests/GoymenERP.Finance.UnitTests`: contract and adapter tests, plus `FinanceDraftPersistenceModelTests`. The latter checks schema, filters, the idempotency key, snapshot == model, the write guard and the payload hash, all without a database.
@@ -212,4 +251,10 @@ contract `GoymenERP.Modules.Finance.Contracts` (#258, #261). The contract's own 
   SQL Server: the product's undecided rule refuses and stores nothing; with a synthetic open-period TEST INPUT (not a
   policy) one money event, every answer of its key, company isolation, a race of two records (one event) and the
   51051 Down refusal.
-- None of this is API or browser evidence.
+- DEC-FIN-014: `tests/GoymenERP.Finance.UnitTests/PosCollectionContractTests.cs` (exact net, refusals, wire shape and
+  hash, no supplier POS) and `PosCollectionServiceTests.cs` (in memory: save, reopen, record once, replay, stale
+  version, company fence, Web audit, allocation at gross closes the open item); SQL:
+  `FinanceRecordSqlServerRelationalAcceptanceTests.A_customer_POS_collection_closes_the_debt_at_gross_and_keeps_net_and_commission_in_one_money_event`
+  and `…The_POS_migration_rolls_back_only_while_no_POS_fact_is_stored`; HTTP on SQL:
+  `FinanceCommandApiSqlServerRelationalAcceptanceTests.A_customer_POS_collection_is_saved_reopened_and_recorded_once_over_HTTP`.
+- None of this is browser evidence.

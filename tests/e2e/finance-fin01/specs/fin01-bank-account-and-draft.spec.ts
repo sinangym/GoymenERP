@@ -492,6 +492,148 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
     expectEveryAnswerRewritten(answered, rewritten)
   })
 
+  test('FIN01-05 the recorder saves a customer POS collection, reopens it, records it once and a replay adds nothing', async ({ page, context }) => {
+    // DEC-FIN-014: the customer's debt closes at the GROSS; the bank net and the commission are kept apart.
+    const rewritten = await asActor(context, env.seed.proposerActor)
+    const answered = watchAnswers(page)
+
+    const entry = new URLSearchParams({ partyId: env.seed.partyId, companyAccountId: env.seed.companyAccountId })
+    await page.goto(`/finans/tahsilatlar/yeni?${entry.toString()}`)
+    await expect(page.getByRole('heading', { level: 1, name: 'Yeni tahsilat taslağı', exact: true })).toBeVisible({ timeout: 30_000 })
+    await page.getByLabel('Banka hesabı', { exact: true }).selectOption({ label: ACCOUNT_NAME })
+    await page.getByLabel('Banka işlem tarihi', { exact: true }).fill('2026-09-18')
+    await page.getByLabel('Tahsilat şekli', { exact: true }).selectOption('pos')
+    const gross = page.getByLabel(/^Brüt POS tutarı/)
+    await expect(gross).toBeEnabled({ timeout: 30_000 })
+    await gross.fill('1000,00')
+    await page.getByLabel('Banka POS komisyonu', { exact: true }).fill('25,50')
+    await page.getByLabel('Komisyonu üstlenen', { exact: true }).selectOption('Company')
+    // The live net is the exact gross − commission, shown before anything is sent.
+    await expect(page.locator('[data-bank-net-preview="ready"]')).toContainText('974,50')
+
+    const post = page.waitForRequest((request) => DRAFT_RE.test(request.url()) && request.method() === 'POST')
+    const answer = page.waitForResponse((response) => DRAFT_RE.test(response.url()) && response.request().method() === 'POST')
+    await page.getByRole('button', { name: 'Taslağı kaydet', exact: true }).click()
+    const sent = await post
+    const sentBody = sent.postDataJSON() as { readonly preparation?: Record<string, unknown> }
+    expect(sentBody).toMatchObject({
+      draftId: null,
+      expectedVersion: null,
+      preparation: {
+        partyId: env.seed.partyId,
+        companyAccountId: env.seed.companyAccountId,
+        treasuryAccountId: bankAccountId,
+        money: { amount: '1000.00' },
+        occurredOn: '2026-09-18',
+        pos: { commissionAmount: '25.50', commissionBearer: 'Company' },
+      },
+    })
+    // The net is the server's to derive; the screen never sends it.
+    expect(JSON.stringify(sentBody)).not.toMatch(/bankNet|974/)
+    const savedAnswer = await answer
+    expect(savedAnswer.status()).toBe(200)
+    const saved = await savedAnswer.json() as {
+      readonly resource?: { readonly source?: { readonly id?: unknown; readonly version?: unknown }; readonly pos?: unknown }
+    }
+    expect(saved.resource?.source).toMatchObject({ version: '1' })
+    expect(saved.resource?.pos).toEqual({
+      commissionBearer: 'Company',
+      commission: { disclosure: 'Visible', money: { amount: '25.50', currencyId: expect.any(String) } },
+      bankNet: { disclosure: 'Visible', money: { amount: '974.50', currencyId: expect.any(String) } },
+    })
+    const sourceId = saved.resource!.source!.id as string
+    expect(sourceId).toMatch(/^[0-9a-f-]{36}$/)
+    await expect(page.getByText('Taslak kaydedildi — para etkisi yok.')).toBeVisible()
+
+    // Close and reopen: a fresh navigation reads the stored facts back from the server.
+    const posFacts = page.getByRole('region', { name: 'Müşteri POS tahsilatı', exact: true })
+    const fact = (term: string) => posFacts.locator('div').filter({ has: page.locator('dt').getByText(term, { exact: true }) }).locator('dd')
+    const expectPosFacts = async () => {
+      await expect(fact('Tahsilat şekli')).toHaveText('Müşteri POS (kredi kartı)', { timeout: 30_000 })
+      await expect(fact('Brüt tutar (müşteri borcu bu tutarla kapanır)')).toHaveText('1.000,00')
+      await expect(fact('Banka POS komisyonu')).toHaveText('25,50')
+      await expect(fact('Bankaya geçecek net')).toHaveText('974,50')
+      await expect(fact('Komisyonu üstlenen')).toHaveText('Şirket (komisyon gideri)')
+      await expect(posFacts.getByText('hesap planı kararı bekleniyor', { exact: false })).toBeVisible()
+    }
+    await page.goto('/finans/tahsilatlar')
+    await page.goto(`/finans/tahsilatlar/${sourceId}`)
+    await expect(page.getByRole('heading', { level: 1, name: 'Tahsilat taslağı', exact: true })).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByText('Taslak — para etkisi yok.', { exact: false })).toBeVisible()
+    await expectPosFacts()
+
+    // Record once, from the screen.
+    await page.getByRole('button', { name: 'Kesin kayda al', exact: true }).click()
+    const recordPost = page.waitForRequest((request) => RECORD_RE.test(request.url()) && request.method() === 'POST')
+    const recordAnswer = page.waitForResponse((response) => RECORD_RE.test(response.url()) && response.request().method() === 'POST')
+    await page.getByRole('button', { name: 'Kesin kaydı onayla', exact: true }).click()
+    const recordSent = await recordPost
+    const recordBody = recordSent.postDataJSON()
+    expect(recordBody).toEqual({ draftId: sourceId, expectedVersion: '1' })
+    const recordedResponse = await recordAnswer
+    const first = await recordedResponse.json() as {
+      readonly isReplay?: unknown
+      readonly originalCorrelationId?: unknown
+      readonly resource?: { readonly source?: { readonly stage?: unknown; readonly version?: unknown } }
+    }
+    expect(recordedResponse.status(), JSON.stringify(first)).toBe(200)
+    expect(first).toMatchObject({
+      isReplay: false,
+      resource: {
+        source: { id: sourceId, stage: 'Recorded', version: '2', amount: { money: { amount: '1000.00' } } },
+        unallocated: { knowledge: 'Known', amount: { money: { amount: '1000.00' } } },
+        pos: { commissionBearer: 'Company', bankNet: { money: { amount: '974.50' } } },
+      },
+    })
+    await expect(page.getByText('Kesin kaynak kaydı.', { exact: false })).toBeVisible({ timeout: 30_000 })
+
+    // The same key and request again: the stored answer, marked as a replay with the first correlation — no second
+    // Record, so no second money event (the event is unique per source and kind in SQL).
+    const replay = await page.evaluate(async ({ id, key, body, companyId }) => {
+      const response = await fetch(`/api/v1/finance/manual-receipts/${id}/record`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key, 'X-Company-Id': companyId },
+        body: JSON.stringify(body),
+      })
+      return { status: response.status, body: await response.json() as unknown }
+    }, { id: sourceId, key: recordSent.headers()['idempotency-key'], body: recordBody, companyId: env.seed.companyId })
+    expect(replay.status).toBe(200)
+    expect(replay.body).toMatchObject({
+      isReplay: true,
+      originalCorrelationId: first.originalCorrelationId,
+      resource: { source: { id: sourceId, stage: 'Recorded', version: '2' } },
+    })
+    // A fresh key at the old version is refused as stale (409) — nothing is recorded a second time.
+    const stale = await page.evaluate(async ({ id, body, companyId }) => {
+      const response = await fetch(`/api/v1/finance/manual-receipts/${id}/record`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID(), 'X-Company-Id': companyId },
+        body: JSON.stringify(body),
+      })
+      return response.status
+    }, { id: sourceId, body: recordBody, companyId: env.seed.companyId })
+    expect(stale).toBe(409)
+
+    // Reopen the recorded source: still version 2, the customer credit is the gross, the POS facts unchanged.
+    await page.goto('/finans/tahsilatlar')
+    await page.goto(`/finans/tahsilatlar/${sourceId}`)
+    await expect(page.getByText('Kesin kaynak kaydı.', { exact: false })).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByRole('button', { name: 'Kesin kayda al' })).toHaveCount(0)
+    await expect(page.locator('dt').getByText('Dağıtılmamış tutar', { exact: true }).locator('xpath=following-sibling::dd'))
+      .toHaveText('1.000,00')
+    await expectPosFacts()
+    const reread = await page.evaluate(async ({ id, companyId }) => {
+      const response = await fetch(`/api/v1/finance/manual-receipts/${id}`, { headers: { 'X-Company-Id': companyId } })
+      return { status: response.status, body: await response.json() as unknown }
+    }, { id: sourceId, companyId: env.seed.companyId })
+    expect(reread.status).toBe(200)
+    expect(reread.body).toMatchObject({
+      source: { id: sourceId, stage: 'Recorded', version: '2', amount: { money: { amount: '1000.00' } } },
+      pos: { commissionBearer: 'Company', commission: { money: { amount: '25.50' } }, bankNet: { money: { amount: '974.50' } } },
+    })
+    expectEveryAnswerRewritten(answered, rewritten)
+  })
+
   test('FIN01-04 the approver has no draft screens and the ungranted profile no Finance screen', async ({ page, context }) => {
     await asActor(context, env.seed.approverActor)
     let financeRequests = 0

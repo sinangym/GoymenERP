@@ -57,9 +57,9 @@ public sealed class FinanceBankAccountTests
     {
         using var context = Context();
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddBankAccounts", StringComparison.Ordinal));
-        // The NEWEST migration is pinned by name on purpose: F-03 allocation persistence must be a
-        // deliberate append after R47, never an unreviewed migration that silently becomes authoritative.
-        Assert.Equal("20260924113000_AddFinanceAllocations", context.Database.GetMigrations().Last());
+        // The NEWEST migration is pinned by name on purpose: DEC-FIN-014's POS facts are a deliberate
+        // append after F-03, never an unreviewed migration that silently becomes authoritative.
+        Assert.Equal("20260927120000_AddPosCollectionFacts", context.Database.GetMigrations().Last());
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
