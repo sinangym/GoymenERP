@@ -186,8 +186,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // sales
             // DEC-SAL-003: +3 SalesDeliveryScheduleSqlServerRelationalAcceptanceTests facts (16fa5110… -> 00189b7b…).
+            // AT-024: +2 SalesDeliveryProgressSqlServerRelationalAcceptanceTests facts (00189b7b… -> 719d0d03…).
             ["tools/relational_inventory/sales.txt"] =
-                "00189b7b1a6cdcb01a399298f1827c981e254e19bff37eb58e585668629c35a7",
+                "719d0d0348973800b24163a0999fba2d62707b2b3d394bde827eb551f0b3d1c4",
         };
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
@@ -646,11 +647,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                             ["Microsoft.Data.SqlClient"] = 1
                         }),
                 // LOG-4a: the Logistics initializer's one provider branch, as Sales.
+                // Re-fingerprinted for AT-024: one scoped registration of the Sales-declared delivery read port; the
+                // provider branch and its token counts are unchanged.
                 ["src/backend/Modules/Logistics/"
                  + "GoymenERP.Modules.Logistics.Infrastructure/"
                  + "LogisticsModuleExtensions.cs"] =
                     new(
-                        "d36ed923bf17fd96bf1ce9156576f6f3fa0896f9519eb8d9cd8c2bea9b8d4a79",
+                        "7cfd2d97e0797ae1b4ee02ae9ab967c6af0a69fc8b8e12ab54ba4c5534dd17d5",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -748,11 +751,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                             ["Microsoft.Data.SqlClient"] = 1
                         }),
                 // SALES-P2 (#315): the Sales initializer's one provider branch, as Organization.
+                // Re-fingerprinted for AT-024: the draft service also receives the optional delivery read port; the
+                // provider branch and its token counts are unchanged.
                 ["src/backend/Modules/Sales/"
                  + "GoymenERP.Modules.Sales.Infrastructure/"
                  + "SalesModuleExtensions.cs"] =
                     new(
-                        "2b706e85f34cfc7475dda51469c66d039996c79796b8452630cb0688c444b49e",
+                        "f72879f85551697b5d4a33385bc6c7055824367fc2ae7d5af4e8227aad81b9b6",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
