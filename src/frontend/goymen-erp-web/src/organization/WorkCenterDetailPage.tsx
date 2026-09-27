@@ -17,7 +17,8 @@
  *    and no location request, only a plain statement of scope.
  *  - The back link returns to the ORG-03 origin the row recorded — the whole list or its location filter — and
  *    only under the same committed context. Router state is caller-controlled, so only the list's exact tokens
- *    are honoured; anything else returns to the whole list.
+ *    are honoured, and a location filter only when it is the loaded record's own location (the location card's
+ *    rule for the same token); anything else returns to the whole list.
  *  - A passive work centre stays readable: passive is a state, not a delete.
  */
 
@@ -117,7 +118,7 @@ function WorkCenterCardScreen({ namespace }: { readonly namespace: string | null
   }
 
   return (
-    <Frame origin={origin}>
+    <Frame origin={origin} cardLocationId={state.data.locationId}>
       <WorkCenterCard workCenter={state.data} namespace={namespace} origin={origin} />
     </Frame>
   )
@@ -125,13 +126,16 @@ function WorkCenterCardScreen({ namespace }: { readonly namespace: string | null
 
 function Frame({
   origin,
+  cardLocationId,
   children,
 }: {
   readonly origin: WorkCenterCardOrigin | undefined
+  /** The loaded record's location; absent until the card is ready, so the back link is then the whole list. */
+  readonly cardLocationId?: string
   readonly children: React.ReactNode
 }) {
   const shell = useShellState()
-  const back = workCenterCardBackTarget(origin)
+  const back = workCenterCardBackTarget(origin, cardLocationId)
   // The list is its own grant; without it the way back is stated, not offered as a link that would only 404.
   const canGoBack = hasCapability(shell, ORGANIZATION_CAPABILITY.workCentersList)
   return (

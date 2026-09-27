@@ -43,11 +43,11 @@ afterEach(() => {
 })
 
 function respond(
-  card: (url: string) => Response,
+  card: (url: string, init: RequestInit | undefined) => Response | Promise<Response>,
   rows: readonly unknown[] = [workCenter(WC_PAINT, LOC_H0, 'BY-01', 'Boya Hattı 1')],
 ) {
-  return (url: string) => {
-    if (CARD_RE.test(url)) return card(url)
+  return (url: string, init: RequestInit | undefined) => {
+    if (CARD_RE.test(url)) return card(url, init)
     if (LIST_RE.test(url)) return json(rows)
     if (url.includes(`/organization/locations/${LOC_H0}`)) return json(location(LOC_H0, SITE_OSM, 'OSM-H0', 'Hol-0'))
     return undefined
@@ -56,6 +56,36 @@ function respond(
 
 const cardReads = (recorded: readonly RecordedRequest[]) => recorded.filter((request) => CARD_RE.test(request.url))
 const locationReads = (recorded: readonly RecordedRequest[]) => requestsFor(recorded, '/organization/locations')
+
+/** The card's own back link, scoped to its `Geri` landmark. */
+const backLink = () =>
+  within(screen.getByRole('navigation', { name: 'Geri' })).getByRole('link', { name: /İş Merkezleri/ })
+
+/** A card read held until the test settles it, with the abort signal the screen sent it. */
+interface HeldRead {
+  readonly company: string
+  readonly signal: AbortSignal | null
+  readonly release: (response: Response) => void
+}
+
+function holdCardReads(): { readonly held: HeldRead[]; readonly recorded: RecordedRequest[] } {
+  const held: HeldRead[] = []
+  const recorded = installFetch({
+    capabilities: WORK_CENTER_CARD_CAPABILITIES,
+    respond: respond(
+      (_url, init) =>
+        // Deliberately ignores the abort, as a slow network answer can: the screen must drop it on its own.
+        new Promise<Response>((resolve) => {
+          held.push({
+            company: new Headers(init?.headers).get('X-Company-Id') ?? '',
+            signal: init?.signal ?? null,
+            release: resolve,
+          })
+        }),
+    ),
+  })
+  return { held, recorded }
+}
 
 describe('ORG-04 work centre card', () => {
   it('shows the record’s own facts and nothing it does not carry', async () => {
@@ -231,12 +261,111 @@ describe('ORG-04 work centre card', () => {
       capabilities: WORK_CENTER_CARD_CAPABILITIES,
       respond: respond(() => {
         calls += 1
-        return calls === 1 ? problem(503) : json(workCenterDetail(WC_PAINT, LOC_H0, 'BY-01', 'Boya Hattı 1'))
+        // A real transport failure — `fetch` rejects and no response exists — not an HTTP status standing in for one.
+        if (calls === 1) throw new TypeError('Failed to fetch')
+        return json(workCenterDetail(WC_PAINT, LOC_H0, 'BY-01', 'Boya Hattı 1'))
       }),
     })
     renderAt(workCenterDetailPath(WC_PAINT))
-    await userEvent.click(await screen.findByRole('button', { name: 'Tekrar dene' }))
+    await waitFor(() => expect(document.querySelector('[data-state="network-error"]')).not.toBeNull())
+    expect(screen.queryByText('BY-01')).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Tekrar dene' }))
     expect(await screen.findByText('BY-01')).toBeTruthy()
+    expect(calls).toBe(2)
+  })
+
+  it('shows a loading state and no card while the read is in flight, then the card', async () => {
+    const { held } = holdCardReads()
+    renderAt(workCenterDetailPath(WC_PAINT))
+    await waitFor(() => expect(held).toHaveLength(1))
+
+    // The card's own frame is up, and what it holds is a busy status — not a card, not an empty record.
+    const frame = await screen.findByRole('region', { name: 'İş merkezi' })
+    const busy = within(frame).getByRole('status')
+    expect(busy.getAttribute('data-state')).toBe('initial-loading')
+    expect(busy.textContent).toContain('Yükleniyor')
+    expect(frame.querySelector('[data-work-center]')).toBeNull()
+    // Its location is not known yet, so the way back is the whole list.
+    expect(backLink().getAttribute('href')).toBe(LIST)
+
+    await act(async () => {
+      held[0].release(json(workCenterDetail(WC_PAINT, LOC_H0, 'BY-01', 'Boya Hattı 1')))
+    })
+    expect(await screen.findByText('BY-01')).toBeTruthy()
+    expect(within(frame).queryByRole('status')).toBeNull()
+    expect(frame.querySelector(`[data-work-center="${WC_PAINT}"]`)).not.toBeNull()
+  })
+
+  it('cancels its read when it unmounts before the answer, and the late answer lands nowhere', async () => {
+    const { held } = holdCardReads()
+    const { router } = renderAt(workCenterDetailPath(WC_PAINT))
+    await waitFor(() => expect(held).toHaveLength(1))
+    expect(held[0].signal).not.toBeNull()
+    expect(held[0].signal?.aborted).toBe(false)
+
+    await act(() => router.navigate(LIST))
+    expect(await screen.findByRole('table')).toBeTruthy()
+    // Leaving the card removed its only observer, which aborted the read in flight.
+    expect(held[0].signal?.aborted).toBe(true)
+
+    await act(async () => {
+      held[0].release(json(workCenterDetail(WC_PAINT, LOC_H0, 'GEC-01', 'Geç yanıt')))
+    })
+    expect(screen.queryByText('GEC-01')).toBeNull()
+    expect(document.querySelector('[data-work-center]')).toBeNull()
+    expect(held).toHaveLength(1)
+  })
+
+  it('restores a location filter only when it is the card’s own location', async () => {
+    installFetch({
+      capabilities: WORK_CENTER_CARD_CAPABILITIES,
+      respond: respond(() => json(workCenterDetail(WC_PAINT, LOC_H0, 'BY-01', 'Boya Hattı 1'))),
+    })
+    const { router, queryClient } = renderAt(workCenterDetailPath(WC_PAINT))
+    await screen.findByText('BY-01')
+    const ns = queryClient.getQueryCache().getAll()
+      .find((entry) => entry.queryKey[2] === 'organization-work-center')?.queryKey[0]
+    expect(typeof ns).toBe('string')
+
+    // A well-formed token of THIS context, naming another location: not this record's filter.
+    await act(() => router.navigate(workCenterDetailPath(WC_PAINT), {
+      state: { ns, from: DETAIL_ORIGIN.workCenters, locationId: LOC_H1 },
+    }))
+    await screen.findByText('BY-01')
+    expect(backLink().getAttribute('href')).toBe(LIST)
+
+    // The same token naming the record's own location is honoured.
+    await act(() => router.navigate(workCenterDetailPath(WC_PAINT), {
+      state: { ns, from: DETAIL_ORIGIN.workCenters, locationId: LOC_H0 },
+    }))
+    await waitFor(() => expect(backLink().getAttribute('href')).toBe(workCenterListPath(LOC_H0)))
+  })
+
+  it('drops the filtered way back once the company changes, returning to the whole list', async () => {
+    const recorded = installFetch({
+      capabilities: WORK_CENTER_CARD_CAPABILITIES,
+      respond: respond(
+        () => json(workCenterDetail(WC_PAINT, LOC_H0, 'BY-01', 'Boya Hattı 1')),
+        [
+          workCenter(WC_PAINT, LOC_H0, 'BY-01', 'Boya Hattı 1'),
+          workCenter(WC_SLIT, LOC_H1, 'DL-02', 'Dilme Hattı 2', { kind: 'Slitting' }),
+        ],
+      ),
+    })
+    const { router } = renderAt(workCenterListPath(LOC_H0))
+    await userEvent.click(await screen.findByRole('link', { name: 'İş merkezi kartını aç: BY-01' }))
+    await waitFor(() => expect(document.querySelector(`[data-work-center="${WC_PAINT}"]`)).not.toBeNull())
+    expect(backLink().getAttribute('href')).toBe(workCenterListPath(LOC_H0))
+    const companyOf = (request: RecordedRequest) => request.headers['X-Company-Id']
+    expect(cardReads(recorded).map(companyOf)).toEqual([COMPANY_A])
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Şirket' }), { target: { value: COMPANY_B } })
+    await waitFor(() => expect(cardReads(recorded).map(companyOf)).toEqual([COMPANY_A, COMPANY_B]))
+    await waitFor(() => expect(document.querySelector(`[data-work-center="${WC_PAINT}"]`)).not.toBeNull())
+    // The router still carries company A's token for the SAME location as B's record — so what drops it is the
+    // context fence, not a missing state or a location mismatch.
+    expect(router.state.location.state).toMatchObject({ from: DETAIL_ORIGIN.workCenters, locationId: LOC_H0 })
+    expect(backLink().getAttribute('href')).toBe(LIST)
   })
 
   it('ignores a late company-A answer after switching to company B', async () => {
@@ -304,13 +433,19 @@ describe('ORG-04 return tokens', () => {
     expect(workCenterCardOrigin({ ns, from: DETAIL_ORIGIN.workCenters }, null)).toBeUndefined()
   })
 
-  it('goes back to the list, restoring only its location filter', () => {
-    expect(workCenterCardBackTarget(undefined)).toEqual({ path: LIST, label: 'İş Merkezleri' })
-    expect(workCenterCardBackTarget({ ns, from: DETAIL_ORIGIN.workCenters })).toEqual({ path: LIST, label: 'İş Merkezleri' })
-    expect(workCenterCardBackTarget({ ns, from: DETAIL_ORIGIN.workCenters, locationId: LOC_H0 })).toEqual({
+  it('goes back to the list, restoring only the card’s own location filter', () => {
+    const whole = { path: LIST, label: 'İş Merkezleri' }
+    expect(workCenterCardBackTarget(undefined, LOC_H0)).toEqual(whole)
+    expect(workCenterCardBackTarget({ ns, from: DETAIL_ORIGIN.workCenters }, LOC_H0)).toEqual(whole)
+    expect(workCenterCardBackTarget({ ns, from: DETAIL_ORIGIN.workCenters, locationId: LOC_H0 }, LOC_H0)).toEqual({
       path: workCenterListPath(LOC_H0),
       label: 'İş Merkezleri',
     })
+    // Another location's filter, or a card whose location is not known yet, is the whole list.
+    expect(workCenterCardBackTarget({ ns, from: DETAIL_ORIGIN.workCenters, locationId: LOC_H0 }, LOC_H1)).toEqual(whole)
+    expect(workCenterCardBackTarget({ ns, from: DETAIL_ORIGIN.workCenters, locationId: LOC_H0 }, undefined)).toEqual(
+      whole,
+    )
   })
 
   it('publishes the card on its own id and route', () => {

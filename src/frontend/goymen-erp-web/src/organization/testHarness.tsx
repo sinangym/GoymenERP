@@ -261,8 +261,14 @@ export interface HarnessOptions {
    * re-verification after a refence looks like.
    */
   readonly generations?: readonly string[]
-  /** Feature-endpoint responder. Return undefined to fall through to a 404. */
-  readonly respond?: (url: string, init: RequestInit | undefined) => Response | undefined
+  /**
+   * Feature-endpoint responder. Return undefined to fall through to a 404. A promise holds the answer until the
+   * test settles it; throwing (or rejecting) is a real transport failure, as `fetch` itself reports one.
+   */
+  readonly respond?: (
+    url: string,
+    init: RequestInit | undefined,
+  ) => Response | Promise<Response> | undefined
 }
 
 /**

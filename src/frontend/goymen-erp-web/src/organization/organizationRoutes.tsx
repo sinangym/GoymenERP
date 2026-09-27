@@ -21,7 +21,6 @@
 
 import type { RouteObject } from 'react-router'
 import { CapabilityRoute } from '../shell/CapabilityRoute'
-import type { CapabilityId } from '../shell/capabilities'
 import { ORGANIZATION_CAPABILITY, ORGANIZATION_ROUTE } from './capabilities'
 import { OrganizationSettingsPage } from './OrganizationSettingsPage'
 import { LocationDetailPage } from './LocationDetailPage'
@@ -54,11 +53,7 @@ export const organizationRoutes: RouteObject[] = [
     // ORG-04. Parameterized, after its static list: `is-merkezleri` itself is never a work-centre id.
     path: ORGANIZATION_ROUTE[ORGANIZATION_CAPABILITY.workCenterDetail].slice(1),
     element: (
-      // Until the shell owner declares ORG-04 in the shared `CapabilityId` union (the central handoff), the
-      // cast only widens a compile-time type, the Manufacturing lane's pattern. It changes NO runtime
-      // behaviour: `hasCapability` compares the plain string with the server's published list, so an
-      // unpublished id still fails closed onto the neutral not-found block.
-      <CapabilityRoute capability={ORGANIZATION_CAPABILITY.workCenterDetail as CapabilityId}>
+      <CapabilityRoute capability={ORGANIZATION_CAPABILITY.workCenterDetail}>
         <WorkCenterDetailPage />
       </CapabilityRoute>
     ),

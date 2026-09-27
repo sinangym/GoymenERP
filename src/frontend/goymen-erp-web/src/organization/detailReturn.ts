@@ -104,10 +104,20 @@ export function workCenterCardOrigin(state: unknown, namespace: string | null): 
   return undefined
 }
 
-/** Where the ORG-04 card's back link goes: the list it came from, with its location filter restored. */
-export function workCenterCardBackTarget(origin: WorkCenterCardOrigin | undefined): DetailBackTarget {
+/**
+ * Where the ORG-04 card's back link goes: the list it came from, with its location filter restored.
+ *
+ * The filter is restored ONLY when it is this card's own location — the rule the location card applies to the
+ * same token (`filteredWorkCenterBackPath`). A token naming another location (a forged or carried-over state)
+ * returns to the whole list rather than to a filter the record does not belong to. The card's location is known
+ * only from the loaded record, so until it is (loading, not-found, an error) the back link is the whole list.
+ */
+export function workCenterCardBackTarget(
+  origin: WorkCenterCardOrigin | undefined,
+  cardLocationId: string | undefined,
+): DetailBackTarget {
   const list = TARGETS[DETAIL_ORIGIN.workCenters]
-  return origin?.locationId === undefined
+  return origin?.locationId === undefined || origin.locationId !== cardLocationId
     ? list
     : { path: workCenterListPath(origin.locationId), label: list.label }
 }
