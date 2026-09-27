@@ -140,7 +140,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         {
             // accounting
             ["tools/relational_inventory/accounting.txt"] =
-                "29310c4f63816e9045dd6f8423095d524afccfcdba362a8f89123dc385c6dbf3",
+                "03817947a1e8f6352ca23eab78cdc2be4813ed54c5963c064e7bf371f9b4d4fc",
 
             // counterparty
             ["tools/relational_inventory/counterparty.txt"] =
