@@ -336,13 +336,21 @@ test('R19 splits a label in the browser, reopens exact children and genealogy, r
     // A consumed source offers nothing to transform.
     await expect(page.getByText('Bölme veya birleştirme için etiketin tek bir fiziksel pozisyonda stoğu olmalı.', { exact: true })).toBeVisible()
 
+    // The genealogy is the CONNECTED many-to-many graph (DEC-LBL-003; the accepted #438 reader and its SQL test
+    // Split_then_merge_preserves_mass_replays_and_reads_the_many_to_many_genealogy), not only the edges touching
+    // the label: each child reads the whole split it came from, both edges, under its own identity.
+    const splitEdges = [['Split', SOURCE, CHILD_A, '4'], ['Split', SOURCE, CHILD_B, '6']]
     const childA = await openLabel(page, childAId, CHILD_A)
     expect(childA.balances).toMatchObject({ physicalKg: '4', freeKg: '4' })
+    expect(childA.genealogy).toMatchObject({ labelId: childAId, windowFull: false })
     expect(childA.genealogy.edges.map((edge) => [edge.kind, edge.sourceCode, edge.outputCode, edge.outputQuantityKg]))
-      .toEqual([['Split', SOURCE, CHILD_A, '4']])
-    await expect(genealogyRows(page).filter({ hasText: 'Bölme' })).toHaveCount(1)
+      .toEqual(splitEdges)
+    await expect(genealogyRows(page).filter({ hasText: 'Bölme' })).toHaveCount(2)
     const childB = await readDetail(page, transformerActor, childBId)
     expect(childB.balances).toMatchObject({ physicalKg: '6', freeKg: '6' })
+    expect(childB.genealogy).toMatchObject({ labelId: childBId, windowFull: false })
+    expect(childB.genealogy.edges.map((edge) => [edge.kind, edge.sourceCode, edge.outputCode, edge.outputQuantityKg]))
+      .toEqual(splitEdges)
 
     // ── 5. Same key replays with nothing new; the consumed version is refused. ────────────────────────────
     const replay = await page.request.post(`${env.apiBaseUrl}${TRANSFORMATIONS}`, {
@@ -412,8 +420,16 @@ test('R19 splits a label in the browser, reopens exact children and genealogy, r
     ])
     await expect(genealogyRows(page).filter({ hasText: 'Birleştirme' })).toHaveCount(2)
     await expect(genealogyRows(page).filter({ hasText: 'Bölme' })).toHaveCount(2)
-    for (const childId of [childAId, childBId]) {
-      expect((await readDetail(page, transformerActor, childId)).balances).toMatchObject({ physicalKg: '0' })
+    // Every member of the connected graph now reads the same four edges: the consumed children at 0 kg and the
+    // original source alike.
+    const mergedKeys = merged.genealogy.edges
+      .map((edge) => [edge.transformationId, edge.sourceLabelId, edge.outputLabelId].join('|'))
+    for (const memberId of [childAId, childBId, sourceId]) {
+      const member = await readDetail(page, transformerActor, memberId)
+      expect(member.balances).toMatchObject({ physicalKg: '0' })
+      expect(member.genealogy).toMatchObject({ labelId: memberId, windowFull: false })
+      expect(member.genealogy.edges.map((edge) => [edge.transformationId, edge.sourceLabelId, edge.outputLabelId].join('|')))
+        .toEqual(mergedKeys)
     }
 
     // ── 7. Fences on the merged label. ────────────────────────────────────────────────────────────────────
