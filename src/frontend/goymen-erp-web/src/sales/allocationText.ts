@@ -27,5 +27,6 @@ export const ALLOCATION_TEXT = {
   conflict: 'Kayıt güncel sunucu durumuyla çakıştı; tahsisler yeniden okundu.',
   forbidden: 'Tahsis yetkisi artık geçerli değil.',
   failed: 'Tahsis işlemi kaydedilmedi.',
+  ownerNotCompany: 'Bu etiketteki stok şirketin kendi malı ve kendi gözetiminde değil; satış siparişine ayrılamaz. Tahsis kaydedilmedi.',
   fullWindow: 'Sunucu yalnız ilk 100 tahsisi döndürdü; eksik görünümle yeni tahsis kapalıdır.',
 } as const
