@@ -1419,6 +1419,23 @@ public sealed partial class OpenApiContractGenerationTests
                     ("target", "oneOf:ref:TargetViewV1|type:null"),
                     ("createdAtUtc", "type:string;format:date-time"),
                     ("closedAtUtc", "type:null|string;format:date-time")),
+                // MFG-PLAN-LIST: the order list's page shape over stored plans; approvedAtUtc is null until approval.
+                ["PlanListViewV1"] = ObjectSchema(
+                    ["plans", "nextCursor"],
+                    ("plans", "type:array;items:ref:PlanSummaryViewV1"),
+                    ("nextCursor", "type:null|string")),
+                ["PlanSummaryViewV1"] = ObjectSchema(
+                    ["planId", "workCenterId", "process", "status", "version", "plannedRollCount", "plannedInputKg", "target", "createdAtUtc", "approvedAtUtc"],
+                    ("planId", "type:string;format:uuid"),
+                    ("workCenterId", "type:string;format:uuid"),
+                    ("process", "type:string"),
+                    ("status", "type:string"),
+                    ("version", "type:integer|string;format:int64"),
+                    ("plannedRollCount", "type:integer|string;format:int32"),
+                    ("plannedInputKg", "type:string"),
+                    ("target", "oneOf:ref:TargetViewV1|type:null"),
+                    ("createdAtUtc", "type:string;format:date-time"),
+                    ("approvedAtUtc", "type:null|string;format:date-time")),
                 ["LogisticsApprovedOrderLinePage"] = ObjectSchema(
                     ["items", "nextCursor"],
                     ("items", "type:array;items:ref:LogisticsApprovedOrderLineView"),
@@ -3611,7 +3628,7 @@ public sealed partial class OpenApiContractGenerationTests
         var operations = ReadOperations(root.GetProperty("paths"));
         Assert.Equal(128, operations.Count);
         Assert.Equal(
-            127,
+            128,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());
