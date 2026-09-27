@@ -66,7 +66,7 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
         var actual = ShellCapabilityRegistry.ComputeCandidateRevision(providers);
         Assert.True(
             string.Equals(
-                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10AndPublishedSalesV11,
+                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV11AndPublishedSalesV11,
                 actual,
                 StringComparison.Ordinal),
             $"Sales normal-host authority drifted. Actual: {actual}");
@@ -84,7 +84,7 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
         var authority = C01E2eShellCapabilityActivation.Configure(services, new TestingEnvironment(),
             new ConfigurationBuilder().Build());
 
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV10AndPublishedSalesV11, authority);
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV11AndPublishedSalesV11, authority);
         using var container = services.BuildServiceProvider();
         var registry = new ShellCapabilityRegistry(container.GetServices<IShellCapabilityProvider>(),
             new ShellCapabilityAuthorityCatalog([authority]));

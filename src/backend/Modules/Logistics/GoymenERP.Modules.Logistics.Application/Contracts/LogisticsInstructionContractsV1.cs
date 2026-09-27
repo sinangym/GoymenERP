@@ -145,7 +145,9 @@ public sealed class LogisticsInstructionServiceException(int status, string code
 public sealed record LogisticsInstructionServiceBindings(
     string? CreatePermission = LogisticsPermissionManifestV1.InstructionsCreate,
     string? ReadPermission = LogisticsPermissionManifestV1.InstructionsRead,
-    string? RecordPermission = LogisticsPermissionManifestV1.LoadsRecord);
+    string? RecordPermission = LogisticsPermissionManifestV1.LoadsRecord,
+    string? ShipmentPermission = LogisticsPermissionManifestV1.ShipmentsRecord,
+    string? DeliveryPermission = LogisticsPermissionManifestV1.DeliveriesRecord);
 
 /// <summary>Constructed by the server, never bound from the request body.</summary>
 public sealed record LogisticsCommandMetadata(string IdempotencyKey, string CorrelationId, string? CausationId, DateTimeOffset RequestedAtUtc);

@@ -16,5 +16,9 @@ public static class LogisticsPermissionManifestV1
     /// <summary>Record a loaded share against an issued instruction's line.</summary>
     public const string LoadsRecord = "logistics.loads.record";
 
-    public static readonly IReadOnlyList<string> Names = [InstructionsCreate, InstructionsRead, LoadsRecord];
+    // Sinan #66/5828506709: two independent actions, neither aliases loads.record; no grant or maker-checker rule.
+    public const string ShipmentsRecord = "logistics.shipments.record";
+    public const string DeliveriesRecord = "logistics.deliveries.record";
+
+    public static readonly IReadOnlyList<string> Names = [InstructionsCreate, InstructionsRead, LoadsRecord, ShipmentsRecord, DeliveriesRecord];
 }

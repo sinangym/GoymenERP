@@ -174,6 +174,10 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         await using var run = await Run.StartAsync();
         var own = await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-ALLOC-BOUND", 100m);
         var foreign = await SeedFreePhysicalSourceAsync(run, CompanyB, "SYN-ALLOC-FOREIGN", 100m);
+        var customerOwned = await SeedOtherPartyFreeSourceAsync(run, "SYN-ALLOC-CUSTOMER",
+            new StockOwner(StockPartyKind.Counterparty, Guid.NewGuid()), new StockCustodian(StockPartyKind.Company, CompanyA));
+        var fasonHeld = await SeedOtherPartyFreeSourceAsync(run, "SYN-ALLOC-FASON",
+            new StockOwner(StockPartyKind.Company, CompanyA), new StockCustodian(StockPartyKind.Counterparty, Guid.NewGuid()));
 
         await using (var scope = run.Store(CompanyA))
         {
@@ -220,6 +224,18 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             var hidden = await Assert.ThrowsAsync<InventoryAllocationException>(() =>
                 scope.Store.CreateAsync(AllocationRequest(foreign, "1") with { AllocationId = Guid.NewGuid() }, Metadata(run)));
             Assert.Equal((404, InventoryAllocationCodesV1.InvalidReference), (hidden.Status, hidden.Code));
+        }
+
+        // #479 review P2-2: a Sales order line never reserves a Free position this company does not own AND hold.
+        foreach (var other in new[] { customerOwned, fasonHeld })
+        {
+            await using var scope = run.Store(CompanyA);
+            var refused = await Assert.ThrowsAsync<InventoryAllocationException>(() =>
+                scope.Store.CreateAsync(AllocationRequest(other, "1"), Metadata(run)));
+            Assert.Equal((422, InventoryAllocationCodesV1.OwnerNotCompany), (refused.Status, refused.Code));
+            Assert.Equal(other.LabelVersion, await run.ScalarAsync<long>(
+                "SELECT Version FROM inventory.Labels WHERE Id = @id", ("@id", other.LabelId)));
+            Assert.Equal(100m, await FreeAfterAllocationsAsync(run, other.LabelId));
         }
 
         Assert.Equal(before, await AllocationEffectCountsAsync(run));
@@ -567,6 +583,26 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             await transaction.RollbackAsync();
         }
         Assert.Equal(beforeForeign, await SnapshotShipmentEffectsAsync(run, state, foreignState));
+
+        // #479 review P2-2: an allocation stored before the Sales ownership gate (or a legacy row) that names a
+        // customer-owned position is never consumed as a company shipment; nothing is written.
+        var customerOwned = await SeedOtherPartyFreeSourceAsync(run, "SYN-LOG5-CUSTOMER",
+            new StockOwner(StockPartyKind.Counterparty, Guid.NewGuid()), new StockCustodian(StockPartyKind.Company, CompanyA),
+            allocatedKg: 80m);
+        var customerState = new ShipmentState(customerOwned.AllocationId!.Value, customerOwned.LabelId, customerOwned.LabelVersion);
+        var beforeCustomer = await SnapshotShipmentEffectsAsync(run, state, customerState);
+        await using (var connection = new SqlConnection(run.Factory.DatabaseConnectionString))
+        {
+            await connection.OpenAsync();
+            await using var transaction = await connection.BeginTransactionAsync();
+            await using var participant = await InventoryDefiniteShipmentParticipant.EnlistAsync(connection, transaction,
+                CompanyA, Settings(run, CompanyA));
+            var refused = await Assert.ThrowsAsync<InventoryDefiniteShipmentException>(() => participant.StageAsync(
+                Request(customerState, "5"), metadata with { IdempotencyKey = $"customer-{Guid.NewGuid():N}" }));
+            Assert.Equal((409, InventoryDefiniteShipmentCodesV1.OwnerNotCompany), (refused.Status, refused.Code));
+            await transaction.RollbackAsync();
+        }
+        Assert.Equal(beforeCustomer, await SnapshotShipmentEffectsAsync(run, state, customerState));
     }
 
     [SqlServerFact]
@@ -727,6 +763,54 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         await using var context = run.Context(company);
         var version = await context.Labels.Where(row => row.Id == label.Id).Select(row => row.Version).SingleAsync();
         return new(label.Id, label.ProductId, version);
+    }
+
+    /// <summary>
+    /// A CompanyA label whose only Free position another party owns or holds, optionally with an active allocation
+    /// row stored directly (as a pre-gate or legacy allocation would be). Which flow produces such stock (#479,
+    /// #66/5830378162) is not the gate's concern, so the position is stored directly, as the foreign fixture does.
+    /// </summary>
+    private static async Task<OtherPartySource> SeedOtherPartyFreeSourceAsync(
+        Run run,
+        string code,
+        StockOwner owner,
+        StockCustodian custodian,
+        decimal? allocatedKg = null)
+    {
+        var location = await run.LocationOfAsync(CompanyA);
+        var label = NewLabel(CompanyA, code);
+        await using (var scope = run.Store(CompanyA))
+        {
+            // The run already stores CompanyA's synthetic lot (LotA); only the label is new.
+            await scope.Labels.SaveLabelAsync(label, Metadata(run) with { CorrelationId = $"seed-{Guid.NewGuid():N}" });
+        }
+
+        Guid? allocationId = allocatedKg is null ? null : Guid.NewGuid();
+        await using var context = run.Context(CompanyA);
+        context.Balances.Add(new BalanceRow
+        {
+            Id = Guid.NewGuid(), CompanyId = CompanyA,
+            OwnerKind = (int)owner.Kind, OwnerId = owner.Id,
+            CustodianKind = (int)custodian.Kind, CustodianId = custodian.Id,
+            LocationId = location, LabelId = label.Id, ProductId = label.ProductId,
+            Block = (int)BlockState.Free, QuantityKg = 100m,
+        });
+        if (allocationId is { } id)
+        {
+            context.Allocations.Add(new AllocationRow
+            {
+                Id = id, CompanyId = CompanyA,
+                OwnerKind = (int)owner.Kind, OwnerId = owner.Id,
+                CustodianKind = (int)custodian.Kind, CustodianId = custodian.Id,
+                LocationId = location, LabelId = label.Id, Block = (int)BlockState.Free,
+                AllocatedKg = allocatedKg!.Value, RemainingKg = allocatedKg.Value,
+                Status = (int)StockAllocationStatus.Active, Version = 1, CreatedAtUtc = At, UpdatedAtUtc = At,
+            });
+        }
+
+        await context.SaveChangesAsync();
+        var version = await context.Labels.Where(row => row.Id == label.Id).Select(row => row.Version).SingleAsync();
+        return new(label.Id, label.ProductId, version, allocationId);
     }
 
     private static async Task InsertLegacyAllocationAsync(Run run, Guid allocationId, Guid labelId) =>
@@ -957,6 +1041,12 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     private sealed record ShipmentState(Guid AllocationId, Guid LabelId, long LabelVersion);
 
     private sealed record PhysicalSource(Guid LabelId, Guid ProductId, long LabelVersion);
+
+    private sealed record OtherPartySource(Guid LabelId, Guid ProductId, long LabelVersion, Guid? AllocationId)
+    {
+        public static implicit operator PhysicalSource(OtherPartySource source) =>
+            new(source.LabelId, source.ProductId, source.LabelVersion);
+    }
 
     private sealed record ShipmentEffectSnapshot(
         decimal OwnAllocationRemainingKg,

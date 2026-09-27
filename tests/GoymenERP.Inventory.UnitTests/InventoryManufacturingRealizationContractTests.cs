@@ -41,6 +41,17 @@ public sealed class InventoryManufacturingRealizationContractTests
     }
 
     [Fact]
+    public void Parent_position_snapshot_keeps_owner_custodian_and_location_as_separate_facts()
+    {
+        var snapshot = new InventoryManufacturingPositionSnapshotV1(
+            StockPartyKind.Counterparty, Id(20), StockPartyKind.Company, Company, Id(21));
+
+        Assert.Equal((StockPartyKind.Counterparty, Id(20), StockPartyKind.Company, Company, Id(21)),
+            (snapshot.OwnerKind, snapshot.OwnerId, snapshot.CustodianKind, snapshot.CustodianId,
+                snapshot.LocationId));
+    }
+
+    [Fact]
     public void Input_return_preserves_exact_post_stage_order_and_parent_label_versions()
     {
         var quantity = InventoryManufacturingRealizationContractV1.Validate(Return(), Metadata(), Company);

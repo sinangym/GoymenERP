@@ -207,14 +207,29 @@ public sealed class NormalJournalDraftServiceV1(
                         eligible.Code, eligible.Field, eligible.ExpectedVersion, eligible.CurrentVersion);
                 }
 
-                var record = await drafts.ApproveAndPostNormalDraftAsync(
-                    draftId,
-                    expectedVersion,
-                    periodId,
-                    actor,
-                    token => FenceAsync(permissions.ApprovePermission, actor, token),
-                    metadata,
-                    cancellationToken);
+                NormalJournalDraftRecordV1 record;
+                try
+                {
+                    record = await drafts.ApproveAndPostNormalDraftAsync(
+                        draftId,
+                        expectedVersion,
+                        periodId,
+                        actor,
+                        token => FenceAsync(permissions.ApprovePermission, actor, token),
+                        metadata,
+                        cancellationToken);
+                }
+                catch (AccountingStoreException exception) when (exception.Code == AccountingStoreCodes.JournalIdTaken)
+                {
+                    // The approval posts exactly one journal: the draft's own, whose id IS the draft id
+                    // (NormalJournalDraftV1.Id is its request's JournalId). "Taken" therefore means that journal already
+                    // exists, e.g. a racing approval committed it after this attempt read the ledger. That is the same
+                    // refusal the store reports as a posting conflict when it meets the delivery or the original first,
+                    // so it is answered as one (replay of this key's winner, else the route's declared 409).
+                    throw new AccountingStoreException(NormalJournalDraftStoreCodesV1.PostingConflict,
+                        exception.Message, exception);
+                }
+
                 return new AccountingApiResult<NormalJournalDraftViewV1>(AccountingApiStatus.Ok, View(record), false, null);
             },
             stored => View((NormalJournalDraftRecordV1)stored),
@@ -334,6 +349,18 @@ public sealed class NormalJournalDraftServiceV1(
         catch (AccountingStoreException exception) when (exception.Code == AccountingStoreCodes.ConcurrentChange)
         {
             return await commands.FindCommandAsync(commandName, keyHash, cancellationToken) is { } winner
+                ? Answer<T>(winner, actorId, requestHash)
+                : new AccountingApiResult<T>(AccountingApiStatus.Conflict, null, false, exception.Code);
+        }
+        catch (AccountingStoreException exception) when (
+            exception.Code == NormalJournalDraftStoreCodesV1.PostingConflict
+            && string.Equals(commandName, NormalJournalCommandNamesV1.ApproveDraft, StringComparison.Ordinal))
+        {
+            // An approval that read the draft pending while a racing approval of it committed is refused by the store
+            // (nothing of it is saved). When that winner answered under THIS key with the same actor and request, its
+            // recorded answer is this key's replay (ADR-011), exactly as for a lost save; otherwise it stays 409.
+            return await commands.FindCommandAsync(commandName, keyHash, cancellationToken) is { } winner
+                && Binds(winner, actorId, requestHash)
                 ? Answer<T>(winner, actorId, requestHash)
                 : new AccountingApiResult<T>(AccountingApiStatus.Conflict, null, false, exception.Code);
         }
@@ -472,11 +499,15 @@ public sealed class NormalJournalDraftServiceV1(
             line.Account!.Value.AccountId,
             Text(line.Amount!.Value)))]);
 
+    /// <summary>A recorded command answers this attempt only for the same actor and the same canonical request.</summary>
+    private static bool Binds(AccountingCommandRecord prior, string actorId, string requestHash) =>
+        string.Equals(prior.ActorId, actorId, StringComparison.Ordinal)
+        && string.Equals(prior.RequestHash, requestHash, StringComparison.Ordinal);
+
     private static AccountingApiResult<T> Answer<T>(AccountingCommandRecord prior, string actorId, string requestHash)
         where T : class
     {
-        if (!string.Equals(prior.ActorId, actorId, StringComparison.Ordinal)
-            || !string.Equals(prior.RequestHash, requestHash, StringComparison.Ordinal))
+        if (!Binds(prior, actorId, requestHash))
         {
             return new AccountingApiResult<T>(AccountingApiStatus.Conflict, null, false, AccountingApiCodes.IdempotencyConflict);
         }

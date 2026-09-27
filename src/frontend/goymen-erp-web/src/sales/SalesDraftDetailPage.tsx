@@ -8,9 +8,10 @@
  *  - the approval facts (who submitted / decided, when, the reason) are shown as stored,
  *    "not yet" when null — never derived, never defaulted;
  *  - a null is shown as unknown, never as zero, cash, today or "none";
- *  - "unplanned" is the quantity not yet placed on a dated slice; nothing has been
- *    delivered, reserved or allocated on a draft — the linked effects line says so honestly
- *    (D4: allocation 0 / loading 0, no consumer in this slice).
+ *  - "unplanned" is the quantity not yet placed on a dated slice;
+ *  - the linked effects are read from their owners, never assumed (`SalesDraftLinkedEffects`): the
+ *    active physical allocations per line from Inventory's server truth when the shell publishes that
+ *    capability, and the loading effect named as not yet readable from Sales — never a default 0.
  *
  * Commands: "Onaya gönder" follows the create capability (whoever may create may submit);
  * "Onayla" / "Reddet" follow the `sales.orders.approve` control the shell publishes only to an
@@ -76,6 +77,7 @@ import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { SalesDraftCommercialRevisionForm } from './SalesDraftCommercialRevisionForm'
 import { SalesDraftRevisionHistory } from './SalesDraftRevisionHistory'
 import { SalesDraftAllocationPanel } from './SalesDraftAllocationPanel'
+import { SalesDraftLinkedEffects, SalesDraftLinkedEffectsUnbound } from './SalesDraftLinkedEffects'
 import { INVENTORY_PHYSICAL_ALLOCATION_WRITE_CAPABILITY } from '../inventory/capabilities'
 import styles from './SalesPages.module.css'
 
@@ -135,6 +137,19 @@ export function SalesDraftDetailPage() {
           />
         ) : null
       }
+      linkedEffects={
+        namespace !== null && companyId !== null && outcome.data.draft.companyId === companyId ? (
+          <SalesDraftLinkedEffects
+            key={`effects:${namespace}:${shell.routeEntryGeneration}:${outcome.data.draft.id}`}
+            allocationReadable={hasCapability(shell, INVENTORY_PHYSICAL_ALLOCATION_WRITE_CAPABILITY)}
+            companyId={companyId}
+            namespace={namespace}
+            routeEntryGeneration={shell.routeEntryGeneration}
+            salesOrderId={outcome.data.draft.id}
+            lines={outcome.data.lines}
+          />
+        ) : null
+      }
       allocations={
         namespace !== null && companyId !== null ? (
           <SalesDraftAllocationPanel
@@ -182,6 +197,7 @@ export function DraftView({
   commercialActions = null,
   revisionHistory = null,
   allocations = null,
+  linkedEffects = null,
 }: {
   readonly detail: DraftDetail
   readonly backLink: React.ReactNode
@@ -191,6 +207,8 @@ export function DraftView({
   readonly commercialActions?: React.ReactNode
   readonly revisionHistory?: React.ReactNode
   readonly allocations?: React.ReactNode
+  /** The owners' linked effects; without a bound company nothing is read and no number is shown. */
+  readonly linkedEffects?: React.ReactNode
 }) {
   const { draft, approval } = detail
   const withdrawn = draft.approvalState === APPROVAL_STATE.withdrawn
@@ -282,9 +300,7 @@ export function DraftView({
             </div>
           ) : null}
         </dl>
-        <p className={styles.muted} data-testid="sales-approval-linked-effects">
-          {T.approval.linkedEffects}
-        </p>
+        {linkedEffects ?? <SalesDraftLinkedEffectsUnbound />}
         {draft.approvalState === APPROVAL_STATE.approved ? <p className={styles.muted}>{T.approval.approvedNote}</p> : null}
         {draft.approvalState === APPROVAL_STATE.rejected ? <p className={styles.muted}>{T.approval.rejectedNote}</p> : null}
         {withdrawn ? <p className={styles.muted}>{T.approval.withdrawnNote}</p> : null}

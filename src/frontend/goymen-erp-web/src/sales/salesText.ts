@@ -219,8 +219,25 @@ export const ORDER_DETAIL_TEXT = {
     rejectionReason: 'Ret nedeni',
     notYet: 'Henüz yok',
     noReason: 'Neden belirtilmedi',
-    // D4 (DEC-SAL-005): the linked effects are shown honestly — no consumer exists in this slice.
-    linkedEffects: 'Bağlı etki: tahsis 0 / yükleme talimatı 0 (bu dilimde tüketici yok).',
+    // DEC-SAL-001/005, Business 5737989917 item 4: the linked effects are read from their owners, never assumed.
+    // Allocation is Inventory's server truth; a count is shown only after a successful read, never a default 0.
+    linkedEffects: {
+      heading: 'Bağlı etkiler',
+      allocationTitle: 'Fiziksel tahsis (Stok)',
+      allocationNoAccess: 'Tahsis etkisi bu yetkiyle okunamıyor; stok tahsis yetkisi gerekir. Sayı gösterilmedi.',
+      noLines: 'Taslakta satır yok; bağlı tahsis okunacak satır bulunmuyor.',
+      lineLabel: (lineNo: number) => `Satır ${lineNo}`,
+      loading: 'okunuyor…',
+      active: (count: number) => `aktif tahsis ${count}`,
+      activeAtLeast: (count: number) =>
+        `en az ${count} aktif tahsis (sunucu yalnız ilk 100 kaydı döndürdü; tam sayı okunamadı)`,
+      forbidden: 'tahsis okuma yetkisi yok; sayı gösterilmedi',
+      unavailable: 'tahsis şu anda okunamıyor; sayı gösterilmedi',
+      malformed: 'tahsis yanıtı doğrulanamadı; sayı gösterilmedi',
+      retry: 'Tekrar oku',
+      loadingTitle: 'Yükleme talimatı (Lojistik)',
+      loadingNotReadable: 'Sales ekranından henüz okunamıyor; sipariş bazlı yükleme okuması yok. Sayı gösterilmedi.',
+    },
     approvedNote: 'Onaylı taslağın satırları değişmez; değişiklik yeni bir revizyonla gelir (SALES-A2).',
     rejectedNote: 'Reddedilen taslak aynı revizyonla yeniden onaya gönderilebilir; düzeltme SALES-A2 ile gelir.',
     submit: 'Onaya gönder',

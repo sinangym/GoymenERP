@@ -7,6 +7,7 @@ using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Counterparty.Application.Contracts;
 using GoymenERP.Modules.Counterparty.Domain.Accounts;
+using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
 using Microsoft.AspNetCore.Mvc;
 
@@ -215,6 +216,64 @@ public static class PurchasingEndpoints
             .ProducesErpUnprocessableEntity("validation_failed")
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
+
+        group.MapPost("/{id:guid}/lines/{lineId:guid}/goods-receipts", (Guid id, Guid lineId, HttpContext httpContext,
+                [FromServices] IPurchaseGoodsReceiptServiceV1 service, ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            CreateAsync(httpContext, correlation, PurchaseGoodsReceiptJsonV1.Read,
+                (body, metadata) => service.RecordGoodsReceiptAsync(id, lineId, body, metadata, cancellationToken),
+                response => $"{OrdersPath}/{response.Receipt.PurchaseOrderId:D}/goods-receipts", cancellationToken))
+            .WithName("RecordPurchaseGoodsReceiptV1")
+            .WithIdempotencyContract(PurchasingApiV1.CreatedStatus, StatusCodes.Status409Conflict)
+            .Accepts<RecordPurchaseGoodsReceiptV1>("application/json")
+            .Produces<PurchaseGoodsReceiptResponseV1>(PurchasingApiV1.CreatedStatus)
+            .ProducesErpBadRequest("validation_failed", PurchasingProblemCodesV1.CommandMetadataInvalid,
+                InventoryGoodsReceiptCodesV1.InvalidRequest, InventoryGoodsReceiptCodesV1.InvalidVersion,
+                InventoryGoodsReceiptCodesV1.InvalidQuantity)
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(PurchaseAcceptanceParticipantCodes.OrderVersionConflict,
+                PurchaseAcceptanceParticipantCodes.ProductVersionConflict,
+                PurchaseAcceptanceParticipantCodes.OrderStateConflict,
+                PurchaseAcceptanceParticipantCodes.QuantityExceedsRemaining,
+                PurchaseAcceptanceParticipantCodes.IdempotencyConflict,
+                PurchaseAcceptanceParticipantCodes.ConcurrentChange,
+                InventoryGoodsReceiptCodesV1.LabelAlreadyRegistered,
+                InventoryGoodsReceiptCodesV1.LotOrLabelConflict,
+                InventoryGoodsReceiptCodesV1.IdempotencyConflict,
+                InventoryGoodsReceiptCodesV1.ConcurrentChange)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
+        group.MapGet("/{id:guid}/lines/{lineId:guid}/goods-receipt-options", async (Guid id, Guid lineId,
+            HttpContext httpContext, [FromServices] IPurchaseGoodsReceiptServiceV1 service,
+            ICorrelationContext correlation, CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            try { return Results.Json(await service.GetGoodsReceiptOptionsAsync(id, lineId, cancellationToken), PurchasingJson.Options); }
+            catch (PurchasingServiceException exception) { return Problem(httpContext, exception, correlation); }
+        })
+            .WithName("GetPurchaseGoodsReceiptOptionsV1")
+            .Produces<PurchaseGoodsReceiptOptionsV1>()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
+        group.MapGet("/{id:guid}/goods-receipts", async (Guid id, [FromQuery] int? limit, HttpContext httpContext,
+            [FromServices] IPurchaseGoodsReceiptServiceV1 service, ICorrelationContext correlation,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            try { return Results.Json(await service.GetGoodsReceiptsAsync(id, limit ?? 100, cancellationToken), PurchasingJson.Options); }
+            catch (PurchasingServiceException exception) { return Problem(httpContext, exception, correlation); }
+        })
+            .WithName("GetPurchaseGoodsReceiptsV1")
+            .Produces<PurchaseGoodsReceiptPageV1>()
+            .ProducesErpBadRequest("validation_failed")
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
     }
 
     private static bool IsListQueryValid(HttpContext httpContext, int? pageSize, string? cursor, string? status) =>
@@ -311,6 +370,7 @@ public static class PurchasingEndpoints
     {
         PurchaseRequestResponse request => request.IsReplay,
         PurchaseOrderResponse order => order.IsReplay,
+        PurchaseGoodsReceiptResponseV1 receipt => receipt.IsReplay,
         _ => false,
     };
 
@@ -318,6 +378,7 @@ public static class PurchasingEndpoints
     {
         PurchaseRequestResponse request => request.OriginalCorrelationId,
         PurchaseOrderResponse order => order.OriginalCorrelationId,
+        PurchaseGoodsReceiptResponseV1 receipt => receipt.OriginalCorrelationId,
         _ => throw new InvalidOperationException("Replay without its original correlation."),
     };
 

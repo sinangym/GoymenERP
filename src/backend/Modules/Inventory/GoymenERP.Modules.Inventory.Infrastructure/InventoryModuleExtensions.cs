@@ -52,6 +52,7 @@ public static class InventoryModuleExtensions
         services.AddScoped<IInventoryOpeningStore>(serviceProvider => serviceProvider.GetRequiredService<InventoryStore>());
         services.AddScoped<IInventoryPhysicalAllocationWriterV1>(serviceProvider =>
             serviceProvider.GetRequiredService<InventoryStore>());
+        services.AddScoped<IInventoryGoodsReceiptSourceV1, InventoryGoodsReceiptSourceService>();
         services.TryAddScoped<IInventoryLabelGenealogyReaderV1>(serviceProvider =>
             serviceProvider.GetRequiredService<InventoryStore>());
         // INV-OPEN-1 part 2: the opening-count command; its location and product ports are the host's adapters.

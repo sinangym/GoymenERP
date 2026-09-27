@@ -9,6 +9,7 @@
  *   GET   /api/v1/products/{id}         → ProductCardView (404 not_found)
  *   POST  /api/v1/products              → 201 ProductMutationResponse
  *   PATCH /api/v1/products/{id}/draft   → 200 ProductMutationResponse
+ *   POST  /api/v1/products/{id}/activation → 200 ProductMutationResponse
  *   GET   /api/v1/products/{id}/history → ProductHistoryView (module contract; host endpoint requested)
  *
  * The transport carries no business logic and invents no field:
@@ -25,11 +26,11 @@
  *    company or session change into a new context;
  *  - ONE `Idempotency-Key` per logical attempt, supplied by the caller, meeting the
  *    source rule (1..128 printable ASCII, no whitespace or comma);
- *  - success is EXACTLY 201 for create and EXACTLY 200 for edit. Any other status
+ *  - success is EXACTLY 201 for create and EXACTLY 200 for edit/activation. Any other status
  *    is reported as a definite refusal or an unknown outcome, never as success.
  *
- * These routes are PINNED, not LIVE: the module is not mapped into the host and no
- * Product service implementation exists.
+ * The host publishes these routes from the Product module; the client still treats
+ * the generated OpenAPI and the module contract as the only source of wire shape.
  */
 
 import {
@@ -357,6 +358,11 @@ export interface EditProductDraftPayload {
   readonly reason: string
 }
 
+/** `ActivateProductRequest{ExpectedVersion}` — no lifecycle or completeness claim is sent. */
+export interface ActivateProductPayload {
+  readonly expectedVersion: string
+}
+
 export const REASON_MAX = 1000
 
 /**
@@ -505,6 +511,35 @@ export async function editProductDraft(
    * a state this screen cannot have caused.
    */
   const mutation = decodeProductMutation(result.body, productId, 'Draft')
+  if (mutation === null) return { type: 'malformed' }
+  return { type: 'succeeded', data: mutation }
+}
+
+export async function activateProduct(
+  productId: string,
+  payload: ActivateProductPayload,
+  context: CommandContext,
+  signal?: AbortSignal,
+): Promise<CommandOutcome<ProductMutationResult>> {
+  const result = await sendCommand(
+    `/products/${encodeURIComponent(productId)}/activation`,
+    'POST',
+    payload,
+    context,
+    signal,
+  )
+  if ('failure' in result) return commandFailure(result.failure)
+
+  if (result.status !== 200) {
+    return {
+      type: 'http',
+      status: result.status,
+      code: productProblemCodeOf(result.body),
+      body: result.body,
+    }
+  }
+
+  const mutation = decodeProductMutation(result.body, productId, 'Active')
   if (mutation === null) return { type: 'malformed' }
   return { type: 'succeeded', data: mutation }
 }

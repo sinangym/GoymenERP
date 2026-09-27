@@ -33,20 +33,18 @@ public sealed class ManufacturingInventoryOutputAdmissionTests
     }
 
     [Fact]
-    public async Task Counterparty_identity_is_fail_closed_before_owner_reads_until_its_reference_port_exists()
+    public async Task Counterparty_assertion_reaches_owner_backed_inventory_trace_validation()
     {
         var products = new Products(Eligible());
         var locations = new Locations(new OrganizationLocationStatusV1(Location, true, false));
         var admission = new ManufacturingInventoryOutputAdmission(products, locations);
+        var customer = Guid.NewGuid();
 
-        var error = await Assert.ThrowsAsync<ManufacturingInventoryRealizationPortException>(() =>
-            admission.ValidateAsync(Company,
-                Command(ownerKind: StockPartyKind.Counterparty, ownerId: Guid.NewGuid()), CancellationToken.None));
+        await admission.ValidateAsync(Company,
+            Command(ownerKind: StockPartyKind.Counterparty, ownerId: customer), CancellationToken.None);
 
-        Assert.Equal((ManufacturingApiStatus.Unavailable, InventoryManufacturingRealizationCodesV1.Unavailable),
-            (error.Status, error.Code));
-        Assert.Empty(products.Selections);
-        Assert.Empty(locations.Requests);
+        Assert.Single(products.Selections);
+        Assert.Equal((Company, Location), Assert.Single(locations.Requests));
     }
 
     [Theory]
