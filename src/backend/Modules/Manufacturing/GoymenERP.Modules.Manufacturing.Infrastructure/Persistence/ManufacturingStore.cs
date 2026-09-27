@@ -39,7 +39,8 @@ public sealed class ManufacturingStore(
     ICompanyContext companyContext,
     IAuditEventCollector auditEvents,
     TimeProvider timeProvider)
-    : IManufacturingPlanStore, IManufacturingPlanListStore, IManufacturingOrderStore, IManufacturingCommandLog
+    : IManufacturingPlanStore, IManufacturingPlanListStore, IManufacturingPlanRevisionStore, IManufacturingOrderStore,
+        IManufacturingCommandLog
 {
     private const string PlanEntityType = "Manufacturing.ProductionPlan";
     private const string OrderEntityType = "Manufacturing.ProductionOrder";
@@ -218,21 +219,61 @@ public sealed class ManufacturingStore(
             .Select(group => new { PlanId = group.Key, Count = group.Count(), PlannedKg = group.Sum(input => input.PlannedKg) })
             .ToListAsync(cancellationToken);
 
+        // MFG-PLAN-EDIT: a revised plan lists its CURRENT content — the revision its row's version counts — not the
+        // content it was created with. A revision committed after the row was read is not this page's; the next read
+        // shows it with its own version.
+        var revised = page.Where(row => RevisionCountOf(row) > 0).Select(row => row.Id).ToArray();
+        var revisionHeaders = revised.Length == 0
+            ? []
+            : await dbContext.PlanRevisions.AsNoTracking()
+                .Where(revision => revised.Contains(revision.PlanId))
+                .ToListAsync(cancellationToken);
+        // The same grouped sum as the creation inputs above (an empty id set reads nothing).
+        var revisionInputs = await dbContext.PlanRevisionInputs.AsNoTracking()
+            .Where(input => revised.Contains(input.PlanId))
+            .GroupBy(input => new { input.PlanId, input.RevisionNo })
+            .Select(group => new
+            {
+                group.Key.PlanId,
+                group.Key.RevisionNo,
+                Count = group.Count(),
+                PlannedKg = group.Sum(input => input.PlannedKg),
+            })
+            .ToListAsync(cancellationToken);
+
         var summaries = new List<ManufacturingPlanSummary>(page.Count);
         foreach (var row in page)
         {
-            var planned = inputs.SingleOrDefault(input => input.PlanId == row.Id);
-            if (planned is null)
+            var revisionNo = RevisionCountOf(row);
+            var (workCenterId, targetBasis, targetKg) = (row.WorkCenterId, row.TargetBasis, row.TargetKg);
+            int count;
+            decimal plannedKg;
+            if (revisionNo == 0)
             {
                 // A plan always has at least one planned input; without one the row is not summarised.
-                throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
-                    "Kayıtlı planın planlanan girdisi yok.");
+                var planned = inputs.SingleOrDefault(input => input.PlanId == row.Id)
+                    ?? throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                        "Kayıtlı planın planlanan girdisi yok.");
+                (count, plannedKg) = (planned.Count, planned.PlannedKg);
+            }
+            else
+            {
+                var header = revisionHeaders.SingleOrDefault(revision =>
+                        revision.PlanId == row.Id && revision.RevisionNo == revisionNo)
+                    ?? throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                        "Kayıtlı planın sürümünün saydığı revizyon yok.");
+                var planned = revisionInputs.SingleOrDefault(input =>
+                        input.PlanId == row.Id && input.RevisionNo == revisionNo)
+                    ?? throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                        "Kayıtlı plan revizyonunun planlanan girdisi yok.");
+                (workCenterId, targetBasis, targetKg) = (header.WorkCenterId, header.TargetBasis, header.TargetKg);
+                (count, plannedKg) = (planned.Count, planned.PlannedKg);
             }
 
-            summaries.Add(new ManufacturingPlanSummary(row.Id, row.CompanyId, row.WorkCenterId,
-                (ManufacturingProcess)row.Process, (PlanStatus)row.Status, row.Version, planned.Count,
-                new Kilograms(planned.PlannedKg), (TargetBasis?)row.TargetBasis,
-                row.TargetKg is { } targetKg ? new Kilograms(targetKg) : null, row.CreatedAtUtc, row.ApprovedByUserId,
+            summaries.Add(new ManufacturingPlanSummary(row.Id, row.CompanyId, workCenterId,
+                (ManufacturingProcess)row.Process, (PlanStatus)row.Status, row.Version, count,
+                new Kilograms(plannedKg), (TargetBasis?)targetBasis,
+                targetKg is { } target ? new Kilograms(target) : null, row.CreatedAtUtc, row.ApprovedByUserId,
                 row.ApprovedAtUtc));
         }
 
@@ -241,6 +282,130 @@ public sealed class ManufacturingStore(
             hasMore && last is not null
                 ? ListCursor.Encode(companyId, last.CreatedAtUtc, last.Id, ListCursor.PlanOrdering)
                 : null);
+    }
+
+    /// <summary>
+    /// MFG-PLAN-EDIT: one Draft revision in one save — the revision and its complete inputs (append-only), the plan
+    /// row's new version and update time, the audit event (<c>manufacturing.plan.revised.v1</c>, before and after, the
+    /// user's reason) and the command record — or nothing. The domain decides on the plan rebuilt from storage (the
+    /// version fence, only a Draft, no slitting spec, the process fixed, the input rules, a real change). Fail-closed
+    /// beyond the domain: a plan that has opened an order has a downstream effect and is refused as not a draft, even
+    /// against a stored record that says Draft. Two writers that read the same version cannot both commit: the plan
+    /// row's concurrency token and the revision key refuse the loser (<see cref="ManufacturingStoreCodes.ConcurrentChange"/>).
+    /// </summary>
+    public async Task<ProductionPlan> RevisePlanAsync(Guid planId, long expectedVersion, Guid workCenterId,
+        ManufacturingProcess workCenterProcess, IReadOnlyList<PlannedInput> inputs, ProductionTarget? target,
+        string reason, ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default)
+    {
+        RequireMetadata(metadata);
+        ArgumentNullException.ThrowIfNull(inputs);
+        var companyId = RequireResolvedCompany();
+        var trimmedReason = reason?.Trim();
+        if (string.IsNullOrEmpty(trimmedReason))
+        {
+            throw new ArgumentException("Plan düzenlemesi bir gerekçe ister.", nameof(reason));
+        }
+
+        if (trimmedReason.Length > ManufacturingStoreCodes.PlanRevisionReasonMaximumLength)
+        {
+            throw Refused(ManufacturingStoreCodes.ValueDoesNotFit, "Düzenleme gerekçesi kayıt alanına sığmıyor.");
+        }
+
+        if (inputs.Any(input => input?.ExpectedLabelVersion is null))
+        {
+            throw new ArgumentException("Düzenlenen planın her ana rulosu doğrulanmış etiket sürümünü taşır.", nameof(inputs));
+        }
+
+        RequireFits(inputs.Select(input => input.PlannedMass).Concat(target is { } declared ? [declared.Mass] : []));
+
+        var row = await dbContext.Plans.SingleOrDefaultAsync(candidate => candidate.Id == planId, cancellationToken)
+            ?? throw Refused(ManufacturingStoreCodes.PlanNotFound, "Bu şirketin böyle bir planı yok.");
+        var plan = await RestorePlanAsync(row, cancellationToken);
+        var before = PlanAudit(plan);
+        var versionBefore = plan.Version;
+
+        // The domain decides: the version fence first, then "only a draft", the spec, the process, the inputs.
+        plan.Revise(expectedVersion, workCenterId, workCenterProcess, inputs, target);
+
+        if (await dbContext.Orders.AsNoTracking().AnyAsync(order => order.PlanId == planId, cancellationToken))
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanNotDraft,
+                "Emir açmış plan düzenlenmez; aşağı akış etkisi vardır.");
+        }
+
+        var now = timeProvider.GetUtcNow();
+        var revisionNo = plan.RevisionCount;
+        dbContext.PlanRevisions.Add(new PlanRevisionRow
+        {
+            CompanyId = companyId,
+            PlanId = plan.Id,
+            RevisionNo = revisionNo,
+            WorkCenterId = plan.WorkCenterId,
+            TargetBasis = plan.Target is null ? null : (int)plan.Target.Basis,
+            TargetKg = plan.Target?.Mass.Value,
+            Reason = trimmedReason,
+            PlanVersion = plan.Version,
+            RevisedBy = metadata.ActorId.Trim(),
+            RevisedAtUtc = now,
+            CorrelationId = metadata.CorrelationId.Trim(),
+        });
+        var sequence = 0;
+        foreach (var input in plan.Inputs)
+        {
+            dbContext.PlanRevisionInputs.Add(new PlanRevisionInputRow
+            {
+                CompanyId = companyId,
+                PlanId = plan.Id,
+                RevisionNo = revisionNo,
+                ParentRollId = input.ParentRollId,
+                Sequence = ++sequence,
+                PlannedKg = input.PlannedMass.Value,
+                ExpectedLabelVersion = input.ExpectedLabelVersion!.Value,
+            });
+        }
+
+        row.Version = plan.Version;
+        row.UpdatedAtUtc = now;
+        Audit(metadata, companyId, PlanEntityType, plan.Id, "manufacturing.plan.revised.v1", "Update",
+            versionBefore, plan.Version, before, PlanAudit(plan), trimmedReason);
+        Complete(metadata, companyId, plan);
+        await SaveAsync(cancellationToken);
+        return plan;
+    }
+
+    /// <summary>
+    /// MFG-PLAN-EDIT: the plan's history — revision 0 from the plan's own rows as created, then every revision its row's
+    /// version counts, each with its complete inputs. Null when the company has no such plan.
+    /// </summary>
+    public async Task<IReadOnlyList<ManufacturingPlanRevision>?> ListPlanRevisionsAsync(Guid planId,
+        CancellationToken cancellationToken = default)
+    {
+        RequireResolvedCompany();
+        var row = await dbContext.Plans.AsNoTracking().SingleOrDefaultAsync(candidate => candidate.Id == planId, cancellationToken);
+        if (row is null)
+        {
+            return null;
+        }
+
+        var created = await dbContext.PlanInputs.AsNoTracking()
+            .Where(input => input.PlanId == row.Id)
+            .OrderBy(input => input.Sequence)
+            .ToListAsync(cancellationToken);
+        var (headers, revisionInputs) = await ReadRevisionsAsync(row, cancellationToken);
+        var history = new List<ManufacturingPlanRevision>(headers.Count + 1)
+        {
+            new(0, 1, row.WorkCenterId,
+                [.. created.Select(input => new PlannedInput(input.ParentRollId, new Kilograms(input.PlannedKg),
+                    input.ExpectedLabelVersion))],
+                Target(row.TargetBasis, row.TargetKg), Reason: null, RevisedBy: null, row.CreatedAtUtc),
+        };
+        history.AddRange(headers.Select(header => new ManufacturingPlanRevision(header.RevisionNo, header.PlanVersion,
+            header.WorkCenterId,
+            [.. revisionInputs.Where(input => input.RevisionNo == header.RevisionNo)
+                .Select(input => new PlannedInput(input.ParentRollId, new Kilograms(input.PlannedKg),
+                    input.ExpectedLabelVersion))],
+            Target(header.TargetBasis, header.TargetKg), header.Reason, header.RevisedBy, header.RevisedAtUtc)));
+        return history;
     }
 
     public async Task<ManufacturingWriteOutcome> CreateOrderAsync(Guid orderId, Guid planId,
@@ -619,11 +784,56 @@ public sealed class ManufacturingStore(
             .Where(line => line.PlanId == row.Id)
             .OrderBy(line => line.Sequence)
             .ToListAsync(cancellationToken);
+        var (headers, revisionInputs) = await ReadRevisionsAsync(row, cancellationToken);
+        // MFG-PLAN-EDIT: the revisions are replayed through the domain's own rule, in their order, before the approval.
         return ProductionPlan.Restore(row.Id, row.CompanyId, row.WorkCenterId, (ManufacturingProcess)row.Process,
             inputs.Select(input => new PlannedInput(input.ParentRollId, new Kilograms(input.PlannedKg),
                 input.ExpectedLabelVersion)),
             Target(row.TargetBasis, row.TargetKg), row.ApprovedByUserId, row.ApprovedAtUtc, row.Version,
-            Spec(lines, row.WindingTargetKg));
+            Spec(lines, row.WindingTargetKg),
+            headers.Select(header => new PlanRevisionContent(header.WorkCenterId,
+                [.. revisionInputs.Where(input => input.RevisionNo == header.RevisionNo)
+                    .Select(input => new PlannedInput(input.ParentRollId, new Kilograms(input.PlannedKg),
+                        input.ExpectedLabelVersion))],
+                Target(header.TargetBasis, header.TargetKg))));
+    }
+
+    /// <summary>
+    /// MFG-PLAN-EDIT: how many revisions the plan row's version counts — one step for the creation, one per revision
+    /// and one for the approval. Read under RCSI, the row fixes the snapshot: a revision committed after it (with its
+    /// own version step) is not this read's, so a plan never pairs one version with another version's content.
+    /// </summary>
+    private static int RevisionCountOf(PlanRow row) =>
+        (int)Math.Max(0L, row.Version - 1 - (row.Status == (int)PlanStatus.Approved ? 1 : 0));
+
+    /// <summary>
+    /// The revisions the row's version counts, with their complete inputs, oldest first. Numbered 1..n without a gap,
+    /// or the stored plan is refused, never repaired.
+    /// </summary>
+    private async Task<(IReadOnlyList<PlanRevisionRow> Headers, IReadOnlyList<PlanRevisionInputRow> Inputs)> ReadRevisionsAsync(
+        PlanRow row, CancellationToken cancellationToken)
+    {
+        var count = RevisionCountOf(row);
+        if (count == 0)
+        {
+            return ([], []);
+        }
+
+        var headers = await dbContext.PlanRevisions.AsNoTracking()
+            .Where(revision => revision.PlanId == row.Id && revision.RevisionNo <= count)
+            .OrderBy(revision => revision.RevisionNo)
+            .ToListAsync(cancellationToken);
+        if (!headers.Select(header => header.RevisionNo).SequenceEqual(Enumerable.Range(1, count)))
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                "Kayıtlı planın sürümünün saydığı revizyonlar eksiksiz değil.");
+        }
+
+        var inputs = await dbContext.PlanRevisionInputs.AsNoTracking()
+            .Where(input => input.PlanId == row.Id && input.RevisionNo <= count)
+            .OrderBy(input => input.RevisionNo).ThenBy(input => input.Sequence)
+            .ToListAsync(cancellationToken);
+        return (headers, inputs);
     }
 
     private async Task<ProductionOrder> RestoreOrderAsync(OrderRow row, CancellationToken cancellationToken)
@@ -828,6 +1038,7 @@ public sealed class ManufacturingStore(
             {
                 2601 or 2627 => ManufacturingStoreCodes.ConcurrentChange,
                 547 when sql.Message.Contains("FK_Plans_WorkCenters_CompanyId_WorkCenterId", StringComparison.Ordinal)
+                    || sql.Message.Contains("FK_PlanRevisions_WorkCenters_CompanyId_WorkCenterId", StringComparison.Ordinal)
                     => ManufacturingStoreCodes.WorkCenterNotFound,
                 _ => null,
             };

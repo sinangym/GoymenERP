@@ -74,6 +74,16 @@ public static class ManufacturingEndpoints
         InventoryParentRollCodesV1.NoPhysicalPosition,
     ];
 
+    // MFG-PLAN-EDIT: the revision's own 422 set — the plan save's, plus the three revision rules. Declared on the
+    // revision endpoint only, so no existing endpoint's contract moves.
+    private static readonly string[] RevisePlanUnprocessableCodes =
+    [
+        .. SavePlanUnprocessableCodes,
+        ManufacturingRuleCodes.PlanProcessFixed,
+        ManufacturingRuleCodes.PlanSlittingSpecFixed,
+        ManufacturingRuleCodes.PlanRevisionNoChange,
+    ];
+
     public static IEndpointRouteBuilder MapManufacturingEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v1/manufacturing")
@@ -172,6 +182,47 @@ public static class ManufacturingEndpoints
             .Accepts<ApprovePlanRequestV1>("application/json")
             .Produces<PlanViewV1>(StatusCodes.Status200OK)
             .WithWriteProblems(notFound: true);
+
+        // MFG-PLAN-EDIT: the Draft edit of a plan, under the plan save's own grant (`manufacturing.plans.write`,
+        // company-wide): the new content as a whole with the save's checks, a reason, and the version the caller read.
+        // Only a Draft with no order is edited; an approved plan, a plan with a slitting spec or a move to another
+        // process is refused (422) and a stale version is 409. ADR-011: one attempt per key, replayed.
+        group.MapPost("/plans/{planId:guid}/revision", async (
+                Guid planId,
+                RevisePlanRequestV1 request,
+                ManufacturingCommandService service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            await WriteAsync(httpContext, key => service.RevisePlanAsync(planId, request, key,
+                ErpPermissions.ManufacturingPlansWrite, cancellationToken)))
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.ManufacturingPlansWrite)
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict)
+            .WithName("ReviseManufacturingPlanV1")
+            .Accepts<RevisePlanRequestV1>("application/json")
+            .Produces<PlanViewV1>(StatusCodes.Status200OK)
+            .WithRevisePlanProblems();
+
+        // MFG-PLAN-EDIT: the plan's history under the plan read's grant — revision 0 as created, then every recorded
+        // Draft edit with its reason, actor and time. Another company's plan is the same code-less 404 as an unknown id.
+        group.MapGet("/plans/{planId:guid}/revisions", async (
+                Guid planId,
+                ManufacturingCommandService service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response.Headers);
+                return ToHttpResult(httpContext, await service.ListPlanRevisionsAsync(planId, cancellationToken),
+                    location: null);
+            })
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.ManufacturingPlansRead)
+            .WithName("ListManufacturingPlanRevisionsV1")
+            .Produces<PlanRevisionListViewV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
 
         // K4.4: the plan read. Until this the surface could CREATE and APPROVE a plan and never answer for
         // it again, so a created plan could not be reopened — the missing piece was an answer, not a screen.
@@ -412,6 +463,17 @@ public static class ManufacturingEndpoints
             .ProducesErpCodeLessNotFound()
             .ProducesErpConflict(SavePlanConflictCodes)
             .ProducesErpUnprocessableEntity(SavePlanUnprocessableCodes)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
+    private static RouteHandlerBuilder WithRevisePlanProblems(this RouteHandlerBuilder builder) =>
+        builder
+            .ProducesErpBadRequest(BadRequestCodes)
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(SavePlanConflictCodes)
+            .ProducesErpUnprocessableEntity(RevisePlanUnprocessableCodes)
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 

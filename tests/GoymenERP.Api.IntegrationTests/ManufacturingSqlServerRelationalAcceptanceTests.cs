@@ -761,6 +761,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
     {
         public IManufacturingPlanStore Plans => store;
         public IManufacturingOrderStore Orders => store;
+        public IManufacturingPlanRevisionStore Revisions => store;
 
         public ValueTask DisposeAsync() => dbContext.DisposeAsync();
     }

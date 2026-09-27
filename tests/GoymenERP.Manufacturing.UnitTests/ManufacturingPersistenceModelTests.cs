@@ -19,8 +19,8 @@ public sealed class ManufacturingPersistenceModelTests
     private static readonly DateTimeOffset At = new(2026, 9, 18, 8, 0, 0, TimeSpan.Zero);
 
     private static readonly Type[] TenantRows =
-        [typeof(PlanRow), typeof(PlanInputRow), typeof(PlanSlitLineRow), typeof(OrderRow), typeof(OrderInputRow), typeof(FactRow),
-            typeof(CommandRow)];
+        [typeof(PlanRow), typeof(PlanInputRow), typeof(PlanSlitLineRow), typeof(PlanRevisionRow), typeof(PlanRevisionInputRow),
+            typeof(OrderRow), typeof(OrderInputRow), typeof(FactRow), typeof(CommandRow)];
 
     [Fact]
     public void Every_manufacturing_table_is_in_its_schema_and_filtered_by_the_active_company()
@@ -43,20 +43,24 @@ public sealed class ManufacturingPersistenceModelTests
     public void Work_centers_plans_and_orders_are_referenced_by_company_and_id()
     {
         using var context = Context();
-        foreach (var type in new[] { typeof(PlanRow), typeof(OrderRow) })
+        foreach (var type in new[] { typeof(PlanRow), typeof(OrderRow), typeof(PlanRevisionRow) })
         {
             var entity = context.Model.FindEntityType(type)!;
             Assert.Contains(entity.GetForeignKeys(), key => key.PrincipalEntityType.GetTableName() == "WorkCenters"
                 && key.PrincipalEntityType.GetSchema() == "organization"
                 && key.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "WorkCenterId"]));
-            Assert.True(entity.FindProperty("Version")!.IsConcurrencyToken);
-            Assert.True(entity.FindProperty("RowVersion")!.IsConcurrencyToken);
+            if (type != typeof(PlanRevisionRow))
+            {
+                Assert.True(entity.FindProperty("Version")!.IsConcurrencyToken);
+                Assert.True(entity.FindProperty("RowVersion")!.IsConcurrencyToken);
+            }
         }
 
         foreach (var (type, column, principal) in new[]
         {
             (typeof(PlanInputRow), "PlanId", typeof(PlanRow)),
             (typeof(PlanSlitLineRow), "PlanId", typeof(PlanRow)),
+            (typeof(PlanRevisionRow), "PlanId", typeof(PlanRow)),
             (typeof(OrderRow), "PlanId", typeof(PlanRow)),
             (typeof(OrderInputRow), "OrderId", typeof(OrderRow)),
             (typeof(FactRow), "OrderId", typeof(OrderRow)),
@@ -69,6 +73,15 @@ public sealed class ManufacturingPersistenceModelTests
         }
 
         // A fact id is one fact per company and kind: the key, not a check in code.
+        // MFG-PLAN-EDIT: a revision is one per (company, plan, number), and its inputs belong to exactly that revision.
+        var revisions = context.Model.FindEntityType(typeof(PlanRevisionRow))!;
+        Assert.Equal(["CompanyId", "PlanId", "RevisionNo"],
+            revisions.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        var revisionInputs = context.Model.FindEntityType(typeof(PlanRevisionInputRow))!;
+        Assert.Contains(revisionInputs.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(PlanRevisionRow)
+            && key.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "PlanId", "RevisionNo"]));
+        Assert.False(revisionInputs.FindProperty(nameof(PlanRevisionInputRow.ExpectedLabelVersion))!.IsNullable);
+
         var facts = context.Model.FindEntityType(typeof(FactRow))!;
         Assert.Equal(["CompanyId", "Kind", "Id"], facts.FindPrimaryKey()!.Properties.Select(property => property.Name));
     }
@@ -87,6 +100,8 @@ public sealed class ManufacturingPersistenceModelTests
             migration => migration.EndsWith("_ExpandManufacturingProcesses", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("_AddManufacturingInputLabelVersions", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AddManufacturingPlanRevisions", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -149,6 +164,12 @@ public sealed class ManufacturingPersistenceModelTests
     [InlineData("edit-order-company")]
     [InlineData("edit-command-result")]
     [InlineData("delete-command")]
+    [InlineData("edit-plan-target")]
+    [InlineData("edit-plan-revision-reason")]
+    [InlineData("edit-plan-revision-work-center")]
+    [InlineData("delete-plan-revision")]
+    [InlineData("edit-plan-revision-input")]
+    [InlineData("delete-plan-revision-input")]
     public void Stored_manufacturing_is_never_deleted_and_only_its_allowed_fields_change(string fault)
     {
         using var context = Context();
@@ -188,6 +209,25 @@ public sealed class ManufacturingPersistenceModelTests
             case "delete-command":
                 context.Commands.Remove(Attach(context, Command()));
                 break;
+            // MFG-PLAN-EDIT: a revision never rewrites the plan's creation content, and a recorded revision is final.
+            case "edit-plan-target":
+                Attach(context, Plan()).TargetKg = 900m;
+                break;
+            case "edit-plan-revision-reason":
+                Attach(context, Revision()).Reason = "sonradan değişmiş gerekçe";
+                break;
+            case "edit-plan-revision-work-center":
+                Attach(context, Revision()).WorkCenterId = Guid.NewGuid();
+                break;
+            case "delete-plan-revision":
+                context.PlanRevisions.Remove(Attach(context, Revision()));
+                break;
+            case "edit-plan-revision-input":
+                Attach(context, RevisionInput()).PlannedKg = 2m;
+                break;
+            case "delete-plan-revision-input":
+                context.PlanRevisionInputs.Remove(Attach(context, RevisionInput()));
+                break;
             default:
                 Attach(context, Order()).CompanyId = CompanyB;
                 break;
@@ -203,7 +243,7 @@ public sealed class ManufacturingPersistenceModelTests
         // what the store's limit (10^15, exclusive) and the theory below assume.
         using var context = Context();
         var model = context.GetService<IDesignTimeModel>().Model;
-        foreach (var table in new[] { "Facts", "PlanInputs", "OrderInputs", "Plans", "Orders" })
+        foreach (var table in new[] { "Facts", "PlanInputs", "OrderInputs", "Plans", "Orders", "PlanRevisions", "PlanRevisionInputs" })
         {
             var entity = model.GetEntityTypes().Single(type => type.GetTableName() == table);
             var mass = entity.GetProperties().Single(property => property.Name is "MassKg" or "PlannedKg" or "TargetKg");
@@ -268,6 +308,18 @@ public sealed class ManufacturingPersistenceModelTests
         CompanyId = CompanyA, CommandName = "manufacturing.input.issue.v1", IdempotencyKeyHash = new string('A', 64),
         ActorId = "synthetic-actor", RequestHash = new string('B', 64), ResultJson = "{\"status\":2}",
         OriginalCorrelationId = "synthetic-correlation", RecordedAtUtc = At,
+    };
+
+    private static PlanRevisionRow Revision() => new()
+    {
+        CompanyId = CompanyA, PlanId = Guid.NewGuid(), RevisionNo = 1, WorkCenterId = Guid.NewGuid(), Reason = "sentetik gerekçe",
+        PlanVersion = 2, RevisedBy = "synthetic-actor", RevisedAtUtc = At, CorrelationId = "synthetic-correlation",
+    };
+
+    private static PlanRevisionInputRow RevisionInput() => new()
+    {
+        CompanyId = CompanyA, PlanId = Guid.NewGuid(), RevisionNo = 1, ParentRollId = Guid.NewGuid(), Sequence = 1,
+        PlannedKg = 1m, ExpectedLabelVersion = 1,
     };
 
     private static PlanSlitLineRow SlitLine() => new()

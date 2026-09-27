@@ -2,7 +2,7 @@
 
 **Sahip:** ORGANİZASYON (Manufacturing).
 **Ekranlar:** MFG-UI #323 `/uretim/emir/:orderId`; MFG-ORD `/uretim/emirler` (emir listesi);
-MFG plan `/uretim/plan/yeni` ve `/uretim/plan/:planId`.
+MFG plan `/uretim/plan/yeni` ve `/uretim/plan/:planId` (MFG-PLAN-EDIT: taslak düzenleme ve plan geçmişi).
 **Kaynak:** koordinatör kararları D1–D5, Business #66 5734735965 (gerçek GET/HTTP; 503'lü form kullanıcı teslimi sayılmaz).
 
 ## Ne ölçer
@@ -23,6 +23,7 @@ MFG plan `/uretim/plan/yeni` ve `/uretim/plan/:planId`.
 | Kapanış (MFG-ORD) | Kapatma yetkisi olan aktör: 1000 çıkış / 600 bildirim iken kapanış **reddedilir** ve ekran kararın gerekçesini (`manufacturing_unexplained_difference`) gösterir; emir API'de hâlâ `Open`. Kalan 400 gerçek API ile bildirilince kapanış kabul edilir; POST okunan sürümü ve kendi anahtarını taşır; API'de `Closed` ve `closedAtUtc` dolu. Bu aktör olgu formunu görmez |
 | Plan → onay → emir | Emir listesindeki tek `Yeni üretim planı` eylemi gerçek iş merkezini ve gerçek Inventory ana rulosunu seçer. POST adayın güncel `expectedLabelVersion` değerini taşır. Başarı formu kapatılır; bağlantı aynı Draft planı fresh GET ile yeniden açar. Detaydaki yetkili onay okunan sürümü ve kendi anahtarını gönderir, fresh GET `Approved` sürüm 2'yi doğrular. Yetkili emir eylemi aynı plan için gerçek emri oluşturur; ekran mevcut emir detayına gider ve fresh GET aynı `Open` emri döndürür |
 | Plan replay | Sunucunun gerçek 201 cevabının tarayıcıya teslimi kesilir. Form donar; aynı gövde ve anahtar yeniden gönderilir, 201 replay döner ve tek Draft plan okunur |
+| Plan düzenleme (MFG-PLAN-EDIT) | Kaydedilen Draft plan yeniden açılır; geçmiş gerçek GET ile okunur (yalnız oluşturma). `Planı düzenle` formu mevcut içerikten başlar; kg ve hedef değişir, gerekçe girilir. POST okunan sürümü (1), rulonun kabul edilmiş etiket sürümünü, bütün içeriği ve kendi anahtarını taşır; 200 sonrası plan ve geçmiş fresh GET ile okunur (sürüm 2). Ekran kapatılıp plan listesinden yeniden açılır: liste 800 kg/sürüm 2 gösterir, `Plan geçmişi` Revizyon 1'i gerekçe ve değişiklikle gösterir. API: aynı anahtar ve gövde replay (200, `Idempotency-Replayed`), eski sürüm 409 `manufacturing_version_conflict`. Onay sürüm 2'yi adlandırır, emir 800 kg ve hedefi snapshot'lar; onaydan sonra düzenleme 422 `manufacturing_plan_not_draft`; erişilemeyen şirket bağlamı 403 |
 | Plan sınırları | Plan yazma izni olmayan aktör 403 alır. Eski etiket sürümü 409 `inventory_label_version_conflict` olur, aynı anahtarla aynı ret replay edilir ve plan GET'i 404 kalır. Aktörün erişemediği şirket bağlamı 403'tür |
 
 - **Kimlik:** her vaka aktörünü istek başına başlık yeniden yazımıyla bağlar (web imajı kendi Development kullanıcısını gömer). Sayfanın aldığı her API cevabının yeniden yazılmış bir isteğe ait olduğu doğrulanır.

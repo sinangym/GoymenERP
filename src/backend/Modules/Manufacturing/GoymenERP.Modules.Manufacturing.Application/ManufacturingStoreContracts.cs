@@ -96,6 +96,9 @@ public static class ManufacturingStoreCodes
     /// </summary>
     public const string ConcurrentChange = "manufacturing_concurrent_change";
 
+    /// <summary>MFG-PLAN-EDIT: the longest revision reason (trimmed) the stored column keeps; a longer one is refused.</summary>
+    public const int PlanRevisionReasonMaximumLength = 256;
+
     /// <summary>A text or mass does not fit its stored column; it is refused, never cut.</summary>
     public const string ValueDoesNotFit = "manufacturing_value_does_not_fit";
 
@@ -162,6 +165,40 @@ public interface IManufacturingPlanListStore
     /// <see cref="ArgumentOutOfRangeException"/>.
     /// </summary>
     Task<ManufacturingPlanPage> ListPlansAsync(int pageSize, string? cursor, PlanStatus? status,
+        CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// MFG-PLAN-EDIT: one entry of a plan's history. Revision 0 is the plan as created (no reason, no reviser: the
+/// plan row keeps its creation content unchanged); every later revision is one recorded Draft edit with the
+/// complete content it set, its reason, who recorded it and when, and the plan version it produced.
+/// </summary>
+public sealed record ManufacturingPlanRevision(
+    int Revision, long PlanVersion, Guid WorkCenterId, IReadOnlyList<PlannedInput> Inputs, ProductionTarget? Target,
+    string? Reason, string? RevisedBy, DateTimeOffset RecordedAtUtc);
+
+/// <summary>
+/// MFG-PLAN-EDIT: the Draft edit of a stored plan and its history. A port of its own, beside
+/// <see cref="IManufacturingPlanStore"/>, so the plan store's existing implementations are not widened (the
+/// plan-list pattern); the one store implements it.
+/// </summary>
+public interface IManufacturingPlanRevisionStore
+{
+    /// <summary>
+    /// Revises the stored plan at the version the caller read: the domain's rules (<c>ProductionPlan.Revise</c>)
+    /// decide on the plan rebuilt from storage, and a plan that already opened an order is refused as not a draft.
+    /// The revision (append-only), the plan's new version, its audit event and the command record commit in one
+    /// save or not at all.
+    /// </summary>
+    Task<ProductionPlan> RevisePlanAsync(Guid planId, long expectedVersion, Guid workCenterId,
+        ManufacturingProcess workCenterProcess, IReadOnlyList<PlannedInput> inputs, ProductionTarget? target,
+        string reason, ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The plan's history, oldest first (revision 0 = as created), or null when the company has no such plan
+    /// (another company's plan is null too). It reads and stores nothing else.
+    /// </summary>
+    Task<IReadOnlyList<ManufacturingPlanRevision>?> ListPlanRevisionsAsync(Guid planId,
         CancellationToken cancellationToken = default);
 }
 

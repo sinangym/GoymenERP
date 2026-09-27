@@ -68,12 +68,16 @@ public sealed class ProductionPlan
 
     public Guid CompanyId { get; }
 
-    public Guid WorkCenterId { get; }
+    /// <summary>
+    /// The work center the plan is for. A Draft revision (<see cref="Revise"/>) may move it to another work center
+    /// of the SAME process; the process itself never changes.
+    /// </summary>
+    public Guid WorkCenterId { get; private set; }
 
     public ManufacturingProcess Process { get; }
 
     /// <summary>The plan's declared target, or null when the plan declares none.</summary>
-    public ProductionTarget? Target { get; }
+    public ProductionTarget? Target { get; private set; }
 
     /// <summary>
     /// MFG-6: what the plan cuts, or null for a plan that claims no engine computation (the MFG-5 plan:
@@ -87,6 +91,12 @@ public sealed class ProductionPlan
     /// <summary>Optimistic concurrency, as on the production order (MFG-3): Approve names the version it read.</summary>
     public long Version { get; private set; } = 1;
 
+    /// <summary>
+    /// MFG-PLAN-EDIT: how many Draft revisions the plan carries. Revision 0 is the plan as created; each revision
+    /// replaces the work center, the planned inputs and the target as a whole and advances the version by one.
+    /// </summary>
+    public int RevisionCount { get; private set; }
+
     public Guid? ApprovedByUserId { get; private set; }
 
     public DateTimeOffset? ApprovedAtUtc { get; private set; }
@@ -98,6 +108,8 @@ public sealed class ProductionPlan
     /// replayed (version fence and draft rule), so a stored plan that breaks a rule is refused, not
     /// repaired. The stored version must be the one the plan's own changes add up to. The MFG-6
     /// approval gate is NOT re-run: a stored approval stands under the inputs it was approved with.
+    /// MFG-PLAN-EDIT: the stored Draft revisions are replayed, in their order, through <see cref="Revise"/> BEFORE the
+    /// approval (a revision exists only on a Draft); the version then counts one step per revision.
     /// </summary>
     public static ProductionPlan Restore(
         Guid id,
@@ -109,7 +121,8 @@ public sealed class ProductionPlan
         Guid? approvedByUserId,
         DateTimeOffset? approvedAtUtc,
         long version,
-        SlittingSpec? spec = null)
+        SlittingSpec? spec = null,
+        IEnumerable<PlanRevisionContent>? revisions = null)
     {
         if (process != ManufacturingProcess.Slitting && spec is not null)
         {
@@ -119,6 +132,21 @@ public sealed class ProductionPlan
         }
 
         var plan = new ProductionPlan(id, companyId, workCenterId, process, inputs, target, spec);
+        foreach (var revision in revisions ?? [])
+        {
+            ArgumentNullException.ThrowIfNull(revision);
+            try
+            {
+                plan.Revise(plan.Version, revision.WorkCenterId, process, revision.Inputs, revision.Target);
+            }
+            catch (ManufacturingRuleException exception)
+            {
+                // A stored revision the rules would refuse is refused, not repaired.
+                throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                    $"Kayıtlı plan revizyonu planın kurallarını karşılamıyor ({exception.Code}).");
+            }
+        }
+
         if (approvedByUserId is { } approvedBy && approvedAtUtc is { } approvedAt)
         {
             plan.ApplyApproval(plan.Version, approvedBy, approvedAt);
@@ -154,6 +182,98 @@ public sealed class ProductionPlan
         ApplyApproval(expectedVersion, approvedByUserId, approvedAtUtc);
     }
 
+    /// <summary>
+    /// MFG-PLAN-EDIT: the edit of a plan that has no downstream effect yet. Only a Draft is revised: an approved plan
+    /// has recorded a decision and may have opened orders (one approved plan may open more than one order,
+    /// #66 5728934213), and an order carries its own snapshot from which inputs are issued — so an approved plan is
+    /// never edited here; a post-approval revision with snapshot and difference (PR-09) is a separate, undecided flow.
+    /// A revision replaces the work center, the planned inputs and the target AS A WHOLE and advances the version by
+    /// one. In order, and nothing is applied on a refusal:
+    /// <list type="number">
+    /// <item>the version fence (<see cref="ManufacturingVersionConflictException"/>);</item>
+    /// <item>only a Draft (<see cref="ManufacturingRuleCodes.PlanNotDraft"/>);</item>
+    /// <item>a plan with a slitting spec is not revised (<see cref="ManufacturingRuleCodes.PlanSlittingSpecFixed"/>):
+    /// how its spec balances against the parent coil is open (AT-044, #66 NEEDS-BUSINESS 5741547443);</item>
+    /// <item>the process is fixed (<see cref="ManufacturingRuleCodes.PlanProcessFixed"/>): the new work center must run
+    /// the plan's own process — no plan changes its process while process chains are open;</item>
+    /// <item>the plan's own input rules (at least one roll, no roll twice);</item>
+    /// <item>a revision that changes nothing is refused (<see cref="ManufacturingRuleCodes.PlanRevisionNoChange"/>),
+    /// so the history holds only real changes.</item>
+    /// </list>
+    /// </summary>
+    public void Revise(long expectedVersion, Guid workCenterId, ManufacturingProcess workCenterProcess,
+        IEnumerable<PlannedInput> inputs, ProductionTarget? target)
+    {
+        RequireRevisable(expectedVersion);
+        var newWorkCenter = RequireId(workCenterId, nameof(workCenterId));
+        if (!Enum.IsDefined(workCenterProcess))
+        {
+            throw new ArgumentOutOfRangeException(nameof(workCenterProcess), workCenterProcess, "Tanımsız üretim süreci.");
+        }
+
+        if (workCenterProcess != Process)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanProcessFixed,
+                "Planın süreci değişmez; yeni iş merkezi planın kendi sürecini yürütmelidir.");
+        }
+
+        ArgumentNullException.ThrowIfNull(inputs);
+        var newInputs = inputs.ToList();
+        if (newInputs.Any(input => input is null))
+        {
+            throw new ArgumentException("Planlanan girdi boş olamaz.", nameof(inputs));
+        }
+
+        if (newInputs.Count == 0)
+        {
+            throw new ManufacturingRuleException(
+                ManufacturingRuleCodes.PlanWithoutInputs, "Plan en az bir ana rulo içermelidir.");
+        }
+
+        if (newInputs.Select(input => input.ParentRollId).Distinct().Count() != newInputs.Count)
+        {
+            throw new ManufacturingRuleException(
+                ManufacturingRuleCodes.DuplicateRollInPlan, "Aynı ana rulo planda iki kez yer alamaz.");
+        }
+
+        if (newWorkCenter == WorkCenterId && Equals(target, Target) && newInputs.SequenceEqual(_inputs))
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanRevisionNoChange,
+                "Düzenleme planda hiçbir şeyi değiştirmiyor.");
+        }
+
+        WorkCenterId = newWorkCenter;
+        Target = target;
+        _inputs.Clear();
+        _inputs.AddRange(newInputs);
+        RevisionCount++;
+        Version++;
+    }
+
+    /// <summary>
+    /// The revision's preconditions on the plan as it stands — the version fence, only a Draft, no slitting spec —
+    /// without a new content: a caller may ask before it reads anything else, and <see cref="Revise"/> asks again.
+    /// </summary>
+    public void RequireRevisable(long expectedVersion)
+    {
+        if (expectedVersion != Version)
+        {
+            throw new ManufacturingVersionConflictException(expectedVersion, Version);
+        }
+
+        if (Status != PlanStatus.Draft)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanNotDraft,
+                "Yalnız taslak plan düzenlenebilir; onaylı plan bir karar kaydetmiştir ve emir açmış olabilir.");
+        }
+
+        if (Spec is not null)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanSlittingSpecFixed,
+                "Dilme ayrıntısı taşıyan plan düzenlenmez; ana ruloyla dengesi iş kararı bekliyor (AT-044).");
+        }
+    }
+
     private void ApplyApproval(long expectedVersion, Guid approvedByUserId, DateTimeOffset approvedAtUtc)
     {
         RequireApprovable(expectedVersion);
@@ -179,3 +299,9 @@ public sealed class ProductionPlan
     private static Guid RequireId(Guid value, string parameterName) =>
         value == Guid.Empty ? throw new ArgumentException("Kimlik boş olamaz.", parameterName) : value;
 }
+
+/// <summary>
+/// MFG-PLAN-EDIT: one stored Draft revision's content — the work center, the planned inputs and the target that
+/// replaced the previous ones as a whole. <see cref="ProductionPlan.Restore"/> replays them in their order.
+/// </summary>
+public sealed record PlanRevisionContent(Guid WorkCenterId, IReadOnlyList<PlannedInput> Inputs, ProductionTarget? Target);

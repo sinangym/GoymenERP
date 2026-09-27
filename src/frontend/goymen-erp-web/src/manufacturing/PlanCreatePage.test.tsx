@@ -155,7 +155,9 @@ describe('plan create and reopen', () => {
     await user.click(reopen)
     expect(await screen.findByRole('heading', { name: 'Plan yeniden açıldı' })).toBeTruthy()
     expect(screen.getByText('900.5')).toBeTruthy()
-    expect(requestsFor(recorded, '/manufacturing/plans/', 'GET')).toHaveLength(1)
+    // MFG-PLAN-EDIT: the reopened detail also reads the plan history; the plan read itself is once.
+    expect(requestsFor(recorded, '/manufacturing/plans/', 'GET').filter((request) => !request.url.endsWith('/revisions')))
+      .toHaveLength(1)
   })
 
   it('retries an unknown write with exactly the same request and idempotency key', async () => {
