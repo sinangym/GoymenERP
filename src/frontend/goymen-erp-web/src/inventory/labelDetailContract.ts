@@ -85,7 +85,7 @@ export interface InventoryLabelMovementLine {
 
 export interface InventoryLabelMovement {
   readonly movementId: string
-  readonly kind: 'Receipt' | 'Issue' | 'Block' | 'Release' | 'Return'
+  readonly kind: 'Receipt' | 'Issue' | 'Block' | 'Release' | 'Return' | 'CountAdjustment'
   readonly occurredAtUtc: string
   readonly sourceKind: string
   readonly sourceId: string
@@ -237,7 +237,7 @@ function movement(value: unknown): InventoryLabelMovement | null {
   if (source === null || !exact(source, [
     'movementId', 'kind', 'occurredAtUtc', 'sourceKind', 'sourceId', 'sourceLineId', 'sourceGrain', 'lines',
   ]) || !guid(source.movementId) ||
-    !['Receipt', 'Issue', 'Block', 'Release', 'Return'].includes(source.kind as string) ||
+    !['Receipt', 'Issue', 'Block', 'Release', 'Return', 'CountAdjustment'].includes(source.kind as string) ||
     !instant(source.occurredAtUtc) || !text(source.sourceKind) || source.sourceKind !== source.sourceKind.trim() ||
     source.sourceKind.length > 64 || !guid(source.sourceId) ||
     (source.sourceLineId !== null && !guid(source.sourceLineId)) ||

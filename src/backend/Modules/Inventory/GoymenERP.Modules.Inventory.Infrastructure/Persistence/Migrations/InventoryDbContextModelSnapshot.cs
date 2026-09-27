@@ -1004,7 +1004,7 @@ partial class InventoryDbContextModelSnapshot : ModelSnapshot
 
                 t.HasCheckConstraint(
                     "CK_Movements_Kind",
-                    "[Kind] BETWEEN 1 AND 5");
+                    "[Kind] BETWEEN 1 AND 6");
 
                 t.HasCheckConstraint(
                     "CK_Movements_PayloadHash",
@@ -1182,6 +1182,144 @@ partial class InventoryDbContextModelSnapshot : ModelSnapshot
                     "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [SourceId] <> '00000000-0000-0000-0000-000000000000' AND LEN([SourceKind]) > 0");
             });
         });
+
+        modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.StockCountDecisionRow", b =>
+            {
+                b.Property<Guid>("CompanyId")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<Guid>("CountId")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<string>("CorrelationId")
+                    .IsRequired()
+                    .HasMaxLength(128)
+                    .HasColumnType("nvarchar(128)");
+
+                b.Property<DateTimeOffset>("DecidedAtUtc")
+                    .HasColumnType("datetimeoffset");
+
+                b.Property<string>("DecidedBy")
+                    .IsRequired()
+                    .HasMaxLength(128)
+                    .HasColumnType("nvarchar(128)");
+
+                b.Property<int>("Decision")
+                    .HasColumnType("int");
+
+                b.Property<Guid?>("MovementId")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<string>("PayloadHash")
+                    .IsRequired()
+                    .HasMaxLength(64)
+                    .IsUnicode(false)
+                    .HasColumnType("varchar(64)");
+
+                b.Property<string>("Reason")
+                    .IsRequired()
+                    .HasMaxLength(1000)
+                    .HasColumnType("nvarchar(1000)");
+
+                b.HasKey("CompanyId", "CountId");
+
+                b.HasIndex("CompanyId", "MovementId")
+                    .IsUnique()
+                    .HasFilter("[MovementId] IS NOT NULL");
+
+                b.ToTable("StockCountDecisions", "inventory", t =>
+                    {
+                        t.HasCheckConstraint("CK_StockCountDecisions_Decision", "([Decision] = 1 AND [MovementId] IS NOT NULL AND [MovementId] <> '00000000-0000-0000-0000-000000000000') OR ([Decision] = 2 AND [MovementId] IS NULL)");
+
+                        t.HasCheckConstraint("CK_StockCountDecisions_Text", "LEN(LTRIM(RTRIM([Reason]))) > 0 AND LEN([PayloadHash]) = 64 AND LEN([DecidedBy]) > 0 AND LEN([CorrelationId]) > 0");
+                    });
+            });
+
+        modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.StockCountRow", b =>
+            {
+                b.Property<Guid>("Id")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<int>("Block")
+                    .HasColumnType("int");
+
+                b.Property<decimal>("BookKg")
+                    .HasPrecision(18, 3)
+                    .HasColumnType("decimal(18,3)");
+
+                b.Property<Guid>("CompanyId")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<string>("CorrelationId")
+                    .IsRequired()
+                    .HasMaxLength(128)
+                    .HasColumnType("nvarchar(128)");
+
+                b.Property<DateTimeOffset>("CountedAtUtc")
+                    .HasColumnType("datetimeoffset");
+
+                b.Property<decimal>("CountedKg")
+                    .HasPrecision(18, 3)
+                    .HasColumnType("decimal(18,3)");
+
+                b.Property<Guid>("CustodianId")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<int>("CustodianKind")
+                    .HasColumnType("int");
+
+                b.Property<Guid>("LabelId")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<long>("LabelVersion")
+                    .HasColumnType("bigint");
+
+                b.Property<Guid>("LocationId")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<Guid>("OwnerId")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<int>("OwnerKind")
+                    .HasColumnType("int");
+
+                b.Property<string>("PayloadHash")
+                    .IsRequired()
+                    .HasMaxLength(64)
+                    .IsUnicode(false)
+                    .HasColumnType("varchar(64)");
+
+                b.Property<Guid>("ProductId")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<string>("Reason")
+                    .IsRequired()
+                    .HasMaxLength(1000)
+                    .HasColumnType("nvarchar(1000)");
+
+                b.Property<DateTimeOffset>("RecordedAtUtc")
+                    .HasColumnType("datetimeoffset");
+
+                b.Property<string>("RecordedBy")
+                    .IsRequired()
+                    .HasMaxLength(128)
+                    .HasColumnType("nvarchar(128)");
+
+                b.HasKey("Id");
+
+                b.HasIndex("CompanyId", "LocationId");
+
+                b.HasIndex("CompanyId", "LabelId", "RecordedAtUtc", "Id");
+
+                b.ToTable("StockCounts", "inventory", t =>
+                    {
+                        t.HasCheckConstraint("CK_StockCounts_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [OwnerId] <> '00000000-0000-0000-0000-000000000000' AND [CustodianId] <> '00000000-0000-0000-0000-000000000000' AND [ProductId] <> '00000000-0000-0000-0000-000000000000'");
+
+                        t.HasCheckConstraint("CK_StockCounts_State", "[OwnerKind] IN (1, 2) AND [CustodianKind] IN (1, 2) AND [Block] IN (1, 2) AND [LabelVersion] >= 1 AND [BookKg] > 0 AND [CountedKg] >= 0");
+
+                        t.HasCheckConstraint("CK_StockCounts_Text", "LEN(LTRIM(RTRIM([Reason]))) > 0 AND LEN([PayloadHash]) = 64 AND LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
+                    });
+            });
 
         modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.AllocationRow", b =>
             {
@@ -1371,6 +1509,44 @@ partial class InventoryDbContextModelSnapshot : ModelSnapshot
                 .OnDelete(DeleteBehavior.Restrict)
                 .IsRequired();
         });
+
+        modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.StockCountDecisionRow", b =>
+            {
+                b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.StockCountRow", null)
+                    .WithMany()
+                    .HasForeignKey("CompanyId", "CountId")
+                    .HasPrincipalKey("CompanyId", "Id")
+                    .OnDelete(DeleteBehavior.Restrict)
+                    .IsRequired();
+
+                b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.MovementRow", null)
+                    .WithMany()
+                    .HasForeignKey("CompanyId", "MovementId")
+                    .HasPrincipalKey("CompanyId", "Id")
+                    .OnDelete(DeleteBehavior.Restrict);
+            });
+
+        modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.StockCountRow", b =>
+            {
+                b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                    .WithMany()
+                    .HasForeignKey("CompanyId")
+                    .OnDelete(DeleteBehavior.Restrict)
+                    .IsRequired();
+
+                b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.LabelRow", null)
+                    .WithMany()
+                    .HasForeignKey("CompanyId", "LabelId")
+                    .HasPrincipalKey("CompanyId", "Id")
+                    .OnDelete(DeleteBehavior.Restrict)
+                    .IsRequired();
+
+                b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.OrganizationLocationReference", null)
+                    .WithMany()
+                    .HasForeignKey("CompanyId", "LocationId")
+                    .OnDelete(DeleteBehavior.Restrict)
+                    .IsRequired();
+            });
 #pragma warning restore 612, 618
     }
 }

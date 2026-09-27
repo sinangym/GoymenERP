@@ -86,6 +86,20 @@ public static class ErpPermissions
     public const string InventoryLabelTransformationRecord = "inventory.label-transformation.record";
 
     /// <summary>
+    /// AT-037 / DEC-STK-007 stock count (user decision 2026-09-27): <c>record</c> enters a counted quantity with a
+    /// mandatory reason on a label's single position; <c>approve</c> decides a pending difference. Until the
+    /// critical-difference threshold is decided (INV-R20-R21-01 Q2, #66/5840984992) every non-zero difference needs
+    /// an actor other than its counter (fail-closed maker≠checker). No seeded role or real user receives either name;
+    /// the only grants are two different disposable r14 browser test actors, and the real-user mapping stays with the
+    /// persona card. Company-wide only, as the label commands. Not Critical: no approved source adds grant-time dual
+    /// control for them.
+    /// </summary>
+    public const string InventoryStockCountRecord = "inventory.stock-count.record";
+
+    /// <inheritdoc cref="InventoryStockCountRecord"/>
+    public const string InventoryStockCountApprove = "inventory.stock-count.approve";
+
+    /// <summary>
     /// Finance bank-account master (FS0, #312): names are the Finance owner's technical mapping
     /// (Business #254 5654539215). Registering them makes them KNOWN, not granted: no role and no
     /// user receives them here, and who holds which is a human gate. All three are company-wide
@@ -438,6 +452,8 @@ public static class ErpPermissions
             InventoryOpeningStockRecord,
             InventoryPhysicalAllocationWrite,
             InventoryLabelTransformationRecord,
+            InventoryStockCountRecord,
+            InventoryStockCountApprove,
             LogisticsLoadingInstructionsCreate,
             LogisticsLoadingInstructionsRead,
             LogisticsLoadsRecord,
@@ -516,6 +532,8 @@ public static class ErpPermissions
             InventoryOpeningStockRecord,
             InventoryPhysicalAllocationWrite,
             InventoryLabelTransformationRecord,
+            InventoryStockCountRecord,
+            InventoryStockCountApprove,
             LogisticsLoadingInstructionsCreate,
             LogisticsLoadingInstructionsRead,
             LogisticsLoadsRecord,
