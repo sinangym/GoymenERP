@@ -1,18 +1,19 @@
-# Göymen AI Merkezi — Uygulama Sözleşmesi ve Master Rapor v1.1
+# Göymen AI Merkezi — Uygulama Sözleşmesi ve Master Rapor v1.2
 
 **Belge kimliği:** `GOYMEN_AI_MERKEZI_MASTER_RAPOR_V1`
 **İlk yayın:** 27 Eylül 2026 (v1.0)
-**Son revizyon:** 27 Eylül 2026 (v1.1 — karşı-ajan eleştirisi sonrası düzeltme turu; değişiklik günlüğü bölüm 15)
+**Son revizyon:** 28 Eylül 2026 (v1.2 — üçüncü bağımsız eleştiri sonrası düzeltme turu: kalıcı iş niyeti kimliği `OperationIntentId`, kanıt matrisi, API-birincil uzlaştırması; değişiklik günlüğü bölüm 15). v1.1: 27 Eylül 2026.
+**Eşlik eden belge:** `GOYMEN_AI_MERKEZI_KODLAMA_TASARIMI_V1.md` (28 Eylül 2026) — bu raporun **nasıl kodlanacağını** kod örnekleriyle anlatan analiz belgesi; bu rapor "ne/neden", o belge "nasıl"
 **Belge türü:** Göymen ERP üzerine kurulacak kurumsal AI yardımcı katmanının ("JARVIS" / Göymen AI Merkezi) amaç, iş analizi, mimari, kod yapısı, modül bazlı spesifikasyon, güvenlik, test, karar paketi ve uygulama planı sözleşmesi
-**Durum:** TASARIM HEDEFİ ve KARAR ADAYI — geliştirilmiş, kabul edilmiş veya canlı sistem beyanı değildir
+**Durum:** YALNIZ ANALİZ / RAPOR TASLAĞI — TASARIM HEDEFİ ve KARAR ADAYI; geliştirilmiş, kabul edilmiş veya canlı sistem beyanı değildir. Bu belge ERP'ye entegrasyon, Faz 0'ı başlatma, yeni geliştirme görevi açma veya yetki/veri aktarımı onayı **değildir**; repo kodu, `KARAR_SICILI.md`, `task_manifest.json`, izinler ve mevcut ERP kapanış çalışması bu belgeyle değişmez
 **Doğrulama tabanı:** `sinangym/GoymenErp` `main@00a879816a7a9bb9a800712e59dc9ae5f52f08b0` (27 Eylül 2026, PR #495)
-**Kaynaklar:** `AGENTS.md`; `docs/decisions/KARAR_SICILI.md`; `docs/decisions/ACIK_KARARLAR.md`; `docs/master/GOYMEN_ERP_MASTER_RAPOR_V3.md` (§6, §7, §12, §25, §27); `docs/features/ERP-000J_AI_GATEWAY_CONTRACT_v1.md`; `docs/features/ERP-000K_SHELL_CONTRACT_v1.md`; `docs/security/AI_VERI_GUVENLIK.md`, `AI_YETKI_SOZLESMESI.md`, `GOREV_AYRILIGI_ONAY.md`, `YETKI_MODELI.md`; `docs/domain/*`; `docs/backlog/task_manifest.json`, `DELIVERY_BACKLOG_v1.json`; `docs/governance/GOYMEN_ERP_HIZLI_TESLIM_v3.md`; `docs/ui/sources/finance/v4/03_AI_KULLANIM_MATRISI.md`; `src/backend/**`, `src/frontend/**`, `contracts/openapi/goymen-erp-v1.json` (salt-okunur kod envanteri); kullanıcının 27 Eylül 2026 tarihli üç metin eki (üç turlu JARVIS değerlendirmesi, bu değerlendirmenin eleştirisi ve v1.0 raporunun eleştirisi)
+**Kaynaklar:** `AGENTS.md`; `docs/decisions/KARAR_SICILI.md`; `docs/decisions/ACIK_KARARLAR.md`; `docs/master/GOYMEN_ERP_MASTER_RAPOR_V3.md` (§6, §7, §12, §25, §27); `docs/features/ERP-000J_AI_GATEWAY_CONTRACT_v1.md`; `docs/features/ERP-000K_SHELL_CONTRACT_v1.md`; `docs/security/AI_VERI_GUVENLIK.md`, `AI_YETKI_SOZLESMESI.md`, `GOREV_AYRILIGI_ONAY.md`, `YETKI_MODELI.md`; `docs/domain/*`; `docs/backlog/task_manifest.json`, `DELIVERY_BACKLOG_v1.json`; `docs/governance/GOYMEN_ERP_HIZLI_TESLIM_v3.md`; `docs/ui/sources/finance/v4/03_AI_KULLANIM_MATRISI.md`; `src/backend/**`, `src/frontend/**`, `contracts/openapi/goymen-erp-v1.json` (salt-okunur kod envanteri); kullanıcının 27 Eylül 2026 tarihli üç metin eki (üç turlu JARVIS değerlendirmesi, bu değerlendirmenin eleştirisi ve v1.0 raporunun eleştirisi); 28 Eylül 2026 tarihli üçüncü eleştiri metni (v1.1 ve ara cevabın değerlendirmesi); bu eleştirinin atıf yaptığı, repoda bulunmayan `GOYMEN_ERP_TUM_MODULLER_UYGULAMA_VE_KARAR_RAPORU_v2_1.docx` (05.09.2026; `AI-K01` "API birincil; GPU sunucusu şart değil") — içeriği eleştiri metninin aktarımıyla alınmıştır, belge bu raporun yazarınca okunmamıştır
 
 ---
 
 ## İçindekiler
 
-0. Okuma ve karar kuralları · 1. Yönetici özeti · 2. Amaç, hedef ve başarı ölçütleri · 3. Kavramsal model (bağlam zarfı, etki kuralları, sevkiyat örneği, bilgi sınıfları, eğitim modu) · 4. Mevcut durum: repo gerçeği · 5. Hedef mimari (proje yapısı, araç sözleşmesi, gateway servisleri, veri modeli, komut zarfı, iş akışı motoru, iş öğesi, bilgi katmanı, model router, ses/belge, frontend, güvenlik, gözlemlenebilirlik, eval) · 6. AI mühendisliği ayrıntıları · 7. Modül bazlı spesifikasyon (13 modül) · 8. İş analizi ve kullanıcı deneyimi · 9. Kapsam uzlaştırması · 10. Karar paketi (ADR-008, OPEN-020, NEEDS-SINAN) · 11. Uygulama planı (Faz 0–5, şerit ve K sınıfı) · 12. Test ve kabul · 13. Riskler · 14. Sözlük · 15. v1.1 değişiklik günlüğü · Ek A Araç kataloğu · Ek B Etki kuralları · Ek C Şema örnekleri · Ek D Golden set · Ek E Kaynaklar
+0. Okuma ve karar kuralları · 1. Yönetici özeti · 2. Amaç, hedef ve başarı ölçütleri · 3. Kavramsal model (bağlam zarfı, etki kuralları, sevkiyat örneği, bilgi sınıfları, eğitim modu) · 4. Mevcut durum: repo gerçeği · 5. Hedef mimari (proje yapısı, araç sözleşmesi, gateway servisleri, veri modeli, komut zarfı, iş akışı motoru, iş öğesi, bilgi katmanı, model router, ses/belge, frontend, güvenlik, gözlemlenebilirlik, eval) · 6. AI mühendisliği ayrıntıları · 7. Modül bazlı spesifikasyon (13 modül) · 8. İş analizi ve kullanıcı deneyimi · 9. Kapsam uzlaştırması · 10. Karar paketi (ADR-008, OPEN-020, NEEDS-SINAN) · 11. Uygulama planı (Faz 0–5, şerit ve K sınıfı) · 12. Test ve kabul · 13. Riskler · 14. Sözlük · 15. Değişiklik günlüğü (v1.1 ve v1.2) ve kapanış kontrol tablosu · Ek A Araç kataloğu · Ek B Etki kuralları · Ek C Şema örnekleri · Ek D Golden set · Ek E Kaynaklar
 
 ---
 
@@ -31,6 +32,9 @@ Belge şunları **yapmaz**:
 - Personel sayısı taahhüdü vermez; verimlilik hedefini dört ölçüyle tanımlar (§2.2) ve ölçümü uygulama planının parçası yapar.
 - Mevcut ERP'ye yeni durdurma koşulu eklemez: hiçbir etki kuralı işlem durdurmaz (yalnız Bilgi / Uyarı / Görev üretir); blok yalnız sahip modülün kilitli kesin kuralından gelir.
 - Model kaynaklı hiçbir yazmayı onaysız çalıştırmaz (`DEC-AI-003`); "otomasyon" bu belgede yalnız deterministik, politika onaylı, modelsiz takip davranışlarını (görev/bildirim) kapsar.
+- (v1.2) Repo kodunu, `KARAR_SICILI.md`'yi, `task_manifest.json`'ı, izinleri ve capability'leri **değiştirmez**; mevcut ERP kapanış çalışmasını (M → O → N → L → J kuyruğu, W-dilimleri) etkilemez. `Modules.Work` **tasarımını** hazırlar; bunu aktif geliştirme kuyruğuna almaz ("şimdilik analiz" — NS-AI-01 Sinan'da).
+- (v1.2) "Repoda zaten var" demez: dayandığı her garanti için dosya/satır kanıtı verir (§5.6a, kodlama belgesi §10.6) ve kanıtsız olanı **DOĞRULANACAK** olarak işaretler.
+- (v1.2) API-birincil tercihini (05.09.2026 v2.1, `AI-K01`) yeniden karar sorusu yapmaz; onu canlı veri aktarımı veya sağlayıcı aktivasyonu onayı da saymaz (§5.10).
 
 ### 0.2 Kaynak önceliği
 
@@ -63,6 +67,7 @@ Belge şunları **yapmaz**:
 | **ÖNERİ** | Bu belgenin önerisi; ADR/karar ile kilitlenmeden kod olmaz. |
 | **NEEDS-SINAN** | Yalnız ürün sahibinin verebileceği işletme kararı; Issue #66 formatında sorulur. |
 | **ÖLÇÜLECEK** | Tasarım varsayımı; gölge mod / pilot ölçümü olmadan taahhüt değildir. |
+| **DOĞRULANACAK** (v1.2) | Belgenin dayandığı fakat repoda kanıtı gösterilemeyen varsayım; uygulama öncesi kanıt şart, kanıt gelene kadar "var" sayılmaz. |
 
 ---
 
@@ -76,13 +81,15 @@ Belge şunları **yapmaz**:
 
 **Mevcut durum dürüstçe:** ERP temeli AI'ya uygun kurulmuştur (CompanyContext, default-deny RBAC/ABAC, transactional audit + `AiInvolvement` alanları, idempotency, deterministik motorlar). Ancak çalışan AI katmanı **yoktur**: `ERP-000J` kontratı OPEN/BLOCKED/NO-GO; fiziksel ADR-008 dosyası yok; `OPEN-020` (bulut sağlayıcı/KVKK/veri sınıfı) açık; `ERP-000J` henüz bloklu olan `ERP-000L`'ye (gözlemlenebilirlik), o da `ERP-000F` (outbox), `M`, `N`'ye bağlı. Outbox dispatcher'ı, arka plan worker'ı, görev/onay nesnesi, politika registry'si ve risk motoru da henüz yok (§4).
 
-**En kritik strateji kararı (NEEDS-SINAN):** Kanonik karar `DEC-AI-004/009` gereği hassas veri yerel-first, bulut default-deny'dır ve `Gizli` sınıf (fiyat, marj, cari, sözleşme) için "yerel model tercih" yazılıdır. JARVIS'in işe yarar olduğu bilgilerin çoğu `Gizli` sınıftır. Bu nedenle sistemin kalitesi iki yoldan birine bağlıdır: **(A)** GPU sunucu + güçlü açık-ağırlıklı yerel model (`OPEN-014` GPU PoC) veya **(B)** `OPEN-020` ile `Gizli` sınıfın maskeleme/DPA/ZDR şartlarıyla onaylı bulut sağlayıcıya açılması. Bu karar verilmeden model router tasarımı tamamlanamaz (§5.10, §10). Yerel-first yönü bu belgenin tercihi değildir; 31 Ağustos 2026 tarihli son kullanıcı kararıdır (`DEC-AI-009`, K0) ve AGENTS.md kaynak önceliğine göre v2.1 raporundaki "API birincil" ifadesini geçersiz kılar. Yol B/karma ancak yeni bir kullanıcı kararıyla açılabilir.
+**Model rotası — kayıt ve son tercih (v1.2 düzeltmesi):** Kanonik kayıt `DEC-AI-004` (26 Ağustos) ve `DEC-AI-009` (31 Ağustos 2026) hassas veriyi yerel-first, bulutu default-deny tanımlar ve bulutu ayrı sağlayıcı/sözleşme/KVKK/veri sınıfı ve **aktivasyon** kararına bağlar. Kullanıcının **5 Eylül 2026** tarihli v2.1 raporundaki tercihi (`AI-K01`) ise açıktır: **API birincil; GPU sunucusu şart değil.** Bu tercih `DEC-AI-009`'dan daha yenidir; AGENTS.md "çelişkide daha yeni kullanıcı kararı geçerlidir" kuralıyla bu belge onu çalışma varsayımı olarak alır ve **yeniden karar sorusu yapmaz** (v1.1'deki "v2.1 daha eskidir" ifadesi yanlıştı; düzeltildi). Repoda henüz kayıtlı olmadığı için tercihin `docs/decisions/`'a kaynak izli **aktarılması** Faz 0'ın idari adımıdır (F0-2) — yeni karar değil. Aktarım ve tercih, **canlı veri aktarımı veya sağlayıcı aktivasyonu onayı değildir**: v2.1'in kendi sınırları (`Gizli` sınıfta yalnız izinli alan/minimizasyon; `Çok gizli` kapalı) ve `OPEN-020` (sağlayıcı, DPA/ZDR, veri bölgesi, saklama/silme kanıtı, production aktivasyonu) ayrı kalır. Router tasarımı bu çerçevede tamamlanır (§5.10): API-birincil sağlayıcı portu, veri sınıfı matrisi, yerel model opsiyonel, GPU PoC (`OPEN-014`) zorunlu değil.
 
 **Nasıl ilerlenecek?** Altı fazda (Faz 0–5), mevcut teslim kuyruğunu bozmadan: Faz 0 karar paketi ve sözleşme ekleri (kod yok, `ERP-000J` §24 "şimdi izinli" listesi); Faz 1 oku/açıkla (READ araçları, bağlam zarfı, modül paneli); Faz 2 taslak/önizleme (DRAFT/SIMULATE, öneri nesnesi, gölge mod); Faz 3 kalıcı iş akışı (olay/zaman tetikli takip, iş öğeleri, eskalasyon, günlük brifing); Faz 4 onaylı WRITE (beyaz liste; her yazma önizleme + insan onayı); Faz 5 yönetim zekâsı (uzman görevler, ortak veri kesiti, AI Merkezi yönetim görünümü). Her fazın giriş koşulu, kabul kanıtı ve şerit dağılımı bölüm 11'dedir.
 
 **Başarı ölçüsü:** "Kaç ajan aktif" değil; seçilmiş iş sınıflarında ölçülen kapsama, doğruluk, net süre kazancı ve onay sonrası ilk seferde tamamlanma oranı; gölge mod ve kontrollü kullanıcı denemesiyle kanıtlanmış (§8.6).
 
 **v1.1 notu:** v1.0, karşı-ajan eleştirisinden (27 Eylül 2026) geçti; 23 tespitin 17'si kabul edilip düzeltildi (biri kısmen), 4'ü nüansla kabul edildi, 2'sinde eleştirinin çerçevesi düzeltildi; belge sahibinin 4 öz-eleştirisi de uygulandı. En önemlileri: sevkiyat örneğindeki risk çift sayımı, `DEC-AI-003` ile çelişen "onaysız WRITE" ölçüsü, ters yazılmış kapsama formülü, kategorik açıklık düzeyinin yetersizliği (kapı sorgusu ile değiştirildi), onay kimliği ≠ iş kimliği, aktör modeli, ölçü referansıyla sayı yerleştirme, veri kesiti mekanizması, kurtarma durum makinesi, sorun/değerlendirme/teslim kimlik ayrımı, saklama matrisi, etki kuralı motorunun AI'dan bağımsız `Modules.Work` içine taşınması ve ADR-009 uyumlu `Assisted` işaretleme. Tam liste bölüm 15.
+
+**v1.2 notu:** Üçüncü bağımsız eleştiri (28 Eylül 2026) sonrası: (1) **kalıcı iş niyeti kimliği `OperationIntentId`** — sunucu üretimli, içerik hash'inden ayrı; aynı içerikle iki meşru işlem mümkün, aynı niyetin yeniden gönderimi tek etki, belirsiz sonucu aşmak için yeni kimlik yok (§5.6 üç durum tablosu); (2) "repoda zaten var" yerine **kanıt matrisi** — sekiz WRITE aracının sahip komutları için dosya/satır kanıtı, kanıtsızlar DOĞRULANACAK (§5.6a); (3) **API-birincil uzlaştırması** — 05.09.2026 v2.1 tercihi yeniden sorulmaz, aktivasyon onayı sayılmaz (§1, §5.10, §9, §10.2); (4) iki onay gerektiren işlem, tek sevkiyata verilen istisnanın üç durumu, kurtarma sözleşmesi, ölçü tanımları ve `Work` tasarımının kuyruk olmadığı açıkça yazıldı. Tam liste ve kapanış kontrol tablosu bölüm 15; kod düzeyi ayrıntı `GOYMEN_AI_MERKEZI_KODLAMA_TASARIMI_V1.md`.
 
 ---
 
@@ -265,7 +272,8 @@ finance.risk.evaluate@1 → {
        devam edebilirsiniz; sevkiyat kaydı Finans kararı olmadan kesinleşmez. Finans'a görev açıldı."
       (Tutar, bakiye, vade, teminat bilgisi ve "ödemesi gecikmiş" gibi finans gerekçeleri bu role
        Finans'ın açıklık matrisinde kapalıdır; yalnız izinli gerekçe kodları görünür. Görev kartının
-       yorum/bildirim/geçmiş kanalları da aynı matrisi uygular.)
+       yorum/bildirim/geçmiş kanalları da aynı matrisi uygular. Bu nötr metin başlangıç ÖNERİSİDİR;
+       hangi rolün neyi göreceği uygulanmış bir yetki kararı değildir — NS-AI-10/15 Sinan'dadır.)
 
 [3] İş öğesi (WorkItem) — Finans sorumlusu (Full düzey):
       Ne tespit edildi: Net risk {{m1}} (limit {{m4}}); sevkiyat aşama geçişi {{m2}}, net etkisi 0
@@ -280,10 +288,17 @@ finance.risk.evaluate@1 → {
 
 [4] Finans (a) süreli istisna onayı verir → ERP onay kaydı (yetki: finance.risk.exception.approve — ÖNERİ;
       maker≠checker gerçek kullanıcı kimliğiyle) → IR-LOG-001 yeniden değerlendirilir (Değerlendirme #2)
-      → Sorun "istisna ile Resolved"; sevkiyatçıya kapı kararı "Devam (istisna: 3 gün)".
+      → Sorun "istisna ile Resolved"; sevkiyatçıya kapı kararı "Devam (istisna: bu talimat için, 3 gün)".
+      İstisna üç durumdan birindedir (v1.2; sahibi Finance, W4-RISK spec girdisi F0-10):
+        Active   — kapsam eşleşiyor (SingleShipment(talimat) veya Party(vade)), süresi dolmamış → Proceed + exceptionRef
+        Consumed — tek sevkiyat istisnası o sevkiyat kaydedilince tükendi → aynı müşteriye ikinci talimat ReviewRequired
+        Expired/Revoked — süre doldu veya Finans geri aldı → Work.Rules zamanlı tarama yeniden değerlendirir;
+                   koşul sürüyorsa Sorun Reopened ve MEVCUT kart güncellenir, yeni kart açılmaz
+      Kapsamı eşleşmeyen istisna (başka talimat için verilmiş) Active sayılmaz.
 
 [5] Sevkiyat kesinleştirme (RecordShipmentAsync) → Logistics komutu Finance risk servisini KESİN olarak
-      yeniden çağırır (DEC-FIN-009). İstisna geçerliyse geçer; yoksa reddedilir. AI bu adımda yoktur.
+      yeniden çağırır (DEC-FIN-009). İstisna Active ve kapsam eşleşiyorsa geçer ve SingleShipment istisnası
+      Consumed olur; yoksa reddedilir. AI bu adımda yoktur.
 
 [6] Kısmi tahsilat gelince (finance.manual-receipt.recorded.v1 → outbox) → Work.Rules aynı Sorun'u
       yeniden değerlendirir (Değerlendirme #3): koşul gerçekten kalktıysa Resolved kalır; kalkmadıysa
@@ -394,7 +409,7 @@ Sonuç: AI katmanının manifest üzerindeki kritik yolu bugün **M → O → N 
 |---|---|
 | Komut zarfı modüle göre değişir: yalnız Counterparty (`CounterpartyCommandMetadata`), Organization (`CommandMetadata`) ve Inventory (`InventoryCommandMetadata`) `SourceChannel`'ı çağrı başına parametre alır; Sales (`SalesCommandMetadata` → iç `SalesDraftWriteEnvelope`), Purchasing, Logistics, Manufacturing, Accounting ve Finance (`FinanceContext` + `CommandMetadata`; `FinanceAuditEnvelope` constructor-injected) kanalı `ICorrelationContext.SourceChannel`'dan türetir; middleware bunu her zaman `Web` yazar | AI host adaptörü kendi DI scope'unda `ICorrelationContext.Set(...)` ile `SourceChannels.AiAssisted`'i kurar (middleware'e dokunmadan) veya bu altı modülün port'una kanal parametresi eklenir (ADR-008 seçimi). `AiInvolvement` her serviste sabit `None`; her modülün zarfına opsiyonel `AiContext` alanı eklenmesi gerekir (K3 cross-module contract, küçük ve geriye uyumlu) |
 | Cross-module atomik yazmalar `GoymenERP.Api/*Runtime` host runner'larında (`LogisticsRealizationTransactionRunner`, `PurchaseGoodsReceiptHost`) | AI araç adaptörleri de `GoymenERP.Api/AiRuntime` altında host olarak yaşar; sahip modüllerin public application port'larını çağırır; yeni modül-arası Domain/Infrastructure kenarı açılmaz |
-| Idempotency yalnız tamamlanmış sonucu saklar; sunucu tarafı "in-progress/unknown" yok; kurtarma = aynı key + aynı payload | Gateway WRITE'ta idempotency key'i yalnız **Proposal** kimliğinden (`ai:{proposalId}`) türetir — tek iş niyeti = tek yürütme kimliği = tek kalıcı etki; onay kayıtları yetkilendirme kanıtıdır, yeni onay satırı yeni key üretmez; bilinmeyen sonuç yeni key ile asla yinelenmez; `AiProposal` durumu `Unknown` ayrı tutulur (§5.6) |
+| Idempotency yalnız tamamlanmış sonucu saklar; sunucu tarafı "in-progress/unknown" yok; kurtarma = aynı key + aynı payload; sahip modüllerde deneme/komut satırı PK'sı (CompanyId, CommandName, IdempotencyKeyHash) ve aynı-key-farklı-içerik reddi vardır (kanıt §5.6a) | Gateway WRITE'ta idempotency key'i **sunucu üretimli, kalıcı iş niyeti kimliğinden** türetir: `ai:{operationIntentId}` — tek iş niyeti = tek yürütme kimliği = tek kalıcı etki; içerik hash'i (`CanonicalPayloadHash`) kimlik **değildir**, gönderilen içeriğin onaylananla aynı olduğunu doğrular; onay kayıtları yetkilendirme kanıtıdır, yeni onay satırı yeni key üretmez; bilinmeyen sonuç **yeni kimlikle asla** yinelenmez; `AiProposal` durumu `Unknown` ayrı tutulur (§5.6) |
 | Shell provider eklemek registry revizyonunu değiştirir; revizyon sabit pinlidir | `ai.*` capability provider'ı eklemek K3 sınıfı değişiklik; `ShellCapabilityRegistryAuthorities` güncellenir |
 | Audit yalnız başarılı/no-change yazmaları kaydeder; ret/yetkisiz denemeler için kalıcı kanal yok | AI'nın reddedilen araç çağrıları, injection denemeleri ve tenant-crossing girişimleri için `ERP-000L` security-event kanalı **ön koşul**dur |
 | Frontend'de üretilmiş istemci yok; modül başına el yazımı `api.ts` + `contract.ts` | AI Merkezi ekranları aynı deseni izler; OpenAPI'ye pinlenmiş decoder testleri şart |
@@ -444,24 +459,25 @@ Sabit ilkeler (KİLİTLİ-KAYNAK): tek kayıt sistemi ERP'dir; AI modülü başk
 src/backend/Modules/Ai/
   GoymenERP.Modules.Ai.Contracts/        # IAiTool, AiToolDescriptor, MeasuredValue, Proposal DTO'ları,
                                          # AiDataClass, AiRiskClass — modüller arası paylaşılan sözleşme
-  GoymenERP.Modules.Ai.Domain/           # AiRun, AiRunStep, AiProposal, AiApproval, AiKnowledgeItem(+Version),
-                                         # AiEvalCase, AiBudget, AiPolicyVersion — aggregate'ler ve değişmezler
+  GoymenERP.Modules.Ai.Domain/           # AiRun, AiRunStep, AiProposal (OperationIntentId), AiApproval, AiKnowledgeItem(+Version),
+                                         # AiEvalCase, AiBudget, AiPolicyVersion, AiJob, WorkflowInstance — aggregate'ler ve değişmezler
   GoymenERP.Modules.Ai.Application/      # IAiCapabilityService, IAiPolicyEvaluator, IAiToolCatalog, IAiContextBuilder,
                                          # IAiOrchestrator, IAiOutputValidator, IAiMeasureRenderer, IAiPreviewService,
                                          # IAiApprovalBinding, IAiCommandDispatcher, IAiRecoveryCoordinator,
                                          # IAiModelClient (port), IAiRunStore, IAiUsageMeter, IAiKnowledgeIndex, IAiEvalRunner
   GoymenERP.Modules.Ai.Infrastructure/   # AiDbContext (şema: ai), EF eşlemeleri, provider adapter'ları (Local, OpenAI…),
                                          # vektör depo adaptörü, prompt registry, redaction/DLP, egress allowlist
-  GoymenERP.Modules.Ai.Workflow/         # AiJob, WorkflowInstance, durum makinesi, IAiScheduler, outbox consumer (inbox/dedup),
-                                         # BackgroundService host'ları (ayrı worker sınırı — DEC-TEC-001 "ayrı worker/connector")
+  GoymenERP.Modules.Ai.Workflow/         # Çalıştırıcılar: worker (BackgroundService), IAiScheduler, iş akışı şablonları, outbox consumer
+                                         # (inbox/dedup), kurtarma zamanlayıcısı (ayrı worker sınırı — DEC-TEC-001 "ayrı worker/connector")
 src/backend/Modules/Work/
-  GoymenERP.Modules.Work.{Contracts,Domain,Application,Infrastructure}/  # WorkItem, ApprovalRequest, EscalationPolicy, Sla,
-                                         # VisibilityMatrix (kanal bazlı açıklık)
-  GoymenERP.Modules.Work.Rules/          # ImpactRuleDefinition, IImpactRuleEngine, Issue, Evaluation, GateDecision —
-                                         # deterministik; AI'dan ve model sağlayıcısından bağımsız; sistem aktörüyle çalışır
+  GoymenERP.Modules.Work.{Contracts,Domain,Application,Infrastructure}/  # Contracts: GateDecisionV1 (tek tanım), WorkItemV1, IssueV1;
+                                         # Domain: WorkItem, ApprovalRequest, EscalationPolicy, VisibilityMatrix, Issue, Evaluation,
+                                         # ImpactRuleDefinition — aggregate'ler ve değişmezler
+  GoymenERP.Modules.Work.Rules/          # IImpactRuleEngine + kural kataloğu (IR-LOG-001 …) — deterministik; AI'dan ve model
+                                         # sağlayıcısından bağımsız; sahip modüllerin sistem port'larıyla çalışır
 src/backend/GoymenERP.Api/AiRuntime/
   Tools/<OwnerModule>/…                  # Sahip modül port'larını IAiTool'a saran host adaptörleri
-  AiEndpoints.cs, AiCapabilityProvider.cs, AiCommandEnvelopeFactory.cs (SourceChannel=AiAssisted, AiContext)
+  AiEndpoints.cs, AiShellCapabilityProvider.cs, AiCommandEnvelopeFactory.cs (SourceChannel=AiAssisted, AiContext), AiDispatchScopeFactory.cs
 src/backend/GoymenERP.Api/RulesRuntime/
   Evaluators/<OwnerModule>/…             # Etki kuralı değerlendiricileri: sahip port'larını sistem aktörüyle çağırır; Ai'ye referans yok
   RulesEndpoints.cs (on-demand kapı sorgusu/SIMULATE tetikleme), RulesOutboxConsumer.cs
@@ -491,15 +507,16 @@ public sealed record AiToolDescriptor(
     AiScopeSemantics Scope,        // CompanyWide | SiteScoped | LocationScoped | WorkCenterScoped — temsil edilemiyorsa fail-closed
     AiDataClass MaxDataClass,      // araç çıktısının en yüksek veri sınıfı (Genel/ŞirketIçi/Gizli/ÇokGizli)
     IReadOnlyList<string> FieldAllowlist,
-    JsonSchema InputSchema,        // strict; additionalProperties=false
-    JsonSchema OutputSchema,       // her sayısal alan MeasuredValue şeklindedir
+    Type InputType,                // strict JSON schema bu türden üretilir (additionalProperties=false, tüm alanlar required)
+    Type OutputType,               // her sayısal alan MeasuredValue şeklindedir (çıplak decimal → başlatma reddi)
     string DeterministicValidator, // sahip modülün validator/formula kimliği (FormulaId@version veya command contract id)
     string OwnerContractId,        // "sales.order-draft.create.v1" gibi komut/sorgu sözleşme kimliği
     TimeSpan Timeout, bool RetrySafe, bool RequiresIdempotencyKey, bool RequiresExpectedVersion,
     AiApprovalRequirement Approval,// None | Preview | PreviewAndApproval | PreviewApprovalReauth
     AiEgressPolicy Egress,         // hangi veri sınıfı hangi rotaya gidebilir
     string AuditRouting,           // business | security-event | telemetry
-    AiCostClass CostClass, string Owner, string DeprecationPolicy, string KillSwitchKey);
+    AiCostClass CostClass, string Owner, string DeprecationPolicy, string KillSwitchKey,
+    int MaxOutputBytes, int MaxCardinality);   // bayt/kardinalite limitleri (ERP-000J §7); kod düzeyi kanonik biçim: kodlama belgesi §6.1
 ```
 
 **Kaynak-bağlı çıktı kuralı:** Araç çıktısındaki her sayısal alan şu zarfı taşır:
@@ -538,8 +555,8 @@ Pilot araç seti (READ ağırlıklı; Ek A'da 44 satır, `list/get` çiftleri a�
 | `IAiOutputValidator` | Yapılandırılmış cevabı şemaya, ölçü referansı kuralına, veri sınıfına, alan bazlı açıklık matrisine ve güvenli renderer kurallarına göre doğrular | Referanssız finansal sayı bastırılır; açıklık matrisi dışı alan (sayı içermese de) → ret + security-event |
 | `IAiPreviewService` | WRITE niyeti için kanonik preview zarfı ve hash (`ERP-000J` §10.1) | Model açıklaması hash kapsamı değildir; gösterilen fark = yürütülecek payload |
 | `IAiApprovalBinding` | Onayı actor + company + previewId/hash + target/version + tool/policy sürümüne bağlar; expiry, reauth | Sürüm/yetki/politika değişince eski onay reddedilir (`ERP-000J` §10.2) |
-| `IAiCommandDispatcher` | Tek kazanan geçişle `Approved` olmuş Proposal'ı sahip modülün public application command'ına `ai:{proposalId}` idempotency key'i + expected version ile iletir | Gateway `CommandExecutions`'a yazmaz; otomatik retry yok; unknown outcome yeni key ile yinelenmez (`ERP-000J` §11) |
-| `IAiRecoveryCoordinator` | `Dispatched/Unknown` durumundaki Proposal'lar için kurtarma: aynı key ile replay sorgusu, sonucu AiRun'a bağlama, ikinci belirsizlikte hedef kilidi + iş öğesi | Kurtarma ≠ retry; insan devralma noktası tanımlı (§5.6) |
+| `IAiCommandDispatcher` | Tek kazanan geçişle `Approved` olmuş Proposal'ı sahip modülün public application command'ına `ai:{operationIntentId}` idempotency key'i + dondurulmuş payload + expected version ile iletir | Gateway `CommandExecutions`'a yazmaz; otomatik retry yok; unknown outcome **yeni kimlikle** yinelenmez (`ERP-000J` §11); sahip modülün aynı-key-farklı-içerik reddi `Failed(ContentConflict)` + security-event olarak işlenir |
+| `IAiRecoveryCoordinator` | `Dispatched/Unknown` durumundaki Proposal'lar için kurtarma: varsa salt-okunur deneme sorgusu, yoksa **en fazla bir** aynı-key/aynı-payload gönderim (sahip PK'sı ikinci etkiyi imkânsız kılar), sonucu AiRun'a bağlama, ikinci belirsizlikte hedef kilidi + iş öğesi | Kurtarma ≠ retry; "kayıt yok" ≠ "hiç ulaşmadı"; insan devralma noktası tanımlı (§5.6) |
 | `IAiModelClient` (port) | Provider-agnostic: `Complete(structured)`, `Embed`, `Transcribe`, `Vision`; strict schema, tool-choice kısıtı | Refusal/incomplete/timeout/truncated/multiple-call ayrı terminal durumlar (`ERP-000J` §9) |
 | `IAiModelRouter` | Veri sınıfı → yetenek → gecikme/maliyet sırasıyla izinli model seçer (§5.10) | Yeni sağlayıcı ekleyemez; yasak sınıfı ucuz modele gönderemez; fallback daha geniş yetki alamaz |
 | `IAiRunStore` | `AiRun`, adımlar, araç çağrıları, doğrulama sonuçları, kullanıcı düzeltmesi, maliyet | `DEC-AI-005` alanları; içerik yerine sürüm/hash/kapsam metadata'sı tercih edilir (`ERP-000J` §16) |
@@ -557,9 +574,9 @@ Bütün tablolar `CompanyId` (Guid, ≠ empty), `CreatedAtUtc/By`, `Version`/`ro
 | Tablo | Amaç | Kilit alanlar |
 |---|---|---|
 | `ai.Runs` | Her AI etkileşimi / iş çalıştırması | `Id`, `CompanyId`, `ActorId`, `Channel` (Panel/Center/Job/Voice), `Intent`, `ContextManifestJson` (kaynak, sürüm, alan allowlist, as-of; içerik değil), `PromptPolicyVersion`, `ToolCatalogVersion`, `ModelDeploymentRef`, `DataClassCeiling`, `Status` (Running/Completed/Partial/Refused/Failed/Unknown), `CostMicros`, `TokensIn/Out`, `LatencyMs`, `UserCorrectionJson`, `Outcome` |
-| `ai.RunSteps` | Adımlar ve araç çağrıları | `RunId`, `Seq`, `Kind` (ToolCall/ModelCall/Validation/Policy), `ToolId@Version`, `ArgsHash`, `ResultHash`, `PolicyDecision`, `DurationMs`, `Error` |
+| `ai.RunSteps` | Adımlar ve araç çağrıları | `RunId`, `Seq`, `Kind` (ToolCall/ModelCall/Validation/Policy/Render), `ToolId@Version`, `ArgsHash`, `ResultHash`, `PolicyDecision`, `DurationMs`, `Error` |
 | `ai.AssistantFindings` | Asistanın (model) ürettiği, kurala bağlı olmayan bulgular | `RunId`, `Severity`, `AssertionKind`, `TargetEntityType/Id/Version`, `MeasuresJson`, `DisclosureLevel`, `Status`; kural-tabanlı bulgular **`work.Issues/Evaluations`**'dadır |
-| `ai.Proposals` | WRITE niyeti önizlemesi = **tek iş niyeti, tek yürütme kimliği** | `RunId`, `ToolId@Version`, `OwnerCommandContract`, `TargetEntityType/Id`, `ExpectedVersion`, `CanonicalPayloadHash`, `DiffJson`, `ValidationResultJson`, `PolicyRefsJson`, `PreviewCreatedAtUtc`, `ExpiresAtUtc`, `Status` (Draft/ShadowOnly/AwaitingApproval/Approved/Dispatched/Executed/Rejected/Stale/Unknown/Failed), `RequestedByActorId` (isteği başlatan), `PreparedByRunId`, `ApprovedByActorId`, `SecondApprovedByActorId?`, `ExecutedBy` (sistem/AiRuntime), `OnBehalfOfActorId`, `IdempotencyKeyHash` (= hash(`ai:{proposalId}`)), `ExecutedCommandRef`, `TargetLock` (Unknown çözülene kadar aynı hedefe ikinci Proposal dispatch edilmez). `AwaitingApproval → Approved` geçişi rowversion ile **tek kazanan**; ikinci onay denemesi `version_conflict` alır |
+| `ai.Proposals` | WRITE niyeti önizlemesi; **iş niyeti kimliği (`OperationIntentId`) ile önizleme kimliği (`Id`) ayrıdır** | `Id` (önizleme), **`OperationIntentId`** (sunucu üretimli, kalıcı iş niyeti kimliği; aynı niyetin bütün önizlemeleri aynı değeri taşır), `IntentRevision` (Stale sonrası yeniden önizleme = +1), `RunId`, `ToolId@Version`, `OwnerCommandContract`, `TargetEntityType/Id`, `ExpectedVersion`, `CanonicalPayloadHash` (içerik doğrulaması; kimlik **değil**), `PayloadCipherRef` (şifreli/immutable içerik deposu), `DispatchedPayloadHash` (gönderimde dondurulur; = `CanonicalPayloadHash`), `DiffJson`, `ValidationResultJson`, `PolicyRefsJson`, `PreviewCreatedAtUtc`, `ExpiresAtUtc`, `Status` (Draft/ShadowOnly/AwaitingApproval/PartiallyApproved/Approved/Rejected/Dispatched/Unknown/Executed/Failed/Stale), `RequiredApprovals` (1 veya 2), `RequestedByActorId`, `PreparedByRunId`, `ApprovedByActorId`, `SecondApprovedByActorId?`, `ExecutedBy` (sistem/AiRuntime), `OnBehalfOfActorId`, `IdempotencyKeyHash` (= hash(`ai:{operationIntentId}`)), `ExecutedCommandRef`, `TargetLock`. Tekillikler: `(CompanyId, OperationIntentId, IntentRevision)`; bir niyetin en fazla **bir** gönderilmiş önizlemesi (filtered unique, Dispatched/Unknown/Executed); güncelleme hedefinde `(CompanyId, TargetEntityType, TargetId)` kilidi; create niyetinde kilit niyet düzeyindedir ve aynı kullanıcı+araç için `Unknown` create varken yeni create `intent_pending_recovery` alır. `AwaitingApproval → Approved` geçişi rowversion ile **tek kazanan**; ikinci onay denemesi `version_conflict` alır |
 | `ai.Approvals` | Onay **kanıtı** (yetkilendirme kaydı; yürütme kimliği değil) | `ProposalId`, `ApproverActorId`, `ApprovedAtUtc`, `BoundHash`, `ReauthRef?`, `Decision` (Approve/Reject/ReturnForFix/RequestInfo/Conditional). Yeni onay satırı kendiliğinden yeni iş etkisi üretmez; Proposal'ın tek geçişine bağlıdır |
 | `ai.KnowledgeItems` / `ai.KnowledgeVersions` | Sürümlü kurumsal bilgi (§3.6 sınıfları) | `Class` (ApprovedRule/OneTimeException/PastCase/UserComment/UnverifiedClaim), `EffectiveFrom/To`, `OwnerRole`, `ApprovedBy`, `SourceRef`, `DataClass`, `AclJson`, `Embedding` (SQL Server vektör veya harici depo referansı) |
 | `ai.PolicyVersions` | Prompt/tool/router politika sürümleri | `Kind`, `Version`, `ContentHash`, `ApprovedBy`, `EffectiveFrom` |
@@ -601,16 +618,44 @@ Komut zarfı modüle göre değişir (§4.4): üç modül `SourceChannel`'ı par
 
 | Alan | Değer |
 |---|---|
-| `CompanyId` / `ActorId` | `ActorId` = yazma yetkisini kullanan **onaylayan** aktör (mevcut Finance/Accounting maker-checker desenindeki gibi); server-side bağlam onay anında yeniden doğrulanır — asla modelden. İsteği başlatan, hazırlayan ve adına işlem yapılan kişiler `AiContext` içinde ayrı alanlardır; onaylayan hazırlayanın yerine yazılmaz |
+| `CompanyId` / `ActorId` | `ActorId` = yazma yetkisini kullanan **onaylayan** aktör (mevcut Finance/Accounting maker-checker desenindeki gibi); server-side bağlam onay anında yeniden doğrulanır — asla modelden. İsteği başlatan, hazırlayan ve adına işlem yapılan kişiler `AiContext` içinde ayrı alanlardır; onaylayan hazırlayanın yerine yazılmaz. (v1.2) Gönderim ve worker scope'unda HTTP bağlamı yoktur; sahip modül fence'leri `ICurrentUser`'ı okuduğu için (bugün `HttpCurrentUser`, claim tabanlı) scope-yerel aktör ayarlanır — gönderimde onaylayan, zamanlı iş akışında şablonun adına koştuğu gerçek kullanıcı (platform kimlik kaydında K3 değişikliği; kodlama belgesi §10.3, §14.3). Yetki genişlemez: sahip fence'i bu aktörün **güncel** yetkisini her çağrıda yeniden doğrular |
 | `SourceChannel` | `SourceChannels.AiAssisted` |
 | `CorrelationId` | `AiRun.Id` türevi; `CausationId` = `AiProposal.Id` |
-| `IdempotencyKey` | `ai:{proposalId}` — **tek iş niyeti = tek yürütme kimliği = tek kalıcı etki**. Onay kimliği key'e girmez: aynı Proposal için iki onay kaydı (çift tıklama, iki ekran, iki onaycı) yeni key üretemez; `AwaitingApproval → Approved` geçişi rowversion ile tek kazanan alır, kaybeden `version_conflict` görür. `Stale` sonrası yeni önizleme = yeni Proposal = meşru yeni key (`ERP-000J` §10.2) |
-| `ExpectedVersion` | Preview anında bağlanan hedef sürüm; farklıysa sahip modül `version_conflict` döner → Proposal `Stale` |
-| `AiContext` (yeni, opsiyonel) | `{ involvement: Assisted / Proposed / Executed, runId, toolId, toolVersion, promptPolicyVersion, modelDeploymentRef, previewHash, proposalId, approvalId, requestedBy, preparedByRun, approvedBy, executedBy, onBehalfOf }` → audit `AiInvolvement` + `AiContextJson`; `ApprovalContextJson` mevcut desenle `{proposedBy, approvedBy}` taşır. `Assisted`: insan, AI yardımıyla normal arayüzden yazdı; `Proposed`: preview üretildi; `Executed`: onaylı komut gateway'den yürütüldü |
+| `IdempotencyKey` | `ai:{operationIntentId}` — **tek iş niyeti = tek yürütme kimliği = tek kalıcı etki**. `OperationIntentId` sunucuda, WRITE niyeti ilk başlatıldığında üretilir ve kalıcıdır; içerik hash'inden **ayrıdır** (araç + şirket + kanonik içerik tek başına iş niyeti kimliği olamaz: aynı müşteri/ürün/miktar için iki ayrı meşru sipariş verilebilir). Onay kimliği key'e girmez: aynı niyet için iki onay kaydı (çift tıklama, iki ekran, iki onaycı) yeni key üretemez; `AwaitingApproval → Approved` geçişi rowversion ile tek kazanan alır, kaybeden `version_conflict` görür. `Stale` sonrası yeniden önizleme **aynı niyetin** yeni revizyonudur (aynı key); yeni key yalnız kullanıcı açıkça **yeni** bir niyet başlattığında üretilir (`ERP-000J` §10.2 ile uyumlu: eski onay düşer, yeni önizleme gerekir — niyet değişmez) |
+| `ExpectedVersion` | Preview anında bağlanan hedef sürüm. Onaydan **önce** fark edilen değişiklik → Proposal `Stale` (hiçbir şey gönderilmedi; aynı niyetin yeni revizyonu önizlenir). **Gönderimde** sahip modül `version_conflict` dönerse → Proposal `Failed(version_conflict)`: sonuç bilinir, etki yoktur; aynı niyet yeniden önizlenemez, çünkü bazı sahip modüller bu reddi aynı key'e terminal ret olarak kaydeder (§5.6a) — yeniden deneme **yeni niyetle** yapılır ve bu, belirsizliği aşma değildir |
+| `AiContext` (yeni, opsiyonel) | `{ involvement: Assisted / Proposed / Executed, runId, toolId, toolVersion, promptPolicyVersion, modelDeploymentRef, previewHash, proposalId, operationIntentId, approvalIds[], requestedBy, preparedByRun, approvedBy, executedBy, onBehalfOf }` → audit `AiInvolvement` + `AiContextJson`; `ApprovalContextJson` mevcut desenle `{proposedBy, approvedBy}` taşır. `Assisted`: insan, AI yardımıyla normal arayüzden yazdı; `Proposed`: preview üretildi; `Executed`: onaylı komut gateway'den yürütüldü |
 
 Gerekli sözleşme eki (K3, geriye uyumlu; Faz 2): her modülün metadata/envelope record'una `AiContext? Ai = null` alanı; audit draft'ında `AiInvolvement = Ai?.Involvement ?? None`, `AiContextJson = Ai?.ToJson()`. ADR-009 "yalnız ilerideki AI Gateway bu alanları doldurur; istemci beyan edemez" der. Bu nedenle **`Assisted` de istemci beyanıyla yazılamaz**: insan, AI panelinden yardım aldıktan sonra normal arayüzden yazarken istemci yalnız `X-AI-Run-Ref` başlığında bir `AiRunId` gönderir; sunucu run'ın aynı aktör + aynı şirket + yakın zaman + ilgili hedef koşullarını doğrular ve ancak o zaman `Assisted`'i **kendisi** yazar; doğrulanamayan referans yok sayılır ve security-event üretir.
 
-**Kurtarma durum makinesi (otomatik retry yoktur):** `Approved → Dispatched` anında kalıcı kayıt; sahip komut sonucu gelince `Executed`/`Failed`. Transport hatası veya çökme → `Unknown`. `IAiRecoveryCoordinator` (worker başlangıcında ve zamanlı) `Unknown` Proposal için önce **salt-okunur kurtarma sorgusu** yapar (sahip modülün kalıcı idempotency kaydı aynı key ile denetlenir — `ERP-000J` §17 "kalıcı idempotency kaydından çözülmeden tekrar başlatılmaz"): kayıt varsa replay sonucu (`Idempotency-Replayed`) alınır → `Executed` ve AiRun tamamlanır; kayıt yoksa (komut sahip modüle hiç ulaşmamış) ve hedef sürümü değişmemişse **en fazla bir** aynı-key/aynı-payload gönderim yapılır; bu da belirsiz kalırsa Proposal `Unknown` kalır, `TargetLock` korunur, AI süreç sahibine ve sahip modül operatörüne iş öğesi açılır — insan devralır. "ERP yazdı, AiRun güncellenmeden servis kapandı" senaryosu bu yolla çift kayıt üretmeden kapanır (Ek D G-26).
+**İş niyeti kimliği — üç durum (v1.2; şema, metin ve testler aynı davranışı tarif eder):**
+
+| Durum | Sahip modüle giden | Sahip modülün cevabı (mevcut kod, §5.6a) | Gateway davranışı |
+|---|---|---|---|
+| Aynı `OperationIntentId` + aynı içerik | Aynı key, aynı payload | Deneme/komut satırı bulunur; aktör ve hash eşit → **replay** (`IsReplay=true`, `Idempotency-Replayed: true`, ilk correlation) | Önceki işlemin devamı/tekrarı; ikinci etki yok; Proposal `Executed` |
+| Aynı `OperationIntentId` + farklı içerik | Aynı key, farklı payload | **409** aynı-key uyuşmazlığı (`same_key_payload_mismatch` / `idempotency_conflict` / Finance `outcome: IdempotencyConflict`) | Sessizce yeni işlem **yok**: Proposal `Failed(ContentConflict)`, `TargetLock` korunur, security-event; normal akışta oluşamaz (gönderilen payload gönderimde dondurulmuştur) |
+| Açıkça başlatılmış **farklı** `OperationIntentId` + aynı içerik | Farklı key, aynı payload | Yeni deneme satırı; komut normal yürür | Meşru yeni işlem olabilir; sahip modülün kendi mükerrerlik kontrolleri (cari aday, belge hash `DEC-DOC-002`, sipariş tekrarı uyarısı) ayrıca uygulanır; önizlemede "aynı içerikli öneri var" **bilgisi** gösterilir, engel yok |
+
+**Kurtarma durum makinesi (otomatik retry yoktur; yeni kimlik yoktur):** `Approved → Dispatched` anında kalıcı kayıt (gönderilen payload hash'i dondurulur); sahip komut sonucu gelince `Executed`/`Failed`. Transport hatası veya çökme → `Unknown`. `IAiRecoveryCoordinator` (worker başlangıcında ve zamanlı) `Unknown` Proposal için **aynı `OperationIntentId`** ve aynı dondurulmuş payload ile çalışır: (1) sahip modül salt-okunur bir deneme-kaydı sorgusu sunuyorsa (ÖNERİ, sahip dilim eki — bugün yok, DOĞRULANACAK) önce o; kayıt varsa replay sonucu → `Executed`, terminal ret kaydı varsa → `Failed`; (2) **"kayıt yok" hiç ulaşmadı anlamına gelmez** (komut yolda olabilir); bu yüzden koşulsuz tekrar yerine **en fazla bir** aynı-key/aynı-payload gönderim yapılır — sahip modülün deneme/komut satırı PK'sı (§5.6a) sayesinde bu gönderim ya ilk sonucu replay eder ya da ilk kez yürütür, ikinci etki üretemez; (3) bu da belirsiz kalırsa Proposal `Unknown` kalır, `TargetLock` korunur, AI süreç sahibine ve sahip modül operatörüne iş öğesi açılır — insan devralır ve sonucu **kanıt referansıyla** kapatır; (4) hiçbir yolda yeni `OperationIntentId` üretilmez; `Unknown` bir niyet için yeniden önizleme reddedilir; aynı hedef için yeni niyet `TargetLock` ile bekletilir. "ERP yazdı, AiRun güncellenmeden servis kapandı" senaryosu bu yolla çift kayıt üretmeden kapanır (Ek D G-26).
+
+**İki onay gerektiren işlem (v1.2):** `RequiredApprovals = 2` (sahip modül politikası veya `ErpPermissions.Critical` seti — ADR-008 madde 5). Birinci onay `PartiallyApproved`; ikinci onay **farklı gerçek kullanıcı** kimliğiyle `Approved`; onaylayanlar isteği başlatandan farklıdır (maker≠checker). Her iki onay aynı niyete ve aynı `CanonicalPayloadHash`'e bağlanır; aralarında hedef sürümü veya politika değişirse `Stale` → iki onay da düşer, aynı niyetin yeni revizyonu önizlenir. Her onay `ai.Approvals`'a ayrı kanıt satırı yazar; hiçbir onay satırı key üretmez.
+
+### 5.6a Kanıt matrisi — "aynı key tek sonuç" sahip modüllerde nerede? (v1.2; main@00a8798, salt-okunur envanter 28 Eylül 2026)
+
+Bu tablo "repoda bu garanti zaten var" iddiasının yerine geçer. Ayrıntılı satır numaraları ve gözlemler kodlama belgesi §10.6'dadır.
+
+| WRITE aracı → sahip komut | Deneme/komut satırı | Aynı key + aynı içerik | Aynı key + farklı içerik/aktör | Eşzamanlılık | Gerçek SQL testi | Durum |
+|---|---|---|---|---|---|---|
+| `counterparty.party.create@1` → `CounterpartyCommandService.CreateAsync` | `idempotency.CommandExecutions` (unique index company+command+keyhash; `ResponseJson`) | Replay + `Idempotency-Replayed` | 409 `idempotency_conflict` (aktör veya hash farkı) | Unique IX; `Version`+`RowVersion`; create yolunda 2601/2627 filtresi **yok** | `WriteIdempotencyAndTerminalReplay_AreDurable`; race testi var | KANITLI; farklı-aktör create testi DOĞRULANACAK |
+| `sales.draft.create@1` → `SalesStore.StoreDraftAsync` | `sales.DraftAttempts` PK; pointer + `RefusalJson` | `FindReplayAsync` replay | 409 `same_key_payload_mismatch` | PK; rowversion; `SaveAsync` 2601/2627 → `ConcurrentChange` | ADR-011 kabul testleri (adı bu envanterde okunmadı — DOĞRULANACAK) | KANITLI |
+| `purchasing.request.create@1` → `PurchasingStore.StoreRequestAsync` | `purchasing.PurchaseAttempts` PK | `Replayed` + ilk correlation | 409 `same_key_payload_mismatch` | PK + filtered unique; rowversion; 2601/2627 | `A_request_and_an_order_are_stored_in_one_save_each_and_the_same_key_replays_with_the_first_correlation` | KANITLI |
+| `inventory.allocation.create@1` → `InventoryStore.Allocations.CreateAsync` | `inventory.Commands` PK; `ResultJson` | Replay (HTTP **200**) | 409 `idempotency_conflict` | PK; label `Version`; 2601/2627 | `Physical_sales_allocation_reduces_free_capacity…`; race testi var | KANITLI |
+| `finance.receipt.draft@1` → `ReceiptDraftService.DraftSaveAsync` | `finance.Commands` PK; `ResultJson` | Replay `IsReplay=true` | 409, gövde `outcome: IdempotencyConflict` (problem kodu yok) | PK; `Version` (Finance'te `RowVersion` yok); 2601/2627 | `A_stale_version_changes_nothing_and_the_same_key_replays_or_conflicts`; HTTP race testi var | KANITLI; kod sözlüğü farkı adaptörde eşlenir |
+| `logistics.instruction.create@1` → `LogisticsStore.StoreInstructionAsync` | `logistics.LoadingAttempts` PK | `Replayed` | 409 `same_key_payload_mismatch` | PK + filtered unique; rowversion; 2601/2627 | `An_instruction_with_lines_is_stored_issued_loaded…`; race testi var | KANITLI |
+| `accounting.normal-journal-draft.create@1` → `AccountingStore.CreateNormalDraftAsync` | `accounting.Commands` PK; `ResultJson` | Replay `IsReplay=true` | 409 `idempotency_conflict`; ayrıca taslak-Id içerik çakışması | PK; rowversion; 2601/2627 (tracker clear yok) | **Key düzeyi gerçek SQL testi yok**; yalnız fake-store birim testi | **DOĞRULANACAK** (Faz 4 öncesi) |
+| `document.link.create@1` | Belge kasası yok (`ERP-000G`) | — | — | — | — | YOK — sahip dilimde |
+| `work.item.create@1` | `work.Attempts` PK (ÖNERİ) | Replay | 409 `same_key_payload_mismatch` | PK; rowversion | Kodlama belgesi §18.2 | TASARIM |
+
+Sonuç: sekiz sahip komutun altısı için "aynı key → tek etki; aynı key + farklı içerik → 409" davranışı kodda ve gerçek SQL testinde kanıtlıdır; Accounting'de key düzeyi SQL testi eksiktir; Documents ve Work henüz yoktur. Gateway kendi hash'ini sahip modülün hash'iyle karşılaştırmaz (büyük/küçük harf ve kanonikleştirme farkları vardır); yalnız kendi payload bütünlüğünü doğrular, sahip modül kendi kararını verir.
 
 ### 5.7 Olay ve iş akışı motoru (`Ai.Workflow`)
 
@@ -626,7 +671,7 @@ Gerekli sözleşme eki (K3, geriye uyumlu; Faz 2): her modülün metadata/envelo
 
 **Delta okuma zorunluluğu:** Zamanlı iş "bütün ERP'yi yeniden oku" yapamaz; olay listesi ve `since` filtreli READ araçları kullanır. Tarama araçları sayfa/kardinalite limitlidir; bütçe aşımında iş `Partial` biter ve bunu söyler.
 
-**Ortak veri kesiti (`AnalysisSnapshot`):** Aynı `asOf` etiketi aynı kesiti garanti etmez; mekanizma açıkça seçilir (ADR-008 madde 6, NS-AI-16): **(A)** bileşik READ/SIMULATE araçları tek bir `SNAPSHOT` izolasyonlu okuma işleminde çalışır — mevcut host-runner deseniyle birden fazla DbContext aynı `DbTransaction`'a enlist olur (RCSI hazırlığı vardır; `ALLOW_SNAPSHOT_ISOLATION` ayrıca doğrulanır); **(B)** çok adımlı model döngülerinde (saniyeler süren araç çağrıları) başlangıç ve bitiş rowversion'ları karşılaştırılır, değişen kaynak yeniden okunur veya sonuç "kısmi/eskimiş" damgası alır. "Kısmi" bir sonuç etiketidir; tutarsızlığı tespit eden mekanizma A veya B'dir ("Stok kontrolü tamamlandı; satınalma termin kaynağına ulaşılamadı, birleşik değerlendirme kısmi").
+**Ortak veri kesiti (`AnalysisSnapshot`):** Aynı `asOf` etiketi aynı kesiti garanti etmez; mekanizma açıkça seçilir (ADR-008 madde 6, NS-AI-16): **(A)** bileşik READ/SIMULATE araçları tek bir `SNAPSHOT` izolasyonlu okuma işleminde çalışır — mevcut host-runner deseniyle birden fazla DbContext aynı `DbTransaction`'a enlist olur (RCSI hazırlığı vardır; `ALLOW_SNAPSHOT_ISOLATION` ayrıca doğrulanır); **(B)** çok adımlı model döngülerinde (saniyeler süren araç çağrıları) başlangıç ve bitiş rowversion'ları karşılaştırılır, değişen kaynak yeniden okunur veya sonuç "kısmi/eskimiş" damgası alır; (v1.2) karşılaştırma **küme üyeliği** ile yapılır — sürüm eşitliği tek başına yetmez, çünkü döngü sırasında **yeni** eklenen kayıt (araya giren tahsis) başlangıç kümesinde olmadığı için sürüm karşılaştırmasına yakalanmaz; liste sorguları için `sayım + en yüksek rowversion` çifti de manifestte tutulur ve karşılaştırılır. "Kısmi" bir sonuç etiketidir; tutarsızlığı tespit eden mekanizma A veya B'dir ("Stok kontrolü tamamlandı; satınalma termin kaynağına ulaşılamadı, birleşik değerlendirme kısmi").
 
 **Eskalasyon:** `work.EscalationPolicies` tablosundan; AI "patrona haber vereyim" kararını kendisi vermez. Zincir örneği: işlemi yapan → süreç sorumlusu → yönetici; `stopAt` ile yöneticiye ulaşan iş sayısı KPI olarak izlenir.
 
@@ -662,22 +707,23 @@ Erişim: sorgu anında `CompanyId` + rol ACL filtresi; arama sonucu yetki bileti
 
 Seçim sırası sabittir: **veri sınıfı → yetenek → gecikme/maliyet**.
 
-| Veri sınıfı (KİLİTLİ-KAYNAK) | Bugünkü kural | Router davranışı |
+| Veri sınıfı (KİLİTLİ-KAYNAK) | Bugünkü kural | Router davranışı (API-birincil; v1.2) |
 |---|---|---|
-| Genel | Onaylı bulut kullanılabilir | `OPEN-020` kapanınca bulut; öncesinde yalnız yerel |
-| Şirket içi | Minimum veri, onaylı kurumsal ortam | `OPEN-020` kapanınca onaylı bulut (DPA/ZDR); öncesinde yerel |
-| Gizli (fiyat, marj, cari, sözleşme) | **Yerel model tercih** | Yerel rota varsayılan; bulut yalnız `OPEN-020`'nin bu sınıfı maskeleme şartıyla açması halinde |
-| Çok gizli (IBAN, kimlik, bordro, anahtar) | Yerel; buluta gönderilmez | Bulut rotası **hiçbir koşulda** yok; yerel model dahi minimizasyon ve audit uygular |
+| Genel | Onaylı bulut kullanılabilir | Birincil rota onaylı API sağlayıcısı; `OPEN-020` aktivasyonu (`Ai:CloudGateway:Activated`) olmadan API'ye **hiç** istek çıkmaz (fake/yerel) |
+| Şirket içi | Minimum veri, onaylı kurumsal ortam | Onaylı API (minimum veri); aktivasyon öncesi fake/yerel |
+| Gizli (fiyat, marj, cari, sözleşme) | Yalnız izinli alan seti / minimizasyon (v2.1 sınırı); kanonik kayıtta "yerel model tercih" | Onaylı API **yalnız izinli alan seti + minimizasyon/maskeleme politikasıyla** (OPEN-020 Q-AI-4); yerel model **opsiyonel** (GPU şart değil; varsa tercih edilebilir); maskeleme sınıf düşürmez |
+| Çok gizli (IBAN, kimlik, bordro, anahtar) | Buluta gönderilmez | Rota **hiçbir koşulda** yok (kod sabiti); yerel model dahi minimizasyon ve audit uygular |
 
-Türetilmiş çıktı kaynaklarının en yüksek sınıfını miras alır; birleştirme veya maskeleme sınıf düşürmez (`ERP-000J` §6). Kapı kararları ve kapı kararı kartları deterministiktir, modele ve buluta hiç gitmez; bir `Gizli` bulgunun **açıklaması** yalnız `Gizli` sınıfın izinli rotasında üretilebilir.
+Türetilmiş çıktı kaynaklarının en yüksek sınıfını miras alır; birleştirme veya maskeleme sınıf düşürmez (`ERP-000J` §6). Kapı kararları ve kapı kararı kartları deterministiktir, modele ve buluta hiç gitmez; bir `Gizli` bulgunun **açıklaması** yalnız `Gizli` sınıfın izinli rotasında ve izinli alanlarla üretilebilir.
 
-Yerel-first, bu belgenin seçeneği değil, kaydın kendisidir: `DEC-AI-004` (26 Ağustos, K0) ve `DEC-AI-009` (31 Ağustos, K0 — "ERP verisi kullanıcı tarafında/on-prem kalır; bulut yalnız ayrı sağlayıcı/sözleşme/KVKK/veri sınıfı ve aktivasyon kararıyla"). v2.1 raporundaki "API birincil; GPU başlangıç şartı değil" ifadesi daha eskidir ve AGENTS.md önceliğine göre geçersizdir. Aşağıdaki yollar bu kaydı değiştirmez; yol B/karma yeni bir kullanıcı kararı gerektirir.
+**Kayıt ve son tercih (v1.2 uzlaştırması):** Kanonik kayıt `DEC-AI-004` (26 Ağustos, K0) ve `DEC-AI-009` (31 Ağustos, K0 — "ERP verisi kullanıcı tarafında/on-prem kalır; bulut yalnız ayrı sağlayıcı/sözleşme/KVKK/veri sınıfı ve aktivasyon kararıyla") yerel-first'ü ve aktivasyon şartını tanımlar. Kullanıcının **05.09.2026** tarihli v2.1 raporundaki tercihi (`AI-K01`) "API birincil; GPU sunucusu şart değil"dir ve `DEC-AI-009`'dan **daha yenidir**; AGENTS.md "daha yeni kullanıcı kararı geçerlidir" kuralıyla bu belge onu çalışma varsayımı olarak alır. v1.1'deki "v2.1 daha eskidir ve geçersizdir" ifadesi **yanlıştı** (v2.1 master rapor ile 05.09.2026 tarihli uygulama/karar raporu karıştırılmıştı) ve düzeltilmiştir. Bu tercih:
 
-**Strateji kararı (NEEDS-SINAN, §10):** JARVIS'in değer ürettiği bilgi çoğunlukla `Gizli` sınıftır (cari risk, fiyat, marj, sözleşme). İki yol:
+- **yeniden karar sorusu yapılmaz** — Q-AI-1/Q-AI-2 karar paketinden çıkarıldı (§10.2); GPU PoC (`OPEN-014`) opsiyonel/ertelenebilir;
+- **repoya aktarılması gerekir** — `docs/decisions/` altına tarihli kayıt (F0-2 idari adım; bu belge `KARAR_SICILI`'ni değiştirmez);
+- **aktivasyon onayı değildir** — canlı veri aktarımı, sağlayıcı seçimi, DPA/ZDR, veri bölgesi, saklama/silme kanıtı ve production aktivasyonu `OPEN-020` paketinde ve Sinan'dadır; kodda `Ai:CloudGateway:Activated` bayrağı (varsayılan kapalı, yalnız insan değiştirir) bu ayrımı taşır;
+- **veri sınıfı sınırlarını değiştirmez** — `Gizli` izinli alan/minimizasyon, `Çok gizli` kapalı (v2.1'in kendi sınırı; `ERP-000J` §6).
 
-- **A — Yerel-first:** GPU sunucu (`OPEN-014` PoC) + güçlü açık-ağırlıklı model; bulut yalnız `Genel/Şirket içi` için. Artı: KVKK ve sözleşme yükü düşük, veri dışarı çıkmaz. Eksi: donanım/işletim maliyeti, model kalitesi ve Türkçe performansı ölçülmeli; ses/görsel için ek modeller.
-- **B — Maskeli bulut:** `OPEN-020` ile `Gizli` sınıfın, alan bazlı maskeleme (cari adı → takma ad, tutar → aralık/oran?) ve DPA/ZDR şartıyla onaylı sağlayıcıya açılması; `Çok gizli` yine yerel. Artı: en güçlü modeller, düşük başlangıç maliyeti. Eksi: maskeleme bazı görevleri anlamsızlaştırır (tutar olmadan risk açıklaması), sözleşme/KVKK yükü, sağlayıcı saklama davranışı (`ERP-000J` §15).
-- **Karma (önerilen tartışma zemini):** Sınıflandırma, çıkarım ve deterministik açıklama şablonları yerelde; yalnız `Genel/Şirket içi` özet ve taslak metinleri bulutta; `Gizli` için bulut rotası ancak GPU PoC yetersiz kalırsa ve maskeleme ölçümle kabul edilirse. Bu belge kararı vermez.
+Bu çerçevede "yol A/B/karma" tartışması kapanmıştır: mimari **API-birincil sağlayıcı portu + veri sınıfı matrisi + opsiyonel yerel model**dir; sağlayıcı/model/SDK seçimi ADR-008 ve OPEN-020'de kalır.
 
 Router kısıtları (KİLİTLİ-KAYNAK): yeni sağlayıcı ekleyemez; yasak sınıfı ucuz modele gönderemez; başarısızlığı aşmak için araç yetkisi genişletemez; fallback aynı policy/egress review'una tabidir. Model adı **yapılandırmadır**; iş mantığına girmez. Yetenek iddiaları (araç çağrısı, yapılandırılmış çıktı, görsel, ses) uygulama anında sağlayıcı dokümanından doğrulanır ve `ai.PolicyVersions`'a yazılır; bu belge hiçbir sağlayıcı yeteneğini doğrulamış saymaz.
 
@@ -777,7 +823,7 @@ AiFinding@1 {
 }
 ```
 
-Doğrulayıcı kuralları: `text` içinde ham sayı bulunmaz, yalnız `{{measure:id}}` referansı bulunur ve her referans `measures[]`'de vardır; her ölçünün `subject/period/scenarioRef`'i bulgunun hedefiyle tutarlıdır (doğru sayı yanlış varlığa bağlanamaz); `disclosure=GateDecision` olan görünümde `measures[]` boştur ve `text` yalnız kapı kararı şablonundan üretilir — sayı içermeyen finans bilgisi de ("teminatı yok") sahip modülün açıklık matrisi izin vermiyorsa bulunamaz; `assertionKind=Forecast` "tahmin", `Scenario` "işlem yapılırsa" rozetiyle gösterilir; `abstained=true` cevaplar "yeterli dayanak yok" olarak sunulur ve eval'de **ödüllendirilir** (uydurma cezalandırılır).
+Doğrulayıcı kuralları: `text` içinde ham sayı bulunmaz, yalnız `{{measure:id}}` referansı bulunur ve her referans `measures[]`'de vardır; her ölçünün `subject/period/scenarioRef`'i bulgunun hedefiyle tutarlıdır (doğru sayı yanlış varlığa bağlanamaz); `disclosure=GateDecision` olan görünümde `measures[]` boştur ve `text` yalnız kapı kararı şablonundan üretilir — sayı içermeyen finans bilgisi de ("teminatı yok") sahip modülün açıklık matrisi izin vermiyorsa bulunamaz; `assertionKind=Forecast` "tahmin", `Scenario` "işlem yapılırsa" rozetiyle gösterilir; `abstained=true` cevaplar "yeterli dayanak yok" olarak sunulur ve eval'de **ödüllendirilir** (uydurma cezalandırılır). (v1.2) **Yargılar calculator'dan gelir:** "limit üstünde", "yeterli değil", "tolerans dışı" gibi her yargı bir `gateDecision`/`EngineResult` referansı taşımak zorundadır; model yargı üretmez, açıklar — referanssız yargı doğrulayıcıda reddedilir. (v1.2) **Model şeması ≠ sunucu şeması:** modelin doldurduğu `AnswerEnvelope` yalnız `summary/findings[].text/recommendedActions/uncertainty/abstained` alanlarını taşır; `measures[]`, `gateDecision`, `target`, `issueKey/evaluationId`, `disclosure` ve `actorMode` gibi alanlar **sunucu tarafından** araç çıktısından ve run bağlamından eklenir; model bu alanları yazamaz (strict şemada bulunmazlar).
 
 ### 6.3 Prompt yönetimi
 
@@ -1170,11 +1216,13 @@ AI zinciri değiştiremez; yalnız politikadaki zinciri uygular ve uyarı yorgun
 1. **Baseline (Faz 0–1):** seçilmiş üç iş sınıfında bugünkü süre, hata, yeniden işleme ve yöneticiye giden iş sayısı ölçülür (manuel zaman çalışması + ERP audit).
 2. **Gölge mod (Faz 2):** sistem öneri/bulgu üretir, işi değiştirmez; insanın yaptığı ile karşılaştırılır → **doğruluk ve kapsama** ölçülür. Gölge mod süre kazancını kanıtlamaz.
 3. **Kontrollü kullanıcı denemesi (Faz 3–4):** aynı iş sınıfında bir grup AI destekli, bir grup baseline; **net insan süresi** ve ilk seferde doğru tamamlama ölçülür.
-4. **Onaylı WRITE ölçümü (Faz 4+):** onay sonrası ilk seferde tamamlanma oranı (düzeltmesiz ve reddedilmeden yürütülen öneri / onaya sunulan öneri); hata oranı insan referansını aşarsa beyaz liste askıya alınır. Hiçbir WRITE onaysız çalışmaz. Kural-tabanlı (modelsiz) görev/bildirim üretimi ayrı gösterge olarak izlenir.
+4. **Onaylı WRITE ölçümü (Faz 4+):** onay sonrası ilk seferde tamamlanma oranı; (v1.2) payda **onaylanan** önerilerdir (`Onay sonrası düzeltmesiz yürütülen öneri / onaylanan öneri`), pay ise onaydan sonra ek giriş/düzeltme gerektirmeden `Executed` olanlardır; reddedilen öneriler bu oranın dışında ayrı "ret oranı" göstergesidir; hata oranı insan referansını aşarsa beyaz liste askıya alınır. Hiçbir WRITE onaysız çalışmaz. Kural-tabanlı (modelsiz) görev/bildirim üretimi ayrı gösterge olarak izlenir.
+
+(v1.2) Ölçü tanımı netleştirmeleri: **kapsama** paydasında "bulgu yok" sonucu da "ele alındı" sayılır (sistem baktı ve sorun görmedi; eksik kaynakla `Partial` biten işlem ele alınmış sayılmaz); **çekimserlik** üç ayrı sonuçtur — haklı çekimserlik (dayanak gerçekten yok; eval'de ödül), gereksiz çekimserlik (dayanak vardı; kapsama kaybı), yanlış cevap (dayanak yokken üretildi; doğruluk kaybı) — ve üçü ayrı sayılır.
 
 Net kazanım formülü: `Eski insan süresi − yeni insan süresi − kontrol/düzeltme − süreç bakımı payı`. Örnek: 10 dk'lık iş → AI ile giriş 1 + kontrol 2 + düzeltme/idare 1 = 4 dk → net %60. "AI metni saniyede yazdı" %99 tasarruf demek değildir.
 
-İlk üç ölçüm iş sınıfı (ÖNERİ): (1) belge–sipariş–kabul karşılaştırması; (2) sipariş/sevkiyat için malzeme, termin ve risk değerlendirmesi; (3) çalışanı işlem boyunca yönlendirme (yeni personel). Ölçüm zor durumları da kapsar: ay sonu, iade, eksik belge, farklı para/birim, bağlantı kesintisi.
+İlk üç ölçüm iş sınıfı (ÖNERİ; ölçüm planında kalır, seçim Sinan'dadır — NS-AI-09): (1) belge–sipariş–kabul karşılaştırması; (2) sipariş/sevkiyat için malzeme, termin ve risk değerlendirmesi; (3) çalışanı işlem boyunca yönlendirme (yeni personel). Ölçüm zor durumları da kapsar: ay sonu, iade, eksik belge, farklı para/birim, bağlantı kesintisi.
 
 ### 8.7 Rol dönüşümü ve AI süreç sahibi
 
@@ -1208,8 +1256,8 @@ Aşağıdaki satırlar, kullanıcının metinlerinde (üç turlu JARVIS değerle
 
 | Konu | Metinlerdeki beklenti | Kanonik karar | Bu belgenin tutumu | Karar sahibi |
 |---|---|---|---|---|
-| Bulut model (GPT-6 Astra vb.) ile başlamak; v2.1 "API birincil, GPU başlangıç şartı değil" | "GPT-6 Astra metin/görsel/araç çağırma için kullanılabilir" | `DEC-AI-004` (26 Ağustos) ve `DEC-AI-009` (31 Ağustos, K0): yerel-first, bulut default-deny; `OPEN-020` açık; `Gizli` için yerel tercih. AGENTS.md önceliğine göre daha yeni olan bu kararlar v2.1 ifadesini geçersiz kılar | Yerel-first kaydın kendisidir; provider-agnostic port; yol B/karma (§5.10) yalnız yeni kullanıcı kararıyla; model yetenek iddiaları doğrulanmamış sayılır | NEEDS-SINAN (OPEN-020, OPEN-014) |
-| v2.1 raporuyla tam uzlaştırma | Önceki metinler v2.1'e atıf yapıyor | v2.1 belgesi repoda yok; kanonik kayıtla (KARAR_SICILI, Master v3) uzlaştırma yapıldı | v2.1 ile satır satır uzlaştırma ancak belge `docs/knowledge` birleştirme süreciyle (kaynak izli, `PROMPT_AI_KNOWLEDGE_MERGE_v1.md`) repoya alındıktan sonra yapılabilir (NS-AI-14) | NEEDS-SINAN |
+| API-birincil model rotası; v2.1 (05.09.2026) `AI-K01` "API birincil, GPU sunucusu şart değil" | "GPT-6 Astra metin/görsel/araç çağırma için kullanılabilir"; API birincil | `DEC-AI-004` (26 Ağustos) ve `DEC-AI-009` (31 Ağustos, K0): yerel-first, bulut default-deny, aktivasyon şartı; **05.09.2026 tercihi daha yenidir** ve AGENTS.md "daha yeni kullanıcı kararı" kuralıyla üstündür (v1.1'deki ters ifade düzeltildi) | (v1.2) API-birincil çalışma varsayımı; yeniden karar sorusu yok; kaydın `docs/decisions/`'a aktarımı F0-2 idari adım; **aktivasyon onayı değil** — `OPEN-020` ve veri sınıfı sınırları ayrı; model adı yapılandırma, yetenek iddiaları doğrulanmamış sayılır (§5.10) | Aktivasyon: NEEDS-SINAN (OPEN-020); tercih: kayıtlı |
+| v2.1 raporuyla tam uzlaştırma | Önceki metinler v2.1'e atıf yapıyor | v2.1 belgesi (05.09.2026 docx) repoda yok; bu belge yalnız üçüncü eleştirinin aktardığı `AI-K01` maddesini uzlaştırdı; diğer maddeler kanonik kayıtla (KARAR_SICILI, Master v3) uzlaştırıldı | v2.1 ile satır satır uzlaştırma ancak belge `docs/knowledge` birleştirme süreciyle (kaynak izli, `PROMPT_AI_KNOWLEDGE_MERGE_v1.md`) repoya alındıktan sonra yapılabilir (NS-AI-14) | NEEDS-SINAN |
 | Geliştirme sahipliği (merge) | — | `main`'deki AGENTS.md: `CODEX-ORCHESTRATOR` merge; 31 Ağustos standing yetkisi | Bu belge şerit adlarını **yürürlükteki sahiplik kaydına** bağlar; fiilî düzen farklıysa düzeltilecek yer AGENTS.md/`SINAN_KARARLARI`'dır, bu belge değil | Sinan |
 | Canlı konuşma ilk sürümde | v2.1: metin, belge/görsel, bas-konuş, canlı konuşma ilk sürüm kanalları | Repo'da v2.1 belgesi yok; `KARAR_SICILI`'nde ses kanalı kararı yok | Kapsam kararı bu belgeyle değişmez; uygulama sırası: metin Faz 1, bas-konuş Faz 2 (STT ADR sonrası), canlı konuşma ayrı dilim (§11) | NEEDS-SINAN (kapsam teyidi) |
 | Banka entegrasyonu (finans hazırlığı için) | Nakit pozisyonu banka ekstresiyle | `DEC-INT-001`: ilk sürümde banka entegrasyonu yok; sıra e-fatura → Mikro mutabakat → banka | Faz 1–3'te manuel/CSV ekstre; canlı banka kapsam dışı; AI araçları kaynak türünden bağımsız | KİLİTLİ-KAYNAK |
@@ -1222,7 +1270,7 @@ Aşağıdaki satırlar, kullanıcının metinlerinde (üç turlu JARVIS değerle
 | Ajan organizasyonu (uzman ajanlar) | Koordinatör + uzmanlar | Master §6.1: üç seviye AI; §27.12 AI Merkezi | Tek asistan + araçlar; uzman görev ölçülmüş gerekçeyle (§6.1) | — |
 | Memory (dört hafıza) | Operational/Corporate/Case/User | `DEC-AI-006`; SoT matrisi | Operasyonel hafıza ERP'ye işaretçidir, kopya değil (§5.9) | — |
 | Görsel akış editörü / Database Query / Code Interpreter düğümleri | Görsellerdeki stüdyo | `ERP-000J` §4, §13: hosted shell/code interpreter/serbest sorgu yok | Onaylı akış şablonları + parametre; serbest düğüm editörü yok | KİLİTLİ-KAYNAK |
-| Görev nesnesi "zaten öngörülmüş" | v2.1'de ortak görev kaydı | Kodda yok; manifestte görev yok | `Modules.Work` ön koşul olarak önerilir (§5.8) | NEEDS-SINAN (manifest görevi) |
+| Görev nesnesi "zaten öngörülmüş" | v2.1'de ortak görev kaydı | Kodda yok; manifestte görev yok | `Modules.Work` ön koşul olarak önerilir (§5.8); (v1.2) **tasarımının hazır olması kuyruğa alınması değildir** — "şimdilik analiz" | NEEDS-SINAN (manifest görevi) |
 
 ## 10. Karar paketi
 
@@ -1234,25 +1282,24 @@ Aşağıdaki satırlar, kullanıcının metinlerinde (üç turlu JARVIS değerle
 | 2 | Tool registry metadata, sürüm, risk, deprecation | `AiToolDescriptor` (§5.3); kaynak-bağlı çıktı ve ölçü sözlüğü zorunlu; deprecation: eski sürüm `Deprecated` → 1 sürüm sonra `Retired` | K3 |
 | 3 | Policy evaluation sırası ve default-deny | `ERP-000J` §8 13 adımı aynen; `IAiPolicyEvaluator` tek giriş noktası; provider alanları geçersiz | K3 |
 | 4 | CompanyContext/RBAC/ABAC/SoD, capability, source reauthorization | AI'ya özgü "geniş okuma" izni yok; araç izni = sahip izin ∩ araç politikası; capability endpoint'i K shell `Generation` mekanizmasıyla; kaynak açılışında sahip backend yeniden doğrular | K3 |
-| 5 | Preview canonicalization/hash, approval binding, expiry, reauth owner | `ai.Proposals/Approvals` (§5.5); hash kapsamı = kanonik payload + target/version + tool/policy sürümü; `AwaitingApproval → Approved` rowversion ile tek kazanan; onay = kanıt, yürütme kimliği Proposal; aktör modeli `requestedBy / preparedByRun / approvedBy / executedBy / onBehalfOf`; expiry politika değeri (ÖNERİ 24 saat, NEEDS-SINAN); reauth: `Critical` set ve `CommitHigh` etki sınıfında | K3 |
-| 6 | Domain command, idempotency, concurrency, unknown-outcome | `ai:{proposalId}` key (onay kimliği key'e girmez); expected version; otomatik retry yok; kurtarma = aynı key ile replay sorgusu, ikinci belirsizlikte `TargetLock` + insan devralma (`IAiRecoveryCoordinator`, §5.6); ortak veri kesiti mekanizması A (SNAPSHOT işlem) / B (rowversion yeniden kontrol) seçimi | K3 |
+| 5 | Preview canonicalization/hash, approval binding, expiry, reauth owner | `ai.Proposals/Approvals` (§5.5); hash kapsamı = kanonik payload + target/version + tool/policy sürümü; `AwaitingApproval → [PartiallyApproved] → Approved` rowversion ile tek kazanan; iki onay gerektiren işlemde kota 2, farklı gerçek kullanıcı, ikisi de aynı niyet+hash'e bağlı, arada sürüm değişirse ikisi de düşer; onay = kanıt, yürütme kimliği `OperationIntentId`; aktör modeli `requestedBy / preparedByRun / approvedBy / executedBy / onBehalfOf`; expiry politika değeri (ÖNERİ 24 saat, NEEDS-SINAN); reauth: `Critical` set ve `CommitHigh` etki sınıfında | K3 |
+| 6 | Domain command, idempotency, concurrency, unknown-outcome | Sunucu üretimli kalıcı **`OperationIntentId`**; key `ai:{operationIntentId}` (onay kimliği ve içerik hash'i key'e girmez); üç durum tablosu (§5.6); expected version; otomatik retry yok; kurtarma = aynı kimlik + dondurulmuş payload, en fazla bir aynı-key gönderim, ikinci belirsizlikte `TargetLock` + insan devralma, **yeni kimlik asla** (`IAiRecoveryCoordinator`, §5.6); sahip modül kanıt matrisi (§5.6a) ve DOĞRULANACAK satırları kapanmadan WRITE beyaz listesi açılmaz; ortak veri kesiti mekanizması A (SNAPSHOT işlem) / B (rowversion küme üyeliği) seçimi; kapı sorgusu on-demand değerlendirme kaydının sınıflandırması (kanıt kaydı / yazma) | K3 |
 | 7 | Business audit / durable security-event / telemetry sahipliği | Sahip modül audit'i `AiContext` ile; `Assisted` yalnız sunucu-doğrulamalı `AiRunId` referansıyla yazılır, istemci beyanı yok (ADR-009); security-event `ERP-000L` kanalı (önkoşul); telemetry ERP-000L | K3 (L'ye bağlı) |
 | 8 | Dört veri sınıfı, minimizasyon/redaction/egress/secret | Sınıf → rota matrisi (§5.10); alan düzeyi `DataClass` etiketi sahip modül sözleşmesinde; redaction fonksiyonu deterministik ve test edilir | K3 |
 | 9 | Prompt injection, attachment, remote content, URL/MCP/hosted tool sınırı | `ERP-000J` §13–14 aynen; belge içeriği veri; remote MCP/hosted tool kapalı | K3 |
 | 10 | Provider state/retention/cache/conversation/file/deletion | Başlangıç: **stateless request** (provider conversation yok); ERP-managed encrypted kısa süreli state yalnız panel oturumu için; tablo türü bazlı saklama/değişmezlik matrisi (§5.5): denetim kayıtları değişmez, içerik süreli, silme indekse yansır; exact retention OPEN-018/020/021/ERP-000L/N | K3 |
 | 11 | Timeout/retry/fallback/kill switch ve manual fallback | READ/DRAFT bounded retry (config); WRITE otomatik retry yok (kurtarma ayrı, madde 6); kill switch tool/adapter/provider bazında ve yalnız `Modules.Ai`'yi kapatır — `Work.Rules` kartları ve iş öğeleri devam eder; AI kapalıyken şablon metinli deterministik kartlar | K2/K3 |
-| 12 | Eval/red-team, rollout/rollback, production activation | §5.15, §6.7; P0 kapısı; rollout `ai.cloudGateway.enabled` ve tool bazlı flag'ler; activation Sinan | K3 |
+| 12 | Eval/red-team, rollout/rollback, production activation | §5.15, §6.7; P0 kapısı; rollout `Ai:CloudGateway:Activated` (OPEN-020 aktivasyon kanıtı; varsayılan kapalı) ve tool bazlı `Ai:Tools:*:Enabled` bayrakları; activation Sinan | K3 |
 
 ### 10.2 OPEN-020 karar paketi (NEEDS-SINAN)
 
-`ERP-000J` §15'teki kanıt listesi aynen gereklidir. Bu belgenin önerdiği karar çerçevesi:
+`ERP-000J` §15'teki kanıt listesi aynen gereklidir. (v1.2) Rota tercihi **karar sorusu değildir**: API-birincil, GPU şart değil (05.09.2026 `AI-K01`; §5.10). Eski Q-AI-1 (rota) ve Q-AI-2 (GPU PoC zorunluluğu) kaldırıldı; `OPEN-014` GPU PoC yalnız isteğe bağlı kalite/gecikme karşılaştırması olarak açık kalabilir. Kalan sorular aktivasyon kanıtı ve sınırlar içindir:
 
 | Soru | Seçenekler | Etki |
 |---|---|---|
-| Q-AI-1: `Gizli` sınıf için birincil rota? | (A) yerel model (GPU PoC) · (B) maskeli onaylı bulut · (C) karma | JARVIS kalitesi ve maliyet yapısı; A donanım, B sözleşme/KVKK |
-| Q-AI-2: GPU PoC yapılacak mı, hangi bütçeyle? (`OPEN-014`) | evet/hayır; hedef: Türkçe kalite + gecikme + ses/görsel | A yolunun fizibilitesi |
-| Q-AI-3: Onaylı bulut sağlayıcı(lar) ve sözleşme (DPA, ZDR/MAM, bölge) | sağlayıcı adı bu belgede seçilmez | `Genel/Şirket içi` rotası |
-| Q-AI-4: Maskeleme politikası (`Gizli` bulut'a giderse hangi alanlar nasıl) | cari adı takma ad; tutar aralık; IBAN asla | B/C yollarında görev faydası |
+| Q-AI-0 (idari): 05.09.2026 `AI-K01` tercihinin `docs/decisions/` altına kaynak izli aktarımı | tarihli `SINAN_KARARLARI_*` kaydı veya `KARAR_SICILI` eki | Kaydın kaynaklara doğru aktarılması; yeni karar değil |
+| Q-AI-3: Onaylı API sağlayıcı(lar) ve sözleşme (DPA, ZDR/MAM, bölge, alt işleyenler, silme kanıtı) | sağlayıcı adı bu belgede seçilmez | Bütün sınıfların birincil rotası; **aktivasyon bayrağı** bu kanıtla açılır |
+| Q-AI-4: `Gizli` sınıf için izinli alan seti ve minimizasyon/maskeleme politikası | cari adı takma ad; tutar aralık/oran; IBAN asla; alan bazlı allowlist | Görev faydası (tutar olmadan risk açıklaması sınırlı) vs. KVKK yükü |
 | Q-AI-5: Retention/deletion (prompt/response/tool/attachment/cache/telemetry) | metadata-only varsayılan; içerik saklama süresi | Audit kanıtı ≠ içerik |
 | Q-AI-6: Production aktivasyon sırası | tool bazlı flag'ler; önce READ, sonra DRAFT/SIMULATE, sonra WRITE beyaz listesi | Rollout |
 
@@ -1260,7 +1307,7 @@ Aşağıdaki satırlar, kullanıcının metinlerinde (üç turlu JARVIS değerle
 
 | ID | Soru | Öneri |
 |---|---|---|
-| NS-AI-01 | `Modules.Work` (görev/onay/eskalasyon) manifest'e yeni platform görevi olarak eklensin mi? | Evet; AI'dan bağımsız; W0/W1 dalgasına |
+| NS-AI-01 | `Modules.Work` (görev/onay/eskalasyon) manifest'e yeni platform görevi olarak eklensin mi? Tasarımı hazırdır (bu belge §5.8, kodlama belgesi §4–§9); **kuyruğa alınması bu belgeyle olmaz** | Evet; AI'dan bağımsız; W0/W1 dalgasına — karar Sinan'da |
 | NS-AI-02 | AI capability/permission adları (`ai.panel.use`, `ai.center.view`, `ai.quality.view`, `ai.policy.manage`, `work.items.view`, `work.items.create`) ve sahip modüllerde önerilen yeni izinler (`finance.risk.read`, `finance.risk.gate.read`, `finance.risk.exception.approve`, `finance.open-items.read`, belge bağlantı izni) ile rol atamaları | ÖNERİ adlar; rol ataması Sinan |
 | NS-AI-03 | Pilot READ/DRAFT/SIMULATE/WRITE araç seti ve sahip modüller (Ek A) | Faz 1: READ seti (Ek A #1–17) + 2 SIMULATE (#19–20); Faz 2: 4 SIMULATE (#21–23, #31) + kapı sorgusu (#44) + 8 DRAFT (#26–30, #32–34); Faz 3: iş öğesi araçları (#18, #43) + 2 SIMULATE (#24–25); Faz 4: 8 WRITE (#35–42) |
 | NS-AI-04 | Eskalasyon politikası başlangıç değerleri (§8.5) | Tablo öneri; Policy Registry'de sürümlenir |
@@ -1269,7 +1316,7 @@ Aşağıdaki satırlar, kullanıcının metinlerinde (üç turlu JARVIS değerle
 | NS-AI-07 | Vektör deposu: SQL Server yerleşik mi, ayrı depo mu | SQL Server sürümü doğrulanırsa yerleşik |
 | NS-AI-08 | AI süreç sahibi rolü: kim, ne kadar zaman | Sinan + 1 koordinatör + alan sahipleri |
 | NS-AI-09 | Ölçüm için ilk üç iş sınıfı (§8.6) | belge eşleştirme, sipariş/sevkiyat risk-termin, yeni personel yönlendirme |
-| NS-AI-10 | Sevkiyat riski açıklığı: sevkiyat rolü Finance'in kapı kararını (`Devam / Değerlendirme gerekli / Durdur`) görsün mü, hiç görmesin mi? | Kapı kararı + izinli gerekçe kodları (bu belge); tutar hiçbir kanalda yok |
+| NS-AI-10 | Sevkiyat riski açıklığı: sevkiyat rolü Finance'in kapı kararını (`Devam / Değerlendirme gerekli / Durdur`) görsün mü, hiç görmesin mi? | Kapı kararı + nötr izinli gerekçe kodu ("Finans değerlendirmesi gerekli") başlangıç önerisi; tutar ve hassas gerekçe hiçbir kanalda yok; **öneridir, uygulanmış yetki kararı değildir** |
 | NS-AI-11 | Ses/canlı konuşma ilk sürüm kapsamı teyidi (v2.1 ile) | Metin Faz 1; bas-konuş Faz 2 (STT ADR sonrası); canlı konuşma ayrı dilim |
 | NS-AI-12 | Golden set için maskeli gerçek veri kullanım izni (on-prem eval ortamı) | Evet, KVKK politikası ile |
 | NS-AI-13 | MRP/CRP (ihtiyaç ve kapasite hesabı) motoru hangi dilimde? Hiçbir backlog diliminde tanımlı değil | `W3-URETIM` veya `W2-SATINALMA` kapsam eki; AI yalnız tüketici |
@@ -1277,8 +1324,10 @@ Aşağıdaki satırlar, kullanıcının metinlerinde (üç turlu JARVIS değerle
 | NS-AI-15 | Kapı sorgusu gerekçe kodları: hangi kodlar hangi role gösterilebilir (örn. `OVERDUE_ITEM` sevkiyat rolüne açık mı?) | Finance açıklık matrisi; başlangıçta yalnız `RISK_REVIEW_REQUIRED` benzeri nötr kodlar |
 | NS-AI-16 | Ortak veri kesiti mekanizması: (A) SNAPSHOT izolasyonlu tek okuma işlemi mi, (B) rowversion yeniden kontrol mü, ikisi birlikte mi? | A bileşik araçlarda, B model döngülerinde (§5.7); DB ayarı doğrulanacak |
 | NS-AI-17 | Fiilî merge/koordinasyon sahipliği AGENTS.md'deki `CODEX-ORCHESTRATOR` kaydıyla aynı mı? Değilse kayıt güncellensin | Bu belge yürürlükteki kayda bağlanır |
+| NS-AI-18 (v1.2) | Kurtarma devralması: `Unknown` kalan öneriyi kim kapatır (AI süreç sahibi mi, sahip modül operatörü mü) ve kanıt referansı hangi kayıttan gelir? | İş öğesi her ikisine; kapanış `resolution` ile kanıt referansı zorunlu |
+| NS-AI-19 (v1.2) | Sahip modüllere salt-okunur deneme-kaydı sorgusu (`IIdempotencyProbeV1`) ve salt-okunur katılımcı (`*ReadParticipant`) port'ları eklensin mi? | ÖNERİ evet (K3 cross-module); olmadan "en fazla bir aynı-key gönderim" ve mekanizma B yolu geçerli |
 
-Bu maddeler v3 governance'a uygun olarak Issue #66'ya `NEEDS-SINAN: <soru>` tek satır biçiminde taşınabilir.
+Bu maddeler v3 governance'a uygun olarak Issue #66'ya `NEEDS-SINAN: <soru>` tek satır biçiminde taşınabilir; **bu belge onları taşımaz** (görev listesi değişmez).
 
 ## 11. Uygulama planı
 
@@ -1290,7 +1339,7 @@ Bu maddeler v3 governance'a uygun olarak Issue #66'ya `NEEDS-SINAN: <soru>` tek 
 | Olay tetikleyicileri | `ERP-000F` / `W0-OUTBOX` | ready | AI iş akışının ön koşulu; dispatcher + inbox |
 | Security-event kanalı, telemetry | `ERP-000L` / `W0-OBSERV` | blocked | J'nin doğrudan bağımlılığı |
 | Görünür AI deneyimi | `ERP-000K` | blocked | AI slot gate |
-| Görev/onay çekirdeği + etki kuralı motoru (`Modules.Work`, `Work.Rules`) | **yok** | ÖNERİ | Yeni platform görevi (NS-AI-01); Faz 1 ile paralel şerit, Faz 3 girişinde kabul |
+| Görev/onay çekirdeği + etki kuralı motoru (`Modules.Work`, `Work.Rules`) | **yok** | ÖNERİ (tasarım hazır; kuyrukta **değil**) | Yeni platform görevi (NS-AI-01); Faz 1 ile paralel şerit, Faz 3 girişinde kabul; kuyruğa alınması Sinan kararı |
 | Policy Registry | `W1-SETTINGS` | planlı | Eşik/eskalasyon/onay matrisi |
 | Cari risk motoru | `W2-ACIKKALEM`, `W4-RISK` | planlı | Sevkiyat örneğinin kesin kuralı |
 | Belge kasası/OCR/arama | `ERP-000G/H/I`, `W2-BELGE` | ready/planlı | Belge araçları |
@@ -1307,7 +1356,7 @@ Kural: her faz **ilk sürümde kararlaştırılmış AI kapsamını ertelemez**;
 | Paket | İçerik | Şerit | K | Çıktı / kanıt |
 |---|---|---|---|---|
 | F0-1 | Fiziksel `docs/adr/ADR-008-ai-gateway.md` (12 madde, §10.1) — security/architecture review | ChatGPT + Codex, insan review | K3 | ADR merge; register satırı fiziksel dosyaya bağlanır |
-| F0-2 | `OPEN-020` karar paketi (§10.2) + `OPEN-014` GPU PoC planı | ChatGPT hazırlar; Sinan karar | — | `KARAR_SICILI` yeni `DEC-AI-*` |
+| F0-2 | `OPEN-020` aktivasyon paketi (§10.2 Q-AI-3/4/5/6) + **idari adım:** 05.09.2026 `AI-K01` "API birincil; GPU şart değil" tercihinin `docs/decisions/`'a kaynak izli aktarımı (Q-AI-0; yeni karar değil) + isteğe bağlı `OPEN-014` GPU karşılaştırma planı | ChatGPT hazırlar; Sinan karar | — | `KARAR_SICILI` yeni `DEC-AI-*` / tarihli `SINAN_KARARLARI` |
 | F0-3 | `ERP-000J-AI-CONTRACT` kapanış envanteri: veri sınıfı/alan etiketleri, tool/attachment/retention inventory, capability/permission önerisi, threat model, eval fixture tasarımı (gerçek veri yok) | ChatGPT + Codex | — | docs-only |
 | F0-4 | `docs/ai/IMPACT_RULES.md` (Ek B), `MEASURE_DICTIONARY.md`, `TOOL_CATALOG.md` (Ek A), iş sözleşmesi şablonları (§8.3) | ChatGPT | — | docs |
 | F0-5 | `Modules.Work` manifest görevi ve spec (NS-AI-01) | ChatGPT | — | task_manifest delta (insan review) |
@@ -1342,7 +1391,7 @@ Kabul: yanlış şirket / eski veri / erişilemeyen kaynak senaryoları; ölçü
 
 | Paket | İçerik | Şerit | K | Kanıt |
 |---|---|---|---|---|
-| F2-1 | `ai.AssistantFindings`, `ai.Proposals` (aktör alanları, tek kazanan geçiş, `TargetLock`), `ai.Approvals` (kanıt), `ai.Feedback` + `IAiPreviewService`, `IAiApprovalBinding` (dispatch Faz 4) | Codex | K3 | hash/binding/expiry; çift onay yarışı tek kazanan |
+| F2-1 | `ai.AssistantFindings`, `ai.Proposals` (`OperationIntentId` + `IntentRevision`, aktör alanları, tek kazanan geçiş, `RequiredApprovals`, `TargetLock`, şifreli payload deposu), `ai.Approvals` (kanıt), `ai.Feedback` + `IAiPreviewService`, `IAiApprovalBinding` (dispatch Faz 4) | Codex | K3 | hash/binding/expiry; çift onay yarışı tek kazanan; iki onay kotası; aynı içerikte iki niyet |
 | F2-2 | DRAFT araçları: `sales.draft.create-from-request@1`, `purchasing.quote.normalize@1`, `counterparty.party.create-draft@1`, `product.card.draft-from-document@1`, `accounting.account-mapping.suggest@1`, `finance.allocation.suggest@1`, `doc.email.draft@1`, `logistics.instruction.draft@1` | Codex | K2 | taslak = form ön-doldurma; kayıt yok |
 | F2-3 | Belge araçları (ERP-000G/OCR geldiğinde): classify/extract/impact-plan | Codex | K2/K3 | injection golden |
 | F2-4 | `Work.Rules` üzerinde etki kuralları v1 + Ek B başlangıç kuralları (deterministik; SIMULATE/kapı sorgusuna bağlı; Sorun/Değerlendirme yaşam döngüsü) — `ShadowOnly` modu | Codex | K2 | gölge kayıtları; Reopened testi |
@@ -1371,11 +1420,11 @@ Kabul: aynı olay tekrar bildirilmez; her uyarının sorumlusu ve kapanış yolu
 
 #### Faz 4 — Onaylı WRITE (beyaz liste; her yazma önizleme + insan onayı)
 
-Ön koşul: gölge mod ölçümü, Faz 2 Proposal altyapısı, `ai.cloudGateway.enabled`/tool flag'leri.
+Ön koşul: gölge mod ölçümü, Faz 2 Proposal altyapısı, tool bazlı `Ai:Tools:*:Enabled` bayrakları (WRITE kalemleri varsayılan kapalı); model gerektiren adımlar için `Ai:CloudGateway:Activated` veya yerel rota.
 
 | Paket | İçerik | Şerit | K | Kanıt |
 |---|---|---|---|---|
-| F4-1 | `IAiCommandDispatcher` + `IAiRecoveryCoordinator`: tek kazanan `Approved` Proposal → sahip komut (idempotency `ai:{proposalId}`, expected version, `AiContext.Executed`, aktör alanları); otomatik retry yok; kurtarma sorgusu, `TargetLock`, insan devralma | Codex | K3 | replay/conflict/unknown; çift onay; commit-sonrası çökme (gerçek SQL) |
+| F4-1 | `IAiCommandDispatcher` + `IAiRecoveryCoordinator`: tek kazanan `Approved` Proposal → sahip komut (idempotency `ai:{operationIntentId}`, dondurulmuş payload, expected version, `AiContext.Executed`, aktör alanları); otomatik retry yok; en fazla bir aynı-key kurtarma gönderimi, `TargetLock`, insan devralma (`resolution` + kanıt); §5.6a DOĞRULANACAK satırları (Accounting key düzeyi SQL testi, Counterparty farklı-aktör create testi) sahip dilimlerde kapatılmış | Codex | K3 | replay/conflict/unknown; çift onay; aynı içerikte iki niyet; belirsiz yeniden gönderim; commit-sonrası çökme (gerçek SQL) |
 | F4-2 | WRITE araçları (beyaz liste, düşük etki): `counterparty.party.create@1`, `sales.draft.create@1`, `purchasing.request.create@1`, `inventory.allocation.create@1`, `finance.receipt.draft@1`, `logistics.instruction.create@1`, `accounting.normal-journal-draft.create@1`, `document.link.create@1` | Codex | K3 | `ERP-000J` §20.3 senaryoları (13–22) |
 | F4-3 | Frontend: preview → onay → sonuç ekranı; reauth akışı; stale/conflict durumları | Claude | K2 | E2E |
 | F4-4 | Kontrollü kullanıcı denemesi (§8.6 adım 3) | Sinan + alan sahipleri | — | net süre ölçümü |
@@ -1398,7 +1447,8 @@ Kabul: onay sonrası ilk seferde tamamlanma oranı ölçülür; işlem başına 
 2. Faz 1, `ERP-000F` ve `ERP-000L` kabulünü bekler; bu arada F0 çıktıları ve fake-provider eval harness tasarımı ilerler.
 3. Her sahip modül dilimi (`W2-ACIKKALEM`, `W4-RISK`, `W3-TAHSIS`, `W1-SETTINGS`) kendi SIMULATE aracını ve `DataClass` etiketlerini **dilim kapsamında** teslim eder; AI katmanı sonradan yama yapmaz.
 4. WRITE beyaz listesi ancak gölge mod ölçümünden sonra ve tool bazlı flag ile açılır; her yazma önizleme + insan onayı ister; production aktivasyonu Sinan'dadır.
-5. `Modules.Work`/`Work.Rules` AI'dan bağımsız paralel şerittir; AI kapılarını (ADR-008, OPEN-020, L) beklemez.
+5. `Modules.Work`/`Work.Rules` AI'dan bağımsız paralel şerittir; AI kapılarını (ADR-008, OPEN-020, L) beklemez — fakat (v1.2) tasarımının hazır olması **kuyruğa alınması değildir**; hiçbir faz veya paket bu belgeyle başlamaz, mevcut ERP kapanış kuyruğu etkilenmez.
+6. (v1.2) API-birincil tercihi Faz 1'de fake provider + (aktivasyon yoksa) yerel/fake rota ile başlar; gerçek API rotası yalnız `OPEN-020` aktivasyon kanıtı ve `Ai:CloudGateway:Activated` ile açılır; GPU sunucu hiçbir fazın ön koşulu değildir.
 
 ---
 
@@ -1415,7 +1465,7 @@ Kabul: onay sonrası ilk seferde tamamlanma oranı ölçülür; işlem başına 
 ### 12.2 Zorunlu test sınıfları (`ERP-000J` §21 ile uyumlu)
 
 - **Unit/contract:** registry default-deny; schema/version/risk/data-class matrisleri; policy sırası ve kısa devre; preview/hash/approval/expiry/reauth binding; argüman yeniden doğrulama; redaction/taint/provenance; `Çok gizli` cloud deny golden; refusal/incomplete/timeout/stream/duplicate fixtures; attachment/OCR truncation; audit zarfı kanonikleştirme; **ölçü referansı doğrulayıcı** (referanssız sayı, yanlış varlık/dönem/senaryoya bağlı referans); **alan bazlı açıklık matrisi sızıntı testi** (sayı içermeyen finans cümlesi dahil, bütün kanallar); **risk aşama geçişi çift sayım golden'ı**; etki kuralı deterministik golden'ları; Sorun yaşam döngüsü (Reopened) testleri.
-- **Integration / gerçek SQL:** CompanyContext/RBAC/ABAC ve sahip query/command sınırı; READ/DRAFT/SIMULATE için sıfır business/command/outbox etkisi; permission/version/policy drift → onay geçersiz; idempotency replay/collision ve concurrency race; business write + audit atomikliği; security-event unavailable → fail-closed; cross-company nondisclosure (count/source/timing/error); **worker yeniden başlatma**; **yinelenen olay → tek iş**; **çift onay yarışı → tek kazanan, tek etki**; **commit-sonrası çökme → kurtarma sorgusu ile tek kayıt**; **`Unknown` ikinci belirsizlik → `TargetLock` + insan devralma**; **ortak kesit: okuma arasında değişen kaynak tespiti**; **AI capability kapalıyken `Work.Rules` ve iş öğeleri çalışır**.
+- **Integration / gerçek SQL:** CompanyContext/RBAC/ABAC ve sahip query/command sınırı; READ/DRAFT/SIMULATE için sıfır business/command/outbox etkisi; permission/version/policy drift → onay geçersiz; idempotency replay/collision ve concurrency race; business write + audit atomikliği; security-event unavailable → fail-closed; cross-company nondisclosure (count/source/timing/error); **worker yeniden başlatma**; **yinelenen olay → tek iş**; **çift onay yarışı → tek kazanan, tek etki**; **commit-sonrası çökme → kurtarma sorgusu ile tek kayıt**; **`Unknown` ikinci belirsizlik → `TargetLock` + insan devralma**; **ortak kesit: okuma arasında değişen kaynak tespiti**; **AI capability kapalıyken `Work.Rules` ve iş öğeleri çalışır**; (v1.2) **aynı içerikte iki meşru niyet → iki sahip kaydı, çakışma yok**; **belirsiz sonucun aynı kimlikle yeniden gönderimi → sahip replay, tek kayıt; hiç ulaşmamışsa en fazla bir gönderim**; **aynı niyet + farklı içerik → sahip 409, `Failed(ContentConflict)`, security-event**; **iki onay gerektiren işlem: aynı aktör ikinci onay 403, arada hedef değişimi → `Stale`**; **tek sevkiyat istisnası: `Active → Consumed`, süre sonu yeniden değerlendirme → `Reopened`, kart güncellenir**.
 - **E2E / erişilebilirlik / operasyon:** capability-gated READ/DRAFT/SIMULATE/WRITE ayrımı; preview/fark/onay/reauth/conflict/degraded UI; AI kapalıyken eksiksiz manuel akış; Türkçe içerik, klavye/odak, screen reader, responsive drawer, safe renderer; kill switch, provider outage, recovery runbook; yalnız OPEN-020 kabulünden sonra opt-in provider contract testi; gerçek müşteri verisi/kişisel API anahtarı CI'da yok.
 - **Red-team sınıfları:** prompt injection, indirect injection, data exfiltration, cross-tenant inference, tool confusion, excessive agency, replay, stale approval, unsafe output rendering, SSRF/egress, attachment bomb, secret leakage, denial-of-wallet, provider-retention drift; **ek:** audience-level bypass ("finans müdürü gibi düşün"), measure fabrication ("net nakit" türetme), stale-knowledge (iptal edilmiş belge).
 
@@ -1431,8 +1481,9 @@ Kalıntı sütunu **tasarım beklentisidir**, ölçülmüş sonuç değildir; ö
 |---|---|---|---|
 | Kritik yol uzun (manifest: M → O → N → L → J; teknik durumu yansıtmayabilir) | AI değeri geç görünür; motivasyon düşer | Faz 0 hemen; F0-8 manifest–gerçeklik uzlaştırması; `Work`/`Work.Rules` AI kapılarını beklemeyen paralel şerit; fake-provider ile eval harness erken | Orta (takvim) |
 | Risk çift sayımı / yanlış uyarı | Gerçekte olmayan limit aşımı, gereksiz onay, durdurulan sevkiyat | Risk aracında aşama geçişi sözleşmesi; çift sayım golden testi; kapı kararı yalnız Finance calculator'ından | Düşük |
-| Çift onay / çift kayıt | Aynı öneri için iki yürütme | Key = `ai:{proposalId}`; tek kazanan geçiş; kurtarma sorgusu; `TargetLock` | Düşük |
-| `Gizli` sınıf rotası kararsız | Model kalitesi/maliyet belirsiz | OPEN-020 + GPU PoC kararı Faz 0'da; router yapılandırma | Orta (NEEDS-SINAN) |
+| Çift onay / çift kayıt | Aynı öneri için iki yürütme | Key = `ai:{operationIntentId}` (içerik hash'inden ayrı); tek kazanan geçiş; kurtarma aynı kimlikle, en fazla bir gönderim; `TargetLock`; sahip PK kanıtı (§5.6a) | Düşük (KANITLI satırlar için); Accounting DOĞRULANACAK |
+| Aynı içerikli meşru işlemin tekrar sayılması | İkinci meşru sipariş engellenir | İş niyeti kimliği içerikten bağımsız; içerik hash'i yalnız doğrulama; mükerrerlik sahip modül kontrolü + bilgi satırı | Düşük |
+| `Gizli` sınıf için API rotası aktivasyonu | Aktivasyon kanıtı (DPA/ZDR, izinli alan seti) gecikirse `Gizli` açıklamalar yalnız fake/yerel rotada kalır | API-birincil tercih kayıtlı; aktivasyon `OPEN-020` ile; yerel model opsiyonel köprü; deterministik kartlar etkilenmez | Orta (NEEDS-SINAN — aktivasyon) |
 | Tek kişiye bağımlılık (Sinan) | Bilgi tabanı ve karar akışı tıkanır | AI süreç sahibi + alan sahipleri; şablonlu bilgi girişi; NEEDS-SINAN toplu check-in | Orta (organizasyonel) |
 | Süreç standardı eksik | Model karışıklığı devralır | İş sözleşmesi her kural/şablon/beyaz liste kalemi öncesi; SOP nesneleri; uygunluk raporu | Orta |
 | Veri kalitesi | AI tutarsızlığı büyütür | Golden set gerçek işlemlerden (maskeli); tutarsızlık raporu önce | Orta |
@@ -1457,7 +1508,10 @@ Kalıntı sütunu **tasarım beklentisidir**, ölçülmüş sonuç değildir; ö
 | **Kapı sorgusu (Gate query)** | Sahip modülün başka rollere açıkça yetkilendirdiği dar karar çıktısı: `Devam / Değerlendirme gerekli / Durdur` + izinli gerekçe kodları; tutar yok; deterministik. |
 | **Ölçü referansı** | Modelin `{{measure:id}}` yer tutucusu; değer sunucu tarafından doğrulanmış araç çıktısından yerleştirilir. |
 | **Aşama geçişi (Stage transition)** | Aynı ticari yükümlülüğün risk formülündeki bir bileşenden diğerine taşınması (onaylı sipariş kalanı → faturalanmamış sevkiyat → açık alacak); brüt riski değiştirmez. |
-| **Öneri (Proposal)** | WRITE niyeti önizlemesi; kanonik payload hash'i, hedef sürüm, expiry. |
+| **Öneri (Proposal)** | WRITE niyeti önizlemesi; kanonik payload hash'i, hedef sürüm, expiry; aynı iş niyetinin yeni önizlemesi yeni revizyondur. |
+| **İş niyeti kimliği (OperationIntentId)** | (v1.2) Sunucu üretimli, kalıcı kimlik; idempotency key `ai:{operationIntentId}` bundan türer; içerik hash'inden ayrıdır; aynı içerikle iki meşru niyet olabilir; belirsiz sonuç için yeni kimlik üretilmez. |
+| **İçerik hash'i (CanonicalPayloadHash)** | Kanonik payload'ın SHA-256'sı; gönderilen içeriğin onaylananla aynı olduğunu doğrular; kimlik değildir. |
+| **Risk istisnası durumları** | `Active` (kapsam eşleşir, süresi dolmamış) · `Consumed` (tek sevkiyat istisnası tükendi) · `Expired/Revoked` (süre doldu / geri alındı → yeniden değerlendirme, `Reopened`). |
 | **İş öğesi (WorkItem)** | Görev/uyarı/onay isteği; sahip, SLA, eskalasyon, kapanış kanıtı. |
 | **Kaynak-bağlı sayı** | Cevaptaki her sayının, ölçü referansı yoluyla araç çıktısındaki `MeasuredValue`'ya ve doğru varlık/dönem/senaryoya bağlanması. |
 | **Ölçü sözlüğü** | İş ölçülerinin tek tanımı, birimi, FormulaId'si ve as-of semantiği. |
@@ -1467,9 +1521,47 @@ Kalıntı sütunu **tasarım beklentisidir**, ölçülmüş sonuç değildir; ö
 
 ---
 
-## 15. v1.1 değişiklik günlüğü
+## 15. Değişiklik günlüğü (v1.1 ve v1.2) ve kapanış kontrol tablosu
 
-v1.0, 27 Eylül 2026 tarihli karşı-ajan eleştirisinden (repo yönetişimindeki "karşı-ajan review" adımı) geçti. Aşağıdaki liste eleştirideki tespitleri, verilen hükmü ve bu belgede nerede düzeltildiğini gösterir. 23 eleştiri tespitinin 17'si kabul edilmiştir (#14 kısmen), 4'ü nüansla kabul edilmiş (#18–21), 2'sinde eleştirinin çerçevesi düzeltilmiştir (#22–23); ayrıca belge sahibinin 4 öz-eleştirisi (Ö-1..Ö-4) uygulanmıştır.
+### 15.1 v1.2 değişiklik günlüğü (28 Eylül 2026 — üçüncü bağımsız eleştiri)
+
+| # | Tespit | Hüküm | Nerede düzeltildi |
+|---|---|---|---|
+| 1 | "Araç + şirket + kanonik içerik" tek başına iş niyeti kimliği olamaz; aynı içerikle iki meşru işlem yapılabilir; kalıcı iş niyeti kimliği içerik hash'inden ayrılmalı (bu ifade v1.1 metninde değil, ara cevaptaki tabloda idi; v1.1'de key `ai:{proposalId}` idi) | Kabul — `OperationIntentId` açıkça tanımlandı, önizleme kimliğinden ve içerik hash'inden ayrıldı | §0.3 terminoloji (Sözlük §14), §4.4, §5.4, §5.5 (`ai.Proposals`), §5.6 (key satırı + üç durum tablosu), §10.1 madde 5–6, F2-1, F4-1, §13, Ek C.3, Ek D G-33/G-37 |
+| 2 | Belirsiz sonucu aşmak için yeni kimlik üretilemez | Kabul | §5.6 kurtarma paragrafı (madde 4), Ek D G-11/G-34; kodlama belgesi §5.1 (`Reissue` reddi), §10.4, §17.3 (UI'da yeniden dene yok) |
+| 3 | "Repoda bu garanti zaten var" bütün araçlar için kanıt değildir; her yazma aracı için eşzamanlılık/kurtarma kanıtı eşleştirilmeli; kanıtsız → doğrulanacak | Kabul | §0.1, §0.4 (DOĞRULANACAK etiketi), §5.6a kanıt matrisi (8 komut), F4-1 ön koşulu, §13; kodlama belgesi §10.6 (dosya:satır), Ek K-1 |
+| 4 | API birincil / GPU şart değil yeni karar değil; 05.09.2026 v2.1 bunu kaydediyor; yeniden seçim istenmemeli; aktarım ≠ canlı veri aktarımı izni | Kabul — v1.1'deki "v2.1 daha eskidir" ifadesi yanlıştı | §1, §5.10 (router tablosu ve uzlaştırma), §9 satır 1–2, §10.2 (Q-AI-1/2 kaldırıldı, Q-AI-0 idari), F0-2, §11.3 madde 6, §13, Ek E |
+| 5 | Sevkiyat/satış kullanıcısının göreceği nötr açıklama başlangıç önerisidir, uygulanmış yetki kararı değil | Kabul | §3.4 [2] notu, NS-AI-10 |
+| 6 | İlk üç ölçüm işi ölçüm planında kalır | Kabul (değişiklik yok; statü açıkça yazıldı) | §8.6 |
+| 7 | Work modülü tasarımı ≠ aktif geliştirme kuyruğu ("şimdilik analiz") | Kabul | §0.1, §9 (görev nesnesi satırı), NS-AI-01, §11.1, §11.3 madde 5 |
+| 8 | Kapanış koşulu: inceleme sayısı değil, v1.2 tam metni + değişiklik listesi + her kritik düzeltme için tutarlı senaryo (aynı içerikte iki sipariş, belirsiz sonucun tekrar gönderilmesi, iki onay, tek sevkiyata istisna) | Kabul | Bu bölüm (15.1–15.3), §5.6 tablo, §12.2, Ek D G-33…G-37; kodlama belgesi §10.5, §18.2 |
+| 9 | Şimdilik repo, karar sicili, görev listesi, kod veya izinler değişmez; ERP kapanış çalışması etkilenmez; Faz 0 başlatılmaz | Kabul | Künye "Durum", §0.1, §10.3 son paragraf; her iki belge docs-only ve ayrı dalda, PR açılmamıştır |
+| Ö-5 | (öz-eleştiri) Kısmi sevkiyat seçeneği (b) tahsisle karışıyordu; istisna kapsamı ve süresi tanımsızdı | Kabul | §3.4 [4]–[5] istisna üç durumu, §14 sözlük, G-36 |
+| Ö-6 | (öz-eleştiri) Kurtarma metni "kayıt yoksa hiç ulaşmamış" varsayıyordu | Kabul | §5.6 madde 2 ("kayıt yok ≠ hiç ulaşmadı"; en fazla bir gönderim + sahip PK) |
+| Ö-7 | (öz-eleştiri) İki onay gerektiren işlem kotası, aktör ayrımı ve arada sürüm değişimi yazılı değildi | Kabul | §5.5 `RequiredApprovals`, §5.6 "iki onay" paragrafı, §10.1 madde 5, G-35 |
+| Ö-8 | (öz-eleştiri) `TargetLock` create niyetinde hedef kimliği olmadığı için tanımsızdı | Kabul | §5.5 (niyet düzeyi kilit + `intent_pending_recovery`) |
+| Ö-9 | (öz-eleştiri) Kapı sorgusu (salt-okunur) ile iş öğesi açma (yazma) aynı çağrıda karışabiliyordu; model şeması ile sunucu şeması ayrımı ve `actorMode`'un sunucu-içi olduğu yazılı değildi; yargıların calculator'dan geldiği açık değildi; kesit mekanizması B'de küme üyeliği eksikti | Kabul | §5.7 (küme üyeliği), §6.2 (yargı ve şema ayrımı), Ek C.2 (`actorMode`); kodlama belgesi §9.1 (ayrı yetkili sistem komutu) |
+| Ö-10 | (öz-eleştiri) Ölçü tanımları: kapsamada "bulgu yok", onay sonrası oranın paydası, çekimserliğin üç sonucu | Kabul | §8.6 |
+| Ö-11 | (öz-eleştiri) Saklama: öneri payload'ı ve içerik alanları için şifreli/immutable depo tanımsızdı | Kabul | §5.5 (`PayloadCipherRef`); kodlama belgesi §4.5 |
+| Ö-12 | (bağımsız doğrulama, 28 Eylül — iki belge repo'ya karşı; 25 bulgu) Gönderimde `version_conflict` → `Stale` değil `Failed` + yeni niyet (sahip terminal ret kaydı); gönderim/worker scope'unda `ICurrentUser` yok → scope-yerel aktör (K3); hash kapsamı kodda yalnız payload'dı → bileşik önizleme zarfı; bayrak adı `Ai:CloudGateway:Activated`; `AiContext.approvalIds[]`; descriptor ve proje yerleşimi kodlama belgesiyle hizalandı; birkaç satır atfı düzeltildi | Kabul | §5.2, §5.3, §5.5, §5.6 (`ExpectedVersion`, `ActorId`, `AiContext`), §10.1 madde 12, Faz 4 ön koşulu, Ek C.3, Ek D G-10; kodlama belgesi §5.1, §10.1–10.5, §14.3, Ek K-1 |
+
+Değişmeyenler: temel mimari (bağlam zarfı, etki kuralları, iş öğeleri, ölçü referanslı çıktı, üç görünüm, dört ölçü), modül spesifikasyonlarının kapsamı, karar paketi yapısı, fazların sayısı ve kolay kullanım hedefi (kullanıcı tek asistan görür; kapı kartı formun içinde; onay tek tık; teknik kimlikler kullanıcıya görünmez).
+
+### 15.2 Kapanış kontrol tablosu (üçüncü eleştirinin her kritik düzeltmesi için senaryo ve konum)
+
+| Kritik düzeltme | Şema | Metin | Senaryo / test |
+|---|---|---|---|
+| Aynı içerikte iki meşru sipariş | `ai.Proposals.OperationIntentId` ayrı; `UX_Proposals_IntentRevision`; key `ai:{operationIntentId}` (§5.5, Ek C.3) | §5.6 üç durum tablosu, satır 3 | G-33; kodlama §18.2 `Two_intents_with_identical_content_produce_two_owner_records_and_no_conflict` |
+| Belirsiz sonucun tekrar gönderilmesi | `Status=Unknown`, `TargetLock`, `DispatchedPayloadHash` | §5.6 kurtarma (madde 1–4) | G-11, G-26, G-34; kodlama §18.2 iki `Unknown` testi |
+| Aynı niyet + farklı içerik | `CK_Proposals_Hashes` (dispatched == canonical); sahip 409 | §5.6 satır 2 | G-37 |
+| İki onay gerektiren işlem | `RequiredApprovals`, `PartiallyApproved`, `ai.Approvals` çoklu kanıt | §5.6 "iki onay" paragrafı; §10.1 madde 5 | G-27, G-35; kodlama §18.2 |
+| Yalnız bir sevkiyata verilen istisna | Kapı çıktısı `exceptionRef` + istisna durumu (Finance sahipliği; W4-RISK) | §3.4 [4]–[5]; §14 sözlük | G-36; kodlama §5.3, §18.1 `RiskExceptionStateTests`, §18.2 süre sonu testi |
+| Kanıt yoksa doğrulanacak | §5.6a matrisi sütunları | §0.4 etiket | F4-1 ön koşulu |
+| API-birincil uzlaştırması | `Ai:CloudGateway:Activated` bayrağı (kodlama §19) | §1, §5.10, §10.2 | Kodlama §18.1 `AiModelRouterTests` (`Activated=false` → API rotası yok; `CokGizli` → rota yok) |
+
+### 15.3 v1.1 değişiklik günlüğü (27 Eylül 2026)
+
+v1.0, 27 Eylül 2026 tarihli karşı-ajan eleştirisinden (bağımsız inceleme; repo yönetişimindeki "karşı-ajan review" adımının belge düzeyindeki karşılığı — bir PR review değildir) geçti. Aşağıdaki liste eleştirideki tespitleri, verilen hükmü ve bu belgede nerede düzeltildiğini gösterir. 23 eleştiri tespitinin 17'si kabul edilmiştir (#14 kısmen), 4'ü nüansla kabul edilmiş (#18–21), 2'sinde eleştirinin çerçevesi düzeltilmiştir (#22–23); ayrıca belge sahibinin 4 öz-eleştirisi (Ö-1..Ö-4) uygulanmıştır.
 
 | # | Tespit | Hüküm | Nerede düzeltildi |
 |---|---|---|---|
@@ -1478,7 +1570,7 @@ v1.0, 27 Eylül 2026 tarihli karşı-ajan eleştirisinden (repo yönetişimindek
 | 3 | Kapsama formülü ters | Kabul | §2.2 |
 | 4 | Kategorik bilgi de hassas; "sayı yok" ölçüt değil; örnekte "SLA: 2 saat" | Kabul | §0.3, §3.2, §3.3, §3.4, §5.3 (kapı sorgusu), §6.2, §7.7, Ek C.1a, Ek D G-01 |
 | 5 | Bileşik araç izinleri ile kategorik sonuç arasında boşluk | Kabul | §5.3, §7.7, Ek A #4/#23/#44 |
-| 6 | Onay kimliği ≠ iş kimliği (`ai:{proposalId}:{approvalId}`) | Kabul | §4.4, §5.5, §5.6 (`ai:{proposalId}`, tek kazanan geçiş), §10.1 madde 5–6, Ek C.3, Ek D G-27 |
+| 6 | Onay kimliği ≠ iş kimliği (`ai:{proposalId}:{approvalId}`) | Kabul | §4.4, §5.5, §5.6 (v1.1'de `ai:{proposalId}`; v1.2'de `ai:{operationIntentId}`, tek kazanan geçiş), §10.1 madde 5–6, Ek C.3, Ek D G-27 |
 | 7 | Hazırlayan / onaylayan / yürüten ayrı kaydedilmeli; "aynı AiRun" SoD değildir | Kabul | §3.4 [3], §5.5, §5.6, §7.10, Ek C.3 |
 | 8 | Doğru sayı yanlış yere bağlanabilir | Kabul (ölçü referansı) | §0.3, §5.3, §5.4 (`IAiMeasureRenderer`), §6.2, Ek C.1, Ek D G-31/G-32 |
 | 9 | Aynı `asOf` aynı kesiti garanti etmez | Kabul | §5.7 (mekanizma A/B), §10.1 madde 6, NS-AI-16, F3-4, Ek D G-28 |
@@ -1490,18 +1582,18 @@ v1.0, 27 Eylül 2026 tarihli karşı-ajan eleştirisinden (repo yönetişimindek
 | 15 | Görev kartının bütün kanalları aynı sınırı korumalı | Kabul | §3.3, §5.5 (`VisibilityMatrixJson`), §5.8, F3-1, Ek C.4 |
 | 16 | "Düşük" kalıntı riskler ölçülmüş değil | Kabul | §13 |
 | 17 | Yatırım üç iş grubuna ayrılmalı | Kabul | §11.1 notu ve §11 iş paketlerinde sahip modül / Work / Ai ayrımı |
-| 18 | Yerel/bulut tercihi güncel kararlarla uzlaştırılmadan GPU kesinleşmiş sayılmamalı | Nüansla kabul | §1, §5.10, §9: yerel-first en yeni kilitli karar (`DEC-AI-009`); GPU NEEDS-SINAN; v2.1 içe alma NS-AI-14 |
+| 18 | Yerel/bulut tercihi güncel kararlarla uzlaştırılmadan GPU kesinleşmiş sayılmamalı | Nüansla kabul (v1.1); **v1.2'de düzeltildi:** 05.09.2026 v2.1 tercihi (`AI-K01`) `DEC-AI-009`'dan yenidir; API-birincil, GPU şart değil | §1, §5.10, §9 (v1.2); v2.1 içe alma NS-AI-14 |
 | 19 | M → O → N → L → J ölçülmüş takvim değil; teknik eksik ile kabul kaydı ayrılmalı | Nüansla kabul | §4.3, F0-8, §13 |
 | 20 | CODEX-ORCHESTRATOR sahipliği fiilî düzene otomatik uygulanmamalı | Nüansla kabul | §9, §11.2, NS-AI-17 (kayıt neyse o) |
 | 21 | "Bir kez daha denemek" yeterli kurtarma sözleşmesi değil | Nüansla kabul (ilkel doğru, durum makinesi eksikti) | §5.6 |
 | 22 | Kategorik cevabın buluta hangi kuralla çıkacağı tanımsız | Çerçeve düzeltildi: kapı kararı deterministik, modele/buluta gitmez; açıkça yazıldı | §5.3, §5.10 |
-| 23 | Rapor yerel-first'i "seçenek" olarak kuruyor | Çerçeve düzeltildi: kaydın kendisi | §1, §5.10, §9 |
+| 23 | Rapor yerel-first'i "seçenek" olarak kuruyor | Çerçeve düzeltildi (v1.1): kaydın kendisi; **v1.2:** kayıt `DEC-AI-009` aynen durur, fakat 05.09.2026 tercihi daha yenidir → API-birincil çalışma varsayımı; aktivasyon şartı korunur | §1, §5.10, §9 |
 | Ö-1 | ADR-009: istemci `AiInvolvement` beyan edemez; F1-7 buna aykırıydı | Öz-eleştiri, kabul | §5.6 (`X-AI-Run-Ref` sunucu doğrulaması), §10.1 madde 7, F0-7, F2-8, Ek D G-30 |
 | Ö-2 | Etki kuralı motoru AI modülündeyse capability/kill switch ile sönebilir | Öz-eleştiri, kabul | §3.3, §5.1, §5.2, §5.4, §5.8, §5.12, §10.1 madde 11, F1-10, Ek D G-29 |
 | Ö-3 | Taslak aşaması tetikleyicileri outbox olayı değil | Öz-eleştiri, kabul | §3.3, §5.7 |
 | Ö-4 | Zarf maliyeti; `Scenario` türü | Öz-eleştiri, kabul | §6.4 (zarf maliyeti), §5.3, §6.2, §6.6 (`Scenario`) |
 
-Değişmeyenler: temel mimari (bağlam zarfı, etki kuralları, iş öğeleri, ölçü referanslı çıktı, üç görünüm, dört ölçü), modül spesifikasyonlarının kapsamı, karar paketi yapısı ve fazların sayısı.
+Değişmeyenler (v1.1): temel mimari (bağlam zarfı, etki kuralları, iş öğeleri, ölçü referanslı çıktı, üç görünüm, dört ölçü), modül spesifikasyonlarının kapsamı, karar paketi yapısı ve fazların sayısı.
 
 ## Ek A — Araç kataloğu v1 (pilot seti, ÖNERİ)
 
@@ -1619,7 +1711,7 @@ Etki türü: **Bilgi / Uyarı / Görev** — hiçbir etki kuralı işlem durdurm
 ```json
 { "runId": "…", "stepSeq": 3, "toolId": "finance.risk.evaluate", "version": 1,
   "actorScope": { "companyId": "…", "actorId": "…", "permissionScopeRef": "…" },
-  "actorMode": "SystemRuleEvaluation",     // etki kuralı: sistem aktörü; panel sorusu: "OnBehalfOfActor"
+  "actorMode": "SystemRuleEvaluation",     // etki kuralı: sistem aktörü; panel sorusu: "OnBehalfOfActor" — SUNUCU-İÇİ alan; model/istemci belirleyemez (v1.2)
   "args": { "partyAccountId": "…", "asOf": "2026-09-27",
             "stageTransition": { "from": "ApprovedOrderRemainder", "to": "UnbilledShipment", "orderLineId": "…", "quantityKg": 24000 } },
   "policyDecision": { "riskClass": "Simulate", "dataClassCeiling": "Gizli", "route": "Local", "redactions": [] } }
@@ -1628,14 +1720,18 @@ Etki türü: **Bilgi / Uyarı / Görev** — hiçbir etki kuralı işlem durdurm
 **C.3 Proposal (WRITE niyeti önizlemesi)**
 
 ```json
-{ "proposalId": "…", "runId": "…", "toolId": "sales.draft.create", "version": 1,
+{ "proposalId": "…", "operationIntentId": "…", "intentRevision": 1,          // niyet kimliği sunucu üretimli ve KALICI; proposalId önizleme kimliği (v1.2)
+  "runId": "…", "toolId": "sales.draft.create", "version": 1,
   "ownerCommandContract": "sales.order-draft.create.v1",
   "target": { "entityType": "Sales.OrderDraft", "id": null, "expectedVersion": null },
-  "canonicalPayloadHash": "sha256:…", "diff": { "…": "…" },
-  "validation": { "outcome": "Ok", "warnings": ["IR-SAL-001: risk onayı gerekecek"] },
+  "canonicalPayloadHash": "<64 küçük harf hex>",                              // önizleme zarfının SHA-256'sı — içerik DOĞRULAMASI; kimlik değil
+  "payloadCipherRef": "vault:…", "diff": { "…": "…" },
+  "validation": { "outcome": "Ok", "warnings": ["IR-SAL-001: risk onayı gerekecek"],
+                  "similarProposals": [ { "proposalId": "…", "status": "Executed", "at": "…" } ] },   // aynı içerikli öneri BİLGİSİ; engel değil
   "policyRefs": { "toolCatalog": 7, "promptPolicy": 12, "riskThresholds": 3 },
-  "actors": { "requestedBy": "user:ayse", "preparedByRun": "run:…", "approvedBy": null, "executedBy": null, "onBehalfOf": "user:ayse" },
-  "idempotencyKey": "ai:{proposalId}", "targetLock": false,
+  "requiredApprovals": 1,
+  "actors": { "requestedBy": "user:ayse", "preparedByRun": "run:…", "approvedBy": [], "executedBy": null, "onBehalfOf": "user:ayse" },
+  "idempotencyKey": "ai:{operationIntentId}", "dispatchedPayloadHash": null, "targetLock": false,
   "createdAtUtc": "…", "expiresAtUtc": "…", "status": "AwaitingApproval", "version": 1 }
 ```
 
@@ -1667,8 +1763,8 @@ Etki türü: **Bilgi / Uyarı / Görev** — hiçbir etki kuralı işlem durdurm
 | G-07 | kg/adet karışık teklif | Normalizasyon reddi/uyarısı; karşılaştırmaya girmez |
 | G-08 | 20 ton / 15 ton tahsisli, 8 ton isteği | En fazla 5 ton önerisi; serbest bırakma önerilmez; ERP 8 tonu reddeder |
 | G-09 | Eşzamanlı tahsis yarışı | Tek kazanan; öneri stale; yeniden önizleme |
-| G-10 | Onay sonrası hedef sürüm değişti | `version_conflict`; Proposal `Stale`; yeni preview |
-| G-11 | Dispatch sırasında transport hatası | Proposal `Unknown`; otomatik retry yok; kurtarma sorgusu aynı key/payload → replay; ikinci belirsizlikte `TargetLock` + insan devralma iş öğesi |
+| G-10 | Hedef sürüm değişti | Onaydan **önce** fark edilirse: Proposal `Stale`, aynı niyetin yeni revizyonu önizlenir. **Gönderimde** sahip `version_conflict` dönerse: Proposal `Failed(version_conflict)`, etki yok, kilit yok; yeni önizleme **yeni niyetle** (sahip reddi aynı key'e terminal kaydedilmiş olabilir) |
+| G-11 | Dispatch sırasında transport hatası | Proposal `Unknown`; otomatik retry yok; kurtarma **aynı `OperationIntentId`** ve dondurulmuş payload ile: sahip kaydetmişse replay, kaydetmemişse en fazla bir gönderim; ikinci belirsizlikte `TargetLock` + insan devralma iş öğesi; **yeni kimlik asla** |
 | G-12 | Görev sırasında yetki iptali | Bekleyen onay/cache geçersiz; iş `WaitingHuman` → yeniden yetki |
 | G-13 | Sağlayıcı kesintisi | Deterministik kartlar çalışır; panel degraded; ERP tam |
 | G-14 | Model "net nakit" türetmeye çalışır | Validator kaynaksız sayıyı bastırır; ölçü sözlüğü dışı ölçü reddedilir |
@@ -1690,11 +1786,19 @@ Etki türü: **Bilgi / Uyarı / Görev** — hiçbir etki kuralı işlem durdurm
 | G-30 | İstemci `AiInvolvement=Assisted` veya sahte `X-AI-Run-Ref` gönderir | Beyan yok sayılır; sunucu doğrulaması olmadan `None`; security-event |
 | G-31 | Model tutarı metne yazar (`{{measure}}` yerine ham sayı) | Doğrulayıcı reddeder; ölçü referansı olmayan finansal sayı bastırılır |
 | G-32 | Ölçü referansı başka müşteriye/döneme ait | `subject/period` uyuşmazlığı → ret |
+| G-33 (v1.2) | Aynı müşteri/ürün/miktar için kullanıcı iki kez "sipariş taslağı oluştur" niyeti başlatır | İki `OperationIntentId`, iki key, iki `sales.DraftAttempts` satırı, iki taslak; ikinci önizlemede "aynı içerikli öneri" bilgisi; engel yok; sahip modül mükerrer uyarısı varsa bulgu |
+| G-34 (v1.2) | `Unknown` niyet için sahip modülde kayıt yok (komut hiç ulaşmamış veya yolda) | Kurtarma aynı key/payload ile **en fazla bir** gönderim → ya replay ya ilk yürütme; toplam tek kayıt; ikinci belirsizlik → `Unknown` + `TargetLock` + iş öğesi; aynı hedefe yeni niyet 409 `intent_pending_recovery`/`target_locked` |
+| G-35 (v1.2) | İki onay gerektiren öneri: aynı kişi iki kez onaylar; iki onay arasında hedef sürümü değişir | İkinci onay 403 (SoD); farklı kişi → `Approved`; arada sürüm değişimi → `Stale`, iki onay da düşer, aynı niyet rev+1 önizlenir |
+| G-36 (v1.2) | Yalnız bir sevkiyata verilen risk istisnası | Kapı `Proceed(exceptionRef)` yalnız o talimat için; sevkiyat kaydedilince `Consumed`; aynı müşteriye ikinci talimat `ReviewRequired`; süre dolunca zamanlı yeniden değerlendirme → koşul sürüyorsa Sorun `Reopened`, mevcut kart güncellenir, yeni kart yok |
+| G-37 (v1.2) | Sahip modül aynı key için farklı içerik görür (bütünlük ihlali) | 409 aynı-key uyuşmazlığı → Proposal `Failed(ContentConflict)`, `TargetLock` kalır, security-event; insan inceler; sessiz yeni işlem yok |
 
 ## Ek E — Kaynaklar ve doğrulama tabanı
 
 - Repo: `sinangym/GoymenErp` `main@00a87981` (27 Eylül 2026). Okunan dosyalar künyede listelenmiştir; kod envanteri `src/backend` (656 `.cs`), `src/frontend/goymen-erp-web/src` (507 dosya), `contracts/openapi/goymen-erp-v1.json` (119 path / 132 op) üzerinden salt-okunur çıkarılmıştır.
 - Kullanıcı ekleri (27 Eylül 2026): üç turlu JARVIS değerlendirmesi (işlev/personel, Command Center, yönetici değerlendirmesi), bu değerlendirmelerin eleştirisi (dört ölçü, bilgi sınıfları, gölge mod sınırı, kapsam çelişkileri) ve v1.0 raporunun eleştirisi (bölüm 15).
 - Belge sahibinin v1.0 için yaptırdığı bağımsız repo doğrulaması (27 Eylül 2026; 27 bulgu düzeltildi) ve v1.1 için tekrarlanan tutarlılık kontrolü.
+- (v1.2) Kullanıcının 28 Eylül 2026 tarihli üçüncü eleştiri metni (v1.1 ve ara cevabın değerlendirmesi; `OperationIntentId`, kanıt, API-birincil, "yalnız analiz" sınırı) ve bu eleştirinin aktardığı 05.09.2026 tarihli `GOYMEN_ERP_TUM_MODULLER_UYGULAMA_VE_KARAR_RAPORU_v2_1.docx` `AI-K01` maddesi (belge repoda değildir; içeriği yalnız eleştiri metninin aktarımı kadar bilinir).
+- (v1.2) Sekiz WRITE aracının sahip komutları için salt-okunur kod envanteri (28 Eylül 2026; §5.6a; ayrıntı kodlama belgesi §10.6 ve Ek K-1) — `main@00a8798`.
+- (v1.2) `GOYMEN_AI_MERKEZI_KODLAMA_TASARIMI_V1.md` — bu raporun kod düzeyi eşlik belgesi (analiz; kod değil).
 - Sağlayıcı yetenek ve saklama notları için tek kaynak `ERP-000J_AI_GATEWAY_CONTRACT_v1.md` §9 ve §15'tir (2026-08-29 doğrulaması); bu belge yeni sağlayıcı doğrulaması yapmamıştır.
 - Bu belge dış uzman görüşmesi içermez; hukuki/mali görüş değildir.
