@@ -28,6 +28,14 @@ public enum StockMovementKind
     /// Unlike a receipt, this deliberately adds stock to an already registered piece.
     /// </summary>
     Return = 5,
+
+    /// <summary>
+    /// ST-05 / AT-037: the approved difference of one stock count (DEC-STK-007), posted on the counted
+    /// position of an already registered piece. Exactly one line: In for a surplus, Out for a shortage,
+    /// free or blocked alike (a count is physical). The count it answers stays as the history; a wrong
+    /// adjustment is corrected by a new count, never by editing this one.
+    /// </summary>
+    CountAdjustment = 6,
 }
 
 public enum StockDirection
@@ -204,6 +212,13 @@ public sealed class StockMovement
                 break;
             case StockMovementKind.Release:
                 RequireBlockPair(BlockState.Blocked, BlockState.Free);
+                break;
+            case StockMovementKind.CountAdjustment:
+                if (lines.Length != 1)
+                {
+                    throw Invalid("Sayım farkı hareketi tek satırdır: sayılan pozisyona giriş ya da çıkış.");
+                }
+
                 break;
         }
     }

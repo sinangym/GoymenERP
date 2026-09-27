@@ -41,6 +41,7 @@ public sealed class ManufacturingShellCapabilitySqlServerRelationalAcceptanceTes
     // MFG-PLAN-LIST, in the same ordinal order: create < detail < list.
     private const string PlanCreate = "manufacturing.plans.create";
     private const string PlanDetail = "manufacturing.plans.detail";
+    private const string PlanEdit = "manufacturing.plans.edit";
     private const string PlanList = "manufacturing.plans.list";
 
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
@@ -166,11 +167,12 @@ public sealed class ManufacturingShellCapabilitySqlServerRelationalAcceptanceTes
                 Assert.Equal(new[] { PlanCreate }, ManufacturingOnly(await ReadAsync(writer)));
             }
 
-            // + the plan read: the plan detail and the plan list open together, on the one grant they share.
+            // + the plan read: the plan detail and the plan list open together, on the one grant they share; the
+            // plan-detail edit control (MFG-PLAN-EDIT) needs both the read and the write, so it opens only now.
             await GrantAsync(factory, TestUsers.CompanyA, CompanyA, ErpPermissions.ManufacturingPlansRead, AccessScopeType.Company, CompanyA);
             using (var reader = factory.CreateClientFor(TestUsers.CompanyA, CompanyA))
             {
-                Assert.Equal(new[] { PlanCreate, PlanDetail, PlanList }, ManufacturingOnly(await ReadAsync(reader)));
+                Assert.Equal(new[] { PlanCreate, PlanDetail, PlanEdit, PlanList }, ManufacturingOnly(await ReadAsync(reader)));
             }
 
             // The same actor in company B, where it holds only a non-Manufacturing assignment: no plan list there.

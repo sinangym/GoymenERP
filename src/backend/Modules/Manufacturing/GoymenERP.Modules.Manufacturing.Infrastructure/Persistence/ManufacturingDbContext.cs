@@ -1,6 +1,7 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
+using GoymenERP.Modules.Manufacturing.Application;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -17,7 +18,8 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence;
 /// Parent rolls and outputs are Inventory label identities only: no foreign key to Inventory in
 /// this slice (T15 integration).</item>
 /// <item>Plans and orders keep their content; only the approval / close and the version change.
-/// Inputs and facts are append-only. Nothing is ever deleted.</item>
+/// Inputs and facts are append-only. Nothing is ever deleted. MFG-PLAN-EDIT: a Draft plan's revision is appended
+/// (<c>PlanRevisions</c>, <c>PlanRevisionInputs</c>); the plan row keeps its creation content.</item>
 /// <item>A fact id is unique per company and kind (primary key), so a retried or duplicated slip
 /// cannot be stored twice even by a racing writer.</item>
 /// </list>
@@ -33,6 +35,12 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
     internal DbSet<PlanInputRow> PlanInputs => Set<PlanInputRow>();
 
     internal DbSet<PlanSlitLineRow> PlanSlitLines => Set<PlanSlitLineRow>();
+
+    /// <summary>MFG-PLAN-EDIT: the recorded Draft revisions of plans (append-only).</summary>
+    internal DbSet<PlanRevisionRow> PlanRevisions => Set<PlanRevisionRow>();
+
+    /// <summary>MFG-PLAN-EDIT: the complete planned inputs of each recorded revision (append-only).</summary>
+    internal DbSet<PlanRevisionInputRow> PlanRevisionInputs => Set<PlanRevisionInputRow>();
 
     internal DbSet<OrderRow> Orders => Set<OrderRow>();
 
@@ -53,6 +61,7 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
         ConfigurePlans(modelBuilder);
         ConfigurePlanInputs(modelBuilder);
         ConfigurePlanSlitLines(modelBuilder);
+        ConfigurePlanRevisions(modelBuilder);
         ConfigureOrders(modelBuilder);
         ConfigureOrderInputs(modelBuilder);
         ConfigureFacts(modelBuilder);
@@ -155,6 +164,54 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
             .HasPrincipalKey(x => new { x.CompanyId, x.Id })
             .OnDelete(DeleteBehavior.Restrict);
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    /// <summary>
+    /// MFG-PLAN-EDIT: a plan's recorded Draft revisions and their complete inputs, bound by (company, plan) like the
+    /// plan's own inputs; the revision's work center by (company, work center) to Organization's alternate key, as the
+    /// plan's. Append-only: the write guard admits no column of either table.
+    /// </summary>
+    private void ConfigurePlanRevisions(ModelBuilder modelBuilder)
+    {
+        var revision = modelBuilder.Entity<PlanRevisionRow>();
+        revision.ToTable("PlanRevisions", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_PlanRevisions_Identity",
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [PlanId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [WorkCenterId] <> '00000000-0000-0000-0000-000000000000' AND [RevisionNo] >= 1 AND [PlanVersion] >= 2");
+            table.HasCheckConstraint("CK_PlanRevisions_Target",
+                "([TargetBasis] IS NULL AND [TargetKg] IS NULL) OR ([TargetBasis] IN (1, 2) AND [TargetKg] > 0)");
+            table.HasCheckConstraint("CK_PlanRevisions_Text",
+                "LEN([Reason]) > 0 AND LEN([RevisedBy]) > 0 AND LEN([CorrelationId]) > 0");
+        });
+        revision.HasKey(x => new { x.CompanyId, x.PlanId, x.RevisionNo });
+        revision.Property(x => x.TargetKg).HasPrecision(18, 3);
+        revision.Property(x => x.Reason).HasMaxLength(ManufacturingStoreCodes.PlanRevisionReasonMaximumLength).IsRequired();
+        revision.Property(x => x.RevisedBy).HasMaxLength(128).IsRequired();
+        revision.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        revision.HasOne<PlanRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.PlanId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        WorkCenterOf(revision);
+        revision.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var input = modelBuilder.Entity<PlanRevisionInputRow>();
+        input.ToTable("PlanRevisionInputs", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_PlanRevisionInputs_Roll", "[ParentRollId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_PlanRevisionInputs_Mass", "[PlannedKg] > 0");
+            table.HasCheckConstraint("CK_PlanRevisionInputs_Sequence", "[Sequence] >= 1");
+            table.HasCheckConstraint("CK_PlanRevisionInputs_LabelVersion", "[ExpectedLabelVersion] >= 1");
+        });
+        input.HasKey(x => new { x.CompanyId, x.PlanId, x.RevisionNo, x.ParentRollId });
+        input.HasIndex(x => new { x.CompanyId, x.PlanId, x.RevisionNo, x.Sequence }).IsUnique();
+        input.Property(x => x.PlannedKg).HasPrecision(18, 3);
+        input.HasOne<PlanRevisionRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.PlanId, x.RevisionNo })
+            .HasPrincipalKey(x => new { x.CompanyId, x.PlanId, x.RevisionNo })
+            .OnDelete(DeleteBehavior.Restrict);
+        input.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
     private void ConfigureOrders(ModelBuilder modelBuilder)
@@ -317,6 +374,10 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
                         nameof(PlanRow.Version), nameof(PlanRow.UpdatedAtUtc)],
                     OrderRow => [nameof(OrderRow.Status), nameof(OrderRow.ClosedByUserId), nameof(OrderRow.ClosedAtUtc),
                         nameof(OrderRow.Version), nameof(OrderRow.UpdatedAtUtc)],
+                    // MFG-PLAN-EDIT: a revision is APPEND-ONLY — it adds its rows and moves only the plan's version and
+                    // update time (admitted above). Nothing of a recorded revision may change afterwards.
+                    PlanRevisionRow => [],
+                    PlanRevisionInputRow => [],
                     _ => [],
                 };
                 var changed = entry.Properties

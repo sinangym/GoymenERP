@@ -499,6 +499,103 @@ partial class ManufacturingDbContextModelSnapshot : ModelSnapshot
             });
         });
 
+        modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.PlanRevisionInputRow", b =>
+        {
+            b.Property<Guid>("CompanyId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<Guid>("PlanId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<int>("RevisionNo")
+                .HasColumnType("int");
+
+            b.Property<Guid>("ParentRollId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<long>("ExpectedLabelVersion")
+                .HasColumnType("bigint");
+
+            b.Property<decimal>("PlannedKg")
+                .HasPrecision(18, 3)
+                .HasColumnType("decimal(18,3)");
+
+            b.Property<int>("Sequence")
+                .HasColumnType("int");
+
+            b.HasKey("CompanyId", "PlanId", "RevisionNo", "ParentRollId");
+
+            b.HasIndex("CompanyId", "PlanId", "RevisionNo", "Sequence")
+                .IsUnique();
+
+            b.ToTable("PlanRevisionInputs", "manufacturing", t =>
+            {
+                t.HasCheckConstraint("CK_PlanRevisionInputs_LabelVersion", "[ExpectedLabelVersion] >= 1");
+
+                t.HasCheckConstraint("CK_PlanRevisionInputs_Mass", "[PlannedKg] > 0");
+
+                t.HasCheckConstraint("CK_PlanRevisionInputs_Roll", "[ParentRollId] <> '00000000-0000-0000-0000-000000000000'");
+
+                t.HasCheckConstraint("CK_PlanRevisionInputs_Sequence", "[Sequence] >= 1");
+            });
+        });
+
+        modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.PlanRevisionRow", b =>
+        {
+            b.Property<Guid>("CompanyId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<Guid>("PlanId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<int>("RevisionNo")
+                .HasColumnType("int");
+
+            b.Property<string>("CorrelationId")
+                .IsRequired()
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)");
+
+            b.Property<long>("PlanVersion")
+                .HasColumnType("bigint");
+
+            b.Property<string>("Reason")
+                .IsRequired()
+                .HasMaxLength(256)
+                .HasColumnType("nvarchar(256)");
+
+            b.Property<DateTimeOffset>("RevisedAtUtc")
+                .HasColumnType("datetimeoffset");
+
+            b.Property<string>("RevisedBy")
+                .IsRequired()
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)");
+
+            b.Property<int?>("TargetBasis")
+                .HasColumnType("int");
+
+            b.Property<decimal?>("TargetKg")
+                .HasPrecision(18, 3)
+                .HasColumnType("decimal(18,3)");
+
+            b.Property<Guid>("WorkCenterId")
+                .HasColumnType("uniqueidentifier");
+
+            b.HasKey("CompanyId", "PlanId", "RevisionNo");
+
+            b.HasIndex("CompanyId", "WorkCenterId");
+
+            b.ToTable("PlanRevisions", "manufacturing", t =>
+            {
+                t.HasCheckConstraint("CK_PlanRevisions_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [PlanId] <> '00000000-0000-0000-0000-000000000000' AND [WorkCenterId] <> '00000000-0000-0000-0000-000000000000' AND [RevisionNo] >= 1 AND [PlanVersion] >= 2");
+
+                t.HasCheckConstraint("CK_PlanRevisions_Target", "([TargetBasis] IS NULL AND [TargetKg] IS NULL) OR ([TargetBasis] IN (1, 2) AND [TargetKg] > 0)");
+
+                t.HasCheckConstraint("CK_PlanRevisions_Text", "LEN([Reason]) > 0 AND LEN([RevisedBy]) > 0 AND LEN([CorrelationId]) > 0");
+            });
+        });
+
         modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.PlanRow", b =>
         {
             b.Property<Guid>("Id")
@@ -685,6 +782,32 @@ partial class ManufacturingDbContextModelSnapshot : ModelSnapshot
                 .OnDelete(DeleteBehavior.Restrict)
                 .IsRequired();
         });
+
+        modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.PlanRevisionInputRow", b =>
+        {
+            b.HasOne("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.PlanRevisionRow", null)
+                .WithMany()
+                .HasForeignKey("CompanyId", "PlanId", "RevisionNo")
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired();
+        });
+
+        modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.PlanRevisionRow", b =>
+        {
+            b.HasOne("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.PlanRow", null)
+                .WithMany()
+                .HasForeignKey("CompanyId", "PlanId")
+                .HasPrincipalKey("CompanyId", "Id")
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired();
+
+            b.HasOne("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.OrganizationWorkCenterReference", null)
+                .WithMany()
+                .HasForeignKey("CompanyId", "WorkCenterId")
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired();
+        });
+
 
         modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.PlanRow", b =>
         {

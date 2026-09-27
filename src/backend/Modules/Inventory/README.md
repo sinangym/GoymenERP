@@ -334,6 +334,44 @@ This source does not choose first-write receipt facts. In particular, the author
 `RequiredDocuments` remains a Purchasing/Business contract dependency; a browser array, empty default
 or synthetic MTC fallback is not accepted as production input.
 
+## ST-05 / AT-037 — stock count with difference reason and authority (DEC-STK-007)
+
+Decision basis: DEC-STK-007 (KILITLI: a count difference needs a reason and authority; a second approval may
+apply to a critical difference; history is never deleted; the reverse/correction chain is audited), AT-037 ("a
+count difference is not final without a reason and an approval"), Master v3 §12.2 (the adjuster and the count
+approver may be different people), DEC-SET-001 (no threshold in code; a missing policy stays fail-closed) and
+#66/5738113623 §2 (the opening-stock exemption does not relax the count-difference second-approval rules).
+
+| Rule | Where | Held by |
+|---|---|---|
+| A count names one stocked label at the version the counter saw, with exactly one stored non-zero position (a label with free AND blocked parts, or none, is `inventory_stock_count_position_conflict`); book = that position's kg, difference = counted − book | `StockCount`, `InventoryStore.RecordStockCountAsync` | domain + store |
+| A reason is mandatory (≤ 1000, trimmed); counted kg is canonical, ≥ 0, ≤ 3 decimals and on the company's approved kg profile at the count date | `ParseStockCount`, `InventoryKilogramScale` | store (400) |
+| Recording changes no stock and bumps no label version; a zero difference closes at once (`NoDifference`) | `InventoryStore.StockCounts.cs` | store |
+| The difference is final only after a decision under `inventory.stock-count.approve`; recording needs `inventory.stock-count.record`; both company-wide, measured fresh twice before the single owner transaction | `InventoryStockCountCommandService` | command (403/503) |
+| **Fail-closed maker≠checker:** every non-zero difference is decided (approved or rejected) by another actor than its counter (`inventory_stock_count_self_approval`). The critical-difference threshold is undecided, so every difference is treated as critical | `DecideStockCountAsync` | store (409) |
+| An approval posts exactly one `CountAdjustment` (kind 6) movement through the ledger — source `inventory.stock-count`/count id, one line In (surplus) or Out (shortage), free or blocked — and bumps the label version; only while the label is still at the counted version (`inventory_stock_count_stale`: count again) and never below the label's active allocations (`inventory_stock_count_allocation_conflict`) | `StockCount.Adjustment`, `StageMovementAsync` | domain + ledger + store |
+| One decision per count: key (company, count); the same decision and note is a replay; anything else `inventory_stock_count_already_decided`. The same count id with other content is `inventory_stock_count_conflict`. ADR-011 key per command (`inventory.stock-count.record.v1` / `.decide.v1`) in `inventory.Commands` | `StockCountDecisions` PK, `FindDecisionReplayAsync` | SQL + store |
+| Counts, decisions and the adjustment are append-only; `AddInventoryStockCounts.Down` refuses (THROW 51053) while any exists | write guard, migration | EF + SQL |
+| Read: `GET …/labels/{labelId}/stock-counts` (newest 50, `windowFull`) behind the ST-02 fence (labels.read + balances.read, measured before and after); foreign = unknown = 404 | `InventoryStockCountQueryService` | service |
+| After approval, ST-01, the ST-02 balance and timeline (`CountAdjustment`) and a new allocation read the counted kg | existing readers over `Balances` / `Movements` | SQL test |
+
+**Not decided (recorded blockers, no invented value):**
+
+- `INV-R21-CRITICAL-THRESHOLD-01` (relay INV-R20-R21-01 Q2, #66/5840984992, unanswered): which difference is
+  "critical", and whether a smaller one may be self-approved (option B: kg/% threshold + owner). Until decided the
+  store applies maker≠checker to every non-zero difference; option B would add a Settings policy key read at decision
+  time (DEC-SET-001 snapshot), not a code constant.
+- `INV-R21-REASON-LIST-01`: no closed reason list is decided (DEC-STK-007 names "sebep" only); the reason is free
+  text. A closed list, if decided, is an additive `ReasonCode` beside the text.
+- Out of this slice: counting a label with no stored stock ("found stock"), a whole-location count sheet, transfer
+  (R20, INV-R20-R21-01 Q1) and cost/valuation of the adjustment (OPEN-008).
+
+**Central publication (coordinator):** register `inventory.stock-count.record` and `inventory.stock-count.approve`
+(company-wide) in `ErpPermissions`; `builder.Services.AddInventoryStockCounts();` and `app.MapInventoryStockCountEndpoints();`
+in the host; Inventory shell provider controls for both names under ST-01 and the authority re-pin; OpenAPI
+regeneration; guard re-pins of `InventoryDbContext.cs` and the new migration; the three relational test names in
+`tools/relational_inventory/inventory.txt`. Grants are the user's (disposable browser actors only, as R19).
+
 ## dependency_wait
 
 - **Central registration (CARİ, same branch, sequential):** the tenant guard's reviewed inventory (this DbContext's fingerprint, the design-time factory and the initializer's `Migrate`/`EnsureCreated` branch); the module-dependency allowlist edge `Inventory.Infrastructure → Audit.Infrastructure` (ADR-009); the `Api.IntegrationTests` project reference to Inventory; and the relational verifier's BROAD list and counts for `InventorySqlServerRelationalAcceptanceTests`.

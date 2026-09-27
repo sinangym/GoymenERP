@@ -56,7 +56,7 @@ internal static class ManufacturingHttpClientExtensions
 /// real company-scoped Inventory labels with physical positions and exact label versions. A positive
 /// answer here is API evidence, not a production outcome.
 /// </summary>
-public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
+public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
 {
     private const string Base = "/api/v1/manufacturing";
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;

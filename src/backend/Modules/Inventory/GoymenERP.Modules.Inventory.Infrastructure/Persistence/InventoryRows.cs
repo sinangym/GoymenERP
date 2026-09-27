@@ -305,3 +305,49 @@ internal sealed class InventoryCommandRow : IInventoryTenantRow
     public string CorrelationId { get; set; } = string.Empty;
     public DateTimeOffset RecordedAtUtc { get; set; }
 }
+
+/// <summary>
+/// ST-05 / AT-037: one physical count of one stocked label (DEC-STK-007). The counted position, the label version
+/// and book kg the counter saw, the counted kg and the mandatory reason are kept exactly as recorded; a count
+/// changes no stock. <see cref="PayloadHash"/> is the canonical request, so the same id again is a replay or a
+/// conflict. The recorder is kept for the fail-closed maker≠checker rule and the audit. Append-only.
+/// </summary>
+internal sealed class StockCountRow : IInventoryTenantRow
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public Guid LabelId { get; set; }
+    public long LabelVersion { get; set; }
+    public int OwnerKind { get; set; }
+    public Guid OwnerId { get; set; }
+    public int CustodianKind { get; set; }
+    public Guid CustodianId { get; set; }
+    public Guid LocationId { get; set; }
+    public Guid ProductId { get; set; }
+    public int Block { get; set; }
+    public decimal BookKg { get; set; }
+    public decimal CountedKg { get; set; }
+    public DateTimeOffset CountedAtUtc { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public string PayloadHash { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+    public string RecordedBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// The one decision on a count difference: approved with the adjustment movement it posted (the schema requires
+/// that movement), or rejected with none. The key (company, count) allows exactly one decision. Append-only.
+/// </summary>
+internal sealed class StockCountDecisionRow : IInventoryTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid CountId { get; set; }
+    public int Decision { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public Guid? MovementId { get; set; }
+    public string PayloadHash { get; set; } = string.Empty;
+    public DateTimeOffset DecidedAtUtc { get; set; }
+    public string DecidedBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}

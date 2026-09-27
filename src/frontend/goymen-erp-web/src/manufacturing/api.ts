@@ -26,6 +26,7 @@ import {
   type ProductionPlanView,
 } from './contract'
 import { decodePlanList, type PlanListView } from './planListContract'
+import { decodePlanRevisions, type PlanRevisionList } from './planRevisionContract'
 import type { ViewOutcome } from '../shell/uiState'
 
 export const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '/api/v1'
@@ -209,6 +210,41 @@ export async function fetchPlan(
   if (response.status !== 200) return { type: 'http', status: response.status, body }
   const plan = decodePlan(body)
   return plan === null ? { type: 'malformed' } : { type: 'ok-single', data: plan }
+}
+
+/**
+ * `GET /api/v1/manufacturing/plans/{planId}/revisions` — MFG-PLAN-EDIT: the plan's history (revision 0 as created,
+ * then every recorded Draft edit), under the plan read's grant. Another company's plan is the same 404 as an unknown
+ * id; a 503 is a real, retryable answer, as for {@link fetchPlan}. The answer must name the plan asked for.
+ */
+export async function fetchPlanRevisions(
+  companyId: string,
+  planId: string,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<PlanRevisionList>> {
+  let response: Response
+  try {
+    response = await fetch(`${MANUFACTURING_BASE}/plans/${encodeURIComponent(planId)}/revisions`, {
+      headers: { ...devHeaders(), 'X-Company-Id': companyId },
+      cache: 'no-store',
+      signal,
+    })
+  } catch {
+    if (signal?.aborted) return { type: 'fence-stale' }
+    return navigator.onLine ? { type: 'network-error' } : { type: 'offline' }
+  }
+  let body: unknown = null
+  try {
+    body = await response.json()
+  } catch {
+    if (signal?.aborted) return { type: 'fence-stale' }
+    body = null
+  }
+  if (response.status !== 200) return { type: 'http', status: response.status, body }
+  const history = decodePlanRevisions(body)
+  return history === null || history.planId.toLowerCase() !== planId.toLowerCase()
+    ? { type: 'malformed' }
+    : { type: 'ok-single', data: history }
 }
 
 /** What the list asks for; every part is optional and the server decides the page it answers. */

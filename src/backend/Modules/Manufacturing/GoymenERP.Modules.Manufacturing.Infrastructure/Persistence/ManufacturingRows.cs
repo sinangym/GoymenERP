@@ -9,7 +9,9 @@ internal interface IManufacturingTenantRow
 /// <summary>
 /// A production plan. Its content (company, work center, process, target and inputs) never changes;
 /// only the approval and the version do. <see cref="PayloadHash"/> is the canonical content hash
-/// that tells a replayed plan from a different plan offered under the same id.
+/// that tells a replayed plan from a different plan offered under the same id. MFG-PLAN-EDIT: this row and its
+/// inputs stay the plan AS CREATED (revision 0); a Draft revision is appended in <see cref="PlanRevisionRow"/> and
+/// moves only the version and the update time here.
 /// </summary>
 internal sealed class PlanRow : IManufacturingTenantRow
 {
@@ -55,6 +57,41 @@ internal sealed class PlanSlitLineRow : IManufacturingTenantRow
     public int Sequence { get; set; }
     public decimal BandWidthMm { get; set; }
     public int BandCount { get; set; }
+}
+
+/// <summary>
+/// MFG-PLAN-EDIT: one recorded Draft revision of a plan (append-only). Revision 0 is the plan's own rows as created
+/// and is never written here; a revision is the next number, with the complete work center and target it set, the
+/// user's reason, who recorded it, when, and the plan version it produced. Never modified, never deleted.
+/// </summary>
+internal sealed class PlanRevisionRow : IManufacturingTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid PlanId { get; set; }
+    public int RevisionNo { get; set; }
+    public Guid WorkCenterId { get; set; }
+    public int? TargetBasis { get; set; }
+    public decimal? TargetKg { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public long PlanVersion { get; set; }
+    public string RevisedBy { get; set; } = string.Empty;
+    public DateTimeOffset RevisedAtUtc { get; set; }
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// MFG-PLAN-EDIT: one planned parent roll of a recorded revision, in the revision's own order, with the Inventory
+/// label version accepted for it. The complete input set of the revision; append-only.
+/// </summary>
+internal sealed class PlanRevisionInputRow : IManufacturingTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid PlanId { get; set; }
+    public int RevisionNo { get; set; }
+    public Guid ParentRollId { get; set; }
+    public int Sequence { get; set; }
+    public decimal PlannedKg { get; set; }
+    public long ExpectedLabelVersion { get; set; }
 }
 
 /// <summary>

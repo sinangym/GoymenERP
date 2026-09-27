@@ -120,6 +120,18 @@ public sealed partial class OpenApiContractGenerationTests
         new("post", "/api/v1/inventory/label-transformations", "RecordInventoryLabelTransformationV1",
             AuthenticatedResponses("201:application/json", "200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "503:application/problem+json"),
             "#/components/schemas/TransformInventoryLabelsV1"),
+        // AT-037 / DEC-STK-007: record a label count, decide its difference (maker != checker) and read a label's
+        // counts; the command codes are the owner's closed sets, read below.
+        new("post", "/api/v1/inventory/stock-counts", "RecordInventoryStockCountV1",
+            AuthenticatedResponses("201:application/json", "200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/RecordInventoryStockCountV1"),
+        new("post", "/api/v1/inventory/stock-counts/{countId}/decision", "DecideInventoryStockCountV1",
+            AuthenticatedResponses("201:application/json", "200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/DecideInventoryStockCountV1",
+            ["path:countId:true:type:string;format:uuid"]),
+        new("get", "/api/v1/inventory/labels/{labelId}/stock-counts", "GetInventoryLabelStockCountsV1",
+            AuthenticatedResponses("200:application/json", "404:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["path:labelId:true:type:string;format:uuid"]),
         new("put", "/api/v1/organization/locations/{id}/active-state", "SetOrganizationLocationActiveStateV1",
             AuthenticatedResponses("204:", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:"),
             "#/components/schemas/SetLocationActiveState",
@@ -285,6 +297,14 @@ public sealed partial class OpenApiContractGenerationTests
         new("post", "/api/v1/manufacturing/plans/{planId}/approval", "ApproveManufacturingPlanV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json", "404:application/problem+json"),
             "#/components/schemas/ApprovePlanRequestV1", ["path:planId:true:type:string;format:uuid"]),
+        // MFG-PLAN-EDIT: a Draft plan is revised under the plan write (the save's rules); its history under the plan read.
+        new("post", "/api/v1/manufacturing/plans/{planId}/revision", "ReviseManufacturingPlanV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/RevisePlanRequestV1", ["path:planId:true:type:string;format:uuid"]),
+        new("get", "/api/v1/manufacturing/plans/{planId}/revisions", "ListManufacturingPlanRevisionsV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json",
+                "503:application/problem+json"),
+            ParameterValues: ["path:planId:true:type:string;format:uuid"]),
         new("post", "/api/v1/manufacturing/orders", "CreateManufacturingOrderV1",
             AuthenticatedResponses("201:application/json", "400:application/problem+json", "415:", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json", "404:application/problem+json"),
             "#/components/schemas/CreateOrderRequestV1"),
@@ -583,6 +603,9 @@ public sealed partial class OpenApiContractGenerationTests
             ["RecordInventoryOpeningCountV1"] = "ref:OpeningCountViewV1",
             ["GetInventoryOpeningCountV1"] = "ref:OpeningCountViewV1",
             ["RecordInventoryLabelTransformationV1"] = "ref:InventoryLabelTransformationViewV1",
+            ["RecordInventoryStockCountV1"] = "ref:InventoryStockCountViewV1",
+            ["DecideInventoryStockCountV1"] = "ref:InventoryStockCountViewV1",
+            ["GetInventoryLabelStockCountsV1"] = "ref:InventoryLabelStockCountsV1",
             ["SetOrganizationLocationActiveStateV1"] = "none",
             ["CreateOrganizationSiteV1"] = "ref:OrganizationCreatedRecord",
             ["UpdateOrganizationSiteV1"] = "none",
@@ -615,6 +638,8 @@ public sealed partial class OpenApiContractGenerationTests
             ["SaveManufacturingPlanV1"] = "ref:PlanViewV1",
             ["GetManufacturingPlanV1"] = "ref:PlanViewV1",
             ["ApproveManufacturingPlanV1"] = "ref:PlanViewV1",
+            ["ReviseManufacturingPlanV1"] = "ref:PlanViewV1",
+            ["ListManufacturingPlanRevisionsV1"] = "ref:PlanRevisionListViewV1",
             ["CreateManufacturingOrderV1"] = "ref:OrderViewV1",
             ["IssueManufacturingInputV1"] = "ref:OrderViewV1",
             ["ReturnManufacturingInputV1"] = "ref:OrderViewV1",
@@ -729,6 +754,9 @@ public sealed partial class OpenApiContractGenerationTests
         "RecordInventoryOpeningCountV1",
         "GetInventoryOpeningCountV1",
         "RecordInventoryLabelTransformationV1",
+        "RecordInventoryStockCountV1",
+        "DecideInventoryStockCountV1",
+        "GetInventoryLabelStockCountsV1",
         "GetCounterpartyCompanyAccountLinkCandidatesV1",
         "CreateCounterpartyV1",
         "CreateCounterpartyCompanyAccountV1",
@@ -750,6 +778,8 @@ public sealed partial class OpenApiContractGenerationTests
         "SaveManufacturingPlanV1",
         "GetManufacturingPlanV1",
         "ApproveManufacturingPlanV1",
+        "ReviseManufacturingPlanV1",
+        "ListManufacturingPlanRevisionsV1",
         "CreateManufacturingOrderV1",
         "IssueManufacturingInputV1",
         "ReturnManufacturingInputV1",
@@ -839,6 +869,8 @@ public sealed partial class OpenApiContractGenerationTests
         "CreateInventoryPhysicalAllocationV1",
         "ReleaseInventoryPhysicalAllocationV1",
         "RecordInventoryLabelTransformationV1",
+        "RecordInventoryStockCountV1",
+        "DecideInventoryStockCountV1",
         "UpdateCounterpartyContactInformationV1",
         "SetOrganizationLocationActiveStateV1",
         "CreateOrganizationSiteV1",
@@ -852,6 +884,7 @@ public sealed partial class OpenApiContractGenerationTests
         "SetCounterpartyCompanyAccountActiveStateV1",
         "SaveManufacturingPlanV1",
         "ApproveManufacturingPlanV1",
+        "ReviseManufacturingPlanV1",
         "CreateManufacturingOrderV1",
         "IssueManufacturingInputV1",
         "ReturnManufacturingInputV1",
@@ -939,6 +972,7 @@ public sealed partial class OpenApiContractGenerationTests
                 ["SaveManufacturingPlanV1"] =
                     [StatusCodes.Status201Created, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
                 ["ApproveManufacturingPlanV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
+                ["ReviseManufacturingPlanV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
                 ["CreateManufacturingOrderV1"] = [StatusCodes.Status201Created, StatusCodes.Status404NotFound],
                 ["IssueManufacturingInputV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
                 ["ReturnManufacturingInputV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
@@ -1003,6 +1037,8 @@ public sealed partial class OpenApiContractGenerationTests
                 ["CreateInventoryPhysicalAllocationV1"] = [StatusCodes.Status200OK],
                 ["ReleaseInventoryPhysicalAllocationV1"] = [StatusCodes.Status200OK],
                 ["RecordInventoryLabelTransformationV1"] = [StatusCodes.Status200OK],
+                ["RecordInventoryStockCountV1"] = [StatusCodes.Status200OK],
+                ["DecideInventoryStockCountV1"] = [StatusCodes.Status200OK],
                 ["CreateLoadingInstructionV1"] = [StatusCodes.Status201Created, StatusCodes.Status409Conflict],
                 ["IssueLoadingInstructionV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["RecordLoadingInstructionLoadV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
@@ -1030,6 +1066,8 @@ public sealed partial class OpenApiContractGenerationTests
         "UpdateCounterpartyContactInformationV1",
         "GetAuditEventsV1",
         "RecordInventoryLabelTransformationV1",
+        "RecordInventoryStockCountV1",
+        "DecideInventoryStockCountV1",
         "GetOrganizationLocationsV1",
         "SetOrganizationLocationActiveStateV1",
         "CreateOrganizationSiteV1",
@@ -1048,6 +1086,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetSalesProductCandidatesV1",
         "SaveManufacturingPlanV1",
         "ApproveManufacturingPlanV1",
+        "ReviseManufacturingPlanV1",
         "CreateManufacturingOrderV1",
         "IssueManufacturingInputV1",
         "ReturnManufacturingInputV1",
@@ -1122,6 +1161,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetInventoryLabelBalancesV1:404",
         "GetInventoryLabelDetailV1:404",
         "GetInventoryOpeningCountV1:404",
+        "GetInventoryLabelStockCountsV1:404",
         "CreateInventoryPhysicalAllocationV1:404",
         "ReleaseInventoryPhysicalAllocationV1:404",
         "SetOrganizationLocationActiveStateV1:404",
@@ -1143,6 +1183,8 @@ public sealed partial class OpenApiContractGenerationTests
         "SaveManufacturingPlanV1:404",
         "GetManufacturingPlanV1:404",
         "ApproveManufacturingPlanV1:404",
+        "ReviseManufacturingPlanV1:404",
+        "ListManufacturingPlanRevisionsV1:404",
         "CreateManufacturingOrderV1:404",
         "IssueManufacturingInputV1:404",
         "ReturnManufacturingInputV1:404",
@@ -1203,6 +1245,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetFinanceManualReceiptDraftContextV1:400",
         "SaveManufacturingPlanV1:400",
         "ApproveManufacturingPlanV1:400",
+        "ReviseManufacturingPlanV1:400",
         "CreateManufacturingOrderV1:400",
         "IssueManufacturingInputV1:400",
         "ReturnManufacturingInputV1:400",
@@ -1308,6 +1351,16 @@ public sealed partial class OpenApiContractGenerationTests
             ["RecordInventoryLabelTransformationV1:404"] = [.. InventoryLabelTransformationHttpCodesV1.Status404Codes.Order(StringComparer.Ordinal)],
             ["RecordInventoryLabelTransformationV1:409"] = [.. InventoryLabelTransformationHttpCodesV1.Status409Codes.Order(StringComparer.Ordinal)],
             ["RecordInventoryLabelTransformationV1:503"] = [.. InventoryLabelTransformationHttpCodesV1.Status503Codes.Order(StringComparer.Ordinal)],
+            // AT-037: the owner's closed sets (InventoryStockCountHttpCodesV1), read here, never retyped.
+            ["RecordInventoryStockCountV1:400"] = [.. InventoryStockCountHttpCodesV1.Status400Codes.Order(StringComparer.Ordinal)],
+            ["RecordInventoryStockCountV1:404"] = [.. InventoryStockCountHttpCodesV1.RecordStatus404Codes.Order(StringComparer.Ordinal)],
+            ["RecordInventoryStockCountV1:409"] = [.. InventoryStockCountHttpCodesV1.RecordStatus409Codes.Order(StringComparer.Ordinal)],
+            ["RecordInventoryStockCountV1:503"] = [.. InventoryStockCountHttpCodesV1.Status503Codes.Order(StringComparer.Ordinal)],
+            ["DecideInventoryStockCountV1:400"] = [.. InventoryStockCountHttpCodesV1.Status400Codes.Order(StringComparer.Ordinal)],
+            ["DecideInventoryStockCountV1:404"] = [.. InventoryStockCountHttpCodesV1.DecideStatus404Codes.Order(StringComparer.Ordinal)],
+            ["DecideInventoryStockCountV1:409"] = [.. InventoryStockCountHttpCodesV1.DecideStatus409Codes.Order(StringComparer.Ordinal)],
+            ["DecideInventoryStockCountV1:503"] = [.. InventoryStockCountHttpCodesV1.Status503Codes.Order(StringComparer.Ordinal)],
+            ["GetInventoryLabelStockCountsV1:503"] = [InventoryStockCountCodesV1.Unavailable],
             ["GetInventoryParentRollCandidatesV1:400"] = [InventoryParentRollCodesV1.InvalidQuery],
             ["GetInventoryParentRollCandidatesV1:409"] = [InventoryParentRollCodesV1.ReadConflict],
             ["GetInventoryStockPositionsV1:400"] = [InventoryStockPositionCodesV1.InvalidQuery],
@@ -1366,6 +1419,13 @@ public sealed partial class OpenApiContractGenerationTests
                 [.. ManufacturingConflictCodes, "inventory_label_version_conflict", "inventory_parent_roll_read_conflict"],
             ["SaveManufacturingPlanV1:422"] =
                 [.. ManufacturingUnprocessableCodes, "inventory_parent_roll_context_required", "inventory_parent_roll_no_physical_position"],
+            // MFG-PLAN-EDIT: the revision takes the save's rules and adds its three Draft-edit refusals.
+            ["ReviseManufacturingPlanV1:400"] = ["manufacturing_request_invalid"],
+            ["ReviseManufacturingPlanV1:409"] =
+                [.. ManufacturingConflictCodes, "inventory_label_version_conflict", "inventory_parent_roll_read_conflict"],
+            ["ReviseManufacturingPlanV1:422"] =
+                [.. ManufacturingUnprocessableCodes, "inventory_parent_roll_context_required", "inventory_parent_roll_no_physical_position",
+                    "manufacturing_plan_process_fixed", "manufacturing_plan_revision_no_change", "manufacturing_plan_slitting_spec_fixed"],
             ["ApproveManufacturingPlanV1:400"] = ["manufacturing_request_invalid"],
             ["ApproveManufacturingPlanV1:409"] = ManufacturingConflictCodes,
             ["ApproveManufacturingPlanV1:422"] = ManufacturingUnprocessableCodes,
@@ -1571,6 +1631,26 @@ public sealed partial class OpenApiContractGenerationTests
                     ("target", "oneOf:ref:TargetViewV1|type:null"),
                     ("createdAtUtc", "type:string;format:date-time"),
                     ("approvedAtUtc", "type:null|string;format:date-time")),
+                // MFG-PLAN-EDIT: every appended revision of a Draft plan, in order, with its reason and author.
+                ["PlanRevisionListViewV1"] = ObjectSchema(
+                    ["planId", "revisions"],
+                    ("planId", "type:string;format:uuid"),
+                    ("revisions", "type:array;items:ref:PlanRevisionViewV1")),
+                ["PlanRevisionViewV1"] = ObjectSchema(
+                    ["revision", "planVersion", "workCenterId", "inputs", "target", "reason", "revisedBy", "recordedAtUtc"],
+                    ("revision", "type:integer|string;format:int32"),
+                    ("planVersion", "type:integer|string;format:int64"),
+                    ("workCenterId", "type:string;format:uuid"),
+                    ("inputs", "type:array;items:ref:PlanRevisionInputViewV1"),
+                    ("target", "oneOf:ref:TargetViewV1|type:null"),
+                    ("reason", "type:null|string"),
+                    ("revisedBy", "type:null|string"),
+                    ("recordedAtUtc", "type:string;format:date-time")),
+                ["PlanRevisionInputViewV1"] = ObjectSchema(
+                    ["parentRollId", "plannedKg", "expectedLabelVersion"],
+                    ("parentRollId", "type:string;format:uuid"),
+                    ("plannedKg", "type:string"),
+                    ("expectedLabelVersion", "type:null|string")),
                 ["LogisticsApprovedOrderLinePage"] = ObjectSchema(
                     ["items", "nextCursor"],
                     ("items", "type:array;items:ref:LogisticsApprovedOrderLineView"),
@@ -2786,6 +2866,27 @@ public sealed partial class OpenApiContractGenerationTests
                     ["allocation", "labelVersion"],
                     ("allocation", "ref:InventoryPhysicalAllocationViewV1"),
                     ("labelVersion", "type:string")),
+                ["InventoryStockCountViewV1"] = ObjectSchema(
+                    ["countId", "companyId", "labelId", "labelVersion", "ownerKind", "ownerId", "custodianKind", "custodianId", "locationId", "productId", "block", "bookKg", "countedKg", "differenceKg", "countedAtUtc", "reason", "recordedAtUtc", "status", "decision"],
+                    ("countId", "type:string;format:uuid"), ("companyId", "type:string;format:uuid"),
+                    ("labelId", "type:string;format:uuid"), ("labelVersion", "type:string"),
+                    ("ownerKind", "type:string"), ("ownerId", "type:string;format:uuid"),
+                    ("custodianKind", "type:string"), ("custodianId", "type:string;format:uuid"),
+                    ("locationId", "type:string;format:uuid"), ("productId", "type:string;format:uuid"),
+                    ("block", "type:string"), ("bookKg", "type:string"), ("countedKg", "type:string"),
+                    ("differenceKg", "type:string"), ("countedAtUtc", "type:string;format:date-time"),
+                    ("reason", "type:string"), ("recordedAtUtc", "type:string;format:date-time"),
+                    ("status", "type:string"),
+                    ("decision", "oneOf:ref:InventoryStockCountDecisionViewV1|type:null")),
+                ["InventoryStockCountDecisionViewV1"] = ObjectSchema(
+                    ["decision", "decidedAtUtc", "reason", "adjustmentMovementId"],
+                    ("decision", "type:string"), ("decidedAtUtc", "type:string;format:date-time"),
+                    ("reason", "type:string"), ("adjustmentMovementId", "type:null|string;format:uuid")),
+                ["InventoryLabelStockCountsV1"] = ObjectSchema(
+                    ["labelId", "items", "windowFull"],
+                    ("labelId", "type:string;format:uuid"),
+                    ("items", "type:array;items:ref:InventoryStockCountViewV1"),
+                    ("windowFull", "type:boolean")),
                 ["InventoryLabelTransformationViewV1"] = ObjectSchema(
                     ["transformationId", "companyId", "kind", "occurredAtUtc", "reason", "sourceLabelIds", "outputLabelIds"],
                     ("transformationId", "type:string;format:uuid"), ("companyId", "type:string;format:uuid"),
@@ -3016,6 +3117,14 @@ public sealed partial class OpenApiContractGenerationTests
                 ["ReleasePhysicalAllocationV1"] = ObjectSchema(
                     ["expectedAllocationVersion", "reason"],
                     ("expectedAllocationVersion", "type:string"), ("reason", "type:string")),
+                ["RecordInventoryStockCountV1"] = ObjectSchema(
+                    ["countId", "labelId", "expectedLabelVersion", "countedKg", "countedAtUtc", "reason"],
+                    ("countId", "type:string;format:uuid"), ("labelId", "type:string;format:uuid"),
+                    ("expectedLabelVersion", "type:string"), ("countedKg", "type:string"),
+                    ("countedAtUtc", "type:string;format:date-time"), ("reason", "type:string")),
+                ["DecideInventoryStockCountV1"] = ObjectSchema(
+                    ["decision", "reason"],
+                    ("decision", "ref:InventoryStockCountDecisionKindV1"), ("reason", "type:string")),
                 ["TransformInventoryLabelsV1"] = ObjectSchema(
                     ["transformationId", "kind", "sources", "outputs", "occurredAtUtc", "reason"],
                     ("transformationId", "type:string;format:uuid"),
@@ -3263,6 +3372,14 @@ public sealed partial class OpenApiContractGenerationTests
                     ("workCenterId", "type:string;format:uuid"),
                     ("inputs", "type:array|null;items:ref:PlannedInputRequestV1"),
                     ("target", "oneOf:ref:TargetRequestV1|type:null")),
+                // MFG-PLAN-EDIT: a Draft plan's revision names the version read and a reason; the process stays fixed.
+                ["RevisePlanRequestV1"] = ObjectSchema(
+                    ["expectedVersion", "workCenterId", "inputs", "target", "reason"],
+                    ("expectedVersion", "type:integer|string;format:int64"),
+                    ("workCenterId", "type:string;format:uuid"),
+                    ("inputs", "type:array|null;items:ref:PlannedInputRequestV1"),
+                    ("target", "oneOf:ref:TargetRequestV1|type:null"),
+                    ("reason", "type:null|string")),
                 ["TargetRequestV1"] = ObjectSchema(
                     ["basis", "kg"],
                     ("basis", "type:null|string"),
@@ -3900,9 +4017,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(139, operations.Count);
+        Assert.Equal(144, operations.Count);
         Assert.Equal(
-            139,
+            144,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());
