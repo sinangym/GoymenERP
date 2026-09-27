@@ -559,11 +559,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // do; here in the draft service, which is the module's only writer. No connection,
                 // command or raw SQL.
                 // Re-fingerprinted for DEC-FIN-014: the POS facts (gross, commission, server-computed bank net,
-                // bearer) travel on the same draft save and record; SqlClient count unchanged.
+                // bearer) travel on the same draft save and record; SqlClient count unchanged. K3 5330956606: the
+                // unallocated amount is redacted like every other amount for an actor without amount read.
                 ["src/backend/Modules/Finance/"
                  + "GoymenERP.Modules.Finance.Infrastructure/ReceiptDraftService.cs"] =
                     new(
-                        "7830db10dfb128774a5c42aff7866c9c8da15744fc417c3a7efb560ec17915aa",
+                        "ae3f59d79bb2701efd45434eb242f7177bba28d346c2ad95d6fd2f0db4a26585",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
