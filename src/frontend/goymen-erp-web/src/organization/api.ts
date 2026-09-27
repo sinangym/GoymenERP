@@ -21,10 +21,12 @@ import {
   decodeLocation,
   decodeLocationPage,
   decodeSites,
+  decodeWorkCenterDetail,
   decodeWorkCenters,
   type LocationPage,
   type LocationSummary,
   type SiteSummary,
+  type WorkCenterDetail,
   type WorkCenterSummary,
 } from './contract'
 import type { ViewOutcome } from '../shell/uiState'
@@ -122,6 +124,30 @@ export async function fetchWorkCenters(
   const workCenters = decodeWorkCenters(result.body)
   if (workCenters === null) return { type: 'malformed' }
   return { type: 'ok-single', data: workCenters }
+}
+
+/**
+ * `GET /api/v1/organization/work-centers/{id}` — ORG-04, one work centre's read-only card.
+ *
+ * The same grant and scope as the list. Another company's, an out-of-scope and an unknown id are one
+ * code-less 404, passed through as that status and never turned into an empty card. The answer must be the
+ * requested record (`decodeWorkCenterDetail`), or it is malformed.
+ */
+export async function fetchWorkCenter(
+  companyId: string,
+  workCenterId: string,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<WorkCenterDetail>> {
+  const result = await read(
+    `/organization/work-centers/${encodeURIComponent(workCenterId)}`,
+    companyId,
+    signal,
+  )
+  if (typeof result === 'string') return transportOutcome(result)
+  if (!result.isOk200) return { type: 'http', status: result.status, body: result.body }
+  const workCenter = decodeWorkCenterDetail(result.body, workCenterId)
+  if (workCenter === null) return { type: 'malformed' }
+  return { type: 'ok-single', data: workCenter }
 }
 
 export interface LocationPageQuery {

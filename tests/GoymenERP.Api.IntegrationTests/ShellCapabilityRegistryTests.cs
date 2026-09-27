@@ -846,6 +846,10 @@ public sealed partial class ShellCapabilityRegistryTests
         public Task<IReadOnlyList<WorkCenterSummary>> GetWorkCentersAsync(
             CancellationToken cancellationToken) => throw NotUsed();
 
+        public Task<WorkCenterDetail?> GetWorkCenterAsync(
+            Guid id,
+            CancellationToken cancellationToken) => throw NotUsed();
+
         public Task<CommandExecutionResult> SetLocationActiveStateAsync(
             Guid id,
             SetLocationActiveState command,
@@ -892,6 +896,10 @@ public sealed partial class ShellCapabilityRegistryTests
             CancellationToken cancellationToken) => throw NotUsed();
 
         public Task<IReadOnlyList<WorkCenterSummary>> GetWorkCentersAsync(
+            CancellationToken cancellationToken) => throw NotUsed();
+
+        public Task<WorkCenterDetail?> GetWorkCenterAsync(
+            Guid id,
             CancellationToken cancellationToken) => throw NotUsed();
 
         public Task<CommandExecutionResult> SetLocationActiveStateAsync(

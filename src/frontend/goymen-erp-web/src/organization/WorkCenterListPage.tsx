@@ -23,13 +23,14 @@ import { useQuery } from '@tanstack/react-query'
 import { Link, useLocation } from 'react-router'
 import { fetchWorkCenters } from './api'
 import type { WorkCenterSummary } from './contract'
-import { locationDetailPath, ORGANIZATION_CAPABILITY, workCenterListPath } from './capabilities'
+import { locationDetailPath, ORGANIZATION_CAPABILITY, workCenterDetailPath, workCenterListPath } from './capabilities'
 import {
   filterWorkCenters, filteredWorkCenterDetailReturn, readWorkCenterLocationFilter,
   WORK_CENTER_LOCATION_TEXT,
 } from './workCenterLocationFilter'
 import {
   LOCATION_NOT_OPENABLE,
+  WORK_CENTER_CARD_TEXT,
   WORK_CENTERS_HEADING,
   WORK_CENTERS_LEAD,
   activeStateLabel,
@@ -102,6 +103,8 @@ function WorkCenterList({ namespace }: { readonly namespace: string | null }) {
   }
 
   const rows = state.kind === 'ready' ? filterWorkCenters(state.data, filter) : []
+  // ORG-04: the card is its own route capability, published on the same grant as this list.
+  const canOpenCard = hasCapability(shell, ORGANIZATION_CAPABILITY.workCenterDetail)
   return (
     <section aria-labelledby="org-wc-heading" className={styles.page}>
       <header className={styles.header}>
@@ -128,7 +131,12 @@ function WorkCenterList({ namespace }: { readonly namespace: string | null }) {
           subject={filter.kind === 'location' ? WORK_CENTER_LOCATION_TEXT.filteredSubject : 'iş merkezleri'}
         />
       ) : (
-        <WorkCenterTable rows={rows} namespace={namespace} filterLocationId={filter.kind === 'location' ? filter.locationId : null} />
+        <WorkCenterTable
+          rows={rows}
+          namespace={namespace}
+          filterLocationId={filter.kind === 'location' ? filter.locationId : null}
+          canOpenCard={canOpenCard}
+        />
       )}
     </section>
   )
@@ -138,10 +146,12 @@ function WorkCenterTable({
   rows,
   namespace,
   filterLocationId,
+  canOpenCard,
 }: {
   readonly rows: readonly WorkCenterSummary[]
   readonly namespace: string | null
   readonly filterLocationId: string | null
+  readonly canOpenCard: boolean
 }) {
   return (
     <div className={styles.tableScroll}>
@@ -162,7 +172,22 @@ function WorkCenterTable({
         <tbody>
           {rows.map((row) => (
             <tr key={row.id}>
-              <td className={styles.codeCell}>{row.code}</td>
+              <td className={styles.codeCell}>
+                {/* ORG-04: the row opens its own card, carrying the same allowlisted return token as the
+                    location link, so the card's way back restores this list and its location filter. */}
+                {canOpenCard ? (
+                  <Link
+                    className={styles.rowLink}
+                    to={workCenterDetailPath(row.id)}
+                    state={filteredWorkCenterDetailReturn(namespace, filterLocationId)}
+                    aria-label={`${WORK_CENTER_CARD_TEXT.openCard}: ${row.code}`}
+                  >
+                    {row.code}
+                  </Link>
+                ) : (
+                  row.code
+                )}
+              </td>
               <td>{row.name}</td>
               <td>{workCenterKindLabel(row.kind)}</td>
               <td>

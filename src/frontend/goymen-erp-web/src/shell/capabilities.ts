@@ -138,6 +138,12 @@ export const CAPABILITY = {
    * shape `organizationSitesList` had before #246 published it.
    */
   organizationWorkCentersList: 'organization.work-centers.list',
+  /**
+   * ORG-04 one work centre's read-only card. Route `/ayarlar/organizasyon/is-merkezleri/:workCenterId`,
+   * owner the Organization lane. The same grant as ORG-03 (`organization.work-centers.read`); reached from a
+   * list row, never from the sidebar.
+   */
+  organizationWorkCentersDetail: 'organization.work-centers.detail',
   /** S-02 sales order draft list. Route `/satis/siparisler`, owner the Sales lane (SİPARİŞ). */
   salesDraftsList: 'sales.drafts.list',
   /** S-04 Sales order 360, one draft. Route `/satis/siparisler/:draftId`. A SEPARATE grant from the list. */
@@ -262,6 +268,9 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   // `/ayarlar/organizasyon/is-merkezleri` differ by a static segment, and neither can match the
   // card's `lokasyon/:locationId` — no url matches two of the three (#172 P1-2).
   [CAPABILITY.organizationWorkCentersList]: '/ayarlar/organizasyon/is-merkezleri',
+  // ORG-04: a parameter BELOW the static list. The list never matches the card and the card never matches
+  // `lokasyon/:locationId`, whose static segment differs (#172 P1-2).
+  [CAPABILITY.organizationWorkCentersDetail]: '/ayarlar/organizasyon/is-merkezleri/:workCenterId',
   [CAPABILITY.salesDraftsList]: '/satis/siparisler',
   // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as a draft id.
   [CAPABILITY.salesDraftsCreate]: '/satis/siparisler/yeni',
@@ -342,6 +351,8 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   // work-centers.read without locations.read never reaches ORG-01 to be linked from it.
   // So Organization's sidebar goes from one entry to two — a list each, no card, no control.
   [CAPABILITY.organizationWorkCentersList]: 'İş Merkezleri',
+  // ORG-04: reached from a work-centre row, never from the sidebar; Organization keeps two entries.
+  [CAPABILITY.organizationWorkCentersDetail]: '',
   [CAPABILITY.salesDraftsList]: 'Sipariş Taslakları',
   [CAPABILITY.salesDraftsCreate]: 'Yeni Sipariş Taslağı',
   // Nor this one: the 360 is reached from a list row, never from the sidebar.

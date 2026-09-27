@@ -121,6 +121,10 @@ public sealed partial class OpenApiContractGenerationTests
             ["path:id:true:type:string;format:uuid"]),
         new("get", "/api/v1/organization/work-centers", "GetOrganizationWorkCentersV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json")),
+        // ORG-04: one work center's card, the location card's shape (code-less 404 for foreign/unknown/out-of-scope).
+        new("get", "/api/v1/organization/work-centers/{id}", "GetOrganizationWorkCenterV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json"),
+            ParameterValues: ["path:id:true:type:string;format:uuid"]),
         new("get", "/api/v1/identity/me", "GetCurrentIdentityV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json")),
         new("get", "/api/v1/counterparties", "GetCounterpartiesV1",
@@ -541,6 +545,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetInventoryOpeningCountV1"] = "ref:OpeningCountViewV1",
             ["SetOrganizationLocationActiveStateV1"] = "none",
             ["GetOrganizationWorkCentersV1"] = "array:WorkCenterSummary",
+            ["GetOrganizationWorkCenterV1"] = "ref:WorkCenterDetail",
             ["GetCurrentIdentityV1"] = "ref:IdentityProfile",
             ["GetCounterpartiesV1"] = "ref:CounterpartyPage",
             ["GetCounterpartyCompanyAccountLinkCandidatesV1"] =
@@ -655,6 +660,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetOrganizationLocationV1",
         "SetOrganizationLocationActiveStateV1",
         "GetOrganizationWorkCentersV1",
+        "GetOrganizationWorkCenterV1",
         "GetInventoryLabelV1",
         "GetInventoryLabelBalancesV1",
         "GetInventoryLabelDetailV1",
@@ -1019,6 +1025,7 @@ public sealed partial class OpenApiContractGenerationTests
     private static readonly HashSet<string> CodeLessProblemResponses =
     [
         "GetOrganizationLocationV1:404",
+        "GetOrganizationWorkCenterV1:404",
         "GetInventoryLabelV1:404",
         "GetInventoryLabelBalancesV1:404",
         "GetInventoryLabelDetailV1:404",
@@ -2666,6 +2673,17 @@ public sealed partial class OpenApiContractGenerationTests
                     ("kind", "type:string"),
                     ("isActive", "type:boolean"),
                     ("canOpenLocationDetail", "type:boolean")),
+                // ORG-04: the card adds the row version to the list row's fields.
+                ["WorkCenterDetail"] = ObjectSchema(
+                    ["id", "locationId", "code", "name", "kind", "isActive", "version", "canOpenLocationDetail"],
+                    ("id", "type:string;format:uuid"),
+                    ("locationId", "type:string;format:uuid"),
+                    ("code", "type:string"),
+                    ("name", "type:string"),
+                    ("kind", "type:string"),
+                    ("isActive", "type:boolean"),
+                    ("version", "type:integer;format:int64"),
+                    ("canOpenLocationDetail", "type:boolean")),
             };
 
     private static readonly IReadOnlyDictionary<string, ComponentSchemaExpectation>
@@ -3626,9 +3644,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(128, operations.Count);
+        Assert.Equal(129, operations.Count);
         Assert.Equal(
-            128,
+            129,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());

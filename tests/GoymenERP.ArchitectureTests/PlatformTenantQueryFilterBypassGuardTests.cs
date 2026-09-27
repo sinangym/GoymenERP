@@ -168,7 +168,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // organization
             ["tools/relational_inventory/organization.txt"] =
-                "ff9e4dea662002bcbba7e4f72c99b8f04a5766640126dbcb376cd4106a09f21b",
+                "6b504dac144f5a9264ae34969ca54275c608b3b5d74b77ac0b411e98d0225d35",
 
             // platform
             ["tools/relational_inventory/platform.txt"] =

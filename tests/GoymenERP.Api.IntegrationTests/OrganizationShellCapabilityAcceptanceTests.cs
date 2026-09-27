@@ -24,15 +24,15 @@ public sealed class OrganizationShellCapabilityAcceptanceTests(GoymenErpApiFacto
         var services = CanonicalServices();
         var authority = C01E2eShellCapabilityActivation.Configure(
             services, new TestingEnvironment(), new ConfigurationBuilder().Build());
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailAndOrganizationV11, authority);
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailAndOrganizationV12, authority);
         using var container = services.BuildServiceProvider();
         var providers = container.GetServices<IShellCapabilityProvider>().ToArray();
         var registry = new ShellCapabilityRegistry(providers, new ShellCapabilityAuthorityCatalog([authority]));
         Assert.Equal(authority, registry.Revision);
-        // Counterparty's four plus Organization's FIVE (ORG-03 joined the four ORG-01/02
-        // declarations). Measured, not incremented: the count is asserted here so that a
-        // declaration appearing or vanishing has to be stated rather than absorbed.
-        Assert.Equal(9, registry.Registrations.Count);
+        // Counterparty's four plus Organization's SIX (ORG-03 joined the four ORG-01/02 declarations,
+        // ORG-04's work-centre card the fifth). Measured, not incremented: the count is asserted here so
+        // that a declaration appearing or vanishing has to be stated rather than absorbed.
+        Assert.Equal(10, registry.Registrations.Count);
         Assert.Throws<InvalidOperationException>(() => new ShellCapabilityRegistry(
             providers, new ShellCapabilityAuthorityCatalog(
                 [ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetail])));
@@ -177,8 +177,12 @@ public sealed class OrganizationShellCapabilityAcceptanceTests(GoymenErpApiFacto
         // `organization.work-centers.read` ALONE. A work-centre reader with no location access still
         // gets this capability — which is why the screen exists as its own sidebar entry rather than
         // a link inside ORG-01, a screen that caller cannot open at all.
+        // ORG-04's card stands on the same permission alone, so it is published exactly with the list.
         if ((permissions & Bit(ErpPermissions.OrganizationWorkCentersRead)) != 0)
+        {
             expected.Add(OrganizationShellCapabilityProvider.WorkCenterListCapabilityId);
+            expected.Add(OrganizationShellCapabilityProvider.WorkCenterDetailCapabilityId);
+        }
 
         Assert.Equal(expected.Order(StringComparer.Ordinal), snapshot.Capabilities);
     }
