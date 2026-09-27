@@ -452,7 +452,8 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
                     .HasFilter("[CollectionSourceId] IS NOT NULL");
 
                 b.HasIndex(new[] { "CompanyId", "Kind", "SerialNumber", "Drawer", "BankName" }, "UX_CustomerInstruments_Identity")
-                    .IsUnique();
+                    .IsUnique()
+                    .HasFilter("[CompanyId] IS NOT NULL");
 
                 b.ToTable("CustomerInstruments", "finance", t =>
                     {

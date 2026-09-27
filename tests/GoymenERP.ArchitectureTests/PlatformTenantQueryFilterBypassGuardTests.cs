@@ -260,7 +260,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // the instrument link and the collection kind.
             ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
              + "Persistence/FinanceDbContext.cs"] =
-            "bd5b06de2b086efe3244edbfb49a480f0d8e04a08431ca1bbb53389c9a6b97e7",
+            "d78ab888f34888ea3ba5c648a6c2b03f0acb064baba299d1883d8c4a279bf170",
             // ACC-3 (#298): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for ACC-V0a: the ADR-011 command log (Commands) is mapped here, company-scoped with the
@@ -1022,7 +1022,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // instrument, instrument command or collection money event is stored; the THROW is the Down's first
                 // statement, before every drop. Forward fix.
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20260927180000_AddCustomerInstruments.cs"] =
-                    new("632f9882fd2fb5cd830939ba58abf1712274f49c0536af65ae3dfcb2cf75b6af",
+                    new("594e12d2598d6f4dfba756790666d15d4f493980af10ca6cdf1b9e636e58c3f6",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // MFG-6 slice 2: the Down's only raw SQL is Manufacturing's module refusal (51047) while any plan

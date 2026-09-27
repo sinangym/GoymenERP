@@ -615,10 +615,12 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         entity.Property(x => x.ReceivedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
         entity.Property(x => x.UpdatedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
         // The workspace's "araç no mükerrer değil": one instrument per kind, serial, drawer and bank in a company.
-        // Unfiltered on purpose: a note has no bank, and SQL Server's unique index treats the NULLs as one value, so a
-        // note is covered too (EF would otherwise filter the nullable column out).
+        // Covers every row on purpose: a note has no bank, and SQL Server's unique index treats the NULLs as one value,
+        // so a note is covered too. The filter is on the non-nullable CompanyId, i.e. true for every row: it exists only
+        // because Finance's hand-written migrations carry no target model, and without an explicit filter EF's SQL
+        // Server generator adds the legacy "[BankName] IS NOT NULL" filter, which would exempt every note (#501 SQL).
         entity.HasIndex(x => new { x.CompanyId, x.Kind, x.SerialNumber, x.Drawer, x.BankName },
-            "UX_CustomerInstruments_Identity").IsUnique().HasFilter(null);
+            "UX_CustomerInstruments_Identity").IsUnique().HasFilter("[CompanyId] IS NOT NULL");
         // Exactly once: a receipt source is the collection of at most one instrument.
         entity.HasIndex(x => new { x.CompanyId, x.CollectionSourceId }, "UX_CustomerInstruments_CollectionSource")
             .HasFilter("[CollectionSourceId] IS NOT NULL").IsUnique();

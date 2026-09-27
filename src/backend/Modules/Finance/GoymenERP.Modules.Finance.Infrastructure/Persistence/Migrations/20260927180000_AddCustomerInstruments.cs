@@ -99,9 +99,12 @@ public sealed class AddCustomerInstruments : Migration
                     onDelete: ReferentialAction.Restrict);
             });
 
-        // Unfiltered: a note's NULL bank counts as one value, so a note is covered too.
+        // Every row: a note's NULL bank counts as one value, so a note is covered too. The filter on the non-nullable
+        // CompanyId is true for every row; it is explicit only so the generator does not add its legacy
+        // "[BankName] IS NOT NULL" filter (this migration has no target model), which would exempt every note.
         migrationBuilder.CreateIndex("UX_CustomerInstruments_Identity", "CustomerInstruments",
-            new[] { "CompanyId", "Kind", "SerialNumber", "Drawer", "BankName" }, schema: "finance", unique: true);
+            new[] { "CompanyId", "Kind", "SerialNumber", "Drawer", "BankName" }, schema: "finance", unique: true,
+            filter: "[CompanyId] IS NOT NULL");
         migrationBuilder.CreateIndex("UX_CustomerInstruments_CollectionSource", "CustomerInstruments",
             new[] { "CompanyId", "CollectionSourceId" }, schema: "finance", unique: true,
             filter: "[CollectionSourceId] IS NOT NULL");

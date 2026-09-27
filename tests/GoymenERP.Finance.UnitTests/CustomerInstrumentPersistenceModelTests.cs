@@ -36,8 +36,10 @@ public sealed class CustomerInstrumentPersistenceModelTests
         Assert.True(instruments.FindProperty(nameof(CustomerInstrumentRow.Version))!.IsConcurrencyToken);
         var identity = Assert.Single(instruments.GetIndexes(), index => index.GetDatabaseName() == "UX_CustomerInstruments_Identity");
         Assert.True(identity.IsUnique);
-        // Unfiltered, so a note (no bank) is covered as well.
-        Assert.Null(identity.GetFilter());
+        // Covers every row, so a note (no bank) is covered as well: the only filter is on the non-nullable CompanyId
+        // (true for every row), which stops EF's legacy "[BankName] IS NOT NULL" filter in the model-less migration.
+        Assert.Equal("[CompanyId] IS NOT NULL", identity.GetFilter());
+        Assert.False(instruments.FindProperty("CompanyId")!.IsNullable);
         var collection = Assert.Single(instruments.GetIndexes(),
             index => index.GetDatabaseName() == "UX_CustomerInstruments_CollectionSource");
         Assert.True(collection.IsUnique);
