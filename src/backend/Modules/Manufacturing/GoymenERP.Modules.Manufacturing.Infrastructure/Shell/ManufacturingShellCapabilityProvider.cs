@@ -20,6 +20,9 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Shell;
 /// <see cref="ErpPermissions.ManufacturingPlansRead"/>.</item>
 /// <item><c>manufacturing.plans.approve</c> and <c>manufacturing.plans.order-create</c>: controls on the
 /// plan detail route, adding the existing approve and order-create permissions respectively.</item>
+/// <item><c>manufacturing.plans.edit</c> (MFG-PLAN-EDIT, contract 1.4): a control on the plan detail route adding
+/// the plan save's own <see cref="ErpPermissions.ManufacturingPlansWrite"/> — the Draft edit and its history. No new
+/// permission.</item>
 /// <item><c>manufacturing.plans.list</c> → <c>/uretim/planlar</c> on
 /// <see cref="ErpPermissions.ManufacturingPlansRead"/> (MFG-PLAN-LIST, contract 1.3): the company's saved plans,
 /// so a plan whose screen was closed is found and reopened. The plan read's own grant; no new permission.</item>
@@ -34,9 +37,10 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Shell;
 public sealed class ManufacturingShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "MANUFACTURING";
-    // 1.2 -> 1.3 (MFG-PLAN-LIST): the plan list route. The owner contract version enters the canonical form of
-    // every declaration, so the accepted authority revisions move with it in the central writer's round.
-    public const string OwnerContractVersion = "1.3";
+    // 1.2 -> 1.3 (MFG-PLAN-LIST): the plan list route. 1.3 -> 1.4 (MFG-PLAN-EDIT): the plan edit control. The owner
+    // contract version enters the canonical form of every declaration, so the accepted authority revisions move with it
+    // in the central writer's round.
+    public const string OwnerContractVersion = "1.4";
 
     public const string DetailCapabilityId = "manufacturing.orders.detail";
     public const string FactsCapabilityId = "manufacturing.orders.facts";
@@ -58,6 +62,7 @@ public sealed class ManufacturingShellCapabilityProvider : IShellCapabilityProvi
     public const string PlanDetailScreenId = "MFG-PLAN-DETAIL";
     public const string PlanApproveCapabilityId = "manufacturing.plans.approve";
     public const string PlanOrderCreateCapabilityId = "manufacturing.plans.order-create";
+    public const string PlanEditCapabilityId = "manufacturing.plans.edit";
     public const string PlanListCapabilityId = "manufacturing.plans.list";
     public const string PlanListRouteId = "manufacturing.plan-list";
     public const string PlanListRoutePath = "/uretim/planlar";
@@ -155,6 +160,13 @@ public sealed class ManufacturingShellCapabilityProvider : IShellCapabilityProvi
                 CapabilityId = PlanOrderCreateCapabilityId,
                 ParentCapabilityId = PlanDetailCapabilityId,
                 RequiredPermissions = [ErpPermissions.ManufacturingPlansRead, ErpPermissions.ManufacturingOrdersCreate],
+            },
+            // MFG-PLAN-EDIT: the Draft edit is a control of the plan detail, on the plan save's own permission.
+            planDetail with
+            {
+                CapabilityId = PlanEditCapabilityId,
+                ParentCapabilityId = PlanDetailCapabilityId,
+                RequiredPermissions = [ErpPermissions.ManufacturingPlansRead, ErpPermissions.ManufacturingPlansWrite],
             },
             planList,
         ];

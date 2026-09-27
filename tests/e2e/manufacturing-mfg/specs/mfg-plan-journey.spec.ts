@@ -1,5 +1,5 @@
 /**
- * MFG plan create/reopen — real Chromium, API and SQL-backed owner stores.
+ * MFG plan create/reopen/edit — real Chromium, API and SQL-backed owner stores.
  *
  * The fixture records one real Inventory label through the public opening-count command. The page
  * discovers that label and its current version through Inventory's candidate endpoint, saves through
@@ -17,6 +17,8 @@ const PLAN_POST_RE = /\/api\/v1\/manufacturing\/plans$/
 const PLAN_GET_RE = /\/api\/v1\/manufacturing\/plans\/[^/]+$/
 const PLAN_LIST_RE = /\/api\/v1\/manufacturing\/plans(?:\?|$)/
 const PLAN_APPROVAL_RE = /\/api\/v1\/manufacturing\/plans\/[^/]+\/approval$/
+const PLAN_REVISION_RE = /\/api\/v1\/manufacturing\/plans\/[^/]+\/revision$/
+const PLAN_REVISIONS_RE = /\/api\/v1\/manufacturing\/plans\/[^/]+\/revisions$/
 const ORDER_POST_RE = /\/api\/v1\/manufacturing\/orders$/
 const ORDER_GET_RE = /\/api\/v1\/manufacturing\/orders\/[^/]+$/
 const CANDIDATES_RE = /\/api\/v1\/inventory\/references\/parent-rolls(?:\?|$)/
@@ -511,5 +513,188 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
     } finally {
       await otherCompany.dispose()
     }
+  })
+
+  test('a draft plan is edited, closed and reopened with its history, and the approval and order read the edit', async ({ page, context }) => {
+    const rewritten = await asActor(context, env.seed.recorderActor)
+    const answered = watchAnswers(page)
+    const candidate = await openPlanForm(page, env.seed.rolls.planCreate)
+
+    const sentPlan = page.waitForRequest((request) => PLAN_POST_RE.test(request.url()) && request.method() === 'POST')
+    await page.getByRole('button', { name: 'Taslak planı kaydet', exact: true }).click()
+    const body = (await sentPlan).postDataJSON() as { planId: string }
+    await expect(page.getByRole('heading', { name: 'Taslak plan kaydedildi' })).toBeVisible()
+
+    // Reopen: the plan and its history are both read from the server; the history has only the creation.
+    const historyRead = page.waitForResponse(
+      (response) => PLAN_REVISIONS_RE.test(response.url()) && response.request().method() === 'GET',
+    )
+    await page.getByRole('link', { name: 'Formu kapat ve planı yeniden aç' }).click()
+    expect((await historyRead).status()).toBe(200)
+    await expect(page.getByRole('heading', { name: 'Plan yeniden açıldı' })).toBeVisible()
+    await expect(page.getByText('Plan oluşturulduğundan beri düzenlenmedi.', { exact: true })).toBeVisible()
+
+    // Edit: the planned kg and a target change, with a reason; the roll keeps its accepted label version.
+    await page.getByRole('button', { name: 'Planı düzenle', exact: true }).click()
+    await expect(page.getByRole('heading', { name: 'Taslak planı düzenle' })).toBeVisible()
+    const kg = page.getByRole('textbox', { name: `${candidate.labelId} planlanan kg` })
+    await expect(kg).toHaveValue('1000')
+    await kg.fill('800')
+    await page.getByLabel('Hedef türü').selectOption('GoodOutputMass')
+    await page.getByLabel('Hedef kg').fill('750')
+    await page.getByRole('textbox', { name: 'Düzenleme gerekçesi' }).fill('Tarayıcı kabulü: bobin kg düşürüldü')
+    const revision = page.waitForResponse(
+      (response) => PLAN_REVISION_RE.test(response.url()) && response.request().method() === 'POST',
+    )
+    const revisedRead = page.waitForResponse(
+      (response) => PLAN_GET_RE.test(response.url()) && response.url().endsWith(body.planId)
+        && response.request().method() === 'GET',
+    )
+    await page.getByRole('button', { name: 'Değişikliği kaydet', exact: true }).click()
+    const revised = await revision
+    expect(revised.status()).toBe(200)
+    const key = revised.request().headers()['idempotency-key']
+    expect(key).toMatch(/^[0-9a-f-]{36}$/)
+    expect(revised.request().headers()['x-company-id']).toBe(env.seed.companyId)
+    const edit = revised.request().postDataJSON() as Record<string, unknown>
+    expect(edit).toEqual({
+      expectedVersion: 1,
+      workCenterId: env.seed.workCenterId,
+      inputs: [{ parentRollId: candidate.labelId, plannedKg: '800', expectedLabelVersion: candidate.labelVersion }],
+      target: { basis: 'GoodOutputMass', kg: '750' },
+      reason: 'Tarayıcı kabulü: bobin kg düşürüldü',
+    })
+    expect((await revisedRead).status()).toBe(200)
+    await expect(page.getByText('Plan güncellendi (sürüm 2); güncel kayıt ve geçmiş yeniden okundu.', { exact: true }))
+      .toBeVisible()
+    await expect(page.getByRole('row', { name: new RegExp(`${candidate.labelId}.*800`) })).toBeVisible()
+
+    // Close the screen and reopen it from the plan list: the list, the plan and the history all read the edit.
+    await page.goto('/uretim/emirler')
+    const listAnswer = page.waitForResponse(
+      (response) => PLAN_LIST_RE.test(response.url()) && response.request().method() === 'GET',
+    )
+    await page.getByRole('link', { name: 'Üretim planları', exact: true }).click()
+    const listed = (await (await listAnswer).json()) as { plans: Array<Record<string, unknown>> }
+    expect(listed.plans.find((row) => row.planId === body.planId)).toMatchObject({
+      version: 2,
+      status: 'Draft',
+      plannedRollCount: 1,
+      plannedInputKg: '800',
+      target: { basis: 'GoodOutputMass', kg: '750' },
+    })
+    const reference = body.planId.slice(-8)
+    const reopenedHistory = page.waitForResponse(
+      (response) => PLAN_REVISIONS_RE.test(response.url()) && response.request().method() === 'GET',
+    )
+    await page.getByRole('row', { name: new RegExp(reference) }).getByRole('link', { name: new RegExp(reference) }).click()
+    expect((await reopenedHistory).status()).toBe(200)
+    const history = page.getByRole('region', { name: 'Plan geçmişi' })
+    const latest = history.getByRole('listitem', { name: 'Revizyon 1' })
+    await expect(latest).toContainText('Gerekçe: Tarayıcı kabulü: bobin kg düşürüldü')
+    await expect(latest).toContainText(`Ana rulo ${candidate.labelId}: 1000 kg → 800 kg`)
+    await expect(latest).toContainText('Hedef: hedef yok → İyi ürün kütlesi 750 kg')
+    await expect(history.getByRole('listitem', { name: 'Revizyon 0' })).toBeVisible()
+
+    const api = await apiAs(env, env.seed.recorderActor)
+    try {
+      // The stored plan and its history are the edit.
+      expect((await readPlan(api, body.planId)).body).toMatchObject({
+        planId: body.planId,
+        status: 'Draft',
+        version: 2,
+        inputs: [{ parentRollId: candidate.labelId, plannedKg: '800' }],
+        target: { basis: 'GoodOutputMass', kg: '750' },
+      })
+      const revisions = await api.get(`/api/v1/manufacturing/plans/${body.planId}/revisions`)
+      expect(revisions.status()).toBe(200)
+      const stored = (await revisions.json()) as { revisions: Array<Record<string, unknown>> }
+      expect(stored.revisions.map((entry) => entry.revision)).toEqual([0, 1])
+      expect(stored.revisions[1]).toMatchObject({
+        planVersion: 2,
+        reason: 'Tarayıcı kabulü: bobin kg düşürüldü',
+        inputs: [{ parentRollId: candidate.labelId, plannedKg: '800', expectedLabelVersion: candidate.labelVersion }],
+      })
+
+      // Idempotent replay: the browser's key and body again answer the stored result, no second revision.
+      const replay = await api.post(`/api/v1/manufacturing/plans/${body.planId}/revision`, {
+        data: edit,
+        headers: { 'Idempotency-Key': key },
+      })
+      expect(replay.status()).toBe(200)
+      expect(replay.headers()['idempotency-replayed']).toBe('true')
+      // A stale version under a new key is 409 with both versions.
+      const stale = await api.post(`/api/v1/manufacturing/plans/${body.planId}/revision`, {
+        data: { ...edit, reason: 'eski sürüm' },
+        headers: { 'Idempotency-Key': randomUUID() },
+      })
+      expect(stale.status()).toBe(409)
+      expect(await stale.json()).toMatchObject({
+        code: 'manufacturing_version_conflict',
+        expectedVersion: '1',
+        currentVersion: '2',
+      })
+    } finally {
+      await api.dispose()
+    }
+
+    // The next steps read the edited plan: the approval names version 2 and the order snapshots 800 kg.
+    const approvalResponse = page.waitForResponse(
+      (response) => PLAN_APPROVAL_RE.test(response.url()) && response.request().method() === 'POST',
+    )
+    await page.getByRole('button', { name: 'Planı onayla', exact: true }).click()
+    const approval = await approvalResponse
+    expect(approval.status()).toBe(200)
+    expect(approval.request().postDataJSON()).toEqual({ expectedVersion: 2 })
+    await expect(page.getByText('Onaylı plan düzenlenmez', { exact: false })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Planı düzenle', exact: true })).toHaveCount(0)
+    const orderResponse = page.waitForResponse(
+      (response) => ORDER_POST_RE.test(response.url()) && response.request().method() === 'POST',
+    )
+    await page.getByRole('button', { name: 'Üretim emri oluştur', exact: true }).click()
+    const created = await orderResponse
+    expect(created.status()).toBe(201)
+    const orderBody = created.request().postDataJSON() as { orderId: string }
+    await expect(page.getByRole('heading', { name: 'Üretim emri' })).toBeVisible()
+
+    const verify = await apiAs(env, env.seed.recorderActor)
+    try {
+      expect(await readOrder(env, orderBody.orderId)).toMatchObject({
+        planId: body.planId,
+        status: 'Open',
+        target: { basis: 'GoodOutputMass', kg: '750' },
+        rolls: [{ parentRollId: candidate.labelId, plannedKg: '800' }],
+      })
+      // Fail closed after the downstream effect: the approved plan (with its order) is not edited.
+      const afterApproval = await verify.post(`/api/v1/manufacturing/plans/${body.planId}/revision`, {
+        data: { ...edit, expectedVersion: 3, reason: 'onaydan sonra' },
+        headers: { 'Idempotency-Key': randomUUID() },
+      })
+      expect(afterApproval.status()).toBe(422)
+      expect(await afterApproval.json()).toMatchObject({ code: 'manufacturing_plan_not_draft' })
+    } finally {
+      await verify.dispose()
+    }
+
+    const otherCompany = await request.newContext({
+      baseURL: env.apiBaseUrl,
+      extraHTTPHeaders: {
+        'X-Development-User': env.seed.recorderActor,
+        'X-Company-Id': OTHER_COMPANY,
+        'X-Correlation-Id': `mfg-ci-${randomUUID()}`,
+      },
+    })
+    try {
+      // The recorder holds no grant in the other company: the edit and the history are refused before any read.
+      const foreign = await otherCompany.post(`/api/v1/manufacturing/plans/${body.planId}/revision`, {
+        data: { ...edit, expectedVersion: 3 },
+        headers: { 'Idempotency-Key': randomUUID() },
+      })
+      expect(foreign.status()).toBe(403)
+      expect((await otherCompany.get(`/api/v1/manufacturing/plans/${body.planId}/revisions`)).status()).toBe(403)
+    } finally {
+      await otherCompany.dispose()
+    }
+    expectEveryAnswerRewritten(answered, rewritten)
   })
 })

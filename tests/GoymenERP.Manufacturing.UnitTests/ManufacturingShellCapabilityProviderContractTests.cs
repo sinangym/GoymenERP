@@ -5,9 +5,10 @@ using GoymenERP.Modules.Manufacturing.Infrastructure.Shell;
 namespace GoymenERP.Manufacturing.UnitTests;
 
 /// <summary>
-/// The published Manufacturing shell provider (MFG-UI card D1–D3; MFG-UI-F; MFG-ORD; MFG-PLAN-LIST): five routes —
-/// the order screen/list and plan create/detail/list — two controls on the order screen and two on plan detail. All nine
-/// consumed ids and all routes stay pinned to <c>src/manufacturing/capabilities.ts</c>, so frontend drift is red here.
+/// The published Manufacturing shell provider (MFG-UI card D1–D3; MFG-UI-F; MFG-ORD; MFG-PLAN-LIST; MFG-PLAN-EDIT): five
+/// routes — the order screen/list and plan create/detail/list — two controls on the order screen and three on plan
+/// detail. All ten consumed ids and all routes stay pinned to <c>src/manufacturing/capabilities.ts</c>, so frontend drift
+/// is red here.
 /// company-wide scope, and <c>ImplementationAvailable: true</c> on all of them. Each control is its
 /// parent with only its id, parent and permissions changed, so the registry's control rule (same route,
 /// context and scope; the parent's permissions kept; never available under a staged parent) holds by
@@ -24,8 +25,8 @@ public sealed class ManufacturingShellCapabilityProviderContractTests
         var provider = new ManufacturingShellCapabilityProvider();
         var declarations = provider.GetDeclarations();
 
-        Assert.Equal(("MANUFACTURING", "1.3"), (provider.Owner, provider.ContractVersion));
-        Assert.Equal(9, declarations.Count);
+        Assert.Equal(("MANUFACTURING", "1.4"), (provider.Owner, provider.ContractVersion));
+        Assert.Equal(10, declarations.Count);
         foreach (var declaration in declarations)
         {
             Assert.Contains($"'{declaration.CapabilityId}'", source);
@@ -86,6 +87,13 @@ public sealed class ManufacturingShellCapabilityProviderContractTests
             [ErpPermissions.ManufacturingPlansRead, ErpPermissions.ManufacturingPlansApprove]);
         AssertControl(declarations, planDetail, "manufacturing.plans.order-create",
             [ErpPermissions.ManufacturingPlansRead, ErpPermissions.ManufacturingOrdersCreate]);
+        // MFG-PLAN-EDIT: the Draft edit on the plan save's own permission — no new name, and neither approval nor
+        // order creation confers it.
+        AssertControl(declarations, planDetail, "manufacturing.plans.edit",
+            [ErpPermissions.ManufacturingPlansRead, ErpPermissions.ManufacturingPlansWrite]);
+        var edit = Assert.Single(declarations, item => item.CapabilityId == "manufacturing.plans.edit");
+        Assert.DoesNotContain(ErpPermissions.ManufacturingPlansApprove, edit.RequiredPermissions);
+        Assert.DoesNotContain(ErpPermissions.ManufacturingOrdersCreate, edit.RequiredPermissions);
 
         // Closing is not recording: neither control's permissions contain the other's own permission.
         var facts = Assert.Single(declarations, item => item.CapabilityId == "manufacturing.orders.facts");

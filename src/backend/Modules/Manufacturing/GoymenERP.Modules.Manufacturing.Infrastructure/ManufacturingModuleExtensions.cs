@@ -44,6 +44,8 @@ public static class ManufacturingModuleExtensions
         services.AddScoped<ManufacturingStore>();
         services.AddScoped<IManufacturingPlanStore>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
         services.AddScoped<IManufacturingPlanListStore>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
+        // MFG-PLAN-EDIT: the Draft revision and the plan history, the same store and DbContext as the plan.
+        services.AddScoped<IManufacturingPlanRevisionStore>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
         services.AddScoped<IManufacturingOrderStore>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
         // ADR-011: the command log shares the store's DbContext, so a success joins the business save.
         services.AddScoped<IManufacturingCommandLog>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
