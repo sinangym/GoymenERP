@@ -41602,6 +41602,46 @@
           }
         }
       },
+      "PosCollectionInput": {
+        "required": [
+          "commissionAmount",
+          "commissionBearer"
+        ],
+        "type": "object",
+        "properties": {
+          "commissionAmount": {
+            "type": "string"
+          },
+          "commissionBearer": {
+            "$ref": "#/components/schemas/PosCommissionBearer"
+          }
+        }
+      },
+      "PosCollectionView": {
+        "required": [
+          "commissionBearer",
+          "commission",
+          "bankNet"
+        ],
+        "type": "object",
+        "properties": {
+          "commissionBearer": {
+            "$ref": "#/components/schemas/PosCommissionBearer"
+          },
+          "commission": {
+            "$ref": "#/components/schemas/AmountView"
+          },
+          "bankNet": {
+            "$ref": "#/components/schemas/AmountView"
+          }
+        }
+      },
+      "PosCommissionBearer": {
+        "enum": [
+          "Company",
+          "Customer"
+        ]
+      },
       "PostingExceptionViewV1": {
         "required": [
           "sourceId",
@@ -43663,6 +43703,16 @@
               "null",
               "string"
             ]
+          },
+          "pos": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PosCollectionInput"
+              }
+            ]
           }
         }
       },
@@ -45667,6 +45717,16 @@
           },
           "unallocated": {
             "$ref": "#/components/schemas/UnallocatedView"
+          },
+          "pos": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PosCollectionView"
+              }
+            ]
           }
         }
       },
