@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { act, fireEvent, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { FINANCE_DRAFT_DIRTY_SCOPE, ManualReceiptDraftForm } from './ManualReceiptDraftForm'
 import {
   ABANDON,
@@ -308,7 +308,7 @@ describe('ManualReceiptDraftForm — closed and client-invalid paths send nothin
     ])
     renderFinance(<ManualReceiptDraftForm party={PARTY} />, { port })
     await screen.findByText(NO_USABLE_BANK_ACCOUNT)
-    expect(screen.getAllByRole('option')).toHaveLength(1) // the placeholder only
+    expect(within(screen.getByLabelText(FIELD_LABEL.treasuryAccountId)).getAllByRole('option')).toHaveLength(1) // the placeholder only
   })
 })
 
@@ -578,5 +578,78 @@ describe('ManualReceiptDraftForm — auth boundary', () => {
       expect(currentShell().activeContext?.capabilities).toEqual([])
       expect(currentShell().requestFenceGeneration).toBe(1)
     }
+  })
+})
+
+describe('ManualReceiptDraftForm — DEC-FIN-014 customer POS collection', () => {
+  function grossInput(): HTMLInputElement {
+    return screen.getByRole('textbox', { name: /^Brüt POS tutarı/ }) as HTMLInputElement
+  }
+
+  async function choosePos(commission: string, bearer: '' | 'Company' | 'Customer') {
+    fireEvent.change(screen.getByLabelText(FIELD_LABEL.collectionChannel), { target: { value: 'pos' } })
+    fireEvent.change(screen.getByLabelText(FIELD_LABEL.commissionAmount), { target: { value: commission } })
+    fireEvent.change(screen.getByLabelText(FIELD_LABEL.commissionBearer), { target: { value: bearer } })
+  }
+
+  it('sends the gross, the typed commission and the bearer, previews the exact net and never sends a net', async () => {
+    const { port, commands } = banksFor()
+    renderFinance(<ManualReceiptDraftForm party={PARTY} />, { port })
+    await fillValid('1000,00')
+    await choosePos('25,50', 'Company')
+
+    expect(grossInput().value).toBe('1000,00')
+    const preview = screen.getByText(/974,50/)
+    expect(preview.getAttribute('data-bank-net-preview')).toBe('ready')
+
+    fireEvent.click(saveButton())
+    expect(commands).toHaveLength(1)
+    const request = commands[0].request as DraftSaveRequest
+    expect(request.preparation.money.amount).toBe('1000.00')
+    expect(request.preparation.pos).toEqual({ commissionAmount: '25.50', commissionBearer: 'Company' })
+    expect(JSON.stringify(request)).not.toMatch(/bankNet|974/)
+  })
+
+  it('a zero commission is an answer: the net is the gross', async () => {
+    const { port, commands } = banksFor()
+    renderFinance(<ManualReceiptDraftForm party={PARTY} />, { port })
+    await fillValid('500')
+    await choosePos('0', 'Company')
+    expect(screen.getByText(/^500/).getAttribute('data-bank-net-preview')).toBe('ready')
+    fireEvent.click(saveButton())
+    expect((commands[0].request as DraftSaveRequest).preparation.pos).toEqual({ commissionAmount: '0', commissionBearer: 'Company' })
+  })
+
+  it('a commission not below the gross and a missing bearer are refused on the screen and nothing is sent', async () => {
+    const { port, commands } = banksFor()
+    renderFinance(<ManualReceiptDraftForm party={PARTY} />, { port })
+    await fillValid('1000')
+    await choosePos('1000', '')
+    expect(screen.getByText(/Brüt tutar ve komisyon girilince/).getAttribute('data-bank-net-preview')).toBe('pending')
+
+    fireEvent.click(saveButton())
+    screen.getByText(FIELD_ERROR['commission-not-below-gross'])
+    screen.getByText(FIELD_ERROR['bearer-required'])
+    expect(screen.getByLabelText(FIELD_LABEL.commissionAmount).getAttribute('aria-invalid')).toBe('true')
+    expect(commands).toHaveLength(0)
+  })
+
+  it('a customer bearer says the charge is not applied here', async () => {
+    const { port } = banksFor()
+    renderFinance(<ManualReceiptDraftForm party={PARTY} />, { port })
+    await fillValid('1000')
+    await choosePos('10', 'Customer')
+    screen.getByText(/bu kayıt müşterinin borcunu artırmaz/)
+  })
+
+  it('switching back to a bank transfer sends the exact #258 request with no pos member', async () => {
+    const { port, commands } = banksFor()
+    renderFinance(<ManualReceiptDraftForm party={PARTY} />, { port })
+    await fillValid()
+    await choosePos('10', 'Company')
+    fireEvent.change(screen.getByLabelText(FIELD_LABEL.collectionChannel), { target: { value: 'bank-transfer' } })
+    fireEvent.click(saveButton())
+    expect(commands[0].request).toEqual(NORMAL_EXAMPLE.draftSave)
+    expect(JSON.stringify(commands[0].request)).not.toContain('"pos"')
   })
 })

@@ -19,17 +19,34 @@
  *    create AND an update, so a changed date never reuses an older profile;
  *  - NOT SENT: company and actor (bound by the authenticated host), scale, direction,
  *    unallocated amount, period, approval.
+ *
+ * DEC-FIN-014 customer POS collection: the same form with `collectionChannel = 'pos'`. The typed
+ * amount is then the GROSS card amount (the customer's debt closes at it); the person adds the
+ * bank's commission (zero allowed) and who bears it. The bank net is only PREVIEWED here —
+ * the server derives and stores it; it is never sent.
  */
 
-import { amountInputFromWire, fractionDigits, parseAmountInput, type AmountInputError } from './decimalText'
+import {
+  amountInputFromWire,
+  fractionDigits,
+  parseAmountInput,
+  parseNonNegativeAmountInput,
+  positiveDifference,
+  type AmountInputError,
+} from './decimalText'
 import { isDateOnly } from './dateOnly'
 import type {
   BankAccountView,
   DraftIdentity,
   DraftSaveRequest,
+  PosCollectionInput,
+  PosCommissionBearer,
   ProfileReference,
   SourceDetail,
 } from './contract'
+
+/** How the customer paid: a bank transfer (the #258 receipt) or our customer POS (DEC-FIN-014). */
+export type CollectionChannel = 'bank-transfer' | 'pos'
 
 export interface ManualReceiptFields {
   readonly treasuryAccountId: string
@@ -40,15 +57,31 @@ export interface ManualReceiptFields {
   /** Blank means none — and never "verified by the bank" (§2). */
   readonly bankReference: string
   readonly description: string
+  readonly collectionChannel: CollectionChannel
+  /** POS only: the bank's commission as typed; `0` is an answer, blank is not. */
+  readonly commissionAmount: string
+  /** POS only: blank until the person chooses — never defaulted to the company. */
+  readonly commissionBearer: '' | PosCommissionBearer
 }
 
 export function emptyManualReceiptFields(): ManualReceiptFields {
-  return { treasuryAccountId: '', amount: '', occurredOn: '', valueOn: '', bankReference: '', description: '' }
+  return {
+    treasuryAccountId: '',
+    amount: '',
+    occurredOn: '',
+    valueOn: '',
+    bankReference: '',
+    description: '',
+    collectionChannel: 'bank-transfer',
+    commissionAmount: '',
+    commissionBearer: '',
+  }
 }
 
 /** Editing an existing draft starts from its persisted values, digit-for-digit. */
 export function fieldsFromDraft(detail: SourceDetail): ManualReceiptFields {
   const amount = detail.source.amount.disclosure === 'Visible' ? amountInputFromWire(detail.source.amount.money.amount) : ''
+  const pos = detail.pos
   return {
     treasuryAccountId: detail.source.treasuryAccountId,
     amount,
@@ -56,7 +89,21 @@ export function fieldsFromDraft(detail: SourceDetail): ManualReceiptFields {
     valueOn: detail.source.valueOn ?? '',
     bankReference: detail.bankReference ?? '',
     description: detail.description ?? '',
+    collectionChannel: pos === null ? 'bank-transfer' : 'pos',
+    commissionAmount: pos !== null && pos.commission.disclosure === 'Visible' ? amountInputFromWire(pos.commission.money.amount) : '',
+    commissionBearer: pos === null ? '' : pos.commissionBearer,
   }
+}
+
+/**
+ * The bank net the server will derive, for display while typing: gross − commission, exact, or
+ * `null` while either is not yet a valid amount or the commission is not below the gross.
+ */
+export function bankNetPreview(fields: ManualReceiptFields): string | null {
+  if (fields.collectionChannel !== 'pos') return null
+  const gross = parseAmountInput(fields.amount)
+  const commission = parseNonNegativeAmountInput(fields.commissionAmount)
+  return gross.ok && commission.ok ? positiveDifference(gross.wire, commission.wire) : null
 }
 
 /** The authorized party/account pair the screen was opened for. */
@@ -65,7 +112,13 @@ export interface ReceiptParty {
   readonly companyAccountId: string
 }
 
-export type FieldError = AmountInputError | 'date-format' | 'bank-account-ineligible' | 'scale-exceeded'
+export type FieldError =
+  | AmountInputError
+  | 'date-format'
+  | 'bank-account-ineligible'
+  | 'scale-exceeded'
+  | 'commission-not-below-gross'
+  | 'bearer-required'
 
 export type FieldErrors = Readonly<Partial<Record<keyof ManualReceiptFields, FieldError>>>
 
@@ -107,6 +160,18 @@ export function buildDraftSaveRequest(
   const valueOn = fields.valueOn.trim()
   if (valueOn.length > 0 && !isDateOnly(valueOn)) errors.valueOn = 'date-format'
 
+  let pos: PosCollectionInput | undefined
+  if (fields.collectionChannel === 'pos') {
+    const commission = parseNonNegativeAmountInput(fields.commissionAmount)
+    if (!commission.ok) errors.commissionAmount = commission.error
+    else if (context.scale !== undefined && fractionDigits(commission.wire) > context.scale) errors.commissionAmount = 'scale-exceeded'
+    else if (amount.ok && positiveDifference(amount.wire, commission.wire) === null) errors.commissionAmount = 'commission-not-below-gross'
+    if (fields.commissionBearer === '') errors.commissionBearer = 'bearer-required'
+    if (commission.ok && fields.commissionBearer !== '') {
+      pos = { commissionAmount: commission.wire, commissionBearer: fields.commissionBearer }
+    }
+  }
+
   if (Object.keys(errors).length > 0 || !amount.ok || bank === undefined) return { ok: false, errors }
 
   const bankReference = fields.bankReference.trim()
@@ -126,6 +191,8 @@ export function buildDraftSaveRequest(
         valueOn: valueOn.length === 0 ? null : valueOn,
         bankReference: bankReference.length === 0 ? null : bankReference,
         description: description.length === 0 ? null : description,
+        // A bank transfer sends no `pos` member at all: the exact #258 request and its idempotency hash.
+        ...(pos === undefined ? {} : { pos }),
       },
     },
   }

@@ -86,3 +86,48 @@ export function formatDecimalTextTr(wire: string): string | null {
   const grouped = match[1].replace(/\B(?=(?:[0-9]{3})+$)/g, '.')
   return match[2] === undefined ? grouped : `${grouped},${match[2]}`
 }
+
+/**
+ * A POS commission as typed: the same tr-TR grammar as `parseAmountInput`, but zero is a real
+ * answer here (a bank that charges no commission), so only the shape is checked (DEC-FIN-014).
+ */
+export function parseNonNegativeAmountInput(input: string): AmountInputResult {
+  const text = input.trim()
+  if (text.length === 0) return { ok: false, error: 'required' }
+  const match = /^([0-9]+)(?:,([0-9]+))?$/.exec(text)
+  if (match === null) return { ok: false, error: 'format' }
+  return { ok: true, wire: match[2] === undefined ? match[1] : `${match[1]}.${match[2]}` }
+}
+
+function exactOf(wire: string): { readonly unscaled: bigint; readonly scale: number } | null {
+  const match = WIRE_DECIMAL_RE.exec(wire)
+  if (match === null) return null
+  const fraction = match[2] ?? ''
+  return { unscaled: BigInt(match[1] + fraction), scale: fraction.length }
+}
+
+/**
+ * `a − b` as exact wire text at the larger scale, or `null` when either is not wire text or the
+ * result would not be positive. BigInt only — never `number`, never rounded. The server derives
+ * the POS bank net the same way; the client uses this for a preview and to check the server's
+ * three amounts agree, never as the stored value.
+ */
+export function positiveDifference(a: string, b: string): string | null {
+  const left = exactOf(a)
+  const right = exactOf(b)
+  if (left === null || right === null) return null
+  const scale = Math.max(left.scale, right.scale)
+  const difference = left.unscaled * 10n ** BigInt(scale - left.scale) - right.unscaled * 10n ** BigInt(scale - right.scale)
+  if (difference <= 0n) return null
+  const digits = difference.toString().padStart(scale + 1, '0')
+  return scale === 0 ? digits : `${digits.slice(0, digits.length - scale)}.${digits.slice(digits.length - scale)}`
+}
+
+/** Exact numeric equality of two wire texts ("974.5" equals "974.50"). */
+export function sameDecimal(a: string, b: string): boolean {
+  const left = exactOf(a)
+  const right = exactOf(b)
+  if (left === null || right === null) return false
+  const scale = Math.max(left.scale, right.scale)
+  return left.unscaled * 10n ** BigInt(scale - left.scale) === right.unscaled * 10n ** BigInt(scale - right.scale)
+}

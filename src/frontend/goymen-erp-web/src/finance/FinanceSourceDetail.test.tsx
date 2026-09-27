@@ -11,6 +11,10 @@ import {
   AMOUNT_UNAVAILABLE,
   DETAIL,
   NO_SOURCE_NUMBER,
+  POS_BEARER_LABEL,
+  POS_CUSTOMER_BEARER_PENDING,
+  POS_DETAIL,
+  POS_POSTING_PENDING,
   RECORD_ACTION,
   RECORD_CONFIRM,
   RECORD_DONE,
@@ -349,5 +353,71 @@ describe('FinanceSourceDetail — references and the currency code', () => {
     expect(factValue(DETAIL.reversedBy)).toBe(DETAIL.none)
     expect(factValue(DETAIL.reverses)).toBe(DETAIL.none)
     expect(container.textContent).not.toContain('ref. …')
+  })
+})
+
+describe('FinanceSourceDetail — DEC-FIN-014 customer POS collection', () => {
+  const visible = (amount: string) => ({ disclosure: 'Visible', money: { amount, currencyId: EXAMPLE_CURRENCY } })
+  const POS_RECORDED = sourceDetail(COMPANY_A, {
+    source: { stage: 'Recorded', version: '9007199254740994' },
+    recordedAtUtc: '2026-09-13T08:00:00Z',
+    unallocated: { knowledge: 'Known', amount: visible('1000') },
+    pos: { commissionBearer: 'Company', commission: visible('25.5'), bankNet: visible('974.5') },
+  })
+
+  function factValue(term: string): string | null | undefined {
+    return screen.getByText(term).nextElementSibling?.textContent
+  }
+
+  it('shows the gross, the commission and the bank net apart, and says the journal is not made yet', async () => {
+    const { port } = recordingPort(detailSequence(found(POS_RECORDED)))
+    renderFinance(<FinanceSourceDetail sourceId={EXAMPLE_SOURCE} />, { port })
+    await screen.findByText(POS_DETAIL.gross)
+    expect(factValue(POS_DETAIL.gross)).toBe('1.000')
+    expect(factValue(POS_DETAIL.commission)).toBe('25,5')
+    expect(factValue(POS_DETAIL.bankNet)).toBe('974,5')
+    expect(factValue(POS_DETAIL.bearer)).toBe(POS_BEARER_LABEL.Company)
+    // The customer's debt closes at the gross: the unallocated amount is the gross, never the net.
+    expect(factValue(UNALLOCATED_LABEL)).toBe('1.000')
+    screen.getByText(POS_POSTING_PENDING)
+    expect(screen.queryByText(POS_CUSTOMER_BEARER_PENDING)).toBeNull()
+  })
+
+  it('a customer bearer is shown as recorded, not applied', async () => {
+    const detail = { ...POS_RECORDED, pos: { ...(POS_RECORDED.pos as object), commissionBearer: 'Customer' } }
+    const { port } = recordingPort(detailSequence(found(detail)))
+    renderFinance(<FinanceSourceDetail sourceId={EXAMPLE_SOURCE} />, { port })
+    await screen.findByText(POS_CUSTOMER_BEARER_PENDING)
+    expect(factValue(POS_DETAIL.bearer)).toBe(POS_BEARER_LABEL.Customer)
+  })
+
+  it('without the amount grant none of the three amounts is shown', async () => {
+    const redacted = { disclosure: 'Redacted', money: null }
+    const detail = sourceDetail(COMPANY_A, {
+      source: { amount: redacted },
+      pos: { commissionBearer: 'Company', commission: redacted, bankNet: redacted },
+    })
+    const { port } = recordingPort(detailSequence(found(detail)))
+    renderFinance(<FinanceSourceDetail sourceId={EXAMPLE_SOURCE} />, { port })
+    await screen.findByText(POS_DETAIL.gross)
+    expect([factValue(POS_DETAIL.gross), factValue(POS_DETAIL.commission), factValue(POS_DETAIL.bankNet)])
+      .toEqual([AMOUNT_REDACTED, AMOUNT_REDACTED, AMOUNT_REDACTED])
+  })
+
+  it('three amounts that do not add up are not shown as money', async () => {
+    const detail = { ...POS_RECORDED, pos: { commissionBearer: 'Company', commission: visible('25.5'), bankNet: visible('975') } }
+    const { port } = recordingPort(detailSequence(found(detail)))
+    const { container } = renderFinance(<FinanceSourceDetail sourceId={EXAMPLE_SOURCE} />, { port })
+    await waitFor(() => expect(container.querySelector('[data-state="malformed-response"]')).not.toBeNull())
+    expect(screen.queryByText(POS_DETAIL.gross)).toBeNull()
+    expect(document.body.textContent).not.toMatch(/975/)
+  })
+
+  it('a bank transfer shows no POS section', async () => {
+    const { port } = recordingPort(detailSequence(found(RECORDED)))
+    renderFinance(<FinanceSourceDetail sourceId={EXAMPLE_SOURCE} />, { port })
+    await screen.findByText('Kesin')
+    expect(screen.queryByText(POS_DETAIL.gross)).toBeNull()
+    expect(screen.queryByText(POS_POSTING_PENDING)).toBeNull()
   })
 })

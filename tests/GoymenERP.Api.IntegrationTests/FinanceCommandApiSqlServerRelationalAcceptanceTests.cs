@@ -630,6 +630,104 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
     /// the registered unavailable owner without persisting a payment, command, audit or money event.
     /// The period and party owner answers are explicit SENTETIK test ports; no production grant is made.
     /// </summary>
+    /// <summary>
+    /// DEC-FIN-014 over the real host: a customer POS collection travels as the receipt's optional <c>pos</c> member,
+    /// is saved, reopened by GET, recorded once (a replay answers the first correlation, a stale version is 409),
+    /// invisible to company B, audited on the Web channel, and its ONE money event keeps gross, commission and net
+    /// apart. Grants are synthetic test roles over the existing manual-receipt names; the period rule is a test input.
+    /// </summary>
+    [SqlServerFact]
+    public async Task A_customer_POS_collection_is_saved_reopened_and_recorded_once_over_HTTP()
+    {
+        await using var run = await Run.StartAsync(services =>
+        {
+            services.RemoveAll<IFinancePartyAccountPort>();
+            services.AddSingleton<SyntheticGate>();
+            services.AddScoped<IFinancePartyAccountPort, SyntheticParties>();
+            services.RemoveAll<IFinanceRecordPeriodRule>();
+            services.AddScoped<IFinanceRecordPeriodRule, SyntheticOpenPeriodRule>();
+        });
+        var account = await run.ApprovedBankAccountAsync(CompanyA);
+        await run.GrantAsync(Proposer, CompanyA,
+            FinancePermissionNames.DraftSave, FinancePermissionNames.DraftRead, FinancePermissionNames.AmountRead,
+            FinancePermissionNames.Record, "finance.bank-account.read");
+        await run.GrantAsync(Approver, CompanyB, FinancePermissionNames.DraftRead, FinancePermissionNames.AmountRead);
+        using var clerk = run.Client(Proposer, CompanyA);
+        using var foreignCompany = run.Client(Approver, CompanyB);
+
+        var body = Save(account, Party, draftId: null, expectedVersion: null);
+        body = body with
+        {
+            Preparation = body.Preparation with { Pos = new PosCollectionInput("25.50", PosCommissionBearer.Company) },
+        };
+        Guid sourceId;
+        string sourceVersion;
+        using (var saved = await clerk.SendAsync(Post(FinanceEndpoints.DraftsPath, "SENTETIK-pos-save",
+                   Guid.NewGuid().ToString("N"), body)))
+        {
+            Assert.Equal(HttpStatusCode.OK, saved.StatusCode);
+            var resource = (await Json(saved)).GetProperty("resource");
+            sourceId = resource.GetProperty("source").GetProperty("id").GetGuid();
+            sourceVersion = resource.GetProperty("source").GetProperty("version").GetString()!;
+            AssertPos(resource, "Company", "25.50", "974.50");
+        }
+
+        using (var reopened = await clerk.GetAsync($"{FinanceEndpoints.ManualReceiptsPath}/{sourceId:D}"))
+        {
+            Assert.Equal(HttpStatusCode.OK, reopened.StatusCode);
+            var detail = await Json(reopened);
+            Assert.Equal("1000.00", detail.GetProperty("source").GetProperty("amount").GetProperty("money")
+                .GetProperty("amount").GetString());
+            AssertPos(detail, "Company", "25.50", "974.50");
+        }
+
+        using (var foreign = await foreignCompany.GetAsync($"{FinanceEndpoints.ManualReceiptsPath}/{sourceId:D}"))
+        {
+            Assert.Equal(HttpStatusCode.NotFound, foreign.StatusCode);
+        }
+
+        var record = new RecordRequest(sourceId, sourceVersion);
+        var firstCorrelation = Guid.NewGuid().ToString("N");
+        using (var recorded = await clerk.SendAsync(Post($"{FinanceEndpoints.ManualReceiptsPath}/{sourceId:D}/record",
+                   "SENTETIK-pos-record", firstCorrelation, record)))
+        {
+            Assert.Equal(HttpStatusCode.OK, recorded.StatusCode);
+            var resource = (await Json(recorded)).GetProperty("resource");
+            Assert.Equal("Recorded", resource.GetProperty("source").GetProperty("stage").GetString());
+            Assert.Equal("1000.00", resource.GetProperty("unallocated").GetProperty("amount").GetProperty("money")
+                .GetProperty("amount").GetString());
+        }
+
+        using (var replay = await clerk.SendAsync(Post($"{FinanceEndpoints.ManualReceiptsPath}/{sourceId:D}/record",
+                   "SENTETIK-pos-record", Guid.NewGuid().ToString("N"), record)))
+        {
+            Assert.Equal(HttpStatusCode.OK, replay.StatusCode);
+            AssertReplayOf(replay, firstCorrelation);
+        }
+
+        using (var stale = await clerk.SendAsync(Post($"{FinanceEndpoints.ManualReceiptsPath}/{sourceId:D}/record",
+                   "SENTETIK-pos-record-stale", Guid.NewGuid().ToString("N"), record)))
+        {
+            Assert.Equal(HttpStatusCode.Conflict, stale.StatusCode);
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.MoneyEvents WHERE SourceId = @s", ("@s", sourceId)));
+        Assert.Equal(("1000.00", "974.50"), (
+            await run.ScalarAsync<string>("SELECT AmountText FROM finance.MoneyEvents WHERE SourceId = @s", ("@s", sourceId)),
+            await run.ScalarAsync<string>("SELECT PosBankNetAmountText FROM finance.MoneyEvents WHERE SourceId = @s", ("@s", sourceId))));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.manual-receipt.recorded.v1' "
+            + "AND EntityId = @s AND SourceChannel = N'Web'", ("@s", sourceId.ToString("D"))));
+    }
+
+    private static void AssertPos(JsonElement detail, string bearer, string commission, string bankNet)
+    {
+        var pos = detail.GetProperty("pos");
+        Assert.Equal(bearer, pos.GetProperty("commissionBearer").GetString());
+        Assert.Equal(commission, pos.GetProperty("commission").GetProperty("money").GetProperty("amount").GetString());
+        Assert.Equal(bankNet, pos.GetProperty("bankNet").GetProperty("money").GetProperty("amount").GetString());
+    }
+
     [SqlServerFact]
     public async Task Manual_bank_payment_is_company_scoped_replayable_and_fails_closed_for_an_unowned_document()
     {

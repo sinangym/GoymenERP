@@ -23,9 +23,12 @@ public sealed record CommandMetadata(string IdempotencyKey);
 public sealed record MoneyText(string Amount, Guid CurrencyId);
 public sealed record ProfileReference(string ProfileId, string Version);
 
+// DEC-FIN-014: Pos is present only for a customer POS collection (Money is then its GROSS amount). It is omitted from
+// the JSON when null, so a bank-transfer preparation keeps the exact #258 shape and the same ADR-011 payload hash.
 public sealed record ReceiptPreparation(Guid PartyId, Guid CompanyAccountId, Guid TreasuryAccountId,
     MoneyText Money, ProfileReference Profile, DateOnly OccurredOn, DateOnly? ValueOn,
-    string? BankReference, string? Description);
+    string? BankReference, string? Description,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PosCollectionInput? Pos = null);
 
 // Save replaces the complete draft; optional nulls clear fields. No patch semantics.
 public sealed record DraftSaveRequest(Guid? DraftId, string? ExpectedVersion, ReceiptPreparation Preparation);
@@ -113,9 +116,12 @@ public sealed record PartyAccountEligibility(Guid PartyId, Guid CompanyAccountId
 public sealed record SourceSummary(Guid Id, Guid CompanyId, string SourceNumber, string Version,
     SourceStage Stage, Guid PartyId, Guid CompanyAccountId, Guid TreasuryAccountId, Guid CurrencyId,
     DateOnly OccurredOn, DateOnly? ValueOn, AmountView Amount);
+// DEC-FIN-014: Pos is present only on a customer POS collection (omitted when null, so a bank-transfer detail and every
+// stored ADR-011 result keep the #258 shape). The gross is Source.Amount; Unallocated is measured from that gross.
 public sealed record SourceDetail(SourceSummary Source, ProfileReference Profile, string? BankReference,
     string? Description, DateTimeOffset? RecordedAtUtc, Guid? ReversalSourceId, Guid? ReversesSourceId,
-    UnallocatedView Unallocated);
+    UnallocatedView Unallocated,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PosCollectionView? Pos = null);
 public sealed record SourcePage(Guid CompanyId, IReadOnlyList<SourceSummary> Items, string? NextCursor);
 public sealed record BankAccountPage(Guid CompanyId, IReadOnlyList<BankAccountView> Items);
 public sealed record ReadResult<T>(ReadOutcome Outcome, T? Resource) where T : class;
@@ -183,7 +189,13 @@ public static partial class PreparationValidator
                 request.OccurredOn < profile.EffectiveFrom ||
                 (profile.EffectiveThrough is { } through && request.OccurredOn > through))
                 Reject("profile", "profile_mismatch");
-            try { _ = ExactPositiveDecimalV1.Parse(request.Money.Amount, profile.Scale); }
+            try
+            {
+                _ = ExactPositiveDecimalV1.Parse(request.Money.Amount, profile.Scale);
+                // DEC-FIN-014: the POS commission is judged against the gross under the same approved scale.
+                if (request.Pos is not null)
+                    issues.AddRange(PosCollectionRules.Validate(request.Money.Amount, request.Pos, profile.Scale));
+            }
             catch (SettingsPrerequisiteException exception) { Reject("money.amount", exception.Code); }
         }
         return issues;

@@ -32,7 +32,7 @@
  */
 
 import { isDateOnly } from './dateOnly'
-import { isNonNegativeDecimalText, isPositiveDecimalText } from './decimalText'
+import { isNonNegativeDecimalText, isPositiveDecimalText, positiveDifference, sameDecimal } from './decimalText'
 
 // ---------------------------------------------------------------------------------
 // Wire guards (local on purpose — other lanes' guards belong to their single writers)
@@ -142,6 +142,22 @@ export interface SourceSummary {
   readonly amount: AmountView
 }
 
+/**
+ * DEC-FIN-014 customer POS collection. Who bears the bank's commission is decided per transaction;
+ * `Customer` is recorded, not applied (a charge to the customer needs its own document — OPEN-016).
+ */
+export type PosCommissionBearer = 'Company' | 'Customer'
+
+/**
+ * The POS facts of a source. The GROSS is `source.amount` (the customer's debt closes at it); the
+ * commission and the bank net are separate facts that follow the gross's disclosure exactly.
+ */
+export interface PosCollectionView {
+  readonly commissionBearer: PosCommissionBearer
+  readonly commission: AmountView
+  readonly bankNet: AmountView
+}
+
 export interface SourceDetail {
   readonly source: SourceSummary
   readonly profile: ProfileReference
@@ -151,6 +167,8 @@ export interface SourceDetail {
   readonly reversalSourceId: string | null
   readonly reversesSourceId: string | null
   readonly unallocated: UnallocatedView
+  /** Present only on a POS collection; a bank transfer's body has no `pos` member at all (the #258 shape). */
+  readonly pos: PosCollectionView | null
 }
 
 export type ReversalProposalStatus = 'Pending' | 'Approved' | 'Rejected'
@@ -333,12 +351,38 @@ const DETAIL_KEYS = [
   'reversalSourceId', 'reversesSourceId', 'unallocated',
 ] as const
 
+const POS_DETAIL_KEYS = [...DETAIL_KEYS, 'pos'] as const
+
+const POS_BEARERS: readonly string[] = ['Company', 'Customer']
+
+/**
+ * DEC-FIN-014, fail-closed: a known bearer; commission (zero allowed) and net (positive) in the
+ * source currency with the SAME disclosure as the gross; and when visible, gross = commission + net
+ * exactly — three amounts that disagree are not shown as money.
+ */
+function decodePos(value: unknown, gross: AmountView, currencyId: string): PosCollectionView | null {
+  if (!isRecord(value) || !hasExactKeys(value, ['commissionBearer', 'commission', 'bankNet'])) return null
+  if (typeof value.commissionBearer !== 'string' || !POS_BEARERS.includes(value.commissionBearer)) return null
+  const commission = decodeAmountView(value.commission, currencyId, true)
+  const bankNet = decodeAmountView(value.bankNet, currencyId, false)
+  if (commission === null || bankNet === null) return null
+  if (commission.disclosure !== gross.disclosure || bankNet.disclosure !== gross.disclosure) return null
+  if (gross.disclosure === 'Visible' && commission.disclosure === 'Visible' && bankNet.disclosure === 'Visible') {
+    const derived = positiveDifference(gross.money.amount, commission.money.amount)
+    if (derived === null || !sameDecimal(derived, bankNet.money.amount)) return null
+  }
+  return { commissionBearer: value.commissionBearer as PosCommissionBearer, commission, bankNet }
+}
+
 export function decodeSourceDetail(value: unknown, companyId: string): Decoded<SourceDetail> {
-  if (!isRecord(value) || !hasExactKeys(value, DETAIL_KEYS)) return FAIL
+  if (!isRecord(value) || !(hasExactKeys(value, DETAIL_KEYS) || hasExactKeys(value, POS_DETAIL_KEYS))) return FAIL
   const source = decodeSummary(value.source, companyId)
   const profile = decodeProfile(value.profile)
   if (source === null || profile === null) return FAIL
   const unallocated = decodeUnallocated(value.unallocated, source.currencyId)
+  // An explicit `pos: null` is the bank transfer too; a present `pos` must be a whole POS fact set.
+  const pos = value.pos === undefined || value.pos === null ? null : decodePos(value.pos, source.amount, source.currencyId)
+  if (value.pos !== undefined && value.pos !== null && pos === null) return FAIL
   if (
     unallocated === null ||
     !isNullableText(value.bankReference) ||
@@ -358,6 +402,7 @@ export function decodeSourceDetail(value: unknown, companyId: string): Decoded<S
     reversalSourceId: value.reversalSourceId as string | null,
     reversesSourceId: value.reversesSourceId as string | null,
     unallocated,
+    pos,
   })
 }
 
@@ -557,6 +602,12 @@ export function decodeCommandResult(value: unknown, companyId: string): Decoded<
 // Request encoders — exact member sets of DraftSaveRequest / RecordRequest / ReverseRequest
 // ---------------------------------------------------------------------------------
 
+/** DEC-FIN-014: the typed POS facts. The bank net is never sent — the server derives gross − commission. */
+export interface PosCollectionInput {
+  readonly commissionAmount: string
+  readonly commissionBearer: PosCommissionBearer
+}
+
 export interface ReceiptPreparation {
   readonly partyId: string
   readonly companyAccountId: string
@@ -567,6 +618,8 @@ export interface ReceiptPreparation {
   readonly valueOn: string | null
   readonly bankReference: string | null
   readonly description: string | null
+  /** Only on a POS collection (then `money.amount` is the GROSS); omitted for a bank transfer, never `null`. */
+  readonly pos?: PosCollectionInput
 }
 
 /** Create sends `draftId` and `expectedVersion` both null; update sends both (README). */

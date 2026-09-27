@@ -102,6 +102,10 @@ internal static class ReversalProposalPolicy
             UpdatedBy = actorId,
             RecordedAtUtc = recordedAtUtc,
             RecordedBy = actorId,
+            // DEC-FIN-014: a reversed POS collection is reversed with the same gross, commission and net facts.
+            PosCommissionAmountText = original.PosCommissionAmountText,
+            PosBankNetAmountText = original.PosBankNetAmountText,
+            PosCommissionBearer = original.PosCommissionBearer,
         };
         var moneyEvent = new MoneyEventRow
         {
@@ -121,6 +125,9 @@ internal static class ReversalProposalPolicy
             RecordedAtUtc = recordedAtUtc,
             RecordedBy = actorId,
             CorrelationId = correlationId,
+            PosCommissionAmountText = original.PosCommissionAmountText,
+            PosBankNetAmountText = original.PosBankNetAmountText,
+            PosCommissionBearer = original.PosCommissionBearer,
         };
 
         proposal.Status = ReversalProposalStatuses.Approved;

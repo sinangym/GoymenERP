@@ -80,6 +80,26 @@ public sealed class ReversalProposalPolicyTests
     }
 
     [Fact]
+    public void A_reversed_POS_collection_is_reversed_with_its_gross_commission_and_net_facts()
+    {
+        var original = Original();
+        original.PosCommissionAmountText = "2.25";
+        original.PosBankNetAmountText = "98.00";
+        original.PosCommissionBearer = PosCommissionBearers.Customer;
+        var proposal = Proposal(original, "maker");
+
+        var rows = ReversalProposalPolicy.Approve(original, proposal,
+            new ApproveReversalRequest(proposal.Id, "1"), Guid.NewGuid(), Guid.NewGuid(), "checker", "corr-pos", At);
+
+        Assert.Equal(("100.25", "2.25", "98.00", (int?)PosCommissionBearers.Customer),
+            (rows.Source.AmountText, rows.Source.PosCommissionAmountText, rows.Source.PosBankNetAmountText,
+                rows.Source.PosCommissionBearer));
+        Assert.Equal(("100.25", "2.25", "98.00", (int?)PosCommissionBearers.Customer),
+            (rows.Event.AmountText, rows.Event.PosCommissionAmountText, rows.Event.PosBankNetAmountText,
+                rows.Event.PosCommissionBearer));
+    }
+
+    [Fact]
     public void Rejection_is_separate_and_keeps_the_reversal_link_empty()
     {
         var original = Original();

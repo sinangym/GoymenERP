@@ -305,8 +305,14 @@ public sealed class ReceiptDraftService(
         var amount = await permissions.CheckAsync(context, FinanceAction.ReadAmount, request.SourceId, cancellationToken);
         Guid? reversalSourceId = null;
         Guid? reversesSourceId = null;
+        string? unallocatedText = null;
         if (row is not null)
         {
+            // F-03: an allocated source's unallocated amount is its allocation state's, not the whole source amount.
+            unallocatedText = await dbContext.SourceAllocationStates.AsNoTracking()
+                .Where(state => state.SourceId == row.Id)
+                .Select(state => state.UnallocatedAmountText)
+                .SingleOrDefaultAsync(cancellationToken);
             reversalSourceId = await dbContext.ReversalProposals.AsNoTracking()
                 .Where(proposal => proposal.Status == ReversalProposalStatuses.Approved
                     && proposal.OriginalSourceId == row.Id)
@@ -327,7 +333,7 @@ public sealed class ReceiptDraftService(
         return row is null
             ? new ReadResult<SourceDetail>(ReadOutcome.NotFound, null)
             : new ReadResult<SourceDetail>(ReadOutcome.Found,
-                Detail(row, Disclosure(amount), reversalSourceId, reversesSourceId));
+                Detail(row, Disclosure(amount), reversalSourceId, reversesSourceId, unallocatedText));
     }
 
     /// <summary>
@@ -476,7 +482,7 @@ public sealed class ReceiptDraftService(
         // The stored preparation, exactly as saved, re-checked against the owners' CURRENT answers.
         var preparation = new ReceiptPreparation(row.PartyId, row.CompanyAccountId, row.TreasuryAccountId,
             new MoneyText(row.AmountText, row.CurrencyId), new ProfileReference(row.ProfileId, row.ProfileVersion),
-            row.OccurredOn, row.ValueOn, row.BankReference, row.Description);
+            row.OccurredOn, row.ValueOn, row.BankReference, row.Description, PosInput(row));
 
         var bankRead = await banks.GetAuthorizedAsync(context, row.TreasuryAccountId, cancellationToken);
         if (await FenceAsync(context, FinanceAction.Record, row.Id, cancellationToken) is { } afterBank)
@@ -593,6 +599,10 @@ public sealed class ReceiptDraftService(
             RecordedAtUtc = now,
             RecordedBy = context.ActorId,
             CorrelationId = context.CorrelationId,
+            // DEC-FIN-014: the same one event carries the POS facts; the customer credit stays the gross AmountText.
+            PosCommissionAmountText = row.PosCommissionAmountText,
+            PosBankNetAmountText = row.PosBankNetAmountText,
+            PosCommissionBearer = row.PosCommissionBearer,
         });
 
         var amountDecision = await permissions.CheckAsync(context, FinanceAction.ReadAmount, row.Id, cancellationToken);
@@ -611,7 +621,9 @@ public sealed class ReceiptDraftService(
             RecordedAtUtc = now,
         });
         Audit(context, metadata, row.Id, "finance.manual-receipt.recorded.v1", "Record", versionBefore, row.Version, before,
-            DraftAudit(row), recordEnvelope ?? envelope, "Manuel banka tahsilatı kesin kayda alındı (tek para olayı)");
+            DraftAudit(row), recordEnvelope ?? envelope, row.PosCommissionBearer is null
+                ? "Manuel banka tahsilatı kesin kayda alındı (tek para olayı)"
+                : "Müşteri POS tahsilatı kesin kayda alındı (tek para olayı; müşteri brüt tutarla alacaklanır, banka neti ve komisyon ayrı)");
 
         // The last fence that can still prevent the write; none after the commit.
         if (await FenceAsync(context, FinanceAction.Record, row.Id, cancellationToken) is { } beforeSave)
@@ -765,9 +777,29 @@ public sealed class ReceiptDraftService(
         row.ValueOn = preparation.ValueOn;
         row.BankReference = preparation.BankReference;
         row.Description = preparation.Description;
+        // DEC-FIN-014: the validator already refused a commission that is not below the gross, so the net exists.
+        if (preparation.Pos is { } pos && PosCollectionRules.TryBankNet(preparation.Money.Amount, pos.CommissionAmount, out var net))
+        {
+            row.PosCommissionAmountText = pos.CommissionAmount;
+            row.PosBankNetAmountText = net;
+            row.PosCommissionBearer = (int)pos.CommissionBearer;
+        }
+        else
+        {
+            row.PosCommissionAmountText = null;
+            row.PosBankNetAmountText = null;
+            row.PosCommissionBearer = null;
+        }
+
         row.UpdatedAtUtc = now;
         row.UpdatedBy = actor;
     }
+
+    /// <summary>The stored POS facts as the preparation input they came from (the net is always re-derived).</summary>
+    private static PosCollectionInput? PosInput(ReceiptDraftRow row) =>
+        row.PosCommissionBearer is { } bearer && row.PosCommissionAmountText is { } commission
+            ? new PosCollectionInput(commission, (PosCommissionBearer)bearer)
+            : null;
 
     /// <summary>Storage limits only, refused and never cut; not a money or document policy.</summary>
     private static List<ValidationIssue> FitIssues(ReceiptPreparation preparation)
@@ -793,23 +825,29 @@ public sealed class ReceiptDraftService(
     }
 
     private static SourceDetail Detail(ReceiptDraftRow row, AmountDisclosure disclosure,
-        Guid? reversalSourceId = null, Guid? reversesSourceId = null)
+        Guid? reversalSourceId = null, Guid? reversesSourceId = null, string? unallocatedText = null)
     {
-        var amount = disclosure == AmountDisclosure.Visible
-            ? new AmountView(AmountDisclosure.Visible, new MoneyText(row.AmountText, row.CurrencyId))
+        AmountView Shown(string text) => disclosure == AmountDisclosure.Visible
+            ? new AmountView(AmountDisclosure.Visible, new MoneyText(text, row.CurrencyId))
             : new AmountView(disclosure, null);
+        var amount = Shown(row.AmountText);
         var recorded = row.Stage == ReceiptStages.Recorded;
         var summary = new SourceSummary(row.Id, row.CompanyId, row.Id.ToString("D"), VersionText(row.Version),
             reversalSourceId is not null ? SourceStage.Reversed : recorded ? SourceStage.Recorded : SourceStage.Draft,
             row.PartyId, row.CompanyAccountId, row.TreasuryAccountId, row.CurrencyId, row.OccurredOn, row.ValueOn, amount);
-        // A draft has no allocation fact: unknown, never 0. A recorded source has no allocation relation yet (FS3), so
-        // what is known is exact: unallocated = the source amount - 0 active allocations (card #66 5743678389 §2).
+        // A draft has no allocation fact: unknown, never 0. A recorded source's unallocated amount is exact: its F-03
+        // allocation state when one exists, otherwise the source amount - 0 active allocations (card #66 5743678389 §2).
+        // For a POS collection that amount is the GROSS (DEC-FIN-014): the customer's debt closes at it.
         var unallocated = recorded
-            ? new UnallocatedView(AllocationKnowledge.Known, amount)
+            ? new UnallocatedView(AllocationKnowledge.Known, unallocatedText is null ? amount : Shown(unallocatedText))
             : new UnallocatedView(AllocationKnowledge.Unavailable, new AmountView(AmountDisclosure.Unavailable, null));
+        var pos = row.PosCommissionBearer is { } bearer
+            ? new PosCollectionView((PosCommissionBearer)bearer, Shown(row.PosCommissionAmountText!),
+                Shown(row.PosBankNetAmountText!))
+            : null;
         return new SourceDetail(summary, new ProfileReference(row.ProfileId, row.ProfileVersion), row.BankReference,
             row.Description, RecordedAtUtc: row.RecordedAtUtc, ReversalSourceId: reversalSourceId,
-            ReversesSourceId: reversesSourceId, unallocated);
+            ReversesSourceId: reversesSourceId, unallocated, pos);
     }
 
     /// <summary>Applies a FRESH amount decision to a result, so a replay never discloses more than now allowed.</summary>
@@ -821,7 +859,14 @@ public sealed class ReceiptDraftService(
         }
 
         var hidden = new AmountView(Disclosure(amount), null);
-        return result with { Resource = detail with { Source = detail.Source with { Amount = hidden } } };
+        return result with
+        {
+            Resource = detail with
+            {
+                Source = detail.Source with { Amount = hidden },
+                Pos = detail.Pos is { } pos ? pos with { Commission = hidden, BankNet = hidden } : null,
+            },
+        };
     }
 
     private static AmountDisclosure Disclosure(PermissionDecision decision) => decision switch
@@ -879,6 +924,9 @@ public sealed class ReceiptDraftService(
         row.OccurredOn,
         row.ValueOn,
         profile = new { row.ProfileId, row.ProfileVersion },
+        // DEC-FIN-014: which kind of collection and who bears the commission; the amounts stay out of audit JSON.
+        channel = row.PosCommissionBearer is null ? "BankTransfer" : "Pos",
+        posCommissionBearer = row.PosCommissionBearer is { } bearer ? ((PosCommissionBearer)bearer).ToString() : null,
     }, new JsonSerializerOptions(JsonSerializerDefaults.Web));
 
     private static bool IsCanonical(string? value) =>

@@ -105,6 +105,8 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
             table.HasCheckConstraint("CK_ReceiptDrafts_Version", "[Version] >= 1");
             // FIN-T05a: a draft carries no record trace; a recorded source carries who and when.
             table.HasCheckConstraint("CK_ReceiptDrafts_Stage", StageCheck);
+            // DEC-FIN-014: a bank transfer carries no POS fact; a POS collection carries all three.
+            table.HasCheckConstraint("CK_ReceiptDrafts_Pos", PosCheck);
         });
         entity.HasKey(x => x.Id);
         entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
@@ -121,6 +123,9 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         entity.Property(x => x.CreatedBy).HasMaxLength(128).IsRequired();
         entity.Property(x => x.UpdatedBy).HasMaxLength(128).IsRequired();
         entity.Property(x => x.RecordedBy).HasMaxLength(128);
+        // DEC-FIN-014: exact text like the amount; no database decimal is a money scale.
+        entity.Property(x => x.PosCommissionAmountText).HasColumnType("varchar(max)").IsUnicode(false);
+        entity.Property(x => x.PosBankNetAmountText).HasColumnType("varchar(max)").IsUnicode(false);
         entity.HasIndex(x => new { x.CompanyId, x.UpdatedAtUtc, x.Id });
         // The list's stable order (FIN-T04b): newest created first; an edit never moves a draft between pages.
         entity.HasIndex(x => new { x.CompanyId, x.CreatedAtUtc, x.Id });
@@ -202,6 +207,16 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         + "([Stage] = 1 AND [RecordedAtUtc] IS NOT NULL AND [RecordedBy] IS NOT NULL AND LEN([RecordedBy]) > 0)";
 
     /// <summary>
+    /// DEC-FIN-014: the POS facts of a receipt source and of its money event are all NULL (a bank transfer) or all set,
+    /// with a known bearer (1 company, 2 customer). The migration that introduced it uses the same text.
+    /// </summary>
+    internal const string PosCheck =
+        "([PosCommissionAmountText] IS NULL AND [PosBankNetAmountText] IS NULL AND [PosCommissionBearer] IS NULL) OR "
+        + "([PosCommissionAmountText] IS NOT NULL AND LEN([PosCommissionAmountText]) > 0 "
+        + "AND [PosBankNetAmountText] IS NOT NULL AND LEN([PosBankNetAmountText]) > 0 "
+        + "AND [PosCommissionBearer] IN (1, 2))";
+
+    /// <summary>
     /// FIN-T05a: one money event per (company, source, kind). Its source is the company's receipt source, and every
     /// fact is non-empty; the row is append-only (the write guard).
     /// </summary>
@@ -221,6 +236,7 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
             table.HasCheckConstraint("CK_MoneyEvents_Text",
                 "LEN([AmountText]) > 0 AND LEN([ProfileId]) > 0 AND LEN([ProfileVersion]) > 0 "
                 + "AND LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
+            table.HasCheckConstraint("CK_MoneyEvents_Pos", PosCheck);
         });
         entity.HasKey(x => x.Id);
         entity.Property(x => x.Id).ValueGeneratedNever();
@@ -231,6 +247,8 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         entity.Property(x => x.ValueOn).HasColumnType("date");
         entity.Property(x => x.RecordedBy).HasMaxLength(128).IsRequired();
         entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        entity.Property(x => x.PosCommissionAmountText).HasColumnType("varchar(max)").IsUnicode(false);
+        entity.Property(x => x.PosBankNetAmountText).HasColumnType("varchar(max)").IsUnicode(false);
         // Exactly once: a second event of the same kind for the same source cannot be stored, whoever races.
         entity.HasIndex(x => new { x.CompanyId, x.SourceId, x.Kind }).IsUnique();
         entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
@@ -650,6 +668,8 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                         nameof(ReceiptDraftRow.Description), nameof(ReceiptDraftRow.UpdatedAtUtc),
                         nameof(ReceiptDraftRow.UpdatedBy), nameof(ReceiptDraftRow.Stage),
                         nameof(ReceiptDraftRow.RecordedAtUtc), nameof(ReceiptDraftRow.RecordedBy),
+                        nameof(ReceiptDraftRow.PosCommissionAmountText), nameof(ReceiptDraftRow.PosBankNetAmountText),
+                        nameof(ReceiptDraftRow.PosCommissionBearer),
                     ],
                     // Initial approval and D4's two-step IBAN transition; the state-aware guard above
                     // prevents these columns from becoming general-purpose mutable fields.
