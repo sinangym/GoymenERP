@@ -151,6 +151,11 @@ export interface HarnessConfig {
   readonly onCreate?: (attempt: number, call: RecordedCall) => Response | Promise<Response>
   /** DEC-SAL-003: GET `/sales/drafts/{id}/delivery-schedules`; default: schedule 0 only (nothing changed). */
   readonly onDeliverySchedules?: (url: string, companyId: string | null) => Response | Promise<Response>
+  /**
+   * AT-024: GET `/sales/drafts/{id}/delivery-progress`; default: nothing shipped or delivered for the lines of the
+   * detail this harness last served for that draft (a 404 when it served none).
+   */
+  readonly onDeliveryProgress?: (url: string, companyId: string | null) => Response | Promise<Response>
   /** DEC-SAL-003: a POST on `/sales/drafts/{id}/delivery-schedule`. */
   readonly onDeliverySchedule?: (call: RecordedCall) => Response | Promise<Response>
   /** SALES-A1: a POST on `/sales/drafts/{id}/(submission|approval|rejection)`. */
@@ -160,6 +165,8 @@ export interface HarnessConfig {
 export function installFetch(config: HarnessConfig = {}) {
   const calls: RecordedCall[] = []
   let creates = 0
+  // The last detail body served per detail URL: the default delivery progress describes exactly those lines.
+  const details = new Map<string, unknown>()
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -188,6 +195,9 @@ export function installFetch(config: HarnessConfig = {}) {
           if (config.onDeliverySchedule === undefined) throw new Error('unexpected delivery-schedule update')
           return config.onDeliverySchedule(call)
         }
+        if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/delivery-progress$/.test(url)) {
+          return config.onDeliveryProgress?.(url, call.companyId) ?? nothingDelivered(details.get(url.replace(/\/delivery-progress$/, '')))
+        }
         if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/delivery-schedules$/.test(url)) {
           return config.onDeliverySchedules?.(url, call.companyId) ?? json(ORIGINAL_SCHEDULE)
         }
@@ -205,7 +215,9 @@ export function installFetch(config: HarnessConfig = {}) {
         }
         if (/\/sales\/drafts\/[^?]+/.test(url)) {
           if (config.onDetail === undefined) throw new Error('unexpected detail read')
-          return config.onDetail(url, call.companyId)
+          const response = await config.onDetail(url, call.companyId)
+          if (response.ok) details.set(url, await response.clone().json().catch(() => undefined))
+          return response
         }
         if (config.onList === undefined) throw new Error('unexpected list read')
         return config.onList(url, call.companyId)
@@ -214,6 +226,19 @@ export function installFetch(config: HarnessConfig = {}) {
     }),
   )
   return { calls, salesCalls: () => calls.filter((c) => c.url.includes('/sales/')) }
+}
+
+/** AT-024: the default progress — every line of the served detail, nothing shipped or delivered, the whole quantity remaining. */
+function nothingDelivered(detail: unknown): Response {
+  const body = detail as { draft?: { version?: unknown }; lines?: { lineId: string; lineNo: number; orderUnitId: string; quantity: string }[] } | undefined
+  if (body?.draft === undefined || !Array.isArray(body.lines)) return json({ status: 404 }, 404)
+  return json({
+    draftVersion: body.draft.version,
+    lines: body.lines.map((line) => ({
+      lineId: line.lineId, lineNo: line.lineNo, orderUnitId: line.orderUnitId, ordered: line.quantity,
+      shipped: '0', delivered: '0', remaining: line.quantity, excess: '0',
+    })),
+  })
 }
 
 export interface HarnessSources {
