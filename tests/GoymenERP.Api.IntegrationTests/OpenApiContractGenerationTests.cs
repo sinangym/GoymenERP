@@ -375,6 +375,28 @@ public sealed partial class OpenApiContractGenerationTests
         new("get", "/api/v1/finance/manual-receipts/{sourceId}", "GetFinanceManualReceiptV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["path:sourceId:true:type:string;format:uuid"]),
+        // DEC-FIN-016: the customer cheque / promissory-note portfolio. The commands answer like Record (a
+        // stored CommandResult-shaped 200/409/422); the customer is credited at collection (user decision
+        // 2026-09-27) and the risk view reads facts only.
+        new("post", "/api/v1/finance/customer-instruments", "ReceiveFinanceCustomerInstrumentV1",
+            AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json", "400:application/problem+json", "415:", "503:application/problem+json"),
+            "#/components/schemas/CustomerInstrumentReceiveRequest"),
+        new("post", "/api/v1/finance/customer-instruments/{instrumentId}/status-changes", "ChangeFinanceCustomerInstrumentStatusV1",
+            AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json", "400:application/problem+json", "415:", "503:application/problem+json"),
+            "#/components/schemas/CustomerInstrumentStatusChangeRequest", ["path:instrumentId:true:type:string;format:uuid"]),
+        new("post", "/api/v1/finance/customer-instruments/{instrumentId}/collection", "CollectFinanceCustomerInstrumentV1",
+            AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json", "400:application/problem+json", "415:", "503:application/problem+json"),
+            "#/components/schemas/CustomerInstrumentCollectRequest", ["path:instrumentId:true:type:string;format:uuid"]),
+        new("get", "/api/v1/finance/customer-instruments", "GetFinanceCustomerInstrumentsV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["query:cursor:false:type:string"]),
+        new("get", "/api/v1/finance/customer-instruments/{instrumentId}", "GetFinanceCustomerInstrumentV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["path:instrumentId:true:type:string;format:uuid"]),
+        new("get", "/api/v1/finance/customer-instruments/risk", "GetFinanceCustomerInstrumentRiskV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["query:asOf:true:type:string;format:date", "query:partyId:false:type:string;format:uuid",
+                "query:companyAccountId:false:type:string;format:uuid"]),
         new("get", "/api/v1/finance/bank-accounts", "GetFinanceBankAccountsV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json")),
         new("get", "/api/v1/sales/drafts", "GetSalesOrderDraftsV1",
@@ -638,6 +660,13 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetManufacturingOrderV1"] = "ref:OrderViewV1",
             ["SaveFinanceManualReceiptDraftV1"] = "ref:CommandResult",
             ["RecordFinanceManualReceiptV1"] = "ref:CommandResult",
+            // DEC-FIN-016: the customer cheque / promissory-note portfolio and its risk view.
+            ["ReceiveFinanceCustomerInstrumentV1"] = "ref:CustomerInstrumentCommandResult",
+            ["ChangeFinanceCustomerInstrumentStatusV1"] = "ref:CustomerInstrumentCommandResult",
+            ["CollectFinanceCustomerInstrumentV1"] = "ref:CustomerInstrumentCommandResult",
+            ["GetFinanceCustomerInstrumentsV1"] = "ref:CustomerInstrumentPage",
+            ["GetFinanceCustomerInstrumentV1"] = "ref:CustomerInstrumentDetail",
+            ["GetFinanceCustomerInstrumentRiskV1"] = "ref:CustomerInstrumentRiskView",
             ["SaveFinanceManualBankPaymentDraftV1"] = "ref:ManualBankPaymentCommandResult",
             ["GetFinanceManualBankPaymentsV1"] = "ref:ManualBankPaymentPage",
             ["GetFinanceManualBankPaymentV1"] = "ref:ManualBankPaymentView",
@@ -783,6 +812,12 @@ public sealed partial class OpenApiContractGenerationTests
         "GetFinanceManualReceiptReversalV1",
         "GetFinanceManualReceiptsV1",
         "GetFinanceManualReceiptV1",
+        "ReceiveFinanceCustomerInstrumentV1",
+        "ChangeFinanceCustomerInstrumentStatusV1",
+        "CollectFinanceCustomerInstrumentV1",
+        "GetFinanceCustomerInstrumentsV1",
+        "GetFinanceCustomerInstrumentV1",
+        "GetFinanceCustomerInstrumentRiskV1",
         "GetFinanceBankAccountsV1",
         "GetSalesOrderDraftsV1",
         "CreateSalesOrderDraftV1",
@@ -879,6 +914,9 @@ public sealed partial class OpenApiContractGenerationTests
         "DeclareManufacturingOutputV1",
         "SaveFinanceManualReceiptDraftV1",
         "RecordFinanceManualReceiptV1",
+        "ReceiveFinanceCustomerInstrumentV1",
+        "ChangeFinanceCustomerInstrumentStatusV1",
+        "CollectFinanceCustomerInstrumentV1",
         "SaveFinanceManualBankPaymentDraftV1",
         "ApproveFinanceManualBankPaymentV1",
         "RecordFinanceManualBankPaymentV1",
@@ -972,6 +1010,20 @@ public sealed partial class OpenApiContractGenerationTests
                 // FIN-T05: Record replays the same three — the recorded terminal refusals as well as
                 // the success, so a retried key never records a second money event (ADR-011 §7).
                 ["RecordFinanceManualReceiptV1"] =
+                [
+                    StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity,
+                ],
+                // DEC-FIN-016: every customer-instrument command replays its recorded answer, refusals included,
+                // so a retried collection never writes a second money event.
+                ["ReceiveFinanceCustomerInstrumentV1"] =
+                [
+                    StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity,
+                ],
+                ["ChangeFinanceCustomerInstrumentStatusV1"] =
+                [
+                    StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity,
+                ],
+                ["CollectFinanceCustomerInstrumentV1"] =
                 [
                     StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity,
                 ],
@@ -1092,6 +1144,12 @@ public sealed partial class OpenApiContractGenerationTests
         "GetFinanceManualReceiptReversalV1",
         "GetFinanceManualReceiptsV1",
         "GetFinanceManualReceiptV1",
+        "ReceiveFinanceCustomerInstrumentV1",
+        "ChangeFinanceCustomerInstrumentStatusV1",
+        "CollectFinanceCustomerInstrumentV1",
+        "GetFinanceCustomerInstrumentsV1",
+        "GetFinanceCustomerInstrumentV1",
+        "GetFinanceCustomerInstrumentRiskV1",
         "GetFinanceBankAccountsV1",
         "GetSalesOrderDraftsV1",
         "CreateSalesOrderDraftV1",
@@ -1175,6 +1233,7 @@ public sealed partial class OpenApiContractGenerationTests
         "DeclareManufacturingOutputV1:404",
         "GetManufacturingOrderV1:404",
         "GetFinanceManualReceiptV1:404",
+        "GetFinanceCustomerInstrumentV1:404",
         "GetFinanceManualBankPaymentV1:404",
         "GetFinanceManualReceiptReversalV1:404",
         "GetSalesOrderDraftV1:404",
@@ -1237,6 +1296,12 @@ public sealed partial class OpenApiContractGenerationTests
         "RecordFinanceManualReceiptV1:400",
         "GetFinanceManualReceiptsV1:400",
         "GetFinanceManualReceiptV1:400",
+        "ReceiveFinanceCustomerInstrumentV1:400",
+        "ChangeFinanceCustomerInstrumentStatusV1:400",
+        "CollectFinanceCustomerInstrumentV1:400",
+        "GetFinanceCustomerInstrumentsV1:400",
+        "GetFinanceCustomerInstrumentV1:400",
+        "GetFinanceCustomerInstrumentRiskV1:400",
         "GetFinanceBankAccountsV1:400",
         "SaveFinanceManualBankPaymentDraftV1:400",
         "GetFinanceManualBankPaymentsV1:400",
@@ -2295,6 +2360,92 @@ public sealed partial class OpenApiContractGenerationTests
                     ("commission", "ref:AmountView"),
                     ("bankNet", "ref:AmountView")),
                 ["PosCommissionBearer"] = ScalarSchema("enum:Company|Customer"),
+                // DEC-FIN-016: the customer cheque / promissory-note portfolio and its risk view.
+                ["CustomerInstrumentAction"] = ScalarSchema("enum:DepositForCollection|WithdrawFromBank|Dishonour|ReturnToCustomer|Collect"),
+                ["CustomerInstrumentCommandResult"] = ObjectSchema(
+                    ["outcome", "resource", "isReplay", "originalCorrelationId", "issues"],
+                    ("outcome", "ref:CommandOutcome"),
+                    ("resource", "oneOf:ref:CustomerInstrumentView|type:null"),
+                    ("isReplay", "type:boolean"),
+                    ("originalCorrelationId", "type:string"),
+                    ("issues", "type:array;items:ref:ValidationIssue")),
+                ["CustomerInstrumentDetail"] = ObjectSchema(
+                    ["instrument", "movements", "availableActions"],
+                    ("instrument", "ref:CustomerInstrumentView"),
+                    ("movements", "type:array;items:ref:CustomerInstrumentMovementView"),
+                    ("availableActions", "type:array;items:ref:CustomerInstrumentAction")),
+                ["CustomerInstrumentKind"] = ScalarSchema("enum:Cheque|PromissoryNote"),
+                ["CustomerInstrumentMovementView"] = ObjectSchema(
+                    ["version", "fromStatus", "toStatus", "occurredOn", "treasuryAccountId", "collectionSourceId", "note", "recordedBy", "recordedAtUtc"],
+                    ("version", "type:string"),
+                    ("fromStatus", "oneOf:ref:CustomerInstrumentStatus|type:null"),
+                    ("toStatus", "ref:CustomerInstrumentStatus"),
+                    ("occurredOn", "type:string;format:date"),
+                    ("treasuryAccountId", "type:null|string;format:uuid"),
+                    ("collectionSourceId", "type:null|string;format:uuid"),
+                    ("note", "type:null|string"),
+                    ("recordedBy", "type:string"),
+                    ("recordedAtUtc", "type:string;format:date-time")),
+                ["CustomerInstrumentPage"] = ObjectSchema(
+                    ["companyId", "items", "nextCursor"],
+                    ("companyId", "type:string;format:uuid"),
+                    ("items", "type:array;items:ref:CustomerInstrumentView"),
+                    ("nextCursor", "type:null|string")),
+                ["CustomerInstrumentRiskBucket"] = ObjectSchema(
+                    ["count", "amount"],
+                    ("count", "type:integer|string;format:int32"),
+                    ("amount", "ref:AmountView")),
+                ["CustomerInstrumentRiskFigures"] = ObjectSchema(
+                    ["inPortfolioNotDue", "inPortfolioOverdue", "atBankForCollection", "dishonoured", "returnedToCustomer", "collected", "openExposure"],
+                    ("inPortfolioNotDue", "ref:CustomerInstrumentRiskBucket"),
+                    ("inPortfolioOverdue", "ref:CustomerInstrumentRiskBucket"),
+                    ("atBankForCollection", "ref:CustomerInstrumentRiskBucket"),
+                    ("dishonoured", "ref:CustomerInstrumentRiskBucket"),
+                    ("returnedToCustomer", "ref:CustomerInstrumentRiskBucket"),
+                    ("collected", "ref:CustomerInstrumentRiskBucket"),
+                    ("openExposure", "ref:CustomerInstrumentRiskBucket")),
+                ["CustomerInstrumentRiskLine"] = ObjectSchema(
+                    ["partyId", "companyAccountId", "currencyId", "figures"],
+                    ("partyId", "type:string;format:uuid"),
+                    ("companyAccountId", "type:string;format:uuid"),
+                    ("currencyId", "type:string;format:uuid"),
+                    ("figures", "ref:CustomerInstrumentRiskFigures")),
+                ["CustomerInstrumentRiskTotal"] = ObjectSchema(
+                    ["currencyId", "figures"],
+                    ("currencyId", "type:string;format:uuid"),
+                    ("figures", "ref:CustomerInstrumentRiskFigures")),
+                ["CustomerInstrumentRiskView"] = ObjectSchema(
+                    ["companyId", "asOf", "partyId", "companyAccountId", "customers", "totals"],
+                    ("companyId", "type:string;format:uuid"),
+                    ("asOf", "type:string;format:date"),
+                    ("partyId", "type:null|string;format:uuid"),
+                    ("companyAccountId", "type:null|string;format:uuid"),
+                    ("customers", "type:array;items:ref:CustomerInstrumentRiskLine"),
+                    ("totals", "type:array;items:ref:CustomerInstrumentRiskTotal")),
+                ["CustomerInstrumentStatus"] = ScalarSchema("enum:InPortfolio|AtBankForCollection|Collected|Bounced|Protested|ReturnedToCustomer"),
+                ["CustomerInstrumentView"] = ObjectSchema(
+                    ["id", "companyId", "version", "kind", "status", "partyId", "companyAccountId", "serialNumber", "drawer", "bankName", "branchName", "dueOn", "receivedOn", "currencyId", "amount", "description", "treasuryAccountId", "statusChangedOn", "collectionSourceId", "receivedBy", "receivedAtUtc"],
+                    ("id", "type:string;format:uuid"),
+                    ("companyId", "type:string;format:uuid"),
+                    ("version", "type:string"),
+                    ("kind", "ref:CustomerInstrumentKind"),
+                    ("status", "ref:CustomerInstrumentStatus"),
+                    ("partyId", "type:string;format:uuid"),
+                    ("companyAccountId", "type:string;format:uuid"),
+                    ("serialNumber", "type:string"),
+                    ("drawer", "type:string"),
+                    ("bankName", "type:null|string"),
+                    ("branchName", "type:null|string"),
+                    ("dueOn", "type:string;format:date"),
+                    ("receivedOn", "type:string;format:date"),
+                    ("currencyId", "type:string;format:uuid"),
+                    ("amount", "ref:AmountView"),
+                    ("description", "type:null|string"),
+                    ("treasuryAccountId", "type:null|string;format:uuid"),
+                    ("statusChangedOn", "type:string;format:date"),
+                    ("collectionSourceId", "type:null|string;format:uuid"),
+                    ("receivedBy", "type:string"),
+                    ("receivedAtUtc", "type:string;format:date-time")),
                 ["SourcePage"] = ObjectSchema(
                     ["companyId", "items", "nextCursor"],
                     ("companyId", "type:string;format:uuid"),
@@ -3235,6 +3386,36 @@ public sealed partial class OpenApiContractGenerationTests
                     ["commissionAmount", "commissionBearer"],
                     ("commissionAmount", "type:string"),
                     ("commissionBearer", "ref:PosCommissionBearer")),
+                // DEC-FIN-016: the customer cheque / promissory-note commands.
+                ["CustomerInstrumentReceiveRequest"] = ObjectSchema(
+                    ["kind", "partyId", "companyAccountId", "serialNumber", "drawer", "bankName", "branchName", "dueOn", "receivedOn", "money", "description"],
+                    ("kind", "ref:CustomerInstrumentKind"),
+                    ("partyId", "type:string;format:uuid"),
+                    ("companyAccountId", "type:string;format:uuid"),
+                    ("serialNumber", "type:string"),
+                    ("drawer", "type:string"),
+                    ("bankName", "type:null|string"),
+                    ("branchName", "type:null|string"),
+                    ("dueOn", "type:string;format:date"),
+                    ("receivedOn", "type:string;format:date"),
+                    ("money", "ref:MoneyText"),
+                    ("description", "type:null|string")),
+                ["CustomerInstrumentStatusChangeRequest"] = ObjectSchema(
+                    ["instrumentId", "expectedVersion", "transition", "occurredOn", "treasuryAccountId", "note"],
+                    ("instrumentId", "type:string;format:uuid"),
+                    ("expectedVersion", "type:string"),
+                    ("transition", "ref:CustomerInstrumentTransition"),
+                    ("occurredOn", "type:string;format:date"),
+                    ("treasuryAccountId", "type:null|string;format:uuid"),
+                    ("note", "type:null|string")),
+                ["CustomerInstrumentTransition"] = ScalarSchema("enum:DepositForCollection|WithdrawFromBank|Dishonour|ReturnToCustomer"),
+                ["CustomerInstrumentCollectRequest"] = ObjectSchema(
+                    ["instrumentId", "expectedVersion", "treasuryAccountId", "collectedOn", "valueOn"],
+                    ("instrumentId", "type:string;format:uuid"),
+                    ("expectedVersion", "type:string"),
+                    ("treasuryAccountId", "type:string;format:uuid"),
+                    ("collectedOn", "type:string;format:date"),
+                    ("valueOn", "type:null|string;format:date")),
                 // FIN-T05: Record names the draft it makes definitive and the version it expects.
                 // Neither property is nullable, unlike DraftSaveRequest's — a save may create, a
                 // record may only act on something that already exists at a known version.
@@ -3964,9 +4145,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(142, operations.Count);
+        Assert.Equal(148, operations.Count);
         Assert.Equal(
-            142,
+            148,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());

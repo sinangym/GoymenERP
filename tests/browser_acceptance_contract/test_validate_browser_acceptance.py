@@ -249,6 +249,11 @@ class WorkflowTests(unittest.TestCase):
                 "finance.manual-bank-payment.draft.read",
                 "finance.manual-bank-payment.approve",
                 "finance.manual-bank-payment.record",
+                "finance.customer-instrument.read",
+                "finance.customer-instrument.amount.read",
+                "finance.customer-instrument.receive",
+                "finance.customer-instrument.status.change",
+                "finance.customer-instrument.collect",
             ),
             validator.SUITE_IDENTITY_PERMISSIONS["fin01"],
         )
