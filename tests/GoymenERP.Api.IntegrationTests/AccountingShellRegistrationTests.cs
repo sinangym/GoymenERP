@@ -39,7 +39,7 @@ public sealed class AccountingShellRegistrationTests
 
         var actual = ShellCapabilityRegistry.ComputeCandidateRevision(providers);
         Assert.True(
-            string.Equals(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV12ProductV11PublishedSalesV11PublishedFinanceV12PublishedManufacturingV13PublishedLogisticsV11PublishedPurchasingV14AndPublishedAccountingV12, actual,
+            string.Equals(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV12ProductV11PublishedSalesV11PublishedFinanceV12PublishedManufacturingV13PublishedLogisticsV11PublishedPurchasingV14AndPublishedAccountingV13, actual,
                 StringComparison.Ordinal),
             $"Accounting normal-host authority drifted. Actual: {actual}");
     }
@@ -52,7 +52,7 @@ public sealed class AccountingShellRegistrationTests
         var authority = C01E2eShellCapabilityActivation.Configure(services, new TestingEnvironment(),
             new ConfigurationBuilder().Build());
 
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV12ProductV11PublishedSalesV11PublishedFinanceV12PublishedManufacturingV13PublishedLogisticsV11PublishedPurchasingV14AndPublishedAccountingV12,
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV12ProductV11PublishedSalesV11PublishedFinanceV12PublishedManufacturingV13PublishedLogisticsV11PublishedPurchasingV14AndPublishedAccountingV13,
             authority);
         using var container = services.BuildServiceProvider();
         var registry = new ShellCapabilityRegistry(container.GetServices<IShellCapabilityProvider>(),
@@ -61,31 +61,38 @@ public sealed class AccountingShellRegistrationTests
             .Where(item => item.Owner == AccountingShellCapabilityProvider.OwnerId)
             .ToArray();
         // M-07 and its propose screen, the approve and close controls of that list, M-04 and its detail, M-01:
-        // Eleven declarations: the seven ACC-V0 routes/controls, three normal-draft routes and staged M-06.
-        Assert.Equal(11, accounting.Length);
+        // Thirteen declarations (Accounting 1.3): the seven ACC-V0 routes/controls, three normal-draft routes, M-06,
+        // and the reversal propose control and approval route (both staged).
+        Assert.Equal(13, accounting.Length);
         // Named rather than counted, and asserted as a SET: "all staged" was true only until the flip, while
         // "these six and no others" stays true and fails loudly if a seventh is ever published without an
         // acceptance to stand on.
         string[] published =
         [
-            "accounting.journals.list", "accounting.normal-journal-drafts.approve",
+            "accounting.journals.detail", "accounting.journals.list", "accounting.normal-journal-drafts.approve",
             "accounting.normal-journal-drafts.create", "accounting.normal-journal-drafts.detail",
             "accounting.periods.approve", "accounting.periods.close",
             "accounting.periods.list", "accounting.periods.propose", "accounting.posting-queues",
+            "accounting.trial-balance",
         ];
         Assert.Equal(published, accounting.Where(item => item.Declaration.ImplementationAvailable)
             .Select(item => item.Declaration.CapabilityId).Order(StringComparer.Ordinal).ToArray());
-        // M-04-DETAIL stays staged on purpose: acc01 never opened a journal — its seed writes none and no
-        // flow produces one before ACC-V1 — so that route has no acceptance to stand on, and publishing it
-        // would claim a screen nobody walked.
+        // ACC-REV-UI phase 1: M-04-DETAIL and M-06 are published because acc01 now walks them (ACC01-09: the
+        // seed's posted journal opened from M-04, closed and reopened; M-06 totals against its lines). The
+        // reversal propose control and approval route stay STAGED until ACC-REV-READ-01 and a propose grant.
         var journalDetail = Assert.Single(accounting,
             item => item.Declaration.CapabilityId == AccountingShellCapabilityProvider.JournalDetailCapabilityId);
-        Assert.False(journalDetail.Declaration.ImplementationAvailable);
+        Assert.True(journalDetail.Declaration.ImplementationAvailable);
         var trialBalance = Assert.Single(accounting,
             item => item.Declaration.CapabilityId == AccountingShellCapabilityProvider.TrialBalanceCapabilityId);
-        Assert.False(trialBalance.Declaration.ImplementationAvailable);
+        Assert.True(trialBalance.Declaration.ImplementationAvailable);
+        Assert.False(Assert.Single(accounting, item => item.Declaration.CapabilityId
+            == AccountingShellCapabilityProvider.JournalReversalProposeCapabilityId).Declaration.ImplementationAvailable);
+        Assert.False(Assert.Single(accounting, item => item.Declaration.CapabilityId
+            == AccountingShellCapabilityProvider.JournalReversalApproveCapabilityId).Declaration.ImplementationAvailable);
         string[] expected =
         [
+            "accounting.journal-reversals.approve", "accounting.journal-reversals.propose",
             "accounting.journals.detail", "accounting.journals.list", "accounting.normal-journal-drafts.approve",
             "accounting.normal-journal-drafts.create", "accounting.normal-journal-drafts.detail", "accounting.periods.approve",
             "accounting.periods.close", "accounting.periods.list", "accounting.periods.propose",

@@ -182,8 +182,11 @@ internal static class ShellCapabilityRegistryAuthorities
     // with Accounting staged (the old half), and the same ACC-V0c model placed back at Organization 1.0
     // reproduces this branch's own sha256:OOlEtnDx… (the new half, which no accepted constant covered).
     // ACC-V1: Accounting 1.1 adds the published normal-draft create, own-detail and approval routes.
-    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV12ProductV11PublishedSalesV11PublishedFinanceV12PublishedManufacturingV13PublishedLogisticsV11PublishedPurchasingV14AndPublishedAccountingV12 =
-        "sha256:Uq7rhyD47lMFfIblcvRnO7pW7lvNXvDliY4mZEHliB0";
+    // ACC-REV-UI phase 1: Accounting 1.3 publishes the M-04 journal detail and M-06 trial balance and declares the
+    // staged reversal propose control and approval route. This row and the Inventory row after it were re-derived by
+    // ShellCapabilityRegistry.ComputeCandidateRevision over main c1837a44's providers with this change's Accounting 1.3.
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV12ProductV11PublishedSalesV11PublishedFinanceV12PublishedManufacturingV13PublishedLogisticsV11PublishedPurchasingV14AndPublishedAccountingV13 =
+        "sha256:3gsYbB79aNP1J8dT6lYcxw9l4m7BqN-41tWzLukkT8c";
 
     // R14: Inventory 1.0 publishes one opening-stock workspace after the existing normal tuple.
     // The capability reuses the accepted company-wide permission; publication grants nothing.
@@ -193,8 +196,8 @@ internal static class ShellCapabilityRegistryAuthorities
     // ST-01 / S04 allocation: Inventory 1.2 publishes the stock-position read and its physical-allocation
     // child control beside the opening-stock workspace. The control preserves the parent's route/context/scope
     // and adds only the existing write permission; publication grants nothing.
-    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV12ProductV11PublishedSalesV11PublishedFinanceV12PublishedManufacturingV13PublishedLogisticsV11PublishedPurchasingV14PublishedAccountingV12AndPublishedInventoryV12 =
-        "sha256:KNzmD-nczVN2--fuCSQeUObuXhVWweHwD8QyNlkjQDE";
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV12ProductV11PublishedSalesV11PublishedFinanceV12PublishedManufacturingV13PublishedLogisticsV11PublishedPurchasingV14PublishedAccountingV13AndPublishedInventoryV12 =
+        "sha256:VW2MDD-7_hmnQvDJmLBODlFkAj8PC2GmlntOEYm04Ro";
 
     internal const string CounterpartyV15PublishedListCreateAndDetail =
         "sha256:UBHnivzhe_dp5f7vU7dP5n7HG-P8XYBGhxvD_OjMSnw";

@@ -36,19 +36,28 @@ public static class AccountingPostedJournalFixtureStoreRegistration
         Func<IServiceProvider, ISettingsPrerequisiteProvider>? fixtureSettings = null)
     {
         ArgumentNullException.ThrowIfNull(services);
-        services.AddScoped<IAccountingPostedJournalFixtureStore>(provider => new AccountingPostedJournalFixtureStore(
-            provider.GetRequiredService<AccountingDbContext>(),
-            provider.GetRequiredService<ICompanyContext>(),
-            provider.GetRequiredService<IAccountingOpenPeriodFixtureStore>(),
-            fixtureSettings is null
-                ? provider.GetRequiredService<IAccountingPostingStore>()
-                : new AccountingStore(
-                    provider.GetRequiredService<AccountingDbContext>(),
-                    provider.GetRequiredService<ICompanyContext>(),
-                    provider.GetRequiredService<IAuditEventCollector>(),
-                    provider.GetRequiredService<TimeProvider>(),
-                    new AccountingAmountScaleVerifier(fixtureSettings(provider)))));
+        // The factory resolves the scope's ICompanyContext; it is kept out of the registration statement so the
+        // platform guard that admits exactly one ICompanyContext registration sees only this store's own type here.
+        services.AddScoped<IAccountingPostedJournalFixtureStore>(provider => CreateStore(provider, fixtureSettings));
         return services;
+    }
+
+    private static AccountingPostedJournalFixtureStore CreateStore(
+        IServiceProvider provider,
+        Func<IServiceProvider, ISettingsPrerequisiteProvider>? fixtureSettings)
+    {
+        var database = provider.GetRequiredService<AccountingDbContext>();
+        var company = provider.GetRequiredService<ICompanyContext>();
+        var posting = fixtureSettings is null
+            ? provider.GetRequiredService<IAccountingPostingStore>()
+            : new AccountingStore(
+                database,
+                company,
+                provider.GetRequiredService<IAuditEventCollector>(),
+                provider.GetRequiredService<TimeProvider>(),
+                new AccountingAmountScaleVerifier(fixtureSettings(provider)));
+        return new AccountingPostedJournalFixtureStore(
+            database, company, provider.GetRequiredService<IAccountingOpenPeriodFixtureStore>(), posting);
     }
 }
 

@@ -461,9 +461,10 @@ SUITE_FIXTURE_OUTPUTS: dict[str, frozenset[str]] = {
                       "productId", "productVersion", "productUnitId", "productUnitProfileId",
                       "productUnitProfileVersion", "productCode", "productName",
                       "allocationLineId", "allocationLabelId", "allocationLabelVersion"}),
-    # FİNANS's Suites/ACC01 seed: the two actors and both companies. No Accounting row is seeded — the suite
-    # proposes, approves and closes through the real API, and the second company exists only to show that
-    # GDC's periods never appear there.
+    # FİNANS's Suites/ACC01 seed: the two actors and both companies. Periods are proposed, approved and closed
+    # through the real API; since ACC-REV-UI phase 1 the seed also installs one fixed SENTETIK posted journal
+    # (gated fixture writer, owner posting path) so ACC01-09 can open M-04 detail and read M-06. Its id is read
+    # from the real API, so the output keys stay these four. The second company only shows GDC's rows never appear.
     "acc01": frozenset({"companyId", "companyBId", "preparerActor", "approverActor"}),
     # SİPARİŞ's Suites/L04 seed: the three actors, both companies, the customer (by id and name), the approved draft
     # line, the instruction created and issued through the real API, its open and gated-blocked lines,
