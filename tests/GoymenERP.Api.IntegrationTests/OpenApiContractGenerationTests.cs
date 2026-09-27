@@ -3453,7 +3453,6 @@ public sealed partial class OpenApiContractGenerationTests
                     ("occurredOn", "type:string;format:date"),
                     ("treasuryAccountId", "type:null|string;format:uuid"),
                     ("note", "type:null|string")),
-                ["CustomerInstrumentTransition"] = ScalarSchema("enum:DepositForCollection|WithdrawFromBank|Dishonour|ReturnToCustomer"),
                 ["CustomerInstrumentCollectRequest"] = ObjectSchema(
                     ["instrumentId", "expectedVersion", "treasuryAccountId", "collectedOn", "valueOn"],
                     ("instrumentId", "type:string;format:uuid"),

@@ -66,7 +66,7 @@ public sealed class CustomerInstrumentService(
     internal const int ListPageSize = 50;
 
     private static readonly JsonSerializerOptions Json = FinanceJson.CreateOptions();
-    private static readonly JsonSerializerOptions AuditJson = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions AuditJson = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
     public async Task<CustomerInstrumentCommandResult> ReceiveAsync(FinanceContext context, CommandMetadata metadata,
         CustomerInstrumentReceiveRequest request, CancellationToken cancellationToken)
@@ -867,7 +867,7 @@ public sealed class CustomerInstrumentService(
 
     private static CustomerInstrumentMovementRow Movement(FinanceContext context, CustomerInstrumentRow row,
         CustomerInstrumentStatus? from, DateOnly occurredOn, Guid? treasuryAccountId, Guid? collectionSourceId,
-        string? note, DateTimeOffset now) => new()
+        string? note, DateTimeOffset now) => new CustomerInstrumentMovementRow
     {
         Id = Guid.NewGuid(),
         CompanyId = context.CompanyId,
@@ -888,7 +888,7 @@ public sealed class CustomerInstrumentService(
         (row.Kind == (int)CustomerInstrumentKind.Cheque ? "Müşteri çeki tahsili · " : "Müşteri senedi tahsili · ")
         + row.SerialNumber;
 
-    private static CustomerInstrumentView View(CustomerInstrumentRow row, AmountDisclosure disclosure) => new(
+    private static CustomerInstrumentView View(CustomerInstrumentRow row, AmountDisclosure disclosure) => new CustomerInstrumentView(
         row.Id, row.CompanyId, VersionText(row.Version), (CustomerInstrumentKind)row.Kind,
         (CustomerInstrumentStatus)row.Status, row.PartyId, row.CompanyAccountId, row.SerialNumber, row.Drawer,
         row.BankName, row.BranchName, row.DueOn, row.ReceivedOn, row.CurrencyId,
@@ -898,13 +898,14 @@ public sealed class CustomerInstrumentService(
         row.Description, row.TreasuryAccountId, row.StatusChangedOn, row.CollectionSourceId, row.ReceivedBy,
         row.ReceivedAtUtc);
 
-    private static CustomerInstrumentMovementView MovementView(CustomerInstrumentMovementRow row) => new(
+    private static CustomerInstrumentMovementView MovementView(CustomerInstrumentMovementRow row) => new CustomerInstrumentMovementView(
         VersionText(row.Version), row.FromStatus is { } from ? (CustomerInstrumentStatus)from : null,
         (CustomerInstrumentStatus)row.ToStatus, row.OccurredOn, row.TreasuryAccountId, row.CollectionSourceId, row.Note,
         row.RecordedBy, row.RecordedAtUtc);
 
     private static CustomerInstrumentCommandResult Succeeded(FinanceContext context, CustomerInstrumentRow row) =>
-        new(CommandOutcome.Succeeded, View(row, AmountDisclosure.Visible), IsReplay: false, context.CorrelationId, []);
+        new CustomerInstrumentCommandResult(
+            CommandOutcome.Succeeded, View(row, AmountDisclosure.Visible), IsReplay: false, context.CorrelationId, []);
 
     /// <summary>A FRESH amount decision on a result (#497 P2-1): no amount of the resource survives without the grant.</summary>
     private static CustomerInstrumentCommandResult Disclose(CustomerInstrumentCommandResult result, PermissionDecision amount)
@@ -994,8 +995,9 @@ public sealed class CustomerInstrumentService(
             instrumentKind = ((CustomerInstrumentKind)instrument.Kind).ToString(),
         }, AuditJson);
 
-    private static ValidationIssue Issue(string field, string code) => new(field, code);
+    private static ValidationIssue Issue(string field, string code) => new ValidationIssue(field, code);
 
     private static CustomerInstrumentCommandResult Refused(FinanceContext context, CommandOutcome outcome,
-        params ValidationIssue[] issues) => new(outcome, null, IsReplay: false, context.CorrelationId, issues);
+        params ValidationIssue[] issues) =>
+        new CustomerInstrumentCommandResult(outcome, null, IsReplay: false, context.CorrelationId, issues);
 }
