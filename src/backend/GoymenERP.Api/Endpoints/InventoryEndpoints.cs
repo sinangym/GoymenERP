@@ -84,6 +84,7 @@ public static class InventoryEndpoints
         MapPhysicalAllocationEndpoints(group);
         MapOpeningCountEndpoints(group);
         MapLabelTransformationEndpoint(endpoints);
+        endpoints.MapInventoryStockCountEndpoints();
         return endpoints;
     }
 
@@ -213,9 +214,9 @@ public static class InventoryEndpoints
 
     /// <summary>
     /// ST-05 / AT-037 (DEC-STK-007): record a count of one stocked label, approve or reject its difference, and read
-    /// a label's counts. NOT mapped by <see cref="MapInventoryEndpoints"/>: the central writer calls this once it has
-    /// registered <c>inventory.stock-count.record</c> and <c>inventory.stock-count.approve</c> (the route policies
-    /// below name exactly those strings) and wired <c>AddInventoryStockCounts()</c>. The two commands follow the R19
+    /// a label's counts. Mapped by <see cref="MapInventoryEndpoints"/>; the route policies name the registered
+    /// <see cref="ErpPermissions.InventoryStockCountRecord"/> and <see cref="ErpPermissions.InventoryStockCountApprove"/>
+    /// and the host wires <c>AddInventoryStockCounts()</c>. The two commands follow the R19
     /// shape: one canonical <c>Idempotency-Key</c>; 201 with the count view, 200 with the same view plus
     /// <c>Idempotency-Replayed</c> and <c>Idempotency-Original-Correlation-Id</c> for the same key and content;
     /// 401/403 are platform problems; 400/404/409/503 carry the owner's closed code
@@ -257,7 +258,7 @@ public static class InventoryEndpoints
             .WithTags("Inventory")
             .WithMetadata(new PrivateNoStoreOnAuthorizationFailureMetadata())
             .RequireCompanyContext()
-            .RequireAuthorization(InventoryPermissionManifestV1.StockCountRecord)
+            .RequireAuthorization(ErpPermissions.InventoryStockCountRecord)
             .WithIdempotencyContract(StatusCodes.Status200OK)
             .Accepts<RecordInventoryStockCountV1>("application/json")
             .Produces<InventoryStockCountViewV1>(StatusCodes.Status201Created)
@@ -301,7 +302,7 @@ public static class InventoryEndpoints
             .WithTags("Inventory")
             .WithMetadata(new PrivateNoStoreOnAuthorizationFailureMetadata())
             .RequireCompanyContext()
-            .RequireAuthorization(InventoryPermissionManifestV1.StockCountApprove)
+            .RequireAuthorization(ErpPermissions.InventoryStockCountApprove)
             .WithIdempotencyContract(StatusCodes.Status200OK)
             .Accepts<DecideInventoryStockCountV1>("application/json")
             .Produces<InventoryStockCountViewV1>(StatusCodes.Status201Created)

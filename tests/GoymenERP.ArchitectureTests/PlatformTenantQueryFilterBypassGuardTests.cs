@@ -64,8 +64,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // PUR-HOST composition (#478, b66b1cca…) and main's reviewed LOG-HOST/#474-#485 composition (e6a57d52…).
     // Re-fingerprinted for R19 (#483): one added host line, builder.Services.AddInventoryLabelGenealogy(), and its
     // comment (588121e3… -> ab4aa1be…); no other startup change.
+    // Re-fingerprinted for AT-037: one added host line, builder.Services.AddInventoryStockCounts(), and its comment
+    // (ab4aa1be… -> 1609e7b4…); no other startup change.
     private const string ReviewedOpenApiStartupFingerprint =
-        "ab4aa1be6235dd0b0de72dc933869790e430ba73c54b48f4cc30bb1e420efc2e";
+        "1609e7b46cedfa0e5d79e5dabdd86c17892066c999e26cbe3b259c32d46e4363";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -158,8 +160,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 "b159330c2eeb6da40a314137d478fcd7251cd5937732d2557817bd1440a6c6b9",
 
             // inventory
+            // AT-037: +3 stock-count SQL facts (d709faf1… -> 4e783c62…).
             ["tools/relational_inventory/inventory.txt"] =
-                "d709faf1019cbc311f092d04182746694541c7490c5a9e37907473d064edd3c3",
+                "4e783c6274086114d7c0709abf65fbcf4c1fc5993736ef2a4739f9ad0982d609",
 
             // logistics
             ["tools/relational_inventory/logistics.txt"] =
@@ -258,9 +261,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 "07b3ba990f40c00499d0ace1cd77e1a6643c865a589733fb3839242f9ed1151a",
             // INV-2 (#293, ADR-INV-001 option A): company-scoped like Organization; every tenant
             // row and AuditEvent carries the CompanyId filter. A standard entry, not an exception.
+            // Re-measured for AT-037: StockCounts and StockCountDecisions, each with the CompanyId query filter and a
+            // company-leading key, and the CountAdjustment movement kind.
             ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
              + "Persistence/InventoryDbContext.cs"] =
-                "d1c8996fe121f5f6d06103aa2b1d1b4881a7480b72e9e06e42d48dd166aa191d",
+                "187cca60266b71b62b65b861427ebd4533e21a2b5219293bfc71b703012c843e",
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "Persistence/ProductDbContext.cs"] =
                 "0ba53cfdf07084818f737c9f21b2ce4a04a44f5fe89603a89f31791c5b4871da",
@@ -1014,6 +1019,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // schema mutation after any transformation has been recorded.
                 ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20260924095845_AddInventoryLabelGenealogy.cs"] =
                     new("7ab6813aed35a31711887f953a98f54e975553a5c7bb380f521482d1e6e6d2c2",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // AT-037: stock counts, their decisions and CountAdjustment movements are durable facts; the Down's only
+                // raw SQL is Inventory's module refusal (51053, as the other Inventory migrations) while any exists, and
+                // the THROW precedes every drop. An empty schema rolls back freely; a populated one needs a forward fix.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20260927150554_AddInventoryStockCounts.cs"] =
+                    new("f466f4c74b927c5885f8d2469aee1a9b53ebdf0a787091b6cb55c5ee3006131f",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // R17: Down refuses before dropping manufacturing-return state while durable facts exist.

@@ -207,8 +207,9 @@ internal static class ShellCapabilityRegistryAuthorities
     // positions route. Re-derived by ShellCapabilityRegistry.ComputeCandidateRevision over main b3c45bf7's providers
     // with this change's Inventory 1.3 provider.
     // DEC-SAL-003: re-derived the same way over main aaea20d0's providers with Sales 1.2 (SalesV11 -> SalesV12).
-    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV12ProductV11PublishedSalesV12PublishedFinanceV12PublishedManufacturingV13PublishedLogisticsV11PublishedPurchasingV14PublishedAccountingV13AndPublishedInventoryV13 =
-        "sha256:raMj9t0riDtcfTleXJ-Z7lM8FFTTFbDozxzg4LdrPxQ";
+    // AT-037: re-derived over main a4777c60's providers with Inventory 1.4 (two stock-count controls; V13 -> V14).
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV12ProductV11PublishedSalesV12PublishedFinanceV12PublishedManufacturingV13PublishedLogisticsV11PublishedPurchasingV14PublishedAccountingV13AndPublishedInventoryV14 =
+        "sha256:T8j19gnO1_60NfKP-kEL3cNPBBkUNf6eGZVRGgWTVhc";
 
     internal const string CounterpartyV15PublishedListCreateAndDetail =
         "sha256:UBHnivzhe_dp5f7vU7dP5n7HG-P8XYBGhxvD_OjMSnw";
