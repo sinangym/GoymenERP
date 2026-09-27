@@ -137,9 +137,25 @@ public static partial class ErpOpenApiContract
                         maximumLength: 1000);
                 }
 
-                if (context.JsonTypeInfo.Type == typeof(SetLocationActiveState))
+                if (context.JsonTypeInfo.Type == typeof(SetLocationActiveState)
+                    // ORG master edit: every edit carries the row version it expects and the audited reason, as the
+                    // active-state command does.
+                    || context.JsonTypeInfo.Type == typeof(UpdateSite)
+                    || context.JsonTypeInfo.Type == typeof(UpdateLocation)
+                    || context.JsonTypeInfo.Type == typeof(UpdateWorkCenter))
                 {
                     SetPositiveInteger(schema, "expectedVersion");
+                    AddCanonicalLengthContract(
+                        schema,
+                        "reason",
+                        minimumLength: 1,
+                        maximumLength: 1000);
+                }
+
+                if (context.JsonTypeInfo.Type == typeof(CreateSite)
+                    || context.JsonTypeInfo.Type == typeof(CreateLocation)
+                    || context.JsonTypeInfo.Type == typeof(CreateWorkCenter))
+                {
                     AddCanonicalLengthContract(
                         schema,
                         "reason",
@@ -196,7 +212,10 @@ public static partial class ErpOpenApiContract
                     || context.JsonTypeInfo.Type == typeof(CounterpartyListItem)
                     || context.JsonTypeInfo.Type == typeof(LocationSummary)
                     // ORG-04: the work-center card's row version is the location card's integer, not a string.
-                    || context.JsonTypeInfo.Type == typeof(WorkCenterDetail))
+                    || context.JsonTypeInfo.Type == typeof(WorkCenterDetail)
+                    // ORG master edit: the site row and a create's answer carry the same integer row version.
+                    || context.JsonTypeInfo.Type == typeof(SiteSummary)
+                    || context.JsonTypeInfo.Type == typeof(OrganizationCreatedRecord))
                 {
                     SetIntegerProperty(schema, "version", nullable: false);
                 }

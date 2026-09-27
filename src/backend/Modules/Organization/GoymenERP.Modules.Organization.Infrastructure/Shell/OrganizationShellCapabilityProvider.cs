@@ -1,5 +1,6 @@
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Shell;
+using GoymenERP.Modules.Organization.Application.Contracts;
 
 namespace GoymenERP.Modules.Organization.Infrastructure.Shell;
 
@@ -13,13 +14,21 @@ public sealed class OrganizationShellCapabilityProvider : IShellCapabilityProvid
     // carried the declaration with the old constants would not start the API at all.
     // 1.1 -> 1.2 (ORG-04): the work-centre card. The same cascade as ORG-03: the owner contract version enters the
     // canonical form of every registration, so the accepted authority constants move with it in the central round.
-    public const string OwnerContractVersion = "1.2";
+    // 1.2 -> 1.3 (master edit): five controls — site create/edit, location create, location edit, work-centre create,
+    // work-centre edit — each on its screen's own parent and each adding its record kind's own write permission. The
+    // same cascade: the accepted authority constants move with it in the central round.
+    public const string OwnerContractVersion = "1.3";
     public const string ListCapabilityId = "organization.sites.list";
     public const string DetailCapabilityId = "organization.locations.detail";
     public const string SitesReadCapabilityId = "organization.sites.read";
     public const string StatusCapabilityId = "organization.locations.status";
     public const string WorkCenterListCapabilityId = "organization.work-centers.list";
     public const string WorkCenterDetailCapabilityId = "organization.work-centers.detail";
+    public const string SitesManageCapabilityId = "organization.sites.manage";
+    public const string LocationCreateCapabilityId = "organization.locations.create";
+    public const string LocationEditCapabilityId = "organization.locations.edit";
+    public const string WorkCenterCreateCapabilityId = "organization.work-centers.create";
+    public const string WorkCenterEditCapabilityId = "organization.work-centers.edit";
 
     public string Owner => OwnerId;
     public string ContractVersion => OwnerContractVersion;
@@ -84,6 +93,56 @@ public sealed class OrganizationShellCapabilityProvider : IShellCapabilityProvid
                 ParentCapabilityId = DetailCapabilityId,
                 RequiredPermissions =
                     [ErpPermissions.OrganizationLocationsRead, ErpPermissions.OrganizationLocationsStatusUpdate],
+            },
+            // Master edit controls. Each stands on its parent screen's read, the read of whatever it must list to
+            // offer a choice (the site list for a new location, the location list for a new work centre), and its
+            // own record kind's write. The server re-authorizes every command on the write alone and its row scope.
+            list with
+            {
+                CapabilityId = SitesManageCapabilityId,
+                ParentCapabilityId = ListCapabilityId,
+                RequiredPermissions =
+                [
+                    ErpPermissions.OrganizationLocationsRead,
+                    ErpPermissions.OrganizationSitesRead,
+                    OrganizationPermissionManifestV1.SitesWrite,
+                ],
+            },
+            list with
+            {
+                CapabilityId = LocationCreateCapabilityId,
+                ParentCapabilityId = ListCapabilityId,
+                RequiredPermissions =
+                [
+                    ErpPermissions.OrganizationLocationsRead,
+                    ErpPermissions.OrganizationSitesRead,
+                    OrganizationPermissionManifestV1.LocationsWrite,
+                ],
+            },
+            detail with
+            {
+                CapabilityId = LocationEditCapabilityId,
+                ParentCapabilityId = DetailCapabilityId,
+                RequiredPermissions =
+                    [ErpPermissions.OrganizationLocationsRead, OrganizationPermissionManifestV1.LocationsWrite],
+            },
+            workCenters with
+            {
+                CapabilityId = WorkCenterCreateCapabilityId,
+                ParentCapabilityId = WorkCenterListCapabilityId,
+                RequiredPermissions =
+                [
+                    ErpPermissions.OrganizationWorkCentersRead,
+                    ErpPermissions.OrganizationLocationsRead,
+                    OrganizationPermissionManifestV1.WorkCentersWrite,
+                ],
+            },
+            workCenterDetail with
+            {
+                CapabilityId = WorkCenterEditCapabilityId,
+                ParentCapabilityId = WorkCenterDetailCapabilityId,
+                RequiredPermissions =
+                    [ErpPermissions.OrganizationWorkCentersRead, OrganizationPermissionManifestV1.WorkCentersWrite],
             },
         ];
     }

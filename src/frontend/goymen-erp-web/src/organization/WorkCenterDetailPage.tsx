@@ -1,8 +1,9 @@
 /**
  * ORG-04 — one work centre's read-only card (W1-ORG / AV-01, Business #66 5702892195).
  *
- * The slice is list → card → (when the server says so) location card → back, and NOTHING that writes:
- * `GET /organization/work-centers/{id}` is the only request this screen makes. It shows the Organization record's
+ * The slice is list → card → (when the server says so) location card → back. The card's own read is
+ * `GET /organization/work-centers/{id}`; the only write is the master edit of code and name, offered only under
+ * the server's `organization.work-centers.edit` control, after which the card is re-read. It shows the Organization record's
  * own facts — code, name, canonical kind, active state — and keeps its `version` for a later stale check without
  * showing it as a figure. Deliberately absent, because the record has no source for them: capacity, shift, load,
  * ownership, production facts and the location's NAME.
@@ -22,7 +23,8 @@
  *  - A passive work centre stays readable: passive is a state, not a delete.
  */
 
-import { useQuery } from '@tanstack/react-query'
+import { useCallback, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useLocation, useParams } from 'react-router'
 import { fetchWorkCenter } from './api'
 import type { WorkCenterDetail } from './contract'
@@ -44,6 +46,9 @@ import { useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { StateBlock } from '../shell/StateBlock'
+import { MasterFormLauncher, MasterRecordForm } from './MasterRecordForm'
+import { MASTER_TEXT, savedNotice } from './organizationText'
+import { refreshOrganizationReads } from './refreshOrganizationReads'
 import styles from './WorkCenterDetailPage.module.css'
 
 /** Only an id the Organization routes could have emitted is ever sent; anything else is not a record here. */
@@ -88,6 +93,15 @@ function WorkCenterCardScreen({ namespace }: { readonly namespace: string | null
     },
   })
 
+  const queryClient = useQueryClient()
+  const refetch = query.refetch
+  /** After a master edit: the card and every other read of this context (the list, pickers elsewhere). */
+  const refreshAll = useCallback(async () => {
+    await refetch()
+    await refreshOrganizationReads(queryClient, namespace)
+  }, [namespace, queryClient, refetch])
+  const canEdit = hasCapability(shell, ORGANIZATION_CAPABILITY.workCenterEdit)
+
   if (!singleCompanyContext) {
     return (
       <Frame origin={origin}>
@@ -120,6 +134,9 @@ function WorkCenterCardScreen({ namespace }: { readonly namespace: string | null
   return (
     <Frame origin={origin} cardLocationId={state.data.locationId}>
       <WorkCenterCard workCenter={state.data} namespace={namespace} origin={origin} />
+      {canEdit ? (
+        <WorkCenterEditSection workCenter={state.data} companyId={activeCompanyId ?? ''} onRefresh={refreshAll} />
+      ) : null}
     </Frame>
   )
 }
@@ -223,5 +240,59 @@ function LocationLink({
     <Link className={styles.link} to={locationDetailPath(workCenter.locationId)} state={onward}>
       {WORK_CENTER_CARD_TEXT.openLocation}
     </Link>
+  )
+}
+
+/**
+ * The master edit of this work centre: code and name only. Its location and its kind are fixed — the kind is the
+ * Manufacturing planning reference's immutable fact — so the form states that instead of offering them. After a 204
+ * the card is re-read; the saved values and the next version are never predicted here.
+ */
+function WorkCenterEditSection({
+  workCenter,
+  companyId,
+  onRefresh,
+}: {
+  readonly workCenter: WorkCenterDetail
+  readonly companyId: string
+  readonly onRefresh: () => Promise<void>
+}) {
+  const [open, setOpen] = useState(false)
+  const [saved, setSaved] = useState<null | { readonly replayed: boolean }>(null)
+  if (!open) {
+    return (
+      <MasterFormLauncher
+        label={MASTER_TEXT.editWorkCenter}
+        saved={saved === null ? null : savedNotice(saved.replayed)}
+        onOpen={() => {
+          setSaved(null)
+          setOpen(true)
+        }}
+      />
+    )
+  }
+  return (
+    <MasterRecordForm
+      heading={MASTER_TEXT.editWorkCenter}
+      companyId={companyId}
+      dirtyScope="organization.work-center.edit"
+      initial={{ code: workCenter.code, name: workCenter.name }}
+      note={`${MASTER_TEXT.fixedFacts} ${MASTER_TEXT.kindFixed}`}
+      buildCommand={(values) => ({
+        kind: 'update-work-center',
+        id: workCenter.id,
+        code: values.code,
+        name: values.name,
+        expectedVersion: workCenter.version,
+        reason: values.reason,
+      })}
+      onUpdated={async (replayed) => {
+        await onRefresh()
+        setSaved({ replayed })
+        setOpen(false)
+      }}
+      onReload={onRefresh}
+      onCancel={() => setOpen(false)}
+    />
   )
 }

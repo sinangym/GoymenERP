@@ -1,7 +1,8 @@
 # org03 (ORGANİZASYON, ORG-03 work-centre list acceptance): the suite's closed-list API extensions on
 # top of its capability profile (`normal`), validated by tools/validate_browser_acceptance.py with the
 # merged model (SUITE_API_EXTENSIONS["org03"]: actors + identity; no Product issuer binding — the suite
-# reads and writes no Product data, and writes nothing at all).
+# reads and writes no Product data). Since the ORG master edit the suite also WRITES Organization master data
+# (sites, locations, work centres) through org03-editor, in the run's disposable database only.
 #
 # WHAT THIS SUITE EXISTS TO PROVE, and therefore why the actors are split the way they are:
 # ORG-03 stands on `organization.work-centers.read` ALONE. A user holding it WITHOUT
@@ -53,6 +54,12 @@ services:
       BootstrapIdentity__Users__2__DisplayName: SENTETIK browser-suite:org03 yalnız iş merkezi okuyucusu
       BootstrapIdentity__Users__3__UserId: org03-reader
       BootstrapIdentity__Users__3__DisplayName: SENTETIK browser-suite:org03 iş merkezi ve lokasyon okuyucusu
+      # ORG master edit (user decision 2026-09-27): the disposable org03-editor is the ONLY holder of
+      # organization.sites.write / .locations.write / .work-centers.write, beside the three reads its screens need.
+      # No real user and no seeded role receives a write; the real-user mapping stays a human gate. The two
+      # readers above keep their exact grants, so the suite also proves a reader sees no create/edit control.
+      BootstrapIdentity__Users__4__UserId: org03-editor
+      BootstrapIdentity__Users__4__DisplayName: SENTETIK browser-suite:org03 organizasyon ana veri düzenleyicisi
       IdentitySeed__Users__5__Id: b2000000-0000-4000-8000-000000000301
       IdentitySeed__Users__5__DisplayName: SENTETIK browser-suite:org03 yalnız iş merkezi okuyucusu
       IdentitySeed__Users__5__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000301
@@ -63,6 +70,11 @@ services:
       IdentitySeed__Users__6__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000302
       IdentitySeed__Users__6__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
       IdentitySeed__Users__6__ExternalIdentities__0__Subject: org03-reader
+      IdentitySeed__Users__7__Id: b2000000-0000-4000-8000-000000000303
+      IdentitySeed__Users__7__DisplayName: SENTETIK browser-suite:org03 organizasyon ana veri düzenleyicisi
+      IdentitySeed__Users__7__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000303
+      IdentitySeed__Users__7__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
+      IdentitySeed__Users__7__ExternalIdentities__0__Subject: org03-editor
       # ONE name, and here is exactly what protects that — an earlier version of this line said a second
       # name would pass "without failing a single case", which UNDERSELLS the protection and invites
       # someone to build a guard that already exists.
@@ -85,6 +97,16 @@ services:
       IdentitySeed__Roles__6__IsSystem: "false"
       IdentitySeed__Roles__6__Permissions__0: organization.work-centers.read
       IdentitySeed__Roles__6__Permissions__1: organization.locations.read
+      IdentitySeed__Roles__7__Id: b3000000-0000-4000-8000-000000000303
+      IdentitySeed__Roles__7__Code: BROWSER_ORG03_EDITOR
+      IdentitySeed__Roles__7__Name: SENTETIK browser-suite:org03 organizasyon ana veri düzenleme rolü
+      IdentitySeed__Roles__7__IsSystem: "false"
+      IdentitySeed__Roles__7__Permissions__0: organization.work-centers.read
+      IdentitySeed__Roles__7__Permissions__1: organization.locations.read
+      IdentitySeed__Roles__7__Permissions__2: organization.sites.read
+      IdentitySeed__Roles__7__Permissions__3: organization.sites.write
+      IdentitySeed__Roles__7__Permissions__4: organization.locations.write
+      IdentitySeed__Roles__7__Permissions__5: organization.work-centers.write
       IdentitySeed__Assignments__7__Id: b4000000-0000-4000-8000-000000000301
       IdentitySeed__Assignments__7__UserId: b2000000-0000-4000-8000-000000000301
       IdentitySeed__Assignments__7__RoleId: b3000000-0000-4000-8000-000000000301
@@ -101,3 +123,11 @@ services:
       IdentitySeed__Assignments__8__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
       IdentitySeed__Assignments__8__Scopes__0__Type: Company
       IdentitySeed__Assignments__8__Scopes__0__Id: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__9__Id: b4000000-0000-4000-8000-000000000303
+      IdentitySeed__Assignments__9__UserId: b2000000-0000-4000-8000-000000000303
+      IdentitySeed__Assignments__9__RoleId: b3000000-0000-4000-8000-000000000303
+      IdentitySeed__Assignments__9__CompanyId: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__9__ValidFromUtc: "2026-01-01T00:00:00+00:00"
+      IdentitySeed__Assignments__9__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
+      IdentitySeed__Assignments__9__Scopes__0__Type: Company
+      IdentitySeed__Assignments__9__Scopes__0__Id: 10000000-0000-0000-0000-000000000001

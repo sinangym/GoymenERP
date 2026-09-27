@@ -119,13 +119,14 @@ public sealed partial class ShellCapabilityRegistryTests
             new GoymenERP.Modules.Counterparty.Infrastructure.Shell.CounterpartyShellCapabilityProvider(),
             new GoymenERP.Modules.Organization.Infrastructure.Shell.OrganizationShellCapabilityProvider(),
         ];
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailAndOrganizationV12,
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailAndOrganizationV13,
             ShellCapabilityRegistry.ComputeCandidateRevision(normal));
         var combined = AuthorizedRegistry([.. normal, Provider("PRODUCT", ProductDeclarations())]);
-        // Counterparty's four + Organization's six (ORG-03 and ORG-04 joined) + Product's five.
-        Assert.Equal(15, combined.Registrations.Count);
+        // Counterparty's four + Organization's eleven (ORG-03 and ORG-04 joined; the master edit adds five child
+        // controls) + Product's five.
+        Assert.Equal(20, combined.Registrations.Count);
         Assert.Equal(5, combined.Registrations.Count(item => item.Declaration.GlobalProductOperation is not null));
-        Assert.Equal(3, combined.Registrations.Count(item => item.Declaration.ParentCapabilityId is not null));
+        Assert.Equal(8, combined.Registrations.Count(item => item.Declaration.ParentCapabilityId is not null));
         var activation = Assert.Single(combined.Registrations,
             item => item.Declaration.CapabilityId == "product.items.activate");
         Assert.Equal("product.items.detail", activation.Declaration.ParentCapabilityId);
@@ -133,7 +134,7 @@ public sealed partial class ShellCapabilityRegistryTests
         Assert.All(combined.Registrations.Where(item => item.Declaration.ParentCapabilityId is not null
                 && item.Declaration.CapabilityId != "product.items.activate"),
             item => Assert.Null(item.Declaration.GlobalProductOperation));
-        Assert.NotEqual(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailAndOrganizationV12, combined.Revision);
+        Assert.NotEqual(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailAndOrganizationV13, combined.Revision);
     }
 
     [Fact]

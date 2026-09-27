@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page, type Response as PageResponse } from '@playwright/test'
-import { READER_ACTOR, WORK_CENTERS_ONLY_ACTOR, readEnvironment } from '../src/env'
+import { EDITOR_ACTOR, GDC_COMPANY_ID, READER_ACTOR, WORK_CENTERS_ONLY_ACTOR, readEnvironment } from '../src/env'
 
 /**
  * ORG-03 (`browser:org03:ci`) — the work-centre list, in a real browser against the disposable stack
@@ -11,9 +11,10 @@ import { READER_ACTOR, WORK_CENTERS_ONLY_ACTOR, readEnvironment } from '../src/e
  * only this layer shows the ENTRY EXISTS for that user — and that ORG-01, the screen a link would have
  * lived inside, does not open for them at all. That pair is why ORG-03 is its own sidebar entry (K5).
  *
- * READ-ONLY. Nothing here writes: no command, no form, no state change. Everything it reads is in the
- * built-in organization seed (five work centres across four locations of the GDC company), so the suite
- * needs no fixture and no seed envelope.
+ * The ORG-03/ORG-04 read cases write nothing: everything they read is in the built-in organization seed (five
+ * work centres across four locations of the GDC company), so the suite needs no fixture and no seed envelope.
+ * The ORG master-edit cases (ORG-ME-*, at the end of this file) WRITE through the real screens as the disposable
+ * org03-editor; they are declared last because the read cases count the seeded work centres exactly.
  *
  * WHAT IT DOES NOT COVER, so nobody reads its green as more than it is: the MIXED case — some rows
  * openable, some not — is absent, because the browser-suite contract refuses a narrowly-scoped actor
@@ -33,7 +34,7 @@ import { READER_ACTOR, WORK_CENTERS_ONLY_ACTOR, readEnvironment } from '../src/e
  * link, Enter to open, Tab to the card's back link, Enter to return.
  */
 
-const { testedCommit } = readEnvironment()
+const { testedCommit, apiBaseUrl } = readEnvironment()
 
 const WORK_CENTRE_LIST_ROUTE = '/ayarlar/organizasyon/is-merkezleri'
 const LOCATION_LIST_ROUTE = '/ayarlar/organizasyon'
@@ -398,4 +399,250 @@ test('ORG04-03 the ORG-04 flow by keyboard alone: Tab to a row\'s card, Enter to
   await expect(page).toHaveURL(new RegExp(`${WORK_CENTRE_LIST_ROUTE}$`))
   await expect(page.getByRole('table')).toBeVisible({ timeout: 30_000 })
   await expect(page.locator('[data-work-center]')).toHaveCount(0)
+})
+
+// ── ORG master edit: create and edit sites, locations and work centres ─────────────────────────────────────
+// These cases WRITE, so they run last: every read case above counts the five seeded work centres exactly.
+// Only org03-editor holds the three writes (infra/browser-suites/org03.override.yml, user decision 2026-09-27).
+
+const SITES_API = '/api/v1/organization/sites'
+const LOCATIONS_API = '/api/v1/organization/locations'
+const WORK_CENTERS_API = '/api/v1/organization/work-centers'
+
+const NEW_SITE = { code: 'ORG03-ME-SITE', name: 'SENTETIK org03 düzenleme deposu', edited: 'SENTETIK org03 düzenlenmiş depo' }
+const NEW_LOCATION = {
+  code: 'ORG03-ME-LOC',
+  name: 'SENTETIK org03 lokasyon',
+  editedCode: 'ORG03-ME-LOC2',
+  editedName: 'SENTETIK org03 lokasyon (düzenlendi)',
+}
+const NEW_WORK_CENTRE = { code: 'ORG03-ME-WC', name: 'SENTETIK org03 iş merkezi', editedName: 'SENTETIK org03 iş merkezi (düzenlendi)' }
+
+function apiHeaders(actor: string): Record<string, string> {
+  return { [DEVELOPMENT_USER_HEADER]: actor, 'X-Company-Id': GDC_COMPANY_ID }
+}
+
+function commandHeaders(actor: string, key: string): Record<string, string> {
+  return { ...apiHeaders(actor), 'Content-Type': 'application/json', 'Idempotency-Key': key }
+}
+
+function isCall(response: PageResponse, method: string, path: string): boolean {
+  return response.request().method() === method && new URL(response.url()).pathname === path
+}
+
+interface MasterChoiceValue {
+  readonly label: string
+  readonly option: string | RegExp
+}
+
+/** The form region is named by its heading; every field is reached by its visible label. */
+async function fillMasterForm(form: Locator, values: {
+  readonly code?: string
+  readonly name?: string
+  readonly choice?: MasterChoiceValue
+  readonly secondChoice?: MasterChoiceValue
+  readonly reason: string
+}): Promise<void> {
+  await expect(form).toBeVisible({ timeout: 30_000 })
+  if (values.code !== undefined) await form.getByLabel('Kod', { exact: true }).fill(values.code)
+  if (values.name !== undefined) await form.getByLabel('Ad', { exact: true }).fill(values.name)
+  for (const choice of [values.choice, values.secondChoice]) {
+    if (choice === undefined) continue
+    const select = form.getByLabel(choice.label, { exact: true })
+    const options = await select.locator('option').allTextContents()
+    const label = options.find((text) => typeof choice.option === 'string' ? text === choice.option : choice.option.test(text))
+    expect(label, `option ${String(choice.option)} is offered by ${choice.label}`).toBeDefined()
+    await select.selectOption({ label: label ?? '' })
+  }
+  await form.getByLabel('Gerekçe', { exact: true }).fill(values.reason)
+}
+
+test('ORG-ME-01 the editor creates a site, a location under it and a work centre there, edits each, and every card reopens with the stored values', async ({ page }) => {
+  await signInAs(page, EDITOR_ACTOR)
+
+  // ── Site: create on ORG-01, then edit its name. ──────────────────────────────────────────────────
+  await page.goto(LOCATION_LIST_ROUTE)
+  await expect(page.getByRole('heading', { level: 1, name: 'Organizasyon' })).toBeVisible({ timeout: 30_000 })
+  await page.getByRole('button', { name: 'Yeni tesis', exact: true }).click()
+  const siteForm = page.getByRole('region', { name: 'Yeni tesis' })
+  await fillMasterForm(siteForm, {
+    code: NEW_SITE.code,
+    name: NEW_SITE.name,
+    choice: { label: 'Tesis türü', option: 'Depo' },
+    reason: 'SENTETIK org03: tesis oluşturma',
+  })
+  const siteCreated = page.waitForResponse((response) => isCall(response, 'POST', SITES_API))
+  await siteForm.getByRole('button', { name: 'Kaydet', exact: true }).click()
+  const siteAnswer = await siteCreated
+  expect(siteAnswer.status()).toBe(201)
+  const site = await siteAnswer.json() as { readonly id: string; readonly version: number }
+  expect(site.id).toMatch(/^[0-9a-f-]{36}$/)
+  await expect(page.getByRole('status').filter({ hasText: 'Kayıt oluşturuldu' })).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByText(NEW_SITE.name, { exact: true })).toBeVisible()
+
+  await page.getByRole('button', { name: `Tesisi düzenle: ${NEW_SITE.code}`, exact: true }).click()
+  const siteEdit = page.getByRole('region', { name: `Tesisi düzenle: ${NEW_SITE.code}` })
+  await fillMasterForm(siteEdit, { name: NEW_SITE.edited, reason: 'SENTETIK org03: tesis adı düzeltme' })
+  const siteUpdated = page.waitForResponse((response) => isCall(response, 'PUT', `${SITES_API}/${site.id}`))
+  await siteEdit.getByRole('button', { name: 'Kaydet', exact: true }).click()
+  expect((await siteUpdated).status()).toBe(204)
+  await expect(page.getByRole('status').filter({ hasText: 'Değişiklik kaydedildi' })).toBeVisible({ timeout: 30_000 })
+
+  // Close and reopen: a fresh page load reads the stored site, not the form's memory.
+  await page.goto('/')
+  await page.goto(LOCATION_LIST_ROUTE)
+  await expect(page.getByText(NEW_SITE.edited, { exact: true })).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByText(NEW_SITE.name, { exact: true })).toHaveCount(0)
+
+  // ── Location: create under the new site; the app opens its card; edit code and name there. ────────
+  await page.getByRole('button', { name: 'Yeni lokasyon', exact: true }).click()
+  const locationForm = page.getByRole('region', { name: 'Yeni lokasyon' })
+  await fillMasterForm(locationForm, {
+    code: NEW_LOCATION.code,
+    name: NEW_LOCATION.name,
+    choice: { label: 'Tesis', option: new RegExp(`^${NEW_SITE.code} — `) },
+    reason: 'SENTETIK org03: lokasyon oluşturma',
+  })
+  const locationCreated = page.waitForResponse((response) => isCall(response, 'POST', LOCATIONS_API))
+  await locationForm.getByRole('button', { name: 'Kaydet', exact: true }).click()
+  const locationAnswer = await locationCreated
+  expect(locationAnswer.status()).toBe(201)
+  const location = await locationAnswer.json() as { readonly id: string; readonly version: number }
+  await expect(page).toHaveURL(new RegExp(`/ayarlar/organizasyon/lokasyon/${location.id}$`), { timeout: 30_000 })
+  await expect(page.getByRole('heading', { level: 1, name: 'Lokasyon' })).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByText(NEW_LOCATION.code, { exact: true })).toBeVisible({ timeout: 30_000 })
+  // A warehouse site's location is internal: the external flag came from the site's type, not from the form.
+  const stored = await page.request.get(`${apiBaseUrl}${LOCATIONS_API}/${location.id}`, { headers: apiHeaders(EDITOR_ACTOR) })
+  expect(stored.status()).toBe(200)
+  expect(await stored.json()).toMatchObject({
+    id: location.id, siteId: site.id, code: NEW_LOCATION.code, isExternal: false, isActive: true,
+  })
+
+  await page.getByRole('button', { name: 'Lokasyonu düzenle', exact: true }).click()
+  const locationEdit = page.getByRole('region', { name: 'Lokasyonu düzenle' })
+  await fillMasterForm(locationEdit, {
+    code: NEW_LOCATION.editedCode, name: NEW_LOCATION.editedName, reason: 'SENTETIK org03: lokasyon düzeltme',
+  })
+  const locationUpdated = page.waitForResponse((response) => isCall(response, 'PUT', `${LOCATIONS_API}/${location.id}`))
+  await locationEdit.getByRole('button', { name: 'Kaydet', exact: true }).click()
+  expect((await locationUpdated).status()).toBe(204)
+  await expect(page.getByRole('status').filter({ hasText: 'Değişiklik kaydedildi' })).toBeVisible({ timeout: 30_000 })
+
+  await page.goto('/')
+  await page.goto(`/ayarlar/organizasyon/lokasyon/${location.id}`)
+  await expect(page.getByText(NEW_LOCATION.editedCode, { exact: true })).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByText(NEW_LOCATION.editedName, { exact: true })).toBeVisible()
+  await expect(page.getByText(NEW_LOCATION.code, { exact: true })).toHaveCount(0)
+
+  // ── Work centre: the NEXT reader of the new location is the work-centre form's location picker. ───
+  await page.goto(WORK_CENTRE_LIST_ROUTE)
+  await expect(page.getByRole('table')).toBeVisible({ timeout: 30_000 })
+  await page.getByRole('button', { name: 'Yeni iş merkezi', exact: true }).click()
+  const wcForm = page.getByRole('region', { name: 'Yeni iş merkezi' })
+  await fillMasterForm(wcForm, {
+    code: NEW_WORK_CENTRE.code,
+    name: NEW_WORK_CENTRE.name,
+    choice: { label: 'Lokasyon', option: `${NEW_LOCATION.editedCode} — ${NEW_LOCATION.editedName}` },
+    secondChoice: { label: 'İş merkezi türü', option: 'Dilme' },
+    reason: 'SENTETIK org03: iş merkezi oluşturma',
+  })
+  const wcCreated = page.waitForResponse((response) => isCall(response, 'POST', WORK_CENTERS_API))
+  await wcForm.getByRole('button', { name: 'Kaydet', exact: true }).click()
+  const wcAnswer = await wcCreated
+  expect(wcAnswer.status()).toBe(201)
+  const workCentre = await wcAnswer.json() as { readonly id: string; readonly version: number }
+  await expect(page).toHaveURL(new RegExp(`${WORK_CENTRE_LIST_ROUTE}/${workCentre.id}$`), { timeout: 30_000 })
+  const card = page.locator(`[data-work-center="${workCentre.id}"]`)
+  await expect(card).toBeVisible({ timeout: 30_000 })
+  await expect(card.getByText(NEW_WORK_CENTRE.name, { exact: true })).toBeVisible()
+
+  await page.getByRole('button', { name: 'İş merkezini düzenle', exact: true }).click()
+  const wcEdit = page.getByRole('region', { name: 'İş merkezini düzenle' })
+  await fillMasterForm(wcEdit, { name: NEW_WORK_CENTRE.editedName, reason: 'SENTETIK org03: iş merkezi adı düzeltme' })
+  const wcUpdated = page.waitForResponse((response) => isCall(response, 'PUT', `${WORK_CENTERS_API}/${workCentre.id}`))
+  await wcEdit.getByRole('button', { name: 'Kaydet', exact: true }).click()
+  expect((await wcUpdated).status()).toBe(204)
+
+  await page.goto('/')
+  await page.goto(`${WORK_CENTRE_LIST_ROUTE}/${workCentre.id}`)
+  const reopened = page.locator(`[data-work-center="${workCentre.id}"]`)
+  await expect(reopened).toBeVisible({ timeout: 30_000 })
+  await expect(reopened.getByText(NEW_WORK_CENTRE.editedName, { exact: true })).toBeVisible()
+  await expect(reopened.getByText('Dilme', { exact: true })).toBeVisible()
+
+  // The list every reader sees now carries the new row, at the edited location.
+  const list = await page.request.get(`${apiBaseUrl}${WORK_CENTERS_API}`, { headers: apiHeaders(READER_ACTOR) })
+  expect(list.status()).toBe(200)
+  const rows = await list.json() as readonly WorkCentreRow[]
+  expect(rows.filter((row) => row.id === workCentre.id)).toEqual([
+    expect.objectContaining({
+      id: workCentre.id, locationId: location.id, code: NEW_WORK_CENTRE.code, name: NEW_WORK_CENTRE.editedName,
+    }),
+  ])
+})
+
+test('ORG-ME-02 a replayed create applies once, another body under the same key is refused, and a stale edit is a 409 that changes nothing', async ({ page }) => {
+  const key = `org03-me-replay-${testedCommit.slice(0, 12)}`
+  const body = { code: 'ORG03-ME-RPL', name: 'SENTETIK org03 tekrar', type: 'Warehouse', reason: 'SENTETIK org03: tekrar denemesi' }
+
+  const first = await page.request.post(`${apiBaseUrl}${SITES_API}`, { headers: commandHeaders(EDITOR_ACTOR, key), data: body })
+  expect(first.status()).toBe(201)
+  const created = await first.json() as { readonly id: string; readonly version: number }
+
+  const replay = await page.request.post(`${apiBaseUrl}${SITES_API}`, { headers: commandHeaders(EDITOR_ACTOR, key), data: body })
+  expect(replay.status()).toBe(201)
+  expect(replay.headers()['idempotency-replayed']).toBe('true')
+  expect(await replay.json()).toEqual(created)
+
+  const otherBody = await page.request.post(`${apiBaseUrl}${SITES_API}`, {
+    headers: commandHeaders(EDITOR_ACTOR, key), data: { ...body, name: 'SENTETIK org03 başka gövde' },
+  })
+  expect(otherBody.status()).toBe(409)
+
+  const sites = await page.request.get(`${apiBaseUrl}${SITES_API}`, { headers: apiHeaders(EDITOR_ACTOR) })
+  expect(sites.status()).toBe(200)
+  const matching = (await sites.json() as readonly { readonly id: string; readonly code: string; readonly name: string }[])
+    .filter((row) => row.code === body.code)
+  expect(matching).toEqual([expect.objectContaining({ id: created.id, name: body.name })])
+
+  // The same code again under a NEW key is the owner's 422, not a second site.
+  const duplicate = await page.request.post(`${apiBaseUrl}${SITES_API}`, {
+    headers: commandHeaders(EDITOR_ACTOR, `${key}-dup`), data: body,
+  })
+  expect(duplicate.status()).toBe(422)
+  expect((await duplicate.json() as { readonly code?: string }).code).toBe('organization_code_in_use')
+
+  const edit = { code: body.code, name: 'SENTETIK org03 tekrar (1)', expectedVersion: created.version, reason: 'SENTETIK org03: ilk düzeltme' }
+  const firstEdit = await page.request.put(`${apiBaseUrl}${SITES_API}/${created.id}`, {
+    headers: commandHeaders(EDITOR_ACTOR, `${key}-edit-1`), data: edit,
+  })
+  expect(firstEdit.status()).toBe(204)
+  const stale = await page.request.put(`${apiBaseUrl}${SITES_API}/${created.id}`, {
+    headers: commandHeaders(EDITOR_ACTOR, `${key}-edit-2`), data: { ...edit, name: 'SENTETIK org03 tekrar (bayat)' },
+  })
+  expect(stale.status()).toBe(409)
+  const after = await page.request.get(`${apiBaseUrl}${SITES_API}`, { headers: apiHeaders(EDITOR_ACTOR) })
+  const current = (await after.json() as readonly { readonly id: string; readonly name: string }[]).find((row) => row.id === created.id)
+  expect(current?.name).toBe(edit.name)
+})
+
+test('ORG-ME-03 a reader without the writes is offered no create or edit control, and the API refuses its command', async ({ page }) => {
+  await signInAs(page, READER_ACTOR)
+  await page.goto(WORK_CENTRE_LIST_ROUTE)
+  await expect(page.getByRole('table')).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByRole('button', { name: 'Yeni iş merkezi', exact: true })).toHaveCount(0)
+
+  await page.goto(LOCATION_LIST_ROUTE)
+  await expect(page.getByRole('heading', { level: 1, name: 'Organizasyon' })).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByRole('button', { name: 'Yeni lokasyon', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Yeni tesis', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /^Tesisi düzenle/ })).toHaveCount(0)
+
+  const refused = await page.request.post(`${apiBaseUrl}${SITES_API}`, {
+    headers: commandHeaders(READER_ACTOR, `org03-me-denied-${testedCommit.slice(0, 12)}`),
+    data: { code: 'ORG03-ME-DENIED', name: 'SENTETIK org03 yetkisiz', type: 'Warehouse', reason: 'SENTETIK org03: yetkisiz deneme' },
+  })
+  expect(refused.status()).toBe(403)
+  const sites = await page.request.get(`${apiBaseUrl}${SITES_API}`, { headers: apiHeaders(EDITOR_ACTOR) })
+  expect((await sites.json() as readonly { readonly code: string }[]).some((row) => row.code === 'ORG03-ME-DENIED')).toBe(false)
 })

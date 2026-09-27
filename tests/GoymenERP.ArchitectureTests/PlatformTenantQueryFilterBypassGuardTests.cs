@@ -170,8 +170,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 "a72e63678da905388ee2e17d46ad3aed74b6ad8d6f6b0ee79fe47ca7b3cd9595",
 
             // organization
+            // ORG master edit: +2 OrganizationMasterDataSqlServerRelationalAcceptanceTests facts (6b504dac… -> 3bad6ad8…).
             ["tools/relational_inventory/organization.txt"] =
-                "6b504dac144f5a9264ae34969ca54275c608b3b5d74b77ac0b411e98d0225d35",
+                "3bad6ad8a1f56508e4f05115b2aecbaf2a9a576d56282c4b51f9d321c3a0b0d5",
 
             // platform
             ["tools/relational_inventory/platform.txt"] =
@@ -194,8 +195,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
         "91a665e6e8982e5a9b66f5d16a14d9fc4d7f98d63775de959a8cc6b2dea2b018";
+    // Re-fingerprinted for the ORG master edit: the seeder's three existing IgnoreQueryFilters projections also read
+    // the row id, so a seeded record a user renamed is recognised by its deterministic id and never re-added under
+    // its old code. No new bypass, query or write path; the IgnoreQueryFilters reads are the same three.
     private const string ReviewedSeederFingerprint =
-        "b9de3d52d72f20ffc6279f32b9cc4b1b646aa3b3f03c6a12fd2fa8d1d4c4c450";
+        "84c4a5cd933a92fc58c59e4a93480fcb7a6ce6d3cfa33bfaeba3ca3be7221a8a";
 
     // This is a reviewed source inventory, not a claim that every entity mapped by every
     // context has a global query filter. Any context change must receive a fresh tenant-safety
@@ -426,11 +430,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 // OrganizationModuleExtensions re-fingerprinted for the location module read registration: one
                 // AddScoped line; its Migrate/EnsureCreated branch is unchanged.
+                // Re-fingerprinted for the ORG master edit: one more AddScoped line (the master-data command service);
+                // the Migrate/EnsureCreated branch and its token counts are unchanged.
                 ["src/backend/Modules/Organization/"
                  + "GoymenERP.Modules.Organization.Infrastructure/"
                  + "OrganizationModuleExtensions.cs"] =
                     new(
-                        "e7f5cdb7b539c704650fa655d6dac858378fff6272eaf848d5243a9528de7c2f",
+                        "00f81ecdedc805aad5224b54b061ab6a5366f219a39cb2eda210680972dbbca9",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
