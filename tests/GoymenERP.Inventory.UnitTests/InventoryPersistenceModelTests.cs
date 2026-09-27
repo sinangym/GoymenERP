@@ -24,6 +24,7 @@ public sealed class InventoryPersistenceModelTests
             typeof(MovementRow), typeof(MovementLineRow),
             typeof(BalanceRow), typeof(SourceGrainRow), typeof(OpeningCountRow), typeof(OpeningCountLineRow),
             typeof(InventoryCommandRow), typeof(AllocationRow), typeof(InventoryOutboxRow),
+            typeof(StockCountRow), typeof(StockCountDecisionRow),
         ];
 
     [Fact]
@@ -160,6 +161,8 @@ public sealed class InventoryPersistenceModelTests
             migration => migration.EndsWith("_AddInventoryPhysicalAllocationLifecycle", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("_AddInventoryLabelGenealogy", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AddInventoryStockCounts", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -224,6 +227,9 @@ public sealed class InventoryPersistenceModelTests
     [InlineData("edit-transformation")]
     [InlineData("edit-transformation-input")]
     [InlineData("delete-transformation-output")]
+    [InlineData("edit-stock-count")]
+    [InlineData("delete-stock-count")]
+    [InlineData("edit-stock-count-decision")]
     public void Stored_stock_is_never_deleted_and_only_its_allowed_field_changes(string fault)
     {
         using var context = Context();
@@ -292,6 +298,20 @@ public sealed class InventoryPersistenceModelTests
             case "delete-transformation-output":
                 context.LabelTransformationOutputs.Remove(Attach(context, TransformationOutput()));
                 break;
+            case "edit-stock-count":
+                // ST-05 / DEC-STK-007: a recorded count is evidence; a wrong one is answered by a new count.
+                Attach(context, StockCount()).CountedKg = 1m;
+                break;
+            case "delete-stock-count":
+                context.StockCounts.Remove(Attach(context, StockCount()));
+                break;
+            case "edit-stock-count-decision":
+                Attach(context, new StockCountDecisionRow
+                {
+                    CompanyId = CompanyA, CountId = Guid.NewGuid(), Decision = 2, Reason = "SYN-REJECT",
+                    PayloadHash = new string('0', 64), DecidedAtUtc = At, DecidedBy = "synthetic", CorrelationId = "synthetic",
+                }).Decision = 1;
+                break;
             default:
                 Attach(context, Balance()).CompanyId = CompanyB;
                 break;
@@ -339,6 +359,14 @@ public sealed class InventoryPersistenceModelTests
         context.Attach(row);
         return row;
     }
+
+    private static StockCountRow StockCount() => new()
+    {
+        Id = Guid.NewGuid(), CompanyId = CompanyA, LabelId = Label1, LabelVersion = 1, OwnerKind = 1, OwnerId = CompanyA,
+        CustodianKind = 1, CustodianId = CompanyA, LocationId = Warehouse1, ProductId = BandProduct, Block = 1,
+        BookKg = 10m, CountedKg = 9m, CountedAtUtc = At, Reason = "SYN-COUNT", PayloadHash = new string('0', 64),
+        RecordedAtUtc = At, RecordedBy = "synthetic", CorrelationId = "synthetic",
+    };
 
     private static LotRow Lot() => new()
     {
