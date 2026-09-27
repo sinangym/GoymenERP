@@ -199,7 +199,11 @@ SUITE_IDENTITY_PERMISSIONS = {
     # and varies the COMPANY, so that when the other-company actor is refused, permissions cannot be
     # the explanation. A closed list of two, therefore, with no per-actor subset to record.
     "c02": ("counterparty.parties.create", "counterparty.parties.read"),
-    "org03": ("organization.work-centers.read", "organization.locations.read"),
+    # ORG master edit (user decision 2026-09-27): a THIRD actor, org03-editor, holds the three reads its
+    # screens need (work-centers, locations, sites) plus the three master-edit writes. The two readers above
+    # keep their exact subsets, so the suite also shows a reader is offered no create/edit control.
+    "org03": ("organization.work-centers.read", "organization.locations.read", "organization.sites.read",
+              "organization.sites.write", "organization.locations.write", "organization.work-centers.write"),
     # u02: the issuer's Identity user holds nothing (the issuer-user rule). The disposable activator's
     # membership role carries only the baseline identity.profile.read, which no endpoint or shell
     # capability uses: it establishes the fresh company membership Product authorization requires and

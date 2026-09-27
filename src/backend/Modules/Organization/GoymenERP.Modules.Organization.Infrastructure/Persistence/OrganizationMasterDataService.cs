@@ -621,7 +621,7 @@ internal sealed class OrganizationMasterDataService(
     /// not recorded again, so a narrowed grant cannot read back a stored answer about a record it no longer reaches.
     /// </summary>
     private static CommandExecutionResult NotRecordedNotFound(CommandMetadata metadata) =>
-        new(CommandResponses.For(CommandResult.NotFound), false, metadata.CorrelationId);
+        new CommandExecutionResult(CommandResponses.For(CommandResult.NotFound), false, metadata.CorrelationId);
 
     private void EnqueueAudit(
         CommandMetadata metadata,

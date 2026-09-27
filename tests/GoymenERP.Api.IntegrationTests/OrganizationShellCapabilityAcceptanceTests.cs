@@ -25,7 +25,7 @@ public sealed class OrganizationShellCapabilityAcceptanceTests(GoymenErpApiFacto
         var services = CanonicalServices();
         var authority = C01E2eShellCapabilityActivation.Configure(
             services, new TestingEnvironment(), new ConfigurationBuilder().Build());
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailAndOrganizationV12, authority);
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailAndOrganizationV13, authority);
         using var container = services.BuildServiceProvider();
         var providers = container.GetServices<IShellCapabilityProvider>().ToArray();
         var registry = new ShellCapabilityRegistry(providers, new ShellCapabilityAuthorityCatalog([authority]));
