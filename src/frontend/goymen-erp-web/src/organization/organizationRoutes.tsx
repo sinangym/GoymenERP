@@ -25,6 +25,7 @@ import { ORGANIZATION_CAPABILITY, ORGANIZATION_ROUTE } from './capabilities'
 import { OrganizationSettingsPage } from './OrganizationSettingsPage'
 import { LocationDetailPage } from './LocationDetailPage'
 import { WorkCenterListPage } from './WorkCenterListPage'
+import { WorkCenterDetailPage } from './WorkCenterDetailPage'
 
 export const organizationRoutes: RouteObject[] = [
   {
@@ -45,6 +46,15 @@ export const organizationRoutes: RouteObject[] = [
     element: (
       <CapabilityRoute capability={ORGANIZATION_CAPABILITY.workCentersList}>
         <WorkCenterListPage />
+      </CapabilityRoute>
+    ),
+  },
+  {
+    // ORG-04. Parameterized, after its static list: `is-merkezleri` itself is never a work-centre id.
+    path: ORGANIZATION_ROUTE[ORGANIZATION_CAPABILITY.workCenterDetail].slice(1),
+    element: (
+      <CapabilityRoute capability={ORGANIZATION_CAPABILITY.workCenterDetail}>
+        <WorkCenterDetailPage />
       </CapabilityRoute>
     ),
   },

@@ -63,6 +63,23 @@ export const WORK_CENTERS_LEAD =
  */
 export const LOCATION_NOT_OPENABLE = 'Lokasyon kartı bu yetkiyle açılamıyor'
 
+/** ORG-04 — one work centre's read-only card. Only the record's own facts; nothing is claimed beyond them. */
+export const WORK_CENTER_CARD_TEXT = {
+  heading: 'İş merkezi',
+  lead:
+    'Bu iş merkezinin Organizasyon kaydı. Kapasite, vardiya ve üretim bilgisi bu kartın kaynağında yoktur; ' +
+    'lokasyonun adı lokasyon kartındadır.',
+  code: 'Kod',
+  name: 'Ad',
+  kind: 'Tür',
+  status: 'Durum',
+  location: 'Lokasyon',
+  openLocation: 'Lokasyon kartını aç',
+  openCard: 'İş merkezi kartını aç',
+  subject: 'iş merkezi',
+  contextSubject: 'iş merkezi kartı için tek şirket bağlamı',
+} as const
+
 export const ACTIVE_LABEL = 'Aktif'
 export const PASSIVE_LABEL = 'Pasif'
 

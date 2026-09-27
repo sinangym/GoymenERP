@@ -20,7 +20,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router'
 import { fetchOrders } from './api'
 import type { OrderStatus, OrderSummary } from './contract'
-import { MANUFACTURING_CAPABILITY, orderDetailPath, planCreatePath } from './capabilities'
+import { MANUFACTURING_CAPABILITY, orderDetailPath, planCreatePath, planListPath } from './capabilities'
 import { ORDER_LIST_TEXT, ORDER_STATUS_LABEL, TARGET_BASIS_LABEL } from './manufacturingText'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { useShellState } from '../shell/shellContext'
@@ -59,6 +59,8 @@ function OrderList({ namespace }: { readonly namespace: string | null }) {
   const singleCompanyContext = (shell.activeContext?.scopeMode ?? 'single') === 'single' && companyId !== null
   const canOpen = hasCapability(shell, MANUFACTURING_CAPABILITY.orderDetail)
   const canCreatePlan = hasCapability(shell, MANUFACTURING_CAPABILITY.planCreate)
+  // MFG-PLAN-LIST: the saved plans, only where that list is published to this actor.
+  const canOpenPlanList = hasCapability(shell, MANUFACTURING_CAPABILITY.planList)
   const [statusFilter, setStatusFilter] = useState<OrderStatus | null>(null)
   const [more, setMore] = useState<readonly OrderSummary[]>([])
   const [cursor, setCursor] = useState<string | null | undefined>(undefined)
@@ -137,6 +139,11 @@ function OrderList({ namespace }: { readonly namespace: string | null }) {
             ))}
           </select>
         </label>
+        {canOpenPlanList ? (
+          <Link className={styles.secondaryLink} to={planListPath()}>
+            Üretim planları
+          </Link>
+        ) : null}
         {canCreatePlan ? (
           <Link className={styles.primaryLink} to={planCreatePath()}>
             Yeni üretim planı

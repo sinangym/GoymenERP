@@ -85,6 +85,22 @@ public sealed record OrderViewV1(
     string CostStatus, Guid? ClosedByUserId, DateTimeOffset? ClosedAtUtc);
 
 /// <summary>
+/// One plan in the plan list (MFG-PLAN-LIST): its stored row only — the work center and process it was bound to,
+/// its status and version, how many parent rolls it plans and their planned mass together, its declared target and
+/// its creation and approval times. No engine answer, no spec, no roll label and no order it may have opened: one
+/// approved plan may open more than one order (#66 5728934213 is open), so the list claims no "converted" state.
+/// </summary>
+public sealed record PlanSummaryViewV1(
+    Guid PlanId, Guid WorkCenterId, string Process, string Status, long Version, int PlannedRollCount,
+    string PlannedInputKg, TargetViewV1? Target, DateTimeOffset CreatedAtUtc, DateTimeOffset? ApprovedAtUtc);
+
+/// <summary>
+/// One page of the company's plans, newest first. <see cref="NextCursor"/> null is the end; the cursor is opaque
+/// and belongs to the company and to the plan list's ordering that produced it.
+/// </summary>
+public sealed record PlanListViewV1(IReadOnlyList<PlanSummaryViewV1> Plans, string? NextCursor);
+
+/// <summary>
 /// One order in the list: its stored facts only — the plan and work center it came from, its status and
 /// version, how many parent rolls its snapshot plans and their planned mass together. No balance, no engine
 /// answer and no roll label: a balance is the order read's answer roll by roll, and the label is Inventory's
@@ -214,7 +230,8 @@ public sealed partial class ManufacturingCommandService(
     IInventoryParentRollValidationV1? parentRolls = null,
     IOrganizationWorkCenterPlanningReferenceV1? workCenters = null,
     IManufacturingInventoryInputIssuePortV1? inventoryInputIssues = null,
-    IManufacturingInventoryReturnOutputPortV1? inventoryReturnsAndOutputs = null)
+    IManufacturingInventoryReturnOutputPortV1? inventoryReturnsAndOutputs = null,
+    IManufacturingPlanListStore? planList = null)
 {
     /// <summary>Any integer mantissa of this many digits fits a decimal's 96 bits, so such a text converts exactly.</summary>
     private const int ExactDecimalDigits = 28;
@@ -773,6 +790,65 @@ public sealed partial class ManufacturingCommandService(
     }
 
     /// <summary>
+    /// One page of the company's plans, newest first (MFG-PLAN-LIST), the order list's rules: the stored rows only,
+    /// another company's plan in no page, and the same read permission as the plan read (the endpoint's policy).
+    /// <paramref name="status"/> is a <c>PlanStatus</c> name (<c>Draft</c> / <c>Approved</c>) or null (every status);
+    /// <paramref name="cursor"/> is the previous page's, and a cursor of another company, another ordering (an
+    /// order-list cursor included) or no grammar is a 400 on <c>cursor</c>, never a silent first page. Without the
+    /// plan-list port the answer is a retryable 503, never an empty page. It computes nothing and stores nothing.
+    /// </summary>
+    public async Task<ManufacturingApiResult<PlanListViewV1>> ListPlansAsync(int? pageSize, string? cursor,
+        string? status, CancellationToken cancellationToken)
+    {
+        if (!HasContext())
+        {
+            return Denied<PlanListViewV1>();
+        }
+
+        var size = pageSize ?? DefaultPageSize;
+        if (size is < 1 or > MaximumPageSize)
+        {
+            return Invalid<PlanListViewV1>("pageSize");
+        }
+
+        if (cursor is { Length: 0 or > MaximumCursorLength })
+        {
+            return Invalid<PlanListViewV1>("cursor");
+        }
+
+        PlanStatus? requested = null;
+        if (status is not null)
+        {
+            if (ParsePlanStatus(status) is not { } parsed)
+            {
+                return Invalid<PlanListViewV1>("status");
+            }
+
+            requested = parsed;
+        }
+
+        if (planList is null)
+        {
+            return new ManufacturingApiResult<PlanListViewV1>(ManufacturingApiStatus.Unavailable, null, false, null);
+        }
+
+        try
+        {
+            var page = await planList.ListPlansAsync(size, cursor, requested, cancellationToken);
+            return new ManufacturingApiResult<PlanListViewV1>(ManufacturingApiStatus.Ok,
+                new PlanListViewV1([.. page.Plans.Select(PlanSummaryView)], page.NextCursor), false, null);
+        }
+        catch (ManufacturingStoreException exception) when (exception.Code == ManufacturingStoreCodes.ListCursorInvalid)
+        {
+            return Invalid<PlanListViewV1>("cursor");
+        }
+        catch (ManufacturingStoreException exception) when (exception.Code == ManufacturingStoreCodes.ConcurrentChange)
+        {
+            return new ManufacturingApiResult<PlanListViewV1>(ManufacturingApiStatus.Unavailable, null, false, null);
+        }
+    }
+
+    /// <summary>
     /// The company's order rebuilt from its stored facts; another company's order is not found. A read
     /// that still meets concurrent commits after the store's own re-reads is a retryable consistency
     /// failure (503), not a command conflict: 409 belongs to commands (FİNANS #313 INFO-4).
@@ -1283,6 +1359,11 @@ public sealed partial class ManufacturingCommandService(
             ? status
             : null;
 
+    private static PlanStatus? ParsePlanStatus(string? text) =>
+        Enum.TryParse<PlanStatus>(text, ignoreCase: false, out var status) && Enum.IsDefined(status) && IsName(text)
+            ? status
+            : null;
+
     private static TargetBasis? ParseBasis(string? text) =>
         Enum.TryParse<TargetBasis>(text, ignoreCase: false, out var basis) && Enum.IsDefined(basis) && IsName(text)
             ? basis
@@ -1299,6 +1380,15 @@ public sealed partial class ManufacturingCommandService(
         [.. plan.Inputs.Select(input => new PlannedInputViewV1(input.ParentRollId, Text(input.PlannedMass.Value)))],
         plan.Target is { } target ? new TargetViewV1(target.Basis.ToString(), Text(target.Mass.Value)) : null,
         plan.ApprovedByUserId, plan.ApprovedAtUtc);
+
+    /// <summary>The stored plan summary as text: the same lossless kilogram text as every other mass here.</summary>
+    internal static PlanSummaryViewV1 PlanSummaryView(ManufacturingPlanSummary summary) => new(
+        summary.PlanId, summary.WorkCenterId, summary.Process.ToString(), summary.Status.ToString(), summary.Version,
+        summary.PlannedRollCount, Text(summary.PlannedInputMass.Value),
+        summary is { TargetBasis: { } basis, TargetMass: { } targetMass }
+            ? new TargetViewV1(basis.ToString(), Text(targetMass.Value))
+            : null,
+        summary.CreatedAtUtc, summary.ApprovedAtUtc);
 
     /// <summary>The stored summary as text: the same lossless kilogram text as every other mass here.</summary>
     internal static OrderSummaryViewV1 OrderSummaryView(ManufacturingOrderSummary summary) => new(

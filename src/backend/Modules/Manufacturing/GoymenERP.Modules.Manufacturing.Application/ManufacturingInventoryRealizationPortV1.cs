@@ -82,7 +82,19 @@ public sealed record ManufacturingInventoryOutputPortCommandV1(
 public sealed record ManufacturingInventoryInputIssuePortResultV1(
     long OrderVersion,
     long ParentLabelVersion,
+    ManufacturingInventoryPositionSnapshotV1 ParentPosition,
     bool IsReplay);
+
+/// <summary>
+/// Inventory-owned physical context captured from the issued parent label. Manufacturing carries
+/// the opaque party-kind names and identities without choosing or changing ownership.
+/// </summary>
+public sealed record ManufacturingInventoryPositionSnapshotV1(
+    string OwnerKind,
+    Guid OwnerId,
+    string CustodianKind,
+    Guid CustodianId,
+    Guid LocationId);
 
 public sealed record ManufacturingInventoryInputReturnPortResultV1(
     long OrderVersion,

@@ -53,6 +53,8 @@ export const READER_CAPABILITIES = [MANUFACTURING_CAPABILITY.orderDetail]
 export const RECORDER_CAPABILITIES = [MANUFACTURING_CAPABILITY.orderDetail, MANUFACTURING_CAPABILITY.orderFacts]
 /** The list only: whoever opens the list may also open one order (the same read grant). */
 export const LIST_CAPABILITIES = [MANUFACTURING_CAPABILITY.orderList, MANUFACTURING_CAPABILITY.orderDetail]
+/** MFG-PLAN-LIST: the plan list and the plan detail it opens (the same plan read grant). */
+export const PLAN_LIST_CAPABILITIES = [MANUFACTURING_CAPABILITY.planList, MANUFACTURING_CAPABILITY.planDetail]
 /** Reader + the close control, without the fact forms: closing is its own authority. */
 export const CLOSER_CAPABILITIES = [MANUFACTURING_CAPABILITY.orderDetail, MANUFACTURING_CAPABILITY.orderClose]
 
@@ -163,6 +165,28 @@ export function orderSummary(overrides: Record<string, unknown> = {}) {
 /** A synthetic `OrderListViewV1`; `nextCursor` null is the end of the list. */
 export function orderList(orders: unknown[] = [orderSummary()], nextCursor: string | null = null) {
   return { orders, nextCursor }
+}
+
+/** A synthetic `PlanSummaryViewV1` (MFG-PLAN-LIST), in the server's JSON shape. */
+export function planSummary(overrides: Record<string, unknown> = {}) {
+  return {
+    planId: PLAN,
+    workCenterId: WORK_CENTER,
+    process: 'Slitting',
+    status: 'Draft',
+    version: 1,
+    plannedRollCount: 2,
+    plannedInputKg: '1500.625',
+    target: null,
+    createdAtUtc: '2026-09-18T09:00:00.000Z',
+    approvedAtUtc: null,
+    ...overrides,
+  }
+}
+
+/** A synthetic `PlanListViewV1`; `nextCursor` null is the end of the list. */
+export function planList(plans: unknown[] = [planSummary()], nextCursor: string | null = null) {
+  return { plans, nextCursor }
 }
 
 export function json(body: unknown, status = 200, headers: Record<string, string> = {}): Response {

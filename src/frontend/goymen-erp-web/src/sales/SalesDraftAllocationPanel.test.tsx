@@ -3,7 +3,7 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SalesDraftAllocationPanel } from './SalesDraftAllocationPanel'
-import { decodePhysicalAllocation, isGuid } from './allocationContract'
+import { CREATE_ALLOCATION_422_CODES, decodePhysicalAllocation, isGuid } from './allocationContract'
 import type { DraftLine } from './contract'
 
 const COMPANY = '10000000-0000-4000-8000-000000000001'
@@ -44,6 +44,43 @@ function mount(enabled = true) {
     salesOrderId={ORDER} lines={[line]} /></QueryClientProvider>)
   return { client, ...view }
 }
+
+// Read the canonical contract with Node's own fs (it lives outside the web package), as
+// src/manufacturing/openapiContract.test.ts does. Vitest runs from the web package.
+const nodeProcess = (globalThis as unknown as {
+  readonly process: { readonly cwd: () => string; readonly getBuiltinModule: (name: string) => unknown }
+}).process
+const nodeFs = nodeProcess.getBuiltinModule('node:fs') as { readFileSync(path: string, encoding: 'utf8'): string }
+const nodePath = nodeProcess.getBuiltinModule('node:path') as { resolve(...segments: string[]): string }
+
+function declaredCreate422Codes(): readonly string[] {
+  const document = JSON.parse(nodeFs.readFileSync(
+    nodePath.resolve(nodeProcess.cwd(), '../../../contracts/openapi/goymen-erp-v1.json'), 'utf8')) as {
+    readonly paths: Record<string, Record<string, { readonly responses?: Record<string, Record<string, unknown>> }>>
+  }
+  const codes = document.paths['/api/v1/inventory/physical-allocations']?.post?.responses?.['422']?.['x-erp-problem-codes']
+  if (!Array.isArray(codes)) throw new Error('OpenAPI declares no 422 problem codes for the allocation create route.')
+  return codes as string[]
+}
+
+async function submitCreate(card: HTMLElement) {
+  await userEvent.type(within(card).getByLabelText('Etiket kimliği'), LABEL)
+  await userEvent.type(within(card).getByLabelText('Etiket sürümü'), '11')
+  await userEvent.type(within(card).getByLabelText('Tahsis kg'), '5')
+  await userEvent.type(within(card).getByLabelText('Tahsis nedeni'), 'Sipariş için ayırıldı.')
+  await userEvent.click(within(card).getByRole('button', { name: 'Tahsis kaydet' }))
+}
+
+function refuseCreateWith(status: number, body: unknown) {
+  const fetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    if ((init?.method ?? 'GET') === 'GET') return answer({ items: [], searchWindowFull: false })
+    return answer(body, status)
+  })
+  vi.stubGlobal('fetch', fetch)
+  return fetch
+}
+
+const OWNER_REFUSAL = 'Bu etiketteki stok şirketin kendi malı ve kendi gözetiminde değil; satış siparişine ayrılamaz. Tahsis kaydedilmedi.'
 
 beforeEach(() => {
   const values = new Map<string, string>()
@@ -227,6 +264,61 @@ describe('Sales physical allocation consumer', () => {
     expect(within(remounted).queryByText('Aktif')).toBeNull()
     await waitFor(() => expect(fetch.mock.calls.filter(([, init]) => (init?.method ?? 'GET') === 'GET').length)
       .toBeGreaterThan(readsBeforeProductChange))
+  })
+
+  it('declares exactly the 422 problem codes the regenerated OpenAPI contract publishes for create', () => {
+    expect([...Object.values(CREATE_ALLOCATION_422_CODES)].sort()).toEqual([...declaredCreate422Codes()].sort())
+  })
+
+  it('shows the stock-ownership refusal as a definite refusal with no retry', async () => {
+    const fetch = refuseCreateWith(422, { title: 'Unprocessable Entity', status: 422,
+      code: CREATE_ALLOCATION_422_CODES.ownerNotCompany })
+    mount()
+    const card = await screen.findByTestId(`sales-allocation-line-${LINE}`)
+    expect(await within(card).findByText('Bu sipariş satırı için tahsis yok.')).toBeTruthy()
+    await submitCreate(card)
+
+    const notice = await within(card).findByTestId('sales-allocation-notice')
+    expect(notice.textContent).toBe(OWNER_REFUSAL)
+    expect(notice.getAttribute('data-tone')).toBe('error')
+    expect(within(card).queryByText('Tahsis işlemi kaydedilmedi.')).toBeNull()
+    expect(within(card).queryByRole('button', { name: 'Aynı tahsis denemesini tekrar gönder' })).toBeNull()
+    expect(within(card).queryByRole('button', { name: 'Tekrar oku' })).toBeNull()
+    expect(within(card).getByRole('button', { name: 'Tahsis kaydet' })).toBeTruthy()
+    expect(within(card).queryByText('Aktif')).toBeNull()
+    expect(within(card).getByText('Bu sipariş satırı için tahsis yok.')).toBeTruthy()
+    expect(fetch.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1)
+    expect(report).toHaveBeenCalledWith(422, { token: 1 })
+  })
+
+  it.each([
+    ['another declared 422 code', { status: 422, code: CREATE_ALLOCATION_422_CODES.invalidReference }],
+    ['an undeclared 422 code', { status: 422, code: 'inventory_something_else' }],
+    ['a 422 without a code', { status: 422 }],
+  ])('keeps the generic definite failure for %s', async (_name, body) => {
+    refuseCreateWith(422, body)
+    mount()
+    const card = await screen.findByTestId(`sales-allocation-line-${LINE}`)
+    expect(await within(card).findByText('Bu sipariş satırı için tahsis yok.')).toBeTruthy()
+    await submitCreate(card)
+
+    const notice = await within(card).findByTestId('sales-allocation-notice')
+    expect(notice.textContent).toBe('Tahsis işlemi kaydedilmedi.')
+    expect(notice.getAttribute('data-tone')).toBe('error')
+    expect(within(card).queryByText(OWNER_REFUSAL)).toBeNull()
+    expect(within(card).queryByRole('button', { name: 'Aynı tahsis denemesini tekrar gönder' })).toBeNull()
+  })
+
+  it('does not show the stock-ownership text when the code arrives on a non-422 status', async () => {
+    refuseCreateWith(409, { status: 409, code: CREATE_ALLOCATION_422_CODES.ownerNotCompany })
+    mount()
+    const card = await screen.findByTestId(`sales-allocation-line-${LINE}`)
+    expect(await within(card).findByText('Bu sipariş satırı için tahsis yok.')).toBeTruthy()
+    await submitCreate(card)
+
+    const notice = await within(card).findByTestId('sales-allocation-notice')
+    expect(notice.textContent).toBe('Kayıt güncel sunucu durumuyla çakıştı; tahsisler yeniden okundu.')
+    expect(within(card).queryByText(OWNER_REFUSAL)).toBeNull()
   })
 
   it('renders and reads nothing without the published capability decision', () => {

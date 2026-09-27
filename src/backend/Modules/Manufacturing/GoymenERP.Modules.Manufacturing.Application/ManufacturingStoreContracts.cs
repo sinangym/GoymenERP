@@ -132,6 +132,40 @@ public interface IManufacturingPlanStore
 }
 
 /// <summary>
+/// One stored plan as the plan list reads it (MFG-PLAN-LIST): the plan's own row and the count and planned
+/// mass of its planned inputs. No engine answer, no slitting spec, no roll label and no order it may have
+/// opened — the plan read and the order list answer those, and the label is Inventory's read.
+/// </summary>
+public sealed record ManufacturingPlanSummary(
+    Guid PlanId, Guid CompanyId, Guid WorkCenterId, ManufacturingProcess Process, PlanStatus Status, long Version,
+    int PlannedRollCount, Kilograms PlannedInputMass, TargetBasis? TargetBasis, Kilograms? TargetMass,
+    DateTimeOffset CreatedAtUtc, Guid? ApprovedByUserId, DateTimeOffset? ApprovedAtUtc);
+
+/// <summary>
+/// One page of the company's plans, newest first (createdAtUtc desc, id desc), as the order list pages:
+/// <see cref="NextCursor"/> null is the end, and the cursor is opaque and bound to the company and to the
+/// plan list's own ordering (an order-list cursor is not a plan-list cursor, and the reverse).
+/// </summary>
+public sealed record ManufacturingPlanPage(IReadOnlyList<ManufacturingPlanSummary> Plans, string? NextCursor);
+
+/// <summary>
+/// The plan list of the server-resolved company. A port of its own, beside <see cref="IManufacturingPlanStore"/>,
+/// so the plan store's existing implementations are not widened; the one store implements both.
+/// </summary>
+public interface IManufacturingPlanListStore
+{
+    /// <summary>
+    /// One page of this company's plans, newest first, optionally only those in <paramref name="status"/>.
+    /// <paramref name="cursor"/> is the previous page's <see cref="ManufacturingPlanPage.NextCursor"/>; another
+    /// company's, another ordering's (an order-list cursor included) or an unreadable cursor is
+    /// <see cref="ManufacturingStoreCodes.ListCursorInvalid"/>. A page size outside the store's bound is an
+    /// <see cref="ArgumentOutOfRangeException"/>.
+    /// </summary>
+    Task<ManufacturingPlanPage> ListPlansAsync(int pageSize, string? cursor, PlanStatus? status,
+        CancellationToken cancellationToken = default);
+}
+
+/// <summary>
 /// One stored order as a list reads it: the order's own row and the count and planned mass of its
 /// input snapshot. No realization fact is rebuilt and nothing is calculated — a balance, a
 /// difference and a roll label are not here. The label belongs to Inventory's label read (ÜRÜN),

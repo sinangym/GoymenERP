@@ -194,7 +194,9 @@ public static partial class ErpOpenApiContract
                     || context.JsonTypeInfo.Type == typeof(PartyCoreView)
                     || context.JsonTypeInfo.Type == typeof(CounterpartyListAccount)
                     || context.JsonTypeInfo.Type == typeof(CounterpartyListItem)
-                    || context.JsonTypeInfo.Type == typeof(LocationSummary))
+                    || context.JsonTypeInfo.Type == typeof(LocationSummary)
+                    // ORG-04: the work-center card's row version is the location card's integer, not a string.
+                    || context.JsonTypeInfo.Type == typeof(WorkCenterDetail))
                 {
                     SetIntegerProperty(schema, "version", nullable: false);
                 }

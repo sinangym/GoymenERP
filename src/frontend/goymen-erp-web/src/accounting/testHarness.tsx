@@ -124,6 +124,43 @@ export function journalDetail(overrides: Record<string, unknown> = {}) {
   }
 }
 
+export const PROPOSAL = 'a7000000-0000-4000-8000-000000000001'
+export const REVERSAL_JOURNAL = 'a3000000-0000-4000-8000-000000000002'
+
+/** A synthetic `AccountingJournalReversalProposalViewV1` (SENTETIK, not UAT), pending by default. */
+export function reversalProposal(overrides: Record<string, unknown> = {}) {
+  return {
+    proposalId: PROPOSAL,
+    companyId: COMPANY_A,
+    sourceJournalId: JOURNAL,
+    reversalJournalId: null,
+    periodId: PERIOD_SEPTEMBER,
+    transactionDate: '2026-09-23',
+    accountingDate: '2026-09-24',
+    valueDate: null,
+    reason: 'SENTETIK ters kayıt gerekçesi',
+    proposedBy: PREPARER,
+    proposedAtUtc: '2026-09-24T09:00:00+00:00',
+    status: 'Pending',
+    decidedBy: null,
+    decidedAtUtc: null,
+    decisionReason: null,
+    version: 1,
+    ...overrides,
+  }
+}
+
+export function approvedReversalProposal(overrides: Record<string, unknown> = {}) {
+  return reversalProposal({
+    status: 'Approved',
+    version: 2,
+    decidedBy: APPROVER,
+    decidedAtUtc: '2026-09-24T10:00:00+00:00',
+    reversalJournalId: REVERSAL_JOURNAL,
+    ...overrides,
+  })
+}
+
 export function json(body: unknown, status = 200, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...headers } })
 }
@@ -164,6 +201,8 @@ export interface HarnessOptions {
   readonly capabilities?: readonly string[]
   /** Feature-endpoint responder. Return undefined to fall through to a 404. */
   readonly respond?: (url: string, init: RequestInit | undefined) => Response | Promise<Response> | undefined
+  /** The signed-in identity's user id (defaults to the neutral synthetic user). */
+  readonly identityUserId?: string
 }
 
 export function installFetch(options: HarnessOptions = {}): RecordedRequest[] {
@@ -191,7 +230,7 @@ export function installFetch(options: HarnessOptions = {}): RecordedRequest[] {
       }
       recorded.push({ method: init?.method ?? 'GET', url, headers, body })
 
-      if (url.endsWith('/identity/me')) return json(IDENTITY)
+      if (url.endsWith('/identity/me')) return json({ ...IDENTITY, userId: options.identityUserId ?? IDENTITY.userId })
       if (url.endsWith('/organization/companies')) return json(DIRECTORY)
       if (url.endsWith('/shell/capabilities')) {
         return json({ contractVersion: SHELL_CAPABILITY_CONTRACT_VERSION, generation: 'acc-cap-gen-1', capabilities })

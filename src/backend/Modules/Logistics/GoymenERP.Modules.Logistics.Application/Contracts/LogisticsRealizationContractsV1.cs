@@ -54,6 +54,7 @@ public static class LogisticsRealizationDependenciesV1
         "inventory_allocation_insufficient",
         "inventory_label_not_releasable",
         "inventory_physical_stock_insufficient",
+        "inventory_definite_shipment_owner_not_company",
         "inventory_definite_shipment_idempotency_conflict",
         "inventory_definite_shipment_concurrent_change",
     };

@@ -9,6 +9,7 @@ using GoymenERP.Modules.Product.Infrastructure.Persistence;
 using GoymenERP.Modules.Purchasing.Infrastructure.Fixtures;
 using GoymenERP.Modules.Sales.Infrastructure.Fixtures;
 using GoymenERP.Modules.Settings.Application;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Api.Shell;
 
@@ -80,10 +81,19 @@ internal static class C01E2eFixtureWriterActivation
         // fin01 FIN-T05/T06: one fixed synthetic Open Accounting period. No API grant or caller-selected row.
         services.AddAccountingOpenPeriodFixtureStore();
         services.AddScoped<C01E2eAccountingOpenPeriodFixtureWriter>();
+        // acc01 ACC01-09: Accounting's fixed SENTETIK posted journal in the fin01 Open period above, through the owner's
+        // posting path. The seed's host scope has no request user, so its amount check reads Settings as the fixture identity.
+        services.AddAccountingPostedJournalFixtureStore(CreateAccountingFixtureSettings);
         // pur01: one synthetic Draft Purchasing order. Approval and replay remain real API commands.
         services.AddPurchaseOrderFixtureStore();
         services.AddScoped<C01E2ePurchaseOrderFixtureWriter>();
         return true;
+    }
+
+    private static ISettingsPrerequisiteProvider CreateAccountingFixtureSettings(IServiceProvider provider)
+    {
+        var identity = new S04ProductFixtureIdentity(AccountingPostedJournalFixture.FixtureActorId);
+        return new ApprovedSettingsPrerequisiteProvider(identity, identity);
     }
 
     private static ProductUnitProfileAdapter CreateProductFixtureUnitProfiles(IServiceProvider provider)
