@@ -106,6 +106,25 @@ export const ORGANIZATION_CAPABILITY = {
    * `canOpenLocationDetail`, exactly as the row does; it is never derived here.
    */
   workCenterDetail: 'organization.work-centers.detail',
+  /**
+   * Master edit (first-release "create and edit sites, locations and work centres"). CONTROLS, not routes — each
+   * is read with `hasCapability` on the screen that hosts it, like `locationStatus`, and each stands on its
+   * record kind's own write permission, so the read grants never hand out a write surface:
+   *
+   *   organization.sites.manage        <- locations.read + sites.read + organization.sites.write (ORG-01)
+   *   organization.locations.create    <- locations.read + sites.read + organization.locations.write (ORG-01)
+   *   organization.locations.edit      <- locations.read + organization.locations.write (ORG-02)
+   *   organization.work-centers.create <- work-centers.read + locations.read + organization.work-centers.write (ORG-03)
+   *   organization.work-centers.edit   <- work-centers.read + organization.work-centers.write (ORG-04)
+   *
+   * The create controls also need the list they pick a parent from (sites for a location, locations for a work
+   * centre), which is why those reads are part of their grant.
+   */
+  sitesManage: 'organization.sites.manage',
+  locationCreate: 'organization.locations.create',
+  locationEdit: 'organization.locations.edit',
+  workCenterCreate: 'organization.work-centers.create',
+  workCenterEdit: 'organization.work-centers.edit',
 } as const
 
 export type OrganizationCapabilityId =

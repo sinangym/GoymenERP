@@ -8,17 +8,12 @@ import { defineConfig, devices } from '@playwright/test'
  * real SQL, the suite's capability profile (`normal`, where the Organization capabilities are published),
  * the authorized web.
  *
- * It WRITES NOTHING: there is no command, no form and no state change in any case, and everything it
- * reads is already in the built-in organization seed, so it needs no fixture and no seed envelope.
+ * The read cases write nothing and read the built-in organization seed, so the suite needs no fixture and
+ * no seed envelope. The ORG master-edit cases (ORG-ME-*) WRITE sites, locations and work centres through the
+ * real screens as the disposable org03-editor; org03 resolves on the workflow's writing arm.
  *
- * That is a property of the CASES, not a registration — an earlier version of this comment said the
- * suite was "registered read-only", and it is not. org03 resolves on the workflow's writing arm and is
- * absent from the validator's read-only set, so the post-browser SQL verification that would prove
- * nothing was written is not run for it. Registering it is a separate slice; see src/env.ts.
- *
- * The cases are independent reads and could run in any order; they are
- * kept serial (`fullyParallel: false`, `workers: 1`) so a failure names one case rather than a race, and
- * because two of them sign in as different actors against one disposable API.
+ * The cases are kept serial (`fullyParallel: false`, `workers: 1`) and IN FILE ORDER: the read cases count
+ * the five seeded work centres exactly, so the writing cases are declared last and must stay last.
  *
  * The contract (tests/e2e/browser-ci/README.md), no defaults. Retries 0 and forbidOnly; traces,
  * screenshots and video off (the C-01 artifact-privacy decision).

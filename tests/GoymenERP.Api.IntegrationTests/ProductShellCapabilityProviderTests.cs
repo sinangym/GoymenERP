@@ -65,8 +65,8 @@ public sealed class ProductShellCapabilityProviderTests
             [new CounterpartyShellCapabilityProvider(), new OrganizationShellCapabilityProvider(), new ProductShellCapabilityProvider()];
 
         Assert.Throws<InvalidOperationException>(() => new ShellCapabilityRegistry(providers,
-            new ShellCapabilityAuthorityCatalog([ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailAndOrganizationV12])));
-        Assert.NotEqual(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailAndOrganizationV12,
+            new ShellCapabilityAuthorityCatalog([ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailAndOrganizationV13])));
+        Assert.NotEqual(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailAndOrganizationV13,
             ShellCapabilityRegistry.ComputeCandidateRevision(providers));
     }
 

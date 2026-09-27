@@ -9,6 +9,17 @@ public static class ErpPermissions
     public const string OrganizationLocationsStatusUpdate =
         "organization.locations.status.update";
 
+    /// <summary>
+    /// Organization master edit (create and edit sites, locations and work centres), the owner's
+    /// OrganizationPermissionManifestV1 names. Sites write is company-wide only (a site has no parent inside the
+    /// company); locations and work-centres write are scoped like <see cref="OrganizationLocationsStatusUpdate"/>.
+    /// None is Critical: no source makes a master-data edit a grant-time dual-control duty. The user's decision of
+    /// 2026-09-27 grants them only to a disposable org03 browser actor; the real-user mapping stays a human gate.
+    /// </summary>
+    public const string OrganizationSitesWrite = "organization.sites.write";
+    public const string OrganizationLocationsWrite = "organization.locations.write";
+    public const string OrganizationWorkCentersWrite = "organization.work-centers.write";
+
     public const string CounterpartyPartiesRead = "counterparty.parties.read";
     public const string CounterpartyPartiesCreate = "counterparty.parties.create";
     public const string CounterpartyPartiesUpdateBasic = "counterparty.parties.update.basic";
@@ -414,6 +425,9 @@ public static class ErpPermissions
             OrganizationLocationsRead,
             OrganizationWorkCentersRead,
             OrganizationLocationsStatusUpdate,
+            OrganizationSitesWrite,
+            OrganizationLocationsWrite,
+            OrganizationWorkCentersWrite,
             CounterpartyPartiesRead,
             CounterpartyPartiesCreate,
             CounterpartyPartiesUpdateBasic,
@@ -493,6 +507,7 @@ public static class ErpPermissions
 
     public static IReadOnlySet<string> CompanyWideOnly { get; } = new HashSet<string>(
         [
+            OrganizationSitesWrite,
             CounterpartyPartiesRead,
             CounterpartyPartiesCreate,
             CounterpartyPartiesUpdateBasic,

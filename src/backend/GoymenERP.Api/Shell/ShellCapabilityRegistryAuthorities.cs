@@ -50,13 +50,16 @@ internal static class ShellCapabilityRegistryAuthorities
     // new permission). Every live normal-host row carries Organization, so all nine were renamed V11 -> V12
     // and re-derived by ShellCapabilityRegistry.ComputeCandidateRevision over main f72978ef's real providers with
     // this change's Organization 1.2 provider; the historical ProductV10 row keeps its V11 name and value.
-    internal const string CounterpartyV15PublishedListCreateAndDetailAndOrganizationV12 =
-        "sha256:w88eloBZVlPv7L3ATYMSMpf9XMsW8tDyWLOmoPbZb-s";
+    // ORG master edit: Organization 1.3 adds five create/edit controls (organization.sites/locations/work-centers.write).
+    // Every live normal-host row carries Organization, so all nine were renamed V12 -> V13 and re-derived by
+    // ShellCapabilityRegistry.ComputeCandidateRevision over main 00a87981's providers with this change's Organization 1.3.
+    internal const string CounterpartyV15PublishedListCreateAndDetailAndOrganizationV13 =
+        "sha256:EnpuLRDSoDyVZrlaZ_nKRBnIPVLxrI7fYNWhTBgm8kk";
 
     // Counterparty 1.5 + Organization 1.1 + Product 1.1 (U-01-360): the normal host's set once Product
     // publishes its four screens.
-    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV12AndProductV11 =
-        "sha256:DvbCLujWzQh_0Sv8mLnlLqCvBF8NmsYJoGanEh7OJp8";
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13AndProductV11 =
+        "sha256:XjUBDT4SEG0T8Lu_bFYBZejG2-78CMjwLwOkXrWX8Po";
 
     // Counterparty 1.5 + Organization 1.0 + Product 1.0 + Sales 1.0 (#321): the normal host while Sales'
     // draft screens were staged. Superseded by the published set below (#328); no host serves it now.
@@ -70,8 +73,8 @@ internal static class ShellCapabilityRegistryAuthorities
     // independently re-checked (ORG DATA ONLY); the control keeps its parent's context; pinned by test.
     // DEC-SAL-003: Sales 1.2 adds the delivery-schedule control of the S-04 detail; this row was re-derived by
     // ShellCapabilityRegistry.ComputeCandidateRevision over main aaea20d0's providers with this change's Sales 1.2.
-    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV12ProductV11AndPublishedSalesV12 =
-        "sha256:JJ72mZvBrChSni2XmwIDfw5NU9aCO40j9FSCIo9Pi98";
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV11AndPublishedSalesV12 =
+        "sha256:pIIQjA60LXzbuMvkKrpYxwkdPyZJt4o_qXDRZFy0A9I";
 
     // ... + Finance 1.0 (#325, FIN-UI-1a) beside the STAGED Sales screens. Superseded when Sales was published
     // (#328, below); no host serves it now. Computed by the ComputeRevision reproduction and,
@@ -101,8 +104,8 @@ internal static class ShellCapabilityRegistryAuthorities
     // PUBLISHED. Finance 1.2 adds the R47 payment routes and controls after the 1.1 record/reversal declarations while preserving
     // their exact context, scope and parent relations. Derived from the integrated provider tuple and pinned by test.
     // DEC-SAL-003: re-derived the same way over main aaea20d0's providers with Sales 1.2 (SalesV11 -> SalesV12).
-    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV12ProductV11PublishedSalesV12AndPublishedFinanceV12 =
-        "sha256:ohYJ-Qy2tYxPLCQabLRhojDcurqTIryybJNFHVPbV5Q";
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV11PublishedSalesV12AndPublishedFinanceV12 =
+        "sha256:gVmTJALNV3QGjpkH98J3nBP3U_J0owwgU_pgUPOPG68";
 
     // FIN-UI-1c: ... + Manufacturing 1.0 staged: the normal host (C+O+P+S(published)+F(published)+M(staged)).
     // Computed by the ComputeRevision reproduction and, independently, by ORG (DATA ONLY); pinned by test.
@@ -121,16 +124,16 @@ internal static class ShellCapabilityRegistryAuthorities
     // providers with this change's Manufacturing 1.3 provider (the pinning tests' own computation); the
     // ManufacturingV12 values are superseded.
     // DEC-SAL-003: re-derived the same way over main aaea20d0's providers with Sales 1.2 (SalesV11 -> SalesV12).
-    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV12ProductV11PublishedSalesV12PublishedFinanceV12AndPublishedManufacturingV13 =
-        "sha256:VXmefjGEAsLL3IbSPs7m5R2Bw516Yy2nEbtKbTp7s2Q";
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV11PublishedSalesV12PublishedFinanceV12AndPublishedManufacturingV13 =
+        "sha256:f_IJJmb1IVXLBNyVq16YQHTE4thpiVyX5RRDR1i4kuI";
 
     // LOG-PUBLISH: ... + Logistics 1.1 PUBLISHED (the loading-instruction routes plus shipment/delivery actions,
     // master v3 §27.8): the normal host (C+O+P+S(published)+F(published)+M(published)+L(published)). Computed by
     // the ComputeRevision reproduction and, independently, by ORG (DATA ONLY); pinned by test.
     // Re-measured for Manufacturing 1.2's two plan-detail controls; pinned by the integrated provider test.
     // DEC-SAL-003: re-derived the same way over main aaea20d0's providers with Sales 1.2 (SalesV11 -> SalesV12).
-    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV12ProductV11PublishedSalesV12PublishedFinanceV12PublishedManufacturingV13AndPublishedLogisticsV11 =
-        "sha256:ojQiMUssypRmSqm15QnPHmO2j4kl18cLNmP6BezwrvA";
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV11PublishedSalesV12PublishedFinanceV12PublishedManufacturingV13AndPublishedLogisticsV11 =
+        "sha256:t__7scVJpUWObAhy7zNczM6ySggInOkIDg94xeM3Ilc";
 
     // PUR-HOST: ... + Purchasing 1.4, with the goods-receipt child control published beside the
     // request list/create/detail/submit and order list/create/detail/approve declarations. Every declaration remains
@@ -146,8 +149,8 @@ internal static class ShellCapabilityRegistryAuthorities
     // Logistics 1.1 + Purchasing 1.4. The Logistics, Purchasing, Accounting and Inventory rows were derived by the
     // same rule from the merge tree's real providers; the Product 1.1 rows before Logistics are #466's unchanged.
     // DEC-SAL-003: re-derived the same way over main aaea20d0's providers with Sales 1.2 (SalesV11 -> SalesV12).
-    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV12ProductV11PublishedSalesV12PublishedFinanceV12PublishedManufacturingV13PublishedLogisticsV11AndPublishedPurchasingV14 =
-        "sha256:cY8tlwa3KPdKsLq3guogCeDlDacLc6ex4be7RiZEUqs";
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV11PublishedSalesV12PublishedFinanceV12PublishedManufacturingV13PublishedLogisticsV11AndPublishedPurchasingV14 =
+        "sha256:WnxNLPim0jwXO-Prre-p4ADJ_IjCLZuCLuoJ5j-Nkys";
 
     // ACC-V0b: ... + Accounting 1.0 STAGED (the period list M-07 and its propose screen, the approve and
     // close controls of that list, the journal list M-04 and its detail, the posting queues M-01): the normal
@@ -192,8 +195,8 @@ internal static class ShellCapabilityRegistryAuthorities
     // staged reversal propose control and approval route. This row and the Inventory row after it were re-derived by
     // ShellCapabilityRegistry.ComputeCandidateRevision over main c1837a44's providers with this change's Accounting 1.3.
     // DEC-SAL-003: re-derived the same way over main aaea20d0's providers with Sales 1.2 (SalesV11 -> SalesV12).
-    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV12ProductV11PublishedSalesV12PublishedFinanceV12PublishedManufacturingV13PublishedLogisticsV11PublishedPurchasingV14AndPublishedAccountingV13 =
-        "sha256:RPuzkGQNAm0r1HwuBwG2Hvx0x5GHtlGM6_gjj8694kg";
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV11PublishedSalesV12PublishedFinanceV12PublishedManufacturingV13PublishedLogisticsV11PublishedPurchasingV14AndPublishedAccountingV13 =
+        "sha256:20ATLbyp2U_jqoCTBmtG-gLJEgu8h57SWywt7VTUTNE";
 
     // R14: Inventory 1.0 publishes one opening-stock workspace after the existing normal tuple.
     // The capability reuses the accepted company-wide permission; publication grants nothing.
@@ -207,9 +210,10 @@ internal static class ShellCapabilityRegistryAuthorities
     // positions route. Re-derived by ShellCapabilityRegistry.ComputeCandidateRevision over main b3c45bf7's providers
     // with this change's Inventory 1.3 provider.
     // DEC-SAL-003: re-derived the same way over main aaea20d0's providers with Sales 1.2 (SalesV11 -> SalesV12).
-    // AT-037: re-derived over main a4777c60's providers with Inventory 1.4 (two stock-count controls; V13 -> V14).
-    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV12ProductV11PublishedSalesV12PublishedFinanceV12PublishedManufacturingV13PublishedLogisticsV11PublishedPurchasingV14PublishedAccountingV13AndPublishedInventoryV14 =
-        "sha256:T8j19gnO1_60NfKP-kEL3cNPBBkUNf6eGZVRGgWTVhc";
+    // AT-037: re-derived over main 9ebb9916's providers (Organization 1.3) with Inventory 1.4 (two stock-count
+    // controls; InventoryV13 -> V14).
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV11PublishedSalesV12PublishedFinanceV12PublishedManufacturingV13PublishedLogisticsV11PublishedPurchasingV14PublishedAccountingV13AndPublishedInventoryV14 =
+        "sha256:d_UgY7cdAXfgS3Ul7zDqeZ1vgBIBpo0EOZEF8CGU4j4";
 
     internal const string CounterpartyV15PublishedListCreateAndDetail =
         "sha256:UBHnivzhe_dp5f7vU7dP5n7HG-P8XYBGhxvD_OjMSnw";

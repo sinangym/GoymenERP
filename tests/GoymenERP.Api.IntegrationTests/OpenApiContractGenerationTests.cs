@@ -11,6 +11,7 @@ using GoymenERP.Api.OpenApi;
 using GoymenERP.Api.Contracts;
 using GoymenERP.BuildingBlocks.OpenApi;
 using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.Modules.Organization.Application.Contracts;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Metadata;
 using Microsoft.AspNetCore.Routing;
@@ -134,6 +135,29 @@ public sealed partial class OpenApiContractGenerationTests
         new("put", "/api/v1/organization/locations/{id}/active-state", "SetOrganizationLocationActiveStateV1",
             AuthenticatedResponses("204:", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:"),
             "#/components/schemas/SetLocationActiveState",
+            ["path:id:true:type:string;format:uuid"]),
+        // ORG master edit: create and edit sites, locations and work centres (the active-state protocol: an
+        // Idempotency-Key, expectedVersion on every edit, code-less 404/409, 422 organization_code_in_use).
+        new("post", "/api/v1/organization/sites", "CreateOrganizationSiteV1",
+            AuthenticatedResponses("201:application/json", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:", "422:application/problem+json"),
+            "#/components/schemas/CreateSite"),
+        new("put", "/api/v1/organization/sites/{id}", "UpdateOrganizationSiteV1",
+            AuthenticatedResponses("204:", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:", "422:application/problem+json"),
+            "#/components/schemas/UpdateSite",
+            ["path:id:true:type:string;format:uuid"]),
+        new("post", "/api/v1/organization/locations", "CreateOrganizationLocationV1",
+            AuthenticatedResponses("201:application/json", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:", "422:application/problem+json"),
+            "#/components/schemas/CreateLocation"),
+        new("put", "/api/v1/organization/locations/{id}", "UpdateOrganizationLocationV1",
+            AuthenticatedResponses("204:", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:", "422:application/problem+json"),
+            "#/components/schemas/UpdateLocation",
+            ["path:id:true:type:string;format:uuid"]),
+        new("post", "/api/v1/organization/work-centers", "CreateOrganizationWorkCenterV1",
+            AuthenticatedResponses("201:application/json", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:", "422:application/problem+json"),
+            "#/components/schemas/CreateWorkCenter"),
+        new("put", "/api/v1/organization/work-centers/{id}", "UpdateOrganizationWorkCenterV1",
+            AuthenticatedResponses("204:", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:", "422:application/problem+json"),
+            "#/components/schemas/UpdateWorkCenter",
             ["path:id:true:type:string;format:uuid"]),
         new("get", "/api/v1/organization/work-centers", "GetOrganizationWorkCentersV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json")),
@@ -575,6 +599,12 @@ public sealed partial class OpenApiContractGenerationTests
             ["DecideInventoryStockCountV1"] = "ref:InventoryStockCountViewV1",
             ["GetInventoryLabelStockCountsV1"] = "ref:InventoryLabelStockCountsV1",
             ["SetOrganizationLocationActiveStateV1"] = "none",
+            ["CreateOrganizationSiteV1"] = "ref:OrganizationCreatedRecord",
+            ["UpdateOrganizationSiteV1"] = "none",
+            ["CreateOrganizationLocationV1"] = "ref:OrganizationCreatedRecord",
+            ["UpdateOrganizationLocationV1"] = "none",
+            ["CreateOrganizationWorkCenterV1"] = "ref:OrganizationCreatedRecord",
+            ["UpdateOrganizationWorkCenterV1"] = "none",
             ["GetOrganizationWorkCentersV1"] = "array:WorkCenterSummary",
             ["GetOrganizationWorkCenterV1"] = "ref:WorkCenterDetail",
             ["GetCurrentIdentityV1"] = "ref:IdentityProfile",
@@ -693,6 +723,12 @@ public sealed partial class OpenApiContractGenerationTests
         "GetOrganizationLocationsV1",
         "GetOrganizationLocationV1",
         "SetOrganizationLocationActiveStateV1",
+        "CreateOrganizationSiteV1",
+        "UpdateOrganizationSiteV1",
+        "CreateOrganizationLocationV1",
+        "UpdateOrganizationLocationV1",
+        "CreateOrganizationWorkCenterV1",
+        "UpdateOrganizationWorkCenterV1",
         "GetOrganizationWorkCentersV1",
         "GetOrganizationWorkCenterV1",
         "GetInventoryLabelV1",
@@ -825,6 +861,12 @@ public sealed partial class OpenApiContractGenerationTests
         "DecideInventoryStockCountV1",
         "UpdateCounterpartyContactInformationV1",
         "SetOrganizationLocationActiveStateV1",
+        "CreateOrganizationSiteV1",
+        "UpdateOrganizationSiteV1",
+        "CreateOrganizationLocationV1",
+        "UpdateOrganizationLocationV1",
+        "CreateOrganizationWorkCenterV1",
+        "UpdateOrganizationWorkCenterV1",
         "CreateCounterpartyV1",
         "CreateCounterpartyCompanyAccountV1",
         "SetCounterpartyCompanyAccountActiveStateV1",
@@ -886,6 +928,19 @@ public sealed partial class OpenApiContractGenerationTests
                     StatusCodes.Status404NotFound,
                     StatusCodes.Status409Conflict,
                 ],
+                // ORG master edit: every final answer is stored and replayed, as the active-state command's.
+                ["CreateOrganizationSiteV1"] =
+                [StatusCodes.Status201Created, StatusCodes.Status404NotFound, StatusCodes.Status422UnprocessableEntity],
+                ["UpdateOrganizationSiteV1"] =
+                [StatusCodes.Status204NoContent, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
+                ["CreateOrganizationLocationV1"] =
+                [StatusCodes.Status201Created, StatusCodes.Status404NotFound, StatusCodes.Status422UnprocessableEntity],
+                ["UpdateOrganizationLocationV1"] =
+                [StatusCodes.Status204NoContent, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
+                ["CreateOrganizationWorkCenterV1"] =
+                [StatusCodes.Status201Created, StatusCodes.Status404NotFound, StatusCodes.Status422UnprocessableEntity],
+                ["UpdateOrganizationWorkCenterV1"] =
+                [StatusCodes.Status204NoContent, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
                 ["UpdateCounterpartyContactInformationV1"] =
                 [StatusCodes.Status204NoContent, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
                 ["CreateCounterpartyV1"] = [StatusCodes.Status201Created],
@@ -1001,6 +1056,12 @@ public sealed partial class OpenApiContractGenerationTests
         "DecideInventoryStockCountV1",
         "GetOrganizationLocationsV1",
         "SetOrganizationLocationActiveStateV1",
+        "CreateOrganizationSiteV1",
+        "UpdateOrganizationSiteV1",
+        "CreateOrganizationLocationV1",
+        "UpdateOrganizationLocationV1",
+        "CreateOrganizationWorkCenterV1",
+        "UpdateOrganizationWorkCenterV1",
         "CreateCounterpartyV1",
         "CreateCounterpartyCompanyAccountV1",
         "SetCounterpartyCompanyAccountActiveStateV1",
@@ -1090,6 +1151,18 @@ public sealed partial class OpenApiContractGenerationTests
         "ReleaseInventoryPhysicalAllocationV1:404",
         "SetOrganizationLocationActiveStateV1:404",
         "SetOrganizationLocationActiveStateV1:409",
+        "CreateOrganizationSiteV1:404",
+        "CreateOrganizationSiteV1:409",
+        "UpdateOrganizationSiteV1:404",
+        "UpdateOrganizationSiteV1:409",
+        "CreateOrganizationLocationV1:404",
+        "CreateOrganizationLocationV1:409",
+        "UpdateOrganizationLocationV1:404",
+        "UpdateOrganizationLocationV1:409",
+        "CreateOrganizationWorkCenterV1:404",
+        "CreateOrganizationWorkCenterV1:409",
+        "UpdateOrganizationWorkCenterV1:404",
+        "UpdateOrganizationWorkCenterV1:409",
         "GetFinanceManualReceiptDraftContextV1:404",
         "GetSalesProductReferenceV1:404",
         "SaveManufacturingPlanV1:404",
@@ -1146,6 +1219,12 @@ public sealed partial class OpenApiContractGenerationTests
         "ApproveAccountingJournalReversalV1:400",
         "GetAuditEventsV1:400",
         "SetOrganizationLocationActiveStateV1:400",
+        "CreateOrganizationSiteV1:400",
+        "UpdateOrganizationSiteV1:400",
+        "CreateOrganizationLocationV1:400",
+        "UpdateOrganizationLocationV1:400",
+        "CreateOrganizationWorkCenterV1:400",
+        "UpdateOrganizationWorkCenterV1:400",
         "GetFinanceManualReceiptDraftContextV1:400",
         "SaveManufacturingPlanV1:400",
         "ApproveManufacturingPlanV1:400",
@@ -1242,6 +1321,13 @@ public sealed partial class OpenApiContractGenerationTests
             ["ReleaseInventoryPhysicalAllocationV1:400"] = [.. InventoryPhysicalAllocationHttpCodesV1.Status400Codes.Order(StringComparer.Ordinal)],
             ["ReleaseInventoryPhysicalAllocationV1:409"] = [.. InventoryPhysicalAllocationHttpCodesV1.ReleaseStatus409Codes.Order(StringComparer.Ordinal)],
             ["ReleaseInventoryPhysicalAllocationV1:422"] = [.. InventoryPhysicalAllocationHttpCodesV1.ReleaseStatus422Codes.Order(StringComparer.Ordinal)],
+            // ORG master edit: the one stable 422 code, the owner's constant.
+            ["CreateOrganizationSiteV1:422"] = [OrganizationProblemCodesV1.CodeInUse],
+            ["UpdateOrganizationSiteV1:422"] = [OrganizationProblemCodesV1.CodeInUse],
+            ["CreateOrganizationLocationV1:422"] = [OrganizationProblemCodesV1.CodeInUse],
+            ["UpdateOrganizationLocationV1:422"] = [OrganizationProblemCodesV1.CodeInUse],
+            ["CreateOrganizationWorkCenterV1:422"] = [OrganizationProblemCodesV1.CodeInUse],
+            ["UpdateOrganizationWorkCenterV1:422"] = [OrganizationProblemCodesV1.CodeInUse],
             // R19: the owner's closed sets (InventoryLabelTransformationHttpCodesV1), read here, never retyped.
             ["RecordInventoryLabelTransformationV1:400"] = [.. InventoryLabelTransformationHttpCodesV1.Status400Codes.Order(StringComparer.Ordinal)],
             ["RecordInventoryLabelTransformationV1:404"] = [.. InventoryLabelTransformationHttpCodesV1.Status404Codes.Order(StringComparer.Ordinal)],
@@ -2802,13 +2888,19 @@ public sealed partial class OpenApiContractGenerationTests
                     ("contractVersion", "type:string"),
                     ("generation", "type:string"),
                     ("capabilities", "type:array;items:type:string")),
+                // ORG master edit: the site row carries its integer row version, which an edit sends back.
                 ["SiteSummary"] = ObjectSchema(
-                    ["id", "code", "name", "type", "isActive"],
+                    ["id", "code", "name", "type", "isActive", "version"],
                     ("id", "type:string;format:uuid"),
                     ("code", "type:string"),
                     ("name", "type:string"),
                     ("type", "type:string"),
-                    ("isActive", "type:boolean")),
+                    ("isActive", "type:boolean"),
+                    ("version", "type:integer;format:int64")),
+                ["OrganizationCreatedRecord"] = ObjectSchema(
+                    ["id", "version"],
+                    ("id", "type:string;format:uuid"),
+                    ("version", "type:integer;format:int64")),
                 // ORG-03: canOpenLocationDetail is REQUIRED and boolean on purpose — the client must not
                 // have to treat "absent" as either answer, because the field is the server's statement
                 // about authorization and a default would be the client deciding one.
@@ -3294,6 +3386,45 @@ public sealed partial class OpenApiContractGenerationTests
                 ["SetLocationActiveState"] = ObjectSchema(
                     ["isActive", "expectedVersion", "reason"],
                     ("isActive", "type:boolean"),
+                    ("expectedVersion", "type:integer|string;format:int64"),
+                    ("reason", "type:string")),
+                // ORG master edit: code and name only; a site's type, a location's site and a work centre's location
+                // and kind are fixed at creation, so an edit does not carry them.
+                ["CreateSite"] = ObjectSchema(
+                    ["code", "name", "type", "reason"],
+                    ("code", "type:string"),
+                    ("name", "type:string"),
+                    ("type", "type:string"),
+                    ("reason", "type:string")),
+                ["UpdateSite"] = ObjectSchema(
+                    ["code", "name", "expectedVersion", "reason"],
+                    ("code", "type:string"),
+                    ("name", "type:string"),
+                    ("expectedVersion", "type:integer|string;format:int64"),
+                    ("reason", "type:string")),
+                ["CreateLocation"] = ObjectSchema(
+                    ["siteId", "code", "name", "reason"],
+                    ("siteId", "type:string;format:uuid"),
+                    ("code", "type:string"),
+                    ("name", "type:string"),
+                    ("reason", "type:string")),
+                ["UpdateLocation"] = ObjectSchema(
+                    ["code", "name", "expectedVersion", "reason"],
+                    ("code", "type:string"),
+                    ("name", "type:string"),
+                    ("expectedVersion", "type:integer|string;format:int64"),
+                    ("reason", "type:string")),
+                ["CreateWorkCenter"] = ObjectSchema(
+                    ["locationId", "code", "name", "kind", "reason"],
+                    ("locationId", "type:string;format:uuid"),
+                    ("code", "type:string"),
+                    ("name", "type:string"),
+                    ("kind", "type:string"),
+                    ("reason", "type:string")),
+                ["UpdateWorkCenter"] = ObjectSchema(
+                    ["code", "name", "expectedVersion", "reason"],
+                    ("code", "type:string"),
+                    ("name", "type:string"),
                     ("expectedVersion", "type:integer|string;format:int64"),
                     ("reason", "type:string")),
             };
@@ -3833,9 +3964,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(136, operations.Count);
+        Assert.Equal(142, operations.Count);
         Assert.Equal(
-            136,
+            142,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());
