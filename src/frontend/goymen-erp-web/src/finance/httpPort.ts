@@ -14,6 +14,10 @@
  * | `approveBankAccount` | `POST /finance/bank-accounts/{accountId}/approval` with `Idempotency-Key` (FIN-UI-1a) |
  * | `proposeBankAccountIbanChange` | `POST …/{accountId}/iban-change` with `Idempotency-Key` (D4) |
  * | `approveBankAccountIbanChange` | `POST …/{accountId}/iban-change/approval` with `Idempotency-Key` (D4) |
+ * | `listCustomerInstruments` / `customerInstrumentDetail` | `GET /finance/customer-instruments[/{id}]` (DEC-FIN-016) |
+ * | `receiveCustomerInstrument` | `POST /finance/customer-instruments` with `Idempotency-Key` (DEC-FIN-016) |
+ * | `changeCustomerInstrumentStatus` | `POST …/{id}/status-changes` with `Idempotency-Key` (DEC-FIN-016) |
+ * | `collectCustomerInstrument` | `POST …/{id}/collection` with `Idempotency-Key` (DEC-FIN-016, the money effect) |
  *
  * Reads: the Backend answers a found resource with 200 and platform problems otherwise, so the
  * adapter restates the status as the #258 `ReadResult` the screens decode — 403 Denied, 404
@@ -45,6 +49,8 @@ export const REVERSAL_PROPOSALS_PATH = '/finance/manual-receipts/reversal-propos
 export const BANK_ACCOUNT_MASTER_PATH = '/finance/bank-accounts/master'
 export const BANK_ACCOUNT_CURRENCY_CANDIDATES_PATH = '/finance/bank-accounts/currency-candidates'
 export const MANUAL_BANK_PAYMENTS_PATH = '/finance/manual-bank-payments'
+/** DEC-FIN-016: the customer cheque / note portfolio (receive, status changes, collection, list, detail). */
+export const CUSTOMER_INSTRUMENTS_PATH = '/finance/customer-instruments'
 
 const READ_OUTCOME_BY_STATUS: Readonly<Record<number, 'Denied' | 'NotFound' | 'Unavailable'>> = {
   403: 'Denied',
@@ -149,6 +155,31 @@ export function createHttpFinancePort(): FinanceReceiptPort {
     recordManualBankPayment: (scope, idempotencyKey, request) =>
       command(
         `${API_BASE}${MANUAL_BANK_PAYMENTS_PATH}/${encodeURIComponent(request.paymentId)}/record`,
+        scope,
+        idempotencyKey,
+        request,
+      ),
+
+    listCustomerInstruments: (scope, request, signal) => {
+      const params = new URLSearchParams()
+      if (request.cursor !== null) params.set('cursor', request.cursor)
+      const query = params.toString()
+      return read(`${API_BASE}${CUSTOMER_INSTRUMENTS_PATH}${query === '' ? '' : `?${query}`}`, scope, signal)
+    },
+    customerInstrumentDetail: (scope, instrumentId, signal) =>
+      read(`${API_BASE}${CUSTOMER_INSTRUMENTS_PATH}/${encodeURIComponent(instrumentId)}`, scope, signal),
+    receiveCustomerInstrument: (scope, idempotencyKey, request) =>
+      command(`${API_BASE}${CUSTOMER_INSTRUMENTS_PATH}`, scope, idempotencyKey, request),
+    changeCustomerInstrumentStatus: (scope, idempotencyKey, request) =>
+      command(
+        `${API_BASE}${CUSTOMER_INSTRUMENTS_PATH}/${encodeURIComponent(request.instrumentId)}/status-changes`,
+        scope,
+        idempotencyKey,
+        request,
+      ),
+    collectCustomerInstrument: (scope, idempotencyKey, request) =>
+      command(
+        `${API_BASE}${CUSTOMER_INSTRUMENTS_PATH}/${encodeURIComponent(request.instrumentId)}/collection`,
         scope,
         idempotencyKey,
         request,
