@@ -282,6 +282,19 @@ public static class ErpPermissions
     public const string SalesOrdersPriceRead = "sales.orders.price.read";
 
     /// <summary>
+    /// DEC-SAL-003 (KILITLI): moving the requested delivery dates of an order (POST …/{id}/delivery-schedule) without
+    /// re-approval, audited — the Sales owner's name (<c>SalesPermissionManifestV1.OrdersDeliveryScheduleWrite</c>, same
+    /// string). The literal is the owner's technical mapping, confirmed by the coordinator (technical names are not
+    /// Sinan's, #66/5808295853 and #66/5811361336). A SEPARATE name because the decision gives the update to the
+    /// planning/shipping role: <see cref="SalesDraftsCreate"/>, <see cref="SalesOrdersApprove"/> and the price names do
+    /// not confer it, and it confers none of them. Registration grants nothing: no seeded role and no real user receives
+    /// it; its only grant (user decision 2026-09-27) is the disposable s04 planner in the per-run browser database, and
+    /// the real-user mapping stays a human gate. Company-wide only, like the other Sales names. Not Critical: no approved
+    /// source adds grant-time dual control for it.
+    /// </summary>
+    public const string SalesOrdersDeliveryScheduleWrite = "sales.orders.delivery-schedule.write";
+
+    /// <summary>
     /// LOG-4a (Business #66 5737790175: the loading instruction on approved order lines, one stock effect): the
     /// Logistics owner's names (LogisticsPermissionManifestV1), the backend owners' technical mapping (Business
     /// #254 5654539215) recorded and confirmed by the coordinator (#66 5743488059). Registered, not granted: no
@@ -398,6 +411,7 @@ public static class ErpPermissions
             SalesOrdersApprove,
             SalesOrdersPriceWrite,
             SalesOrdersPriceRead,
+            SalesOrdersDeliveryScheduleWrite,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,
             ManufacturingOrdersCreate,
@@ -474,6 +488,7 @@ public static class ErpPermissions
             SalesOrdersApprove,
             SalesOrdersPriceWrite,
             SalesOrdersPriceRead,
+            SalesOrdersDeliveryScheduleWrite,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,
             ManufacturingOrdersCreate,

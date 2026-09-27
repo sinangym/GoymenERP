@@ -420,11 +420,14 @@ public sealed class SalesDraftServiceTests
     }
 
     [Fact]
-    public async Task The_production_binding_is_unregistered_in_the_catalogue_until_the_central_writer_registers_it_so_it_fails_closed_503()
+    public async Task An_unregistered_delivery_schedule_name_fails_closed_503_and_the_production_name_is_registered()
     {
+        // Central registration (ErpPermissions.SalesOrdersDeliveryScheduleWrite) made the production binding KNOWN; the
+        // fail-closed path for a name the catalogue does not know is kept with a synthetic name (the price-read precedent).
+        Assert.True(ErpPermissions.IsKnown(SalesPermissionManifestV1.OrdersDeliveryScheduleWrite));
         var world = new World();
         var created = (await world.Service().CreateDraftAsync(Request(lines: 2), Metadata("k-1"))).Detail;
-        world.Bindings = world.Bindings with { DeliverySchedulePermission = SalesPermissionManifestV1.OrdersDeliveryScheduleWrite };
+        world.Bindings = world.Bindings with { DeliverySchedulePermission = "sales.synthetic.unregistered" };
 
         var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().RescheduleDeliveryAsync(created.Draft.Id,
             Schedule("3", Day.AddDays(30), SameDates(created.Lines[0]), SameDates(created.Lines[1])), Metadata("k-s1")));

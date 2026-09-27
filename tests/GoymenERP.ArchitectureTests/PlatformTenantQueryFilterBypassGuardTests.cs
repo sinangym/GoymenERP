@@ -185,8 +185,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 "cc672732f572babb9161403ca6eea3181b7996bc8346df1b1813edcaadd1d161",
 
             // sales
+            // DEC-SAL-003: +3 SalesDeliveryScheduleSqlServerRelationalAcceptanceTests facts (16fa5110… -> 00189b7b…).
             ["tools/relational_inventory/sales.txt"] =
-                "16fa5110756788cb8beae6556eff16e7015c6fbc42e4dbabcb7a7a9bd1bb94ff",
+                "00189b7b1a6cdcb01a399298f1827c981e254e19bff37eb58e585668629c35a7",
         };
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
@@ -216,9 +217,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 "198fddce9a2fd4552850c2d1545b96b0030411d5d256a70ee932cf5173be2ff2",
             // SALES-P2 (#315): company-scoped like Organization; every tenant row and AuditEvent carries the
             // CompanyId filter. A standard entry, not an exception.
+            // Re-fingerprinted for DEC-SAL-003: the two delivery-schedule tables (DraftDeliverySchedules,
+            // DraftDeliveryScheduleDates), each with the same CompanyId query filter and a company-leading key.
             ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/"
              + "Persistence/SalesDbContext.cs"] =
-                "2ce870a4b7ed0ee3f42d502e634b0dbd65e0965c7e5eef6c12bcb05a24290101",
+                "7781a5f6a90d0218ca1d4be63a8d49aef41f74ebe8aacc10980042915be85f0d",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
@@ -759,10 +762,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // (SqlException 2601/2627) after SaveChanges, as the other module stores do. No
                 // connection, command or raw SQL. Re-fingerprinted for SALES-A1: the approval commands
                 // (one save each, attempts keyed per command); SqlClient count unchanged.
+                // Re-fingerprinted for DEC-SAL-003: the delivery-schedule write and history read, company-resolved
+                // and saved once through the filtered context; no connection, command or raw SQL; SqlClient count unchanged.
                 ["src/backend/Modules/Sales/"
                  + "GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.cs"] =
                     new(
-                        "d6206c9718b9240333dda81e088c07fac11f079fb2352d06ccb26a623597039d",
+                        "31b964d88b94b2aeeb81e76916b6c67f03b2aaf89ecdb7d5048197251c494ec9",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -920,6 +925,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // identity is erased; environments containing one require a forward fix.
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20260922120000_LinkMutationRefusalsToDrafts.cs"] =
                     new("b34e318fa4e27a6f30b23a19d7370fd5783c7d7ece01204f36337b11cebbcc91",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // DEC-SAL-003: the Down's only raw SQL refuses rollback (51054, used by no other module) while any
+                // delivery schedule is stored — after a change the schedule is the only home of the order's current
+                // dates. The THROW precedes both DropTables; an empty database rolls back freely. Forward fix.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20260926090000_AddDeliverySchedules.cs"] =
+                    new("dc0019ef55d4283bdba596e50ce1ceaf7504efe11172457bb45db9f11109ffa9",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // ACC-V0a: the Down's only raw SQL is Accounting's module refusal (51048, coordinator-assigned) while any

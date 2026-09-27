@@ -81,6 +81,7 @@ class FixtureListTests(unittest.TestCase):
                 "productId", "productVersion", "productUnitId", "productUnitProfileId",
                 "productUnitProfileVersion", "productCode", "productName",
                 "allocationLineId", "allocationLabelId", "allocationLabelVersion",
+                "plannerActor", "scheduleDraftId",
             }),
             browser.SUITE_FIXTURE_OUTPUTS["s04"])
 

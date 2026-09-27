@@ -27,9 +27,9 @@ namespace GoymenERP.Api.IntegrationTests;
 /// Logistics L-02 / allocation source) answers the new line date; the dates as created survive as schedule 0; the same key
 /// replays without a second save; another company sees nothing; the migration refuses to roll back while a schedule exists.
 /// <para>
-/// The service runs under a REGISTERED stand-in for its own name: <c>sales.orders.delivery-schedule.write</c> is not in the
-/// central catalogue until the central writer registers it (until then the real name is a 503 setup gap, pinned in
-/// SalesDraftServiceTests). The drafts are built from ISOLATED SYNTHETIC owner snapshots. SENTETIK / NOT_ENV.
+/// The service runs under its own REAL name, <c>sales.orders.delivery-schedule.write</c>, registered centrally
+/// (ErpPermissions.SalesOrdersDeliveryScheduleWrite); an unregistered name stays a 503 setup gap, pinned in
+/// SalesDraftServiceTests. The drafts are built from ISOLATED SYNTHETIC owner snapshots. SENTETIK / NOT_ENV.
 /// </para>
 /// </summary>
 public sealed class SalesDeliveryScheduleSqlServerRelationalAcceptanceTests
@@ -45,8 +45,8 @@ public sealed class SalesDeliveryScheduleSqlServerRelationalAcceptanceTests
     private static readonly Guid KgProfile = Guid.Parse("8b2e3d4c-5b6a-4798-8b1c-2d3e4f5a6b04");
     private static readonly Guid Product = Guid.Parse("8b2e3d4c-5b6a-4798-8b1c-2d3e4f5a6b05");
 
-    /// <summary>A registered central name standing in for <c>sales.orders.delivery-schedule.write</c> until it is registered.</summary>
-    private const string ScheduleStandIn = ErpPermissions.CounterpartyPartiesUpdateBasic;
+    /// <summary>The Sales owner's own schedule name, now registered in the central catalogue.</summary>
+    private const string SchedulePermission = ErpPermissions.SalesOrdersDeliveryScheduleWrite;
 
     private static readonly SalesDraftStateAudit Submitted = new("sales.order-draft.submitted.v1", "Submit", "SENTETIK onaya gönderildi");
     private static readonly SalesDraftStateAudit Approved = new("sales.order-draft.approved.v1", "Approve", "SENTETIK onaylandı");
@@ -69,14 +69,14 @@ public sealed class SalesDeliveryScheduleSqlServerRelationalAcceptanceTests
             var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
                 run.Service(a, "SENTETIK-approver", approver).RescheduleDeliveryAsync(draft.Id, request, run.Metadata("k-denied")));
             Assert.Equal((403, "forbidden"), (refused.Status, refused.Code));
-            Assert.Equal([(ScheduleStandIn, CompanyA)], approver.Measured);
+            Assert.Equal([(SchedulePermission, CompanyA)], approver.Measured);
         }
 
         // (b) The ONE save, measured and refused: the whole change set reached it together, and SQL Server keeps nothing of it.
         var faulting = new SaveRecorder { Fault = true };
         await using (var a = run.Store(CompanyA, faulting))
         {
-            await Assert.ThrowsAsync<SaveFault>(() => run.Service(a, "SENTETIK-planner", new RecordingAuthority(ScheduleStandIn))
+            await Assert.ThrowsAsync<SaveFault>(() => run.Service(a, "SENTETIK-planner", new RecordingAuthority(SchedulePermission))
                 .RescheduleDeliveryAsync(draft.Id, request, run.Metadata("k-schedule")));
         }
 
@@ -90,7 +90,7 @@ public sealed class SalesDeliveryScheduleSqlServerRelationalAcceptanceTests
         var recorder = new SaveRecorder();
         await using (var a = run.Store(CompanyA, recorder))
         {
-            var service = run.Service(a, "SENTETIK-planner", new RecordingAuthority(ScheduleStandIn, SalesPermissionManifestV1.DraftsRead));
+            var service = run.Service(a, "SENTETIK-planner", new RecordingAuthority(SchedulePermission, SalesPermissionManifestV1.DraftsRead));
             var moved = await service.RescheduleDeliveryAsync(draft.Id, request, run.Metadata("k-schedule"));
             Assert.False(moved.IsReplay);
             AssertScheduleChangeSet(Assert.Single(recorder.Saves), dateRows: 3);
@@ -144,13 +144,13 @@ public sealed class SalesDeliveryScheduleSqlServerRelationalAcceptanceTests
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EntityType] = N'Sales.OrderDraft' AND [EventType] = N'sales.order-draft.delivery-rescheduled.v1' "
             + "AND [EntityId] = @id AND [EntityVersionBefore] = 4 AND [EntityVersionAfter] = 5 AND [PermissionCode] = @perm",
-            ("@id", draft.Id.ToString("D")), ("@perm", ScheduleStandIn)));
+            ("@id", draft.Id.ToString("D")), ("@perm", SchedulePermission)));
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [CorrelationId] = N'SENTETIK-second'"));
 
         // (d) A stale version is the key's terminal 409, recorded bound to the draft; nothing else moves.
         await using (var a = run.Store(CompanyA))
         {
-            var stale = await Assert.ThrowsAsync<SalesDraftServiceException>(() => run.Service(a, "SENTETIK-planner", new RecordingAuthority(ScheduleStandIn))
+            var stale = await Assert.ThrowsAsync<SalesDraftServiceException>(() => run.Service(a, "SENTETIK-planner", new RecordingAuthority(SchedulePermission))
                 .RescheduleDeliveryAsync(draft.Id, request with { RequestedDeliveryDate = Day.AddDays(45) }, run.Metadata("k-stale")));
             Assert.Equal((409, SalesDraftProblemCodesV1.VersionConflict), (stale.Status, stale.Code));
         }
@@ -171,13 +171,13 @@ public sealed class SalesDeliveryScheduleSqlServerRelationalAcceptanceTests
                 [.. line.RequestedDeliverySlices.Select(slice => new SalesDraftSliceScheduleV1(slice.SliceId, slice.RequestedDeliveryDate.AddDays(7)))])]);
         await using (var a = run.Store(CompanyA))
         {
-            await run.Service(a, "SENTETIK-planner", new RecordingAuthority(ScheduleStandIn)).RescheduleDeliveryAsync(draft.Id, request, run.Metadata("k-a"));
+            await run.Service(a, "SENTETIK-planner", new RecordingAuthority(SchedulePermission)).RescheduleDeliveryAsync(draft.Id, request, run.Metadata("k-a"));
         }
 
         await using (var b = run.Store(CompanyB))
         {
             Assert.Null(await b.Store.FindDraftAsync(draft.Id));
-            var service = run.Service(b, "SENTETIK-planner", new RecordingAuthority(ScheduleStandIn, SalesPermissionManifestV1.DraftsRead), company: CompanyB);
+            var service = run.Service(b, "SENTETIK-planner", new RecordingAuthority(SchedulePermission, SalesPermissionManifestV1.DraftsRead), company: CompanyB);
             var missing = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
                 service.RescheduleDeliveryAsync(draft.Id, request with { ExpectedVersion = "5" }, run.Metadata("k-b")));
             Assert.Equal(404, missing.Status);
@@ -195,7 +195,7 @@ public sealed class SalesDeliveryScheduleSqlServerRelationalAcceptanceTests
         var line = draft.Lines[0];
         await using (var a = run.Store(CompanyA))
         {
-            await run.Service(a, "SENTETIK-planner", new RecordingAuthority(ScheduleStandIn)).RescheduleDeliveryAsync(draft.Id,
+            await run.Service(a, "SENTETIK-planner", new RecordingAuthority(SchedulePermission)).RescheduleDeliveryAsync(draft.Id,
                 new SalesDraftDeliveryScheduleRequest("4", Day.AddDays(30), [new SalesDraftLineScheduleV1(line.Id, line.RequestedDeliveryDate,
                     [.. line.RequestedDeliverySlices.Select(slice => new SalesDraftSliceScheduleV1(slice.SliceId, slice.RequestedDeliveryDate))])]),
                 run.Metadata("k-a"));
@@ -339,7 +339,7 @@ public sealed class SalesDeliveryScheduleSqlServerRelationalAcceptanceTests
         public SalesDraftWriteEnvelope Envelope(string key, string? correlation = null, string? actor = null) =>
             new(actor ?? Actor, "SENTETIK-sales-permission", ["SENTETIK-SALES"], correlation ?? Correlation, null, key, "Web", "127.0.0.1", "SENTETIK-agent");
 
-        /// <summary>The REAL draft service over this scope's real store, the schedule name bound to its registered stand-in.</summary>
+        /// <summary>The REAL draft service over this scope's real store, the schedule name bound to its registered real name.</summary>
         public SalesDraftService Service(StoreScope scope, string actor, IErpAuthorityRevalidationService authority, Guid? company = null)
         {
             var companyId = company ?? CompanyA;
@@ -348,7 +348,7 @@ public sealed class SalesDeliveryScheduleSqlServerRelationalAcceptanceTests
             var owners = new NoOwners();
             return new SalesDraftService(companyContext, new FixedUser(actor, companyId), authority, new NoActiveRoles(),
                 new FixedCorrelation(Correlation), owners, owners, null, scope.Store,
-                new SalesDraftServiceBindings() with { DeliverySchedulePermission = ScheduleStandIn }, TimeProvider.System);
+                new SalesDraftServiceBindings() with { DeliverySchedulePermission = SchedulePermission }, TimeProvider.System);
         }
 
         public SalesCommandMetadata Metadata(string key, string? correlation = null) => new(key, correlation ?? Correlation, null, T0);
