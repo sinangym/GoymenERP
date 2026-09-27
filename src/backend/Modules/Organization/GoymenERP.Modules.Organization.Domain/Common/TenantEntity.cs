@@ -37,6 +37,19 @@ public abstract class TenantEntity
         IsActive = isActive;
     }
 
+    /// <summary>
+    /// The master edit (code and name only). The record's identity, company and structural facts — a site's type, a
+    /// location's site and external flag, a work centre's location and planning kind — are fixed at creation and are
+    /// not reachable from here. The version moves on save only when a value actually changed.
+    /// </summary>
+    public void Rename(string code, string name)
+    {
+        var normalizedCode = RequireText(code, nameof(code), 64);
+        var normalizedName = RequireText(name, nameof(name), 200);
+        Code = normalizedCode;
+        Name = normalizedName;
+    }
+
     internal void Touch(DateTimeOffset utcNow)
     {
         UpdatedAtUtc = utcNow;

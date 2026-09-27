@@ -29,15 +29,15 @@ internal sealed class OrganizationDataSeeder(
             .ToDictionary(x => x.Code, x => x.Id, StringComparer.OrdinalIgnoreCase);
         var existingSites = await dbContext.Sites
             .IgnoreQueryFilters()
-            .Select(x => new { x.CompanyId, x.Code })
+            .Select(x => new { x.Id, x.CompanyId, x.Code })
             .ToListAsync(cancellationToken);
         var existingLocations = await dbContext.Locations
             .IgnoreQueryFilters()
-            .Select(x => new { x.CompanyId, x.Code })
+            .Select(x => new { x.Id, x.CompanyId, x.Code })
             .ToListAsync(cancellationToken);
         var existingWorkCenters = await dbContext.WorkCenters
             .IgnoreQueryFilters()
-            .Select(x => new { x.CompanyId, x.Code })
+            .Select(x => new { x.Id, x.CompanyId, x.Code })
             .ToListAsync(cancellationToken);
 
         var siteKeys = existingSites
@@ -49,6 +49,13 @@ internal sealed class OrganizationDataSeeder(
         var workCenterKeys = existingWorkCenters
             .Select(x => (x.CompanyId, x.Code))
             .ToHashSet();
+
+        // A seeded record keeps its deterministic id when a user renames it (the master edit changes code and name),
+        // so the seed also recognises its own records by id: re-adding a renamed record under its old code would
+        // collide with the id it already holds and stop the host from starting.
+        var siteIds = existingSites.Select(x => x.Id).ToHashSet();
+        var locationIds = existingLocations.Select(x => x.Id).ToHashSet();
+        var workCenterIds = existingWorkCenters.Select(x => x.Id).ToHashSet();
 
         foreach (var companySeed in seed.Companies)
         {
@@ -93,7 +100,7 @@ internal sealed class OrganizationDataSeeder(
             foreach (var siteSeed in seed.SiteTemplates)
             {
                 var siteId = DeterministicGuid.Create(companySeed.Id, "site", siteSeed.Code);
-                if (siteKeys.Add((companySeed.Id, siteSeed.Code)))
+                if (!siteIds.Contains(siteId) && siteKeys.Add((companySeed.Id, siteSeed.Code)))
                 {
                     dbContext.Sites.Add(new Site(
                         siteId,
@@ -108,13 +115,15 @@ internal sealed class OrganizationDataSeeder(
 
                 foreach (var locationSeed in siteSeed.Locations)
                 {
-                    if (!locationKeys.Add((companySeed.Id, locationSeed.Code)))
+                    var locationId = DeterministicGuid.Create(companySeed.Id, "location", locationSeed.Code);
+                    if (locationIds.Contains(locationId)
+                        || !locationKeys.Add((companySeed.Id, locationSeed.Code)))
                     {
                         continue;
                     }
 
                     dbContext.Locations.Add(new Location(
-                        DeterministicGuid.Create(companySeed.Id, "location", locationSeed.Code),
+                        locationId,
                         companySeed.Id,
                         siteId,
                         locationSeed.Code,
@@ -125,13 +134,15 @@ internal sealed class OrganizationDataSeeder(
 
             foreach (var workCenterSeed in seed.WorkCenters)
             {
-                if (!workCenterKeys.Add((companySeed.Id, workCenterSeed.Code)))
+                var workCenterId = DeterministicGuid.Create(companySeed.Id, "work-center", workCenterSeed.Code);
+                if (workCenterIds.Contains(workCenterId)
+                    || !workCenterKeys.Add((companySeed.Id, workCenterSeed.Code)))
                 {
                     continue;
                 }
 
                 dbContext.WorkCenters.Add(new WorkCenter(
-                    DeterministicGuid.Create(companySeed.Id, "work-center", workCenterSeed.Code),
+                    workCenterId,
                     companySeed.Id,
                     DeterministicGuid.Create(
                         companySeed.Id,

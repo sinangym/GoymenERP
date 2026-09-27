@@ -71,7 +71,8 @@ internal sealed class OrganizationService(
                 x.Code,
                 x.Name,
                 x.Type.ToString(),
-                x.IsActive))
+                x.IsActive,
+                x.Version))
             .ToListAsync(cancellationToken);
     }
 
@@ -486,44 +487,14 @@ internal sealed class OrganizationService(
     private IQueryable<GoymenERP.Modules.Organization.Domain.WorkCenters.WorkCenter>
         ApplyWorkCenterScope(
             IQueryable<GoymenERP.Modules.Organization.Domain.WorkCenters.WorkCenter> query,
-            PermissionScope scope)
-    {
-        if (scope.IsCompanyWide)
-        {
-            return query;
-        }
-
-        var siteIds = scope.SiteIds.ToArray();
-        var locationIds = scope.LocationIds.ToArray();
-        var workCenterIds = scope.WorkCenterIds.ToArray();
-        return query.Where(workCenter =>
-            workCenterIds.Contains(workCenter.Id)
-            || locationIds.Contains(workCenter.LocationId)
-            || dbContext.Locations.Any(location =>
-                location.Id == workCenter.LocationId
-                && siteIds.Contains(location.SiteId)));
-    }
+            PermissionScope scope) =>
+        OrganizationScopes.ApplyWorkCenterScope(dbContext, query, scope);
 
     private IQueryable<GoymenERP.Modules.Organization.Domain.Locations.Location>
         ApplyLocationScope(
             IQueryable<GoymenERP.Modules.Organization.Domain.Locations.Location> query,
-            PermissionScope scope)
-    {
-        if (scope.IsCompanyWide)
-        {
-            return query;
-        }
-
-        var siteIds = scope.SiteIds.ToArray();
-        var locationIds = scope.LocationIds.ToArray();
-        var workCenterIds = scope.WorkCenterIds.ToArray();
-        return query.Where(location =>
-            locationIds.Contains(location.Id)
-            || siteIds.Contains(location.SiteId)
-            || dbContext.WorkCenters.Any(workCenter =>
-                workCenter.LocationId == location.Id
-                && workCenterIds.Contains(workCenter.Id)));
-    }
+            PermissionScope scope) =>
+        OrganizationScopes.ApplyLocationScope(dbContext, query, scope);
 
     private void ValidateCommandMetadata(CommandMetadata metadata)
     {

@@ -5,6 +5,7 @@ using GoymenERP.Api.Shell;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Shell;
 using GoymenERP.Modules.Counterparty.Infrastructure.Shell;
+using GoymenERP.Modules.Organization.Application.Contracts;
 using GoymenERP.Modules.Organization.Infrastructure.Shell;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
@@ -29,10 +30,11 @@ public sealed class OrganizationShellCapabilityAcceptanceTests(GoymenErpApiFacto
         var providers = container.GetServices<IShellCapabilityProvider>().ToArray();
         var registry = new ShellCapabilityRegistry(providers, new ShellCapabilityAuthorityCatalog([authority]));
         Assert.Equal(authority, registry.Revision);
-        // Counterparty's four plus Organization's SIX (ORG-03 joined the four ORG-01/02 declarations,
-        // ORG-04's work-centre card the fifth). Measured, not incremented: the count is asserted here so
-        // that a declaration appearing or vanishing has to be stated rather than absorbed.
-        Assert.Equal(10, registry.Registrations.Count);
+        // Counterparty's four plus Organization's ELEVEN (ORG-03 joined the four ORG-01/02 declarations,
+        // ORG-04's work-centre card the fifth, the master edit's five controls the rest). Measured, not
+        // incremented: the count is asserted here so that a declaration appearing or vanishing has to be
+        // stated rather than absorbed.
+        Assert.Equal(15, registry.Registrations.Count);
         Assert.Throws<InvalidOperationException>(() => new ShellCapabilityRegistry(
             providers, new ShellCapabilityAuthorityCatalog(
                 [ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetail])));
@@ -70,6 +72,9 @@ public sealed class OrganizationShellCapabilityAcceptanceTests(GoymenErpApiFacto
         ErpPermissions.OrganizationSitesRead,
         ErpPermissions.OrganizationLocationsStatusUpdate,
         ErpPermissions.OrganizationWorkCentersRead,
+        OrganizationPermissionManifestV1.SitesWrite,
+        OrganizationPermissionManifestV1.LocationsWrite,
+        OrganizationPermissionManifestV1.WorkCentersWrite,
     ];
 
     /// <summary>
@@ -171,6 +176,17 @@ public sealed class OrganizationShellCapabilityAcceptanceTests(GoymenErpApiFacto
                 expected.Add(OrganizationShellCapabilityProvider.SitesReadCapabilityId);
             if ((permissions & Bit(ErpPermissions.OrganizationLocationsStatusUpdate)) != 0)
                 expected.Add(OrganizationShellCapabilityProvider.StatusCapabilityId);
+            // The master edit controls on ORG-01/02: each adds its record kind's own write, and the two
+            // ORG-01 creates also need the site list they choose from.
+            if ((permissions & Bits(ErpPermissions.OrganizationSitesRead, OrganizationPermissionManifestV1.SitesWrite))
+                == Bits(ErpPermissions.OrganizationSitesRead, OrganizationPermissionManifestV1.SitesWrite))
+                expected.Add(OrganizationShellCapabilityProvider.SitesManageCapabilityId);
+            if ((permissions & Bit(OrganizationPermissionManifestV1.LocationsWrite)) != 0)
+            {
+                expected.Add(OrganizationShellCapabilityProvider.LocationEditCapabilityId);
+                if ((permissions & Bit(ErpPermissions.OrganizationSitesRead)) != 0)
+                    expected.Add(OrganizationShellCapabilityProvider.LocationCreateCapabilityId);
+            }
         }
 
         // OUTSIDE the locations-read branch, and that placement is the assertion: ORG-03 stands on
@@ -182,6 +198,13 @@ public sealed class OrganizationShellCapabilityAcceptanceTests(GoymenErpApiFacto
         {
             expected.Add(OrganizationShellCapabilityProvider.WorkCenterListCapabilityId);
             expected.Add(OrganizationShellCapabilityProvider.WorkCenterDetailCapabilityId);
+            if ((permissions & Bit(OrganizationPermissionManifestV1.WorkCentersWrite)) != 0)
+            {
+                expected.Add(OrganizationShellCapabilityProvider.WorkCenterEditCapabilityId);
+                // The create control lists locations to choose from, so it also needs the location read.
+                if ((permissions & Bit(ErpPermissions.OrganizationLocationsRead)) != 0)
+                    expected.Add(OrganizationShellCapabilityProvider.WorkCenterCreateCapabilityId);
+            }
         }
 
         Assert.Equal(expected.Order(StringComparer.Ordinal), snapshot.Capabilities);

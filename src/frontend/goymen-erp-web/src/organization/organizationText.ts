@@ -271,3 +271,118 @@ export const REPLAYED_DETAIL =
   'Kaydın şu anki durumu aşağıdaki güncel görünümdedir.'
 
 export const REFRESHING_DETAIL = 'Güncel kayıt yükleniyor…'
+
+/** The site types a new site may take, in the order the form offers them (the wire tokens `SiteType` publishes). */
+export const SITE_TYPE_OPTIONS: readonly string[] = [
+  SITE_TYPE.factory,
+  SITE_TYPE.warehouse,
+  SITE_TYPE.externalWarehouse,
+]
+
+/** The work-centre kinds a new work centre may take (the wire tokens `WorkCenterKind` publishes). */
+export const WORK_CENTER_KIND_OPTIONS: readonly string[] = [
+  WORK_CENTER_KIND.paint,
+  WORK_CENTER_KIND.tubeProfile,
+  WORK_CENTER_KIND.slitting,
+  WORK_CENTER_KIND.coldRolling,
+  WORK_CENTER_KIND.cutToLength,
+]
+
+/**
+ * The master edit (create and edit sites, locations and work centres). Every message is chosen from a status code
+ * or a decoded object; none claims a resulting state — after a save the card is re-read and says what the record is.
+ */
+export const MASTER_TEXT = {
+  code: 'Kod',
+  name: 'Ad',
+  reason: 'Gerekçe',
+  siteType: 'Tesis türü',
+  site: 'Tesis',
+  location: 'Lokasyon',
+  kind: 'İş merkezi türü',
+  choose: 'Seçin',
+  save: 'Kaydet',
+  cancel: 'Vazgeç',
+  resend: 'Aynı işlem anahtarıyla tekrar gönder',
+  reload: 'Güncel kaydı yükle',
+  codeMax: 64,
+  nameMax: 200,
+  codeRequired: 'Kod zorunludur (en fazla 64 karakter).',
+  nameRequired: 'Ad zorunludur (en fazla 200 karakter).',
+  parentRequired: 'Bağlanacağı kayıt seçilmelidir.',
+  typeRequired: 'Tür seçilmelidir.',
+  help: 'Kaydedilen değişiklik gerekçesiyle birlikte audit kaydına yazılır.',
+  frozenHelp:
+    'Sonucu bilinmeyen bir kayıt işlemi var. Çözülene kadar alanlar değiştirilemez; aynı işlem anahtarıyla ' +
+    'tekrar gönderebilir veya vazgeçip güncel kaydı kontrol edebilirsiniz.',
+  fixedFacts:
+    'Tür ve bağlı olduğu kayıt oluşturulurken belirlenir; burada yalnız kod ve ad değiştirilir.',
+  externalFromSite:
+    'Lokasyonun harici olup olmadığı seçilen tesisin türünden gelir: harici depo tesisindeki lokasyon haricidir.',
+  kindFixed: 'İş merkezi türü üretim planlamasının referansıdır; oluşturulduktan sonra değiştirilemez.',
+  savedTitle: 'Değişiklik kaydedildi',
+  savedDetail: 'Sunucu isteği kabul etti. Kart güncel kayıttan yenilendi.',
+  createdTitle: 'Kayıt oluşturuldu',
+  createdDetail: 'Sunucu kaydı oluşturdu. Liste güncel kayıttan yenilendi.',
+  replayedTitle: 'Aynı işlem zaten kaydedilmişti',
+  replayedDetail:
+    'Sunucu bu işlemi daha önce aldığı için tekrar uygulamadı ve önceki sonucunu döndürdü. Kaydın şu anki ' +
+    'durumu güncel görünümdedir.',
+  codeInUseTitle: 'Kod kullanımda',
+  codeInUseDetail: 'Bu kod şirketteki başka bir kayıtta kullanılıyor. Farklı bir kod girin; kayıt yapılmadı.',
+  newSite: 'Yeni tesis',
+  editSite: 'Tesisi düzenle',
+  newLocation: 'Yeni lokasyon',
+  editLocation: 'Lokasyonu düzenle',
+  newWorkCenter: 'Yeni iş merkezi',
+  editWorkCenter: 'İş merkezini düzenle',
+  locationsLoading: 'Lokasyonlar yükleniyor…',
+  locationsUnavailable: 'Lokasyon listesi okunamadı; iş merkezi için lokasyon seçilemiyor.',
+  locationsTooMany: 'Lokasyon listesi bu formun sınırını aşıyor; seçim listesi eksik olacağı için sunulmuyor.',
+  sitesUnavailable: 'Tesis listesi okunamadı; lokasyon için tesis seçilemiyor.',
+} as const
+
+/** The notice after an accepted edit (204): accepted, or an earlier identical command replayed — never a state. */
+export function savedNotice(replayed: boolean): { title: string; detail: string; outcome: string } {
+  return replayed
+    ? { title: MASTER_TEXT.replayedTitle, detail: MASTER_TEXT.replayedDetail, outcome: 'replayed' }
+    : { title: MASTER_TEXT.savedTitle, detail: MASTER_TEXT.savedDetail, outcome: 'saved' }
+}
+
+/** The notice after a create (201) on a list screen. The list, re-read, shows what was stored. */
+export function createdNotice(replayed: boolean): { title: string; detail: string; outcome: string } {
+  return replayed
+    ? { title: MASTER_TEXT.replayedTitle, detail: MASTER_TEXT.replayedDetail, outcome: 'replayed' }
+    : { title: MASTER_TEXT.createdTitle, detail: MASTER_TEXT.createdDetail, outcome: 'created' }
+}
+
+/** A definite refusal of a master-data command. Each kind has its own text; none says the record is changed. */
+export function masterFailureText(
+  failure: CommandFailure | { readonly kind: 'code-in-use' },
+): { title: string; detail: string } {
+  switch (failure.kind) {
+    case 'code-in-use':
+      return { title: MASTER_TEXT.codeInUseTitle, detail: MASTER_TEXT.codeInUseDetail }
+    case 'forbidden':
+      return { title: 'Yetkiniz yok', detail: 'Bu kaydı oluşturma veya düzenleme yetkiniz bulunmuyor. Kayıt yapılmadı.' }
+    case 'not-found':
+      return {
+        title: 'Bulunamadı',
+        detail: 'Kayıt veya bağlanacağı kayıt bulunamadı ya da bu bağlamda kullanılamıyor. Kayıt yapılmadı.',
+      }
+    case 'version-conflict':
+      return {
+        title: 'Kayıt bu sırada değişti',
+        detail:
+          'Kayıt siz formu açtıktan sonra başka bir işlemle güncellendi; değişikliğiniz uygulanmadı. Güncel ' +
+          'kaydı yükleyip tekrar düzenleyin.',
+      }
+    case 'validation':
+      return {
+        title: 'İşlem kabul edilmedi',
+        detail: 'Sunucu alanları geçersiz buldu. Kod, ad ve gerekçeyi gözden geçirin; kayıt yapılmadı.',
+      }
+    default:
+      return failureText(failure)
+  }
+}

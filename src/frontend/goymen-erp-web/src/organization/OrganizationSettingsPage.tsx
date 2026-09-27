@@ -3,8 +3,10 @@
  *
  * Scope is exactly what the merged Organization API can answer and nothing beyond it.
  * Deliberately absent: stock balances and movements, production capacity, KPI tiles,
- * creating a company/site/location, and any ownership or operator fact the API does
- * not return. A card whose owner API does not exist is not rendered empty — it is not
+ * creating a company, and any ownership or operator fact the API does not return.
+ * Creating and editing a site, and creating a location, are the master edit's controls
+ * (`organization.sites.manage`, `organization.locations.create`), shown only when the
+ * server grants them. A card whose owner API does not exist is not rendered empty — it is not
  * rendered, because an empty box reads as "this facility has none", which is a claim.
  *
  * NO SEARCH BOX, ON PURPOSE. `/locations` accepts only `page` and `pageSize` — there
@@ -17,14 +19,24 @@
  * this screen. Deactivation is a state, not a delete.
  */
 
-import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { Link, useLocation } from 'react-router'
+import { useCallback, useMemo, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link, useLocation, useNavigate } from 'react-router'
 import { fetchLocationPage, fetchSites, DEFAULT_PAGE_SIZE } from './api'
 import { pageCount, type LocationPage, type SiteSummary } from './contract'
 import { ORGANIZATION_CAPABILITY, locationDetailPath } from './capabilities'
 import { groupLocations } from './locationGrouping'
-import { activeStateLabel, externalLabel, siteTypeLabel } from './organizationText'
+import {
+  MASTER_TEXT,
+  SITE_TYPE_OPTIONS,
+  activeStateLabel,
+  createdNotice,
+  externalLabel,
+  savedNotice,
+  siteTypeLabel,
+} from './organizationText'
+import { MasterFormLauncher, MasterRecordForm } from './MasterRecordForm'
+import { refreshOrganizationReads } from './refreshOrganizationReads'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
@@ -153,6 +165,14 @@ function OrganizationSettings({ namespace }: { readonly namespace: string | null
   const sites = sitesState.kind === 'ready' ? sitesState.data : []
   const locationPage = locationsState.kind === 'ready' ? locationsState.data : null
 
+  // Master edit controls. Each is the server's own grant (its record kind's write); the reads they list from are part
+  // of that grant, so a manage control never appears without the site list it needs.
+  const canManageSites = canReadSites && hasCapability(shell, ORGANIZATION_CAPABILITY.sitesManage)
+  const canCreateLocation = canReadSites && hasCapability(shell, ORGANIZATION_CAPABILITY.locationCreate)
+  const queryClient = useQueryClient()
+  const navigate = useNavigate()
+  const refreshAll = useCallback(() => refreshOrganizationReads(queryClient, namespace), [namespace, queryClient])
+
   if (!singleCompanyContext) {
     return (
       <section aria-labelledby="org-heading" className={styles.page}>
@@ -179,7 +199,23 @@ function OrganizationSettings({ namespace }: { readonly namespace: string | null
         available={canReadSites}
         state={sitesState}
         onRetry={() => void sitesQuery.refetch()}
+        canManage={canManageSites}
+        companyId={activeCompanyId ?? ''}
+        onChanged={refreshAll}
       />
+
+      {canCreateLocation ? (
+        <LocationCreateSection
+          sitesState={sitesState}
+          companyId={activeCompanyId ?? ''}
+          onCreated={async (id) => {
+            await refreshAll()
+            // Save, then reopen: the new record's own card is the read that says what was stored.
+            await navigate(locationDetailPath(id))
+          }}
+          onReload={refreshAll}
+        />
+      ) : null}
 
       <LocationsSection
         state={locationsState}
@@ -199,12 +235,23 @@ function SitesSection({
   available,
   state,
   onRetry,
+  canManage,
+  companyId,
+  onChanged,
 }: {
   /** The server granted the optional facility-label capability. */
   readonly available: boolean
   readonly state: RemoteViewState<readonly SiteSummary[]>
   readonly onRetry: () => void
+  /** The server granted `organization.sites.manage` (create and edit sites). */
+  readonly canManage: boolean
+  readonly companyId: string
+  readonly onChanged: () => Promise<void>
 }) {
+  const [editing, setEditing] = useState<string | null>(null)
+  const [creating, setCreating] = useState(false)
+  const [notice, setNotice] = useState<null | { title: string; detail: string; outcome: string }>(null)
+  const editedSite = state.kind === 'ready' ? state.data.find((site) => site.id === editing) : undefined
   return (
     <section aria-labelledby="org-sites-heading" className={styles.section}>
       <h2 id="org-sites-heading" className={styles.sectionHeading}>
@@ -227,11 +274,137 @@ function SitesSection({
               <span className={styles.siteName}>{site.name}</span>
               <span className={styles.siteMeta}>{siteTypeLabel(site.type)}</span>
               <StateBadge isActive={site.isActive} />
+              {canManage && site.version !== undefined && editing === null && !creating ? (
+                <button
+                  type="button"
+                  className={styles.pagerButton}
+                  aria-label={`${MASTER_TEXT.editSite}: ${site.code}`}
+                  onClick={() => {
+                    setNotice(null)
+                    setEditing(site.id)
+                  }}
+                >
+                  {MASTER_TEXT.editSite}
+                </button>
+              ) : null}
             </li>
           ))}
         </ul>
       )}
+
+      {!canManage ? null : editedSite !== undefined && editedSite.version !== undefined ? (
+        <MasterRecordForm
+          key={editedSite.id}
+          heading={`${MASTER_TEXT.editSite}: ${editedSite.code}`}
+          companyId={companyId}
+          dirtyScope="organization.site.edit"
+          initial={{ code: editedSite.code, name: editedSite.name }}
+          note={MASTER_TEXT.fixedFacts}
+          buildCommand={(values) => ({
+            kind: 'update-site',
+            id: editedSite.id,
+            code: values.code,
+            name: values.name,
+            // The version of the site as last READ; a stale one is the server's 409, never a local guess.
+            expectedVersion: editedSite.version ?? 0,
+            reason: values.reason,
+          })}
+          onUpdated={async (replayed) => {
+            await onChanged()
+            setNotice(savedNotice(replayed))
+            setEditing(null)
+          }}
+          onReload={onChanged}
+          onCancel={() => setEditing(null)}
+        />
+      ) : creating ? (
+        <MasterRecordForm
+          heading={MASTER_TEXT.newSite}
+          companyId={companyId}
+          dirtyScope="organization.site.create"
+          initial={{ code: '', name: '' }}
+          choice={{
+            label: MASTER_TEXT.siteType,
+            options: SITE_TYPE_OPTIONS.map((type) => ({ value: type, label: siteTypeLabel(type) })),
+          }}
+          buildCommand={(values) => ({
+            kind: 'create-site',
+            code: values.code,
+            name: values.name,
+            type: values.choice,
+            reason: values.reason,
+          })}
+          onCreated={async (_record, replayed) => {
+            await onChanged()
+            setCreating(false)
+            setNotice(createdNotice(replayed))
+          }}
+          onReload={onChanged}
+          onCancel={() => setCreating(false)}
+        />
+      ) : editing === null ? (
+        <MasterFormLauncher
+          label={MASTER_TEXT.newSite}
+          saved={notice}
+          onOpen={() => {
+            setNotice(null)
+            setCreating(true)
+          }}
+        />
+      ) : null}
     </section>
+  )
+}
+
+/**
+ * A new location under one of the listed sites. The site list is the one this screen already read; when it is not
+ * readable the form says so and refuses to submit rather than offering a partial choice. After the 201 the user is
+ * taken to the new record's own card — the read that says what was stored.
+ */
+function LocationCreateSection({
+  sitesState,
+  companyId,
+  onCreated,
+  onReload,
+}: {
+  readonly sitesState: RemoteViewState<readonly SiteSummary[]>
+  readonly companyId: string
+  readonly onCreated: (id: string) => Promise<void>
+  readonly onReload: () => Promise<void>
+}) {
+  const [open, setOpen] = useState(false)
+  if (!open) {
+    return <MasterFormLauncher label={MASTER_TEXT.newLocation} saved={null} onOpen={() => setOpen(true)} />
+  }
+  const sites = sitesState.kind === 'ready' ? sitesState.data : null
+  return (
+    <MasterRecordForm
+      heading={MASTER_TEXT.newLocation}
+      companyId={companyId}
+      dirtyScope="organization.location.create"
+      initial={{ code: '', name: '' }}
+      choice={{
+        label: MASTER_TEXT.site,
+        options: (sites ?? []).map((site) => ({
+          value: site.id,
+          label: `${site.code} — ${site.name} (${siteTypeLabel(site.type)})`,
+        })),
+        help: MASTER_TEXT.externalFromSite,
+        unavailable: sites === null ? MASTER_TEXT.sitesUnavailable : undefined,
+      }}
+      buildCommand={(values) => ({
+        kind: 'create-location',
+        siteId: values.choice,
+        code: values.code,
+        name: values.name,
+        reason: values.reason,
+      })}
+      onCreated={async (record) => {
+        await onCreated(record.id)
+      }}
+      onReload={onReload}
+      onCancel={() => setOpen(false)}
+    />
   )
 }
 
