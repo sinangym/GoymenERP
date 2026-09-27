@@ -338,8 +338,19 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
     expect(orderBody.planId).toBe(body.planId)
     await expect(page.getByRole('heading', { name: 'Üretim emri' })).toBeVisible()
 
-    // Back in the plan list the same plan now reads as approved; the Draft filter no longer shows it.
-    await page.goto('/uretim/planlar')
+    // Back to the reopened plan, and from its own back link to the plan list: the list reads the server again and
+    // the same plan now reads as approved; the Draft filter no longer shows it.
+    await page.goBack()
+    await expect(page.getByRole('heading', { name: 'Plan yeniden açıldı' })).toBeVisible()
+    expect(new URL(page.url()).pathname).toBe(`/uretim/plan/${body.planId}`)
+    const backToList = page.waitForResponse(
+      (response) => PLAN_LIST_RE.test(response.url()) && response.request().method() === 'GET',
+    )
+    await page.getByRole('link', { name: '← Üretim planları', exact: true }).click()
+    const relisted = await backToList
+    expect(relisted.status()).toBe(200)
+    expect(relisted.request().headers()['x-company-id']).toBe(env.seed.companyId)
+    expect(new URL(page.url()).pathname).toBe('/uretim/planlar')
     await expect(page.getByRole('heading', { name: 'Üretim planları' })).toBeVisible()
     await expect(page.getByRole('row', { name: new RegExp(reference) })).toContainText('Onaylı')
     const draftsAnswer = page.waitForResponse(

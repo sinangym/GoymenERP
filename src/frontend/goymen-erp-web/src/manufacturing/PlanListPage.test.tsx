@@ -51,6 +51,37 @@ function stub(
 const lists = (recorded: RecordedRequest[]) =>
   recorded.filter((request) => request.method === 'GET' && /\/manufacturing\/plans(\?|$)/.test(request.url))
 
+const THIRD = 'd0000000-0000-4000-8000-00000000000d'
+
+interface HeldContinuation {
+  readonly company: string
+  readonly url: string
+  readonly signal: AbortSignal | null
+  readonly release: (response: Response) => void
+}
+
+/**
+ * Every next-page read (a request carrying the server's cursor) is held until the test releases it; first pages
+ * answer at once from `firstPage`. The held read's company and abort signal are recorded, so a test can prove the
+ * late answer was both cancelled and, when it arrives anyway, never applied.
+ */
+function holdContinuations(firstPage: (company: string, url: string) => Response): HeldContinuation[] {
+  const held: HeldContinuation[] = []
+  installFetch({
+    capabilities: PLAN_LIST_CAPABILITIES,
+    respond: (url, init) => {
+      if (!/\/manufacturing\/plans(\?|$)/.test(url)) return undefined
+      const company = new Headers(init?.headers).get('X-Company-Id') ?? ''
+      if (!url.includes('cursor=')) return firstPage(company, url)
+      // Deliberately ignores the abort, as a slow network answer can: the page must drop it on its own.
+      return new Promise<Response>((resolve) => {
+        held.push({ company, url, signal: init?.signal ?? null, release: resolve })
+      })
+    },
+  })
+  return held
+}
+
 afterEach(() => {
   vi.unstubAllGlobals()
 })
@@ -298,6 +329,70 @@ describe('plan list', () => {
     expect(calls).toContain(COMPANY_B)
     expect(screen.queryByRole('row', { name: new RegExp(SECOND.slice(-8)) })).toBeNull()
     expect(screen.queryByRole('table')).toBeNull()
+  })
+
+  it('drops a late next-page answer once a status filter has restarted the list', async () => {
+    const user = userEvent.setup()
+    const held = holdContinuations((_company, url) =>
+      url.includes('status=Approved')
+        ? json(planList([planSummary({ planId: THIRD, status: 'Approved', version: 2, approvedAtUtc: APPROVED_AT })], null))
+        : json(planList([planSummary()], 'CURSOR-1')),
+    )
+    renderAt(PATH)
+    await screen.findByRole('row', { name: new RegExp(PLAN.slice(-8)) })
+
+    await user.click(screen.getByRole('button', { name: 'Sonraki sayfayı yükle' }))
+    await waitFor(() => expect(held).toHaveLength(1))
+    expect(held[0].url).toContain('cursor=CURSOR-1')
+    expect(held[0].url).not.toContain('status=')
+
+    await user.selectOptions(screen.getByLabelText('Durum'), 'Approved')
+    await screen.findByRole('row', { name: new RegExp(THIRD.slice(-8)) })
+    // The filter cancelled the unfiltered continuation still in flight.
+    expect(held[0].signal?.aborted).toBe(true)
+
+    // Its answer arrives anyway: a page of the OLD (unfiltered) list with a cursor of its own.
+    await act(async () => {
+      held[0].release(json(planList([planSummary({ planId: SECOND })], 'CURSOR-2')))
+    })
+    expect(screen.queryByRole('row', { name: new RegExp(SECOND.slice(-8)) })).toBeNull()
+    expect(screen.queryByRole('row', { name: new RegExp(PLAN.slice(-8)) })).toBeNull()
+    expect(screen.getByRole('row', { name: new RegExp(THIRD.slice(-8)) })).toBeTruthy()
+    // Nor is its cursor taken: the filtered list still ends where its own server page said.
+    expect(screen.getByText('Liste sonu.')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Sonraki sayfayı yükle' })).toBeNull()
+    expect(held).toHaveLength(1)
+  })
+
+  it('drops a late company-A next-page answer after switching to company B', async () => {
+    const user = userEvent.setup()
+    const held = holdContinuations((company) =>
+      company === COMPANY_A
+        ? json(planList([planSummary()], 'CURSOR-1'))
+        : json(planList([planSummary({ planId: THIRD })], null)),
+    )
+    renderAt(PATH)
+    await screen.findByRole('row', { name: new RegExp(PLAN.slice(-8)) })
+
+    await user.click(screen.getByRole('button', { name: 'Sonraki sayfayı yükle' }))
+    await waitFor(() => expect(held).toHaveLength(1))
+    expect(held[0].company).toBe(COMPANY_A)
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Şirket' }), { target: { value: COMPANY_B } })
+    await screen.findByRole('row', { name: new RegExp(THIRD.slice(-8)) })
+    // Leaving company A's context unmounted its list, which cancelled the continuation in flight.
+    expect(held[0].signal?.aborted).toBe(true)
+
+    await act(async () => {
+      held[0].release(json(planList([planSummary({ planId: SECOND })], 'CURSOR-2')))
+    })
+    // Nothing of company A reaches company B's screen: neither the late row, nor A's first page, nor its cursor.
+    expect(screen.queryByRole('row', { name: new RegExp(SECOND.slice(-8)) })).toBeNull()
+    expect(screen.queryByRole('row', { name: new RegExp(PLAN.slice(-8)) })).toBeNull()
+    expect(screen.getByRole('row', { name: new RegExp(THIRD.slice(-8)) })).toBeTruthy()
+    expect(screen.getByText('Liste sonu.')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Sonraki sayfayı yükle' })).toBeNull()
+    expect(held).toHaveLength(1)
   })
 })
 

@@ -25,6 +25,15 @@
   margin-left: auto;
 }
 
+/* The plan list's own secondary action, the same as its "Üretim emirleri" link (./PlanListPage.module.css). */
+.secondaryLink {
+  padding: 0.45rem 0.9rem;
+  border: 1px solid var(--color-border, #9aa5b1);
+  border-radius: 0.25rem;
+  color: inherit;
+  text-decoration: none;
+}
+
 .primaryLink {
   padding: 0.45rem 0.9rem;
   border-radius: 0.25rem;

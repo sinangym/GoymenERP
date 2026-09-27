@@ -110,8 +110,9 @@ internal static class ShellCapabilityRegistryAuthorities
     // Derived from the integrated provider tuple through ComputeCandidateRevision and pinned by test.
     // MFG-PLAN-LIST: Manufacturing 1.3 adds the saved-plan list route /uretim/planlar (manufacturing.plans.list,
     // existing manufacturing.plans.read, no sidebar entry). This row and every later normal-host row that carries
-    // Manufacturing were re-derived by ShellCapabilityRegistry.ComputeCandidateRevision over the real providers on
-    // main b0b3b744 (the pinning tests' own computation); the ManufacturingV12 values are superseded.
+    // Manufacturing were re-derived by ShellCapabilityRegistry.ComputeCandidateRevision over main b0b3b744's real
+    // providers with this change's Manufacturing 1.3 provider (the pinning tests' own computation); the
+    // ManufacturingV12 values are superseded.
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV11ProductV11PublishedSalesV11PublishedFinanceV12AndPublishedManufacturingV13 =
         "sha256:LNf6fmjS4jCUjFHHcRLBPS2B2aprZ0dxZKDY2nIayno";
 

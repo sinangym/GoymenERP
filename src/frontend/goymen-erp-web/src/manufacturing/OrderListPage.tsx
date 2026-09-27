@@ -139,7 +139,11 @@ function OrderList({ namespace }: { readonly namespace: string | null }) {
             ))}
           </select>
         </label>
-        {canOpenPlanList ? <Link to={planListPath()}>Üretim planları</Link> : null}
+        {canOpenPlanList ? (
+          <Link className={styles.secondaryLink} to={planListPath()}>
+            Üretim planları
+          </Link>
+        ) : null}
         {canCreatePlan ? (
           <Link className={styles.primaryLink} to={planCreatePath()}>
             Yeni üretim planı
