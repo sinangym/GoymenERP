@@ -206,8 +206,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // DEC-SAL-003: +3 SalesDeliveryScheduleSqlServerRelationalAcceptanceTests facts (16fa5110… -> 00189b7b…).
             // AT-024: +2 SalesDeliveryProgressSqlServerRelationalAcceptanceTests facts (00189b7b… -> 719d0d03…).
             // DEC-SAL-005: +4 SalesOrderCancellationSqlServerRelationalAcceptanceTests facts (719d0d03… -> 5508f4ed…).
+            // DEC-SAL-002: +4 SalesOrderQuantityRevisionSqlServerRelationalAcceptanceTests facts (5508f4ed… -> 3ef99851…).
             ["tools/relational_inventory/sales.txt"] =
-                "5508f4ed1c791e826a1a237464db67b63ca8bcca2adf46ec9d38af8c8d7dc50c",
+                "3ef9985194153ac76a55345420d5ae31018a6be9156636f6656b31f48c97fb4d",
         };
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
@@ -244,9 +245,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // DraftDeliveryScheduleDates), each with the same CompanyId query filter and a company-leading key.
             // Re-fingerprinted for DEC-SAL-005: the cancellation table (DraftCancellations), with the same CompanyId
             // query filter and a company-leading key, plus the lifecycle column on Drafts.
+            // Re-fingerprinted for DEC-SAL-002: the nullable Reason column on DraftRevisions and the line write guard
+            // admitting Quantity/QuantityText under a quantity revision; no new table, query filter or key.
             ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/"
              + "Persistence/SalesDbContext.cs"] =
-                "81934b822345dda81cde094c20a8a74894e19fa1a4af1c745ca4e934500bb194",
+                "b4c7b466c44a76837285248281fa52192455a3c83956c4dd38242aad6da4f71e",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
@@ -862,8 +865,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.cs"] =
                     // Re-fingerprinted for DEC-SAL-005: the cancellation write and read, company-resolved and saved
                     // once through the filtered context; no connection, command or raw SQL; SqlClient count unchanged.
+                    // Re-fingerprinted for DEC-SAL-002: the price and quantity revisions share one archive-and-save
+                    // core (still a single save through the filtered context); SqlClient count unchanged.
                     new(
-                        "f50a2e49e00cc78d9a9482fa58c5acf82898462412e414b2c1fc78916016657e",
+                        "383c57f5cc883c43982005cf1489145475723a3acd58d58b3b30ba5c55bc0baf",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -1034,6 +1039,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // order cancellation is stored; the THROW precedes the DropTable and DropColumn. Forward fix.
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20260927120000_AddDraftCancellations.cs"] =
                     new("651cae770ecc2d18d3b24479523d95ead0259fe231188a47c390f24da8d0f21e",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // DEC-SAL-002: the Down's only raw SQL refuses rollback (51057, used by no other migration) while any
+                // revision reason is stored; the THROW precedes the DropColumn. Forward fix.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20260928090000_AddRevisionReasons.cs"] =
+                    new("236f74197308a8e753fa2b74cc25070be726c0de4ea0ab38f785e3f60284a8a3",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // AT-053: the Down's only raw SQL is Logistics' module refusal (51056, used by no other migration) while

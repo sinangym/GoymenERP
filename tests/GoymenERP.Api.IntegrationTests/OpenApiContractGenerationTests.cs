@@ -459,6 +459,10 @@ public sealed partial class OpenApiContractGenerationTests
         new("post", "/api/v1/sales/drafts/{id}/commercial-revision", "ReviseSalesOrderDraftCommercialV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
             "#/components/schemas/SalesDraftCommercialRevisionRequest", ["path:id:true:type:string;format:uuid"]),
+        // DEC-SAL-002 / AT-023: the quantity revision of an approved order (Rev.N, re-approval).
+        new("post", "/api/v1/sales/drafts/{id}/quantity-revision", "ReviseSalesOrderDraftQuantityV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/SalesDraftQuantityRevisionRequest", ["path:id:true:type:string;format:uuid"]),
         new("get", "/api/v1/sales/drafts/{id}/revisions", "GetSalesOrderDraftRevisionsV1",
             AuthenticatedResponses("200:application/json", "404:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["path:id:true:type:string;format:uuid"]),
@@ -753,6 +757,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["RejectSalesOrderDraftV1"] = "ref:SalesOrderDraftResponse",
             ["WithdrawSalesOrderDraftV1"] = "ref:SalesOrderDraftResponse",
             ["ReviseSalesOrderDraftCommercialV1"] = "ref:SalesOrderDraftResponse",
+            ["ReviseSalesOrderDraftQuantityV1"] = "ref:SalesOrderDraftResponse",
             ["GetSalesOrderDraftRevisionsV1"] = "ref:SalesOrderDraftRevisionsResponse",
             ["RescheduleSalesOrderDraftDeliveryV1"] = "ref:SalesOrderDraftResponse",
             ["GetSalesOrderDraftDeliverySchedulesV1"] = "ref:SalesOrderDraftDeliverySchedulesResponse",
@@ -905,6 +910,7 @@ public sealed partial class OpenApiContractGenerationTests
         "RejectSalesOrderDraftV1",
         "WithdrawSalesOrderDraftV1",
         "ReviseSalesOrderDraftCommercialV1",
+        "ReviseSalesOrderDraftQuantityV1",
         "GetSalesOrderDraftRevisionsV1",
         "RescheduleSalesOrderDraftDeliveryV1",
         "GetSalesOrderDraftDeliverySchedulesV1",
@@ -1017,6 +1023,7 @@ public sealed partial class OpenApiContractGenerationTests
         "RejectSalesOrderDraftV1",
         "WithdrawSalesOrderDraftV1",
         "ReviseSalesOrderDraftCommercialV1",
+        "ReviseSalesOrderDraftQuantityV1",
         "RescheduleSalesOrderDraftDeliveryV1",
         "CancelSalesOrderDraftV1",
         "ProposeFinanceBankAccountV1",
@@ -1154,6 +1161,7 @@ public sealed partial class OpenApiContractGenerationTests
                 ["RejectSalesOrderDraftV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["WithdrawSalesOrderDraftV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["ReviseSalesOrderDraftCommercialV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
+                ["ReviseSalesOrderDraftQuantityV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["RescheduleSalesOrderDraftDeliveryV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["CancelSalesOrderDraftV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["ProposeFinanceBankAccountV1"] = [StatusCodes.Status200OK],
@@ -1253,6 +1261,7 @@ public sealed partial class OpenApiContractGenerationTests
         "RejectSalesOrderDraftV1",
         "WithdrawSalesOrderDraftV1",
         "ReviseSalesOrderDraftCommercialV1",
+        "ReviseSalesOrderDraftQuantityV1",
         "GetSalesOrderDraftRevisionsV1",
         "RescheduleSalesOrderDraftDeliveryV1",
         "GetSalesOrderDraftDeliverySchedulesV1",
@@ -1349,6 +1358,7 @@ public sealed partial class OpenApiContractGenerationTests
         "RejectSalesOrderDraftV1:404",
         "WithdrawSalesOrderDraftV1:404",
         "ReviseSalesOrderDraftCommercialV1:404",
+        "ReviseSalesOrderDraftQuantityV1:404",
         "GetSalesOrderDraftRevisionsV1:404",
         "RescheduleSalesOrderDraftDeliveryV1:404",
         "GetSalesOrderDraftDeliverySchedulesV1:404",
@@ -1629,6 +1639,9 @@ public sealed partial class OpenApiContractGenerationTests
             ["ReviseSalesOrderDraftCommercialV1:400"] = ["command_metadata_invalid", "validation_failed"],
             ["ReviseSalesOrderDraftCommercialV1:409"] = ["concurrent_change", "sales_state_conflict", "same_key_payload_mismatch", "version_conflict"],
             ["ReviseSalesOrderDraftCommercialV1:422"] = ["validation_failed"],
+            ["ReviseSalesOrderDraftQuantityV1:400"] = ["command_metadata_invalid", "validation_failed"],
+            ["ReviseSalesOrderDraftQuantityV1:409"] = ["concurrent_change", "sales_revision_blocked", "sales_state_conflict", "same_key_payload_mismatch", "version_conflict"],
+            ["ReviseSalesOrderDraftQuantityV1:422"] = ["validation_failed"],
             ["RescheduleSalesOrderDraftDeliveryV1:400"] = ["command_metadata_invalid", "validation_failed"],
             ["RescheduleSalesOrderDraftDeliveryV1:409"] = ["concurrent_change", "sales_state_conflict", "same_key_payload_mismatch", "version_conflict"],
             ["RescheduleSalesOrderDraftDeliveryV1:422"] = ["validation_failed"],
@@ -2328,7 +2341,7 @@ public sealed partial class OpenApiContractGenerationTests
                     ("discountPercent", "type:null|string"),
                     ("priceDisclosure", "ref:SalesPriceDisclosure")),
                 ["SalesDraftRevisionV1"] = ObjectSchema(
-                    ["revision", "submittedBy", "submittedAtUtc", "approvedBy", "approvedAtUtc", "archivedAtUtc", "archivedBy", "moneyProfileId", "moneyProfileVersion", "moneyScale", "lines"],
+                    ["revision", "submittedBy", "submittedAtUtc", "approvedBy", "approvedAtUtc", "archivedAtUtc", "archivedBy", "moneyProfileId", "moneyProfileVersion", "moneyScale", "lines", "reason"],
                     ("revision", "type:string"),
                     ("submittedBy", "type:null|string"),
                     ("submittedAtUtc", "type:null|string;format:date-time"),
@@ -2339,7 +2352,9 @@ public sealed partial class OpenApiContractGenerationTests
                     ("moneyProfileId", "type:string;format:uuid"),
                     ("moneyProfileVersion", "type:string"),
                     ("moneyScale", "type:integer|string;format:int32"),
-                    ("lines", "type:array;items:ref:SalesDraftRevisionLineV1")),
+                    ("lines", "type:array;items:ref:SalesDraftRevisionLineV1"),
+                    // DEC-SAL-002: the archived revision's reason (null for revisions archived before the reason existed).
+                    ("reason", "type:null|string")),
                 ["SalesOrderDraftRevisionsResponse"] = ObjectSchema(
                     ["items"],
                     ("items", "type:array;items:ref:SalesDraftRevisionV1")),
@@ -3702,6 +3717,15 @@ public sealed partial class OpenApiContractGenerationTests
                     ["expectedVersion"],
                     ("expectedVersion", "type:string"),
                     ("reason", "type:null|string")),
+                ["SalesDraftQuantityRevisionRequest"] = ObjectSchema(
+                    ["expectedVersion", "reason", "lines"],
+                    ("expectedVersion", "type:string"),
+                    ("reason", "type:string"),
+                    ("lines", "type:array;items:ref:SalesDraftLineQuantityV1")),
+                ["SalesDraftLineQuantityV1"] = ObjectSchema(
+                    ["lineId", "quantity"],
+                    ("lineId", "type:string;format:uuid"),
+                    ("quantity", "type:string")),
                 ["SalesDraftCommercialRevisionRequest"] = ObjectSchema(
                     ["expectedVersion", "lines"],
                     ("expectedVersion", "type:string"),
@@ -4567,9 +4591,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(166, operations.Count);
+        Assert.Equal(167, operations.Count);
         Assert.Equal(
-            166,
+            167,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());
