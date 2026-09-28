@@ -108,12 +108,22 @@ async function searchAnswer(response: Response): Promise<SearchReading> {
  * (and failed request) seen after Back, and the main region's text. Remove once the cause is known.
  */
 async function backExpectingFreshSearch(page: Page, term: string): Promise<SearchReading> {
-  await page.evaluate(() => {
-    const marked = window as unknown as { __gsDocument?: number; __gsPersisted?: boolean }
+  const before = await page.evaluate(() => {
+    const marked = window as unknown as { __gsDocument?: number; __gsPersisted?: boolean; __gsPops?: string[] }
     marked.__gsDocument = Date.now()
+    marked.__gsPops = []
     window.addEventListener('pageshow', (event) => {
       marked.__gsPersisted = event.persisted
     })
+    window.addEventListener('popstate', (event) => {
+      marked.__gsPops?.push(`${location.pathname}${location.search} state=${JSON.stringify(event.state)}`)
+    })
+    return {
+      href: location.pathname + location.search,
+      historyLength: history.length,
+      historyState: JSON.stringify(history.state),
+      main: document.querySelector('main')?.textContent?.replace(/\s+/g, ' ').slice(0, 300) ?? null,
+    }
   })
   const seen: string[] = []
   const onRequest = (request: Request) => seen.push(`${request.method()} ${request.url()}`)
@@ -127,10 +137,13 @@ async function backExpectingFreshSearch(page: Page, term: string): Promise<Searc
   } catch (error) {
     const state = await page
       .evaluate(() => {
-        const marked = window as unknown as { __gsDocument?: number; __gsPersisted?: boolean }
+        const marked = window as unknown as { __gsDocument?: number; __gsPersisted?: boolean; __gsPops?: string[] }
         return {
           sameDocument: marked.__gsDocument !== undefined,
           persisted: marked.__gsPersisted ?? null,
+          popstates: marked.__gsPops ?? null,
+          historyLength: history.length,
+          historyState: JSON.stringify(history.state),
           navigations: performance.getEntriesByType('navigation').map((entry) => (entry as PerformanceNavigationTiming).type),
           main: document.querySelector('main')?.textContent?.replace(/\s+/g, ' ').slice(0, 800) ?? null,
         }
@@ -138,7 +151,7 @@ async function backExpectingFreshSearch(page: Page, term: string): Promise<Searc
       .catch((reason: unknown) => ({ evaluateFailed: String(reason) }))
     throw new Error(
       `DIAGNOSTIC no fresh search answer after Back for q=${JSON.stringify(term)}: ${String(error)}\n` +
-        `url=${page.url()}\nstate=${JSON.stringify(state)}\nrequests after Back=${JSON.stringify(seen, null, 1)}`,
+        `before Back=${JSON.stringify(before)}\nurl=${page.url()}\nstate=${JSON.stringify(state)}\nrequests after Back=${JSON.stringify(seen, null, 1)}`,
     )
   } finally {
     page.off('request', onRequest)
@@ -198,8 +211,14 @@ test('S04-GS2 the preparer finds the REAL Cari party and opens its detail', asyn
 
   const link = page.getByTestId(`global-search-group-${PARTY_KIND}`).getByRole('link', { name: new RegExp(party.code) })
   await expect(link).toHaveAttribute('href', `/cari/${realPartyId}`)
+  // The Cari detail is really entered and read before Back: its own owner read answers and its screen replaces the results.
+  const detailRead = page.waitForResponse(
+    (candidate) => new URL(candidate.url()).pathname === `/api/v1/counterparties/${realPartyId}` && candidate.request().method() === 'GET',
+  )
   await link.click()
   await expect(page).toHaveURL(new RegExp(`/cari/${realPartyId}$`))
+  expect((await detailRead).status()).toBe(200)
+  await expect(page.getByTestId(`global-search-group-${PARTY_KIND}`)).toHaveCount(0)
   // Back is a new route entry: a fresh read answers the same party.
   const again = await backExpectingFreshSearch(page, party.legalName)
   expect(again.groups.find((group) => group.kind === PARTY_KIND)?.items.map((item) => item.id)).toContain(realPartyId)
