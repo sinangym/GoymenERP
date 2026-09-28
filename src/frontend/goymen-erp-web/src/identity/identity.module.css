@@ -1,0 +1,206 @@
+/*
+ * "Kullanıcılar ve yetkiler" styling — the Organization cards' token set: colour is never the only carrier of
+ * status, focus is always visible, and nothing forces the page body to scroll sideways at 400px (tables scroll in
+ * their own container instead).
+ */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.page h1 {
+  font-size: 1.25rem;
+  margin: 0;
+  color: #0f172a;
+  overflow-wrap: anywhere;
+}
+
+.page h2 {
+  font-size: 1rem;
+  margin: 0 0 8px;
+  color: #0f172a;
+}
+
+.page h3 {
+  font-size: 0.95rem;
+  margin: 12px 0 6px;
+  color: #0f172a;
+}
+
+.lead,
+.muted {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.9rem;
+  max-width: 70ch;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(min(100%, 16rem), 1fr) minmax(min(100%, 28rem), 2.4fr);
+  gap: 18px;
+  align-items: start;
+}
+
+@media (max-width: 800px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.panel {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 14px;
+  min-width: 0;
+}
+
+.userList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.userLink {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  color: #0f172a;
+  text-decoration: none;
+  border: 1px solid transparent;
+  overflow-wrap: anywhere;
+}
+.userLink:hover {
+  background: #f1f5f9;
+}
+.userLink[aria-current='true'] {
+  background: #eff6ff;
+  border-color: #0b6fe8;
+}
+.userLink:focus-visible,
+.link:focus-visible,
+.breadcrumb a:focus-visible {
+  outline: 2px solid #0b6fe8;
+  outline-offset: 2px;
+}
+
+.userMeta {
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
+.link,
+.breadcrumb a {
+  color: #0b6fe8;
+  text-decoration: none;
+}
+.link:hover,
+.breadcrumb a:hover {
+  text-decoration: underline;
+}
+
+.breadcrumb {
+  font-size: 0.9rem;
+}
+
+.tableWrap {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+.table th,
+.table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 8px 10px;
+  border-bottom: 1px solid #e2e8f0;
+}
+.table th {
+  color: #475569;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
+.id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+  color: #475569;
+  overflow-wrap: anywhere;
+}
+
+.inlineList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.permissionList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.permissionList li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+}
+
+.badgeOn,
+.badgeOff,
+.badgeWarn {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid;
+  white-space: nowrap;
+}
+.badgeOn {
+  color: #166534;
+  background: #f0fdf4;
+  border-color: #86efac;
+}
+.badgeOff {
+  color: #475569;
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+.badgeWarn {
+  color: #9a3412;
+  background: #fff7ed;
+  border-color: #fdba74;
+}
+
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+}

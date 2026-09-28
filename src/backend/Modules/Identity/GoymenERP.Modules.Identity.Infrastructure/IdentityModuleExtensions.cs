@@ -68,6 +68,8 @@ public static class IdentityModuleExtensions
         services.TryAddSingleton<IPermissionScopeReadObserver,
             NullPermissionScopeReadObserver>();
         services.AddScoped<IIdentityProfileService, IdentityProfileService>();
+        // AT-004 read-only access view. A read port only: no grant or revocation service exists behind it.
+        services.AddScoped<IIdentityAccessReadService, IdentityAccessReadService>();
         services.AddScoped<ISystemRolePermissionReconciler, SystemRolePermissionReconciler>();
         services.AddScoped<IdentityDataSeeder>();
         services.AddSingleton(rcsiBinding);
