@@ -108,8 +108,9 @@ public sealed class ProductDuplicateCandidatesSqlServerRelationalAcceptanceTests
         {
             using var first = factory.CreateClientFor("group-bootstrap-admin", CompanyA);
             using var second = factory.CreateClientFor("group-bootstrap-admin", CompanyA);
-            var left = await CreateDraftAsync(first, "SENTETIK yaris adi", "dup-race-left");
-            var right = await CreateDraftAsync(first, "sentetik YARIS adi", "dup-race-right");
+            // Turkish case pairs (i/İ, ı/I): the two names are one name under the Turkish name collation.
+            var left = await CreateDraftAsync(first, "sentetik yarış adı", "dup-race-left");
+            var right = await CreateDraftAsync(first, "SENTETİK YARIŞ ADI", "dup-race-right");
             Assert.NotEqual(left.Code, right.Code);
 
             // Both approvals are held until both have staged their card, so they overlap in the database.
