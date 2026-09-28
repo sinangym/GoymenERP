@@ -1,6 +1,6 @@
 namespace GoymenERP.Modules.Identity.Domain.Assignments;
 
-public enum ProductMasterOperation { Read = 1, DraftCreate = 2, DraftBasicEdit = 3, Activate = 4 }
+public enum ProductMasterOperation { Read = 1, DraftCreate = 2, DraftBasicEdit = 3, Activate = 4, Deactivate = 5, Reactivate = 6 }
 
 // Explicit Identity-owned global assignment. A company RoleAssignment cannot substitute
 // for this record. Its construction is data preparation, not an authenticated grant API.
@@ -16,7 +16,8 @@ public sealed class ProductMasterAssignment
     {
         if (new[] { id, userId, roleId, issuerUserId, issuerExternalIdentityId, decisionId }.Any(x => x == Guid.Empty)
             || operation is not (ProductMasterOperation.Read or ProductMasterOperation.DraftCreate
-                or ProductMasterOperation.DraftBasicEdit or ProductMasterOperation.Activate))
+                or ProductMasterOperation.DraftBasicEdit or ProductMasterOperation.Activate
+                or ProductMasterOperation.Deactivate or ProductMasterOperation.Reactivate))
             throw new ArgumentException("An explicit Product assignment requires exact identities and operation.");
         ValidateReference(decisionReference);
         if (validFromUtc.Offset != TimeSpan.Zero || validUntilUtc?.Offset != TimeSpan.Zero && validUntilUtc.HasValue

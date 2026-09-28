@@ -29,6 +29,9 @@ public static class GroupSharedAuditEventFactory
             GroupSharedMasterOperation.DraftBasicEdit => ("DraftBasicEdit", "product.draft.edit"),
             // #329: the card approval (its event type product.card.activated.v1 is the Product owner's).
             GroupSharedMasterOperation.Activate => ("Activate", "product.card.activate"),
+            // The deactivation / reactivation (their event types are the Product owner's).
+            GroupSharedMasterOperation.Deactivate => ("Deactivate", "product.card.deactivate"),
+            GroupSharedMasterOperation.Reactivate => ("Reactivate", "product.card.reactivate"),
             _ => throw new ArgumentException("Unsupported Product audit command.", nameof(draft)),
         };
         var envelope = new GroupSharedAuditEventEnvelope(Guid.NewGuid(),

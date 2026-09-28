@@ -32,7 +32,7 @@ public sealed class ManufacturingShellRegistrationTests
 
         var actual = ShellCapabilityRegistry.ComputeCandidateRevision(providers);
         Assert.True(
-            string.Equals(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV11PublishedSalesV13PublishedFinanceV12AndPublishedManufacturingV14, actual,
+            string.Equals(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV13PublishedFinanceV12AndPublishedManufacturingV14, actual,
                 StringComparison.Ordinal),
             $"Manufacturing normal-host authority drifted. Actual: {actual}");
     }
@@ -45,7 +45,7 @@ public sealed class ManufacturingShellRegistrationTests
         var authority = C01E2eShellCapabilityActivation.Configure(services, new TestingEnvironment(),
             new ConfigurationBuilder().Build());
 
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV11PublishedSalesV13PublishedFinanceV12AndPublishedManufacturingV14,
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV13PublishedFinanceV12AndPublishedManufacturingV14,
             authority);
         using var container = services.BuildServiceProvider();
         var registry = new ShellCapabilityRegistry(container.GetServices<IShellCapabilityProvider>(),

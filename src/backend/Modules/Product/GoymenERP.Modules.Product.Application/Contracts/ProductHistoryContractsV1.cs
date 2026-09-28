@@ -8,7 +8,7 @@ namespace GoymenERP.Modules.Product.Application.Contracts;
 /// </summary>
 public sealed record ProductHistoryView(Guid ProductId, IReadOnlyList<ProductHistoryEntryView> Entries, bool Truncated);
 
-/// <param name="Operation">Exactly <c>DraftCreate</c>, <c>DraftBasicEdit</c> or <c>Activate</c>.</param>
+/// <param name="Operation">Exactly <c>DraftCreate</c>, <c>DraftBasicEdit</c>, <c>Activate</c>, <c>Deactivate</c> or <c>Reactivate</c>.</param>
 /// <param name="VersionBefore">Lossless decimal string; null only for <c>DraftCreate</c>.</param>
 /// <param name="ChangedFields">
 /// Stable keys from <see cref="ProductHistoryFields"/>, in that order. Empty for
@@ -40,6 +40,8 @@ public static class ProductHistoryApiV1
     public const string DraftCreate = "DraftCreate";
     public const string DraftBasicEdit = "DraftBasicEdit";
     public const string Activate = "Activate";
+    public const string Deactivate = "Deactivate";
+    public const string Reactivate = "Reactivate";
 }
 
 /// <summary>The only change keys a history entry may carry, in display order.</summary>

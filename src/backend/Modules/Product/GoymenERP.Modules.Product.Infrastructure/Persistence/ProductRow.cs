@@ -68,6 +68,27 @@ public sealed class ProductRow
         CopyState(record);
     }
 
+    // Deactivation (Active -> Inactive) and reactivation (Inactive -> Active): as for the approval, only
+    // the lifecycle, one version and the update time change; identity and every card value stay.
+    public void ApplyLifecycleChange(ProductStoredRecord record, Domain.Products.ProductLifecycle from,
+        Domain.Products.ProductLifecycle to)
+    {
+        _ = record.RestoreProduct();
+        _ = record.RestoreReferences();
+        if (from == to || from == Domain.Products.ProductLifecycle.Draft || to == Domain.Products.ProductLifecycle.Draft
+            || record.Id != Id || record.Code != Code || record.GroupId != GroupId || record.CreatedAtUtc != CreatedAtUtc
+            || record.Name != Name || record.ClassId != ClassId || record.FamilyId != FamilyId
+            || record.ReferencesJson != ReferencesJson
+            || record.Purchasable.Value != PurchasableValue || record.Purchasable.Provenance != PurchasableProvenance
+            || record.Sellable.Value != SellableValue || record.Sellable.Provenance != SellableProvenance
+            || record.ProductionInput.Value != ProductionInputValue || record.ProductionInput.Provenance != ProductionInputProvenance
+            || record.ProductionOutput.Value != ProductionOutputValue || record.ProductionOutput.Provenance != ProductionOutputProvenance
+            || Lifecycle != (int)from || record.Lifecycle != (int)to
+            || record.Version != checked(Version + 1))
+            throw new InvalidOperationException("A Product lifecycle change must preserve the card and move by one version.");
+        CopyState(record);
+    }
+
     public ProductStoredRecord ToRecord() => new(Id, Code, Name, GroupId, ClassId, FamilyId,
         new(PurchasableValue, PurchasableProvenance), new(SellableValue, SellableProvenance),
         new(ProductionInputValue, ProductionInputProvenance), new(ProductionOutputValue, ProductionOutputProvenance),

@@ -129,6 +129,37 @@ public sealed class ProductHttpContractTests
         Assert.Equal(1, service.Activations);
     }
 
+    [Theory]
+    [InlineData("deactivation", """{"expectedVersion":"2","reason":"Kalktı","lifecycle":"Inactive"}""")]
+    [InlineData("deactivation", """{"expectedVersion":"2","reason":"Kalktı","companyId":"9197acdd-034f-4082-bc66-cebc5c81be53"}""")]
+    [InlineData("deactivation", """{"expectedVersion":2,"reason":"Kalktı"}""")]
+    [InlineData("deactivation", """{"expectedVersion":"2"}""")]
+    [InlineData("deactivation", """{"reason":"Kalktı"}""")]
+    [InlineData("reactivation", """{"expectedVersion":"3","reason":"Döndü","lifecycle":"Active"}""")]
+    [InlineData("reactivation", """{"expectedVersion":"3"}""")]
+    [InlineData("reactivation", """{}""")]
+    public async Task A_lifecycle_body_with_an_unknown_missing_or_numeric_member_does_not_reach_command(string route, string json)
+    {
+        var service = new Service();
+        await using var app = await StartAsync(service);
+        using var client = Client(app);
+        var path = $"/api/v1/products/{service.Card.Product.Id}/{route}";
+        using var body = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsync(path, body)).StatusCode);
+        Assert.Equal((0, 0), (service.Deactivations, service.Reactivations));
+
+        // Control: the exact body reaches only its own command on the same route, and a refusal is a 409 problem.
+        using var exact = new StringContent("""{"expectedVersion":"2","reason":"Gerekçe"}""",
+            System.Text.Encoding.UTF8, "application/json");
+        using var response = await client.PostAsync(path, exact);
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        using var problem = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(ProductApiV1.LifecycleConflict, problem.RootElement.GetProperty("code").GetString());
+        Assert.Equal(route == "deactivation" ? (1, 0) : (0, 1), (service.Deactivations, service.Reactivations));
+        Assert.Equal(new ChangeProductLifecycleRequest("2", "Gerekçe"), service.LastLifecycleRequest);
+        Assert.Equal(0, service.Activations);
+    }
+
     [Fact]
     public async Task Stale_edit_is_problem_details_with_lossless_versions()
     {
@@ -305,6 +336,15 @@ public sealed class ProductHttpContractTests
         public Task<ProductMutationResponse> ActivateAsync(Guid id, ActivateProductRequest request,
             string idempotencyKey, CancellationToken cancellationToken)
         { Activations++; throw new ProductOperationException(ProductApiV1.LifecycleConflict, 409); }
+        public int Deactivations { get; private set; }
+        public int Reactivations { get; private set; }
+        public ChangeProductLifecycleRequest? LastLifecycleRequest { get; private set; }
+        public Task<ProductMutationResponse> DeactivateAsync(Guid id, ChangeProductLifecycleRequest request,
+            string idempotencyKey, CancellationToken cancellationToken)
+        { Deactivations++; LastLifecycleRequest = request; throw new ProductOperationException(ProductApiV1.LifecycleConflict, 409); }
+        public Task<ProductMutationResponse> ReactivateAsync(Guid id, ChangeProductLifecycleRequest request,
+            string idempotencyKey, CancellationToken cancellationToken)
+        { Reactivations++; LastLifecycleRequest = request; throw new ProductOperationException(ProductApiV1.LifecycleConflict, 409); }
     }
 
     private sealed class AuditSource(Guid productId) : IProductAuditHistorySourceV1

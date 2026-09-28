@@ -60,6 +60,52 @@ public sealed class ProductHistoryTests
     }
 
     [Fact]
+    public void Deactivation_and_reactivation_carry_the_actors_reason_in_the_same_canonical_chain()
+    {
+        var draft = Card(1);
+        var active = Card(2, lifecycle: "Active");
+        var inactive = Card(3, lifecycle: "Inactive");
+        var again = Card(4, lifecycle: "Active");
+        var history = ProductHistoryProjector.Project(ProductId,
+        [
+            Lifecycle(ProductHistoryApiV1.Reactivate, inactive, again, T0.AddMinutes(3), "Tedarik yeniden başladı"),
+            Lifecycle(ProductHistoryApiV1.Deactivate, active, inactive, T0.AddMinutes(2), "Üretimden kalktı"),
+            Activate(draft, active, T0.AddMinutes(1)),
+            Create(draft, T0),
+        ]);
+
+        Assert.Equal(4, history.Entries.Count);
+        var reactivation = history.Entries[0];
+        Assert.Equal((ProductHistoryApiV1.Reactivate, "3", "4", "Tedarik yeniden başladı"),
+            (reactivation.Operation, reactivation.VersionBefore, reactivation.VersionAfter, reactivation.Reason));
+        var deactivation = history.Entries[1];
+        Assert.Equal((ProductHistoryApiV1.Deactivate, "2", "3", "Üretimden kalktı", T0.AddMinutes(2)),
+            (deactivation.Operation, deactivation.VersionBefore, deactivation.VersionAfter, deactivation.Reason,
+                deactivation.OccurredAtUtc));
+        Assert.Equal(["lifecycle"], deactivation.ChangedFields);
+        Assert.Equal(["lifecycle"], reactivation.ChangedFields);
+    }
+
+    [Theory]
+    [InlineData("Deactivate", "Draft", "Inactive")]
+    [InlineData("Deactivate", "Active", "Active")]
+    [InlineData("Reactivate", "Active", "Active")]
+    [InlineData("Reactivate", "Inactive", "Draft")]
+    public void A_lifecycle_event_whose_snapshots_contradict_its_operation_is_an_integrity_fault(string operation,
+        string from, string to)
+    {
+        var draft = Card(1);
+        var before = Card(2, lifecycle: from);
+        var after = Card(3, lifecycle: to);
+        Assert.Throws<InvalidOperationException>(() => ProductHistoryProjector.Project(ProductId,
+        [
+            Lifecycle(operation, before, after, T0.AddMinutes(2), "Gerekçe"),
+            Edit(draft, before, T0.AddMinutes(1), "Önceki"),
+            Create(draft, T0),
+        ]));
+    }
+
+    [Fact]
     public void Missing_unit_container_and_explicit_null_unit_are_the_same_value()
     {
         var before = Card(1, units: null);
@@ -303,6 +349,11 @@ public sealed class ProductHistoryTests
         new(Guid.NewGuid(), ProductId, ProductHistoryApiV1.Activate, at, long.Parse(before.Product.Version),
             long.Parse(after.Product.Version), "Ürün kartı onayı", Json(before), Json(after));
 
+    private static ProductAuditRecordV1 Lifecycle(string operation, ProductCardView before, ProductCardView after,
+        DateTimeOffset at, string reason) =>
+        new(Guid.NewGuid(), ProductId, operation, at, long.Parse(before.Product.Version),
+            long.Parse(after.Product.Version), reason, Json(before), Json(after));
+
     private static string Json(ProductCardView card) => JsonSerializer.Serialize(card, Web);
 
     private static ProductCardView Card(long version, string name = "Galvaniz bant", Guid? familyId = null,
@@ -330,6 +381,10 @@ public sealed class ProductHistoryTests
         public Task<ProductMutationResponse> CreateDraftAsync(CreateProductDraftRequest request, string idempotencyKey, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<ProductMutationResponse> EditDraftAsync(Guid id, EditProductDraftRequest request, string idempotencyKey, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<ProductMutationResponse> ActivateAsync(Guid id, ActivateProductRequest request,
+            string idempotencyKey, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<ProductMutationResponse> DeactivateAsync(Guid id, ChangeProductLifecycleRequest request,
+            string idempotencyKey, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<ProductMutationResponse> ReactivateAsync(Guid id, ChangeProductLifecycleRequest request,
             string idempotencyKey, CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 

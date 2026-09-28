@@ -24,7 +24,8 @@ public sealed class SqlProductMasterAuthorizationService(IdentityDbContext datab
         cancellationToken.ThrowIfCancellationRequested();
         if (subject != GroupSharedMasterKind.Product || operation is not
             (GroupSharedMasterOperation.Read or GroupSharedMasterOperation.DraftCreate
-                or GroupSharedMasterOperation.DraftBasicEdit or GroupSharedMasterOperation.Activate)
+                or GroupSharedMasterOperation.DraftBasicEdit or GroupSharedMasterOperation.Activate
+                or GroupSharedMasterOperation.Deactivate or GroupSharedMasterOperation.Reactivate)
             || issuer is null || issuer.LocalUserId == Guid.Empty || issuer.ExternalIdentityId == Guid.Empty
             || !currentUser.IsAuthenticated || !companyContext.IsResolved
             || !Guid.TryParse(currentUser.UserId, out var actorId) || actorId == Guid.Empty)
@@ -41,6 +42,8 @@ public sealed class SqlProductMasterAuthorizationService(IdentityDbContext datab
             GroupSharedMasterOperation.DraftCreate => ProductMasterOperation.DraftCreate,
             GroupSharedMasterOperation.DraftBasicEdit => ProductMasterOperation.DraftBasicEdit,
             GroupSharedMasterOperation.Activate => ProductMasterOperation.Activate,
+            GroupSharedMasterOperation.Deactivate => ProductMasterOperation.Deactivate,
+            GroupSharedMasterOperation.Reactivate => ProductMasterOperation.Reactivate,
             _ => throw new InvalidOperationException("A Product master operation without its own grant mapping."),
         };
         var now = (clock ?? TimeProvider.System).GetUtcNow();

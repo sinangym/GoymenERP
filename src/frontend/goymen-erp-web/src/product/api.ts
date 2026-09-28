@@ -10,6 +10,8 @@
  *   POST  /api/v1/products              → 201 ProductMutationResponse
  *   PATCH /api/v1/products/{id}/draft   → 200 ProductMutationResponse
  *   POST  /api/v1/products/{id}/activation → 200 ProductMutationResponse
+ *   POST  /api/v1/products/{id}/deactivation → 200 ProductMutationResponse (Active → Inactive)
+ *   POST  /api/v1/products/{id}/reactivation → 200 ProductMutationResponse (Inactive → Active)
  *   GET   /api/v1/products/{id}/history → ProductHistoryView (module contract; host endpoint requested)
  *
  * The transport carries no business logic and invents no field:
@@ -363,6 +365,18 @@ export interface ActivateProductPayload {
   readonly expectedVersion: string
 }
 
+/**
+ * `ChangeProductLifecycleRequest{ExpectedVersion, Reason}` for deactivation and reactivation.
+ *
+ * The reason is the person's own (trimmed, 1..1000, no control characters): it is recorded on
+ * the canonical audit event and shown in the card history. No lifecycle claim is sent — the
+ * route IS the move, and the server decides whether the card is in the state it moves from.
+ */
+export interface ChangeProductLifecyclePayload {
+  readonly expectedVersion: string
+  readonly reason: string
+}
+
 export const REASON_MAX = 1000
 
 /**
@@ -540,6 +554,50 @@ export async function activateProduct(
   }
 
   const mutation = decodeProductMutation(result.body, productId, 'Active')
+  if (mutation === null) return { type: 'malformed' }
+  return { type: 'succeeded', data: mutation }
+}
+
+/**
+ * The two lifecycle moves of a card that is already in use (DEC-CAR-003: a used card is never
+ * deleted; it is taken out of new use). Each is its own global grant; each answers EXACTLY 200
+ * with the card in the state it moved TO, bound to the id that was sent. Anything else is a
+ * definite refusal or an unknown outcome, never a success.
+ */
+export type ProductLifecycleMove = 'deactivate' | 'reactivate'
+
+const LIFECYCLE_MOVE: Record<ProductLifecycleMove, { readonly path: string; readonly to: ProductLifecycle }> = {
+  deactivate: { path: 'deactivation', to: 'Inactive' },
+  reactivate: { path: 'reactivation', to: 'Active' },
+}
+
+export async function changeProductLifecycle(
+  productId: string,
+  move: ProductLifecycleMove,
+  payload: ChangeProductLifecyclePayload,
+  context: CommandContext,
+  signal?: AbortSignal,
+): Promise<CommandOutcome<ProductMutationResult>> {
+  const target = LIFECYCLE_MOVE[move]
+  const result = await sendCommand(
+    `/products/${encodeURIComponent(productId)}/${target.path}`,
+    'POST',
+    payload,
+    context,
+    signal,
+  )
+  if ('failure' in result) return commandFailure(result.failure)
+
+  if (result.status !== 200) {
+    return {
+      type: 'http',
+      status: result.status,
+      code: productProblemCodeOf(result.body),
+      body: result.body,
+    }
+  }
+
+  const mutation = decodeProductMutation(result.body, productId, target.to)
   if (mutation === null) return { type: 'malformed' }
   return { type: 'succeeded', data: mutation }
 }

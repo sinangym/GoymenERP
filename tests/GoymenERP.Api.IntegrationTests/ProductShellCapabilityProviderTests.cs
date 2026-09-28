@@ -14,8 +14,8 @@ using Microsoft.Extensions.Hosting;
 namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>
-/// Product's real shell capability provider: Product's four screens and U-01-360 activation control
-/// are published to the shell and granted only from the matching global Product
+/// Product's real shell capability provider: Product's four screens and the U-01-360 lifecycle controls
+/// (approve, deactivate, reactivate) are published to the shell and granted only from the matching global Product
 /// authority. These checks need no database; the granted/denied answer through the real host on a real
 /// SQL Server is <see cref="ProductShellCapabilitySqlServerRelationalAcceptanceTests"/>.
 /// </summary>
@@ -35,9 +35,11 @@ public sealed class ProductShellCapabilityProviderTests
             [
                 ("product.items.activate", "/urun/:productId", GroupSharedMasterOperation.Activate),
                 ("product.items.create", "/urun/yeni", GroupSharedMasterOperation.DraftCreate),
+                ("product.items.deactivate", "/urun/:productId", GroupSharedMasterOperation.Deactivate),
                 ("product.items.detail", "/urun/:productId", GroupSharedMasterOperation.Read),
                 ("product.items.edit", "/urun/:productId/duzenle", GroupSharedMasterOperation.DraftBasicEdit),
                 ("product.items.list", "/urun", GroupSharedMasterOperation.Read),
+                ("product.items.reactivate", "/urun/:productId", GroupSharedMasterOperation.Reactivate),
             ],
             registry.Registrations.Select(registration => (registration.Declaration.CapabilityId,
                 registration.Declaration.RoutePath, registration.Declaration.GlobalProductOperation!.Value)));
@@ -47,12 +49,21 @@ public sealed class ProductShellCapabilityProviderTests
             Assert.Empty(registration.Declaration.RequiredPermissions);
             Assert.True(registration.Declaration.ImplementationAvailable);
         });
-        var activation = Assert.Single(registry.Registrations,
-            registration => registration.Declaration.CapabilityId == ProductShellCapabilityProvider.ActivateCapabilityId);
-        Assert.Equal(ProductShellCapabilityProvider.DetailCapabilityId, activation.Declaration.ParentCapabilityId);
-        Assert.Equal("product.detail", activation.Declaration.RouteId);
-        Assert.Equal("U-01-360", activation.Declaration.ScreenId);
-        Assert.All(registry.Registrations.Where(registration => registration != activation),
+        string[] controls =
+        [
+            ProductShellCapabilityProvider.ActivateCapabilityId, ProductShellCapabilityProvider.DeactivateCapabilityId,
+            ProductShellCapabilityProvider.ReactivateCapabilityId,
+        ];
+        Assert.Equal("1.2", provider.ContractVersion);
+        foreach (var control in controls)
+        {
+            var registration = Assert.Single(registry.Registrations,
+                candidate => candidate.Declaration.CapabilityId == control);
+            Assert.Equal(ProductShellCapabilityProvider.DetailCapabilityId, registration.Declaration.ParentCapabilityId);
+            Assert.Equal("product.detail", registration.Declaration.RouteId);
+            Assert.Equal("U-01-360", registration.Declaration.ScreenId);
+        }
+        Assert.All(registry.Registrations.Where(registration => !controls.Contains(registration.Declaration.CapabilityId)),
             registration => Assert.Null(registration.Declaration.ParentCapabilityId));
     }
 
