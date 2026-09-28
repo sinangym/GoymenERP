@@ -26,6 +26,7 @@ import { accountingRoutes } from '../accounting/accountingRoutes'
 import { logisticsRoutes } from '../logistics/logisticsRoutes'
 import { purchasingRoutes } from '../purchasing/purchasingRoutes'
 import { inventoryRoutes } from '../inventory/inventoryRoutes'
+import { identityRoutes } from '../identity/identityRoutes'
 import { StateBlock } from './StateBlock'
 
 export const shellRoutes: RouteObject[] = [
@@ -183,6 +184,7 @@ export const shellRoutes: RouteObject[] = [
        */
       ...purchasingRoutes,
       ...inventoryRoutes,
+      ...identityRoutes,
       {
         /**
          * Catch-all. Without it react-router renders its own error boundary —

@@ -228,6 +228,12 @@ internal static class ShellCapabilityRegistryAuthorities
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV13PublishedFinanceV12PublishedManufacturingV14PublishedLogisticsV11PublishedPurchasingV14PublishedAccountingV13AndPublishedInventoryV14 =
         "sha256:Ey1zzzn9b4LKGrgutJDLeap3x0nmEKfhrxlu3Rif9gs";
 
+    // SY-01/SY-02 (read-only users-and-permissions view): Identity 1.0 joins the normal host with two screens on
+    // identity.assignments.read. Only this new full-host row is added; every earlier row keeps its provider set and value.
+    // Derived by ShellCapabilityRegistry.ComputeCandidateRevision over main fec92de9's providers plus Identity 1.0.
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV13PublishedFinanceV12PublishedManufacturingV14PublishedLogisticsV11PublishedPurchasingV14PublishedAccountingV13PublishedInventoryV14AndPublishedIdentityV10 =
+        "sha256:i5zyXc6rE26sPjTg2XCE2FwJjYMu4Ltddi7MLTW6fRQ";
+
     internal const string CounterpartyV15PublishedListCreateAndDetail =
         "sha256:UBHnivzhe_dp5f7vU7dP5n7HG-P8XYBGhxvD_OjMSnw";
 

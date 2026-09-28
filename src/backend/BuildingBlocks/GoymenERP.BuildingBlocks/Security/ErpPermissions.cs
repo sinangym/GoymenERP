@@ -455,6 +455,11 @@ public static class ErpPermissions
     public const string IdentityAccessApprove = "identity.access.approve";
     public const string IdentityRolesManage = "identity.roles.manage";
     public const string IdentityAuditRead = "identity.audit.read";
+    /// <summary>
+    /// SY-01/SY-02 read-only access view: who holds which role, permission and scope in the company. Critical and
+    /// company-wide only (user decision 2026-09-28); no seeded role holds it.
+    /// </summary>
+    public const string IdentityAssignmentsRead = "identity.assignments.read";
 
     public static IReadOnlySet<string> All { get; } = new HashSet<string>(
         [
@@ -539,6 +544,7 @@ public static class ErpPermissions
             IdentityAccessApprove,
             IdentityRolesManage,
             IdentityAuditRead,
+            IdentityAssignmentsRead,
         ],
         StringComparer.Ordinal);
 
@@ -547,6 +553,7 @@ public static class ErpPermissions
             IdentityAccessApprove,
             IdentityRolesManage,
             IdentityAuditRead,
+            IdentityAssignmentsRead,
             FinanceBankAccountPropose,
             FinanceBankAccountApprove,
         ],
@@ -624,6 +631,7 @@ public static class ErpPermissions
         FinancePartyLedgerAmountRead,
         FinanceAllocationWrite,
             IdentityAuditRead,
+            IdentityAssignmentsRead,
         ],
         StringComparer.Ordinal);
 

@@ -216,6 +216,10 @@ export const CAPABILITY = {
   inventoryOpeningStockRecord: 'inventory.opening-stock.record',
   /** ST-01 bounded, company-scoped physical stock-position read. */
   inventoryStockPositionsList: 'inventory.stock-positions.list',
+  /** SY-01 read subset "Kullanıcılar ve yetkiler". Route `/ayarlar/kullanicilar-ve-yetkiler`, owner Identity. Read-only. */
+  identityAssignmentsList: 'identity.assignments.list',
+  /** SY-02 read subset: one role's permissions and holders. Reached from a row, never the sidebar. */
+  identityRolesDetail: 'identity.roles.detail',
   /** L-02 loading-instruction list. Route `/lojistik/yukleme-talimatlari`, owner the Sales/Logistics lane (SİPARİŞ). */
   logisticsInstructionsList: 'logistics.instructions.list',
   /** L-03 new loading instruction. Route `/lojistik/yukleme-talimatlari/yeni`. A SEPARATE grant from reading. */
@@ -306,6 +310,8 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.accountingTrialBalance]: '/muhasebe/mizan',
   [CAPABILITY.inventoryOpeningStockRecord]: '/stok/acilis',
   [CAPABILITY.inventoryStockPositionsList]: '/stok/pozisyonlar',
+  [CAPABILITY.identityAssignmentsList]: '/ayarlar/kullanicilar-ve-yetkiler',
+  [CAPABILITY.identityRolesDetail]: '/ayarlar/kullanicilar-ve-yetkiler/roller/:roleId',
   [CAPABILITY.logisticsInstructionsList]: '/lojistik/yukleme-talimatlari',
   // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as an instruction id.
   [CAPABILITY.logisticsInstructionsCreate]: '/lojistik/yukleme-talimatlari/yeni',
@@ -384,6 +390,9 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   [CAPABILITY.accountingTrialBalance]: '',
   [CAPABILITY.inventoryOpeningStockRecord]: 'Stok Açılışı',
   [CAPABILITY.inventoryStockPositionsList]: 'Stok / Malzeme Pozisyonu',
+  [CAPABILITY.identityAssignmentsList]: 'Kullanıcılar ve yetkiler',
+  // The role card is opened from a row of the access list, never from the sidebar.
+  [CAPABILITY.identityRolesDetail]: '',
   // Not these two: a period is proposed from the M-07 list and a journal opened from a row.
   [CAPABILITY.accountingPeriodsPropose]: '',
   [CAPABILITY.accountingJournalsDetail]: '',

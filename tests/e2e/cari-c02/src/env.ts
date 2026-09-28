@@ -34,6 +34,22 @@ export const CREATOR_ACTOR = 'c02-creator'
  */
 export const OTHER_COMPANY_ACTOR = 'c02-other-company'
 
+/**
+ * AT-004 read-only access view ("Kullanıcılar ve yetkiler"). Holds `identity.assignments.read` ONLY,
+ * company-wide in company A. Reads the assignments of the two actors above; writes nothing.
+ */
+export const ACCESS_ADMIN_ACTOR = 'c02-access-admin'
+
+/**
+ * Holds the SAME single name, company-wide in company B — the company fence, measured the way C02-03
+ * measures it: a fully authorized administrator of another company must not see company A's grants.
+ */
+export const ACCESS_ADMIN_OTHER_COMPANY_ACTOR = 'c02-access-admin-b'
+
+/** Identity user ids of the suite's own actors, as `infra/browser-suites/c02.override.yml` seeds them. */
+export const CREATOR_USER_ID = 'b2000000-0000-4000-8000-000000000401'
+export const OTHER_COMPANY_USER_ID = 'b2000000-0000-4000-8000-000000000402'
+
 export interface C02Environment {
   readonly apiBaseUrl: string
   readonly testedCommit: string
