@@ -303,6 +303,25 @@ export const PRODUCT_ACTIVATION_TEXT = {
 } as const
 
 /**
+ * Spec §10.2/§15: the server's exact-name duplicate preview. The texts state the ONE rule the server
+ * applied (same name, Turkish case-insensitive) and what it does NOT do: it never blocks a save or an
+ * approval, never merges, and does not compare technical attributes (no decided rule; NEEDS-SINAN).
+ */
+export const PRODUCT_DUPLICATE_TEXT = {
+  heading: 'Mükerrer kart kontrolü',
+  checking: 'Aynı adlı ürün kartları sunucuda kontrol ediliyor…',
+  none: 'Sunucu kontrolünde bu adla başka ürün kartı yok.',
+  foundTitle: 'Bu adla kayıtlı başka ürün kartları var',
+  foundDetail:
+    'Karşılaştırın: aynı ürünü ikinci kez tanımlamadığınızdan emin olun. Bu uyarı kaydı veya onayı engellemez ve kartları birleştirmez.',
+  rule: 'Kontrol kuralı: aynı ad (Türkçe büyük/küçük harf farkı gözetilmez). Teknik özellik benzerliği bu kontrolde yoktur.',
+  more: 'Aynı adlı daha fazla kart var; tamamı için ürün listesinde arayın.',
+  failed: 'Aynı ad kontrolü yapılamadı. Bu, kaydı veya onayı engellemez.',
+  changedBeforeApproval:
+    'Aynı adlı kartların listesi siz bakarken değişti. Güncel listeyi inceleyin; onaylamak için yeniden basın.',
+} as const
+
+/**
  * Deactivation / reactivation of a card already in use (DEC-CAR-003, #98 §7.9). The texts say
  * what the move DOES in both companies and what it does NOT do: nothing is deleted, existing
  * stock, orders and history stay readable; only new selections refuse the card.

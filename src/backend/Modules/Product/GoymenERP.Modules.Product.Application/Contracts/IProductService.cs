@@ -13,6 +13,13 @@ public interface IProductService
     Task<ProductPage> GetPageAsync(ProductListQuery query, CancellationToken cancellationToken);
     Task<ProductCardView?> GetAsync(Guid id, CancellationToken cancellationToken);
     Task<IReadOnlyList<ProductCodeGroup>> GetCodeGroupsAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// §10.2 / §15: the read-only exact-name duplicate candidates for a name being created or edited (a warning to
+    /// compare against; it never blocks a save or an approval). Same global Read authority as the list.
+    /// </summary>
+    Task<ProductDuplicateCandidates> GetDuplicateCandidatesAsync(ProductDuplicateQuery query,
+        CancellationToken cancellationToken);
     Task<ProductReferenceOptions> GetReferenceOptionsAsync(ProductReferenceQuery query, CancellationToken cancellationToken);
     Task<ProductMutationResponse> CreateDraftAsync(CreateProductDraftRequest request,
         string idempotencyKey, CancellationToken cancellationToken);
