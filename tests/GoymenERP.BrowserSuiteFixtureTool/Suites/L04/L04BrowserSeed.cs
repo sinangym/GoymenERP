@@ -257,10 +257,12 @@ public sealed class L04BrowserSeed : IBrowserSuiteFixture
             throw new InvalidOperationException("The sales section must answer the seeded approved sales line and nothing of the purchase order.");
         }
 
+        // The supplier name is compared as a parsed value: the raw JSON escapes its non-ASCII letters (ç as ç).
         if (purchaseWork.GetProperty("section").GetString() != "Purchase"
-            || !purchaseWorkJson.Contains(PurchaseLineId.ToString("D"), StringComparison.OrdinalIgnoreCase)
-            || purchaseWorkJson.Contains(DraftId.ToString("D"), StringComparison.OrdinalIgnoreCase)
-            || !purchaseWorkJson.Contains(SupplierName, StringComparison.Ordinal))
+            || !purchaseWork.GetProperty("items").EnumerateArray().Any(item =>
+                item.GetProperty("lineId").GetGuid() == PurchaseLineId
+                && item.GetProperty("supplierName").GetString() == SupplierName)
+            || purchaseWorkJson.Contains(DraftId.ToString("D"), StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException("The purchase section must answer the seeded purchase line by the supplier's name and nothing of the sales order.");
         }
