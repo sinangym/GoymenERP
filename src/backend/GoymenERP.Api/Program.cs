@@ -25,6 +25,7 @@ using GoymenERP.Modules.Counterparty.Infrastructure;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure;
 using GoymenERP.Modules.Finance.Infrastructure.Shell;
+using GoymenERP.Modules.Identity.Infrastructure.Shell;
 using GoymenERP.Modules.Idempotency.Infrastructure;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Infrastructure;
@@ -270,6 +271,9 @@ builder.Services.AddSingleton<IShellCapabilityProvider, LogisticsShellCapability
 builder.Services.AddSingleton<IShellCapabilityProvider, PurchasingShellCapabilityProvider>();
 // ACC-V0b: Accounting's (staged) period, journal and posting-queue screens, before the authority is chosen.
 builder.Services.AddSingleton<IShellCapabilityProvider, AccountingShellCapabilityProvider>();
+// SY-01/SY-02: Identity's read-only users-and-permissions view (identity.assignments.read), before the authority
+// is chosen. No control: assigning and revoking stay blocked (NEEDS-SINAN #66 5738113623, OPEN-013).
+builder.Services.AddSingleton<IShellCapabilityProvider, IdentityShellCapabilityProvider>();
 var shellCapabilityAuthority = C01E2eShellCapabilityActivation.Configure(
     builder.Services,
     builder.Environment,

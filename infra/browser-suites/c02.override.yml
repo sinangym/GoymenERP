@@ -1,4 +1,4 @@
-# CARI-NORMAL (`browser:c02:ci`) — the two synthetic actors of the create/reopen journey, and their
+# CARI-NORMAL (`browser:c02:ci`) — the synthetic actors of the create/reopen journey and of the SY-01/SY-02 read-only access view, and their
 # Identity users, roles and company-wide assignments, seeded through the real IdentityDataSeeder at
 # host start (before the canonical fixture baseline, so none of it appears as a delta).
 #
@@ -78,3 +78,47 @@ services:
       IdentitySeed__Assignments__8__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
       IdentitySeed__Assignments__8__Scopes__0__Type: Company
       IdentitySeed__Assignments__8__Scopes__0__Id: 10000000-0000-0000-0000-000000000002
+      # SY-01/SY-02 read-only access view (user decision 2026-09-28): two administrators that hold ONLY
+      # identity.assignments.read (Critical, company-wide only), one in A and one in B. The same design as above:
+      # the permission is held constant and the company varies, so B's refusal of A's grants is the company fence.
+      # No seeded or real role receives the name; these disposable actors are its only holders.
+      BootstrapIdentity__Users__4__UserId: c02-access-admin
+      BootstrapIdentity__Users__4__DisplayName: SENTETIK browser-suite:c02 yetki görüntüleyici
+      BootstrapIdentity__Users__5__UserId: c02-access-admin-b
+      BootstrapIdentity__Users__5__DisplayName: SENTETIK browser-suite:c02 diğer şirketin yetki görüntüleyicisi
+      IdentitySeed__Users__7__Id: b2000000-0000-4000-8000-000000000403
+      IdentitySeed__Users__7__DisplayName: SENTETIK browser-suite:c02 yetki görüntüleyici
+      IdentitySeed__Users__7__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000403
+      IdentitySeed__Users__7__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
+      IdentitySeed__Users__7__ExternalIdentities__0__Subject: c02-access-admin
+      IdentitySeed__Users__8__Id: b2000000-0000-4000-8000-000000000404
+      IdentitySeed__Users__8__DisplayName: SENTETIK browser-suite:c02 diğer şirketin yetki görüntüleyicisi
+      IdentitySeed__Users__8__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000404
+      IdentitySeed__Users__8__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
+      IdentitySeed__Users__8__ExternalIdentities__0__Subject: c02-access-admin-b
+      IdentitySeed__Roles__7__Id: b3000000-0000-4000-8000-000000000403
+      IdentitySeed__Roles__7__Code: BROWSER_C02_ACCESS_ADMIN
+      IdentitySeed__Roles__7__Name: SENTETIK browser-suite:c02 yetki görüntüleme rolü
+      IdentitySeed__Roles__7__IsSystem: "false"
+      IdentitySeed__Roles__7__Permissions__0: identity.assignments.read
+      IdentitySeed__Roles__8__Id: b3000000-0000-4000-8000-000000000404
+      IdentitySeed__Roles__8__Code: BROWSER_C02_ACCESS_ADMIN_OTHER_COMPANY
+      IdentitySeed__Roles__8__Name: SENTETIK browser-suite:c02 diğer şirkette yetki görüntüleme rolü
+      IdentitySeed__Roles__8__IsSystem: "false"
+      IdentitySeed__Roles__8__Permissions__0: identity.assignments.read
+      IdentitySeed__Assignments__9__Id: b4000000-0000-4000-8000-000000000403
+      IdentitySeed__Assignments__9__UserId: b2000000-0000-4000-8000-000000000403
+      IdentitySeed__Assignments__9__RoleId: b3000000-0000-4000-8000-000000000403
+      IdentitySeed__Assignments__9__CompanyId: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__9__ValidFromUtc: "2026-01-01T00:00:00+00:00"
+      IdentitySeed__Assignments__9__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
+      IdentitySeed__Assignments__9__Scopes__0__Type: Company
+      IdentitySeed__Assignments__9__Scopes__0__Id: 10000000-0000-0000-0000-000000000001
+      IdentitySeed__Assignments__10__Id: b4000000-0000-4000-8000-000000000404
+      IdentitySeed__Assignments__10__UserId: b2000000-0000-4000-8000-000000000404
+      IdentitySeed__Assignments__10__RoleId: b3000000-0000-4000-8000-000000000404
+      IdentitySeed__Assignments__10__CompanyId: 10000000-0000-0000-0000-000000000002
+      IdentitySeed__Assignments__10__ValidFromUtc: "2026-01-01T00:00:00+00:00"
+      IdentitySeed__Assignments__10__ApprovedByUserId: 20000000-0000-0000-0000-000000000003
+      IdentitySeed__Assignments__10__Scopes__0__Type: Company
+      IdentitySeed__Assignments__10__Scopes__0__Id: 10000000-0000-0000-0000-000000000002

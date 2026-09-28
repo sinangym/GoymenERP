@@ -198,7 +198,9 @@ SUITE_IDENTITY_PERMISSIONS = {
     # deliberate. org03 varies the permissions to show a capability boundary; c02 holds them CONSTANT
     # and varies the COMPANY, so that when the other-company actor is refused, permissions cannot be
     # the explanation. A closed list of two, therefore, with no per-actor subset to record.
-    "c02": ("counterparty.parties.create", "counterparty.parties.read"),
+    # SY-01/SY-02 (user decision 2026-09-28): two further actors, c02-access-admin (A) and c02-access-admin-b (B),
+    # hold ONLY identity.assignments.read — the same company-fence design, now for the read-only access view.
+    "c02": ("counterparty.parties.create", "counterparty.parties.read", "identity.assignments.read"),
     # ORG master edit (user decision 2026-09-27): a THIRD actor, org03-editor, holds the three reads its
     # screens need (work-centers, locations, sites) plus the three master-edit writes. The two readers above
     # keep their exact subsets, so the suite also shows a reader is offered no create/edit control.
