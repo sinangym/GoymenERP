@@ -43,10 +43,10 @@ expired allocations. It supports only the locked `sales.order-line` demand kind;
 sources and source conversion are separate accepted slices. Rows created before this lifecycle remain readable with
 null demand facts, so the LOG-5 runtime is not relabelled.
 
-Host publication is **NOT READY**: no approved allocation write permission exists. Issue #66 comment 5805818345 asks
-for the exact existing permission/action mapping. Until that is answered, there is no endpoint, grant, shell route or
-OpenAPI operation. The central host must also read `ISalesOrderLineReferencePortV1`, compare the approved line's
-company/product/version, then revalidate authority/company/actor immediately before this single owner save.
+Host publication: the allocation routes are published under `inventory.physical-allocation.write` (create,
+release, and the INV-AL-1 change below) with their OpenAPI operations. The host reads `ISalesOrderLineReferencePortV1`,
+compares the approved line's company/product/version, then revalidates authority/company/actor immediately before
+the single owner save.
 
 ### INV-AL-1 change — revise an existing allocation (2026-09-28)
 
