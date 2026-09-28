@@ -36,6 +36,11 @@ import type {
   ManualBankPaymentDraftSaveRequest,
   RecordManualBankPaymentRequest,
 } from './manualBankPaymentContract'
+import type {
+  CustomerInstrumentCollectRequest,
+  CustomerInstrumentReceiveRequest,
+  CustomerInstrumentStatusChangeRequest,
+} from './customerInstrumentContract'
 import { clearAttemptStore } from './receiptCommand'
 import { clearBankAttemptStore } from './bankAccountCommand'
 import { DRAFT_CONTEXT_EXAMPLE, EXAMPLE_BANK, EXAMPLE_COMPANY, EXAMPLE_CURRENCY, NEGATIVE_EXAMPLE, NORMAL_EXAMPLE } from './contractExamples'
@@ -75,6 +80,9 @@ type CommandName =
   | 'saveManualBankPaymentDraft'
   | 'approveManualBankPayment'
   | 'recordManualBankPayment'
+  | 'receiveCustomerInstrument'
+  | 'changeCustomerInstrumentStatus'
+  | 'collectCustomerInstrument'
 type ReadName =
   | 'listBankAccounts'
   | 'listSources'
@@ -86,6 +94,9 @@ type ReadName =
   | 'reversalProposal'
   | 'listManualBankPayments'
   | 'manualBankPaymentDetail'
+  | 'listCustomerInstruments'
+  | 'customerInstrumentDetail'
+  | 'customerInstrumentRisk'
 
 export interface CommandCall {
   readonly method: CommandName
@@ -103,6 +114,9 @@ export interface CommandCall {
     | ManualBankPaymentDraftSaveRequest
     | ApproveManualBankPaymentRequest
     | RecordManualBankPaymentRequest
+    | CustomerInstrumentReceiveRequest
+    | CustomerInstrumentStatusChangeRequest
+    | CustomerInstrumentCollectRequest
     | ApprovalCall
   resolve(reply: PortReply): Promise<void>
   reject(): Promise<void>
@@ -171,6 +185,12 @@ export function recordingPort(respond: ReadResponder) {
     saveManualBankPaymentDraft: command('saveManualBankPaymentDraft'),
     approveManualBankPayment: command('approveManualBankPayment'),
     recordManualBankPayment: command('recordManualBankPayment'),
+    listCustomerInstruments: read('listCustomerInstruments') as FinanceReceiptPort['listCustomerInstruments'],
+    customerInstrumentDetail: read('customerInstrumentDetail') as FinanceReceiptPort['customerInstrumentDetail'],
+    customerInstrumentRisk: read('customerInstrumentRisk') as FinanceReceiptPort['customerInstrumentRisk'],
+    receiveCustomerInstrument: command('receiveCustomerInstrument'),
+    changeCustomerInstrumentStatus: command('changeCustomerInstrumentStatus'),
+    collectCustomerInstrument: command('collectCustomerInstrument'),
     listBankAccounts: read('listBankAccounts') as FinanceReceiptPort['listBankAccounts'],
     listSources: read('listSources') as FinanceReceiptPort['listSources'],
     sourceDetail: read('sourceDetail') as FinanceReceiptPort['sourceDetail'],

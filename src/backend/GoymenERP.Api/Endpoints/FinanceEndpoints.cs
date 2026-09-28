@@ -21,6 +21,7 @@ public static class FinanceEndpoints
     public const string BankAccountCurrencyCandidatesPath = "/api/v1/finance/bank-accounts/currency-candidates";
     public const string ManualBankPaymentsPath = "/api/v1/finance/manual-bank-payments";
     public const string AllocationsPath = "/api/v1/finance/allocations";
+    public const string CustomerInstrumentsPath = "/api/v1/finance/customer-instruments";
     private const string IdempotencyHeaderName = "Idempotency-Key";
     private const int MaximumIdempotencyKeyLength = 128;
     private static readonly JsonSerializerOptions ContractJson = FinanceJson.CreateOptions();
@@ -80,8 +81,250 @@ public static class FinanceEndpoints
         MapManualReceiptEndpoints(endpoints);
         MapManualBankPaymentEndpoints(endpoints);
         MapFinanceAllocationEndpoints(endpoints);
+        MapCustomerInstrumentEndpoints(endpoints);
         MapBankAccountEndpoints(endpoints);
         return endpoints;
+    }
+
+    /// <summary>
+    /// DEC-FIN-016 first release: the customer cheque / note portfolio. Receive (no money effect), a status change
+    /// without a money effect, and the collection — the only money effect (one recorded receipt source, one money
+    /// event). Each command needs an <c>Idempotency-Key</c> and answers like every Finance command (200 / 422 / 409;
+    /// 403 / 503 code-less); the route's instrument id and the body's must agree, else 400.
+    /// </summary>
+    private static void MapCustomerInstrumentEndpoints(IEndpointRouteBuilder endpoints)
+    {
+        endpoints.MapPost(CustomerInstrumentsPath, async (
+                HttpContext httpContext,
+                ICustomerInstrumentService service,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key))
+                {
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                }
+
+                if (await ReadBodyAsync<CustomerInstrumentReceiveRequest>(httpContext, cancellationToken) is not { } request)
+                {
+                    return httpContext.Request.HasJsonContentType()
+                        ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                        : Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+                }
+
+                var result = await service.ReceiveAsync(Context(companyContext, currentUser, correlation),
+                    new CommandMetadata(key), request, cancellationToken);
+                return Command(httpContext, result, result.Outcome, result.IsReplay, result.OriginalCorrelationId);
+            })
+            .WithName("ReceiveFinanceCustomerInstrumentV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
+            .Accepts<CustomerInstrumentReceiveRequest>("application/json")
+            .Produces<CustomerInstrumentCommandResult>(StatusCodes.Status200OK)
+            .Produces<CustomerInstrumentCommandResult>(StatusCodes.Status422UnprocessableEntity)
+            .Produces<CustomerInstrumentCommandResult>(StatusCodes.Status409Conflict)
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapPost(CustomerInstrumentsPath + "/{instrumentId:guid}/status-changes", async (
+                Guid instrumentId,
+                HttpContext httpContext,
+                ICustomerInstrumentService service,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key))
+                {
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                }
+
+                if (await ReadBodyAsync<CustomerInstrumentStatusChangeRequest>(httpContext, cancellationToken)
+                    is not { } request)
+                {
+                    return httpContext.Request.HasJsonContentType()
+                        ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                        : Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+                }
+
+                if (request.InstrumentId != instrumentId)
+                {
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                }
+
+                var result = await service.ChangeStatusAsync(Context(companyContext, currentUser, correlation),
+                    new CommandMetadata(key), request, cancellationToken);
+                return Command(httpContext, result, result.Outcome, result.IsReplay, result.OriginalCorrelationId);
+            })
+            .WithName("ChangeFinanceCustomerInstrumentStatusV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
+            .Accepts<CustomerInstrumentStatusChangeRequest>("application/json")
+            .Produces<CustomerInstrumentCommandResult>(StatusCodes.Status200OK)
+            .Produces<CustomerInstrumentCommandResult>(StatusCodes.Status422UnprocessableEntity)
+            .Produces<CustomerInstrumentCommandResult>(StatusCodes.Status409Conflict)
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpServiceUnavailable();
+
+        // The one money effect of the portfolio: the period follows collectedOn (K1); a closed period is a 422
+        // finance_period_not_open and an undecidable rule a 422 finance_period_rule_unavailable, both before any write.
+        endpoints.MapPost(CustomerInstrumentsPath + "/{instrumentId:guid}/collection", async (
+                Guid instrumentId,
+                HttpContext httpContext,
+                ICustomerInstrumentService service,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key))
+                {
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                }
+
+                if (await ReadBodyAsync<CustomerInstrumentCollectRequest>(httpContext, cancellationToken) is not { } request)
+                {
+                    return httpContext.Request.HasJsonContentType()
+                        ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                        : Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+                }
+
+                if (request.InstrumentId != instrumentId)
+                {
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                }
+
+                var result = await service.CollectAsync(Context(companyContext, currentUser, correlation),
+                    new CommandMetadata(key), request, cancellationToken);
+                return Command(httpContext, result, result.Outcome, result.IsReplay, result.OriginalCorrelationId);
+            })
+            .WithName("CollectFinanceCustomerInstrumentV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
+            .Accepts<CustomerInstrumentCollectRequest>("application/json")
+            .Produces<CustomerInstrumentCommandResult>(StatusCodes.Status200OK)
+            .Produces<CustomerInstrumentCommandResult>(StatusCodes.Status422UnprocessableEntity)
+            .Produces<CustomerInstrumentCommandResult>(StatusCodes.Status409Conflict)
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapGet(CustomerInstrumentsPath, async (
+                [FromQuery] string? cursor,
+                HttpContext httpContext,
+                ICustomerInstrumentService service,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                var result = await service.ListAuthorizedAsync(Context(companyContext, currentUser, correlation), cursor,
+                    cancellationToken);
+                // The list has no "not found": the service answers NotFound only for a malformed or foreign cursor.
+                return result.Outcome == ReadOutcome.NotFound
+                    ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                    : Read(result);
+            })
+            .WithName("GetFinanceCustomerInstrumentsV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .Produces<CustomerInstrumentPage>()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpServiceUnavailable();
+
+        // DEC-FIN-016 risk tracking (user decision 2026-09-27): read-only facts per customer account and currency as of
+        // an exact ISO date; one customer account needs both ids. No money effect, no limit (OPEN-010).
+        endpoints.MapGet(CustomerInstrumentsPath + "/risk", async (
+                [FromQuery] DateOnly asOf,
+                [FromQuery] Guid? partyId,
+                [FromQuery] Guid? companyAccountId,
+                HttpContext httpContext,
+                ICustomerInstrumentService service,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                var rawAsOf = httpContext.Request.Query["asOf"];
+                if (rawAsOf.Count != 1 || !FinanceIsoDate.TryParse(rawAsOf[0], out var isoAsOf) || isoAsOf != asOf)
+                {
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                }
+
+                var result = await service.RiskAuthorizedAsync(Context(companyContext, currentUser, correlation),
+                    new CustomerInstrumentRiskRequest(asOf, partyId, companyAccountId), cancellationToken);
+                // The view has no "not found": the service answers NotFound only for a half-named customer scope.
+                return result.Outcome == ReadOutcome.NotFound
+                    ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                    : Read(result);
+            })
+            .WithName("GetFinanceCustomerInstrumentRiskV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .Produces<CustomerInstrumentRiskView>()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapGet(CustomerInstrumentsPath + "/{instrumentId:guid}", async (
+                Guid instrumentId,
+                HttpContext httpContext,
+                ICustomerInstrumentService service,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                return Read(await service.DetailAuthorizedAsync(Context(companyContext, currentUser, correlation),
+                    instrumentId, cancellationToken));
+            })
+            .WithName("GetFinanceCustomerInstrumentV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .Produces<CustomerInstrumentDetail>()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable();
     }
 
     private static void MapFinanceAllocationEndpoints(IEndpointRouteBuilder endpoints)

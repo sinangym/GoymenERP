@@ -15,7 +15,7 @@ import { StateBlock } from '../shell/StateBlock'
 import { useShellState } from '../shell/shellContext'
 import { hasCapability } from '../shell/shellState'
 import { isBoundUuid, type SourceDetail } from './contract'
-import { FINANCE_CAPABILITY, FINANCE_ROUTE, receiptDetailPath } from './capabilities'
+import { FINANCE_CAPABILITY, FINANCE_ROUTE, INSTRUMENT_QUERY, receiptDetailPath } from './capabilities'
 import { FinanceSourceDetail } from './FinanceSourceDetail'
 import { FinanceSourceList } from './FinanceSourceList'
 import {
@@ -29,15 +29,31 @@ import {
   SOURCE_SUBJECT,
 } from './financeText'
 import { ManualReceiptDraftForm } from './ManualReceiptDraftForm'
+import { CustomerInstrumentPortfolio, CustomerInstrumentReceiveForm } from './CustomerInstruments'
+import { CustomerInstrumentRiskBlock } from './CustomerInstrumentRisk'
 import styles from './Finance.module.css'
+
+/** DEC-FIN-016: how the customer pays on the new-receipt page — a bank / POS receipt draft, or a cheque / note. */
+const RECEIPT_INSTRUMENT_LABEL = 'Tahsilat aracı'
+const RECEIPT_INSTRUMENT_OPTION = {
+  transfer: 'Banka havalesi / EFT veya müşteri POS',
+  instrument: 'Müşteri çeki veya senedi (portföye al)',
+} as const
 
 export function ReceiptListPage() {
   const navigate = useNavigate()
+  const [search, setSearch] = useSearchParams()
+  const selected = search.get(INSTRUMENT_QUERY)
   return (
     <section aria-labelledby="finance-receipts-title">
       <h1 id="finance-receipts-title">{RECEIPTS_TITLE}</h1>
       <p className={styles.notice}>{RECEIPTS_NOTICE}</p>
       <FinanceSourceList onOpen={(sourceId) => navigate(receiptDetailPath(sourceId))} />
+      {/* DEC-FIN-016: the customer cheque / note portfolio; hidden for an actor without its own read grant. */}
+      <CustomerInstrumentPortfolio
+        selectedId={isBoundUuid(selected) ? selected : null}
+        onSelect={(instrumentId) => setSearch(instrumentId === null ? {} : { [INSTRUMENT_QUERY]: instrumentId })}
+      />
     </section>
   )
 }
@@ -47,6 +63,7 @@ export function ReceiptDraftPage() {
   const partyId = search.get('partyId')
   const companyAccountId = search.get('companyAccountId')
   const [saved, setSaved] = useState<SourceDetail | null>(null)
+  const [instrument, setInstrument] = useState<'transfer' | 'instrument'>('transfer')
   const party =
     isBoundUuid(partyId) && isBoundUuid(companyAccountId) ? { partyId, companyAccountId } : null
 
@@ -56,7 +73,21 @@ export function ReceiptDraftPage() {
       {party === null ? (
         <p role="status">{RECEIPT_DRAFT_NEEDS_PARTY}</p>
       ) : (
-        <ManualReceiptDraftForm party={party} onSaved={setSaved} />
+        <>
+          <div className={styles.field}>
+            <label htmlFor="finance-receipt-instrument">{RECEIPT_INSTRUMENT_LABEL}</label>
+            <select id="finance-receipt-instrument" value={instrument}
+              onChange={(event) => setInstrument(event.target.value === 'instrument' ? 'instrument' : 'transfer')}>
+              <option value="transfer">{RECEIPT_INSTRUMENT_OPTION.transfer}</option>
+              <option value="instrument">{RECEIPT_INSTRUMENT_OPTION.instrument}</option>
+            </select>
+          </div>
+          {instrument === 'transfer'
+            ? <ManualReceiptDraftForm party={party} onSaved={setSaved} />
+            : <CustomerInstrumentReceiveForm party={party} />}
+          {/* The customer's own cheque / note risk, beside the receipt entered from its account (facts only). */}
+          <CustomerInstrumentRiskBlock party={party} />
+        </>
       )}
       {saved === null ? null : (
         <p>

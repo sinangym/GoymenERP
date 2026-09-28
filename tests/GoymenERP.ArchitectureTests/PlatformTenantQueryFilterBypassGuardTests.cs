@@ -152,8 +152,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // finance
             // DEC-FIN-014: +3 POS collection SQL facts (b18c13d9… -> 7af8ecf1…).
+            // DEC-FIN-016: +6 customer cheque / note SQL facts (7af8ecf1… -> de54339e…).
             ["tools/relational_inventory/finance.txt"] =
-                "7af8ecf15bf83c1a0456dea0305ecbe6dbb317c289058be25a5c821a3f82501e",
+                "de54339e92abc3cf4a90a34a7e5866e7185a806ccc05ecf59e9854681ed2589b",
 
             // identity
             ["tools/relational_inventory/identity.txt"] =
@@ -254,10 +255,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // FIN-T04a (#305): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for DEC-FIN-014: nullable POS fact columns on ReceiptDrafts and MoneyEvents; no new table,
-            // query filter or key.
+            // query filter or key. Re-measured for DEC-FIN-016: the customer instrument, its movements and the
+            // risk read are company-scoped with the same CompanyId filter; the command log and money events gain
+            // the instrument link and the collection kind.
             ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
              + "Persistence/FinanceDbContext.cs"] =
-            "f19915191d13640197d5b80d79e7ce5f85a2681a634c3ff9352fde0852aa9474",
+            "d78ab888f34888ea3ba5c648a6c2b03f0acb064baba299d1883d8c4a279bf170",
             // ACC-3 (#298): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for ACC-V0a: the ADR-011 command log (Commands) is mapped here, company-scoped with the
@@ -559,11 +562,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                             ["Microsoft.Data.SqlClient"] = 1
                         }),
                 // FIN-T04a (#305): the Finance initializer's one provider branch, as Organization.
+                // Re-fingerprinted for DEC-FIN-016: the customer-instrument service registration; the provider
+                // branch and its token counts are unchanged.
                 ["src/backend/Modules/Finance/"
                  + "GoymenERP.Modules.Finance.Infrastructure/"
                  + "FinanceModuleExtensions.cs"] =
                     new(
-                        "dd3869e1245925031441e77b0f77c3a2897a119e9d8062a388cf8776ce08a41a",
+                        "af5480b5dec5030271800fefb0e75e0764cdbbd3d16ec8537c39b68d46fe1155",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -580,6 +585,18 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Finance.Infrastructure/ReceiptDraftService.cs"] =
                     new(
                         "ae3f59d79bb2701efd45434eb242f7177bba28d346c2ad95d6fd2f0db4a26585",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1
+                        }),
+                // DEC-FIN-016: the customer cheque / promissory-note writer references SqlException only to
+                // classify a 2601/2627 unique-key race after SaveChanges (a race of two collections makes one
+                // money event). No connection, command, raw SQL or DbContext construction. K3 5332370492: the
+                // risk view reads each instrument's state as of the chosen business date; SqlClient count unchanged.
+                ["src/backend/Modules/Finance/"
+                 + "GoymenERP.Modules.Finance.Infrastructure/CustomerInstrumentService.cs"] =
+                    new(
+                        "c6f97f814df4a4a7850c9f5e6bd9cc0f4b253d5d8b55a5d7df88c93a17630227",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -1000,6 +1017,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // stored on a draft or money event; the THROW precedes every DropColumn. Forward fix.
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20260927120000_AddPosCollectionFacts.cs"] =
                     new("9741c5fbb341827f77056fa578b0ec8403144990066b40c38d5bcdd48d1da23e",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // DEC-FIN-016: the Down's only raw SQL is Finance's module refusal (51051) while any customer
+                // instrument, instrument command or collection money event is stored; the THROW is the Down's first
+                // statement, before every drop. Forward fix.
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20260927180000_AddCustomerInstruments.cs"] =
+                    new("594e12d2598d6f4dfba756790666d15d4f493980af10ca6cdf1b9e636e58c3f6",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // MFG-6 slice 2: the Down's only raw SQL is Manufacturing's module refusal (51047) while any plan

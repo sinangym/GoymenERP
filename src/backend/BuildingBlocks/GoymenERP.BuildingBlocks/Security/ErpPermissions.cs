@@ -229,6 +229,21 @@ public static class ErpPermissions
     public const string FinanceManualBankPaymentRecord = "finance.manual-bank-payment.record";
 
     /// <summary>
+    /// DEC-FIN-016 customer cheque / promissory-note portfolio: the Finance owner's names
+    /// (FinancePermissionNames, same strings). Registration makes them measurable; it grants nothing — the
+    /// user's decision of 2026-09-27 gives them only to the disposable fin01 browser actor, and the real-user
+    /// mapping stays a human gate. Company-wide only: the portfolio belongs to the server-resolved company and
+    /// has no narrower scope dimension. Not Critical: no source makes receiving, a status change or the
+    /// collection a grant-time dual-control duty. The customer is credited at collection (user decision
+    /// 2026-09-27); the risk view reads under the read name and discloses amounts only with the amount name.
+    /// </summary>
+    public const string FinanceCustomerInstrumentRead = "finance.customer-instrument.read";
+    public const string FinanceCustomerInstrumentAmountRead = "finance.customer-instrument.amount.read";
+    public const string FinanceCustomerInstrumentReceive = "finance.customer-instrument.receive";
+    public const string FinanceCustomerInstrumentStatusChange = "finance.customer-instrument.status.change";
+    public const string FinanceCustomerInstrumentCollect = "finance.customer-instrument.collect";
+
+    /// <summary>
     /// F-03 allocation commands. Registration makes the Finance owner's permission name available
     /// to endpoint authorization; it grants no role or user access.
     /// </summary>
@@ -486,6 +501,11 @@ public static class ErpPermissions
         FinanceManualBankPaymentDraftRead,
         FinanceManualBankPaymentApprove,
         FinanceManualBankPaymentRecord,
+        FinanceCustomerInstrumentRead,
+        FinanceCustomerInstrumentAmountRead,
+        FinanceCustomerInstrumentReceive,
+        FinanceCustomerInstrumentStatusChange,
+        FinanceCustomerInstrumentCollect,
         FinanceAllocationWrite,
             IdentityProfileRead,
             IdentityAccessRequest,
@@ -566,6 +586,11 @@ public static class ErpPermissions
         FinanceManualBankPaymentDraftRead,
         FinanceManualBankPaymentApprove,
         FinanceManualBankPaymentRecord,
+        FinanceCustomerInstrumentRead,
+        FinanceCustomerInstrumentAmountRead,
+        FinanceCustomerInstrumentReceive,
+        FinanceCustomerInstrumentStatusChange,
+        FinanceCustomerInstrumentCollect,
         FinanceAllocationWrite,
             IdentityAuditRead,
         ],

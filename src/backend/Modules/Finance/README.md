@@ -230,6 +230,84 @@ contract `GoymenERP.Modules.Finance.Contracts` (#258, #261). The contract's own 
     (the outgoing payment contract has no POS member), which is what "tedarikçi POS yoktur" requires;
   - POS terminal, commission rate, settlement batch or bank statement matching: not decided (OPEN-016).
 
+## DEC-FIN-016: customer cheque / promissory note portfolio (first release)
+
+> DEC-FIN-016 (KILITLI, K1): "Çek ve senet durumları portföy, banka, teminat, ciro, tahsil, karşılıksız, iade/protesto ve
+> ters akışı kapsar." DEC-FIN-006: a cheque or note is a financial source on the same distribution engine (F-03).
+
+- **Customer credit timing = COLLECTION (user decision 2026-09-27).** The customer's debt closes only when the
+  instrument is collected; receiving it closes nothing. The instrument's payment / risk status is tracked SEPARATELY
+  (the risk view below), so the exposure a held cheque stands for is visible without being a money event.
+- **Shape.** Its own aggregate, `finance.CustomerInstruments` (kind `Cheque` | `PromissoryNote`, party + company
+  account, serial, drawer, bank / branch — the bank is required for a cheque —, due date, receipt date, face value as
+  exact text within the Settings profile's scale, currency, status) and the append-only
+  `finance.CustomerInstrumentMovements` (one row per instrument version). The facts never change after the receipt.
+- **Lifecycle (only what the decision names; `CustomerInstrumentRules`).** receive → `InPortfolio`;
+  `DepositForCollection` → `AtBankForCollection` (a Finance bank account: approved, usable, same currency);
+  `WithdrawFromBank` back to the portfolio (the pre-collection reverse flow); `Dishonour` → `Bounced` (cheque,
+  "karşılıksız") | `Protested` (note); `ReturnToCustomer` (from the portfolio or after dishonour); collect →
+  `Collected`. `Collected` and `ReturnedToCustomer` are final. The write guard and `CK_CustomerInstruments_State`
+  hold the same rule in the model and in the database.
+- **Money.** Receiving, depositing, dishonouring and returning have NO money effect: the customer's debt stays open.
+  Collection is the ONE money effect: in one save a recorded receipt source (the manual-bank-receipt shape, so F-02
+  shows it and F-03 distributes it at the face value) and exactly one money event of its own kind
+  (`MoneyEventKinds.CustomerInstrumentCollected` = 3). The instrument names that source once
+  (`UX_CustomerInstruments_CollectionSource`), its version is the concurrency token, and ADR-011 replays the key: a
+  replay, a stale retry or a race never credits the customer twice. At collection the owners are read again (bank
+  account, party account, the Settings profile in effect on the collection date) and the period follows the
+  collection date (K1, the host's `occurredOn` rule). The collection's receipt source is created already recorded at
+  version `1` (it never passed through a draft), so an F-03 allocation of it names `expectedSourceVersion: "1"`. The
+  face value is judged by the approved
+  `finance.manual-bank-receipt.v1` profile, because collection records exactly such a receipt.
+- **HTTP.** `POST /api/v1/finance/customer-instruments` (receive), `POST …/{id}/status-changes`,
+  `POST …/{id}/collection`, `GET …?cursor=` (newest received first), `GET …/{id}` (with the movements and the
+  `availableActions` the actor may take now — the state machine intersected with fresh grants). Commands need an
+  `Idempotency-Key` and answer 200 / 422 / 409 (403 / 503 code-less); the route id must equal the body's (else 400).
+  A missing instrument (422 `instrument_not_found`) and a stale version (409) are the key's terminal answers.
+- **Authority.** Own narrow names (`FinancePermissionNames.CustomerInstrument*`): `finance.customer-instrument.read`,
+  `.amount.read`, `.receive`, `.status.change`, `.collect`. The central registry must know them; until then the port
+  answers `Unavailable` (503). Collection also needs the caller's `finance.bank-account.read` and
+  `accounting.periods.read`, and receiving needs Cari's party read (the party port). Every amount — command result,
+  replay, list, detail — is disclosed only with a fresh `.amount.read` (#497 P2-1).
+- **Audit.** `finance.customer-instrument.received.v1` / `.status-changed.v1` / `.collected.v1` on the instrument, plus
+  `finance.manual-receipt.recorded.v1` (channel `CustomerInstrument`) on the collection's source; no amount in audit
+  JSON; the source channel is the host's (Web over HTTP).
+- **Migration** `20260927180000_AddCustomerInstruments`: the two tables, the command record's sixth target
+  (`CustomerInstrumentId`), `CK_MoneyEvents_Kind` widened to `(1, 2, 3)`. Down refuses with `THROW 51051` while any
+  instrument, movement, instrument command or collection money event is stored.
+- **Screen.** F-02's new-receipt page has "Tahsilat aracı" (bank / POS draft | customer cheque or note); the latter
+  receives into the portfolio. The F-02 list shows the portfolio (hidden for an actor without its read grant) and opens
+  one instrument (`?cekSenet=<id>`) with its facts, history and the server-offered next steps; a collected instrument
+  links to its receipt source. No new route or shell capability.
+- **Risk view (user decision 2026-09-27, read-only).** `GET /api/v1/finance/customer-instruments/risk?asOf=YYYY-MM-DD`
+  (optionally `&partyId=&companyAccountId=`, both or neither, else 400; `asOf` exact ISO, else 400). It is the picture
+  ON `asOf` (point in time, K3 5332370492 P2-1): only instruments received on or before `asOf` count, and each one's
+  state is the status of its last movement dated on or before `asOf`. Every movement carries a business date — the
+  receipt date, the status change's `occurredOn`, the collection date — so no transition falls back to the recording
+  instant; a step recorded later but dated earlier counts from its business date. Per customer account and currency —
+  and their total per currency (the company total, or the one customer's) — the count and exact face sum by risk
+  state on that day: in portfolio not yet due (due on or after `asOf`) / overdue (due before), at the bank
+  for collection, dishonoured (karşılıksız / protestolu), returned, collected, plus the **open exposure** = received and
+  neither collected nor returned (portfolio + bank + dishonoured). Currencies are never added. Every sum, an empty
+  bucket's zero included, is written at the currency scale (P3-1, e.g. `0.00`): the approved Settings profile's scale
+  for the currency on that day, or — when Settings cannot answer for the day — the widest scale of the stored face
+  values of that currency; a digit is never cut. Same read grant as the
+  portfolio (`finance.customer-instrument.read`, no new name); every amount only with `.amount.read` (counts stay).
+  Facts only: no limit, threshold or warning (OPEN-010 stays open); no money effect. Shown on the F-02 list under the
+  portfolio (company view with per-customer lines) and on the new-receipt page for the entered customer account
+  ("Çek/senet riski"). The query is a company-filtered projection; the bucketing is `CustomerInstrumentRiskPolicy`.
+- **Not here, with the blocker that holds it:**
+  - "ciro" (endorsement to a supplier): the customer's credit is decided to come at collection (2026-09-27), so an
+    endorsed, never-collected instrument's credit moment and the supplier-side payment effect still need a decision;
+  - "teminat" (to a bank as collateral): the risk/limit effect needs OPEN-010 (haircut / risk policy) and a credit
+    facility master;
+  - the reverse flow AFTER collection (a collected cheque coming back): FIN-T06 reverses only an original manual
+    receipt, so it refuses the collection source (`finance_reversal_source_not_original_receipt`) until decided;
+  - the journal (portfolio / bank / customer accounts): chart of accounts NEEDS-BUSINESS 5740501573 and voucher
+    approval 5740501655 (ACC-V1);
+  - bank statement matching of the collection: OPEN-016 (no bank integration in the first release);
+  - given (outgoing) cheques / notes and DBS (DEC-FIN-008): not part of this contract.
+
 ## Validation
 
 - `tests/GoymenERP.Finance.UnitTests`: contract and adapter tests, plus `FinanceDraftPersistenceModelTests`. The latter checks schema, filters, the idempotency key, snapshot == model, the write guard and the payload hash, all without a database.
@@ -257,4 +335,12 @@ contract `GoymenERP.Modules.Finance.Contracts` (#258, #261). The contract's own 
   `FinanceRecordSqlServerRelationalAcceptanceTests.A_customer_POS_collection_closes_the_debt_at_gross_and_keeps_net_and_commission_in_one_money_event`
   and `…The_POS_migration_rolls_back_only_while_no_POS_fact_is_stored`; HTTP on SQL:
   `FinanceCommandApiSqlServerRelationalAcceptanceTests.A_customer_POS_collection_is_saved_reopened_and_recorded_once_over_HTTP`.
-- None of this is browser evidence.
+- DEC-FIN-016: `tests/GoymenERP.Finance.UnitTests/CustomerInstrumentContractTests.cs` (the state machine, receive
+  checks, wire shape, payload hash, permission names), `CustomerInstrumentServiceTests.cs` (in memory: receive, reopen,
+  deposit, collect once, replay / stale / other actor, F-03 closes the open item, FIN-T06 refuses the collection
+  source, company fence, Web audit, parsed-JSON redaction) and `CustomerInstrumentPersistenceModelTests.cs` (model and
+  write guard), `CustomerInstrumentRiskPolicyTests.cs` (risk states, exact sums, exposure, redaction) and the service's
+  risk case; SQL: `FinanceCustomerInstrumentSqlServerRelationalAcceptanceTests` (journey, race, redaction, 51051, the
+  risk view) and
+  HTTP on SQL: `FinanceCustomerInstrumentApiSqlServerRelationalAcceptanceTests`; browser: fin01 `FIN01-06`.
+- None of this is browser evidence (except fin01).
