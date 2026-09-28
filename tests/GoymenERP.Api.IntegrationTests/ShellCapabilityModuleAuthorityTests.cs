@@ -25,7 +25,7 @@ public sealed class ShellCapabilityModuleAuthorityTests
             [new CounterpartyShellCapabilityProvider(), new OrganizationShellCapabilityProvider(), new ProductShellCapabilityProvider()];
 
         // On failure xUnit prints the actual revision: the constant is never guessed.
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13AndProductV11,
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13AndProductV12,
             ShellCapabilityRegistry.ComputeCandidateRevision(providers));
     }
 
@@ -48,7 +48,7 @@ public sealed class ShellCapabilityModuleAuthorityTests
         {
             "counterparty" => ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetail,
             "counterparty+organization" => ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailAndOrganizationV13,
-            _ => ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13AndProductV11,
+            _ => ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13AndProductV12,
         }, authority);
     }
 
@@ -101,7 +101,7 @@ public sealed class ShellCapabilityModuleAuthorityTests
         using var container = services.BuildServiceProvider();
         var registry = new ShellCapabilityRegistry(container.GetServices<IShellCapabilityProvider>(),
             new ShellCapabilityAuthorityCatalog([authority]));
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13AndProductV11, authority);
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13AndProductV12, authority);
         Assert.Equal(
             new[]
             {

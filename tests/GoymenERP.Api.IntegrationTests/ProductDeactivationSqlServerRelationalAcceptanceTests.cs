@@ -145,23 +145,6 @@ public sealed class ProductDeactivationSqlServerRelationalAcceptanceTests
             Assert.Equal(HttpStatusCode.Forbidden, companyDenied.StatusCode);
             await AssertUnchangedAsync(factory, product.Id, 1, 2);
 
-            // Granted, then revoked while the move is in flight: 403 and nothing is written.
-            await GrantAsync(factory, ProductMasterOperation.Deactivate);
-            observer.Callback = async (stage, _, cancellationToken) =>
-            {
-                if (stage != ProductCommandAttemptStage.BeforeCommit) return;
-                await using var scope = factory.Services.CreateAsyncScope();
-                var identity = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
-                var grant = await identity.Set<ProductMasterAssignment>().SingleAsync(row => row.UserId == ActorId
-                    && row.Operation == ProductMasterOperation.Deactivate && row.IsActive, cancellationToken);
-                grant.Revoke(Guid.NewGuid(), "Synthetic isolated SQL late revocation", DateTimeOffset.UtcNow);
-                await identity.SaveChangesAsync(cancellationToken);
-            };
-            using var revoked = await MoveAsync(client, "deactivation", product.Id, "deactivate-revoked", "2", "Gerekçe");
-            Assert.Equal(HttpStatusCode.Forbidden, revoked.StatusCode);
-            observer.Callback = null;
-            await AssertUnchangedAsync(factory, product.Id, 1, 2);
-
             // With the Deactivate grant the card leaves use; the Reactivate grant is separate and still missing.
             await GrantAsync(factory, ProductMasterOperation.Deactivate);
             using var deactivated = await MoveAsync(client, "deactivation", product.Id, "deactivate-2", "2", "Gerekçe");
@@ -172,6 +155,25 @@ public sealed class ProductDeactivationSqlServerRelationalAcceptanceTests
             Assert.Equal(HttpStatusCode.Conflict, fenced.StatusCode);
             using var noReactivate = await MoveAsync(client, "reactivation", product.Id, "reactivate-denied", "3", "Gerekçe");
             Assert.Equal(HttpStatusCode.Forbidden, noReactivate.StatusCode);
+            await AssertUnchangedAsync(factory, product.Id, 2, 3);
+
+            // Granted, then revoked while the move is in flight: 403 and nothing is written. (A user holds at most
+            // one assignment row per operation — IX_ProductMasterAssignments_UserId_Operation — so a revoked grant
+            // is not re-issued as a new row; the late revocation is therefore proven on the Reactivate grant.)
+            await GrantAsync(factory, ProductMasterOperation.Reactivate);
+            observer.Callback = async (stage, _, cancellationToken) =>
+            {
+                if (stage != ProductCommandAttemptStage.BeforeCommit) return;
+                await using var scope = factory.Services.CreateAsyncScope();
+                var identity = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
+                var grant = await identity.Set<ProductMasterAssignment>().SingleAsync(row => row.UserId == ActorId
+                    && row.Operation == ProductMasterOperation.Reactivate && row.IsActive, cancellationToken);
+                grant.Revoke(Guid.NewGuid(), "Synthetic isolated SQL late revocation", DateTimeOffset.UtcNow);
+                await identity.SaveChangesAsync(cancellationToken);
+            };
+            using var revoked = await MoveAsync(client, "reactivation", product.Id, "reactivate-revoked", "3", "Gerekçe");
+            Assert.Equal(HttpStatusCode.Forbidden, revoked.StatusCode);
+            observer.Callback = null;
             await AssertUnchangedAsync(factory, product.Id, 2, 3);
             Assert.Equal(0, await CountAsync(factory,
                 "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType] = N'product.card.reactivated.v1' AND [EntityId] = @entity", product.Id));
