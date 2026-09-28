@@ -30,8 +30,9 @@ public sealed class SalesShellCapabilityProviderTests
 
         Assert.Equal("SALES", provider.Owner);
         // The three screens (one permission each, no parent), the SALES-A1 approve CONTROL, and the
-        // S05 commercial-price write CONTROL and the DEC-SAL-003 delivery-schedule CONTROL of the detail. Controls reuse
-        // the detail route, combine read with their command permission, and remain parented by the detail capability.
+        // S05 commercial-price write CONTROL, the DEC-SAL-003 delivery-schedule CONTROL and the DEC-SAL-005 cancel
+        // CONTROL of the detail. Controls reuse the detail route, combine read with their command permission, and remain
+        // parented by the detail capability.
         Assert.Equal(
             [
                 ("sales.drafts.create", "/satis/siparisler/yeni", SalesPermissionManifestV1.DraftsCreate, (string?)null),
@@ -39,6 +40,8 @@ public sealed class SalesShellCapabilityProviderTests
                 ("sales.drafts.list", "/satis/siparisler", SalesPermissionManifestV1.DraftsRead, null),
                 ("sales.orders.approve", "/satis/siparisler/:draftId",
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersApprove}", "sales.drafts.detail"),
+                ("sales.orders.cancel", "/satis/siparisler/:draftId",
+                    $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersCancel}", "sales.drafts.detail"),
                 ("sales.orders.delivery-schedule.write", "/satis/siparisler/:draftId",
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersDeliveryScheduleWrite}", "sales.drafts.detail"),
                 ("sales.orders.price.write", "/satis/siparisler/:draftId",

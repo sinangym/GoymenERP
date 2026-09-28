@@ -203,10 +203,12 @@ public sealed class SalesDeliveryScheduleSqlServerRelationalAcceptanceTests
 
         await using var context = run.Context(CompanyA);
         var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
-        Assert.EndsWith("_AddDeliverySchedules", applied[^1], StringComparison.Ordinal);
-        var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[^2]));
+        // DEC-SAL-005's cancellations sit on top; with none stored they roll back freely, then the schedule guard refuses.
+        Assert.EndsWith("_AddDraftCancellations", applied[^1], StringComparison.Ordinal);
+        Assert.EndsWith("_AddDeliverySchedules", applied[^2], StringComparison.Ordinal);
+        var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[^3]));
         Assert.Equal(51054, error.Number);
-        Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
+        Assert.Equal(applied[..^1], await context.Database.GetAppliedMigrationsAsync());
         Assert.Equal(1, await run.CountAsync("[sales].[DraftDeliverySchedules]", draft.Id));
     }
 

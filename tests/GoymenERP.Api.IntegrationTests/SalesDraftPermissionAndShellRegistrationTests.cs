@@ -40,8 +40,9 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
     // price names do not confer it. Company-wide and not Critical (the reason is on
     // ErpPermissions.SalesOrdersDeliveryScheduleWrite).
     [InlineData(SalesPermissionManifestV1.OrdersDeliveryScheduleWrite, ErpPermissions.SalesOrdersDeliveryScheduleWrite)]
-    // DEC-SAL-005 (central step, with the registration): [InlineData(SalesPermissionManifestV1.OrdersCancel,
-    // ErpPermissions.SalesOrdersCancel)] — its own name, company-wide; Critical only if the central writer classifies it.
+    // DEC-SAL-005: cancelling an approved order. Its own name, company-wide and not Critical (the reason is on
+    // ErpPermissions.SalesOrdersCancel).
+    [InlineData(SalesPermissionManifestV1.OrdersCancel, ErpPermissions.SalesOrdersCancel)]
     public void The_owner_name_is_the_registered_central_name(string ownerName, string centralName)
     {
         Assert.Equal(ownerName, centralName);
@@ -72,7 +73,7 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
         var actual = ShellCapabilityRegistry.ComputeCandidateRevision(providers);
         Assert.True(
             string.Equals(
-                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV11AndPublishedSalesV12,
+                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV11AndPublishedSalesV13,
                 actual,
                 StringComparison.Ordinal),
             $"Sales normal-host authority drifted. Actual: {actual}");
@@ -90,7 +91,7 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
         var authority = C01E2eShellCapabilityActivation.Configure(services, new TestingEnvironment(),
             new ConfigurationBuilder().Build());
 
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV11AndPublishedSalesV12, authority);
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV11AndPublishedSalesV13, authority);
         using var container = services.BuildServiceProvider();
         var registry = new ShellCapabilityRegistry(container.GetServices<IShellCapabilityProvider>(),
             new ShellCapabilityAuthorityCatalog([authority]));
