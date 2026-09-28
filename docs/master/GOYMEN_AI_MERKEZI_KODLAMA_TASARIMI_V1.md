@@ -1,11 +1,11 @@
-# Göymen AI Merkezi — Kodlama Tasarımı v1.0
+# Göymen AI Merkezi — Kodlama Tasarımı v1.1
 
 **Belge kimliği:** `GOYMEN_AI_MERKEZI_KODLAMA_TASARIMI_V1`
-**Yayın:** 28 Eylül 2026 (v1.0)
-**Belge türü:** `GOYMEN_AI_MERKEZI_MASTER_RAPOR_V1.md` (v1.2) ile tanımlanan Göymen AI Merkezi'nin **nasıl kodlanacağını** — çözüm yapısı, proje dosyaları, DI kaydı, veri modeli ve EF eşlemeleri, aggregate'ler ve durum makineleri, araç sözleşmesi, politika değerlendirici, bağlam kurucu, etki kuralı motoru, öneri/onay/gönderim/kurtarma, sağlayıcı portu ve router, ölçü referansı, bilgi katmanı, iş akışı motoru, endpoint'ler ve OpenAPI, capability provider, frontend, testler, CI, yapılandırma ve gözlemlenebilirlik — kod örnekleriyle açıklayan **kodlama tasarımı ve analiz belgesi**
+**Yayın:** 28 Eylül 2026 (v1.0); **revizyon:** 28 Eylül 2026 (v1.1 — kapanış kontrolü bulguları; değişiklik günlüğü §24)
+**Belge türü:** `GOYMEN_AI_MERKEZI_MASTER_RAPOR_V1.md` (v1.3) ile tanımlanan Göymen AI Merkezi'nin **nasıl kodlanacağını** — çözüm yapısı, proje dosyaları, DI kaydı, veri modeli ve EF eşlemeleri, aggregate'ler ve durum makineleri, araç sözleşmesi, politika değerlendirici, bağlam kurucu, etki kuralı motoru, öneri/onay/gönderim/kurtarma, sağlayıcı portu ve router, ölçü referansı, bilgi katmanı, iş akışı motoru, endpoint'ler ve OpenAPI, capability provider, frontend, testler, CI, yapılandırma ve gözlemlenebilirlik — kod örnekleriyle açıklayan **kodlama tasarımı ve analiz belgesi**
 **Durum:** **YALNIZ ANALİZ / TASARIM TASLAĞI.** Bu belge kod değildir; repoya kod, migration, izin, capability, görev veya karar eklemez; hiçbir geliştirme görevini kuyruğa almaz; Faz 0'ı başlatmaz; sağlayıcı/SDK/model seçmez; canlı veri aktarımı veya sağlayıcı aktivasyonu onayı değildir. `ERP-000J_AI_GATEWAY_CONTRACT_v1.md` §24 "Şimdi yasak" listesi (gateway endpoint, tool handler, worker, prompt, retrieval/vector store kodlamak; DB migration eklemek; provider/SDK seçmek) **aynen geçerlidir**; buradaki kod blokları uygulama anında yazılacak kodun **önerilen biçimidir**, repoya alınmış kod değildir.
 **Doğrulama tabanı:** `sinangym/GoymenErp` `main@00a879816a7a9bb9a800712e59dc9ae5f52f08b0` (27 Eylül 2026); kod desenleri salt-okunur envanterle çıkarılmıştır (Ek K-1 kanıt tablosu)
-**Kaynak önceliği:** `AGENTS.md` sırası — son tarihli `SINAN_KARARLARI_*.md` > `KARAR_SICILI.md` > Master Rapor v3 > feature spec/ADR (`ERP-000J`, `ERP-000K`, ADR-002/009/011/013) > `GOYMEN_AI_MERKEZI_MASTER_RAPOR_V1.md` v1.2 > bu belge. Bu belge master raporla çelişirse master rapor, master rapor kanonik kararla çelişirse kanonik karar geçerlidir.
+**Kaynak önceliği:** `AGENTS.md` sırası — son tarihli `SINAN_KARARLARI_*.md` > `KARAR_SICILI.md` > Master Rapor v3 > feature spec/ADR (`ERP-000J`, `ERP-000K`, ADR-002/009/011/013) > `GOYMEN_AI_MERKEZI_MASTER_RAPOR_V1.md` v1.3 > bu belge. Bu belge master raporla çelişirse master rapor, master rapor kanonik kararla çelişirse kanonik karar geçerlidir.
 **Adlandırma:** Belgedeki bütün proje, sınıf, tablo, permission, capability, endpoint, araç ve yapılandırma adları **ÖNERİ**dir; ADR-008 ve ilgili K3 review ile kilitlenmeden bağlayıcı değildir.
 
 ---
@@ -20,7 +20,7 @@
 
 ### 0.1 Bu belge neyi çözer
 
-Master rapor v1.2 **ne** yapılacağını ve **neden** yapılacağını söyler; bu belge **nasıl kodlanacağını** söyler: hangi proje, hangi sınıf, hangi tablo, hangi endpoint, hangi test. İki belge birlikte okunur; bu belge master raporun bölüm numaralarına (§) atıf yapar.
+Master rapor v1.3 **ne** yapılacağını ve **neden** yapılacağını söyler; bu belge **nasıl kodlanacağını** söyler: hangi proje, hangi sınıf, hangi tablo, hangi endpoint, hangi test. İki belge birlikte okunur; bu belge master raporun bölüm numaralarına (§) atıf yapar.
 
 ### 0.2 Bu belge neyi yapmaz
 
@@ -43,11 +43,11 @@ Master rapor v1.2 **ne** yapılacağını ve **neden** yapılacağını söyler;
 
 **Evet; tasarım tam olarak bunu hedefler, ama "ajan" burada özerk yazıcı değil, kalıcı takipçidir.** Üç bileşen birlikte iş takibi ajanını oluşturur (ayrıntı §14):
 
-1. **`Modules.Work` + `Work.Rules` (modelsiz, deterministik):** olay (`ERP-000F` outbox), zaman (tarama) ve form içi niyet (on-demand) tetikleyicileriyle etki kurallarını çalıştırır; her tespit bir **Sorun** (IssueKey) olarak yaşam döngüsü kazanır (`Open → Acknowledged → Resolved → Reopened`); sahibi, son tarihi, SLA'sı, eskalasyon zinciri ve kapanış kanıtı olan **iş öğeleri** açar; koşul kalkınca kapatır, geri dönünce yeniden açar. AI capability veya model kill switch kapalıyken de çalışır.
-2. **`Ai.Workflow` (kalıcı iş akışı motoru):** "geciken terminleri takip et", "fatura–sipariş–kabul karşılaştır", "vade/tahsilat takibi", "sevkiyat öncesi risk", "günlük yönetici brifingi" gibi **iş akışı şablonları** sunucuda saklanan `WorkflowInstance` olarak yürür; bilgisayar kapansa da iş kaybolmaz; yeniden başlatmada çift işlem yapmaz; bekleme durumlarında (`WaitingHuman/WaitingApproval/WaitingData`) model çağırmaz. Kullanıcının "bu haftaki teslimatları incele" gibi istekleri de bir `WorkflowInstance` olur.
+1. **`Modules.Work` + `Work.Rules` (modelsiz, deterministik):** olay (`ERP-000F` outbox), zaman (tarama) ve form içi niyet (on-demand) tetikleyicileriyle etki kurallarını çalıştırır; her tespit bir **Sorun** (IssueKey) olarak yaşam döngüsü kazanır (`Open → Acknowledged → Resolved → Reopened`); sahibi, son tarihi, SLA'sı, eskalasyon zinciri ve kapanış kanıtı olan **iş öğeleri** açar; koşul kalkınca kapatır, geri dönünce yeniden açar. Sorun kaydı ile görevi **aynı veritabanı işleminde** yazar; ikisinin arasında kesinti olsa bile "açık sorun var, görevi yok" durumu oluşamaz (§9.1). AI capability veya model kill switch kapalıyken de çalışır.
+2. **`Ai.Workflow` (kalıcı iş akışı motoru):** "geciken terminleri takip et", "fatura–sipariş–kabul karşılaştır", "vade/tahsilat takibi", "sevkiyat öncesi risk", "günlük yönetici brifingi" gibi **iş akışı şablonları** sunucuda saklanan `WorkflowInstance` olarak yürür; kullanıcının bilgisayarı kapansa da iş kaybolmaz. Bu bir **kalıcılık** hedefidir: sunucu kapalıyken işleme durur, sunucu açılınca kaldığı adımdan devam eder ve çift işlem yapmaz; bekleme durumlarında (`WaitingHuman/WaitingApproval/WaitingData`) model çağırmaz. Kullanıcının "bu haftaki teslimatları incele" gibi istekleri de bir `WorkflowInstance` olur.
 3. **`Modules.Ai` (model):** iş öğesine açıklama, seçenek gerekçesi ve taslak (e-posta, görev metni) ekler; tutarları yazmaz (`{{measure}}`); hiçbir iş kaydını onaysız yazmaz.
 
-Ajanın **yapamayacakları** (KİLİTLİ-KAYNAK): onaysız iş kaydı yazmak (`DEC-AI-003`); e-posta/mesaj göndermek (yalnız taslak; gönderim kullanıcı onayıyla, `DEC-DOC-006/007`); eskalasyon zincirini kendi belirlemek (politika tablosundan uygular); ERP'nin kesin kurallarını aşmak; "hep böyle yapıyoruz" cümlesini kurala çevirmek (`DEC-AI-006`). Sohbetten "görev aç" isteği tek adımlı önizleme-onaydan geçer (`work.item.create@1`, WRITE-düşük etki).
+Ajanın **yapamayacakları** (KİLİTLİ-KAYNAK): onaysız iş kaydı yazmak (`DEC-AI-003`); e-posta/mesaj göndermek (yalnız taslak; gönderim kullanıcı onayıyla, `DEC-DOC-006/007`); eskalasyon zincirini kendi belirlemek (politika tablosundan uygular); ERP'nin kesin kurallarını aşmak; "hep böyle yapıyoruz" cümlesini kurala çevirmek (`DEC-AI-006`). Sohbetten "görev aç" isteğinde AI yalnız **görev taslağı** üretir (`work.item.draft@1`, DRAFT); kullanıcı taslağı normal Çalışma Merkezi ekranında kendi komutuyla kaydeder (Work kullanıcı komutu; AI WRITE aracı değildir).
 
 Bu ajanın ilk sürümü Faz 3'tür (master §11.2); ön koşulu `Modules.Work` çekirdeği ve `ERP-000F` outbox dispatcher'ıdır. Bu belge her iki parçanın kod tasarımını verir; kuyruğa alınması Sinan kararıdır.
 
@@ -76,11 +76,11 @@ src/backend/Modules/Work/
                                                # IImpactRuleGateQueryV1 — başka modüller ve Ai yalnız bunu görür
   GoymenERP.Modules.Work.Domain/               # WorkItem, WorkItemEvent, ApprovalRequest, EscalationPolicy, Issue, Evaluation,
                                                # ImpactRuleDefinition, VisibilityMatrix, değişmezler ve durum makineleri
-  GoymenERP.Modules.Work.Application/          # IWorkItemService, IWorkItemStore, IImpactRuleEngine, IImpactRuleEvaluator (port),
+  GoymenERP.Modules.Work.Application/          # IWorkItemService, IWorkItemStore, IImpactRuleGate (salt-okunur), IImpactRuleTracker (kalıcı), IImpactRuleEvaluatorPort,
                                                # IEscalationScheduler, WorkCommandMetadata, WorkWriteEnvelope, problem kodları
   GoymenERP.Modules.Work.Infrastructure/       # WorkDbContext (şema: work), Rows, Store, Migrations, WorkModuleExtensions,
                                                # WorkShellCapabilityProvider (Organization/Counterparty deseni: modül içinde kayıt)
-  GoymenERP.Modules.Work.Rules/                # Kural kataloğu (IR-LOG-001 …), ImpactRuleEngine, Issue/Evaluation yaşam döngüsü —
+  GoymenERP.Modules.Work.Rules/                # Kural kataloğu (IR-LOG-001 …), ImpactRuleGate + ImpactRuleTracker —
                                                # Ai'ye referans YOK; sahip port'larını RulesRuntime host'u üzerinden çağırır
 src/backend/Modules/Ai/
   GoymenERP.Modules.Ai.Contracts/              # IAiTool, AiToolDescriptor, MeasuredValue, AiDataClass, AiRiskClass, AiContext (audit eki),
@@ -169,7 +169,7 @@ Mevcut kayıt biçimi (KİLİTLİ-KAYNAK, `GoymenERP.Api/Program.cs`): `builder.
 // Program.cs (ÖNERİ; yalnız eklenen satırlar)
 builder.Services.AddWorkModule(builder.Configuration,
     (services, options) => options.AddInterceptors(services.GetRequiredService<AuditSaveChangesInterceptor>()));
-builder.Services.AddWorkRules();                       // Work.Rules kataloğu + IImpactRuleEngine (Ai'den bağımsız)
+builder.Services.AddWorkRules();                       // Work.Rules kataloğu + IImpactRuleGate + IImpactRuleTracker (Ai'den bağımsız)
 builder.Services.AddRulesRuntime();                    // GoymenERP.Api/RulesRuntime: IImpactRuleEvaluator host adaptörleri
 
 builder.Services.AddAiModule(builder.Configuration,
@@ -305,7 +305,8 @@ internal sealed class IssueRow : IWorkTenantRow
     public int Severity { get; set; }                           // son değerlendirme
     public DateTimeOffset FirstSeenAtUtc { get; set; }
     public Guid? LastEvaluationId { get; set; }
-    public string? ResolvedByRef { get; set; }                  // istisna onayı / olay kimliği
+    public string? ResolvedByRef { get; set; }                  // koşulu kaldıran olay kimliği
+    public string? DecisionRefJson { get; set; }                // Acknowledged iken geçerli karar (istisna referansı, kapsam, geçerlilik)
     public int ReopenCount { get; set; }
     public long Version { get; set; }
     public byte[] RowVersion { get; set; } = [];
@@ -323,9 +324,10 @@ internal sealed class EvaluationRow : IWorkTenantRow
     public long TargetVersion { get; set; }
     public int TriggerKind { get; set; }                        // 1 Event · 2 OnDemand · 3 Schedule · 4 RuleVersionChange
     public string? DeliveryId { get; set; }                     // outbox teslim kimliği (üçüncü kimlik)
-    public string MeasuresJson { get; set; } = "[]";            // MeasuredValue[] (ölçü referansları)
+    public string MeasuresRef { get; set; } = string.Empty;     // MeasuredValue[] içerik deposunda (§4.5); satırda referans
+    public string MeasuresHash { get; set; } = string.Empty;    // içerik silinse de kanıt olarak kalır
     public string? GateDecisionJson { get; set; }
-    public int Outcome { get; set; }                            // 1 Raised · 2 Unchanged · 3 Cleared
+    public int Outcome { get; set; }                            // 1 Raised · 2 Unchanged · 3 Cleared · 4 Partial · 5 Acknowledged (CK_Evaluations_Outcome 1..5)
     public string CorrelationId { get; set; } = string.Empty;
     public DateTimeOffset EvaluatedAtUtc { get; set; }
 }
@@ -348,12 +350,13 @@ internal sealed class WorkItemRow : IWorkTenantRow
     public int Priority { get; set; }
     public DateTimeOffset? DueAtUtc { get; set; }
     public string EscalationPolicyId { get; set; } = string.Empty;
+    public int EscalationPolicyVersion { get; set; }            // öğe açıldığı andaki politika sürümüne bağlıdır
     public int EscalationStep { get; set; }
     public int Status { get; set; }                             // 1 Open · 2 InProgress · 3 WaitingInfo · 4 Escalated · 5 Done · 6 Cancelled
     public string? ClosureEvidenceRef { get; set; }             // audit/komut kimliği
     public string DedupKey { get; set; } = string.Empty;        // IssueKey bazlı; yalnız açık öğeler için tekil (filtered index)
     public string VisibilityMatrixJson { get; set; } = "{}";    // kanal × rol açıklık düzeyi
-    public string IdempotencyKeyHash { get; set; } = string.Empty; // kural/iş akışı üretiminde: hash("rule:{issueId}:{evaluationId}")
+    public string IdempotencyKeyHash { get; set; } = string.Empty; // takip komutunun key hash'i: rule:{deliveryId} / sweep:{ruleId}:{slot}:{issueKey} / istemci key (§9.1)
     public long Version { get; set; }
     public byte[] RowVersion { get; set; } = [];
     public DateTimeOffset CreatedAtUtc { get; set; }
@@ -361,7 +364,8 @@ internal sealed class WorkItemRow : IWorkTenantRow
 }
 
 internal sealed class WorkItemEventRow : IWorkTenantRow      // yorum, atama, eskalasyon, kapanış — append-only
-{ /* Id, CompanyId, WorkItemId, Seq, Kind, ActorId, PayloadJson (açıklık matrisine tabi), CorrelationId, RecordedAtUtc */ }
+{ /* Id, CompanyId, WorkItemId, Seq, Kind (Created/Commented/Assigned/Escalated/Closed…), ActorId, EscalationStep, FromRole, ToRole, PolicyId, PolicyVersion,
+     PayloadRef + PayloadHash (yorum metni içerik deposunda; açıklık matrisine tabi), CorrelationId, RecordedAtUtc */ }
 
 internal sealed class WorkAttemptRow : IWorkTenantRow        // ADR-011 deneme kaydı (Sales DraftAttemptRow deseni); append-only
 {
@@ -419,7 +423,7 @@ attempts.ToTable("Attempts", Schema, t => t.HasCheckConstraint("CK_Attempts_Hash
 attempts.HasKey(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });   // ADR-011 deneme kimliği
 ```
 
-`ApplyWriteGuards` izinli `Modified` alanları (ÖNERİ): `IssueRow` → `Status, Severity, LastEvaluationId, ResolvedByRef, ReopenCount, Version, UpdatedAtUtc`; `WorkItemRow` → `OwnerActorId, Status, EscalationStep, DueAtUtc, ClosureEvidenceRef, Version, UpdatedAtUtc`; `EvaluationRow`, `WorkItemEventRow`, `WorkAttemptRow` → **hiç** (append-only). `Deleted` her satırda yasak.
+`ApplyWriteGuards` izinli `Modified` alanları (ÖNERİ): `IssueRow` → `Status, Severity, DecisionRefJson, LastEvaluationId, ResolvedByRef, ReopenCount, Version, UpdatedAtUtc`; `WorkItemRow` → `OwnerActorId, Status, DueAtUtc, ClosureEvidenceRef, Version, UpdatedAtUtc` ve **yalnız çift olarak** `OwnerRole` + `EscalationStep`: guard, `OwnerRole` değiştiğinde (a) `EscalationStep`'in tam 1 arttığını, (b) aynı save'de bu öğe ve bu adım için `Kind=Escalated` bir `WorkItemEventRow` eklendiğini ve olaydaki `FromRole/ToRole/PolicyId/PolicyVersion` değerlerinin satırla eşleştiğini doğrular; aksi halde save reddedilir. Böylece rol değişikliği genel düzenlemeye kapalı, yalnız eskalasyon komutunun politika doğrulamalı yoluna açıktır (politika zinciriyle eşleşme komutta `Escalate` içinde denetlenir). `EvaluationRow`, `WorkItemEventRow`, `WorkAttemptRow` → **hiç** (append-only). `Deleted` her satırda yasak.
 
 ### 4.3 `ai` şeması — satırlar ve eşlemeler
 
@@ -441,7 +445,7 @@ internal sealed class RunRow : IAiTenantRow                 // metadata; içerik
     public int DataClassCeiling { get; set; }               // 1 Genel · 2 ŞirketIçi · 3 Gizli · 4 ÇokGizli
     public int Status { get; set; }                         // 1 Running · 2 Completed · 3 Partial · 4 Refused · 5 Failed · 6 Unknown
     public long CostMicros { get; set; } public int TokensIn { get; set; } public int TokensOut { get; set; } public int LatencyMs { get; set; }
-    public string? UserCorrectionJson { get; set; }
+    public string? UserCorrectionRef { get; set; }          // düzeltme içeriği içerik deposunda (§4.5)
     public string CorrelationId { get; set; } = string.Empty; public string? CausationId { get; set; }
     public long Version { get; set; } public byte[] RowVersion { get; set; } = [];
     public DateTimeOffset CreatedAtUtc { get; set; } public DateTimeOffset UpdatedAtUtc { get; set; }
@@ -479,6 +483,9 @@ internal sealed class ProposalRow : IAiTenantRow
     public string? DispatchedPayloadHash { get; set; }      // gönderim anında dondurulan hash (== CanonicalPayloadHash olmalı)
     public string? ExecutedCommandRef { get; set; }         // sahip komut sonucu (örn. draft id) + orijinal correlation
     public bool TargetLock { get; set; }                    // Unknown çözülene kadar aynı hedef/niyet için ikinci dispatch yok
+    public bool FailedBeforeDispatch { get; set; }          // Failed ama hiçbir şey gönderilmedi (ör. zarf bütünlüğü)
+    public bool RejectedForFix { get; set; }                // Rejected yalnız ReturnForFix ise yeniden önizlenebilir
+    public string? FailureCode { get; set; }
     public int RecoveryAttempts { get; set; }               // 0 | 1 — "en fazla bir aynı-key kurtarma gönderimi" DB düzeyinde (CK_Proposals_Recovery)
     public DateTimeOffset? LastRecoveryAtUtc { get; set; }
     public DateTimeOffset PreviewCreatedAtUtc { get; set; } public DateTimeOffset ExpiresAtUtc { get; set; }
@@ -516,17 +523,17 @@ proposals.ToTable("Proposals", Schema, t =>
     t.HasCheckConstraint("CK_Proposals_Hashes", "LEN([CanonicalPayloadHash]) = 64 AND LEN([IdempotencyKeyHash]) = 64 AND ([DispatchedPayloadHash] IS NULL OR [DispatchedPayloadHash] = [CanonicalPayloadHash])");
     t.HasCheckConstraint("CK_Proposals_Approvals", "[RequiredApprovals] IN (1,2)");
     t.HasCheckConstraint("CK_Proposals_Recovery", "[RecoveryAttempts] BETWEEN 0 AND 1");   // ikinci kurtarma gönderimi şema düzeyinde imkânsız
-    t.HasCheckConstraint("CK_Proposals_Status", "[Status] BETWEEN 1 AND 11");
+    t.HasCheckConstraint("CK_Proposals_Status", "[Status] BETWEEN 1 AND 12");
 });
 proposals.HasIndex(x => new { x.CompanyId, x.OperationIntentId, x.IntentRevision }).IsUnique().HasDatabaseName("UX_Proposals_IntentRevision");
 proposals.HasIndex(x => new { x.CompanyId, x.OperationIntentId }).IsUnique()
-    .HasFilter("[Status] IN (7,8,9)")                          // Dispatched/Unknown/Executed: bir niyetin en fazla BİR gönderilmiş önizlemesi
-    .HasDatabaseName("UX_Proposals_OneDispatchPerIntent");
+    .HasFilter("[Status] <> 12")                               // bir niyetin EN FAZLA BİR canlı (Superseded olmayan) revizyonu: eski revizyon yürütülemez
+    .HasDatabaseName("UX_Proposals_OneLiveRevisionPerIntent");  // gönderilmiş (7/8/9) revizyon da canlıdır → bir niyet en fazla bir kez gönderilir
 proposals.HasIndex(x => new { x.CompanyId, x.TargetEntityType, x.TargetId }).IsUnique()
     .HasFilter("[TargetLock] = 1 AND [TargetId] IS NOT NULL")   // güncelleme hedefi başına tek kilit
     .HasDatabaseName("UX_Proposals_TargetLock");
 proposals.HasIndex(x => new { x.CompanyId, x.IdempotencyKeyHash }).HasDatabaseName("IX_Proposals_IdempotencyKeyHash");   // tekil DEĞİL: aynı niyetin revizyonları aynı key hash'ini taşır;
-                                                                                                            // gönderim tekilliği UX_Proposals_OneDispatchPerIntent ile sağlanır (kurtarma araması için)
+                                                                                                            // gönderim tekilliği UX_Proposals_OneLiveRevisionPerIntent ile sağlanır (kurtarma araması için)
 
 var inbox = modelBuilder.Entity<InboxRow>();
 inbox.ToTable("Inbox", Schema);
@@ -553,7 +560,8 @@ Master §5.5 matrisi şu tasarımla uygulanır:
 
 | Satır türü | Depo | Değişmezlik | Süre sonu |
 |---|---|---|---|
-| `ai.RunSteps`, `ai.Approvals`, `work.Evaluations`, `work.WorkItemEvents`, `work.Attempts`, `ai.Inbox` | SQL (`ai`/`work`) | Append-only (write guard) | Kalır |
+| `ai.RunSteps`, `ai.Approvals`, `work.Attempts`, `ai.Inbox` | SQL (`ai`/`work`) | Append-only (write guard); içerik alanı yok (hash, sürüm, karar, sonuç) | Kalır |
+| `work.Evaluations` (ölçü değerleri), `work.WorkItemEvents` (yorum metni), `ai.Feedback` (düzeltme), `ai.Runs.UserCorrectionRef` | Satır SQL'de append-only; **içerik alanları** içerik deposunda (`MeasuresRef`, `PayloadRef`, `CorrectionRef` + hash) | Satır değişmez; içerik yazıldıktan sonra değişmez | Süre sonunda içerik silinir; satır, referans ve hash kalır ("şu tarihte şu karar verildi" kanıtı korunur, tutar/yorum metni saklanmaz) |
 | `ai.Runs`, `ai.Proposals`, `ai.Jobs`, `ai.WorkflowInstances`, `work.Issues`, `work.WorkItems` | SQL | Silinmez; izinli alanlar rowversion ile güncellenir | Kalır |
 | Öneri payload'ı, prompt/cevap içeriği (saklanmasına karar verilirse), zarf içeriği | **Şifreli, immutable içerik deposu** (`IAiPayloadVault`: SQL `ai.PayloadBlobs` `varbinary(max)` + AES-GCM, anahtar KMS/`DataProtection`; veya S3-uyumlu nesne depo — ADR-008 madde 10) | Yazıldıktan sonra değişmez; `PayloadCipherRef` = hash + anahtar sürümü | Süreli; süre sonunda blob silinir, satır metadata'sı ve hash'i kalır |
 | `ai.KnowledgeVersions` | SQL + embedding deposu | Sürümlü; eski sürüm pasif | Onaylı kural kalır; taslak süreli |
@@ -595,6 +603,7 @@ public enum AiProposalStatus
 {
     Draft = 1, ShadowOnly = 2, AwaitingApproval = 3, PartiallyApproved = 4, Approved = 5, Rejected = 6,
     Dispatched = 7, Unknown = 8, Executed = 9, Failed = 10, Stale = 11,
+    Superseded = 12,   // aynı niyetin yeni revizyonu üretildi; bu satır bir daha onaylanamaz ve gönderilemez
 }
 
 public sealed class AiProposal
@@ -633,16 +642,24 @@ public sealed class AiProposal
         };
     }
 
-    /// <summary>Draft/Stale/Rejected(ReturnForFix) sonrası aynı niyetin yeni önizlemesi. Gönderilmiş veya gönderimde kesin ret almış niyet için ASLA çağrılamaz.</summary>
-    public AiProposal Reissue(string newCanonicalPayloadHash, ProposalTarget refreshedTarget, bool validationPassed, DateTimeOffset now, TimeSpan expiry)
+    /// <summary>Aynı niyetin yeni önizlemesi. YALNIZ izin verilen başlangıç durumlarından (beyaz liste):
+    /// Draft, Stale, Rejected (ReturnForFix) ve ShadowOnly. Diğer her durum reddedilir:
+    /// AwaitingApproval/PartiallyApproved/Approved (önce Stale olmalı), Dispatched/Unknown (belirsizliği aşma olurdu),
+    /// Executed (iş bitti), Failed (sahip reddi aynı key'e terminal kaydedilmiş olabilir → YENİ niyet), Superseded (zaten eski).
+    /// Gölge öneri yeniden üretilince de GÖLGE kalır. Eski revizyon aynı save'de Superseded olur.</summary>
+    public AiProposal Reissue(string newCanonicalPayloadHash, ProposalTarget refreshedTarget, bool validationPassed, bool shadowModeNow, DateTimeOffset now, TimeSpan expiry)
     {
-        if (Status is AiProposalStatus.Dispatched or AiProposalStatus.Unknown or AiProposalStatus.Executed or AiProposalStatus.Failed)
+        var allowed = Status is AiProposalStatus.Draft or AiProposalStatus.Stale or AiProposalStatus.ShadowOnly
+                      || (Status == AiProposalStatus.Rejected && RejectedForFix);         // yalnız "düzeltip yeniden gönder" reddi; kesin ret yeni niyet ister
+        if (!allowed)
         {
-            // Dispatched/Unknown: yeni önizleme belirsizliği aşma olurdu. Executed: iş bitti. Failed: sahip reddi aynı key'e terminal kaydedilmiş olabilir → yeni NİYET gerekir.
-            throw new AiProposalRuleException(AiProposalCodes.IntentAlreadyDispatched);
+            throw new AiProposalRuleException(AiProposalCodes.ReissueNotAllowed);
         }
+        var shadow = Status == AiProposalStatus.ShadowOnly || shadowModeNow;   // eski gölgeyse VEYA araç şu an gölge moddaysa yeni revizyon da gölge
+        Status = AiProposalStatus.Superseded; Version++;                     // eski revizyon kalıcı olarak ölü: onay/gönderim yolları Superseded'ı kabul etmez
         return new AiProposal { Id = Guid.CreateVersion7(), OperationIntentId = OperationIntentId, IntentRevision = IntentRevision + 1,
-            CompanyId = CompanyId, Status = validationPassed ? AiProposalStatus.AwaitingApproval : AiProposalStatus.Draft,
+            CompanyId = CompanyId,
+            Status = shadow ? AiProposalStatus.ShadowOnly : validationPassed ? AiProposalStatus.AwaitingApproval : AiProposalStatus.Draft,
             CanonicalPayloadHash = newCanonicalPayloadHash, RequiredApprovals = RequiredApprovals, Version = 1, /* … */ };
     }
 
@@ -668,11 +685,23 @@ public sealed class AiProposal
     }
 
     public void MarkExecuted(string executedCommandRef) { Require(Status is AiProposalStatus.Dispatched or AiProposalStatus.Unknown); Status = AiProposalStatus.Executed; TargetLock = false; ExecutedCommandRef = executedCommandRef; Version++; }
+    /// <summary>Gönderim sonrası belirsizlik; ayrıca süresi geçmiş Dispatched kurtarmaya alınırken ilk adım (reason: dispatch_grace_expired).</summary>
     public void MarkUnknown(string reason) { Require(Status is AiProposalStatus.Dispatched or AiProposalStatus.Unknown); Status = AiProposalStatus.Unknown; /* TargetLock kalır */ Version++; }
-    public void MarkFailed(string code) { Require(Status is AiProposalStatus.Dispatched or AiProposalStatus.Unknown); Status = AiProposalStatus.Failed; TargetLock = code == AiProposalCodes.ContentConflict; Version++; }   // bilinen kesin ret hedefi serbest bırakır; bütünlük ihlali (ContentConflict) kilidi korur
+    /// <summary>Gönderim SONRASI bilinen kesin ret (sahip 4xx). ContentConflict kilidi korur (bütünlük ihlali); diğer kesin retler hedefi serbest bırakır.</summary>
+    public void MarkFailed(string code) { Require(Status is AiProposalStatus.Dispatched or AiProposalStatus.Unknown); Status = AiProposalStatus.Failed; FailureCode = code; TargetLock = code == AiProposalCodes.ContentConflict; Version++; }
+    /// <summary>Uzun süren gönderim sürerken kurtarma öneriyi Unknown'a aldıysa: gönderimin BİLİNEN sonucu (Executed/Failed) taze satıra uygulanır; Unknown ise değişmez.</summary>
+    public void ApplyLateOutcome(AiProposalStatus observed, string? commandRef, string? failureCode)
+    {
+        if (Status is not (AiProposalStatus.Dispatched or AiProposalStatus.Unknown)) return;   // zaten sonuçlanmış (ör. kurtarma replay ile Executed yaptı)
+        if (observed == AiProposalStatus.Executed) MarkExecuted(commandRef!);
+        else if (observed == AiProposalStatus.Failed) MarkFailed(failureCode!);
+    }
+
+    /// <summary>Gönderim ÖNCESİ ret (örn. zarf bütünlüğü bozuk, güncel yetki düştü). Hiçbir şey gönderilmedi: kilit yok, belirsizlik yok; yeniden deneme yeni niyet.</summary>
+    public void FailBeforeDispatch(string code) { Require(Status == AiProposalStatus.Approved); Status = AiProposalStatus.Failed; FailureCode = code; TargetLock = false; FailedBeforeDispatch = true; Version++; }
     public void MarkStale(string reason) { Require(Status is AiProposalStatus.AwaitingApproval or AiProposalStatus.PartiallyApproved or AiProposalStatus.Approved); Status = AiProposalStatus.Stale; Version++; }   // yalnız GÖNDERİM ÖNCESİ
     public void MarkRecoveryAttempt(DateTimeOffset now) { Require(Status == AiProposalStatus.Unknown && RecoveryAttempts == 0); RecoveryAttempts = 1; LastRecoveryAtUtc = now; Version++; }   // rowversion: tek koordinatör kazanır
-    public void Reject(string actorId, string reason) { Require(Status is AiProposalStatus.AwaitingApproval or AiProposalStatus.PartiallyApproved); Status = AiProposalStatus.Rejected; Version++; }
+    public void Reject(string actorId, string reason, bool returnForFix) { Require(Status is AiProposalStatus.AwaitingApproval or AiProposalStatus.PartiallyApproved); Status = AiProposalStatus.Rejected; RejectedForFix = returnForFix; Version++; }
 
     public string IdempotencyKey => $"ai:{OperationIntentId:N}";   // raw key yalnız gönderim anında üretilir; DB'de hash'i saklanır
 }
@@ -682,7 +711,9 @@ public sealed class AiProposal
 
 ```text
 StartIntent ─▶ Draft (sahip doğrulaması geçmedi; onaylanamaz) ──(düzelt + Reissue, aynı niyet rev+1)──▶ AwaitingApproval
-StartIntent ─▶ ShadowOnly (gölge mod; hiçbir zaman Approved olmaz)
+StartIntent ─▶ ShadowOnly (gölge mod; hiçbir zaman Approved olmaz) ──(Reissue)──▶ ShadowOnly (rev+1; gölge statüsü korunur)
+Her Reissue: eski revizyon ──▶ Superseded (aynı save; bir daha onaylanamaz/gönderilemez)
+Approved ──(gönderim öncesi zarf/politika kontrolü başarısız)──▶ Failed (FailBeforeDispatch: kilit yok) · veya ──▶ Stale (politika sürümü değişti)
 StartIntent ─▶ AwaitingApproval ──(approve, kota 1/2)──▶ [PartiallyApproved] ──▶ Approved ──(tek kazanan dispatch)──▶ Dispatched
                   │  │                                                            │                                     │
                   │  └─(reject)──▶ Rejected ─(ReturnForFix: Reissue)─▶ …          │                                     ├─(sahip 2xx/replay)─▶ Executed
@@ -694,7 +725,7 @@ Unknown ──(kurtarma: replay/ilk yürütme)──▶ Executed · (kurtarma: k
 
 - `Approved` geçişi **tek kazanan**: `AiProposalStore.TransitionAsync` rowversion ile günceller; `DbUpdateConcurrencyException` → kaybeden `version_conflict` (409). İki ekran/çift tıklama/iki onaycı senaryosu (G-27) bununla kapanır.
 - **İki onay gerektiren işlem:** `RequiredApprovals = 2` (sahip modül politikası veya `ErpPermissions.Critical` seti — ADR-008 madde 5). Birinci onay `PartiallyApproved`; ikinci onay farklı gerçek kullanıcı kimliğiyle (`approvers` listesi, `Ordinal`) `Approved`. İki onay da aynı `OperationIntentId` ve aynı `CanonicalPayloadHash`'e bağlanır; birinci ile ikinci onay arasında hedef sürümü veya politika değişirse `Stale` → her iki onay düşer, `Reissue` gerekir. Her onay `ai.Approvals`'a ayrı kanıt satırı yazar; hiçbir onay satırı key üretmez.
-- **`TargetLock` kapsamı:** güncelleme niyetinde `(CompanyId, TargetEntityType, TargetId)` (filtered unique index `UX_Proposals_TargetLock`); **create** niyetinde hedef kimliği olmadığı için kilit `(CompanyId, OperationIntentId)` düzeyindedir (`UX_Proposals_OneDispatchPerIntent`) ve ek olarak `(CompanyId, ToolId, RequestedByActorId)` için **yumuşak kilit**: aynı kullanıcının aynı araçla `Unknown` durumda bir create niyeti varken yeni create niyeti başlatması `intent_pending_recovery` (409) ile reddedilir; farklı kullanıcı veya farklı araç engellenmez (meşru yeni iş).
+- **`TargetLock` kapsamı:** güncelleme niyetinde `(CompanyId, TargetEntityType, TargetId)` (filtered unique index `UX_Proposals_TargetLock`); **create** niyetinde hedef kimliği olmadığı için kilit `(CompanyId, OperationIntentId)` düzeyindedir (`UX_Proposals_OneLiveRevisionPerIntent`) ve ek olarak `(CompanyId, ToolId, RequestedByActorId)` için **yumuşak kilit**: aynı kullanıcının aynı araçla `Unknown` durumda bir create niyeti varken yeni create niyeti başlatması `intent_pending_recovery` (409) ile reddedilir; farklı kullanıcı veya farklı araç engellenmez (meşru yeni iş).
 - Onay `expiry` politika değeridir (ÖNERİ 24 saat; NS-AI-05); `Reissue` aynı niyeti korur.
 
 ### 5.2 `AiRun`
@@ -724,49 +755,84 @@ public sealed class AiRun
 
 `AiRun` **içerik saklamaz**; `ArgsHash/ResultHash` ile adımları kanıtlar (`ERP-000J` §16). Prompt/cevap içeriği yalnız politika izin verirse `IAiPayloadVault`'a gider (§4.5).
 
-### 5.3 `Issue` / `Evaluation` (`Work.Rules`) ve risk istisnası durumları
+### 5.3 `Issue` / `Evaluation` (`Work.Rules`), karar ve risk istisnası (v1.1)
+
+Üç şey ayrı tutulur ve biri diğerinin yerine geçmez:
+
+| Nesne | Ne anlatır | Neye göre değişir |
+|---|---|---|
+| **Sorun (Issue)** | İşletme koşulu sürüyor mu? (örn. müşterinin net riski limitin üstünde) | Yalnız sahip calculator'ın **koşul** yargısına göre (`risk.LimitExceeded`, gecikme politikası). Kapı kararına veya istisnaya göre **kapanmaz** |
+| **Karar (Decision)** | Koşul sürerken yetkili ne dedi? (istisna, bekle, kısmi sevkiyat) | Finance'in onay kaydı; süresi ve kapsamı vardır |
+| **İş öğesi (WorkItem)** | Karar bekleyen bir iş var mı? | Sorun karar beklerken açılır; karar verilince kanıtla kapanır |
 
 ```csharp
 // GoymenERP.Modules.Work.Domain/Issues/Issue.cs
 public enum IssueStatus { Open = 1, Acknowledged = 2, Resolved = 3, Reopened = 4, Suppressed = 5 }
-public enum EvaluationOutcome { Raised = 1, Unchanged = 2, Cleared = 3 }
+// Open: koşul var, karar bekleniyor (görev gerekir) · Acknowledged: koşul var, geçerli karar var (görev gerekmez, izlenir)
+// Resolved: koşul kalktı · Reopened: koşul geri döndü VEYA karar geçersizleşti (görev gerekir) · Suppressed: politika ile bastırıldı
+public enum EvaluationOutcome { Raised = 1, Unchanged = 2, Cleared = 3, Partial = 4, Acknowledged = 5 }   // CK_Evaluations_Outcome: 1..5
 
 public sealed class Issue
 {
-    public IssueKey Key { get; private set; } = default!;        // (RuleId, TargetEntityType, TargetId)
+    public Guid Id { get; private set; }
+    public IssueKey Key { get; private set; } = default!;        // (RuleId, TargetEntityType, TargetId) — IR-LOG-001'de hedef CompanyPartyAccount
     public IssueStatus Status { get; private set; }
     public Severity Severity { get; private set; }
+    public DecisionRef? Decision { get; private set; }            // Finance kararı: ExceptionRef, tür (Exception/Hold/PartialShipment), kapsam, geçerlilik
+    public string? ResolvedByRef { get; private set; }            // koşulu kaldıran olay (tahsilat, teminat…) — istisna DEĞİL
     public int ReopenCount { get; private set; }
+    public long Version { get; private set; }
+    public bool AwaitsDecision => Status is IssueStatus.Open or IssueStatus.Reopened;   // görev değişmezi bu özelliğe bağlıdır (§9.1)
 
-    /// <summary>Yeni değerlendirme sonucu uygular: yeni Sorun değil, yeni Değerlendirme; kart güncellenir; koşul geri dönerse Reopened.</summary>
-    public EvaluationOutcome Apply(RuleEvaluationResult result, Evaluation evaluation)
+    /// <summary>Sorun YALNIZ koşul varken oluşur (koşul yoksa satır yazılmaz). İlk tespit her zaman Raised'dır.</summary>
+    public static (Issue Issue, EvaluationOutcome Outcome) Open(Guid companyId, IssueKey key, RuleEvaluationResult result, DateTimeOffset now)
     {
+        if (!result.ConditionHolds || result.IsPartial) throw new WorkRuleException(WorkCodes.IssueRequiresHoldingCondition);
+        var issue = new Issue { Id = Guid.CreateVersion7(), Key = key, Status = IssueStatus.Open, Severity = result.Severity, Version = 1 };
+        return result.ActiveDecisionFor(issue.Key) is { } decision                     // karar Sorun'dan önce verilmişse (nadir) doğrudan Acknowledged
+            ? (issue.With(IssueStatus.Acknowledged, decision), EvaluationOutcome.Acknowledged)
+            : (issue, EvaluationOutcome.Raised);
+    }
+
+    /// <summary>Tek giriş noktası: koşul, karar ve süre bu metotta değerlendirilir; Acknowledge ayrıca çağrılmaz.</summary>
+    public EvaluationOutcome Apply(RuleEvaluationResult result, DateTimeOffset now)
+    {
+        if (result.IsPartial) return EvaluationOutcome.Partial;                            // kaynak eksik: durum DEĞİŞMEZ; "koşul kalktı" sayılmaz
+        if (!result.ConditionHolds)
+        {
+            if (Status == IssueStatus.Resolved) return EvaluationOutcome.Unchanged;
+            Status = IssueStatus.Resolved; Decision = null; ResolvedByRef = result.ClearingEventRef; Version++; return EvaluationOutcome.Cleared;
+        }
+        var active = result.ActiveDecisionFor(Key);                                        // Finance'in bu MÜŞTERİ için GEÇERLİ kararı (talimattan bağımsız; §5.5)
         switch (Status)
         {
-            case IssueStatus.Open or IssueStatus.Acknowledged or IssueStatus.Reopened when !result.ConditionHolds:
-                Status = IssueStatus.Resolved; ResolvedByRef = result.ResolutionRef; return EvaluationOutcome.Cleared;
-            case IssueStatus.Open or IssueStatus.Acknowledged or IssueStatus.Reopened:
-                Severity = result.Severity; return EvaluationOutcome.Unchanged;          // yeni uyarı ÜRETİLMEZ
-            case IssueStatus.Resolved when result.ConditionHolds:
-                Status = IssueStatus.Reopened; ReopenCount++; Severity = result.Severity; return EvaluationOutcome.Raised;
             case IssueStatus.Suppressed:
-                return EvaluationOutcome.Unchanged;                                        // bastırma politikası; süresi ayrı
-            default:
                 return EvaluationOutcome.Unchanged;
+            case IssueStatus.Open or IssueStatus.Reopened when active is not null:           // Finance karar verdi → görev kanıtla kapanır (§9.1)
+                Status = IssueStatus.Acknowledged; Decision = active; Severity = result.Severity; Version++; return EvaluationOutcome.Acknowledged;
+            case IssueStatus.Acknowledged when active is null || active.ExceptionRef != Decision!.ExceptionRef:   // karar tüketildi / süresi doldu / geri alındı
+                Status = IssueStatus.Reopened; ReopenCount++; Decision = null; Severity = result.Severity; Version++; return EvaluationOutcome.Raised;
+            case IssueStatus.Resolved:
+                Status = IssueStatus.Reopened; ReopenCount++; Severity = result.Severity; Version++; return EvaluationOutcome.Raised;
+            default:                                                                          // Open/Reopened kararsız veya Acknowledged kararı geçerli
+                Severity = result.Severity; return EvaluationOutcome.Unchanged;               // yeni Sorun ve yeni uyarı ÜRETİLMEZ; kart güncellenir
         }
     }
 }
 ```
 
-**Risk istisnası (tek sevkiyata verilen istisna) — üç durum (ÖNERİ; `W4-RISK` spec girdisi, F0-10):** İstisnanın sahibi Finance'tir (`DEC-FIN-009` "istisna süreli ve auditli"). Kapı sorgusu istisnayı şu üç durumdan biriyle görür:
+**Kararın Sorun'a ulaşması:** Finance istisna/bekletme kararını kendi komutuyla kaydeder; `finance.risk-exception.approved.v1` / `.consumed.v1` / `.revoked.v1` olayları (ÖNERİ; `W4-RISK` + `ERP-000F`) IR-LOG-001'i tetikler. Olay altyapısı gelene kadar Finance'in onay ekranı, onay başarılı olduktan sonra takip komutunu (§9.4) çağırır. Değerlendirmede Finance port'u o müşterinin **geçerli kararlarını** (`ActiveDecisions`: istisna referansı, kapsam, durum) döndürür; `Apply` Sorunu `Acknowledged` yapar ve tracker aynı işlemde karar görevini kapatır. Karar geçerliliği odaktaki talimattan değil, kararın kendi referansı ve durumundan okunur; tahsilat veya zamanlı tarama tetiklemesinde de doğru sonuç verir.
 
-| Durum | Anlam | Kapı kararı | Sorun etkisi |
+**Tek sevkiyata verilen risk istisnası (ÖNERİ; sahibi Finance, `DEC-FIN-009` "istisna süreli ve auditli"; `W4-RISK` spec girdisi F0-10):**
+
+| Olay | Müşterinin risk Sorunu | İlgili sevkiyatın izni (kapı kararı) | İstisna değerlendirme görevi |
 |---|---|---|---|
-| `Active` (kapsam: `SingleShipment(loadingInstructionId)` veya `Party(validUntil)`) | Onaylı, süresi dolmamış, kapsam eşleşiyor | `Proceed` + `exceptionRef` | Sorun `Resolved(ResolvedByRef = exception)` |
-| `Consumed` | Tek sevkiyat istisnası o sevkiyat kaydedilince tükendi | İkinci sevkiyat için `ReviewRequired` | Yeni sevkiyat niyeti → yeniden değerlendirme → koşul sürüyorsa `Reopened` |
-| `Expired` / `Revoked` | Süre doldu veya Finance geri aldı | `ReviewRequired`/`Stop` (politikaya göre) | `Work.Rules` zamanlı tarama (`Trigger=Schedule`, aktif istisnalar için) süre sonunda **yeniden değerlendirir**; koşul sürüyorsa `Reopened`, kart güncellenir; yeni kart açılmaz |
+| Finance tek sevkiyat istisnası onaylar | **Açık kalır**: `Open → Acknowledged` (karar referansıyla); limit aşımı sürdüğü sürece `Resolved` olmaz | Yalnız o talimat için `Proceed` + `exceptionRef`; başka talimat `ReviewRequired` | Karar verildiği için **kapanır** (kanıt: istisna onay kaydı) |
+| O sevkiyat kaydedilir (istisna `Consumed`) | Sonraki değerlendirmede karar geçersiz → `Reopened` (koşul sürüyorsa) | Aynı müşteriye yeni talimat `ReviewRequired` | Değişmez kuralı yeni görev açar (§9.1) |
+| İstisna süresi dolar / geri alınır (`Expired`/`Revoked`) | Zamanlı tarama yeniden değerlendirir → koşul sürüyorsa `Reopened`; mevcut Sorun kartı güncellenir, **yeni Sorun açılmaz** | `ReviewRequired`/`Stop` (politika) | Yeni görev açılır |
+| Tahsilat/DBS/teminat limit aşımını kaldırır | `Resolved` | `Proceed` (istisnasız) | Açık görev varsa kanıtla kapanır |
 
-Kapı sorgusu istisnanın **yalnız** durumunu ve referansını döndürür; gerekçe ve tutar Finance açıklık matrisine tabidir. Kapsam eşleşmeyen istisna (`SingleShipment` başka talimat için) `Active` sayılmaz.
+Kapı sorgusu istisnanın **yalnız** durumunu ve referansını döndürür; gerekçe ve tutar Finance açıklık matrisine tabidir. Kapsamı eşleşmeyen istisna `Active` sayılmaz.
 
 ### 5.4 `WorkItem` ve `ApprovalRequest`
 
@@ -776,13 +842,21 @@ public sealed class WorkItem
     public WorkItemStatus Status { get; private set; }   // Open · InProgress · WaitingInfo · Escalated · Done · Cancelled
     public int EscalationStep { get; private set; }
 
-    public static WorkItem FromRule(Guid companyId, IssueKey issue, Guid evaluationId, WorkItemTemplate template, VisibilityMatrix visibility, EscalationPolicy policy, DateTimeOffset now)
-        => /* DedupKey = issue.ToDedupKey(); SourceKind = ImpactRule; OwnerRole = template.OwnerRole; DueAtUtc = now + policy.Sla[0] */ default!;
+    public static WorkItem FromRule(Guid companyId, Issue issue, Guid evaluationId, WorkItemTemplate template, DisclosureMatrix visibility, EscalationPolicy policy, DateTimeOffset now)
+        => /* DedupKey = issue.Key.ToDedupKey(); SourceKind = ImpactRule; OwnerRole = policy.Chain[0] (template.OwnerRole ile eşit olmalı, aksi WorkRuleException);
+              Watchers += policy.ConcurrentRoles[0] (EP-CRIT gibi "eşzamanlı" zincirlerde diğer roller aynı adımda gözlemci + bildirim);
+              EscalationPolicyId/Version = policy.Id/Version; EscalationStep = 0; DueAtUtc = now + policy.Sla[0] */ default!;
 
-    public void Escalate(EscalationPolicy policy, DateTimeOffset now)
+    /// <summary>Yalnız yetkili eskalasyon komutu (work.item.escalate.v1, sistem aktörü EscalationTicker) çağırır. Politika sürümü öğeye bağlıdır.</summary>
+    public WorkItemEvent Escalate(EscalationPolicy policy, DateTimeOffset now)
     {
-        if (EscalationStep + 1 >= policy.Chain.Count) { return; }               // stopAt: zincir biter; KPI'a düşer
+        if (Status is not (WorkItemStatus.Open or WorkItemStatus.InProgress or WorkItemStatus.WaitingInfo or WorkItemStatus.Escalated))
+            throw new WorkRuleException(WorkCodes.WorkItemNotOpen);                         // Done/Cancelled öğe eskalasyonla yeniden açılamaz
+        if (policy.Id != EscalationPolicyId || policy.Version != EscalationPolicyVersion) throw new WorkRuleException(WorkCodes.EscalationPolicyMismatch);
+        if (EscalationStep + 1 >= policy.Chain.Count) { return WorkItemEvent.EscalationStopped(Id, EscalationStep, now); }   // stopAt: KPI'a düşer
+        var fromRole = OwnerRole;
         EscalationStep++; OwnerRole = policy.Chain[EscalationStep]; DueAtUtc = now + policy.Sla[EscalationStep]; Status = WorkItemStatus.Escalated; Version++;
+        return WorkItemEvent.Escalated(Id, EscalationStep, fromRole, OwnerRole, policy.Id, policy.Version, now);   // aynı save'de yazılır; write guard bunu arar
     }
 
     public void Close(ClosureEvidence evidence) { if (evidence.Ref is null) throw new WorkRuleException(WorkCodes.ClosureEvidenceRequired); Status = WorkItemStatus.Done; ClosureEvidenceRef = evidence.Ref; Version++; }
@@ -805,6 +879,9 @@ public sealed class IrLog001ShipmentCustomerRisk : IImpactRule
         RuleTrigger.OnDemand("logistics.loading-instruction.issue-intent"),
         RuleTrigger.Event("logistics.loading-instruction.issued.v1"),
         RuleTrigger.Event("finance.manual-receipt.recorded.v1"),           // kısmi tahsilat → yeniden değerlendirme
+        RuleTrigger.Event("finance.risk-exception.approved.v1"),           // karar → Sorun Acknowledged, görev kapanır (ÖNERİ olay; W4-RISK)
+        RuleTrigger.Event("finance.risk-exception.consumed.v1"),           // tek sevkiyat istisnası tükendi → Reopened (koşul sürüyorsa)
+        RuleTrigger.Event("finance.risk-exception.revoked.v1"),
         RuleTrigger.Schedule("finance.risk-exception.expiry"),             // istisna süresi dolunca
     };
     public EffectKind Effect => EffectKind.Warning | EffectKind.WorkItem; // Block ASLA
@@ -818,11 +895,14 @@ public sealed class IrLog001ShipmentCustomerRisk : IImpactRule
 
     public async Task<RuleEvaluationResult> EvaluateAsync(RuleContext context, IImpactRuleEvaluatorPort port, CancellationToken cancellationToken)
     {
-        // Sistem aktörü ile sahip port'u; sonuç MeasuredValue[] + GateDecision; hedef = CompanyPartyAccount (risk müşteri bazlıdır)
+        // Sistem aktörü ile sahip port'u; sonuç MeasuredValue[] + yargılar + GateDecision; hedef = CompanyPartyAccount (risk müşteri bazlıdır)
         var risk = await port.EvaluateRiskAsync(context.CompanyId, context.Focus.PartyAccountId, context.Focus.StageTransition, cancellationToken);
         if (risk.Outcome != PortOutcome.Computed) return RuleEvaluationResult.Partial(risk.MissingSources);   // "0" veya "yok" DENMEZ
-        var holds = risk.Gate.Decision != GateDecisionKind.Proceed;
-        return new RuleEvaluationResult(holds, holds ? Severity.High : Severity.Info, risk.Measures, risk.Gate, ResolutionRef: risk.Gate.ExceptionRef);
+        // KOŞUL calculator yargısından gelir, kapı kararından DEĞİL: istisna sevkiyatı serbest bırakır ama müşterinin limit aşımını kaldırmaz.
+        var holds = risk.Judgements.LimitExceeded || risk.Judgements.OverduePolicyTriggered;
+        return new RuleEvaluationResult(holds, holds ? Severity.High : Severity.Info, risk.Measures, risk.Gate,
+            ClearingEventRef: holds ? null : risk.ClearingEventRef,                               // koşulu kaldıran tahsilat/teminat olayı
+            ActiveDecisions: risk.ActiveDecisions);                                              // müşterinin GEÇERLİ kararları (ref + kapsam + durum) — talimattan bağımsız
     }
 }
 ```
@@ -1077,36 +1157,97 @@ Katılımcı sınıflar sahip modüllerin **Application** projesinde `internal`�
 
 ## 9. Etki kuralı motoru (`Work.Rules`), kapı sorgusu ve kural-tabanlı iş öğesi
 
-### 9.1 Motor
+### 9.1 Motor: salt-okunur değerlendirme ile kalıcı takip ayrı yollardır (v1.1)
+
+İki ayrı arayüz vardır; kapı sorgusu yalnız birincisini görür:
+
+| Arayüz | Ne yapar | Bağımlılıkları | Kim çağırır |
+|---|---|---|---|
+| `IImpactRuleGate` | Kuralı hesaplar, sonucu **döndürür**; hiçbir şey yazmaz | Kural kataloğu + sahip sistem port'ları; **store, DbContext, iş öğesi komutu YOK** (yapıcıda bulunmaz) | Kapı sorgusu endpoint'i (§9.3) |
+| `IImpactRuleTracker` | Aynı hesabı yapar, sonra Sorun + Değerlendirme + (gerekiyorsa) iş öğesi + deneme kaydını **tek veritabanı işleminde** kalıcılaştırır | `IImpactRuleGate` + `IWorkRulesStore` | Olay tüketicisi, zamanlı tarama, takip komutu (§9.4) |
 
 ```csharp
-// GoymenERP.Modules.Work.Rules/ImpactRuleEngine.cs (ÖNERİ) — Ai'ye referans YOK
-internal sealed class ImpactRuleEngine(IImpactRuleCatalog rules, IImpactRuleEvaluatorPort port, IWorkRulesStore store,
-    IWorkItemCommandsV1 workItems, IWorkRulesPolicy policy, TimeProvider clock) : IImpactRuleEngine
+// GoymenERP.Modules.Work.Rules/ImpactRuleGate.cs (ÖNERİ) — saf hesap; yazma yapabilecek hiçbir bağımlılığı yok
+internal sealed class ImpactRuleGate(IImpactRuleCatalog rules, IImpactRuleEvaluatorPort port, IWorkRulesPolicySnapshot policy) : IImpactRuleGate
 {
-    public async Task<RuleRunResult> RunAsync(RuleTrigger trigger, RuleContext context, CancellationToken ct)
+    public async Task<IReadOnlyList<RuleEvaluationResult>> EvaluateAsync(RuleTrigger trigger, RuleContext context, CancellationToken ct)
     {
-        var results = new List<RuleOutcome>();
+        var results = new List<RuleEvaluationResult>();
         foreach (var rule in rules.For(trigger))
         {
-            if (!policy.IsEnabled(context.CompanyId, rule)) continue;                              // ÖNERİ kurallar politika ile açılır; KİLİTLİ olanlar her zaman
-            var evaluation = await rule.EvaluateAsync(context, port, ct);                             // sistem aktörü; hesap sahip port'unda
-            var issue = await store.FindOrCreateIssueAsync(context.CompanyId, rule.IssueKeyFor(context), ct);
-            var outcome = issue.Apply(evaluation, new Evaluation(issue.Id, rule.Version, context.TargetVersion, trigger, context.DeliveryId, evaluation.Measures, evaluation.Gate, clock.GetUtcNow()));
-            await store.SaveAsync(issue, ct);                                                          // Issue (durum) + Evaluation (append) tek SaveChanges; rowversion
-            if (outcome == EvaluationOutcome.Raised && rule.Effect.HasFlag(EffectKind.WorkItem))
-            {
-                await workItems.CreateFromRuleAsync(new CreateWorkItemFromRuleV1(context.CompanyId, issue.Key, issue.LastEvaluationId!.Value, rule.WorkItem, rule.Disclosure),
-                    WorkCommandMetadata.System(idempotencyKey: $"rule:{issue.Id:N}:{issue.LastEvaluationId:N}", context.CorrelationId, causationId: context.DeliveryId), ct);
-            }
-            results.Add(new RuleOutcome(rule.RuleId, rule.Version, issue.Key, outcome, evaluation.Gate, rule.Disclosure));
+            var mode = policy.ModeOf(context.CompanyId, rule);                              // Disabled | Shadow | Active — bellekteki anlık görüntüden; DB'ye yazmaz
+            if (mode == RuleMode.Disabled) continue;
+            results.Add((await rule.EvaluateAsync(context, port, ct)) with { Mode = mode });  // hesap sahip SİSTEM port'unda (salt-okunur; §9.2)
         }
-        return new RuleRunResult(results);
+        return results;
+    }
+}
+
+// GoymenERP.Modules.Work.Rules/ImpactRuleTracker.cs (ÖNERİ) — kalıcı takip; Sorun, Değerlendirme, görev açma/kapama ve deneme kaydı TEK işlemde
+internal sealed class ImpactRuleTracker(IImpactRuleGate gate, IImpactRuleCatalog rules, IWorkRulesStore store, TimeProvider clock) : IImpactRuleTracker
+{
+    public async Task<RuleTrackResult> TrackAsync(RuleTrigger trigger, RuleContext context, WorkCommandMetadata metadata, CancellationToken ct)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try { return await TrackOnceAsync(trigger, context, metadata, ct); }
+            catch (WorkStoreConflictException) when (attempt == 1)                          // 2601/2627 veya rowversion: TÜM save geri alındı
+            {
+                store.Reset();                                                                // ChangeTracker.Clear; taze durumla bir kez daha (kazananın görevi artık görünür)
+            }
+        }
+    }
+
+    private async Task<RuleTrackResult> TrackOnceAsync(RuleTrigger trigger, RuleContext context, WorkCommandMetadata metadata, CancellationToken ct)
+    {
+        if (await store.FindTrackReplayAsync(metadata, ct) is { } replay) return replay;      // aynı teslim / aynı key → ilk sonuç (work.Attempts)
+        var now = clock.GetUtcNow();
+        var outcomes = new List<RuleOutcome>();
+        foreach (var result in await gate.EvaluateAsync(trigger, context, ct))
+        {
+            var rule = rules.Get(result.RuleId, result.RuleVersion);
+            var key = rule.IssueKeyFor(context);
+            var existing = await store.FindIssueAsync(context.CompanyId, key, ct);
+
+            Issue issue; EvaluationOutcome outcome;
+            if (existing is null)
+            {
+                if (!result.ConditionHolds || result.IsPartial) { outcomes.Add(RuleOutcome.NothingToTrack(rule, key, result)); continue; }   // koşul yoksa satır YOK
+                (issue, outcome) = Issue.Open(context.CompanyId, key, result, now);
+            }
+            else { issue = existing; outcome = issue.Apply(result, now); }                   // ÖNCE sonuç hesaplanır…
+
+            var evaluation = Evaluation.From(issue, result, outcome, trigger, context, now); // …SONRA sonuç append-only değerlendirmeye yazılır
+
+            var openItem = await store.FindOpenWorkItemAsync(key.ToDedupKey(), ct);
+            WorkItem? created = null;
+            if (openItem is not null && !issue.AwaitsDecision)                                // Cleared veya Acknowledged: bekleyen görev kanıtla KAPANIR
+            {
+                openItem.Close(ClosureEvidence.FromRule(issue.ResolvedByRef ?? issue.Decision?.ExceptionRef ?? $"eval:{evaluation.Id:N}", evaluation.Id));
+            }
+            else if (openItem is null && issue.AwaitsDecision && rule.Effect.HasFlag(EffectKind.WorkItem) && result.Mode == RuleMode.Active)
+            {
+                // DEĞİŞMEZ (sonuç türünden bağımsız): karar bekleyen Sorunun açık görevi yoksa görev BU işlemde oluşur.
+                var escalation = await store.GetEscalationPolicyAsync(rule.WorkItem.EscalationPolicyId, ct);
+                created = WorkItem.FromRule(context.CompanyId, issue, evaluation.Id, rule.WorkItem, rule.Disclosure, escalation, now);
+            }
+            store.Stage(issue, evaluation, openItem, created);                                    // + WorkItemEvent (Created/Closed)
+            outcomes.Add(new RuleOutcome(rule.RuleId, rule.Version, key, outcome, result.Gate, rule.Disclosure, created?.Id));
+        }
+        store.StageAttempt(metadata, outcomes);                                                  // work.Attempts: (CompanyId, "work.rules.track.v1", keyHash)
+        await store.CommitAsync(ct);                                                             // TEK SaveChanges → tek SQL işlemi; audit aynı save'de (ADR-009)
+        return new RuleTrackResult(outcomes, IsReplay: false, metadata.CorrelationId);
     }
 }
 ```
 
-- **Kapı sorgusu salt-okunurdur**; iş öğesi açma **ayrı, yetkili sistem komutudur** (`IWorkItemCommandsV1.CreateFromRuleAsync`): aktör `system:work.rules`, izin `work.items.create.system` (ÖNERİ; yalnız sistem aktörüne verilir), idempotency key `rule:{issueId}:{evaluationId}` → `work.Attempts` satırı; aynı değerlendirme iki kez işlense ikinci çağrı replay olur. Bu ayrım, "kapı sorgusu çağıran form kayıt yazdı" durumunu imkânsız kılar: `RulesEndpoints` kapı sorgusu yolunda `IWorkItemCommandsV1` **enjekte edilmez**; on-demand değerlendirmede iş öğesi üretimi `Trigger=OnDemand` için politika bayrağıyla ve yalnız **sunucu içi** çağrıyla yapılır.
+- **Tek işlem:** `Issue`, `Evaluation`, açılan/kapanan `WorkItem`, `WorkItemEvent` ve `Attempt` aynı `WorkDbContext`'tedir (hepsi Work modülünün tablosu); tek `SaveChangesAsync` hepsini birlikte yazar ya da hiçbirini yazmaz. Başka modüle yazma yoktur (AGENTS.md).
+- **Görev açma VE kapama aynı işlemde:** karar verilince (`Acknowledged`) veya koşul kalkınca (`Cleared`) açık görev kanıtla kapanır; bu yüzden eski bir açık görev, istisna tükenince açılması gereken **yeni** karar görevini `UX_WorkItems_OpenDedupKey` üzerinden engellemez.
+- **Eşzamanlılık:** iki değerlendirici aynı anda görev açmaya kalkarsa `UX_WorkItems_OpenDedupKey` ikinciyi 2601/2627 ile reddeder; **bütün save geri alınır**, tracker durumu sıfırlayıp bir kez daha dener ve bu kez kazananın görevini görür (ikinci görev açılmaz).
+- **Takip kimliği:** olay tetiklemede key `rule:{deliveryId}`, zamanlı taramada `sweep:{ruleId}:{slot}:{issueKey}`, takip komutunda istemcinin `Idempotency-Key`'i; hepsi `work.Attempts`'a yazılır.
+- **Gölge mod:** kural `Shadow` modundaysa (veya `Work:Rules:ShadowOnly=true`) Sorun ve Değerlendirme kaydedilir, görev **açılmaz**. Gölge kapatılınca toplu görev üretimi yapılmaz; görev, aktivasyondan sonraki ilk değerlendirmede (olay veya zamanlı tarama) oluşur. İlk taramada kaç görev açılacağı yönetim ekranında (AI-03 / Work yönetimi) önizlenir.
+- **Kural politikası okuması yazma değildir:** `IWorkRulesPolicySnapshot`, `work.ImpactRules` durumlarını **salt-okunur** bir bağlamdan (`WorkReadOnlyDbContext`: `NoTracking`, `SaveChanges*` fırlatır — mevcut `CommandExecutionDbContext` deseni, Ek K-1 madde 14) okuyup bellekte tutar; kapı yolu bu anlık görüntüyü kullanır.
+
 - Motor **blok üretmez**: `EffectKind` içinde `Block` üyesi **yoktur** (derleme zamanı garanti).
 - AI kapalıyken çalışır: `Work.Rules` hiçbir `Ai.*` türüne referans vermez; capability/kill switch bayrakları `Ai:*` altındadır, `Work:Rules:Enabled` ayrıdır (§19).
 
@@ -1127,28 +1268,38 @@ internal sealed class FinanceRiskEvaluatorAdapter(IServiceScopeFactory scopes) :
 }
 ```
 
-Sahip modülün "sistem aktörü ile değerlendirme" yolu **sahip dilimde** tanımlanır (kesin kural kontrolleri gibi); `RulesRuntime` hiçbir izni atlamaz, sahip modülün açıkça sunduğu sistem port'unu çağırır. Bu port'ların listesi Ek K-3'te "sahip dilim eki" olarak işaretlidir.
+Sahip modülün "sistem aktörü ile değerlendirme" yolu **sahip dilimde** tanımlanır (kesin kural kontrolleri gibi); `RulesRuntime` hiçbir izni atlamaz, sahip modülün açıkça sunduğu sistem port'unu çağırır. Bu port **salt-okunur** olmak zorundadır (SIMULATE/READ sınıfı; `ERP-000J` §7: iş tablosu, olay, outbox veya komut kaydı üretmez); kapı sorgusu ve tracker aynı port'u kullanır. Bu port'ların listesi Ek K-3'te "sahip dilim eki" olarak işaretlidir.
 
 Neden ayrı sistem port'u: mevcut sahip servislerin fence'i (`SalesDraftService.RequireAsync` deseni) `ICurrentUser`'ı okur; host'ta `ICurrentUser` → `HttpCurrentUser` (`IHttpContextAccessor`) kayıtlıdır (`Program.cs`, `Security/HttpCurrentUser.cs`); HTTP bağlamı olmayan bir scope'ta `IsAuthenticated=false` → fence 401 `unauthenticated` döner. Dolayısıyla worker/kural scope'u sahip modülün **kullanıcı** port'unu çağıramaz; ya sahip modülün sistem port'unu çağırır (bu bölüm) ya da gerçek bir kullanıcı adına çalışır ve `ICurrentUser` scope-yerel override edilir (§10.3, §14.3).
 
-### 9.3 Kapı sorgusu endpoint'i (on-demand; form içinden)
+### 9.3 Kapı sorgusu endpoint'i (on-demand; form içinden; salt-okunur)
 
 ```csharp
 // GoymenERP.Api/RulesRuntime/RulesEndpoints.cs (ÖNERİ)
 var group = endpoints.MapGroup("/api/v1/rules").WithTags("Work").RequireAuthorization().RequireCompanyContext();
-group.MapPost("/gate", async (GateQueryRequestV1 body, IImpactRuleEngine engine, IGateQueryAuthorizer auth, HttpContext http, CancellationToken ct) =>
+group.MapPost("/gate", async (GateQueryRequestV1 body, IImpactRuleGate gate, IGateQueryAuthorizer auth, HttpContext http, CancellationToken ct) =>
 {
-    http.Response.SetPrivateNoStore();
-    var actor = await auth.AuthorizeAsync(body.GateToolId, ct);          // örn. finance.risk.shipment-gate@1 → finance.risk.gate.read (ÖNERİ) — aktör izni; aksi 403 (nondisclosing)
+    SetPrivateNoStore(http.Response);
+    var actor = await auth.AuthorizeAsync(body.GateToolId, ct);          // örn. finance.risk.shipment-gate@1 → finance.risk.gate.read (ÖNERİ); aksi 403 (nondisclosing)
     if (!actor.Granted) return Results.Problem(statusCode: 403);
-    var run = await engine.RunAsync(RuleTrigger.OnDemand(body.IntentKind), RuleContext.From(body, actor), ct);
-    return Results.Ok(GateQueryResponseV1.From(run, actor.DisclosureLevel));   // yalnız GateDecision + izinli gerekçe kodları; tutar yok
+    var results = await gate.EvaluateAsync(RuleTrigger.OnDemand(body.IntentKind), RuleContext.From(body, actor), ct);   // saf hesap: YAZMA YOK
+    return Results.Ok(GateQueryResponseV1.From(results, actor.DisclosureLevel));                                   // yalnız kapı kararı + izinli gerekçe kodları
 })
 .WithName("QueryRuleGateV1").Accepts<GateQueryRequestV1>("application/json").Produces<GateQueryResponseV1>(200)
 .ProducesErpBadRequest("validation_failed", "gate_tool_unknown").ProducesErpUnsupportedMediaType().ProducesErpAuthenticatedProblems();
 ```
 
-Bu endpoint **POST** olmasına rağmen `Idempotency-Key` istemez ve `WithIdempotencyContract` taşımaz: yazma yapmaz (değerlendirme kaydı `work.Evaluations`'a `Trigger=OnDemand` ile yazılır — bu bir **kanıt kaydıdır**, iş kaydı değil; ADR-008 madde 6'da açıkça sınıflandırılır: DOĞRULANACAK/karar). Alternatif: on-demand değerlendirmeler yalnız `ShadowOnly` iken kayıt yazmaz; ilk sürümde bu seçilir.
+Kapı sorgusu **hiçbir kayıt yazmaz** — değerlendirme kaydı dahil (v1.0'daki "kanıt kaydı" seçeneği kaldırıldı; K-AÇIK-06 bu öneriyle kapanır, onay ADR-008 madde 6'da). Endpoint'in DI grafiğinde yazma yapabilen hiçbir bileşen bulunmaz: `IImpactRuleTracker`, `IWorkRulesStore`, yazılabilir `WorkDbContext` ve `IWorkItemCommandsV1` yoktur; kural durumu yalnız salt-okunur `WorkReadOnlyDbContext` üzerinden gelen anlık görüntüden okunur. Sahip modülün değerlendirme port'u da **salt-okunur sistem port'u** olmak zorundadır (§9.2). Kanıt iki katmanlıdır: mimari test (`GateQueryHasNoWriteDependenciesTests`: grafikte yazma bağımlılığı yok) ve davranış testi — `IServiceScopeFactory` üzerinden çözülen sahip port'larını da kapsamak için statik grafik yetmez; kapı sorgusundan önce ve sonra **bütün şemalardaki** satır sayıları ve rowversion'lar, audit, outbox ve security-event tabloları dahil, aynı kalmalıdır.
+
+### 9.4 Kalıcı takip komutu (form kaydında veya olayda)
+
+Form, kaydı başarıyla yaptıktan sonra (örn. yükleme talimatı kaydedildi veya "issue" niyeti gönderildi) **ayrı** bir komut çağırır; `ERP-000F` olayları geldiğinde aynı iş olay tüketicisinden yapılır:
+
+| Yöntem ve yol | İzin (ÖNERİ) | Idempotency-Key | Cevap |
+|---|---|---|---|
+| `POST /api/v1/rules/evaluations` | `work.rules.track` — formu kullanan operasyon rolüne verilir; **finans verisi görme izni değildir**, yalnız "takibi başlat" iznidir | Zorunlu | 201: kapı kararı + "takip açıldı" bayrağı + görevin kimliği (kullanıcının açıklık düzeyinde; tutar yok) |
+
+Bu komut `IImpactRuleTracker.TrackAsync` çağırır (§9.1): Sorun, Değerlendirme ve Finans görevi aynı işlemde yazılır. Sevkiyat kullanıcısının ekranındaki "Finans'a görev açıldı" metni **yalnız** bu komutun 201 cevabından sonra görünür.
 
 ---
 
@@ -1193,10 +1344,12 @@ internal sealed class AiPreviewService(IAiProposalStore proposals, IAiPayloadVau
         var cipherRef = await vault.PutAsync(context.CompanyId, envelopeBytes, ct);             // vault AYNI baytları saklar (şifreli, immutable)
         var shadow = options.Value.Tools.IsShadowOnly(registration.Descriptor);
         var proposal = intent.ReissueOf is { } prior
-            ? (await proposals.GetAsync(prior, ct)).Reissue(hash, intent.Target, validation.Passed, clock.GetUtcNow(), options.Value.Preview.Expiry)
+            ? (await proposals.GetAsync(prior, ct)).Reissue(hash, intent.Target, validation.Passed, shadow, clock.GetUtcNow(), options.Value.Preview.Expiry)
             : AiProposal.StartIntent(context.CompanyId, context.RunId, registration.Ref, intent.Target, hash, intent.Actors,
                 registration.RequiredApprovals(context), validation.Passed, shadow, clock.GetUtcNow(), options.Value.Preview.Expiry);
         await proposals.AddAsync(proposal, cipherRef, validation, ct);                           // ai.Proposals (+ audit: "ai.proposal.created.v1", AiInvolvement=Proposed)
+        // Reissue'da store İKİ save'i TEK işlemde yapar: önce eski satır Superseded (UPDATE), sonra yeni satır (INSERT).
+        // EF filtreli tekil indeksi bilmez; tek save'de INSERT önce giderse UX_Proposals_OneLiveRevisionPerIntent 2601 verir.
         return AiPreview.From(proposal, validation, diff: registration.Diff(canonical, intent.Target),   // gösterilen fark == yürütülecek payload
             similar: await proposals.FindSimilarAsync(context.CompanyId, registration.Descriptor.ToolId, hash, since: clock.GetUtcNow().AddDays(-1), ct));
     }
@@ -1212,38 +1365,74 @@ Onay isteği `POST /api/v1/ai/proposals/{id}/approvals` gövdesinde `{ boundHash
 ### 10.3 `AiCommandDispatcher` ve `AiCommandEnvelopeFactory`
 
 ```csharp
+// GoymenERP.Modules.Ai.Application/Dispatch/AiEnvelopeVerifier.cs (ÖNERİ) — gönderim VE kurtarma bu tek kontrolü çağırır
+internal sealed class AiEnvelopeVerifier(IAiPayloadVault vault)
+{
+    public async Task<AiVerifiedEnvelope?> LoadVerifiedAsync(AiProposal proposal, CancellationToken ct)
+    {
+        var bytes = await vault.GetAsync(proposal.CompanyId, proposal.PayloadCipherRef, ct);
+        if (!string.Equals(AiCanonicalJson.HashBytes(bytes), proposal.CanonicalPayloadHash, StringComparison.Ordinal)) return null;   // hash
+        var envelope = AiPreviewEnvelope.Read(bytes);
+        return envelope.Matches(proposal) ? new AiVerifiedEnvelope(envelope) : null;                                                 // sözleşme/araç/şirket/hedef/sürüm
+    }
+}
+
 // GoymenERP.Modules.Ai.Application/Dispatch/AiCommandDispatcher.cs (ÖNERİ)
-internal sealed class AiCommandDispatcher(IAiProposalStore proposals, IAiPayloadVault vault, IAiToolCatalog catalog, IAiPolicyEvaluator policy,
+internal sealed class AiCommandDispatcher(IAiProposalStore proposals, AiEnvelopeVerifier verifier, IAiToolCatalog catalog, IAiPolicyEvaluator policy,
     IAiDispatchScopeFactory scopes, IAiSecurityEventSink security, TimeProvider clock) : IAiCommandDispatcher
 {
     public async Task<AiDispatchResult> DispatchAsync(Guid proposalId, CancellationToken ct)
     {
         var proposal = await proposals.GetAsync(proposalId, ct);
-        var gate = await policy.EvaluateDispatchAsync(AiDispatchRequest.For(proposal), ct);      // adım 12 ön koşulları
-        if (!gate.Allowed) return AiDispatchResult.Refused(gate.Code);
+        if (proposal.Status != AiProposalStatus.Approved) return AiDispatchResult.Refused(AiProposalCodes.NotApproved);   // yalnız Approved gönderilir
+        if (clock.GetUtcNow() >= proposal.ExpiresAtUtc)                                          // onay süresi geçti → gönderim öncesi Stale
+        { proposal.MarkStale("expired"); await proposals.SaveAsync(proposal, ct); return AiDispatchResult.Refused(AiProposalCodes.ProposalExpired); }
+        var gate = await policy.EvaluateDispatchAsync(AiDispatchRequest.For(proposal), ct);      // adım 12: güncel yetki/politika/hedef sürümü
+        if (!gate.Allowed)
+        {
+            if (gate.IsDrift) { proposal.MarkStale(gate.Code); await proposals.SaveAsync(proposal, ct); }   // politika/hedef değişti → Stale (tekrar gönderilemez)
+            else { proposal.FailBeforeDispatch(gate.Code); await proposals.SaveAsync(proposal, ct); }        // yetki düştü vb. → gönderim öncesi kesin ret
+            return AiDispatchResult.Refused(gate.Code);
+        }
 
-        var envelopeBytes = await vault.GetAsync(proposal.CompanyId, proposal.PayloadCipherRef, ct);
-        var envelope = AiPreviewEnvelope.Read(envelopeBytes);
-        if (!string.Equals(AiCanonicalJson.HashBytes(envelopeBytes), proposal.CanonicalPayloadHash, StringComparison.Ordinal) || !envelope.Matches(proposal))
-        { proposal.MarkFailed(AiProposalCodes.PayloadIntegrity); await proposals.SaveAsync(proposal, ct); await security.RecordAsync(AiSecurityEvent.PayloadIntegrity(proposal), ct); return AiDispatchResult.Failed(AiProposalCodes.PayloadIntegrity); }
+        // GÖNDERİM ÖNCESİ: öneri hâlâ Approved. Bozuk zarf → FailBeforeDispatch (Approved → Failed; hiçbir şey gönderilmedi; kilit yok).
+        if (await verifier.LoadVerifiedAsync(proposal, ct) is not { } verified)
+        {
+            proposal.FailBeforeDispatch(AiProposalCodes.PayloadIntegrity);
+            await proposals.SaveAsync(proposal, ct);
+            await security.RecordAsync(AiSecurityEvent.PayloadIntegrity(proposal, phase: "pre-dispatch"), ct);
+            return AiDispatchResult.Failed(AiProposalCodes.PayloadIntegrity);
+        }
 
         proposal.MarkDispatched(clock.GetUtcNow());                                              // Approved → Dispatched; DispatchedPayloadHash dondurulur; TargetLock
-        await proposals.SaveAsync(proposal, ct);                                                 // kalıcı kayıt ÖNCE (çökme → Unknown'dan kurtarılır)
+        await proposals.SaveAsync(proposal, ct);                                                 // kalıcı kayıt ÖNCE (çökme → süre aşımında Unknown'a alınıp kurtarılır)
+        return await ExecuteAsync(proposal, verified, ct);
+    }
 
+    /// <summary>Gönderim ve kurtarmanın ORTAK yürütme adımı: aynı doğrulanmış zarf, aynı key, aynı hata sınıflaması.</summary>
+    internal async Task<AiDispatchResult> ExecuteAsync(AiProposal proposal, AiVerifiedEnvelope verified, CancellationToken ct)
+    {
         await using var scope = scopes.CreateDispatchScope(proposal);                            // yeni DI scope: ICompanyContext, ICorrelationContext(AiAssisted), ICurrentUser(onaylayan)
         var registration = catalog.Resolve(proposal.ToolId, proposal.ToolVersion);
         try
         {
-            var result = await registration.ExecuteWriteAsync(scope.ToolContext, envelope.Payload, ct);   // sahip public application command; key = context.Dispatch.IdempotencyKey
+            var result = await registration.ExecuteWriteAsync(scope.ToolContext, verified.Envelope.Payload, ct);   // key = context.Dispatch.IdempotencyKey
             proposal.MarkExecuted(result.CommandRef);                                              // replay da Executed sayılır (IsReplay=true kaydedilir)
         }
         catch (AiOwnerRefusalException refusal) when (refusal.IsSameKeyMismatch)                   // 409 same_key_payload_mismatch / idempotency_conflict
         { proposal.MarkFailed(AiProposalCodes.ContentConflict); await security.RecordAsync(AiSecurityEvent.ContentConflict(proposal, refusal), ct); }
         catch (AiOwnerRefusalException refusal)                                                    // kesin 4xx (validation, version_conflict, forbidden…)
         { proposal.MarkFailed(refusal.Code); }
-        catch (Exception ex) when (ex is HttpRequestException or TimeoutException or OperationCanceledException or DbUpdateException)
+        catch (Exception ex)                                                                       // sahibin kesin reddi DIŞINDAKİ her istisna: sonuç bilinmiyor
         { proposal.MarkUnknown(ex.GetType().Name); }                                               // OTOMATİK RETRY YOK; kurtarma koordinatörü
-        await proposals.SaveAsync(proposal, ct);                                                   // ai.Proposals + audit (AiInvolvement=Executed / Failed)
+        try { await proposals.SaveAsync(proposal, ct); }                                           // ai.Proposals + audit (AiInvolvement=Executed / Failed / Unknown)
+        catch (AiProposalConcurrencyException)                                                     // bu arada kurtarma öneriyi Unknown'a almış olabilir (uzun süren gönderim)
+        {
+            var fresh = await proposals.ReloadAsync(proposal.Id, ct);                              // taze satır üzerine BİLİNEN sonucu uygula: Executed/Failed Unknown'dan kabul edilir
+            fresh.ApplyLateOutcome(proposal.Status, proposal.ExecutedCommandRef, proposal.FailureCode);
+            await proposals.SaveAsync(fresh, ct);
+            proposal = fresh;
+        }
         return AiDispatchResult.From(proposal);
     }
 }
@@ -1298,45 +1487,45 @@ internal sealed class AiCommandEnvelopeFactory(ICorrelationContext correlation, 
 ### 10.4 `AiRecoveryCoordinator` (otomatik retry yok; yeni kimlik yok)
 
 ```csharp
-internal sealed class AiRecoveryCoordinator(IAiProposalStore proposals, IAiToolCatalog catalog, IAiPayloadVault vault, IAiDispatchScopeFactory scopes,
+internal sealed class AiRecoveryCoordinator(IAiProposalStore proposals, IAiToolCatalog catalog, AiEnvelopeVerifier verifier, AiCommandDispatcher dispatcher,
     IWorkItemCommandsV1 workItems, IAiSecurityEventSink security, IOptions<AiOptions> options, TimeProvider clock) : IAiRecoveryCoordinator
 {
-    /// <summary>Worker başlangıcında ve zamanlı: Dispatched (süresi geçmiş) ve Unknown öneriler. Aynı OperationIntentId; asla yeni kimlik.</summary>
+    /// <summary>Worker başlangıcında ve zamanlı: süresi geçmiş Dispatched ve Unknown öneriler. Aynı OperationIntentId; asla yeni kimlik.</summary>
     public async Task RecoverAsync(Guid companyId, CancellationToken ct)
     {
-        foreach (var proposal in await proposals.ListPendingRecoveryAsync(companyId, olderThan: options.Value.DispatchGracePeriod, ct))
+        foreach (var proposal in await proposals.ListPendingRecoveryAsync(companyId, olderThan: options.Value.Workflow.DispatchGracePeriod, ct))
         {
+            // 0) Yarım kalmış gönderim: Dispatched iken süre aşıldıysa önce AÇIKÇA Unknown'a alınır (MarkRecoveryAttempt yalnız Unknown kabul eder).
+            if (proposal.Status == AiProposalStatus.Dispatched) { proposal.MarkUnknown("dispatch_grace_expired"); await proposals.SaveAsync(proposal, ct); }
+
             var registration = catalog.Resolve(proposal.ToolId, proposal.ToolVersion);
             // 1) Salt-okunur kurtarma sorgusu — sahip modül bir "deneme kaydı okuma" port'u sunuyorsa (ÖNERİ, sahip dilim eki: IIdempotencyProbeV1) önce o.
             var probe = registration.Probe is { } p ? await p.FindAsync(companyId, registration.OwnerContractId, proposal.IdempotencyKeyHash, ct) : ProbeResult.Unsupported;
             if (probe.Kind == ProbeKind.Recorded) { proposal.MarkExecuted(probe.CommandRef!); await proposals.SaveAsync(proposal, ct); continue; }
             if (probe.Kind == ProbeKind.RecordedRefusal) { proposal.MarkFailed(probe.Code!); await proposals.SaveAsync(proposal, ct); continue; }
-            // "Kayıt yok" ≠ "hiç ulaşmadı": in-flight olabilir. Bu yüzden 2) EN FAZLA BİR aynı-key/aynı-payload gönderim; sahip modülün PK'sı ikinci etkiyi imkânsız kılar.
-            if (proposal.RecoveryAttempts >= 1)
+
+            // 2) "Kayıt yok" ≠ "hiç ulaşmadı". EN FAZLA BİR aynı-key gönderim — ama ÖNCE gönderimle AYNI zarf kontrolü.
+            if (proposal.RecoveryAttempts >= 1) { await OpenTakeoverAsync(proposal, reason: "second_uncertainty", ct); continue; }   // Unknown + kilit kalır
+            if (await verifier.LoadVerifiedAsync(proposal, ct) is not { } verified)
             {
-                await workItems.CreateFromSystemAsync(WorkItemRequests.RecoveryTakeover(proposal), WorkCommandMetadata.System($"recovery:{proposal.Id:N}", proposal.CorrelationId, null), ct);
-                continue;                                                                          // Unknown kalır; TargetLock kalır; insan devralır
+                // İlk gönderim yapılmış olabilir; bozuk zarfla tekrar gönderilmez, "Failed" da denmez (sonuç bilinmiyor).
+                await security.RecordAsync(AiSecurityEvent.PayloadIntegrity(proposal, phase: "recovery"), ct);
+                await OpenTakeoverAsync(proposal, reason: "payload_integrity", ct);                  // Unknown + TargetLock kalır; insan devralır
+                continue;
             }
-            proposal.MarkRecoveryAttempt(clock.GetUtcNow());                                              // RecoveryAttempts 0→1 (CK_Proposals_Recovery: en fazla 1)
-            await proposals.SaveAsync(proposal, ct);                                                        // rowversion: iki koordinatör aynı anda deneyemez
-            await using var scope = scopes.CreateDispatchScope(proposal);
-            var envelopeBytes = await vault.GetAsync(companyId, proposal.PayloadCipherRef, ct);           // aynı zarf; hash + Matches yeniden doğrulanır (dispatcher ile aynı kontrol)
-            var envelope = AiPreviewEnvelope.Read(envelopeBytes);
-            try
-            {
-                var result = await registration.ExecuteWriteAsync(scope.ToolContext, envelope.Payload, ct);  // replay dönerse (IsReplay=true) ilk sonuç; ilk kez ulaşıyorsa tek yürütme
-                proposal.MarkExecuted(result.CommandRef);
-            }
-            catch (AiOwnerRefusalException refusal) when (refusal.IsSameKeyMismatch) { proposal.MarkFailed(AiProposalCodes.ContentConflict); await security.RecordAsync(AiSecurityEvent.ContentConflict(proposal, refusal), ct); }
-            catch (AiOwnerRefusalException refusal) { proposal.MarkFailed(refusal.Code); }
-            catch (Exception ex) when (ex is HttpRequestException or TimeoutException or OperationCanceledException or DbUpdateException) { proposal.MarkUnknown(ex.GetType().Name); }
-            await proposals.SaveAsync(proposal, ct);
+            proposal.MarkRecoveryAttempt(clock.GetUtcNow());                                         // Unknown önkoşulu; RecoveryAttempts 0→1 (CK_Proposals_Recovery)
+            await proposals.SaveAsync(proposal, ct);                                                   // rowversion: iki koordinatör aynı anda deneyemez
+            await dispatcher.ExecuteAsync(proposal, verified, ct);                                     // gönderimle AYNI yürütme ve hata sınıflaması
         }
     }
+
+    private Task OpenTakeoverAsync(AiProposal proposal, string reason, CancellationToken ct) =>
+        workItems.CreateFromSystemAsync(WorkItemRequests.RecoveryTakeover(proposal, reason),
+            WorkCommandMetadata.System($"recovery:{proposal.Id:N}:{reason}", proposal.CorrelationId, null), ct);   // aynı key → replay; tek görev
 }
 ```
 
-Sözleşme (ADR-008 madde 6'ya öneri): (1) kurtarma yalnız aynı `OperationIntentId` ve aynı dondurulmuş payload ile; (2) "sahip modülde kayıt yok" **hiç ulaşmadı anlamına gelmez** — bu yüzden koşulsuz ikinci deneme yerine **en fazla bir** aynı-key gönderim ve sahip modülün PK garantisine yaslanma; (3) ikinci belirsizlik → `Unknown` + `TargetLock` + iş öğesi (AI süreç sahibi + sahip modül operatörü); (4) insan devralma sonucu (`Executed`/`Failed`) `POST /ai/proposals/{id}/resolution` ile **kanıt referansı** zorunlu girilir; (5) hiçbir yolda yeni kimlik üretilmez, `Reissue` `Unknown` için çalışma zamanında reddedilir (§5.1); (6) "en fazla bir" gönderim hem kodda (`MarkRecoveryAttempt` önkoşulu) hem şemada (`CK_Proposals_Recovery`) hem eşzamanlılıkta (rowversion) zorlanır.
+Sözleşme (ADR-008 madde 6'ya öneri): (1) kurtarma yalnız aynı `OperationIntentId` ve aynı dondurulmuş payload ile; (2) "sahip modülde kayıt yok" **hiç ulaşmadı anlamına gelmez** — bu yüzden koşulsuz ikinci deneme yerine **en fazla bir** aynı-key gönderim ve sahip modülün PK garantisine yaslanma; (3) ikinci belirsizlik → `Unknown` + `TargetLock` + iş öğesi (AI süreç sahibi + sahip modül operatörü); (4) insan devralma sonucu (`Executed`/`Failed`) `POST /ai/proposals/{id}/resolution` ile **kanıt referansı** zorunlu girilir; (5) hiçbir yolda yeni kimlik üretilmez, `Reissue` `Unknown` için çalışma zamanında reddedilir (§5.1); (6) "en fazla bir" gönderim hem kodda (`MarkRecoveryAttempt` önkoşulu) hem şemada (`CK_Proposals_Recovery`) hem eşzamanlılıkta (rowversion) zorlanır; (7) gönderim ve kurtarma **aynı** `AiEnvelopeVerifier` ve **aynı** `ExecuteAsync` adımını kullanır — zarf kontrolü kurtarmada da çağrıdır, yorum değil; (8) gönderim öncesi ret (`FailBeforeDispatch`, `Approved → Failed`, kilit yok) ile gönderim sonrası belirsizlik (`Dispatched → Unknown`) ayrı geçişlerdir; süresi geçmiş `Dispatched` kurtarmaya alınmadan önce açıkça `Unknown` yapılır.
 
 ### 10.5 Kaydedilen senaryolar (test sözleşmesi, §18.2)
 
@@ -1348,8 +1537,13 @@ Sözleşme (ADR-008 madde 6'ya öneri): (1) kurtarma yalnız aynı `OperationInt
 | **İkinci belirsizlik** | `Unknown` kalır; `TargetLock`; `work.WorkItems` "kurtarma devralma" açık; aynı hedef için yeni niyet `intent_pending_recovery` (409) |
 | **Gönderimde sahip `version_conflict`** (onaydan sonra hedef değişti) | Proposal `Failed(version_conflict)`; bilinen sonuç, etki yok, kilit yok; aynı niyet yeniden önizlenemez (sahip reddi aynı key'e terminal kaydedilmiş olabilir); kullanıcı **yeni niyetle** yeniden önizler. Onaydan **önce** fark edilen sürüm değişikliği `Stale` → aynı niyet rev+1 |
 | **İki onay gerektiren işlem** | 1. onay → `PartiallyApproved` (kanıt satırı); aynı kişi 2. onay → `403`; farklı kişi → `Approved`; iki onay arasında hedef sürümü değişti → `Stale`, iki onay da düşer; `Reissue` aynı niyet rev+1 |
-| **Yalnız bir sevkiyata verilen istisna** | Kapı `Proceed(exceptionRef)` yalnız o talimat için; sevkiyat kaydedilince istisna `Consumed`; aynı müşteriye ikinci talimat → `ReviewRequired`; istisna süresi dolunca zamanlı yeniden değerlendirme → koşul sürüyorsa Sorun `Reopened`, kart güncellenir, yeni kart yok |
+| **Yalnız bir sevkiyata verilen istisna** | Müşterinin risk Sorunu **açık kalır** (`Acknowledged`, istisna referansıyla; limit aşımı sürdükçe `Resolved` olmaz); kapı `Proceed(exceptionRef)` yalnız o talimat için; istisna değerlendirme görevi kanıtla kapanır; sevkiyat kaydedilince istisna `Consumed` → aynı müşteriye ikinci talimat `ReviewRequired`, Sorun `Reopened` ve yeni karar görevi; süre dolunca aynısı zamanlı taramayla; yeni Sorun açılmaz |
 | **Aynı niyet, farklı içerik (bütünlük ihlali)** | Sahip `409 same_key_payload_mismatch`/`idempotency_conflict` → `Failed(ContentConflict)` + security-event; `TargetLock` kalır; insan inceler |
+| **Sorun kaydı ile görev arasında kesinti** | Olamaz: ikisi aynı işlemdedir; kesinti ikisini birden geri alır; sonraki değerlendirme ikisini birlikte yazar. "Açık sorun, görev yok" durumu (eski veri) ilk değerlendirmede tamamlanır (§9.1 değişmezi) |
+| **Kapı sorgusu** | Hiçbir satır yazmaz; kalıcı takip ayrı `POST /rules/evaluations` komutuyla (§9.3–9.4) |
+| **Gölge öneri yeniden üretilir** | Yeni revizyon da `ShadowOnly`; eski revizyon `Superseded`; hiçbiri onaylanamaz |
+| **Gönderim öncesi zarf bozuk** | `FailBeforeDispatch`: `Approved → Failed`, sahip çağrılmaz, kilit yok, security-event; yeniden deneme yeni niyet |
+| **Kurtarmada zarf bozuk** | Gönderim yapılmaz; `Unknown` + kilit kalır; security-event; insan devralma görevi (ilk gönderim yürümüş olabilir, "Failed" denmez) |
 
 ### 10.6 Kanıt matrisi — "aynı key tek sonuç" garantisi sahip modüllerde nerede? (main@00a8798)
 
@@ -1358,16 +1552,18 @@ Bu tablo "repoda zaten var" iddiasının yerine geçer; her satır dosya/satır 
 | WRITE aracı → sahip komut | Deneme/komut satırı (PK) | Aynı key + aynı içerik | Aynı key + farklı içerik/aktör | Eşzamanlılık | Terminal ret kaydı | Gerçek SQL testi | Durum |
 |---|---|---|---|---|---|---|---|
 | `counterparty.party.create@1` → `CounterpartyCommandService.CreateAsync` (`CounterpartyCommandService.cs:32–123`) | `idempotency.CommandExecutions` — unique `IX_CommandExecutions_CompanyId_CommandName_IdempotencyKeyHash` (`CommandExecutionModelBuilderExtensions.cs:51–57`); `ResponseJson` saklar | Replay: `new CounterpartyCommandExecution(response, true, execution.OriginalCorrelationId)` (`:390–393`); başlıklar `CounterpartyEndpoints.cs:486–488` | Aktör **veya** hash farkı → `Responses.IdempotencyConflict()` 409 `idempotency_conflict` (`:361–368`; kod `ICounterpartyCommandService.cs:79`) | Unique IX; `Version`+`RowVersion` (`CounterpartyDbContext.cs:93–94, 121–122`); create yolunda `catch (DbUpdateException)` kazananı yeniden okur, **2601/2627 filtresi yok**, kazanan yoksa `throw;` (`:327–340`) | Yalnız 201 başarı | `CounterpartyWriteSqlServerRelationalAcceptanceTests.WriteIdempotencyAndTerminalReplay_AreDurable` (`:81`; mismatch `:212–222`); race `CounterpartyWriteSafety…ConcurrentCreatesAndDifferentKeyStatusWrites_AreSerialized` (`:15`) | KANITLI; **DOĞRULANACAK:** create için farklı-aktör testi yok; 2601/2627 filtresi eksikliği ADR-011 ile uzlaştırılmalı |
-| `sales.draft.create@1` → `SalesDraftService.CreateDraftAsync` → `SalesStore.StoreDraftAsync` | `sales.DraftAttempts` PK (CompanyId, CommandName, IdempotencyKeyHash) (`SalesRows.cs:149–169`); pointer `DraftId` + `RefusalJson` | `FindReplayAsync` → `SalesDraftReplay(stored, null, attempt.CorrelationId)` (`SalesStore.cs:148–176`) | `SalesDraftStoreCodes.SameKeyPayloadMismatch` (`"sales_same_key_payload_mismatch"`, `ISalesOrderDraftStore.cs:74`) → 409 `same_key_payload_mismatch` (`SalesDraftService.cs:1310`) | PK; `Version`+`RowVersion`; `SaveAsync` `DbUpdateConcurrencyException` / `SqlException 2601/2627` → `ConcurrentChange`, tracker clear | Evet (`Outcome=2`, `RefusalJson`) | Sales SQL kabul testleri (ADR-011 §7 replay) — **DOĞRULANACAK:** tam test adı bu envanterde okunmadı | KANITLI |
+| `sales.draft.create@1` → `SalesDraftService.CreateDraftAsync` → `SalesStore.StoreDraftAsync` | `sales.DraftAttempts` PK (CompanyId, CommandName, IdempotencyKeyHash) (`SalesRows.cs:149–169`); pointer `DraftId` + `RefusalJson` | `FindReplayAsync` → `SalesDraftReplay(stored, null, attempt.CorrelationId)` (`SalesStore.cs:148–176`) | `SalesDraftStoreCodes.SameKeyPayloadMismatch` (`"sales_same_key_payload_mismatch"`, `ISalesOrderDraftStore.cs:74`) → 409 `same_key_payload_mismatch` (`SalesDraftService.cs:1310`) | PK; `Version`+`RowVersion`; `SaveAsync` `DbUpdateConcurrencyException` / `SqlException 2601/2627` → `ConcurrentChange`, tracker clear | Evet (`Outcome=2`, `RefusalJson`) | `SalesDraftSqlServerRelationalAcceptanceTests.A_draft_with_lines_and_slices_is_stored_replayed_and_audited_in_one_save` (`:44`; replay `:60`); `…The_same_key_with_other_content_is_refused_and_a_racing_same_key_loses_cleanly` (`:107`; farklı içerik `:117`, farklı aktör `:127`) — v1.1'de repodan okundu | KANITLI |
 | `purchasing.request.create@1` → `PurchasingService.CreateRequestAsync` (`:57–128`) → `PurchasingStore.StoreRequestAsync` (`:39–115`) | `purchasing.PurchaseAttempts` PK (`PurchasingDbContext.cs:202`); `Outcome 1/2`, `RequestId` pointer, `RefusalJson` | `PurchasingWriteOutcome.Replayed` + `attempt.CorrelationId` (`:52–59`); `RequestResponse(request, isReplay: true, …)` (`PurchasingService.cs:659–665`) | `RequireSameContent` (`:696–703`) → `purchasing_same_key_payload_mismatch` → 409 `same_key_payload_mismatch` (`PurchasingService.cs:734`; `PurchasingContractsV1.cs:109`) | PK + filtered unique `UX_PurchaseAttempts_RequestId`; `Version`+`RowVersion`; `SaveAsync` (`:766–784`) 2601/2627 → `purchasing_concurrent_change`; servis kazananı replay eder (`:117–121`) | Evet (`version_conflict` terminal) | `PurchasingSqlServerRelationalAcceptanceTests.A_request_and_an_order_are_stored_in_one_save_each_and_the_same_key_replays_with_the_first_correlation` (`:42`; mismatch `:57`) | KANITLI |
 | `inventory.allocation.create@1` → `InventoryStore.Allocations.CreateAsync` (`InventoryStore.Allocations.cs:20–155`) | `inventory.Commands` PK (`InventoryDbContext.cs:542`); `PayloadHash` **küçük harf**, `ResultJson` | `FindAllocationReplayAsync` → `IsReplay=true` (`:266–289`); HTTP replay **200** (`InventoryEndpoints.cs:553–559`) | Payload **veya** aktör farkı → 409 `idempotency_conflict` (`InventoryAllocationContractsV1.cs:78`) | PK; `label.Version` (`:128`) + `RowVersion`; `catch` 2601/2627 → kazananı okur, yoksa 409 `inventory_concurrent_change` (`:141–152`) | **Yalnız başarı** | `InventoryAllocationSqlServerRelationalAcceptanceTests.Physical_sales_allocation_reduces_free_capacity…` (`:101`; replay `:131–132`, 409 `:139`); race `Concurrent_physical_allocations_cannot_both_consume_the_same_free_capacity` (`:247`) | KANITLI |
 | `finance.receipt.draft@1` → `ReceiptDraftService.DraftSaveAsync` (`:85–284`; upsert) | `finance.Commands` PK (`FinanceDbContext.cs:547`; ADR-011 hizalaması `20260919090000_AlignCommandsWithAdr011.cs:38–42`); `ResultJson` | `prior.PayloadHash == payloadHash && ActorId eşit` → `ReplayAsync` (`:666–668`, `:715–727`) `IsReplay=true` | `Refused(CommandOutcome.IdempotencyConflict)`; **problem kodu yok**, gövde `"outcome":"IdempotencyConflict"` (`ManualReceiptV1.cs:99–100`); HTTP 409 (`FinanceEndpoints.cs:929–930`) | PK; `ReceiptDraftRow.Version` concurrency token; **Finance'te `RowVersion` yok**; `SaveAsync` (`:676–691`) 2601/2627 → `PriorAsync` yeniden, yoksa `VersionConflict` | Yalnız güncelleme yolunda (`draft_not_found`, `version_conflict`); **create için yalnız başarı** | `FinanceDraftSqlServerRelationalAcceptanceTests.A_stale_version_changes_nothing_and_the_same_key_replays_or_conflicts` (`:83`); HTTP race `FinanceCommandApi…A_same_key_race_on_a_save_stores_one_draft…` (`:242`) | KANITLI; **DOĞRULANACAK:** adaptör `outcome` enum'unu problem koduna eşler (kod sözlüğü farklı) |
 | `logistics.instruction.create@1` → `LogisticsInstructionService.CreateInstructionAsync` (`:49–112`) → `LogisticsStore.StoreInstructionAsync` (`:35–117`) | `logistics.LoadingAttempts` PK (`LogisticsDbContext.cs:155`); `Outcome 1/2`, `InstructionId` pointer | `LogisticsWriteOutcome.Replayed` (`:44–55`); `Response(..., isReplay: true, …)` (`:566–574`) | `RequireSameContent` (`:396–403`) → `logistics_same_key_payload_mismatch` → 409 `same_key_payload_mismatch` (`LogisticsInstructionContractsV1.cs:114`) | PK + filtered unique `UX_LoadingAttempts_InstructionId`; `Version`+`RowVersion`; `SaveAsync` (`:438–456`) → `logistics_concurrent_change`; servis kazananı replay eder | **Create için yalnız başarı** (terminal ret mutation yollarında) | `LogisticsInstructionSqlServerRelationalAcceptanceTests.An_instruction_with_lines_is_stored_issued_loaded_within_the_cap_replayed_and_rebuilt_in_one_save_each` (`:60`; replay `:72`, mismatch `:75`); race (`:156`) | KANITLI |
 | `accounting.normal-journal-draft.create@1` → `NormalJournalDraftServiceV1.CreateAsync` (`:144–180` → `RunAsync :268–410`) → `AccountingStore.CreateNormalDraftAsync` (`:285–364`) | `accounting.Commands` PK (`AccountingDbContext.cs:303`); `ResultJson` | `Answer`: `stored with { IsReplay = true, OriginalCorrelationId }` (`:507–518`) | `Binds` başarısız → `AccountingApiStatus.Conflict` + `idempotency_conflict` (`AccountingApiV1.cs:97`); ayrıca aynı taslak Id için `ContentConflict` (`AccountingStore.cs:297–310`) | PK; `Version`+`RowVersion` (`AccountingDbContext.cs:342–343`); `AccountingStore.SaveAsync` (`:1185–1201`) 2601/2627 → `accounting_concurrent_change`; **tracker clear yok** | Terminal set: NotFound, `accounting_version_conflict`, başarı (`:391–393`) | **Key düzeyi gerçek SQL testi YOK**; yalnız fake store birim testi `NormalJournalDraftLifecycleV1Tests.Reordered_lines_with_the_same_idempotency_key_are_refused…` (`:125`); SQL yalnız Id düzeyi ContentConflict | **DOĞRULANACAK:** key düzeyi replay/mismatch SQL testi Faz 4 öncesi sahip dilime eklenmeli |
 | `document.link.create@1` | Belge kasası yok (`ERP-000G` ready) | — | — | — | — | — | **YOK — sahip dilimde yazılacak** |
-| `work.item.create@1` → `WorkItemService.CreateAsync` (bu belge §4.2) | `work.Attempts` PK (ÖNERİ) | Replay: `WorkWriteOutcome.Replayed` | `work_same_key_payload_mismatch` → 409 `same_key_payload_mismatch` | PK; `Version`+`RowVersion`; `SaveAsync` 2601/2627 | Evet (Sales deseni) | Bu belge §18.2'de tanımlı | **TASARIM** (henüz yok) |
+| Work kullanıcı komutu `WorkItemService.CreateAsync` (AI aracı **değil**; AI taslağını insan kaydeder — master Ek A #43) | `work.Attempts` PK (ÖNERİ) | Replay: `WorkWriteOutcome.Replayed` | `work_same_key_payload_mismatch` → 409 `same_key_payload_mismatch` | PK; `Version`+`RowVersion`; `SaveAsync` 2601/2627 | Evet (Sales deseni) | Bu belge §18.2'de tanımlı | **TASARIM** (henüz yok) |
 
-Genel gözlemler (uygulama öncesi uzlaştırma listesi, ADR-008 madde 6): (a) iki depolama stili var — pointer + `RefusalJson` (Sales/Purchasing/Logistics) ve `ResultJson` (Counterparty/Organization `CommandExecution`; Inventory/Finance/Accounting/Manufacturing kendi `Commands` tabloları); adaptör iki stili de `AiWriteResult` haline getirir. (b) Aynı-key-farklı-içerik kodu **üç yazımdadır** (`same_key_payload_mismatch`, `idempotency_conflict`, Finance `outcome` enum) — adaptör hepsini `IsSameKeyMismatch` olarak tanır (Ek K-2). (c) Hash büyük/küçük harf farkı: key hash her yerde büyük harf; payload hash Inventory/Finance'te küçük, `CommandExecution`'da büyük — gateway kendi `CanonicalPayloadHash`'ini sahip modülün hash'iyle **karşılaştırmaz** (sahip modül kendi hesabını yapar); gateway yalnız kendi payload bütünlüğünü doğrular. (d) Hiçbir create yolu açık `BeginTransactionAsync` kullanmaz; tek `SaveChangesAsync` (audit aynı save'de). (e) Counterparty create yolundaki 2601/2627 filtresi eksikliği ve Accounting/Manufacturing'de tracker clear yokluğu sahip modül konularıdır; AI adaptörü bunları **varsaymaz**, transport dışı her istisnayı `Unknown` sayar ve kurtarma yoluna sokar.
+**Kanıt durumu (daraltılmış, v1.1):** Altı komutta (Counterparty, Sales, Purchasing, Inventory, Finance, Logistics) "aynı key + aynı içerik → replay" ve "aynı key + farklı içerik → 409" davranışı kodda ve sahip modülün **store/API düzeyindeki** gerçek SQL testinde kanıtlıdır. Eksikler: Counterparty create için farklı-aktör testi yok; Accounting'de key düzeyi gerçek SQL testi yok; Documents ve Work komutları henüz yok. Bu testler sahip komutları doğrudan çağırır; **AI gönderici üzerinden** aynı davranışın kanıtı §18.2'deki kabul planıdır, henüz yoktur.
+
+Genel gözlemler (uygulama öncesi uzlaştırma listesi, ADR-008 madde 6): (a) iki depolama stili var — pointer + `RefusalJson` (Sales/Purchasing/Logistics) ve `ResultJson` (Counterparty/Organization `CommandExecution`; Inventory/Finance/Accounting/Manufacturing kendi `Commands` tabloları); adaptör iki stili de `AiWriteResult` haline getirir. (b) Aynı-key-farklı-içerik kodu **üç yazımdadır** (`same_key_payload_mismatch`, `idempotency_conflict`, Finance `outcome` enum) — adaptör hepsini `IsSameKeyMismatch` olarak tanır (Ek K-2). (c) Hash büyük/küçük harf farkı: key hash her yerde büyük harf; payload hash Inventory/Finance'te küçük, `CommandExecution`'da büyük — gateway kendi `CanonicalPayloadHash`'ini sahip modülün hash'iyle **karşılaştırmaz** (sahip modül kendi hesabını yapar); gateway yalnız kendi payload bütünlüğünü doğrular. (d) Hiçbir create yolu açık `BeginTransactionAsync` kullanmaz; tek `SaveChangesAsync` (audit aynı save'de). (e) Counterparty create yolundaki 2601/2627 filtresi eksikliği ve Accounting/Manufacturing'de tracker clear yokluğu sahip modül konularıdır; AI adaptörü bunları **varsaymaz**: sahibin kesin reddi (`AiOwnerRefusalException`) dışındaki her istisnayı `Unknown` sayar ve kurtarma yoluna sokar (§10.3 genel `catch`).
 
 ## 11. Sağlayıcı portu, router ve API-birincil yol
 
@@ -1558,7 +1754,7 @@ Kurallar: (1) iş akışının **okuyabildiği** şey, adına koştuğu gerçek 
 | Eksik belge / imza | Sevkiyat niyeti, belge olayları | IR-LOG-005 / IR-DOC-* Sorun; belge sahibine görev | Hangi belge neden gerekli (SOP) | Belge bağlantı olayı |
 | Sevkiyat öncesi risk | On-demand kapı + olaylar + istisna süresi | IR-LOG-001; Finans görevi; istisna durumları (§5.3) | Seçenek gerekçeleri; hatırlatma taslağı | İstisna onayı / tahsilat / iptal |
 | Fatura–sipariş–kabul karşılaştırma | Belge olayı (`ERP-000G` gelince) | IR-PUR-002 fark; muhasebe + satınalma görevi | Fark açıklaması; tedarikçi yazışma taslağı | Fark kapanış kaydı |
-| Kullanıcı isteği ("bu haftaki teslimatları incele") | Panel / AI Merkezi | `WorkflowInstance(wf.user.goal@1)`: READ araçları + kural değerlendirmeleri; sonuç `AiFinding[]`; istenirse görev açma **önizleme-onay** ile | Özet ve öneri metni | Kullanıcı kapatır / görevler kapanır |
+| Kullanıcı isteği ("bu haftaki teslimatları incele") | Panel / AI Merkezi | `WorkflowInstance(wf.user.goal@1)`: READ araçları + kural değerlendirmeleri; sonuç `AiFinding[]`; istenirse **görev taslağı** (`work.item.draft@1`) — kullanıcı Çalışma Merkezi'nde kaydeder | Özet ve öneri metni | Kullanıcı kapatır / görevler kapanır |
 | Günlük yönetici brifingi | 07:30 iş günü | Açık Sorunlar, geciken görevler, onay bekleyenler, KPI (ölçü referanslı) | Anlatı özeti (kaynaklı); "kısmi" damgası | — |
 
 **Ne yapmaz:** onaysız kayıt; e-posta/mesaj gönderme (taslak + insan gönderir); yeni eskalasyon zinciri uydurma; "hep böyle yapıyoruz"ı kurala çevirme; bütün ERP'yi yeniden okuma (delta + kardinalite limitleri); sonucu belirsiz işi kendiliğinden tekrar deneme.
@@ -1590,7 +1786,8 @@ Kurallar: (1) iş akışının **okuyabildiği** şey, adına koştuğu gerçek 
 | `POST /api/v1/work/items` | `CreateWorkItemV1` | WRITE-düşük | Zorunlu | 201 (+Location); 409 |
 | `POST /api/v1/work/items/{id}/events` | `AppendWorkItemEventV1` (yorum/atama/kapanış) | yazma | Zorunlu | 201; kapanışta `closureEvidenceRef` zorunlu |
 | `POST /api/v1/work/items/{id}/approval-decision` | `DecideApprovalRequestV1` | SoD | Zorunlu | 201; 403 maker=checker |
-| `POST /api/v1/rules/gate` | `QueryRuleGateV1` | READ (kapı sorgusu) | — | 200 `GateQueryResponse` (§9.3) |
+| `POST /api/v1/rules/gate` | `QueryRuleGateV1` | READ (kapı sorgusu; **hiçbir şey yazmaz**) | — | 200 `GateQueryResponse` (§9.3) |
+| `POST /api/v1/rules/evaluations` | `TrackRuleEvaluationV1` | Kalıcı takip komutu (Sorun + Değerlendirme + görev tek işlemde) | Zorunlu | 201; 409 `same_key_payload_mismatch` (§9.4) |
 
 Onay ve gönderim **ayrı** adımlardır fakat kullanıcı tek tıkla görür: `ApproveAiProposalV1` kota dolunca `IAiCommandDispatcher.DispatchAsync`'i **aynı istek içinde** çağırır; dispatch sonucu `Executed/Failed/Unknown` cevapta döner; `Unknown` cevabı "sonucu belirsiz — kurtarma bekleniyor" durumudur (UI durum sözlüğü).
 
@@ -1804,6 +2001,8 @@ Decoder testleri OpenAPI baseline'ındaki şema örneklerine pinlenir (Product/S
 
 ## 18. Test stratejisi ve CI kapıları
 
+**Statü:** Bu bölümdeki bütün testler **kabul planıdır**; hiçbiri yazılmamış veya koşulmamıştır. Bir satırın burada bulunması, o davranışın uygulanıp geçtiği anlamına gelmez.
+
 ### 18.1 Birim ve sözleşme testleri (`GoymenERP.Ai.UnitTests`, `GoymenERP.Work.UnitTests`; xunit 2.9.3)
 
 | Test sınıfı | Kanıtladığı |
@@ -1816,9 +2015,15 @@ Decoder testleri OpenAPI baseline'ındaki şema örneklerine pinlenir (Product/S
 | `AiToolCatalogTests` | Default-deny; bilinmeyen tool/sürüm; `Retired`; çıplak `decimal` çıktı alanı → başlatma reddi; manifest sürümü dondurma |
 | `AiOutputValidatorTests` | Referanssız finansal sayı bastırma (G-31); yanlış varlık/dönem/senaryo referansı ret (G-32); `GateDecision` düzeyinde sayı içermeyen finans cümlesi ret (G-01); ölçü sözlüğü dışı ölçü ret (G-14); `abstained=true` kabul |
 | `AiMeasureRendererTests` | `{{measure}}` → tr-TR biçim; `GateDecision` düzeyinde render yok |
-| `ImpactRuleEngineTests` (Work.Rules) | `EffectKind` içinde `Block` yok (reflection); Sorun yaşam döngüsü `Open→Resolved→Reopened`; aynı varlık yeni sürüm → yeni Değerlendirme, yeni Sorun yok; kural sürümü değişimi; kapı sorgusu yolunda `IWorkItemCommandsV1` enjekte edilmez (DI grafiği testi) |
-| `RiskExceptionStateTests` | `Active(SingleShipment)` yalnız eşleşen talimat; `Consumed` sonrası ikinci talimat `ReviewRequired`; `Expired` yeniden değerlendirme → `Reopened` |
-| `AiRecoveryCoordinatorTests` (fake port) | Replay bulundu → `Executed`; kayıt yok → en fazla bir gönderim; ikinci belirsizlik → iş öğesi; **hiçbir yolda yeni `OperationIntentId`** (assert: key değişmedi); same-key mismatch → `Failed(ContentConflict)` + security-event |
+| `ImpactRuleTrackerTests` (Work.Rules) | `EffectKind` içinde `Block` yok (reflection); Sorun yaşam döngüsü `Open→Acknowledged→Reopened→Resolved`; `Partial` sonuç durumu değiştirmez; aynı varlık yeni sürüm → yeni Değerlendirme, yeni Sorun yok; kural sürümü değişimi; **değişmez:** `AwaitsDecision` ve açık görev yoksa görev sonuç `Unchanged` olsa da oluşur; `Acknowledged` görev açmaz |
+| `ImpactRuleGateTests` | `ImpactRuleGate` yapıcısında yazılabilir store/DbContext/iş öğesi bağımlılığı yok (reflection); `WorkReadOnlyDbContext.SaveChanges` fırlatır; aynı girdide tracker ile aynı kapı kararı |
+| `IssueDecisionTests` | İlk tespit yalnız koşul varken ve `Raised` ile; koşul yoksa Sorun satırı yok; geçerli Finance kararı → `Acknowledged` (Sorun **açık**, `Resolved` olmaz); karar geçerliliği talimattan değil karar kaydından (tahsilat/zamanlı tetiklemede de doğru); istisna `Consumed/Expired/Revoked` → `Reopened`; tahsilat koşulu kaldırınca `Resolved` |
+| `WorkItemEscalationGuardTests` | `OwnerRole` yalnız `EscalationStep+1` ve eşleşen `Escalated` olayıyla (adım alanı dahil) aynı save'de değişir; genel güncellemede rol değişikliği reddedilir; politika sürümü uyuşmazlığı reddedilir; Done/Cancelled öğe eskalasyonla açılamaz |
+| `ImpactRuleTrackerLifecycleTests` | Karar → aynı işlemde görev kapanır; koşul kalkınca görev kapanır; istisna tükenince yeni karar görevi açılır (eski açık görev engellemez); gölge modda görev açılmaz; çakışmada tek yeniden deneme ve tek görev; değerlendirme satırı sonuç kodunu taşır |
+| `RiskExceptionStateTests` | `Active(SingleShipment)` kapı kararı yalnız eşleşen talimat için `Proceed`; `Consumed` sonrası ikinci talimat `ReviewRequired`; `Expired` yeniden değerlendirme → `Reopened` |
+| `AiProposalReissueTests` | `Reissue` yalnız Draft/Stale/ShadowOnly/Rejected(ReturnForFix)'ten; araç şu an gölge moddaysa Stale/Draft da gölge revizyon üretir; `ShadowOnly → Reissue → ShadowOnly` (gölge korunur, `AwaitingApproval` olamaz); `Approved` doğrudan reissue edilemez; eski revizyon `Superseded` olur ve `Approve`/`MarkDispatched` onu reddeder |
+| `AiRecoveryCoordinatorTests` (fake port) | Süresi geçmiş `Dispatched` önce `Unknown` olur; replay bulundu → `Executed`; kayıt yok → en fazla bir gönderim; kurtarmada zarf bozuksa **gönderim yok**, `Unknown` + kilit + devralma görevi (Failed denmez); ikinci belirsizlik → iş öğesi; **hiçbir yolda yeni `OperationIntentId`**; same-key mismatch → `Failed(ContentConflict)` |
+| `AiCommandDispatcherTests` | Gönderim öncesi zarf bozuk → `FailBeforeDispatch` (`Approved → Failed`, kilit yok, sahip çağrılmaz); `Approved` olmayan veya süresi geçmiş öneri gönderilmez; politika/hedef değişimi → `Stale`, yetki düşüşü → gönderim öncesi ret; beklenmeyen istisna → `Unknown`; kurtarma arada öneriyi `Unknown` yaptıysa geç sonuç taze satıra uygulanır; gönderim ve kurtarma aynı `AiEnvelopeVerifier` örneğini çağırır |
 | `WorkflowRunnerTests` | Bekleme durumlarında model çağrısı yok (fake client çağrı sayacı 0); `Unknown` önce sorgu; bütçe aşımı → `Partial` |
 | `AiModelRouterTests` | `CokGizli` → rota yok (her yapılandırmada); `Activated=false` → API rotası yok; router sağlayıcı ekleyemez |
 | `AiEgressAllowlistHandlerTests` | Model üretimli URL → istek yok; `CokGizli` payload → fırlatma + security-event; `Authorization` log'a girmez |
@@ -1830,9 +2035,14 @@ Decoder testleri OpenAPI baseline'ındaki şema örneklerine pinlenir (Product/S
 | Test | Senaryo |
 |---|---|
 | `WorkSqlServerRelationalAcceptanceTests.An_issue_is_created_once_per_rule_and_target_and_reevaluation_updates_it_without_a_second_issue` | `UX_Issues_IssueKey`; Değerlendirme append; kart tekilliği (`UX_WorkItems_OpenDedupKey`) |
-| `…A_rule_work_item_is_created_once_for_an_evaluation_and_the_same_key_replays` | `work.Attempts` PK; `rule:{issueId}:{evaluationId}` replay |
+| `…The_same_delivery_tracked_twice_replays_and_creates_one_work_item` | `work.Attempts` PK; `rule:{deliveryId}` replay; `UX_WorkItems_OpenDedupKey` |
 | `…Company_B_sees_nothing_of_company_A_issues_items_and_events` | Query filter; count/timing nondisclosure |
 | `…Work_rules_run_when_ai_capability_and_kill_switch_are_off` | `Ai:Enabled=false`, `Ai:KillSwitch=true` → kapı sorgusu ve iş öğesi çalışır (G-29) |
+| `…A_failure_between_issue_and_work_item_leaves_neither_and_the_next_evaluation_creates_both` | Kesinti **tam iki adım arasına** yerleştirilir (Issue/Evaluation staged, WorkItem eklenirken interceptor hata fırlatır): hiçbir satır yazılmaz; sonraki değerlendirme (koşul sürdüğü için sonuç `Unchanged` olsa da) Sorun + görevi birlikte yazar |
+| `…An_open_issue_without_a_work_item_gets_one_on_the_next_evaluation` | Veri tabanına elle "açık Sorun, görev yok" durumu yazılır (eski sürüm/elle müdahale simülasyonu); sonraki değerlendirme görevi tamamlar |
+| `…A_gate_query_writes_nothing_in_any_schema` | Kapı sorgusundan önce/sonra bütün şemalarda (audit, outbox, security-event dahil) satır sayıları ve rowversion'lar aynı |
+| `…An_escalation_changes_the_owner_role_only_with_its_event` | Eskalasyon komutu rol + adım + `Escalated` olayını tek save'de yazar; doğrudan rol güncellemesi reddedilir |
+| `…A_single_shipment_exception_keeps_the_customer_risk_issue_open` | İstisna onayı → görev kapanır, Sorun `Acknowledged` kalır; ikinci talimat `ReviewRequired`; istisna tükenince `Reopened` + yeni görev |
 | `AiProposalSqlServerRelationalAcceptanceTests.Two_screens_approving_the_same_proposal_produce_one_winner_one_key_one_effect` | Rowversion tek kazanan; iki `Approvals` satırı değil, bir onay + bir `version_conflict` (G-27) |
 | `…Two_intents_with_identical_content_produce_two_owner_records_and_no_conflict` | **Aynı içerikte iki meşru sipariş**: iki `OperationIntentId`, iki `sales.DraftAttempts` satırı (gerçek Sales store ile), iki taslak |
 | `…An_unknown_dispatch_is_recovered_with_the_same_key_and_never_creates_a_second_record` | Dispatch sırasında sahip kaydetti, gateway `Unknown`; koordinatör aynı key → replay (`Idempotency-Replayed`) → `Executed`; `sales.DraftAttempts` tek satır (G-11/G-26) |
@@ -1845,7 +2055,10 @@ Decoder testleri OpenAPI baseline'ındaki şema örneklerine pinlenir (Product/S
 | `AiRunSqlServerRelationalAcceptanceTests.Read_draft_simulate_tools_leave_no_business_outbox_or_command_rows` | Sahip şemalarında satır sayısı değişmez (negatif test) |
 | `AiWorkflowSqlServerRelationalAcceptanceTests.Worker_restart_with_running_instances_does_not_duplicate_work` | Lease/rowversion; `Unknown` kontrolü; tek iş öğesi (G-18) |
 | `…Duplicate_outbox_delivery_creates_one_job` | `ai.Inbox` PK (G-19) |
-| `…Exception_expiry_reevaluates_and_reopens_the_issue_without_a_new_card` | Zamanlı tetikleyici; `Reopened`; kart güncellendi |
+| `…Exception_expiry_reevaluates_and_reopens_the_issue_without_a_new_card` | Zamanlı tetikleyici; `Reopened` (yeni Sorun yok); yeni **karar görevi** açılır |
+| `AiProposalSqlServerRelationalAcceptanceTests.A_superseded_revision_can_never_be_dispatched` | `UX_Proposals_OneLiveRevisionPerIntent`; eski revizyon gönderim denemesi reddedilir |
+| `…A_shadow_proposal_reissued_stays_shadow` | Gölge öneri yeniden üretilince `ShadowOnly`; onay endpoint'i `NotApprovable` |
+| `…An_expired_dispatch_is_moved_to_unknown_before_recovery` | `Dispatched` + süre aşımı → `Unknown` → kurtarma yolu |
 | `AiSnapshotSqlServerRelationalAcceptanceTests.A_composite_read_sees_one_snapshot_when_an_allocation_lands_midway` | Mekanizma A (`SNAPSHOT`); B için küme üyeliği tespiti (G-28) |
 | `AiMigrationSqlServerRelationalAcceptanceTests.Migrations_apply_and_roll_back_on_an_empty_database` | `MigrateAsync` + `Down` (canlıya çıkmamış) |
 
@@ -1856,10 +2069,10 @@ Decoder testleri OpenAPI baseline'ındaki şema örneklerine pinlenir (Product/S
 ### 18.4 Mimari ve sözleşme kapıları
 
 - `ModuleDependencyGuardTests`: allowlist'e §2.3 kenarları; başka kenar yok.
-- Yeni: `WorkNeverReferencesAiTests`, `AiAndWorkNeverUseRawSqlTests`, `AiWriteToolsAreOnlyInvokedByDispatcherTests` (reflection: `IAiTool` WRITE `ExecuteAsync` çağıran tek tip `AiCommandDispatcher`/`AiRecoveryCoordinator`), `SystemActorHasNoWriteToolsTests`, `ScopedActorOverrideIsOnlySetByRuntimeFactoriesTests` (`IScopedActorOverride.Set` çağıranlar yalnız `AiDispatchScopeFactory`, `RulesRuntime` ve worker scope fabrikaları).
+- Yeni: `WorkNeverReferencesAiTests`, `AiAndWorkNeverUseRawSqlTests`, `AiWriteToolsAreOnlyInvokedByDispatcherTests` (reflection: `IAiTool` WRITE `ExecuteAsync` çağıran tek tip `AiCommandDispatcher`/`AiRecoveryCoordinator`), `SystemActorHasNoWriteToolsTests`, `ScopedActorOverrideIsOnlySetByRuntimeFactoriesTests` (`IScopedActorOverride.Set` çağıranlar yalnız `AiDispatchScopeFactory`, `RulesRuntime` ve worker scope fabrikaları), `GateQueryHasNoWriteDependenciesTests` (kapı endpoint'inin DI grafiğinde tracker/store/DbContext/iş öğesi komutu yok).
 - `PlatformTenantQueryFilterBypassGuardTests` envanteri: AI/Work'te `IgnoreQueryFilters` yok (sıfır kayıt).
 - OpenAPI drift (`contract-drift` işi) ve shell capability revizyon testleri (`C01E2eShellCapabilityActivation`).
-- Eval harness (`GoymenERP.Ai.EvalTests`): fake provider + golden set (master Ek D G-01…G-37 + `ERP-000J` §20 1–35); P0 güvenlik seti CI'da zorunlu; iş kalitesi seti raporlayıcı.
+- Eval harness (`GoymenERP.Ai.EvalTests`): fake provider + golden set (master Ek D G-01…G-40 + `ERP-000J` §20 1–35); P0 güvenlik seti CI'da zorunlu; iş kalitesi seti raporlayıcı.
 
 ### 18.5 CI (`.github/workflows/ci.yml` — K3; yalnız kalite kapısı)
 
@@ -1882,7 +2095,7 @@ Mevcut işlere ek: `ai-unit`, `work-unit`, `ai-eval-p0` (fake provider; ağ yok)
   "Tools": { "finance.risk.evaluate@1": { "Enabled": true }, "sales.draft.create@1": { "Enabled": false } },       // tool bazlı flag; WRITE beyaz listesi Faz 4
   "Preview": { "Expiry": "24:00:00" },                                     // NEEDS-SINAN NS-AI-05
   "Budgets": { "PerRun": { "MaxToolCalls": 12, "MaxTokens": 20000, "MaxSeconds": 60, "MaxCostMicros": 500000 }, "Company": { "MonthlyCapMicros": 0 } },
-  "Workflow": { "Enabled": false, "Standalone": false, "PollInterval": "00:00:15", "LeaseDuration": "00:05:00", "DispatchGracePeriod": "00:02:00" },
+  "Workflow": { "Enabled": false, "Standalone": false, "PollInterval": "00:00:15", "LeaseDuration": "00:05:00", "DispatchGracePeriod": "00:02:00" },   // DispatchGracePeriod > en uzun WRITE aracı Timeout + pay (AiOptions başlangıçta doğrular); yine de yarış §10.3 ApplyLateOutcome ile kapanır
   "Retention": { "PayloadVault": "90.00:00:00", "PromptContent": "0.00:00:00" }   // OPEN-018/020/021; 0 = içerik saklanmaz
 }
 ```
@@ -1927,20 +2140,26 @@ Her PR'ın açıklaması ilgili karar/feature spec referansını, CompanyId ve y
 
 ---
 
-## 22. Kapanış kontrol tablosu (üçüncü eleştiri → nerede karşılandı)
+## 22. Kapanış kontrol tablosu
 
-| Eleştiri maddesi | Bu belge | Master v1.2 |
-|---|---|---|
-| Araç + şirket + kanonik içerik tek başına iş niyeti kimliği olamaz; kalıcı `OperationIntentId` içerik hash'inden ayrı | §5.1 (tanım, üç kimlik, aggregate), §4.3 (`ProposalRow.OperationIntentId`, indeksler), §10.1–10.3 | §4.4, §5.5, §5.6 (tablo), §10.1 madde 5–6, Ek C.3 |
-| Üç durum tablosu (aynı niyet+aynı içerik / aynı niyet+farklı içerik / farklı niyet+aynı içerik) | §5.1 tablo; §18.1 `OperationIntentIdentityTests`; §18.2 iki senaryo | §5.6 tablo; Ek D G-33/G-34 |
-| Belirsiz sonucu aşmak için yeni kimlik üretilmez | §5.1 (`Reissue` reddi), §10.4 (koordinatör), §17.3 (UI'da yeniden dene yok), §18.1 assert | §5.6 kurtarma paragrafı; G-11/G-26 güncellemesi |
-| "Repoda zaten var" → kanıt; kanıt yoksa DOĞRULANACAK | §10.6 kanıt matrisi (8 komut, dosya:satır); Ek K-1 | §5.6a kısa kanıt tablosu ve DOĞRULANACAK etiketi |
-| API-birincil, GPU şart değil — 05.09.2026 v2.1 ile uzlaştır; yeniden karar sorusu yapma; aktivasyon onayı sayma | §11.1–11.2, §19 (`Activated` bayrağı) | §1, §5.10, §9, §10.2 (Q-AI-1/2 kaldırıldı), §11 F0-2, §15 |
-| Sevkiyat/satış kullanıcısına nötr açıklama ("Finans değerlendirmesi gerekli") — öneri, uygulanmış yetki kararı değil | §9.3, §17.3 `GateDecisionCard` | §3.4 [2], NS-AI-10/15 (öneri statüsü açık) |
-| İlk üç ölçüm işi ölçüm planında kalır | — | §8.6 (değişmedi; "ÖNERİ") |
-| Work modülü tasarımı ≠ geliştirme kuyruğu | §0.2, §21 başlığı | §11.1 notu, NS-AI-01 |
-| v1.2 tam metin + değişiklik listesi + senaryolar | — | §15 (v1.2 günlüğü), Ek D yeni satırlar |
-| Şimdilik repo/karar sicili/görev listesi/kod/izin değişmez; ERP kapanış çalışması etkilenmez | §0.2; bu belge docs-only, ayrı dal, PR yok | §0.1 |
+Üç durum ayrı gösterilir: **Tasarımda karşılandı** (ilke ve sözleşme yazılı) · **Örnek eşitlendi** (metin, şema ve kod örneği bu sürümde birbiriyle çelişmiyor; son denetimde çelişki bulunan satırlar v1.1'de düzeltildi) · **Uygulamada test edilecek** (kabul testi §18'de planlı; yazılmadı, koşulmadı). Hiçbir satır "uygulandı" veya "test geçti" anlamına gelmez.
+
+| Konu | Tasarımda karşılandı | Örnek eşitlendi | Uygulamada test edilecek | Konum (bu belge / master) |
+|---|---|---|---|---|
+| Kalıcı `OperationIntentId`, içerik hash'inden ayrı; üç durum | Evet | Evet (v1.0) | Evet | §5.1, §4.3 / master §5.5, §5.6 |
+| Belirsiz sonuç için yeni kimlik yok | Evet | Evet | Evet | §5.1, §10.4 / §5.6 |
+| Sorun kaydı ile görev arasında kesinti boşluğu | Evet | **v1.1'de düzeltildi** (tek işlem + değişmez) | Evet (kesinti iki adım arasına) | §9.1, §18.2 / §5.7, §5.8 |
+| Eskalasyonda rol değişikliği ile yazma koruması çelişkisi | Evet | **v1.1'de düzeltildi** (rol yalnız eskalasyon olayıyla çift; yalnız açık öğe) | Evet | §4.2, §5.4 / §5.7 |
+| Kapı sorgusunun yazma yapabilen motoru çağırması | Evet | **v1.1'de düzeltildi** (salt-okunur arayüz; takip ayrı komut) | Evet (satır sayısı/rowversion değişmez) | §9.1, §9.3, §9.4 / §3.3, §3.4 |
+| Gönderim ve kurtarmada aynı zarf kontrolü | Evet | **v1.1'de düzeltildi** (`AiEnvelopeVerifier`, ortak `ExecuteAsync`) | Evet | §10.3, §10.4 / §5.6 |
+| Gönderim öncesi ret ile gönderim sonrası belirsizliğin ayrı geçişleri | Evet | **v1.1'de düzeltildi** (`FailBeforeDispatch`; `Dispatched → Unknown` açık adım) | Evet | §5.1, §10.3, §10.4 / §5.6 |
+| `Reissue` gölge modu ve eski revizyonu koruma | Evet | **v1.1'de düzeltildi** (beyaz liste, gölge korunur, `Superseded`, tekil canlı revizyon indeksi) | Evet | §5.1, §4.3 / §5.5, §5.6 |
+| Tek sevkiyat istisnası: risk koşulu / sevkiyat izni / görev ayrımı | Evet | **v1.1'de düzeltildi** (Sorun `Acknowledged` kalır, koşul calculator'dan) | Evet | §5.3, §5.5 / §3.4, G-36 |
+| İki onay gerektiren işlem | Evet | Evet | Evet | §5.1 / §5.6 |
+| Kanıt matrisi ("repoda var" yerine dosya:satır) | Evet | **v1.1'de daraltıldı** (Sales SQL testi okundu; Counterparty farklı-aktör ve Accounting key düzeyi eksikleri açık) | Sahip dilimde eksik testler | §10.6 / §5.6a |
+| API-birincil uzlaştırması; aktivasyon ayrı | Evet | Evet | Evet (router) | §11, §19 / §1, §5.10 |
+| Nötr kapı metni öneridir | Evet | Evet | — | §9.3 / §3.4, NS-AI-10 |
+| `Work` tasarımı ≠ geliştirme kuyruğu; repo/karar/görev/kod/izin değişmez | Evet | Evet | — | §0.2, §21 / §0.1 |
 
 ---
 
@@ -1953,7 +2172,7 @@ Her PR'ın açıklaması ilgili karar/feature spec referansını, CompanyId ve y
 | K-AÇIK-03 | `ALLOW_SNAPSHOT_ISOLATION` doğrulaması (readiness probe genişletmesi) | NS-AI-16 |
 | K-AÇIK-04 | Accounting normal fiş taslağı için key düzeyi gerçek SQL replay/mismatch testi | DOĞRULANACAK (Faz 4 öncesi) |
 | K-AÇIK-05 | Counterparty create yolunda 2601/2627 filtresi ve kazanan yoksa `throw;` davranışı; Accounting/Manufacturing tracker clear | Sahip modül konusu; AI adaptörü varsaymaz |
-| K-AÇIK-06 | Kapı sorgusu on-demand değerlendirme kaydının sınıflandırması (kanıt kaydı mı, yazma mı) | ADR-008 madde 6 |
+| K-AÇIK-06 | ~~Kapı sorgusu on-demand değerlendirme kaydı~~ → v1.1 önerisi: kapı sorgusu hiçbir şey yazmaz; kalıcı takip ayrı komut (§9.3–9.4) | ÖNERİ; onay ADR-008 madde 6 |
 | K-AÇIK-07 | `AiContext?` alanı için altı modülün metadata record'larında geriye uyumlu ek (F2-8) | K3 sözleşme; Codex |
 | K-AÇIK-08 | Sağlayıcı/SDK/model; strict schema yeteneklerinin doğrulanması; OPEN-020 aktivasyon kanıtı | ADR-008 / NEEDS-SINAN |
 | K-AÇIK-09 | 05.09.2026 v2.1 tercihinin (`AI-K01`) `docs/decisions/`'a kaynak izli aktarımı | Faz 0 F0-2 idari adım (Sinan/ChatGPT şeridi) |
@@ -1964,6 +2183,21 @@ Her PR'ın açıklaması ilgili karar/feature spec referansını, CompanyId ve y
 | K-AÇIK-14 | Zamanlı iş akışı şablonlarının `RunAsActorId`'si (hangi gerçek kullanıcı adına okur) | NS-AI-02 / politika kaydı |
 
 ---
+
+## 24. Değişiklik günlüğü
+
+**v1.1 (28 Eylül 2026 — kapanış kontrolü bulguları):**
+
+1. Sorun/değerlendirme ile görev oluşturma tek veritabanı işlemine alındı; görev üretimi "yalnız Raised" koşulundan çıkarılıp "karar bekleyen sorunun açık görevi yoksa" değişmezine bağlandı (§9.1, §5.3).
+2. Eskalasyonda `OwnerRole` değişikliği yazma korumasına yalnız `EscalationStep+1` ve eşleşen `Escalated` olayıyla çift olarak eklendi; öğe politika sürümüne bağlandı (§4.2, §5.4).
+3. Kapı sorgusu yazma yapabilecek hiçbir bağımlılığı olmayan `IImpactRuleGate`'i çağırıyor; kalıcı takip ayrı `POST /rules/evaluations` komutu (§9.1, §9.3, §9.4); K-AÇIK-06 öneriyle kapatıldı.
+4. Gönderim ve kurtarma aynı `AiEnvelopeVerifier` ve aynı `ExecuteAsync` adımını kullanıyor; gönderim öncesi bozuk zarf `FailBeforeDispatch` ile, süresi geçmiş gönderim açık `Dispatched → Unknown` adımıyla işleniyor; kurtarmada bozuk zarf gönderilmiyor ve "Failed" denmiyor (§5.1, §10.3, §10.4).
+5. `Reissue` beyaz listeyle sınırlandı; gölge öneri gölge kalıyor; eski revizyon `Superseded` oluyor; bir niyetin tek canlı revizyonu indeksle zorlanıyor (§5.1, §4.3).
+6. Tek sevkiyat istisnası müşterinin risk Sorununu kapatmıyor: Sorun `Acknowledged` kalıyor, koşul calculator yargısından geliyor, kapı izni yalnız o talimat için, karar görevi kapanıyor (§5.3, §5.5).
+7. İçerik taşıyan append-only alanlar (ölçü değerleri, yorum, düzeltme) içerik deposuna referansla taşındı (§4.2, §4.3, §4.5).
+8. Sohbetten görev açma: AI yalnız taslak üretir, kullanıcı Work ekranında kaydeder (§0.4, §10.6, §14.4).
+9. Kanıt matrisinde Sales satırı repodan doğrulandı; testler bölümüne "kabul planıdır" statüsü, kapanış tablosuna üç durumlu gösterim eklendi (§10.6, §18, §22).
+10. İkinci iç kontrol: Finance kararı `Issue.Apply` içinde `Acknowledged`'a taşınır ve karar olayları kuralı tetikler; tracker görevi aynı işlemde açar ve kapatır; Sorun yalnız koşul varken `Raised` ile doğar; değerlendirme sonuç hesaplandıktan sonra yazılır; çakışmada işlem bir kez yeniden denenir; gölgede görev açılmaz; kural politikası salt-okunur bağlamdan okunur; eskalasyon yalnız açık öğede, olay satırı adımı taşır; gönderici durum/süre/politika reddini ele alır, genel istisna `Unknown`, geç sonuç taze satıra uygulanır; `Reissue` aracın güncel gölge modunu ve yalnız ReturnForFix reddini kabul eder, eski/yeni revizyon iki save + tek işlemle yazılır (§5.1, §5.3, §5.4, §9.1–9.3, §10.1, §10.3, §19).
 
 ## Ek K-1 — Kod deseni kanıt tablosu (main@00a8798, salt-okunur)
 
@@ -2026,8 +2260,8 @@ Sahip modül kodlarının adaptör eşlemesi (`IsSameKeyMismatch`): `same_key_pa
 
 ## Ek K-3 — Dosya listesi (ÖNERİ; iskelet + Faz 1–4 ilk set)
 
-**Backend — `Modules/Work`:** `Contracts/{WorkItemV1,IssueV1,GateDecisionV1,IWorkItemReadsV1,IWorkItemCommandsV1,WorkPermissionManifestV1}.cs` · `Domain/{WorkItems/WorkItem,WorkItemEvent,ApprovalRequest,EscalationPolicy,VisibilityMatrix; Issues/Issue,Evaluation,IssueKey; Rules/ImpactRuleDefinition,EffectKind,RuleTrigger,DisclosureMatrix; WorkRuleException,WorkCodes}.cs` · `Application/{IWorkItemService,IWorkItemStore,IImpactRuleEngine,IImpactRuleEvaluatorPort,IEscalationScheduler,WorkCommandMetadata,WorkWriteEnvelope,WorkProblemCodesV1,WorkItemService}.cs` · `Infrastructure/{WorkModuleExtensions,WorkShellCapabilityProvider,Persistence/WorkDbContext,WorkRows,WorkStore,WorkAuditEventTenantGuard,WorkDbContextDesignTimeFactory,Migrations/*}.cs` · `Rules/{ImpactRuleEngine,IImpactRuleCatalog,ImpactRuleCatalog,Catalog/IrLog001…,IrSal001…,IrPur003…,IrFin002…,IrInv003…,IrAcc001…,IrDoc001…}.cs`
-**Backend — `Modules/Ai`:** `Contracts/{Tools/IAiTool,AiToolDescriptor,AiToolContext,AiDispatchInfo,AiToolResult,MeasuredValue,AiEnums; Proposals/ProposalV1,ApprovalV1; Audit/AiContext; AiToolCatalogManifestV1}.cs` · `Domain/{Runs/AiRun,AiRunStep,AiRunBudget,AiContextManifest; Proposals/AiProposal,AiProposalCodes,AiApproval; Knowledge/AiKnowledgeItem,AiKnowledgeVersion; Policy/AiPolicyVersion; Usage/AiBudget; Workflow/AiJob,WorkflowInstance,WorkflowState}.cs` · `Application/{Ports/*.cs (§2.1 listesi), Policy/AiPolicyEvaluator,Steps/*.cs, Context/AiContextBuilder,AiContextPlans, Output/AiOutputValidator,AiMeasureRenderer,AiMeasureDictionary, Preview/AiPreviewService,AiCanonicalJson,AiApprovalBinding, Dispatch/AiCommandDispatcher,AiRecoveryCoordinator,AiDispatchScope, Orchestration/AiOrchestrator, Providers/IAiModelClient,AiModelOutcome,AiModelRouter, AiOptions,AiCommandMetadata,AiProblemCodesV1,AiServiceException}.cs` · `Infrastructure/{AiModuleExtensions,Persistence/AiDbContext,AiRows,AiRunStore,AiProposalStore,AiPayloadVault,Migrations/*; Providers/FakeAiModelClient,HttpJsonSchemaModelClient,AiEgressAllowlistHandler,AiSecretProvider; Prompts/AiPromptRegistry; Knowledge/AiKnowledgeIndex; Security/AiSecurityEventSink}.cs` · `Workflow/{AiWorkflowWorker,JobPoller,SchedulePlanner,InboxConsumer,WorkflowRunner,EscalationTicker,RecoverySweeper,Definitions/*.cs,AiWorkflowExtensions}.cs`
+**Backend — `Modules/Work`:** `Contracts/{WorkItemV1,IssueV1,GateDecisionV1,IWorkItemReadsV1,IWorkItemCommandsV1,WorkPermissionManifestV1}.cs` · `Domain/{WorkItems/WorkItem,WorkItemEvent,ApprovalRequest,EscalationPolicy,VisibilityMatrix; Issues/Issue,Evaluation,IssueKey; Rules/ImpactRuleDefinition,EffectKind,RuleTrigger,DisclosureMatrix; WorkRuleException,WorkCodes}.cs` · `Application/{IWorkItemService,IWorkItemStore,IImpactRuleGate,IImpactRuleTracker,IWorkRulesStore,IImpactRuleEvaluatorPort,IEscalationScheduler,WorkCommandMetadata,WorkWriteEnvelope,WorkProblemCodesV1,WorkItemService}.cs` · `Infrastructure/{WorkModuleExtensions,WorkShellCapabilityProvider,Persistence/WorkDbContext,WorkRows,WorkStore,WorkAuditEventTenantGuard,WorkDbContextDesignTimeFactory,Migrations/*}.cs` · `Rules/{ImpactRuleGate,ImpactRuleTracker,IImpactRuleCatalog,ImpactRuleCatalog,Catalog/IrLog001…,IrSal001…,IrPur003…,IrFin002…,IrInv003…,IrAcc001…,IrDoc001…}.cs`
+**Backend — `Modules/Ai`:** `Contracts/{Tools/IAiTool,AiToolDescriptor,AiToolContext,AiDispatchInfo,AiToolResult,MeasuredValue,AiEnums; Proposals/ProposalV1,ApprovalV1; Audit/AiContext; AiToolCatalogManifestV1}.cs` · `Domain/{Runs/AiRun,AiRunStep,AiRunBudget,AiContextManifest; Proposals/AiProposal,AiProposalCodes,AiApproval; Knowledge/AiKnowledgeItem,AiKnowledgeVersion; Policy/AiPolicyVersion; Usage/AiBudget; Workflow/AiJob,WorkflowInstance,WorkflowState}.cs` · `Application/{Ports/*.cs (§2.1 listesi), Policy/AiPolicyEvaluator,Steps/*.cs, Context/AiContextBuilder,AiContextPlans, Output/AiOutputValidator,AiMeasureRenderer,AiMeasureDictionary, Preview/AiPreviewService,AiCanonicalJson,AiApprovalBinding, Dispatch/AiEnvelopeVerifier,AiCommandDispatcher,AiRecoveryCoordinator,AiDispatchScope, Orchestration/AiOrchestrator, Providers/IAiModelClient,AiModelOutcome,AiModelRouter, AiOptions,AiCommandMetadata,AiProblemCodesV1,AiServiceException}.cs` · `Infrastructure/{AiModuleExtensions,Persistence/AiDbContext,AiRows,AiRunStore,AiProposalStore,AiPayloadVault,Migrations/*; Providers/FakeAiModelClient,HttpJsonSchemaModelClient,AiEgressAllowlistHandler,AiSecretProvider; Prompts/AiPromptRegistry; Knowledge/AiKnowledgeIndex; Security/AiSecurityEventSink}.cs` · `Workflow/{AiWorkflowWorker,JobPoller,SchedulePlanner,InboxConsumer,WorkflowRunner,EscalationTicker,RecoverySweeper,Definitions/*.cs,AiWorkflowExtensions}.cs`
 **Backend — `GoymenERP.Api`:** `RulesRuntime/{RulesRuntimeExtensions,RulesEndpoints,RulesOutboxConsumer,Evaluators/<Owner>/*.cs}` · `AiRuntime/{AiRuntimeExtensions,AiEndpoints,AiCapabilityEndpoints,AiShellCapabilityProvider,AiCommandEnvelopeFactory,AiDispatchScopeFactory,AiDispatchUser,AiReadSnapshotRunner,Tools/<Owner>/*Tool.cs}` · `Shell/{C01E2eShellCapabilityActivation (ek satırlar), ShellCapabilityRegistryAuthorities (yeni sabit)}.cs` · `Program.cs` (ek satırlar) · `GoymenERP.Api.csproj` (referanslar)
 **Frontend:** `src/work/{capabilities,api,contract,workRoutes,WorkCenterPage,WorkItemDetailPage,GateDecisionCard,*.test.tsx}` · `src/ai/{capabilities,api,contract,aiRoutes,AiContextPanel,ProposalPreviewCard,MeasureText,AiCenterPage,AiQualityPage,AiPolicyPage,*.test.tsx}` · `src/shell/{capabilities.ts (ek), router.tsx (ek), AppShell.tsx (NAV ek), aiMountDrift.test.ts, workMountDrift.test.ts}`
 **Testler:** `tests/GoymenERP.Work.UnitTests/*`, `tests/GoymenERP.Ai.UnitTests/*`, `tests/GoymenERP.Ai.EvalTests/{FakeProviderEvalTests, Fixtures/**}`, `tests/GoymenERP.Api.IntegrationTests/{Work,AiProposal,AiRun,AiWorkflow,AiSnapshot,AiMigration}SqlServerRelationalAcceptanceTests.cs`, `{Ai,Work,RulesGate}HttpAcceptanceTests.cs`, `tests/GoymenERP.ArchitectureTests/{WorkNeverReferencesAiTests,AiAndWorkNeverUseRawSqlTests,AiWriteToolsAreOnlyInvokedByDispatcherTests,SystemActorHasNoWriteToolsTests}.cs`
