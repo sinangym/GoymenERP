@@ -28,6 +28,8 @@ export const SALES_DRAFT_PATH = '/sales/drafts'
 export const salesDraftDetailPath = (id: string) => `${SALES_DRAFT_PATH}/${encodeURIComponent(id)}`
 export const salesDraftCommercialRevisionPath = (id: string) => `${salesDraftDetailPath(id)}/commercial-revision`
 export const salesDraftRevisionsPath = (id: string) => `${salesDraftDetailPath(id)}/revisions`
+/** DEC-SAL-002 / AT-023: the quantity revision (POST, the quantity control's name). */
+export const salesDraftQuantityRevisionPath = (id: string) => `${salesDraftDetailPath(id)}/quantity-revision`
 /** DEC-SAL-003: the delivery-schedule update (POST) and its history (GET). */
 export const salesDraftDeliverySchedulePath = (id: string) => `${salesDraftDetailPath(id)}/delivery-schedule`
 export const salesDraftDeliverySchedulesPath = (id: string) => `${salesDraftDetailPath(id)}/delivery-schedules`
@@ -97,6 +99,23 @@ export interface DraftLineCommercialRequest {
 export interface DraftCommercialRevisionRequest {
   readonly expectedVersion: string
   readonly lines: readonly DraftLineCommercialRequest[]
+}
+
+/** DEC-SAL-002: one line's new ordered quantity, exact decimal text in the line's own order unit. */
+export interface DraftLineQuantityRequest {
+  readonly lineId: string
+  readonly quantity: string
+}
+
+/**
+ * DEC-SAL-002 / AT-023 (`SalesDraftQuantityRevisionRequest`): every member present — the expected version, the reason (why
+ * the order changes; the server refuses a blank one) and every line of the draft exactly once with its new quantity. An
+ * approved order is archived and re-enters approval; the unit, product, price and delivery plan do not change here.
+ */
+export interface DraftQuantityRevisionRequest {
+  readonly expectedVersion: string
+  readonly reason: string
+  readonly lines: readonly DraftLineQuantityRequest[]
 }
 
 /**
@@ -327,6 +346,8 @@ export interface DraftRevision {
   readonly moneyProfileVersion: string
   readonly moneyScale: number
   readonly lines: readonly DraftRevisionLine[]
+  /** DEC-SAL-002: why this approved revision was superseded (a quantity revision's reason); null when a price revision archived it. */
+  readonly reason: string | null
 }
 
 export interface DraftRevisions {
@@ -416,6 +437,9 @@ export const SALES_PROBLEM_CODE = {
   // reading refuses; and the impact no longer is the preview the command named (read it again).
   cancellationBlocked: 'sales_cancellation_blocked',
   cancellationImpactChanged: 'sales_cancellation_impact_changed',
+  // DEC-SAL-002 (contract delta): an owner links a record to the order (allocation, loading line) — the quantity revision is
+  // refused fail-closed, like the cancellation; the errors name each blocking source.
+  revisionBlocked: 'sales_revision_blocked',
 } as const
 
 export type SalesProblemCode = (typeof SALES_PROBLEM_CODE)[keyof typeof SALES_PROBLEM_CODE]
@@ -723,7 +747,7 @@ export function decodeDraftPage(value: unknown): DraftPage | null {
 
 const REVISION_KEYS = [
   'revision', 'submittedBy', 'submittedAtUtc', 'approvedBy', 'approvedAtUtc',
-  'archivedAtUtc', 'archivedBy', 'moneyProfileId', 'moneyProfileVersion', 'moneyScale', 'lines',
+  'archivedAtUtc', 'archivedBy', 'moneyProfileId', 'moneyProfileVersion', 'moneyScale', 'lines', 'reason',
 ] as const
 const REVISION_LINE_KEYS = [
   'lineId', 'lineNo', 'productId', 'productVersion', 'orderUnitId', 'quantity',
@@ -785,7 +809,8 @@ export function decodeDraftRevisions(value: unknown): DraftRevisions | null {
       !isRevisionId(o.moneyProfileId) || !isOwnerVersion(o.moneyProfileVersion) ||
       typeof o.moneyScale !== 'number' || !Number.isInteger(o.moneyScale) ||
       o.moneyScale < 0 || o.moneyScale > 2147483647 ||
-      !Array.isArray(o.lines) || o.lines.length < 1 || o.lines.length > LIMITS.lines
+      !Array.isArray(o.lines) || o.lines.length < 1 || o.lines.length > LIMITS.lines ||
+      !isNullable(o.reason, (v): v is string => isText(v, LIMITS.note) && v.trim().length > 0)
     ) return null
     // Revision is a .NET Int32 on the server. Compare its canonical digits as
     // text: do not lexically sort Rev.10 ahead of Rev.2 or accept duplicate rows.
@@ -810,7 +835,7 @@ export function decodeDraftRevisions(value: unknown): DraftRevisions | null {
       approvedBy: o.approvedBy, approvedAtUtc: o.approvedAtUtc,
       archivedAtUtc: o.archivedAtUtc, archivedBy: o.archivedBy,
       moneyProfileId: o.moneyProfileId, moneyProfileVersion: o.moneyProfileVersion,
-      moneyScale: o.moneyScale, lines,
+      moneyScale: o.moneyScale, lines, reason: o.reason,
     })
   }
   return { items }

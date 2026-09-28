@@ -218,6 +218,19 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
             return Revisions(draftId);
         }
 
+        /// <summary>DEC-SAL-002: what the stub answers a quantity revision with; the calls reach <see cref="QuantityCalls"/>.</summary>
+        public Func<Guid, SalesDraftQuantityRevisionRequest, Task<SalesOrderDraftResponse>> Quantity { get; set; } =
+            (_, _) => throw new SalesDraftServiceException(404, "not_found");
+
+        public List<(Guid DraftId, SalesDraftQuantityRevisionRequest Request, string Key)> QuantityCalls { get; } = [];
+
+        public Task<SalesOrderDraftResponse> ReviseQuantityAsync(Guid draftId, SalesDraftQuantityRevisionRequest request, SalesCommandMetadata metadata,
+            CancellationToken cancellationToken = default)
+        {
+            QuantityCalls.Add((draftId, request, metadata.IdempotencyKey));
+            return Quantity(draftId, request);
+        }
+
         /// <summary>DEC-SAL-003: the delivery-schedule update and its history; this stub answers nothing it was not given.</summary>
         public Func<Guid, SalesDraftDeliveryScheduleRequest, Task<SalesOrderDraftResponse>> Schedule { get; set; } =
             (_, _) => throw new SalesDraftServiceException(404, "not_found");
@@ -431,7 +444,8 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
             Revisions = _ => Task.FromResult(new SalesOrderDraftRevisionsResponse([
                 new SalesDraftRevisionV1("Rev.0", "SENTETIK-submitter", archivedAt.AddMinutes(-2), "SENTETIK-approver",
                     archivedAt.AddMinutes(-1), archivedAt, "SENTETIK-pricer", moneyProfileId, "7", 2,
-                    [new SalesDraftRevisionLineV1(lineId, 1, Guid.NewGuid(), "3", Guid.NewGuid(), "2.5", "13.00", priceUnitId, "5", SalesPriceDisclosure.Visible)])
+                    [new SalesDraftRevisionLineV1(lineId, 1, Guid.NewGuid(), "3", Guid.NewGuid(), "2.5", "13.00", priceUnitId, "5", SalesPriceDisclosure.Visible)],
+                    null)
             ])),
         };
         using var host = CreateHost(service);
@@ -463,7 +477,100 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
         Assert.Equal("Rev.0", item.GetProperty("revision").GetString());
         Assert.Equal("Visible", item.GetProperty("lines")[0].GetProperty("priceDisclosure").GetString());
         Assert.Equal("13.00", item.GetProperty("lines")[0].GetProperty("unitPrice").GetString());
+        // DEC-SAL-002: the member is present (a price revision archives with no reason).
+        Assert.Equal(JsonValueKind.Null, item.GetProperty("reason").ValueKind);
         Assert.Equal([draftId], service.RevisionReads);
+    }
+
+    /// <summary>
+    /// DEC-SAL-002 / AT-023: the quantity-revision route's wire — one canonical key and the strict body {expectedVersion, reason,
+    /// lines[{lineId, quantity}]} before the service is reached (no unit, price or slice member, no numeric quantity); 200
+    /// with the detail after the change and the replay headers on a replay; a blocked revision is a 409 that names each
+    /// blocking source and carries the replay headers when it is replayed; a 503 stays code-less.
+    /// </summary>
+    [Fact]
+    public async Task Quantity_revision_uses_the_strict_owner_contract_replay_headers_and_a_named_blocked_conflict()
+    {
+        var draftId = Guid.NewGuid();
+        var lineId = Guid.NewGuid();
+        var service = new StubDraftService
+        {
+            Quantity = (_, _) => Task.FromResult(new SalesOrderDraftResponse(Detail(draftId), true, "SENTETIK-quantity-first")),
+        };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+        var path = $"{SalesEndpoints.DraftsPath}/{draftId:D}/quantity-revision";
+
+        foreach (var json in new[]
+                 {
+                     "{}",
+                     $"{{\"expectedVersion\":\"4\",\"lines\":[{{\"lineId\":\"{lineId:D}\",\"quantity\":\"2\"}}]}}",
+                     $"{{\"expectedVersion\":\"4\",\"reason\":\"r\",\"lines\":[{{\"lineId\":\"{lineId:D}\",\"quantity\":2}}]}}",
+                     $"{{\"expectedVersion\":\"4\",\"reason\":\"r\",\"lines\":[{{\"lineId\":\"{lineId:D}\",\"quantity\":\"2\",\"orderUnitId\":\"{lineId:D}\"}}]}}",
+                     $"{{\"expectedVersion\":\"4\",\"reason\":\"r\",\"lines\":[{{\"lineId\":\"{lineId:D}\",\"quantity\":\"0\"}}]}}",
+                 })
+        {
+            using var invalid = new HttpRequestMessage(HttpMethod.Post, path) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
+            invalid.Headers.Add("Idempotency-Key", "SENTETIK-invalid");
+            using var response = await client.SendAsync(invalid);
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Equal("validation_failed", (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
+        }
+
+        var body = new SalesDraftQuantityRevisionRequest("4", "SENTETIK neden", [new SalesDraftLineQuantityV1(lineId, "2.5")]);
+        using (var noKey = new HttpRequestMessage(HttpMethod.Post, path)
+               {
+                   Content = new StringContent(JsonSerializer.Serialize(body, SalesDraftJson.Options), Encoding.UTF8, "application/json"),
+               })
+        using (var response = await client.SendAsync(noKey))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+
+        Assert.Empty(service.QuantityCalls);
+
+        using (var request = new HttpRequestMessage(HttpMethod.Post, path)
+               {
+                   Content = new StringContent(JsonSerializer.Serialize(body, SalesDraftJson.Options), Encoding.UTF8, "application/json"),
+               })
+        {
+            request.Headers.Add("Idempotency-Key", "SENTETIK-quantity-1");
+            using var response = await client.SendAsync(request);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.Equal("true", Assert.Single(response.Headers.GetValues("Idempotency-Replayed")));
+            Assert.Equal("SENTETIK-quantity-first", Assert.Single(response.Headers.GetValues("Idempotency-Original-Correlation-Id")));
+        }
+
+        var call = Assert.Single(service.QuantityCalls);
+        Assert.Equal((draftId, "4", "SENTETIK neden", "SENTETIK-quantity-1"), (call.DraftId, call.Request.ExpectedVersion, call.Request.Reason, call.Key));
+        Assert.Equal((lineId, "2.5"), (Assert.Single(call.Request.Lines).LineId, call.Request.Lines[0].Quantity));
+
+        service.Quantity = (_, _) => throw new SalesDraftServiceException(409, SalesDraftProblemCodesV1.RevisionBlocked,
+            [new("inventory.active-allocations", "Present"), new("logistics.loading-without-dispatch-note", "Present")], true, "SENTETIK-quantity-first");
+        using (var blocked = new HttpRequestMessage(HttpMethod.Post, path)
+               {
+                   Content = new StringContent(JsonSerializer.Serialize(body, SalesDraftJson.Options), Encoding.UTF8, "application/json"),
+               })
+        {
+            blocked.Headers.Add("Idempotency-Key", "SENTETIK-quantity-2");
+            using var refused = await client.SendAsync(blocked);
+            Assert.Equal(HttpStatusCode.Conflict, refused.StatusCode);
+            Assert.Equal("true", Assert.Single(refused.Headers.GetValues("Idempotency-Replayed")));
+            var problem = await refused.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal(SalesDraftProblemCodesV1.RevisionBlocked, problem.GetProperty("code").GetString());
+            Assert.Equal(["inventory.active-allocations", "logistics.loading-without-dispatch-note"],
+                problem.GetProperty("errors").EnumerateArray().Select(error => error.GetProperty("field").GetString()));
+        }
+
+        service.Quantity = (_, _) => throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.RevisionImpactUnavailable);
+        using var unavailableRequest = new HttpRequestMessage(HttpMethod.Post, path)
+        {
+            Content = new StringContent(JsonSerializer.Serialize(body, SalesDraftJson.Options), Encoding.UTF8, "application/json"),
+        };
+        unavailableRequest.Headers.Add("Idempotency-Key", "SENTETIK-quantity-3");
+        using var unavailable = await client.SendAsync(unavailableRequest);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, unavailable.StatusCode);
+        Assert.DoesNotContain(SalesDraftProblemCodesV1.RevisionImpactUnavailable, await unavailable.Content.ReadAsStringAsync(), StringComparison.Ordinal);
     }
 
     [Fact]

@@ -23,9 +23,9 @@ public sealed class SalesShellCapabilityProviderContractTests
         var declarations = provider.GetDeclarations();
 
         // DEC-SAL-003 (1.2): the delivery-schedule control joins the approve and commercial-revision controls;
-        // DEC-SAL-005 (1.3): the cancel control joins them.
-        Assert.Equal(("SALES", "1.3"), (provider.Owner, provider.ContractVersion));
-        Assert.Equal(7, declarations.Count);
+        // DEC-SAL-005 (1.3): the cancel control joins them; DEC-SAL-002 (1.4): the quantity-revision control.
+        Assert.Equal(("SALES", "1.4"), (provider.Owner, provider.ContractVersion));
+        Assert.Equal(8, declarations.Count);
         foreach (var declaration in declarations)
         {
             Assert.Contains($"'{declaration.CapabilityId}'", source);
@@ -85,6 +85,14 @@ public sealed class SalesShellCapabilityProviderContractTests
             (cancel.RouteId, cancel.RoutePath, cancel.ScreenId, cancel.RoutePrecedence, cancel.ContextRequirement, cancel.ScopeRequirement));
         Assert.Equal(SalesShellCapabilityProvider.DetailCapabilityId, cancel.ParentCapabilityId);
         Assert.Equal([SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersCancel], cancel.RequiredPermissions);
+
+        // DEC-SAL-002: the quantity revision is a control of the detail — the read plus its own name.
+        var quantity = Assert.Single(declarations, item => item.CapabilityId == SalesShellCapabilityProvider.QuantityWriteCapabilityId);
+        Assert.Equal("sales.orders.quantity.write", quantity.CapabilityId);
+        Assert.Equal((detail.RouteId, detail.RoutePath, detail.ScreenId, detail.RoutePrecedence, detail.ContextRequirement, detail.ScopeRequirement),
+            (quantity.RouteId, quantity.RoutePath, quantity.ScreenId, quantity.RoutePrecedence, quantity.ContextRequirement, quantity.ScopeRequirement));
+        Assert.Equal(SalesShellCapabilityProvider.DetailCapabilityId, quantity.ParentCapabilityId);
+        Assert.Equal([SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersQuantityWrite], quantity.RequiredPermissions);
     }
 
     [Fact]
@@ -103,11 +111,13 @@ public sealed class SalesShellCapabilityProviderContractTests
         Assert.Equal("sales.orders.delivery-schedule.write", SalesPermissionManifestV1.OrdersDeliveryScheduleWrite);
         // DEC-SAL-005: the SEPARATE cancel name; no other Sales name confers it and it confers none of them.
         Assert.Equal("sales.orders.cancel", SalesPermissionManifestV1.OrdersCancel);
-        Assert.Equal((8, 7), (SalesPermissionManifestV1.Version, SalesPermissionManifestV1.Names.Count));
+        // DEC-SAL-002: the SEPARATE quantity-revision name; no other Sales name confers it and it confers no approval.
+        Assert.Equal("sales.orders.quantity.write", SalesPermissionManifestV1.OrdersQuantityWrite);
+        Assert.Equal((9, 8), (SalesPermissionManifestV1.Version, SalesPermissionManifestV1.Names.Count));
         Assert.Equal(new SalesDraftServiceBindings(),
             new SalesDraftServiceBindings(SalesPermissionManifestV1.DraftsCreate, SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersApprove,
                 SalesPermissionManifestV1.OrdersPriceWrite, SalesPermissionManifestV1.OrdersPriceRead, SalesPermissionManifestV1.OrdersDeliveryScheduleWrite,
-                SalesPermissionManifestV1.OrdersCancel));
+                SalesPermissionManifestV1.OrdersCancel, SalesPermissionManifestV1.OrdersQuantityWrite));
     }
 
     private static string FindRepositoryRoot()

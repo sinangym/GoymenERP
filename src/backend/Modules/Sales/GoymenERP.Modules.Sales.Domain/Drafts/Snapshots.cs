@@ -94,6 +94,12 @@ public sealed record CommercialDraftFields(string? UnitPrice, Guid? PriceUnitId,
 /// <summary>K3 Head B: one line's new commercial fields in a commercial revision, addressed by the client line id.</summary>
 public sealed record LineCommercialInput(Guid LineId, CommercialDraftFields Commercial);
 
+/// <summary>
+/// DEC-SAL-002: one line's new ordered quantity in a quantity revision, addressed by the client line id — the client's text
+/// kept verbatim and its exact value (Ö2: validated against the line's own order unit, never rounded, never converted).
+/// </summary>
+public sealed record LineQuantityInput(Guid LineId, string QuantityText, decimal Quantity);
+
 /// <summary>A line as it stood in an approved revision: identity, quantity text and the commercial fields, kept verbatim.</summary>
 public sealed record RevisionLineSnapshot(
     Guid LineId, int LineNo, Guid ProductId, string ProductVersion, Guid OrderUnitId, string QuantityText,
@@ -103,10 +109,12 @@ public sealed record RevisionLineSnapshot(
 /// K3 (Sinan 5748258299): an APPROVED revision archived the moment its price or discount was changed —
 /// the approval facts, the money profile it was approved under and every line's commercial values as
 /// they were. The previous approved snapshot is never deleted; the draft goes on as the next revision.
+/// DEC-SAL-002: a quantity revision archives the same way; <see cref="Reason"/> is WHY this approved revision was
+/// superseded — required by the quantity revision, null for a price revision (which carries no reason member).
 /// </summary>
 public sealed record ApprovedRevisionSnapshot(
     int Revision, ApprovalFacts Approval, Guid MoneyProfileId, string MoneyProfileVersion, int MoneyScale,
-    DateTimeOffset ArchivedAtUtc, string ArchivedBy, IReadOnlyList<RevisionLineSnapshot> Lines);
+    DateTimeOffset ArchivedAtUtc, string ArchivedBy, IReadOnlyList<RevisionLineSnapshot> Lines, string? Reason = null);
 
 /// <summary>DEC-SAL-003: one slice's new requested delivery date, addressed by the slice id the line already carries.</summary>
 public sealed record SliceScheduleInput(Guid SliceId, DateOnly RequestedDeliveryDate);

@@ -174,6 +174,8 @@ export const PROBLEM_CODE_TEXT: Record<SalesProblemCode, string> = {
     'Siparişe bağlı kayıtlar var (tahsis ya da yükleme); iptal yapılmadı. Kayıtlar kendi ekranlarında kapatıldıktan sonra etkiyi yeniden okuyun.',
   [SALES_PROBLEM_CODE.cancellationImpactChanged]:
     'İptal etkisi siz gördükten sonra değişti; iptal yapılmadı. Güncel etkiyi yeniden okuyun.',
+  [SALES_PROBLEM_CODE.revisionBlocked]:
+    'Siparişe bağlı kayıtlar var (tahsis ya da yükleme); miktar değiştirilmedi. Kayıtlar kendi ekranlarında kapatıldıktan sonra yeniden deneyin.',
 }
 
 export function problemCodeText(code: string | null): string | null {
@@ -305,6 +307,47 @@ export const ORDER_DETAIL_TEXT = {
       reason === 'discount-without-price'
         ? `${lineNo}. satırda iskonto için birim fiyat gerekir.`
         : `${lineNo}. satırda birim fiyat için fiyat birimi gerekir.`,
+  },
+  /** DEC-SAL-002 / AT-023: the quantity revision ("Revizyon oluştur"). Texts only; the rules are the server's. */
+  quantityRevision: {
+    heading: 'Revizyon oluştur',
+    open: 'Revizyon oluştur',
+    close: 'Revizyondan vazgeç',
+    description:
+      'Satır miktarlarını gerekçeyle değiştirin. Birim, ürün, fiyat ve termin dilimleri bu revizyonda değişmez; yeni miktar planlanan dilimlerin toplamından küçük olamaz.',
+    approvedWarning:
+      'Onaylı siparişte miktar değişikliği önceki onayı silmez; mevcut revizyon gerekçesiyle arşivlenir ve sipariş yeni revizyonla yeniden onaya girer.',
+    linkedWarning:
+      'Siparişe bağlı tahsis ya da yükleme kaydı varken miktar değiştirilemez; önce o kayıtlar kendi ekranlarında kapatılmalıdır.',
+    stateUnavailable: 'Onay bekleyen, geri çekilmiş veya iptal edilmiş siparişte miktar revizyonu yapılamaz.',
+    quantity: (unitId: string) => `Yeni miktar (sipariş birimi ${unitId})`,
+    current: (quantity: string) => `Mevcut: ${quantity}`,
+    reason: 'Revizyon gerekçesi',
+    reasonHint: 'Zorunlu; en fazla 4000 karakter.',
+    submit: 'Revizyonu kaydet',
+    submitting: 'Miktar revizyonu gönderiliyor…',
+    unknown: 'İşlemin sonucu alınamadı; kaydedilmiş olabilir. Aynı işlemi aynı anahtarla tekrar deneyin.',
+    completed: 'Miktar revizyonu kaydedildi. Sipariş yeniden onaya gönderilmelidir.',
+    completedUnapproved: 'Miktar revizyonu kaydedildi.',
+    replayed: 'Bu miktar revizyonu daha önce kaydedilmişti; güncel sipariş gösteriliyor.',
+    retry: 'Aynı revizyonu tekrar dene',
+    abandon: 'Bu denemeyi bırak',
+    unauthenticated: 'Oturumunuz sona erdi; miktar revizyonu uygulanmadı.',
+    forbidden: 'Bu şirkette miktar revizyonu yetkiniz yok; işlem uygulanmadı.',
+    notFound: 'Sipariş taslağı bulunamadı; işlem uygulanmadı.',
+    conflict: 'Miktar revizyonu uygulanmadı; güncel kayıt yeniden okunuyor.',
+    versionConflict: 'Kayıt sürümü değişti; güncel miktarları yeniden inceleyin.',
+    validation: 'Miktar revizyonu uygulanmadı; satır miktarlarını ve gerekçeyi kontrol edin.',
+    unavailable: 'Bağlı kayıt sahiplerine (stok, sevkiyat) şu anda ulaşılamıyor; miktar değiştirilmedi. Daha sonra tekrar deneyin.',
+    unexpected: 'Miktar revizyonu uygulanmadı. Beklenmeyen bir yanıt alındı.',
+    blockedSource: (source: string) =>
+      source === 'inventory.active-allocations' ? 'Aktif stok tahsisi var.'
+        : source === 'logistics.loading-without-dispatch-note' ? 'Yükleme talimatı satırı var.'
+          : `Bağlı kayıt: ${source}`,
+    localError: (lineNo: number | null, reason: 'reason-required' | 'quantity-format' | 'no-change') =>
+      reason === 'reason-required' ? 'Revizyon gerekçesi zorunludur.'
+        : reason === 'no-change' ? 'Hiçbir satırın miktarı değişmedi; onay boşuna düşürülmez.'
+          : `${lineNo ?? ''}. satırın miktarı sıfırdan büyük, noktayla yazılmış bir sayı olmalıdır.`,
   },
   /**
    * DEC-SAL-003: the planner's delivery-date update (dates only, no re-approval, audited). Texts only; the rules are the
@@ -500,6 +543,10 @@ export const REVISION_HISTORY_TEXT = {
   heading: 'Onaylı ticari revizyon geçmişi',
   subject: 'ticari revizyon geçmişi',
   empty: 'Henüz arşivlenmiş onaylı ticari revizyon yok.',
+  reason: 'Revizyon gerekçesi',
+  noReason: 'Gerekçe kaydedilmemiş (fiyat revizyonu)',
+  nextQuantity: 'Sonraki revizyonda miktar',
+  changed: 'değişti',
   note: 'Önceki onaylı revizyonlar, arşivlendikleri bilgilerle ve en eskisi önce gösterilir. Güncel sipariş değiştirilmez.',
   unknown: 'Kayıtlı bilgi yok',
   submittedBy: 'Onaya gönderen',

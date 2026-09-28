@@ -335,20 +335,56 @@ public sealed class SalesStore(
     /// beside the header's revision/approval axis and the lines' commercial columns — together with the
     /// attempt record and the audit event, or nothing at all.
     /// </summary>
-    public async Task<SalesDraftStateResult?> ReviseDraftCommercialAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+    public Task<SalesDraftStateResult?> ReviseDraftCommercialAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
         Guid draftId, Func<SalesOrderDraft, DateTimeOffset, ApprovedRevisionSnapshot?> mutate, SalesDraftStateAudit audit,
         Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(mutate);
-        ArgumentNullException.ThrowIfNull(audit);
         ArgumentNullException.ThrowIfNull(beforeWrite);
-        RequireEnvelope(envelope);
-        RequireHash(requestHash);
         RequireCommand(commandName);
         if (commandName != SalesDraftCommands.ReviseCommercialV1)
         {
             throw new ArgumentException("Yalnız fiyat revizyonu komutu satırların ticari alanlarını değiştirir.", nameof(commandName));
         }
+
+        return ReviseLinesAsync(envelope, requestHash, commandName, draftId, mutate, audit,
+            (_, writeCancellationToken) => beforeWrite(writeCancellationToken), Commercial, cancellationToken);
+    }
+
+    /// <summary>
+    /// DEC-SAL-002: the quantity revision, one save — the commercial revision's shape (the same core below). The header AND
+    /// the line rows are tracked; <paramref name="beforeWrite"/> receives the draft as read (the caller's fences, the domain's
+    /// preconditions and the owners' links); the domain decides and returns the archived approved snapshot (with its reason)
+    /// when it made one; the lines' quantity columns change beside the header — no slice, schedule or commercial value moves
+    /// (checked).
+    /// </summary>
+    public Task<SalesDraftStateResult?> ReviseDraftQuantityAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+        Guid draftId, Func<SalesOrderDraft, DateTimeOffset, ApprovedRevisionSnapshot?> mutate, SalesDraftStateAudit audit,
+        Func<SalesOrderDraft, CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(beforeWrite);
+        RequireCommand(commandName);
+        if (commandName != SalesDraftCommands.ReviseQuantityV1)
+        {
+            throw new ArgumentException("Yalnız miktar revizyonu komutu satırların miktarını değiştirir.", nameof(commandName));
+        }
+
+        return ReviseLinesAsync(envelope, requestHash, commandName, draftId, mutate, audit, beforeWrite, Quantities, cancellationToken);
+    }
+
+    /// <summary>
+    /// The one core of both line revisions: the key rules of a state command, the tracked header and lines, the caller's
+    /// last word, the domain's mutation, the archived rows, the header's axis and revision, the line columns the command
+    /// owns, the attempt and the audit event — one save, or nothing at all.
+    /// </summary>
+    private async Task<SalesDraftStateResult?> ReviseLinesAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+        Guid draftId, Func<SalesOrderDraft, DateTimeOffset, ApprovedRevisionSnapshot?> mutate, SalesDraftStateAudit audit,
+        Func<SalesOrderDraft, CancellationToken, Task> beforeWrite, Func<SalesOrderDraft, object> picture,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(mutate);
+        ArgumentNullException.ThrowIfNull(audit);
+        RequireEnvelope(envelope);
+        RequireHash(requestHash);
 
         if (string.IsNullOrWhiteSpace(audit.EventType) || string.IsNullOrWhiteSpace(audit.Operation) || string.IsNullOrWhiteSpace(audit.Reason))
         {
@@ -390,17 +426,27 @@ public sealed class SalesStore(
             return null;
         }
 
-        // The line rows are tracked here so their commercial columns can change in this save (the guard admits only those).
+        // The line rows are tracked here so the command's own columns can change in this save (the guard admits only those).
         var lineRows = await dbContext.DraftLines.Where(line => line.DraftId == draftId).OrderBy(line => line.LineNo).ToListAsync(cancellationToken);
         var draft = (await RestoreAsync([row], cancellationToken)).Single();
-        await beforeWrite(cancellationToken);
-        var before = Commercial(draft);
+        await beforeWrite(draft, cancellationToken);
+        var before = picture(draft);
         var versionBefore = draft.Version;
+        var commercialBefore = draft.Lines.Select(line => line.Commercial).ToArray();
+        var quantitiesBefore = draft.Lines.Select(line => line.QuantityText).ToArray();
         var now = timeProvider.GetUtcNow();
         var archived = mutate(draft, now);
         if (draft.Version != versionBefore + 1 || draft.Id != row.Id || draft.CompanyId != companyId)
         {
-            throw new InvalidOperationException("Fiyat revizyonu tam olarak bir sürüm ilerletir ve taslağı değiştirmez.");
+            throw new InvalidOperationException("Satır revizyonu tam olarak bir sürüm ilerletir ve taslağı değiştirmez.");
+        }
+
+        // Each command moves only its own columns: a price revision never a quantity, a quantity revision never a price.
+        var quantityCommand = commandName == SalesDraftCommands.ReviseQuantityV1;
+        if (quantityCommand ? !draft.Lines.Select(line => line.Commercial).SequenceEqual(commercialBefore)
+                : !draft.Lines.Select(line => line.QuantityText).SequenceEqual(quantitiesBefore, StringComparer.Ordinal))
+        {
+            throw new InvalidOperationException("Satır revizyonu yalnız kendi komutunun alanlarını değiştirir.");
         }
 
         if (archived is not null)
@@ -421,6 +467,7 @@ public sealed class SalesStore(
                 ArchivedAtUtc = archived.ArchivedAtUtc,
                 ArchivedBy = archived.ArchivedBy,
                 CorrelationId = envelope.CorrelationId.Trim(),
+                Reason = archived.Reason,
             });
             foreach (var line in archived.Lines)
             {
@@ -454,9 +501,21 @@ public sealed class SalesStore(
         foreach (var lineRow in lineRows)
         {
             var line = draft.Lines.Single(candidate => candidate.LineNo == lineRow.LineNo);
-            lineRow.UnitPrice = line.Commercial.UnitPrice;
-            lineRow.PriceUnitId = line.Commercial.PriceUnitId;
-            lineRow.DiscountPercent = line.Commercial.DiscountPercent;
+            if (quantityCommand)
+            {
+                // Assigned only when the value moved: a value-equal line keeps its stored text and stays unmodified.
+                if (lineRow.Quantity != line.Quantity.Value || !string.Equals(lineRow.QuantityText, line.QuantityText, StringComparison.Ordinal))
+                {
+                    lineRow.Quantity = line.Quantity.Value;
+                    lineRow.QuantityText = line.QuantityText;
+                }
+            }
+            else
+            {
+                lineRow.UnitPrice = line.Commercial.UnitPrice;
+                lineRow.PriceUnitId = line.Commercial.PriceUnitId;
+                lineRow.DiscountPercent = line.Commercial.DiscountPercent;
+            }
         }
 
         dbContext.DraftAttempts.Add(new DraftAttemptRow
@@ -484,7 +543,7 @@ public sealed class SalesStore(
             envelope.PermissionCode,
             envelope.RoleCodes,
             JsonSerializer.Serialize(before, Json),
-            JsonSerializer.Serialize(Commercial(draft), Json),
+            JsonSerializer.Serialize(picture(draft), Json),
             audit.Reason,
             ApprovalContextJson: null,
             AuditAiInvolvement.None,
@@ -813,6 +872,19 @@ public sealed class SalesStore(
         }).ToArray(),
     };
 
+    /// <summary>
+    /// DEC-SAL-002: the audit picture of a draft's ordered quantities — revision, approval axis, every line's quantity text and,
+    /// after an archive, the reason the last approved revision was superseded.
+    /// </summary>
+    private static object Quantities(SalesOrderDraft draft) => new
+    {
+        revision = draft.Revision,
+        state = draft.ApprovalState.ToString(),
+        approval = draft.Approval,
+        supersededReason = draft.ArchivedRevisions.Count == 0 ? null : draft.ArchivedRevisions[^1].Reason,
+        lines = draft.Lines.Select(line => new { line.LineNo, line.Id, quantity = line.QuantityText }).ToArray(),
+    };
+
     /// <summary>The audit picture of a draft's commercial surface: revision, approval axis and every line's fields.</summary>
     private static object Commercial(SalesOrderDraft draft) => new
     {
@@ -942,7 +1014,8 @@ public sealed class SalesStore(
                     archived.MoneyProfileId, archived.MoneyProfileVersion, archived.MoneyScale, archived.ArchivedAtUtc, archived.ArchivedBy,
                     [.. revisionLines.Where(line => line.DraftId == row.Id && line.Revision == archived.Revision).OrderBy(line => line.LineNo)
                         .Select(line => new RevisionLineSnapshot(line.LineId, line.LineNo, line.ProductId, line.ProductVersion, line.OrderUnitId,
-                            line.QuantityText, new CommercialDraftFields(line.UnitPrice, line.PriceUnitId, line.DiscountPercent)))]));
+                            line.QuantityText, new CommercialDraftFields(line.UnitPrice, line.PriceUnitId, line.DiscountPercent)))],
+                    archived.Reason));
             }
 
             // DEC-SAL-003: every recorded delivery schedule, oldest first, BEFORE the approval axis (its version floor counts
@@ -1112,7 +1185,7 @@ public sealed class SalesStore(
     {
         if (commandName is not (SalesDraftCommands.CreateV1 or SalesDraftCommands.SubmitV1 or SalesDraftCommands.ApproveV1
             or SalesDraftCommands.RejectV1 or SalesDraftCommands.ReviseCommercialV1 or SalesDraftCommands.WithdrawV1
-            or SalesDraftCommands.RescheduleDeliveryV1 or SalesDraftCommands.CancelV1))
+            or SalesDraftCommands.RescheduleDeliveryV1 or SalesDraftCommands.CancelV1 or SalesDraftCommands.ReviseQuantityV1))
         {
             throw new ArgumentException("Bilinmeyen Sales komut adı.", nameof(commandName));
         }

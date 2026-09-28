@@ -51,9 +51,11 @@ export default defineConfig({
   // DEC-SAL-003: the delivery-schedule journey runs on its own seeded order (file order: after d2, before references).
   // DEC-SAL-005: the cancellation journey runs on its own order created through the real API (file order: after the approval
   // journey); its disposable canceller is a central override delta (see the spec header).
+  // DEC-SAL-002: the quantity-revision journey runs on its own order created through the real API (file order: after the
+  // delivery schedule, before references); the preparer's quantity grant is a central override delta (see the spec header).
   // INV-AL-1 change (specs/s04-approved-allocation-change.spec.ts): file order puts it right after the approval journey
   // (the draft is Approved and S04-06 has released its allocation); it reuses the preparer's existing grants.
-  testMatch: /(^|[\\/])s04-(approval-journey|approved-allocation-change|cancellation|commercial-revision|d2-persona-withdrawal|delivery-schedule|references)\.spec\.ts$/,
+  testMatch: /(^|[\\/])s04-(approval-journey|approved-allocation-change|cancellation|commercial-revision|d2-persona-withdrawal|delivery-schedule|quantity-revision|references)\.spec\.ts$/,
   fullyParallel: false,
   workers: 1,
   retries: 0,

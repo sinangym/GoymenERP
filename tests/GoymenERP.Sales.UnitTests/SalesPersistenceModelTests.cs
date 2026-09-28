@@ -112,8 +112,26 @@ public sealed class SalesPersistenceModelTests
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_InitialSales", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddAttemptOutcome", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddDeliverySchedules", StringComparison.Ordinal));
-        Assert.Equal("20260927120000_AddDraftCancellations", context.Database.GetMigrations().Last());
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddDraftCancellations", StringComparison.Ordinal));
+        Assert.Equal("20260928090000_AddRevisionReasons", context.Database.GetMigrations().Last());
         Assert.False(context.Database.HasPendingModelChanges());
+    }
+
+    /// <summary>DEC-SAL-002: the reason column's rollback refuses with Sales' own 51057 BEFORE anything is dropped (forward fix).</summary>
+    [Fact]
+    public void The_revision_reason_migration_down_refuses_with_51057_before_it_drops_anything()
+    {
+        var down = new GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations.AddRevisionReasons().DownOperations;
+        Assert.Equal(3, down.Count);
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(down[0]);
+        Assert.Contains("IF EXISTS (SELECT 1 FROM [sales].[DraftRevisions] WHERE [Reason] IS NOT NULL)", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("THROW 51057,", guard.Sql, StringComparison.Ordinal);
+        Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropCheckConstraintOperation>(down[1]);
+        var drop = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropColumnOperation>(down[2]);
+        Assert.Equal(("sales", "DraftRevisions", "Reason"), (drop.Schema, drop.Table, drop.Name));
+        var up = new GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations.AddRevisionReasons().UpOperations;
+        var column = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.AddColumnOperation>(up[0]);
+        Assert.Equal(("Reason", true, 4000), (column.Name, column.IsNullable, column.MaxLength));
     }
 
     [Theory]
@@ -135,6 +153,8 @@ public sealed class SalesPersistenceModelTests
     [InlineData("edit-draft-header")]
     [InlineData("edit-draft-company")]
     [InlineData("edit-line")]
+    [InlineData("edit-line-unit")]
+    [InlineData("edit-revision-reason")]
     [InlineData("edit-slice")]
     [InlineData("edit-attempt")]
     [InlineData("edit-counter-company")]
@@ -164,7 +184,14 @@ public sealed class SalesPersistenceModelTests
                 Attach(context, Draft()).CompanyId = CompanyB;
                 break;
             case "edit-line":
-                Attach(context, Line()).Quantity = 2m;
+                // DEC-SAL-002 admits the ordered quantity under a quantity revision; the product binding stays immutable.
+                Attach(context, Line()).ProductVersion = "8";
+                break;
+            case "edit-line-unit":
+                Attach(context, Line()).OrderUnitId = Guid.NewGuid();
+                break;
+            case "edit-revision-reason":
+                Attach(context, Revision()).Reason = "sonradan yazılan gerekçe";
                 break;
             case "edit-slice":
                 Attach(context, Slice()).RequestedDeliveryDate = new DateOnly(2026, 10, 1);
@@ -231,6 +258,7 @@ public sealed class SalesPersistenceModelTests
     [Theory]
     [InlineData("line-price")]
     [InlineData("line-discount")]
+    [InlineData("line-quantity")]
     [InlineData("header-revision")]
     public void Only_a_lines_commercial_columns_and_the_headers_revision_pass_the_write_guard(string change)
     {
@@ -244,6 +272,12 @@ public sealed class SalesPersistenceModelTests
                 break;
             case "line-discount":
                 Attach(context, Line()).DiscountPercent = "5";
+                break;
+            case "line-quantity":
+                // DEC-SAL-002: the quantity revision moves the ordered quantity and its verbatim text, nothing else.
+                var revised = Attach(context, Line());
+                revised.Quantity = 2m;
+                revised.QuantityText = "2";
                 break;
             default:
                 Attach(context, Draft()).Revision = 1;

@@ -1380,7 +1380,8 @@ public sealed partial class SalesDraftService(
             archived.MoneyProfileId, archived.MoneyProfileVersion, archived.MoneyScale,
             [.. archived.Lines.Select(line => new SalesDraftRevisionLineV1(line.LineId, line.LineNo, line.ProductId, line.ProductVersion,
                 line.OrderUnitId, line.QuantityText, Disclosed(disclosure, line.Commercial.UnitPrice), Disclosed(disclosure, line.Commercial.PriceUnitId),
-                Disclosed(disclosure, line.Commercial.DiscountPercent), disclosure))]);
+                Disclosed(disclosure, line.Commercial.DiscountPercent), disclosure))],
+            archived.Reason);
 
     private static T? Disclosed<T>(SalesPriceDisclosure disclosure, T? value) =>
         disclosure == SalesPriceDisclosure.Visible ? value : default;

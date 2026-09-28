@@ -35,6 +35,12 @@ public interface ISalesDraftService
     Task<SalesOrderDraftRevisionsResponse> GetDraftRevisionsAsync(Guid draftId,
         CancellationToken cancellationToken = default);
 
+    // DEC-SAL-002 / AT-023 — the quantity revision under `sales.orders.quantity.write`: every line's ordered quantity
+    // replaced with a reason; an APPROVED order archives its approved revision first (with that reason) and advances to the
+    // next one, back in preparation, for re-approval. Refused while an owner links a record to the order (fail-closed).
+    Task<SalesOrderDraftResponse> ReviseQuantityAsync(Guid draftId, SalesDraftQuantityRevisionRequest request,
+        SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
+
     // DEC-SAL-003 — the delivery-schedule update under `sales.orders.delivery-schedule.write` (dates only, no
     // re-approval, audited), and the read of the schedule history (`sales.drafts.read`).
     Task<SalesOrderDraftResponse> RescheduleDeliveryAsync(Guid draftId, SalesDraftDeliveryScheduleRequest request,
