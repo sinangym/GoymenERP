@@ -166,6 +166,8 @@ export interface HarnessConfig {
   readonly onCancel?: (call: RecordedCall) => Response | Promise<Response>
   /** AT-007: GET `/sales/drafts/{id}/cancellation`; default: no recorded cancellation. */
   readonly onCancellation?: (url: string, companyId: string | null) => Response | Promise<Response>
+  /** DEC-SAL-002: a POST on `/sales/drafts/{id}/quantity-revision`. */
+  readonly onQuantityRevision?: (call: RecordedCall) => Response | Promise<Response>
 }
 
 export function installFetch(config: HarnessConfig = {}) {
@@ -200,6 +202,10 @@ export function installFetch(config: HarnessConfig = {}) {
         if (call.method === 'POST' && /\/sales\/drafts\/[^/?]+\/delivery-schedule$/.test(url)) {
           if (config.onDeliverySchedule === undefined) throw new Error('unexpected delivery-schedule update')
           return config.onDeliverySchedule(call)
+        }
+        if (call.method === 'POST' && /\/sales\/drafts\/[^/?]+\/quantity-revision$/.test(url)) {
+          if (config.onQuantityRevision === undefined) throw new Error('unexpected quantity revision')
+          return config.onQuantityRevision(call)
         }
         if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/cancellation-impact$/.test(url)) {
           if (config.onCancellationImpact === undefined) throw new Error('unexpected cancellation-impact read')

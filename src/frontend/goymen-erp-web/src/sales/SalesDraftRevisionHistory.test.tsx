@@ -60,7 +60,9 @@ describe('SalesDraftRevisionHistory in the detail', () => {
     const cells = within(screen.getByTestId('sales-revision-Rev.0-line-1')).getAllByRole('cell').map((cell) => cell.textContent)
     expect(cells).toEqual([
       r.lines[0].lineId, r.lines[0].productId, '9007199254740993', r.lines[0].orderUnitId,
-      '1000.000', '12.500000', r.lines[0].priceUnitId, '0',
+      // DEC-SAL-002: the quantity of the revision that followed; this archived line id is not a line of the current
+      // detail, so nothing is shown as its successor (never an assumed value).
+      '1000.000', T.unknown, '12.500000', r.lines[0].priceUnitId, '0',
     ])
     expect(within(revision).queryByRole('button')).toBeNull()
   })

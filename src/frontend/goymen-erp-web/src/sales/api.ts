@@ -48,12 +48,14 @@ import {
   salesDraftCommandPath,
   salesDraftDetailPath,
   salesDraftRevisionsPath,
+  salesDraftQuantityRevisionPath,
   type ApprovalState,
   type ContactInformationOptions,
   type CurrencyOption,
   type DeliverySlice,
   type DraftCreateRequest,
   type DraftCommercialRevisionRequest,
+  type DraftQuantityRevisionRequest,
   type DraftDeliveryScheduleRequest,
   type DeliverySchedules,
   type DeliveryProgress,
@@ -624,6 +626,49 @@ export async function sendDraftCommercialRevision(
 ): Promise<OrderCommandOutcome<DraftMutation>> {
   const raw = await request(
     salesDraftCommercialRevisionPath(context.draftId),
+    {
+      method: 'POST',
+      headers: {
+        ...headers(context.companyId),
+        'Content-Type': 'application/json',
+        'Idempotency-Key': context.idempotencyKey,
+      },
+      body: JSON.stringify(payload),
+    },
+    signal,
+  )
+  if ('failure' in raw) {
+    if (raw.failure === 'aborted') return { type: 'aborted' }
+    if (raw.failure === 'offline') return { type: 'offline' }
+    return { type: 'network-error' }
+  }
+  if (raw.status !== STATE_COMMAND_STATUS) {
+    if (raw.status >= 200 && raw.status < 300) return { type: 'malformed' }
+    return { type: 'http', status: raw.status, problem: decodeProblem(raw.body, raw.status) }
+  }
+  const mutation = decodeDraftMutation(raw.body)
+  if (
+    mutation === null ||
+    mutation.isReplay !== raw.replayed ||
+    mutation.detail.draft.id !== context.draftId ||
+    mutation.detail.draft.companyId !== context.companyId
+  ) {
+    return { type: 'malformed' }
+  }
+  return { type: 'succeeded', data: mutation }
+}
+
+/**
+ * DEC-SAL-002: the quantity revision — the commercial revision's keyed-attempt and strict response rules. Success is the
+ * draft after the change, of this draft and this company, with the replay header and `isReplay` agreeing.
+ */
+export async function sendDraftQuantityRevision(
+  payload: DraftQuantityRevisionRequest,
+  context: CommandContext,
+  signal?: AbortSignal,
+): Promise<OrderCommandOutcome<DraftMutation>> {
+  const raw = await request(
+    salesDraftQuantityRevisionPath(context.draftId),
     {
       method: 'POST',
       headers: {
