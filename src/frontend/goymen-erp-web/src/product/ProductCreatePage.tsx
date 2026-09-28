@@ -88,6 +88,8 @@ import {
   type AttemptBinding,
 } from './pendingAttempt'
 import styles from './ProductCreatePage.module.css'
+import { DuplicateCandidatesPanel } from './DuplicateCandidates'
+import { useDuplicateCandidates } from './duplicateQuery'
 import { ProductTechnicalFields } from './ProductTechnicalFields'
 import { technicalDraft } from './technicalForm'
 
@@ -113,6 +115,37 @@ function nameMatchTerm(name: string): string {
 
 function foldName(name: string): string {
   return name.toLocaleLowerCase('tr-TR')
+}
+
+/**
+ * §10.2 after the save: the server's exact-name candidates for the Draft just created (itself left out), with
+ * a link to each, so a duplicate is visible at the moment it was made. The save already happened — a name
+ * match never blocks it — and the Draft stays a Draft until someone approves it.
+ */
+function CreatedDuplicateCheck({
+  name,
+  productId,
+  namespace,
+  entryGeneration,
+  origin,
+  canOpenDetail,
+}: {
+  readonly name: string
+  readonly productId: string
+  readonly namespace: string | null
+  readonly entryGeneration: number
+  readonly origin: string | null
+  readonly canOpenDetail: boolean
+}) {
+  const query = useDuplicateCandidates({
+    name: name.trim(),
+    excludeProductId: productId,
+    namespace,
+    entryGeneration,
+    origin,
+    enabled: true,
+  })
+  return <DuplicateCandidatesPanel id="product-created-duplicate-check" outcome={query.data} canOpenDetail={canOpenDetail} />
 }
 
 /** The shown result's id, for the name field's `aria-describedby`. */
@@ -655,6 +688,16 @@ function ProductCreateForm({
             {created.code} — {created.name}
           </p>
           <p className={styles.note}>{PRODUCT_CREATE_TEXT.draftNote}</p>
+          {canCheckNames ? (
+            <CreatedDuplicateCheck
+              name={created.name}
+              productId={created.id}
+              namespace={namespace}
+              entryGeneration={entryGeneration}
+              origin={origin}
+              canOpenDetail={canOpenDetail}
+            />
+          ) : null}
           {/* `isReplay` is a response FIELD in this contract, not a header. */}
           {attempt.result.isReplay ? (
             <p className={styles.note}>{PRODUCT_CREATE_TEXT.replayedNote}</p>

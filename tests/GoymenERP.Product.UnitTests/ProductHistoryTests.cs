@@ -377,6 +377,7 @@ public sealed class ProductHistoryTests
 
         public Task<ProductPage> GetPageAsync(ProductListQuery query, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<IReadOnlyList<ProductCodeGroup>> GetCodeGroupsAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<ProductDuplicateCandidates> GetDuplicateCandidatesAsync(ProductDuplicateQuery query, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<ProductReferenceOptions> GetReferenceOptionsAsync(ProductReferenceQuery query, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<ProductMutationResponse> CreateDraftAsync(CreateProductDraftRequest request, string idempotencyKey, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<ProductMutationResponse> EditDraftAsync(Guid id, EditProductDraftRequest request, string idempotencyKey, CancellationToken cancellationToken) => throw new NotSupportedException();

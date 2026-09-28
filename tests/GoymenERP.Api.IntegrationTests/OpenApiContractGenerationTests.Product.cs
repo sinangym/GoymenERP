@@ -20,6 +20,10 @@ public sealed partial class OpenApiContractGenerationTests
         new("get", "/api/v1/products/reference-options", "GetProductReferenceOptionsV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json"),
             ParameterValues: ["query:groupId:true:type:string;format:uuid", "query:classId:false:type:string;format:uuid"]),
+        // DEC-PRD-010 (spec PRODUCT-U01-U02-JIT-001 §10.2): the same-name duplicate warning, a read that never blocks.
+        new("get", "/api/v1/products/duplicate-candidates", "GetProductDuplicateCandidatesV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json"),
+            ParameterValues: ["query:name:false:type:string", "query:excludeProductId:false:type:string;format:uuid"]),
         new("get", "/api/v1/products/{id}", "GetProductV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json"),
             ParameterValues: ["path:id:true:type:string;format:uuid"]),
@@ -50,6 +54,7 @@ public sealed partial class OpenApiContractGenerationTests
         ["GetProductsV1"] = "ref:ProductPage",
         ["GetProductCodeGroupsV1"] = "array:ProductCodeGroup",
         ["GetProductReferenceOptionsV1"] = "ref:ProductReferenceOptions",
+        ["GetProductDuplicateCandidatesV1"] = "ref:ProductDuplicateCandidates",
         ["GetProductV1"] = "ref:ProductCardView",
         ["GetProductHistoryV1"] = "ref:ProductHistoryView",
         ["CreateProductDraftV1"] = "ref:ProductMutationResponse",
@@ -120,7 +125,7 @@ public sealed partial class OpenApiContractGenerationTests
             Assert.Equal(codes.Length > 0, response.Value.TryGetProperty("x-erp-problem-codes", out var actualCodes));
             if (codes.Length > 0) Assert.Equal(codes, actualCodes.EnumerateArray().Select(value => value.GetString()));
             if (status == 400)
-                Assert.Equal(mutation || expected.OperationId is "GetProductsV1" or "GetProductReferenceOptionsV1",
+                Assert.Equal(mutation || expected.OperationId is "GetProductsV1" or "GetProductReferenceOptionsV1" or "GetProductDuplicateCandidatesV1",
                     response.Value.TryGetProperty(ErpOpenApiContract.EmptyBodyPossibleExtensionName, out var empty) && empty.GetBoolean());
         }
     }
@@ -130,6 +135,9 @@ public sealed partial class OpenApiContractGenerationTests
         var expected = new Dictionary<string, ComponentSchemaExpectation>(StringComparer.Ordinal)
         {
             ["ProductPage"] = ObjectSchema(["items", "nextCursor"], ("items", "type:array;items:ref:ProductDraftView"), ("nextCursor", "type:null|string")),
+            ["ProductDuplicateCandidates"] = ObjectSchema(["rule", "name", "exactName", "hasMore"],
+                ("rule", "type:string"), ("name", "type:string"), ("exactName", "type:array;items:ref:ProductDraftView"),
+                ("hasMore", "type:boolean")),
             ["ProductCodeGroup"] = ObjectSchema(["id", "name", "prefix"], ("id", "type:string;format:uuid"), ("name", "type:string"), ("prefix", "type:string")),
             ["ProductMutationResponse"] = ObjectSchema(["card", "isReplay"], ("card", "ref:ProductCardView"), ("isReplay", "type:boolean")),
             ["ProductHistoryView"] = ObjectSchema(["productId", "entries", "truncated"],
