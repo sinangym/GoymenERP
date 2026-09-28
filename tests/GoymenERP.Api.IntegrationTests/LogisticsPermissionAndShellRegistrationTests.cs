@@ -29,6 +29,7 @@ public sealed class LogisticsPermissionAndShellRegistrationTests
     [InlineData(LogisticsPermissionManifestV1.LoadsRecord, ErpPermissions.LogisticsLoadsRecord)]
     [InlineData(LogisticsPermissionManifestV1.ShipmentsRecord, ErpPermissions.LogisticsShipmentsRecord)]
     [InlineData(LogisticsPermissionManifestV1.DeliveriesRecord, ErpPermissions.LogisticsDeliveriesRecord)]
+    [InlineData(LogisticsPermissionManifestV1.WeighingsRecord, ErpPermissions.LogisticsWeighingsRecord)]
     public void The_owner_name_is_the_registered_central_name(string ownerName, string centralName)
     {
         Assert.Equal(ownerName, centralName);

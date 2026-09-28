@@ -166,8 +166,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 "4e783c6274086114d7c0709abf65fbcf4c1fc5993736ef2a4739f9ad0982d609",
 
             // logistics
+            // AT-053: +4 weighbridge SQL facts (81c1ff0b… -> 264898d7…).
             ["tools/relational_inventory/logistics.txt"] =
-                "81c1ff0b928c464dbe9c8378e1a95531ccabe2f6c9c9443d94f28e1f56763aed",
+                "264898d775b52cec9f087fcb7e1b90db27ef07711d7438154a625aa4160f6f27",
 
             // manufacturing
             // MFG-PLAN-EDIT: +6 plan-revision SQL facts (a72e6367… -> 02711b6c…).
@@ -237,7 +238,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
              + "Persistence/LogisticsDbContext.cs"] =
-                "836402675ced5dcb6fc4bc09e54f26fc318268d8d0acfb92bb0fd58e194d6479",
+            // Re-measured for AT-053: VehicleWeighings, company-scoped with the same CompanyId query filter and a
+            // company-leading key; one weighing per instruction.
+                "c157f2333337aaac614b9098754dfa4bcc99ac4ef062fd4c15d8c72dd5d0886d",
             // PUR-4a: company-scoped like Organization; every tenant row (requests and their lines, orders and their
             // lines, attempts) and AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
@@ -717,7 +720,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Logistics/"
                  + "GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsStore.cs"] =
                     new(
-                        "aee284d99947f3ff94794d1e5df7e9843fbb769cfb3afd334ec892f410f204be",
+                        // Re-fingerprinted for AT-053: the weighing is saved in the instruction's one save and
+                        // replayed at its share position; SqlClient count unchanged.
+                        "4c64fde78e67008e4cc3e334437c795dd608f35cba011c52d36d328144fb1d7d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -978,6 +983,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // dates. The THROW precedes both DropTables; an empty database rolls back freely. Forward fix.
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20260926090000_AddDeliverySchedules.cs"] =
                     new("dc0019ef55d4283bdba596e50ce1ceaf7504efe11172457bb45db9f11109ffa9",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // AT-053: the Down's only raw SQL is Logistics' module refusal (51056, used by no other migration) while
+                // any weighbridge record is stored; the THROW precedes the DropTable, an empty table rolls back freely.
+                ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/Migrations/20260928120000_AddVehicleWeighings.cs"] =
+                    new("beb572dd1dd3450169f3c2b927e143161f2a15daedbd6b391eccc2b598817f4b",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // ACC-V0a: the Down's only raw SQL is Accounting's module refusal (51048, coordinator-assigned) while any

@@ -287,6 +287,7 @@ class WorkflowTests(unittest.TestCase):
                 "logistics.loads.record",
                 "logistics.shipments.record",
                 "logistics.deliveries.record",
+                "logistics.weighings.record",
                 "sales.drafts.create",
                 "sales.drafts.read",
                 "sales.orders.approve",
