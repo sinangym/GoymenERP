@@ -90,7 +90,8 @@ test('S04-GS1 box → grouped results → open the order → Back returns to the
   await page.goto('/')
 
   const box = page.getByRole('search', { name: 'Genel arama' }).first()
-  await box.getByLabel('Genel arama').fill(documentNo)
+  // Exact: the submit button's accessible name ("Genel aramada ara") also contains "Genel arama".
+  await box.getByRole('textbox', { name: 'Genel arama', exact: true }).fill(documentNo)
   const first = page.waitForResponse((response) => isSearch(response, documentNo))
   await box.getByRole('button', { name: 'Genel aramada ara' }).click()
   const answer = await searchAnswer(await first)
