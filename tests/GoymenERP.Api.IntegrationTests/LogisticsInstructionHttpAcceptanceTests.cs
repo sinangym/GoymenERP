@@ -140,6 +140,61 @@ public sealed class LogisticsInstructionHttpAcceptanceTests(GoymenErpApiFactory 
         Assert.Equal(0, service.Calls);
     }
 
+    [Fact]
+    public async Task The_weighing_route_answers_the_instruction_with_its_record_replays_with_headers_and_refuses_a_loose_body_before_the_service()
+    {
+        // AT-053 wire: 200 with the instruction after the record (the weighing member always present), the replay headers on the
+        // same key, the recorded terminal 409 with its code, and a body carrying a calculated member refused before the service.
+        var id = Guid.NewGuid();
+        var weighing = new LoadingInstructionWeighingView(Guid.NewGuid(), "TareFirst", "15000", "39120", "15000", "39120", "24120", "24000", "120",
+            "SENTETIK-kantar", DateTimeOffset.UtcNow);
+        var service = new StubService { Weigh = () => Task.FromResult(new LoadingInstructionResponse(Detail(id) with { Weighing = weighing }, false, "SENTETIK-corr")) };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+        var body = $$"""{"expectedVersion":"4","weighingId":"{{weighing.WeighingId:D}}","direction":"TareFirst","firstWeighingKg":"15000","secondWeighingKg":"39120"}""";
+
+        using (var response = await client.SendAsync(Post($"{id:D}/weighings", "SENTETIK-weigh", body)))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var answered = (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("detail").GetProperty("weighing");
+            Assert.Equal(("24120", "120", "TareFirst"), (answered.GetProperty("netKg").GetString(), answered.GetProperty("differenceKg").GetString(),
+                answered.GetProperty("direction").GetString()));
+        }
+
+        service.Weigh = () => Task.FromResult(new LoadingInstructionResponse(Detail(id) with { Weighing = weighing }, true, "SENTETIK-first"));
+        using (var response = await client.SendAsync(Post($"{id:D}/weighings", "SENTETIK-weigh", body)))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.Equal("true", Assert.Single(response.Headers.GetValues("Idempotency-Replayed")));
+            Assert.Equal("SENTETIK-first", Assert.Single(response.Headers.GetValues("Idempotency-Original-Correlation-Id")));
+        }
+
+        service.Weigh = () => throw new LogisticsInstructionServiceException(409, LogisticsProblemCodesV1.WeighingAlreadyRecorded,
+            [new("weighingId", "logistics_weighing_already_recorded")]);
+        using (var response = await client.SendAsync(Post($"{id:D}/weighings", "SENTETIK-weigh-2", body)))
+        {
+            Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+            Assert.Equal(LogisticsProblemCodesV1.WeighingAlreadyRecorded, (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
+        }
+
+        var calls = service.Calls;
+        var loose = body.Replace("}", ",\"netKg\":\"24120\"}", StringComparison.Ordinal);
+        using (var response = await client.SendAsync(Post($"{id:D}/weighings", "SENTETIK-weigh-loose", loose)))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+
+        Assert.Equal(calls, service.Calls);
+
+        // Without a weighing, the detail's member is present and null (the frontend decoder requires every member).
+        service.Create = () => Task.FromResult(new LoadingInstructionResponse(Detail(id), false, "SENTETIK-corr"));
+        using (var response = await client.SendAsync(Post(string.Empty, "SENTETIK-created", CreateBody())))
+        {
+            var detail = (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("detail");
+            Assert.Equal(JsonValueKind.Null, detail.GetProperty("weighing").ValueKind);
+        }
+    }
+
     private static string CreateBody() =>
         $$"""{"customerPartyId":"{{Guid.NewGuid():D}}","companyAccountId":"{{Guid.NewGuid():D}}","effectiveOn":"2026-09-19","lines":[{"lineId":"{{Guid.NewGuid():D}}","sourceOrderId":"{{Guid.NewGuid():D}}","sourceOrderLineId":"{{Guid.NewGuid():D}}","unitId":"{{Guid.NewGuid():D}}","quantity":"6"}]}""";
 
@@ -192,6 +247,15 @@ public sealed class LogisticsInstructionHttpAcceptanceTests(GoymenErpApiFactory 
         {
             Calls++;
             return Load();
+        }
+
+        public Func<Task<LoadingInstructionResponse>> Weigh { get; set; } = () => throw new InvalidOperationException("not expected");
+
+        public Task<LoadingInstructionResponse> RecordWeighingAsync(Guid instructionId, RecordWeighingRequest request, LogisticsCommandMetadata metadata,
+            CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return Weigh();
         }
 
         public Task<LoadingInstructionDetailView> GetInstructionDetailAsync(Guid instructionId, CancellationToken cancellationToken = default) =>

@@ -278,7 +278,7 @@ SUITE_IDENTITY_PERMISSIONS = {
     # approved-lines read reaches Cari through the ACTOR's own grant (the s03/s04 precedent), so without it
     # the owner answers nothing and the picker is silently empty (ASSUMPTION-LOG4B-3).
     "l04": ("logistics.loading-instructions.create", "logistics.loading-instructions.read", "logistics.loads.record",
-            "logistics.shipments.record", "logistics.deliveries.record",
+            "logistics.shipments.record", "logistics.deliveries.record", "logistics.weighings.record",
             "sales.drafts.create", "sales.drafts.read", "sales.orders.approve", "counterparty.parties.read",
             "inventory.opening-stock.record", "inventory.labels.read", "inventory.balances.read",
             "inventory.physical-allocation.write", "product.operational-selection.read"),

@@ -135,6 +135,7 @@ export function refusalMovesRecord(state: AttemptState<unknown, unknown>): boole
       code === LOGISTICS_PROBLEM_CODE.concurrentChange ||
       code === LOGISTICS_PROBLEM_CODE.duplicateShare ||
       code === LOGISTICS_PROBLEM_CODE.loadExceedsInstructed ||
-      code === LOGISTICS_PROBLEM_CODE.lineBlocked)
+      code === LOGISTICS_PROBLEM_CODE.lineBlocked ||
+      code === LOGISTICS_PROBLEM_CODE.weighingAlreadyRecorded)
   )
 }

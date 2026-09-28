@@ -29,6 +29,7 @@ public sealed class LogisticsPermissionRegistrationTests
         ErpPermissions.LogisticsLoadsRecord,
         ErpPermissions.LogisticsShipmentsRecord,
         ErpPermissions.LogisticsDeliveriesRecord,
+        ErpPermissions.LogisticsWeighingsRecord,
     };
 
     [Fact]
@@ -39,6 +40,7 @@ public sealed class LogisticsPermissionRegistrationTests
         Assert.Equal("logistics.loads.record", ErpPermissions.LogisticsLoadsRecord);
         Assert.Equal("logistics.shipments.record", ErpPermissions.LogisticsShipmentsRecord);
         Assert.Equal("logistics.deliveries.record", ErpPermissions.LogisticsDeliveriesRecord);
+        Assert.Equal("logistics.weighings.record", ErpPermissions.LogisticsWeighingsRecord);
     }
 
     [Theory]
