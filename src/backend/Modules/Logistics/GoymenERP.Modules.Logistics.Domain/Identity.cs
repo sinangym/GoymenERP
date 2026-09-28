@@ -43,6 +43,12 @@ public static class LogisticsRuleCodes
     public const string UnitMismatch = "logistics_unit_mismatch";
     public const string QuantityBelowZero = "logistics_quantity_below_zero";
 
+    // AT-053 manual weighbridge record (one per instruction; its correction rule is not decided, so a second is refused).
+    public const string WeighingAlreadyRecorded = "logistics_weighing_already_recorded";
+    public const string WeighingDirectionRequired = "logistics_weighing_direction_required";
+    public const string WeighingDirectionInconsistent = "logistics_weighing_direction_inconsistent";
+    public const string WeighingUnitUnsupported = "logistics_weighing_unit_unsupported";
+
     /// <summary>
     /// A line-level guard fired although the aggregate had already checked the same bound. The
     /// aggregate is the single authority for every share bound; this code marks the second,

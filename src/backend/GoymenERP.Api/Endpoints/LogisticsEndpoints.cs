@@ -207,6 +207,28 @@ public static class LogisticsEndpoints
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
+        // AT-053: the vehicle's manual weighbridge record on an issued instruction — one per instruction; the backend calculates the
+        // net (WGT-001) and the signed difference to the loaded kilograms (WGT-002) as facts, with no tolerance verdict (OPEN-004).
+        group.MapPost("/{id:guid}/weighings", (Guid id, HttpContext httpContext, [FromServices] ILogisticsInstructionService service,
+                ICorrelationContext correlation, CancellationToken cancellationToken) =>
+            MutateAsync(httpContext, correlation, LogisticsJson.ReadRecordWeighing,
+                (body, metadata) => service.RecordWeighingAsync(id, body, metadata, cancellationToken), cancellationToken))
+            .WithName("RecordLoadingInstructionWeighingV1")
+            .WithIdempotencyContract(LogisticsApiV1.MutationStatus, StatusCodes.Status409Conflict)
+            .Accepts<RecordWeighingRequest>("application/json")
+            .Produces<LoadingInstructionResponse>(LogisticsApiV1.MutationStatus)
+            .ProducesErpBadRequest("validation_failed", LogisticsProblemCodesV1.CommandMetadataInvalid)
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(LogisticsProblemCodesV1.VersionConflict, LogisticsProblemCodesV1.InstructionState,
+                LogisticsProblemCodesV1.WeighingAlreadyRecorded, LogisticsProblemCodesV1.SameKeyPayloadMismatch,
+                LogisticsProblemCodesV1.ConcurrentChange)
+            .ProducesErpUnprocessableEntity("validation_failed", LogisticsProblemCodesV1.WeighingDirectionInconsistent,
+                LogisticsProblemCodesV1.UnsupportedUnit)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
         group.MapPost("/{id:guid}/lines/{lineId:guid}/shipments", (Guid id, Guid lineId, HttpContext httpContext,
                 [FromServices] ILogisticsRealizationServiceV1 service, ICorrelationContext correlation,
                 CancellationToken cancellationToken) =>

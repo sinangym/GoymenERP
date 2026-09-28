@@ -16,6 +16,8 @@
  * state, the §13 cap, a block, a duplicate share), the detail is re-read — the answer is the server's.
  *
  * LOG-5 adds independently capability-gated definite shipment and delivery; load remains non-physical.
+ * AT-053 adds the vehicle's manual weighbridge record (WeighingCommand.tsx): its facts are shown to every reader,
+ * above the shipment / delivery commands that follow it; the form is offered on an Issued instruction without one.
  */
 
 import { useRef, useState } from 'react'
@@ -59,6 +61,7 @@ import { StateBlock } from '../shell/StateBlock'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import styles from './LogisticsPages.module.css'
 import { RealizationCommands } from './RealizationCommands'
+import { WeighingFacts, WeighingForm } from './WeighingCommand'
 
 export function InstructionDetailPage() {
   const shell = useShellState()
@@ -113,6 +116,7 @@ export function InstructionDetailPage() {
                 section, or the notice of the command that caused the version step would vanish with it. */}
             <IssueCommand key={`issue:${namespace ?? ''}:${detail.instruction.id}`} shell={shell} detail={detail} companyId={companyId} onRecorded={reread} />
             <LoadForm key={`load:${namespace ?? ''}:${detail.instruction.id}`} shell={shell} detail={detail} companyId={companyId} onRecorded={reread} />
+            <WeighingForm key={`weighing:${namespace ?? ''}:${detail.instruction.id}`} shell={shell} detail={detail} companyId={companyId} onRecorded={reread} />
             <RealizationCommands key={`realization:${namespace ?? ''}:${shell.routeEntryGeneration}:${detail.instruction.id}`}
               shell={shell} detail={detail} companyId={companyId} onRecorded={reread} />
           </>
@@ -267,6 +271,8 @@ export function InstructionView({
           </div>
         )}
       </section>
+
+      <WeighingFacts weighing={detail.weighing} />
 
       {commands}
     </article>

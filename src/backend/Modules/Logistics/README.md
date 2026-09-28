@@ -38,8 +38,25 @@ Business 5737790175 (loading instruction → loaded / shipped / delivered, one s
 ### Sales delivery read (AT-024)
 `LogisticsSalesOrderDeliveryReadPort` answers the Sales-declared `ISalesOrderDeliveryReadPortV1` over Logistics's own company-filtered lines: per Sales order line (the D4 binding) and unit, the summed `Shipped` / `Delivered` totals of every instruction of the context company, untracked, creating nothing. Registered in `AddLogisticsModule` (the owner registers the port, as Sales registers its line port), so Sales reads recorded deliveries without reaching Logistics tables. No company context → refused before any read. The port carries no authority (D6); the Sales draft read fences its own name. Evidence: `LogisticsSalesOrderDeliveryReadPortTests`, `SalesDeliveryProgressSqlServerRelationalAcceptanceTests`.
 
+### Manual weighbridge record (AT-053)
+
+Sources: ACCEPTANCE_70 AT-053 ("Kantar neti iki tartım ve brüt/dara yönüyle tutarlıdır"), master v3 §28.12 WGT-001 (`|Tartım2 − Tartım1|`, brüt/dara yönü metadata) and WGT-002 (`Gerçek/KantarKg − Beklenen/İrsaliyeKg`), §7.8 ("plan, fiilî yük, teorik ağırlık ve kantar farkı ayrıdır"), §27.8 L-06 (Kantar Oturumu: brüt, dara, net ve fark), OPEN-003 (closed: the weight is entered by hand), DEC-STK-009 / OPEN-004 (tolerance per product/operation profile, thresholds not final — none is applied here).
+
+| Concern | Rule |
+|---|---|
+| What it is | One record per loading instruction: the two weighings as typed (exact kg, ≤ 3 decimals, never rounded), the direction (`TareFirst` / `GrossFirst`), the backend's tare / gross / net (`WeighbridgeCalculator.Net`, WGT-001), the kilograms loaded on the instruction at that moment and the SIGNED difference net − loaded (`WeighbridgeCalculator.Difference`, WGT-002), the operator (the authenticated actor) and the server time. |
+| AT-053 | The gross must be strictly heavier than the tare in the declared direction; a contradicting pair (or two equal weighings) is `422 logistics_weighing_direction_inconsistent`, never turned around. SQL Server holds the same shape (`CK_VehicleWeighings_Net`, `CK_VehicleWeighings_Difference`). |
+| No verdict | The difference is a fact only: no tolerance, warning, approval or block (OPEN-004), no share is refused or adjusted because of it, and the screen shows the backend's text without recomputing it. |
+| One per instruction | The correction rule is not decided, so a second record is a recorded terminal `409 logistics_weighing_already_recorded` (fail closed, never a replacement); the table key is (company, instruction). |
+| State / concurrency | Issued instructions only; `expectedVersion` (stale → recorded `409 version_conflict`); the record bumps the instruction's version once; one `Idempotency-Key` per command (same key → the stored answer, no second row). |
+| Rebuild | The row keeps `SharesBefore`; the store replays the weighing after exactly those shares, so the loaded snapshot and difference are reproduced, and a stored value the rebuild does not reach is refused. |
+| Route | `POST /api/v1/logistics/loading-instructions/{id}/weighings` (`logistics.weighings.record`, its own name; body `{expectedVersion, weighingId, direction, firstWeighingKg, secondWeighingKg}`; 200 with the instruction). The detail carries `weighing` (null until recorded). |
+| Not decided / not here | Vehicle plate, driver, ticket number, per-weighing times, document/photo (L-04 and the document archive are other screens; vehicle/driver data stays out of this module), a correction flow, tolerance thresholds, and any link to Inventory quantity (the stock-quantity source is a P0 policy, master §28.12). No Inventory write. |
+| Screen | L-02-DETAIL shows the record to every reader (`WeighingFacts`) and offers the form on an Issued instruction without one (`WeighingForm`). Like the load form (ASSUMPTION-LOG4B-2) there is no shell control; the server measures the name and answers 403 otherwise. |
+| Evidence | Unit: `VehicleWeighingTests`, `LogisticsInstructionServiceTests.Weighing`, `LogisticsPersistenceModelTests` (snapshot = model). HTTP: `LogisticsInstructionHttpAcceptanceTests`. Real SQL: `LogisticsInstructionSqlServerRelationalAcceptanceTests.Weighing`. Browser: `l04` L04-07. |
+
 ## What this module is not
-- No physical effect: no stock exit, no allocation consumption, no label scan, no weighing ticket. Definite shipment's stock exit + allocation consumption belong to Inventory (T11/T12) and are **one transaction** with the shipped share (§7.4); `MarkShipped` is never wired on its own.
+- No physical effect: no stock exit, no allocation consumption, no label scan. The weighbridge record (AT-053) is a fact on the instruction, never a stock quantity. Definite shipment's stock exit + allocation consumption belong to Inventory (T11/T12) and are **one transaction** with the shipped share (§7.4); `MarkShipped` is never wired on its own.
 - No vehicle/driver data (authorization and audit scope), no documents/invoices; no shipment / delivery route until the Inventory seam (LOG-5).
 
 

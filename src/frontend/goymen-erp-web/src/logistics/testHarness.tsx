@@ -94,8 +94,27 @@ export function instructionDetail(
   summary: Record<string, unknown> = {},
   lines: readonly Record<string, unknown>[] = [instructionLine()],
   shares: readonly Record<string, unknown>[] = [],
+  weighing: Record<string, unknown> | null = null,
 ): Record<string, unknown> {
-  return { instruction: instructionSummary({ lineCount: lines.length, ...summary }), lines, shares }
+  return { instruction: instructionSummary({ lineCount: lines.length, ...summary }), lines, shares, weighing }
+}
+
+/** AT-053: a weighbridge record as the backend answers it (its calculation, never the client's). */
+export function weighingRecord(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    weighingId: 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee',
+    direction: 'TareFirst',
+    firstWeighingKg: '15000',
+    secondWeighingKg: '15004.3',
+    tareKg: '15000',
+    grossKg: '15004.3',
+    netKg: '4.3',
+    loadedKgAtWeighing: '4.5',
+    differenceKg: '-0.2',
+    recordedBy: 'SENTETIK-kantar',
+    recordedAtUtc: '2026-09-19T09:20:00Z',
+    ...overrides,
+  }
 }
 
 export function mutation(detail: Record<string, unknown>, isReplay = false, originalCorrelationId = 'corr-1'): Record<string, unknown> {
@@ -142,6 +161,7 @@ export interface HarnessConfig {
   readonly onLoad?: (lineId: string, call: RecordedCall) => Response | Promise<Response>
   readonly onShipment?: (lineId: string, call: RecordedCall) => Response | Promise<Response>
   readonly onDelivery?: (lineId: string, call: RecordedCall) => Response | Promise<Response>
+  readonly onWeighing?: (call: RecordedCall) => Response | Promise<Response>
   readonly onAllocations?: (call: RecordedCall) => Response | Promise<Response>
   /** The price-free approved-order-lines read the picker uses. */
   readonly onApprovedLines?: (url: string, companyId: string | null) => Response | Promise<Response>
@@ -191,6 +211,10 @@ export function installFetch(config: HarnessConfig = {}) {
         if (call.method === 'POST' && load !== undefined) {
           if (config.onLoad === undefined) throw new Error('unexpected load')
           return config.onLoad(decodeURIComponent(load), call)
+        }
+        if (call.method === 'POST' && /\/weighings$/.test(url)) {
+          if (config.onWeighing === undefined) throw new Error('unexpected weighing')
+          return config.onWeighing(call)
         }
         if (call.method === 'POST' && /\/issue$/.test(url)) {
           if (config.onIssue === undefined) throw new Error('unexpected issue')

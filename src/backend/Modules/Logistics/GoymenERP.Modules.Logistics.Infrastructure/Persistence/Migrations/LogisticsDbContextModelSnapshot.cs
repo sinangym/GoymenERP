@@ -461,6 +461,81 @@ partial class LogisticsDbContextModelSnapshot : ModelSnapshot
             });
         });
 
+        modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.VehicleWeighingRow", b =>
+        {
+            b.Property<Guid>("CompanyId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<Guid>("InstructionId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<decimal>("DifferenceKg")
+                .HasPrecision(18, 3)
+                .HasColumnType("decimal(18,3)");
+
+            b.Property<int>("Direction")
+                .HasColumnType("int");
+
+            b.Property<decimal>("FirstWeighingKg")
+                .HasPrecision(18, 3)
+                .HasColumnType("decimal(18,3)");
+
+            b.Property<decimal>("LoadedKgAtWeighing")
+                .HasPrecision(18, 3)
+                .HasColumnType("decimal(18,3)");
+
+            b.Property<decimal>("NetKg")
+                .HasPrecision(18, 3)
+                .HasColumnType("decimal(18,3)");
+
+            b.Property<DateTimeOffset>("RecordedAtUtc")
+                .HasColumnType("datetimeoffset");
+
+            b.Property<string>("RecordedBy")
+                .IsRequired()
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)");
+
+            b.Property<decimal>("SecondWeighingKg")
+                .HasPrecision(18, 3)
+                .HasColumnType("decimal(18,3)");
+
+            b.Property<int>("SharesBefore")
+                .HasColumnType("int");
+
+            b.Property<Guid>("WeighingId")
+                .HasColumnType("uniqueidentifier");
+
+            b.HasKey("CompanyId", "InstructionId");
+
+            b.HasIndex("CompanyId", "WeighingId")
+                .IsUnique()
+                .HasDatabaseName("UX_VehicleWeighings_WeighingId");
+
+            b.ToTable("VehicleWeighings", "logistics", t =>
+            {
+                t.HasCheckConstraint(
+                    "CK_VehicleWeighings_Difference",
+                    "[DifferenceKg] = [NetKg] - [LoadedKgAtWeighing]");
+
+                t.HasCheckConstraint(
+                    "CK_VehicleWeighings_Direction",
+                    "[Direction] IN (1, 2)");
+
+                t.HasCheckConstraint(
+                    "CK_VehicleWeighings_Identity",
+                    "[WeighingId] <> '00000000-0000-0000-0000-000000000000' AND LEN([RecordedBy]) > 0");
+
+                t.HasCheckConstraint(
+                    "CK_VehicleWeighings_Net",
+                    "([Direction] = 1 AND [SecondWeighingKg] > [FirstWeighingKg] AND [NetKg] = [SecondWeighingKg] - [FirstWeighingKg]) OR ([Direction] = 2 AND [FirstWeighingKg] > [SecondWeighingKg] AND [NetKg] = [FirstWeighingKg] - [SecondWeighingKg])");
+
+                t.HasCheckConstraint(
+                    "CK_VehicleWeighings_Weights",
+                    "[FirstWeighingKg] > 0 AND [SecondWeighingKg] > 0 AND [NetKg] > 0 AND [LoadedKgAtWeighing] >= 0 AND [SharesBefore] >= 0");
+            });
+        });
+
         modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.LoadingAttemptRow", b =>
         {
             b.HasOne("GoymenERP.Modules.Logistics.Infrastructure.Persistence.OrganizationCompanyReference", null)
@@ -496,6 +571,16 @@ partial class LogisticsDbContextModelSnapshot : ModelSnapshot
         });
 
         modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.LoadingShareRow", b =>
+        {
+            b.HasOne("GoymenERP.Modules.Logistics.Infrastructure.Persistence.LoadingInstructionRow", null)
+                .WithMany()
+                .HasForeignKey("CompanyId", "InstructionId")
+                .HasPrincipalKey("CompanyId", "Id")
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired();
+        });
+
+        modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.VehicleWeighingRow", b =>
         {
             b.HasOne("GoymenERP.Modules.Logistics.Infrastructure.Persistence.LoadingInstructionRow", null)
                 .WithMany()

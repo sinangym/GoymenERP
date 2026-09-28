@@ -116,7 +116,7 @@ public sealed partial class LogisticsInstructionService(
     {
         ArgumentNullException.ThrowIfNull(request);
         return MutateAsync(instructionId, request, request.ExpectedVersion, metadata, LogisticsCommands.IssueV1, bindings.CreatePermission,
-            (instruction, expected, now, _) => instruction.Issue(expected, now),
+            (instruction, expected, now, _, _) => instruction.Issue(expected, now),
             new LogisticsMutationAudit("logistics.loading-instruction.issued.v1", "Issue", "Yükleme talimatı yayımlandı"),
             prepare: null, cancellationToken);
     }
@@ -133,7 +133,7 @@ public sealed partial class LogisticsInstructionService(
         };
         return MutateAsync(instructionId, new { lineId, request }, request.ExpectedVersion, metadata, LogisticsCommands.RecordLoadV1,
             bindings.RecordPermission,
-            (instruction, expected, now, quantity) => instruction.RecordLoad(expected, request.LoadId, lineId, quantity!.Value, measurement, now),
+            (instruction, expected, now, quantity, _) => instruction.RecordLoad(expected, request.LoadId, lineId, quantity!.Value, measurement, now),
             new LogisticsMutationAudit("logistics.loading-instruction.load-recorded.v1", "RecordLoad", "Yükleme payı kaydedildi"),
             // The line's unit is re-verified against the Settings profile on the instruction's date (the
             // verifier-before-share contract): the loaded quantity's scale is the owner's, never guessed.
@@ -144,6 +144,58 @@ public sealed partial class LogisticsInstructionService(
                 return await VerifyUnitAsync(scope, bindings.RecordPermission, line.UnitId, request.Quantity, stored.EffectiveOn, "load",
                     cancellationToken);
             }, cancellationToken);
+    }
+
+    /// <summary>
+    /// AT-053: the vehicle's manual weighbridge record. The two weighings are exact kilogram text (Ö2's cap of 3 decimals,
+    /// the column's 15 integer digits, never rounded); the domain calculates net and difference (WGT-001/002) and refuses a
+    /// pair that contradicts the direction. The operator is the authenticated actor, the time the server's. No Settings
+    /// profile is read: a weighbridge weighs kilograms by definition, and the instruction's lines are compared only when
+    /// every one of them is a kilogram line. Measured under its own name, <c>logistics.weighings.record</c>.
+    /// </summary>
+    public Task<LoadingInstructionResponse> RecordWeighingAsync(Guid instructionId, RecordWeighingRequest request, LogisticsCommandMetadata metadata,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var direction = request.Direction switch
+        {
+            "TareFirst" => WeighingDirection.TareFirst,
+            "GrossFirst" => WeighingDirection.GrossFirst,
+            _ => throw new LogisticsInstructionServiceException(400, "validation_failed", [new("direction", "validation_failed")]),
+        };
+        return MutateAsync(instructionId, request, request.ExpectedVersion, metadata, LogisticsCommands.RecordWeighingV1, bindings.WeighingPermission,
+            (instruction, expected, now, _, actorId) => instruction.RecordWeighing(expected, request.WeighingId, direction,
+                Quantity.Positive(ReadWeighingKg(request.FirstWeighingKg, "firstWeighingKg"), QuantityUnit.Kilogram),
+                Quantity.Positive(ReadWeighingKg(request.SecondWeighingKg, "secondWeighingKg"), QuantityUnit.Kilogram), actorId, now),
+            // The texts are read inside the transition: after the fences and the replay, before anything is saved.
+            new LogisticsMutationAudit("logistics.loading-instruction.weighing-recorded.v1", "RecordWeighing", "Kantar tartımı kaydedildi"),
+            prepare: null, cancellationToken);
+    }
+
+    /// <summary>A weighing in kilograms as exact text: the lexical Ö2 check first (≤ 3 decimals, a non-zero digit), then the column width; never rounded.</summary>
+    private static decimal ReadWeighingKg(string text, string field)
+    {
+        try
+        {
+            ExactPositiveDecimalV1.Parse(text, Quantity.KilogramScale);
+        }
+        catch (SettingsPrerequisiteException exception) when (exception.Code == "settings_decimal_scale_exceeded")
+        {
+            throw new LogisticsInstructionServiceException(422, "validation_failed", [new(field, LoadingUnitCodes.QuantityScaleExceeded)]);
+        }
+        catch (SettingsPrerequisiteException)
+        {
+            throw new LogisticsInstructionServiceException(400, "validation_failed", [new(field, "invalid_decimal_text")]);
+        }
+
+        var point = text.IndexOf('.', StringComparison.Ordinal);
+        if ((point < 0 ? text : text[..point]).TrimStart('0').Length > MaximumIntegerDigits)
+        {
+            throw new LogisticsInstructionServiceException(422, "validation_failed", [new(field, LogisticsStoreCodes.ValueDoesNotFit)]);
+        }
+
+        // At most 18 significant digits by now: the conversion is exact.
+        return decimal.Parse(text, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture);
     }
 
     public async Task<LoadingInstructionDetailView> GetInstructionDetailAsync(Guid instructionId, CancellationToken cancellationToken = default)
@@ -304,7 +356,7 @@ public sealed partial class LogisticsInstructionService(
 
     private async Task<LoadingInstructionResponse> MutateAsync(Guid instructionId, object content, string expectedVersionText,
         LogisticsCommandMetadata metadata, string commandName, string? permission,
-        Action<LoadingInstruction, long, DateTimeOffset, Quantity?> transition, LogisticsMutationAudit audit,
+        Action<LoadingInstruction, long, DateTimeOffset, Quantity?, string> transition, LogisticsMutationAudit audit,
         Func<Scope, StoredLoadingInstruction, Task<Quantity>>? prepare, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(metadata);
@@ -354,7 +406,7 @@ public sealed partial class LogisticsInstructionService(
         try
         {
             result = await store.MutateInstructionAsync(envelope, requestHash, commandName, instructionId,
-                (instruction, now) => transition(instruction, expectedVersion, now, prepared), audit, cancellationToken);
+                (instruction, now) => transition(instruction, expectedVersion, now, prepared, scope.ActorId), audit, cancellationToken);
         }
         catch (LogisticsVersionConflictException)
         {
@@ -380,6 +432,22 @@ public sealed partial class LogisticsInstructionService(
         {
             return await TerminalAsync(envelope, requestHash, commandName,
                 new LogisticsTerminalRefusal(409, LogisticsProblemCodesV1.DuplicateShare, [new("loadId", exception.Code)]), cancellationToken);
+        }
+        catch (LogisticsRuleException exception) when (exception.Code == LogisticsRuleCodes.WeighingAlreadyRecorded)
+        {
+            // AT-053: one weighbridge record per instruction; a second one (another weighing id, another key) is a recorded
+            // terminal refusal — never a replacement, since how a wrong entry is corrected is not decided.
+            return await TerminalAsync(envelope, requestHash, commandName,
+                new LogisticsTerminalRefusal(409, LogisticsProblemCodesV1.WeighingAlreadyRecorded, [new("weighingId", exception.Code)]), cancellationToken);
+        }
+        catch (LogisticsRuleException exception) when (exception.Code == LogisticsRuleCodes.WeighingDirectionInconsistent)
+        {
+            throw new LogisticsInstructionServiceException(422, LogisticsProblemCodesV1.WeighingDirectionInconsistent,
+                [new("secondWeighingKg", exception.Code)]);
+        }
+        catch (LogisticsRuleException exception) when (exception.Code == LogisticsRuleCodes.WeighingUnitUnsupported)
+        {
+            throw new LogisticsInstructionServiceException(422, LogisticsProblemCodesV1.UnsupportedUnit, [new("instruction", exception.Code)]);
         }
         catch (LogisticsRuleException exception) when (exception.Code == LogisticsRuleCodes.LineNotFound)
         {
@@ -718,6 +786,13 @@ public sealed partial class LogisticsInstructionService(
                 Text(line.ShippedQuantity), Text(line.DeliveredQuantity), Text(line.RemainingToLoad), Text(line.LoadedNotShipped),
                 Text(line.ShippedNotDelivered), line.IsBlocked))],
             [.. instruction.Shares.Select(share => new LoadingShareView(share.ShareId, share.LineId, share.Kind.ToString(), Text(share.Quantity),
-                share.Measurement?.ToString(), share.SourceShipmentId, share.RecordedAtUtc))]);
+                share.Measurement?.ToString(), share.SourceShipmentId, share.RecordedAtUtc))],
+            instruction.Weighing is { } weighing ? WeighingView(weighing) : null);
     }
+
+    /// <summary>The weighbridge record exactly as the domain calculated it; the difference keeps its sign ("-" = lighter than loaded).</summary>
+    private static LoadingInstructionWeighingView WeighingView(VehicleWeighing weighing) =>
+        new(weighing.WeighingId, weighing.Direction.ToString(), Text(weighing.FirstWeighing), Text(weighing.SecondWeighing), Text(weighing.Tare),
+            Text(weighing.Gross), Text(weighing.Net), Text(weighing.LoadedAtWeighing), weighing.DifferenceKg.ToString(CultureInfo.InvariantCulture),
+            weighing.RecordedBy, weighing.RecordedAtUtc);
 }

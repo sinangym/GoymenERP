@@ -77,3 +77,24 @@ internal sealed class LoadingAttemptRow : ILogisticsTenantRow
     public string CorrelationId { get; set; } = string.Empty;
     public DateTimeOffset RecordedAtUtc { get; set; }
 }
+
+/// <summary>
+/// AT-053: the instruction's manual weighbridge record, one per instruction (the key), append-only. The two weighings as
+/// entered, the direction and the backend's calculation (net, the loaded kilograms when weighed, the signed difference),
+/// the share count it was recorded after (so the rebuild replays it at that point) and the operator.
+/// </summary>
+internal sealed class VehicleWeighingRow : ILogisticsTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid InstructionId { get; set; }
+    public Guid WeighingId { get; set; }
+    public int Direction { get; set; }
+    public decimal FirstWeighingKg { get; set; }
+    public decimal SecondWeighingKg { get; set; }
+    public decimal NetKg { get; set; }
+    public decimal LoadedKgAtWeighing { get; set; }
+    public decimal DifferenceKg { get; set; }
+    public int SharesBefore { get; set; }
+    public string RecordedBy { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+}

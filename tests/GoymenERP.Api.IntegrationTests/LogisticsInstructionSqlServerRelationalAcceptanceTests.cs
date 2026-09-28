@@ -44,7 +44,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// the customer and the order line are identities here — the owners' answers are the service's (unit
 /// tests) and the browser suite's (LOG-4b) evidence.
 /// </summary>
-public sealed class LogisticsInstructionSqlServerRelationalAcceptanceTests
+public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTests
 {
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;
