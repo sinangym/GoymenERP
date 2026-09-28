@@ -173,6 +173,71 @@ public sealed class InventoryPhysicalAllocationReadTests
     }
 
     [Fact]
+    public async Task Label_read_returns_the_owner_window_with_history_under_the_same_fresh_authority()
+    {
+        var world = new World();
+        var label = Guid.NewGuid();
+        var allocation = Allocation() with { LabelId = label };
+        var change = new InventoryPhysicalAllocationChangeEntryV1(Guid.NewGuid(), InventoryAllocationChangeKindsV1.Resize,
+            allocation.AllocationId, "2", label, "12", allocation.AllocationId, label, "10", "SENTETIK",
+            DateTimeOffset.Parse("2026-09-24T09:00:00Z"));
+        world.Reader.LabelAnswer = new InventoryLabelPhysicalAllocationsV1(label, "5",
+            [new InventoryLabelPhysicalAllocationV1(allocation, null, null, [change])], false);
+
+        var answer = await world.Service().ReadLabelAsync(label);
+
+        Assert.Same(world.Reader.LabelAnswer, answer);
+        Assert.Equal(
+            [ErpPermissions.InventoryPhysicalAllocationWrite, ErpPermissions.InventoryPhysicalAllocationWrite],
+            world.Authority.Requests);
+    }
+
+    [Fact]
+    public async Task Label_read_of_an_unknown_label_is_404_and_an_empty_id_is_400_before_the_read()
+    {
+        var world = new World();
+
+        await Refused(world.Service().ReadLabelAsync(Guid.NewGuid()), 404, InventoryPhysicalAllocationReadCodesV1.NotFound);
+        Assert.Equal(1, world.Reader.Reads);
+
+        await Refused(world.Service().ReadLabelAsync(Guid.Empty), 400, InventoryPhysicalAllocationReadCodesV1.InvalidQuery);
+        Assert.Equal(1, world.Reader.Reads);
+    }
+
+    [Theory]
+    [InlineData("foreign-allocation")]
+    [InlineData("other-label")]
+    [InlineData("released-without-reason")]
+    [InlineData("unrelated-change")]
+    public async Task Label_read_fails_closed_on_an_inconsistent_owner_answer(string fault)
+    {
+        var world = new World();
+        var label = Guid.NewGuid();
+        var allocation = Allocation() with { LabelId = label };
+        allocation = fault switch
+        {
+            "foreign-allocation" => allocation with { CompanyId = Guid.NewGuid() },
+            "other-label" => allocation with { LabelId = Guid.NewGuid() },
+            "released-without-reason" => allocation with { Status = "Released", RemainingKg = "0" },
+            _ => allocation,
+        };
+        IReadOnlyList<InventoryPhysicalAllocationChangeEntryV1> changes = fault == "unrelated-change"
+            ?
+            [
+                new InventoryPhysicalAllocationChangeEntryV1(Guid.NewGuid(), InventoryAllocationChangeKindsV1.Move,
+                    Guid.NewGuid(), "1", label, "5", Guid.NewGuid(), Guid.NewGuid(), "5", "SENTETIK",
+                    DateTimeOffset.Parse("2026-09-24T09:00:00Z")),
+            ]
+            : [];
+        world.Reader.LabelAnswer = new InventoryLabelPhysicalAllocationsV1(label, "5",
+            [new InventoryLabelPhysicalAllocationV1(allocation,
+                fault == "released-without-reason" ? DateTimeOffset.Parse("2026-09-24T09:00:00Z") : null, null, changes)],
+            false);
+
+        await Refused(world.Service().ReadLabelAsync(label), 503, InventoryPhysicalAllocationReadCodesV1.Unavailable);
+    }
+
+    [Fact]
     public void Registration_publishes_the_owner_contract_as_scoped()
     {
         var services = new ServiceCollection();
@@ -281,6 +346,21 @@ public sealed class InventoryPhysicalAllocationReadTests
             }
 
             return new InventoryPhysicalAllocationReadWindow([Record], HasMore);
+        }
+
+        public InventoryLabelPhysicalAllocationsV1? LabelAnswer { get; set; }
+
+        public Task<InventoryLabelPhysicalAllocationsV1?> ReadLabelAsync(
+            Guid companyId,
+            Guid labelId,
+            int limit,
+            CancellationToken cancellationToken)
+        {
+            Reads++;
+            During?.Invoke();
+            return Fail
+                ? throw new InvalidOperationException("Provider failure")
+                : Task.FromResult(LabelAnswer);
         }
     }
 }

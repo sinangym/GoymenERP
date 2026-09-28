@@ -23,6 +23,13 @@ internal interface IInventoryPhysicalAllocationReader
         Guid salesOrderLineId,
         int limit,
         CancellationToken cancellationToken);
+
+    /// <summary>Null when the label is unknown in the company.</summary>
+    Task<InventoryLabelPhysicalAllocationsV1?> ReadLabelAsync(
+        Guid companyId,
+        Guid labelId,
+        int limit,
+        CancellationToken cancellationToken);
 }
 
 internal sealed class InventoryPhysicalAllocationReadService(
@@ -56,6 +63,49 @@ internal sealed class InventoryPhysicalAllocationReadService(
         return new InventoryPhysicalAllocationReadsV1(
             [.. window.Records.Select(record => Item(record, scope.CompanyId, query))],
             window.HasMore);
+    }
+
+    /// <summary>The label's newest allocations (at most <see cref="LabelWindow"/>) with release facts and change history.</summary>
+    public const int LabelWindow = 50;
+
+    public async Task<InventoryLabelPhysicalAllocationsV1> ReadLabelAsync(
+        Guid labelId,
+        CancellationToken cancellationToken = default)
+    {
+        var scope = await RequireAsync(null, cancellationToken);
+        if (labelId == Guid.Empty)
+        {
+            throw Error(400, InventoryPhysicalAllocationReadCodesV1.InvalidQuery);
+        }
+
+        var source = reader ?? throw Error(503, InventoryPhysicalAllocationReadCodesV1.Unavailable);
+        var answer = await FencedAsync(
+            () => source.ReadLabelAsync(scope.CompanyId, labelId, LabelWindow, cancellationToken),
+            scope,
+            cancellationToken)
+            ?? throw Error(404, InventoryPhysicalAllocationReadCodesV1.NotFound);
+        if (answer.LabelId != labelId || !PositiveVersion(answer.LabelVersion) || answer.Items.Count > LabelWindow
+            || answer.Items.Select(item => item.Allocation.AllocationId).Distinct().Count() != answer.Items.Count
+            || answer.Items.Any(item => item.Allocation.CompanyId != scope.CompanyId
+                || item.Allocation.LabelId != labelId
+                || !string.Equals(item.Allocation.DemandKind, InventoryAllocationDemandKindsV1.SalesOrderLine,
+                    StringComparison.Ordinal)
+                || !Enum.TryParse<StockAllocationStatus>(item.Allocation.Status, false, out var status)
+                || !Enum.IsDefined(status)
+                || !Quantity(item.Allocation.AllocatedKg, positive: true, out var allocated)
+                || !Quantity(item.Allocation.RemainingKg, positive: false, out var remaining)
+                || remaining > allocated
+                || status == StockAllocationStatus.Active && remaining <= 0m
+                || status != StockAllocationStatus.Active && remaining != 0m
+                || (status == StockAllocationStatus.Released) != (item.ReleasedAtUtc is not null)
+                || (item.ReleasedAtUtc is null) != (item.ReleaseReason is null)
+                || item.Changes.Any(entry => entry.SourceAllocationId != item.Allocation.AllocationId
+                    && entry.TargetAllocationId != item.Allocation.AllocationId)))
+        {
+            throw Error(503, InventoryPhysicalAllocationReadCodesV1.Unavailable);
+        }
+
+        return answer;
     }
 
     private static InventoryPhysicalAllocationReadItemV1 Item(

@@ -9,10 +9,12 @@ import { StateBlock } from '../shell/StateBlock'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import {
   INVENTORY_LABEL_TRANSFORMATION_CAPABILITY,
+  INVENTORY_PHYSICAL_ALLOCATION_WRITE_CAPABILITY,
   INVENTORY_STOCK_COUNT_APPROVE_CAPABILITY,
   INVENTORY_STOCK_COUNT_RECORD_CAPABILITY,
 } from './capabilities'
 import { fetchInventoryLabelDetail } from './labelDetailApi'
+import { LabelAllocationPanel } from './LabelAllocationPanel'
 import { LabelTransformationPanel } from './LabelTransformationPanel'
 import { StockCountPanel } from './StockCountPanel'
 import type { InventoryLabelDetailWithMovementTimeline } from './labelDetailContract'
@@ -53,6 +55,7 @@ function InventoryLabelDetailView({ namespace, labelId }: {
   const canTransform = hasCapability(shell, INVENTORY_LABEL_TRANSFORMATION_CAPABILITY)
   const canRecordCount = hasCapability(shell, INVENTORY_STOCK_COUNT_RECORD_CAPABILITY)
   const canApproveCount = hasCapability(shell, INVENTORY_STOCK_COUNT_APPROVE_CAPABILITY)
+  const canChangeAllocations = hasCapability(shell, INVENTORY_PHYSICAL_ALLOCATION_WRITE_CAPABILITY)
   const companyId = shell.activeContext?.scopeMode === 'single' ? shell.activeContext.companyId : null
   const actorId = shell.activeContext?.userId ?? null
   const query = useQuery({
@@ -160,6 +163,15 @@ function InventoryLabelDetailView({ namespace, labelId }: {
         </table></div>}
       {genealogy.windowFull ? <p>Daha eski soy ağacı kayıtları bu görünümde yer almıyor.</p> : null}
     </section>
+
+    {canChangeAllocations
+      ? <LabelAllocationPanel
+        key={`${identity.labelId}:allocations`}
+        labelId={identity.labelId}
+        companyId={companyId}
+        onChanged={() => void query.refetch()}
+      />
+      : null}
 
     {canTransform && actorId !== null
       ? <LabelTransformationPanel

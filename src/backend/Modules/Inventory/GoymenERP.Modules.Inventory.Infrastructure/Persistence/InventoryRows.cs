@@ -216,6 +216,30 @@ internal sealed class AllocationRow : IInventoryTenantRow
 }
 
 /// <summary>
+/// INV-AL-1 change: one append-only history fact of an allocation change. A resize names the same allocation as
+/// source and target (its version moved from <see cref="SourceVersion"/> to <see cref="SourceVersion"/> + 1); a move
+/// names the released source and the new target allocation (version 1). Kilograms are the remaining kilograms before
+/// (source) and after (target). One change per source version: (company, source allocation, source version) is unique.
+/// </summary>
+internal sealed class AllocationChangeRow : IInventoryTenantRow
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public int Kind { get; set; }
+    public Guid SourceAllocationId { get; set; }
+    public long SourceVersion { get; set; }
+    public Guid SourceLabelId { get; set; }
+    public decimal SourceRemainingKg { get; set; }
+    public Guid TargetAllocationId { get; set; }
+    public Guid TargetLabelId { get; set; }
+    public decimal TargetRemainingKg { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public string ChangedBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+    public DateTimeOffset ChangedAtUtc { get; set; }
+}
+
+/// <summary>
 /// One unpublished Inventory-owned event stored in the producer transaction. This slice has no
 /// dispatcher and never mutates publication state; the row is append-only.
 /// </summary>

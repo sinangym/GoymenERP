@@ -49,7 +49,7 @@ public sealed class StockAllocation
 
     public StockPosition Position { get; }
 
-    public Kilograms Allocated { get; }
+    public Kilograms Allocated { get; private set; }
 
     public Kilograms Remaining { get; private set; }
 
@@ -108,6 +108,44 @@ public sealed class StockAllocation
     }
 
     /// <summary>
+    /// INV-AL-1 change: re-states the kilograms this active allocation still reserves at its own position, in
+    /// place, so its identity (and any reference bound to it) survives. The consumed part is kept exactly:
+    /// <c>Allocated − Remaining</c> before equals it after. An increase is a new reservation part, so the caller
+    /// must first prove the position's unreserved free kilograms cover it (DEC-STK-004); a decrease frees kilograms
+    /// the same way a release does. Changing to zero is a release, not a change; the same quantity is no change.
+    /// Returns the signed difference (new − old).
+    /// </summary>
+    public decimal Resize(long expectedVersion, Kilograms remaining)
+    {
+        if (expectedVersion != Version)
+        {
+            throw new StockAllocationException(StockAllocationFailure.VersionConflict);
+        }
+
+        if (Status != StockAllocationStatus.Active)
+        {
+            throw new StockAllocationException(StockAllocationFailure.StateConflict);
+        }
+
+        if (remaining.Value <= 0m)
+        {
+            throw new StockAllocationException(StockAllocationFailure.Insufficient);
+        }
+
+        if (remaining.Value == Remaining.Value)
+        {
+            throw new StockAllocationException(StockAllocationFailure.Unchanged);
+        }
+
+        var consumed = Allocated.Value - Remaining.Value;
+        var difference = remaining.Value - Remaining.Value;
+        Allocated = Kilograms.Positive(consumed + remaining.Value);
+        Remaining = remaining;
+        Version = checked(Version + 1);
+        return difference;
+    }
+
+    /// <summary>
     /// Releases every unconsumed kilogram. Releasing is not a stock movement: the physical balance stays
     /// unchanged and the released quantity becomes free again when active allocations are deducted.
     /// </summary>
@@ -137,6 +175,9 @@ public enum StockAllocationFailure
     StateConflict,
     LabelMismatch,
     Insufficient,
+
+    /// <summary>A change that would leave the allocation exactly as it is.</summary>
+    Unchanged,
 }
 
 public sealed class StockAllocationException(StockAllocationFailure failure) : Exception(failure.ToString())
