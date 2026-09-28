@@ -87,6 +87,18 @@ public sealed class LogisticsPersistenceModelTests
     }
 
     [Fact]
+    public void The_weighing_migration_down_refuses_with_51056_before_it_drops_the_table()
+    {
+        var down = new GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations.AddVehicleWeighings().DownOperations;
+        Assert.Equal(2, down.Count);
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(down[0]);
+        Assert.Contains("IF EXISTS (SELECT 1 FROM [logistics].[VehicleWeighings])", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("THROW 51056,", guard.Sql, StringComparison.Ordinal);
+        var drop = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropTableOperation>(down[1]);
+        Assert.Equal(("logistics", "VehicleWeighings"), (drop.Schema, drop.Name));
+    }
+
+    [Fact]
     public async Task A_stored_weighbridge_record_is_never_rewritten_or_deleted()
     {
         await using (var context = Context())

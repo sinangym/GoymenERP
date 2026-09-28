@@ -1,9 +1,14 @@
 using System.Net;
 using GoymenERP.Api.Endpoints;
+using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Logistics.Application.Contracts;
 using GoymenERP.Modules.Logistics.Domain;
 using GoymenERP.Modules.Logistics.Domain.Loading;
+using GoymenERP.Modules.Logistics.Infrastructure.Persistence;
 using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -134,6 +139,53 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
         Assert.Equal(0, await InsertAsync(2, 20m, 10m, 10m, 12m, -2m));
         Assert.Equal(2627, await InsertAsync(1, 10m, 20m, 10m, 10m, 0m));
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM logistics.VehicleWeighings"));
+    }
+
+    [SqlServerFact]
+    public async Task The_weighing_migration_rolls_back_an_empty_table_and_refuses_with_51056_while_any_weighing_exists()
+    {
+        await using var run = await Run.StartAsync();
+        var companyContext = new CompanyContext();
+        companyContext.Set(CompanyA);
+        var options = new DbContextOptionsBuilder<LogisticsDbContext>()
+            .UseSqlServer(run.Factory.DatabaseConnectionString, sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", LogisticsDbContext.Schema))
+            .Options;
+        const string TableExists = "SELECT COUNT(*) FROM sys.tables WHERE [name] = N'VehicleWeighings' AND SCHEMA_NAME([schema_id]) = N'logistics'";
+
+        // Empty: the rollback runs, the table is dropped, and the forward migration re-creates it.
+        await using (var context = new LogisticsDbContext(options, companyContext))
+        {
+            var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
+            Assert.EndsWith("_AddVehicleWeighings", applied[^1], StringComparison.Ordinal);
+            await context.GetService<IMigrator>().MigrateAsync(applied[^2]);
+            Assert.Equal(0, await run.ScalarAsync<int>(TableExists));
+            Assert.Equal(applied[..^1], await context.Database.GetAppliedMigrationsAsync());
+            await context.Database.MigrateAsync();
+            Assert.Equal(1, await run.ScalarAsync<int>(TableExists));
+        }
+
+        // One recorded weighing: the rollback is refused BEFORE the drop, with Logistics's module error; nothing changes.
+        var owners = Owners.For(CompanyA);
+        Guid id;
+        await using (var a = run.Store(CompanyA))
+        {
+            var stored = (await a.Store.StoreInstructionAsync(run.Envelope("k-create"), Hash("create-1"), Day, () => Instruction(owners))).Instruction.Instruction;
+            id = stored.Id;
+            await a.Store.MutateInstructionAsync(run.Envelope("k-issue"), Hash("issue-2"), LogisticsCommands.IssueV1, id, (instruction, now) => instruction.Issue(2, now), Issued);
+            await a.Store.MutateInstructionAsync(run.Envelope("k-weigh"), Hash("weigh-3"), LogisticsCommands.RecordWeighingV1, id,
+                (instruction, now) => instruction.RecordWeighing(3, Guid.NewGuid(), WeighingDirection.TareFirst, Kg(100m), Kg(106m), run.Actor, now), Weighed);
+        }
+
+        await using (var context = new LogisticsDbContext(options, companyContext))
+        {
+            var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
+            var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[^2]));
+            Assert.Equal(51056, error.Number);
+            Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>(TableExists));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM logistics.VehicleWeighings WHERE InstructionId = @id", ("@id", id)));
     }
 
     [SqlServerFact]

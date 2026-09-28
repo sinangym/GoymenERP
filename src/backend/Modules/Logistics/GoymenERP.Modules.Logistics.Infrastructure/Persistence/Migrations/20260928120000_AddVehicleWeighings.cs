@@ -10,8 +10,9 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations;
 /// key), append-only, tenant-scoped like every Logistics table and bound to its instruction by the
 /// company-leading key. SQL Server also holds the calculation's shape (WGT-001 net = gross − tare with the
 /// direction deciding which weighing is the gross, the gross strictly heavier; WGT-002 difference = net −
-/// loaded, signed). No tolerance column: OPEN-004 is not decided. Additive only: Down drops the new table
-/// and nothing that existed before is touched.
+/// loaded, signed). No tolerance column: OPEN-004 is not decided. Additive only. <c>Down</c> refuses
+/// (<c>THROW 51056</c>, Logistics's module refusal) while any weighbridge record exists — a recorded fact is
+/// never silently dropped (forward fix); an empty table is dropped and nothing that existed before is touched.
 /// </summary>
 [DbContext(typeof(LogisticsDbContext))]
 [Migration("20260928120000_AddVehicleWeighings")]
@@ -71,6 +72,15 @@ public sealed class AddVehicleWeighings : Migration
 
     protected override void Down(MigrationBuilder migrationBuilder)
     {
+        // A weighbridge record is an append-only fact of the instruction (it moved the instruction's version and is replayed
+        // by the rebuild), so dropping the table would silently erase it. While any record exists the rollback is refused,
+        // before the drop, with Logistics's own module error (51056, used by no other module on main or any branch at the
+        // time of writing); an empty database rolls back freely. Forward fix, the Finance 51051 / Sales 51054 pattern.
+        migrationBuilder.Sql("""
+            IF EXISTS (SELECT 1 FROM [logistics].[VehicleWeighings])
+                THROW 51056, 'Logistics weighbridge records exist; AddVehicleWeighings is not rolled back (forward fix).', 1;
+            """);
+
         migrationBuilder.DropTable(name: "VehicleWeighings", schema: "logistics");
     }
 }
