@@ -116,3 +116,14 @@ npx vitest run src/logistics
 
 `src/logistics/testHarness.tsx` gerçek `AppShell` + `CapabilityRoute` + `ShellProvider` etrafında `logisticsRoutes`'u
 kendi memory router'ında kurar; delta uygulanınca davranış değişmez.
+
+## AT-025 ek (2026-09-28): Operasyon işleri — iki ayrı bölüm
+
+Bu dalda shell tarafı **eklemeli** olarak yazıldı (mevcut satırlar değişmedi); koordinatör kaldırmak/yeniden yazmak isterse delta yalnız şudur:
+
+- `src/shell/capabilities.ts`: `CAPABILITY.logisticsOperationsSales = 'logistics.operations-work.sales'`, `CAPABILITY.logisticsOperationsPurchase = 'logistics.operations-work.purchase'`; rotalar `/lojistik/operasyon-isleri/satis`, `/lojistik/operasyon-isleri/satinalma`; nav etiketleri `Operasyon işleri — Satış`, `Operasyon işleri — Satın alma`.
+- `src/shell/AppShell.tsx`: `NAV_CAPABILITIES` içine `logisticsInstructionsList`'ten sonra iki giriş.
+- `src/shell/logisticsMountDrift.test.ts`: iki kimlik ve iki rota eşitliği.
+- `src/shell/router.tsx` değişmedi: `...logisticsRoutes` iki yeni rotayı kendisi taşır.
+
+Backend karşılığı: `LogisticsShellCapabilityProvider` 1.2 (L-01, L-09; her biri kendi okuma adı). Yayın hiçbir yetki vermez.

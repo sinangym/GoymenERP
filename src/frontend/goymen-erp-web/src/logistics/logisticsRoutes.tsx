@@ -15,6 +15,7 @@ import { LOGISTICS_CAPABILITY, LOGISTICS_ROUTE, type LogisticsCapabilityId } fro
 import { InstructionListPage } from './InstructionListPage'
 import { InstructionCreatePage } from './InstructionCreatePage'
 import { InstructionDetailPage } from './InstructionDetailPage'
+import { OperationsWorkPage } from './OperationsWorkPage'
 
 function gate(capability: LogisticsCapabilityId, children: ReactNode) {
   // The cast goes once the shell owner adds the three ids to `src/shell/capabilities.ts` (the mount handoff).
@@ -26,4 +27,13 @@ export const logisticsRoutes: RouteObject[] = [
   // Static `yeni` before `:instructionId`, so it is never read as a record id.
   { path: LOGISTICS_ROUTE.create.slice(1), element: gate(LOGISTICS_CAPABILITY.instructionsCreate, <InstructionCreatePage />) },
   { path: LOGISTICS_ROUTE.detail.slice(1), element: gate(LOGISTICS_CAPABILITY.instructionsDetail, <InstructionDetailPage />) },
+  // AT-025: the operations work list's two separate sections, each behind its own capability (L-01 sales, L-09 purchase).
+  {
+    path: LOGISTICS_ROUTE.operationsSales.slice(1),
+    element: gate(LOGISTICS_CAPABILITY.operationsSales, <OperationsWorkPage section="sales" />),
+  },
+  {
+    path: LOGISTICS_ROUTE.operationsPurchase.slice(1),
+    element: gate(LOGISTICS_CAPABILITY.operationsPurchase, <OperationsWorkPage section="purchase" />),
+  },
 ]

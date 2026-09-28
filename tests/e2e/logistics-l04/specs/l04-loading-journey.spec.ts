@@ -40,6 +40,11 @@
  *          the server's net and the signed loaded-vs-weighed difference as facts (no tolerance verdict, OPEN-004) on
  *          the instruction whose delivery continues below; the same key replays with one row; a second record is 409;
  *          the reader is 403; one audit on the Web channel; no Inventory movement
+ *   L04-08 AT-025 operations actor: "Operasyon işleri" — the sales section shows the seeded approved sales line and never the
+ *          seeded purchase order, the purchase section the purchase line (by the supplier's Cari name) and never the sales
+ *          order; each row opens its OWNER screen (P-03-DETAIL, S-04); back keeps the section and the search; reopen shows
+ *          the same row; no price text or key; the reader holds neither section (routes closed, reads 403); nothing under
+ *          the other company
  */
 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
@@ -758,5 +763,103 @@ test('L04-07 AT-053: the loader records the manual weighbridge record once; reop
     expect(after.instruction.version).toBe(reading.instruction.version)
   } finally {
     await pool.close()
+  }
+})
+
+// AT-025: the operations work list. The actor and the purchase order are the seed's deterministic values
+// (L04BrowserSeed.OperationsActor / PurchaseOrderId / PurchaseLineId / SupplierName; seed_export carries only the three
+// Logistics actors, the SALES_READER_ACTOR way). The operations actor holds the two section names, the Cari party read
+// (names) and the two owner screens' reads (sales.drafts.read, purchasing.orders.read) — no price name.
+const OPERATIONS_ACTOR = 'l04-operations'
+const PURCHASE_ORDER_ID = 'e7000000-0000-4000-8000-000000000401'
+const PURCHASE_LINE_ID = 'e7100000-0000-4000-8000-000000000401'
+const SUPPLIER_NAME = 'SENTETIK browser-suite:l04 Operasyon tedarikçisi'
+const SALES_WORK_ROUTE = '/lojistik/operasyon-isleri/satis'
+const PURCHASE_WORK_ROUTE = '/lojistik/operasyon-isleri/satinalma'
+const SALES_WORK_PATH = '/api/v1/logistics/operations-work/sales'
+const PURCHASE_WORK_PATH = '/api/v1/logistics/operations-work/purchase'
+
+test('L04-08 AT-025: the operations work list keeps sales and purchase work in separate sections; a row opens its owner screen; back keeps the section and the search; reopen shows the same; no price; the reader sees neither section', async ({ page }) => {
+  await signInAs(page, OPERATIONS_ACTOR)
+
+  // The sales section: the seeded approved sales line (by its document number), never the purchase order.
+  const salesRead = page.waitForResponse((response) => response.request().method() === 'GET'
+    && new URL(response.url()).pathname === SALES_WORK_PATH, { timeout: 30_000 })
+  await page.goto(SALES_WORK_ROUTE)
+  await expect(page.getByRole('heading', { level: 1, name: 'Operasyon işleri' })).toBeVisible({ timeout: 30_000 })
+  const salesAnswer = await salesRead
+  expect(salesAnswer.status()).toBe(200)
+  const salesBody = (await salesAnswer.json()) as { section: string }
+  expect(salesBody.section).toBe('Sales')
+  expect(JSON.stringify(salesBody).toLowerCase()).not.toContain(PURCHASE_ORDER_ID)
+  const salesRow = page.getByTestId(`operations-sales-row-${approvedLineId}`)
+  await expect(salesRow).toBeVisible({ timeout: 30_000 })
+  await expect(salesRow).toContainText(DOCUMENT_NO)
+  await expect(salesRow).toContainText(customerName)
+  await expect(page.getByTestId('operations-sales-table')).not.toContainText(SUPPLIER_NAME)
+  await expect(page.getByTestId(`operations-purchase-row-${PURCHASE_LINE_ID}`)).toHaveCount(0)
+  await expectNoPriceText(page)
+  for (const key of PRICE_KEYS) expect([...keysOf(salesBody)], `no price key in the sales section: ${key}`).not.toContain(key)
+
+  // The purchase section through the section switcher: the seeded purchase line (by the supplier's Cari name), never the sales order.
+  const purchaseRead = page.waitForResponse((response) => response.request().method() === 'GET'
+    && new URL(response.url()).pathname === PURCHASE_WORK_PATH, { timeout: 30_000 })
+  await page.getByTestId('operations-tab-purchase').click()
+  await expect(page).toHaveURL(new RegExp(`${PURCHASE_WORK_ROUTE}$`))
+  const purchaseAnswer = await purchaseRead
+  expect(purchaseAnswer.status()).toBe(200)
+  const purchaseBody = (await purchaseAnswer.json()) as { section: string }
+  expect(purchaseBody.section).toBe('Purchase')
+  expect(JSON.stringify(purchaseBody).toLowerCase()).not.toContain(draftId.toLowerCase())
+  const purchaseRow = page.getByTestId(`operations-purchase-row-${PURCHASE_LINE_ID}`)
+  await expect(purchaseRow).toBeVisible({ timeout: 30_000 })
+  await expect(purchaseRow).toContainText(SUPPLIER_NAME)
+  await expect(purchaseRow.locator('td').last()).toHaveText('7')
+  await expect(page.getByTestId('operations-purchase-table')).not.toContainText(DOCUMENT_NO)
+  await expect(page.getByTestId(`operations-sales-row-${approvedLineId}`)).toHaveCount(0)
+  await expectNoPriceText(page)
+  for (const key of PRICE_KEYS) expect([...keysOf(purchaseBody)], `no price key in the purchase section: ${key}`).not.toContain(key)
+
+  // Search, then open the row's OWNER screen (P-03-DETAIL), then back: the same section and search, and the same row.
+  await page.getByLabel('Gösterilen satırlarda ara').fill('Operasyon tedarik')
+  await expect(page).toHaveURL(/\?ara=Operasyon/)
+  await purchaseRow.getByRole('link').click()
+  await expect(page).toHaveURL(new RegExp(`/satinalma/siparisler/${PURCHASE_ORDER_ID}$`))
+  await expect(page.getByRole('heading', { level: 1, name: 'Satın alma siparişi' })).toBeVisible({ timeout: 30_000 })
+  await page.goBack()
+  await expect(page).toHaveURL(new RegExp(`${PURCHASE_WORK_ROUTE}\\?ara=Operasyon`))
+  await expect(page.getByLabel('Gösterilen satırlarda ara')).toHaveValue('Operasyon tedarik')
+  await expect(page.getByTestId('operations-tab-purchase')).toHaveAttribute('aria-current', 'page')
+  await expect(page.getByTestId(`operations-purchase-row-${PURCHASE_LINE_ID}`)).toContainText(SUPPLIER_NAME, { timeout: 30_000 })
+
+  // The sales row opens the Sales order's S-04; back returns to the sales section; a fresh open shows the same row.
+  await page.getByTestId('operations-tab-sales').click()
+  await expect(page).toHaveURL(new RegExp(`${SALES_WORK_ROUTE}$`))
+  await page.getByTestId(`operations-sales-row-${approvedLineId}`).getByRole('link', { name: DOCUMENT_NO }).click()
+  await expect(page).toHaveURL(new RegExp(`/satis/siparisler/${draftId}$`))
+  await expect(page.getByRole('heading', { level: 1, name: DOCUMENT_NO })).toBeVisible({ timeout: 30_000 })
+  await page.goBack()
+  await expect(page).toHaveURL(new RegExp(`${SALES_WORK_ROUTE}$`))
+  await expect(page.getByTestId(`operations-sales-row-${approvedLineId}`)).toBeVisible({ timeout: 30_000 })
+  await page.reload()
+  await expect(page.getByTestId(`operations-sales-row-${approvedLineId}`)).toContainText(DOCUMENT_NO, { timeout: 30_000 })
+
+  // The reader holds neither section name: both routes close onto the neutral not-found block and both reads answer 403.
+  await signInAs(page, readerActor)
+  for (const route of [SALES_WORK_ROUTE, PURCHASE_WORK_ROUTE]) {
+    await page.goto(route)
+    await expect(page.locator('[data-state="not-found"]')).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByRole('heading', { level: 1, name: 'Operasyon işleri' })).toHaveCount(0)
+  }
+
+  const readerHeaders = { [DEVELOPMENT_USER_HEADER]: readerActor, 'X-Company-Id': companyId }
+  expect((await page.request.get(`${env.apiBaseUrl}${SALES_WORK_PATH}`, { headers: readerHeaders })).status()).toBe(403)
+  expect((await page.request.get(`${env.apiBaseUrl}${PURCHASE_WORK_PATH}`, { headers: readerHeaders })).status()).toBe(403)
+
+  // Under the other company the operations actor holds nothing: the reads answer nothing of GDC's work.
+  const elsewhere = { [DEVELOPMENT_USER_HEADER]: OPERATIONS_ACTOR, 'X-Company-Id': otherCompanyId }
+  for (const path of [SALES_WORK_PATH, PURCHASE_WORK_PATH]) {
+    const answer = await page.request.get(`${env.apiBaseUrl}${path}`, { headers: elsewhere })
+    expect([403, 404]).toContain(answer.status())
   }
 })

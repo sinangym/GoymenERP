@@ -226,6 +226,10 @@ export const CAPABILITY = {
   logisticsInstructionsCreate: 'logistics.instructions.create',
   /** L-02-DETAIL one instruction. Route `/lojistik/yukleme-talimatlari/:instructionId`. A SEPARATE grant from the list. */
   logisticsInstructionsDetail: 'logistics.instructions.detail',
+  /** AT-025 L-01 operations work — the SALES section. Route `/lojistik/operasyon-isleri/satis`. Its own grant. */
+  logisticsOperationsSales: 'logistics.operations-work.sales',
+  /** AT-025 L-09 operations work — the PURCHASE section. Route `/lojistik/operasyon-isleri/satinalma`. Its own grant. */
+  logisticsOperationsPurchase: 'logistics.operations-work.purchase',
   /** P-01 purchase-request list. Route `/satinalma/talepler`, owner the Purchasing lane. */
   purchasingRequestsList: 'purchasing.requests.list',
   /** P-01 new request. Route `/satinalma/talepler/yeni`; reached from the list under K5. */
@@ -316,6 +320,8 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as an instruction id.
   [CAPABILITY.logisticsInstructionsCreate]: '/lojistik/yukleme-talimatlari/yeni',
   [CAPABILITY.logisticsInstructionsDetail]: '/lojistik/yukleme-talimatlari/:instructionId',
+  [CAPABILITY.logisticsOperationsSales]: '/lojistik/operasyon-isleri/satis',
+  [CAPABILITY.logisticsOperationsPurchase]: '/lojistik/operasyon-isleri/satinalma',
   [CAPABILITY.purchasingRequestsList]: '/satinalma/talepler',
   // K5 keeps creation inside the P-01 list. Static `yeni` must never be read as a request id.
   [CAPABILITY.purchasingRequestsCreate]: '/satinalma/talepler/yeni',
@@ -405,6 +411,9 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   // instruction is opened from a list row — never from the sidebar.
   [CAPABILITY.logisticsInstructionsCreate]: '',
   [CAPABILITY.logisticsInstructionsDetail]: '',
+  // AT-025: one sidebar entry per section, because each section is its own grant.
+  [CAPABILITY.logisticsOperationsSales]: 'Operasyon işleri — Satış',
+  [CAPABILITY.logisticsOperationsPurchase]: 'Operasyon işleri — Satın alma',
   [CAPABILITY.purchasingRequestsList]: 'Satın alma talepleri',
   // K5: create is reached through the list's single action; detail is reached from a row.
   [CAPABILITY.purchasingRequestsCreate]: '',

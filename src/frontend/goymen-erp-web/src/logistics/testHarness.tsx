@@ -165,6 +165,10 @@ export interface HarnessConfig {
   readonly onAllocations?: (call: RecordedCall) => Response | Promise<Response>
   /** The price-free approved-order-lines read the picker uses. */
   readonly onApprovedLines?: (url: string, companyId: string | null) => Response | Promise<Response>
+  /** AT-025: the operations work list's sales section read. */
+  readonly onSalesWork?: (url: string, companyId: string | null) => Response | Promise<Response>
+  /** AT-025: the operations work list's purchase section read. */
+  readonly onPurchaseWork?: (url: string, companyId: string | null) => Response | Promise<Response>
 }
 
 export function installFetch(config: HarnessConfig = {}) {
@@ -191,6 +195,14 @@ export function installFetch(config: HarnessConfig = {}) {
           generation: 'gen-1',
           capabilities: config.capabilities ?? ALL_LOGISTICS,
         })
+      }
+      if (url.includes('/logistics/operations-work/sales')) {
+        if (config.onSalesWork === undefined) throw new Error('unexpected sales work read')
+        return config.onSalesWork(url, call.companyId)
+      }
+      if (url.includes('/logistics/operations-work/purchase')) {
+        if (config.onPurchaseWork === undefined) throw new Error('unexpected purchase work read')
+        return config.onPurchaseWork(url, call.companyId)
       }
       if (url.includes('/logistics/loading-instructions/approved-order-lines')) {
         if (config.onApprovedLines === undefined) throw new Error('unexpected approved-order-lines read')
@@ -268,3 +280,42 @@ export function deferred<T>() {
 
 /** Every word that must never appear on a Logistics screen (Business 5743412166). */
 export const FORBIDDEN_MONEY_WORDS = ['₺', 'fiyat', 'Fiyat', 'price', 'unitPrice', 'iskonto', 'İskonto', 'discount', 'para birimi'] as const
+
+/* ── AT-025: synthetic operations work rows (the LogisticsSalesWorkItemView / LogisticsPurchaseWorkItemView shapes) ── */
+
+export const salesRow = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+  orderId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+  documentNo: 'SENTETIK SO-0001',
+  lineId: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+  lineNo: 1,
+  customerPartyId: '11111111-1111-1111-1111-111111111111',
+  customerName: 'Sentetik Müşteri',
+  productId: '22222222-2222-2222-2222-222222222222',
+  productCode: 'GDC-001',
+  productName: 'Sentetik rulo',
+  unitId: '44444444-4444-4444-4444-444444444444',
+  unitCode: 'kg',
+  ordered: '12.5',
+  instructed: '10',
+  loaded: '8.5',
+  shipped: '4',
+  delivered: '2.25',
+  requestedDeliveryDate: '2026-09-25',
+  ...overrides,
+})
+
+export const purchaseRow = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+  orderId: 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee',
+  orderEffectiveOn: '2026-09-19',
+  lineId: 'ffffffff-ffff-ffff-ffff-ffffffffffff',
+  lineNo: 1,
+  kind: 'General',
+  supplierPartyId: '33333333-3333-3333-3333-333333333333',
+  supplierName: 'Sentetik Tedarikçi',
+  productId: '22222222-2222-2222-2222-222222222222',
+  unitId: '44444444-4444-4444-4444-444444444444',
+  committed: '100',
+  accepted: '40',
+  remaining: '60',
+  ...overrides,
+})

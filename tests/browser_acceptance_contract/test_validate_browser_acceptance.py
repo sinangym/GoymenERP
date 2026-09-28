@@ -301,6 +301,10 @@ class WorkflowTests(unittest.TestCase):
                 "inventory.balances.read",
                 "inventory.physical-allocation.write",
                 "product.operational-selection.read",
+                "logistics.operations-work.sales.read",
+                "logistics.operations-work.purchase.read",
+                "purchasing.orders.read",
+                "purchasing.orders.approve",
             ),
             validator.SUITE_IDENTITY_PERMISSIONS["l04"],
         )

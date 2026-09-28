@@ -381,6 +381,16 @@ public static class ErpPermissions
     public const string LogisticsWeighingsRecord = "logistics.weighings.record";
 
     /// <summary>
+    /// AT-025: the operations work list's two SEPARATE section reads (LogisticsPermissionManifestV1) — the sales section (L-01) and
+    /// the purchase section (L-09), each its own name so that neither implies the other (Sinan #66 5738113623 §4: each read its own
+    /// name, deny-first). Registered, not granted: no role, seed or user receives them here. Company-wide only. Not Critical.
+    /// </summary>
+    public const string LogisticsOperationsSalesWorkRead = "logistics.operations-work.sales.read";
+
+    /// <inheritdoc cref="LogisticsOperationsSalesWorkRead"/>
+    public const string LogisticsOperationsPurchaseWorkRead = "logistics.operations-work.purchase.read";
+
+    /// <summary>
     /// PUR-4a (Business #66 5737790175: the purchase supply link of the core chain): the Purchasing owner's names
     /// (PurchasingPermissionManifestV1), the backend owners' technical mapping (Business #254 5654539215) recorded
     /// and confirmed by the coordinator (#66 5743488059). Read, create and approve are separate names so that
@@ -504,6 +514,8 @@ public static class ErpPermissions
             LogisticsShipmentsRecord,
             LogisticsDeliveriesRecord,
             LogisticsWeighingsRecord,
+            LogisticsOperationsSalesWorkRead,
+            LogisticsOperationsPurchaseWorkRead,
             PurchasingOrdersCreate,
             PurchasingOrdersRead,
             PurchasingOrdersApprove,
@@ -595,6 +607,8 @@ public static class ErpPermissions
             LogisticsShipmentsRecord,
             LogisticsDeliveriesRecord,
             LogisticsWeighingsRecord,
+            LogisticsOperationsSalesWorkRead,
+            LogisticsOperationsPurchaseWorkRead,
             PurchasingOrdersCreate,
             PurchasingOrdersRead,
             PurchasingOrdersApprove,

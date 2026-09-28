@@ -277,7 +277,65 @@ public static class LogisticsEndpoints
             .ProducesErpUnprocessableEntity("validation_failed", LogisticsProblemCodesV1.UnsupportedUnit)
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
+
+        MapOperationsWork(endpoints);
         return endpoints;
+    }
+
+    /// <summary>
+    /// AT-025: the operations work list's two SEPARATE sections — two routes, two names, two wire types (never one mixed list
+    /// with a filter). GET only, price-free, company-bound (the committed company context; another company's rows are never
+    /// read), creating nothing. <c>pageSize</c> 1–100 and the owner's opaque, company-bound <c>cursor</c>; any other query
+    /// member is 400. The service measures each section's own name afresh (#276); platform 401/403 and every 503 are code-less.
+    /// </summary>
+    private static void MapOperationsWork(IEndpointRouteBuilder endpoints)
+    {
+        var work = endpoints.MapGroup(LogisticsOperationsWorkApiV1.BasePath)
+            .WithTags("Logistics")
+            .RequireAuthorization()
+            .RequireCompanyContext();
+
+        work.MapGet("/sales", ([FromQuery] int? pageSize, [FromQuery] string? cursor, HttpContext httpContext,
+                [FromServices] ILogisticsOperationsWorkService service, ICorrelationContext correlation, CancellationToken cancellationToken) =>
+            ReadWorkAsync(httpContext, correlation, pageSize, cursor,
+                query => service.GetSalesWorkAsync(query, cancellationToken)))
+            .WithName("GetLogisticsSalesWorkV1")
+            .Produces<LogisticsSalesWorkPage>()
+            .ProducesErpBadRequest("validation_failed", LogisticsProblemCodesV1.InvalidCursor)
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
+        work.MapGet("/purchase", ([FromQuery] int? pageSize, [FromQuery] string? cursor, HttpContext httpContext,
+                [FromServices] ILogisticsOperationsWorkService service, ICorrelationContext correlation, CancellationToken cancellationToken) =>
+            ReadWorkAsync(httpContext, correlation, pageSize, cursor,
+                query => service.GetPurchaseWorkAsync(query, cancellationToken)))
+            .WithName("GetLogisticsPurchaseWorkV1")
+            .Produces<LogisticsPurchaseWorkPage>()
+            .ProducesErpBadRequest("validation_failed", LogisticsProblemCodesV1.InvalidCursor)
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+    }
+
+    private static async Task<IResult> ReadWorkAsync<TPage>(HttpContext httpContext, ICorrelationContext correlation, int? pageSize, string? cursor,
+        Func<LogisticsOperationsWorkQuery, Task<TPage>> read)
+    {
+        SetPrivateNoStore(httpContext.Response);
+        if (!httpContext.Request.Query.All(pair => ApprovedLinesQueryNames.Contains(pair.Key) && pair.Value.Count == 1)
+            || pageSize is < 1 or > 100 || cursor?.Length > MaximumCursorLength)
+        {
+            return Problem(StatusCodes.Status400BadRequest, "validation_failed", correlation);
+        }
+
+        try
+        {
+            return Results.Json(await read(new LogisticsOperationsWorkQuery(pageSize ?? 50, cursor)), LogisticsJson.Options);
+        }
+        catch (LogisticsInstructionServiceException exception)
+        {
+            return Problem(httpContext, exception, correlation);
+        }
     }
 
     private static async Task<IResult> MutateAsync<TBody>(HttpContext httpContext, ICorrelationContext correlation,
