@@ -377,6 +377,8 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                 + "AND [Revision] >= 0 AND LEN([SubmittedBy]) > 0 AND LEN([ApprovedBy]) > 0 AND LEN([ArchivedBy]) > 0 AND LEN([CorrelationId]) > 0");
             table.HasCheckConstraint("CK_DraftRevisions_Money",
                 "[MoneyProfileId] <> '00000000-0000-0000-0000-000000000000' AND LEN([MoneyProfileVersion]) > 0 AND [MoneyScale] >= 0");
+            // DEC-SAL-002: a quantity revision's reason is non-blank; a price revision archives with none (AddRevisionReasons).
+            table.HasCheckConstraint("CK_DraftRevisions_Reason", "[Reason] IS NULL OR LEN([Reason]) > 0");
         });
         revision.HasKey(x => new { x.CompanyId, x.DraftId, x.Revision });
         revision.Property(x => x.SubmittedBy).HasMaxLength(128).IsRequired();
@@ -384,6 +386,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         revision.Property(x => x.ArchivedBy).HasMaxLength(128).IsRequired();
         revision.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
         revision.Property(x => x.MoneyProfileVersion).HasMaxLength(128).IsRequired();
+        revision.Property(x => x.Reason).HasMaxLength(SalesOrderDraft.MaximumRevisionReasonLength);
         revision.HasOne<DraftRow>().WithMany()
             .HasForeignKey(x => new { x.CompanyId, x.DraftId })
             .HasPrincipalKey(x => new { x.CompanyId, x.Id })
@@ -453,9 +456,14 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                         nameof(DraftRow.State),
                     ],
                     // K3 Head B — a DELIBERATE narrowing of "lines never change", declared here and in the PR: ONLY the three
-                    // commercial columns may change, under a commercial revision; identity, product, unit and quantity
-                    // columns stay immutable (the persistence test pins both halves).
-                    DraftLineRow => [nameof(DraftLineRow.UnitPrice), nameof(DraftLineRow.PriceUnitId), nameof(DraftLineRow.DiscountPercent)],
+                    // commercial columns may change, under a commercial revision; DEC-SAL-002 widens it by exactly the ordered
+                    // quantity and its verbatim text, under a quantity revision (the approved values stay in the archived
+                    // revision's lines). Identity, product, unit and slice columns stay immutable (the persistence test pins both halves).
+                    DraftLineRow =>
+                    [
+                        nameof(DraftLineRow.UnitPrice), nameof(DraftLineRow.PriceUnitId), nameof(DraftLineRow.DiscountPercent),
+                        nameof(DraftLineRow.Quantity), nameof(DraftLineRow.QuantityText),
+                    ],
                     // DEC-SAL-003: the delivery schedule is APPEND-ONLY — a change adds a schedule and its dates and moves
                     // only the header's version (the token) and UpdatedAtUtc, both already admitted above. Nothing of an
                     // added schedule may change afterwards: no column is admitted.

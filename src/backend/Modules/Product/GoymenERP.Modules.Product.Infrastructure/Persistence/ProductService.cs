@@ -25,6 +25,9 @@ public sealed class ProductService(ProductReader reader, ProductCommandGateway g
     public Task<IReadOnlyList<ProductCodeGroup>> GetCodeGroupsAsync(CancellationToken cancellationToken) =>
         reader.GetCodeGroupsAsync(cancellationToken);
 
+    public Task<ProductDuplicateCandidates> GetDuplicateCandidatesAsync(ProductDuplicateQuery query,
+        CancellationToken cancellationToken) => reader.GetDuplicateCandidatesAsync(query, cancellationToken);
+
     public Task<ProductReferenceOptions> GetReferenceOptionsAsync(ProductReferenceQuery query, CancellationToken cancellationToken) =>
         reader.GetReferenceOptionsAsync(query, cancellationToken);
 

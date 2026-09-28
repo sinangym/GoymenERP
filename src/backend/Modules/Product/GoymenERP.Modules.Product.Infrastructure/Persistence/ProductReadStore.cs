@@ -63,6 +63,31 @@ public sealed class ProductReadStore(ProductDbContext context, ILogger<ProductRe
         return groups.Select(group => group.ToContract()).ToArray();
     }
 
+    /// <summary>
+    /// The exact-name duplicate candidates (<see cref="ProductDuplicateRules.ExactName"/>): <c>Name = @name</c> under the
+    /// column's own <c>Turkish_100_CI_AS</c> collation, every lifecycle, the excluded card left out, code order
+    /// (binary collation) then UUID, at most <paramref name="take"/> + 1 rows so the caller knows there are more.
+    /// </summary>
+    public async Task<IReadOnlyList<ProductStoredRecord>> ReadExactNameAsync(GroupSharedMasterReadContext authority,
+        string name, Guid? excludeProductId, int take, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(authority);
+        var rows = await BuildExactNameQuery(name, excludeProductId).Take(take + 1).ToListAsync(cancellationToken);
+        return rows.Select(row => row.ToRecord()).ToArray();
+    }
+
+    public IQueryable<ProductRow> BuildExactNameQuery(string name, Guid? excludeProductId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        var rows = context.Products.AsNoTracking().Where(row => row.Name == name);
+        if (excludeProductId.HasValue)
+        {
+            var excluded = excludeProductId.Value;
+            rows = rows.Where(row => row.Id != excluded);
+        }
+        return rows.OrderBy(row => row.Code).ThenBy(row => row.Id);
+    }
+
     public async Task<ProductStoredPage> ReadPageAsync(GroupSharedMasterReadContext authority,
         ProductListQuery query, ProductListPosition? after, CancellationToken cancellationToken)
     {

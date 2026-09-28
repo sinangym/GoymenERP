@@ -13,6 +13,7 @@
  *   POST  /api/v1/products/{id}/deactivation → 200 ProductMutationResponse (Active → Inactive)
  *   POST  /api/v1/products/{id}/reactivation → 200 ProductMutationResponse (Inactive → Active)
  *   GET   /api/v1/products/{id}/history → ProductHistoryView (module contract; host endpoint requested)
+ *   GET   /api/v1/products/duplicate-candidates?name&excludeProductId → ProductDuplicateCandidates
  *
  * The transport carries no business logic and invents no field:
  *  - `X-Company-Id` on EVERY Product request, from the shell's committed context.
@@ -37,6 +38,7 @@
 
 import {
   decodeCodeGroupList,
+  decodeDuplicateCandidates,
   decodeProductCard,
   decodeProductHistory,
   decodeProductMutation,
@@ -46,6 +48,7 @@ import {
   type CompletenessEvaluation,
   type ProductCard,
   type ProductCodeGroup,
+  type ProductDuplicateCandidates,
   type ProductHistory,
   type ProductLifecycle,
   type ProductMutationResult,
@@ -249,6 +252,26 @@ export async function fetchProductHistory(
  * grup/UUID/default şirket yok". The create form offers a choice from this read and
  * nothing else; when it fails or returns nothing, creation waits.
  */
+/**
+ * §10.2/§15: the server's exact-name duplicate candidates for `name` (the card being edited or approved is
+ * `excludeProductId`, so it never lists itself). A warning read: a failure here never blocks a save.
+ */
+export async function fetchDuplicateCandidates(
+  name: string,
+  excludeProductId: string | null,
+  origin: ProductOrigin,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<ProductDuplicateCandidates>> {
+  const params = new URLSearchParams({ name })
+  if (excludeProductId !== null) params.set('excludeProductId', excludeProductId)
+  const result = await rawRead(`/products/duplicate-candidates?${params.toString()}`, origin, signal)
+  if ('failure' in result) return failureOutcome(result.failure)
+  if (result.status !== 200) return { type: 'http', status: result.status, body: result.body }
+  const candidates = decodeDuplicateCandidates(result.body)
+  if (candidates === null) return { type: 'malformed' }
+  return { type: 'ok-single', data: candidates }
+}
+
 export async function fetchCodeGroups(
   origin: ProductOrigin,
   signal?: AbortSignal,

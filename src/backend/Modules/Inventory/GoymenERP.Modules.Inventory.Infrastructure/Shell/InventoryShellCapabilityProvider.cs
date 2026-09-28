@@ -40,8 +40,8 @@ public sealed class InventoryShellCapabilityProvider : IShellCapabilityProvider
     /// re-measures each on every command. Publishing grants nothing. The names are the owner's manifest literals until
     /// the central catalogue registers them.
     /// </summary>
-    public const string StockScrapRecordCapabilityId = InventoryPermissionManifestV1.StockScrapRecord;
-    public const string StockScrapApproveCapabilityId = InventoryPermissionManifestV1.StockScrapApprove;
+    public const string StockScrapRecordCapabilityId = ErpPermissions.InventoryStockScrapRecord;
+    public const string StockScrapApproveCapabilityId = ErpPermissions.InventoryStockScrapApprove;
     public const string OpeningStockCapabilityId = ErpPermissions.InventoryOpeningStockRecord;
     public const string OpeningStockRouteId = "inventory.opening-stock";
     public const string OpeningStockRoutePath = "/stok/acilis";
@@ -118,7 +118,7 @@ public sealed class InventoryShellCapabilityProvider : IShellCapabilityProvider
             [
                 ErpPermissions.InventoryLabelsRead,
                 ErpPermissions.InventoryBalancesRead,
-                InventoryPermissionManifestV1.StockScrapRecord,
+                ErpPermissions.InventoryStockScrapRecord,
             ],
         },
         stockPositions with
@@ -129,7 +129,7 @@ public sealed class InventoryShellCapabilityProvider : IShellCapabilityProvider
             [
                 ErpPermissions.InventoryLabelsRead,
                 ErpPermissions.InventoryBalancesRead,
-                InventoryPermissionManifestV1.StockScrapApprove,
+                ErpPermissions.InventoryStockScrapApprove,
             ],
         },
         new(

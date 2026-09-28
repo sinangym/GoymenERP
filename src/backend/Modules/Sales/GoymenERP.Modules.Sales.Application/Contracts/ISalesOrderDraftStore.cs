@@ -55,6 +55,9 @@ public static class SalesDraftCommands
     /// <summary>DEC-SAL-003: the delivery-schedule update (dates only, no re-approval, audited).</summary>
     public const string RescheduleDeliveryV1 = "sales.order-draft.reschedule-delivery.v1";
 
+    /// <summary>DEC-SAL-002: POST /api/v1/sales/drafts/{id}/quantity-revision — the ordered quantity of every line replaced with a reason; an approved draft is archived and advances a revision.</summary>
+    public const string ReviseQuantityV1 = "sales.order-draft.revise-quantity.v1";
+
     /// <summary>DEC-SAL-005: POST /api/v1/sales/drafts/{id}/cancellation — an approved order's lifecycle Draft → Cancelled after its impact preview.</summary>
     public const string CancelV1 = "sales.order-draft.cancel.v1";
 
@@ -232,6 +235,20 @@ public interface ISalesOrderDraftStore
         Guid draftId, Func<SalesOrderDraft, CancellationImpactSnapshot, DateTimeOffset, CancellationFacts> mutate, SalesDraftStateAudit audit,
         Func<SalesOrderDraft, CancellationToken, Task<CancellationImpactSnapshot>> beforeWrite, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// DEC-SAL-002: the quantity revision, one save — the commercial revision's key rules and shape (§3/§4/§7/§8).
+    /// <paramref name="beforeWrite"/> receives the draft as read (tracked header and lines) and is the caller's last word before
+    /// the mutation — its fences, the domain's own preconditions and the owners' links read afresh; any refusal it throws
+    /// leaves nothing written. <paramref name="mutate"/> is the domain's <c>ReviseQuantities</c> and returns the archived
+    /// approved snapshot (with its reason) when one was made. The store writes that snapshot's rows, the header (revision,
+    /// approval axis, version) and every line's quantity columns together with the attempt record and the audit event, or
+    /// nothing at all. No slice, schedule or commercial column changes. The command name must be
+    /// <see cref="SalesDraftCommands.ReviseQuantityV1"/>.
+    /// </summary>
+    Task<SalesDraftStateResult?> ReviseDraftQuantityAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+        Guid draftId, Func<SalesOrderDraft, DateTimeOffset, ApprovedRevisionSnapshot?> mutate, SalesDraftStateAudit audit,
+        Func<SalesOrderDraft, CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default);
+
     Task<SalesOrderDraft?> FindDraftAsync(Guid draftId, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -274,6 +291,15 @@ public static class SalesDraftRequestHash
         ArgumentNullException.ThrowIfNull(request);
         ArgumentException.ThrowIfNullOrWhiteSpace(commandName);
         return Hash(JsonSerializer.Serialize(new { command = commandName, draftId, request.ExpectedVersion, request.Lines }, SalesDraftJson.Options));
+    }
+
+    /// <summary>DEC-SAL-002: the canonical content of a quantity revision — the command, the draft, the expected version, the reason as sent and every line's quantity text in the order given.</summary>
+    public static string Compute(string commandName, Guid draftId, SalesDraftQuantityRevisionRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(commandName);
+        return Hash(JsonSerializer.Serialize(
+            new { command = commandName, draftId, request.ExpectedVersion, request.Reason, request.Lines }, SalesDraftJson.Options));
     }
 
     /// <summary>DEC-SAL-003: the canonical content of a delivery-schedule update (command, draft, version, header date and every line's dates, in order).</summary>

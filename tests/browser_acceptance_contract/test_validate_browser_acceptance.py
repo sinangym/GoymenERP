@@ -279,6 +279,8 @@ class WorkflowTests(unittest.TestCase):
                 "sales.orders.delivery-schedule.write",
                 # DEC-SAL-005: held only by the disposable s04-canceller.
                 "sales.orders.cancel",
+                # DEC-SAL-002: held only by the disposable s04-preparer.
+                "sales.orders.quantity.write",
             ),
             validator.SUITE_IDENTITY_PERMISSIONS["s04"],
         )

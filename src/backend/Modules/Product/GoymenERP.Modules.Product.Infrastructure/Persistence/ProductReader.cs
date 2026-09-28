@@ -41,6 +41,26 @@ public sealed class ProductReader(ProductReadStore store, ProductCursorCodec cur
             return new(ProductDraftView.FromProduct(product, labels), references);
         }, cancellationToken);
 
+    /// <summary>
+    /// §10.2 / §15: the exact-name duplicate candidates, a WARNING read. Authority first (a caller without the
+    /// global Read learns nothing, not even that the name is malformed), then the write path's name rule, then
+    /// the store; the final authority check guards the answer like every other Product read.
+    /// </summary>
+    public Task<ProductDuplicateCandidates> GetDuplicateCandidatesAsync(ProductDuplicateQuery query,
+        CancellationToken cancellationToken) =>
+        ReadAsync(async context =>
+        {
+            query = ProductDuplicateRules.Normalize(query);
+            var rows = await store.ReadExactNameAsync(context, query.Name!, query.ExcludeProductId,
+                ProductDuplicateRules.MaximumCandidates, cancellationToken);
+            var hasMore = rows.Count > ProductDuplicateRules.MaximumCandidates;
+            var groups = await store.ReadCodeGroupsAsync(context, cancellationToken);
+            var names = groups.ToDictionary(group => group.Id, group => group.Name);
+            var views = rows.Take(ProductDuplicateRules.MaximumCandidates).Select(row => ProductDraftView.FromProduct(
+                row.RestoreProduct(), new(names.GetValueOrDefault(row.GroupId), null, null, null))).ToArray();
+            return new ProductDuplicateCandidates(ProductDuplicateRules.ExactName, query.Name!, views, hasMore);
+        }, cancellationToken);
+
     public Task<IReadOnlyList<ProductCodeGroup>> GetCodeGroupsAsync(CancellationToken cancellationToken) =>
         ReadAsync(context => store.ReadCodeGroupsAsync(context, cancellationToken), cancellationToken);
 

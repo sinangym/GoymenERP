@@ -12,7 +12,7 @@ namespace GoymenERP.Modules.Sales.Application.Contracts;
 /// </summary>
 public static class SalesPermissionManifestV1
 {
-    public const int Version = 8;
+    public const int Version = 9;
     public const string Subject = "Sales";
 
     /// <summary>POST /api/v1/sales/drafts, the reference reads of the draft form, and POST …/{id}/submission (SALES-A1: whoever may create a draft may send it for approval).</summary>
@@ -66,7 +66,17 @@ public static class SalesPermissionManifestV1
     /// </summary>
     public const string OrdersCancel = "sales.orders.cancel";
 
+    /// <summary>
+    /// DEC-SAL-002 (KILITLI): "Cari, ürün, miktar, fiyat, iskonto, para, vade ve risk istisnası değişirse yeni revizyon ve
+    /// yeniden onay gerekir." — POST …/{id}/quantity-revision, replacing the ordered quantity of an order's lines (an approved
+    /// order is archived and re-enters approval). A SEPARATE name because no source says who may change an approved order's
+    /// quantity: the create, approve, price, schedule and cancel names do NOT confer it and it confers none of them (no
+    /// approval — the new revision is approved through <see cref="OrdersApprove"/> as any other). Company-wide; registration
+    /// and class are the central writer's step; which persona holds it is a human gate (NEEDS-SINAN).
+    /// </summary>
+    public const string OrdersQuantityWrite = "sales.orders.quantity.write";
+
     public static IReadOnlySet<string> Names { get; } =
-        new[] { DraftsCreate, DraftsRead, OrdersApprove, OrdersPriceWrite, OrdersPriceRead, OrdersDeliveryScheduleWrite, OrdersCancel }
+        new[] { DraftsCreate, DraftsRead, OrdersApprove, OrdersPriceWrite, OrdersPriceRead, OrdersDeliveryScheduleWrite, OrdersCancel, OrdersQuantityWrite }
             .ToFrozenSet(StringComparer.Ordinal);
 }

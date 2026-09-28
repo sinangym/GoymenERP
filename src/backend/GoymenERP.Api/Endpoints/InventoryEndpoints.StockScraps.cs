@@ -16,8 +16,8 @@ public static partial class InventoryEndpoints
     /// <summary>
     /// ST-02 scrap write-off: record a scrap of one stocked label, approve or reject it, and read a label's scraps.
     /// Mapped by <see cref="MapInventoryEndpoints"/>; the route policies name the owner's
-    /// <see cref="InventoryPermissionManifestV1.StockScrapRecord"/> and
-    /// <see cref="InventoryPermissionManifestV1.StockScrapApprove"/> (registered by the central catalogue) and the host
+    /// <see cref="ErpPermissions.InventoryStockScrapRecord"/> and
+    /// <see cref="ErpPermissions.InventoryStockScrapApprove"/> (registered by the central catalogue) and the host
     /// wires <c>AddInventoryStockScraps()</c>. The stock-count (AT-037) shape: one canonical <c>Idempotency-Key</c>;
     /// 201 with the scrap view, 200 with the same view plus <c>Idempotency-Replayed</c> and
     /// <c>Idempotency-Original-Correlation-Id</c> for the same key and content; 401/403 are platform problems;
@@ -45,7 +45,7 @@ public static partial class InventoryEndpoints
                 try
                 {
                     var result = await command.RecordAsync(read.Request!,
-                        StockCountTransport(currentUser, correlation, read.Key, InventoryPermissionManifestV1.StockScrapRecord),
+                        StockCountTransport(currentUser, correlation, read.Key, ErpPermissions.InventoryStockScrapRecord),
                         cancellationToken);
                     return StockScrapResult(httpContext, result);
                 }
@@ -59,7 +59,7 @@ public static partial class InventoryEndpoints
             .WithTags("Inventory")
             .WithMetadata(new PrivateNoStoreOnAuthorizationFailureMetadata())
             .RequireCompanyContext()
-            .RequireAuthorization(InventoryPermissionManifestV1.StockScrapRecord)
+            .RequireAuthorization(ErpPermissions.InventoryStockScrapRecord)
             .WithIdempotencyContract(StatusCodes.Status200OK)
             .Accepts<RecordInventoryStockScrapV1>("application/json")
             .Produces<InventoryStockScrapViewV1>(StatusCodes.Status201Created)
@@ -89,7 +89,7 @@ public static partial class InventoryEndpoints
                 try
                 {
                     var result = await command.DecideAsync(scrapId, read.Request!,
-                        StockCountTransport(currentUser, correlation, read.Key, InventoryPermissionManifestV1.StockScrapApprove),
+                        StockCountTransport(currentUser, correlation, read.Key, ErpPermissions.InventoryStockScrapApprove),
                         cancellationToken);
                     return StockScrapResult(httpContext, result);
                 }
@@ -103,7 +103,7 @@ public static partial class InventoryEndpoints
             .WithTags("Inventory")
             .WithMetadata(new PrivateNoStoreOnAuthorizationFailureMetadata())
             .RequireCompanyContext()
-            .RequireAuthorization(InventoryPermissionManifestV1.StockScrapApprove)
+            .RequireAuthorization(ErpPermissions.InventoryStockScrapApprove)
             .WithIdempotencyContract(StatusCodes.Status200OK)
             .Accepts<DecideInventoryStockScrapV1>("application/json")
             .Produces<InventoryStockScrapViewV1>(StatusCodes.Status201Created)

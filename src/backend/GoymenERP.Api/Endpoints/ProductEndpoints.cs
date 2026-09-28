@@ -41,6 +41,14 @@ public static class ProductEndpoints
             })).WithName("GetProductReferenceOptionsV1").Produces<ProductReferenceOptions>()
             .WithProductRuntimeContract(notFound: true, primitiveBinding: true);
 
+        // §10.2 / §15: the read-only exact-name duplicate candidates. A warning to compare against, never a block.
+        group.MapGet("/duplicate-candidates", async ([AsParameters] ProductDuplicateQuery query,
+            IProductService service, HttpContext context, CancellationToken cancellationToken) =>
+            await ExecuteAsync(context, async () =>
+                Results.Ok(await service.GetDuplicateCandidatesAsync(query, cancellationToken))))
+            .WithName("GetProductDuplicateCandidatesV1").Produces<ProductDuplicateCandidates>()
+            .WithProductRuntimeContract(primitiveBinding: true);
+
         group.MapGet("/{id:guid}/history", async (Guid id, ProductHistoryReader reader, HttpContext context,
             CancellationToken cancellationToken) => await ExecuteAsync(context, async () =>
                 Results.Ok(await reader.GetAsync(id, cancellationToken))))

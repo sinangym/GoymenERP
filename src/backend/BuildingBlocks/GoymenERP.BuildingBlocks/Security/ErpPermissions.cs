@@ -367,6 +367,15 @@ public static class ErpPermissions
     public const string SalesOrdersCancel = "sales.orders.cancel";
 
     /// <summary>
+    /// DEC-SAL-002 / AT-023: revise an approved order's line quantities into a new revision that needs re-approval (Sales
+    /// owner name SalesPermissionManifestV1.OrdersQuantityWrite). Its own name: create, approve, price, delivery-schedule
+    /// and cancel names do not confer it. Registration grants nothing: its only grant (user decision 2026-09-28) is the
+    /// disposable s04 preparer in the per-run browser database; the real-user mapping stays a human gate. Company-wide
+    /// only, like the other Sales names. Not Critical: the revision itself returns to the approval flow.
+    /// </summary>
+    public const string SalesOrdersQuantityWrite = "sales.orders.quantity.write";
+
+    /// <summary>
     /// LOG-4a (Business #66 5737790175: the loading instruction on approved order lines, one stock effect): the
     /// Logistics owner's names (LogisticsPermissionManifestV1), the backend owners' technical mapping (Business
     /// #254 5654539215) recorded and confirmed by the coordinator (#66 5743488059). Registered, not granted: no
@@ -506,6 +515,7 @@ public static class ErpPermissions
             SalesOrdersPriceRead,
             SalesOrdersDeliveryScheduleWrite,
             SalesOrdersCancel,
+            SalesOrdersQuantityWrite,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,
             ManufacturingOrdersCreate,
@@ -601,6 +611,7 @@ public static class ErpPermissions
             SalesOrdersPriceRead,
             SalesOrdersDeliveryScheduleWrite,
             SalesOrdersCancel,
+            SalesOrdersQuantityWrite,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,
             ManufacturingOrdersCreate,

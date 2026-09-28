@@ -642,15 +642,16 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
         // DEC-SAL-005's cancellations, DEC-SAL-003's schedules, the linked-refusal migration, D2 and K3 Head B sit on top of
         // approval. With no cancellation, no schedule and no linked refusal, rollback reaches approval; its guard then
         // refuses (51045), leaving approval facts intact.
-        Assert.EndsWith("_AddDraftCancellations", applied[^1], StringComparison.Ordinal);
-        Assert.EndsWith("_AddDeliverySchedules", applied[^2], StringComparison.Ordinal);
-        Assert.EndsWith("_LinkMutationRefusalsToDrafts", applied[^3], StringComparison.Ordinal);
-        Assert.EndsWith("_AddDraftWithdrawal", applied[^4], StringComparison.Ordinal);
-        Assert.EndsWith("_AddDraftRevisions", applied[^5], StringComparison.Ordinal);
-        Assert.EndsWith("_AddDraftApproval", applied[^6], StringComparison.Ordinal);
-        var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[^7]));
+        Assert.EndsWith("_AddRevisionReasons", applied[^1], StringComparison.Ordinal);
+        Assert.EndsWith("_AddDraftCancellations", applied[^2], StringComparison.Ordinal);
+        Assert.EndsWith("_AddDeliverySchedules", applied[^3], StringComparison.Ordinal);
+        Assert.EndsWith("_LinkMutationRefusalsToDrafts", applied[^4], StringComparison.Ordinal);
+        Assert.EndsWith("_AddDraftWithdrawal", applied[^5], StringComparison.Ordinal);
+        Assert.EndsWith("_AddDraftRevisions", applied[^6], StringComparison.Ordinal);
+        Assert.EndsWith("_AddDraftApproval", applied[^7], StringComparison.Ordinal);
+        var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[^8]));
         Assert.Equal(51045, error.Number);
-        Assert.Equal(applied[..^5], await context.Database.GetAppliedMigrationsAsync());
+        Assert.Equal(applied[..^6], await context.Database.GetAppliedMigrationsAsync());
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'sales') AND name IN (N'DraftRevisions', N'DraftRevisionLines')"));
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM sys.check_constraints WHERE [name] = N'CK_Drafts_State' AND schema_id = SCHEMA_ID(N'sales') AND definition LIKE N'%[[]Revision]=(0)%'"));
@@ -929,12 +930,13 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
         await using (var context = run.Context(CompanyA))
         {
             applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
-            // DEC-SAL-005's cancellations and DEC-SAL-003's schedules sit on top (none here, so they roll back freely).
-            Assert.EndsWith("_AddDraftCancellations", applied[^1], StringComparison.Ordinal);
-            Assert.EndsWith("_AddDeliverySchedules", applied[^2], StringComparison.Ordinal);
-            Assert.EndsWith("_LinkMutationRefusalsToDrafts", applied[^3], StringComparison.Ordinal);
-            Assert.EndsWith("_AddDraftWithdrawal", applied[^4], StringComparison.Ordinal);
-            await context.GetService<IMigrator>().MigrateAsync(applied[^4]);
+            // DEC-SAL-002's reasons, DEC-SAL-005's cancellations and DEC-SAL-003's schedules sit on top (none here, so they roll back freely).
+            Assert.EndsWith("_AddRevisionReasons", applied[^1], StringComparison.Ordinal);
+            Assert.EndsWith("_AddDraftCancellations", applied[^2], StringComparison.Ordinal);
+            Assert.EndsWith("_AddDeliverySchedules", applied[^3], StringComparison.Ordinal);
+            Assert.EndsWith("_LinkMutationRefusalsToDrafts", applied[^4], StringComparison.Ordinal);
+            Assert.EndsWith("_AddDraftWithdrawal", applied[^5], StringComparison.Ordinal);
+            await context.GetService<IMigrator>().MigrateAsync(applied[^5]);
         }
 
         var owners = Owners.For(CompanyA);
@@ -977,10 +979,10 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
 
         await using (var context = run.Context(CompanyA))
         {
-            // The empty cancellations and schedules migrations roll back first; the linked refusal then refuses (51046).
-            var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[^4]));
+            // The empty revision-reason, cancellations and schedules migrations roll back first; the linked refusal then refuses (51046).
+            var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[^5]));
             Assert.Equal(51046, error.Number);
-            Assert.Equal(applied[..^2], await context.Database.GetAppliedMigrationsAsync());
+            Assert.Equal(applied[..^3], await context.Database.GetAppliedMigrationsAsync());
         }
     }
 
@@ -1008,13 +1010,14 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
         var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
         // DEC-SAL-005's empty cancellations, DEC-SAL-003's empty schedules and the unlinked refusal migration roll back;
         // D2's guard then refuses (51050).
-        Assert.EndsWith("_AddDraftCancellations", applied[^1], StringComparison.Ordinal);
-        Assert.EndsWith("_AddDeliverySchedules", applied[^2], StringComparison.Ordinal);
-        Assert.EndsWith("_LinkMutationRefusalsToDrafts", applied[^3], StringComparison.Ordinal);
-        Assert.EndsWith("_AddDraftWithdrawal", applied[^4], StringComparison.Ordinal);
-        var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[^5]));
+        Assert.EndsWith("_AddRevisionReasons", applied[^1], StringComparison.Ordinal);
+        Assert.EndsWith("_AddDraftCancellations", applied[^2], StringComparison.Ordinal);
+        Assert.EndsWith("_AddDeliverySchedules", applied[^3], StringComparison.Ordinal);
+        Assert.EndsWith("_LinkMutationRefusalsToDrafts", applied[^4], StringComparison.Ordinal);
+        Assert.EndsWith("_AddDraftWithdrawal", applied[^5], StringComparison.Ordinal);
+        var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[^6]));
         Assert.Equal(51050, error.Number);
-        Assert.Equal(applied[..^3], await context.Database.GetAppliedMigrationsAsync());
+        Assert.Equal(applied[..^4], await context.Database.GetAppliedMigrationsAsync());
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM sys.check_constraints WHERE [name] = N'CK_Drafts_Approval' AND schema_id = SCHEMA_ID(N'sales') AND definition LIKE N'%[[]ApprovalState]=(5)%'"));
         Assert.Equal(5, await run.ScalarAsync<int>("SELECT [ApprovalState] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id)));

@@ -720,6 +720,149 @@ public sealed class SalesOrderDraft
         return archived;
     }
 
+    // ---- quantity revision (DEC-SAL-002, AT-023) -------------------------------------------------
+
+    /// <summary>The technical bound of a revision reason: the note's, as the rejection and cancellation reasons'.</summary>
+    public const int MaximumRevisionReasonLength = MaximumNoteLength;
+
+    /// <summary>
+    /// DEC-SAL-002 (KILITLI, verbatim): "Cari, ürün, miktar, fiyat, iskonto, para, vade ve risk istisnası değişirse yeni
+    /// revizyon ve yeniden onay gerekir." — "Rev.0 korunur". AT-023: "Onaylı siparişte kritik satır değişikliği eski onayı
+    /// geçersizleştirir." Replaces the ordered QUANTITY of every line — each current line named exactly once, no other — with
+    /// a required reason, under the caller's quantity-write fence. The price revision's shape, step for step:
+    /// <list type="bullet">
+    /// <item>From <c>Preparing</c> or <c>Rejected</c> the quantities simply change (nothing approved is touched; the revision
+    /// number stays). From <c>Approved</c> the approved revision is archived FIRST — its approval facts, money profile, every
+    /// line's quantity text and commercial values as they were, and WHY it is superseded — and only then does the draft
+    /// advance to the next revision, back to <c>Preparing</c> with no approval facts: the changed quantity re-enters
+    /// approval, the previous approved snapshot is never deleted. <c>PendingApproval</c>, <c>Withdrawn</c> and a cancelled
+    /// order are refused (<see cref="SalesRuleCodes.StateConflict"/>).</item>
+    /// <item>Ö2 per line in its OWN order unit (never converted, never rounded); the text must be the value.</item>
+    /// <item>The delivery plan is NOT re-split (DEC-SAL-003's dates-only update does not cover quantities, and no decision
+    /// says how a plan follows a quantity): a new quantity below the line's planned slices is
+    /// <see cref="SalesRuleCodes.SlicesExceedQuantity"/> on that line — a technical scope limit, not a policy.</item>
+    /// <item>A revision that changes no line's value is refused (<see cref="SalesRuleCodes.RevisionNoChange"/>): an approval
+    /// is never discarded for nothing. A value-equal text ("12.50" for 12.5) is no change and keeps the stored text.</item>
+    /// </list>
+    /// What other modules hold for the order (allocations, loading lines) is NOT this aggregate's knowledge: the caller reads
+    /// the owners and refuses while any record exists, BEFORE this runs (the cancellation's fail-closed reading). Returns the
+    /// archived snapshot when one was made (the store persists it in the same save as the draft), else null.
+    /// </summary>
+    public ApprovedRevisionSnapshot? ReviseQuantities(long expectedVersion, IReadOnlyList<LineQuantityInput> inputs, string actorId,
+        string? reason, DateTimeOffset now)
+    {
+        var actor = RequireActor(actorId);
+        var trimmedReason = RequireQuantityRevisable(expectedVersion, reason);
+        ArgumentNullException.ThrowIfNull(inputs);
+
+        if (inputs.Count != lines.Count || inputs.Any(input => input is null)
+            || inputs.Select(input => input.LineId).Distinct().Count() != inputs.Count
+            || inputs.Any(input => lines.All(line => line.Id != input.LineId)))
+        {
+            throw new SalesRuleException(SalesRuleCodes.RevisionLinesMismatch,
+                "Miktar revizyonu taslağın her satırını tam bir kez adlandırır; başka satır adlandıramaz.");
+        }
+
+        var replacements = new List<(SalesOrderDraftLine Line, Quantity Quantity, string Text)>(inputs.Count);
+        foreach (var input in inputs)
+        {
+            var line = lines.Single(candidate => candidate.Id == input.LineId);
+            Quantity quantity;
+            try
+            {
+                quantity = RequireQuantity(input.Quantity, line.OrderUnit);
+                RequireQuantityText(input.QuantityText, input.Quantity);
+                var planned = line.RequestedDeliverySlices.Aggregate(Quantity.Zero(quantity.Unit), (sum, slice) => sum.Add(slice.Quantity));
+                if (planned.IsGreaterThan(quantity))
+                {
+                    throw new SalesRuleException(SalesRuleCodes.SlicesExceedQuantity,
+                        "Yeni miktar satırın termin dilimlerinin toplamından küçük; dilimler bu revizyonda yeniden bölünmez.");
+                }
+            }
+            catch (SalesRuleException exception) when (exception.LineId is null)
+            {
+                // The same rule, now naming the line it is about (the caller answers lines[i].quantity).
+                throw new SalesRuleException(exception.Code, exception.Message, line.Id);
+            }
+
+            replacements.Add((line, quantity, input.QuantityText));
+        }
+
+        if (replacements.All(entry => entry.Line.Quantity.Value == entry.Quantity.Value))
+        {
+            throw new SalesRuleException(SalesRuleCodes.RevisionNoChange,
+                "Miktar revizyonu hiçbir satırın miktarını değiştirmiyor; onay boşuna düşürülmez.");
+        }
+
+        ApprovedRevisionSnapshot? archived = null;
+        if (ApprovalState == InternalApprovalState.Approved)
+        {
+            // The approved revision as it stands, archived BEFORE anything of it changes — with the reason it is superseded.
+            archived = new ApprovedRevisionSnapshot(Revision, Approval, Money.ProfileId, Money.ProfileVersion, Money.Scale,
+                now.ToUniversalTime(), actor,
+                [.. lines.Select(line => new RevisionLineSnapshot(line.Id, line.LineNo, line.Product.ProductId, line.Product.ProductVersion,
+                    line.OrderUnit.UnitId, line.QuantityText, line.Commercial))],
+                trimmedReason);
+            archivedRevisions.Add(archived);
+            Revision += 1;
+            ApprovalState = InternalApprovalState.Preparing;
+            Approval = ApprovalFacts.None;
+        }
+
+        foreach (var (line, quantity, text) in replacements)
+        {
+            // A value-equal text is no change: the stored text stays (Ö2 keeps the client's first spelling).
+            if (line.Quantity.Value != quantity.Value)
+            {
+                line.ReplaceQuantity(quantity, text);
+            }
+        }
+
+        Touch(now);
+        return archived;
+    }
+
+    /// <summary>
+    /// The quantity revision's own preconditions WITHOUT the change — the expected version, the lifecycle and approval state
+    /// and the reason — so the caller can refuse a stale or wrong-state command before it asks any owner (Inventory,
+    /// Logistics) what it holds. Returns the trimmed reason. <see cref="ReviseQuantities"/> runs the same checks again.
+    /// </summary>
+    public string RequireQuantityRevisable(long expectedVersion, string? reason)
+    {
+        RequireVersion(expectedVersion);
+        // Not RequireDraft(): that guard closes the lines of an approved draft (DEC-SAL-002), and THIS command is the
+        // revision that decision points to. DEC-SAL-005: a cancelled order is terminal (a 409, like Withdrawn).
+        RequireNotCancelled("İptal edilmiş siparişin miktarı değiştirilmez.");
+        if (State != SalesDraftState.Draft)
+        {
+            throw new SalesRuleException(SalesRuleCodes.DraftNotDraft, "Yalnız taslak değiştirilebilir.");
+        }
+
+        if (ApprovalState == InternalApprovalState.PendingApproval)
+        {
+            throw StateConflict("Onay bekleyen taslağın miktarı değiştirilmez; önce karar verilir.");
+        }
+
+        if (ApprovalState == InternalApprovalState.Withdrawn)
+        {
+            throw StateConflict("Geri çekilmiş taslak değiştirilmez.");
+        }
+
+        var trimmedReason = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
+        if (trimmedReason is null)
+        {
+            throw new SalesRuleException(SalesRuleCodes.RevisionReasonRequired, "Revizyon gerekçesi zorunludur.");
+        }
+
+        if (trimmedReason.Length > MaximumRevisionReasonLength)
+        {
+            throw new SalesRuleException(SalesRuleCodes.RevisionReasonTooLong,
+                $"Revizyon gerekçesi en fazla {MaximumRevisionReasonLength} karakterdir.");
+        }
+
+        return trimmedReason;
+    }
+
     /// <summary>
     /// DEC-SAL-003 (KILITLI): "Termin üst bilgi, satır ve miktar dilimleriyle izlenir; termin güncellemesi planlama/sevkiyat
     /// rolündedir ve yeniden onay gerektirmez, ancak auditlidir." A planner moves the requested delivery dates of the
@@ -931,7 +1074,8 @@ public sealed class SalesOrderDraft
         var expected = archivedRevisions.Count == 0 ? 0 : archivedRevisions[^1].Revision + 1;
         if (snapshot.Revision != expected || snapshot.Revision >= Revision
             || snapshot.Approval.DecidedBy is null || snapshot.Approval.DecidedAtUtc is null || snapshot.Approval.RejectionReason is not null
-            || snapshot.Lines.Count == 0 || string.IsNullOrWhiteSpace(snapshot.ArchivedBy))
+            || snapshot.Lines.Count == 0 || string.IsNullOrWhiteSpace(snapshot.ArchivedBy)
+            || (snapshot.Reason is { } reason && (string.IsNullOrWhiteSpace(reason) || reason.Length > MaximumRevisionReasonLength)))
         {
             throw new InvalidOperationException("Kayıtlı revizyon geçmişi taslakla uyuşmuyor.");
         }

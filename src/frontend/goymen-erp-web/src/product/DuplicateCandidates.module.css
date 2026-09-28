@@ -1,0 +1,40 @@
+/* §10.2 duplicate warning: a note, never an error block — it blocks nothing. Same tokens as the Product pages. */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 72ch;
+  padding: 10px 12px;
+  background: #f7f9fc;
+  border: 1px solid #d5dbe6;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  color: #3b4660;
+}
+
+.found {
+  background: #fff8e6;
+  border-color: #e0b54a;
+}
+
+.title {
+  margin: 0;
+  font-weight: 600;
+}
+
+.line {
+  margin: 0;
+}
+
+.list {
+  margin: 4px 0;
+  padding-left: 20px;
+  overflow-wrap: anywhere;
+}
+
+.rule {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #55607a;
+}

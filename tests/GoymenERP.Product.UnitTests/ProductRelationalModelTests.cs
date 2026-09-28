@@ -1,6 +1,7 @@
 using GoymenERP.Modules.Product.Infrastructure.Persistence;
 using GoymenERP.Modules.Product.Application.Contracts;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 
 namespace GoymenERP.Product.UnitTests;
 
@@ -72,6 +73,29 @@ public sealed class ProductRelationalModelTests
         Assert.Contains("[Id]", sql);
         Assert.DoesNotContain("OFFSET", sql);
         Assert.DoesNotContain("CompanyId", sql);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Exact_name_candidates_translate_to_an_equality_under_the_name_collation_never_a_pattern(bool exclude)
+    {
+        using var context = Context();
+        var store = new ProductReadStore(context);
+        var sql = store.BuildExactNameQuery("Siyah sac", exclude ? Guid.NewGuid() : null)
+            .Take(ProductDuplicateRules.MaximumCandidates + 1).ToQueryString();
+        // Equality on the column (Turkish_100_CI_AS by the model), no LIKE, no function over the column that
+        // would define another rule, and every lifecycle (no Lifecycle predicate).
+        Assert.Contains("[p].[Name] = @", sql);
+        Assert.DoesNotContain("LIKE", sql);
+        Assert.DoesNotContain("COLLATE", sql);
+        Assert.DoesNotContain("[Lifecycle]", sql.Split("FROM")[1]);
+        Assert.Equal(exclude, sql.Contains("[p].[Id] <> @", StringComparison.Ordinal));
+        Assert.Contains("ORDER BY [p].[Code], [p].[Id]", sql);
+        Assert.DoesNotContain("CompanyId", sql);
+        Assert.Equal("Turkish_100_CI_AS", context.GetService<Microsoft.EntityFrameworkCore.Metadata.IDesignTimeModel>().Model
+            .FindEntityType(typeof(ProductRow))!
+            .FindProperty(nameof(ProductRow.Name))!.GetCollation());
     }
 
     private static ProductDbContext Context() => new(new DbContextOptionsBuilder<ProductDbContext>()

@@ -197,8 +197,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // product
             // DEC-CAR-003: +4 ProductDeactivationSqlServerRelationalAcceptanceTests facts (d7dbec7f… -> ddeead62…).
+            // DEC-PRD-010: +5 ProductDuplicateCandidatesSqlServerRelationalAcceptanceTests facts (ddeead62… -> d434c2b8…).
             ["tools/relational_inventory/product.txt"] =
-                "ddeead62b309b7c7d8929539a6ea39a36d760dbc4c40ef9ef40a09f962aa1650",
+                "d434c2b81e15574d21933413649fb40a5cc045008b5d7c9bd0eb7358807b495b",
 
             // purchasing
             ["tools/relational_inventory/purchasing.txt"] =
@@ -208,8 +209,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // DEC-SAL-003: +3 SalesDeliveryScheduleSqlServerRelationalAcceptanceTests facts (16fa5110… -> 00189b7b…).
             // AT-024: +2 SalesDeliveryProgressSqlServerRelationalAcceptanceTests facts (00189b7b… -> 719d0d03…).
             // DEC-SAL-005: +4 SalesOrderCancellationSqlServerRelationalAcceptanceTests facts (719d0d03… -> 5508f4ed…).
+            // DEC-SAL-002: +4 SalesOrderQuantityRevisionSqlServerRelationalAcceptanceTests facts (5508f4ed… -> 3ef99851…).
             ["tools/relational_inventory/sales.txt"] =
-                "5508f4ed1c791e826a1a237464db67b63ca8bcca2adf46ec9d38af8c8d7dc50c",
+                "3ef9985194153ac76a55345420d5ae31018a6be9156636f6656b31f48c97fb4d",
         };
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
@@ -246,9 +248,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // DraftDeliveryScheduleDates), each with the same CompanyId query filter and a company-leading key.
             // Re-fingerprinted for DEC-SAL-005: the cancellation table (DraftCancellations), with the same CompanyId
             // query filter and a company-leading key, plus the lifecycle column on Drafts.
+            // Re-fingerprinted for DEC-SAL-002: the nullable Reason column on DraftRevisions and the line write guard
+            // admitting Quantity/QuantityText under a quantity revision; no new table, query filter or key.
             ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/"
              + "Persistence/SalesDbContext.cs"] =
-                "81934b822345dda81cde094c20a8a74894e19fa1a4af1c745ca4e934500bb194",
+                "b4c7b466c44a76837285248281fa52192455a3c83956c4dd38242aad6da4f71e",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
@@ -372,8 +376,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // read-only DI additions; no new database capability, MigrateAsync stays 2.
                 // Re-measured for DEC-CAR-003: the denied (unconfigured) Product service gains the deactivate and
                 // reactivate members, which throw like its siblings; no new database capability, MigrateAsync stays 2.
+                // Re-measured for DEC-PRD-010: the denied Product service gains the read-only duplicate-candidates
+                // member, which throws like its siblings; no new database capability, MigrateAsync stays 2.
                 ["src/backend/GoymenERP.Api/ProductRuntime/ProductRuntimeExtensions.cs"] =
-                    new("f07b29fc2ca6b7270b254e58a0e5b83ac7ccecb56e66323f86b024914e86f4e5",
+                    new("2c5296cb5cc9fa5eaad8a926b3d1cea3617f7322961f5b3044d20bc17d9f4c25",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["MigrateAsync"] = 2 }),
                 // Re-measured for PRD-UNIT-1: the Product participant gets Settings' unit-identity catalog
@@ -864,8 +870,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.cs"] =
                     // Re-fingerprinted for DEC-SAL-005: the cancellation write and read, company-resolved and saved
                     // once through the filtered context; no connection, command or raw SQL; SqlClient count unchanged.
+                    // Re-fingerprinted for DEC-SAL-002: the price and quantity revisions share one archive-and-save
+                    // core (still a single save through the filtered context); SqlClient count unchanged.
                     new(
-                        "f50a2e49e00cc78d9a9482fa58c5acf82898462412e414b2c1fc78916016657e",
+                        "383c57f5cc883c43982005cf1489145475723a3acd58d58b3b30ba5c55bc0baf",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -1036,6 +1044,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // order cancellation is stored; the THROW precedes the DropTable and DropColumn. Forward fix.
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20260927120000_AddDraftCancellations.cs"] =
                     new("651cae770ecc2d18d3b24479523d95ead0259fe231188a47c390f24da8d0f21e",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // DEC-SAL-002: the Down's only raw SQL refuses rollback (51057, used by no other migration) while any
+                // revision reason is stored; the THROW precedes the DropColumn. Forward fix.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20260928090000_AddRevisionReasons.cs"] =
+                    new("236f74197308a8e753fa2b74cc25070be726c0de4ea0ab38f785e3f60284a8a3",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // AT-053: the Down's only raw SQL is Logistics' module refusal (51056, used by no other migration) while
