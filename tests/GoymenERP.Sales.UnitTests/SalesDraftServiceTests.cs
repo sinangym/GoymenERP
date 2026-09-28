@@ -1318,15 +1318,21 @@ public sealed partial class SalesDraftServiceTests
         public bool NoContactInformation { get; set; }
         /// <summary>AT-024: the delivery owner's read port; null = not composed.</summary>
         public ISalesOrderDeliveryReadPortV1? Deliveries { get; set; }
+        /// <summary>DEC-SAL-005: the allocation owner's read port (Inventory); null = not composed.</summary>
+        public ISalesOrderAllocationReadPortV1? Allocations { get; set; }
+        /// <summary>DEC-SAL-005: the loading owner's read port (Logistics); null = not composed.</summary>
+        public ISalesOrderLoadingReadPortV1? Loadings { get; set; }
         public FixedActiveRoleCodeReader ActiveRoleCodes { get; } = new();
-        public SalesDraftServiceBindings Bindings { get; set; } = new(CreatePermission, ReadPermission, ApprovePermission, PricePermission, PriceReadPermission, SchedulePermission);
+        public SalesDraftServiceBindings Bindings { get; set; } = new(CreatePermission, ReadPermission, ApprovePermission, PricePermission, PriceReadPermission, SchedulePermission,
+            CancelPermission);
 
         public SalesDraftService Service()
         {
             var company = new CompanyContext();
             company.Set(Company);
             return new SalesDraftService(company, User, Authority, ActiveRoleCodes, new FixedCorrelation(), Accounts, Settings,
-                NoProducts ? null : Products, Store, Bindings, TimeProvider.System, NoContactInformation ? null : ContactInformation, Deliveries);
+                NoProducts ? null : Products, Store, Bindings, TimeProvider.System, NoContactInformation ? null : ContactInformation, Deliveries,
+                Allocations, Loadings);
         }
 
         public void ResetOwnerCalls()
@@ -1586,6 +1592,23 @@ public sealed partial class SalesDraftServiceTests
             var result = await UpdateDraftStateAsyncCore(envelope, requestHash, commandName, draftId,
                 (draft, now) => recorded = mutate(draft, now), audit, beforeWrite, cancellationToken);
             if (recorded is not null) Schedules.Add(recorded);
+            return result;
+        }
+
+        public List<CancellationFacts> Cancellations { get; } = [];
+
+        public async Task<SalesDraftStateResult?> CancelDraftAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+            Guid draftId, Func<SalesOrderDraft, CancellationImpactSnapshot, DateTimeOffset, CancellationFacts> mutate, SalesDraftStateAudit audit,
+            Func<SalesOrderDraft, CancellationToken, Task<CancellationImpactSnapshot>> beforeWrite, CancellationToken cancellationToken = default)
+        {
+            if (commandName != SalesDraftCommands.CancelV1) throw new ArgumentException("wrong command", nameof(commandName));
+            CancellationImpactSnapshot? impact = null;
+            CancellationFacts? recorded = null;
+            var draft = _drafts.SingleOrDefault(candidate => candidate.Id == draftId);
+            var result = await UpdateDraftStateAsyncCore(envelope, requestHash, commandName, draftId,
+                (target, now) => recorded = mutate(target, impact!, now), audit,
+                async token => impact = await beforeWrite(draft!, token), cancellationToken);
+            if (recorded is not null) Cancellations.Add(recorded);
             return result;
         }
 

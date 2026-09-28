@@ -12,7 +12,7 @@ namespace GoymenERP.Modules.Sales.Application.Contracts;
 /// </summary>
 public static class SalesPermissionManifestV1
 {
-    public const int Version = 7;
+    public const int Version = 8;
     public const string Subject = "Sales";
 
     /// <summary>POST /api/v1/sales/drafts, the reference reads of the draft form, and POST …/{id}/submission (SALES-A1: whoever may create a draft may send it for approval).</summary>
@@ -57,7 +57,16 @@ public static class SalesPermissionManifestV1
     /// </summary>
     public const string OrdersDeliveryScheduleWrite = "sales.orders.delivery-schedule.write";
 
+    /// <summary>
+    /// DEC-SAL-005 (KILITLI): cancelling an APPROVED order — GET …/{id}/cancellation-impact (the impact preview) and POST
+    /// …/{id}/cancellation. A SEPARATE name because no source says who may cancel: the create, approve, price and schedule
+    /// names do NOT confer it and it confers none of them. Holding it grants no second-person approval, release or reversal
+    /// of any other module's record. Company-wide; registration and its class (Critical = grant-time dual control, if Sinan
+    /// wants a cancellation to need two people) are the central writer's step; which persona holds it is a human gate.
+    /// </summary>
+    public const string OrdersCancel = "sales.orders.cancel";
+
     public static IReadOnlySet<string> Names { get; } =
-        new[] { DraftsCreate, DraftsRead, OrdersApprove, OrdersPriceWrite, OrdersPriceRead, OrdersDeliveryScheduleWrite }
+        new[] { DraftsCreate, DraftsRead, OrdersApprove, OrdersPriceWrite, OrdersPriceRead, OrdersDeliveryScheduleWrite, OrdersCancel }
             .ToFrozenSet(StringComparer.Ordinal);
 }

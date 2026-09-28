@@ -13,7 +13,7 @@ import { useCallback, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router'
 import { fetchDraftPage } from './api'
-import { APPROVAL_STATE, type ApprovalState, type DraftSummary } from './contract'
+import { APPROVAL_STATE, CANCELLED_STATE, type ApprovalState, type DraftSummary } from './contract'
 import { SALES_CAPABILITY, SALES_ROUTE, salesDetailPath } from './capabilities'
 import { APPROVAL_STATE_TEXT, ORDER_DETAIL_TEXT, ORDER_LIST_TEXT } from './salesText'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
@@ -161,7 +161,7 @@ function DraftList({ namespace }: { readonly namespace: string | null }) {
                 <td>{formatBusinessDate(row.businessDate)}</td>
                 <td>
                   <span className={styles.badge} data-testid={`sales-row-approval-${row.id}`}>
-                    {ORDER_DETAIL_TEXT.stateDraft} · {APPROVAL_STATE_TEXT[row.approvalState]}
+                    {row.state === CANCELLED_STATE ? ORDER_DETAIL_TEXT.stateCancelled : ORDER_DETAIL_TEXT.stateDraft} · {APPROVAL_STATE_TEXT[row.approvalState]}
                   </span>
                 </td>
                 <td>{row.revision}</td>

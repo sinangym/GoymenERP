@@ -72,6 +72,9 @@ public sealed class LoadingInstruction
     /// <summary>Every recorded load, shipment and delivery share, in order.</summary>
     public IReadOnlyList<LoadingShare> Shares => shares.AsReadOnly();
 
+    /// <summary>The instruction's manual weighbridge record (AT-053), or null while none is recorded.</summary>
+    public VehicleWeighing? Weighing { get; private set; }
+
     public static LoadingInstruction Create(Guid id, Guid companyId, Guid customerPartyId, Guid companyAccountId, DateTimeOffset now) =>
         new(id, companyId, customerPartyId, companyAccountId, now);
 
@@ -219,6 +222,47 @@ public sealed class LoadingInstruction
         line.AddDelivered(delivered);
         return Add(new LoadingShare(deliveryId, line.Id, LoadingShareKind.Delivered, delivered, null, shipment.ShareId,
             now.ToUniversalTime()), now);
+    }
+
+    /// <summary>
+    /// Records the vehicle's manual weighbridge record (AT-053; OPEN-003: entered by hand). The backend
+    /// calculates the net from the two weighings and the declared direction (WGT-001, refused when they
+    /// contradict it) and keeps, as facts, the kilograms loaded on the instruction at this moment and the
+    /// signed difference net − loaded (WGT-002). The difference is never judged: its tolerance is OPEN-004
+    /// (DEC-STK-009), so no share is refused or adjusted because of it. One record per instruction: how a
+    /// wrong entry is corrected is not decided, so a second record is refused (fail closed) rather than
+    /// replacing the first. Nothing physical is written; Inventory is not touched.
+    /// </summary>
+    public VehicleWeighing RecordWeighing(long expectedVersion, Guid weighingId, WeighingDirection direction, Quantity firstWeighing,
+        Quantity secondWeighing, string recordedBy, DateTimeOffset now)
+    {
+        RequireVersion(expectedVersion);
+        RequireStatus(LoadingInstructionStatus.Issued, LogisticsRuleCodes.InstructionNotIssued, "Kantar tartımı yalnız yayımlanmış talimata kaydedilir.");
+        Identity.Require(weighingId, nameof(weighingId));
+        if (string.IsNullOrWhiteSpace(recordedBy))
+        {
+            throw new ArgumentException("Tartımı kaydeden kullanıcı belirtilmelidir.", nameof(recordedBy));
+        }
+
+        if (Weighing is not null)
+        {
+            throw new LogisticsRuleException(LogisticsRuleCodes.WeighingAlreadyRecorded,
+                "Bu talimatın kantar tartımı zaten kayıtlı; düzeltme kuralı karara bağlanmadığı için ikinci tartım kaydedilmez.");
+        }
+
+        if (lines.Any(line => line.InstructedQuantity.Unit != QuantityUnit.Kilogram))
+        {
+            throw new LogisticsRuleException(LogisticsRuleCodes.WeighingUnitUnsupported, "Kantar farkı yalnız kilogram satırlarıyla karşılaştırılır.");
+        }
+
+        var net = WeighbridgeCalculator.Net(direction, firstWeighing, secondWeighing);
+        // Re-read through Of so equal kilograms print equally (3.0 → 3), as every entered quantity does.
+        var loaded = Quantity.Of(lines.Aggregate(Quantity.Zero(QuantityUnit.Kilogram), (sum, line) => sum.Add(line.LoadedQuantity)).Value,
+            QuantityUnit.Kilogram);
+        Weighing = new VehicleWeighing(weighingId, direction, firstWeighing, secondWeighing, net, loaded,
+            WeighbridgeCalculator.Difference(net, loaded), shares.Count, recordedBy.Trim(), now.ToUniversalTime());
+        Touch(now);
+        return Weighing;
     }
 
     /// <summary>What a definite shipment still has undelivered: its quantity minus the deliveries that name it.</summary>

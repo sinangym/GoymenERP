@@ -36,6 +36,10 @@
  *          no price key anywhere;
  *          the preparer under the other company: the API answers nothing of GDC's instruction and publishes no
  *          Logistics screen there
+ *   L04-07 AT-053 loader: the manual weighbridge record typed in the detail (two weighings + direction); reopening shows
+ *          the server's net and the signed loaded-vs-weighed difference as facts (no tolerance verdict, OPEN-004) on
+ *          the instruction whose delivery continues below; the same key replays with one row; a second record is 409;
+ *          the reader is 403; one audit on the Web channel; no Inventory movement
  */
 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
@@ -650,5 +654,109 @@ test('L04-06 the reader reads and cannot create or record; the preparer has noth
     expect(published.filter((id) => id.startsWith('logistics.'))).toEqual([])
   } else {
     expect([403, 404]).toContain(capabilities.status())
+  }
+})
+
+test('L04-07 AT-053: the loader records the manual weighbridge record once; reopening shows net and the signed loaded-vs-weighed difference as facts beside shipment and delivery; the same key replays with no second record; a second record and the reader are refused; Inventory is not written', async ({ page }) => {
+  await signInAs(page, loaderActor)
+  if (createdId === '') createdId = recallCreatedId()
+  await openDetail(page, createdId)
+  const before = await readInstruction(page, loaderActor, createdId)
+  expect(before.instruction.status).toBe('Issued')
+  // The kilograms the weighing is compared with are the server's own loaded text (3.5 after L04-03), read, never assumed.
+  const loaded = before.lines.reduce((sum, line) => sum + Number(line.loaded), 0)
+  expect(loaded).toBe(3.5)
+  await expect(page.getByTestId('logistics-weighing-none')).toBeVisible()
+
+  const pool = await new sql.ConnectionPool(env.sqlConnection).connect()
+  try {
+    const counts = async () => {
+      const result = await pool.request()
+        .input('companyId', sql.UniqueIdentifier, companyId)
+        .input('instructionId', sql.UniqueIdentifier, createdId)
+        .input('entityId', sql.NVarChar, createdId)
+        .query(`
+          SELECT
+            (SELECT COUNT(*) FROM [logistics].[VehicleWeighings] WHERE [CompanyId]=@companyId AND [InstructionId]=@instructionId) AS weighings,
+            (SELECT COUNT(*) FROM [inventory].[Movements] WHERE [CompanyId]=@companyId) AS movements,
+            (SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [CompanyId]=@companyId AND [EntityId]=@entityId
+               AND [EventType]=N'logistics.loading-instruction.weighing-recorded.v1' AND [SourceChannel]=N'Web') AS audits`)
+      return result.recordset[0] as { weighings: number; movements: number; audits: number }
+    }
+    const start = await counts()
+    expect([start.weighings, start.audits]).toEqual([0, 0])
+
+    // The person types the two weighings off the ticket in the order taken; the server calculates the rest.
+    const form = page.getByTestId('logistics-weighing-form')
+    await form.locator('#logistics-weighing-direction').selectOption('TareFirst')
+    await form.locator('#logistics-weighing-first').fill('14000')
+    await form.locator('#logistics-weighing-second').fill('14003,2')
+    const answer = page.waitForResponse((response) => response.request().method() === 'POST'
+      && new URL(response.url()).pathname === `${INSTRUCTIONS_PATH}/${createdId}/weighings`)
+    await page.getByTestId('logistics-weighing-button').click()
+    const recorded = await answer
+    expect(recorded.status()).toBe(200)
+    const sent = recorded.request().postDataJSON() as Record<string, unknown>
+    expect(Object.keys(sent).sort()).toEqual(['direction', 'expectedVersion', 'firstWeighingKg', 'secondWeighingKg', 'weighingId'])
+    expect(sent).toMatchObject({ direction: 'TareFirst', firstWeighingKg: '14000', secondWeighingKg: '14003.2' })
+    await expect(page.getByTestId('logistics-weighing-notice')).toHaveText('İşlem kaydedildi.')
+    await expect(page.getByTestId('logistics-weighing-button')).toHaveCount(0)
+
+    // Close and reopen: the record is on the instruction, the difference keeps its sign, and no verdict word exists.
+    await page.goto(LIST_ROUTE)
+    await openDetail(page, createdId)
+    await expect(page.getByTestId('logistics-weighing-net')).toHaveText('3.2')
+    await expect(page.getByTestId('logistics-weighing-loaded')).toHaveText('3.5')
+    await expect(page.getByTestId('logistics-weighing-difference')).toHaveText('-0.3')
+    await expect(page.getByTestId('logistics-weighing-tare')).toHaveText('14000')
+    await expect(page.getByTestId('logistics-weighing-gross')).toHaveText('14003.2')
+    for (const word of ['tolerans dışı', 'Tolerans dışı', 'kabul edildi', ...PRICE_WORDS]) {
+      await expect(page.getByTestId('logistics-weighing')).not.toContainText(word)
+    }
+    // The next step reads the same instruction: the delivery section of this detail is where it continues.
+    await expect(page.getByTestId('delivery-1')).toBeVisible()
+    const reopened = await page.request.get(`${env.apiBaseUrl}${INSTRUCTIONS_PATH}/${createdId}`, {
+      headers: { [DEVELOPMENT_USER_HEADER]: loaderActor, 'X-Company-Id': companyId },
+    })
+    const reading = (await reopened.json()) as { instruction: { version: string }; weighing: Record<string, unknown> | null }
+    expect(reading.weighing).toMatchObject({ weighingId: sent.weighingId, netKg: '3.2', loadedKgAtWeighing: '3.5', differenceKg: '-0.3' })
+
+    // The same key and body again through the real route: the stored answer, never a second record.
+    const key = recorded.request().headers()['idempotency-key']
+    expect(key, 'the browser sent the weighing under an Idempotency-Key').toBeTruthy()
+    const replay = await page.request.post(`${env.apiBaseUrl}${INSTRUCTIONS_PATH}/${createdId}/weighings`, {
+      headers: { [DEVELOPMENT_USER_HEADER]: loaderActor, 'X-Company-Id': companyId, 'Idempotency-Key': key, 'Content-Type': 'application/json' },
+      data: recorded.request().postData() ?? '',
+    })
+    expect(replay.status()).toBe(200)
+    expect(replay.headers()['idempotency-replayed']).toBe('true')
+
+    // A second record under a new key is refused (its correction is not decided); nothing changes.
+    const second = await page.request.post(`${env.apiBaseUrl}${INSTRUCTIONS_PATH}/${createdId}/weighings`, {
+      headers: {
+        [DEVELOPMENT_USER_HEADER]: loaderActor, 'X-Company-Id': companyId, 'Content-Type': 'application/json',
+        'X-Correlation-Id': `browser-suite-l04-weighing-2-${Date.now()}`, 'Idempotency-Key': `browser-suite:l04:weighing-2:${Date.now()}`,
+      },
+      data: { expectedVersion: reading.instruction.version, weighingId: crypto.randomUUID(), direction: 'TareFirst', firstWeighingKg: '14000', secondWeighingKg: '14004' },
+    })
+    expect(second.status()).toBe(409)
+    expect(((await second.json()) as { code?: unknown }).code).toBe('logistics_weighing_already_recorded')
+
+    // The reader holds no weighing grant: refused 403 at the fence.
+    const byReader = await page.request.post(`${env.apiBaseUrl}${INSTRUCTIONS_PATH}/${createdId}/weighings`, {
+      headers: {
+        [DEVELOPMENT_USER_HEADER]: readerActor, 'X-Company-Id': companyId, 'Content-Type': 'application/json',
+        'X-Correlation-Id': `browser-suite-l04-weighing-reader-${Date.now()}`, 'Idempotency-Key': `browser-suite:l04:weighing-reader:${Date.now()}`,
+      },
+      data: { expectedVersion: reading.instruction.version, weighingId: crypto.randomUUID(), direction: 'TareFirst', firstWeighingKg: '1', secondWeighingKg: '2' },
+    })
+    expect(byReader.status()).toBe(403)
+
+    const end = await counts()
+    expect(end).toEqual({ weighings: 1, movements: start.movements, audits: 1 })
+    const after = await readInstruction(page, loaderActor, createdId)
+    expect(after.instruction.version).toBe(reading.instruction.version)
+  } finally {
+    await pool.close()
   }
 })

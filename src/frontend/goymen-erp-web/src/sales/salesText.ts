@@ -170,6 +170,10 @@ export const PROBLEM_CODE_TEXT: Record<SalesProblemCode, string> = {
   [SALES_PROBLEM_CODE.invalidCursor]: 'Liste sayfası imleci geçersiz; listeyi baştan açın.',
   [SALES_PROBLEM_CODE.stateConflict]: 'Bu işlem taslağın şu anki onay durumunda yapılamaz; taslağı yeniden açın.',
   [SALES_PROBLEM_CODE.approvalReasonTooLong]: 'Ret nedeni en fazla 4000 karakter olabilir.',
+  [SALES_PROBLEM_CODE.cancellationBlocked]:
+    'Siparişe bağlı kayıtlar var (tahsis ya da yükleme); iptal yapılmadı. Kayıtlar kendi ekranlarında kapatıldıktan sonra etkiyi yeniden okuyun.',
+  [SALES_PROBLEM_CODE.cancellationImpactChanged]:
+    'İptal etkisi siz gördükten sonra değişti; iptal yapılmadı. Güncel etkiyi yeniden okuyun.',
 }
 
 export function problemCodeText(code: string | null): string | null {
@@ -208,6 +212,8 @@ export const ORDER_DETAIL_TEXT = {
   backToList: 'Sipariş taslakları',
   state: 'Durum',
   stateDraft: 'Taslak',
+  /** DEC-SAL-005: the lifecycle of an approved order cancelled after its impact preview. */
+  stateCancelled: 'İptal edildi',
   /** SALES-A1: the approval facts and the commands on the detail. */
   approval: {
     heading: 'İç onay',
@@ -275,7 +281,7 @@ export const ORDER_DETAIL_TEXT = {
     description: 'Her satırın fiyatını ve iskonto yüzdesini birlikte kaydedin. Boş fiyat ücretsiz anlamına gelmez.',
     approvedWarning: 'Onaylı fiyat değişikliği önceki onayı silmez; eski revizyon arşivlenir ve sipariş yeniden onaya girer.',
     withheld: 'Fiyatları görme yetkisi olmadan mevcut ticari değerler güvenle değiştirilemez.',
-    stateUnavailable: 'Onay bekleyen veya geri çekilmiş siparişte fiyat revizyonu yapılamaz.',
+    stateUnavailable: 'Onay bekleyen, geri çekilmiş veya iptal edilmiş siparişte fiyat revizyonu yapılamaz.',
     unitPrice: 'Birim fiyat',
     priceUnit: 'Fiyat birimi',
     discount: 'İskonto %',
@@ -308,7 +314,7 @@ export const ORDER_DETAIL_TEXT = {
     heading: 'Termin güncelle',
     description:
       'Üst termin, satır terminleri ve mevcut dilimlerin tarihleri güncellenir. Dilim miktarları değişmez; dilim eklenmez veya silinmez. Onay durumu değişmez, değişiklik kayıt altına alınır.',
-    stateUnavailable: 'Geri çekilmiş siparişin termini güncellenemez.',
+    stateUnavailable: 'Geri çekilmiş veya iptal edilmiş siparişin termini güncellenemez.',
     headerLegend: 'Üst termin',
     headerDate: 'Üst termin tarihi',
     lineDate: 'Satır termini',
@@ -349,6 +355,73 @@ export const ORDER_DETAIL_TEXT = {
     lineDate: 'Satır termini',
     slices: 'Dilimler (miktar → termin)',
     noSlices: 'Dilim yok',
+  },
+  /**
+   * DEC-SAL-005 / AT-007: the impact preview and the cancellation of an approved order. Each category is read from its
+   * owner; "kaynak yok" is not zero; nothing of another module is released by Sales.
+   */
+  cancellation: {
+    heading: 'Sipariş iptali',
+    description:
+      'İptal etkisi her kategori için kendi sahibinden okunur (DEC-SAL-005). Bağlı bir kayıt varken ya da bir sahip okunamazken ' +
+      'iptal yapılmaz; Satış başka modülün kaydını serbest bırakmaz veya geri almaz. İptal geçmişi silmez (AT-007).',
+    showImpact: 'İptal etkisini göster',
+    refresh: 'Etkiyi yeniden oku',
+    subject: 'iptal etkisi',
+    sourcesCaption: 'DEC-SAL-005 etki kategorileri',
+    category: 'Kategori',
+    status: 'Durum',
+    source: {
+      'inventory.active-allocations': 'Aktif tahsis (Stok)',
+      'purchasing.linked-orders': 'Bağlı satın alma',
+      'manufacturing.linked-orders': 'Bağlı üretim',
+      'logistics.loading-without-dispatch-note': 'İrsaliyesiz yükleme (Lojistik)',
+      'invoicing.uninvoiced-dispatch-notes': 'Faturalanmamış irsaliye',
+      'finance.unmatched-advances': 'Eşleşmemiş avans/dekont',
+    } as Record<string, string>,
+    statusText: {
+      None: 'Kayıt yok (sahibi okundu)',
+      Present: 'Kayıt var — iptali engeller',
+      Unreadable: 'Okunamadı — iptali engeller; sıfır varsayılmaz',
+      NoSource: 'Kaynak yok — bu bağı tutan modül henüz yok; sıfır değildir',
+    } as Record<string, string>,
+    linesCaption: 'Satır bazında sahiplerin kayıtları',
+    lineNo: 'Satır',
+    ordered: 'Sipariş',
+    activeAllocations: 'Aktif tahsis',
+    allocatedKg: 'Tahsisli kg',
+    loadingLines: 'Yükleme satırı',
+    instructed: 'Talimat',
+    loaded: 'Yüklenen',
+    shipped: 'Sevk edilen',
+    delivered: 'Teslim edilen',
+    unreadable: 'okunamadı',
+    blocked: 'Bu sipariş şu anda iptal edilemez. Engelleyen kayıtları kendi ekranlarında kapatın, sonra etkiyi yeniden okuyun.',
+    reasonLabel: 'İptal nedeni (zorunlu)',
+    reasonRequired: 'İptal nedeni zorunludur.',
+    submit: 'Siparişi iptal et',
+    submitting: 'İptal gönderiliyor…',
+    unknown: 'İptalin sonucu alınamadı; kaydedilmiş olabilir. Aynı işlemi tekrar göndermek ikinci bir iptal oluşturmaz.',
+    completed: 'Sipariş iptal edildi.',
+    replayed: 'Bu iptal daha önce kaydedilmişti; güncel durum gösteriliyor.',
+    retry: 'Aynı iptali tekrar dene',
+    abandon: 'Bu işlemi bırak',
+    unauthenticated: 'Oturumunuz sona erdi; iptal uygulanmadı.',
+    forbidden: 'Bu şirkette sipariş iptal yetkiniz yok; iptal uygulanmadı.',
+    notFound: 'Sipariş bulunamadı; iptal uygulanmadı.',
+    conflict: 'İptal uygulanmadı; sipariş ve etki yeniden okundu.',
+    versionConflict: 'Sipariş siz okuduktan sonra değişti; güncel durum gösteriliyor.',
+    validation: 'İptal uygulanmadı; gönderilen bilgi geçerli değil.',
+    unexpected: 'İptal uygulanmadı. Beklenmeyen bir yanıt alındı.',
+    recordHeading: 'İptal kaydı',
+    recordSubject: 'iptal kaydı',
+    cancelledBy: 'İptal eden',
+    cancelledAt: 'İptal zamanı',
+    reason: 'İptal nedeni',
+    revision: 'İptal edilen revizyon',
+    recordNote: 'İptal edilen siparişin onay bilgileri, satırları ve geçmişi silinmez; sipariş başka işlem kabul etmez.',
+    recordSources: 'İptal anındaki etki',
+    recordMissing: 'İptal kaydı okunamadı.',
   },
   /** AT-024: delivered / remaining per line, read from Logistics' recorded deliveries; no tolerance is judged (OPEN-004). */
   deliveryProgress: {

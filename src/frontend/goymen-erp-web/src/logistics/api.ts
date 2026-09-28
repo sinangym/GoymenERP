@@ -7,6 +7,7 @@
  *   GET  …/loading-instructions/{id}                       → LoadingInstructionDetailView
  *   POST …/loading-instructions/{id}/issue                 → 200 (Draft → Issued); replay 200 + header
  *   POST …/loading-instructions/{id}/lines/{lineId}/loads → 200 (a loaded share); replay 200 + header
+ *   POST …/loading-instructions/{id}/weighings             → 200 (AT-053 weighbridge record); replay 200 + header
  *
  * The transport invents no field and carries no business rule. It adds the consumer checks the
  * contract asks for: a command answer is success only when status and `isReplay` agree with the
@@ -34,6 +35,7 @@ import {
   instructionDetailPath,
   issuePath,
   loadsPath,
+  weighingsPath,
   type ApprovedOrderLinePage,
   type CreateInstructionRequest,
   type InstructionDetail,
@@ -42,6 +44,7 @@ import {
   type InstructionStatus,
   type IssueRequest,
   type RecordLoadRequest,
+  type RecordWeighingRequest,
 } from './contract'
 import type { CommandOutcome } from './instructionAttempt'
 import type { ViewOutcome } from '../shell/uiState'
@@ -178,7 +181,8 @@ export function describesAttempt(mutation: InstructionMutation, sent: CreateInst
     instruction.companyAccountId !== sent.companyAccountId ||
     instruction.effectiveOn !== sent.effectiveOn ||
     detail.lines.length !== sent.lines.length ||
-    detail.shares.length !== 0
+    detail.shares.length !== 0 ||
+    detail.weighing !== null
   ) {
     return false
   }
@@ -248,7 +252,7 @@ export interface CommandContext {
 
 async function sendTransition(
   path: string,
-  payload: IssueRequest | RecordLoadRequest | RecordShipmentRequest | RecordDeliveryRequest,
+  payload: IssueRequest | RecordLoadRequest | RecordShipmentRequest | RecordDeliveryRequest | RecordWeighingRequest,
   context: CommandContext,
   signal: AbortSignal | undefined,
 ): Promise<CommandOutcome<InstructionMutation>> {
@@ -333,4 +337,19 @@ export async function recordDelivery(lineId: string, payload: RecordDeliveryRequ
   return shares.length !== 1 || share.kind !== 'Delivered' || share.lineId !== lineId || share.quantity !== payload.quantity
     || share.measurement !== null || share.sourceShipmentId !== payload.sourceShipmentId
     || Date.parse(share.recordedAtUtc) !== Date.parse(payload.occurredAtUtc) ? { type: 'malformed' } : outcome
+}
+
+/**
+ * AT-053: the vehicle's manual weighbridge record. The answer must be THIS instruction carrying THE record sent — its
+ * id, direction and both weighings as the text sent. Net and difference are the backend's; they are shown, never checked
+ * against a client calculation.
+ */
+export async function recordWeighing(payload: RecordWeighingRequest, context: CommandContext,
+  signal?: AbortSignal): Promise<CommandOutcome<InstructionMutation>> {
+  const outcome = await sendTransition(weighingsPath(context.instructionId), payload, context, signal)
+  if (outcome.type !== 'succeeded') return outcome
+  const weighing = outcome.data.detail.weighing
+  return weighing === null || weighing.weighingId !== payload.weighingId || weighing.direction !== payload.direction
+    || weighing.firstWeighingKg !== payload.firstWeighingKg || weighing.secondWeighingKg !== payload.secondWeighingKg
+    ? { type: 'malformed' } : outcome
 }

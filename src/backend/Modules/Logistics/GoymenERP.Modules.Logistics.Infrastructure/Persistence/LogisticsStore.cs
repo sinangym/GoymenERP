@@ -182,7 +182,7 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         RequireCommand(commandName);
         if (!LogisticsCommands.IsMutation(commandName))
         {
-            throw new ArgumentException("Yalnız yayımlama ve yükleme komutları bir talimatı değiştirir.", nameof(commandName));
+            throw new ArgumentException("Yalnız yayımlama, pay ve kantar tartımı komutları bir talimatı değiştirir.", nameof(commandName));
         }
 
         if (string.IsNullOrWhiteSpace(audit.EventType) || string.IsNullOrWhiteSpace(audit.Operation) || string.IsNullOrWhiteSpace(audit.Reason))
@@ -221,17 +221,22 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         var lineRows = await dbContext.Lines.Where(line => line.InstructionId == instructionId).OrderBy(line => line.LineNo).ToListAsync(cancellationToken);
         var shareRows = await dbContext.Shares.AsNoTracking().Where(share => share.InstructionId == instructionId).OrderBy(share => share.ShareNo)
             .ToListAsync(cancellationToken);
-        var instruction = Restore(row, lineRows, shareRows);
+        var weighingRow = await dbContext.Weighings.AsNoTracking().SingleOrDefaultAsync(weighing => weighing.InstructionId == instructionId, cancellationToken);
+        var instruction = Restore(row, lineRows, shareRows, weighingRow);
         var versionBefore = instruction.Version;
         var before = Snapshot(instruction);
         var sharesBefore = instruction.Shares.Count;
+        var weighingBefore = instruction.Weighing;
         var now = timeProvider.GetUtcNow();
         // The domain decides; a refusal leaves the tracked rows untouched (nothing below has run).
         mutate(instruction, now);
+        var weighingAdded = weighingBefore is null && instruction.Weighing is not null;
         if (instruction.Version != versionBefore + 1 || instruction.Id != row.Id || instruction.CompanyId != companyId
-            || instruction.Shares.Count > sharesBefore + 1 || instruction.Lines.Count != lineRows.Count)
+            || instruction.Shares.Count > sharesBefore + 1 || instruction.Lines.Count != lineRows.Count
+            || (weighingBefore is not null && !ReferenceEquals(weighingBefore, instruction.Weighing))
+            || (weighingAdded && instruction.Shares.Count != sharesBefore))
         {
-            throw new InvalidOperationException("Bir komut tam olarak bir sürüm ilerletir ve en fazla bir pay ekler.");
+            throw new InvalidOperationException("Bir komut tam olarak bir sürüm ilerletir ve en fazla bir pay ya da bir kantar tartımı ekler.");
         }
 
         row.Status = (int)instruction.Status;
@@ -261,6 +266,29 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
                 Measurement = share.Measurement is { } measurement ? (int)measurement : null,
                 SourceShipmentId = share.SourceShipmentId,
                 RecordedAtUtc = share.RecordedAtUtc,
+            });
+        }
+
+        if (weighingAdded && instruction.Weighing is { } weighing)
+        {
+            // AT-053: appended once; the key (company, instruction) refuses a second record in SQL Server too.
+            dbContext.Weighings.Add(new VehicleWeighingRow
+            {
+                CompanyId = companyId,
+                InstructionId = instruction.Id,
+                WeighingId = weighing.WeighingId,
+                Direction = (int)weighing.Direction,
+                FirstWeighingKg = RequireFits(weighing.FirstWeighing.Value),
+                SecondWeighingKg = RequireFits(weighing.SecondWeighing.Value),
+                NetKg = RequireFits(weighing.Net.Value),
+                LoadedKgAtWeighing = RequireFits(weighing.LoadedAtWeighing.Value),
+                DifferenceKg = weighing.DifferenceKg < 0m ? -RequireFits(-weighing.DifferenceKg) : RequireFits(weighing.DifferenceKg),
+                SharesBefore = weighing.SharesBefore,
+                // The operator is this write's actor (its column width is the envelope's, measured above).
+                RecordedBy = string.Equals(weighing.RecordedBy, actorId, StringComparison.Ordinal)
+                    ? actorId
+                    : throw new InvalidOperationException("Kantar tartımını kaydeden, bu yazmanın aktörüdür."),
+                RecordedAtUtc = weighing.RecordedAtUtc,
             });
         }
 
@@ -324,14 +352,21 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         var ids = rows.Select(row => row.Id).ToArray();
         var lines = await dbContext.Lines.AsNoTracking().Where(line => ids.Contains(line.InstructionId)).ToListAsync(cancellationToken);
         var shares = await dbContext.Shares.AsNoTracking().Where(share => ids.Contains(share.InstructionId)).ToListAsync(cancellationToken);
+        var weighings = await dbContext.Weighings.AsNoTracking().Where(weighing => ids.Contains(weighing.InstructionId)).ToListAsync(cancellationToken);
         return [.. rows.Select(row => new StoredLoadingInstruction(
             Restore(row, [.. lines.Where(line => line.InstructionId == row.Id).OrderBy(line => line.LineNo)],
-                [.. shares.Where(share => share.InstructionId == row.Id).OrderBy(share => share.ShareNo)]),
+                [.. shares.Where(share => share.InstructionId == row.Id).OrderBy(share => share.ShareNo)],
+                weighings.SingleOrDefault(weighing => weighing.InstructionId == row.Id)),
             row.EffectiveOn))];
     }
 
-    /// <summary>Rebuilds the instruction through the domain in recording order; the stored version and totals must be the ones the rebuild reaches.</summary>
-    private static LoadingInstruction Restore(LoadingInstructionRow row, IReadOnlyList<LoadingInstructionLineRow> lines, IReadOnlyList<LoadingShareRow> shares)
+    /// <summary>
+    /// Rebuilds the instruction through the domain in recording order; the stored version and totals must be the ones the rebuild
+    /// reaches. The weighbridge record (AT-053) is replayed after the shares it was recorded after, so the domain recalculates its
+    /// net, loaded snapshot and difference; the stored ones must be the same.
+    /// </summary>
+    private static LoadingInstruction Restore(LoadingInstructionRow row, IReadOnlyList<LoadingInstructionLineRow> lines, IReadOnlyList<LoadingShareRow> shares,
+        VehicleWeighingRow? weighing)
     {
         var instruction = LoadingInstruction.Create(row.Id, row.CompanyId, row.CustomerPartyId, row.CompanyAccountId, row.CreatedAtUtc);
         foreach (var line in lines)
@@ -346,8 +381,24 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
             instruction.Issue(instruction.Version, row.UpdatedAtUtc);
         }
 
-        foreach (var share in shares)
+        if (weighing is not null && (weighing.SharesBefore < 0 || weighing.SharesBefore > shares.Count))
         {
+            throw new InvalidOperationException("Kayıtlı kantar tartımının pay sırası paylarla uyuşmuyor.");
+        }
+
+        for (var index = 0; index <= shares.Count; index++)
+        {
+            if (weighing is not null && weighing.SharesBefore == index)
+            {
+                RestoreWeighing(instruction, weighing);
+            }
+
+            if (index == shares.Count)
+            {
+                break;
+            }
+
+            var share = shares[index];
             var line = lines.Single(candidate => candidate.LineId == share.LineId);
             var quantity = Quantity.Of(share.Quantity, line.UnitIsKilogram ? QuantityUnit.Kilogram : QuantityUnit.Piece);
             switch ((LoadingShareKind)share.Kind)
@@ -386,6 +437,17 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         }
 
         return instruction;
+    }
+
+    private static void RestoreWeighing(LoadingInstruction instruction, VehicleWeighingRow row)
+    {
+        var restored = instruction.RecordWeighing(instruction.Version, row.WeighingId, (WeighingDirection)row.Direction,
+            Quantity.Of(row.FirstWeighingKg, QuantityUnit.Kilogram), Quantity.Of(row.SecondWeighingKg, QuantityUnit.Kilogram), row.RecordedBy,
+            row.RecordedAtUtc);
+        if (restored.Net.Value != row.NetKg || restored.LoadedAtWeighing.Value != row.LoadedKgAtWeighing || restored.DifferenceKg != row.DifferenceKg)
+        {
+            throw new InvalidOperationException("Kayıtlı kantar tartımı yeniden hesaplanan net, yüklenen ve fark ile uyuşmuyor.");
+        }
     }
 
     // ---- helpers --------------------------------------------------------------------------------
@@ -433,6 +495,15 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
             shipped = line.ShippedQuantity.Value, delivered = line.DeliveredQuantity.Value, blocked = line.IsBlocked,
         }),
         shares = instruction.Shares.Count,
+        // AT-053: the weighbridge facts in the audit trail; no tolerance verdict exists to record (OPEN-004).
+        weighing = instruction.Weighing is { } weighing
+            ? new
+            {
+                weighingId = weighing.WeighingId, direction = weighing.Direction.ToString(), first = weighing.FirstWeighing.Value,
+                second = weighing.SecondWeighing.Value, net = weighing.Net.Value, loaded = weighing.LoadedAtWeighing.Value,
+                difference = weighing.DifferenceKg, recordedBy = weighing.RecordedBy,
+            }
+            : null,
     }, Json);
 
     private async Task SaveAsync(CancellationToken cancellationToken)

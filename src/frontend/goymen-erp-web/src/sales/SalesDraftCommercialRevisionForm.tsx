@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { sendDraftCommercialRevision } from './api'
 import { buildCommercialRevisionRequest, commercialRowsFromDetail, type CommercialRevisionRow } from './commercialRevision'
-import { APPROVAL_STATE, SALES_PROBLEM_CODE, type DraftCommercialRevisionRequest, type DraftDetail, type DraftMutation } from './contract'
+import { APPROVAL_STATE, CANCELLED_STATE, SALES_PROBLEM_CODE, type DraftCommercialRevisionRequest, type DraftDetail, type DraftMutation } from './contract'
 import {
   abandon,
   applyOutcome,
@@ -55,10 +55,11 @@ export function SalesDraftCommercialRevisionForm({
     return <p className={styles.muted} data-testid="sales-price-revision-withheld">{text.withheld}</p>
   }
 
-  const stateAllowsRevision =
+  // DEC-SAL-005: a cancelled order keeps its Approved facts but is terminal — no revision re-opens it.
+  const stateAllowsRevision = detail.draft.state !== CANCELLED_STATE && (
     detail.draft.approvalState === APPROVAL_STATE.preparing ||
     detail.draft.approvalState === APPROVAL_STATE.rejected ||
-    detail.draft.approvalState === APPROVAL_STATE.approved
+    detail.draft.approvalState === APPROVAL_STATE.approved)
 
   async function send(
     snapshot: OrderAttemptSnapshot<DraftCommercialRevisionRequest>,

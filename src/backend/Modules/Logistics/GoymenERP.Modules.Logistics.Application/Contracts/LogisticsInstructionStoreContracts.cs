@@ -35,8 +35,10 @@ public static class LogisticsCommands
     public const string RecordLoadV1 = "logistics.loading-instruction.record-load.v1";
     public const string RecordShipmentV1 = "logistics.loading-instruction.record-shipment.v1";
     public const string RecordDeliveryV1 = "logistics.loading-instruction.record-delivery.v1";
+    public const string RecordWeighingV1 = "logistics.loading-instruction.record-weighing.v1";
 
-    public static bool IsMutation(string commandName) => commandName is IssueV1 or RecordLoadV1 or RecordShipmentV1 or RecordDeliveryV1;
+    public static bool IsMutation(string commandName) =>
+        commandName is IssueV1 or RecordLoadV1 or RecordShipmentV1 or RecordDeliveryV1 or RecordWeighingV1;
 
     public static bool IsKnown(string commandName) => commandName == CreateV1 || IsMutation(commandName);
 }

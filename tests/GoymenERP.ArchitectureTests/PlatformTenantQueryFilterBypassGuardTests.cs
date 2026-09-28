@@ -162,12 +162,14 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // inventory
             // AT-037: +3 stock-count SQL facts (d709faf1… -> 4e783c62…).
+            // DEC-SAL-005: +1 allocation-blocks-cancellation SQL fact (4e783c62… -> 953d329a…).
             ["tools/relational_inventory/inventory.txt"] =
-                "4e783c6274086114d7c0709abf65fbcf4c1fc5993736ef2a4739f9ad0982d609",
+                "953d329a4c4047fadb6ad3dc491ee9ec9d7df9cbca1db52044b3cff1f567c464",
 
             // logistics
+            // AT-053: +4 weighbridge SQL facts (81c1ff0b… -> 264898d7…).
             ["tools/relational_inventory/logistics.txt"] =
-                "81c1ff0b928c464dbe9c8378e1a95531ccabe2f6c9c9443d94f28e1f56763aed",
+                "264898d775b52cec9f087fcb7e1b90db27ef07711d7438154a625aa4160f6f27",
 
             // manufacturing
             // MFG-PLAN-EDIT: +6 plan-revision SQL facts (a72e6367… -> 02711b6c…).
@@ -194,8 +196,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // sales
             // DEC-SAL-003: +3 SalesDeliveryScheduleSqlServerRelationalAcceptanceTests facts (16fa5110… -> 00189b7b…).
             // AT-024: +2 SalesDeliveryProgressSqlServerRelationalAcceptanceTests facts (00189b7b… -> 719d0d03…).
+            // DEC-SAL-005: +4 SalesOrderCancellationSqlServerRelationalAcceptanceTests facts (719d0d03… -> 5508f4ed…).
             ["tools/relational_inventory/sales.txt"] =
-                "719d0d0348973800b24163a0999fba2d62707b2b3d394bde827eb551f0b3d1c4",
+                "5508f4ed1c791e826a1a237464db67b63ca8bcca2adf46ec9d38af8c8d7dc50c",
         };
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
@@ -230,14 +233,18 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // CompanyId filter. A standard entry, not an exception.
             // Re-fingerprinted for DEC-SAL-003: the two delivery-schedule tables (DraftDeliverySchedules,
             // DraftDeliveryScheduleDates), each with the same CompanyId query filter and a company-leading key.
+            // Re-fingerprinted for DEC-SAL-005: the cancellation table (DraftCancellations), with the same CompanyId
+            // query filter and a company-leading key, plus the lifecycle column on Drafts.
             ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/"
              + "Persistence/SalesDbContext.cs"] =
-                "7781a5f6a90d0218ca1d4be63a8d49aef41f74ebe8aacc10980042915be85f0d",
+                "81934b822345dda81cde094c20a8a74894e19fa1a4af1c745ca4e934500bb194",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
              + "Persistence/LogisticsDbContext.cs"] =
-                "836402675ced5dcb6fc4bc09e54f26fc318268d8d0acfb92bb0fd58e194d6479",
+            // Re-measured for AT-053: VehicleWeighings, company-scoped with the same CompanyId query filter and a
+            // company-leading key; one weighing per instruction.
+                "c157f2333337aaac614b9098754dfa4bcc99ac4ef062fd4c15d8c72dd5d0886d",
             // PUR-4a: company-scoped like Organization; every tenant row (requests and their lines, orders and their
             // lines, attempts) and AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
@@ -457,8 +464,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Inventory/"
                  + "GoymenERP.Modules.Inventory.Infrastructure/"
                  + "InventoryModuleExtensions.cs"] =
+                    // Re-fingerprinted for DEC-SAL-005: one scoped registration of the Sales-declared allocation read
+                    // port; the provider branch and its token counts are unchanged.
                     new(
-                        "2d9b9d1196f14313d66beba3dc9f88d3bfaa722aba61833f0eb0f1eef6394191",
+                        "4e6f2a46b46a4c9e4899bda34639e3cda707b39dfab3bc970cba7f8c655d6304",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -693,8 +702,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Logistics/"
                  + "GoymenERP.Modules.Logistics.Infrastructure/"
                  + "LogisticsModuleExtensions.cs"] =
+                    // Re-fingerprinted for DEC-SAL-005: one scoped registration of the Sales-declared loading read port;
+                    // the provider branch and its token counts are unchanged.
                     new(
-                        "7cfd2d97e0797ae1b4ee02ae9ab967c6af0a69fc8b8e12ab54ba4c5534dd17d5",
+                        "725cbc0fb41d09e180af4a21fd1c4c01a2621e4fdfa38f3790093bb7358aa451",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -717,7 +728,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Logistics/"
                  + "GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsStore.cs"] =
                     new(
-                        "aee284d99947f3ff94794d1e5df7e9843fbb769cfb3afd334ec892f410f204be",
+                        // Re-fingerprinted for AT-053: the weighing is saved in the instruction's one save and
+                        // replayed at its share position; SqlClient count unchanged.
+                        "4c64fde78e67008e4cc3e334437c795dd608f35cba011c52d36d328144fb1d7d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -797,8 +810,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Sales/"
                  + "GoymenERP.Modules.Sales.Infrastructure/"
                  + "SalesModuleExtensions.cs"] =
+                    // Re-fingerprinted for DEC-SAL-005: the draft service also receives the optional allocation and
+                    // loading read ports; the provider branch and its token counts are unchanged.
                     new(
-                        "f72879f85551697b5d4a33385bc6c7055824367fc2ae7d5af4e8227aad81b9b6",
+                        "088bcdbf9410ffab45fcdd603d0ecaa7fbb02abf46c042f4663f29cccc62fcde",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -812,8 +827,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // and saved once through the filtered context; no connection, command or raw SQL; SqlClient count unchanged.
                 ["src/backend/Modules/Sales/"
                  + "GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.cs"] =
+                    // Re-fingerprinted for DEC-SAL-005: the cancellation write and read, company-resolved and saved
+                    // once through the filtered context; no connection, command or raw SQL; SqlClient count unchanged.
                     new(
-                        "31b964d88b94b2aeeb81e76916b6c67f03b2aaf89ecdb7d5048197251c494ec9",
+                        "f50a2e49e00cc78d9a9482fa58c5acf82898462412e414b2c1fc78916016657e",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -978,6 +995,18 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // dates. The THROW precedes both DropTables; an empty database rolls back freely. Forward fix.
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20260926090000_AddDeliverySchedules.cs"] =
                     new("dc0019ef55d4283bdba596e50ce1ceaf7504efe11172457bb45db9f11109ffa9",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // DEC-SAL-005: the Down's only raw SQL refuses rollback (51055, used by no other module) while any
+                // order cancellation is stored; the THROW precedes the DropTable and DropColumn. Forward fix.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20260927120000_AddDraftCancellations.cs"] =
+                    new("651cae770ecc2d18d3b24479523d95ead0259fe231188a47c390f24da8d0f21e",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // AT-053: the Down's only raw SQL is Logistics' module refusal (51056, used by no other migration) while
+                // any weighbridge record is stored; the THROW precedes the DropTable, an empty table rolls back freely.
+                ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/Migrations/20260928120000_AddVehicleWeighings.cs"] =
+                    new("beb572dd1dd3450169f3c2b927e143161f2a15daedbd6b391eccc2b598817f4b",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // ACC-V0a: the Down's only raw SQL is Accounting's module refusal (51048, coordinator-assigned) while any

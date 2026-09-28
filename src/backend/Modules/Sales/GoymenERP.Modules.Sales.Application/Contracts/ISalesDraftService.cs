@@ -46,6 +46,16 @@ public interface ISalesDraftService
     // through ISalesOrderDeliveryReadPortV1), under the draft read; read-only, nothing is written.
     Task<SalesOrderDraftDeliveryProgressResponse> GetDraftDeliveryProgressAsync(Guid draftId,
         CancellationToken cancellationToken = default);
+
+    // DEC-SAL-005 / AT-007 — the impact preview and the cancellation of an approved order under `sales.orders.cancel`
+    // (owners read through their ports; fail-closed: any recorded effect or an unreadable owner refuses), and the read of the
+    // recorded cancellation (`sales.drafts.read`).
+    Task<SalesOrderDraftCancellationImpactResponse> GetCancellationImpactAsync(Guid draftId,
+        CancellationToken cancellationToken = default);
+    Task<SalesOrderDraftResponse> CancelDraftAsync(Guid draftId, SalesDraftCancelRequest request,
+        SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
+    Task<SalesOrderDraftCancellationResponse> GetDraftCancellationAsync(Guid draftId,
+        CancellationToken cancellationToken = default);
 }
 
 // Constructed by the server, never bound from the request body.
