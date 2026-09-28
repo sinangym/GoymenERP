@@ -1,11 +1,11 @@
-# Göymen AI Merkezi — Uygulama Sözleşmesi ve Master Rapor v1.3
+# Göymen AI Merkezi — Uygulama Sözleşmesi ve Master Rapor v1.4
 
 **Belge kimliği:** `GOYMEN_AI_MERKEZI_MASTER_RAPOR_V1`
 **İlk yayın:** 27 Eylül 2026 (v1.0)
-**Son revizyon:** 28 Eylül 2026 (v1.3 — kapanış kontrolü bulguları: sorun/görev tek işlem, salt-okunur kapı, gönderim-kurtarma ortak zarf kontrolü, gölge mod ve eski revizyon koruması, tek sevkiyat istisnasında risk/izin/görev ayrımı, eski tanımların eşitlenmesi; değişiklik günlüğü bölüm 15). v1.2 ve v1.1: 28 ve 27 Eylül 2026.
-**Eşlik eden belge:** `GOYMEN_AI_MERKEZI_KODLAMA_TASARIMI_V1.md` (v1.1, 28 Eylül 2026) — bu raporun **nasıl kodlanacağını** kod örnekleriyle anlatan analiz belgesi; bu rapor "ne/neden", o belge "nasıl"
+**Son revizyon:** 28 Eylül 2026 (v1.4 — ikinci kapanış kontrolü: kurtarmada deneme reddi ≠ niyet reddi, onaylanmış-gönderilmemiş öneri, öneri oluşturmanın tekrar gönderime dayanıklılığı, talimat kapsamlı karar ihtiyacı, takip başlatma garantisi, gölge modun operasyonel izolasyonu, Work'ün kendi çalıştırıcısı, rakam yasaklı çıktı doğrulama, içerik alanlarının saklaması; değişiklik günlüğü bölüm 15.0). v1.3: sorun/görev tek işlem, salt-okunur kapı, gönderim-kurtarma ortak zarf kontrolü, gölge mod ve eski revizyon koruması, tek sevkiyat istisnasında risk/izin/görev ayrımı, eski tanımların eşitlenmesi; değişiklik günlüğü bölüm 15). v1.2 ve v1.1: 28 ve 27 Eylül 2026.
+**Eşlik eden belge:** `GOYMEN_AI_MERKEZI_KODLAMA_TASARIMI_V1.md` (v1.2, 28 Eylül 2026) — bu raporun **nasıl kodlanacağını** kod örnekleriyle anlatan analiz belgesi; bu rapor "ne/neden", o belge "nasıl"
 **Belge türü:** Göymen ERP üzerine kurulacak kurumsal AI yardımcı katmanının ("JARVIS" / Göymen AI Merkezi) amaç, iş analizi, mimari, kod yapısı, modül bazlı spesifikasyon, güvenlik, test, karar paketi ve uygulama planı sözleşmesi
-**Durum:** YALNIZ ANALİZ / RAPOR TASLAĞI — TASARIM HEDEFİ ve KARAR ADAYI; geliştirilmiş, kabul edilmiş veya canlı sistem beyanı değildir. Bu belge ERP'ye entegrasyon, Faz 0'ı başlatma, yeni geliştirme görevi açma veya yetki/veri aktarımı onayı **değildir**; repo kodu, `KARAR_SICILI.md`, `task_manifest.json`, izinler ve mevcut ERP kapanış çalışması bu belgeyle değişmez
+**Durum:** YALNIZ ANALİZ / RAPOR TASLAĞI — ana yaklaşımı belirlenmiş, önemli düzeltmeleri yapılmış tasarım taslağı; ikinci kapanış kontrolünün kritik yürütme ve takip bulguları v1.4'te işlendi, **bağımsız yeniden kontrol bekliyor**. TASARIM HEDEFİ ve KARAR ADAYI; geliştirilmiş, kabul edilmiş veya canlı sistem beyanı değildir. Bu belge ERP'ye entegrasyon, Faz 0'ı başlatma, yeni geliştirme görevi açma veya yetki/veri aktarımı onayı **değildir**; repo kodu, `KARAR_SICILI.md`, `task_manifest.json`, izinler ve mevcut ERP kapanış çalışması bu belgeyle değişmez
 **Doğrulama tabanı:** `sinangym/GoymenErp` `main@00a879816a7a9bb9a800712e59dc9ae5f52f08b0` (27 Eylül 2026, PR #495)
 **Kaynaklar:** `AGENTS.md`; `docs/decisions/KARAR_SICILI.md`; `docs/decisions/ACIK_KARARLAR.md`; `docs/master/GOYMEN_ERP_MASTER_RAPOR_V3.md` (§6, §7, §12, §25, §27); `docs/features/ERP-000J_AI_GATEWAY_CONTRACT_v1.md`; `docs/features/ERP-000K_SHELL_CONTRACT_v1.md`; `docs/security/AI_VERI_GUVENLIK.md`, `AI_YETKI_SOZLESMESI.md`, `GOREV_AYRILIGI_ONAY.md`, `YETKI_MODELI.md`; `docs/domain/*`; `docs/backlog/task_manifest.json`, `DELIVERY_BACKLOG_v1.json`; `docs/governance/GOYMEN_ERP_HIZLI_TESLIM_v3.md`; `docs/ui/sources/finance/v4/03_AI_KULLANIM_MATRISI.md`; `src/backend/**`, `src/frontend/**`, `contracts/openapi/goymen-erp-v1.json` (salt-okunur kod envanteri); kullanıcının 27 Eylül 2026 tarihli üç metin eki (üç turlu JARVIS değerlendirmesi, bu değerlendirmenin eleştirisi ve v1.0 raporunun eleştirisi); 28 Eylül 2026 tarihli üçüncü eleştiri metni (v1.1 ve ara cevabın değerlendirmesi); bu eleştirinin atıf yaptığı, repoda bulunmayan `GOYMEN_ERP_TUM_MODULLER_UYGULAMA_VE_KARAR_RAPORU_v2_1.docx` (05.09.2026; `AI-K01` "API birincil; GPU sunucusu şart değil") — içeriği eleştiri metninin aktarımıyla alınmıştır, belge bu raporun yazarınca okunmamıştır
 
@@ -13,7 +13,7 @@
 
 ## İçindekiler
 
-0. Okuma ve karar kuralları · 1. Yönetici özeti · 2. Amaç, hedef ve başarı ölçütleri · 3. Kavramsal model (bağlam zarfı, etki kuralları, sevkiyat örneği, bilgi sınıfları, eğitim modu) · 4. Mevcut durum: repo gerçeği · 5. Hedef mimari (proje yapısı, araç sözleşmesi, gateway servisleri, veri modeli, komut zarfı, iş akışı motoru, iş öğesi, bilgi katmanı, model router, ses/belge, frontend, güvenlik, gözlemlenebilirlik, eval) · 6. AI mühendisliği ayrıntıları · 7. Modül bazlı spesifikasyon (13 modül) · 8. İş analizi ve kullanıcı deneyimi · 9. Kapsam uzlaştırması · 10. Karar paketi (ADR-008, OPEN-020, NEEDS-SINAN) · 11. Uygulama planı (Faz 0–5, şerit ve K sınıfı) · 12. Test ve kabul · 13. Riskler · 14. Sözlük · 15. Değişiklik günlüğü (v1.1–v1.3) ve kapanış kontrol tablosu · Ek A Araç kataloğu · Ek B Etki kuralları · Ek C Şema örnekleri · Ek D Golden set · Ek E Kaynaklar
+0. Okuma ve karar kuralları · 1. Yönetici özeti · 2. Amaç, hedef ve başarı ölçütleri · 3. Kavramsal model (bağlam zarfı, etki kuralları, sevkiyat örneği, bilgi sınıfları, eğitim modu) · 4. Mevcut durum: repo gerçeği · 5. Hedef mimari (proje yapısı, araç sözleşmesi, gateway servisleri, veri modeli, komut zarfı, iş akışı motoru, iş öğesi, bilgi katmanı, model router, ses/belge, frontend, güvenlik, gözlemlenebilirlik, eval) · 6. AI mühendisliği ayrıntıları · 7. Modül bazlı spesifikasyon (13 modül) · 8. İş analizi ve kullanıcı deneyimi · 9. Kapsam uzlaştırması · 10. Karar paketi (ADR-008, OPEN-020, NEEDS-SINAN) · 11. Uygulama planı (Faz 0–5, şerit ve K sınıfı) · 12. Test ve kabul · 13. Riskler · 14. Sözlük · 15. Değişiklik günlüğü (v1.1–v1.4) ve kapanış kontrol tablosu · Ek A Araç kataloğu · Ek B Etki kuralları · Ek C Şema örnekleri · Ek D Golden set · Ek E Kaynaklar
 
 ---
 
@@ -225,7 +225,7 @@ Kurallar:
 - Her bulgu **alan bazlı açıklık matrisi** ile süzülür: `Full` (tutarlar görünür), `GateDecision` (yalnız sahip modülün kapı kararı ve izinli gerekçe kodları), `Hidden`. Aktörün izin kapsamı düzeyi belirler; AI cümlesi bu düzeyi aşamaz. Aynı matris görev kartının bütün kanallarına (yorum, bildirim, geçmiş, ek, arama, dışa aktarım) uygulanır.
 - Etki kuralı motoru `Modules.Work.Rules` içindedir; AI capability veya model kill switch kapalıyken de çalışır. AI yalnız bulguyu açıklar ve taslak ekler.
 - Etki kuralı, kesin kuralın **yerine geçmez**: sevkiyatta kesin risk kontrolünü Logistics komutu Finance'in risk servisiyle yapar (`DEC-FIN-009`); etki kuralı bu sonucu **önceden** (yükleme talimatı aşamasında) ve **açıklamalı** olarak gösterir, iş öğesi açar.
-- (v1.3) **Salt-okunur kapı ile kalıcı takip ayrıdır:** form içi kapı sorgusu yalnız hesaplar ve karar döndürür, hiçbir kayıt yazmaz; Sorun/Değerlendirme/görev yalnız ayrı takip komutu, olay tüketicisi veya zamanlı tarama yolunda ve **tek veritabanı işleminde** yazılır. Karar bekleyen (`Open`/`Reopened`) her Sorunun açık görevi vardır (değişmez); eksikse bir sonraki değerlendirme, sonuç "değişmedi" olsa da görevi tamamlar.
+- (v1.3) **Salt-okunur kapı ile kalıcı takip ayrıdır:** form içi kapı sorgusu yalnız hesaplar ve karar döndürür, hiçbir kayıt yazmaz; Sorun/Değerlendirme/görev yalnız olay tüketicisi, zamanlı tarama/uzlaştırma veya ayrı takip komutu yolunda ve **tek veritabanı işleminde** yazılır. (v1.4) Görevler **karar ihtiyacı başına ve kapsamlıdır** (müşteri geneli veya talimat): karşılanmamış her ihtiyacın açık görevi vardır; bir talimata verilen karar başka talimatın ihtiyacını kapatmaz; eksik görev bir sonraki değerlendirmede, sonuç "değişmedi" olsa da tamamlanır. Takibin **başlatılması** outbox olayına ve uzlaştırma taramasına dayanır; ekranın takip çağrısı yalnız hızlandırıcıdır. Gölge moddaki kural operasyonel Sorun ve görevi hiç değiştirmez (yalnız ayrı gölge kaydı).
 - Kural kataloğu `docs/ai/IMPACT_RULES.md` altında sürümlenir; başlangıç kataloğu (kaynak ve etki türü sütunlarıyla) Ek B'dedir.
 - Taslak aşamasındaki niyetler (örn. yükleme talimatı taslağı) outbox olayı üretmez; bu kurallar form içinden çağrılan **on-demand SIMULATE/kapı sorgusu** ile tetiklenir, olay tabanlı kurallar ise `ERP-000F` outbox'ından.
 
@@ -269,10 +269,13 @@ finance.risk.evaluate@1 → {
 [1] Sevkiyat kullanıcısı yükleme talimatı taslağını açar (L-workspace)
       → Form, on-demand kapı sorgusunu çağırır: finance.risk.shipment-gate@1 (Finance'in lojistik rolüne
         açıkça yetkilendirdiği dar READ; tutar döndürmez). Kapı sorgusu HİÇBİR KAYIT YAZMAZ (v1.3).
-      → Kullanıcı talimatı kaydedince form AYRI takip komutunu çağırır (POST /rules/evaluations; ERP-000F gelince
-        aynı iş olaydan): Work.Rules IR-LOG-001'i SİSTEM aktörüyle değerlendirir (finance.risk.evaluate@1, aşama
-        geçişi sözleşmesiyle) → Sorun IR-LOG-001:Counterparty.CompanyPartyAccount:X Open, severity High (risk müşteri
-        bazlıdır; talimat Değerlendirme'nin hedefidir); Değerlendirme #1 ve Finans görevi AYNI veritabanı işleminde yazılır.
+      → Kullanıcı talimatı kaydedince takip başlar. GARANTİ SIRASI (v1.4): birincil = talimat kaydıyla AYNI işlemde
+        yazılan outbox olayı (ERP-000F); outbox gelene kadar ve sonrasında emniyet ağı = Work'ün zamanlı UZLAŞTIRMA
+        taraması (açık talimatların DURUM sorgusu); ekranın ayrı takip çağrısı (POST /rules/evaluations) yalnız
+        HIZLANDIRICIDIR — tarayıcı kapanırsa kaybolabilir, tek dayanak değildir.
+        Work.Rules IR-LOG-001'i SİSTEM aktörüyle değerlendirir (finance.risk.evaluate@1, aşama geçişi sözleşmesiyle)
+        → Sorun IR-LOG-001:Counterparty.CompanyPartyAccount:X Open (müşteri düzeyinde TEK Sorun) + karar ihtiyacı
+        "talimat A" + Finans görevi (ihtiyaç başına TEK görev); hepsi AYNI veritabanı işleminde yazılır.
 
 [2] Sevkiyat kullanıcısının ekranındaki kart (GateDecision düzeyi, deterministik, modelsiz):
       "⚠ X müşterisi için Finans değerlendirmesi gerekli (gerekçe kodu: RISK_REVIEW_REQUIRED). Talimatı hazırlamaya
@@ -293,19 +296,24 @@ finance.risk.evaluate@1 → {
       Aktörler: requestedBy = sevkiyat kullanıcısı (taslağı açan) · preparedBy = Work.Rules/AiRun
                 · approvedBy = Finans sorumlusu · executedBy = ERP komutu (sistem)
 
-[4] Finans (a) süreli istisna onayı verir → ERP onay kaydı (yetki: finance.risk.exception.approve — ÖNERİ;
-      maker≠checker gerçek kullanıcı kimliğiyle) → IR-LOG-001 yeniden değerlendirilir (Değerlendirme #2)
-      → Üç nesne AYRI sonuçlanır (v1.3):
-        Müşterinin risk Sorunu   : AÇIK KALIR — Open → Acknowledged (karar referansıyla). Limit aşımı sürdükçe Resolved OLMAZ;
-                                   koşul calculator yargısıdır (net risk > limit), kapı kararı veya istisna değildir.
-        Bu sevkiyatın izni        : kapı kararı "Devam (istisna: yalnız bu talimat için, 3 gün)"; başka talimat ReviewRequired.
-        İstisna değerlendirme görevi: karar verildiği için kanıtla (istisna onay kaydı) KAPANIR.
+[4] Finans (a) A talimatı için süreli istisna onayı verir → ERP onay kaydı (yetki: finance.risk.exception.approve — ÖNERİ;
+      maker≠checker gerçek kullanıcı kimliğiyle) → onay olayı IR-LOG-001'i tetikler (Değerlendirme #2)
+      → Dört nesne AYRI sonuçlanır (v1.4):
+        Müşterinin risk Sorunu   : AÇIK KALIR. Limit aşımı sürdükçe Resolved OLMAZ; koşul calculator yargısıdır.
+                                   Açık karar ihtiyacı kalmadıysa Acknowledged; kalmışsa Open.
+        Karar ihtiyacı (kapsam)  : "talimat A" karşılandı. Kararın kapsamı yalnız A'dır.
+        Bu sevkiyatın izni        : kapı kararı "Devam (istisna: yalnız A talimatı için, 3 gün)".
+        A'nın karar görevi        : kanıtla (istisna onay kaydı) KAPANIR.
+      A'nın istisnası hâlâ aktifken B talimatı hazırlanırsa: B için kapı ReviewRequired; "talimat B" karar ihtiyacı
+        doğar ve B için AYRI Finans görevi açılır — A'nın istisnası B'nin ihtiyacını karşılayamaz; Sorun Acknowledged → Open.
+      Karar YENİLENİRSE (A'nın istisnası B'yi de kapsayan müşteri geneli kararla değiştirilirse): ihtiyaçlar karşılanır,
+        görevler kapanır, yeni görev AÇILMAZ ("karar yenilendi" ≠ "karar geçersizleşti").
       İstisna üç durumdan birindedir (sahibi Finance, W4-RISK spec girdisi F0-10):
         Active   — kapsam eşleşiyor (SingleShipment(talimat) veya Party(vade)), süresi dolmamış → yalnız o kapsam için Proceed + exceptionRef
-        Consumed — tek sevkiyat istisnası o sevkiyat kaydedilince tükendi → karar geçersiz; koşul sürüyorsa Sorun Reopened
-                   ve yeni karar görevi; aynı müşteriye ikinci talimat ReviewRequired
-        Expired/Revoked — süre doldu veya Finans geri aldı → Work.Rules zamanlı tarama yeniden değerlendirir;
-                   koşul sürüyorsa Sorun Reopened (MEVCUT Sorun; yeni Sorun açılmaz) ve yeni karar görevi
+        Consumed — tek sevkiyat istisnası o sevkiyat kaydedilince tükendi → geçerli karar kalmadıysa ve koşul sürüyorsa
+                   müşteri düzeyinde karar ihtiyacı ve görevi; yeni talimatlar ReviewRequired
+        Expired/Revoked — süre doldu veya Finans geri aldı → Work'ün zamanlı taraması yeniden değerlendirir;
+                   karşılanmayan kapsamlar için görev (MEVCUT Sorun; yeni Sorun açılmaz)
       Kapsamı eşleşmeyen istisna (başka talimat için verilmiş) Active sayılmaz.
 
 [5] Sevkiyat kesinleştirme (RecordShipmentAsync) → Logistics komutu Finance risk servisini KESİN olarak
@@ -316,7 +324,8 @@ finance.risk.evaluate@1 → {
       yeniden değerlendirir (Değerlendirme #3): limit aşımı gerçekten kalktıysa Sorun Resolved olur; kalkmadıysa
       (küçük kısmi tahsilat limiti karşılamıyor) Sorun mevcut durumunda (Open veya kararlı Acknowledged) kalır, YENİ
       uyarı üretilmez, mevcut kart güncellenir. Kapanmış bir Sorun daha sonra yeniden aşım gösterirse "Reopened" olur
-      (yeni Sorun değil). Karar bekleyen (Open/Reopened) her Sorunun açık görevi vardır; ikisi aynı işlemde yazılır.
+      (yeni Sorun değil). Karşılanmamış her karar ihtiyacının (kapsam başına) açık görevi vardır; Sorun, ihtiyaç ve
+      görev aynı işlemde yazılır.
 ```
 
 Bu akışta AI modelinin yaptığı iş: [3]'teki açıklama metni, seçeneklerin gerekçesi ve e-posta taslağı; tutarlar model tarafından yazılmaz, `{{measure}}` referanslarından sunucu tarafından yerleştirilir. [1], [2], [4], [5], [6] deterministiktir ve **model, AI capability veya kill switch kapalıyken de aynen çalışır**; yalnız açıklama metni şablon metniyle yer değiştirir (`DEC-AI-001`).
@@ -589,7 +598,7 @@ Bütün tablolar `CompanyId` (Guid, ≠ empty), `CreatedAtUtc/By`, `Version`/`ro
 | `ai.Runs` | Her AI etkileşimi / iş çalıştırması | `Id`, `CompanyId`, `ActorId`, `Channel` (Panel/Center/Job/Voice), `Intent`, `ContextManifestJson` (kaynak, sürüm, alan allowlist, as-of; içerik değil), `PromptPolicyVersion`, `ToolCatalogVersion`, `ModelDeploymentRef`, `DataClassCeiling`, `Status` (Running/Completed/Partial/Refused/Failed/Unknown), `CostMicros`, `TokensIn/Out`, `LatencyMs`, `UserCorrectionRef` (içerik deposu), `Outcome` |
 | `ai.RunSteps` | Adımlar ve araç çağrıları | `RunId`, `Seq`, `Kind` (ToolCall/ModelCall/Validation/Policy/Render), `ToolId@Version`, `ArgsHash`, `ResultHash`, `PolicyDecision`, `DurationMs`, `Error` |
 | `ai.AssistantFindings` | Asistanın (model) ürettiği, kurala bağlı olmayan bulgular | `RunId`, `Severity`, `AssertionKind`, `TargetEntityType/Id/Version`, `MeasuresRef` + hash (içerik deposu), `DisclosureLevel`, `Status`; kural-tabanlı bulgular **`work.Issues/Evaluations`**'dadır |
-| `ai.Proposals` | WRITE niyeti önizlemesi; **iş niyeti kimliği (`OperationIntentId`) ile önizleme kimliği (`Id`) ayrıdır** | `Id` (önizleme), **`OperationIntentId`** (sunucu üretimli, kalıcı iş niyeti kimliği; aynı niyetin bütün önizlemeleri aynı değeri taşır), `IntentRevision` (Stale sonrası yeniden önizleme = +1), `RunId`, `ToolId@Version`, `OwnerCommandContract`, `TargetEntityType/Id`, `ExpectedVersion`, `CanonicalPayloadHash` (içerik doğrulaması; kimlik **değil**), `PayloadCipherRef` (şifreli/immutable içerik deposu), `DispatchedPayloadHash` (gönderimde dondurulur; = `CanonicalPayloadHash`), `DiffJson`, `ValidationResultJson`, `PolicyRefsJson`, `PreviewCreatedAtUtc`, `ExpiresAtUtc`, `Status` (Draft/ShadowOnly/AwaitingApproval/PartiallyApproved/Approved/Rejected/Dispatched/Unknown/Executed/Failed/Stale/Superseded), `RequiredApprovals` (1 veya 2), `RequestedByActorId`, `PreparedByRunId`, `ApprovedByActorId`, `SecondApprovedByActorId?`, `ExecutedBy` (sistem/AiRuntime), `OnBehalfOfActorId`, `IdempotencyKeyHash` (= hash(`ai:{operationIntentId}`)), `ExecutedCommandRef`, `TargetLock`. Tekillikler: `(CompanyId, OperationIntentId, IntentRevision)`; (v1.3) bir niyetin en fazla **bir canlı** revizyonu (filtered unique, `Superseded` hariç) — yeniden önizleme eski revizyonu aynı işlemde `Superseded` yapar, eski revizyon bir daha onaylanamaz ve gönderilemez; yeniden önizleme yalnız Draft/Stale/ShadowOnly'den veya "düzeltip yeniden gönder" reddinden yapılır; gölge öneri — ya da araç o an gölge moddaysa her yeni revizyon — gölge kalır; `RecoveryAttempts` (0/1, şema kısıtı), `FailedBeforeDispatch`, `RejectedForFix` alanları; güncelleme hedefinde `(CompanyId, TargetEntityType, TargetId)` kilidi; create niyetinde kilit niyet düzeyindedir ve aynı kullanıcı+araç için `Unknown` create varken yeni create `intent_pending_recovery` alır. `AwaitingApproval → Approved` geçişi rowversion ile **tek kazanan**; ikinci onay denemesi `version_conflict` alır |
+| `ai.Proposals` | WRITE niyeti önizlemesi; **iş niyeti kimliği (`OperationIntentId`) ile önizleme kimliği (`Id`) ayrıdır** | `Id` (önizleme), **`OperationIntentId`** (sunucu üretimli, kalıcı iş niyeti kimliği; aynı niyetin bütün önizlemeleri aynı değeri taşır), `IntentRevision` (Stale sonrası yeniden önizleme = +1), `RunId`, `ToolId@Version`, `OwnerCommandContract`, `TargetEntityType/Id`, `ExpectedVersion`, `CanonicalPayloadHash` (içerik doğrulaması; kimlik **değil**), `PayloadCipherRef` (şifreli/immutable içerik deposu), `DispatchedPayloadHash` (gönderimde dondurulur; = `CanonicalPayloadHash`), `DiffRef`, `ValidationRef` + `ValidationOutcome` (fark ve doğrulama içeriği içerik deposunda), `PolicyRefsJson`, `PreviewCreatedAtUtc`, `ExpiresAtUtc`, `Status` (Draft/ShadowOnly/AwaitingApproval/PartiallyApproved/Approved/Rejected/Dispatched/Unknown/Executed/Failed/Stale/Superseded), `RequiredApprovals` (1 veya 2), `RequestedByActorId`, `PreparedByRunId`, `ApprovedByActorId`, `SecondApprovedByActorId?`, `ExecutedBy` (sistem/AiRuntime), `OnBehalfOfActorId`, `IdempotencyKeyHash` (= hash(`ai:{operationIntentId}`)), `ExecutedCommandRef`, `TargetLock`. Tekillikler: `(CompanyId, OperationIntentId, IntentRevision)`; (v1.3) bir niyetin en fazla **bir canlı** revizyonu (filtered unique, `Superseded` hariç) — yeniden önizleme eski revizyonu aynı işlemde `Superseded` yapar, eski revizyon bir daha onaylanamaz ve gönderilemez; yeniden önizleme yalnız Draft/Stale/ShadowOnly'den veya "düzeltip yeniden gönder" reddinden yapılır; gölge öneri — ya da araç o an gölge moddaysa her yeni revizyon — gölge kalır; `RecoveryAttempts` (0/1, şema kısıtı), `FailedBeforeDispatch`, `RejectedForFix`, `DispatchRequestedAtUtc` (onayla yazılan kalıcı gönderim talebi), `DispatchedAtUtc`, `LastRecoveryRefusalCode` (kurtarma denemesinin reddi — niyetin reddi değil), `OutcomeCorrected` alanları; güncelleme hedefinde `(CompanyId, TargetEntityType, TargetId)` kilidi; create niyetinde kilit niyet düzeyindedir ve aynı kullanıcı+araç için `Unknown` create varken yeni create `intent_pending_recovery` alır. `AwaitingApproval → Approved` geçişi rowversion ile **tek kazanan**; ikinci onay denemesi `version_conflict` alır |
 | `ai.Approvals` | Onay **kanıtı** (yetkilendirme kaydı; yürütme kimliği değil) | `ProposalId`, `ApproverActorId`, `ApprovedAtUtc`, `BoundHash`, `ReauthRef?`, `Decision` (Approve/Reject/ReturnForFix/RequestInfo/Conditional). Yeni onay satırı kendiliğinden yeni iş etkisi üretmez; Proposal'ın tek geçişine bağlıdır |
 | `ai.KnowledgeItems` / `ai.KnowledgeVersions` | Sürümlü kurumsal bilgi (§3.6 sınıfları) | `Class` (ApprovedRule/OneTimeException/PastCase/UserComment/UnverifiedClaim), `EffectiveFrom/To`, `OwnerRole`, `ApprovedBy`, `SourceRef`, `DataClass`, `AclJson`, `Embedding` (SQL Server vektör veya harici depo referansı) |
 | `ai.PolicyVersions` | Prompt/tool/router politika sürümleri | `Kind`, `Version`, `ContentHash`, `ApprovedBy`, `EffectiveFrom` |
@@ -607,7 +616,7 @@ Bütün tablolar `CompanyId` (Guid, ≠ empty), `CreatedAtUtc/By`, `Version`/`ro
 | `work.ImpactRules` | Etki kuralı tanımları (kod + DB sürüm kaydı) | `RuleId`, `Version`, `Trigger` (Event/OnDemand/Schedule), `EvaluatorToolId`, `EffectKind` (Info/Warning/WorkItem), `DisclosureMatrixJson`, `WorkItemTemplate`, `OwnerModule`, `SourceDecision` (DEC-*/ÖNERİ), `Status`, `PolicyKey` (ÖNERİ kurallar için aç/kapat) |
 | `work.Issues` | Sorun — kural + hedef varlık için sürümden bağımsız yaşam döngüsü | `IssueKey` (RuleId + TargetEntityType/Id), `Status` (Open/Acknowledged/Resolved/Reopened/Suppressed), `Severity` (son değerlendirme), `FirstSeenAtUtc`, `LastEvaluationId`, `ResolvedByRef` (koşulu kaldıran olay — istisna DEĞİL), `DecisionRefJson` (v1.3: `Acknowledged` iken geçerli Finance kararı; karar Sorunu kapatmaz), `ReopenCount` |
 | `work.Evaluations` | Değerlendirme — bir Sorun'un belirli kural sürümü + varlık sürümü + zamandaki hesabı | `IssueId`, `RuleVersion`, `TargetVersion`, `EvaluatedAtUtc`, `TriggerKind`, `DeliveryId?` (outbox teslim kimliği — üçüncü ayrı kimlik), `MeasuresRef` + `MeasuresHash` (ölçü değerleri içerik deposunda), `GateDecisionJson`, `Outcome` (Raised/Unchanged/Cleared/Partial/Acknowledged) |
-| `work.WorkItems` | Görev / uyarı / onay isteği | `Kind` (Task/Alert/ApprovalRequest/InfoRequest), `Title`, `SourceKind` (Human/ImpactRule/Workflow/Assistant), `SourceRef`, `IssueId?`, `TargetEntityType/Id`, `OwnerRole`, `OwnerActorId?`, `Watchers`, `Priority`, `DueAtUtc`, `Sla`, `EscalationPolicyId`, `EscalationPolicyVersion`, `EscalationStep` (rol yalnız eskalasyon komutu + olayıyla değişir), `Status` (Open/InProgress/WaitingInfo/Escalated/Done/Cancelled), `ClosureEvidenceRef` (audit/komut kimliği), `DedupKey` (IssueKey bazlı), `VisibilityMatrixJson` (kanal × rol açıklık düzeyi: kart, yorum, bildirim, geçmiş, ek, arama, dışa aktarım) |
+| `work.WorkItems` | Görev / uyarı / onay isteği | `Kind` (Task/Alert/ApprovalRequest/InfoRequest), `TitleTemplateCode` + `TitleParamsRef` (başlık serbest metin değil), `ScopeKey` (karar ihtiyacı kapsamı: müşteri veya talimat), `DataClass` (içeriğin gerçek sınıfı, kaynaktan miras), `SourceKind` (Human/ImpactRule/Workflow/Assistant), `SourceRef`, `IssueId?`, `TargetEntityType/Id`, `OwnerRole`, `OwnerActorId?`, `Watchers`, `Priority`, `DueAtUtc`, `Sla`, `EscalationPolicyId`, `EscalationPolicyVersion`, `EscalationStep` (rol yalnız eskalasyon komutu + olayıyla değişir), `Status` (Open/InProgress/WaitingInfo/Escalated/Done/Cancelled), `ClosureEvidenceRef` (audit/komut kimliği), `DedupKey` (IssueKey bazlı), `VisibilityMatrixJson` (kanal × rol açıklık düzeyi: kart, yorum, bildirim, geçmiş, ek, arama, dışa aktarım) |
 | `work.WorkItemEvents` | Yorum, atama, eskalasyon, kapanış | append-only |
 | `work.EscalationPolicies` | `(impactClass, roleChain[], sla[], stopAt)` | Politika registry'siyle sürümlü |
 | `work.ApprovalRequests` | Onay isteği (SoD, ikinci onay) | `RequiresSecondApproval`, `MakerActorId`, `CheckerActorId`, `Decision`, `Reason` — `AccessGrantRequest` deseninin genelleştirilmişi; SoD gerçek kullanıcı kimliği ve sahip modül politikasıyla denetlenir |
@@ -618,8 +627,9 @@ Bütün tablolar `CompanyId` (Guid, ≠ empty), `CreatedAtUtc/By`, `Version`/`ro
 |---|---|---|---|
 | `ai.RunSteps` (hash'ler), `ai.Approvals`, `work.Attempts`, `ai.Inbox` | Append-only (ekleme var, güncelleme/silme yok) | Sürüm, hash, kapsam, karar, sonuç — içerik yok | Kalır; yalnız en yüksek yetkili fiziksel silme (`DEC-DATA-001`) |
 | `work.Evaluations` (ölçü değerleri), `ai.AssistantFindings` (ölçü değerleri), `work.WorkItemEvents` (yorum metni), `ai.Feedback` (düzeltme), `ai.Runs` düzeltme alanı | Satır append-only; (v1.3) **içerik alanları** satırda değil, şifreli/immutable içerik deposunda (referans + hash) | Ölçü değeri, yorum ve düzeltme **içeriktir** | Süre sonunda içerik silinir; satır, referans ve hash kalır ("şu tarihte şu karar verildi" kanıtı korunur) |
-| `ai.Runs` (metadata), `ai.Proposals`, `work.Issues`, `work.WorkItems` | Silinmez; yalnız durum alanları rowversion ile güncellenir (`ApplyWriteGuards`: company match + delete yok; mevcut modül deseniyle aynı) | Durum, sürüm, hash, kapsam — içerik yok | Kalır; yalnız en yüksek yetkili fiziksel silme (`DEC-DATA-001`) |
+| `ai.Runs` (metadata), `ai.Proposals`, `work.Issues`, `work.WorkItems` | Silinmez; yalnız durum alanları rowversion ile güncellenir (`ApplyWriteGuards`: company match + delete yok; mevcut modül deseniyle aynı) | Satırda durum, sürüm, hash, kapsam, kod. (v1.4) İçerik taşıyabilen alanlar **satırda değil** içerik deposunda referansla: öneri farkı (`DiffRef`), doğrulama sonucu (`ValidationRef`), görev başlık parametreleri (başlık = şablon kodu, serbest metin değil) | Satır kalır; içerik deposundaki alanlar içerik satırındaki kurala tabi |
 | Prompt/cevap içeriği (yalnız saklanmasına karar verilirse), panel oturum durumu | Süreli | Metin | Süre sonunda içerik kaldırılır, `Runs` metadata'sı kalır |
+| (v1.4) Öneri zarfı, fark ve doğrulama içeriği | Şifreli, immutable içerik deposu | İçerik | Süreli; **yasal bekletme:** `Approved`, `Dispatched`, `Unknown` veya kilitli önerinin zarfı süre dolsa da silinmez; süre öneri çözülünce başlar (kurtarma ve insan devralma için gerekli) |
 | `ai.KnowledgeVersions` | Sürümlü; eski sürüm pasif | Kurumsal bilgi | Onaylı kural sürümleri kalır; taslak/öneri sürümleri süreli |
 | Embedding'ler, belge metin çıkarımları, ek metinleri | Türev | Yeniden üretilebilir | Kaynak belge silinince/pasifleşince indeks geçersizlenir; süreli |
 | `ai.EvalCases` (sentetik) | Değişmez (kabul edilmiş vaka) | Sentetik fixture | Politikaya göre (`ai.Feedback` yukarıdaki içerik alanlı satırdadır) |
@@ -650,6 +660,13 @@ Gerekli sözleşme eki (K3, geriye uyumlu; Faz 2): her modülün metadata/envelo
 | Açıkça başlatılmış **farklı** `OperationIntentId` + aynı içerik | Farklı key, aynı payload | Yeni deneme satırı; komut normal yürür | Meşru yeni işlem olabilir; sahip modülün kendi mükerrerlik kontrolleri (cari aday, belge hash `DEC-DOC-002`, sipariş tekrarı uyarısı) ayrıca uygulanır; önizlemede "aynı içerikli öneri var" **bilgisi** gösterilir, engel yok |
 
 **Kurtarma durum makinesi (otomatik retry yoktur; yeni kimlik yoktur):** Gönderimden **önce** önizleme zarfı hash ve içerikle doğrulanır; bozuksa `Approved → Failed` (gönderim öncesi ret; hiçbir şey gönderilmedi, kilit yok, security-event). `Approved → Dispatched` anında kalıcı kayıt (gönderilen payload hash'i dondurulur); sahip komut sonucu gelince `Executed`/`Failed`. Transport hatası veya çökme → `Unknown`; süresi geçmiş `Dispatched` kurtarmaya alınmadan önce açıkça `Unknown` yapılır. Gönderim ve kurtarma **aynı** zarf doğrulamasını ve aynı yürütme adımını kullanır; kurtarmada zarf bozuksa tekrar gönderilmez ve `Failed` denmez (ilk gönderim yürümüş olabilir) — `Unknown` + kilit + insan devralma. `IAiRecoveryCoordinator` (worker başlangıcında ve zamanlı) `Unknown` Proposal için **aynı `OperationIntentId`** ve aynı dondurulmuş payload ile çalışır: (1) sahip modül salt-okunur bir deneme-kaydı sorgusu sunuyorsa (ÖNERİ, sahip dilim eki — bugün yok, DOĞRULANACAK) önce o; kayıt varsa replay sonucu → `Executed`, terminal ret kaydı varsa → `Failed`; (2) **"kayıt yok" hiç ulaşmadı anlamına gelmez** (komut yolda olabilir); bu yüzden koşulsuz tekrar yerine **en fazla bir** aynı-key/aynı-payload gönderim yapılır — sahip modülün deneme/komut satırı PK'sı (§5.6a) sayesinde bu gönderim ya ilk sonucu replay eder ya da ilk kez yürütür, ikinci etki üretemez; (3) bu da belirsiz kalırsa Proposal `Unknown` kalır, `TargetLock` korunur, AI süreç sahibine ve sahip modül operatörüne iş öğesi açılır — insan devralır ve sonucu **kanıt referansıyla** kapatır; (4) hiçbir yolda yeni `OperationIntentId` üretilmez; `Unknown` bir niyet için yeniden önizleme reddedilir; aynı hedef için yeni niyet `TargetLock` ile bekletilir. "ERP yazdı, AiRun güncellenmeden servis kapandı" senaryosu bu yolla çift kayıt üretmeden kapanır (Ek D G-26).
+
+**(v1.4) Kurtarma ve yaşam döngüsünün başı — dört ek kural:**
+
+1. **"Bu deneme reddedildi" ≠ "bu niyet reddedildi".** İlk gönderimdeki sahip reddi niyetin reddidir (bu key ile başka gönderim yoktur). Kurtarma **yeniden gönderiminde** yalnız sahibin **bu key için kaydettiği** sonuç (başarı/replay veya kayıtlı terminal ret) niyetin sonucudur; diğer retler — örneğin onaylayanın yetkisi gateway kontrolünden sonra veya yalnız sahip modülde (saha/lokasyon kapsamı) daraldığı için 403 — yalnız o denemenin reddidir (gateway politikası yetki düşüşünü önceden görürse yeniden gönderim hiç yapılmaz; sonuç aynıdır): öneri `Unknown` ve kilitli kalır, insan devralır (G-43). Çünkü sahip modüller yetki kontrolünü replay aramasından önce yapar; 403, ilk siparişin kaydedilmediğini kanıtlamaz.
+2. **Sonuç okuma ile yeniden gönderim ayrı yollardır.** Sahibin salt-okunur sonuç sorgusu (probe) varsa önce o kullanılır; iş etkisi üretmez ve onaylayanın yetkisine bağlı değildir. Yeniden gönderim ise ilk kez etki üretebileceği için gateway'in **güncel** yürütme koşullarını (capability, onaylayanın izni ve SoD, araç bayrağı, kill switch, politika sürümü, azami yeniden gönderim süresi) sağlamak zorundadır; sağlamaması niyeti başarısız yapmaz. Probe'u olmayan sahip komutlarda yetkisi kaldırılmış onaylayanla kurtarma yalnız insan devralmasıyla kapanır; bu yüzden probe, WRITE beyaz listesine giren her sahip komut için Faz 4 ön koşulu önerilir (NS-AI-19).
+3. **Geç gelen başarı kazanır.** Sahipten bu key için gelen başarı, önceki çıkarım `Failed` olsa bile sonucu `Executed` olarak düzeltir (gönderim öncesi reddedilenler hariç); düzeltme security-event ve inceleme görevi üretir.
+4. **Başlangıç boşlukları:** (a) Öneri oluşturma isteği `Idempotency-Key` ile tekrar gönderime dayanıklıdır: aynı aktör + şirket + key → daha önce üretilmiş aynı niyet ve önizleme (deneme kaydı öneriyle aynı işlemde; G-45). (b) Onay kalıcılaşınca **kalıcı gönderim talebi** (`DispatchRequestedAtUtc`) yazılır; süreç gönderimden önce kapanırsa süpürücü `Approved` öneriyi **tam gönderim yolundan** geçirir (G-44).
 
 **İki onay gerektiren işlem (v1.2):** `RequiredApprovals = 2` (sahip modül politikası veya `ErpPermissions.Critical` seti — ADR-008 madde 5). Birinci onay `PartiallyApproved`; ikinci onay **farklı gerçek kullanıcı** kimliğiyle `Approved`; onaylayanlar isteği başlatandan farklıdır (maker≠checker). Her iki onay aynı niyete ve aynı `CanonicalPayloadHash`'e bağlanır; aralarında hedef sürümü veya politika değişirse `Stale` → iki onay da düşer, aynı niyetin yeni revizyonu önizlenir. Her onay `ai.Approvals`'a ayrı kanıt satırı yazar; hiçbir onay satırı key üretmez.
 
@@ -703,7 +720,7 @@ Master v3 §7.1 "Çalışma Merkezi" ve §12.3 "Onay motoru" için kodda karşı
 - Frontend: Çalışma Merkezi ("Benim İşlerim") — bana atanan, rol kuyruğu, onay bekleyen, bilgi bekleyen, geciken; tek tıkla ilgili workspace.
 - `Work.Rules`: etki kuralı motoru, Sorun/Değerlendirme kayıtları ve kapı kararı tüketimi bu modüldedir; AI capability veya model kill switch kapalıyken çalışmaya devam eder (test: Ek D G-29).
 - **Kanal görünürlük matrisi:** Finansın tam tutarı gördüğü bir görevde sevkiyat kullanıcısı gözlemci olabilir; kart, yorum, bildirim, geçmiş, ek, arama sonucu ve dışa aktarım aynı `VisibilityMatrixJson` ile süzülür; bildirim ve arama projeksiyonları düzeyi düşüremez.
-- Kural-tabanlı iş öğesi üretimi deterministik, politika onaylı ve modelsizdir; Sorun/Değerlendirme ile **aynı veritabanı işleminde** yazılır; karar bekleyen her Sorunun açık görevi vardır. Sohbetten "görev aç" isteğinde AI taslak üretir, kullanıcı kaydeder.
+- Kural-tabanlı iş öğesi üretimi deterministik, politika onaylı ve modelsizdir; Sorun/Değerlendirme ile **aynı veritabanı işleminde** yazılır; karşılanmamış her karar ihtiyacının (kapsam başına) açık görevi vardır. (v1.4) Zamanlı tarama, uzlaştırma, eskalasyon ve olay tüketimi Work'ün **kendi çalıştırıcısında** (`WorkRulesWorker`) çalışır; AI bayraklarının hiçbirine bağlı değildir (kabul testi: AI tamamen kapalıyken görev açılır, eskalasyon olur). Sohbetten "görev aç" isteğinde AI taslak üretir, kullanıcı kaydeder.
 
 ### 5.9 Bilgi katmanı
 
@@ -832,12 +849,12 @@ AiFinding@1 {
                   "sourceRef": {…}, "formula": "CARI-RISK/1", "assertionKind": "Fact" } ],
   "gateDecision": { "owner": "Finance", "decision": "ReviewRequired", "reasonCodes": ["RISK_LIMIT_EXCEEDED"] } | null,
   "target": { "entityType": "Logistics.LoadingInstruction", "id": "…", "version": 5 },
-  "recommendedActions": [ { "kind": "OpenWorkItem", "template": "FinansRiskOnayi" }, { "kind": "Draft", "toolId": "doc.email.draft@1" } ],
+  "recommendedActions": [ { "kind": "DraftWorkItem", "template": "FinansRiskOnayi", "label": "…" }, { "kind": "Draft", "toolId": "doc.email.draft@1" } ],
   "disclosure": "Full|GateDecision|Hidden"
 }
 ```
 
-Doğrulayıcı kuralları: `text` içinde ham sayı bulunmaz, yalnız `{{measure:id}}` referansı bulunur ve her referans `measures[]`'de vardır; her ölçünün `subject/period/scenarioRef`'i bulgunun hedefiyle tutarlıdır (doğru sayı yanlış varlığa bağlanamaz); `disclosure=GateDecision` olan görünümde `measures[]` boştur ve `text` yalnız kapı kararı şablonundan üretilir — sayı içermeyen finans bilgisi de ("teminatı yok") sahip modülün açıklık matrisi izin vermiyorsa bulunamaz; `assertionKind=Forecast` "tahmin", `Scenario` "işlem yapılırsa" rozetiyle gösterilir; `abstained=true` cevaplar "yeterli dayanak yok" olarak sunulur ve eval'de **ödüllendirilir** (uydurma cezalandırılır). (v1.2) **Yargılar calculator'dan gelir:** "limit üstünde", "yeterli değil", "tolerans dışı" gibi her yargı bir `gateDecision`/`EngineResult` referansı taşımak zorundadır; model yargı üretmez, açıklar — referanssız yargı doğrulayıcıda reddedilir. (v1.2) **Model şeması ≠ sunucu şeması:** modelin doldurduğu `AnswerEnvelope` yalnız `summary/findings[].text/recommendedActions/uncertainty/abstained` alanlarını taşır; `measures[]`, `gateDecision`, `target`, `issueKey/evaluationId`, `disclosure` ve `actorMode` gibi alanlar **sunucu tarafından** araç çıktısından ve run bağlamından eklenir; model bu alanları yazamaz (strict şemada bulunmazlar).
+Doğrulayıcı kuralları: `text` içinde ham sayı bulunmaz, yalnız `{{measure:id}}` referansı bulunur ve her referans `measures[]`'de vardır; her ölçünün `subject/period/scenarioRef`'i bulgunun hedefiyle tutarlıdır (doğru sayı yanlış varlığa bağlanamaz); `disclosure=GateDecision` olan görünümde `measures[]` boştur ve `text` yalnız kapı kararı şablonundan üretilir — sayı içermeyen finans bilgisi de ("teminatı yok") sahip modülün açıklık matrisi izin vermiyorsa bulunamaz; `assertionKind=Forecast` "tahmin", `Scenario` "işlem yapılırsa" rozetiyle gösterilir; `abstained=true` cevaplar "yeterli dayanak yok" olarak sunulur ve eval'de **ödüllendirilir** (uydurma cezalandırılır). (v1.2) **Yargılar calculator'dan gelir:** "limit üstünde", "yeterli değil", "tolerans dışı" gibi her yargı bir `gateDecision`/`EngineResult` referansı taşımak zorundadır; model yargı üretmez, açıklar — referanssız yargı doğrulayıcıda reddedilir (v1.4: yargı cümlesi zorunlu `judgementRef` taşır; `summary` ve `recommendedActions[].label` dahil bütün görünür alanlarda token dışı rakam/tutar yasaktır, G-49). `recommendedActions` yalnız öneridir: `DraftWorkItem` görevi açmaz, kullanıcının Work ekranında kaydedeceği taslağı hazırlar; kalıcı takip yalnız Work.Rules tracker'ındadır. (v1.2) **Model şeması ≠ sunucu şeması:** modelin doldurduğu `AnswerEnvelope` yalnız `summary/findings[].text/recommendedActions/uncertainty/abstained` alanlarını taşır; `measures[]`, `gateDecision`, `target`, `issueKey/evaluationId`, `disclosure` ve `actorMode` gibi alanlar **sunucu tarafından** araç çıktısından ve run bağlamından eklenir; model bu alanları yazamaz (strict şemada bulunmazlar).
 
 ### 6.3 Prompt yönetimi
 
@@ -1199,8 +1216,11 @@ Etki türü          : Uyarı + Görev (blok yalnız DEC-FIN-009 kesin kontrolü
 Sorumlu            : Finans (Full) · Sevkiyat (GateDecision) · GM (High+)
 Kaynak             : DEC-FIN-007, DEC-FIN-009 (KİLİTLİ-KAYNAK)
 Durma koşulu       : risk kaynağı erişilemez → bulgu "kısmi", kesin kontrol ERP'de
-Tamamlanma kanıtı  : yeniden değerlendirme sonucu koşul kalktı — istisna onayı audit kaydı VEYA yeterli tahsilat/DBS/teminat
-                     olayı VEYA sevkiyat iptali; koşul geri dönerse Sorun Reopened
+Tamamlanma kanıtı  : (v1.4 — iki ayrı kapanış)
+                     KARAR GÖREVİ (talimat/müşteri kapsamı başına): o kapsamı karşılayan istisna/bekletme kararının onay
+                       kaydı, VEYA talimatın iptali/başka yolla kapanması, VEYA koşulun kalkması
+                     MÜŞTERİNİN RİSK SORUNU: yalnız koşulun kalkması — yeterli tahsilat/DBS/teminat olayı; istisna onayı
+                       ve sevkiyat iptali Sorunu KAPATMAZ; koşul geri dönerse Sorun Reopened
 SLA / eskalasyon   : EP-FIN-01 (EP-HIGH): süreç sorumlusu 2 saat → bölüm yöneticisi 4 saat → GM
 Ölçüm              : precision (gereksiz uyarı), yöneticiye giden sayı, ortalama kapanış süresi
 ```
@@ -1232,7 +1252,7 @@ AI zinciri değiştiremez; yalnız politikadaki zinciri uygular ve uyarı yorgun
 3. **Kontrollü kullanıcı denemesi (Faz 3–4):** aynı iş sınıfında bir grup AI destekli, bir grup baseline; **net insan süresi** ve ilk seferde doğru tamamlama ölçülür.
 4. **Onaylı WRITE ölçümü (Faz 4+):** onay sonrası ilk seferde tamamlanma oranı; (v1.2) payda **onaylanan** önerilerdir (`Onay sonrası düzeltmesiz yürütülen öneri / onaylanan öneri`), pay ise onaydan sonra ek giriş/düzeltme gerektirmeden `Executed` olanlardır; reddedilen öneriler bu oranın dışında ayrı "ret oranı" göstergesidir; hata oranı insan referansını aşarsa beyaz liste askıya alınır. Hiçbir WRITE onaysız çalışmaz. Kural-tabanlı (modelsiz) görev/bildirim üretimi ayrı gösterge olarak izlenir.
 
-(v1.2) Ölçü tanımı netleştirmeleri: **kapsama** paydasında "bulgu yok" sonucu da "ele alındı" sayılır (sistem baktı ve sorun görmedi; eksik kaynakla `Partial` biten işlem ele alınmış sayılmaz); **çekimserlik** üç ayrı sonuçtur — haklı çekimserlik (dayanak gerçekten yok; eval'de ödül), gereksiz çekimserlik (dayanak vardı; kapsama kaybı), yanlış cevap (dayanak yokken üretildi; doğruluk kaybı) — ve üçü ayrı sayılır.
+(v1.2, v1.4'te düzeltildi) Ölçü tanımı netleştirmeleri: **kapsama** oranında kapsam-içi her işlem paydadadır; "bulgu yok" sonucu da **payda** "ele alındı" olarak sayılır (sistem baktı ve sorun görmedi; eksik kaynakla `Partial` biten işlem ele alınmış sayılmaz); **çekimserlik** üç ayrı sonuçtur — haklı çekimserlik (dayanak gerçekten yok; eval'de ödül), gereksiz çekimserlik (dayanak vardı; kapsama kaybı), yanlış cevap (dayanak yokken üretildi; doğruluk kaybı) — ve üçü ayrı sayılır.
 
 Net kazanım formülü: `Eski insan süresi − yeni insan süresi − kontrol/düzeltme − süreç bakımı payı`. Örnek: 10 dk'lık iş → AI ile giriş 1 + kontrol 2 + düzeltme/idare 1 = 4 dk → net %60. "AI metni saniyede yazdı" %99 tasarruf demek değildir.
 
@@ -1297,7 +1317,7 @@ Aşağıdaki satırlar, kullanıcının metinlerinde (üç turlu JARVIS değerle
 | 3 | Policy evaluation sırası ve default-deny | `ERP-000J` §8 13 adımı aynen; `IAiPolicyEvaluator` tek giriş noktası; provider alanları geçersiz | K3 |
 | 4 | CompanyContext/RBAC/ABAC/SoD, capability, source reauthorization | AI'ya özgü "geniş okuma" izni yok; araç izni = sahip izin ∩ araç politikası; capability endpoint'i K shell `Generation` mekanizmasıyla; kaynak açılışında sahip backend yeniden doğrular | K3 |
 | 5 | Preview canonicalization/hash, approval binding, expiry, reauth owner | `ai.Proposals/Approvals` (§5.5); hash kapsamı = kanonik payload + target/version + tool/policy sürümü; `AwaitingApproval → [PartiallyApproved] → Approved` rowversion ile tek kazanan; iki onay gerektiren işlemde kota 2, farklı gerçek kullanıcı, ikisi de aynı niyet+hash'e bağlı, arada sürüm değişirse ikisi de düşer; onay = kanıt, yürütme kimliği `OperationIntentId`; aktör modeli `requestedBy / preparedByRun / approvedBy / executedBy / onBehalfOf`; expiry politika değeri (ÖNERİ 24 saat, NEEDS-SINAN); reauth: `Critical` set ve `CommitHigh` etki sınıfında | K3 |
-| 6 | Domain command, idempotency, concurrency, unknown-outcome | Sunucu üretimli kalıcı **`OperationIntentId`**; key `ai:{operationIntentId}` (onay kimliği ve içerik hash'i key'e girmez); üç durum tablosu (§5.6); expected version; otomatik retry yok; kurtarma = aynı kimlik + dondurulmuş payload, en fazla bir aynı-key gönderim, ikinci belirsizlikte `TargetLock` + insan devralma, **yeni kimlik asla** (`IAiRecoveryCoordinator`, §5.6); sahip modül kanıt matrisi (§5.6a) ve DOĞRULANACAK satırları kapanmadan WRITE beyaz listesi açılmaz; ortak veri kesiti mekanizması A (SNAPSHOT işlem) / B (rowversion küme üyeliği) seçimi; kapı sorgusu on-demand değerlendirme kaydının sınıflandırması (kanıt kaydı / yazma) | K3 |
+| 6 | Domain command, idempotency, concurrency, unknown-outcome | Sunucu üretimli kalıcı **`OperationIntentId`**; key `ai:{operationIntentId}` (onay kimliği ve içerik hash'i key'e girmez); üç durum tablosu (§5.6); expected version; otomatik retry yok; kurtarma = aynı kimlik + dondurulmuş payload, en fazla bir aynı-key gönderim, ikinci belirsizlikte `TargetLock` + insan devralma, **yeni kimlik asla** (`IAiRecoveryCoordinator`, §5.6); sahip modül kanıt matrisi (§5.6a) ve DOĞRULANACAK satırları kapanmadan WRITE beyaz listesi açılmaz; ortak veri kesiti mekanizması A (SNAPSHOT işlem) / B (rowversion küme üyeliği) seçimi; (v1.4) kapı sorgusu **hiçbir kayıt yazmaz** (seçenek değil, sözleşme); kalıcı takip ayrı yollardan (outbox, uzlaştırma, takip komutu); gönderim/kurtarma ayrımı: ilk denemedeki sahip reddi niyetin reddidir, kurtarma denemesindeki ret yalnız o denemenin reddidir | K3 |
 | 7 | Business audit / durable security-event / telemetry sahipliği | Sahip modül audit'i `AiContext` ile; `Assisted` yalnız sunucu-doğrulamalı `AiRunId` referansıyla yazılır, istemci beyanı yok (ADR-009); security-event `ERP-000L` kanalı (önkoşul); telemetry ERP-000L | K3 (L'ye bağlı) |
 | 8 | Dört veri sınıfı, minimizasyon/redaction/egress/secret | Sınıf → rota matrisi (§5.10); alan düzeyi `DataClass` etiketi sahip modül sözleşmesinde; redaction fonksiyonu deterministik ve test edilir | K3 |
 | 9 | Prompt injection, attachment, remote content, URL/MCP/hosted tool sınırı | `ERP-000J` §13–14 aynen; belge içeriği veri; remote MCP/hosted tool kapalı | K3 |
@@ -1525,7 +1545,7 @@ Kalıntı sütunu **tasarım beklentisidir**, ölçülmüş sonuç değildir; ö
 | **Öneri (Proposal)** | WRITE niyeti önizlemesi; kanonik payload hash'i, hedef sürüm, expiry; aynı iş niyetinin yeni önizlemesi yeni revizyondur. |
 | **İş niyeti kimliği (OperationIntentId)** | (v1.2) Sunucu üretimli, kalıcı kimlik; idempotency key `ai:{operationIntentId}` bundan türer; içerik hash'inden ayrıdır; aynı içerikle iki meşru niyet olabilir; belirsiz sonuç için yeni kimlik üretilmez. |
 | **İçerik hash'i (CanonicalPayloadHash)** | Kanonik payload'ın SHA-256'sı; gönderilen içeriğin onaylananla aynı olduğunu doğrular; kimlik değildir. |
-| **Risk istisnası durumları** | `Active` (kapsam eşleşir, süresi dolmamış) · `Consumed` (tek sevkiyat istisnası tükendi) · `Expired/Revoked` (süre doldu / geri alındı → yeniden değerlendirme, `Reopened`). |
+| **Risk istisnası durumları** | `Active` (kapsam eşleşir, süresi dolmamış) · `Consumed` (tek sevkiyat istisnası tükendi) · `Expired/Revoked` (süre doldu / geri alındı → yeniden değerlendirme; koşul sürüyor ve başka geçerli karar yoksa Sorun `Acknowledged → Open`). `Reopened` yalnız `Resolved` bir Sorunun koşulu geri döndüğünde kullanılır. |
 | **İş öğesi (WorkItem)** | Görev/uyarı/onay isteği; sahip, SLA, eskalasyon, kapanış kanıtı. |
 | **Kaynak-bağlı sayı** | Cevaptaki her sayının, ölçü referansı yoluyla araç çıktısındaki `MeasuredValue`'ya ve doğru varlık/dönem/senaryoya bağlanması. |
 | **Ölçü sözlüğü** | İş ölçülerinin tek tanımı, birimi, FormulaId'si ve as-of semantiği. |
@@ -1535,9 +1555,27 @@ Kalıntı sütunu **tasarım beklentisidir**, ölçülmüş sonuç değildir; ö
 
 ---
 
-## 15. Değişiklik günlüğü (v1.1–v1.3) ve kapanış kontrol tablosu
+## 15. Değişiklik günlüğü (v1.1–v1.4) ve kapanış kontrol tablosu
 
-### 15.0 v1.3 değişiklik günlüğü (28 Eylül 2026 — kapanış kontrolü)
+### 15.0 v1.4 değişiklik günlüğü (28 Eylül 2026 — ikinci kapanış kontrolü)
+
+İkinci kontrol, v1.3'ün düzelttiği noktaların doğru yönde olduğunu kabul etti; buna karşılık örnekler gösterildiği gibi uygulanırsa "yapılmış işlemin başarısız sayılması", "Finans'a taşınması gereken işin görevsiz kalması" ve "gölge modun gerçek görevi kapatması" gibi sonuçlar doğabileceğini gösterdi. Yeni tasarım tartışması açılmadı; karşı örnekler kapatıldı.
+
+| # | Bulgu (karşı örnek) | Düzeltme | Nerede |
+|---|---|---|---|
+| 1 | Kurtarmada sahibin reddi (ör. yetkisi sonradan kaldırılan onaylayan için 403) öneriyi `Failed` yapıp kilidi kaldırıyordu; oysa ilk sipariş kaydedilmiş olabilir. Geç gelen başarı `Failed` üzerine uygulanmıyordu | Deneme reddi ≠ niyet reddi: kurtarmada yalnız bu key için sahibin kaydettiği sonuç (başarı/replay, kayıtlı terminal ret) niyetin sonucu; diğer retler `Unknown` + kilit + devralma. Geç başarı kazanır | §5.6 (v1.4 kuralları), G-43; kodlama §5.1, §10.3, §10.4 |
+| 2 | Kurtarma, gönderimin yürütme kontrollerini atlayan doğrudan yürütmeyi çağırıyordu | Sonuç okuma (probe; etkisiz) ile yeniden gönderim (güncel capability, onaylayanın izni/SoD, bayrak, kill switch, politika, azami süre) ayrı yollar; koşul sağlanmazsa gönderim yok, `Failed` yok | §5.6; kodlama §10.4 |
+| 3 | Öneri oluşturma isteğinin tekrarı ikinci niyet üretebiliyordu | İstek deneme kaydı (`ai.CommandAttempts`) öneriyle aynı işlemde; aynı aktör+şirket+key → aynı niyet | §5.6, G-45; kodlama §4.3, §10.1 |
+| 4 | Onay kalıcılaşıp gönderim başlamadan çökme | Onayla kalıcı gönderim talebi; süpürücü `Approved`'u tam gönderim yolundan geçirir | §5.6, G-44; kodlama §5.1, §10.4 |
+| 5 | A istisnası aktifken B talimatının Finans görevi açılmıyordu; karar yenilemesi gereksiz görev açabiliyordu | Karar ihtiyacı kapsam başına (müşteri / talimat); görev ihtiyaç başına; `Instruction(A)` kararı B'yi karşılamaz; yenileme ≠ geçersizleşme | §3.4 [4], §8.3, G-36, G-41, G-42; kodlama §5.3, §9.1 |
+| 6 | Takibin hiç başlatılmaması (kaynak kaydedildi, ekranın ikinci çağrısı yapılamadı); delta sorgusunun hiç güncellenmemiş gecikmiş kaydı kaçırması | Garanti sırası: outbox (birincil) + uzlaştırma taraması (geçici garanti/emniyet ağı); ekran çağrısı yalnız hızlandırıcı; zamanlı sorgular durum sorgusu | §3.4 [1], §3.3, G-46, G-47; kodlama §9.4, §14.2 |
+| 7 | Gölgeye alınan kural gerçek görevi kapatabiliyordu; iş akışı örneğinde eski iki adımlı görev açma; zamanlı takibin çalıştırıcısı AI worker'ıydı | Gölge yalnız ayrı gölge kaydı yazar; iş akışı tracker'ı çağırır; Work'ün kendi çalıştırıcısı (`WorkRulesWorker`) AI bayraklarından bağımsız, kabul testiyle | §3.3, §5.8, G-48, G-50; kodlama §9.1, §14.1, §14.2 |
+| 8 | Çıktı doğrulayıcı bazı tutar biçimlerini ve özet alanını kaçırıyordu; yargı kontrolü kodda yoktu | Bütün görünür alanlarda token dışı rakam/tutar yasağı; yargı için zorunlu `judgementRef` ve çelişki kontrolü | G-49; kodlama §12 |
+| 9 | Work araçlarının veri sınıfı içerikten düşüktü; "içerik yok" denen satırlarda fark/doğrulama/başlık içeriği vardı; `Unknown` önerinin kurtarma içeriği süre dolunca silinebilirdi | Görev ve araç çıktısı gerçek sınıfı taşır; fark, doğrulama ve başlık parametreleri içerik deposunda; kurtarma içeriğine yasal bekletme | §5.5, Ek A #18/#43; kodlama §4.2–4.5 |
+| 10 | Küçük tutarsızlıklar: §8.3 kapanış kanıtı, §10.1 madde 6, §8.6 "payda", onay cevabı durumları, kapı kartı testi, G-39 kapsamı, kesit kontrolünde alt küme ve `Version`/`RowVersion` | Hepsi eşitlendi | §8.3, §8.6, §10.1; kodlama §8.2, §9.3, §15.1, §17.4 |
+| 11 | (teslim öncesi iç bağımsız kontrol) Geç sonuç kurtarma reddini kaybedebiliyordu; tek önerideki çakışma şirketin kurtarma taramasını durdurabiliyordu; devralma görevi farklı nedenle aynı key'e çakışabiliyordu; müşteri düzeyi ihtiyaç ile görev kapanışı farklı kural kullanıyordu; "istisna tükendi → Reopened" ifadesi kodla uyumsuzdu | Geç sonuç niyet/deneme ayrımıyla uygulanır; kurtarma öneri başına yalıtılır; devralma görevi öneri başına tek ve çözülünce kanıtla kapanır; tek yüklem; `Reopened` yalnız `Resolved`'dan, tükenme/süre dolması `Acknowledged → Open`; G-43 iki varyantlı; süresi dolmuş onay gönderilmez (bilinçli istisna) | §5.6, §14, G-43; kodlama §5.1, §5.3, §9.1, §10.3–10.5 |
+
+### 15.0.1 v1.3 değişiklik günlüğü (28 Eylül 2026 — kapanış kontrolü)
 
 Kapanış kontrolü, metin–şema–kod örneği eşitliğini denetledi ve beş uygulama boşluğu ile dört eski tanım buldu. Yeni tasarım tartışması açılmadı; ilgili metinler, kod örnekleri ve kapanış tabloları eşitlendi.
 
@@ -1578,23 +1616,28 @@ Kapanış kontrolü, metin–şema–kod örneği eşitliğini denetledi ve beş
 
 Değişmeyenler: temel mimari (bağlam zarfı, etki kuralları, iş öğeleri, ölçü referanslı çıktı, üç görünüm, dört ölçü), modül spesifikasyonlarının kapsamı, karar paketi yapısı, fazların sayısı ve kolay kullanım hedefi (kullanıcı tek asistan görür; kapı kartı formun içinde; onay tek tık; teknik kimlikler kullanıcıya görünmez).
 
-### 15.2 Kapanış kontrol tablosu (v1.3; üç durumlu)
+### 15.2 Kapanış kontrol tablosu (v1.4; üç durumlu)
 
-**Tasarımda karşılandı:** ilke ve sözleşme yazılı. **Örnek eşitlendi:** metin, şema ve kod örneği birbiriyle çelişmiyor (son kontrolde çelişki bulunanlar v1.3'te düzeltildi). **Uygulamada test edilecek:** kabul testi planlı; yazılmadı, koşulmadı. Hiçbir satır "uygulandı" veya "test geçti" anlamına gelmez; bu belge tasarım taslağıdır.
+**Tasarımda karşılandı:** ilke ve sözleşme yazılı. **Örnek eşitlendi:** metin, şema ve kod örneği birbiriyle çelişmiyor. "Evet" yalnız son bağımsız kontrolde açık bulgu kalmayan satırlar içindir; bu sürümde düzeltilen satırlar **"v1.4'te düzeltildi — bağımsız yeniden kontrol bekliyor"** olarak işaretlidir. **Uygulamada test edilecek:** kabul testi planlı; yazılmadı, koşulmadı. Hiçbir satır "uygulandı" veya "test geçti" anlamına gelmez.
 
-| Kritik düzeltme | Tasarımda karşılandı | Örnek eşitlendi | Uygulamada test edilecek | Şema / metin / senaryo |
+| Kritik konu | Tasarımda karşılandı | Örnek eşitlendi | Uygulamada test edilecek | Şema / metin / senaryo |
 |---|---|---|---|---|
-| Aynı içerikte iki meşru sipariş | Evet | Evet | Evet | `OperationIntentId` (§5.5, Ek C.3) / §5.6 tablo / G-33 |
-| Belirsiz sonucun tekrar gönderilmesi | Evet | **v1.3'te düzeltildi** (ortak zarf kontrolü; `Dispatched → Unknown` açık adım) | Evet | `Unknown`, `TargetLock`, `RecoveryAttempts ≤ 1` / §5.6 / G-11, G-26, G-34 |
-| Aynı niyet + farklı içerik | Evet | Evet | Evet | `DispatchedPayloadHash = CanonicalPayloadHash` / §5.6 / G-37 |
-| İki onay gerektiren işlem | Evet | Evet | Evet | `RequiredApprovals`, `PartiallyApproved` / §5.6 / G-27, G-35 |
-| Yalnız bir sevkiyata verilen istisna (risk / izin / görev ayrımı) | Evet | **v1.3'te düzeltildi** | Evet | Sorun `Acknowledged` + kapı `exceptionRef` / §3.4 [4]–[6] / G-36 |
-| Sorun kaydı ile görev arasında kesinti | Evet | **v1.3'te düzeltildi** (tek işlem + değişmez) | Evet | `work.*` tek işlem / §3.3, §5.8 / G-38 |
-| Salt-okunur kapı sorgusu | Evet | **v1.3'te düzeltildi** | Evet | Kapı arayüzünde yazma bağımlılığı yok / §3.3 / G-39 |
-| Gölge mod ve eski revizyon | Evet | **v1.3'te düzeltildi** | Evet | `Superseded`, tek canlı revizyon / §5.5 / G-40 |
-| Eskalasyon ile yazma koruması | Evet | **v1.3'te düzeltildi** | Evet | Rol + adım + olay aynı işlem / §5.7 / kodlama §18.2 |
-| Kanıt yoksa DOĞRULANACAK | Evet | **v1.3'te daraltıldı** | Sahip dilimde: Counterparty farklı-aktör, Accounting key düzeyi testleri | §5.6a |
-| API-birincil uzlaştırması; aktivasyon ayrı | Evet | Evet | Evet (router testleri) | `Ai:CloudGateway:Activated` / §1, §5.10, §10.2 |
+| Aynı içerikte iki meşru sipariş | Evet | Evet | Evet | `OperationIntentId` / §5.6 / G-33 |
+| Aynı niyet + farklı içerik | Evet | Evet | Evet | `DispatchedPayloadHash` / §5.6 / G-37 |
+| İki onay gerektiren işlem | Evet | Evet | Evet | `RequiredApprovals` / §5.6 / G-27, G-35 |
+| Salt-okunur kapı sorgusu | Evet | Evet (v1.4: security-event kapsamı daraltıldı) | Evet | §3.3 / G-39 |
+| Eskalasyon ile yazma koruması | Evet | Evet | Evet | §5.7 |
+| Belirsiz sonucun kurtarılması (deneme reddi ≠ niyet reddi; probe/yeniden gönderim ayrımı; geç başarı) | Evet | v1.4'te düzeltildi — yeniden kontrol bekliyor | Evet | §5.6 / G-11, G-26, G-34, G-43 |
+| Onaylanmış ama gönderilmemiş öneri | Evet | v1.4'te düzeltildi — yeniden kontrol bekliyor | Evet | `DispatchRequestedAtUtc` / §5.6 / G-44 |
+| Öneri oluşturma isteğinin tekrarı | Evet | v1.4'te düzeltildi — yeniden kontrol bekliyor | Evet | `ai.CommandAttempts` / §5.6 / G-45 |
+| Tek sevkiyat istisnası ve talimat kapsamlı karar ihtiyacı (A/B) | Evet | v1.4'te düzeltildi — yeniden kontrol bekliyor | Evet | `ScopeKey` / §3.4 / G-36, G-41, G-42 |
+| Sorun–görev kesintisi ve takibin başlatılması | Evet | v1.4'te düzeltildi — yeniden kontrol bekliyor (outbox kabulüne kadar uzlaştırma zorunlu) | Evet | §3.3, §3.4 [1] / G-38, G-46, G-47 |
+| Gölge mod (öneri ve kural) | Evet | v1.4'te düzeltildi — yeniden kontrol bekliyor | Evet | `Superseded`, `ShadowEvaluations` / G-40, G-48 |
+| AI'dan bağımsız zamanlı takip ve eskalasyon | Evet | v1.4'te düzeltildi — yeniden kontrol bekliyor | Evet | `WorkRulesWorker` / §5.8 / G-50 |
+| Çıktı doğrulama (tutar, yargı) | Evet | v1.4'te düzeltildi — yeniden kontrol bekliyor | Evet | G-31, G-49 |
+| Veri sınıfı ve saklama (içerik alanları, yasal bekletme) | Evet | v1.4'te düzeltildi — yeniden kontrol bekliyor | Evet | §5.5, Ek A #18/#43 |
+| Kanıt yoksa DOĞRULANACAK | Evet | Evet | Sahip dilimde: Counterparty farklı-aktör, Accounting key düzeyi, probe port'ları | §5.6a |
+| API-birincil uzlaştırması; aktivasyon ayrı | Evet | Evet | Evet (router) | §1, §5.10, §10.2 |
 
 ### 15.3 v1.1 değişiklik günlüğü (27 Eylül 2026)
 
@@ -1655,7 +1698,7 @@ Sınıf: R=READ, S=SIMULATE, D=DRAFT, W=WRITE. Faz: araç hangi fazda açılır.
 | 15 | `finance.open-items.read@1` | R | 1 | Finance | OpenItems okuma (yeni port) | `finance.manual-receipt.amount.read` (ÖNERİ: `finance.open-items.read`) | Gizli |
 | 16 | `finance.receipts.list/get@1`, `finance.payments.list/get@1`, `finance.bank-accounts.read@1` | R | 1 | Finance | `ListAuthorizedAsync`, `DetailAuthorizedAsync`, `IFinanceBankAccountReader` | ilgili `finance.*.read` | Gizli / Çok gizli (IBAN — maskeli) |
 | 17 | `accounting.periods.list/get@1`, `accounting.journals.list/get@1`, `accounting.trial-balance.read@1`, `accounting.posting-queues.read@1` | R | 1 | Accounting | ilgili sorgular | `accounting.*.read` | Gizli |
-| 18 | `work.items.read@1` | R | 3 | Work | (yeni) | `work.items.view` | Şirket içi |
+| 18 | `work.items.read@1` | R | 3 | Work | (yeni) | `work.items.view` | (v1.4) **Değişken:** her öğe kaynağının gerçek sınıfını taşır (`WorkItem.DataClass`; Finans kaynaklı öğe `Gizli`); çıktı sınıfı döndürülen öğelerin en yüksek sınıfıdır; yalnız metadata isteyen çağrı (durum, son tarih, sahip, şablon kodu) `Şirket içi` |
 | 19 | `inventory.allocation.simulate@1` | S | 1 | Inventory | serbest miktar hesabı (Serbest Fiziki formülü; yeni port) | `inventory.balances.read` | Şirket içi |
 | 20 | `manufacturing.engine.preview@1` | S | 1 | Manufacturing | `Engines/*` (preview endpoint — yeni) | `manufacturing.plans.read` | Şirket içi |
 | 21 | `finance.risk.evaluate@1` | S | 2 (W4-RISK) | Finance | CARI-RISK/1 calculator (yeni) | `finance.risk.read` (ÖNERİ) | Gizli |
@@ -1680,7 +1723,7 @@ Sınıf: R=READ, S=SIMULATE, D=DRAFT, W=WRITE. Faz: araç hangi fazda açılır.
 | 40 | `logistics.instruction.create@1` | W | 4 | Logistics | `CreateInstructionAsync` | `logistics.loading-instructions.create` | Gizli |
 | 41 | `accounting.normal-journal-draft.create@1` | W | 4 | Accounting | `INormalJournalDraftLifecycleV1.CreateAsync` | `accounting.normal-journal.draft.create` | Gizli |
 | 42 | `document.link.create@1` | W | 4 (ERP-000G) | Documents | belge kasası kayıt bağlantısı (yeni) | belge bağlantı izni (ÖNERİ) | Gizli |
-| 43 | `work.item.draft@1` | D (görev taslağı; kullanıcı Çalışma Merkezi'nde normal komutla kaydeder — AI WRITE aracı değil; v1.3) | 3 | Work | (yeni) | `work.items.create` (kaydeden kullanıcının izni) | Şirket içi |
+| 43 | `work.item.draft@1` | D (görev taslağı; kullanıcı Çalışma Merkezi'nde normal komutla kaydeder — AI WRITE aracı değil; v1.3) | 3 | Work | (yeni) | `work.items.create` (kaydeden kullanıcının izni) | (v1.4) **Değişken:** taslağın kaynağının sınıfı (Finans görevi taslağı `Gizli`) |
 | 44 | `finance.risk.shipment-gate@1` | R (kapı sorgusu; tutar yok) | 2 (W4-RISK) | Finance | CARI-RISK/1 calculator → karar + izinli gerekçe kodları (yeni) | `finance.risk.gate.read` (ÖNERİ; lojistik/satış rollerine) | Şirket içi (ayrı ölçü; sınıf düşürme değil) |
 
 Kural-tabanlı iş öğesi üretimi (etki kuralı → `WorkItem`) bu katalogda **araç değildir**: `Work.Rules` sistem aktörüyle, politika onaylı şablonla, modelsiz çalışır.
@@ -1826,11 +1869,21 @@ Etki türü: **Bilgi / Uyarı / Görev** — hiçbir etki kuralı işlem durdurm
 | G-33 (v1.2) | Aynı müşteri/ürün/miktar için kullanıcı iki kez "sipariş taslağı oluştur" niyeti başlatır | İki `OperationIntentId`, iki key, iki `sales.DraftAttempts` satırı, iki taslak; ikinci önizlemede "aynı içerikli öneri" bilgisi; engel yok; sahip modül mükerrer uyarısı varsa bulgu |
 | G-34 (v1.2) | `Unknown` niyet için sahip modülde kayıt yok (komut hiç ulaşmamış veya yolda) | Kurtarma aynı key/payload ile **en fazla bir** gönderim → ya replay ya ilk yürütme; toplam tek kayıt; ikinci belirsizlik → `Unknown` + `TargetLock` + iş öğesi; aynı hedefe yeni niyet 409 `intent_pending_recovery`/`target_locked` |
 | G-35 (v1.2) | İki onay gerektiren öneri: aynı kişi iki kez onaylar; iki onay arasında hedef sürümü değişir | İkinci onay 403 (SoD); farklı kişi → `Approved`; arada sürüm değişimi → `Stale`, iki onay da düşer, aynı niyet rev+1 önizlenir |
-| G-36 (v1.2, v1.3'te düzeltildi) | Yalnız bir sevkiyata verilen risk istisnası | Müşterinin risk Sorunu **açık kalır** (`Acknowledged`; limit aşımı sürdükçe `Resolved` olmaz); kapı `Proceed(exceptionRef)` yalnız o talimat için; istisna değerlendirme görevi kanıtla kapanır; sevkiyat kaydedilince `Consumed` → ikinci talimat `ReviewRequired`, Sorun `Reopened`, yeni karar görevi; süre dolunca aynısı zamanlı taramayla; yeni Sorun açılmaz |
+| G-36 (v1.2; v1.4'te düzeltildi) | Yalnız bir sevkiyata (A) verilen risk istisnası | Müşterinin risk Sorunu **açık kalır**; A'nın karar görevi kanıtla kapanır; kapı yalnız A için `Proceed(exceptionRef)`; A sevk edilince istisna `Consumed`, geçerli karar kalmadıysa müşteri düzeyi karar görevi açılır; süre dolunca aynısı zamanlı taramayla; yeni Sorun açılmaz |
 | G-37 (v1.2) | Sahip modül aynı key için farklı içerik görür (bütünlük ihlali) | 409 aynı-key uyuşmazlığı → Proposal `Failed(ContentConflict)`, `TargetLock` kalır, security-event; insan inceler; sessiz yeni işlem yok |
 | G-38 (v1.3) | Sorun kaydı yazıldı, görev yazılmadan servis durdu | Olamaz: ikisi aynı işlemde; kesinti ikisini birden geri alır; sonraki değerlendirme (sonuç "değişmedi" olsa da) ikisini birlikte yazar |
 | G-39 (v1.3) | Kapı sorgusu | Hiçbir satır yazılmaz (satır sayısı ve rowversion'lar aynı) |
 | G-40 (v1.3) | Gölge öneri yeniden önizlenir | Yeni revizyon da gölge; eski revizyon `Superseded`; hiçbiri onaylanamaz |
+| G-41 (v1.4) | A'nın istisnası hâlâ aktifken B talimatı hazırlanır | B için kapı `ReviewRequired`; "talimat B" karar ihtiyacı ve **ayrı** Finans görevi açılır; A'nın istisnası B'yi kapatmaz; Sorun `Acknowledged → Open` |
+| G-42 (v1.4) | Geçerli karar başka geçerli kararla yenilenir (A'nın istisnası müşteri geneli kararla değiştirilir) | Sorun yeniden açılmaz; ara değerlendirmede gereksiz görev açılmaz; kapsamı karşılanan görevler kapanır |
+| G-43 (v1.4) | İlk gönderim sahipte başarıyla kaydedildi, cevap kayboldu; probe yok. İki varyant: (a) onaylayanın yetkisi kaldırıldı, gateway yeniden gönderimi engeller; (b) yetki yalnız sahip tarafında daraldı, yeniden gönderim sahip fence'inden 403 alır | Her iki varyantta öneri **Failed yapılmaz**, `Unknown` + kilit kalır; (b)'de reddin kodu yalnız deneme reddi olarak kaydedilir; insan devralma görevi; ilk sipariş tek kalır. Sahip probe'u varsa önce o okunur ve `Executed` olur; devralma görevi kanıtla kapanır |
+| G-44 (v1.4) | Onay kaydedildi (`Approved`), gönderim başlamadan süreç kapandı | Süpürücü `Approved` + eski gönderim talebini bulur, **tam gönderim yolundan** geçirir (durum, süre, politika, zarf); HTTP isteğiyle yarışta tek gönderim |
+| G-45 (v1.4) | Öneri oluşturma isteği aynı `Idempotency-Key` ile tekrar gönderilir | Aynı niyet ve aynı önizleme döner; ikinci niyet oluşmaz; aynı key farklı gövde → 409 |
+| G-46 (v1.4) | Talimat kaydedildi, ekran takip çağrısını yapamadan kapandı | Outbox olayı (ERP-000F) veya uzlaştırma taraması takibi başlatır; görev oluşur; tek görev |
+| G-47 (v1.4) | Geçen hafta kaydedilmiş ve hiç güncellenmemiş sipariş bugün termini geçer | Durum sorgusu ("açık ve termin < bugün") onu bulur; güncellenme zamanı filtresi kullanılmaz |
+| G-48 (v1.4) | Önceden aktif kural gölgeye alınır; gölge değerlendirmede koşul kalkmış görünür | Operasyonel Sorun ve görev değişmez; yalnız gölge kaydı yazılır |
+| G-49 (v1.4) | Model metninde `5580000 TRY`, `₺5.580.000` veya yazıyla tutar; özet alanında tutar | Hepsi reddedilir (token dışı rakam/tutar yasağı bütün görünür alanlarda) |
+| G-50 (v1.4) | AI tamamen kapalı (`Ai:Enabled=false`, kill switch, workflow kapalı) | Zamanlı kural taraması, uzlaştırma, eskalasyon ve görev açma/kapama çalışır |
 
 ## Ek E — Kaynaklar ve doğrulama tabanı
 
