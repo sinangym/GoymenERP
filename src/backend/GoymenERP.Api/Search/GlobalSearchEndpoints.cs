@@ -42,8 +42,9 @@ public static class GlobalSearchEndpoints
     /// </summary>
     public static IEndpointRouteBuilder MapGlobalSearchEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapGet(GlobalSearchApiV1.Path, async (HttpContext httpContext, [FromServices] GlobalSearchComposer composer,
-                ICorrelationContext correlation, CancellationToken cancellationToken) =>
+        // `q` is bound only so the contract documents it; the rule is applied to the raw query (one value, no other member).
+        endpoints.MapGet(GlobalSearchApiV1.Path, async ([FromQuery(Name = GlobalSearchApiV1.QueryParameter)] string? q, HttpContext httpContext,
+                [FromServices] GlobalSearchComposer composer, ICorrelationContext correlation, CancellationToken cancellationToken) =>
             {
                 httpContext.Response.Headers.CacheControl = "private, no-store";
                 httpContext.Response.Headers.Pragma = "no-cache";
