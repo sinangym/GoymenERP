@@ -194,8 +194,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // product
             // DEC-CAR-003: +4 ProductDeactivationSqlServerRelationalAcceptanceTests facts (d7dbec7f… -> ddeead62…).
+            // DEC-PRD-010: +5 ProductDuplicateCandidatesSqlServerRelationalAcceptanceTests facts (ddeead62… -> d434c2b8…).
             ["tools/relational_inventory/product.txt"] =
-                "ddeead62b309b7c7d8929539a6ea39a36d760dbc4c40ef9ef40a09f962aa1650",
+                "d434c2b81e15574d21933413649fb40a5cc045008b5d7c9bd0eb7358807b495b",
 
             // purchasing
             ["tools/relational_inventory/purchasing.txt"] =
@@ -367,8 +368,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // read-only DI additions; no new database capability, MigrateAsync stays 2.
                 // Re-measured for DEC-CAR-003: the denied (unconfigured) Product service gains the deactivate and
                 // reactivate members, which throw like its siblings; no new database capability, MigrateAsync stays 2.
+                // Re-measured for DEC-PRD-010: the denied Product service gains the read-only duplicate-candidates
+                // member, which throws like its siblings; no new database capability, MigrateAsync stays 2.
                 ["src/backend/GoymenERP.Api/ProductRuntime/ProductRuntimeExtensions.cs"] =
-                    new("f07b29fc2ca6b7270b254e58a0e5b83ac7ccecb56e66323f86b024914e86f4e5",
+                    new("2c5296cb5cc9fa5eaad8a926b3d1cea3617f7322961f5b3044d20bc17d9f4c25",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["MigrateAsync"] = 2 }),
                 // Re-measured for PRD-UNIT-1: the Product participant gets Settings' unit-identity catalog

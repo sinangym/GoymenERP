@@ -27,6 +27,7 @@ import {
   PENDING_REFERENCE_NOTE,
   PRODUCT_ACTIVATION_TEXT,
   PRODUCT_DETAIL_TEXT,
+  PRODUCT_DUPLICATE_TEXT,
   PRODUCT_HISTORY_TEXT,
   PRODUCT_LIFECYCLE_TEXT,
   ROLE_LABEL,
@@ -70,7 +71,17 @@ import {
   rememberAttempt,
 } from './pendingAttempt'
 import { UnresolvedExitGuard } from './UnresolvedExitGuard'
+import { DuplicateCandidatesPanel } from './DuplicateCandidates'
+import {
+  duplicateIds,
+  duplicateQueryKey,
+  useDuplicateCandidates,
+  type DuplicateOutcome,
+} from './duplicateQuery'
 import styles from './ProductDetailPage.module.css'
+
+/** The id of the Draft card's duplicate warning, which the approval control is described by. */
+const DUPLICATE_CHECK_ID = 'product-duplicate-check'
 
 function formatInstant(value: string): string {
   const parsed = new Date(value)
@@ -146,6 +157,11 @@ export function ProductDetailPage() {
     ...(hasCapability(shell, PRODUCT_DEACTIVATE_CAPABILITY) ? (['deactivate'] as const) : []),
     ...(hasCapability(shell, PRODUCT_REACTIVATE_CAPABILITY) ? (['reactivate'] as const) : []),
   ]
+  /**
+   * §10.2: a Draft card shows the server's exact-name duplicates on every open, so closing and reopening the
+   * card answers what the server holds now. An Active/Inactive card is past approval; it shows none.
+   */
+  const isDraft = card.product.lifecycle.known && card.product.lifecycle.value === 'Draft'
   const reReadAfterWrite = (productIdWritten: string) => {
     // As for activation: the command's card carries the group label only, so it is never painted.
     // The card, its history and the list are RE-READ; the new state appears when the server says so.
@@ -177,6 +193,17 @@ export function ProductDetailPage() {
           </Link>
         ) : null
       }
+      duplicateCheck={
+        isDraft ? (
+          <DraftDuplicateCheck
+            key={card.product.id}
+            card={card}
+            namespace={namespace}
+            entryGeneration={entryGeneration}
+            origin={origin}
+          />
+        ) : null
+      }
       inactiveDetail={
         card.product.lifecycle.known && card.product.lifecycle.value === 'Inactive' ? (
           <InactiveDetail
@@ -201,6 +228,7 @@ export function ProductDetailPage() {
           <ProductActivationAction
             key={card.product.id}
             card={card}
+            duplicateKey={duplicateQueryKey(namespace, entryGeneration, card.product.name.trim(), card.product.id)}
             onActivated={(activated) => {
               /**
                * The command's answer CONFIRMS Active, but its card is the command's own
@@ -228,19 +256,58 @@ export function ProductDetailPage() {
   )
 }
 
+/**
+ * The Draft card's duplicate warning (§10.2): the server's exact-name candidates, this card left out, with a
+ * link to each. It blocks nothing; the approval re-reads the same query before it sends (see below).
+ */
+function DraftDuplicateCheck({
+  card,
+  namespace,
+  entryGeneration,
+  origin,
+}: {
+  readonly card: ProductCard
+  readonly namespace: string | null
+  readonly entryGeneration: number
+  readonly origin: string | null
+}) {
+  const shell = useShellState()
+  const query = useDuplicateCandidates({
+    name: card.product.name.trim(),
+    excludeProductId: card.product.id,
+    namespace,
+    entryGeneration,
+    origin,
+    enabled: true,
+  })
+  return (
+    <DuplicateCandidatesPanel
+      id={DUPLICATE_CHECK_ID}
+      outcome={query.data}
+      canOpenDetail={hasCapability(shell, PRODUCT_CAPABILITY.productsDetail)}
+    />
+  )
+}
+
 type ActivationAttempt = AttemptState<ActivateProductPayload, ProductMutationResult>
 const PRODUCT_ACTIVATION_DIRTY_SCOPE = 'product.activation'
 
 function ProductActivationAction({
   card,
+  duplicateKey,
   onActivated,
   onReload,
 }: {
   readonly card: ProductCard
+  /** The Draft card's duplicate-warning query, re-read before a NEW approval attempt is sent. */
+  readonly duplicateKey: readonly unknown[]
   readonly onActivated: (card: ProductCard) => void
   /** Re-reads the card from its own endpoint; resolves once that read has answered. */
   readonly onReload: () => Promise<unknown>
 }) {
+  const queryClient = useQueryClient()
+  const [duplicatesChanged, setDuplicatesChanged] = useState(false)
+  const [checking, setChecking] = useState(false)
   const shell = useShellState()
   const dispatch = useShellDispatch()
   const boundary = useAuthBoundary()
@@ -305,13 +372,38 @@ function ProductActivationAction({
     if (attemptRef.current === refused) setAttempt({ phase: 'idle' })
   }
 
-  function startOrRetry() {
+  /**
+   * §10.2 re-check before approval. The duplicate warning never blocks an approval, but the person must not
+   * approve on the strength of a list that is no longer the server's: the warning is re-read first, and when
+   * it names other cards than the ones on screen the press does not send — the fresh list is shown and a
+   * second press approves. A failed re-read blocks nothing (the warning is not a gate). A same-key retry of
+   * an unresolved attempt skips this: it repeats a decision already sent.
+   */
+  async function duplicatesStillAsShown(): Promise<boolean> {
+    const shown = duplicateIds(queryClient.getQueryData<DuplicateOutcome>(duplicateKey))
+    await queryClient.refetchQueries({ queryKey: duplicateKey, exact: true })
+    const fresh = queryClient.getQueryData<DuplicateOutcome>(duplicateKey)
+    if (fresh === undefined || fresh.type !== 'ok-single') return true
+    if (fresh.data.exactName.length === 0 && !fresh.data.hasMore) return true
+    return duplicateIds(fresh) === shown
+  }
+
+  async function startOrRetry() {
     const pending = liveSnapshot(attempt)
     if (pending !== null) {
       void send(pending)
       return
     }
     if (origin === null) return
+    setChecking(true)
+    let unchanged = true
+    try {
+      unchanged = await duplicatesStillAsShown()
+    } finally {
+      setChecking(false)
+    }
+    setDuplicatesChanged(!unchanged)
+    if (!unchanged) return
     void send({
       key: generateAttemptKey(),
       payload: { expectedVersion: card.product.version },
@@ -333,7 +425,7 @@ function ProductActivationAction({
       <div className={styles.activationError} role="alert" data-testid="product-activation-unknown">
         <strong>{PRODUCT_ACTIVATION_TEXT.unknownTitle}</strong>
         <span>{PRODUCT_ACTIVATION_TEXT.unknownDetail}</span>
-        <button type="button" className={styles.activateButton} onClick={startOrRetry}>
+        <button type="button" className={styles.activateButton} onClick={() => void startOrRetry()}>
           {PRODUCT_ACTIVATION_TEXT.retrySameAttempt}
         </button>
       </div>
@@ -363,11 +455,17 @@ function ProductActivationAction({
     content = (
       <div className={styles.activationAction}>
         <span>{PRODUCT_ACTIVATION_TEXT.globalImpact}</span>
+        {duplicatesChanged ? (
+          <span role="alert" data-testid="product-duplicates-changed">
+            {PRODUCT_DUPLICATE_TEXT.changedBeforeApproval}
+          </span>
+        ) : null}
         <button
           type="button"
           className={styles.activateButton}
-          disabled={attempt.phase === 'submitting'}
-          onClick={startOrRetry}
+          disabled={attempt.phase === 'submitting' || checking}
+          aria-describedby={DUPLICATE_CHECK_ID}
+          onClick={() => void startOrRetry()}
         >
           {attempt.phase === 'submitting'
             ? PRODUCT_ACTIVATION_TEXT.submitting
@@ -763,6 +861,7 @@ function ProductCardView({
   activationControl,
   lifecycleControl,
   inactiveDetail,
+  duplicateCheck,
 }: {
   readonly card: ProductCard
   readonly history: React.ReactNode
@@ -771,6 +870,7 @@ function ProductCardView({
   readonly activationControl: React.ReactNode
   readonly lifecycleControl: React.ReactNode
   readonly inactiveDetail: React.ReactNode
+  readonly duplicateCheck: React.ReactNode
 }) {
   const { product, references } = card
   // Single source: the card's own `completeness` is a compatibility projection of
@@ -801,6 +901,8 @@ function ProductCardView({
           <span className={styles.lifecycleMeaning}>{lifecycleMeaning(product.lifecycle)}</span>
         </div>
       </header>
+
+      {duplicateCheck}
 
       {/* Only for a KNOWN Inactive: an unrecognised status must not inherit this claim. */}
       {product.lifecycle.known && product.lifecycle.value === 'Inactive' ? (
