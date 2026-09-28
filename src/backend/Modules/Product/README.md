@@ -21,6 +21,7 @@ Identity ID mapping, schema/runtime acceptance or production authorization.
 | Approval | POST /api/v1/products/{id}/activation | 200 ProductMutationResponse (Draft -> Active) |
 | Deactivation | POST /api/v1/products/{id}/deactivation | 200 ProductMutationResponse (Active -> Inactive) |
 | Reactivation | POST /api/v1/products/{id}/reactivation | 200 ProductMutationResponse (Inactive -> Active) |
+| Duplicate preview | GET /api/v1/products/duplicate-candidates?name=...&excludeProductId=... | ProductDuplicateCandidates (exact-name warning, never a block) |
 
 The module endpoint source compiles and is exercised using ASP.NET TestServer with
 an explicitly controlled service double. It is NOT mapped into the main host yet.
@@ -540,3 +541,32 @@ not picked for a new transaction but stays visible on old ones).
 `DeactivateProductV1` / `ReactivateProductV1`, the architecture guard pins (the two new migrations with raw
 SQL, `ProductRuntimeExtensions.cs`, `GroupSharedCommandDbContext.cs`, `tools/relational_inventory/product.txt`)
 and the four new `ProductDeactivationSqlServerRelationalAcceptanceTests` names in the relational inventory.
+
+## Duplicate warning (spec §10.2 / §15, first release)
+
+Sources: spec PRODUCT-U01-U02-JIT-001 §7 (code/alias collision; DB uniqueness settles the minting race), §10.2
+("Code/alias exact collision hard block'tur. Name/technical similarity yalnız warning/compare üretir; kendi başına
+kaydı birleştirmez veya engellemez."), §15 ("duplicate candidate read-only preview"), DEC-PRD-010 (a Draft is not
+used in a firm transaction; approval is its own step) and this README ("Same name is not a duplicate hard block").
+DEC-PRD-010's "mükerrer kontrol" step belongs to the Excel import (AT-019/AT-020), which is not built here.
+
+| Rule | Where |
+|---|---|
+| **Hard block = code/alias.** The code is server-minted; a second holder of a code is refused by the unique keys of `product.Products.Code` and `product.CodeRegistrations` (SQL 2601/2627), the same keys that settle concurrent minting. No check-then-insert. | `ProductDbContext`, `ProductDuplicateCandidatesSqlServerRelationalAcceptanceTests` |
+| **Warning = exact name** (`exactName`): cards whose name equals the given one after the write path's trim (`Product.NormalizeName`), compared as `Name = @name` under the column's own `Turkish_100_CI_AS` (Turkish case-insensitive: İ=i, I=ı; accent-sensitive), every lifecycle, the card being edited/approved excluded, code order, at most 20 (`hasMore` says there are more). No LIKE, score, token or threshold. | `ProductDuplicateRules`, `ProductReadStore.BuildExactNameQuery`, `ProductReader.GetDuplicateCandidatesAsync` |
+| Authority: the global Product `Read` (PRD-PERM-001), measured before the name is even validated (no 400 oracle) and again before the answer is released; `private, no-store`; nothing is written. | `ProductReader`, `ProductEndpoints` |
+| The warning never blocks a create, an edit or an approval; the server applies no duplicate precondition to any command. | `ProductDraftOperation` (unchanged) |
+| UI: the saved-Draft screen, the Draft card (fresh on every open) and the edit page (after the name field is left) list the other cards with links. The approval re-reads the warning before a NEW attempt: if it names other cards than those on screen, nothing is sent and the fresh list is shown; the next press approves. A failed re-read blocks nothing. A same-key retry skips the re-read. | `DuplicateCandidates.tsx`, `duplicateQuery.ts`, `ProductDetailPage.tsx` |
+
+**Open (NEEDS-SINAN, not guessed):** which technical attributes define "the same product" (defining-attribute
+duplicate) and any similarity rule/threshold (§10.2 technical similarity, AI candidates §12); whether approving
+a card that has exact-name candidates must require an explicit, recorded acknowledgement (today: shown, re-read,
+never blocking; the "changed list needs a second press" step is a reversible UX choice, not a policy); whether
+a manual-code/alias command (admin exception, §7) gets its own collision preview.
+
+**Central (coordinator), before this runs on the host:** OpenAPI `GetProductDuplicateCandidatesV1` + schema
+`ProductDuplicateCandidates` (regenerated artifact, additive only), its `OpenApiContractGenerationTests.Product`
+expectation, the `ProductRuntimeExtensions.cs` guard re-pin (the unconfigured service gains the member, which
+throws like its siblings; no new database capability, MigrateAsync stays 2) and the five new
+`ProductDuplicateCandidatesSqlServerRelationalAcceptanceTests` names in `tools/relational_inventory/product.txt`.
+No permission, shell capability, migration or grant changes.

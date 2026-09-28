@@ -157,6 +157,11 @@ export function productHistory(over: Record<string, unknown> = {}) {
   return { productId: PRODUCT_1, entries: [historyEntry()], truncated: false, ...over }
 }
 
+/** `ProductDuplicateCandidates`: the exact-name rule, no other card by default. */
+export function duplicateCandidates(over: Record<string, unknown> = {}) {
+  return { rule: 'exactName', name: 'Sac', exactName: [], hasMore: false, ...over }
+}
+
 export interface RecordedCall {
   readonly url: string
   readonly method: string
@@ -178,6 +183,8 @@ export interface HarnessConfig {
   readonly onList?: (url: string) => Response | Promise<Response>
   readonly onCard?: (url: string) => Response | Promise<Response>
   readonly onHistory?: (url: string) => Response | Promise<Response>
+  /** `GET /products/duplicate-candidates`; defaults to no other card with the name. */
+  readonly onDuplicates?: (url: string) => Response | Promise<Response>
   readonly onGroups?: () => Response | Promise<Response>
   /** May be deferred, so a test can resolve it in the same batch as a command's answer. */
   readonly onOptions?: (url: string) => Response | Promise<Response>
@@ -280,6 +287,9 @@ export function installFetch(config: HarnessConfig = {}) {
         }
         createAttempts += 1
         return (await config.onCreate?.(createAttempts, body)) ?? json(mutation(), 201)
+      }
+      if (url.includes('/products/duplicate-candidates')) {
+        return (await config.onDuplicates?.(url)) ?? json(duplicateCandidates())
       }
       if (/\/products\/[^/?]+\/history/.test(url)) {
         return (await config.onHistory?.(url)) ?? json(productHistory())
