@@ -150,6 +150,9 @@ public static class LogisticsProblemCodesV1
     /// <summary>503 (never on the wire): the Sales line reference owner cannot answer.</summary>
     public const string SalesProviderUnavailable = "sales_provider_unavailable";
 
+    /// <summary>503 (never on the wire): the Purchasing open-line owner cannot answer (AT-025, the purchase section).</summary>
+    public const string PurchasingProviderUnavailable = "purchasing_provider_unavailable";
+
     /// <summary>503 (never on the wire): an owner answered a malformed value.</summary>
     public const string ReferenceProviderInvalid = "reference_provider_invalid";
 

@@ -80,7 +80,8 @@ public sealed class LogisticsPermissionAndShellRegistrationTests
             .Where(item => item.Owner == LogisticsShellCapabilityProvider.OwnerId)
             .ToArray();
         // The list, the new-instruction workspace and the detail are published; each still requires its owner permission.
-        Assert.Equal(5, logistics.Length);
+        // AT-025: plus the operations work list's two separate sections (L-01 sales, L-09 purchase), each behind its own name.
+        Assert.Equal(7, logistics.Length);
         Assert.All(logistics, item => Assert.True(item.Declaration.ImplementationAvailable));
         Assert.Equal(2, logistics.Count(item => item.Declaration.ParentCapabilityId == LogisticsShellCapabilityProvider.DetailCapabilityId));
     }
