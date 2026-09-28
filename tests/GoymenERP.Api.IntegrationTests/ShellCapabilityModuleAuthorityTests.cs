@@ -103,7 +103,11 @@ public sealed class ShellCapabilityModuleAuthorityTests
             new ShellCapabilityAuthorityCatalog([authority]));
         Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13AndProductV11, authority);
         Assert.Equal(
-            new[] { "product.items.activate", "product.items.create", "product.items.detail", "product.items.edit", "product.items.list" },
+            new[]
+            {
+                "product.items.activate", "product.items.create", "product.items.deactivate", "product.items.detail",
+                "product.items.edit", "product.items.list", "product.items.reactivate",
+            },
             registry.Registrations.Where(item => item.Owner == ProductShellCapabilityProvider.OwnerId)
                 .Select(item => item.Declaration.CapabilityId).Order(StringComparer.Ordinal));
         Assert.Contains(registry.Registrations, item => item.Owner == OrganizationShellCapabilityProvider.OwnerId);

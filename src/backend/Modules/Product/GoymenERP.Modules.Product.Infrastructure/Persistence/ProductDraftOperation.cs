@@ -88,8 +88,41 @@ internal static class ProductDraftOperation
             // System action label, as for creation: the approval carries no user-supplied reason.
             return new(Card(before, groupName), Card(after, groupName), "Ürün kartı onayı", "product.card.activated.v1");
         }
+        if (operation is ProductCommandIntent.DeactivateOperation or ProductCommandIntent.ReactivateOperation)
+        {
+            var deactivate = operation == ProductCommandIntent.DeactivateOperation;
+            if (authority.Operation != (deactivate ? GroupSharedMasterOperation.Deactivate : GroupSharedMasterOperation.Reactivate))
+                throw WrongOperation();
+            var id = envelope.ProductId
+                ?? throw new InvalidOperationException("The frozen Product target is missing.");
+            var request = envelope.Request.Deserialize<ChangeProductLifecycleRequest>(Json)
+                ?? throw new InvalidOperationException("The frozen lifecycle request is missing.");
+            var row = await context.Products.SingleOrDefaultAsync(product => product.Id == id, cancellationToken)
+                ?? throw new ProductOperationException(ProductApiV1.NotFound, 404);
+            var before = row.ToRecord();
+            var product = before.RestoreProduct();
+            var (from, to) = deactivate
+                ? (ProductLifecycle.Active, ProductLifecycle.Inactive)
+                : (ProductLifecycle.Inactive, ProductLifecycle.Active);
+            if (product.Lifecycle != from)
+                throw new ProductOperationException(ProductApiV1.LifecycleConflict, 409);
+            var expectedVersion = ProductVersion.Parse(request.ExpectedVersion);
+            if (deactivate) product.Deactivate(expectedVersion, clock.GetUtcNow());
+            else product.Reactivate(expectedVersion, clock.GetUtcNow());
+            var after = ProductStoredRecord.Capture(product, before.RestoreReferences());
+            row.ApplyLifecycleChange(after, from, to);
+            var groupName = await context.CodeGroups.AsNoTracking().Where(group => group.Id == row.GroupId)
+                .Select(group => group.Name).SingleOrDefaultAsync(cancellationToken)
+                ?? throw new InvalidOperationException("The stored Product code group is missing.");
+            // The actor's own reason (normalised in the frozen intent) is the audit reason and the history's.
+            return new(Card(before, groupName), Card(after, groupName), ProductDraftValidator.NormalizeReason(request.Reason),
+                deactivate ? DeactivatedEventType : ReactivatedEventType);
+        }
         throw new InvalidOperationException("The frozen Product operation is unsupported.");
     }
+
+    public const string DeactivatedEventType = "product.card.deactivated.v1";
+    public const string ReactivatedEventType = "product.card.reactivated.v1";
 
     private static ProductCardView Card(ProductStoredRecord record, string groupName) => new(
         ProductDraftView.FromProduct(record.RestoreProduct(), new(groupName, null, null, null)), record.RestoreReferences());

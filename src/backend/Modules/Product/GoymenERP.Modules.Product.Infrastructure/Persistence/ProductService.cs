@@ -50,4 +50,18 @@ public sealed class ProductService(ProductReader reader, ProductCommandGateway g
         var prepared = await gateway.PrepareActivateAsync(idempotencyKey, id, request, cancellationToken);
         return await commands.RunAsync(prepared, cancellationToken);
     }
+
+    public async Task<ProductMutationResponse> DeactivateAsync(Guid id, ChangeProductLifecycleRequest request,
+        string idempotencyKey, CancellationToken cancellationToken)
+    {
+        var prepared = await gateway.PrepareDeactivateAsync(idempotencyKey, id, request, cancellationToken);
+        return await commands.RunAsync(prepared, cancellationToken);
+    }
+
+    public async Task<ProductMutationResponse> ReactivateAsync(Guid id, ChangeProductLifecycleRequest request,
+        string idempotencyKey, CancellationToken cancellationToken)
+    {
+        var prepared = await gateway.PrepareReactivateAsync(idempotencyKey, id, request, cancellationToken);
+        return await commands.RunAsync(prepared, cancellationToken);
+    }
 }

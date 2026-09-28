@@ -198,4 +198,6 @@ internal sealed class UnconfiguredProductService : IProductService
     public Task<ProductMutationResponse> CreateDraftAsync(CreateProductDraftRequest request, string idempotencyKey, CancellationToken cancellationToken) => throw Denied();
     public Task<ProductMutationResponse> EditDraftAsync(Guid id, EditProductDraftRequest request, string idempotencyKey, CancellationToken cancellationToken) => throw Denied();
     public Task<ProductMutationResponse> ActivateAsync(Guid id, ActivateProductRequest request, string idempotencyKey, CancellationToken cancellationToken) => throw Denied();
+    public Task<ProductMutationResponse> DeactivateAsync(Guid id, ChangeProductLifecycleRequest request, string idempotencyKey, CancellationToken cancellationToken) => throw Denied();
+    public Task<ProductMutationResponse> ReactivateAsync(Guid id, ChangeProductLifecycleRequest request, string idempotencyKey, CancellationToken cancellationToken) => throw Denied();
 }

@@ -4,15 +4,16 @@ using GoymenERP.BuildingBlocks.Shell;
 namespace GoymenERP.Modules.Product.Infrastructure.Shell;
 
 /// <summary>
-/// Publishes Product's four screens and the U-01-360 activation control to the shell, so an actor
+/// Publishes Product's four screens and the U-01-360 lifecycle controls (approve, deactivate, reactivate)
+/// to the shell, so an actor
 /// holding the matching global Product authority reaches them in the normal runtime.
 /// <list type="bullet">
 /// <item><b>Authority is not company permission.</b> Every declaration carries its exact
 /// <see cref="GroupSharedMasterOperation"/> and no company permission: the shell grants it from the
 /// server's global Product authority snapshot (explicit Product master assignments), never from a
 /// company role. The central registry pins these ids, routes and operations and refuses anything
-/// else (owner <c>PRODUCT</c>, single-company context and any granted scope). Activation is a child
-/// control of the detail screen, not another route.</item>
+/// else (owner <c>PRODUCT</c>, single-company context and any granted scope). Approval, deactivation and
+/// reactivation are child controls of the detail screen, not other routes; each is its own operation.</item>
 /// <item><b>No new permission name.</b> The operations are the ones the Product runtime already
 /// enforces on every API call; publishing a capability decides nothing the API does not.</item>
 /// <item><b>Unconfigured runtime shows nothing.</b> Without the Product runtime's issuer
@@ -24,13 +25,15 @@ namespace GoymenERP.Modules.Product.Infrastructure.Shell;
 public sealed class ProductShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "PRODUCT";
-    public const string OwnerContractVersion = "1.1";
+    public const string OwnerContractVersion = "1.2";
 
     public const string ListCapabilityId = "product.items.list";
     public const string DetailCapabilityId = "product.items.detail";
     public const string CreateCapabilityId = "product.items.create";
     public const string EditCapabilityId = "product.items.edit";
     public const string ActivateCapabilityId = "product.items.activate";
+    public const string DeactivateCapabilityId = "product.items.deactivate";
+    public const string ReactivateCapabilityId = "product.items.reactivate";
 
     public string Owner => OwnerId;
 
@@ -55,6 +58,18 @@ public sealed class ProductShellCapabilityProvider : IShellCapabilityProvider
                 CapabilityId = ActivateCapabilityId,
                 ParentCapabilityId = DetailCapabilityId,
                 GlobalProductOperation = GroupSharedMasterOperation.Activate,
+            },
+            detail with
+            {
+                CapabilityId = DeactivateCapabilityId,
+                ParentCapabilityId = DetailCapabilityId,
+                GlobalProductOperation = GroupSharedMasterOperation.Deactivate,
+            },
+            detail with
+            {
+                CapabilityId = ReactivateCapabilityId,
+                ParentCapabilityId = DetailCapabilityId,
+                GlobalProductOperation = GroupSharedMasterOperation.Reactivate,
             },
         ];
     }

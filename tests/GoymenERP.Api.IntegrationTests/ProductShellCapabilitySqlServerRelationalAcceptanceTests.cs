@@ -25,7 +25,10 @@ public sealed class ProductShellCapabilitySqlServerRelationalAcceptanceTests
     private static readonly Guid CompanyA = Guid.Parse("10000000-0000-0000-0000-000000000001");
 
     private static readonly string[] ProductCapabilities =
-        ["product.items.activate", "product.items.create", "product.items.detail", "product.items.edit", "product.items.list"];
+    [
+        "product.items.activate", "product.items.create", "product.items.deactivate", "product.items.detail",
+        "product.items.edit", "product.items.list", "product.items.reactivate",
+    ];
 
     [SqlServerFact]
     public async Task Product_screens_follow_the_global_Product_authority_through_the_real_provider()
@@ -59,7 +62,7 @@ public sealed class ProductShellCapabilitySqlServerRelationalAcceptanceTests
                 await identity.SaveChangesAsync();
             }
 
-            // Granted: all four screens plus the activation control; the other actor, without a Product grant, none.
+            // Granted: all four screens plus the three lifecycle controls; the other actor, without a Product grant, none.
             Assert.Equal(ProductCapabilities, ProductOnly(await ReadAsync(administrator)));
             Assert.Empty(ProductOnly(await ReadAsync(companyOnly)));
 
@@ -72,8 +75,12 @@ public sealed class ProductShellCapabilitySqlServerRelationalAcceptanceTests
                 await identity.SaveChangesAsync();
             }
 
+            // Only the approval control goes: the deactivation / reactivation grants are their own.
             Assert.Equal(
-                ["product.items.create", "product.items.detail", "product.items.edit", "product.items.list"],
+                [
+                    "product.items.create", "product.items.deactivate", "product.items.detail", "product.items.edit",
+                    "product.items.list", "product.items.reactivate",
+                ],
                 ProductOnly(await ReadAsync(administrator)));
 
             await using (var scope = factory.Services.CreateAsyncScope())

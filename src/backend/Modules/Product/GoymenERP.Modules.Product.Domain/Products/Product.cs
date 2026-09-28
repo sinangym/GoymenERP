@@ -118,6 +118,42 @@ public sealed class Product
         Version = nextVersion;
     }
 
+    /// <summary>
+    /// DEC-CAR-003 / PRD-SCOPE-001 (#98) §7.9: a used card is never deleted; it is taken out of new use.
+    /// Only an Active card becomes Inactive, at the version the actor read; every card value is kept, so
+    /// existing stock, orders and snapshots still read it. The reason is the audit event's, not a card field.
+    /// </summary>
+    public void Deactivate(long expectedVersion, DateTimeOffset now) =>
+        MoveLifecycle(expectedVersion, ProductLifecycle.Active, ProductLifecycle.Inactive, now,
+            "Yalnız aktif ürün kartı pasife alınabilir.");
+
+    /// <summary>
+    /// PRD-PERM-001 (#99) names reactivation beside deactivation: only an Inactive card returns to
+    /// Active, at the version the actor read. It is never a way back to Draft.
+    /// </summary>
+    public void Reactivate(long expectedVersion, DateTimeOffset now) =>
+        MoveLifecycle(expectedVersion, ProductLifecycle.Inactive, ProductLifecycle.Active, now,
+            "Yalnız pasif ürün kartı yeniden aktifleştirilebilir.");
+
+    private void MoveLifecycle(long expectedVersion, ProductLifecycle from, ProductLifecycle to,
+        DateTimeOffset now, string refusal)
+    {
+        if (expectedVersion != Version)
+        {
+            throw new ProductVersionConflictException(expectedVersion, Version);
+        }
+
+        if (Lifecycle != from)
+        {
+            throw new InvalidOperationException(refusal);
+        }
+
+        var nextVersion = checked(Version + 1);
+        Lifecycle = to;
+        UpdatedAtUtc = now.ToUniversalTime();
+        Version = nextVersion;
+    }
+
     private static void PreserveDerived(ProductRoleState before, ProductRoleState after)
     {
         if (before.Provenance == ProductRoleProvenance.Derived && before != after)
