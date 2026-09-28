@@ -137,12 +137,21 @@ test('U02-DUP a same-named Draft is saved with a warning that links the other ca
   })
 
   const b = await test.step('the authorized actor saves B (other letter cases): 201, and the saved screen links A', async () => {
-    await page.goto('/urun/yeni')
+    // Enter the form the way U02-FIX-01 does (list → "Yeni ürün") and wait for the real code-group read, so the
+    // form is filled only after the shell has settled and cannot be remounted under the typed values.
+    const groupsAnswer = page.waitForResponse((response) =>
+      new URL(response.url()).pathname === `${PRODUCTS_PATH}/code-groups` && response.request().method() === 'GET')
+    await page.goto('/urun')
+    await expect(page.getByRole('heading', { level: 1, name: 'Ürünler' })).toBeVisible({ timeout: 30_000 })
+    await page.getByRole('main').getByRole('link', { name: 'Yeni ürün', exact: true }).click()
     await expect(page.getByRole('heading', { level: 1, name: 'Yeni ürün' })).toBeVisible({ timeout: 30_000 })
+    expect((await groupsAnswer).status(), 'the real code-group read').toBe(200)
     await page.getByLabel('Ürün adı').fill(typedB)
     const options = page.waitForResponse((response) => new URL(response.url()).pathname === `${PRODUCTS_PATH}/reference-options`)
     await page.getByLabel('Kod grubu').selectOption(s.codeGroupId)
     expect((await options).status()).toBe(200)
+    await expect(page.getByLabel('Ürün adı')).toHaveValue(typedB)
+    await expect(page.getByLabel('Kod grubu')).toHaveValue(s.codeGroupId)
     const created = page.waitForResponse((response) =>
       new URL(response.url()).pathname === PRODUCTS_PATH && response.request().method() === 'POST')
     const read = page.waitForResponse((response) => new URL(response.url()).pathname === DUPLICATES_PATH)
