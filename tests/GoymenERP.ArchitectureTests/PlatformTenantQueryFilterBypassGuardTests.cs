@@ -153,8 +153,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // finance
             // DEC-FIN-014: +3 POS collection SQL facts (b18c13d9… -> 7af8ecf1…).
             // DEC-FIN-016: +6 customer cheque / note SQL facts (7af8ecf1… -> de54339e…).
+            // Party ledger: +2 SQL facts (de54339e… -> 84295fb2…).
             ["tools/relational_inventory/finance.txt"] =
-                "de54339e92abc3cf4a90a34a7e5866e7185a806ccc05ecf59e9854681ed2589b",
+                "84295fb267df8cdfa161de6040e7f29525d1a018fcccde9855cde50251293bcf",
 
             // identity
             ["tools/relational_inventory/identity.txt"] =
@@ -572,12 +573,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 // FIN-T04a (#305): the Finance initializer's one provider branch, as Organization.
                 // Re-fingerprinted for DEC-FIN-016: the customer-instrument service registration; the provider
-                // branch and its token counts are unchanged.
+                // branch and its token counts are unchanged. Re-fingerprinted for the party ledger: one read-service
+                // registration (no writer); the provider branch and its token counts are unchanged.
                 ["src/backend/Modules/Finance/"
                  + "GoymenERP.Modules.Finance.Infrastructure/"
                  + "FinanceModuleExtensions.cs"] =
                     new(
-                        "af5480b5dec5030271800fefb0e75e0764cdbbd3d16ec8537c39b68d46fe1155",
+                        "4ffceef1f7aa1faf0774564486c25d8ecdec0e9197670d7424a13189008e07d9",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
