@@ -24,7 +24,7 @@ public sealed class InventoryPersistenceModelTests
             typeof(MovementRow), typeof(MovementLineRow),
             typeof(BalanceRow), typeof(SourceGrainRow), typeof(OpeningCountRow), typeof(OpeningCountLineRow),
             typeof(InventoryCommandRow), typeof(AllocationRow), typeof(InventoryOutboxRow),
-            typeof(StockCountRow), typeof(StockCountDecisionRow),
+            typeof(StockCountRow), typeof(StockCountDecisionRow), typeof(AllocationChangeRow),
         ];
 
     [Fact]
@@ -163,6 +163,8 @@ public sealed class InventoryPersistenceModelTests
             migration => migration.EndsWith("_AddInventoryLabelGenealogy", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("_AddInventoryStockCounts", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AddInventoryAllocationChanges", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -230,6 +232,9 @@ public sealed class InventoryPersistenceModelTests
     [InlineData("edit-stock-count")]
     [InlineData("delete-stock-count")]
     [InlineData("edit-stock-count-decision")]
+    [InlineData("edit-allocation-change")]
+    [InlineData("delete-allocation-change")]
+    [InlineData("edit-allocation-label")]
     public void Stored_stock_is_never_deleted_and_only_its_allowed_field_changes(string fault)
     {
         using var context = Context();
@@ -312,6 +317,17 @@ public sealed class InventoryPersistenceModelTests
                     PayloadHash = new string('0', 64), DecidedAtUtc = At, DecidedBy = "synthetic", CorrelationId = "synthetic",
                 }).Decision = 1;
                 break;
+            case "edit-allocation-change":
+                // INV-AL-1 change: the history of a resize or move is evidence; it is never rewritten.
+                Attach(context, AllocationChange()).TargetRemainingKg = 2m;
+                break;
+            case "delete-allocation-change":
+                context.AllocationChanges.Remove(Attach(context, AllocationChange()));
+                break;
+            case "edit-allocation-label":
+                // A move never re-points an allocation: it releases it and creates a new one.
+                Attach(context, Allocation()).LabelId = Guid.NewGuid();
+                break;
             default:
                 Attach(context, Balance()).CompanyId = CompanyB;
                 break;
@@ -359,6 +375,13 @@ public sealed class InventoryPersistenceModelTests
         context.Attach(row);
         return row;
     }
+
+    private static AllocationChangeRow AllocationChange() => new AllocationChangeRow()
+    {
+        Id = Guid.NewGuid(), CompanyId = CompanyA, Kind = 1, SourceAllocationId = Guid.NewGuid(), SourceVersion = 1,
+        SourceLabelId = Label1, SourceRemainingKg = 10m, TargetLabelId = Label1, TargetRemainingKg = 5m,
+        Reason = "SYN-CHANGE", ChangedBy = "synthetic", CorrelationId = "synthetic", ChangedAtUtc = At,
+    };
 
     private static StockCountRow StockCount() => new()
     {

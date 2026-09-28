@@ -183,6 +183,95 @@ public sealed class InventoryPhysicalAllocationHostServiceTests
         Assert.Null(fixture.Writer.CreateRequest);
     }
 
+    [Fact]
+    public async Task Change_derives_the_approved_line_product_and_passes_the_fresh_fence_to_the_writer()
+    {
+        var fixture = Fixture(Granted("ROLE-OLD"), Granted("ROLE-CHANGE-FINAL"));
+        var allocationId = Guid.NewGuid();
+        var target = Guid.NewGuid();
+        var newId = Guid.NewGuid();
+
+        var result = await fixture.Service.ChangeAsync(allocationId,
+            new ChangeInventoryPhysicalAllocationRequestV1("3", OrderId, LineId, target, "9", "4.5", "SENTETIK change", newId),
+            Metadata(), CancellationToken.None);
+
+        Assert.False(result.IsReplay);
+        Assert.Equal(2, fixture.Authority.Calls.Count);
+        Assert.Equal(1, fixture.OrderLines.Calls);
+        var (id, request) = fixture.Writer.Change!.Value;
+        Assert.Equal((allocationId, ProductId, "7", OrderId, LineId, target, "9", "4.5", "3", newId),
+            (id, request.ProductId, request.ProductVersion, request.SalesOrderId, request.SalesOrderLineId,
+                request.TargetLabelId, request.ExpectedTargetLabelVersion, request.QuantityKg,
+                request.ExpectedAllocationVersion, request.NewAllocationId));
+        Assert.Equal((fixture.User.UserId, InventoryPermissionManifestV1.PhysicalAllocationWrite),
+            (fixture.Writer.Metadata!.ActorId, fixture.Writer.Metadata.PermissionCode));
+        Assert.Equal(["ROLE-CHANGE-FINAL"], fixture.Writer.Metadata.RoleCodes);
+    }
+
+    [Theory]
+    [InlineData(SalesOrderLineReferenceOutcomeV1.NotFound, StatusCodes.Status404NotFound, null)]
+    [InlineData(SalesOrderLineReferenceOutcomeV1.NotApproved, StatusCodes.Status422UnprocessableEntity,
+        InventoryAllocationCodesV1.InvalidReference)]
+    public async Task Change_of_an_allocation_whose_line_is_no_longer_approved_is_refused_without_a_write(
+        SalesOrderLineReferenceOutcomeV1 outcome,
+        int status,
+        string? code)
+    {
+        var fixture = Fixture();
+        fixture.OrderLines.Answer = new(outcome, null, outcome == SalesOrderLineReferenceOutcomeV1.NotApproved
+            ? "Cancelled"
+            : null);
+
+        var exception = await Assert.ThrowsAsync<InventoryPhysicalAllocationHostException>(() =>
+            fixture.Service.ChangeAsync(Guid.NewGuid(), ChangeRequest(), Metadata(), CancellationToken.None));
+
+        Assert.Equal((status, code), (exception.Status, exception.Code));
+        Assert.Null(fixture.Writer.Change);
+    }
+
+    [Fact]
+    public async Task Change_revocation_at_the_fresh_fence_returns_403_without_a_write()
+    {
+        var fixture = Fixture(Granted(), PermissionScope.Denied);
+
+        var exception = await Assert.ThrowsAsync<InventoryPhysicalAllocationHostException>(() =>
+            fixture.Service.ChangeAsync(Guid.NewGuid(), ChangeRequest(), Metadata(), CancellationToken.None));
+
+        Assert.Equal(StatusCodes.Status403Forbidden, exception.Status);
+        Assert.Null(fixture.Writer.Change);
+    }
+
+    [Fact]
+    public async Task Change_without_the_allocation_permission_never_reads_sales_or_writes()
+    {
+        var fixture = Fixture(PermissionScope.Denied);
+
+        var exception = await Assert.ThrowsAsync<InventoryPhysicalAllocationHostException>(() =>
+            fixture.Service.ChangeAsync(Guid.NewGuid(), ChangeRequest(), Metadata(), CancellationToken.None));
+
+        Assert.Equal(StatusCodes.Status403Forbidden, exception.Status);
+        Assert.Equal(0, fixture.OrderLines.Calls);
+        Assert.Null(fixture.Writer.Change);
+    }
+
+    [Fact]
+    public async Task Change_with_an_empty_new_allocation_id_is_400_before_the_sales_read()
+    {
+        var fixture = Fixture();
+
+        var exception = await Assert.ThrowsAsync<InventoryPhysicalAllocationHostException>(() =>
+            fixture.Service.ChangeAsync(Guid.NewGuid(), ChangeRequest() with { NewAllocationId = Guid.Empty }, Metadata(),
+                CancellationToken.None));
+
+        Assert.Equal((StatusCodes.Status400BadRequest, InventoryAllocationCodesV1.ValidationFailed),
+            (exception.Status, exception.Code));
+        Assert.Equal(0, fixture.OrderLines.Calls);
+        Assert.Null(fixture.Writer.Change);
+    }
+
+    private static ChangeInventoryPhysicalAllocationRequestV1 ChangeRequest() => new(
+        "1", OrderId, LineId, Guid.NewGuid(), "2", "3", "SENTETIK change", null);
+
     private static TestFixture Fixture(params PermissionScope[] scopes)
     {
         var company = new MutableCompanyContext(CompanyA);
@@ -300,6 +389,23 @@ public sealed class InventoryPhysicalAllocationHostServiceTests
             ReleaseId = allocationId;
             Metadata = metadata;
             return Task.FromResult(Result(allocationId, Guid.NewGuid(), ProductId));
+        }
+
+        public (Guid AllocationId, ChangePhysicalSalesAllocationV1 Request)? Change { get; private set; }
+
+        public Task<InventoryPhysicalAllocationChangeResultV1> ChangeAsync(
+            Guid allocationId,
+            ChangePhysicalSalesAllocationV1 request,
+            InventoryCommandMetadata metadata,
+            CancellationToken cancellationToken = default)
+        {
+            Change = (allocationId, request);
+            Metadata = metadata;
+            var view = Result(allocationId, request.TargetLabelId, request.ProductId).Allocation;
+            return Task.FromResult(new InventoryPhysicalAllocationChangeResultV1(
+                new InventoryPhysicalAllocationChangeViewV1(InventoryAllocationChangeKindsV1.Resize, view, null),
+                false,
+                "SENTETIK-correlation"));
         }
 
         private static InventoryPhysicalAllocationResultV1 Result(Guid allocationId, Guid labelId, Guid productId) => new(
