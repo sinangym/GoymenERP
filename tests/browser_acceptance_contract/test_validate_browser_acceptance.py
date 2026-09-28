@@ -337,6 +337,9 @@ class WorkflowTests(unittest.TestCase):
                 # AT-037: record held only by r14-counter, approve only by r14-count-approver.
                 "inventory.stock-count.record",
                 "inventory.stock-count.approve",
+                # ST-02 scrap write-off: record held only by r14-scrapper, approve only by r14-scrap-approver.
+                "inventory.stock-scrap.record",
+                "inventory.stock-scrap.approve",
             ),
             validator.SUITE_IDENTITY_PERMISSIONS["r14"],
         )

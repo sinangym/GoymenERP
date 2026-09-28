@@ -100,6 +100,18 @@ public static class ErpPermissions
     public const string InventoryStockCountApprove = "inventory.stock-count.approve";
 
     /// <summary>
+    /// ST-02 scrap write-off (hurda/fire çıkışı), the stock-count pattern: <c>record</c> enters the scrapped kg of a
+    /// label's single position with a mandatory reason; <c>approve</c> decides it and only then posts one Scrap
+    /// movement. Until the scrap approval authority is decided every scrap needs an actor other than its recorder
+    /// (fail-closed maker≠checker). No seeded role or real user receives either name; the only grants are two
+    /// different disposable r14 browser test actors. Company-wide only. Not Critical.
+    /// </summary>
+    public const string InventoryStockScrapRecord = "inventory.stock-scrap.record";
+
+    /// <inheritdoc cref="InventoryStockScrapRecord"/>
+    public const string InventoryStockScrapApprove = "inventory.stock-scrap.approve";
+
+    /// <summary>
     /// Finance bank-account master (FS0, #312): names are the Finance owner's technical mapping
     /// (Business #254 5654539215). Registering them makes them KNOWN, not granted: no role and no
     /// user receives them here, and who holds which is a human gate. All three are company-wide
@@ -508,6 +520,8 @@ public static class ErpPermissions
             InventoryLabelTransformationRecord,
             InventoryStockCountRecord,
             InventoryStockCountApprove,
+            InventoryStockScrapRecord,
+            InventoryStockScrapApprove,
             LogisticsLoadingInstructionsCreate,
             LogisticsLoadingInstructionsRead,
             LogisticsLoadsRecord,
@@ -601,6 +615,8 @@ public static class ErpPermissions
             InventoryLabelTransformationRecord,
             InventoryStockCountRecord,
             InventoryStockCountApprove,
+            InventoryStockScrapRecord,
+            InventoryStockScrapApprove,
             LogisticsLoadingInstructionsCreate,
             LogisticsLoadingInstructionsRead,
             LogisticsLoadsRecord,

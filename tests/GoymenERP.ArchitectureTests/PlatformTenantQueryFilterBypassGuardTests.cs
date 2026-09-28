@@ -69,8 +69,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // Re-fingerprinted for SY-01/SY-02: one added using and one added host line registering
     // IdentityShellCapabilityProvider before the shell authority is chosen, with its comment (1609e7b4… -> 50c5acf2…);
     // no other startup change.
+    // Re-fingerprinted for the ST-02 scrap write-off: one added host line, builder.Services.AddInventoryStockScraps(),
+    // and its comment (50c5acf2… -> da93806b…); no other startup change.
     private const string ReviewedOpenApiStartupFingerprint =
-        "50c5acf2e806136d504eaceec5bd96a1de01561c04526ee986b25829b3e5b256";
+        "da93806b12d9a7a96827de2a03b86297b70e5b703e7da628fe41e550f6ffd3ea";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -169,8 +171,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // AT-037: +3 stock-count SQL facts (d709faf1… -> 4e783c62…).
             // DEC-SAL-005: +1 allocation-blocks-cancellation SQL fact (4e783c62… -> 953d329a…).
             // INV-AL-1: +8 allocation-change SQL facts (953d329a… -> 1ca5b9e1…).
+            // ST-02 scrap write-off: +5 stock-scrap SQL facts (1ca5b9e1… -> bd676b05…).
             ["tools/relational_inventory/inventory.txt"] =
-                "1ca5b9e195de6dbf2388b7fa092503910a4d46f4dc761d8af4053021cbd4526e",
+                "bd676b053e5fe215c843a4e4ba12bac534de01f6f660788f9e148f069fa9ef6d",
 
             // logistics
             // AT-053: +4 weighbridge SQL facts (81c1ff0b… -> 264898d7…).
@@ -290,9 +293,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // company-leading key, and the CountAdjustment movement kind.
             // Re-measured for INV-AL-1: the append-only AllocationChanges history (CompanyId query filter,
             // company-leading key) and the allocation write guard admitting an AllocatedKg resize.
+            // Re-measured for the ST-02 scrap write-off: StockScraps and StockScrapDecisions, each with the CompanyId
+            // query filter and a company-leading key, and the Scrap movement kind (CK_Movements_Kind 1..7).
             ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
              + "Persistence/InventoryDbContext.cs"] =
-                "3f2409aa5e988f324c07bb706587beb78833b4f38716b2c59c473f5279282e3b",
+                "4d2cfcc27f7a0cfc252302ac715232a77beb955a4b65274ea7e2ea541bd4ceaa",
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "Persistence/ProductDbContext.cs"] =
                 "0ba53cfdf07084818f737c9f21b2ce4a04a44f5fe89603a89f31791c5b4871da",
@@ -1134,6 +1139,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // refusal (51053) while any change exists, and the THROW precedes the drop. Forward fix otherwise.
                 ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20260928120614_AddInventoryAllocationChanges.cs"] =
                     new("64ff8f317b94bc2e8beed57e3346ddab9b2f8181dae7885013baa167f633ccdd",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // ST-02 scrap write-off: stock scraps, their decisions and Scrap movements are durable facts; the Down's
+                // only raw SQL is Inventory's module refusal (51053) while any exists, and the THROW precedes every
+                // drop. An empty schema rolls back freely; a populated one needs a forward fix.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20260928161227_AddInventoryStockScraps.cs"] =
+                    new("9a4b4e0fd2233b33b8b95ffca4a9df4b06049dc86b7cfd0fd84e1a47b83424d4",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // R17: Down refuses before dropping manufacturing-return state while durable facts exist.

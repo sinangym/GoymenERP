@@ -304,10 +304,13 @@ SUITE_IDENTITY_PERMISSIONS = {
     # beside the two label reads; no other r14 actor holds it.
     # AT-037 (user decision 2026-09-27): the disposable r14-counter holds only stock-count.record and the
     # disposable r14-count-approver only stock-count.approve, each beside the two label reads (maker != checker).
+    # ST-02 scrap write-off: the disposable r14-scrapper holds only stock-scrap.record and the disposable
+    # r14-scrap-approver only stock-scrap.approve, each beside the two label reads (maker != checker).
     "r14": ("inventory.opening-stock.record", "product.operational-selection.read",
             "inventory.labels.read", "inventory.balances.read",
             "organization.locations.read", "inventory.label-transformation.record",
-            "inventory.stock-count.record", "inventory.stock-count.approve"),
+            "inventory.stock-count.record", "inventory.stock-count.approve",
+            "inventory.stock-scrap.record", "inventory.stock-scrap.approve"),
 }
 
 
@@ -513,7 +516,7 @@ SUITE_FIXTURE_OUTPUTS: dict[str, frozenset[str]] = {
     # STOK's Suites/R14 seed: three actors, company fence, active Organization location and Product's
     # exact gated stock-candidate tuple. The browser creates the Inventory record itself.
     "r14": frozenset({"recorderActor", "deniedActor", "arrangerActor", "transformerActor",
-                      "counterActor", "countApproverActor", "companyId",
+                      "counterActor", "countApproverActor", "scrapperActor", "scrapApproverActor", "companyId",
                       "otherCompanyId",
                       "locationId", "productId", "productVersion", "productUnitId",
                       "productUnitProfileId", "productUnitProfileVersion", "productCode", "productName"}),
