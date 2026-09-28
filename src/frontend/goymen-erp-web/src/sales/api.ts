@@ -36,11 +36,15 @@ import {
   decodeDraftRevisions,
   decodeDeliverySchedules,
   decodeDeliveryProgress,
+  decodeCancellation,
+  decodeCancellationImpact,
   decodeProblem,
   salesDraftCommercialRevisionPath,
   salesDraftDeliverySchedulePath,
   salesDraftDeliverySchedulesPath,
   salesDraftDeliveryProgressPath,
+  salesDraftCancellationImpactPath,
+  salesDraftCancellationPath,
   salesDraftCommandPath,
   salesDraftDetailPath,
   salesDraftRevisionsPath,
@@ -53,6 +57,9 @@ import {
   type DraftDeliveryScheduleRequest,
   type DeliverySchedules,
   type DeliveryProgress,
+  type CancellationImpact,
+  type CancellationRead,
+  type DraftCancelRequest,
   type DraftDetail,
   type DraftMutation,
   type DraftPage,
@@ -195,6 +202,35 @@ export async function fetchDraftDeliveryProgress(
   if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
   const progress = decodeDeliveryProgress(raw.body, detail)
   return progress === null ? { type: 'malformed' } : { type: 'ok-single', data: progress }
+}
+
+/**
+ * DEC-SAL-005: the impact preview of cancelling `detail`, read-only under the cancel control's name; the server reads every
+ * category afresh from its owner (Inventory allocations, Logistics loading). Data only when it describes exactly this detail.
+ */
+export async function fetchCancellationImpact(
+  detail: DraftDetail,
+  companyId: string,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<CancellationImpact>> {
+  const raw = await request(salesDraftCancellationImpactPath(detail.draft.id), { headers: headers(companyId) }, signal)
+  if ('failure' in raw) return readFailure(raw.failure)
+  if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
+  const impact = decodeCancellationImpact(raw.body, detail)
+  return impact === null ? { type: 'malformed' } : { type: 'ok-single', data: impact }
+}
+
+/** AT-007: the recorded cancellation (or null), read-only under the draft read; company filtering stays on the server. */
+export async function fetchDraftCancellation(
+  draftId: string,
+  companyId: string,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<CancellationRead>> {
+  const raw = await request(salesDraftCancellationPath(draftId), { headers: headers(companyId) }, signal)
+  if ('failure' in raw) return readFailure(raw.failure)
+  if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
+  const read = decodeCancellation(raw.body)
+  return read === null ? { type: 'malformed' } : { type: 'ok-single', data: read }
 }
 
 /* ── Reference options (S03) ─────────────────────────────────────────────── */
@@ -631,6 +667,49 @@ export async function sendDraftDeliverySchedule(
 ): Promise<OrderCommandOutcome<DraftMutation>> {
   const raw = await request(
     salesDraftDeliverySchedulePath(context.draftId),
+    {
+      method: 'POST',
+      headers: {
+        ...headers(context.companyId),
+        'Content-Type': 'application/json',
+        'Idempotency-Key': context.idempotencyKey,
+      },
+      body: JSON.stringify(payload),
+    },
+    signal,
+  )
+  if ('failure' in raw) {
+    if (raw.failure === 'aborted') return { type: 'aborted' }
+    if (raw.failure === 'offline') return { type: 'offline' }
+    return { type: 'network-error' }
+  }
+  if (raw.status !== STATE_COMMAND_STATUS) {
+    if (raw.status >= 200 && raw.status < 300) return { type: 'malformed' }
+    return { type: 'http', status: raw.status, problem: decodeProblem(raw.body, raw.status) }
+  }
+  const mutation = decodeDraftMutation(raw.body)
+  if (
+    mutation === null ||
+    mutation.isReplay !== raw.replayed ||
+    mutation.detail.draft.id !== context.draftId ||
+    mutation.detail.draft.companyId !== context.companyId
+  ) {
+    return { type: 'malformed' }
+  }
+  return { type: 'succeeded', data: mutation }
+}
+
+/**
+ * DEC-SAL-005 / AT-007: the cancellation — the delivery schedule's keyed-attempt and strict response rules. Success is the
+ * draft after the change, of this draft and this company, with the replay header and `isReplay` agreeing.
+ */
+export async function sendDraftCancel(
+  payload: DraftCancelRequest,
+  context: CommandContext,
+  signal?: AbortSignal,
+): Promise<OrderCommandOutcome<DraftMutation>> {
+  const raw = await request(
+    salesDraftCancellationPath(context.draftId),
     {
       method: 'POST',
       headers: {

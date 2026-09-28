@@ -33,7 +33,7 @@ public sealed class SalesPersistenceModelTests
                  {
                      typeof(DraftNumberRow), typeof(DraftRow), typeof(DraftLineRow), typeof(DraftDeliverySliceRow), typeof(DraftAttemptRow),
                      typeof(DraftRevisionRow), typeof(DraftRevisionLineRow),
-                     typeof(DraftDeliveryScheduleRow), typeof(DraftDeliveryScheduleDateRow),
+                     typeof(DraftDeliveryScheduleRow), typeof(DraftDeliveryScheduleDateRow), typeof(DraftCancellationRow),
                  })
         {
             var entity = context.Model.FindEntityType(type)!;
@@ -112,6 +112,7 @@ public sealed class SalesPersistenceModelTests
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_InitialSales", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddAttemptOutcome", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddDeliverySchedules", StringComparison.Ordinal));
+        Assert.Equal("20260927120000_AddDraftCancellations", context.Database.GetMigrations().Last());
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -144,6 +145,10 @@ public sealed class SalesPersistenceModelTests
     [InlineData("delete-schedule")]
     [InlineData("edit-schedule-date")]
     [InlineData("delete-schedule-date")]
+    [InlineData("edit-cancellation")]
+    [InlineData("delete-cancellation")]
+    [InlineData("uncancel-draft")]
+    [InlineData("draft-to-unknown-state")]
     public void Drafts_lines_slices_and_attempts_never_change_and_nothing_is_deleted(string fault)
     {
         using var context = Context();
@@ -188,6 +193,22 @@ public sealed class SalesPersistenceModelTests
                 break;
             case "delete-schedule-date":
                 context.DraftDeliveryScheduleDates.Remove(Attach(context, ScheduleDate()));
+                break;
+            // DEC-SAL-005 / AT-007: a recorded cancellation is append-only, and the lifecycle only ever moves Draft → Cancelled.
+            case "edit-cancellation":
+                Attach(context, Cancellation()).Reason = "another reason";
+                break;
+            case "delete-cancellation":
+                context.DraftCancellations.Remove(Attach(context, Cancellation()));
+                break;
+            case "uncancel-draft":
+                var cancelled = Draft();
+                cancelled.State = 2;
+                cancelled.ApprovalState = 3;
+                Attach(context, cancelled).State = 1;
+                break;
+            case "draft-to-unknown-state":
+                Attach(context, Draft()).State = 3;
                 break;
             default:
                 Attach(context, new DraftNumberRow { CompanyId = CompanyA, Next = 2, Version = 1, UpdatedAtUtc = At }).CompanyId = CompanyB;
@@ -389,6 +410,49 @@ public sealed class SalesPersistenceModelTests
         Assert.Contains(design.FindEntityType(typeof(DraftDeliveryScheduleDateRow))!.GetCheckConstraints(),
             constraint => constraint.Name == "CK_DraftDeliveryScheduleDates_Slice");
     }
+
+    /// <summary>
+    /// DEC-SAL-005: a cancellation APPENDS its row and moves only the header's lifecycle state (Draft → Cancelled), its version
+    /// and UpdatedAtUtc; no line, slice, revision, schedule or approval column is rewritten.
+    /// </summary>
+    [Fact]
+    public void A_cancellation_passes_the_write_guard_by_appending_its_row_and_moving_only_the_headers_state_and_version()
+    {
+        using var context = Context();
+        var header = Draft();
+        header.ApprovalState = 3;
+        Attach(context, header);
+        header.State = 2;
+        header.Version = 5;
+        header.UpdatedAtUtc = At.AddMinutes(1);
+        context.DraftCancellations.Add(Cancellation());
+
+        Assert.Throws<GuardPassedException>(() => context.SaveChanges());
+    }
+
+    [Fact]
+    public void The_cancellation_table_is_keyed_by_the_draft_bound_to_it_and_the_header_state_admits_cancelled_only_beside_approved()
+    {
+        using var context = Context();
+        var cancellations = context.Model.FindEntityType(typeof(DraftCancellationRow))!;
+        Assert.Equal(["CompanyId", "DraftId"], cancellations.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        Assert.Equal("DraftCancellations", cancellations.GetTableName());
+        Assert.Contains(cancellations.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(DraftRow));
+        Assert.Equal((SalesOrderDraft.MaximumCancellationReasonLength, 128),
+            (cancellations.FindProperty(nameof(DraftCancellationRow.Reason))!.GetMaxLength(), cancellations.FindProperty(nameof(DraftCancellationRow.CancelledBy))!.GetMaxLength()));
+        var design = context.GetService<IDesignTimeModel>().Model;
+        Assert.Equal(["CK_DraftCancellations_Identity", "CK_DraftCancellations_Impact"],
+            design.FindEntityType(typeof(DraftCancellationRow))!.GetCheckConstraints().Select(constraint => constraint.Name).Order(StringComparer.Ordinal));
+        Assert.Equal("[Kind] = 1 AND [State] IN (1, 2) AND [Revision] >= 0 AND ([State] = 1 OR [ApprovalState] = 3)",
+            design.FindEntityType(typeof(DraftRow))!.GetCheckConstraints().Single(constraint => constraint.Name == "CK_Drafts_State").Sql);
+    }
+
+    private static DraftCancellationRow Cancellation() => new()
+    {
+        CompanyId = CompanyA, DraftId = Guid.NewGuid(), Revision = 0, CancelledBy = "synthetic-canceller", CancelledAtUtc = At,
+        Reason = "SENTETIK müşteri vazgeçti", DraftVersion = 5, ImpactToken = new string('b', 64),
+        ImpactJson = "{\"token\":\"x\",\"sources\":[]}", CorrelationId = "synthetic-correlation",
+    };
 
     private static DraftDeliveryScheduleRow Schedule() => new()
     {

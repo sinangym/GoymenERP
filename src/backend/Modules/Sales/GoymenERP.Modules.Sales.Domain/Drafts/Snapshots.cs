@@ -132,3 +132,22 @@ public sealed record LineScheduleSnapshot(Guid LineId, int LineNo, DateOnly? Req
 public sealed record DeliveryScheduleSnapshot(
     int ScheduleNo, DateOnly? RequestedDeliveryDate, string? ChangedBy, DateTimeOffset? ChangedAtUtc,
     IReadOnlyList<LineScheduleSnapshot> Lines);
+
+/// <summary>
+/// DEC-SAL-005 / AT-007: the recorded cancellation of an approved order — the commercial revision that was cancelled, who
+/// cancelled it, when, and the reason (required). Recorded once; the approval facts, the lines, the archived revisions and
+/// the delivery schedules stay exactly as they were ("İptal ve ters işlem geçmişi silmez"). What the owners held when it was
+/// cancelled (the impact the user saw) is kept by the store beside it; the domain decides only the transition.
+/// </summary>
+public sealed record CancellationFacts(
+    int Revision, string CancelledBy, DateTimeOffset CancelledAtUtc, string Reason, CancellationImpactSnapshot Impact);
+
+/// <summary>
+/// DEC-SAL-005: the impact preview the cancellation was decided on, as the caller computed it from the owners' answers —
+/// its token (what the user confirmed) and each source's status (owner answered nothing / no source on main). Opaque text
+/// to the domain: it is kept with the cancellation as history, never interpreted here.
+/// </summary>
+public sealed record CancellationImpactSnapshot(string Token, IReadOnlyList<CancellationImpactEntry> Sources);
+
+/// <summary>One impact source (e.g. <c>inventory.active-allocations</c>) and the status it had when the order was cancelled.</summary>
+public sealed record CancellationImpactEntry(string Source, string Status);

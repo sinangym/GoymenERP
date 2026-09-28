@@ -8,9 +8,21 @@ public enum SalesDraftKind
     Order = 1,
 }
 
+/// <summary>
+/// The LIFECYCLE axis of an order (DEC-SAL-001: a separate axis from the internal approval; DURUM_MAKINELERI "Yaşam
+/// döngüsü: Taslak / Aktif / Kapalı / İptal"). Only the two states this code can reach exist: <see cref="Draft"/> (every
+/// order, approved or not — "Aktif"/"Kapalı" are not derived here) and <see cref="Cancelled"/> (DEC-SAL-005: an approved
+/// order cancelled after its impact preview; terminal, nothing deleted).
+/// </summary>
 public enum SalesDraftState
 {
     Draft = 1,
+
+    /// <summary>
+    /// DEC-SAL-005 / AT-007: the approved order was cancelled with a reason. Terminal: every mutation entry refuses it.
+    /// The approval axis keeps its facts (who approved stays who approved); the lines, revisions and schedules stay.
+    /// </summary>
+    Cancelled = 2,
 }
 
 /// <summary>
@@ -154,7 +166,14 @@ public sealed class SalesOrderDraft
 
     public SalesDraftKind Kind => SalesDraftKind.Order;
 
-    public SalesDraftState State => SalesDraftState.Draft;
+    /// <summary>The lifecycle axis: <see cref="SalesDraftState.Draft"/> until a recorded cancellation (DEC-SAL-005).</summary>
+    public SalesDraftState State { get; private set; } = SalesDraftState.Draft;
+
+    /// <summary>DEC-SAL-005: the recorded cancellation (who, when, why, which revision); null while the order is not cancelled.</summary>
+    public CancellationFacts? Cancellation { get; private set; }
+
+    /// <summary>The technical bound of a cancellation reason: the note's, as the rejection reason's.</summary>
+    public const int MaximumCancellationReasonLength = MaximumNoteLength;
 
     /// <summary>The internal approval axis (SALES-A1); born <see cref="InternalApprovalState.Preparing"/>.</summary>
     public InternalApprovalState ApprovalState { get; private set; } = InternalApprovalState.Preparing;
@@ -501,6 +520,110 @@ public sealed class SalesOrderDraft
         Touch(now);
     }
 
+    // ---- cancellation of an approved order (DEC-SAL-005, AT-007) ---------------------------------
+
+    /// <summary>
+    /// DEC-SAL-005 (KILITLI): "Sipariş iptalinde aktif tahsis, bağlı satın alma/üretim, irsaliyesiz yükleme, faturalanmamış
+    /// irsaliye ve eşleşmemiş avans/dekont etkisi gösterilir" — "Etki önizlemesi olmadan iptal yok". The domain half: the
+    /// lifecycle moves <c>Draft → Cancelled</c> for an APPROVED order only, with a required reason. What the owners hold
+    /// (allocations, loading, …) is NOT this aggregate's knowledge: the caller reads the impact through the owners' ports and
+    /// refuses the cancellation while any effect exists (the fail-closed reading of an undecided rule, README) BEFORE this
+    /// runs; nothing of another module is released or reversed here.
+    /// <list type="bullet">
+    /// <item><b>Only Approved:</b> a never-approved Rev.0 draft is withdrawn by its preparer (D2), not cancelled; a draft in
+    /// re-approval (Rev.N back in Preparing/PendingApproval/Rejected) has no approved revision in force, and whether it may
+    /// be cancelled is not decided — refused (<see cref="SalesRuleCodes.StateConflict"/>), never guessed.</item>
+    /// <item><b>History stays (AT-007):</b> the approval facts, the revision, the lines, the archived revisions and the
+    /// schedules do not move; only the lifecycle state, the cancellation facts and the version (one step) do.</item>
+    /// <item><b>Terminal:</b> a cancelled order refuses every mutation entry, this one included.</item>
+    /// </list>
+    /// </summary>
+    public CancellationFacts Cancel(long expectedVersion, string actorId, string? reason, CancellationImpactSnapshot impact,
+        DateTimeOffset now)
+    {
+        var actor = RequireActor(actorId);
+        var trimmedReason = RequireCancellable(expectedVersion, reason);
+        RequireImpact(impact);
+        var facts = new CancellationFacts(Revision, actor, now.ToUniversalTime(), trimmedReason, impact);
+        State = SalesDraftState.Cancelled;
+        Cancellation = facts;
+        Touch(now);
+        return facts;
+    }
+
+    /// <summary>
+    /// The cancellation's own preconditions WITHOUT the transition — the expected version, the lifecycle and approval state
+    /// and the reason — so the caller can refuse a stale or wrong-state command before it asks any owner for the impact.
+    /// Returns the trimmed reason. <see cref="Cancel"/> runs the same checks again (its word is final).
+    /// </summary>
+    public string RequireCancellable(long expectedVersion, string? reason)
+    {
+        RequireVersion(expectedVersion);
+        RequireNotCancelled("Sipariş zaten iptal edilmiş.");
+        if (ApprovalState != InternalApprovalState.Approved)
+        {
+            throw StateConflict("Yalnız onaylı sipariş iptal edilir; onaylanmamış taslak geri çekilir.");
+        }
+
+        var trimmedReason = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
+        if (trimmedReason is null)
+        {
+            throw new SalesRuleException(SalesRuleCodes.CancellationReasonRequired, "İptal nedeni zorunludur.");
+        }
+
+        if (trimmedReason.Length > MaximumCancellationReasonLength)
+        {
+            throw new SalesRuleException(SalesRuleCodes.CancellationReasonTooLong,
+                $"İptal nedeni en fazla {MaximumCancellationReasonLength} karakterdir.");
+        }
+
+        return trimmedReason;
+    }
+
+    /// <summary>
+    /// The store's rebuild of the recorded cancellation, after the lines, the revisions and the schedules and BEFORE the
+    /// approval axis (whose version floor counts it as one step). It must name the current revision, an actor, a time and
+    /// a reason within the bound; a stored cancellation that does not fit is refused, not repaired.
+    /// </summary>
+    public void RestoreCancellation(CancellationFacts facts)
+    {
+        ArgumentNullException.ThrowIfNull(facts);
+        RequireApprovalNotRestored();
+        if (State != SalesDraftState.Draft || Cancellation is not null || facts.Revision != Revision
+            || string.IsNullOrWhiteSpace(facts.CancelledBy) || facts.CancelledBy.Length > MaximumActorLength
+            || string.IsNullOrWhiteSpace(facts.Reason) || facts.Reason.Length > MaximumCancellationReasonLength
+            || !IsImpact(facts.Impact))
+        {
+            throw new InvalidOperationException("Kayıtlı iptal olguları taslakla uyuşmuyor.");
+        }
+
+        State = SalesDraftState.Cancelled;
+        Cancellation = facts;
+    }
+
+    /// <summary>The impact the cancellation was decided on: a token and at least one source, each named once with a status.</summary>
+    private static void RequireImpact(CancellationImpactSnapshot impact)
+    {
+        if (!IsImpact(impact))
+        {
+            throw new ArgumentException("İptal, kullanıcının gördüğü etki önizlemesiyle (belirteç ve kaynaklar) kaydedilir.", nameof(impact));
+        }
+    }
+
+    private static bool IsImpact(CancellationImpactSnapshot? impact) =>
+        impact is not null && !string.IsNullOrWhiteSpace(impact.Token) && impact.Token.Length <= 128
+        && impact.Sources is { Count: > 0 }
+        && impact.Sources.All(entry => entry is not null && !string.IsNullOrWhiteSpace(entry.Source) && !string.IsNullOrWhiteSpace(entry.Status))
+        && impact.Sources.Select(entry => entry.Source).Distinct(StringComparer.Ordinal).Count() == impact.Sources.Count;
+
+    private void RequireNotCancelled(string message)
+    {
+        if (State == SalesDraftState.Cancelled)
+        {
+            throw new SalesRuleException(SalesRuleCodes.StateConflict, $"{message} (yaşam döngüsü: {State}).");
+        }
+    }
+
     // ---- commercial revision (K3 Head B, Sinan 5748258299) --------------------------------------
 
     /// <summary>
@@ -524,6 +647,8 @@ public sealed class SalesOrderDraft
         ArgumentNullException.ThrowIfNull(inputs);
         // Not RequireDraft(): that guard closes the lines of an approved draft (DEC-SAL-002), and THIS command is the
         // revision that decision points to. Only the lifecycle state is required here; the approval axis is decided below.
+        // DEC-SAL-005: a cancelled order is terminal - no revision re-opens it for approval (a 409, like Withdrawn).
+        RequireNotCancelled("İptal edilmiş siparişin fiyatı değiştirilmez.");
         if (State != SalesDraftState.Draft)
         {
             throw new SalesRuleException(SalesRuleCodes.DraftNotDraft, "Yalnız taslak değiştirilebilir.");
@@ -616,6 +741,8 @@ public sealed class SalesOrderDraft
         RequireVersion(expectedVersion);
         var actor = RequireActor(actorId);
         ArgumentNullException.ThrowIfNull(inputs);
+        // DEC-SAL-005: a cancelled order is terminal at every mutation entry, its schedule included (a 409, like Withdrawn).
+        RequireNotCancelled("İptal edilmiş siparişin termini değiştirilmez.");
         if (State != SalesDraftState.Draft)
         {
             throw new SalesRuleException(SalesRuleCodes.DraftNotDraft, "Yalnız taslak değiştirilebilir.");
@@ -876,7 +1003,16 @@ public sealed class SalesOrderDraft
         var archivedTransitions = checked(3L * archivedRevisions.Count);
         // DEC-SAL-003: every recorded delivery-schedule change was exactly one step of its own (restored just before this).
         var scheduleTransitions = (long)deliverySchedules.Count;
-        var consistentVersion = storedVersion >= checked(Version + minimumTransitions + archivedTransitions + scheduleTransitions);
+        // DEC-SAL-005: a recorded cancellation was one step of its own, and only an APPROVED order is ever cancelled - a
+        // stored cancellation beside any other approval state is refused, not repaired.
+        if (State == SalesDraftState.Cancelled && state != InternalApprovalState.Approved)
+        {
+            throw new InvalidOperationException("Kayıtlı iptal yalnız onaylı bir siparişin yanında durur.");
+        }
+
+        var cancellationTransitions = State == SalesDraftState.Cancelled ? 1L : 0L;
+        var consistentVersion = storedVersion >= checked(Version + minimumTransitions + archivedTransitions + scheduleTransitions
+            + cancellationTransitions);
         if (!consistentVersion)
         {
             throw new InvalidOperationException("Kayıtlı sürüm, satırların ve onay geçişlerinin hesabıyla uyuşmuyor.");

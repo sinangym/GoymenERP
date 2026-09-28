@@ -26,6 +26,11 @@ import { defineConfig, devices } from '@playwright/test'
  * separate seeded order after it is submitted and approved through the real API; replay, stale version and the 403 of
  * every other s04 actor are proven through the real API and read-only SQL.
  *
+ * DEC-SAL-005 / AT-007 (specs/s04-cancellation.spec.ts): the preparer creates and submits, the approver approves a separate
+ * order through the real API; the disposable canceller (the ONLY holder of sales.orders.cancel in the run database, a central
+ * override delta) previews its impact from the real owners and cancels it in the browser; replay, stale version, the next
+ * module's refusal and the 403 of every other s04 actor are proven through the real API and read-only SQL.
+ *
  * The contract (tests/e2e/browser-ci/README.md), no defaults. Retries 0 and forbidOnly; traces,
  * screenshots and video off (the C-01 artifact-privacy decision).
  */
@@ -44,7 +49,9 @@ export default defineConfig({
   testDir: path.join(here, 'sales-s04', 'specs'),
   // SALES-A2a/S05: references and commercial revision remain in the one serial exact-head journey.
   // DEC-SAL-003: the delivery-schedule journey runs on its own seeded order (file order: after d2, before references).
-  testMatch: /(^|[\\/])s04-(approval-journey|commercial-revision|d2-persona-withdrawal|delivery-schedule|references)\.spec\.ts$/,
+  // DEC-SAL-005: the cancellation journey runs on its own order created through the real API (file order: after the approval
+  // journey); its disposable canceller is a central override delta (see the spec header).
+  testMatch: /(^|[\\/])s04-(approval-journey|cancellation|commercial-revision|d2-persona-withdrawal|delivery-schedule|references)\.spec\.ts$/,
   fullyParallel: false,
   workers: 1,
   retries: 0,

@@ -82,7 +82,12 @@ public static class SalesModuleExtensions
         serviceProvider.GetService<ISalesPartyContactInformationPortV1>(),
         // AT-024: the delivery owner's read port, registered by that owner's module (Logistics); until it is, the
         // delivered / remaining read is 503, never an assumed zero.
-        serviceProvider.GetService<ISalesOrderDeliveryReadPortV1>());
+        serviceProvider.GetService<ISalesOrderDeliveryReadPortV1>(),
+        // DEC-SAL-005: the impact owners' read ports, registered by those owners' modules (Inventory: active allocations;
+        // Logistics: loading-instruction lines); until one is, its category of the cancellation preview is unreadable and a
+        // cancellation is refused, never decided on an assumed zero.
+        serviceProvider.GetService<ISalesOrderAllocationReadPortV1>(),
+        serviceProvider.GetService<ISalesOrderLoadingReadPortV1>());
 
     /// <summary>Applies Sales's migrations. Its foreign keys need Organization's tables first.</summary>
     public static async Task InitializeSalesModuleAsync(

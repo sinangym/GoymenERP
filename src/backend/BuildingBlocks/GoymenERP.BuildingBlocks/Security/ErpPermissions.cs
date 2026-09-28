@@ -335,6 +335,16 @@ public static class ErpPermissions
     public const string SalesOrdersDeliveryScheduleWrite = "sales.orders.delivery-schedule.write";
 
     /// <summary>
+    /// DEC-SAL-005 / AT-007: cancel an approved order after its impact preview (Sales owner name
+    /// SalesPermissionManifestV1.OrdersCancel). Its own name: create, approve, price and delivery-schedule names do not
+    /// confer it, and it confers none of them. Registration grants nothing: its only grant (user decision 2026-09-27) is
+    /// the disposable s04 canceller in the per-run browser database; the real-user mapping stays a human gate.
+    /// Company-wide only, like the other Sales names. Not Critical: the user decided a single authorised person cancels
+    /// (2026-09-27); no approved source adds grant-time dual control.
+    /// </summary>
+    public const string SalesOrdersCancel = "sales.orders.cancel";
+
+    /// <summary>
     /// LOG-4a (Business #66 5737790175: the loading instruction on approved order lines, one stock effect): the
     /// Logistics owner's names (LogisticsPermissionManifestV1), the backend owners' technical mapping (Business
     /// #254 5654539215) recorded and confirmed by the coordinator (#66 5743488059). Registered, not granted: no
@@ -458,6 +468,7 @@ public static class ErpPermissions
             SalesOrdersPriceWrite,
             SalesOrdersPriceRead,
             SalesOrdersDeliveryScheduleWrite,
+            SalesOrdersCancel,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,
             ManufacturingOrdersCreate,
@@ -544,6 +555,7 @@ public static class ErpPermissions
             SalesOrdersPriceWrite,
             SalesOrdersPriceRead,
             SalesOrdersDeliveryScheduleWrite,
+            SalesOrdersCancel,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,
             ManufacturingOrdersCreate,

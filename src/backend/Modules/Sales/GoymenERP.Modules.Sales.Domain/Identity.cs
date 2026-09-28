@@ -113,6 +113,14 @@ public static class SalesRuleCodes
     /// <summary>A delivery-schedule update that changes no date is refused: no empty audited change is recorded.</summary>
     public const string ScheduleNoChange = "sales_schedule_no_change";
 
+    /// <summary>
+    /// DEC-SAL-005 / AT-007: a cancellation carries its reason (the master report's "silme yok … sebep ile"); a blank
+    /// reason is refused, never defaulted.
+    /// </summary>
+    public const string CancellationReasonRequired = "sales_cancellation_reason_required";
+    /// <summary>A cancellation reason over the technical bound (the note's) is refused, never cut.</summary>
+    public const string CancellationReasonTooLong = "sales_cancellation_reason_too_long";
+
     public const string TooManySlices = "sales_too_many_slices";
     public const string DuplicateSliceId = "sales_duplicate_slice_id";
     public const string SliceUnitMismatch = "sales_slice_unit_mismatch";

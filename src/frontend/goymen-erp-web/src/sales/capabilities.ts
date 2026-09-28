@@ -35,10 +35,17 @@ export const SALES_PRICE_WRITE_CAPABILITY = 'sales.orders.price.write' as const
  */
 export const SALES_DELIVERY_SCHEDULE_WRITE_CAPABILITY = 'sales.orders.delivery-schedule.write' as const
 
+/**
+ * DEC-SAL-005: the impact-preview + cancel CONTROL on S-04 for an approved order. The shell publishes it only to an actor
+ * holding `sales.orders.cancel` beside the read; create, approve, price and schedule never confer it.
+ */
+export const SALES_CANCEL_CAPABILITY = 'sales.orders.cancel' as const
+
 export type SalesCapabilityId =
   | (typeof SALES_CAPABILITY)[keyof typeof SALES_CAPABILITY]
   | typeof SALES_PRICE_WRITE_CAPABILITY
   | typeof SALES_DELIVERY_SCHEDULE_WRITE_CAPABILITY
+  | typeof SALES_CANCEL_CAPABILITY
 
 export const SALES_ROUTE = {
   list: '/satis/siparisler',

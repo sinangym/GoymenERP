@@ -657,6 +657,149 @@ public sealed class SalesStore(
         return new SalesDraftStateResult(draft, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId.Trim());
     }
 
+    /// <summary>
+    /// DEC-SAL-005 / AT-007: the cancellation of an approved order, one save — the delivery schedule's key rules and shape. The
+    /// header is tracked; <paramref name="beforeWrite"/> (the caller's fences and the impact read afresh from the owners) runs
+    /// on the draft as read and answers the impact to keep; the domain decides (version, state, reason) and returns the facts.
+    /// The cancellation row is APPENDED beside the header's lifecycle state and version, the attempt record and the audit event
+    /// (the facts and the impact) — or nothing at all. No line, revision, schedule or approval column changes (checked).
+    /// </summary>
+    public async Task<SalesDraftStateResult?> CancelDraftAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+        Guid draftId, Func<SalesOrderDraft, CancellationImpactSnapshot, DateTimeOffset, CancellationFacts> mutate, SalesDraftStateAudit audit,
+        Func<SalesOrderDraft, CancellationToken, Task<CancellationImpactSnapshot>> beforeWrite, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(mutate);
+        ArgumentNullException.ThrowIfNull(audit);
+        ArgumentNullException.ThrowIfNull(beforeWrite);
+        RequireEnvelope(envelope);
+        RequireHash(requestHash);
+        RequireCommand(commandName);
+        if (commandName != SalesDraftCommands.CancelV1)
+        {
+            throw new ArgumentException("Yalnız iptal komutu siparişin yaşam döngüsünü değiştirir.", nameof(commandName));
+        }
+
+        if (string.IsNullOrWhiteSpace(audit.EventType) || string.IsNullOrWhiteSpace(audit.Operation) || string.IsNullOrWhiteSpace(audit.Reason))
+        {
+            throw new ArgumentException("İptal komutunun audit olayı tür, işlem ve gerekçe ister.", nameof(audit));
+        }
+
+        var companyId = RequireResolvedCompany();
+        var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
+        var actorId = envelope.ActorId.Trim();
+        var attempt = await dbContext.DraftAttempts.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.CommandName == commandName && row.IdempotencyKeyHash == keyHash, cancellationToken);
+        if (attempt is not null)
+        {
+            if (!string.Equals(attempt.ActorId, actorId, StringComparison.Ordinal)
+                || !string.Equals(attempt.RequestHash, requestHash, StringComparison.Ordinal))
+            {
+                throw Refused(SalesDraftStoreCodes.SameKeyPayloadMismatch,
+                    "Aynı Idempotency-Key başka bir istekle geldi; ilk cevap bu isteğe verilmez.");
+            }
+
+            if (attempt.Outcome != AttemptOutcomeRecorded || attempt.DraftId is not { } recordedId)
+            {
+                throw Refused(SalesDraftStoreCodes.ConcurrentChange, "Bu anahtar kayıtlı bir terminal reddi taşıyor; tekrar aynı reddi alır.");
+            }
+
+            var stored = await FindDraftAsync(recordedId, cancellationToken)
+                ?? throw new InvalidOperationException("Kayıtlı deneme kaydının taslağı bulunamadı.");
+            return new SalesDraftStateResult(stored, SalesDraftWriteOutcome.Replayed, attempt.CorrelationId);
+        }
+
+        if (draftId == Guid.Empty)
+        {
+            return null;
+        }
+
+        var row = await dbContext.Drafts.SingleOrDefaultAsync(candidate => candidate.Id == draftId, cancellationToken);
+        if (row is null)
+        {
+            return null;
+        }
+
+        var draft = (await RestoreAsync([row], cancellationToken)).Single();
+        var impact = await beforeWrite(draft, cancellationToken)
+            ?? throw new InvalidOperationException("İptal, kullanıcının gördüğü etki önizlemesi olmadan kaydedilmez.");
+        var before = new { state = draft.State.ToString(), approvalState = draft.ApprovalState.ToString(), revision = draft.Revision, version = draft.Version };
+        var versionBefore = draft.Version;
+        var revisionBefore = draft.Revision;
+        var approvalBefore = (draft.ApprovalState, draft.Approval);
+        var now = timeProvider.GetUtcNow();
+        var facts = mutate(draft, impact, now);
+        if (draft.Version != versionBefore + 1 || draft.Id != row.Id || draft.CompanyId != companyId
+            || draft.Revision != revisionBefore || (draft.ApprovalState, draft.Approval) != approvalBefore
+            || draft.State != SalesDraftState.Cancelled || facts is null || draft.Cancellation != facts || facts.Impact != impact)
+        {
+            throw new InvalidOperationException("İptal tam olarak bir sürüm ilerletir; revizyonu, onay eksenini ve satırları değiştirmez.");
+        }
+
+        var impactJson = JsonSerializer.Serialize(new { token = facts.Impact.Token, sources = facts.Impact.Sources }, Json);
+        dbContext.DraftCancellations.Add(new DraftCancellationRow
+        {
+            CompanyId = companyId,
+            DraftId = draft.Id,
+            Revision = facts.Revision,
+            CancelledBy = facts.CancelledBy,
+            CancelledAtUtc = facts.CancelledAtUtc,
+            Reason = facts.Reason,
+            DraftVersion = draft.Version,
+            ImpactToken = facts.Impact.Token,
+            ImpactJson = impactJson,
+            CorrelationId = envelope.CorrelationId.Trim(),
+        });
+        row.State = (int)draft.State;
+        row.Version = draft.Version;
+        row.UpdatedAtUtc = draft.UpdatedAtUtc;
+        dbContext.DraftAttempts.Add(new DraftAttemptRow
+        {
+            CompanyId = companyId,
+            CommandName = commandName,
+            IdempotencyKeyHash = keyHash,
+            RequestHash = requestHash,
+            ActorId = actorId,
+            Outcome = AttemptOutcomeRecorded,
+            DraftId = draft.Id,
+            CorrelationId = envelope.CorrelationId.Trim(),
+            RecordedAtUtc = now,
+        });
+        auditEvents.Enqueue(new AuditEventDraft(
+            companyId,
+            audit.EventType,
+            DraftEntityType,
+            draft.Id.ToString("D"),
+            audit.Operation,
+            EntityVersionBefore: versionBefore,
+            EntityVersionAfter: draft.Version,
+            AuditActorTypes.User,
+            envelope.ActorId,
+            envelope.PermissionCode,
+            envelope.RoleCodes,
+            JsonSerializer.Serialize(before, Json),
+            JsonSerializer.Serialize(new
+            {
+                state = draft.State.ToString(),
+                approvalState = draft.ApprovalState.ToString(),
+                revision = draft.Revision,
+                version = draft.Version,
+                cancellation = new { facts.CancelledBy, facts.CancelledAtUtc, facts.Reason },
+                impact = new { token = facts.Impact.Token, sources = facts.Impact.Sources },
+            }, Json),
+            audit.Reason,
+            ApprovalContextJson: null,
+            AuditAiInvolvement.None,
+            AiContextJson: null,
+            envelope.SourceChannel,
+            envelope.ClientIpAddress,
+            envelope.UserAgent,
+            envelope.CorrelationId,
+            envelope.CausationId,
+            envelope.IdempotencyKey));
+        await SaveAsync(cancellationToken);
+        return new SalesDraftStateResult(draft, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId.Trim());
+    }
+
     /// <summary>The audit picture of a draft's delivery dates: the header's, every line's and every slice's (id, quantity, date).</summary>
     private static object Schedule(SalesOrderDraft draft) => new
     {
@@ -746,6 +889,7 @@ public sealed class SalesStore(
         var revisionLines = await dbContext.DraftRevisionLines.AsNoTracking().Where(line => ids.Contains(line.DraftId)).ToListAsync(cancellationToken);
         var schedules = await dbContext.DraftDeliverySchedules.AsNoTracking().Where(schedule => ids.Contains(schedule.DraftId)).ToListAsync(cancellationToken);
         var scheduleDates = await dbContext.DraftDeliveryScheduleDates.AsNoTracking().Where(date => ids.Contains(date.DraftId)).ToListAsync(cancellationToken);
+        var cancellations = await dbContext.DraftCancellations.AsNoTracking().Where(cancellation => ids.Contains(cancellation.DraftId)).ToListAsync(cancellationToken);
         var drafts = new List<SalesOrderDraft>(rows.Count);
         foreach (var row in rows)
         {
@@ -823,6 +967,22 @@ public sealed class SalesStore(
                                 slice.RequestedDeliveryDate ?? throw new InvalidOperationException("Kayıtlı termin diliminin tarihi yok.")))]))]));
             }
 
+            // DEC-SAL-005: the recorded cancellation, BEFORE the approval axis (its version floor counts it as one step). The
+            // header's lifecycle state and the appended row must agree: a cancelled header without its row, or a row beside a
+            // Draft header, is refused, not repaired.
+            var cancellation = cancellations.SingleOrDefault(candidate => candidate.DraftId == row.Id);
+            if ((row.State == (int)SalesDraftState.Cancelled) != (cancellation is not null)
+                || row.State is not ((int)SalesDraftState.Draft or (int)SalesDraftState.Cancelled))
+            {
+                throw new InvalidOperationException("Kayıtlı yaşam döngüsü durumu ile iptal kaydı uyuşmuyor.");
+            }
+
+            if (cancellation is not null)
+            {
+                draft.RestoreCancellation(new CancellationFacts(cancellation.Revision, cancellation.CancelledBy, cancellation.CancelledAtUtc,
+                    cancellation.Reason, CancellationImpact(cancellation)));
+            }
+
             // SALES-A1: the stored approval axis, restored without a transition; the facts must fit the state.
             draft.RestoreApproval((InternalApprovalState)row.ApprovalState,
                 new ApprovalFacts(row.SubmittedBy, row.SubmittedAtUtc, row.DecidedBy, row.DecidedAtUtc, row.RejectionReason),
@@ -837,6 +997,20 @@ public sealed class SalesStore(
 
         return drafts;
     }
+
+    /// <summary>The impact stored with a cancellation: its token (the row's column) and the sources of its JSON; a mismatch is refused.</summary>
+    private static CancellationImpactSnapshot CancellationImpact(DraftCancellationRow row)
+    {
+        var stored = JsonSerializer.Deserialize<StoredImpact>(row.ImpactJson, Json);
+        if (stored is null || stored.Sources is null || !string.Equals(stored.Token, row.ImpactToken, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Kayıtlı iptal etkisi okunamadı.");
+        }
+
+        return new CancellationImpactSnapshot(row.ImpactToken, [.. stored.Sources]);
+    }
+
+    private sealed record StoredImpact(string Token, IReadOnlyList<CancellationImpactEntry> Sources);
 
     private async Task SaveAsync(CancellationToken cancellationToken)
     {
@@ -938,7 +1112,7 @@ public sealed class SalesStore(
     {
         if (commandName is not (SalesDraftCommands.CreateV1 or SalesDraftCommands.SubmitV1 or SalesDraftCommands.ApproveV1
             or SalesDraftCommands.RejectV1 or SalesDraftCommands.ReviseCommercialV1 or SalesDraftCommands.WithdrawV1
-            or SalesDraftCommands.RescheduleDeliveryV1))
+            or SalesDraftCommands.RescheduleDeliveryV1 or SalesDraftCommands.CancelV1))
         {
             throw new ArgumentException("Bilinmeyen Sales komut adı.", nameof(commandName));
         }
