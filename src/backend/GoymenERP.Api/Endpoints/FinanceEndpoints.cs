@@ -22,6 +22,7 @@ public static class FinanceEndpoints
     public const string ManualBankPaymentsPath = "/api/v1/finance/manual-bank-payments";
     public const string AllocationsPath = "/api/v1/finance/allocations";
     public const string CustomerInstrumentsPath = "/api/v1/finance/customer-instruments";
+    public const string PartyLedgerPath = "/api/v1/finance/party-ledger";
     private const string IdempotencyHeaderName = "Idempotency-Key";
     private const int MaximumIdempotencyKeyLength = 128;
     private static readonly JsonSerializerOptions ContractJson = FinanceJson.CreateOptions();
@@ -299,6 +300,55 @@ public static class FinanceEndpoints
             .ProducesErpBadRequest()
             .AllowsEmptyErpBadRequestBody()
             .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpServiceUnavailable();
+
+        // First-release party ledger (cari hesap ekstresi): one party account's recorded Finance facts in an inclusive
+        // range of exact ISO dates, per currency, with a running balance from zero (OPEN-018: no carry-forward).
+        endpoints.MapGet(PartyLedgerPath, async (
+                [FromQuery] Guid partyId,
+                [FromQuery] Guid companyAccountId,
+                [FromQuery] DateOnly from,
+                [FromQuery] DateOnly to,
+                HttpContext httpContext,
+                IPartyLedgerService service,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                var rawFrom = httpContext.Request.Query["from"];
+                var rawTo = httpContext.Request.Query["to"];
+                if (rawFrom.Count != 1 || !FinanceIsoDate.TryParse(rawFrom[0], out var isoFrom) || isoFrom != from
+                    || rawTo.Count != 1 || !FinanceIsoDate.TryParse(rawTo[0], out var isoTo) || isoTo != to)
+                {
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                }
+
+                var result = await service.ReadAuthorizedAsync(Context(companyContext, currentUser, correlation),
+                    new PartyLedgerRequest(partyId, companyAccountId, from, to), cancellationToken);
+                return result.Outcome switch
+                {
+                    PartyLedgerOutcome.Found when result.Ledger is not null => Results.Json(result.Ledger, ContractJson),
+                    PartyLedgerOutcome.Invalid => Results.Problem(statusCode: StatusCodes.Status400BadRequest),
+                    PartyLedgerOutcome.TooManyEntries => Results.Problem(
+                        statusCode: StatusCodes.Status422UnprocessableEntity,
+                        extensions: new Dictionary<string, object?> { ["code"] = PartyLedgerRules.TooManyEntriesCode }),
+                    PartyLedgerOutcome.Denied => Results.Problem(statusCode: StatusCodes.Status403Forbidden),
+                    PartyLedgerOutcome.Unavailable => Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable),
+                    _ => throw new InvalidOperationException("Party ledger read returned an invalid outcome/resource combination."),
+                };
+            })
+            .WithName("GetFinancePartyLedgerV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .Produces<PartyLedgerView>()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnprocessableEntity(PartyLedgerRules.TooManyEntriesCode)
             .ProducesErpServiceUnavailable();
 
         endpoints.MapGet(CustomerInstrumentsPath + "/{instrumentId:guid}", async (

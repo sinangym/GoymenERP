@@ -16,6 +16,7 @@
  * | `approveBankAccountIbanChange` | `POST …/{accountId}/iban-change/approval` with `Idempotency-Key` (D4) |
  * | `listCustomerInstruments` / `customerInstrumentDetail` | `GET /finance/customer-instruments[/{id}]` (DEC-FIN-016) |
  * | `customerInstrumentRisk` | `GET /finance/customer-instruments/risk?asOf=[&partyId&companyAccountId]` (read-only) |
+ * | `partyLedger` | `GET /finance/party-ledger?partyId&companyAccountId&from&to` (read-only; 400 / 422 as refusals) |
  * | `receiveCustomerInstrument` | `POST /finance/customer-instruments` with `Idempotency-Key` (DEC-FIN-016) |
  * | `changeCustomerInstrumentStatus` | `POST …/{id}/status-changes` with `Idempotency-Key` (DEC-FIN-016) |
  * | `collectCustomerInstrument` | `POST …/{id}/collection` with `Idempotency-Key` (DEC-FIN-016, the money effect) |
@@ -52,6 +53,10 @@ export const BANK_ACCOUNT_CURRENCY_CANDIDATES_PATH = '/finance/bank-accounts/cur
 export const MANUAL_BANK_PAYMENTS_PATH = '/finance/manual-bank-payments'
 /** DEC-FIN-016: the customer cheque / note portfolio (receive, status changes, collection, list, detail). */
 export const CUSTOMER_INSTRUMENTS_PATH = '/finance/customer-instruments'
+/** The first-release party ledger (cari hesap ekstresi), read-only. */
+export const PARTY_LEDGER_PATH = '/finance/party-ledger'
+/** The ledger's stated refusal: more rows than one answer carries (narrow the range). */
+export const PARTY_LEDGER_TOO_MANY_CODE = 'finance_party_ledger_too_many_entries'
 
 const READ_OUTCOME_BY_STATUS: Readonly<Record<number, 'Denied' | 'NotFound' | 'Unavailable'>> = {
   403: 'Denied',
@@ -85,6 +90,46 @@ async function read(url: string, scope: FinanceScope, signal: AbortSignal): Prom
     return { kind: 'no-reply' }
   }
 
+  if (response.status === 200) {
+    try {
+      return { kind: 'body', body: { outcome: 'Found', resource: await response.json() } }
+    } catch {
+      return signal.aborted ? { kind: 'no-reply' } : { kind: 'body', body: undefined }
+    }
+  }
+
+  const outcome = READ_OUTCOME_BY_STATUS[response.status]
+  return { kind: 'body', body: outcome === undefined ? undefined : { outcome, resource: null } }
+}
+
+/**
+ * The party ledger read: a found ledger and the platform outcomes as `read` restates them, plus the two refusals the
+ * server states by status — 400 (a malformed range) and 422 `finance_party_ledger_too_many_entries` — handed on as the
+ * ledger decoder's refusal marker, so the screen can say which one it was. Any other 422 is not a ledger answer.
+ */
+async function readPartyLedger(url: string, scope: FinanceScope, signal: AbortSignal): Promise<PortReply> {
+  let response: Response
+  try {
+    response = await fetch(url, {
+      headers: { ...devHeaders(), 'X-Company-Id': scope.companyId, Accept: 'application/json' },
+      signal,
+    })
+  } catch {
+    return { kind: 'no-reply' }
+  }
+
+  const refusal = (partyLedgerRefusal: 'Invalid' | 'TooManyEntries'): PortReply =>
+    ({ kind: 'body', body: { outcome: 'Found', resource: { partyLedgerRefusal } } })
+  if (response.status === 400) return refusal('Invalid')
+  if (response.status === 422) {
+    let code: unknown
+    try {
+      code = ((await response.json()) as { readonly code?: unknown } | null)?.code
+    } catch {
+      return signal.aborted ? { kind: 'no-reply' } : { kind: 'body', body: undefined }
+    }
+    return code === PARTY_LEDGER_TOO_MANY_CODE ? refusal('TooManyEntries') : { kind: 'body', body: undefined }
+  }
   if (response.status === 200) {
     try {
       return { kind: 'body', body: { outcome: 'Found', resource: await response.json() } }
@@ -174,6 +219,15 @@ export function createHttpFinancePort(): FinanceReceiptPort {
         params.set('companyAccountId', request.companyAccountId)
       }
       return read(`${API_BASE}${CUSTOMER_INSTRUMENTS_PATH}/risk?${params.toString()}`, scope, signal)
+    },
+    partyLedger: (scope, request, signal) => {
+      const params = new URLSearchParams({
+        partyId: request.partyId,
+        companyAccountId: request.companyAccountId,
+        from: request.from,
+        to: request.to,
+      })
+      return readPartyLedger(`${API_BASE}${PARTY_LEDGER_PATH}?${params.toString()}`, scope, signal)
     },
     customerInstrumentDetail: (scope, instrumentId, signal) =>
       read(`${API_BASE}${CUSTOMER_INSTRUMENTS_PATH}/${encodeURIComponent(instrumentId)}`, scope, signal),

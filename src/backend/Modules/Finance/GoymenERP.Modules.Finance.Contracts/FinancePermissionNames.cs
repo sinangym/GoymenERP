@@ -46,4 +46,11 @@ public static class FinancePermissionNames
     public const string CustomerInstrumentReceive = "finance.customer-instrument.receive";
     public const string CustomerInstrumentStatusChange = "finance.customer-instrument.status.change";
     public const string CustomerInstrumentCollect = "finance.customer-instrument.collect";
+
+    // First-release party ledger (cari hesap ekstresi): a READ only. Its own names because it shows facts no other read
+    // shows together (admitted open items have no read of their own) — owner declarations: until the central registry
+    // knows them the port answers Unavailable (503), and a human grants them. Every amount, total and balance of the
+    // ledger needs the amount read as well.
+    public const string PartyLedgerRead = "finance.party-ledger.read";
+    public const string PartyLedgerAmountRead = "finance.party-ledger.amount.read";
 }

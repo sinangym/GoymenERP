@@ -14,8 +14,18 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { StateBlock } from '../shell/StateBlock'
 import { useShellState } from '../shell/shellContext'
 import { hasCapability } from '../shell/shellState'
-import { isBoundUuid, type SourceDetail } from './contract'
-import { FINANCE_CAPABILITY, FINANCE_ROUTE, INSTRUMENT_QUERY, receiptDetailPath } from './capabilities'
+import { decodeSourceDetailFor, isBoundUuid, type SourceDetail } from './contract'
+import {
+  FINANCE_CAPABILITY,
+  FINANCE_ROUTE,
+  INSTRUMENT_QUERY,
+  LEDGER_QUERY,
+  partyLedgerPath,
+  receiptDetailPath,
+} from './capabilities'
+import { useFinanceRead } from './financePort'
+import { PartyLedger, type PartyLedgerRange } from './PartyLedger'
+import { LEDGER_BACK, LEDGER_NEEDS_ACCOUNT, LEDGER_OPEN, LEDGER_OPEN_HINT } from './partyLedgerText'
 import { FinanceSourceDetail } from './FinanceSourceDetail'
 import { FinanceSourceList } from './FinanceSourceList'
 import {
@@ -40,10 +50,74 @@ const RECEIPT_INSTRUMENT_OPTION = {
   instrument: 'Müşteri çeki veya senedi (portföye al)',
 } as const
 
+/** The browser's own calendar days: the default range is this month up to today, as the user sees them. */
+function defaultRange(): PartyLedgerRange {
+  const now = new Date()
+  const pad = (value: number) => String(value).padStart(2, '0')
+  const month = `${now.getFullYear()}-${pad(now.getMonth() + 1)}`
+  return { from: `${month}-01`, to: `${month}-${pad(now.getDate())}` }
+}
+
+/** Exactly one value of a query parameter, or null. */
+function single(search: URLSearchParams, name: string): string | null {
+  return search.getAll(name).length === 1 ? search.get(name) : null
+}
+
+/**
+ * The first-release party ledger on the F-02 list (no route of its own yet): the party account and the range are the
+ * address's, so a row's source opens on its own screen and the browser's back returns to the same range.
+ */
+function PartyLedgerPage({ search }: { readonly search: URLSearchParams }) {
+  const navigate = useNavigate()
+  const partyId = single(search, LEDGER_QUERY.party)
+  const companyAccountId = single(search, LEDGER_QUERY.account)
+  if (!isBoundUuid(partyId) || !isBoundUuid(companyAccountId)) {
+    return (
+      <section aria-labelledby="finance-party-ledger-title">
+        <h1 id="finance-party-ledger-title">{LEDGER_OPEN}</h1>
+        <p role="status">{LEDGER_NEEDS_ACCOUNT}</p>
+        <p><Link to={FINANCE_ROUTE.receiptsList}>{LEDGER_BACK}</Link></p>
+      </section>
+    )
+  }
+  const from = single(search, LEDGER_QUERY.from)
+  const to = single(search, LEDGER_QUERY.to)
+  // No range in the address yet: this month; an address that names one keeps exactly it (a malformed one is shown so).
+  const range: PartyLedgerRange = from === null && to === null ? defaultRange() : { from: from ?? '', to: to ?? '' }
+  return (
+    <>
+      <PartyLedger partyId={partyId} companyAccountId={companyAccountId}
+        range={range}
+        onRange={(next) => navigate(partyLedgerPath(partyId, companyAccountId, next))} />
+      <p><Link to={FINANCE_ROUTE.receiptsList}>{LEDGER_BACK}</Link></p>
+    </>
+  )
+}
+
+/** "Cari ekstre" for one party account, offered wherever F-02 knows the party and its company account. */
+export function PartyLedgerLink({ partyId, companyAccountId }: { readonly partyId: string; readonly companyAccountId: string }) {
+  return (
+    <p>
+      <Link to={partyLedgerPath(partyId, companyAccountId)}>{LEDGER_OPEN}</Link>
+      <span className={styles.hint}>{` — ${LEDGER_OPEN_HINT}`}</span>
+    </p>
+  )
+}
+
+/** The receipt detail's party account, from the same source read the detail itself makes (one request). */
+function SourcePartyLedgerLink({ sourceId }: { readonly sourceId: string }) {
+  const detail = useFinanceRead('source', [sourceId], (port, scope, signal) => port.sourceDetail(scope, { sourceId }, signal),
+    decodeSourceDetailFor(sourceId))
+  if (detail.state.kind !== 'ready') return null
+  const source = detail.state.data.source
+  return <PartyLedgerLink partyId={source.partyId} companyAccountId={source.companyAccountId} />
+}
+
 export function ReceiptListPage() {
   const navigate = useNavigate()
   const [search, setSearch] = useSearchParams()
   const selected = search.get(INSTRUMENT_QUERY)
+  if (search.has(LEDGER_QUERY.party) || search.has(LEDGER_QUERY.account)) return <PartyLedgerPage search={search} />
   return (
     <section aria-labelledby="finance-receipts-title">
       <h1 id="finance-receipts-title">{RECEIPTS_TITLE}</h1>
@@ -87,6 +161,7 @@ export function ReceiptDraftPage() {
             : <CustomerInstrumentReceiveForm party={party} />}
           {/* The customer's own cheque / note risk, beside the receipt entered from its account (facts only). */}
           <CustomerInstrumentRiskBlock party={party} />
+          <PartyLedgerLink partyId={party.partyId} companyAccountId={party.companyAccountId} />
         </>
       )}
       {saved === null ? null : (
@@ -111,7 +186,10 @@ export function ReceiptDetailPage() {
     <section aria-labelledby="finance-receipt-detail-title">
       <h1 id="finance-receipt-detail-title">{RECEIPT_DETAIL_TITLE}</h1>
       {isBoundUuid(sourceId) ? (
-        <FinanceSourceDetail sourceId={sourceId} offerRecord={canRecord} offerReverse={canProposeReversal} />
+        <>
+          <FinanceSourceDetail sourceId={sourceId} offerRecord={canRecord} offerReverse={canProposeReversal} />
+          <SourcePartyLedgerLink sourceId={sourceId} />
+        </>
       ) : (
         <StateBlock state={{ kind: 'not-found' }} subject={SOURCE_SUBJECT} />
       )}

@@ -308,6 +308,38 @@ contract `GoymenERP.Modules.Finance.Contracts` (#258, #261). The contract's own 
   - bank statement matching of the collection: OPEN-016 (no bank integration in the first release);
   - given (outgoing) cheques / notes and DBS (DEC-FIN-008): not part of this contract.
 
+## First-release party ledger (cari hesap ekstresi)
+
+A READ of one party account's recorded Finance facts (`IPartyLedgerService`, `PartyLedgerService`,
+`GET /api/v1/finance/party-ledger?partyId&companyAccountId&from&to`, exact ISO dates, inclusive range).
+
+- **Rows (derived only from stored facts, never from drafts):** an admitted open item (debit, dated by the UTC day
+  Finance admitted it — the approved official-invoice source carries no document date yet); a recorded receipt's money
+  event (credit; a POS receipt at its gross, DEC-FIN-014); a FIN-T06 reversal counter-event (debit, its OWN row, linked
+  to the original through the approved proposal); a cheque / note collection's money event (credit, linked to the
+  instrument); a recorded payment's outgoing money event (debit). Each is one stored row read once: a replayed command
+  stored nothing new, so nothing is counted twice. A money-event kind the ledger does not know fails the read (500)
+  rather than hiding a row.
+- **Not rows:** drafts (no money event), F-03 allocations (DEC-FIN-006: a distribution is not a second movement; it
+  never moves the balance), portfolio receipts and status changes (no money effect, DEC-FIN-016).
+- **Balance:** per currency (OPEN-012: never converted or added), starting at ZERO on the range's first day —
+  `carryForward = NoneOpen018`: OPEN-018 (devir / carry-forward) is open, so nothing before the range is carried in.
+  Debit balance = the party owes. Exact decimal text; every amount of a currency at the widest scale its rows carry.
+- **Authority:** `finance.party-ledger.read` measured before the read and again after it; every amount, total and
+  balance (and a balance's side) only with a fresh `finance.party-ledger.amount.read`, otherwise `Redacted` /
+  `Unavailable`. The names are owner declarations; until the central registry knows them every call is 503, and a
+  human grants them. Company fence: the tenant-filtered context; the context must be the request's.
+- **Refusals:** 400 for a malformed request (an empty id, `to < from`, a non-ISO date); 422
+  `finance_party_ledger_too_many_entries` above `PartyLedgerRules.MaximumEntries` (1000) rows —
+  ASSUMPTION-FIN-LEDGER-ROWS, a technical response-size guard, refused rather than cut because a cut ledger shows a
+  wrong balance.
+- **Screen:** on the F-02 list (no route or capability of its own yet): `/finans/tahsilatlar?ekstreCari&ekstreHesap&
+  ekstreBaslangic&ekstreBitis`, opened as "Cari ekstre" from the new-receipt page (the customer context) and from a
+  receipt detail. Each row opens its source on the existing screens; an open item has no screen yet.
+- **No migration, no index, no write, no raw SQL.** Tests: unit `PartyLedgerServiceTests`; SQL
+  `FinancePartyLedgerSqlServerRelationalAcceptanceTests` (service on SQL, HTTP through the real permission port);
+  browser fin01 `FIN01-07`.
+
 ## Validation
 
 - `tests/GoymenERP.Finance.UnitTests`: contract and adapter tests, plus `FinanceDraftPersistenceModelTests`. The latter checks schema, filters, the idempotency key, snapshot == model, the write guard and the payload hash, all without a database.

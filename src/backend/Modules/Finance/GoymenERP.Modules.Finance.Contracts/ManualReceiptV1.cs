@@ -98,6 +98,8 @@ public enum FinanceAction
     // lifecycle is not a receipt draft's; only collection creates a (recorded) receipt source.
     ReadCustomerInstruments, ReadCustomerInstrumentAmount, ReceiveCustomerInstrument,
     ChangeCustomerInstrumentStatus, CollectCustomerInstrument,
+    // The first-release party ledger (cari hesap ekstresi): read-only, amounts under their own grant.
+    ReadPartyLedger, ReadPartyLedgerAmount,
 }
 public enum PermissionDecision { Unavailable, Denied, Allowed }
 
