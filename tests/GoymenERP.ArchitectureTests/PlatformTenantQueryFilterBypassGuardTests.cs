@@ -66,8 +66,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // comment (588121e3… -> ab4aa1be…); no other startup change.
     // Re-fingerprinted for AT-037: one added host line, builder.Services.AddInventoryStockCounts(), and its comment
     // (ab4aa1be… -> 1609e7b4…); no other startup change.
+    // Re-fingerprinted for SY-01/SY-02: one added using and one added host line registering
+    // IdentityShellCapabilityProvider before the shell authority is chosen, with its comment (1609e7b4… -> 50c5acf2…);
+    // no other startup change.
     private const string ReviewedOpenApiStartupFingerprint =
-        "1609e7b46cedfa0e5d79e5dabdd86c17892066c999e26cbe3b259c32d46e4363";
+        "50c5acf2e806136d504eaceec5bd96a1de01561c04526ee986b25829b3e5b256";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -158,8 +161,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 "84295fb267df8cdfa161de6040e7f29525d1a018fcccde9855cde50251293bcf",
 
             // identity
+            // SY-01/SY-02: +2 IdentityAccessViewSqlServerRelationalAcceptanceTests facts (b159330c… -> a521143a…).
             ["tools/relational_inventory/identity.txt"] =
-                "b159330c2eeb6da40a314137d478fcd7251cd5937732d2557817bd1440a6c6b9",
+                "a521143a709900ff57b12388bc80b4b45f92f802102963d53e01971132788b50",
 
             // inventory
             // AT-037: +3 stock-count SQL facts (d709faf1… -> 4e783c62…).
@@ -422,8 +426,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // authorization service now also exposes a permission-independent role view.
                     // The database startup surface below is unchanged, which is what the API
                     // counts hold.
+                    // Re-fingerprinted for SY-01/SY-02: one scoped registration of the read-only
+                    // IIdentityAccessReadService; the database startup surface and its counts are unchanged.
                     new(
-                        "3d2b7ad072a7e98976c9dc0d1e51a732c848db35c12c7bde71ab09995cfd23b6",
+                        "f2b86575654154bf37b763914b0d2f6107166cd9e8a9787984abf46f29f91798",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,

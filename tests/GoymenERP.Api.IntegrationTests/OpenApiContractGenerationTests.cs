@@ -175,6 +175,18 @@ public sealed partial class OpenApiContractGenerationTests
             ParameterValues: ["path:id:true:type:string;format:uuid"]),
         new("get", "/api/v1/identity/me", "GetCurrentIdentityV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json")),
+        // SY-01/SY-02 read-only access view (identity.assignments.read, company-wide): the two detail reads answer
+        // a code-less 404 for another company's, an unknown or an unassigned user/role, never a disclosing 403.
+        new("get", "/api/v1/identity/access/users", "GetIdentityAccessUsersV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json")),
+        new("get", "/api/v1/identity/access/users/{userId}", "GetIdentityAccessUserV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json"),
+            ParameterValues: ["path:userId:true:type:string;format:uuid"]),
+        new("get", "/api/v1/identity/access/roles", "GetIdentityAccessRolesV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json")),
+        new("get", "/api/v1/identity/access/roles/{roleId}", "GetIdentityAccessRoleV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json"),
+            ParameterValues: ["path:roleId:true:type:string;format:uuid"]),
         new("get", "/api/v1/counterparties", "GetCounterpartiesV1",
             AuthenticatedResponses(
                 "200:application/json",
@@ -667,6 +679,10 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetOrganizationWorkCentersV1"] = "array:WorkCenterSummary",
             ["GetOrganizationWorkCenterV1"] = "ref:WorkCenterDetail",
             ["GetCurrentIdentityV1"] = "ref:IdentityProfile",
+            ["GetIdentityAccessUsersV1"] = "array:IdentityAccessUserSummary",
+            ["GetIdentityAccessUserV1"] = "ref:IdentityAccessUserDetail",
+            ["GetIdentityAccessRolesV1"] = "array:IdentityAccessRoleSummary",
+            ["GetIdentityAccessRoleV1"] = "ref:IdentityAccessRoleDetail",
             ["GetCounterpartiesV1"] = "ref:CounterpartyPage",
             ["GetCounterpartyCompanyAccountLinkCandidatesV1"] =
                 "ref:CounterpartyLinkCandidatePage",
@@ -804,6 +820,10 @@ public sealed partial class OpenApiContractGenerationTests
         "UpdateOrganizationWorkCenterV1",
         "GetOrganizationWorkCentersV1",
         "GetOrganizationWorkCenterV1",
+        "GetIdentityAccessUsersV1",
+        "GetIdentityAccessUserV1",
+        "GetIdentityAccessRolesV1",
+        "GetIdentityAccessRoleV1",
         "GetInventoryLabelV1",
         "GetInventoryLabelBalancesV1",
         "GetInventoryLabelDetailV1",
@@ -1268,6 +1288,8 @@ public sealed partial class OpenApiContractGenerationTests
     [
         "GetOrganizationLocationV1:404",
         "GetOrganizationWorkCenterV1:404",
+        "GetIdentityAccessUserV1:404",
+        "GetIdentityAccessRoleV1:404",
         "GetInventoryLabelV1:404",
         "GetInventoryLabelBalancesV1:404",
         "GetInventoryLabelDetailV1:404",
@@ -3314,6 +3336,83 @@ public sealed partial class OpenApiContractGenerationTests
                     ("isActive", "type:boolean"),
                     ("version", "type:integer;format:int64"),
                     ("canOpenLocationDetail", "type:boolean")),
+                // SY-01/SY-02 read-only access view: no e-mail, issuer or external subject is ever a member.
+                ["IdentityAccessUserSummary"] = ObjectSchema(
+                    ["userId", "displayName", "isActive", "assignmentCount", "effectiveAssignmentCount"],
+                    ("userId", "type:string;format:uuid"),
+                    ("displayName", "type:string"),
+                    ("isActive", "type:boolean"),
+                    ("assignmentCount", "type:integer|string;format:int32"),
+                    ("effectiveAssignmentCount", "type:integer|string;format:int32")),
+                ["IdentityAccessUserDetail"] = ObjectSchema(
+                    ["userId", "displayName", "isActive", "assignments", "effectivePermissions"],
+                    ("userId", "type:string;format:uuid"),
+                    ("displayName", "type:string"),
+                    ("isActive", "type:boolean"),
+                    ("assignments", "type:array;items:ref:IdentityAccessAssignment"),
+                    ("effectivePermissions", "type:array;items:ref:IdentityAccessEffectivePermission")),
+                ["IdentityAccessAssignment"] = ObjectSchema(
+                    ["assignmentId", "roleId", "roleCode", "roleName", "roleIsActive", "status", "validity", "validFromUtc", "validUntilUtc", "createdAtUtc", "approvedBy", "scopes"],
+                    ("assignmentId", "type:string;format:uuid"),
+                    ("roleId", "type:string;format:uuid"),
+                    ("roleCode", "type:string"),
+                    ("roleName", "type:string"),
+                    ("roleIsActive", "type:boolean"),
+                    ("status", "type:string"),
+                    ("validity", "type:string"),
+                    ("validFromUtc", "type:string;format:date-time"),
+                    ("validUntilUtc", "type:null|string;format:date-time"),
+                    ("createdAtUtc", "type:string;format:date-time"),
+                    ("approvedBy", "oneOf:ref:IdentityAccessPerson|type:null"),
+                    ("scopes", "type:array;items:ref:IdentityAccessScope")),
+                ["IdentityAccessScope"] = ObjectSchema(
+                    ["type", "id"],
+                    ("type", "type:string"),
+                    ("id", "type:string;format:uuid")),
+                ["IdentityAccessPerson"] = ObjectSchema(
+                    ["userId", "displayName"],
+                    ("userId", "type:string;format:uuid"),
+                    ("displayName", "type:string")),
+                ["IdentityAccessEffectivePermission"] = ObjectSchema(
+                    ["code", "isCritical", "roleCodes"],
+                    ("code", "type:string"),
+                    ("isCritical", "type:boolean"),
+                    ("roleCodes", "type:array;items:type:string")),
+                ["IdentityAccessPermission"] = ObjectSchema(
+                    ["code", "isCritical"],
+                    ("code", "type:string"),
+                    ("isCritical", "type:boolean")),
+                ["IdentityAccessRoleSummary"] = ObjectSchema(
+                    ["roleId", "code", "name", "isSystem", "isActive", "permissionCount", "holderCount", "effectiveHolderCount"],
+                    ("roleId", "type:string;format:uuid"),
+                    ("code", "type:string"),
+                    ("name", "type:string"),
+                    ("isSystem", "type:boolean"),
+                    ("isActive", "type:boolean"),
+                    ("permissionCount", "type:integer|string;format:int32"),
+                    ("holderCount", "type:integer|string;format:int32"),
+                    ("effectiveHolderCount", "type:integer|string;format:int32")),
+                ["IdentityAccessRoleDetail"] = ObjectSchema(
+                    ["roleId", "code", "name", "isSystem", "isActive", "permissions", "holders"],
+                    ("roleId", "type:string;format:uuid"),
+                    ("code", "type:string"),
+                    ("name", "type:string"),
+                    ("isSystem", "type:boolean"),
+                    ("isActive", "type:boolean"),
+                    ("permissions", "type:array;items:ref:IdentityAccessPermission"),
+                    ("holders", "type:array;items:ref:IdentityAccessRoleHolder")),
+                ["IdentityAccessRoleHolder"] = ObjectSchema(
+                    ["assignmentId", "userId", "displayName", "userIsActive", "status", "validity", "validFromUtc", "validUntilUtc", "approvedBy", "scopes"],
+                    ("assignmentId", "type:string;format:uuid"),
+                    ("userId", "type:string;format:uuid"),
+                    ("displayName", "type:string"),
+                    ("userIsActive", "type:boolean"),
+                    ("status", "type:string"),
+                    ("validity", "type:string"),
+                    ("validFromUtc", "type:string;format:date-time"),
+                    ("validUntilUtc", "type:null|string;format:date-time"),
+                    ("approvedBy", "oneOf:ref:IdentityAccessPerson|type:null"),
+                    ("scopes", "type:array;items:ref:IdentityAccessScope")),
             };
 
     private static readonly IReadOnlyDictionary<string, ComponentSchemaExpectation>
@@ -4410,9 +4509,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(159, operations.Count);
+        Assert.Equal(163, operations.Count);
         Assert.Equal(
-            159,
+            163,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());

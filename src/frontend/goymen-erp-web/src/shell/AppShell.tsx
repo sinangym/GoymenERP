@@ -114,6 +114,11 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
    */
   CAPABILITY.purchasingRequestsList,
   CAPABILITY.purchasingOrdersList,
+  /**
+   * SY-01 read subset, listed with the route that serves it. It renders only where the server granted
+   * `identity.assignments.read` company-wide; the role card is reached from a row.
+   */
+  CAPABILITY.identityAssignmentsList,
 ]
 
 export function AppShell() {
