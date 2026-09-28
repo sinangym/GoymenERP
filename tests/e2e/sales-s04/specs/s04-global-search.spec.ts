@@ -24,7 +24,7 @@
  *   S04-GS3 the reader's answer for the same name has no Cari group; its order search still answers the Sales group
  */
 
-import { expect, test, type Page, type Request, type Response } from '@playwright/test'
+import { expect, test, type Page, type Response } from '@playwright/test'
 import { readEnvironment } from '../src/env.js'
 
 const env = readEnvironment()
@@ -102,61 +102,19 @@ async function searchAnswer(response: Response): Promise<SearchReading> {
 }
 
 /**
- * TEMPORARY DIAGNOSTIC (#511 s04 run 36480112277: no search answer seen after Back). Goes Back and waits for the fresh
- * search answer the #146/#148 rule requires — the assertion is kept, only its failure is made informative: within 30 s it
- * throws with the page URL, whether the document was replaced or restored from the back/forward cache, every request
- * (and failed request) seen after Back, and the main region's text. Remove once the cause is known.
+ * Back from an owner screen is a new route entry (#146/#148): the results page must read the search AFRESH, never re-show a
+ * cached answer. Waits (30 s) for that fresh answer and fails with the page URL when none arrives.
  */
 async function backExpectingFreshSearch(page: Page, term: string): Promise<SearchReading> {
-  const before = await page.evaluate(() => {
-    const marked = window as unknown as { __gsDocument?: number; __gsPersisted?: boolean; __gsPops?: string[] }
-    marked.__gsDocument = Date.now()
-    marked.__gsPops = []
-    window.addEventListener('pageshow', (event) => {
-      marked.__gsPersisted = event.persisted
-    })
-    window.addEventListener('popstate', (event) => {
-      marked.__gsPops?.push(`${location.pathname}${location.search} state=${JSON.stringify(event.state)}`)
-    })
-    return {
-      href: location.pathname + location.search,
-      historyLength: history.length,
-      historyState: JSON.stringify(history.state),
-      main: document.querySelector('main')?.textContent?.replace(/\s+/g, ' ').slice(0, 300) ?? null,
-    }
-  })
-  const seen: string[] = []
-  const onRequest = (request: Request) => seen.push(`${request.method()} ${request.url()}`)
-  const onFailed = (request: Request) => seen.push(`FAILED ${request.method()} ${request.url()} ${request.failure()?.errorText ?? ''}`)
-  page.on('request', onRequest)
-  page.on('requestfailed', onFailed)
   const fresh = page.waitForResponse((response) => isSearch(response, term), { timeout: 30_000 })
+  await page.goBack()
+  let response: Response
   try {
-    await page.goBack()
-    return await searchAnswer(await fresh)
+    response = await fresh
   } catch (error) {
-    const state = await page
-      .evaluate(() => {
-        const marked = window as unknown as { __gsDocument?: number; __gsPersisted?: boolean; __gsPops?: string[] }
-        return {
-          sameDocument: marked.__gsDocument !== undefined,
-          persisted: marked.__gsPersisted ?? null,
-          popstates: marked.__gsPops ?? null,
-          historyLength: history.length,
-          historyState: JSON.stringify(history.state),
-          navigations: performance.getEntriesByType('navigation').map((entry) => (entry as PerformanceNavigationTiming).type),
-          main: document.querySelector('main')?.textContent?.replace(/\s+/g, ' ').slice(0, 800) ?? null,
-        }
-      })
-      .catch((reason: unknown) => ({ evaluateFailed: String(reason) }))
-    throw new Error(
-      `DIAGNOSTIC no fresh search answer after Back for q=${JSON.stringify(term)}: ${String(error)}\n` +
-        `before Back=${JSON.stringify(before)}\nurl=${page.url()}\nstate=${JSON.stringify(state)}\nrequests after Back=${JSON.stringify(seen, null, 1)}`,
-    )
-  } finally {
-    page.off('request', onRequest)
-    page.off('requestfailed', onFailed)
+    throw new Error(`no fresh search answer after Back for q=${JSON.stringify(term)} (url=${page.url()}): ${String(error)}`)
   }
+  return await searchAnswer(response)
 }
 
 test.describe.configure({ mode: 'serial' })
