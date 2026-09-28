@@ -107,6 +107,9 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
   // the same accessible name to one route is what l04's strict-mode violation found, and a screen
   // reader announces it twice.
   CAPABILITY.logisticsInstructionsList,
+  // AT-025: the operations work list's two separate sections, each shown only to an actor holding its own grant.
+  CAPABILITY.logisticsOperationsSales,
+  CAPABILITY.logisticsOperationsPurchase,
   /**
    * P-01 and P-03 are Purchasing's two list entries. Their create actions live inside their lists
    * under K5, and each detail is reached from a row. Submit and approve are controls inside their

@@ -51,6 +51,15 @@ import type { ViewOutcome } from '../shell/uiState'
 import { decodeShipmentAllocations, deliveryPath, shipmentPath, SHIPMENT_ALLOCATIONS_PATH,
   type RecordDeliveryRequest, type RecordShipmentRequest, type ShipmentAllocationPage } from './realizationContract'
 import type { InstructionLine } from './contract'
+import {
+  PURCHASE_WORK_PATH,
+  SALES_WORK_PATH,
+  decodePurchaseWorkPage,
+  decodeSalesWorkPage,
+  type PurchaseWorkRow,
+  type SalesWorkRow,
+  type WorkPage,
+} from './operationsWorkContract'
 
 export const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '/api/v1'
 const DEV_USER = (import.meta.env.VITE_DEV_USER as string | undefined) ?? 'company-a-user'
@@ -152,6 +161,37 @@ export async function fetchApprovedOrderLines(
   if ('failure' in raw) return readFailure(raw.failure)
   if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
   const page = decodeApprovedOrderLinePage(raw.body)
+  if (page === null) return { type: 'malformed' }
+  return { type: 'ok-single', data: page }
+}
+
+/* ── AT-025: the operations work list's two separate sections ─────────────── */
+
+/**
+ * One section's page (`sales` → L-01, `purchase` → L-09). Each section is its own route and grant; the decoder takes only
+ * that section's rows and refuses a page naming the other section, so a row can never be shown in the wrong list.
+ */
+export async function fetchSalesWork(cursor: string | null, companyId: string, signal?: AbortSignal): Promise<ViewOutcome<WorkPage<SalesWorkRow>>> {
+  return fetchWork(SALES_WORK_PATH, decodeSalesWorkPage, cursor, companyId, signal)
+}
+
+export async function fetchPurchaseWork(cursor: string | null, companyId: string, signal?: AbortSignal): Promise<ViewOutcome<WorkPage<PurchaseWorkRow>>> {
+  return fetchWork(PURCHASE_WORK_PATH, decodePurchaseWorkPage, cursor, companyId, signal)
+}
+
+async function fetchWork<T>(
+  path: string,
+  decode: (body: unknown) => WorkPage<T> | null,
+  cursor: string | null,
+  companyId: string,
+  signal: AbortSignal | undefined,
+): Promise<ViewOutcome<WorkPage<T>>> {
+  const params = new URLSearchParams({ pageSize: String(PAGE_SIZE) })
+  if (cursor !== null) params.set('cursor', cursor)
+  const raw = await request(`${path}?${params.toString()}`, { headers: headers(companyId) }, signal)
+  if ('failure' in raw) return readFailure(raw.failure)
+  if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
+  const page = decode(raw.body)
   if (page === null) return { type: 'malformed' }
   return { type: 'ok-single', data: page }
 }
