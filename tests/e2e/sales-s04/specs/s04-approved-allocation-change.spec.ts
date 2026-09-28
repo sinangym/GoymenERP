@@ -112,11 +112,12 @@ test.describe.configure({ mode: 'serial' })
 test('INV-AL-1-01 an allocation opened from ST-01 changes 5 → 3 kg with a reason and reopens with its history', async ({ page }) => {
   const pool = await new sql.ConnectionPool(env.sqlConnection).connect()
   try {
+    // The effect probe binds the allocation id as a uniqueidentifier, so the id is minted before the first probe.
+    allocationId = randomUUID()
     const movementsBefore = (await effects(pool)).movements
     const freeBefore = await positionOf(page)
 
     // Arrange through the real API: the approved line reserves 5 kg of the label (S04-06 proves the screen create).
-    allocationId = randomUUID()
     const created = await page.request.post(`${env.apiBaseUrl}${ALLOCATIONS}`, {
       headers: headers(preparerActor, `SENTETIK-inv-al-1-create-${allocationId}`),
       data: { allocationId, salesOrderId: draftId, salesOrderLineId: allocationLineId, labelId: allocationLabelId,
