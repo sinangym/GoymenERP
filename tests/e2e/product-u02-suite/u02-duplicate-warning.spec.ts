@@ -154,8 +154,17 @@ test('U02-DUP a same-named Draft is saved with a warning that links the other ca
     await expect(page.getByLabel('Kod grubu')).toHaveValue(s.codeGroupId)
     const created = page.waitForResponse((response) =>
       new URL(response.url()).pathname === PRODUCTS_PATH && response.request().method() === 'POST')
-    const read = page.waitForResponse((response) => new URL(response.url()).pathname === DUPLICATES_PATH)
-    await page.getByRole('button', { name: 'Taslak olarak kaydet' }).click()
+    // The saved screen's read names the new card to leave out; the form's own name-match read never does.
+    const read = page.waitForResponse((response) => {
+      const url = new URL(response.url())
+      return url.pathname === DUPLICATES_PATH && url.searchParams.has('excludeProductId')
+    })
+    // Leaving the name field starts the create page's own name-match read, whose panel grows above the button;
+    // a mouse click can land while the layout shifts. Focus the button, let the panel settle, then press it.
+    const save = page.getByRole('button', { name: 'Taslak olarak kaydet', exact: true })
+    await save.focus()
+    await expect(page.getByText('(aynı ad)').first()).toBeVisible({ timeout: 30_000 })
+    await save.press('Enter')
     // If the form refuses to send, fail at once with what the screen says instead of waiting out the test.
     const createdResponse = await Promise.race([
       created,
