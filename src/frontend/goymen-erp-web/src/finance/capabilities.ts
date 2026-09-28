@@ -77,3 +77,28 @@ export const INSTRUMENT_QUERY = 'cekSenet'
 
 export const portfolioInstrumentPath = (instrumentId: string) =>
   `/finans/tahsilatlar?${new URLSearchParams({ [INSTRUMENT_QUERY]: instrumentId }).toString()}`
+
+/**
+ * The first-release party ledger (cari hesap ekstresi) lives on the F-02 list too (no route or capability of its own
+ * until the central shell declares one): these query parameters name the party account and the date range, so the
+ * range survives opening a row's source and coming back, and the same address reopens the same ledger.
+ */
+export const LEDGER_QUERY = {
+  party: 'ekstreCari',
+  account: 'ekstreHesap',
+  from: 'ekstreBaslangic',
+  to: 'ekstreBitis',
+} as const
+
+export const partyLedgerPath = (
+  partyId: string,
+  companyAccountId: string,
+  range?: { readonly from: string; readonly to: string },
+) => {
+  const params = new URLSearchParams({ [LEDGER_QUERY.party]: partyId, [LEDGER_QUERY.account]: companyAccountId })
+  if (range !== undefined) {
+    params.set(LEDGER_QUERY.from, range.from)
+    params.set(LEDGER_QUERY.to, range.to)
+  }
+  return `/finans/tahsilatlar?${params.toString()}`
+}

@@ -254,6 +254,9 @@ SUITE_IDENTITY_PERMISSIONS = {
         "finance.customer-instrument.receive",
         "finance.customer-instrument.status.change",
         "finance.customer-instrument.collect",
+        # Party ledger (user decision 2026-09-28): the disposable fin01-proposer alone holds the two ledger reads.
+        "finance.party-ledger.read",
+        "finance.party-ledger.amount.read",
     ),
     # SALES-A1's approval axis: the preparer creates and reads, the approver approves and reads, the reader reads.
     # SALES-A2a: the preparer reaches the Cari owner's contact information through its OWN party read.

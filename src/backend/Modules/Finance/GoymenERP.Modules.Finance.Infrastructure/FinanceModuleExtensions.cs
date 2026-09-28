@@ -84,6 +84,8 @@ public static class FinanceModuleExtensions
         services.AddScoped<IFinanceAllocationService>(CreateAllocationService);
         // DEC-FIN-016 first release: the customer cheque / note portfolio, on the same owners and period rule.
         services.AddScoped<ICustomerInstrumentService>(CreateCustomerInstrumentService);
+        // The first-release party ledger (cari hesap ekstresi): a read over the recorded facts above, no writer.
+        services.AddScoped<IPartyLedgerService>(CreatePartyLedgerService);
         // FIN-T05: the Record's period gate. K1 (#66 5748258299) answered it — occurredOn decides — but the rule
         // that maps the date reads Accounting's period port, which this module cannot see. So the HOST registers
         // OccurredOnFinanceRecordPeriodRule before calling this method and the TryAdd below then does nothing;
@@ -213,6 +215,13 @@ public static class FinanceModuleExtensions
                     FinanceAction.CollectCustomerInstrument)),
             provider.GetRequiredService<TimeProvider>());
     }
+
+    private static PartyLedgerService CreatePartyLedgerService(IServiceProvider provider) =>
+        new PartyLedgerService(
+            provider.GetRequiredService<FinanceDbContext>(),
+            provider.GetRequiredService<ICompanyContext>(),
+            provider.GetRequiredService<ICurrentUser>(),
+            provider.GetRequiredService<FinancePermissionPort>());
 
     /// <summary>The ADR-009 envelope of the request: the permission that authorizes the write and its roles.</summary>
     private static FinanceAuditEnvelope Envelope(IServiceProvider provider, string permissionCode,

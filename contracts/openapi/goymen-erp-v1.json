@@ -7139,6 +7139,266 @@
         ]
       }
     },
+    "/api/v1/finance/party-ledger": {
+      "get": {
+        "tags": [
+          "Finance"
+        ],
+        "operationId": "GetFinancePartyLedgerV1",
+        "parameters": [
+          {
+            "name": "partyId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "companyAccountId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "X-Correlation-Id",
+            "in": "header",
+            "description": "Optional client correlation identifier; the server creates one when absent.",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Causation-Id",
+            "in": "header",
+            "description": "Optional identifier of the command or event that caused this request.",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Company-Id",
+            "in": "header",
+            "description": "Selected company identifier for this company-scoped request.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "x-erp-non-empty-uuid": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartyLedgerView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "authentication_required"
+            ]
+          },
+          "403": {
+            "description": "Forbidden",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "forbidden"
+            ]
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "internal_error"
+            ]
+          },
+          "400": {
+            "description": "Bad Request",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErpCodeLessProblemDetailsContract"
+                    }
+                  ]
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "company_context_invalid",
+              "correlation_metadata_invalid"
+            ],
+            "x-erp-empty-body-possible": true
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "finance_party_ledger_too_many_entries"
+            ]
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "service_unavailable"
+            ]
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
     "/api/v1/finance/customer-instruments/{instrumentId}": {
       "get": {
         "tags": [
@@ -49185,6 +49445,205 @@
           1,
           2
         ]
+      },
+      "PartyLedgerBalanceSide": {
+        "enum": [
+          "Zero",
+          "Debit",
+          "Credit",
+          null
+        ]
+      },
+      "PartyLedgerBalanceView": {
+        "required": [
+          "side",
+          "amount"
+        ],
+        "type": "object",
+        "properties": {
+          "side": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PartyLedgerBalanceSide"
+              }
+            ]
+          },
+          "amount": {
+            "$ref": "#/components/schemas/AmountView"
+          }
+        }
+      },
+      "PartyLedgerCarryForward": {
+        "enum": [
+          "NoneOpen018"
+        ]
+      },
+      "PartyLedgerCurrency": {
+        "required": [
+          "currencyId",
+          "entries",
+          "debitTotal",
+          "creditTotal",
+          "closingBalance"
+        ],
+        "type": "object",
+        "properties": {
+          "currencyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PartyLedgerEntry"
+            }
+          },
+          "debitTotal": {
+            "$ref": "#/components/schemas/AmountView"
+          },
+          "creditTotal": {
+            "$ref": "#/components/schemas/AmountView"
+          },
+          "closingBalance": {
+            "$ref": "#/components/schemas/PartyLedgerBalanceView"
+          }
+        }
+      },
+      "PartyLedgerEntry": {
+        "required": [
+          "kind",
+          "entryId",
+          "occurredOn",
+          "recordedAtUtc",
+          "side",
+          "amount",
+          "runningBalance",
+          "sourceId",
+          "reversesSourceId",
+          "instrumentId",
+          "documentId",
+          "dueOn"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/PartyLedgerEntryKind"
+          },
+          "entryId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "occurredOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "recordedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "side": {
+            "$ref": "#/components/schemas/PartyLedgerSide"
+          },
+          "amount": {
+            "$ref": "#/components/schemas/AmountView"
+          },
+          "runningBalance": {
+            "$ref": "#/components/schemas/PartyLedgerBalanceView"
+          },
+          "sourceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reversesSourceId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "instrumentId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "documentId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "dueOn": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date"
+          }
+        }
+      },
+      "PartyLedgerEntryKind": {
+        "enum": [
+          "OpenItem",
+          "ManualReceipt",
+          "ManualReceiptReversal",
+          "CustomerInstrumentCollection",
+          "ManualBankPayment"
+        ]
+      },
+      "PartyLedgerSide": {
+        "enum": [
+          "Debit",
+          "Credit"
+        ]
+      },
+      "PartyLedgerView": {
+        "required": [
+          "companyId",
+          "partyId",
+          "companyAccountId",
+          "from",
+          "to",
+          "carryForward",
+          "currencies"
+        ],
+        "type": "object",
+        "properties": {
+          "companyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "partyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "companyAccountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "from": {
+            "type": "string",
+            "format": "date"
+          },
+          "to": {
+            "type": "string",
+            "format": "date"
+          },
+          "carryForward": {
+            "$ref": "#/components/schemas/PartyLedgerCarryForward"
+          },
+          "currencies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PartyLedgerCurrency"
+            }
+          }
+        }
       },
       "PartyRole": {
         "maximum": 15,
