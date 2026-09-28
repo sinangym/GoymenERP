@@ -131,7 +131,8 @@ test('S04-GS1 box → grouped results → open the order → Back returns to the
   await expect(page).toHaveURL(isResultsUrl(documentNo))
   await searchAnswer(await again)
   await expect(page.getByTestId(`global-search-group-${SALES_KIND}`).getByRole('link', { name: new RegExp(documentNo) })).toBeVisible()
-  await expect(page.getByLabel('Aranan metin')).toHaveValue(documentNo)
+  // The results form and its input share the name "Aranan metin"; the input is the searchbox.
+  await expect(page.getByRole('searchbox', { name: 'Aranan metin', exact: true })).toHaveValue(documentNo)
 
   const reload = page.waitForResponse((response) => isSearch(response, documentNo))
   await page.reload()
