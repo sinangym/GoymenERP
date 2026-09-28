@@ -35,6 +35,11 @@
  * An approved order may consume Inventory's existing physical-allocation surface when the shell
  * publishes its write capability. Inventory remains the owner: create/release and every reopen are
  * read from its server truth; this page creates no stock movement or local allocation projection.
+ *
+ * DEC-SAL-005 / AT-007 — "Sipariş iptali": behind the `sales.orders.cancel` control, an approved order's impact preview is
+ * read from the owners and the order is cancelled with a reason only when nothing blocks it (`SalesDraftCancellation`). A
+ * cancelled order reads "İptal edildi" beside its unchanged approval facts, shows its recorded cancellation, and offers no
+ * other command (no schedule, price, allocation or approval action).
  */
 
 import { useContext, useRef, useState } from 'react'
@@ -43,6 +48,7 @@ import { Link, useParams } from 'react-router'
 import { fetchDraftDetail, sendDraftCommand } from './api'
 import {
   APPROVAL_STATE,
+  CANCELLED_STATE,
   OWNER_REFERENCE_FIELDS,
   REV_0,
   type ContactInformationOptions,
@@ -86,6 +92,7 @@ import { SalesDraftAllocationPanel } from './SalesDraftAllocationPanel'
 import { SalesDraftDeliveryScheduleForm } from './SalesDraftDeliveryScheduleForm'
 import { SalesDraftDeliveryScheduleHistory } from './SalesDraftDeliveryScheduleHistory'
 import { SalesDraftDeliveryProgress } from './SalesDraftDeliveryProgress'
+import { SalesDraftCancellation } from './SalesDraftCancellation'
 import { SalesDraftLinkedEffects, SalesDraftLinkedEffectsUnbound } from './SalesDraftLinkedEffects'
 import { INVENTORY_PHYSICAL_ALLOCATION_WRITE_CAPABILITY } from '../inventory/capabilities'
 import styles from './SalesPages.module.css'
@@ -192,6 +199,7 @@ export function SalesDraftDetailPage() {
         namespace !== null && companyId !== null ? (
           <SalesDraftAllocationPanel
             enabled={outcome.data.draft.approvalState === APPROVAL_STATE.approved
+              && outcome.data.draft.state !== CANCELLED_STATE
               && hasCapability(shell, INVENTORY_PHYSICAL_ALLOCATION_WRITE_CAPABILITY)}
             companyId={companyId}
             namespace={namespace}
@@ -205,6 +213,17 @@ export function SalesDraftDetailPage() {
         companyId === null ? null : (
           <ApprovalCommands
             key={`${namespace ?? ''}:${outcome.data.draft.id}`}
+            shell={shell}
+            detail={outcome.data}
+            companyId={companyId}
+            onRecorded={() => void queryClient.invalidateQueries({ queryKey })}
+          />
+        )
+      }
+      cancellation={
+        companyId === null ? null : (
+          <SalesDraftCancellation
+            key={`cancellation:${namespace ?? ''}:${shell.routeEntryGeneration}:${outcome.data.draft.id}`}
             shell={shell}
             detail={outcome.data}
             companyId={companyId}
@@ -239,6 +258,7 @@ export function DraftView({
   deliveryScheduleHistory = null,
   deliveryProgress = null,
   linkedEffects = null,
+  cancellation = null,
 }: {
   readonly detail: DraftDetail
   readonly backLink: React.ReactNode
@@ -255,9 +275,12 @@ export function DraftView({
   readonly deliveryProgress?: React.ReactNode
   /** The owners' linked effects; without a bound company nothing is read and no number is shown. */
   readonly linkedEffects?: React.ReactNode
+  /** DEC-SAL-005 / AT-007: the impact preview and cancel control, or the recorded cancellation of a cancelled order. */
+  readonly cancellation?: React.ReactNode
 }) {
   const { draft, approval } = detail
   const withdrawn = draft.approvalState === APPROVAL_STATE.withdrawn
+  const cancelled = draft.state === CANCELLED_STATE
   return (
     <article className={styles.page} aria-labelledby="sales-detail-heading">
       {backLink}
@@ -269,11 +292,15 @@ export function DraftView({
           <p className={styles.muted}>{T.referenceNote}</p>
         </div>
         <span className={styles.badge} data-testid="sales-draft-state">
-          {T.stateDraft} · {APPROVAL_STATE_TEXT[draft.approvalState]}
+          {cancelled ? T.stateCancelled : T.stateDraft} · {APPROVAL_STATE_TEXT[draft.approvalState]}
         </span>
       </header>
 
       <dl className={styles.facts}>
+        <div>
+          <dt>{T.state}</dt>
+          <dd data-testid="sales-draft-lifecycle-state">{cancelled ? T.stateCancelled : T.stateDraft}</dd>
+        </div>
         <div>
           <dt>{T.approval.state}</dt>
           <dd data-testid="sales-draft-approval-state">{APPROVAL_STATE_TEXT[draft.approvalState]}</dd>
@@ -347,11 +374,13 @@ export function DraftView({
           ) : null}
         </dl>
         {linkedEffects ?? <SalesDraftLinkedEffectsUnbound />}
-        {draft.approvalState === APPROVAL_STATE.approved ? <p className={styles.muted}>{T.approval.approvedNote}</p> : null}
+        {draft.approvalState === APPROVAL_STATE.approved && !cancelled ? <p className={styles.muted}>{T.approval.approvedNote}</p> : null}
         {draft.approvalState === APPROVAL_STATE.rejected ? <p className={styles.muted}>{T.approval.rejectedNote}</p> : null}
         {withdrawn ? <p className={styles.muted}>{T.approval.withdrawnNote}</p> : null}
         {commands}
       </section>
+
+      {cancellation}
 
       <section className={styles.section} aria-labelledby="sales-commercial-heading">
         <h2 id="sales-commercial-heading">{T.commercialHeading}</h2>

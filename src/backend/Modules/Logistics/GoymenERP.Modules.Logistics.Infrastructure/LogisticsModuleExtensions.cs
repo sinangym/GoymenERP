@@ -56,6 +56,9 @@ public static class LogisticsModuleExtensions
         // AT-024: Logistics answers the Sales-declared delivery read over its own company-filtered lines. Registered here,
         // in the owner's module (no host file), so that Sales reads recorded deliveries only through this port.
         services.AddScoped<ISalesOrderDeliveryReadPortV1, LogisticsSalesOrderDeliveryReadPort>();
+        // DEC-SAL-005: Logistics answers the Sales-declared loading read (every instruction line of an order, instructed or
+        // loaded included) for the cancellation preview; the owner's module registers it, as the delivery read above.
+        services.AddScoped<ISalesOrderLoadingReadPortV1, LogisticsSalesOrderLoadingReadPort>();
         return services;
     }
 

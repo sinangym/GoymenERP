@@ -33,6 +33,10 @@ export const salesDraftDeliverySchedulePath = (id: string) => `${salesDraftDetai
 export const salesDraftDeliverySchedulesPath = (id: string) => `${salesDraftDetailPath(id)}/delivery-schedules`
 /** AT-024: per line the delivered and remaining quantity, read from the delivery owner's records (GET). */
 export const salesDraftDeliveryProgressPath = (id: string) => `${salesDraftDetailPath(id)}/delivery-progress`
+/** DEC-SAL-005: the impact preview of cancelling an approved order (GET, the cancel control's name). */
+export const salesDraftCancellationImpactPath = (id: string) => `${salesDraftDetailPath(id)}/cancellation-impact`
+/** DEC-SAL-005 / AT-007: the cancel command (POST) and the recorded cancellation (GET, the draft read). */
+export const salesDraftCancellationPath = (id: string) => `${salesDraftDetailPath(id)}/cancellation`
 
 /**
  * `SalesDraftApiV1`: a first commit answers 201; the same accepted attempt answers 201 again with
@@ -44,6 +48,12 @@ export const REPLAY_HEADER = 'Idempotency-Replayed'
 export const REV_0 = 'Rev.0'
 export const ORDER_KIND = 'Order' as const
 export const DRAFT_STATE = 'Draft' as const
+/**
+ * DEC-SAL-005: the lifecycle `state` of an APPROVED order cancelled after its impact preview — terminal; its approval facts,
+ * lines and history stay (AT-007). The approval axis still reads `Approved` (who approved stays who approved).
+ */
+export const CANCELLED_STATE = 'Cancelled' as const
+export type LifecycleState = typeof DRAFT_STATE | typeof CANCELLED_STATE
 
 /**
  * SALES-A1: the INTERNAL APPROVAL axis (`InternalApprovalState`), a fourth fact beside the lifecycle
@@ -249,7 +259,8 @@ export interface DraftSummary {
   /** Opaque display text; its format is illustrative in the source. */
   readonly documentNo: string
   readonly kind: typeof ORDER_KIND
-  readonly state: typeof DRAFT_STATE
+  /** The lifecycle axis: `Draft`, or `Cancelled` (DEC-SAL-005) — never merged with the approval axis. */
+  readonly state: LifecycleState
   readonly version: string
   readonly revision: string
   readonly partyId: string
@@ -401,6 +412,10 @@ export const SALES_PROBLEM_CODE = {
   // (409, terminal for the key), and a rejection reason over the technical bound (422).
   stateConflict: 'sales_state_conflict',
   approvalReasonTooLong: 'sales_approval_reason_too_long',
+  // DEC-SAL-005 (contract deltas): an owner records an effect of the order (the errors name each source) — the fail-closed
+  // reading refuses; and the impact no longer is the preview the command named (read it again).
+  cancellationBlocked: 'sales_cancellation_blocked',
+  cancellationImpactChanged: 'sales_cancellation_impact_changed',
 } as const
 
 export type SalesProblemCode = (typeof SALES_PROBLEM_CODE)[keyof typeof SALES_PROBLEM_CODE]
@@ -529,10 +544,11 @@ export function decodeDraftSummary(value: unknown): DraftSummary | null {
     !isReferenceId(o.id) ||
     !isReferenceId(o.companyId) ||
     !isText(o.documentNo, 200) ||
-    // The first slice creates goods Orders in Draft only. Any other kind or state is a
-    // meaning this build was not written for, and is not shown as if it were a Draft.
+    // Goods Orders in Draft, or (DEC-SAL-005) Cancelled — and only an approved order is ever cancelled. Any other kind or
+    // state is a meaning this build was not written for, and is not shown as if it were a Draft.
     o.kind !== ORDER_KIND ||
-    o.state !== DRAFT_STATE ||
+    (o.state !== DRAFT_STATE && o.state !== CANCELLED_STATE) ||
+    (o.state === CANCELLED_STATE && o.approvalState !== APPROVAL_STATE.approved) ||
     !isVersionString(o.version) ||
     (o.version as string).length > LIMITS.versionText ||
     typeof o.revision !== 'string' ||
@@ -554,7 +570,7 @@ export function decodeDraftSummary(value: unknown): DraftSummary | null {
     companyId: o.companyId,
     documentNo: o.documentNo,
     kind: ORDER_KIND,
-    state: DRAFT_STATE,
+    state: o.state === CANCELLED_STATE ? CANCELLED_STATE : DRAFT_STATE,
     version: o.version as string,
     revision: o.revision,
     partyId: o.partyId,
@@ -878,6 +894,162 @@ export function decodeDeliveryProgress(value: unknown, detail: DraftDetail): Del
     })
   }
   return { draftVersion: response.draftVersion, lines }
+}
+
+/* ── DEC-SAL-005 / AT-007: the cancellation of an approved order ────────────── */
+
+/** The six DEC-SAL-005 categories, the decision's order. */
+export const CANCELLATION_SOURCE = {
+  activeAllocations: 'inventory.active-allocations',
+  linkedPurchasing: 'purchasing.linked-orders',
+  linkedProduction: 'manufacturing.linked-orders',
+  loadingWithoutDispatchNote: 'logistics.loading-without-dispatch-note',
+  uninvoicedDispatchNotes: 'invoicing.uninvoiced-dispatch-notes',
+  unmatchedAdvances: 'finance.unmatched-advances',
+} as const
+export type CancellationSource = (typeof CANCELLATION_SOURCE)[keyof typeof CANCELLATION_SOURCE]
+const CANCELLATION_SOURCES: readonly string[] = Object.values(CANCELLATION_SOURCE)
+
+/**
+ * What the preview knows of one category: the owner answered nothing (`None`) or records (`Present`, blocks); the owner
+ * exists but could not be read (`Unreadable`, blocks — never zero); no module on main records this link (`NoSource`).
+ */
+export const CANCELLATION_STATUS = { none: 'None', present: 'Present', unreadable: 'Unreadable', noSource: 'NoSource' } as const
+export type CancellationStatus = (typeof CANCELLATION_STATUS)[keyof typeof CANCELLATION_STATUS]
+const CANCELLATION_STATUSES: readonly string[] = Object.values(CANCELLATION_STATUS)
+
+export interface CancellationImpactSource {
+  readonly source: CancellationSource
+  readonly status: CancellationStatus
+}
+
+/** One line of the preview; a null member means its owner could not be read — never zero in its place. */
+export interface CancellationImpactLine {
+  readonly lineId: string
+  readonly lineNo: number
+  readonly orderUnitId: string
+  readonly ordered: string
+  readonly activeAllocations: number | null
+  readonly allocatedKg: string | null
+  readonly loadingInstructionLines: number | null
+  readonly instructed: string | null
+  readonly loaded: string | null
+  readonly shipped: string | null
+  readonly delivered: string | null
+}
+
+export interface CancellationImpact {
+  readonly draftVersion: string
+  readonly revision: string
+  readonly cancellable: boolean
+  /** The identity of exactly this preview; the cancel command carries it back. */
+  readonly impactToken: string
+  readonly sources: readonly CancellationImpactSource[]
+  readonly lines: readonly CancellationImpactLine[]
+}
+
+/** `SalesDraftCancelRequest`: every member present; the reason is required (the server trims and bounds it). */
+export interface DraftCancelRequest {
+  readonly expectedVersion: string
+  readonly reason: string
+  readonly impactToken: string
+}
+
+/** AT-007: the recorded cancellation — who, when, why, the revision cancelled and the preview it was decided on. */
+export interface CancellationRecord {
+  readonly revision: string
+  readonly cancelledBy: string
+  readonly cancelledAtUtc: string
+  readonly reason: string
+  readonly impactToken: string
+  readonly sources: readonly CancellationImpactSource[]
+}
+
+export interface CancellationRead {
+  readonly cancellation: CancellationRecord | null
+}
+
+const IMPACT_TOKEN_RE = /^[0-9a-f]{64}$/
+const isCount = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 2147483647
+
+function decodeCancellationSources(value: unknown): readonly CancellationImpactSource[] | null {
+  if (!Array.isArray(value) || value.length !== CANCELLATION_SOURCES.length) return null
+  const sources: CancellationImpactSource[] = []
+  for (const [index, entry] of value.entries()) {
+    const o = exact(entry, ['source', 'status'])
+    // The decision's six categories, each once, in its order; a status this build does not know is not shown.
+    if (o === null || o.source !== CANCELLATION_SOURCES[index] || typeof o.status !== 'string' || !CANCELLATION_STATUSES.includes(o.status)) return null
+    sources.push({ source: o.source as CancellationSource, status: o.status as CancellationStatus })
+  }
+  return sources
+}
+
+/**
+ * DEC-SAL-005: `SalesOrderDraftCancellationImpactResponse`, read exactly and only as the preview OF `detail` (its version and
+ * revision, every line once in order with its unit and quantity). An owner's numbers are null together or present together,
+ * and null exactly when that owner is Unreadable — a body that does not fit is not shown.
+ */
+export function decodeCancellationImpact(value: unknown, detail: DraftDetail): CancellationImpact | null {
+  const o = exact(value, ['draftVersion', 'revision', 'cancellable', 'impactToken', 'sources', 'lines'])
+  if (
+    o === null || o.draftVersion !== detail.draft.version || o.revision !== detail.draft.revision ||
+    typeof o.cancellable !== 'boolean' || typeof o.impactToken !== 'string' || !IMPACT_TOKEN_RE.test(o.impactToken) ||
+    !Array.isArray(o.lines) || o.lines.length !== detail.lines.length
+  ) return null
+  const sources = decodeCancellationSources(o.sources)
+  if (sources === null) return null
+  const statusOf = (source: CancellationSource) => sources.find((entry) => entry.source === source)?.status
+  const allocationsRead = statusOf(CANCELLATION_SOURCE.activeAllocations) !== CANCELLATION_STATUS.unreadable
+  const loadingRead = statusOf(CANCELLATION_SOURCE.loadingWithoutDispatchNote) !== CANCELLATION_STATUS.unreadable
+  const blocked = sources.some((entry) => entry.status === CANCELLATION_STATUS.present || entry.status === CANCELLATION_STATUS.unreadable)
+  if (o.cancellable && blocked) return null
+  const lines: CancellationImpactLine[] = []
+  for (const [index, entry] of o.lines.entries()) {
+    const l = exact(entry, ['lineId', 'lineNo', 'orderUnitId', 'ordered', 'activeAllocations', 'allocatedKg',
+      'loadingInstructionLines', 'instructed', 'loaded', 'shipped', 'delivered'])
+    const line = detail.lines[index]
+    if (
+      l === null || !isRevisionId(l.lineId) || l.lineId.toLowerCase() !== line.lineId.toLowerCase() || l.lineNo !== line.lineNo ||
+      !isRevisionId(l.orderUnitId) || l.orderUnitId.toLowerCase() !== line.orderUnitId.toLowerCase() || l.ordered !== line.quantity
+    ) return null
+    const allocation = [l.activeAllocations, l.allocatedKg]
+    const loading = [l.loadingInstructionLines, l.instructed, l.loaded, l.shipped, l.delivered]
+    const allocationOk = allocationsRead
+      ? isCount(l.activeAllocations) && isRevisionDecimal(l.allocatedKg, false)
+      : allocation.every((member) => member === null)
+    const loadingOk = loadingRead
+      ? isCount(l.loadingInstructionLines) && [l.instructed, l.loaded, l.shipped, l.delivered].every((member) => isRevisionDecimal(member, false))
+      : loading.every((member) => member === null)
+    if (!allocationOk || !loadingOk) return null
+    lines.push({
+      lineId: l.lineId, lineNo: l.lineNo, orderUnitId: l.orderUnitId, ordered: l.ordered as string,
+      activeAllocations: l.activeAllocations as number | null, allocatedKg: l.allocatedKg as string | null,
+      loadingInstructionLines: l.loadingInstructionLines as number | null, instructed: l.instructed as string | null,
+      loaded: l.loaded as string | null, shipped: l.shipped as string | null, delivered: l.delivered as string | null,
+    })
+  }
+  return { draftVersion: o.draftVersion, revision: o.revision, cancellable: o.cancellable, impactToken: o.impactToken, sources, lines }
+}
+
+/** AT-007: `SalesOrderDraftCancellationResponse`, read exactly: null, or the recorded facts with the preview's categories. */
+export function decodeCancellation(value: unknown): CancellationRead | null {
+  const o = exact(value, ['cancellation'])
+  if (o === null) return null
+  if (o.cancellation === null) return { cancellation: null }
+  const c = exact(o.cancellation, ['revision', 'cancelledBy', 'cancelledAtUtc', 'reason', 'impactToken', 'sources'])
+  if (
+    c === null || typeof c.revision !== 'string' || !REVISION_RE.test(c.revision) || !isRevisionActor(c.cancelledBy) ||
+    !isRevisionInstant(c.cancelledAtUtc) || !isText(c.reason, LIMITS.note) || c.reason.trim().length === 0 ||
+    typeof c.impactToken !== 'string' || !IMPACT_TOKEN_RE.test(c.impactToken)
+  ) return null
+  const sources = decodeCancellationSources(c.sources)
+  if (sources === null) return null
+  return {
+    cancellation: {
+      revision: c.revision, cancelledBy: c.cancelledBy, cancelledAtUtc: c.cancelledAtUtc, reason: c.reason,
+      impactToken: c.impactToken, sources,
+    },
+  }
 }
 
 /**

@@ -29,7 +29,8 @@ public sealed record SalesDraftDeliverySliceV1(
     Guid SliceId, Guid OrderUnitId, string Quantity, DateOnly RequestedDeliveryDate);
 
 // SALES-A1 (contract delta): `approvalState` is the internal approval axis — "Preparing",
-// "PendingApproval", "Approved", "Rejected" or (D2) "Withdrawn" — beside the lifecycle `state` ("Draft"), the
+// "PendingApproval", "Approved", "Rejected" or (D2) "Withdrawn" — beside the lifecycle `state` ("Draft", or since
+// DEC-SAL-005 "Cancelled" for an approved order cancelled after its impact preview), the
 // commercial `revision` and the concurrency `version`. Four separate facts, never merged.
 public sealed record SalesOrderDraftSummaryView(
     Guid Id, Guid CompanyId, string DocumentNo, string Kind, string State,
@@ -201,6 +202,13 @@ public static class SalesDraftApiV1
     public const string DeliverySchedulePath = "/api/v1/sales/drafts/{id}/delivery-schedule";
     public const string DeliverySchedulesPath = "/api/v1/sales/drafts/{id}/delivery-schedules";
 
+    // DEC-SAL-005 / AT-007: the impact preview (GET, the cancel permission), the cancel command (POST, 200 with the detail
+    // after the change; same-key replay 200 + `Idempotency-Replayed`) and the recorded cancellation (GET, the draft read).
+    // The detail wire is unchanged apart from the lifecycle `state` ("Cancelled"): the facts live on their own route so the
+    // S-04 decoder (exact members) keeps working.
+    public const string CancellationImpactPath = "/api/v1/sales/drafts/{id}/cancellation-impact";
+    public const string CancellationPath = "/api/v1/sales/drafts/{id}/cancellation";
+
     /// <summary>The wire text of a revision number (<c>Rev.0</c>, <c>Rev.1</c>, …).</summary>
     public static string RevisionText(int revision) => $"Rev.{revision.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
 }
@@ -323,6 +331,25 @@ public static class SalesDraftJson
     /// only where <paramref name="allowReason"/> (the rejection) and is otherwise an unknown member.
     /// The reason's length is the domain's rule (422), not a shape rule.
     /// </summary>
+    /// <summary>
+    /// DEC-SAL-005: the strict cancel body — the expected version (canonical positive integer text), the reason (present, at
+    /// most 4000; the domain requires it non-blank) and the preview token (non-blank, at most 128). Anything else is a shape
+    /// error.
+    /// </summary>
+    public static SalesDraftCancelRequest ReadCancel(string json)
+    {
+        var request = JsonSerializer.Deserialize<SalesDraftCancelRequest>(json, Options)
+            ?? throw new JsonException("Request body is required.");
+        if (string.IsNullOrEmpty(request.ExpectedVersion) || request.ExpectedVersion.Length > 19
+            || !Regex.IsMatch(request.ExpectedVersion, "\\A[1-9][0-9]*\\z"))
+            throw new JsonException("Invalid expected version.");
+        if (request.Reason is null || request.Reason.Length > 4000)
+            throw new JsonException("Invalid reason.");
+        if (string.IsNullOrWhiteSpace(request.ImpactToken) || request.ImpactToken.Length > 128)
+            throw new JsonException("Invalid impact token.");
+        return request;
+    }
+
     public static SalesDraftStateCommandRequest ReadStateCommand(string json, bool allowReason)
     {
         var request = JsonSerializer.Deserialize<SalesDraftStateCommandRequest>(json, Options)

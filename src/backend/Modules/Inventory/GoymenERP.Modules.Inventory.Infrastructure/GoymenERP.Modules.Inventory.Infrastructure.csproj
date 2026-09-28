@@ -12,5 +12,7 @@
     <ProjectReference Include="../../Audit/GoymenERP.Modules.Audit.Infrastructure/GoymenERP.Modules.Audit.Infrastructure.csproj" />
     <ProjectReference Include="../GoymenERP.Modules.Inventory.Application/GoymenERP.Modules.Inventory.Application.csproj" />
     <ProjectReference Include="../GoymenERP.Modules.Inventory.Domain/GoymenERP.Modules.Inventory.Domain.csproj" />
+    <!-- DEC-SAL-005: Inventory answers the Sales-declared allocation read (an Application contract; the Logistics precedent). -->
+    <ProjectReference Include="../../Sales/GoymenERP.Modules.Sales.Application/GoymenERP.Modules.Sales.Application.csproj" />
   </ItemGroup>
 </Project>

@@ -441,6 +441,16 @@ public sealed partial class OpenApiContractGenerationTests
         new("post", "/api/v1/sales/drafts/{id}/delivery-schedule", "RescheduleSalesOrderDraftDeliveryV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
             "#/components/schemas/SalesDraftDeliveryScheduleRequest", ["path:id:true:type:string;format:uuid"]),
+        // DEC-SAL-005: the impact preview, the cancel command and the recorded cancellation of an approved order.
+        new("get", "/api/v1/sales/drafts/{id}/cancellation-impact", "GetSalesOrderDraftCancellationImpactV1",
+            AuthenticatedResponses("200:application/json", "404:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["path:id:true:type:string;format:uuid"]),
+        new("post", "/api/v1/sales/drafts/{id}/cancellation", "CancelSalesOrderDraftV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/SalesDraftCancelRequest", ["path:id:true:type:string;format:uuid"]),
+        new("get", "/api/v1/sales/drafts/{id}/cancellation", "GetSalesOrderDraftCancellationV1",
+            AuthenticatedResponses("200:application/json", "404:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["path:id:true:type:string;format:uuid"]),
         new("get", "/api/v1/sales/drafts/{id}/delivery-schedules", "GetSalesOrderDraftDeliverySchedulesV1",
             AuthenticatedResponses("200:application/json", "404:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["path:id:true:type:string;format:uuid"]),
@@ -704,6 +714,9 @@ public sealed partial class OpenApiContractGenerationTests
             ["RescheduleSalesOrderDraftDeliveryV1"] = "ref:SalesOrderDraftResponse",
             ["GetSalesOrderDraftDeliverySchedulesV1"] = "ref:SalesOrderDraftDeliverySchedulesResponse",
             ["GetSalesOrderDraftDeliveryProgressV1"] = "ref:SalesOrderDraftDeliveryProgressResponse",
+            ["GetSalesOrderDraftCancellationImpactV1"] = "ref:SalesOrderDraftCancellationImpactResponse",
+            ["CancelSalesOrderDraftV1"] = "ref:SalesOrderDraftResponse",
+            ["GetSalesOrderDraftCancellationV1"] = "ref:SalesOrderDraftCancellationResponse",
             ["ProposeFinanceBankAccountV1"] = "ref:BankAccountCommandResult",
             ["ApproveFinanceBankAccountV1"] = "ref:BankAccountCommandResult",
             ["ProposeFinanceBankAccountIbanChangeV1"] = "ref:BankAccountCommandResult",
@@ -843,6 +856,9 @@ public sealed partial class OpenApiContractGenerationTests
         "RescheduleSalesOrderDraftDeliveryV1",
         "GetSalesOrderDraftDeliverySchedulesV1",
         "GetSalesOrderDraftDeliveryProgressV1",
+        "GetSalesOrderDraftCancellationImpactV1",
+        "CancelSalesOrderDraftV1",
+        "GetSalesOrderDraftCancellationV1",
         "ProposeFinanceBankAccountV1",
         "ApproveFinanceBankAccountV1",
         "ProposeFinanceBankAccountIbanChangeV1",
@@ -945,6 +961,7 @@ public sealed partial class OpenApiContractGenerationTests
         "WithdrawSalesOrderDraftV1",
         "ReviseSalesOrderDraftCommercialV1",
         "RescheduleSalesOrderDraftDeliveryV1",
+        "CancelSalesOrderDraftV1",
         "ProposeFinanceBankAccountV1",
         "ApproveFinanceBankAccountV1",
         "ProposeFinanceBankAccountIbanChangeV1",
@@ -1080,6 +1097,7 @@ public sealed partial class OpenApiContractGenerationTests
                 ["WithdrawSalesOrderDraftV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["ReviseSalesOrderDraftCommercialV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["RescheduleSalesOrderDraftDeliveryV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
+                ["CancelSalesOrderDraftV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["ProposeFinanceBankAccountV1"] = [StatusCodes.Status200OK],
                 ["ApproveFinanceBankAccountV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
                 ["ProposeFinanceBankAccountIbanChangeV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
@@ -1177,6 +1195,9 @@ public sealed partial class OpenApiContractGenerationTests
         "RescheduleSalesOrderDraftDeliveryV1",
         "GetSalesOrderDraftDeliverySchedulesV1",
         "GetSalesOrderDraftDeliveryProgressV1",
+        "GetSalesOrderDraftCancellationImpactV1",
+        "CancelSalesOrderDraftV1",
+        "GetSalesOrderDraftCancellationV1",
         "ProposeFinanceBankAccountV1",
         "ApproveFinanceBankAccountV1",
         "ProposeFinanceBankAccountIbanChangeV1",
@@ -1263,6 +1284,9 @@ public sealed partial class OpenApiContractGenerationTests
         "RescheduleSalesOrderDraftDeliveryV1:404",
         "GetSalesOrderDraftDeliverySchedulesV1:404",
         "GetSalesOrderDraftDeliveryProgressV1:404",
+        "GetSalesOrderDraftCancellationImpactV1:404",
+        "CancelSalesOrderDraftV1:404",
+        "GetSalesOrderDraftCancellationV1:404",
         "GetLoadingInstructionV1:404",
         "IssueLoadingInstructionV1:404",
         "RecordLoadingInstructionLoadV1:404",
@@ -1530,6 +1554,9 @@ public sealed partial class OpenApiContractGenerationTests
             ["RescheduleSalesOrderDraftDeliveryV1:400"] = ["command_metadata_invalid", "validation_failed"],
             ["RescheduleSalesOrderDraftDeliveryV1:409"] = ["concurrent_change", "sales_state_conflict", "same_key_payload_mismatch", "version_conflict"],
             ["RescheduleSalesOrderDraftDeliveryV1:422"] = ["validation_failed"],
+            ["CancelSalesOrderDraftV1:400"] = ["command_metadata_invalid", "validation_failed"],
+            ["CancelSalesOrderDraftV1:409"] = ["concurrent_change", "sales_cancellation_blocked", "sales_cancellation_impact_changed", "sales_state_conflict", "same_key_payload_mismatch", "version_conflict"],
+            ["CancelSalesOrderDraftV1:422"] = ["validation_failed"],
             ["GetShellCapabilitiesV1:400"] = ["company_context_invalid"],
             ["GetLoadingInstructionsV1:400"] = ["invalid_cursor", "validation_failed"],
             ["CreateLoadingInstructionV1:400"] = ["command_metadata_invalid", "validation_failed"],
@@ -2206,6 +2233,43 @@ public sealed partial class OpenApiContractGenerationTests
                     ("delivered", "type:string"),
                     ("remaining", "type:string"),
                     ("excess", "type:string")),
+                // DEC-SAL-005: the cancellation impact preview, per owner category and per line; null counts are "unread".
+                ["SalesOrderDraftCancellationImpactResponse"] = ObjectSchema(
+                    ["draftVersion", "revision", "cancellable", "impactToken", "sources", "lines"],
+                    ("draftVersion", "type:string"),
+                    ("revision", "type:string"),
+                    ("cancellable", "type:boolean"),
+                    ("impactToken", "type:string"),
+                    ("sources", "type:array;items:ref:SalesDraftCancellationImpactSourceV1"),
+                    ("lines", "type:array;items:ref:SalesDraftCancellationImpactLineV1")),
+                ["SalesDraftCancellationImpactSourceV1"] = ObjectSchema(
+                    ["source", "status"],
+                    ("source", "type:string"),
+                    ("status", "type:string")),
+                ["SalesDraftCancellationImpactLineV1"] = ObjectSchema(
+                    ["lineId", "lineNo", "orderUnitId", "ordered", "activeAllocations", "allocatedKg", "loadingInstructionLines", "instructed", "loaded", "shipped", "delivered"],
+                    ("lineId", "type:string;format:uuid"),
+                    ("lineNo", "type:integer|string;format:int32"),
+                    ("orderUnitId", "type:string;format:uuid"),
+                    ("ordered", "type:string"),
+                    ("activeAllocations", "type:integer|null|string;format:int32"),
+                    ("allocatedKg", "type:null|string"),
+                    ("loadingInstructionLines", "type:integer|null|string;format:int32"),
+                    ("instructed", "type:null|string"),
+                    ("loaded", "type:null|string"),
+                    ("shipped", "type:null|string"),
+                    ("delivered", "type:null|string")),
+                ["SalesOrderDraftCancellationResponse"] = ObjectSchema(
+                    ["cancellation"],
+                    ("cancellation", "oneOf:ref:SalesDraftCancellationV1|type:null")),
+                ["SalesDraftCancellationV1"] = ObjectSchema(
+                    ["revision", "cancelledBy", "cancelledAtUtc", "reason", "impactToken", "sources"],
+                    ("revision", "type:string"),
+                    ("cancelledBy", "type:string"),
+                    ("cancelledAtUtc", "type:string;format:date-time"),
+                    ("reason", "type:string"),
+                    ("impactToken", "type:string"),
+                    ("sources", "type:array;items:ref:SalesDraftCancellationImpactSourceV1")),
                 ["SalesOrderDraftDetailView"] = ObjectSchema(
                     ["draft", "requestedDeliveryDate", "note", "lines", "deliveryAddress", "contact", "responsible", "paymentTerms", "sourceStrategy", "package", "approval", "isOwnDraft", "isOwnDecisionRestricted"],
                     ("draft", "ref:SalesOrderDraftSummaryView"),
@@ -3353,6 +3417,12 @@ public sealed partial class OpenApiContractGenerationTests
                     ("expectedVersion", "type:string"),
                     ("requestedDeliveryDate", "type:null|string;format:date"),
                     ("lines", "type:array;items:ref:SalesDraftLineScheduleV1")),
+                // DEC-SAL-005: the cancel command names the version and the preview token it was decided on.
+                ["SalesDraftCancelRequest"] = ObjectSchema(
+                    ["expectedVersion", "reason", "impactToken"],
+                    ("expectedVersion", "type:string"),
+                    ("reason", "type:string"),
+                    ("impactToken", "type:string")),
                 ["SalesDraftLineScheduleV1"] = ObjectSchema(
                     ["lineId", "requestedDeliveryDate", "slices"],
                     ("lineId", "type:string;format:uuid"),
@@ -4197,9 +4267,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(150, operations.Count);
+        Assert.Equal(153, operations.Count);
         Assert.Equal(
-            150,
+            153,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());

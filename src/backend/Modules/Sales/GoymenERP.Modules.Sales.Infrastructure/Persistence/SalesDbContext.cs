@@ -85,6 +85,15 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
     /// <summary>DEC-SAL-003: the complete dates of each recorded schedule (append-only).</summary>
     internal DbSet<DraftDeliveryScheduleDateRow> DraftDeliveryScheduleDates => Set<DraftDeliveryScheduleDateRow>();
 
+    /// <summary>DEC-SAL-005 / AT-007: the recorded cancellation of an approved order (append-only, at most one per draft).</summary>
+    internal DbSet<DraftCancellationRow> DraftCancellations => Set<DraftCancellationRow>();
+
+    /// <summary>
+    /// CK_Drafts_State: the kind is Order; the lifecycle is Draft (1) or, since DEC-SAL-005, Cancelled (2) — and only an
+    /// APPROVED order (approval state 3) is ever cancelled; the revision is a counter.
+    /// </summary>
+    internal const string StateConstraint = "[Kind] = 1 AND [State] IN (1, 2) AND [Revision] >= 0 AND ([State] = 1 OR [ApprovalState] = 3)";
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -100,6 +109,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         ConfigureDraftAttempts(modelBuilder);
         ConfigureDraftRevisions(modelBuilder);
         ConfigureDraftDeliverySchedules(modelBuilder);
+        ConfigureDraftCancellations(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -145,8 +155,9 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                 + "AND [PartyId] <> '00000000-0000-0000-0000-000000000000' AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000' AND [MoneyProfileId] <> '00000000-0000-0000-0000-000000000000'");
             // K3 Head B: the header's Revision is a counter (0 at creation, +1 per archived approved revision), no longer
-            // R3's "= 0" pin; Kind and State stay pinned. AddDraftRevisions widens the constraint.
-            table.HasCheckConstraint("CK_Drafts_State", "[Kind] = 1 AND [State] = 1 AND [Revision] >= 0");
+            // R3's "= 0" pin; Kind stays pinned. AddDraftRevisions widens the constraint. DEC-SAL-005: the lifecycle State is
+            // Draft or Cancelled, and Cancelled only beside an approved order (AddDraftCancellations widens it again).
+            table.HasCheckConstraint("CK_Drafts_State", StateConstraint);
             // SALES-A1: the approval facts follow the approval state exactly (a row cannot say "approved" without a decision).
             table.HasCheckConstraint("CK_Drafts_Approval", ApprovalConstraint);
             table.HasCheckConstraint("CK_Drafts_Version", "[Version] >= 1");
@@ -329,6 +340,32 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         date.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    // DEC-SAL-005 / AT-007: the recorded cancellation — append-only history beside the draft, at most one per draft.
+    private void ConfigureDraftCancellations(ModelBuilder modelBuilder)
+    {
+        var cancellation = modelBuilder.Entity<DraftCancellationRow>();
+        cancellation.ToTable("DraftCancellations", Schema, table =>
+        {
+            // The smallest version a cancellation can produce: create (1), one line (2), submit (3), approve (4), cancel (5).
+            table.HasCheckConstraint("CK_DraftCancellations_Identity",
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [Revision] >= 0 AND [DraftVersion] >= 5 AND LEN([CancelledBy]) > 0 AND LEN([Reason]) > 0 "
+                + "AND LEN([ImpactToken]) > 0 AND LEN([CorrelationId]) > 0");
+            table.HasCheckConstraint("CK_DraftCancellations_Impact", "ISJSON([ImpactJson]) = 1");
+        });
+        cancellation.HasKey(x => new { x.CompanyId, x.DraftId });
+        cancellation.Property(x => x.CancelledBy).HasMaxLength(SalesOrderDraft.MaximumActorLength).IsRequired();
+        cancellation.Property(x => x.Reason).HasMaxLength(SalesOrderDraft.MaximumCancellationReasonLength).IsRequired();
+        cancellation.Property(x => x.ImpactToken).HasMaxLength(128).IsRequired();
+        cancellation.Property(x => x.ImpactJson).HasColumnType("nvarchar(max)").IsRequired();
+        cancellation.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        cancellation.HasOne<DraftRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.DraftId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        cancellation.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     // K3 Head B: the archived approved revisions and their lines — append-only history beside the draft.
     private void ConfigureDraftRevisions(ModelBuilder modelBuilder)
     {
@@ -407,11 +444,13 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                 {
                     DraftNumberRow => [nameof(DraftNumberRow.Next), nameof(DraftNumberRow.UpdatedAtUtc)],
                     // SALES-A1: the header moves only along the approval axis (state, facts, time; the version is the token);
-                    // K3 Head B: and its commercial revision number, which the archived history explains.
+                    // K3 Head B: and its commercial revision number, which the archived history explains; DEC-SAL-005: and its
+                    // lifecycle State, Draft → Cancelled only (checked below), which the appended cancellation row explains.
                     DraftRow =>
                     [
                         nameof(DraftRow.UpdatedAtUtc), nameof(DraftRow.ApprovalState), nameof(DraftRow.SubmittedBy), nameof(DraftRow.SubmittedAtUtc),
                         nameof(DraftRow.DecidedBy), nameof(DraftRow.DecidedAtUtc), nameof(DraftRow.RejectionReason), nameof(DraftRow.Revision),
+                        nameof(DraftRow.State),
                     ],
                     // K3 Head B — a DELIBERATE narrowing of "lines never change", declared here and in the PR: ONLY the three
                     // commercial columns may change, under a commercial revision; identity, product, unit and quantity
@@ -422,8 +461,19 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                     // added schedule may change afterwards: no column is admitted.
                     DraftDeliveryScheduleRow => [],
                     DraftDeliveryScheduleDateRow => [],
+                    // DEC-SAL-005: a recorded cancellation is APPEND-ONLY — no column of it may change afterwards.
+                    DraftCancellationRow => [],
                     _ => [],
                 };
+                if (entry.Entity is DraftRow)
+                {
+                    var state = entry.Property(nameof(DraftRow.State));
+                    if (state.IsModified && !((int)state.OriginalValue! == (int)SalesDraftState.Draft && (int)state.CurrentValue! == (int)SalesDraftState.Cancelled))
+                    {
+                        throw new InvalidOperationException("Satış siparişinin yaşam döngüsü yalnız Taslak → İptal yönünde değişir.");
+                    }
+                }
+
                 var changed = entry.Properties
                     .Where(property => property.IsModified && !property.Metadata.IsConcurrencyToken)
                     .Select(property => property.Metadata.Name)
