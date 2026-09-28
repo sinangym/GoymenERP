@@ -77,8 +77,22 @@ function isSearch(response: Response, term: string): boolean {
 async function searchAnswer(response: Response): Promise<SearchReading> {
   expect(response.status()).toBe(200)
   const body = (await response.json()) as SearchReading
-  const text = JSON.stringify(body).toLowerCase()
-  for (const word of PRICE_WORDS) expect(text, `the search answer carries no "${word}" member`).not.toContain(`"${word}`)
+  // Member NAMES are checked, walking the parsed answer: a substring scan of the text also matched values such as the
+  // kind "counterparty.party" against "count".
+  const memberNames: string[] = []
+  const walk = (value: unknown): void => {
+    if (Array.isArray(value)) value.forEach(walk)
+    else if (value !== null && typeof value === 'object') {
+      for (const [name, member] of Object.entries(value)) {
+        memberNames.push(name.toLowerCase())
+        walk(member)
+      }
+    }
+  }
+  walk(body)
+  for (const word of PRICE_WORDS) {
+    expect(memberNames.filter((name) => name.includes(word)), `the search answer carries no "${word}" member`).toEqual([])
+  }
   return body
 }
 
