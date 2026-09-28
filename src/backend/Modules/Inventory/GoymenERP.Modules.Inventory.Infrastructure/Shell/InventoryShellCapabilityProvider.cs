@@ -1,5 +1,6 @@
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Shell;
+using GoymenERP.Modules.Inventory.Application;
 
 namespace GoymenERP.Modules.Inventory.Infrastructure.Shell;
 
@@ -11,7 +12,7 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Shell;
 public sealed class InventoryShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "INVENTORY";
-    public const string OwnerContractVersion = "1.4";
+    public const string OwnerContractVersion = "1.5";
     public const string StockPositionsCapabilityId = "inventory.stock-positions.list";
     public const string StockPositionsRouteId = "inventory.stock-positions";
     public const string StockPositionsRoutePath = "/stok/pozisyonlar";
@@ -32,6 +33,15 @@ public sealed class InventoryShellCapabilityProvider : IShellCapabilityProvider
     /// </summary>
     public const string StockCountRecordCapabilityId = ErpPermissions.InventoryStockCountRecord;
     public const string StockCountApproveCapabilityId = ErpPermissions.InventoryStockCountApprove;
+
+    /// <summary>
+    /// ST-02 scrap write-off: two CONTROLS of the label detail reached from ST-01 (no route of their own), one to
+    /// record a scrap and one to decide it, as the stock count's pair (maker ≠ checker visible in the shell). The API
+    /// re-measures each on every command. Publishing grants nothing. The names are the owner's manifest literals until
+    /// the central catalogue registers them.
+    /// </summary>
+    public const string StockScrapRecordCapabilityId = ErpPermissions.InventoryStockScrapRecord;
+    public const string StockScrapApproveCapabilityId = ErpPermissions.InventoryStockScrapApprove;
     public const string OpeningStockCapabilityId = ErpPermissions.InventoryOpeningStockRecord;
     public const string OpeningStockRouteId = "inventory.opening-stock";
     public const string OpeningStockRoutePath = "/stok/acilis";
@@ -98,6 +108,28 @@ public sealed class InventoryShellCapabilityProvider : IShellCapabilityProvider
                 ErpPermissions.InventoryLabelsRead,
                 ErpPermissions.InventoryBalancesRead,
                 ErpPermissions.InventoryStockCountApprove,
+            ],
+        },
+        stockPositions with
+        {
+            CapabilityId = StockScrapRecordCapabilityId,
+            ParentCapabilityId = StockPositionsCapabilityId,
+            RequiredPermissions =
+            [
+                ErpPermissions.InventoryLabelsRead,
+                ErpPermissions.InventoryBalancesRead,
+                ErpPermissions.InventoryStockScrapRecord,
+            ],
+        },
+        stockPositions with
+        {
+            CapabilityId = StockScrapApproveCapabilityId,
+            ParentCapabilityId = StockPositionsCapabilityId,
+            RequiredPermissions =
+            [
+                ErpPermissions.InventoryLabelsRead,
+                ErpPermissions.InventoryBalancesRead,
+                ErpPermissions.InventoryStockScrapApprove,
             ],
         },
         new(

@@ -212,6 +212,8 @@ builder.Services.AddInventoryPhysicalAllocationReads();
 builder.Services.AddInventoryLabelGenealogy();
 // AT-037: the stock count's fenced record/decide commands and the label count read behind the published routes.
 builder.Services.AddInventoryStockCounts();
+// ST-02 scrap write-off: the fenced record/decide commands and the label scrap read behind the published routes.
+builder.Services.AddInventoryStockScraps();
 // INV-OPEN-1 part 2: the opening command's host ports — Organization's company-scoped location module read
 // and Product's stock eligibility (the owners' contracts; no user read, no copy of either owner's rows).
 builder.Services.AddScoped<IInventoryLocationStatusPort, OrganizationInventoryLocationStatusPort>();

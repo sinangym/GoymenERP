@@ -16,7 +16,7 @@ namespace GoymenERP.Api.Endpoints;
 /// tenant filter never shows it. The one write is the opening count (INV-OPEN-1 part 2), below; the
 /// receipt is a later slice.
 /// </summary>
-public static class InventoryEndpoints
+public static partial class InventoryEndpoints
 {
     public static IEndpointRouteBuilder MapInventoryEndpoints(this IEndpointRouteBuilder endpoints)
     {
@@ -85,6 +85,7 @@ public static class InventoryEndpoints
         MapOpeningCountEndpoints(group);
         MapLabelTransformationEndpoint(endpoints);
         endpoints.MapInventoryStockCountEndpoints();
+        endpoints.MapInventoryStockScrapEndpoints();
         return endpoints;
     }
 

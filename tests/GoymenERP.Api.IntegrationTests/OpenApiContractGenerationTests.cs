@@ -140,6 +140,18 @@ public sealed partial class OpenApiContractGenerationTests
         new("get", "/api/v1/inventory/labels/{labelId}/stock-counts", "GetInventoryLabelStockCountsV1",
             AuthenticatedResponses("200:application/json", "404:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["path:labelId:true:type:string;format:uuid"]),
+        // ST-02 scrap write-off (the AT-037 shape): record a label scrap, decide it (maker != checker) and read a
+        // label's scraps; the command codes are the owner's closed sets, read below.
+        new("post", "/api/v1/inventory/stock-scraps", "RecordInventoryStockScrapV1",
+            AuthenticatedResponses("201:application/json", "200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/RecordInventoryStockScrapV1"),
+        new("post", "/api/v1/inventory/stock-scraps/{scrapId}/decision", "DecideInventoryStockScrapV1",
+            AuthenticatedResponses("201:application/json", "200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/DecideInventoryStockScrapV1",
+            ["path:scrapId:true:type:string;format:uuid"]),
+        new("get", "/api/v1/inventory/labels/{labelId}/stock-scraps", "GetInventoryLabelStockScrapsV1",
+            AuthenticatedResponses("200:application/json", "404:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["path:labelId:true:type:string;format:uuid"]),
         new("put", "/api/v1/organization/locations/{id}/active-state", "SetOrganizationLocationActiveStateV1",
             AuthenticatedResponses("204:", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:"),
             "#/components/schemas/SetLocationActiveState",
@@ -684,6 +696,9 @@ public sealed partial class OpenApiContractGenerationTests
             ["RecordInventoryStockCountV1"] = "ref:InventoryStockCountViewV1",
             ["DecideInventoryStockCountV1"] = "ref:InventoryStockCountViewV1",
             ["GetInventoryLabelStockCountsV1"] = "ref:InventoryLabelStockCountsV1",
+            ["RecordInventoryStockScrapV1"] = "ref:InventoryStockScrapViewV1",
+            ["DecideInventoryStockScrapV1"] = "ref:InventoryStockScrapViewV1",
+            ["GetInventoryLabelStockScrapsV1"] = "ref:InventoryLabelStockScrapsV1",
             ["SetOrganizationLocationActiveStateV1"] = "none",
             ["CreateOrganizationSiteV1"] = "ref:OrganizationCreatedRecord",
             ["UpdateOrganizationSiteV1"] = "none",
@@ -861,6 +876,9 @@ public sealed partial class OpenApiContractGenerationTests
         "RecordInventoryStockCountV1",
         "DecideInventoryStockCountV1",
         "GetInventoryLabelStockCountsV1",
+        "RecordInventoryStockScrapV1",
+        "DecideInventoryStockScrapV1",
+        "GetInventoryLabelStockScrapsV1",
         "GetCounterpartyCompanyAccountLinkCandidatesV1",
         "CreateCounterpartyV1",
         "CreateCounterpartyCompanyAccountV1",
@@ -991,6 +1009,8 @@ public sealed partial class OpenApiContractGenerationTests
         "RecordInventoryLabelTransformationV1",
         "RecordInventoryStockCountV1",
         "DecideInventoryStockCountV1",
+        "RecordInventoryStockScrapV1",
+        "DecideInventoryStockScrapV1",
         "UpdateCounterpartyContactInformationV1",
         "SetOrganizationLocationActiveStateV1",
         "CreateOrganizationSiteV1",
@@ -1182,6 +1202,8 @@ public sealed partial class OpenApiContractGenerationTests
                 ["RecordInventoryLabelTransformationV1"] = [StatusCodes.Status200OK],
                 ["RecordInventoryStockCountV1"] = [StatusCodes.Status200OK],
                 ["DecideInventoryStockCountV1"] = [StatusCodes.Status200OK],
+                ["RecordInventoryStockScrapV1"] = [StatusCodes.Status200OK],
+                ["DecideInventoryStockScrapV1"] = [StatusCodes.Status200OK],
                 ["CreateLoadingInstructionV1"] = [StatusCodes.Status201Created, StatusCodes.Status409Conflict],
                 ["IssueLoadingInstructionV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["RecordLoadingInstructionLoadV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
@@ -1213,6 +1235,8 @@ public sealed partial class OpenApiContractGenerationTests
         "RecordInventoryLabelTransformationV1",
         "RecordInventoryStockCountV1",
         "DecideInventoryStockCountV1",
+        "RecordInventoryStockScrapV1",
+        "DecideInventoryStockScrapV1",
         "GetOrganizationLocationsV1",
         "SetOrganizationLocationActiveStateV1",
         "CreateOrganizationSiteV1",
@@ -1323,6 +1347,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetInventoryLabelDetailV1:404",
         "GetInventoryOpeningCountV1:404",
         "GetInventoryLabelStockCountsV1:404",
+        "GetInventoryLabelStockScrapsV1:404",
         "CreateInventoryPhysicalAllocationV1:404",
         "ReleaseInventoryPhysicalAllocationV1:404",
         "ChangeInventoryPhysicalAllocationV1:404",
@@ -1542,6 +1567,16 @@ public sealed partial class OpenApiContractGenerationTests
             ["DecideInventoryStockCountV1:409"] = [.. InventoryStockCountHttpCodesV1.DecideStatus409Codes.Order(StringComparer.Ordinal)],
             ["DecideInventoryStockCountV1:503"] = [.. InventoryStockCountHttpCodesV1.Status503Codes.Order(StringComparer.Ordinal)],
             ["GetInventoryLabelStockCountsV1:503"] = [InventoryStockCountCodesV1.Unavailable],
+            // ST-02 scrap write-off: the owner's closed sets (InventoryStockScrapHttpCodesV1), read here, never retyped.
+            ["RecordInventoryStockScrapV1:400"] = [.. InventoryStockScrapHttpCodesV1.Status400Codes.Order(StringComparer.Ordinal)],
+            ["RecordInventoryStockScrapV1:404"] = [.. InventoryStockScrapHttpCodesV1.RecordStatus404Codes.Order(StringComparer.Ordinal)],
+            ["RecordInventoryStockScrapV1:409"] = [.. InventoryStockScrapHttpCodesV1.RecordStatus409Codes.Order(StringComparer.Ordinal)],
+            ["RecordInventoryStockScrapV1:503"] = [.. InventoryStockScrapHttpCodesV1.Status503Codes.Order(StringComparer.Ordinal)],
+            ["DecideInventoryStockScrapV1:400"] = [.. InventoryStockScrapHttpCodesV1.Status400Codes.Order(StringComparer.Ordinal)],
+            ["DecideInventoryStockScrapV1:404"] = [.. InventoryStockScrapHttpCodesV1.DecideStatus404Codes.Order(StringComparer.Ordinal)],
+            ["DecideInventoryStockScrapV1:409"] = [.. InventoryStockScrapHttpCodesV1.DecideStatus409Codes.Order(StringComparer.Ordinal)],
+            ["DecideInventoryStockScrapV1:503"] = [.. InventoryStockScrapHttpCodesV1.Status503Codes.Order(StringComparer.Ordinal)],
+            ["GetInventoryLabelStockScrapsV1:503"] = [InventoryStockScrapCodesV1.Unavailable],
             ["GetInventoryParentRollCandidatesV1:400"] = [InventoryParentRollCodesV1.InvalidQuery],
             ["GetInventoryParentRollCandidatesV1:409"] = [InventoryParentRollCodesV1.ReadConflict],
             ["GetInventoryStockPositionsV1:400"] = [InventoryStockPositionCodesV1.InvalidQuery],
@@ -3334,6 +3369,27 @@ public sealed partial class OpenApiContractGenerationTests
                     ("labelId", "type:string;format:uuid"),
                     ("items", "type:array;items:ref:InventoryStockCountViewV1"),
                     ("windowFull", "type:boolean")),
+                ["InventoryStockScrapViewV1"] = ObjectSchema(
+                    ["scrapId", "companyId", "labelId", "labelVersion", "ownerKind", "ownerId", "custodianKind", "custodianId", "locationId", "productId", "block", "bookKg", "scrapKg", "remainingKg", "scrappedAtUtc", "reason", "recordedAtUtc", "status", "decision"],
+                    ("scrapId", "type:string;format:uuid"), ("companyId", "type:string;format:uuid"),
+                    ("labelId", "type:string;format:uuid"), ("labelVersion", "type:string"),
+                    ("ownerKind", "type:string"), ("ownerId", "type:string;format:uuid"),
+                    ("custodianKind", "type:string"), ("custodianId", "type:string;format:uuid"),
+                    ("locationId", "type:string;format:uuid"), ("productId", "type:string;format:uuid"),
+                    ("block", "type:string"), ("bookKg", "type:string"), ("scrapKg", "type:string"),
+                    ("remainingKg", "type:string"), ("scrappedAtUtc", "type:string;format:date-time"),
+                    ("reason", "type:string"), ("recordedAtUtc", "type:string;format:date-time"),
+                    ("status", "type:string"),
+                    ("decision", "oneOf:ref:InventoryStockScrapDecisionViewV1|type:null")),
+                ["InventoryStockScrapDecisionViewV1"] = ObjectSchema(
+                    ["decision", "decidedAtUtc", "reason", "scrapMovementId"],
+                    ("decision", "type:string"), ("decidedAtUtc", "type:string;format:date-time"),
+                    ("reason", "type:string"), ("scrapMovementId", "type:null|string;format:uuid")),
+                ["InventoryLabelStockScrapsV1"] = ObjectSchema(
+                    ["labelId", "items", "windowFull"],
+                    ("labelId", "type:string;format:uuid"),
+                    ("items", "type:array;items:ref:InventoryStockScrapViewV1"),
+                    ("windowFull", "type:boolean")),
                 ["InventoryLabelTransformationViewV1"] = ObjectSchema(
                     ["transformationId", "companyId", "kind", "occurredAtUtc", "reason", "sourceLabelIds", "outputLabelIds"],
                     ("transformationId", "type:string;format:uuid"), ("companyId", "type:string;format:uuid"),
@@ -4616,9 +4672,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(168, operations.Count);
+        Assert.Equal(171, operations.Count);
         Assert.Equal(
-            168,
+            171,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());

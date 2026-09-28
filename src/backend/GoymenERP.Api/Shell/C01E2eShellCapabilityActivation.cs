@@ -149,7 +149,7 @@ internal static class C01E2eShellCapabilityActivation
                 typeof(PurchasingShellCapabilityProvider), typeof(AccountingShellCapabilityProvider),
                 typeof(InventoryShellCapabilityProvider),
             },
-                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV14PublishedFinanceV12PublishedManufacturingV14PublishedLogisticsV12PublishedPurchasingV14PublishedAccountingV13AndPublishedInventoryV14),
+                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV14PublishedFinanceV12PublishedManufacturingV14PublishedLogisticsV12PublishedPurchasingV14PublishedAccountingV13AndPublishedInventoryV15),
         // SY-01/SY-02: Identity's read-only users-and-permissions view joins the normal host.
         (new[]
             {
@@ -159,7 +159,7 @@ internal static class C01E2eShellCapabilityActivation
                 typeof(PurchasingShellCapabilityProvider), typeof(AccountingShellCapabilityProvider),
                 typeof(InventoryShellCapabilityProvider), typeof(IdentityShellCapabilityProvider),
             },
-                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV14PublishedFinanceV12PublishedManufacturingV14PublishedLogisticsV12PublishedPurchasingV14PublishedAccountingV13PublishedInventoryV14AndPublishedIdentityV10),
+                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV14PublishedFinanceV12PublishedManufacturingV14PublishedLogisticsV12PublishedPurchasingV14PublishedAccountingV13PublishedInventoryV15AndPublishedIdentityV10),
     ];
 
     private static string NormalAuthority(IServiceCollection services)

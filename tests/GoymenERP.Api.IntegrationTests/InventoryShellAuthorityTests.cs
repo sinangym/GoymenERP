@@ -34,7 +34,7 @@ public sealed class InventoryShellAuthorityTests
         var actual = ShellCapabilityRegistry.ComputeCandidateRevision(providers);
 
         Assert.True(string.Equals(
-                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV14PublishedFinanceV12PublishedManufacturingV14PublishedLogisticsV12PublishedPurchasingV14PublishedAccountingV13AndPublishedInventoryV14,
+                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV14PublishedFinanceV12PublishedManufacturingV14PublishedLogisticsV12PublishedPurchasingV14PublishedAccountingV13AndPublishedInventoryV15,
                 actual,
                 StringComparison.Ordinal),
             $"Inventory normal-host authority drifted. Actual: {actual}");

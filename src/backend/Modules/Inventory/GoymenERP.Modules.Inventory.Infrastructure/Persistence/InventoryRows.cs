@@ -375,3 +375,49 @@ internal sealed class StockCountDecisionRow : IInventoryTenantRow
     public string DecidedBy { get; set; } = string.Empty;
     public string CorrelationId { get; set; } = string.Empty;
 }
+
+/// <summary>
+/// ST-02 scrap write-off: part or all of one stocked label recorded as scrap. The scrapped position, the label
+/// version and book kg the recorder saw, the scrap kg and the mandatory reason are kept exactly as recorded; a
+/// recorded scrap changes no stock. <see cref="PayloadHash"/> is the canonical request, so the same id again is a
+/// replay or a conflict. The recorder is kept for the fail-closed maker≠checker rule and the audit. Append-only.
+/// </summary>
+internal sealed class StockScrapRow : IInventoryTenantRow
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public Guid LabelId { get; set; }
+    public long LabelVersion { get; set; }
+    public int OwnerKind { get; set; }
+    public Guid OwnerId { get; set; }
+    public int CustodianKind { get; set; }
+    public Guid CustodianId { get; set; }
+    public Guid LocationId { get; set; }
+    public Guid ProductId { get; set; }
+    public int Block { get; set; }
+    public decimal BookKg { get; set; }
+    public decimal ScrapKg { get; set; }
+    public DateTimeOffset ScrappedAtUtc { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public string PayloadHash { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+    public string RecordedBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// The one decision on a scrap: approved with the scrap movement it posted (the schema requires that movement), or
+/// rejected with none. The key (company, scrap) allows exactly one decision. Append-only.
+/// </summary>
+internal sealed class StockScrapDecisionRow : IInventoryTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid ScrapId { get; set; }
+    public int Decision { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public Guid? MovementId { get; set; }
+    public string PayloadHash { get; set; } = string.Empty;
+    public DateTimeOffset DecidedAtUtc { get; set; }
+    public string DecidedBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}

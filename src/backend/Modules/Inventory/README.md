@@ -405,6 +405,53 @@ in the host; Inventory shell provider controls for both names under ST-01 and th
 regeneration; guard re-pins of `InventoryDbContext.cs` and the new migration; the three relational test names in
 `tools/relational_inventory/inventory.txt`. Grants are the user's (disposable browser actors only, as R19).
 
+## ST-02 — scrap write-off (hurda/fire çıkışı) and why stock return is not built
+
+**Readiness (checked 2026-09-28 on main `27591d0d`).** No decision names an Inventory scrap write-off by itself:
+DEC-STK-007 (KILITLI) says a stock difference needs a reason and an authority, a critical one may need a second
+approval and history is never deleted; DEC-PRDCT-006/007 place scrap as a separate Manufacturing output class; no
+AT covers an Inventory write-off. So this slice builds only what those decisions allow, on the AT-037 stock-count
+pattern with its fail-closed rule applied to EVERY write-off, and records the rest as open questions.
+
+| Rule | Where | Held by |
+|---|---|---|
+| A scrap names one stocked label at the version the recorder saw, with exactly one stored non-zero position (free or blocked; mixed or none is `inventory_stock_scrap_position_conflict`); book = that position's kg | `StockScrap`, `InventoryStore.RecordStockScrapAsync` | domain + store |
+| The scrap is positive, ≤ 3 decimals, on the company's approved kg profile and never more than the book (`inventory_stock_scrap_exceeds_book`, and `CK_StockScraps_State` in SQL); a reason is mandatory (≤ 1000, trimmed) | `ParseStockScrap`, `InventoryKilogramScale`, `CK_StockScraps_State` | store + SQL |
+| Only the company's own stock in its own custody is scrapped (owner and custodian = the transaction company); anything else is `inventory_stock_scrap_not_own_stock` (fail-closed) | `RecordStockScrapAsync` | store (409) |
+| Recording changes no stock and bumps no label version; what would remain must still cover the label's active allocations (`inventory_stock_scrap_allocation_conflict`) | `InventoryStore.StockScraps.cs` | store |
+| Stock leaves only after a decision under `inventory.stock-scrap.approve`; recording needs `inventory.stock-scrap.record`; both company-wide, measured fresh twice before the single owner transaction. The stock-count names grant nothing here | `InventoryStockScrapCommandService` | command (403/503) |
+| **Fail-closed maker≠checker:** every scrap is decided (approved or rejected) by another actor than its recorder (`inventory_stock_scrap_self_approval`) | `DecideStockScrapAsync` | store (409) |
+| An approval posts exactly one `Scrap` (kind 7) movement — source `inventory.stock-scrap`/scrap id, one Out line of the scrap kg, free OR blocked (scrapping blocked material needs no release, T13), cost `NotCalculated` — and bumps the label version; only while the label is still at the recorded version (`inventory_stock_scrap_stale`) and never below the active allocations | `StockScrap.WriteOff`, `StageMovementAsync` | domain + ledger + store |
+| One decision per scrap: key (company, scrap); same decision and note = replay, anything else `inventory_stock_scrap_already_decided`; the same scrap id with other content is `inventory_stock_scrap_conflict`; ADR-011 key per command (`inventory.stock-scrap.record.v1` / `.decide.v1`) | `StockScrapDecisions` PK, `FindScrapDecisionReplayAsync` | SQL + store |
+| Scraps, decisions and the movement are append-only; audit `Inventory.StockScrap` (record/approve/reject) + `Inventory.StockMovement`, channel from the caller (Web); `AddInventoryStockScraps.Down` refuses (THROW 51053) while any exists | write guard, migration | EF + SQL |
+| Read: `GET …/labels/{labelId}/stock-scraps` (newest 50, `windowFull`) behind the ST-02 fence; foreign = unknown = 404. After approval ST-01, the ST-02 balance and timeline (`Scrap`) and a new allocation read what remains | `InventoryStockScrapQueryService`, existing readers | service + SQL test |
+
+**Not decided (recorded, no invented value; NEEDS-SINAN candidates):**
+
+- `INV-SCRAP-AUTHORITY-01`: who may approve a scrap, and whether a small scrap may be self-approved (a kg/% threshold
+  would be a Settings policy, DEC-SET-001). Until decided every scrap needs a second actor.
+- `INV-SCRAP-DISPOSITION-01`: whether scrapped kg leave stock (this write-off) or become a sellable scrap label/product
+  (DEC-PRDCT-007: "hurda … ayrı kalite/üretim durumu; düzenli ticari satışta ayrı satış ürününe eşlenebilir"). If a
+  scrap label is decided, it is an additive receipt of a new label linked to this scrap, not a change of this movement.
+- `INV-SCRAP-REASON-LIST-01`: no closed reason list (free text), as `INV-R21-REASON-LIST-01`.
+- Valuation of the written-off kg: OPEN-008 (deferred); the movement carries `NotCalculated`.
+- `INV-SCRAP-OTHER-PARTY-01`: writing off a customer's goods (emanet) or our goods in a fason/external keeper's custody
+  (DEC-STK-008: loss/damage there is its own event). Undecided, so refused fail-closed
+  (`inventory_stock_scrap_not_own_stock`); only company-owned stock in the company's own custody is scrapped.
+
+**Stock return (iade) is NOT built — blocked:** AT-028 ("İade kaynak sipariş, teslimat ve fatura bağını korur") is a
+Sales/Logistics/Finance outcome whose source documents (return request, return delivery note, credit note) have no
+owner contract yet; no decision fixes whether a returned piece re-enters as its original label (the manufacturing
+`Return` kind only covers unused production input) or as a new label, under which owner, and whether it waits in a
+quality hold (DEC-STK-006 names the block kinds, not a return rule). Transfer (DEC-STK-008) stays blocked on
+INV-R20-R21-01 Q1. Inventory will add a return receipt only when the owning module publishes the source document.
+
+**Central publication (coordinator):** register `inventory.stock-scrap.record` / `inventory.stock-scrap.approve`
+(company-wide, not Critical) in `ErpPermissions`; `builder.Services.AddInventoryStockScraps();` in the host (the
+routes are mapped by `MapInventoryEndpoints`); Inventory shell 1.5 (two ST-01 controls) and the InventoryV14 → V15
+chain rows; OpenAPI regeneration (+3 operations); guard re-pins of `Program.cs`, `InventoryDbContext.cs`, the new
+migration and `inventory.txt` (+5 facts); r14 disposable actors `r14-scrapper` / `r14-scrap-approver`.
+
 ## dependency_wait
 
 - **Central registration (CARİ, same branch, sequential):** the tenant guard's reviewed inventory (this DbContext's fingerprint, the design-time factory and the initializer's `Migrate`/`EnsureCreated` branch); the module-dependency allowlist edge `Inventory.Infrastructure → Audit.Infrastructure` (ADR-009); the `Api.IntegrationTests` project reference to Inventory; and the relational verifier's BROAD list and counts for `InventorySqlServerRelationalAcceptanceTests`.

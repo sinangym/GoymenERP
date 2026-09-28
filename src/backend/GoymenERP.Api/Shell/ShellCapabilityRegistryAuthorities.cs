@@ -228,14 +228,17 @@ internal static class ShellCapabilityRegistryAuthorities
     // AT-037: re-derived over main 9ebb9916's providers (Organization 1.3) with Inventory 1.4 (two stock-count
     // controls; InventoryV13 -> V14).
     // MFG-PLAN-EDIT: re-derived over main 0b6a68cd's providers with Manufacturing 1.4 (ManufacturingV13 -> V14).
-    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV14PublishedFinanceV12PublishedManufacturingV14PublishedLogisticsV12PublishedPurchasingV14PublishedAccountingV13AndPublishedInventoryV14 =
-        "sha256:_1CuY0Qvwr8-NQ96ZpIbSIGD3SGMDb-LjJZFETqNH3Q";
+    // Stock scrap: re-derived over main 4ea83fa4's providers with Inventory 1.5 (two ST-01 scrap controls;
+    // InventoryV14 -> V15).
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV14PublishedFinanceV12PublishedManufacturingV14PublishedLogisticsV12PublishedPurchasingV14PublishedAccountingV13AndPublishedInventoryV15 =
+        "sha256:O8oYci_u_jNfk-ypJFLWJrKl85VGEYZ3JmjgsRLedOw";
 
     // SY-01/SY-02 (read-only users-and-permissions view): Identity 1.0 joins the normal host with two screens on
     // identity.assignments.read. Only this new full-host row is added; every earlier row keeps its provider set and value.
     // Derived by ShellCapabilityRegistry.ComputeCandidateRevision over main fec92de9's providers plus Identity 1.0.
-    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV14PublishedFinanceV12PublishedManufacturingV14PublishedLogisticsV12PublishedPurchasingV14PublishedAccountingV13PublishedInventoryV14AndPublishedIdentityV10 =
-        "sha256:_S8t605z-8rfNQOYxO_zQNinuRHPrCNQTZOmSl58JRA";
+    // Stock scrap: re-derived over main 4ea83fa4's providers with Inventory 1.5 (InventoryV14 -> V15).
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV14PublishedFinanceV12PublishedManufacturingV14PublishedLogisticsV12PublishedPurchasingV14PublishedAccountingV13PublishedInventoryV15AndPublishedIdentityV10 =
+        "sha256:cxB8jzcBwDLZYZQcPBRHqmvVP8PzyXQh4RRRaXfpHi8";
 
     internal const string CounterpartyV15PublishedListCreateAndDetail =
         "sha256:UBHnivzhe_dp5f7vU7dP5n7HG-P8XYBGhxvD_OjMSnw";
