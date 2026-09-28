@@ -80,4 +80,10 @@ public static class InventoryRuleCodes
     /// another company, or an adjustment asked of a count without a difference.
     /// </summary>
     public const string InvalidStockCount = "inventory_invalid_stock_count";
+
+    /// <summary>
+    /// A scrap write-off is not valid: no reason, a non-UTC time, a position of another company, or a scrap
+    /// quantity that is not positive or exceeds the book quantity of the piece.
+    /// </summary>
+    public const string InvalidStockScrap = "inventory_invalid_stock_scrap";
 }

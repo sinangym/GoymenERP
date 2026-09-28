@@ -42,6 +42,21 @@ public static class InventoryPermissionManifestV1
     /// adjuster and the approver may be different people (Master v3 §12.2). Registration and grants are central.
     /// </summary>
     public const string StockCountApprove = "inventory.stock-count.approve";
+
+    /// <summary>
+    /// ST-02 scrap write-off: record that part or all of one stocked label is scrap, with its mandatory reason.
+    /// Company-wide. Recording changes no stock; the scrap waits for <see cref="StockScrapApprove"/>. The literal is
+    /// the owner's technical mapping, by analogy with <see cref="StockCountRecord"/>; registration, classification
+    /// and every grant are the central writer's and the user's.
+    /// </summary>
+    public const string StockScrapRecord = "inventory.stock-scrap.record";
+
+    /// <summary>
+    /// ST-02 scrap write-off: approve (post) or reject one recorded scrap. Company-wide. A separate name from
+    /// <see cref="StockScrapRecord"/> so the recorder and the approver can be different people (fail-closed
+    /// maker≠checker while the scrap approval authority is undecided). Registration and grants are central.
+    /// </summary>
+    public const string StockScrapApprove = "inventory.stock-scrap.approve";
 }
 
 /// <summary>The opening count as the client sends it: one physical count sheet of one location.</summary>

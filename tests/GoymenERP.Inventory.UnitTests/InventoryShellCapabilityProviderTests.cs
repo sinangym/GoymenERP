@@ -12,12 +12,12 @@ public sealed class InventoryShellCapabilityProviderTests
     {
         var provider = new InventoryShellCapabilityProvider();
         var declarations = provider.GetDeclarations();
-        Assert.Equal(6, declarations.Count);
+        Assert.Equal(8, declarations.Count);
         var declaration = Assert.Single(declarations,
             item => item.CapabilityId == InventoryShellCapabilityProvider.OpeningStockCapabilityId);
 
         Assert.Equal("INVENTORY", provider.Owner);
-        Assert.Equal("1.4", provider.ContractVersion);
+        Assert.Equal("1.5", provider.ContractVersion);
         Assert.Equal(ErpPermissions.InventoryOpeningStockRecord, declaration.CapabilityId);
         Assert.Equal("inventory.opening-stock", declaration.RouteId);
         Assert.Equal("/stok/acilis", declaration.RoutePath);
@@ -100,7 +100,9 @@ public sealed class InventoryShellCapabilityProviderTests
     [Theory]
     [InlineData(InventoryShellCapabilityProvider.StockCountRecordCapabilityId, "inventory.stock-count.record", InventoryPermissionManifestV1.StockCountRecord)]
     [InlineData(InventoryShellCapabilityProvider.StockCountApproveCapabilityId, "inventory.stock-count.approve", InventoryPermissionManifestV1.StockCountApprove)]
-    public void Stock_count_record_and_approve_are_separate_stock_position_controls_over_their_own_names(
+    [InlineData(InventoryShellCapabilityProvider.StockScrapRecordCapabilityId, "inventory.stock-scrap.record", InventoryPermissionManifestV1.StockScrapRecord)]
+    [InlineData(InventoryShellCapabilityProvider.StockScrapApproveCapabilityId, "inventory.stock-scrap.approve", InventoryPermissionManifestV1.StockScrapApprove)]
+    public void Stock_count_and_scrap_record_and_approve_are_separate_stock_position_controls_over_their_own_names(
         string capabilityId, string expectedName, string manifestName)
     {
         var declaration = Assert.Single(new InventoryShellCapabilityProvider().GetDeclarations(),
