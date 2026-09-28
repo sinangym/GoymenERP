@@ -49,6 +49,15 @@ export const PRODUCT_CAPABILITY = {
 /** U-01-360 child control. It shares the detail route and never creates a nav entry. */
 export const PRODUCT_ACTIVATE_CAPABILITY = 'product.items.activate'
 
+/**
+ * U-01-360 child controls for a card already in use: take it out of new use (Active → Inactive)
+ * and return it (Inactive → Active). Each is its OWN server grant (PRD-PERM-001 names the three
+ * lifecycle moves separately); like activation they share the detail route and never create a
+ * nav entry or a route of their own.
+ */
+export const PRODUCT_DEACTIVATE_CAPABILITY = 'product.items.deactivate'
+export const PRODUCT_REACTIVATE_CAPABILITY = 'product.items.reactivate'
+
 export type ProductCapabilityId = (typeof PRODUCT_CAPABILITY)[keyof typeof PRODUCT_CAPABILITY]
 
 /**

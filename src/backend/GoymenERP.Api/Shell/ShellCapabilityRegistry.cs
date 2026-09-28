@@ -194,9 +194,13 @@ public sealed partial class ShellCapabilityRegistry
                 "product.items.create" => (GroupSharedMasterOperation.DraftCreate, "/urun/yeni"),
                 "product.items.edit" => (GroupSharedMasterOperation.DraftBasicEdit, "/urun/:productId/duzenle"),
                 "product.items.activate" => (GroupSharedMasterOperation.Activate, "/urun/:productId"),
+                "product.items.deactivate" => (GroupSharedMasterOperation.Deactivate, "/urun/:productId"),
+                "product.items.reactivate" => (GroupSharedMasterOperation.Reactivate, "/urun/:productId"),
                 _ => throw new InvalidOperationException("Unknown global Product capability."),
             };
-            var isActivationControl = declaration.CapabilityId == "product.items.activate";
+            // U-01-360 lifecycle controls (approve, deactivate, reactivate) are children of the detail screen.
+            var isActivationControl = declaration.CapabilityId is "product.items.activate"
+                or "product.items.deactivate" or "product.items.reactivate";
             if (owner != "PRODUCT" || productOperation != expected.Item1
                 || declaration.RoutePath != expected.Item2 || permissions.Length != 0
                 || declaration.ParentCapabilityId != (isActivationControl ? "product.items.detail" : null)

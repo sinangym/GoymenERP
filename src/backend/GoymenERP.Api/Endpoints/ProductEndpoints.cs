@@ -76,6 +76,22 @@ public static class ProductEndpoints
                 ReadIdempotencyKey(context), cancellationToken))))
             .WithName("ActivateProductV1").Produces<ProductMutationResponse>()
             .WithProductRuntimeContract(mutation: true, notFound: true, primitiveBinding: true).WithIdempotencyContract(200);
+
+        // DEC-CAR-003 / #98 §7.9: an Active card is taken out of new use with a reason (Active -> Inactive); nothing
+        // is deleted. PRD-PERM-001 (#99): each move needs its own explicit global grant (Deactivate / Reactivate).
+        group.MapPost("/{id:guid}/deactivation", async (Guid id, ChangeProductLifecycleRequest request,
+            IProductService service, HttpContext context, CancellationToken cancellationToken) =>
+            await ExecuteAsync(context, async () => Results.Ok(await service.DeactivateAsync(id, request,
+                ReadIdempotencyKey(context), cancellationToken))))
+            .WithName("DeactivateProductV1").Produces<ProductMutationResponse>()
+            .WithProductRuntimeContract(mutation: true, notFound: true, primitiveBinding: true).WithIdempotencyContract(200);
+
+        group.MapPost("/{id:guid}/reactivation", async (Guid id, ChangeProductLifecycleRequest request,
+            IProductService service, HttpContext context, CancellationToken cancellationToken) =>
+            await ExecuteAsync(context, async () => Results.Ok(await service.ReactivateAsync(id, request,
+                ReadIdempotencyKey(context), cancellationToken))))
+            .WithName("ReactivateProductV1").Produces<ProductMutationResponse>()
+            .WithProductRuntimeContract(mutation: true, notFound: true, primitiveBinding: true).WithIdempotencyContract(200);
         return endpoints;
     }
 

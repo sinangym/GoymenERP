@@ -18,6 +18,9 @@ Identity ID mapping, schema/runtime acceptance or production authorization.
 | Reference choices | GET /api/v1/products/reference-options?groupId=...&classId=... | ProductReferenceOptions from authorized catalogues |
 | Draft create | POST /api/v1/products | 201 ProductMutationResponse + Location |
 | Basic Draft edit | PATCH /api/v1/products/{id}/draft | 200 ProductMutationResponse |
+| Approval | POST /api/v1/products/{id}/activation | 200 ProductMutationResponse (Draft -> Active) |
+| Deactivation | POST /api/v1/products/{id}/deactivation | 200 ProductMutationResponse (Active -> Inactive) |
+| Reactivation | POST /api/v1/products/{id}/reactivation | 200 ProductMutationResponse (Inactive -> Active) |
 
 The module endpoint source compiles and is exercised using ASP.NET TestServer with
 an explicitly controlled service double. It is NOT mapped into the main host yet.
@@ -498,3 +501,42 @@ mapping in `SqlProductMasterAuthorizationService` (its allowlist admits `Activat
 becomes an explicit case — today `_ => DraftBasicEdit` would read an Activate check as a DraftBasicEdit grant);
 `UnconfiguredProductService.ActivateAsync` in `ProductRuntimeExtensions`; guard pins; the relational
 verifier's five `ProductActivationSqlServerRelationalAcceptanceTests` names; OpenAPI (`ActivateProductV1`).
+
+## Card deactivation and reactivation (Active <-> Inactive)
+
+Sources: DEC-CAR-003 (KILITLI: a used card/product is never deleted, it is taken out of use), PRD-SCOPE-001
+(#98) and section 7.9 of the group-shared master draft (a global Inactive closes new order, purchase, stock and
+production use in both companies; historical records stay visible), PRD-PERM-001 (#99, option A: the pilot
+activate/deactivate/reactivate moves are SYSTEM_ADMINISTRATOR-bounded explicit global grants; a generic
+maker-checker is not an MVP prerequisite), AT-007 / AT-013 (deactivation keeps history; an inactive master is
+not picked for a new transaction but stays visible on old ones).
+
+| Rule | Where |
+|---|---|
+| Only Active becomes Inactive and only Inactive becomes Active, at the version the actor read; one version up; every card value kept; never to or from Draft | `Product.Deactivate` / `Product.Reactivate`, `ProductRow.ApplyLifecycleChange` |
+| Body `{expectedVersion, reason}` (unknown members refused); the reason is trimmed, 1..1000, no control characters, and normalised BEFORE hashing, so surrounding blanks are one logical command | `ChangeProductLifecycleRequest`, `ProductCommandIntent.Deactivate` / `Reactivate` |
+| Each move is its OWN global operation (`Deactivate` = 5, `Reactivate` = 6), measured fresh and again before commit; no other grant (not even `Activate`) opens it, and neither opens the other | `ProductCommandGateway`, the host runner, Identity's explicit arms |
+| Same key + same request replays the stored 200 (`Idempotency-Replayed`, first correlation); another request under the key is `409 idempotency_conflict`; the same key from another origin company is a conflict too | the shared command boundary (`product.card.deactivate.v1` / `product.card.reactivate.v1`) |
+| The wrong source state is `409 lifecycle_conflict`, a stale version `409 version_conflict`, an unknown card `404` | `ProductDraftOperation` |
+| One canonical audit event (`product.card.deactivated.v1` / `product.card.reactivated.v1`), before/after card, the actor's reason and the request's SourceChannel (Web), in the same transaction | the host's audit session |
+| The history shows the move with its reason and time (`Deactivate` / `Reactivate`); an event whose snapshots do not show that exact move is an integrity fault | `ProductHistoryProjector` |
+
+- **What an Inactive card means downstream.** Nothing new is built for it: every operational read already
+  admits only Active (`ProductSalesPreconditions`, `ProductStockPreconditions`, `ProductPurchasePreconditions`,
+  hence the Manufacturing technical snapshot; the sales/stock/purchase candidate readers search only Active
+  cards), and the move raises the version, so a selection held at the old version is `version_conflict`.
+  Existing orders, stock and snapshots keep their copied values; the card itself stays readable (card, list
+  with `lifecycle=Inactive`, history).
+- **Shell.** Provider 1.2 adds the U-01-360 child controls `product.items.deactivate` / `product.items.reactivate`
+  (operations `Deactivate` / `Reactivate`) beside `product.items.activate`.
+- **Not here / open.** Who made the move is not shown (the history carries no actor, #181 section 5.4; an
+  Identity display source is a separate decision). A second approver (maker != checker) for deactivation is
+  not in the sources and is not invented: the move is fail-closed behind its own explicit grant, and nobody
+  holds it outside disposable test databases. The exact treatment of in-flight documents (a draft order line
+  already holding the product) is the draft's open item 11: they are refused at their next Product check and
+  no cascade is run. No bulk deactivation; no grant.
+
+**Central (coordinator), before this runs on the host:** shell authority re-pins for Product 1.2, OpenAPI
+`DeactivateProductV1` / `ReactivateProductV1`, the architecture guard pins (the two new migrations with raw
+SQL, `ProductRuntimeExtensions.cs`, `GroupSharedCommandDbContext.cs`, `tools/relational_inventory/product.txt`)
+and the four new `ProductDeactivationSqlServerRelationalAcceptanceTests` names in the relational inventory.

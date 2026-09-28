@@ -142,6 +142,62 @@
   font-size: 0.88rem;
 }
 
+.inactiveBanner p {
+  margin: 0;
+}
+
+.inactiveDetail {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 2px 12px;
+  margin: 6px 0 0;
+}
+
+.inactiveDetail div {
+  display: contents;
+}
+
+.inactiveDetail dt {
+  font-weight: 600;
+}
+
+.inactiveDetail dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Deactivation / reactivation: the reason form stays beside the badge, the same width as the approval. */
+.lifecycleForm {
+  display: flex;
+  max-width: 34rem;
+  flex-direction: column;
+  gap: 6px;
+  align-items: stretch;
+  font-size: 0.82rem;
+  color: #3b4660;
+}
+
+.lifecycleForm input {
+  padding: 5px 8px;
+  border: 1px solid #b9c2d3;
+  border-radius: 4px;
+  font: inherit;
+}
+
+.lifecycleImpact {
+  margin: 0;
+}
+
+.lifecycleButtons {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.fieldError {
+  color: #9b1c1c;
+}
+
 .section {
   padding: 14px 16px;
   background: #fff;

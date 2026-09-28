@@ -18,8 +18,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router'
-import { activateProduct, fetchProductCard, fetchProductHistory } from './api'
-import type { ActivateProductPayload } from './api'
+import { REASON_MAX, activateProduct, changeProductLifecycle, fetchProductCard, fetchProductHistory } from './api'
+import type { ActivateProductPayload, ChangeProductLifecyclePayload, ProductLifecycleMove } from './api'
 import { PRODUCT_ROLE, UNIT_ROLE, isComplete, type ProductCard, type ProductMutationResult } from './contract'
 import {
   COMPLETENESS_LABEL,
@@ -28,6 +28,7 @@ import {
   PRODUCT_ACTIVATION_TEXT,
   PRODUCT_DETAIL_TEXT,
   PRODUCT_HISTORY_TEXT,
+  PRODUCT_LIFECYCLE_TEXT,
   ROLE_LABEL,
   historyFieldLabel,
   historyOperationLabel,
@@ -42,6 +43,8 @@ import {
 import {
   PRODUCT_ACTIVATE_CAPABILITY,
   PRODUCT_CAPABILITY,
+  PRODUCT_DEACTIVATE_CAPABILITY,
+  PRODUCT_REACTIVATE_CAPABILITY,
   PRODUCT_CAPABILITY_ROUTE,
   productEditPath,
 } from './capabilities'
@@ -61,6 +64,7 @@ import {
 import {
   activationScope,
   attemptBindingFor,
+  lifecycleScope,
   forgetAttempt,
   recallAttempt,
   rememberAttempt,
@@ -131,6 +135,28 @@ export function ProductDetailPage() {
     card.product.lifecycle.known &&
     card.product.lifecycle.value === 'Draft'
   const canActivate = hasCapability(shell, PRODUCT_ACTIVATE_CAPABILITY)
+  /**
+   * The lifecycle moves the actor holds, each by ITS OWN grant. Like the approval, a control is
+   * mounted by its capability alone and itself decides what to show: the open button only while the
+   * card is in the state it moves FROM (an Active card may be taken out of new use, an Inactive one
+   * returned; a Draft takes neither — approval is its way forward), and its own confirmed answer
+   * until a later move makes that answer stale. The server re-checks all of it.
+   */
+  const lifecycleMoves: readonly ProductLifecycleMove[] = [
+    ...(hasCapability(shell, PRODUCT_DEACTIVATE_CAPABILITY) ? (['deactivate'] as const) : []),
+    ...(hasCapability(shell, PRODUCT_REACTIVATE_CAPABILITY) ? (['reactivate'] as const) : []),
+  ]
+  const reReadAfterWrite = (productIdWritten: string) => {
+    // As for activation: the command's card carries the group label only, so it is never painted.
+    // The card, its history and the list are RE-READ; the new state appears when the server says so.
+    void queryClient.invalidateQueries({ queryKey, exact: true })
+    void queryClient.invalidateQueries({
+      queryKey: [namespace, entryGeneration, 'product-history', productIdWritten],
+    })
+    void queryClient.invalidateQueries({
+      queryKey: [namespace, entryGeneration, 'products'],
+    })
+  }
 
   return (
     <ProductCardView
@@ -151,6 +177,25 @@ export function ProductDetailPage() {
           </Link>
         ) : null
       }
+      inactiveDetail={
+        card.product.lifecycle.known && card.product.lifecycle.value === 'Inactive' ? (
+          <InactiveDetail
+            productId={card.product.id}
+            namespace={namespace as string}
+            entryGeneration={entryGeneration}
+            origin={origin as string}
+          />
+        ) : null
+      }
+      lifecycleControl={lifecycleMoves.map((move) => (
+        <ProductLifecycleChangeAction
+          key={`${card.product.id}:${move}`}
+          card={card}
+          move={move}
+          onChanged={(changed) => reReadAfterWrite(changed.product.id)}
+          onReload={() => query.refetch()}
+        />
+      ))}
       activationControl={
         canActivate ? (
           <ProductActivationAction
@@ -347,6 +392,292 @@ function ProductActivationAction({
   )
 }
 
+type ChangeAttempt = AttemptState<ChangeProductLifecyclePayload, ProductMutationResult>
+
+/** Client-side reason check, the server's rule restated for an early answer; the server still decides. */
+function reasonProblem(raw: string): string | null {
+  const trimmed = raw.trim()
+  if (trimmed.length === 0) return PRODUCT_LIFECYCLE_TEXT.reasonRequired
+  if (trimmed.length > REASON_MAX) return PRODUCT_LIFECYCLE_TEXT.reasonTooLong
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001f\u007f-\u009f]/.test(raw)) return PRODUCT_LIFECYCLE_TEXT.reasonInvalid
+  return null
+}
+
+/**
+ * Deactivation (Active → Inactive) or reactivation (Inactive → Active) of a card in use, with the
+ * person's reason. The same attempt discipline as the approval: one key per submitted snapshot, an
+ * unknown outcome is retried with the SAME key and payload, a definite refusal is settled and the
+ * card re-read, and nothing is painted before the server answers — the new state comes from the
+ * card's own re-read.
+ */
+function ProductLifecycleChangeAction({
+  card,
+  move,
+  onChanged,
+  onReload,
+}: {
+  readonly card: ProductCard
+  readonly move: ProductLifecycleMove
+  readonly onChanged: (card: ProductCard) => void
+  /** Re-reads the card from its own endpoint; resolves once that read has answered. */
+  readonly onReload: () => Promise<unknown>
+}) {
+  const shell = useShellState()
+  const dispatch = useShellDispatch()
+  const boundary = useAuthBoundary()
+  const origin = shell.activeContext?.companyId ?? null
+  const text = PRODUCT_LIFECYCLE_TEXT[move]
+  // One dirty scope per move, so one control settling never clears the other's unresolved attempt.
+  const dirtyScope = `product.${move}`
+  const binding = useMemo(
+    () => attemptBindingFor(shell, lifecycleScope(card.product.id, move)),
+    [shell, card.product.id, move],
+  )
+  const [attempt, setAttempt] = useState<ChangeAttempt>(
+    () => recallAttempt<ChangeProductLifecyclePayload, ProductMutationResult>(binding) ?? { phase: 'idle' },
+  )
+  const [open, setOpen] = useState(false)
+  const [reason, setReason] = useState('')
+  const [reasonError, setReasonError] = useState<string | null>(null)
+  const attemptRef = useRef(attempt)
+  useEffect(() => {
+    attemptRef.current = attempt
+  }, [attempt])
+
+  const unresolved = isOutcomeStillUnknown(attempt)
+  useEffect(() => {
+    dispatch({ type: unresolved ? 'DIRTY_SET' : 'DIRTY_CLEAR', scope: dirtyScope })
+  }, [dispatch, dirtyScope, unresolved])
+  useEffect(
+    () => () => dispatch({ type: 'DIRTY_CLEAR', scope: dirtyScope }),
+    [dispatch, dirtyScope],
+  )
+  useEffect(() => {
+    if (attempt.phase === 'completed') rememberAttempt(binding, attempt)
+  }, [attempt, binding])
+
+  const send = useCallback(
+    async (snapshot: AttemptSnapshot<ChangeProductLifecyclePayload>) => {
+      const previous = attemptRef.current
+      const inFlight: ChangeAttempt = { phase: 'submitting', snapshot }
+      rememberAttempt(binding, inFlight)
+      setAttempt(inFlight)
+      const securitySnapshot = boundary.capture()
+      const result = await changeProductLifecycle(card.product.id, move, snapshot.payload, {
+        idempotencyKey: snapshot.key,
+        origin: { companyId: snapshot.origin },
+      })
+      const next = nextState(snapshot, result, previous)
+      rememberAttempt(binding, next, false)
+      if (result.type === 'http') boundary.report(result.status, securitySnapshot)
+      setAttempt(next)
+      if (next.phase === 'completed') onChanged(next.result.card)
+    },
+    [binding, boundary, card.product.id, move, onChanged],
+  )
+
+  async function reloadAfterRefusal() {
+    const refused = attemptRef.current
+    if (refused.phase !== 'failed' || refused.unresolvedSince !== undefined) return
+    await onReload()
+    if (attemptRef.current === refused) {
+      setAttempt({ phase: 'idle' })
+      setOpen(false)
+    }
+  }
+
+  function submit() {
+    const pending = liveSnapshot(attempt)
+    if (pending !== null) {
+      void send(pending)
+      return
+    }
+    const problem = reasonProblem(reason)
+    setReasonError(problem)
+    if (problem !== null || origin === null) return
+    void send({
+      key: generateAttemptKey(),
+      payload: { expectedVersion: card.product.version, reason: reason.trim() },
+      origin,
+      namespace: binding?.key ?? '',
+    })
+  }
+
+  const reasonId = `product-lifecycle-reason-${card.product.id}-${move}`
+  const lifecycle = card.product.lifecycle.known ? card.product.lifecycle.value : null
+  const from = move === 'deactivate' ? 'Active' : 'Inactive'
+  let content: React.ReactNode = null
+  if (attempt.phase === 'completed') {
+    // The confirmed answer stays until a later move (the other control) makes it stale.
+    if (lifecycle !== from) content = (
+      <p className={styles.activationSuccess} role="status">
+        {text.success}
+        {attempt.result.isReplay ? ` ${text.replayed}` : ''}
+      </p>
+    )
+  } else if (unresolved && attempt.phase !== 'submitting') {
+    content = (
+      <div className={styles.activationError} role="alert" data-testid={`product-${move}-unknown`}>
+        <strong>{text.unknownTitle}</strong>
+        <span>{PRODUCT_LIFECYCLE_TEXT.unknownDetail}</span>
+        <button type="button" className={styles.activateButton} onClick={submit}>
+          {text.retrySameAttempt}
+        </button>
+      </div>
+    )
+  } else if (attempt.phase === 'failed') {
+    const message =
+      attempt.failure === 'stale-version'
+        ? `${PRODUCT_LIFECYCLE_TEXT.staleTitle}. ${PRODUCT_LIFECYCLE_TEXT.staleDetail}`
+        : attempt.failure === 'lifecycle-conflict'
+          ? `${text.lifecycleTitle}. ${text.lifecycleDetail}`
+          : attempt.failure === 'not-found'
+            ? PRODUCT_LIFECYCLE_TEXT.notFound
+            : attempt.failure === 'forbidden'
+              ? text.forbidden
+              : attempt.failure === 'unauthenticated'
+                ? PRODUCT_LIFECYCLE_TEXT.unauthenticated
+                : text.failed
+    content = (
+      <div className={styles.activationError} role="alert">
+        <span>{message}</span>
+        <button type="button" className={styles.activateButton} onClick={() => void reloadAfterRefusal()}>
+          {PRODUCT_LIFECYCLE_TEXT.refresh}
+        </button>
+      </div>
+    )
+  } else if (lifecycle !== from && attempt.phase !== 'submitting') {
+    content = null
+  } else if (!open) {
+    content = (
+      <button type="button" className={styles.activateButton} onClick={() => setOpen(true)}>
+        {text.open}
+      </button>
+    )
+  } else {
+    const submitting = attempt.phase === 'submitting'
+    content = (
+      <form
+        className={styles.lifecycleForm}
+        aria-label={text.open}
+        noValidate
+        onSubmit={(event) => {
+          event.preventDefault()
+          submit()
+        }}
+      >
+        <p className={styles.lifecycleImpact}>{text.impact}</p>
+        <label htmlFor={reasonId}>{PRODUCT_LIFECYCLE_TEXT.reasonLabel}</label>
+        <input
+          id={reasonId}
+          type="text"
+          value={reason}
+          maxLength={REASON_MAX}
+          required
+          disabled={submitting}
+          aria-invalid={reasonError !== null}
+          aria-describedby={`${reasonId}-hint${reasonError !== null ? ` ${reasonId}-error` : ''}`}
+          onChange={(event) => {
+            setReason(event.target.value)
+            if (reasonError !== null) setReasonError(null)
+          }}
+        />
+        <span id={`${reasonId}-hint`} className={styles.note}>
+          {PRODUCT_LIFECYCLE_TEXT.reasonHint}
+        </span>
+        {reasonError !== null ? (
+          <span id={`${reasonId}-error`} className={styles.fieldError} role="alert">
+            {reasonError}
+          </span>
+        ) : null}
+        <div className={styles.lifecycleButtons}>
+          <button type="submit" className={styles.activateButton} disabled={submitting}>
+            {submitting ? text.submitting : text.submit}
+          </button>
+          <button
+            type="button"
+            disabled={submitting}
+            onClick={() => {
+              setOpen(false)
+              setReason('')
+              setReasonError(null)
+            }}
+          >
+            {PRODUCT_LIFECYCLE_TEXT.cancel}
+          </button>
+        </div>
+      </form>
+    )
+  }
+
+  return (
+    <>
+      {content}
+      <UnresolvedExitGuard
+        active={unresolved}
+        title={text.unsavedTitle}
+        detail={PRODUCT_LIFECYCLE_TEXT.unsavedDetail}
+        stayLabel={PRODUCT_LIFECYCLE_TEXT.unsavedStay}
+        leaveLabel={PRODUCT_LIFECYCLE_TEXT.unsavedLeave}
+        onLeave={() => forgetAttempt(binding)}
+      />
+    </>
+  )
+}
+
+/** The card's history read. One query key, shared by the timeline and the Inactive detail. */
+function useProductHistory(productId: string, namespace: string, entryGeneration: number, origin: string) {
+  const boundary = useAuthBoundary()
+  return useQuery({
+    queryKey: [namespace, entryGeneration, 'product-history', productId],
+    queryFn: async ({ signal }) => {
+      const snapshot = boundary.capture()
+      const outcome = await fetchProductHistory(productId, { companyId: origin }, signal)
+      if (outcome.type === 'http') boundary.report(outcome.status, snapshot)
+      return outcome
+    },
+  })
+}
+
+/**
+ * When and why the card was taken out of use: the NEWEST history entry, and only when that entry is
+ * a deactivation (a newer move would make it stale). Who did it is not on the wire (the history
+ * carries no actor, #181 §5.4) and is not guessed here. Nothing is shown while the history is not
+ * readable: the banner above already states the fact that matters.
+ */
+function InactiveDetail({
+  productId,
+  namespace,
+  entryGeneration,
+  origin,
+}: {
+  readonly productId: string
+  readonly namespace: string
+  readonly entryGeneration: number
+  readonly origin: string
+}) {
+  const query = useProductHistory(productId, namespace, entryGeneration, origin)
+  const outcome = query.data
+  if (outcome === undefined || outcome.type !== 'ok-single') return null
+  const newest = outcome.data.entries[0]
+  if (newest === undefined || !newest.operation.known || newest.operation.value !== 'Deactivate') return null
+  return (
+    <dl className={styles.inactiveDetail} data-testid="product-inactive-detail">
+      <div>
+        <dt>{PRODUCT_LIFECYCLE_TEXT.deactivatedAt}</dt>
+        <dd>
+          <time dateTime={newest.occurredAtUtc}>{formatInstant(newest.occurredAtUtc)}</time>
+        </dd>
+      </div>
+      <div>
+        <dt>{PRODUCT_LIFECYCLE_TEXT.deactivationReason}</dt>
+        <dd>{newest.reason}</dd>
+      </div>
+    </dl>
+  )
+}
+
 /**
  * U-01 §9 item 6: the version/change timeline, read from the server's projection of
  * the canonical audit record. Its own query, so a history that cannot be read never
@@ -363,16 +694,7 @@ function ProductHistorySection({
   readonly entryGeneration: number
   readonly origin: string
 }) {
-  const boundary = useAuthBoundary()
-  const query = useQuery({
-    queryKey: [namespace, entryGeneration, 'product-history', productId],
-    queryFn: async ({ signal }) => {
-      const snapshot = boundary.capture()
-      const outcome = await fetchProductHistory(productId, { companyId: origin }, signal)
-      if (outcome.type === 'http') boundary.report(outcome.status, snapshot)
-      return outcome
-    },
-  })
+  const query = useProductHistory(productId, namespace, entryGeneration, origin)
 
   const outcome = query.data
   let body: React.ReactNode
@@ -439,12 +761,16 @@ function ProductCardView({
   backLink,
   editLink,
   activationControl,
+  lifecycleControl,
+  inactiveDetail,
 }: {
   readonly card: ProductCard
   readonly history: React.ReactNode
   readonly backLink: React.ReactNode
   readonly editLink: React.ReactNode
   readonly activationControl: React.ReactNode
+  readonly lifecycleControl: React.ReactNode
+  readonly inactiveDetail: React.ReactNode
 }) {
   const { product, references } = card
   // Single source: the card's own `completeness` is a compatibility projection of
@@ -465,6 +791,7 @@ function ProductCardView({
         <div className={styles.lifecycle}>
           {editLink}
           {activationControl}
+          {lifecycleControl}
           <span
             className={styles.badge}
             data-lifecycle={product.lifecycle.known ? product.lifecycle.value : 'unknown'}
@@ -477,9 +804,10 @@ function ProductCardView({
 
       {/* Only for a KNOWN Inactive: an unrecognised status must not inherit this claim. */}
       {product.lifecycle.known && product.lifecycle.value === 'Inactive' ? (
-        <p className={styles.inactiveBanner} role="status">
-          Bu ürün her iki şirkette de yeni kullanıma kapalıdır. Geçmiş kayıtlar görünür kalır.
-        </p>
+        <div className={styles.inactiveBanner} role="status">
+          <p>Bu ürün her iki şirkette de yeni kullanıma kapalıdır. Geçmiş kayıtlar görünür kalır.</p>
+          {inactiveDetail}
+        </div>
       ) : null}
 
       <section className={styles.section} aria-labelledby="product-roles-heading">

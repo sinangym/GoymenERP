@@ -184,6 +184,10 @@ export interface HarnessConfig {
   readonly onCreate?: (attempt: number, body: string | null) => Response | Promise<Response>
   readonly onEdit?: (attempt: number, body: string | null) => Response | Promise<Response>
   readonly onActivate?: (attempt: number, body: string | null) => Response | Promise<Response>
+  /** `POST /products/{id}/deactivation`; defaults to an Inactive v8 card. */
+  readonly onDeactivate?: (attempt: number, body: string | null) => Response | Promise<Response>
+  /** `POST /products/{id}/reactivation`; defaults to an Active v8 card. */
+  readonly onReactivate?: (attempt: number, body: string | null) => Response | Promise<Response>
 }
 
 /**
@@ -197,6 +201,8 @@ export function installFetch(config: HarnessConfig = {}) {
   let createAttempts = 0
   let editAttempts = 0
   let activationAttempts = 0
+  let deactivationAttempts = 0
+  let reactivationAttempts = 0
 
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString()
@@ -243,6 +249,28 @@ export function installFetch(config: HarnessConfig = {}) {
           activationAttempts += 1
           return (
             (await config.onActivate?.(activationAttempts, body)) ??
+            json(
+              mutation({
+                card: productCard({ product: productCore({ lifecycle: 'Active', version: '8' }) }),
+              }),
+            )
+          )
+        }
+        if (/\/products\/[^/?]+\/deactivation/.test(url)) {
+          deactivationAttempts += 1
+          return (
+            (await config.onDeactivate?.(deactivationAttempts, body)) ??
+            json(
+              mutation({
+                card: productCard({ product: productCore({ lifecycle: 'Inactive', version: '8' }) }),
+              }),
+            )
+          )
+        }
+        if (/\/products\/[^/?]+\/reactivation/.test(url)) {
+          reactivationAttempts += 1
+          return (
+            (await config.onReactivate?.(reactivationAttempts, body)) ??
             json(
               mutation({
                 card: productCard({ product: productCore({ lifecycle: 'Active', version: '8' }) }),

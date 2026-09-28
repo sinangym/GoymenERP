@@ -99,6 +99,41 @@ public sealed record ProductCommandIntent
     /// <summary>The versioned command name of the DEC-PRD-010 approval.</summary>
     public const string ActivateOperation = "product.card.activate.v1";
 
+    /// <summary>The versioned command name of the deactivation (Active -> Inactive).</summary>
+    public const string DeactivateOperation = "product.card.deactivate.v1";
+
+    /// <summary>The versioned command name of the reactivation (Inactive -> Active).</summary>
+    public const string ReactivateOperation = "product.card.reactivate.v1";
+
+    public static ProductCommandIntent Deactivate(string key, Guid productId, ChangeProductLifecycleRequest request) =>
+        LifecycleChange(DeactivateOperation, key, productId, request);
+
+    public static ProductCommandIntent Reactivate(string key, Guid productId, ChangeProductLifecycleRequest request) =>
+        LifecycleChange(ReactivateOperation, key, productId, request);
+
+    private static ProductCommandIntent LifecycleChange(string operation, string key, Guid productId,
+        ChangeProductLifecycleRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (productId == Guid.Empty)
+            throw new ProductValidationException([new("productId", "invalid_reference")]);
+        try { _ = ProductVersion.Parse(request.ExpectedVersion); }
+        catch (ArgumentException)
+        {
+            throw new ProductValidationException([new("expectedVersion", "invalid_version")]);
+        }
+
+        // The reason is normalised before hashing, as for a draft edit: surrounding blanks never make a
+        // second logical command under the same key.
+        var normalized = request with { Reason = ProductDraftValidator.NormalizeReason(request.Reason) };
+        return new(key, JsonSerializer.SerializeToElement(new
+        {
+            operation,
+            productId,
+            request = normalized,
+        }, Json));
+    }
+
     private static string NormalizeName(string value)
     {
         try { return Domain.Products.Product.NormalizeName(value); }

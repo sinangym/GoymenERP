@@ -36,6 +36,7 @@ import {
   attemptBindingFor,
   activationScope,
   editScope,
+  lifecycleScope,
   forgetAttempt,
   reconcileArmedDiscards,
 } from './pendingAttempt'
@@ -89,12 +90,19 @@ export function EditPendingAttemptScope({ children }: { readonly children: React
   )
 }
 
-/** The detail route also owns the record-scoped activation attempt. */
+/**
+ * The detail route also owns the record-scoped activation attempt and the record-scoped
+ * deactivation / reactivation attempt.
+ */
 export function ActivationPendingAttemptScope({ children }: { readonly children: ReactNode }) {
   const { productId } = useParams()
   return (
     <PendingAttemptDiscardObserver scope={activationScope(productId ?? '')}>
-      {children}
+      <PendingAttemptDiscardObserver scope={lifecycleScope(productId ?? '', 'deactivate')}>
+        <PendingAttemptDiscardObserver scope={lifecycleScope(productId ?? '', 'reactivate')}>
+          {children}
+        </PendingAttemptDiscardObserver>
+      </PendingAttemptDiscardObserver>
     </PendingAttemptDiscardObserver>
   )
 }

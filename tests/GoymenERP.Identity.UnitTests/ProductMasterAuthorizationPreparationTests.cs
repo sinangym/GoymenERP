@@ -98,9 +98,34 @@ public sealed class ProductMasterAuthorizationPreparationTests
         }
     }
 
+    // DEC-CAR-003 / PRD-PERM-001 (#99): deactivation and reactivation are each their own grant. No other
+    // operation's grant (not even the approval's) opens them, and neither opens the other.
+    [Theory]
+    [InlineData(ProductMasterOperation.Read)]
+    [InlineData(ProductMasterOperation.DraftCreate)]
+    [InlineData(ProductMasterOperation.DraftBasicEdit)]
+    [InlineData(ProductMasterOperation.Activate)]
+    [InlineData(ProductMasterOperation.Deactivate)]
+    [InlineData(ProductMasterOperation.Reactivate)]
+    public async Task A_lifecycle_grant_opens_only_its_own_operation(ProductMasterOperation granted)
+    {
+        await using var setup = await Fixture.CreateAsync(granted);
+        foreach (var operation in new[]
+                 {
+                     GroupSharedMasterOperation.Read, GroupSharedMasterOperation.DraftCreate,
+                     GroupSharedMasterOperation.DraftBasicEdit, GroupSharedMasterOperation.Activate,
+                     GroupSharedMasterOperation.Deactivate, GroupSharedMasterOperation.Reactivate,
+                 })
+        {
+            var snapshot = await setup.Authority.GetSnapshotAsync(GroupSharedMasterKind.Product, operation);
+            Assert.Equal(operation == ToShared(granted), snapshot.IsGranted);
+            Assert.Equal(operation, snapshot.Operation);
+        }
+    }
+
     [Theory]
     [InlineData(0)]
-    [InlineData(5)]
+    [InlineData(7)]
     [InlineData(99)]
     public async Task An_unknown_operation_is_denied_not_mapped(int unknown)
     {
@@ -115,6 +140,8 @@ public sealed class ProductMasterAuthorizationPreparationTests
         ProductMasterOperation.DraftCreate => GroupSharedMasterOperation.DraftCreate,
         ProductMasterOperation.DraftBasicEdit => GroupSharedMasterOperation.DraftBasicEdit,
         ProductMasterOperation.Activate => GroupSharedMasterOperation.Activate,
+        ProductMasterOperation.Deactivate => GroupSharedMasterOperation.Deactivate,
+        ProductMasterOperation.Reactivate => GroupSharedMasterOperation.Reactivate,
         _ => throw new ArgumentOutOfRangeException(nameof(operation)),
     };
 

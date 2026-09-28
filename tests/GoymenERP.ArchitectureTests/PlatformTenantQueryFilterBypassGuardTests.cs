@@ -187,8 +187,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 "5bc60202f358f060e50b8453d1e6077d608c110f7b9e2cd061da061aec61f344",
 
             // product
+            // DEC-CAR-003: +4 ProductDeactivationSqlServerRelationalAcceptanceTests facts (d7dbec7f… -> ddeead62…).
             ["tools/relational_inventory/product.txt"] =
-                "d7dbec7ff39d9a487be2ecfae3ee3188a1e7b16dc8d695fb8e9a98952b0c991e",
+                "ddeead62b309b7c7d8929539a6ea39a36d760dbc4c40ef9ef40a09f962aa1650",
 
             // purchasing
             ["tools/relational_inventory/purchasing.txt"] =
@@ -288,8 +289,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
              + "Persistence/ProductDbContext.cs"] =
                 "0ba53cfdf07084818f737c9f21b2ce4a04a44f5fe89603a89f31791c5b4871da",
             ["src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/"
+             // Re-measured for DEC-CAR-003: the terminal command-name check admits the Product deactivate/reactivate
+             // commands beside activate; no query filter, key or table change.
              + "Persistence/GroupSharedCommandDbContext.cs"] =
-                "6fe01949b839e3005d33c3aa00c02982add6a1af63482005b43b277b95c5dfc3"
+                "3a6a4fcc0409f247c084ecea59c1bd3e26a6c2a782f5d4df75d14363a3e8e092"
         };
 
     // Accepted module initializers own one exact Migrate/EnsureCreated provider branch each.
@@ -354,8 +357,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // DI-only additions over the existing Product read store; no new database capability, MigrateAsync stays 2.
                 // Re-measured for Product history: the scoped Audit-owner adapter and Product history reader are
                 // read-only DI additions; no new database capability, MigrateAsync stays 2.
+                // Re-measured for DEC-CAR-003: the denied (unconfigured) Product service gains the deactivate and
+                // reactivate members, which throw like its siblings; no new database capability, MigrateAsync stays 2.
                 ["src/backend/GoymenERP.Api/ProductRuntime/ProductRuntimeExtensions.cs"] =
-                    new("f94c81990d714a710a77677e274e80f6d0129611693beec1ed94a52d3047f993",
+                    new("f07b29fc2ca6b7270b254e58a0e5b83ac7ccecb56e66323f86b024914e86f4e5",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["MigrateAsync"] = 2 }),
                 // Re-measured for PRD-UNIT-1: the Product participant gets Settings' unit-identity catalog
@@ -1133,6 +1138,16 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         { ["Sql"] = 1 }),
                 ["src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/Persistence/Migrations/20260918230100_AllowProductActivateTerminals.cs"] =
                     new("4716d015c2cd1a883d84d95589654f2d57077c06c8c641f2f148234453138c15",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // DEC-CAR-003 / PRD-PERM-001: widen the same checks to Deactivate/Reactivate; each Down's only raw SQL is
+                // again the module's existing rollback refusal (51042/51043) while such a row is stored.
+                ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Persistence/Migrations/20260928120000_AllowProductLifecycleAssignments.cs"] =
+                    new("a5a3b8dd24acab43331d6e2558c9c885fdf9a19db4ecafa927f81169587964ae",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                ["src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/Persistence/Migrations/20260928120100_AllowProductLifecycleTerminals.cs"] =
+                    new("407833cc812c41921226bb8bbbddf182c15e12549bdc1569147b6d161d965b9f",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 ["src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/Persistence/Migrations/20260912173914_AddGlobalProductAuditSubject.cs"] =

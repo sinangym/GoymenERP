@@ -20,6 +20,13 @@ namespace GoymenERP.BrowserSuiteFixtureTool.Suites.U02;
 /// so a grant that leaks Activate to the authorized actor, or create/edit to the activator, fails the run here.
 /// </para>
 /// <para>
+/// Deactivation / reactivation (PRD-PERM-001 #99 names activate/deactivate/reactivate together): the same
+/// disposable actor also holds Product master <c>Deactivate</c> and <c>Reactivate</c>, each its own explicit
+/// assignment in this run's database only. No real user, production role or seeded role gains either; the
+/// read-back below pins the actor's exact five Product capabilities. PENDING coordinator confirmation that the
+/// 2026-09-27 disposable-activator fixture decision may carry the two lifecycle grants.
+/// </para>
+/// <para>
 /// Decision C: neither writer writes an AuditEvent. This seed makes no audited call (the reads are not
 /// audited), so the SUITE_FIXTURE line's <c>audit_delta=0</c> is that evidence on the real SQL.
 /// </para>
@@ -80,11 +87,16 @@ public sealed class U02BrowserSeed : IBrowserSuiteFixture
         (ProductMasterOperation.DraftBasicEdit, Guid.Parse("b5000000-0000-4000-8000-000000000203"), Guid.Parse("b5100000-0000-4000-8000-000000000203")),
     ];
 
-    /// <summary>The activator's operations: the card (Read) and the U-01-360 activation. No create, no edit.</summary>
+    /// <summary>
+    /// The activator's operations: the card (Read), the U-01-360 approval, and the deactivation / reactivation of a
+    /// card in use. No create, no edit.
+    /// </summary>
     private static readonly (ProductMasterOperation Operation, Guid AssignmentId, Guid DecisionId)[] ActivatorGrants =
     [
         (ProductMasterOperation.Read, Guid.Parse("b5000000-0000-4000-8000-000000000210"), Guid.Parse("b5100000-0000-4000-8000-000000000210")),
         (ProductMasterOperation.Activate, Guid.Parse("b5000000-0000-4000-8000-000000000211"), Guid.Parse("b5100000-0000-4000-8000-000000000211")),
+        (ProductMasterOperation.Deactivate, Guid.Parse("b5000000-0000-4000-8000-000000000212"), Guid.Parse("b5100000-0000-4000-8000-000000000212")),
+        (ProductMasterOperation.Reactivate, Guid.Parse("b5000000-0000-4000-8000-000000000213"), Guid.Parse("b5100000-0000-4000-8000-000000000213")),
     ];
 
     public string Suite => "u02";
@@ -163,10 +175,11 @@ public sealed class U02BrowserSeed : IBrowserSuiteFixture
         // activation control, so the activator is the only actor the shell offers it to.
         var activator = await context.GetJsonAsync(ActivatorActor, CompanyId, "/api/v1/shell/capabilities", cancellationToken);
         var activatorProduct = ProductCapabilities(activator);
-        if (!activatorProduct.SequenceEqual(["product.items.activate", "product.items.detail", "product.items.list"]))
+        if (!activatorProduct.SequenceEqual(["product.items.activate", "product.items.deactivate", "product.items.detail",
+                "product.items.list", "product.items.reactivate"]))
         {
             throw new InvalidOperationException(
-                $"The activator should see the Product card and its activation control only; it sees [{string.Join(", ", activatorProduct)}].");
+                $"The activator should see the Product card and its three lifecycle controls only; it sees [{string.Join(", ", activatorProduct)}].");
         }
 
         return new Dictionary<string, string>(StringComparer.Ordinal)

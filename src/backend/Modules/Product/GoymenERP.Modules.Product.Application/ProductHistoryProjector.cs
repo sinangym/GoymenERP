@@ -86,11 +86,22 @@ public static class ProductHistoryProjector
             }
             case ProductHistoryApiV1.DraftBasicEdit:
             case ProductHistoryApiV1.Activate:
+            case ProductHistoryApiV1.Deactivate:
+            case ProductHistoryApiV1.Reactivate:
             {
                 if (record.VersionBefore is not (>= 1 and < long.MaxValue) || record.VersionAfter != record.VersionBefore + 1)
                     throw Invalid();
                 using var before = Parse(record.BeforeJson);
                 RequireSnapshot(before.RootElement, productId, record.VersionBefore.Value);
+                // A deactivation or reactivation event whose own snapshots do not show that very move
+                // contradicts its envelope: an integrity fault, never a quietly shown row.
+                if (record.Operation is ProductHistoryApiV1.Deactivate or ProductHistoryApiV1.Reactivate)
+                {
+                    var (from, to) = record.Operation == ProductHistoryApiV1.Deactivate
+                        ? ("Active", "Inactive") : ("Inactive", "Active");
+                    if (LifecycleOf(before.RootElement) != from || LifecycleOf(after.RootElement) != to)
+                        throw Invalid();
+                }
                 var changed = ProductHistoryFields.All
                     .Where(field => !JsonElement.DeepEquals(Read(before.RootElement, field), Read(after.RootElement, field)))
                     .ToArray();
@@ -113,6 +124,9 @@ public static class ProductHistoryProjector
             || !card.TryGetProperty("references", out var references) || references.ValueKind != JsonValueKind.Object)
             throw Invalid();
     }
+
+    private static string? LifecycleOf(JsonElement card) =>
+        Read(card, "lifecycle") is { ValueKind: JsonValueKind.String } lifecycle ? lifecycle.GetString() : null;
 
     /// <summary>Reads a change key; a missing or null container reads as JSON null.</summary>
     private static JsonElement Read(JsonElement card, string field)
