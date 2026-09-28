@@ -26,6 +26,12 @@ namespace GoymenERP.BrowserSuiteFixtureTool.Suites.R14;
 /// of the command. This seed writes nothing for them; the read-back pins that each is offered exactly its own
 /// control beside the label detail and no other r14 actor is offered either.
 /// </para>
+/// <para>
+/// ST-02 scrap write-off (the AT-037 pattern): <c>inventory.stock-scrap.record</c> is held ONLY by the disposable
+/// <see cref="ScrapperActor"/> and <c>inventory.stock-scrap.approve</c> ONLY by the disposable
+/// <see cref="ScrapApproverActor"/>; the read-back pins the same split, and that no other r14 actor (the stock
+/// counters included) is offered either scrap control.
+/// </para>
 /// </summary>
 public sealed class R14BrowserSeed : IBrowserSuiteFixture
 {
@@ -35,6 +41,8 @@ public sealed class R14BrowserSeed : IBrowserSuiteFixture
     public const string TransformerActor = "r14-transformer";
     public const string CounterActor = "r14-counter";
     public const string CountApproverActor = "r14-count-approver";
+    public const string ScrapperActor = "r14-scrapper";
+    public const string ScrapApproverActor = "r14-scrap-approver";
 
     public static readonly Guid CompanyGdc = Guid.Parse("10000000-0000-0000-0000-000000000001");
     public static readonly Guid CompanyOther = Guid.Parse("10000000-0000-0000-0000-000000000002");
@@ -63,6 +71,8 @@ public sealed class R14BrowserSeed : IBrowserSuiteFixture
     private const string LabelTransformationCapability = "inventory.label-transformation.record";
     private const string StockCountRecordCapability = "inventory.stock-count.record";
     private const string StockCountApproveCapability = "inventory.stock-count.approve";
+    private const string StockScrapRecordCapability = "inventory.stock-scrap.record";
+    private const string StockScrapApproveCapability = "inventory.stock-scrap.approve";
 
     public string Suite => "r14";
 
@@ -188,6 +198,27 @@ public sealed class R14BrowserSeed : IBrowserSuiteFixture
                 "Only the disposable AT-037 counter may record and only the disposable count approver may decide a count.");
         }
 
+        string[] scrapperCapabilities = await CapabilitiesAsync(context, ScrapperActor, cancellationToken);
+        string[] scrapApproverCapabilities = await CapabilitiesAsync(context, ScrapApproverActor, cancellationToken);
+        string[][] nonScrapCapabilities =
+        [
+            recorderCapabilities, deniedCapabilities, arrangerCapabilities, transformerCapabilities,
+            counterCapabilities, approverCapabilities,
+        ];
+        if (!scrapperCapabilities.Contains(LabelDetailCapability, StringComparer.Ordinal)
+            || !scrapperCapabilities.Contains(StockScrapRecordCapability, StringComparer.Ordinal)
+            || scrapperCapabilities.Contains(StockScrapApproveCapability, StringComparer.Ordinal)
+            || !scrapApproverCapabilities.Contains(LabelDetailCapability, StringComparer.Ordinal)
+            || !scrapApproverCapabilities.Contains(StockScrapApproveCapability, StringComparer.Ordinal)
+            || scrapApproverCapabilities.Contains(StockScrapRecordCapability, StringComparer.Ordinal)
+            || nonScrapCapabilities.Any(capabilities =>
+                capabilities.Contains(StockScrapRecordCapability, StringComparer.Ordinal)
+                || capabilities.Contains(StockScrapApproveCapability, StringComparer.Ordinal)))
+        {
+            throw new InvalidOperationException(
+                "Only the disposable scrapper may record and only the disposable scrap approver may decide a scrap.");
+        }
+
         return new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["recorderActor"] = RecorderActor,
@@ -196,6 +227,8 @@ public sealed class R14BrowserSeed : IBrowserSuiteFixture
             ["transformerActor"] = TransformerActor,
             ["counterActor"] = CounterActor,
             ["countApproverActor"] = CountApproverActor,
+            ["scrapperActor"] = ScrapperActor,
+            ["scrapApproverActor"] = ScrapApproverActor,
             ["companyId"] = CompanyGdc.ToString("D"),
             ["otherCompanyId"] = CompanyOther.ToString("D"),
             ["locationId"] = locationId.ToString("D"),

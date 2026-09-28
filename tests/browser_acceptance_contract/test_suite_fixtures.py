@@ -110,7 +110,8 @@ class FixtureListTests(unittest.TestCase):
         self.assertEqual(
             frozenset({
                 "recorderActor", "deniedActor", "arrangerActor", "transformerActor",
-                "counterActor", "countApproverActor", "companyId", "otherCompanyId",
+                "counterActor", "countApproverActor", "scrapperActor", "scrapApproverActor",
+                "companyId", "otherCompanyId",
                 "locationId", "productId", "productVersion", "productUnitId",
                 "productUnitProfileId", "productUnitProfileVersion", "productCode", "productName",
             }),

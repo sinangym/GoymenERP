@@ -12,11 +12,14 @@ import {
   INVENTORY_PHYSICAL_ALLOCATION_WRITE_CAPABILITY,
   INVENTORY_STOCK_COUNT_APPROVE_CAPABILITY,
   INVENTORY_STOCK_COUNT_RECORD_CAPABILITY,
+  INVENTORY_STOCK_SCRAP_APPROVE_CAPABILITY,
+  INVENTORY_STOCK_SCRAP_RECORD_CAPABILITY,
 } from './capabilities'
 import { fetchInventoryLabelDetail } from './labelDetailApi'
 import { LabelAllocationPanel } from './LabelAllocationPanel'
 import { LabelTransformationPanel } from './LabelTransformationPanel'
 import { StockCountPanel } from './StockCountPanel'
+import { StockScrapPanel } from './StockScrapPanel'
 import type { InventoryLabelDetailWithMovementTimeline } from './labelDetailContract'
 import { inventoryLabelDetailPath } from './labelDetailRoute'
 import styles from './inventory.module.css'
@@ -28,6 +31,7 @@ const MOVEMENT_KIND_TEXT = {
   Release: 'Serbest bırakma',
   Return: 'İade',
   CountAdjustment: 'Sayım farkı',
+  Scrap: 'Hurda çıkışı',
 } as const
 
 const DIRECTION_TEXT = { In: 'Giriş', Out: 'Çıkış' } as const
@@ -55,6 +59,8 @@ function InventoryLabelDetailView({ namespace, labelId }: {
   const canTransform = hasCapability(shell, INVENTORY_LABEL_TRANSFORMATION_CAPABILITY)
   const canRecordCount = hasCapability(shell, INVENTORY_STOCK_COUNT_RECORD_CAPABILITY)
   const canApproveCount = hasCapability(shell, INVENTORY_STOCK_COUNT_APPROVE_CAPABILITY)
+  const canRecordScrap = hasCapability(shell, INVENTORY_STOCK_SCRAP_RECORD_CAPABILITY)
+  const canApproveScrap = hasCapability(shell, INVENTORY_STOCK_SCRAP_APPROVE_CAPABILITY)
   const canChangeAllocations = hasCapability(shell, INVENTORY_PHYSICAL_ALLOCATION_WRITE_CAPABILITY)
   const companyId = shell.activeContext?.scopeMode === 'single' ? shell.activeContext.companyId : null
   const actorId = shell.activeContext?.userId ?? null
@@ -196,6 +202,17 @@ function InventoryLabelDetailView({ namespace, labelId }: {
         companyId={companyId}
         canRecord={canRecordCount}
         canApprove={canApproveCount}
+        onChanged={() => void query.refetch()}
+      />
+      : null}
+
+    {canRecordScrap || canApproveScrap
+      ? <StockScrapPanel
+        key={`${identity.labelId}:stock-scrap`}
+        label={{ labelId: identity.labelId, labelVersion, positions: balances.positions }}
+        companyId={companyId}
+        canRecord={canRecordScrap}
+        canApprove={canApproveScrap}
         onChanged={() => void query.refetch()}
       />
       : null}

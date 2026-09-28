@@ -72,6 +72,10 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
 
     internal DbSet<StockCountDecisionRow> StockCountDecisions => Set<StockCountDecisionRow>();
 
+    internal DbSet<StockScrapRow> StockScraps => Set<StockScrapRow>();
+
+    internal DbSet<StockScrapDecisionRow> StockScrapDecisions => Set<StockScrapDecisionRow>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -92,6 +96,7 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         ConfigureOpeningCounts(modelBuilder);
         ConfigureCommands(modelBuilder);
         ConfigureStockCounts(modelBuilder);
+        ConfigureStockScraps(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -291,7 +296,7 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
                 "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [SourceId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND ([SourceLineId] IS NULL OR [SourceLineId] <> '00000000-0000-0000-0000-000000000000')");
-            table.HasCheckConstraint("CK_Movements_Kind", "[Kind] BETWEEN 1 AND 6");
+            table.HasCheckConstraint("CK_Movements_Kind", "[Kind] BETWEEN 1 AND 7");
             table.HasCheckConstraint("CK_Movements_SourceKind", "LEN([SourceKind]) > 0");
             table.HasCheckConstraint("CK_Movements_Cost",
                 "([CostStatus] IN (1, 2) AND [CostAmount] IS NULL AND [CostCurrencyId] IS NULL) OR "
@@ -676,6 +681,74 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
             .HasFilter("[MovementId] IS NOT NULL");
         decision.HasOne<StockCountRow>().WithMany()
             .HasForeignKey(x => new { x.CompanyId, x.CountId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        decision.HasOne<MovementRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.MovementId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        decision.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    /// <summary>
+    /// ST-02 scrap write-off: a scrap of one stocked label at its stored position, and at most one decision on it. A
+    /// scrap names its company's label and location; an approval names the scrap movement it posted (both by
+    /// (company, id)), a rejection none. The scrap is positive and never more than the book. Both are append-only.
+    /// </summary>
+    private void ConfigureStockScraps(ModelBuilder modelBuilder)
+    {
+        var scrap = modelBuilder.Entity<StockScrapRow>();
+        scrap.ToTable("StockScraps", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_StockScraps_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [OwnerId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [CustodianId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [ProductId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_StockScraps_State",
+                "[OwnerKind] IN (1, 2) AND [CustodianKind] IN (1, 2) AND [Block] IN (1, 2) AND [LabelVersion] >= 1 "
+                + "AND [BookKg] > 0 AND [ScrapKg] > 0 AND [ScrapKg] <= [BookKg]");
+            table.HasCheckConstraint("CK_StockScraps_Text",
+                "LEN(LTRIM(RTRIM([Reason]))) > 0 AND LEN([PayloadHash]) = 64 AND LEN([RecordedBy]) > 0 "
+                + "AND LEN([CorrelationId]) > 0");
+        });
+        scrap.HasKey(x => x.Id);
+        scrap.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        scrap.Property(x => x.Id).ValueGeneratedNever();
+        scrap.Property(x => x.BookKg).HasPrecision(18, 3);
+        scrap.Property(x => x.ScrapKg).HasPrecision(18, 3);
+        scrap.Property(x => x.Reason).HasMaxLength(1000).IsRequired();
+        scrap.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        scrap.Property(x => x.RecordedBy).HasMaxLength(128).IsRequired();
+        scrap.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        scrap.HasIndex(x => new { x.CompanyId, x.LabelId, x.RecordedAtUtc, x.Id });
+        scrap.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        LabelOf(scrap);
+        LocationOf(scrap);
+        scrap.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var decision = modelBuilder.Entity<StockScrapDecisionRow>();
+        decision.ToTable("StockScrapDecisions", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_StockScrapDecisions_Decision",
+                "([Decision] = 1 AND [MovementId] IS NOT NULL "
+                + "AND [MovementId] <> '00000000-0000-0000-0000-000000000000') "
+                + "OR ([Decision] = 2 AND [MovementId] IS NULL)");
+            table.HasCheckConstraint("CK_StockScrapDecisions_Text",
+                "LEN(LTRIM(RTRIM([Reason]))) > 0 AND LEN([PayloadHash]) = 64 AND LEN([DecidedBy]) > 0 "
+                + "AND LEN([CorrelationId]) > 0");
+        });
+        decision.HasKey(x => new { x.CompanyId, x.ScrapId });
+        decision.Property(x => x.Reason).HasMaxLength(1000).IsRequired();
+        decision.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        decision.Property(x => x.DecidedBy).HasMaxLength(128).IsRequired();
+        decision.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        decision.HasIndex(x => new { x.CompanyId, x.MovementId })
+            .IsUnique()
+            .HasFilter("[MovementId] IS NOT NULL");
+        decision.HasOne<StockScrapRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.ScrapId })
             .HasPrincipalKey(x => new { x.CompanyId, x.Id })
             .OnDelete(DeleteBehavior.Restrict);
         decision.HasOne<MovementRow>().WithMany()

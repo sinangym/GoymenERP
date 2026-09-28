@@ -85,7 +85,7 @@ export interface InventoryLabelMovementLine {
 
 export interface InventoryLabelMovement {
   readonly movementId: string
-  readonly kind: 'Receipt' | 'Issue' | 'Block' | 'Release' | 'Return' | 'CountAdjustment'
+  readonly kind: 'Receipt' | 'Issue' | 'Block' | 'Release' | 'Return' | 'CountAdjustment' | 'Scrap'
   readonly occurredAtUtc: string
   readonly sourceKind: string
   readonly sourceId: string
@@ -237,7 +237,7 @@ function movement(value: unknown): InventoryLabelMovement | null {
   if (source === null || !exact(source, [
     'movementId', 'kind', 'occurredAtUtc', 'sourceKind', 'sourceId', 'sourceLineId', 'sourceGrain', 'lines',
   ]) || !guid(source.movementId) ||
-    !['Receipt', 'Issue', 'Block', 'Release', 'Return', 'CountAdjustment'].includes(source.kind as string) ||
+    !['Receipt', 'Issue', 'Block', 'Release', 'Return', 'CountAdjustment', 'Scrap'].includes(source.kind as string) ||
     !instant(source.occurredAtUtc) || !text(source.sourceKind) || source.sourceKind !== source.sourceKind.trim() ||
     source.sourceKind.length > 64 || !guid(source.sourceId) ||
     (source.sourceLineId !== null && !guid(source.sourceLineId)) ||
@@ -250,6 +250,7 @@ function movement(value: unknown): InventoryLabelMovement | null {
     decoded.some((line, index) => index > 0 && decoded[index - 1].sequence >= line.sequence) ||
     ((source.kind === 'Receipt' || source.kind === 'Return') && decoded.some((line) => line.direction !== 'In')) ||
     source.kind === 'Issue' && decoded.some((line) => line.direction !== 'Out' || line.block === 'Blocked') ||
+    source.kind === 'Scrap' && (decoded.length !== 1 || decoded[0].direction !== 'Out') ||
     (source.kind === 'Block' || source.kind === 'Release') && !validBlockChange(source.kind, decoded)) return null
   return { ...(source as unknown as InventoryLabelMovement), lines: decoded }
 }
