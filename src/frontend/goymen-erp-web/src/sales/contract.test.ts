@@ -357,6 +357,13 @@ describe('decodeDraftRevisions', () => {
     expect(decodeDraftRevisions(input)?.items[0].lines[0].priceDisclosure).toBe('Withheld')
   })
 
+  it('keeps a quantity revision reason verbatim (DEC-SAL-002) and a price revision without one null', () => {
+    const input = body()
+    expect(decodeDraftRevisions(input)?.items[0].reason).toBeNull()
+    input.items[0].reason = '  SENTETIK müşteri 2 kg istedi '
+    expect(decodeDraftRevisions(input)?.items[0].reason).toBe('  SENTETIK müşteri 2 kg istedi ')
+  })
+
   it('accepts numeric revision order through Rev.10, allowing the same line in different snapshots', () => {
     const input = body()
     input.items = ['Rev.0', 'Rev.2', 'Rev.10'].map((revision) => ({ ...clone(input.items[0]), revision }))
@@ -370,6 +377,11 @@ describe('decodeDraftRevisions', () => {
   it.each([
     ['unknown revision member', (r: any) => { r.total = '0' }],
     ['missing nullable member', (r: any) => { delete r.approvedBy }],
+    ['missing reason member', (r: any) => { delete r.reason }],
+    ['blank reason', (r: any) => { r.reason = '  ' }],
+    ['empty reason', (r: any) => { r.reason = '' }],
+    ['numeric reason', (r: any) => { r.reason = 1 }],
+    ['over-long reason', (r: any) => { r.reason = 'x'.repeat(4001) }],
     ['numeric revision', (r: any) => { r.revision = 1 }],
     ['noncanonical revision', (r: any) => { r.revision = 'Rev.01' }],
     ['line-terminated revision', (r: any) => { r.revision = 'Rev.0\n' }],

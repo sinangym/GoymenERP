@@ -101,6 +101,13 @@ public static class SalesRuleCodes
     public const string RevisionLinesMismatch = "sales_revision_lines_mismatch";
     /// <summary>A commercial revision that changes no value is refused: an approval is never discarded for nothing (ASSUMPTION-SALESP-5).</summary>
     public const string RevisionNoChange = "sales_revision_no_change";
+    /// <summary>
+    /// DEC-SAL-002 quantity revision: the change carries its reason (the task's "gerekçe ile"); a blank reason is refused,
+    /// never defaulted. The price revision keeps its own shape (no reason member), unchanged.
+    /// </summary>
+    public const string RevisionReasonRequired = "sales_revision_reason_required";
+    /// <summary>A revision reason over the technical bound (the note's) is refused, never cut.</summary>
+    public const string RevisionReasonTooLong = "sales_revision_reason_too_long";
 
     /// <summary>DEC-SAL-003: a delivery-schedule update must name every current line exactly once and no other line.</summary>
     public const string ScheduleLinesMismatch = "sales_schedule_lines_mismatch";

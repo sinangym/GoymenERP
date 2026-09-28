@@ -88,6 +88,7 @@ import { StateBlock } from '../shell/StateBlock'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { SalesDraftCommercialRevisionForm } from './SalesDraftCommercialRevisionForm'
 import { SalesDraftRevisionHistory } from './SalesDraftRevisionHistory'
+import { SalesDraftQuantityRevisionForm } from './SalesDraftQuantityRevisionForm'
 import { SalesDraftAllocationPanel } from './SalesDraftAllocationPanel'
 import { SalesDraftDeliveryScheduleForm } from './SalesDraftDeliveryScheduleForm'
 import { SalesDraftDeliveryScheduleHistory } from './SalesDraftDeliveryScheduleHistory'
@@ -150,8 +151,20 @@ export function SalesDraftDetailPage() {
             key={`history:${namespace}:${shell.routeEntryGeneration}:${outcome.data.draft.id}`}
             draftId={outcome.data.draft.id}
             draftVersion={outcome.data.draft.version}
+            currentLines={outcome.data.lines}
           />
         ) : null
+      }
+      quantityRevision={
+        companyId === null ? null : (
+          <SalesDraftQuantityRevisionForm
+            key={`quantity:${namespace ?? ''}:${outcome.data.draft.id}`}
+            shell={shell}
+            detail={outcome.data}
+            companyId={companyId}
+            onRecorded={() => void queryClient.invalidateQueries({ queryKey })}
+          />
+        )
       }
       deliverySchedule={
         companyId === null ? null : (
@@ -253,6 +266,7 @@ export function DraftView({
   delivery = null,
   commercialActions = null,
   revisionHistory = null,
+  quantityRevision = null,
   allocations = null,
   deliverySchedule = null,
   deliveryScheduleHistory = null,
@@ -267,6 +281,8 @@ export function DraftView({
   readonly delivery?: React.ReactNode
   readonly commercialActions?: React.ReactNode
   readonly revisionHistory?: React.ReactNode
+  /** DEC-SAL-002: "Revizyon oluştur" — the quantity revision control, under the lines. */
+  readonly quantityRevision?: React.ReactNode
   readonly allocations?: React.ReactNode
   /** DEC-SAL-003: the planner's delivery-date control (shell-gated) and the schedule history. */
   readonly deliverySchedule?: React.ReactNode
@@ -405,6 +421,7 @@ export function DraftView({
         {detail.lines.map((line) => (
           <LineView key={line.lineId} line={line} />
         ))}
+        {quantityRevision}
         {deliverySchedule}
       </section>
       {deliveryScheduleHistory}

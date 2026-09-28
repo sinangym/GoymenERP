@@ -251,11 +251,16 @@ public sealed class SalesOrderCancellationSqlServerRelationalAcceptanceTests
 
         await using var context = run.SalesContext(CompanyA);
         var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
-        Assert.EndsWith("_AddDraftCancellations", applied[^1], StringComparison.Ordinal);
-        var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[^2]));
+        Assert.EndsWith("_AddRevisionReasons", applied[^1], StringComparison.Ordinal);
+        Assert.EndsWith("_AddDraftCancellations", applied[^2], StringComparison.Ordinal);
+        var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[^3]));
         Assert.Equal(51055, error.Number);
-        Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
+        Assert.Equal(applied[..^1], await context.Database.GetAppliedMigrationsAsync());
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftCancellations] WHERE [DraftId] = @id", ("@id", draft.Id)));
+        // The empty AddRevisionReasons above it did roll back (no reason stored), so the schema is one migration behind
+        // the model; re-apply it before reading the order back through the current model.
+        await context.Database.MigrateAsync();
+        Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
         // The rebuilt order carries its cancellation (the store's restore reads the row back through the domain).
         await using var reader = run.SalesStore(CompanyA);
         var reread = await reader.Store.FindDraftAsync(draft.Id);

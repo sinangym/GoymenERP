@@ -60,6 +60,16 @@ public sealed record SalesDraftLineCommercialV1(Guid LineId, string? UnitPrice =
 /// </summary>
 public sealed record SalesDraftCommercialRevisionRequest(string ExpectedVersion, IReadOnlyList<SalesDraftLineCommercialV1> Lines);
 
+/// <summary>DEC-SAL-002: one line's new ordered quantity in a quantity revision — the client line id and the exact decimal text (the create's shape).</summary>
+public sealed record SalesDraftLineQuantityV1(Guid LineId, string Quantity);
+
+/// <summary>
+/// DEC-SAL-002 / AT-023: POST …/{id}/quantity-revision — the expected concurrency version, the reason (required; why the order
+/// changes) and EVERY line of the draft exactly once with its new ordered quantity in the line's own order unit. Strict: every
+/// member present, no other member. The unit, product, price and delivery plan do not change here.
+/// </summary>
+public sealed record SalesDraftQuantityRevisionRequest(string ExpectedVersion, string Reason, IReadOnlyList<SalesDraftLineQuantityV1> Lines);
+
 /// <summary>DEC-SAL-003: one existing slice's new requested delivery date, addressed by its client slice id.</summary>
 public sealed record SalesDraftSliceScheduleV1(Guid SliceId, DateOnly RequestedDeliveryDate);
 
@@ -115,12 +125,13 @@ public sealed record SalesDraftRevisionLineV1(
 /// <summary>
 /// An approved revision the draft left behind when its price or discount was changed (K3: the previous
 /// approved snapshot is never deleted): who submitted and who approved it, when it was archived and by
-/// whom, the money profile it was approved under, and its lines.
+/// whom, the money profile it was approved under, and its lines. DEC-SAL-002 (contract delta): <c>reason</c> is why it was
+/// superseded — the quantity revision's required reason; null when a price revision (which has no reason member) archived it.
 /// </summary>
 public sealed record SalesDraftRevisionV1(
     string Revision, string? SubmittedBy, DateTimeOffset? SubmittedAtUtc, string? ApprovedBy, DateTimeOffset? ApprovedAtUtc,
     DateTimeOffset ArchivedAtUtc, string ArchivedBy, Guid MoneyProfileId, string MoneyProfileVersion, int MoneyScale,
-    IReadOnlyList<SalesDraftRevisionLineV1> Lines);
+    IReadOnlyList<SalesDraftRevisionLineV1> Lines, string? Reason);
 
 /// <summary>GET …/{id}/revisions: the archived approved revisions, oldest first; empty for a draft never revised after an approval.</summary>
 public sealed record SalesOrderDraftRevisionsResponse(IReadOnlyList<SalesDraftRevisionV1> Items);
@@ -195,6 +206,11 @@ public static class SalesDraftApiV1
     // "Rev.N", and the history lives on its own route so the S-04 decoder (exact members) keeps working.
     public const string CommercialRevisionPath = "/api/v1/sales/drafts/{id}/commercial-revision";
     public const string RevisionsPath = "/api/v1/sales/drafts/{id}/revisions";
+
+    // DEC-SAL-002 / AT-023: the quantity revision (200 with the detail after the change; same-key replay 200 +
+    // `Idempotency-Replayed`). The detail wire is unchanged (the line's `quantity` carries the new text); the superseded
+    // approved revision, with its reason, is read on the revisions route.
+    public const string QuantityRevisionPath = "/api/v1/sales/drafts/{id}/quantity-revision";
 
     // DEC-SAL-003: the delivery-schedule update (200 with the detail after the change; same-key replay 200 +
     // `Idempotency-Replayed`) and the read of the schedule history. The detail wire is unchanged: it carries the
@@ -290,6 +306,34 @@ public static class SalesDraftJson
                 throw new JsonException("Invalid line fields.");
             if (line.UnitPrice is not null) RequireDecimalShape(line.UnitPrice, positive: false);
             if (line.DiscountPercent is not null) RequireDecimalShape(line.DiscountPercent, positive: false);
+        }
+
+        return request;
+    }
+
+    /// <summary>
+    /// DEC-SAL-002: the strict body of a quantity revision — the expected version as on every state command, the reason
+    /// present (at most 4000; the domain requires it non-blank) and 1..500 lines each named once with a positive plain decimal
+    /// quantity text (the create's shape). The domain decides the rest (every current line named, Ö2 in the line's unit, the
+    /// delivery plan still fitting, no-change).
+    /// </summary>
+    public static SalesDraftQuantityRevisionRequest ReadQuantityRevision(string json)
+    {
+        var request = JsonSerializer.Deserialize<SalesDraftQuantityRevisionRequest>(json, Options)
+            ?? throw new JsonException("Request body is required.");
+        if (string.IsNullOrEmpty(request.ExpectedVersion) || request.ExpectedVersion.Length > 19
+            || !Regex.IsMatch(request.ExpectedVersion, "\\A[1-9][0-9]*\\z"))
+            throw new JsonException("Invalid expected version.");
+        if (request.Reason is null || request.Reason.Length > 4000)
+            throw new JsonException("Invalid reason.");
+        if (request.Lines is null || request.Lines.Count is < 1 or > 500)
+            throw new JsonException("Invalid revision lines.");
+        var ids = new HashSet<Guid>();
+        foreach (var line in request.Lines)
+        {
+            if (line is null || line.LineId == Guid.Empty || !ids.Add(line.LineId))
+                throw new JsonException("Invalid line fields.");
+            RequireDecimalShape(line.Quantity, positive: true);
         }
 
         return request;

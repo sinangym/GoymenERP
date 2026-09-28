@@ -41,11 +41,18 @@ export const SALES_DELIVERY_SCHEDULE_WRITE_CAPABILITY = 'sales.orders.delivery-s
  */
 export const SALES_CANCEL_CAPABILITY = 'sales.orders.cancel' as const
 
+/**
+ * DEC-SAL-002: the quantity-revision CONTROL on S-04 ("Revizyon oluştur"). The shell publishes it only to an actor holding
+ * `sales.orders.quantity.write` beside the read; create, approve, price, schedule and cancel never confer it.
+ */
+export const SALES_QUANTITY_WRITE_CAPABILITY = 'sales.orders.quantity.write' as const
+
 export type SalesCapabilityId =
   | (typeof SALES_CAPABILITY)[keyof typeof SALES_CAPABILITY]
   | typeof SALES_PRICE_WRITE_CAPABILITY
   | typeof SALES_DELIVERY_SCHEDULE_WRITE_CAPABILITY
   | typeof SALES_CANCEL_CAPABILITY
+  | typeof SALES_QUANTITY_WRITE_CAPABILITY
 
 export const SALES_ROUTE = {
   list: '/satis/siparisler',

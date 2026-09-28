@@ -215,7 +215,9 @@ test('S04-08 one approved record is priced in the form, reopened as Rev.1, and i
     const row = archivedTable.locator('tbody tr').nth(index)
     await expect(row.locator('td').nth(0)).toHaveText(line.lineId)
     await expect(row.locator('td').nth(4)).toHaveText(line.quantity)
-    await expect(row.locator('td').nth(5)).toHaveText('Fiyat girilmemiş')
+    // DEC-SAL-002 added the "quantity that followed" column: a price revision leaves every quantity unchanged.
+    await expect(row.locator('td').nth(5)).toHaveText(line.quantity)
+    await expect(row.locator('td').nth(6)).toHaveText('Fiyat girilmemiş')
   }
   await expect(archived.getByRole('button')).toHaveCount(0)
 

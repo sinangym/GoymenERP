@@ -188,6 +188,9 @@ internal sealed class DraftRevisionRow : ISalesTenantRow
     public DateTimeOffset ArchivedAtUtc { get; set; }
     public string ArchivedBy { get; set; } = string.Empty;
     public string CorrelationId { get; set; } = string.Empty;
+
+    /// <summary>DEC-SAL-002: why this approved revision was superseded (the quantity revision's reason); null when a price revision archived it.</summary>
+    public string? Reason { get; set; }
 }
 
 /// <summary>A line of an archived approved revision: identity, quantity text and the commercial fields exactly as they were. Append-only.</summary>
