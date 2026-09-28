@@ -24,7 +24,7 @@
  *   S04-GS3 the reader's answer for the same name has no Cari group; its order search still answers the Sales group
  */
 
-import { expect, test, type Page, type Response } from '@playwright/test'
+import { expect, test, type Page, type Request, type Response } from '@playwright/test'
 import { readEnvironment } from '../src/env.js'
 
 const env = readEnvironment()
@@ -101,6 +101,51 @@ async function searchAnswer(response: Response): Promise<SearchReading> {
   return body
 }
 
+/**
+ * TEMPORARY DIAGNOSTIC (#511 s04 run 36480112277: no search answer seen after Back). Goes Back and waits for the fresh
+ * search answer the #146/#148 rule requires — the assertion is kept, only its failure is made informative: within 30 s it
+ * throws with the page URL, whether the document was replaced or restored from the back/forward cache, every request
+ * (and failed request) seen after Back, and the main region's text. Remove once the cause is known.
+ */
+async function backExpectingFreshSearch(page: Page, term: string): Promise<SearchReading> {
+  await page.evaluate(() => {
+    const marked = window as unknown as { __gsDocument?: number; __gsPersisted?: boolean }
+    marked.__gsDocument = Date.now()
+    window.addEventListener('pageshow', (event) => {
+      marked.__gsPersisted = event.persisted
+    })
+  })
+  const seen: string[] = []
+  const onRequest = (request: Request) => seen.push(`${request.method()} ${request.url()}`)
+  const onFailed = (request: Request) => seen.push(`FAILED ${request.method()} ${request.url()} ${request.failure()?.errorText ?? ''}`)
+  page.on('request', onRequest)
+  page.on('requestfailed', onFailed)
+  const fresh = page.waitForResponse((response) => isSearch(response, term), { timeout: 30_000 })
+  try {
+    await page.goBack()
+    return await searchAnswer(await fresh)
+  } catch (error) {
+    const state = await page
+      .evaluate(() => {
+        const marked = window as unknown as { __gsDocument?: number; __gsPersisted?: boolean }
+        return {
+          sameDocument: marked.__gsDocument !== undefined,
+          persisted: marked.__gsPersisted ?? null,
+          navigations: performance.getEntriesByType('navigation').map((entry) => (entry as PerformanceNavigationTiming).type),
+          main: document.querySelector('main')?.textContent?.replace(/\s+/g, ' ').slice(0, 800) ?? null,
+        }
+      })
+      .catch((reason: unknown) => ({ evaluateFailed: String(reason) }))
+    throw new Error(
+      `DIAGNOSTIC no fresh search answer after Back for q=${JSON.stringify(term)}: ${String(error)}\n` +
+        `url=${page.url()}\nstate=${JSON.stringify(state)}\nrequests after Back=${JSON.stringify(seen, null, 1)}`,
+    )
+  } finally {
+    page.off('request', onRequest)
+    page.off('requestfailed', onFailed)
+  }
+}
+
 test.describe.configure({ mode: 'serial' })
 
 test('S04-GS1 box → grouped results → open the order → Back returns to the same results', async ({ page }) => {
@@ -127,10 +172,9 @@ test('S04-GS1 box → grouped results → open the order → Back returns to the
   await expect(page).toHaveURL(new RegExp(`/satis/siparisler/${deliveryDraftId}$`))
 
   // Back is a new route entry (#146/#148): the page reads the search AFRESH (never a cached answer) and shows the same.
-  const again = page.waitForResponse((response) => isSearch(response, documentNo))
-  await page.goBack()
+  const again = await backExpectingFreshSearch(page, documentNo)
   await expect(page).toHaveURL(isResultsUrl(documentNo))
-  expect((await searchAnswer(await again)).groups.find((group) => group.kind === SALES_KIND)?.items.map((item) => item.id)).toContain(deliveryDraftId)
+  expect(again.groups.find((group) => group.kind === SALES_KIND)?.items.map((item) => item.id)).toContain(deliveryDraftId)
   await expect(page.getByTestId(`global-search-group-${SALES_KIND}`).getByRole('link', { name: new RegExp(documentNo) })).toBeVisible()
   // The results form and its input share the name "Aranan metin"; the input is the searchbox.
   await expect(page.getByRole('searchbox', { name: 'Aranan metin', exact: true })).toHaveValue(documentNo)
@@ -157,9 +201,8 @@ test('S04-GS2 the preparer finds the REAL Cari party and opens its detail', asyn
   await link.click()
   await expect(page).toHaveURL(new RegExp(`/cari/${realPartyId}$`))
   // Back is a new route entry: a fresh read answers the same party.
-  const again = page.waitForResponse((candidate) => isSearch(candidate, party.legalName))
-  await page.goBack()
-  expect((await searchAnswer(await again)).groups.find((group) => group.kind === PARTY_KIND)?.items.map((item) => item.id)).toContain(realPartyId)
+  const again = await backExpectingFreshSearch(page, party.legalName)
+  expect(again.groups.find((group) => group.kind === PARTY_KIND)?.items.map((item) => item.id)).toContain(realPartyId)
   await expect(page.getByTestId(`global-search-group-${PARTY_KIND}`).getByRole('link', { name: new RegExp(party.code) })).toBeVisible()
 })
 
