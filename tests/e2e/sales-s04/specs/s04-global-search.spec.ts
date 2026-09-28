@@ -126,10 +126,10 @@ test('S04-GS1 box → grouped results → open the order → Back returns to the
   await result.click()
   await expect(page).toHaveURL(new RegExp(`/satis/siparisler/${deliveryDraftId}$`))
 
-  const again = page.waitForResponse((response) => isSearch(response, documentNo))
+  // Back restores the same results for the same session binding (the shell may serve its cached answer for this entry);
+  // the reload below proves a fresh read answers the same.
   await page.goBack()
   await expect(page).toHaveURL(isResultsUrl(documentNo))
-  await searchAnswer(await again)
   await expect(page.getByTestId(`global-search-group-${SALES_KIND}`).getByRole('link', { name: new RegExp(documentNo) })).toBeVisible()
   // The results form and its input share the name "Aranan metin"; the input is the searchbox.
   await expect(page.getByRole('searchbox', { name: 'Aranan metin', exact: true })).toHaveValue(documentNo)
