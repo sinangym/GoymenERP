@@ -174,8 +174,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // logistics
             // AT-053: +4 weighbridge SQL facts (81c1ff0b… -> 264898d7…).
+            // AT-025: +3 operations work list SQL facts (264898d7… -> e410a445…).
             ["tools/relational_inventory/logistics.txt"] =
-                "264898d775b52cec9f087fcb7e1b90db27ef07711d7438154a625aa4160f6f27",
+                "e410a445d2759703b39ce7ea242d5cb0a11074b24c685291c46ca028f8ac50bc",
 
             // manufacturing
             // MFG-PLAN-EDIT: +6 plan-revision SQL facts (a72e6367… -> 02711b6c…).
@@ -733,9 +734,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Logistics.Infrastructure/"
                  + "LogisticsModuleExtensions.cs"] =
                     // Re-fingerprinted for DEC-SAL-005: one scoped registration of the Sales-declared loading read port;
-                    // the provider branch and its token counts are unchanged.
+                    // the provider branch and its token counts are unchanged. Re-fingerprinted for AT-025: the operations
+                    // work list's progress reader, bindings and service registrations; token counts unchanged.
                     new(
-                        "725cbc0fb41d09e180af4a21fd1c4c01a2621e4fdfa38f3790093bb7358aa451",
+                        "c40c93ba0e67221a2af009a6d77545b8a914e9d7112a38e68c1cda5c64f80e37",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -766,11 +768,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                             ["Microsoft.Data.SqlClient"] = 1
                         }),
                 // PUR-4a: the Purchasing initializer's one provider branch, as Sales.
+                // Re-fingerprinted for AT-025: one scoped registration of the open-line read port; token counts unchanged.
                 ["src/backend/Modules/Purchasing/"
                  + "GoymenERP.Modules.Purchasing.Infrastructure/"
                  + "PurchasingModuleExtensions.cs"] =
                     new(
-                        "8576c97f63a8a6ff92d21b05b50635997b192e7649d2b4523489258e10be04dc",
+                        "096f4a1dcaf64a77222ab43692402f0928f7b8def45a2f8b8c41f332652b923f",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,

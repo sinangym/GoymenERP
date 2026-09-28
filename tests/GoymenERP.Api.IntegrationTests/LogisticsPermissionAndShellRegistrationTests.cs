@@ -30,6 +30,8 @@ public sealed class LogisticsPermissionAndShellRegistrationTests
     [InlineData(LogisticsPermissionManifestV1.ShipmentsRecord, ErpPermissions.LogisticsShipmentsRecord)]
     [InlineData(LogisticsPermissionManifestV1.DeliveriesRecord, ErpPermissions.LogisticsDeliveriesRecord)]
     [InlineData(LogisticsPermissionManifestV1.WeighingsRecord, ErpPermissions.LogisticsWeighingsRecord)]
+    [InlineData(LogisticsPermissionManifestV1.OperationsSalesWorkRead, ErpPermissions.LogisticsOperationsSalesWorkRead)]
+    [InlineData(LogisticsPermissionManifestV1.OperationsPurchaseWorkRead, ErpPermissions.LogisticsOperationsPurchaseWorkRead)]
     public void The_owner_name_is_the_registered_central_name(string ownerName, string centralName)
     {
         Assert.Equal(ownerName, centralName);
@@ -59,7 +61,7 @@ public sealed class LogisticsPermissionAndShellRegistrationTests
 
         var actual = ShellCapabilityRegistry.ComputeCandidateRevision(providers);
         Assert.True(
-            string.Equals(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV13PublishedFinanceV12PublishedManufacturingV14AndPublishedLogisticsV11, actual,
+            string.Equals(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV13PublishedFinanceV12PublishedManufacturingV14AndPublishedLogisticsV12, actual,
                 StringComparison.Ordinal),
             $"Logistics normal-host authority drifted. Actual: {actual}");
     }
@@ -72,7 +74,7 @@ public sealed class LogisticsPermissionAndShellRegistrationTests
         var authority = C01E2eShellCapabilityActivation.Configure(services, new TestingEnvironment(),
             new ConfigurationBuilder().Build());
 
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV13PublishedFinanceV12PublishedManufacturingV14AndPublishedLogisticsV11, authority);
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV13PublishedFinanceV12PublishedManufacturingV14AndPublishedLogisticsV12, authority);
         using var container = services.BuildServiceProvider();
         var registry = new ShellCapabilityRegistry(container.GetServices<IShellCapabilityProvider>(),
             new ShellCapabilityAuthorityCatalog([authority]));
@@ -80,7 +82,8 @@ public sealed class LogisticsPermissionAndShellRegistrationTests
             .Where(item => item.Owner == LogisticsShellCapabilityProvider.OwnerId)
             .ToArray();
         // The list, the new-instruction workspace and the detail are published; each still requires its owner permission.
-        Assert.Equal(5, logistics.Length);
+        // AT-025: plus the operations work list's two separate sections (L-01 sales, L-09 purchase), each behind its own name.
+        Assert.Equal(7, logistics.Length);
         Assert.All(logistics, item => Assert.True(item.Declaration.ImplementationAvailable));
         Assert.Equal(2, logistics.Count(item => item.Declaration.ParentCapabilityId == LogisticsShellCapabilityProvider.DetailCapabilityId));
     }

@@ -616,7 +616,12 @@ class IssuerUserRuleTests(unittest.TestCase):
         self.assertEqual(self.LOCAL, environment[user + "Id"])
         self.assertEqual(self.EXTERNAL, environment[user + "ExternalIdentities__0__Id"])
         self.assertEqual("l04-issuer", environment[user + "ExternalIdentities__0__Subject"])
-        self.assertFalse(any(key.startswith("IdentitySeed__Roles__10__") for key in environment))
+        # The issuer is an ungranted non-actor: no role is defined for it and (below) no assignment names it.
+        # (The earlier check tested for an absent Roles__10 index, conflating the issuer's USER index 10 with a
+        # role index; Roles__10 is now the disposable AT-025 operations reader, so the intent is stated directly,
+        # as pur01 does.)
+        self.assertFalse(any(key.startswith("IdentitySeed__Roles__") and key.endswith("__Code")
+                             and "ISSUER" in value.upper() for key, value in environment.items()))
         self.assertFalse(any(value == self.LOCAL for key, value in environment.items()
                              if key.startswith("IdentitySeed__Assignments__")))
         self._validate(environment, suite="l04")

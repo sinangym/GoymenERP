@@ -168,22 +168,25 @@ public sealed class LogisticsPersistenceModelTests
     {
         var provider = new LogisticsShellCapabilityProvider();
         var declarations = provider.GetDeclarations();
-        Assert.Equal("1.1", provider.ContractVersion);
-        Assert.Equal(5, declarations.Count);
+        Assert.Equal("1.2", provider.ContractVersion);
+        Assert.Equal(7, declarations.Count);
         Assert.All(declarations, declaration => Assert.True(declaration.ImplementationAvailable));
         Assert.Equal(
             [
                 ("logistics.instructions.create", "/lojistik/yukleme-talimatlari/yeni", LogisticsPermissionManifestV1.InstructionsCreate),
                 ("logistics.instructions.detail", "/lojistik/yukleme-talimatlari/:instructionId", LogisticsPermissionManifestV1.InstructionsRead),
                 ("logistics.instructions.list", "/lojistik/yukleme-talimatlari", LogisticsPermissionManifestV1.InstructionsRead),
+                // AT-025: the operations work list's two separate sections, each behind its own read name.
+                ("logistics.operations-work.purchase", "/lojistik/operasyon-isleri/satinalma", LogisticsPermissionManifestV1.OperationsPurchaseWorkRead),
+                ("logistics.operations-work.sales", "/lojistik/operasyon-isleri/satis", LogisticsPermissionManifestV1.OperationsSalesWorkRead),
             ],
             declarations.Where(declaration => declaration.ParentCapabilityId is null)
                 .Select(declaration => (declaration.CapabilityId, declaration.RoutePath, declaration.RequiredPermissions.Single()))
                 .OrderBy(item => item.CapabilityId, StringComparer.Ordinal).ToArray());
-        Assert.Equal(6, LogisticsPermissionManifestV1.Names.Count);
+        Assert.Equal(8, LogisticsPermissionManifestV1.Names.Count);
         Assert.Equal("logistics.shipments.record", LogisticsPermissionManifestV1.ShipmentsRecord);
         Assert.Equal("logistics.deliveries.record", LogisticsPermissionManifestV1.DeliveriesRecord);
-        Assert.Equal(6, LogisticsPermissionManifestV1.Names.Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(8, LogisticsPermissionManifestV1.Names.Distinct(StringComparer.Ordinal).Count());
         // AT-053: the weighbridge record has its own name and, like recording a load, no shell declaration (a server-measured command on the detail).
         Assert.Equal("logistics.weighings.record", LogisticsPermissionManifestV1.WeighingsRecord);
         Assert.DoesNotContain(declarations, declaration => declaration.RequiredPermissions.Contains(LogisticsPermissionManifestV1.WeighingsRecord));
@@ -194,6 +197,8 @@ public sealed class LogisticsPersistenceModelTests
                 ("logistics.instructions.create", "L-03"),
                 ("logistics.instructions.detail", "L-02-DETAIL"),
                 ("logistics.instructions.list", "L-02"),
+                ("logistics.operations-work.purchase", "L-09"),
+                ("logistics.operations-work.sales", "L-01"),
                 ("logistics.shipments.record", "L-02-DETAIL"),
             ],
             declarations.OrderBy(declaration => declaration.CapabilityId, StringComparer.Ordinal)

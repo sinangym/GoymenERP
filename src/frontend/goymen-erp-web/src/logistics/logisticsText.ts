@@ -272,3 +272,48 @@ export const WEIGHING_TEXT = {
   invalidDirection: 'Brüt (dolu araç) tartımı daradan (boş araç) ağır olmalıdır; yönü ve tartımları kontrol edin.',
 } as const
 
+
+/** AT-025 — the operations work list (L-01 sales section, L-09 purchase section). */
+export const OPERATIONS_WORK_TEXT = {
+  heading: 'Operasyon işleri',
+  sections: 'Bölüm',
+  salesTab: 'Satış işleri',
+  purchaseTab: 'Satın alma işleri',
+  salesIntro: 'Onaylı satış siparişlerinin yükleme, sevk ve teslim bekleyen satırları. Satın alma belgeleri bu listede yer almaz.',
+  purchaseIntro: 'Onaylı satın alma siparişlerinin mal kabulü bekleyen satırları. Satış belgeleri bu listede yer almaz.',
+  salesCaption: 'Satış işleri — onaylı satış siparişi satırları, en yeni sipariş önce',
+  purchaseCaption: 'Satın alma işleri — mal kabulü bekleyen onaylı satın alma siparişi satırları, en yeni sipariş önce',
+  filter: 'Gösterilen satırlarda ara',
+  filterHint: 'Arama yalnız yüklenmiş satırlarda yapılır; kalan sayfalar için “Daha fazla göster”i kullanın.',
+  salesSubject: 'satış işleri',
+  purchaseSubject: 'satın alma işleri',
+  order: 'Sipariş',
+  line: 'Satır',
+  customer: 'Müşteri',
+  supplier: 'Tedarikçi',
+  product: 'Ürün',
+  unit: 'Birim',
+  ordered: 'Sipariş miktarı',
+  instructed: 'Talimat verilen',
+  loaded: 'Yüklenen',
+  shipped: 'Sevk edilen',
+  delivered: 'Teslim edilen',
+  requestedDelivery: 'İstenen teslim',
+  effectiveOn: 'Sipariş tarihi',
+  kind: 'Tür',
+  committed: 'Taahhüt',
+  accepted: 'Kabul edilen',
+  remaining: 'Kabul bekleyen',
+  purchaseOrder: 'Satın alma siparişi',
+  noDate: '—',
+  loadMore: 'Daha fazla göster',
+  loadingMore: 'Yükleniyor…',
+  end: 'Listenin sonu.',
+  nextPageFailed: 'Sonraki sayfa alınamadı. Gösterilen satırlar geçerli.',
+  noSection: 'Bu şirkette operasyon işleri için yetkiniz yok.',
+} as const
+
+export const PURCHASE_LINE_KIND_TEXT: Readonly<Record<string, string>> = {
+  General: 'Genel',
+  Technical: 'Teknik',
+}

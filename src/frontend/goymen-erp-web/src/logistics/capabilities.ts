@@ -20,6 +20,16 @@ export const LOGISTICS_CAPABILITY = {
   instructionsCreate: 'logistics.instructions.create',
   /** L-02-DETAIL — one instruction: the read view of one L-02 row (the F-02-DETAIL precedent). */
   instructionsDetail: 'logistics.instructions.detail',
+  /**
+   * AT-025 L-01 — the operations work list's SALES section (approved sales order lines to load, ship, deliver). Its own
+   * grant (`logistics.operations-work.sales.read`); it opens nothing of the purchase section.
+   */
+  operationsSales: 'logistics.operations-work.sales',
+  /**
+   * AT-025 L-09 — the operations work list's PURCHASE section (approved purchase order lines waiting for goods receipt).
+   * Its own grant (`logistics.operations-work.purchase.read`); it opens nothing of the sales section.
+   */
+  operationsPurchase: 'logistics.operations-work.purchase',
 } as const
 
 export type LogisticsCapabilityId = (typeof LOGISTICS_CAPABILITY)[keyof typeof LOGISTICS_CAPABILITY]
@@ -29,6 +39,8 @@ export const LOGISTICS_ROUTE = {
   // Static before the parameter route: `yeni` must never be read as an instruction id.
   create: '/lojistik/yukleme-talimatlari/yeni',
   detail: '/lojistik/yukleme-talimatlari/:instructionId',
+  operationsSales: '/lojistik/operasyon-isleri/satis',
+  operationsPurchase: '/lojistik/operasyon-isleri/satinalma',
 } as const
 
 /** Master v3 §27.8 screen ids, one per route, as the backend provider declares them. */
@@ -36,6 +48,8 @@ export const LOGISTICS_SCREEN_ID = {
   [LOGISTICS_CAPABILITY.instructionsList]: 'L-02',
   [LOGISTICS_CAPABILITY.instructionsCreate]: 'L-03',
   [LOGISTICS_CAPABILITY.instructionsDetail]: 'L-02-DETAIL',
+  [LOGISTICS_CAPABILITY.operationsSales]: 'L-01',
+  [LOGISTICS_CAPABILITY.operationsPurchase]: 'L-09',
 } as const
 
 export const LOGISTICS_NAV_LABEL = {
@@ -46,6 +60,9 @@ export const LOGISTICS_NAV_LABEL = {
   [LOGISTICS_CAPABILITY.instructionsCreate]: '',
   // No nav entry: an instruction is opened from the list row.
   [LOGISTICS_CAPABILITY.instructionsDetail]: '',
+  // AT-025: one entry per section, because each section is its own grant.
+  [LOGISTICS_CAPABILITY.operationsSales]: 'Operasyon işleri — Satış',
+  [LOGISTICS_CAPABILITY.operationsPurchase]: 'Operasyon işleri — Satın alma',
 } as const
 
 export const instructionDetailRoute = (instructionId: string) =>

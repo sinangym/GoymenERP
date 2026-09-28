@@ -623,6 +623,13 @@ public sealed partial class OpenApiContractGenerationTests
         new("get", "/api/v1/logistics/loading-instructions/approved-order-lines", "GetLogisticsApprovedOrderLinesV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["query:pageSize:false:type:integer|string;format:int32;pattern:^-?(?:0|[1-9]\\d*)$", "query:cursor:false:type:string"]),
+        // AT-025: the operations work list's two separate sections (L-01 sales, L-09 purchase).
+        new("get", "/api/v1/logistics/operations-work/sales", "GetLogisticsSalesWorkV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["query:pageSize:false:type:integer|string;format:int32;pattern:^-?(?:0|[1-9]\\d*)$", "query:cursor:false:type:string"]),
+        new("get", "/api/v1/logistics/operations-work/purchase", "GetLogisticsPurchaseWorkV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["query:pageSize:false:type:integer|string;format:int32;pattern:^-?(?:0|[1-9]\\d*)$", "query:cursor:false:type:string"]),
         new("get", "/api/v1/sales/references/contact-information", "GetSalesContactInformationReferencesV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["query:partyId:true:type:string;format:uuid", "query:companyAccountId:true:type:string;format:uuid"]),
@@ -798,6 +805,8 @@ public sealed partial class OpenApiContractGenerationTests
             ["ListManufacturingPlansV1"] = "ref:PlanListViewV1",
             ["CloseManufacturingOrderV1"] = "ref:OrderViewV1",
             ["GetLogisticsApprovedOrderLinesV1"] = "ref:LogisticsApprovedOrderLinePage",
+            ["GetLogisticsSalesWorkV1"] = "ref:LogisticsSalesWorkPage",
+            ["GetLogisticsPurchaseWorkV1"] = "ref:LogisticsPurchaseWorkPage",
             ["GetSalesContactInformationReferencesV1"] = "ref:SalesContactInformationOptionsV1",
             ["GetSalesCurrencyReferencesV1"] = "ref:SalesCurrencyOptionsV1",
         };
@@ -948,6 +957,8 @@ public sealed partial class OpenApiContractGenerationTests
         "ListManufacturingPlansV1",
         "CloseManufacturingOrderV1",
         "GetLogisticsApprovedOrderLinesV1",
+        "GetLogisticsSalesWorkV1",
+        "GetLogisticsPurchaseWorkV1",
         "GetSalesContactInformationReferencesV1",
         "GetSalesCurrencyReferencesV1",
     ];
@@ -1280,6 +1291,8 @@ public sealed partial class OpenApiContractGenerationTests
         "ApproveAccountingJournalReversalV1",
         "CloseManufacturingOrderV1",
         "GetLogisticsApprovedOrderLinesV1",
+        "GetLogisticsSalesWorkV1",
+        "GetLogisticsPurchaseWorkV1",
         "GetSalesContactInformationReferencesV1",
         "GetSalesCurrencyReferencesV1",
     ];
@@ -1721,6 +1734,8 @@ public sealed partial class OpenApiContractGenerationTests
             ["CloseManufacturingOrderV1:409"] = ManufacturingConflictCodes,
             ["CloseManufacturingOrderV1:422"] = ManufacturingUnprocessableCodes,
             ["GetLogisticsApprovedOrderLinesV1:400"] = ["invalid_cursor", "validation_failed"],
+            ["GetLogisticsSalesWorkV1:400"] = ["invalid_cursor", "validation_failed"],
+            ["GetLogisticsPurchaseWorkV1:400"] = ["invalid_cursor", "validation_failed"],
             ["GetSalesContactInformationReferencesV1:400"] = ["validation_failed"],
             ["GetSalesCurrencyReferencesV1:400"] = ["validation_failed"],
         };
@@ -1815,6 +1830,49 @@ public sealed partial class OpenApiContractGenerationTests
                     ("parentRollId", "type:string;format:uuid"),
                     ("plannedKg", "type:string"),
                     ("expectedLabelVersion", "type:null|string")),
+                ["LogisticsSalesWorkPage"] = ObjectSchema(
+                    ["section", "items", "nextCursor"],
+                    ("section", "type:string"),
+                    ("items", "type:array;items:ref:LogisticsSalesWorkItemView"),
+                    ("nextCursor", "type:null|string")),
+                ["LogisticsSalesWorkItemView"] = ObjectSchema(
+                    ["orderId", "documentNo", "lineId", "lineNo", "customerPartyId", "customerName", "productId", "productCode", "productName", "unitId", "unitCode", "ordered", "instructed", "loaded", "shipped", "delivered", "requestedDeliveryDate"],
+                    ("orderId", "type:string;format:uuid"),
+                    ("documentNo", "type:string"),
+                    ("lineId", "type:string;format:uuid"),
+                    ("lineNo", "type:integer|string;format:int32"),
+                    ("customerPartyId", "type:string;format:uuid"),
+                    ("customerName", "type:string"),
+                    ("productId", "type:string;format:uuid"),
+                    ("productCode", "type:string"),
+                    ("productName", "type:string"),
+                    ("unitId", "type:string;format:uuid"),
+                    ("unitCode", "type:string"),
+                    ("ordered", "type:string"),
+                    ("instructed", "type:string"),
+                    ("loaded", "type:string"),
+                    ("shipped", "type:string"),
+                    ("delivered", "type:string"),
+                    ("requestedDeliveryDate", "type:null|string;format:date")),
+                ["LogisticsPurchaseWorkPage"] = ObjectSchema(
+                    ["section", "items", "nextCursor"],
+                    ("section", "type:string"),
+                    ("items", "type:array;items:ref:LogisticsPurchaseWorkItemView"),
+                    ("nextCursor", "type:null|string")),
+                ["LogisticsPurchaseWorkItemView"] = ObjectSchema(
+                    ["orderId", "orderEffectiveOn", "lineId", "lineNo", "kind", "supplierPartyId", "supplierName", "productId", "unitId", "committed", "accepted", "remaining"],
+                    ("orderId", "type:string;format:uuid"),
+                    ("orderEffectiveOn", "type:string;format:date"),
+                    ("lineId", "type:string;format:uuid"),
+                    ("lineNo", "type:integer|string;format:int32"),
+                    ("kind", "type:string"),
+                    ("supplierPartyId", "type:string;format:uuid"),
+                    ("supplierName", "type:string"),
+                    ("productId", "type:string;format:uuid"),
+                    ("unitId", "type:string;format:uuid"),
+                    ("committed", "type:string"),
+                    ("accepted", "type:string"),
+                    ("remaining", "type:string")),
                 ["LogisticsApprovedOrderLinePage"] = ObjectSchema(
                     ["items", "nextCursor"],
                     ("items", "type:array;items:ref:LogisticsApprovedOrderLineView"),
@@ -4509,9 +4567,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(164, operations.Count);
+        Assert.Equal(166, operations.Count);
         Assert.Equal(
-            164,
+            166,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());

@@ -4,6 +4,7 @@ using GoymenERP.Api.Shell;
 using GoymenERP.BrowserSuiteFixtureTool.Shared;
 using GoymenERP.Modules.Logistics.Infrastructure.Fixtures;
 using GoymenERP.Modules.Product.Infrastructure.Fixtures;
+using GoymenERP.Modules.Purchasing.Infrastructure.Fixtures;
 using GoymenERP.Modules.Sales.Infrastructure.Fixtures;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.Extensions.DependencyInjection;
@@ -22,6 +23,10 @@ namespace GoymenERP.BrowserSuiteFixtureTool.Suites.L04;
 /// Logistics API by the preparer; its second line is then BLOCKED by the gated Logistics fixture writer —
 /// the only suite state no API produces in 4a (D2's block source arrives in LOG-5).</item>
 /// </list>
+/// <item>AT-025 (L04-08): ONE Cari supplier through the REAL Counterparty API and ONE purchase order written by the gated
+/// Purchasing fixture writer (Draft, the pur01 way) with that supplier, then APPROVED through the REAL Purchasing API by the
+/// seed-only purchase approver — so the operations work list has one purchase line waiting for goods receipt beside the
+/// approved sales line, and the suite can prove that neither shows in the other's section.</item>
 /// Everything the suite does afterwards is real UI + real API: the positive path creates ANOTHER instruction
 /// from a real selection of the approved line in the normal screens. The read-backs below fail the run here,
 /// not in the browser, when a grant, a port or a mount does not resolve.
@@ -33,6 +38,9 @@ public sealed class L04BrowserSeed : IBrowserSuiteFixture
     public const string ReaderActor = "l04-reader";
     public const string SalesPreparerActor = "l04-sales-preparer";
     public const string SalesApproverActor = "l04-sales-approver";
+    // AT-025: the operations work list's actor (both section names + the owner screens' reads) and the seed-only purchase approver.
+    public const string OperationsActor = "l04-operations";
+    public const string PurchaseApproverActor = "l04-purchase-approver";
     public const string CariActor = "group-bootstrap-admin";
 
     public static readonly Guid CompanyGdc = Guid.Parse("10000000-0000-0000-0000-000000000001");
@@ -48,6 +56,12 @@ public sealed class L04BrowserSeed : IBrowserSuiteFixture
     // no trade name, so the price-free read's customerName is its legal name = context.Label("Yükleme müşterisi").
     public const string CustomerName = "SENTETIK browser-suite:l04 Yükleme müşterisi";
 
+    // AT-025: the purchase order waiting for goods receipt (deterministic ids, the pur01 way), and its supplier's Cari name.
+    public static readonly Guid PurchaseOrderId = Guid.Parse("e7000000-0000-4000-8000-000000000401");
+    public static readonly Guid PurchaseLineId = Guid.Parse("e7100000-0000-4000-8000-000000000401");
+    private static readonly Guid PurchaseProductId = Guid.Parse("e7200000-0000-4000-8000-000000000401");
+    public const string SupplierName = "SENTETIK browser-suite:l04 Operasyon tedarikçisi";
+
     // Synthetic owner snapshots the Sales fixture stores (no Product or Settings money answer is asked for them).
     private static readonly Guid CurrencyId = Guid.Parse("e4000000-0000-4000-8000-000000000401");
     private static readonly Guid MoneyProfileId = Guid.Parse("e5000000-0000-4000-8000-000000000401");
@@ -62,6 +76,12 @@ public sealed class L04BrowserSeed : IBrowserSuiteFixture
     private static readonly DateTimeOffset At = new DateTimeOffset(2026, 9, 19, 9, 0, 0, TimeSpan.Zero);
 
     private const int CustomerRole = 1;
+    private const int SupplierRole = 2;
+    private const string PurchaseOrdersPath = "/api/v1/purchasing/orders";
+    private const string SalesWorkPath = "/api/v1/logistics/operations-work/sales";
+    private const string PurchaseWorkPath = "/api/v1/logistics/operations-work/purchase";
+    private const string SalesWorkCapability = "logistics.operations-work.sales";
+    private const string PurchaseWorkCapability = "logistics.operations-work.purchase";
     private const string DraftsPath = "/api/v1/sales/drafts";
     private const string InstructionsPath = "/api/v1/logistics/loading-instructions";
     private const string ApprovedLinesPath = InstructionsPath + "/approved-order-lines";
@@ -224,6 +244,35 @@ public sealed class L04BrowserSeed : IBrowserSuiteFixture
             throw new InvalidOperationException("The reader does not see the seeded instruction in the real list.");
         }
 
+        // 4) AT-025: one approved purchase order waiting for goods receipt, and the operations actor's two separate sections.
+        await EnsureApprovedPurchaseOrderAsync(context, cancellationToken);
+        JsonElement salesWork = await context.GetJsonAsync(OperationsActor, CompanyGdc, SalesWorkPath, cancellationToken);
+        JsonElement purchaseWork = await context.GetJsonAsync(OperationsActor, CompanyGdc, PurchaseWorkPath, cancellationToken);
+        string salesWorkJson = salesWork.GetRawText();
+        string purchaseWorkJson = purchaseWork.GetRawText();
+        if (salesWork.GetProperty("section").GetString() != "Sales"
+            || !salesWorkJson.Contains(LineId.ToString("D"), StringComparison.OrdinalIgnoreCase)
+            || salesWorkJson.Contains(PurchaseOrderId.ToString("D"), StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("The sales section must answer the seeded approved sales line and nothing of the purchase order.");
+        }
+
+        // The supplier name is compared as a parsed value: the raw JSON escapes its non-ASCII letters (ç as ç).
+        if (purchaseWork.GetProperty("section").GetString() != "Purchase"
+            || !purchaseWork.GetProperty("items").EnumerateArray().Any(item =>
+                item.GetProperty("lineId").GetGuid() == PurchaseLineId
+                && item.GetProperty("supplierName").GetString() == SupplierName)
+            || purchaseWorkJson.Contains(DraftId.ToString("D"), StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("The purchase section must answer the seeded purchase line by the supplier's name and nothing of the sales order.");
+        }
+
+        string[] operations = await CapabilitiesAsync(context, OperationsActor, cancellationToken);
+        if (!operations.Contains(SalesWorkCapability, StringComparer.Ordinal) || !operations.Contains(PurchaseWorkCapability, StringComparer.Ordinal))
+        {
+            throw new InvalidOperationException("The two operations sections are not published to the operations actor.");
+        }
+
         string[] preparer = await CapabilitiesAsync(context, PreparerActor, cancellationToken);
         if (!preparer.Contains(ListCapability, StringComparer.Ordinal) || !preparer.Contains(CreateCapability, StringComparer.Ordinal)
             || !preparer.Contains(DetailCapability, StringComparer.Ordinal))
@@ -235,7 +284,8 @@ public sealed class L04BrowserSeed : IBrowserSuiteFixture
         {
             string[] published = await CapabilitiesAsync(context, actor, cancellationToken);
             if (!published.Contains(ListCapability, StringComparer.Ordinal) || !published.Contains(DetailCapability, StringComparer.Ordinal)
-                || published.Contains(CreateCapability, StringComparer.Ordinal))
+                || published.Contains(CreateCapability, StringComparer.Ordinal)
+                || published.Contains(SalesWorkCapability, StringComparer.Ordinal) || published.Contains(PurchaseWorkCapability, StringComparer.Ordinal))
             {
                 throw new InvalidOperationException($"{actor} must see the list and the detail and not the create screen.");
             }
@@ -258,6 +308,55 @@ public sealed class L04BrowserSeed : IBrowserSuiteFixture
             ["shipmentAllocationId"] = ShipmentAllocationId.ToString("D"),
             ["shipmentLabelId"] = ShipmentLabelId.ToString("D"),
         };
+    }
+
+    /// <summary>
+    /// AT-025: the supplier through the real Cari API, the order through the gated Purchasing fixture writer (Draft), then the
+    /// approval through the real Purchasing API by the seed-only approver; a re-run finds it Approved and leaves it.
+    /// </summary>
+    private static async Task EnsureApprovedPurchaseOrderAsync(BrowserSuiteFixtureContext context, CancellationToken cancellationToken)
+    {
+        CariBrowserAccount supplier = await CariBrowserSeed.OpenPartyWithAccountAsync(
+            context, CariActor, CompanyGdc, "supplier", "Operasyon tedarikçisi", SupplierRole, cancellationToken);
+        long version;
+        await using (AsyncServiceScope scope = context.Services.CreateAsyncScope())
+        {
+            PurchaseOrderFixtureOutcome outcome = await scope.ServiceProvider.GetRequiredService<C01E2ePurchaseOrderFixtureWriter>().EnsureAsync(
+                new PurchaseOrderFixtureRequest(
+                    PurchaseOrderId,
+                    CompanyGdc,
+                    supplier.PartyId,
+                    supplier.AccountId,
+                    BusinessDate,
+                    new PurchaseOrderFixtureLine(PurchaseLineId, PurchaseProductId, "1", SettingsUnitIdentitiesV1.Kilogram, IsKilogram: true, Quantity: 7m),
+                    context.Label(string.Empty).TrimEnd(),
+                    context.Label("purchase-seed"),
+                    context.IdempotencyKey("purchase-order"),
+                    At),
+                cancellationToken);
+            if (outcome.OrderId != PurchaseOrderId)
+            {
+                throw new InvalidOperationException("The Purchasing fixture writer answered another order id.");
+            }
+
+            version = outcome.Version;
+        }
+
+        JsonElement detail = await context.GetJsonAsync(PurchaseApproverActor, CompanyGdc, $"{PurchaseOrdersPath}/{PurchaseOrderId:D}", cancellationToken);
+        if (detail.GetProperty("order").GetProperty("status").GetString() == "Draft")
+        {
+            await context.PostJsonAsync(PurchaseApproverActor, CompanyGdc, $"{PurchaseOrdersPath}/{PurchaseOrderId:D}/approval",
+                new { expectedVersion = version.ToString(System.Globalization.CultureInfo.InvariantCulture) }, "purchase-approve", cancellationToken);
+            detail = await context.GetJsonAsync(PurchaseApproverActor, CompanyGdc, $"{PurchaseOrdersPath}/{PurchaseOrderId:D}", cancellationToken);
+        }
+
+        if (detail.GetProperty("order").GetProperty("status").GetString() != "Approved"
+            || detail.GetProperty("lines").GetArrayLength() != 1
+            || detail.GetProperty("lines")[0].GetProperty("lineId").GetGuid() != PurchaseLineId
+            || detail.GetProperty("lines")[0].GetProperty("remaining").GetString() != "7")
+        {
+            throw new InvalidOperationException("The seeded purchase order is not an APPROVED one-line order with 7 kg waiting for receipt.");
+        }
     }
 
     /// <summary>The seeded instruction through the real API: its create key replays on a re-run, so the id is stable.</summary>
