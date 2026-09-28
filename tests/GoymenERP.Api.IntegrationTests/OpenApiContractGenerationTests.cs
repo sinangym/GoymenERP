@@ -630,6 +630,10 @@ public sealed partial class OpenApiContractGenerationTests
         new("get", "/api/v1/logistics/operations-work/purchase", "GetLogisticsPurchaseWorkV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["query:pageSize:false:type:integer|string;format:int32;pattern:^-?(?:0|[1-9]\\d*)$", "query:cursor:false:type:string"]),
+        // AT-002: the global search composer over module-owned sources (Cari, Product, Sales).
+        new("get", "/api/v1/search", "SearchGlobalV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["query:q:false:type:string"]),
         new("get", "/api/v1/sales/references/contact-information", "GetSalesContactInformationReferencesV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["query:partyId:true:type:string;format:uuid", "query:companyAccountId:true:type:string;format:uuid"]),
@@ -807,6 +811,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetLogisticsApprovedOrderLinesV1"] = "ref:LogisticsApprovedOrderLinePage",
             ["GetLogisticsSalesWorkV1"] = "ref:LogisticsSalesWorkPage",
             ["GetLogisticsPurchaseWorkV1"] = "ref:LogisticsPurchaseWorkPage",
+            ["SearchGlobalV1"] = "ref:GlobalSearchResponseV1",
             ["GetSalesContactInformationReferencesV1"] = "ref:SalesContactInformationOptionsV1",
             ["GetSalesCurrencyReferencesV1"] = "ref:SalesCurrencyOptionsV1",
         };
@@ -959,6 +964,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetLogisticsApprovedOrderLinesV1",
         "GetLogisticsSalesWorkV1",
         "GetLogisticsPurchaseWorkV1",
+        "SearchGlobalV1",
         "GetSalesContactInformationReferencesV1",
         "GetSalesCurrencyReferencesV1",
     ];
@@ -1736,6 +1742,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetLogisticsApprovedOrderLinesV1:400"] = ["invalid_cursor", "validation_failed"],
             ["GetLogisticsSalesWorkV1:400"] = ["invalid_cursor", "validation_failed"],
             ["GetLogisticsPurchaseWorkV1:400"] = ["invalid_cursor", "validation_failed"],
+            ["SearchGlobalV1:400"] = ["validation_failed"],
             ["GetSalesContactInformationReferencesV1:400"] = ["validation_failed"],
             ["GetSalesCurrencyReferencesV1:400"] = ["validation_failed"],
         };
@@ -3394,6 +3401,24 @@ public sealed partial class OpenApiContractGenerationTests
                     ("isActive", "type:boolean"),
                     ("version", "type:integer;format:int64"),
                     ("canOpenLocationDetail", "type:boolean")),
+                // AT-002 global search: price-free and count-free; each group is one module-owned kind.
+                ["GlobalSearchResponseV1"] = ObjectSchema(
+                    ["query", "groups"],
+                    ("query", "type:string"),
+                    ("groups", "type:array;items:ref:GlobalSearchGroupV1")),
+                ["GlobalSearchGroupV1"] = ObjectSchema(
+                    ["kind", "items", "hasMore"],
+                    ("kind", "type:string"),
+                    ("items", "type:array;items:ref:GlobalSearchItemV1"),
+                    ("hasMore", "type:boolean")),
+                ["GlobalSearchItemV1"] = ObjectSchema(
+                    ["id", "code", "name", "secondaryName", "state", "date"],
+                    ("id", "type:string;format:uuid"),
+                    ("code", "type:string"),
+                    ("name", "type:null|string"),
+                    ("secondaryName", "type:null|string"),
+                    ("state", "type:string"),
+                    ("date", "type:null|string;format:date")),
                 // SY-01/SY-02 read-only access view: no e-mail, issuer or external subject is ever a member.
                 ["IdentityAccessUserSummary"] = ObjectSchema(
                     ["userId", "displayName", "isActive", "assignmentCount", "effectiveAssignmentCount"],
@@ -4567,9 +4592,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(166, operations.Count);
+        Assert.Equal(167, operations.Count);
         Assert.Equal(
-            166,
+            167,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());

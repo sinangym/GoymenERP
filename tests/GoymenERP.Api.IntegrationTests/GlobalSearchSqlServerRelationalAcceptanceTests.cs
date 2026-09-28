@@ -116,7 +116,11 @@ public sealed class GlobalSearchSqlServerRelationalAcceptanceTests
                 (approved.GetProperty("code").GetString(), approved.GetProperty("state").GetString(), approved.GetProperty("date").GetString()));
             Assert.Equal("Preparing", group.GetProperty("items")[0].GetProperty("state").GetString());
             Assert.DoesNotContain(Id(orderB.Id), orders.GetRawText(), StringComparison.OrdinalIgnoreCase);
-            Assert.Empty((await run.SearchAsync(salesOnly, "zeta")).GetProperty("groups").EnumerateArray());
+            // A readable kind with no match answers its group with no items (as the Cari-only "SO-" search above); no Cari
+            // group appears because this actor holds no Cari read.
+            var noOrder = await run.SearchAsync(salesOnly, "zeta");
+            Assert.Equal([GlobalSearchKindsV1.SalesOrder], Kinds(noOrder));
+            Assert.Equal(0, noOrder.GetProperty("groups")[0].GetProperty("items").GetArrayLength());
         }
 
         // Company B's reader with both reads: B's own party and the shared one, B's order only.

@@ -27,6 +27,7 @@ import { logisticsRoutes } from '../logistics/logisticsRoutes'
 import { purchasingRoutes } from '../purchasing/purchasingRoutes'
 import { inventoryRoutes } from '../inventory/inventoryRoutes'
 import { identityRoutes } from '../identity/identityRoutes'
+import { searchRoutes } from '../search/searchRoutes'
 import { StateBlock } from './StateBlock'
 
 export const shellRoutes: RouteObject[] = [
@@ -185,6 +186,11 @@ export const shellRoutes: RouteObject[] = [
       ...purchasingRoutes,
       ...inventoryRoutes,
       ...identityRoutes,
+      /**
+       * AT-002: the global search results (`/arama`), declared in `src/search/searchRoutes.tsx` behind the shared entry
+       * gate on the first searchable owner list the actor holds; it has no capability of its own.
+       */
+      ...searchRoutes,
       {
         /**
          * Catch-all. Without it react-router renders its own error boundary —

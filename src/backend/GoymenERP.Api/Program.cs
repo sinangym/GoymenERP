@@ -5,6 +5,7 @@ using GoymenERP.Api.LogisticsRuntime;
 using GoymenERP.Api.ManufacturingRuntime;
 using GoymenERP.Api.Multitenancy;
 using GoymenERP.Api.PurchasingRuntime;
+using GoymenERP.Api.Search;
 using GoymenERP.Api.Observability;
 using GoymenERP.Api.OpenApi;
 using GoymenERP.Api.ProductRuntime;
@@ -259,6 +260,8 @@ builder.Services.AddAccountingModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(
         services.GetRequiredService<AuditSaveChangesInterceptor>()));
+// AT-002 / ERP-000I: the global search composer and its module-owned sources (Cari, Product, Sales), after the modules.
+builder.Services.AddGlobalSearch();
 // Registered before the shell authority is chosen: the module table maps the provider set.
 builder.Services.AddSingleton<IShellCapabilityProvider, SalesShellCapabilityProvider>();
 // FIN-UI-1a (#325): Finance's (staged) receipt and bank-account screens, before the authority is chosen.
@@ -329,6 +332,7 @@ app.MapLogisticsEndpoints();
 app.MapPurchasingEndpoints();
 app.MapPurchasingProductCandidateEndpoints();
 app.MapAccountingEndpoints();
+app.MapGlobalSearchEndpoints();
 app.MapShellEndpoints();
 
 if (!isOpenApiDocumentGeneration
