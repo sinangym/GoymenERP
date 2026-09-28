@@ -342,7 +342,7 @@ internal sealed class IdentityAccessReadService(
             : IdentityAccessValidity.Inactive;
     }
 
-    private static IdentityAccessAssignment ToAssignment(AssignmentRow row) => new(
+    private static IdentityAccessAssignment ToAssignment(AssignmentRow row) => new IdentityAccessAssignment(
         row.AssignmentId,
         row.RoleId,
         row.RoleCode,
