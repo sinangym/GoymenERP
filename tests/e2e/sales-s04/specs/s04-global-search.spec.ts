@@ -139,8 +139,15 @@ test('S04-GS1 box → grouped results → open the order → Back returns to the
   const salesGroup = page.getByTestId(`global-search-group-${SALES_KIND}`)
   const result = salesGroup.getByRole('link', { name: new RegExp(documentNo) })
   await expect(result).toHaveAttribute('href', `/satis/siparisler/${deliveryDraftId}`)
+  // The Sales order detail is really entered and read before Back: its own draft read answers and its screen replaces the
+  // results (the GS2 rule; without it Back can fire before the owner route is entered).
+  const detailRead = page.waitForResponse(
+    (candidate) => new URL(candidate.url()).pathname === `/api/v1/sales/drafts/${deliveryDraftId}` && candidate.request().method() === 'GET',
+  )
   await result.click()
   await expect(page).toHaveURL(new RegExp(`/satis/siparisler/${deliveryDraftId}$`))
+  expect((await detailRead).status()).toBe(200)
+  await expect(page.getByTestId(`global-search-group-${SALES_KIND}`)).toHaveCount(0)
 
   // Back is a new route entry (#146/#148): the page reads the search AFRESH (never a cached answer) and shows the same.
   const again = await backExpectingFreshSearch(page, documentNo)
