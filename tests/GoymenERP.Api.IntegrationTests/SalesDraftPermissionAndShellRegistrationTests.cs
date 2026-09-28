@@ -43,6 +43,9 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
     // DEC-SAL-005: cancelling an approved order. Its own name, company-wide and not Critical (the reason is on
     // ErpPermissions.SalesOrdersCancel).
     [InlineData(SalesPermissionManifestV1.OrdersCancel, ErpPermissions.SalesOrdersCancel)]
+    // DEC-SAL-002: the quantity revision of an approved order. Its own name, company-wide and not Critical (the reason is
+    // on ErpPermissions.SalesOrdersQuantityWrite).
+    [InlineData(SalesPermissionManifestV1.OrdersQuantityWrite, ErpPermissions.SalesOrdersQuantityWrite)]
     public void The_owner_name_is_the_registered_central_name(string ownerName, string centralName)
     {
         Assert.Equal(ownerName, centralName);
@@ -73,7 +76,7 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
         var actual = ShellCapabilityRegistry.ComputeCandidateRevision(providers);
         Assert.True(
             string.Equals(
-                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12AndPublishedSalesV13,
+                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12AndPublishedSalesV14,
                 actual,
                 StringComparison.Ordinal),
             $"Sales normal-host authority drifted. Actual: {actual}");
@@ -91,7 +94,7 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
         var authority = C01E2eShellCapabilityActivation.Configure(services, new TestingEnvironment(),
             new ConfigurationBuilder().Build());
 
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12AndPublishedSalesV13, authority);
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12AndPublishedSalesV14, authority);
         using var container = services.BuildServiceProvider();
         var registry = new ShellCapabilityRegistry(container.GetServices<IShellCapabilityProvider>(),
             new ShellCapabilityAuthorityCatalog([authority]));
