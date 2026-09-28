@@ -591,11 +591,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 // DEC-FIN-016: the customer cheque / promissory-note writer references SqlException only to
                 // classify a 2601/2627 unique-key race after SaveChanges (a race of two collections makes one
-                // money event). No connection, command, raw SQL or DbContext construction.
+                // money event). No connection, command, raw SQL or DbContext construction. K3 5332370492: the
+                // risk view reads each instrument's state as of the chosen business date; SqlClient count unchanged.
                 ["src/backend/Modules/Finance/"
                  + "GoymenERP.Modules.Finance.Infrastructure/CustomerInstrumentService.cs"] =
                     new(
-                        "abad72d7a1e379530fc0e71566b14f1e440dba9ed7df2967bb9c6b1dbccd31fb",
+                        "c6f97f814df4a4a7850c9f5e6bd9cc0f4b253d5d8b55a5d7df88c93a17630227",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
