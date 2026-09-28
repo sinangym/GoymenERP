@@ -205,6 +205,10 @@ export const PROBLEM_CODE_TEXT: Record<LogisticsProblemCode, string> = {
   [LOGISTICS_PROBLEM_CODE.loadExceedsInstructed]: 'Yükleme payı talimat kalanını aşıyor; pay kaydedilmedi.',
   [LOGISTICS_PROBLEM_CODE.lineBlocked]: 'Satır bloklu; yeni yükleme payı kaydedilmez.',
   [LOGISTICS_PROBLEM_CODE.duplicateShare]: 'Bu yükleme kaydı daha önce işlendi; ikinci kez kaydedilmedi.',
+  [LOGISTICS_PROBLEM_CODE.weighingAlreadyRecorded]:
+    'Bu talimatın kantar tartımı zaten kayıtlı; düzeltme kuralı karara bağlanmadığı için ikinci tartım kaydedilmez.',
+  [LOGISTICS_PROBLEM_CODE.weighingDirectionInconsistent]:
+    'Tartımlar seçilen yönle tutarsız: brüt (dolu araç) tartımı daradan (boş araç) ağır olmalıdır.',
   [LOGISTICS_PROBLEM_CODE.sameKeyPayloadMismatch]:
     'Aynı işlem anahtarı farklı bir içerikle kullanılmış; bu gönderim uygulanmadı.',
   [LOGISTICS_PROBLEM_CODE.concurrentChange]: 'Aynı anda başka bir kayıt öne geçti; aynı gönderimi tekrar deneyin.',
@@ -238,3 +242,33 @@ export const REALIZATION_TEXT = {
   noShipment: 'Bu satırda teslim bekleyen bir sevk yok.',
   refresh: 'Kaynakları yenile',
 } as const
+
+/** AT-053 — the manual weighbridge record (master v3 §27.8 L-06 "Kantar Oturumu": brüt, dara, net ve fark). */
+export const WEIGHING_TEXT = {
+  heading: 'Kantar tartımı',
+  note:
+    'Aracın iki tartımını kantar fişindeki sırayla elle girin. Net ve fark sunucuda hesaplanır. Fark yalnız bir olgudur: ' +
+    'tolerans eşikleri henüz karara bağlanmadığı için kabul/ret değerlendirmesi yapılmaz. Stok hareketi oluşmaz.',
+  none: 'Bu talimat için kantar tartımı kaydedilmedi.',
+  issuedOnly: 'Kantar tartımı yalnız yayımlanmış talimata kaydedilir.',
+  direction: 'Tartım yönü',
+  directionOption: {
+    TareFirst: 'Önce dara (boş araç), sonra brüt (dolu araç)',
+    GrossFirst: 'Önce brüt (dolu araç), sonra dara (boş araç)',
+  },
+  directionShort: { TareFirst: 'Önce dara', GrossFirst: 'Önce brüt' },
+  first: '1. tartım (kg)',
+  second: '2. tartım (kg)',
+  tare: 'Dara (kg)',
+  gross: 'Brüt (kg)',
+  net: 'Net (kg)',
+  loadedAtWeighing: 'Tartım anında yüklenen (kg)',
+  difference: 'Fark: net − yüklenen (kg)',
+  differenceNote: 'Eksi değer tartımın yüklenenden hafif, artı değer ağır olduğunu gösterir. Tolerans değerlendirmesi yoktur.',
+  recordedBy: 'Kaydeden kullanıcı',
+  recordedAt: 'Kayıt zamanı',
+  record: 'Tartımı kaydet',
+  onlyOnce: 'Bir talimata tek kantar tartımı kaydedilir; hatalı bir kaydın nasıl düzeltileceği henüz karara bağlanmadı.',
+  invalidDirection: 'Brüt (dolu araç) tartımı daradan (boş araç) ağır olmalıdır; yönü ve tartımları kontrol edin.',
+} as const
+

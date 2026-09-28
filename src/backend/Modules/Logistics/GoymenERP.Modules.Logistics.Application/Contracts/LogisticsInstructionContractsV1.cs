@@ -35,6 +35,15 @@ public sealed record IssueLoadingInstructionRequest(string ExpectedVersion);
 /// </summary>
 public sealed record RecordLoadRequest(string ExpectedVersion, Guid LoadId, string Quantity, string Measurement);
 
+/// <summary>
+/// POST …/{id}/weighings (AT-053): the vehicle's manual weighbridge record for an issued instruction — the two
+/// weighings as exact kilogram text in the order they were taken and the direction (<c>TareFirst</c> |
+/// <c>GrossFirst</c>) that says which one is the empty vehicle. The weighing id is the client's (one record per
+/// snapshot). No net, difference, tolerance, operator or time is sent: the backend calculates and stamps them.
+/// </summary>
+public sealed record RecordWeighingRequest(string ExpectedVersion, Guid WeighingId, string Direction, string FirstWeighingKg,
+    string SecondWeighingKg);
+
 // ---- views --------------------------------------------------------------------------------------
 
 public sealed record LoadingInstructionSummaryView(
@@ -51,10 +60,22 @@ public sealed record LoadingInstructionLineView(
 public sealed record LoadingShareView(
     Guid ShareId, Guid LineId, string Kind, string Quantity, string? Measurement, Guid? SourceShipmentId, DateTimeOffset RecordedAtUtc);
 
+/// <summary>
+/// The instruction's manual weighbridge record (AT-053) as exact kilogram text: the two weighings as entered, the
+/// direction, tare / gross / net (WGT-001, the backend's calculation), the kilograms loaded on the instruction when
+/// it was weighed and the signed difference net − loaded (WGT-002; "-" when lighter). Facts only — no tolerance
+/// verdict exists (OPEN-004). <paramref name="RecordedBy"/> is the operator's user id.
+/// </summary>
+public sealed record LoadingInstructionWeighingView(
+    Guid WeighingId, string Direction, string FirstWeighingKg, string SecondWeighingKg, string TareKg, string GrossKg, string NetKg,
+    string LoadedKgAtWeighing, string DifferenceKg, string RecordedBy, DateTimeOffset RecordedAtUtc);
+
+/// <param name="Weighing">The manual weighbridge record, or null while none is recorded (always present on the wire).</param>
 public sealed record LoadingInstructionDetailView(
     LoadingInstructionSummaryView Instruction,
     IReadOnlyList<LoadingInstructionLineView> Lines,
-    IReadOnlyList<LoadingShareView> Shares);
+    IReadOnlyList<LoadingShareView> Shares,
+    LoadingInstructionWeighingView? Weighing = null);
 
 public sealed record LoadingInstructionResponse(LoadingInstructionDetailView Detail, bool IsReplay, string OriginalCorrelationId);
 
@@ -111,6 +132,12 @@ public static class LogisticsProblemCodesV1
     /// <summary>409, terminal (§7): the same load id was already recorded on this instruction under another key.</summary>
     public const string DuplicateShare = "logistics_duplicate_share_id";
 
+    /// <summary>409, terminal (§7; AT-053): the instruction already has its weighbridge record; the correction rule is undecided, so a second is refused.</summary>
+    public const string WeighingAlreadyRecorded = "logistics_weighing_already_recorded";
+
+    /// <summary>422 (AT-053): the two weighings contradict the declared direction (the gross must be heavier than the tare).</summary>
+    public const string WeighingDirectionInconsistent = "logistics_weighing_direction_inconsistent";
+
     public const string SameKeyPayloadMismatch = "same_key_payload_mismatch";
     public const string ConcurrentChange = "concurrent_change";
 
@@ -147,7 +174,8 @@ public sealed record LogisticsInstructionServiceBindings(
     string? ReadPermission = LogisticsPermissionManifestV1.InstructionsRead,
     string? RecordPermission = LogisticsPermissionManifestV1.LoadsRecord,
     string? ShipmentPermission = LogisticsPermissionManifestV1.ShipmentsRecord,
-    string? DeliveryPermission = LogisticsPermissionManifestV1.DeliveriesRecord);
+    string? DeliveryPermission = LogisticsPermissionManifestV1.DeliveriesRecord,
+    string? WeighingPermission = LogisticsPermissionManifestV1.WeighingsRecord);
 
 /// <summary>Constructed by the server, never bound from the request body.</summary>
 public sealed record LogisticsCommandMetadata(string IdempotencyKey, string CorrelationId, string? CausationId, DateTimeOffset RequestedAtUtc);
@@ -158,6 +186,9 @@ public static class LogisticsApiV1
     public const string InstructionDetailPath = "/api/v1/logistics/loading-instructions/{id}";
     public const string IssuePath = "/api/v1/logistics/loading-instructions/{id}/issue";
     public const string LoadsPath = "/api/v1/logistics/loading-instructions/{id}/lines/{lineId}/loads";
+
+    /// <summary>AT-053: the instruction's manual weighbridge record (one per instruction).</summary>
+    public const string WeighingsPath = "/api/v1/logistics/loading-instructions/{id}/weighings";
 
     /// <summary>LOG-4b: the price-free approved-order-lines read for the picker (the create name).</summary>
     public const string ApprovedOrderLinesPath = "/api/v1/logistics/loading-instructions/approved-order-lines";
@@ -237,6 +268,21 @@ public static class LogisticsJson
         }
 
         RequireDecimalShape(request.Quantity);
+        return request;
+    }
+
+    public static RecordWeighingRequest ReadRecordWeighing(string json)
+    {
+        var request = JsonSerializer.Deserialize<RecordWeighingRequest>(json, Options)
+            ?? throw new JsonException("Request body is required.");
+        RequireVersionShape(request.ExpectedVersion);
+        if (request.WeighingId == Guid.Empty || request.Direction is not ("TareFirst" or "GrossFirst"))
+        {
+            throw new JsonException("Invalid weighing fields.");
+        }
+
+        RequireDecimalShape(request.FirstWeighingKg);
+        RequireDecimalShape(request.SecondWeighingKg);
         return request;
     }
 

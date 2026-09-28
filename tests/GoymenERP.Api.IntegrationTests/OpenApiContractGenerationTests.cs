@@ -495,6 +495,10 @@ public sealed partial class OpenApiContractGenerationTests
         new("post", "/api/v1/logistics/loading-instructions/{id}/lines/{lineId}/deliveries", "RecordLoadingInstructionDeliveryV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
             "#/components/schemas/RecordDeliveryRequest", ["path:id:true:type:string;format:uuid", "path:lineId:true:type:string;format:uuid"]),
+        // AT-053: one manual weighbridge record per instruction; facts only (tolerance OPEN-004).
+        new("post", "/api/v1/logistics/loading-instructions/{id}/weighings", "RecordLoadingInstructionWeighingV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/RecordWeighingRequest", ["path:id:true:type:string;format:uuid"]),
         new("get", "/api/v1/purchasing/requests", "GetPurchaseRequestsV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["query:pageSize:false:type:integer|string;format:int32;pattern:^-?(?:0|[1-9]\\d*)$", "query:cursor:false:type:string", "query:status:false:type:string"]),
@@ -730,6 +734,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["RecordLoadingInstructionLoadV1"] = "ref:LoadingInstructionResponse",
             ["RecordLoadingInstructionShipmentV1"] = "ref:LoadingInstructionResponse",
             ["RecordLoadingInstructionDeliveryV1"] = "ref:LoadingInstructionResponse",
+            ["RecordLoadingInstructionWeighingV1"] = "ref:LoadingInstructionResponse",
             ["GetPurchaseRequestsV1"] = "ref:PurchaseRequestListResponse",
             ["CreatePurchaseRequestV1"] = "ref:PurchaseRequestResponse",
             ["GetPurchaseRequestV1"] = "ref:PurchaseRequestDetailView",
@@ -872,6 +877,7 @@ public sealed partial class OpenApiContractGenerationTests
         "RecordLoadingInstructionLoadV1",
         "RecordLoadingInstructionShipmentV1",
         "RecordLoadingInstructionDeliveryV1",
+        "RecordLoadingInstructionWeighingV1",
         "GetPurchaseRequestsV1",
         "CreatePurchaseRequestV1",
         "GetPurchaseRequestV1",
@@ -971,6 +977,7 @@ public sealed partial class OpenApiContractGenerationTests
         "RecordLoadingInstructionLoadV1",
         "RecordLoadingInstructionShipmentV1",
         "RecordLoadingInstructionDeliveryV1",
+        "RecordLoadingInstructionWeighingV1",
         "CreatePurchaseRequestV1",
         "SubmitPurchaseRequestV1",
         "CreatePurchaseOrderV1",
@@ -1114,6 +1121,7 @@ public sealed partial class OpenApiContractGenerationTests
                 ["RecordLoadingInstructionLoadV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["RecordLoadingInstructionShipmentV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["RecordLoadingInstructionDeliveryV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
+                ["RecordLoadingInstructionWeighingV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["CreatePurchaseRequestV1"] = [StatusCodes.Status201Created, StatusCodes.Status409Conflict],
                 ["SubmitPurchaseRequestV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["CreatePurchaseOrderV1"] = [StatusCodes.Status201Created, StatusCodes.Status409Conflict],
@@ -1211,6 +1219,7 @@ public sealed partial class OpenApiContractGenerationTests
         "RecordLoadingInstructionLoadV1",
         "RecordLoadingInstructionShipmentV1",
         "RecordLoadingInstructionDeliveryV1",
+        "RecordLoadingInstructionWeighingV1",
         "GetPurchaseRequestsV1",
         "CreatePurchaseRequestV1",
         "SubmitPurchaseRequestV1",
@@ -1292,6 +1301,7 @@ public sealed partial class OpenApiContractGenerationTests
         "RecordLoadingInstructionLoadV1:404",
         "RecordLoadingInstructionShipmentV1:404",
         "RecordLoadingInstructionDeliveryV1:404",
+        "RecordLoadingInstructionWeighingV1:404",
         "GetPurchaseRequestV1:404",
         "SubmitPurchaseRequestV1:404",
         "GetPurchaseOrderV1:404",
@@ -1594,6 +1604,13 @@ public sealed partial class OpenApiContractGenerationTests
                 "version_conflict",
             ],
             ["RecordLoadingInstructionDeliveryV1:422"] = ["unsupported_unit", "validation_failed"],
+            ["RecordLoadingInstructionWeighingV1:400"] = ["command_metadata_invalid", "validation_failed"],
+            ["RecordLoadingInstructionWeighingV1:409"] =
+            [
+                "concurrent_change", "logistics_instruction_state", "logistics_weighing_already_recorded",
+                "same_key_payload_mismatch", "version_conflict",
+            ],
+            ["RecordLoadingInstructionWeighingV1:422"] = ["logistics_weighing_direction_inconsistent", "unsupported_unit", "validation_failed"],
             ["GetPurchaseRequestsV1:400"] = ["invalid_cursor", "validation_failed"],
             ["CreatePurchaseRequestV1:400"] = ["command_metadata_invalid", "validation_failed"],
             ["CreatePurchaseRequestV1:409"] = ["concurrent_change", "same_key_payload_mismatch", "version_conflict"],
@@ -2053,7 +2070,22 @@ public sealed partial class OpenApiContractGenerationTests
                     ["instruction", "lines", "shares"],
                     ("instruction", "ref:LoadingInstructionSummaryView"),
                     ("lines", "type:array;items:ref:LoadingInstructionLineView"),
-                    ("shares", "type:array;items:ref:LoadingShareView")),
+                    ("shares", "type:array;items:ref:LoadingShareView"),
+                    // AT-053: the instruction's one weighbridge record, or null before it is weighed.
+                    ("weighing", "oneOf:ref:LoadingInstructionWeighingView|type:null")),
+                ["LoadingInstructionWeighingView"] = ObjectSchema(
+                    ["weighingId", "direction", "firstWeighingKg", "secondWeighingKg", "tareKg", "grossKg", "netKg", "loadedKgAtWeighing", "differenceKg", "recordedBy", "recordedAtUtc"],
+                    ("weighingId", "type:string;format:uuid"),
+                    ("direction", "type:string"),
+                    ("firstWeighingKg", "type:string"),
+                    ("secondWeighingKg", "type:string"),
+                    ("tareKg", "type:string"),
+                    ("grossKg", "type:string"),
+                    ("netKg", "type:string"),
+                    ("loadedKgAtWeighing", "type:string"),
+                    ("differenceKg", "type:string"),
+                    ("recordedBy", "type:string"),
+                    ("recordedAtUtc", "type:string;format:date-time")),
                 ["LoadingInstructionLineView"] = ObjectSchema(
                     ["lineId", "lineNo", "sourceOrderId", "sourceOrderLineId", "sourceOrderRevision", "productId", "unitId", "instructed", "loaded", "shipped", "delivered", "remainingToLoad", "loadedNotShipped", "shippedNotDelivered", "isBlocked"],
                     ("lineId", "type:string;format:uuid"),
@@ -3318,6 +3350,13 @@ public sealed partial class OpenApiContractGenerationTests
                     ("sourceShipmentId", "type:string;format:uuid"),
                     ("quantity", "type:string"),
                     ("occurredAtUtc", "type:string;format:date-time")),
+                ["RecordWeighingRequest"] = ObjectSchema(
+                    ["expectedVersion", "weighingId", "direction", "firstWeighingKg", "secondWeighingKg"],
+                    ("expectedVersion", "type:string"),
+                    ("weighingId", "type:string;format:uuid"),
+                    ("direction", "type:string"),
+                    ("firstWeighingKg", "type:string"),
+                    ("secondWeighingKg", "type:string")),
                 ["OpeningCountRequestV1"] = ObjectSchema(
                     ["countId", "locationId", "countedOn", "sheetReference", "lines"],
                     ("countId", "type:string;format:uuid"), ("locationId", "type:string;format:uuid"),
@@ -4267,9 +4306,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(153, operations.Count);
+        Assert.Equal(156, operations.Count);
         Assert.Equal(
-            153,
+            156,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());

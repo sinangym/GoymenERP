@@ -65,8 +65,9 @@ public sealed class SqlServerRelationalAcceptanceTests
             await ScalarAsync<int>(
                 connection,
                 "SELECT COUNT(*) FROM [organization].[__EFMigrationsHistory];"));
+        // Identity: initial + explicit Product assignments + #329 activate + DEC-CAR-003 deactivate/reactivate.
         Assert.Equal(
-            3,
+            4,
             await ScalarAsync<int>(
                 connection,
                 "SELECT COUNT(*) FROM [identity].[__EFMigrationsHistory];"));

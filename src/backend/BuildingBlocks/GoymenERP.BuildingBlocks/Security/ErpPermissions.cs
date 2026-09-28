@@ -367,6 +367,9 @@ public static class ErpPermissions
     /// <inheritdoc cref="LogisticsLoadingInstructionsCreate"/>
     public const string LogisticsDeliveriesRecord = "logistics.deliveries.record";
 
+    /// <inheritdoc cref="LogisticsLoadingInstructionsCreate"/>
+    public const string LogisticsWeighingsRecord = "logistics.weighings.record";
+
     /// <summary>
     /// PUR-4a (Business #66 5737790175: the purchase supply link of the core chain): the Purchasing owner's names
     /// (PurchasingPermissionManifestV1), the backend owners' technical mapping (Business #254 5654539215) recorded
@@ -485,6 +488,7 @@ public static class ErpPermissions
             LogisticsLoadsRecord,
             LogisticsShipmentsRecord,
             LogisticsDeliveriesRecord,
+            LogisticsWeighingsRecord,
             PurchasingOrdersCreate,
             PurchasingOrdersRead,
             PurchasingOrdersApprove,
@@ -571,6 +575,7 @@ public static class ErpPermissions
             LogisticsLoadsRecord,
             LogisticsShipmentsRecord,
             LogisticsDeliveriesRecord,
+            LogisticsWeighingsRecord,
             PurchasingOrdersCreate,
             PurchasingOrdersRead,
             PurchasingOrdersApprove,

@@ -167,8 +167,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 "953d329a4c4047fadb6ad3dc491ee9ec9d7df9cbca1db52044b3cff1f567c464",
 
             // logistics
+            // AT-053: +4 weighbridge SQL facts (81c1ff0b… -> 264898d7…).
             ["tools/relational_inventory/logistics.txt"] =
-                "81c1ff0b928c464dbe9c8378e1a95531ccabe2f6c9c9443d94f28e1f56763aed",
+                "264898d775b52cec9f087fcb7e1b90db27ef07711d7438154a625aa4160f6f27",
 
             // manufacturing
             // MFG-PLAN-EDIT: +6 plan-revision SQL facts (a72e6367… -> 02711b6c…).
@@ -185,8 +186,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 "5bc60202f358f060e50b8453d1e6077d608c110f7b9e2cd061da061aec61f344",
 
             // product
+            // DEC-CAR-003: +4 ProductDeactivationSqlServerRelationalAcceptanceTests facts (d7dbec7f… -> ddeead62…).
             ["tools/relational_inventory/product.txt"] =
-                "d7dbec7ff39d9a487be2ecfae3ee3188a1e7b16dc8d695fb8e9a98952b0c991e",
+                "ddeead62b309b7c7d8929539a6ea39a36d760dbc4c40ef9ef40a09f962aa1650",
 
             // purchasing
             ["tools/relational_inventory/purchasing.txt"] =
@@ -241,7 +243,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
              + "Persistence/LogisticsDbContext.cs"] =
-                "836402675ced5dcb6fc4bc09e54f26fc318268d8d0acfb92bb0fd58e194d6479",
+            // Re-measured for AT-053: VehicleWeighings, company-scoped with the same CompanyId query filter and a
+            // company-leading key; one weighing per instruction.
+                "c157f2333337aaac614b9098754dfa4bcc99ac4ef062fd4c15d8c72dd5d0886d",
             // PUR-4a: company-scoped like Organization; every tenant row (requests and their lines, orders and their
             // lines, attempts) and AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
@@ -284,8 +288,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
              + "Persistence/ProductDbContext.cs"] =
                 "0ba53cfdf07084818f737c9f21b2ce4a04a44f5fe89603a89f31791c5b4871da",
             ["src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/"
+             // Re-measured for DEC-CAR-003: the terminal command-name check admits the Product deactivate/reactivate
+             // commands beside activate; no query filter, key or table change.
              + "Persistence/GroupSharedCommandDbContext.cs"] =
-                "6fe01949b839e3005d33c3aa00c02982add6a1af63482005b43b277b95c5dfc3"
+                "3a6a4fcc0409f247c084ecea59c1bd3e26a6c2a782f5d4df75d14363a3e8e092"
         };
 
     // Accepted module initializers own one exact Migrate/EnsureCreated provider branch each.
@@ -350,8 +356,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // DI-only additions over the existing Product read store; no new database capability, MigrateAsync stays 2.
                 // Re-measured for Product history: the scoped Audit-owner adapter and Product history reader are
                 // read-only DI additions; no new database capability, MigrateAsync stays 2.
+                // Re-measured for DEC-CAR-003: the denied (unconfigured) Product service gains the deactivate and
+                // reactivate members, which throw like its siblings; no new database capability, MigrateAsync stays 2.
                 ["src/backend/GoymenERP.Api/ProductRuntime/ProductRuntimeExtensions.cs"] =
-                    new("f94c81990d714a710a77677e274e80f6d0129611693beec1ed94a52d3047f993",
+                    new("f07b29fc2ca6b7270b254e58a0e5b83ac7ccecb56e66323f86b024914e86f4e5",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["MigrateAsync"] = 2 }),
                 // Re-measured for PRD-UNIT-1: the Product participant gets Settings' unit-identity catalog
@@ -725,7 +733,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Logistics/"
                  + "GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsStore.cs"] =
                     new(
-                        "aee284d99947f3ff94794d1e5df7e9843fbb769cfb3afd334ec892f410f204be",
+                        // Re-fingerprinted for AT-053: the weighing is saved in the instruction's one save and
+                        // replayed at its share position; SqlClient count unchanged.
+                        "4c64fde78e67008e4cc3e334437c795dd608f35cba011c52d36d328144fb1d7d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -998,6 +1008,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new("651cae770ecc2d18d3b24479523d95ead0259fe231188a47c390f24da8d0f21e",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
+                // AT-053: the Down's only raw SQL is Logistics' module refusal (51056, used by no other migration) while
+                // any weighbridge record is stored; the THROW precedes the DropTable, an empty table rolls back freely.
+                ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/Migrations/20260928120000_AddVehicleWeighings.cs"] =
+                    new("beb572dd1dd3450169f3c2b927e143161f2a15daedbd6b391eccc2b598817f4b",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
                 // ACC-V0a: the Down's only raw SQL is Accounting's module refusal (51048, coordinator-assigned) while any
                 // period or command row exists (the preparer/approver columns are NOT NULL facts of Ö4); forward fix.
                 ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/Migrations/20260919140000_AddPeriodApproval.cs"] =
@@ -1120,6 +1136,16 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         { ["Sql"] = 1 }),
                 ["src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/Persistence/Migrations/20260918230100_AllowProductActivateTerminals.cs"] =
                     new("4716d015c2cd1a883d84d95589654f2d57077c06c8c641f2f148234453138c15",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // DEC-CAR-003 / PRD-PERM-001: widen the same checks to Deactivate/Reactivate; each Down's only raw SQL is
+                // again the module's existing rollback refusal (51042/51043) while such a row is stored.
+                ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Persistence/Migrations/20260928120000_AllowProductLifecycleAssignments.cs"] =
+                    new("a5a3b8dd24acab43331d6e2558c9c885fdf9a19db4ecafa927f81169587964ae",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                ["src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/Persistence/Migrations/20260928120100_AllowProductLifecycleTerminals.cs"] =
+                    new("407833cc812c41921226bb8bbbddf182c15e12549bdc1569147b6d161d965b9f",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 ["src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/Persistence/Migrations/20260912173914_AddGlobalProductAuditSubject.cs"] =

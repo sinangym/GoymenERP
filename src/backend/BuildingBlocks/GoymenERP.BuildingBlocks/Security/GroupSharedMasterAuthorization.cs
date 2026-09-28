@@ -13,6 +13,9 @@ public enum GroupSharedMasterOperation
     DraftBasicEdit = 3,
     // DEC-PRD-010 (#329): the Draft -> Active card approval, its own explicit global grant.
     Activate = 4,
+    // DEC-CAR-003 / PRD-PERM-001 (#99): Active -> Inactive and Inactive -> Active, each its own explicit grant.
+    Deactivate = 5,
+    Reactivate = 6,
 }
 
 // This is a trusted server service result, never an HTTP request contract.
@@ -80,7 +83,8 @@ public sealed record GroupSharedMasterCommandContext
         ArgumentNullException.ThrowIfNull(snapshot);
         if (!snapshot.IsGranted || snapshot.Subject != GroupSharedMasterKind.Product
             || expectedOperation is not (GroupSharedMasterOperation.DraftCreate
-                or GroupSharedMasterOperation.DraftBasicEdit or GroupSharedMasterOperation.Activate)
+                or GroupSharedMasterOperation.DraftBasicEdit or GroupSharedMasterOperation.Activate
+                or GroupSharedMasterOperation.Deactivate or GroupSharedMasterOperation.Reactivate)
             || snapshot.Operation != expectedOperation
             || snapshot.LocalActorId == Guid.Empty || snapshot.OriginCompanyId == Guid.Empty
             || string.IsNullOrWhiteSpace(snapshot.AuthorityRevision)

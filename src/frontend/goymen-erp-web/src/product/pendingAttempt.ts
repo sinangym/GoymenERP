@@ -77,7 +77,7 @@ export interface AttemptBinding {
   readonly sessionEpoch: number
   readonly scopeMode: 'single' | 'group'
   readonly companyId: string | null
-  /** `product.create`, `product.edit:<productId>`, or `product.activate:<productId>`. */
+  /** `product.create`, `product.edit:<productId>`, or `product.<activate|deactivate|reactivate>:<productId>`. */
   readonly scope: string
   /** Canonical, collision-free string of the fields above (JSON of a string array). */
   readonly key: string
@@ -93,6 +93,14 @@ export function editScope(productId: string): string {
 
 export function activationScope(productId: string): string {
   return `product.activate:${productId}`
+}
+
+/**
+ * Deactivation and reactivation of one card each have their own scope: a recalled attempt must be
+ * retried on the SAME route it was first sent to, whatever state the card reads now.
+ */
+export function lifecycleScope(productId: string, move: 'deactivate' | 'reactivate'): string {
+  return `product.${move}:${productId}`
 }
 
 /**

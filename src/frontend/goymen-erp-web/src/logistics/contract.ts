@@ -27,6 +27,8 @@ export const LOGISTICS_PATH = '/logistics/loading-instructions'
 export const instructionDetailPath = (id: string) => `${LOGISTICS_PATH}/${encodeURIComponent(id)}`
 export const issuePath = (id: string) => `${instructionDetailPath(id)}/issue`
 export const loadsPath = (id: string, lineId: string) => `${instructionDetailPath(id)}/lines/${encodeURIComponent(lineId)}/loads`
+/** AT-053: the instruction's manual weighbridge record (one per instruction). */
+export const weighingsPath = (id: string) => `${instructionDetailPath(id)}/weighings`
 
 /** `LogisticsApiV1`: a first commit answers 201; its replay 201 + `Idempotency-Replayed: true` (ADR-011 §4). */
 export const CREATED_STATUS = 201
@@ -46,6 +48,11 @@ const MEASUREMENTS: readonly string[] = Object.values(MEASUREMENT)
 export const SHARE_KIND = { loaded: 'Loaded', shipped: 'Shipped', delivered: 'Delivered' } as const
 export type ShareKind = (typeof SHARE_KIND)[keyof typeof SHARE_KIND]
 const SHARE_KINDS: readonly string[] = Object.values(SHARE_KIND)
+
+/** WGT-001's direction metadata: which of the two weighings is the empty vehicle (tare). */
+export const WEIGHING_DIRECTION = { tareFirst: 'TareFirst', grossFirst: 'GrossFirst' } as const
+export type WeighingDirection = (typeof WEIGHING_DIRECTION)[keyof typeof WEIGHING_DIRECTION]
+const WEIGHING_DIRECTIONS: readonly string[] = Object.values(WEIGHING_DIRECTION)
 
 /** Technical bounds from `LogisticsJson` / the endpoints. Not owner scale or precision. */
 export const LIMITS = {
@@ -93,6 +100,18 @@ export interface RecordLoadRequest {
   readonly measurement: Measurement
 }
 
+/**
+ * `RecordWeighingRequest` (AT-053): the two weighings as exact kilogram text in the order taken and the direction.
+ * No net, difference, tolerance, operator or time: the backend calculates and stamps them.
+ */
+export interface RecordWeighingRequest {
+  readonly expectedVersion: string
+  readonly weighingId: string
+  readonly direction: WeighingDirection
+  readonly firstWeighingKg: string
+  readonly secondWeighingKg: string
+}
+
 /* ── Responses ────────────────────────────────────────────────────────────── */
 
 export interface InstructionSummary {
@@ -137,10 +156,32 @@ export interface LoadingShare {
   readonly recordedAtUtc: string
 }
 
+/**
+ * `LoadingInstructionWeighingView` (AT-053): the manual weighbridge record exactly as the backend calculated it —
+ * tare / gross / net (WGT-001), the kilograms loaded when it was weighed and the SIGNED difference net − loaded
+ * (WGT-002). Facts only: no tolerance verdict exists (OPEN-004), and this client never recomputes any of them.
+ */
+export interface InstructionWeighing {
+  readonly weighingId: string
+  readonly direction: WeighingDirection
+  readonly firstWeighingKg: string
+  readonly secondWeighingKg: string
+  readonly tareKg: string
+  readonly grossKg: string
+  readonly netKg: string
+  readonly loadedKgAtWeighing: string
+  /** Signed exact text: "-120" lighter than loaded, "120" heavier, "0" equal. */
+  readonly differenceKg: string
+  readonly recordedBy: string
+  readonly recordedAtUtc: string
+}
+
 export interface InstructionDetail {
   readonly instruction: InstructionSummary
   readonly lines: readonly InstructionLine[]
   readonly shares: readonly LoadingShare[]
+  /** null while none is recorded; the member is always present on the wire. */
+  readonly weighing: InstructionWeighing | null
 }
 
 export interface InstructionMutation {
@@ -180,6 +221,8 @@ export const LOGISTICS_PROBLEM_CODE = {
   loadExceedsInstructed: 'logistics_load_exceeds_instructed',
   lineBlocked: 'logistics_line_blocked',
   duplicateShare: 'logistics_duplicate_share_id',
+  weighingAlreadyRecorded: 'logistics_weighing_already_recorded',
+  weighingDirectionInconsistent: 'logistics_weighing_direction_inconsistent',
   sameKeyPayloadMismatch: 'same_key_payload_mismatch',
   concurrentChange: 'concurrent_change',
   unsupportedUnit: 'unsupported_unit',
@@ -435,9 +478,60 @@ function decodeShare(value: unknown): LoadingShare | null {
   }
 }
 
+const WEIGHING_KEYS = [
+  'weighingId', 'direction', 'firstWeighingKg', 'secondWeighingKg', 'tareKg', 'grossKg', 'netKg', 'loadedKgAtWeighing',
+  'differenceKg', 'recordedBy', 'recordedAtUtc',
+] as const
+
+const SIGNED_QUANTITY_RE = /^-?[0-9]+(?:\.[0-9]+)?$/
+
+/**
+ * The weighbridge record, taken as the backend wrote it. The consumer checks are identity checks only — the
+ * tare and gross are the first / second weighing the direction names — never a recalculation of net or difference.
+ */
+export function decodeWeighing(value: unknown): InstructionWeighing | null {
+  const o = exact(value, WEIGHING_KEYS)
+  if (
+    o === null ||
+    !isReferenceId(o.weighingId) ||
+    typeof o.direction !== 'string' ||
+    !WEIGHING_DIRECTIONS.includes(o.direction) ||
+    !isPositiveQuantityText(o.firstWeighingKg) ||
+    !isPositiveQuantityText(o.secondWeighingKg) ||
+    !isPositiveQuantityText(o.tareKg) ||
+    !isPositiveQuantityText(o.grossKg) ||
+    !isPositiveQuantityText(o.netKg) ||
+    !isQuantityText(o.loadedKgAtWeighing) ||
+    typeof o.differenceKg !== 'string' ||
+    o.differenceKg.length > LIMITS.decimalText ||
+    !SIGNED_QUANTITY_RE.test(o.differenceKg) ||
+    !isText(o.recordedBy, 128) ||
+    !isInstant(o.recordedAtUtc)
+  ) {
+    return null
+  }
+  const tareFirst = o.direction === WEIGHING_DIRECTION.tareFirst
+  if (o.tareKg !== (tareFirst ? o.firstWeighingKg : o.secondWeighingKg) || o.grossKg !== (tareFirst ? o.secondWeighingKg : o.firstWeighingKg)) {
+    return null
+  }
+  return {
+    weighingId: o.weighingId,
+    direction: o.direction as WeighingDirection,
+    firstWeighingKg: o.firstWeighingKg,
+    secondWeighingKg: o.secondWeighingKg,
+    tareKg: o.tareKg,
+    grossKg: o.grossKg,
+    netKg: o.netKg,
+    loadedKgAtWeighing: o.loadedKgAtWeighing,
+    differenceKg: o.differenceKg,
+    recordedBy: o.recordedBy,
+    recordedAtUtc: o.recordedAtUtc,
+  }
+}
+
 /** `expectedId`: the record the caller asked for. A detail of another record is not an answer. */
 export function decodeInstructionDetail(value: unknown, expectedId: string | null): InstructionDetail | null {
-  const o = exact(value, ['instruction', 'lines', 'shares'])
+  const o = exact(value, ['instruction', 'lines', 'shares', 'weighing'])
   if (o === null) return null
   const instruction = decodeInstructionSummary(o.instruction)
   if (instruction === null || (expectedId !== null && instruction.id !== expectedId)) return null
@@ -461,7 +555,13 @@ export function decodeInstructionDetail(value: unknown, expectedId: string | nul
     shareIds.add(share.shareId)
     shares.push(share)
   }
-  return { instruction, lines, shares }
+  let weighing: InstructionWeighing | null = null
+  if (o.weighing !== null) {
+    weighing = decodeWeighing(o.weighing)
+    // A weighbridge record exists only on an issued instruction.
+    if (weighing === null || instruction.status !== INSTRUCTION_STATUS.issued) return null
+  }
+  return { instruction, lines, shares, weighing }
 }
 
 export function decodeInstructionMutation(value: unknown): InstructionMutation | null {

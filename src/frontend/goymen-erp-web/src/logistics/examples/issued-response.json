@@ -31,7 +31,8 @@
         "isBlocked": false
       }
     ],
-    "shares": []
+    "shares": [],
+    "weighing": null
   },
   "isReplay": false,
   "originalCorrelationId": "corr-2"

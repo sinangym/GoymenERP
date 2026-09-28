@@ -820,7 +820,7 @@ export function productFieldErrorsOf(raw: unknown): readonly ProductFieldError[]
  * version step and the recorded reason — not who, until an Identity display source
  * exists for it.
  */
-export const HISTORY_OPERATION = ['DraftCreate', 'DraftBasicEdit', 'Activate'] as const
+export const HISTORY_OPERATION = ['DraftCreate', 'DraftBasicEdit', 'Activate', 'Deactivate', 'Reactivate'] as const
 export type HistoryOperation = (typeof HISTORY_OPERATION)[number]
 
 /** `ProductHistoryFields.All`, in the server's display order. */
@@ -898,7 +898,7 @@ function decodeHistoryEntry(raw: unknown): ProductHistoryEntry | null {
     if (e.versionBefore !== null || e.versionAfter !== '1' || fields.length > 0) return null
   }
   if (operation.known && operation.value !== 'DraftCreate') {
-    // An edit or activation moves the revision by exactly one; compared as integers, never as doubles.
+    // An edit or a lifecycle move moves the revision by exactly one; compared as integers, never as doubles.
     if (typeof e.versionBefore !== 'string') return null
     if (BigInt(e.versionAfter) !== BigInt(e.versionBefore) + BigInt(1)) return null
   }

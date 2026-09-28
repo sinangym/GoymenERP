@@ -13,7 +13,7 @@ public static class ProductMasterAssignmentModel
         var entity = modelBuilder.Entity<ProductMasterAssignment>();
         entity.ToTable("ProductMasterAssignments", "identity", table =>
         {
-            table.HasCheckConstraint("CK_ProductMasterAssignments_Operation", "[Operation] IN (1, 2, 3, 4)");
+            table.HasCheckConstraint("CK_ProductMasterAssignments_Operation", "[Operation] IN (1, 2, 3, 4, 5, 6)");
             table.HasCheckConstraint("CK_ProductMasterAssignments_Identities",
                 "[Id] <> '00000000-0000-0000-0000-000000000000' AND [UserId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [RoleId] <> '00000000-0000-0000-0000-000000000000' AND [DecisionId] <> '00000000-0000-0000-0000-000000000000'");

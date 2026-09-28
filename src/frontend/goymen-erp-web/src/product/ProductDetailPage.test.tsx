@@ -1,20 +1,28 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { PRODUCT_ACTIVATE_CAPABILITY, PRODUCT_CAPABILITY } from './capabilities'
+import {
+  PRODUCT_ACTIVATE_CAPABILITY,
+  PRODUCT_CAPABILITY,
+  PRODUCT_DEACTIVATE_CAPABILITY,
+  PRODUCT_REACTIVATE_CAPABILITY,
+} from './capabilities'
 import { resetPendingAttempts } from './pendingAttempt'
 import {
   COMPANY_A,
   CLASS_FLAT,
   FAMILY_FLAT,
   PRODUCT_1,
+  historyEntry,
   installFetch,
   json,
   mutation,
   productCard,
   productCore,
+  productHistory,
   references,
   renderProductApp,
+  type RecordedCall,
 } from './testHarness'
 
 const DETAIL_ONLY = [PRODUCT_CAPABILITY.productsDetail]
@@ -570,5 +578,236 @@ describe('activation control', () => {
       expect(screen.queryByRole('button', { name: 'Ürünü aktifleştir' })).toBeNull(),
     )
     expect(screen.queryByText('Ürün aktifleştirildi.')).toBeNull()
+  })
+})
+
+describe('deactivation and reactivation', () => {
+  const WITH_DEACTIVATE = [...DETAIL_ONLY, PRODUCT_DEACTIVATE_CAPABILITY]
+  const WITH_REACTIVATE = [...DETAIL_ONLY, PRODUCT_REACTIVATE_CAPABILITY]
+  const ACTIVE = () => json(productCard({ product: productCore({ lifecycle: 'Active', version: '7' }) }))
+  const INACTIVE = () => json(productCard({ product: productCore({ lifecycle: 'Inactive', version: '8' }) }))
+  /** One unbroken chain from the creation to a deactivation, newest first, as the server projects it. */
+  const deactivatedHistory = (reason = 'Üretimden kalktı') =>
+    json(
+      productHistory({
+        entries: [
+          historyEntry({
+            eventId: 'eeeeeeee-0000-0000-0000-000000000003',
+            operation: 'Deactivate',
+            occurredAtUtc: '2026-09-28T09:30:00Z',
+            versionBefore: '2',
+            versionAfter: '3',
+            reason,
+            changedFields: ['lifecycle'],
+          }),
+          historyEntry({
+            eventId: 'eeeeeeee-0000-0000-0000-000000000002',
+            operation: 'Activate',
+            occurredAtUtc: '2026-09-20T08:00:00Z',
+            versionBefore: '1',
+            versionAfter: '2',
+            reason: 'Ürün kartı onayı',
+            changedFields: ['lifecycle'],
+          }),
+          historyEntry(),
+        ],
+        truncated: false,
+      }),
+    )
+  const lifecycleCalls = (calls: readonly RecordedCall[], route: string) =>
+    calls.filter((call) => call.url.endsWith(`/products/${PRODUCT_1}/${route}`))
+
+  it('offers each move only with its own capability and only from its own source state', async () => {
+    const cases: { caps: string[]; card: () => Response; open: string | null }[] = [
+      { caps: DETAIL_ONLY, card: ACTIVE, open: null },
+      { caps: WITH_DEACTIVATE, card: ACTIVE, open: 'Ürünü pasife al' },
+      { caps: WITH_REACTIVATE, card: ACTIVE, open: null },
+      // A Draft was never in use: approval is its way forward, not deactivation.
+      {
+        caps: [...WITH_DEACTIVATE, PRODUCT_REACTIVATE_CAPABILITY],
+        card: () => json(productCard()),
+        open: null,
+      },
+      { caps: WITH_REACTIVATE, card: INACTIVE, open: 'Ürünü yeniden aktifleştir' },
+      { caps: WITH_DEACTIVATE, card: INACTIVE, open: null },
+    ]
+    for (const item of cases) {
+      installFetch({ capabilities: item.caps, onCard: item.card })
+      const view = renderProductApp(PATH)
+      await cardVisible()
+      for (const label of ['Ürünü pasife al', 'Ürünü yeniden aktifleştir']) {
+        if (label === item.open) expect(screen.getByRole('button', { name: label })).toBeTruthy()
+        else expect(screen.queryByRole('button', { name: label })).toBeNull()
+      }
+      view.unmount()
+      cleanup()
+    }
+  })
+
+  it('refuses a blank reason on the client and sends nothing', async () => {
+    const { calls } = installFetch({ capabilities: WITH_DEACTIVATE, onCard: ACTIVE })
+    renderProductApp(PATH)
+    await cardVisible()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Ürünü pasife al' }))
+    expect(screen.getByText(/Hiçbir kayıt silinmez/)).toBeTruthy()
+    await userEvent.type(screen.getByLabelText('Gerekçe'), '   ')
+    await userEvent.click(screen.getByRole('button', { name: 'Pasife al' }))
+    expect(screen.getByText('Gerekçe zorunludur.')).toBeTruthy()
+    expect(lifecycleCalls(calls, 'deactivation')).toHaveLength(0)
+  })
+
+  it('posts the version read and the trimmed reason with one key; Pasif, when and why come from the re-read', async () => {
+    let cardReads = 0
+    let historyReads = 0
+    const { calls } = installFetch({
+      capabilities: WITH_DEACTIVATE,
+      onCard: () => {
+        cardReads += 1
+        return cardReads === 1 ? ACTIVE() : INACTIVE()
+      },
+      onHistory: () => {
+        historyReads += 1
+        return historyReads === 1 ? json(productHistory()) : deactivatedHistory()
+      },
+    })
+    renderProductApp(PATH)
+    await cardVisible()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Ürünü pasife al' }))
+    await userEvent.type(screen.getByLabelText('Gerekçe'), '  Üretimden kalktı ')
+    await userEvent.click(screen.getByRole('button', { name: 'Pasife al' }))
+    await waitFor(() => expect(screen.getByText('Ürün pasife alındı.')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('Pasif')).toBeTruthy())
+    expect(cardReads).toBe(2)
+    await waitFor(() => expect(screen.getByTestId('product-inactive-detail')).toBeTruthy())
+    const detail = screen.getByTestId('product-inactive-detail')
+    expect(within(detail).getByText('Üretimden kalktı')).toBeTruthy()
+    expect(within(detail).getByText('Pasife alındığı an')).toBeTruthy()
+    expect(screen.getByText(/her iki şirkette de yeni kullanıma kapalıdır/)).toBeTruthy()
+    // The history names the move; who made it is not on the wire and is not guessed.
+    expect(within(screen.getByTestId('product-history')).getByText('Ürün pasife alındı')).toBeTruthy()
+
+    const [request] = lifecycleCalls(calls, 'deactivation')
+    expect(request).toMatchObject({ method: 'POST', companyId: COMPANY_A })
+    expect(request.idempotencyKey).toMatch(/^[0-9a-f]{32}$/)
+    expect(JSON.parse(request.body ?? '{}')).toEqual({ expectedVersion: '7', reason: 'Üretimden kalktı' })
+    expect(lifecycleCalls(calls, 'reactivation')).toHaveLength(0)
+    expect(lifecycleCalls(calls, 'activation')).toHaveLength(0)
+  })
+
+  it('retries an unknown outcome with the same key, origin and body', async () => {
+    let cardReads = 0
+    const { calls } = installFetch({
+      capabilities: WITH_DEACTIVATE,
+      onCard: () => {
+        cardReads += 1
+        return cardReads === 1 ? ACTIVE() : INACTIVE()
+      },
+      onDeactivate: (attempt) => {
+        if (attempt === 1) throw new TypeError('connection dropped')
+        return json(
+          mutation({
+            card: productCard({ product: productCore({ lifecycle: 'Inactive', version: '8' }) }),
+            isReplay: true,
+          }),
+        )
+      },
+    })
+    renderProductApp(PATH)
+    await cardVisible()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Ürünü pasife al' }))
+    await userEvent.type(screen.getByLabelText('Gerekçe'), 'Gerekçe')
+    await userEvent.click(screen.getByRole('button', { name: 'Pasife al' }))
+    await waitFor(() => expect(screen.getByTestId('product-deactivate-unknown')).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: 'Aynı pasife almayı tekrar dene' }))
+    await waitFor(() => expect(screen.getByText(/ikinci bir değişiklik uygulanmadı/)).toBeTruthy())
+
+    const requests = lifecycleCalls(calls, 'deactivation')
+    expect(requests).toHaveLength(2)
+    expect(requests[1].idempotencyKey).toBe(requests[0].idempotencyKey)
+    expect(requests[1].companyId).toBe(requests[0].companyId)
+    expect(requests[1].body).toBe(requests[0].body)
+  })
+
+  it('stops on a stale version or a state conflict and never paints the move', async () => {
+    for (const [code, text] of [
+      ['version_conflict', /Ürün siz bakarken değişti/],
+      ['lifecycle_conflict', /Ürün artık aktif değil/],
+    ] as const) {
+      const { calls } = installFetch({
+        capabilities: WITH_DEACTIVATE,
+        onCard: ACTIVE,
+        onDeactivate: () => json({ code, currentVersion: '8' }, 409),
+      })
+      const view = renderProductApp(PATH)
+      await cardVisible()
+      await userEvent.click(screen.getByRole('button', { name: 'Ürünü pasife al' }))
+      await userEvent.type(screen.getByLabelText('Gerekçe'), 'Gerekçe')
+      await userEvent.click(screen.getByRole('button', { name: 'Pasife al' }))
+      await waitFor(() => expect(screen.getByText(text)).toBeTruthy())
+      expect(screen.queryByText('Ürün pasife alındı.')).toBeNull()
+      expect(screen.getByText('Aktif')).toBeTruthy()
+      expect(lifecycleCalls(calls, 'deactivation')).toHaveLength(1)
+      view.unmount()
+      cleanup()
+      resetPendingAttempts()
+    }
+  })
+
+  it('reactivates an Inactive card with its own route and reason', async () => {
+    let cardReads = 0
+    const { calls } = installFetch({
+      capabilities: WITH_REACTIVATE,
+      onCard: () => {
+        cardReads += 1
+        return cardReads === 1
+          ? INACTIVE()
+          : json(productCard({ product: productCore({ lifecycle: 'Active', version: '9' }) }))
+      },
+      onHistory: () => deactivatedHistory(),
+      onReactivate: () =>
+        json(
+          mutation({ card: productCard({ product: productCore({ lifecycle: 'Active', version: '9' }) }) }),
+        ),
+    })
+    renderProductApp(PATH)
+    await cardVisible()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Ürünü yeniden aktifleştir' }))
+    await userEvent.type(screen.getByLabelText('Gerekçe'), 'Tedarik yeniden başladı')
+    await userEvent.click(screen.getByRole('button', { name: 'Yeniden aktifleştir' }))
+    await waitFor(() => expect(screen.getByText('Ürün yeniden aktifleştirildi.')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('Aktif')).toBeTruthy())
+
+    const [request] = lifecycleCalls(calls, 'reactivation')
+    expect(JSON.parse(request.body ?? '{}')).toEqual({
+      expectedVersion: '8',
+      reason: 'Tedarik yeniden başladı',
+    })
+    expect(lifecycleCalls(calls, 'deactivation')).toHaveLength(0)
+  })
+
+  it('shows when and why only while the newest history entry is the deactivation', async () => {
+    installFetch({
+      capabilities: DETAIL_ONLY,
+      onCard: INACTIVE,
+      onHistory: () => deactivatedHistory('Kalite değişti'),
+    })
+    const first = renderProductApp(PATH)
+    await cardVisible()
+    await waitFor(() => expect(screen.getByTestId('product-inactive-detail')).toBeTruthy())
+    expect(within(screen.getByTestId('product-inactive-detail')).getByText('Kalite değişti')).toBeTruthy()
+    first.unmount()
+    cleanup()
+
+    // An unreadable history leaves the banner's fact and adds no guessed detail.
+    installFetch({ capabilities: DETAIL_ONLY, onCard: INACTIVE, onHistory: () => json({}, 500) })
+    renderProductApp(PATH)
+    await cardVisible()
+    expect(screen.getByText(/her iki şirkette de yeni kullanıma kapalıdır/)).toBeTruthy()
+    await waitFor(() => expect(screen.getByText('Değişiklik geçmişi okunamadı.')).toBeTruthy())
+    expect(screen.queryByTestId('product-inactive-detail')).toBeNull()
   })
 })
