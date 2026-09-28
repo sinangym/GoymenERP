@@ -69,6 +69,11 @@ async function readParty(page: Page): Promise<{ readonly code: string; readonly 
   return (await response.json()) as { code: string; legalName: string }
 }
 
+/** The results route carries exactly one member, `q`, equal to the term (the app writes spaces as `+`). */
+function isResultsUrl(term: string): (url: URL) => boolean {
+  return (url) => url.pathname === '/arama' && url.searchParams.get('q') === term && [...url.searchParams.keys()].length === 1
+}
+
 function isSearch(response: Response, term: string): boolean {
   const url = new URL(response.url())
   return url.pathname === SEARCH_PATH && url.searchParams.get('q') === term && response.request().method() === 'GET'
@@ -109,7 +114,7 @@ test('S04-GS1 box → grouped results → open the order → Back returns to the
   const first = page.waitForResponse((response) => isSearch(response, documentNo))
   await box.getByRole('button', { name: 'Genel aramada ara' }).click()
   const answer = await searchAnswer(await first)
-  await expect(page).toHaveURL(new RegExp(`/arama\\?q=${encodeURIComponent(documentNo)}$`))
+  await expect(page).toHaveURL(isResultsUrl(documentNo))
 
   expect(answer.groups.map((group) => group.kind)).not.toContain(PRODUCT_KIND)
   const sales = answer.groups.find((group) => group.kind === SALES_KIND)
@@ -123,7 +128,7 @@ test('S04-GS1 box → grouped results → open the order → Back returns to the
 
   const again = page.waitForResponse((response) => isSearch(response, documentNo))
   await page.goBack()
-  await expect(page).toHaveURL(new RegExp(`/arama\\?q=${encodeURIComponent(documentNo)}$`))
+  await expect(page).toHaveURL(isResultsUrl(documentNo))
   await searchAnswer(await again)
   await expect(page.getByTestId(`global-search-group-${SALES_KIND}`).getByRole('link', { name: new RegExp(documentNo) })).toBeVisible()
   await expect(page.getByLabel('Aranan metin')).toHaveValue(documentNo)
