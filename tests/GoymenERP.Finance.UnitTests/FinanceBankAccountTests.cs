@@ -46,7 +46,7 @@ public sealed class FinanceBankAccountTests
         var commands = design.FindEntityType(typeof(FinanceCommandRow))!;
         var target = Assert.Single(commands.GetCheckConstraints(), check => check.Name == "CK_Commands_Target");
         Assert.Equal(FinanceDbContext.TargetCheck, target.Sql);
-        Assert.EndsWith("OR ([DraftId] IS NULL AND [BankAccountId] IS NULL AND [ReversalProposalId] IS NULL AND [ManualBankPaymentId] IS NULL AND [FinanceAllocationId] IS NULL AND JSON_VALUE([ResultJson], '$.outcome') = 'ValidationFailed')",
+        Assert.EndsWith("OR ([DraftId] IS NULL AND [BankAccountId] IS NULL AND [ReversalProposalId] IS NULL AND [ManualBankPaymentId] IS NULL AND [FinanceAllocationId] IS NULL AND [CustomerInstrumentId] IS NULL AND JSON_VALUE([ResultJson], '$.outcome') = 'ValidationFailed')",
             target.Sql, StringComparison.Ordinal);
         Assert.All(commands.GetForeignKeys().Where(key => key.PrincipalEntityType.ClrType != typeof(OrganizationCompanyReference)),
             key => Assert.False(key.IsRequired));
@@ -57,9 +57,9 @@ public sealed class FinanceBankAccountTests
     {
         using var context = Context();
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddBankAccounts", StringComparison.Ordinal));
-        // The NEWEST migration is pinned by name on purpose: DEC-FIN-014's POS facts are a deliberate
-        // append after F-03, never an unreviewed migration that silently becomes authoritative.
-        Assert.Equal("20260927120000_AddPosCollectionFacts", context.Database.GetMigrations().Last());
+        // The NEWEST migration is pinned by name on purpose: DEC-FIN-016's customer instruments are a deliberate
+        // append after DEC-FIN-014's POS facts, never an unreviewed migration that silently becomes authoritative.
+        Assert.Equal("20260927180000_AddCustomerInstruments", context.Database.GetMigrations().Last());
         Assert.False(context.Database.HasPendingModelChanges());
     }
 

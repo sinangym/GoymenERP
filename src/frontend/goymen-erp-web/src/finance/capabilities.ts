@@ -68,3 +68,12 @@ export const manualBankPaymentDetailPath = (paymentId: string) =>
  */
 export const receiptDraftPath = (partyId: string, companyAccountId: string) =>
   `/finans/tahsilatlar/yeni?${new URLSearchParams({ partyId, companyAccountId }).toString()}`
+
+/**
+ * DEC-FIN-016: the customer cheque / note portfolio lives on the F-02 list (no route or capability of its own until the
+ * central shell declares one); this query parameter names the instrument whose detail is open there.
+ */
+export const INSTRUMENT_QUERY = 'cekSenet'
+
+export const portfolioInstrumentPath = (instrumentId: string) =>
+  `/finans/tahsilatlar?${new URLSearchParams({ [INSTRUMENT_QUERY]: instrumentId }).toString()}`

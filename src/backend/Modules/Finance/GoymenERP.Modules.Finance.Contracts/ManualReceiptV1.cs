@@ -94,6 +94,10 @@ public enum FinanceAction
     SaveManualBankPaymentDraft, ReadManualBankPayments,
     ApproveManualBankPayment, RecordManualBankPayment,
     WriteAllocation,
+    // DEC-FIN-016 first release: the customer cheque / note portfolio. Its own narrow names, because the portfolio's
+    // lifecycle is not a receipt draft's; only collection creates a (recorded) receipt source.
+    ReadCustomerInstruments, ReadCustomerInstrumentAmount, ReceiveCustomerInstrument,
+    ChangeCustomerInstrumentStatus, CollectCustomerInstrument,
 }
 public enum PermissionDecision { Unavailable, Denied, Allowed }
 

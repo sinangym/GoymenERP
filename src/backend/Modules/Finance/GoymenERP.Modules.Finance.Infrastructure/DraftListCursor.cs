@@ -14,12 +14,21 @@ internal static class DraftListCursor
     private const string Ordering = "createdAtUtc desc, id desc";
     private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
+    /// <summary>DEC-FIN-016: the customer instrument portfolio's own ordering, so neither list reads the other's cursor.</summary>
+    public const string InstrumentOrdering = "receivedAtUtc desc, id desc";
+
     public static string Encode(Guid companyId, DateTimeOffset createdAtUtc, Guid id) =>
+        Encode(companyId, createdAtUtc, id, Ordering);
+
+    public static string Encode(Guid companyId, DateTimeOffset createdAtUtc, Guid id, string ordering) =>
         Convert.ToBase64String(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(
-                new Payload(companyId, Ordering, createdAtUtc.UtcDateTime.ToString("O", CultureInfo.InvariantCulture), id), Json)))
+                new Payload(companyId, ordering, createdAtUtc.UtcDateTime.ToString("O", CultureInfo.InvariantCulture), id), Json)))
             .TrimEnd('=').Replace('+', '-').Replace('/', '_');
 
-    public static (DateTimeOffset CreatedAtUtc, Guid Id)? Decode(string cursor, Guid companyId)
+    public static (DateTimeOffset CreatedAtUtc, Guid Id)? Decode(string cursor, Guid companyId) =>
+        Decode(cursor, companyId, Ordering);
+
+    public static (DateTimeOffset CreatedAtUtc, Guid Id)? Decode(string cursor, Guid companyId, string ordering)
     {
         Payload? payload;
         try
@@ -33,7 +42,7 @@ internal static class DraftListCursor
             return null;
         }
 
-        if (payload is null || payload.Company != companyId || !string.Equals(payload.Ordering, Ordering, StringComparison.Ordinal)
+        if (payload is null || payload.Company != companyId || !string.Equals(payload.Ordering, ordering, StringComparison.Ordinal)
             || payload.Id == Guid.Empty || payload.CreatedAtUtc is null
             || !DateTimeOffset.TryParseExact(payload.CreatedAtUtc, "O", CultureInfo.InvariantCulture,
                 DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var createdAtUtc))

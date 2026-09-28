@@ -25,6 +25,12 @@ import type {
   RejectReversalRequest,
   ReverseRequest,
 } from './contract'
+import type {
+  CustomerInstrumentCollectRequest,
+  CustomerInstrumentReceiveRequest,
+  CustomerInstrumentRiskRequest,
+  CustomerInstrumentStatusChangeRequest,
+} from './customerInstrumentContract'
 import type { DraftContextRequest } from './draftContext'
 import type { HttpReadReply } from './http'
 import type {
@@ -60,6 +66,35 @@ export interface FinanceReceiptPort {
     scope: FinanceScope,
     idempotencyKey: string,
     request: RecordManualBankPaymentRequest,
+  ): Promise<PortReply>
+
+  /** DEC-FIN-016: `GET /finance/customer-instruments?cursor=` → `ReadResult<CustomerInstrumentPage>`. */
+  listCustomerInstruments(
+    scope: FinanceScope,
+    request: { readonly cursor: string | null },
+    signal: AbortSignal,
+  ): Promise<PortReply>
+  /** DEC-FIN-016: `GET /finance/customer-instruments/{id}` → `ReadResult<CustomerInstrumentDetail>`. */
+  customerInstrumentDetail(scope: FinanceScope, instrumentId: string, signal: AbortSignal): Promise<PortReply>
+  /** DEC-FIN-016 risk (read-only): `GET /finance/customer-instruments/risk?asOf=` → `ReadResult<CustomerInstrumentRiskView>`. */
+  customerInstrumentRisk(scope: FinanceScope, request: CustomerInstrumentRiskRequest, signal: AbortSignal): Promise<PortReply>
+  /** DEC-FIN-016: receive into the portfolio → `CustomerInstrumentCommandResult`. No money effect. */
+  receiveCustomerInstrument(
+    scope: FinanceScope,
+    idempotencyKey: string,
+    request: CustomerInstrumentReceiveRequest,
+  ): Promise<PortReply>
+  /** DEC-FIN-016: a status change without a money effect → `CustomerInstrumentCommandResult`. */
+  changeCustomerInstrumentStatus(
+    scope: FinanceScope,
+    idempotencyKey: string,
+    request: CustomerInstrumentStatusChangeRequest,
+  ): Promise<PortReply>
+  /** DEC-FIN-016: the collection — the portfolio's ONE money effect → `CustomerInstrumentCommandResult`. */
+  collectCustomerInstrument(
+    scope: FinanceScope,
+    idempotencyKey: string,
+    request: CustomerInstrumentCollectRequest,
   ): Promise<PortReply>
 
   /** FS0 — `IFinanceBankAccountReader.ListAuthorizedAsync` → `ReadResult<BankAccountPage>`. */

@@ -12,6 +12,11 @@
  *            draft from the list — a draft, no money effect;
  *   FIN01-04 the approver (no draft grant) and the ungranted profile are closed out of the screens
  *            they may not use, and send no Finance request.
+ *   FIN01-06 DEC-FIN-016: the proposer receives a customer cheque into the portfolio (no money effect),
+ *            reopens it from the F-02 list, collects it ONCE into the approved account — one recorded
+ *            receipt source at the face value — and a replay or a stale retry adds nothing. The risk
+ *            view (user decision 2026-09-27: the debt closes at collection, the risk is tracked apart)
+ *            follows it before and after receipt, collection and a second cheque's dishonour.
  *
  * NOTHING IS FULFILLED LOCALLY: the only interception is the Development identity rewrite, and
  * every answer a case relies on is asserted to belong to a rewritten request (the mfg pattern).
@@ -41,6 +46,23 @@ const REVERSAL_APPROVAL_RE = /\/api\/v1\/finance\/manual-receipts\/reversal-prop
 const MANUAL_PAYMENT_RE = /\/api\/v1\/finance\/manual-bank-payments$/
 const MANUAL_PAYMENT_APPROVAL_RE = /\/api\/v1\/finance\/manual-bank-payments\/[^/]+\/approval$/
 const MANUAL_PAYMENT_RECORD_RE = /\/api\/v1\/finance\/manual-bank-payments\/[^/]+\/record$/
+const INSTRUMENT_RECEIVE_RE = /\/api\/v1\/finance\/customer-instruments$/
+const INSTRUMENT_COLLECT_RE = /\/api\/v1\/finance\/customer-instruments\/[^/]+\/collection$/
+const CHEQUE_SERIAL = `SENTETIK-FIN01-CEK-${Date.now()}`
+const BOUNCED_SERIAL = `SENTETIK-FIN01-KRS-${Date.now()}`
+const RISK_AS_OF = '2026-10-01'
+
+/** The risk block's count and amount cells of one bucket, as shown (tr-TR). */
+async function riskCells(page: Page, bucket: string): Promise<string[]> {
+  const risk = page.getByRole('region', { name: 'Çek/senet riski', exact: true })
+  return risk.locator(`table:first-of-type [data-risk-bucket="${bucket}"] td`).allTextContents()
+}
+
+async function setRiskDate(page: Page) {
+  const risk = page.getByRole('region', { name: 'Çek/senet riski', exact: true })
+  await expect(risk).toBeVisible({ timeout: 30_000 })
+  await risk.getByLabel('Tarih itibarıyla', { exact: true }).fill(RISK_AS_OF)
+}
 
 let recordedSourceId = ''
 let reversalSourceId = ''
@@ -630,6 +652,221 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
     expect(reread.body).toMatchObject({
       source: { id: sourceId, stage: 'Recorded', version: '2', amount: { money: { amount: '1000.00' } } },
       pos: { commissionBearer: 'Company', commission: { money: { amount: '25.50' } }, bankNet: { money: { amount: '974.50' } } },
+    })
+    expectEveryAnswerRewritten(answered, rewritten)
+  })
+
+  test('FIN01-06 the recorder receives a customer cheque, reopens it, collects it once and a replay adds nothing', async ({ page, context }) => {
+    // DEC-FIN-016: receiving has no money effect; the collection is the one money event at the face value.
+    const rewritten = await asActor(context, env.seed.proposerActor)
+    const answered = watchAnswers(page)
+
+    const entry = new URLSearchParams({ partyId: env.seed.partyId, companyAccountId: env.seed.companyAccountId })
+    await page.goto(`/finans/tahsilatlar/yeni?${entry.toString()}`)
+    await expect(page.getByRole('heading', { level: 1, name: 'Yeni tahsilat taslağı', exact: true })).toBeVisible({ timeout: 30_000 })
+    await page.getByLabel('Tahsilat aracı', { exact: true }).selectOption('instrument')
+    await expect(page.getByRole('heading', { level: 2, name: 'Çek / senet ile tahsilat (portföye al)' })).toBeVisible()
+    // Before the receipt: the customer's cheque / note risk (facts only) is empty.
+    await setRiskDate(page)
+    await expect(page.getByRole('region', { name: 'Çek/senet riski', exact: true }).getByText('Çek/senet riski yok.'))
+      .toBeVisible({ timeout: 30_000 })
+    await page.getByLabel('Tür', { exact: true }).selectOption('Cheque')
+    await page.getByLabel('Seri / belge no', { exact: true }).fill(CHEQUE_SERIAL)
+    await page.getByLabel('Keşideci / borçlu', { exact: true }).fill('SENTETIK FIN01 Keşideci A.Ş.')
+    await page.getByLabel('Çekin bankası', { exact: true }).fill('SENTETIK FIN01 Çek Bankası')
+    await page.getByLabel('Vade tarihi', { exact: true }).fill('2026-10-15')
+    await page.getByLabel('Alış tarihi', { exact: true }).fill('2026-09-18')
+    await page.getByLabel('Nominal tutar', { exact: true }).fill('1500,00')
+    const currency = page.getByLabel('Para birimi', { exact: true })
+    await expect(currency).toBeEnabled({ timeout: 30_000 })
+    await currency.selectOption({ label: 'TRY' })
+
+    const post = page.waitForRequest((request) => INSTRUMENT_RECEIVE_RE.test(request.url()) && request.method() === 'POST')
+    const answer = page.waitForResponse((response) => INSTRUMENT_RECEIVE_RE.test(response.url()) && response.request().method() === 'POST')
+    await page.getByRole('button', { name: 'Portföye al', exact: true }).click()
+    const sent = await post
+    expect(sent.postDataJSON()).toMatchObject({
+      kind: 'Cheque',
+      partyId: env.seed.partyId,
+      companyAccountId: env.seed.companyAccountId,
+      serialNumber: CHEQUE_SERIAL,
+      receivedOn: '2026-09-18',
+      dueOn: '2026-10-15',
+      money: { amount: '1500.00' },
+    })
+    const received = await answer
+    const receivedBody = await received.json() as { readonly resource?: { readonly id?: unknown; readonly status?: unknown } }
+    expect(received.status(), JSON.stringify(receivedBody)).toBe(200)
+    expect(receivedBody.resource?.status).toBe('InPortfolio')
+    const instrumentId = receivedBody.resource!.id as string
+    expect(instrumentId).toMatch(/^[0-9a-f-]{36}$/)
+    await expect(page.getByText('Portföye alındı — para etkisi yok.')).toBeVisible()
+    // After the receipt: still the customer's open exposure — the debt closes only at collection.
+    await expect.poll(() => riskCells(page, 'inPortfolioNotDue'), { timeout: 30_000 }).toEqual(['1', '1.500,00'])
+    await expect.poll(() => riskCells(page, 'openExposure')).toEqual(['1', '1.500,00'])
+    await expect.poll(() => riskCells(page, 'collected')).toEqual(['0', '0,00'])
+
+    // Close and reopen: a fresh navigation lists it on F-02 and opens it from the row.
+    await page.goto('/finans/tahsilatlar')
+    const row = page.getByRole('row').filter({ has: page.getByRole('rowheader', { name: CHEQUE_SERIAL, exact: true }) })
+    await expect(row).toHaveCount(1, { timeout: 30_000 })
+    await expect(row).toContainText('Portföyde')
+    await expect(row).toContainText('1.500,00')
+    await row.getByRole('button', { name: `Aç: ${CHEQUE_SERIAL}`, exact: true }).click()
+    const panel = page.getByRole('region', { name: `Müşteri çeki · ${CHEQUE_SERIAL}`, exact: true })
+    await expect(panel).toBeVisible({ timeout: 30_000 })
+    await expect(page).toHaveURL(new RegExp(`cekSenet=${instrumentId}`))
+
+    // The next step on the same record: collect it into the approved account.
+    await panel.getByRole('button', { name: 'Tahsil edildi olarak kaydet', exact: true }).click()
+    const form = panel.getByRole('form', { name: 'Tahsil edildi olarak kaydet' })
+    await form.getByLabel('Tahsil tarihi', { exact: true }).fill('2026-09-18')
+    await form.getByLabel('Banka hesabı', { exact: true }).selectOption({ label: ACCOUNT_NAME })
+    const collectPost = page.waitForRequest((request) => INSTRUMENT_COLLECT_RE.test(request.url()) && request.method() === 'POST')
+    const collectAnswer = page.waitForResponse((response) => INSTRUMENT_COLLECT_RE.test(response.url()) && response.request().method() === 'POST')
+    await form.getByRole('button', { name: 'Onayla', exact: true }).click()
+    const collectSent = await collectPost
+    const collectBody = collectSent.postDataJSON()
+    expect(collectBody).toEqual({
+      instrumentId, expectedVersion: '1', treasuryAccountId: bankAccountId, collectedOn: '2026-09-18', valueOn: null,
+    })
+    const collected = await collectAnswer
+    const first = await collected.json() as {
+      readonly originalCorrelationId?: unknown
+      readonly resource?: { readonly status?: unknown; readonly collectionSourceId?: unknown; readonly version?: unknown }
+    }
+    expect(collected.status(), JSON.stringify(first)).toBe(200)
+    expect(first.resource).toMatchObject({ status: 'Collected', version: '2' })
+    const sourceId = first.resource!.collectionSourceId as string
+    expect(sourceId).toMatch(/^[0-9a-f-]{36}$/)
+    await expect(panel.getByRole('link', { name: 'Tahsilat kaydını aç', exact: true })).toBeVisible({ timeout: 30_000 })
+    // After the collection: out of the open exposure, counted as collected (company view on the portfolio page).
+    await setRiskDate(page)
+    await expect.poll(() => riskCells(page, 'collected'), { timeout: 30_000 }).toEqual(['1', '1.500,00'])
+    await expect.poll(() => riskCells(page, 'openExposure')).toEqual(['0', '0,00'])
+
+    // The same key and request again: the stored answer with the first correlation; a fresh key at the old version is
+    // stale (409). Neither makes a second collection: the instrument names its one source, and the source one event.
+    const replay = await page.evaluate(async ({ id, key, body, companyId }) => {
+      const response = await fetch(`/api/v1/finance/customer-instruments/${id}/collection`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key, 'X-Company-Id': companyId },
+        body: JSON.stringify(body),
+      })
+      return { status: response.status, body: await response.json() as unknown }
+    }, { id: instrumentId, key: collectSent.headers()['idempotency-key'], body: collectBody, companyId: env.seed.companyId })
+    expect(replay.status).toBe(200)
+    expect(replay.body).toMatchObject({
+      isReplay: true,
+      originalCorrelationId: first.originalCorrelationId,
+      resource: { id: instrumentId, status: 'Collected', collectionSourceId: sourceId },
+    })
+    const stale = await page.evaluate(async ({ id, body, companyId }) => {
+      const response = await fetch(`/api/v1/finance/customer-instruments/${id}/collection`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID(), 'X-Company-Id': companyId },
+        body: JSON.stringify(body),
+      })
+      return response.status
+    }, { id: instrumentId, body: collectBody, companyId: env.seed.companyId })
+    expect(stale).toBe(409)
+
+    // Reopen: the instrument is Collected with two movements and the same one source; that source is a recorded
+    // receipt of the face value, open for distribution (F-03) like any receipt.
+    await page.goto(`/finans/tahsilatlar?cekSenet=${instrumentId}`)
+    const reopened = page.getByRole('region', { name: `Müşteri çeki · ${CHEQUE_SERIAL}`, exact: true })
+    await expect(reopened).toBeVisible({ timeout: 30_000 })
+    await expect(reopened.getByText('Tahsil edildi', { exact: true })).toBeVisible()
+    await expect(reopened.getByRole('button', { name: 'Tahsil edildi olarak kaydet' })).toHaveCount(0)
+    const reread = await page.evaluate(async ({ id, companyId }) => {
+      const response = await fetch(`/api/v1/finance/customer-instruments/${id}`, { headers: { 'X-Company-Id': companyId } })
+      return { status: response.status, body: await response.json() as { readonly movements?: readonly unknown[] } }
+    }, { id: instrumentId, companyId: env.seed.companyId })
+    expect(reread.status).toBe(200)
+    expect(reread.body).toMatchObject({ instrument: { status: 'Collected', collectionSourceId: sourceId, version: '2' } })
+    expect(reread.body.movements).toHaveLength(2)
+
+    const second = await page.evaluate(async ({ body, companyId }) => {
+      const response = await fetch('/api/v1/finance/customer-instruments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID(), 'X-Company-Id': companyId },
+        body: JSON.stringify(body),
+      })
+      return { status: response.status, body: await response.json() as { readonly resource?: { readonly id?: string } } }
+    }, {
+      companyId: env.seed.companyId,
+      body: {
+        kind: 'Cheque', partyId: env.seed.partyId, companyAccountId: env.seed.companyAccountId, serialNumber: BOUNCED_SERIAL,
+        drawer: 'SENTETIK FIN01 Keşideci A.Ş.', bankName: 'SENTETIK FIN01 Çek Bankası', branchName: null,
+        dueOn: '2026-10-15', receivedOn: '2026-09-18', money: { amount: '700.00', currencyId: sent.postDataJSON().money.currencyId },
+        description: null,
+      },
+    })
+    expect(second.status).toBe(200)
+    const secondId = second.body.resource!.id!
+    await page.goto(`/finans/tahsilatlar?cekSenet=${secondId}`)
+    const bouncedPanel = page.getByRole('region', { name: `Müşteri çeki · ${BOUNCED_SERIAL}`, exact: true })
+    await expect(bouncedPanel).toBeVisible({ timeout: 30_000 })
+    await bouncedPanel.getByRole('button', { name: 'Karşılıksız olarak işaretle', exact: true }).click()
+    const bounceForm = bouncedPanel.getByRole('form', { name: 'Karşılıksız olarak işaretle' })
+    await bounceForm.getByLabel('İşlem tarihi', { exact: true }).fill('2026-09-18')
+    await bounceForm.getByRole('button', { name: 'Onayla', exact: true }).click()
+    await expect(bouncedPanel.getByText('Karşılıksız', { exact: true })).toBeVisible({ timeout: 30_000 })
+    await setRiskDate(page)
+    await expect.poll(() => riskCells(page, 'dishonoured'), { timeout: 30_000 }).toEqual(['1', '700,00'])
+    await expect.poll(() => riskCells(page, 'openExposure')).toEqual(['1', '700,00'])
+    await expect.poll(() => riskCells(page, 'collected')).toEqual(['1', '1.500,00'])
+    const risk = await page.evaluate(async ({ asOf, partyId, companyAccountId, companyId }) => {
+      const query = new URLSearchParams({ asOf, partyId, companyAccountId })
+      const response = await fetch(`/api/v1/finance/customer-instruments/risk?${query.toString()}`,
+        { headers: { 'X-Company-Id': companyId } })
+      return { status: response.status, body: await response.json() as unknown }
+    }, { asOf: RISK_AS_OF, partyId: env.seed.partyId, companyAccountId: env.seed.companyAccountId, companyId: env.seed.companyId })
+    expect(risk.status).toBe(200)
+    expect(risk.body).toMatchObject({
+      asOf: RISK_AS_OF,
+      customers: [{
+        partyId: env.seed.partyId,
+        figures: {
+          collected: { count: 1, amount: { disclosure: 'Visible', money: { amount: '1500.00' } } },
+          dishonoured: { count: 1, amount: { money: { amount: '700.00' } } },
+          openExposure: { count: 1, amount: { money: { amount: '700.00' } } },
+          inPortfolioNotDue: { count: 0 },
+        },
+      }],
+    })
+
+    // Point in time (K3 5332370492 P2-1): the day before both receipts shows nothing; every step here is dated
+    // 2026-09-18, so that day's picture already holds the collection and the dishonour.
+    const riskOn = async (asOf: string) => page.evaluate(async ({ day, partyId, companyAccountId, companyId }) => {
+      const query = new URLSearchParams({ asOf: day, partyId, companyAccountId })
+      const response = await fetch(`/api/v1/finance/customer-instruments/risk?${query.toString()}`,
+        { headers: { 'X-Company-Id': companyId } })
+      return { status: response.status, body: await response.json() as { readonly customers?: readonly unknown[] } }
+    }, { day: asOf, partyId: env.seed.partyId, companyAccountId: env.seed.companyAccountId, companyId: env.seed.companyId })
+    const dayBefore = await riskOn('2026-09-17')
+    expect(dayBefore.status).toBe(200)
+    expect(dayBefore.body.customers).toEqual([])
+    const receiptDay = await riskOn('2026-09-18')
+    expect(receiptDay.status).toBe(200)
+    expect(receiptDay.body).toMatchObject({
+      customers: [{ figures: { collected: { count: 1 }, dishonoured: { count: 1 }, openExposure: { count: 1 } } }],
+    })
+
+    await page.goto(`/finans/tahsilatlar?cekSenet=${instrumentId}`)
+    await reopened.getByRole('link', { name: 'Tahsilat kaydını aç', exact: true }).click()
+    await expect(page).toHaveURL(new RegExp(`/finans/tahsilatlar/${sourceId}$`))
+    await expect(page.getByText('Kesin kaynak kaydı.', { exact: false })).toBeVisible({ timeout: 30_000 })
+    await expect(page.locator('dt').getByText('Dağıtılmamış tutar', { exact: true }).locator('xpath=following-sibling::dd'))
+      .toHaveText('1.500,00')
+    const source = await page.evaluate(async ({ id, companyId }) => {
+      const response = await fetch(`/api/v1/finance/manual-receipts/${id}`, { headers: { 'X-Company-Id': companyId } })
+      return { status: response.status, body: await response.json() as unknown }
+    }, { id: sourceId, companyId: env.seed.companyId })
+    expect(source.status).toBe(200)
+    expect(source.body).toMatchObject({
+      source: { id: sourceId, stage: 'Recorded', amount: { money: { amount: '1500.00' } }, treasuryAccountId: bankAccountId },
+      unallocated: { knowledge: 'Known', amount: { money: { amount: '1500.00' } } },
     })
     expectEveryAnswerRewritten(answered, rewritten)
   })

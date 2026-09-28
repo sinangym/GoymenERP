@@ -82,6 +82,8 @@ public static class FinanceModuleExtensions
         services.AddScoped<IReversalProposalService>(provider =>
             provider.GetRequiredService<ReversalProposalService>());
         services.AddScoped<IFinanceAllocationService>(CreateAllocationService);
+        // DEC-FIN-016 first release: the customer cheque / note portfolio, on the same owners and period rule.
+        services.AddScoped<ICustomerInstrumentService>(CreateCustomerInstrumentService);
         // FIN-T05: the Record's period gate. K1 (#66 5748258299) answered it — occurredOn decides — but the rule
         // that maps the date reads Accounting's period port, which this module cannot see. So the HOST registers
         // OccurredOnFinanceRecordPeriodRule before calling this method and the TryAdd below then does nothing;
@@ -184,6 +186,31 @@ public static class FinanceModuleExtensions
             permissions,
             provider.GetRequiredService<IAuditEventCollector>(),
             Envelope(provider, FinancePermissionNames.AllocationWrite, permissions, FinanceAction.WriteAllocation),
+            provider.GetRequiredService<TimeProvider>());
+    }
+
+    private static CustomerInstrumentService CreateCustomerInstrumentService(IServiceProvider provider)
+    {
+        var permissions = provider.GetRequiredService<FinancePermissionPort>();
+        return new CustomerInstrumentService(
+            provider.GetRequiredService<FinanceDbContext>(),
+            provider.GetRequiredService<ICompanyContext>(),
+            provider.GetRequiredService<ICurrentUser>(),
+            permissions,
+            provider.GetRequiredService<IFinanceBankAccountReader>(),
+            provider.GetRequiredService<IFinancePartyAccountPort>(),
+            provider.GetRequiredService<ISettingsPrerequisiteProvider>(),
+            provider.GetRequiredService<IFinanceRecordPeriodRule>(),
+            provider.GetRequiredService<IAuditEventCollector>(),
+            // Collection records a manual bank receipt, so the face value is judged by that approved profile.
+            new FinanceReceiptDraftBinding(FinanceMoneyOperations.ManualBankReceiptV1),
+            new CustomerInstrumentAuditEnvelopes(
+                Envelope(provider, FinancePermissionNames.CustomerInstrumentReceive, permissions,
+                    FinanceAction.ReceiveCustomerInstrument),
+                Envelope(provider, FinancePermissionNames.CustomerInstrumentStatusChange, permissions,
+                    FinanceAction.ChangeCustomerInstrumentStatus),
+                Envelope(provider, FinancePermissionNames.CustomerInstrumentCollect, permissions,
+                    FinanceAction.CollectCustomerInstrument)),
             provider.GetRequiredService<TimeProvider>());
     }
 
