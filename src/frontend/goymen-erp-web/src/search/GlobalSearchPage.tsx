@@ -46,8 +46,15 @@ function SearchResults({ namespace, raw }: { readonly namespace: string | null; 
   const companyId = shell.activeContext?.scopeMode === 'single' ? shell.activeContext.companyId : null
 
   const read = useQuery({
+    // ENTRY-SCOPED (#146/#148, the C-01 rule): a route entry — Back and a reopen included — gets its own cache key, so a
+    // revisit is never answered from the previous entry's cache while its authorization is being revalidated.
     queryKey: [namespace ?? 'no-context', shell.routeEntryGeneration, 'global-search', term],
     enabled: namespace !== null && companyId !== null && term !== null,
+    // And belt-and-braces for the same rule: an answer is never served from cache on mount (every entry mounts this
+    // component afresh behind the entry gate), and nothing is kept once the page is left.
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnMount: 'always',
     queryFn: async ({ signal }) => {
       const snapshot = boundary.capture()
       const outcome = await fetchGlobalSearch(term as string, companyId as string, signal)
@@ -55,6 +62,10 @@ function SearchResults({ namespace, raw }: { readonly namespace: string | null; 
       return outcome
     },
   })
+
+  // Only an answer read during THIS mount is shown: until the entry's own read lands the page says it is loading, even if
+  // an older answer for the same term is still somewhere in the cache.
+  const answer = read.isFetchedAfterMount ? read.data : undefined
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -98,17 +109,17 @@ function SearchResults({ namespace, raw }: { readonly namespace: string | null; 
         <p className={styles.muted} data-testid="global-search-prompt">
           {raw.trim() === '' ? T.emptyPrompt : T.termInvalid}
         </p>
-      ) : read.data === undefined ? (
+      ) : answer === undefined ? (
         <StateBlock state={{ kind: 'initial-loading' }} subject="arama" />
-      ) : read.data.type !== 'ok-single' ? (
-        <StateBlock state={classifyOutcome(read.data)} subject="arama" onRetry={() => void read.refetch()} />
-      ) : read.data.data.groups.length === 0 ? (
+      ) : answer.type !== 'ok-single' ? (
+        <StateBlock state={classifyOutcome(answer)} subject="arama" onRetry={() => void read.refetch()} />
+      ) : answer.data.groups.length === 0 ? (
         <div data-testid="global-search-no-results">
           <p>{T.noResults}</p>
           <p className={styles.muted}>{T.noResultsHint}</p>
         </div>
       ) : (
-        read.data.data.groups.map((group) => <Group key={group.kind} group={group} term={term} />)
+        answer.data.groups.map((group) => <Group key={group.kind} group={group} term={term} />)
       )}
     </section>
   )

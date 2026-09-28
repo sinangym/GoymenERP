@@ -126,10 +126,11 @@ test('S04-GS1 box → grouped results → open the order → Back returns to the
   await result.click()
   await expect(page).toHaveURL(new RegExp(`/satis/siparisler/${deliveryDraftId}$`))
 
-  // Back restores the same results for the same session binding (the shell may serve its cached answer for this entry);
-  // the reload below proves a fresh read answers the same.
+  // Back is a new route entry (#146/#148): the page reads the search AFRESH (never a cached answer) and shows the same.
+  const again = page.waitForResponse((response) => isSearch(response, documentNo))
   await page.goBack()
   await expect(page).toHaveURL(isResultsUrl(documentNo))
+  expect((await searchAnswer(await again)).groups.find((group) => group.kind === SALES_KIND)?.items.map((item) => item.id)).toContain(deliveryDraftId)
   await expect(page.getByTestId(`global-search-group-${SALES_KIND}`).getByRole('link', { name: new RegExp(documentNo) })).toBeVisible()
   // The results form and its input share the name "Aranan metin"; the input is the searchbox.
   await expect(page.getByRole('searchbox', { name: 'Aranan metin', exact: true })).toHaveValue(documentNo)
@@ -155,7 +156,10 @@ test('S04-GS2 the preparer finds the REAL Cari party and opens its detail', asyn
   await expect(link).toHaveAttribute('href', `/cari/${realPartyId}`)
   await link.click()
   await expect(page).toHaveURL(new RegExp(`/cari/${realPartyId}$`))
+  // Back is a new route entry: a fresh read answers the same party.
+  const again = page.waitForResponse((candidate) => isSearch(candidate, party.legalName))
   await page.goBack()
+  expect((await searchAnswer(await again)).groups.find((group) => group.kind === PARTY_KIND)?.items.map((item) => item.id)).toContain(realPartyId)
   await expect(page.getByTestId(`global-search-group-${PARTY_KIND}`).getByRole('link', { name: new RegExp(party.code) })).toBeVisible()
 })
 

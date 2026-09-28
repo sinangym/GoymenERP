@@ -16,6 +16,8 @@ import { QueryClient } from '@tanstack/react-query'
 import { ShellProvider } from '../shell/ShellProvider'
 import { AppShell } from '../shell/AppShell'
 import { SHELL_CAPABILITY_CONTRACT_VERSION } from '../shell/api'
+import { CapabilityRoute } from '../shell/CapabilityRoute'
+import type { CapabilityId } from '../shell/capabilities'
 import { GlobalSearchBox } from './GlobalSearchBox'
 import { searchRoutes } from './searchRoutes'
 import { SEARCH_KIND } from './searchContract'
@@ -24,10 +26,10 @@ import { SEARCH_TEXT } from './searchText'
 const COMPANY_A = '99999999-9999-9999-9999-999999999999'
 const PARTY = '11111111-1111-1111-1111-111111111111'
 const ORDER = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
-const CARI_LIST = 'cari.parties.list'
-const CARI_DETAIL = 'cari.parties.detail'
-const SALES_LIST = 'sales.drafts.list'
-const SALES_DETAIL = 'sales.drafts.detail'
+const CARI_LIST = 'cari.parties.list' as CapabilityId
+const CARI_DETAIL = 'cari.parties.detail' as CapabilityId
+const SALES_LIST = 'sales.drafts.list' as CapabilityId
+const SALES_DETAIL = 'sales.drafts.detail' as CapabilityId
 const MONEY_WORDS = ['₺', 'fiyat', 'Fiyat', 'price', 'iskonto', 'tutar', 'Tutar']
 
 const IDENTITY = { userId: '77777777-7777-7777-7777-777777777777', displayName: 'Arama kullanıcısı', email: null, allowedCompanyIds: [COMPANY_A] }
@@ -52,7 +54,7 @@ const answer = (query: string) => ({
   ],
 })
 
-function installFetch(capabilities: readonly string[], onSearch: (url: string) => Response = (url) => json(answer(new URL(url, 'http://x').searchParams.get('q') ?? ''))) {
+function installFetch(capabilities: readonly string[], onSearch: (url: string) => Response | Promise<Response> = (url) => json(answer(new URL(url, 'http://x').searchParams.get('q') ?? ''))) {
   const searches: { url: string; companyId: string | null }[] = []
   vi.stubGlobal(
     'fetch',
@@ -98,9 +100,10 @@ function renderApp(initialPath: string) {
             children: [
               { index: true, element: <p>Ana sayfa</p> },
               ...searchRoutes,
-              { path: 'cari', element: <OwnerStub label="Cari listesi" /> },
-              { path: 'cari/:partyId', element: <OwnerStub label="Cari detay" /> },
-              { path: 'satis/siparisler/:draftId', element: <OwnerStub label="Sipariş detay" /> },
+              // Behind the real entry gate, as the owner routes are in the app: leaving and coming Back are route entries.
+              { path: 'cari', element: <CapabilityRoute capability={CARI_LIST}><OwnerStub label="Cari listesi" /></CapabilityRoute> },
+              { path: 'cari/:partyId', element: <CapabilityRoute capability={CARI_DETAIL}><OwnerStub label="Cari detay" /></CapabilityRoute> },
+              { path: 'satis/siparisler/:draftId', element: <CapabilityRoute capability={SALES_DETAIL}><OwnerStub label="Sipariş detay" /></CapabilityRoute> },
             ],
           },
         ],
@@ -124,7 +127,15 @@ afterEach(() => {
 
 describe('AT-002 global search', () => {
   it('type → grouped results → open one → Back returns to the same results, read again under the same company', async () => {
-    const { searches } = installFetch([CARI_LIST, CARI_DETAIL, SALES_LIST])
+    // The FIRST answer comes at once; every later one waits for the test, so the Back step can prove the page shows no
+    // earlier answer while the entry's own fresh read is in flight (#146/#148).
+    let held: ((response: Response) => void) | null = null
+    let reads = 0
+    const { searches } = installFetch([CARI_LIST, CARI_DETAIL, SALES_LIST], (url) => {
+      reads += 1
+      const body = json(answer(new URL(url, 'http://x').searchParams.get('q') ?? ''))
+      return reads === 1 ? body : new Promise<Response>((resolve) => { held = () => resolve(body) })
+    })
     const router = renderApp('/')
 
     await userEvent.type((await screen.findAllByLabelText(SEARCH_TEXT.boxLabel, { selector: 'input' }))[0], '  Zeta ')
@@ -151,10 +162,14 @@ describe('AT-002 global search', () => {
     expect((await screen.findByTestId('owner-screen')).textContent).toBe(`Cari detay ${PARTY}`)
 
     await router.navigate(-1)
-    await screen.findByTestId(`global-search-group-${SEARCH_KIND.party}`)
-    expect(router.state.location.search).toBe('?q=Zeta')
-    expect((screen.getByLabelText(SEARCH_TEXT.pageLabel, { selector: 'input' }) as HTMLInputElement).value).toBe('Zeta')
+    // Back is a new route entry: a FRESH read is sent, and until it answers no earlier answer is shown.
     await waitFor(() => expect(searches.map((call) => call.url)).toEqual(['/api/v1/search?q=Zeta', '/api/v1/search?q=Zeta']))
+    expect(router.state.location.search).toBe('?q=Zeta')
+    expect(screen.queryByTestId(`global-search-group-${SEARCH_KIND.party}`)).toBeNull()
+    expect(document.body.textContent).not.toContain('CAR-000001')
+    ;(held as unknown as (response: Response) => void)(json(null))
+    await screen.findByTestId(`global-search-group-${SEARCH_KIND.party}`)
+    expect((screen.getByLabelText(SEARCH_TEXT.pageLabel, { selector: 'input' }) as HTMLInputElement).value).toBe('Zeta')
     expect(within(screen.getByTestId(`global-search-group-${SEARCH_KIND.party}`)).getByText('Zeta Çelik A.Ş.', { exact: false })).toBeTruthy()
   })
 
