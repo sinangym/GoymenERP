@@ -27,5 +27,20 @@ public static class LogisticsPermissionManifestV1
     /// </summary>
     public const string WeighingsRecord = "logistics.weighings.record";
 
-    public static readonly IReadOnlyList<string> Names = [InstructionsCreate, InstructionsRead, LoadsRecord, ShipmentsRecord, DeliveriesRecord, WeighingsRecord];
+    /// <summary>
+    /// AT-025: read the SALES section of the operations work list (L-01 Sevk Edilebilir Siparişler) — the approved sales order
+    /// lines with Logistics's own instructed / loaded / shipped / delivered totals, price-free (Sinan §4, #66 5738113623). Its
+    /// own name (each read is its own name, #66 5738113623 §4): holding it reveals nothing of purchasing, and the purchase
+    /// section's name reveals nothing of sales. Registered centrally; who holds it is a human grant, not chosen here.
+    /// </summary>
+    public const string OperationsSalesWorkRead = "logistics.operations-work.sales.read";
+
+    /// <summary>
+    /// AT-025: read the PURCHASE section of the operations work list (L-09 Beklenen Alış / Kapı Kabulü) — the approved purchase
+    /// order lines still waiting for goods receipt, price-free. Its own name, apart from the sales section's (see above).
+    /// </summary>
+    public const string OperationsPurchaseWorkRead = "logistics.operations-work.purchase.read";
+
+    public static readonly IReadOnlyList<string> Names =
+        [InstructionsCreate, InstructionsRead, LoadsRecord, ShipmentsRecord, DeliveriesRecord, WeighingsRecord, OperationsSalesWorkRead, OperationsPurchaseWorkRead];
 }

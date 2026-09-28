@@ -286,7 +286,10 @@ SUITE_IDENTITY_PERMISSIONS = {
             "logistics.shipments.record", "logistics.deliveries.record", "logistics.weighings.record",
             "sales.drafts.create", "sales.drafts.read", "sales.orders.approve", "counterparty.parties.read",
             "inventory.opening-stock.record", "inventory.labels.read", "inventory.balances.read",
-            "inventory.physical-allocation.write", "product.operational-selection.read"),
+            "inventory.physical-allocation.write", "product.operational-selection.read",
+            # AT-025: the disposable l04-operations reader and the seed-only l04-purchase-approver.
+            "logistics.operations-work.sales.read", "logistics.operations-work.purchase.read",
+            "purchasing.orders.read", "purchasing.orders.approve"),
     # PUR-01: the complete union of the disposable creator, approver and reader grants. The creator's
     # two owner-read names are the same intersection the real Purchasing create command already uses;
     # this closed list grants nothing outside the disposable normal profile.

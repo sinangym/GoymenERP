@@ -52,6 +52,8 @@ public static class PurchasingModuleExtensions
         services.AddScoped<IPurchaseGoodsReceiptServiceV1>(provider => provider.GetRequiredService<PurchasingService>());
         services.AddScoped<IPurchaseAcceptanceSourceV1, PurchaseAcceptanceSource>();
         services.AddScoped<IPurchaseSupplyReferencePortV1, PurchaseSupplyReferencePort>();
+        // AT-025: the purchase section of the operations work list reads the approved lines awaiting receipt through this port only.
+        services.AddScoped<IPurchaseOpenLineReadPortV1, PurchaseOpenLineReadPort>();
         return services;
     }
 

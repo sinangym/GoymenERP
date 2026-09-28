@@ -59,6 +59,11 @@ public static class LogisticsModuleExtensions
         // DEC-SAL-005: Logistics answers the Sales-declared loading read (every instruction line of an order, instructed or
         // loaded included) for the cancellation preview; the owner's module registers it, as the delivery read above.
         services.AddScoped<ISalesOrderLoadingReadPortV1, LogisticsSalesOrderLoadingReadPort>();
+        // AT-025: the operations work list — two separate sections over the Sales and Purchasing owners' read ports (registered by
+        // those modules) and Logistics's own recorded totals; each section measures its own name.
+        services.AddScoped<ILogisticsOrderLineProgressReader, LogisticsOrderLineProgressReader>();
+        services.TryAddSingleton(new LogisticsOperationsWorkBindings());
+        services.AddScoped<ILogisticsOperationsWorkService, LogisticsOperationsWorkService>();
         return services;
     }
 

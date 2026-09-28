@@ -59,8 +59,9 @@ describe('Logistics lane ↔ backend shell provider', () => {
 
   it('the provider publishes all three declarations after the accepted staged-profile journey', () => {
     // The declaration form ends with `)`; the provider's doc comment mentions the same words inside `<c>…</c>`.
-    expect(constant('OwnerContractVersion')).toBe('1.1')
-    expect((providerText.match(/ImplementationAvailable: true\)/g) ?? []).length).toBe(3)
+    expect(constant('OwnerContractVersion')).toBe('1.2')
+    // The three instruction screens and the two AT-025 operations sections (L-01, L-09).
+    expect((providerText.match(/ImplementationAvailable: true\)/g) ?? []).length).toBe(5)
     expect(providerText).not.toMatch(/ImplementationAvailable: false\)/)
   })
 
@@ -84,6 +85,26 @@ describe('Logistics lane ↔ backend shell provider', () => {
     expect(delivery).toContain('ParentCapabilityId: DetailCapabilityId')
     expect(delivery).not.toContain('LogisticsPermissionManifestV1.ShipmentsRecord')
     expect(delivery).not.toContain('ErpPermissions.InventoryPhysicalAllocationWrite')
+  })
+
+  it('AT-025: declares the two operations sections as separate screens, each behind its own read name', () => {
+    expect(constant('SalesWorkCapabilityId')).toBe(LOGISTICS_CAPABILITY.operationsSales)
+    expect(constant('PurchaseWorkCapabilityId')).toBe(LOGISTICS_CAPABILITY.operationsPurchase)
+    expect(constant('SalesWorkRoutePath')).toBe(LOGISTICS_ROUTE.operationsSales)
+    expect(constant('PurchaseWorkRoutePath')).toBe(LOGISTICS_ROUTE.operationsPurchase)
+    expect(constant('SalesWorkScreenId')).toBe(LOGISTICS_SCREEN_ID[LOGISTICS_CAPABILITY.operationsSales])
+    expect(constant('PurchaseWorkScreenId')).toBe(LOGISTICS_SCREEN_ID[LOGISTICS_CAPABILITY.operationsPurchase])
+    const sales = declaration('SalesWorkCapabilityId')
+    expect(sales).toContain('LogisticsPermissionManifestV1.OperationsSalesWorkRead')
+    expect(sales).not.toContain('LogisticsPermissionManifestV1.OperationsPurchaseWorkRead')
+    expect(sales).not.toContain('ParentCapabilityId')
+    const purchase = declaration('PurchaseWorkCapabilityId')
+    expect(purchase).toContain('LogisticsPermissionManifestV1.OperationsPurchaseWorkRead')
+    expect(purchase).not.toContain('LogisticsPermissionManifestV1.OperationsSalesWorkRead')
+    expect(purchase).not.toContain('ParentCapabilityId')
+    expect(matchPath(LOGISTICS_ROUTE.operationsSales, LOGISTICS_ROUTE.operationsPurchase)).toBeNull()
+    expect(LOGISTICS_NAV_LABEL[LOGISTICS_CAPABILITY.operationsSales]).not.toBe('')
+    expect(LOGISTICS_NAV_LABEL[LOGISTICS_CAPABILITY.operationsPurchase]).not.toBe('')
   })
 
   it('the detail link helper matches the mounted pattern and the detail has no nav entry', () => {
