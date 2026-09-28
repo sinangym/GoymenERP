@@ -156,7 +156,14 @@ test('U02-DUP a same-named Draft is saved with a warning that links the other ca
       new URL(response.url()).pathname === PRODUCTS_PATH && response.request().method() === 'POST')
     const read = page.waitForResponse((response) => new URL(response.url()).pathname === DUPLICATES_PATH)
     await page.getByRole('button', { name: 'Taslak olarak kaydet' }).click()
-    const createdResponse = await created
+    // If the form refuses to send, fail at once with what the screen says instead of waiting out the test.
+    const createdResponse = await Promise.race([
+      created,
+      page.waitForTimeout(20_000).then(async () => {
+        const screen = (await page.getByRole('main').innerText()).replace(/\s+/g, ' ').slice(0, 1500)
+        throw new Error(`the save sent no create request within 20 s; the screen shows: ${screen}`)
+      }),
+    ])
     expect(createdResponse.status(), 'a name match never blocks the save').toBe(201)
     const product = ((await createdResponse.json()) as { card: { product: Core } }).card.product
     await expect(page.getByRole('heading', { level: 1, name: 'Taslak kaydedildi' })).toBeVisible()
