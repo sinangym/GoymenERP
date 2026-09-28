@@ -113,8 +113,8 @@ const PRODUCTS_PATH = '/api/v1/products'
 const CAPABILITIES_PATH = '/api/v1/shell/capabilities'
 const BOOTSTRAP_ISSUER = 'urn:goymen:development-bootstrap'
 
-/** identity ProductMasterOperation: Read = 1, DraftCreate = 2, DraftBasicEdit = 3, Activate = 4. */
-const OPERATION = { read: 1, draftCreate: 2, draftBasicEdit: 3, activate: 4 } as const
+/** identity ProductMasterOperation: Read = 1, DraftCreate = 2, DraftBasicEdit = 3, Activate = 4, Deactivate = 5, Reactivate = 6. */
+const OPERATION = { read: 1, draftCreate: 2, draftBasicEdit: 3, activate: 4, deactivate: 5, reactivate: 6 } as const
 /** product.Products.Lifecycle: Draft = 0, Active = 1. */
 const LIFECYCLE = { draft: 0, active: 1 } as const
 
@@ -457,12 +457,16 @@ test('U01-360-ACT the disposable activator activates a Draft card in the browser
       const authorizedId = await readUserId(pool, authorizedActor)
       const unauthorizedId = await readUserId(pool, unauthorizedActor)
       expect(await readActivateGrantees(pool), 'no real user and no seeded role holds Activate').toEqual([activatorId])
-      expect(await readOperations(pool, activatorId)).toEqual([OPERATION.read, OPERATION.activate])
+      // The same disposable actor also carries the deactivation / reactivation grants (u01-360-deactivation-journey).
+      expect(await readOperations(pool, activatorId))
+        .toEqual([OPERATION.read, OPERATION.activate, OPERATION.deactivate, OPERATION.reactivate])
       expect(await readOperations(pool, authorizedId)).toEqual([OPERATION.read, OPERATION.draftCreate, OPERATION.draftBasicEdit])
       expect(await readOperations(pool, unauthorizedId)).toEqual([])
 
-      expect(await productCapabilities(page, env, activatorActor))
-        .toEqual(['product.items.activate', 'product.items.detail', 'product.items.list'])
+      expect(await productCapabilities(page, env, activatorActor)).toEqual([
+        'product.items.activate', 'product.items.deactivate', 'product.items.detail', 'product.items.list',
+        'product.items.reactivate',
+      ])
       expect(await productCapabilities(page, env, authorizedActor))
         .toEqual(['product.items.create', 'product.items.detail', 'product.items.edit', 'product.items.list'])
       expect(await productCapabilities(page, env, unauthorizedActor)).toEqual([])
