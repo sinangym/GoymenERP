@@ -307,7 +307,7 @@ test('S04-06 authorized allocation saves, closes, reopens, releases and reopens 
     const releasedResponse = await releaseAnswer
     expect(releasedResponse.status()).toBe(200)
     expect(await releasedResponse.json()).toMatchObject({ allocationId: created.allocationId, status: 'Released', version: '2', remainingKg: '0' })
-    await expect(reopenedLine.getByText('Serbest bırakıldı')).toBeVisible()
+    await expect(reopenedLine.getByText('Serbest bırakıldı', { exact: true })).toBeVisible()
 
     await page.goto('/satis/siparisler')
     await page.locator(`a[href="${DETAIL_ROUTE}"]`).click()
