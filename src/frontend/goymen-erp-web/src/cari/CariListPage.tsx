@@ -11,7 +11,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
-import { Link } from 'react-router'
+import { Link, useSearchParams } from 'react-router'
 import {
   fetchCounterparties,
   type AccountStateFilter,
@@ -54,7 +54,9 @@ import {
   readCariListView,
   rememberOpenedRecord,
   takeOpenedRecord,
+  withEntryQuery,
   writeCariListView,
+  CARI_LIST_ENTRY_QUERY_PARAM,
   type CariListView,
 } from './listViewState'
 import styles from './CariListPage.module.css'
@@ -211,7 +213,14 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
    * view saved under another actor or company is unreachable rather than merely
    * unused.
    */
-  const [restored] = useState<CariListView>(() => readCariListView(namespace))
+  /**
+   * AT-002: an entry carrying `?q=` (the global search's "Tümünü listede gör") starts from that search on the default
+   * filters, so the list continues exactly the search the user came from; any other entry restores the saved view.
+   */
+  const [searchParams] = useSearchParams()
+  const [restored] = useState<CariListView>(() =>
+    withEntryQuery(readCariListView(namespace), searchParams.get(CARI_LIST_ENTRY_QUERY_PARAM)),
+  )
   const [q, setQ] = useState(restored.q)
   const [kind, setKind] = useState<KindFilter | ''>(restored.kind)
   const [roles, setRoles] = useState<readonly RoleFilter[]>(restored.roles)

@@ -119,6 +119,20 @@ export function clearedFilters(view: CariListView): CariListView {
   }
 }
 
+/** AT-002: the URL member the global search's "more" link carries into the list (`/cari?q=…`). */
+export const CARI_LIST_ENTRY_QUERY_PARAM = 'q'
+
+/**
+ * AT-002: the view an entry starts from. An entry carrying a non-blank search term (the global search's "more")
+ * starts from THAT term on the default filters — the global search reads active parties of every kind and role —
+ * keeping only the user's sort and page size; without one, the saved view is used unchanged.
+ */
+export function withEntryQuery(view: CariListView, entryQuery: string | null): CariListView {
+  const q = entryQuery?.trim() ?? ''
+  if (q === '') return view
+  return { ...clearedFilters(view), q }
+}
+
 let slot: { readonly namespace: string; readonly view: CariListView } | null = null
 
 /** The saved view for this namespace, or the defaults. Never another namespace's. */
