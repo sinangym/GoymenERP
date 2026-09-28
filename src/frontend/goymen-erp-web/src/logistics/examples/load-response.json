@@ -41,7 +41,8 @@
         "sourceShipmentId": null,
         "recordedAtUtc": "2026-09-19T09:10:00Z"
       }
-    ]
+    ],
+    "weighing": null
   },
   "isReplay": false,
   "originalCorrelationId": "corr-3"

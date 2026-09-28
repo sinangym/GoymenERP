@@ -11,7 +11,7 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence;
 /// SALES-P2 shape). Every row is a tenant row of the instruction's company: a global query filter on the
 /// server-resolved company and a write guard that refuses any row of another company, any company change,
 /// any delete and any column move outside the axis a command may move (the header's status / version /
-/// time; a line's four share totals and block flag; shares and attempts append only). The attempt key
+/// time; a line's four share totals and block flag; shares, weighbridge records and attempts append only). The attempt key
 /// (company, command, key hash) is a primary key under a binary collation; the raw key is never stored.
 /// The audit sidecar is Audit's table, written in the same save and filtered the same way.
 /// </summary>
@@ -30,6 +30,8 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
 
     internal DbSet<LoadingAttemptRow> Attempts => Set<LoadingAttemptRow>();
 
+    internal DbSet<VehicleWeighingRow> Weighings => Set<VehicleWeighingRow>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -42,6 +44,7 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
         ConfigureLines(modelBuilder);
         ConfigureShares(modelBuilder);
         ConfigureAttempts(modelBuilder);
+        ConfigureWeighings(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -167,6 +170,41 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
             .HasForeignKey(x => new { x.CompanyId, x.InstructionId })
             .HasPrincipalKey(x => new { x.CompanyId, x.Id })
             .IsRequired(false)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    /// <summary>
+    /// AT-053: one manual weighbridge record per instruction (the key), append-only. SQL Server holds the calculation's
+    /// shape too: the direction decides which weighing is the gross, the gross is strictly heavier (so the net is
+    /// positive), net = gross − tare (WGT-001) and difference = net − loaded (WGT-002, signed). No tolerance column.
+    /// </summary>
+    private void ConfigureWeighings(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<VehicleWeighingRow>();
+        entity.ToTable("VehicleWeighings", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_VehicleWeighings_Identity", $"[WeighingId] <> {EmptyGuid} AND LEN([RecordedBy]) > 0");
+            table.HasCheckConstraint("CK_VehicleWeighings_Direction", "[Direction] IN (1, 2)");
+            table.HasCheckConstraint("CK_VehicleWeighings_Weights",
+                "[FirstWeighingKg] > 0 AND [SecondWeighingKg] > 0 AND [NetKg] > 0 AND [LoadedKgAtWeighing] >= 0 AND [SharesBefore] >= 0");
+            table.HasCheckConstraint("CK_VehicleWeighings_Net",
+                "([Direction] = 1 AND [SecondWeighingKg] > [FirstWeighingKg] AND [NetKg] = [SecondWeighingKg] - [FirstWeighingKg]) "
+                + "OR ([Direction] = 2 AND [FirstWeighingKg] > [SecondWeighingKg] AND [NetKg] = [FirstWeighingKg] - [SecondWeighingKg])");
+            table.HasCheckConstraint("CK_VehicleWeighings_Difference", "[DifferenceKg] = [NetKg] - [LoadedKgAtWeighing]");
+        });
+        entity.HasKey(x => new { x.CompanyId, x.InstructionId });
+        entity.HasIndex(x => new { x.CompanyId, x.WeighingId }).IsUnique().HasDatabaseName("UX_VehicleWeighings_WeighingId");
+        foreach (var weight in new[] { nameof(VehicleWeighingRow.FirstWeighingKg), nameof(VehicleWeighingRow.SecondWeighingKg),
+                     nameof(VehicleWeighingRow.NetKg), nameof(VehicleWeighingRow.LoadedKgAtWeighing), nameof(VehicleWeighingRow.DifferenceKg) })
+        {
+            entity.Property<decimal>(weight).HasPrecision(18, 3);
+        }
+
+        entity.Property(x => x.RecordedBy).HasMaxLength(128).IsRequired();
+        entity.HasOne<LoadingInstructionRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.InstructionId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
             .OnDelete(DeleteBehavior.Restrict);
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }

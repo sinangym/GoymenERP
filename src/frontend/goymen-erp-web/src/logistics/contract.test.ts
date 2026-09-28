@@ -16,7 +16,7 @@ import {
   parseQuantityInput,
 } from './contract'
 import approvedLinesRaw from './examples/approved-order-lines-response.json?raw'
-import { approvedOrderLine, INSTRUCTION } from './testHarness'
+import { approvedOrderLine, INSTRUCTION, weighingRecord } from './testHarness'
 
 type Body = Record<string, any>
 const parse = (raw: string): Body => JSON.parse(raw) as Body
@@ -60,6 +60,31 @@ describe('instruction decoders', () => {
     ['an all-zero id', (b: Body) => (b.instruction.customerPartyId = '00000000-0000-0000-0000-000000000000')],
   ])('a body with %s is refused', (_, change) => {
     expect(decodeInstructionDetail(tweak(detailResponseRaw, change), null)).toBeNull()
+  })
+
+  it('AT-053: reads the weighbridge record as the backend wrote it, sign kept, and refuses one it cannot vouch for', () => {
+    const issuedWith = (weighing: Body | null) => tweak(detailResponseRaw, (b) => {
+      b.instruction.status = 'Issued'
+      b.weighing = weighing
+    })
+    const detail = decodeInstructionDetail(issuedWith(weighingRecord()), INSTRUCTION)
+    expect(detail?.weighing).toMatchObject({ direction: 'TareFirst', netKg: '4.3', loadedKgAtWeighing: '4.5', differenceKg: '-0.2' })
+    expect(decodeInstructionDetail(issuedWith(null), INSTRUCTION)?.weighing).toBeNull()
+    expect(decodeInstructionDetail(parse(detailResponseRaw), INSTRUCTION)?.weighing).toBeNull()
+    const refused: [string, Body | null, (b: Body) => void][] = [
+      ['a missing weighing member', null, (b) => delete b.weighing],
+      ['a record on a Draft', weighingRecord(), (b) => (b.instruction.status = 'Draft')],
+      ['a number for the difference', weighingRecord({ differenceKg: -0.2 }), () => undefined],
+      ['a tolerance verdict member', { ...weighingRecord(), withinTolerance: true }, () => undefined],
+      ['a tare that is not the weighing the direction names', weighingRecord({ direction: 'GrossFirst' }), () => undefined],
+      ['an unknown direction', weighingRecord({ direction: 'Sideways' }), () => undefined],
+      ['a zero net', weighingRecord({ netKg: '0' }), () => undefined],
+    ]
+    for (const [name, weighing, change] of refused) {
+      const body = issuedWith(weighing)
+      change(body)
+      expect(decodeInstructionDetail(body, INSTRUCTION), name).toBeNull()
+    }
   })
 
   it('a detail of another record is not an answer to the one asked', () => {

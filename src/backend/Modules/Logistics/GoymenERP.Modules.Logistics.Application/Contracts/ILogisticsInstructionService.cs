@@ -18,6 +18,10 @@ public interface ILogisticsInstructionService
     Task<LoadingInstructionResponse> RecordLoadAsync(Guid instructionId, Guid lineId, RecordLoadRequest request,
         LogisticsCommandMetadata metadata, CancellationToken cancellationToken = default);
 
+    /// <summary>AT-053: the vehicle's manual weighbridge record on an issued instruction (one per instruction; facts, no tolerance verdict).</summary>
+    Task<LoadingInstructionResponse> RecordWeighingAsync(Guid instructionId, RecordWeighingRequest request, LogisticsCommandMetadata metadata,
+        CancellationToken cancellationToken = default);
+
     Task<LoadingInstructionDetailView> GetInstructionDetailAsync(Guid instructionId, CancellationToken cancellationToken = default);
 
     Task<LoadingInstructionListResponse> GetInstructionListAsync(LoadingInstructionListQuery query, CancellationToken cancellationToken = default);
