@@ -2,6 +2,7 @@ using GoymenERP.BuildingBlocks.Shell;
 using GoymenERP.Modules.Accounting.Infrastructure.Shell;
 using GoymenERP.Modules.Counterparty.Infrastructure.Shell;
 using GoymenERP.Modules.Finance.Infrastructure.Shell;
+using GoymenERP.Modules.Identity.Infrastructure.Shell;
 using GoymenERP.Modules.Inventory.Infrastructure.Shell;
 using GoymenERP.Modules.Logistics.Infrastructure.Shell;
 using GoymenERP.Modules.Manufacturing.Infrastructure.Shell;
@@ -82,6 +83,7 @@ internal static class C01E2eShellCapabilityActivation
         typeof(PurchasingShellCapabilityProvider),
         typeof(AccountingShellCapabilityProvider),
         typeof(InventoryShellCapabilityProvider),
+        typeof(IdentityShellCapabilityProvider),
     ];
 
     // The accepted normal-host authority for each set of optional module providers present (in the
@@ -148,6 +150,16 @@ internal static class C01E2eShellCapabilityActivation
                 typeof(InventoryShellCapabilityProvider),
             },
                 ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV13PublishedFinanceV12PublishedManufacturingV14PublishedLogisticsV11PublishedPurchasingV14PublishedAccountingV13AndPublishedInventoryV14),
+        // SY-01/SY-02: Identity's read-only users-and-permissions view joins the normal host.
+        (new[]
+            {
+                typeof(OrganizationShellCapabilityProvider), typeof(ProductShellCapabilityProvider),
+                typeof(SalesShellCapabilityProvider), typeof(FinanceShellCapabilityProvider),
+                typeof(ManufacturingShellCapabilityProvider), typeof(LogisticsShellCapabilityProvider),
+                typeof(PurchasingShellCapabilityProvider), typeof(AccountingShellCapabilityProvider),
+                typeof(InventoryShellCapabilityProvider), typeof(IdentityShellCapabilityProvider),
+            },
+                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV13PublishedFinanceV12PublishedManufacturingV14PublishedLogisticsV11PublishedPurchasingV14PublishedAccountingV13PublishedInventoryV14AndPublishedIdentityV10),
     ];
 
     private static string NormalAuthority(IServiceCollection services)

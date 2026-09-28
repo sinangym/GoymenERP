@@ -11,14 +11,12 @@
 import type { ReactNode } from 'react'
 import type { RouteObject } from 'react-router'
 import { CapabilityRoute } from '../shell/CapabilityRoute'
-import type { CapabilityId } from '../shell/capabilities'
 import { IDENTITY_CAPABILITY, IDENTITY_ROUTE, type IdentityCapabilityId } from './capabilities'
 import { IdentityAccessPage } from './IdentityAccessPage'
 import { IdentityRoleDetailPage } from './IdentityRoleDetailPage'
 
 function gate(capability: IdentityCapabilityId, children: ReactNode) {
-  // The cast goes once the shell owner adds the two ids to `src/shell/capabilities.ts` (the mount handoff).
-  return <CapabilityRoute capability={capability as unknown as CapabilityId}>{children}</CapabilityRoute>
+  return <CapabilityRoute capability={capability}>{children}</CapabilityRoute>
 }
 
 export const identityRoutes: RouteObject[] = [
