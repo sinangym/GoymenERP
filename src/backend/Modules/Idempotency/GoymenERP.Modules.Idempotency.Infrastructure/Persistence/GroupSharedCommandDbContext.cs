@@ -17,7 +17,7 @@ public sealed class GroupSharedCommandDbContext(DbContextOptions<GroupSharedComm
         {
             table.HasCheckConstraint("CK_GroupSharedTerminals_ProductCommands",
                 "[Subject] = 'Product' AND [CommandName] IN ('product.draft.create.v1', 'product.draft.basic-edit.v1', "
-                + "'product.card.activate.v1')");
+                + "'product.card.activate.v1', 'product.card.deactivate.v1', 'product.card.reactivate.v1')");
             table.HasCheckConstraint("CK_GroupSharedTerminals_ActorOrigin",
                 "[LocalActorId] <> '00000000-0000-0000-0000-000000000000' AND "
                 + "[OriginCompanyId] <> '00000000-0000-0000-0000-000000000000'");

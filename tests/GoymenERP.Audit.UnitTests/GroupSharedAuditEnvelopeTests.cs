@@ -105,6 +105,35 @@ public sealed class GroupSharedAuditEnvelopeTests
             Assert.Throws<ArgumentException>(() => GroupSharedAuditEventData.Create(envelope));
     }
 
+    // DEC-CAR-003 / PRD-PERM-001 (#99): deactivation and reactivation are evidence only as a one-step move
+    // under their own event type and permission; neither borrows the other's, nor the approval's.
+    [Theory]
+    [InlineData(GroupSharedMasterOperation.Deactivate, "Deactivate", "product.card.deactivate", "product.card.deactivated.v1",
+        "product.card.reactivated.v1", "product.card.reactivate")]
+    [InlineData(GroupSharedMasterOperation.Reactivate, "Reactivate", "product.card.reactivate", "product.card.reactivated.v1",
+        "product.card.deactivated.v1", "product.card.deactivate")]
+    public void LifecycleMovesAreAcceptedOnlyAsOneStepTransitionsUnderTheirOwnNames(GroupSharedMasterOperation operation,
+        string name, string permission, string eventType, string otherEvent, string otherPermission)
+    {
+        var data = GroupSharedAuditEventFactory.Create(new(
+            GroupSharedMasterCommandContext.FromServerDecision(new(true, GroupSharedMasterKind.Product,
+                operation, Actor, Origin, "revision-1"), operation),
+            Product, eventType, 3, 4, "{\"lifecycle\":\"Active\"}", "{\"lifecycle\":\"Inactive\"}",
+            "Üretimden kalktı", "Web", null, null, "original-correlation", null, "request-key", "None", null));
+        Assert.Equal((name, permission, "Web"), (data.Envelope.Operation, data.Envelope.PermissionCode, data.Envelope.SourceChannel));
+        data.ValidateIntegrity();
+        foreach (var envelope in new[]
+        {
+            data.Envelope with { EventType = otherEvent },
+            data.Envelope with { EventType = "product.card.activated.v1" },
+            data.Envelope with { PermissionCode = otherPermission },
+            data.Envelope with { PermissionCode = "product.card.activate" },
+            data.Envelope with { EntityVersionAfter = 5 },
+            data.Envelope with { EntityVersionBefore = null, EntityVersionAfter = 1 },
+        })
+            Assert.Throws<ArgumentException>(() => GroupSharedAuditEventData.Create(envelope));
+    }
+
     [Fact]
     public void EmptySubjectAndNoncanonicalMetadataCannotBeNormalizedIntoValidEvidence()
     {

@@ -84,7 +84,7 @@ namespace GoymenERP.Modules.Idempotency.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_GroupSharedTerminals_Hashes", "DATALENGTH([IdempotencyKeyHash]) = 64 AND [IdempotencyKeyHash] NOT LIKE '%[^0-9A-F]%' AND DATALENGTH([RequestHash]) = 64 AND [RequestHash] NOT LIKE '%[^0-9A-F]%'");
 
-                            t.HasCheckConstraint("CK_GroupSharedTerminals_ProductCommands", "[Subject] = 'Product' AND [CommandName] IN ('product.draft.create.v1', 'product.draft.basic-edit.v1', 'product.card.activate.v1')");
+                            t.HasCheckConstraint("CK_GroupSharedTerminals_ProductCommands", "[Subject] = 'Product' AND [CommandName] IN ('product.draft.create.v1', 'product.draft.basic-edit.v1', 'product.card.activate.v1', 'product.card.deactivate.v1', 'product.card.reactivate.v1')");
 
                             t.HasCheckConstraint("CK_GroupSharedTerminals_Response", "ISJSON([ResponseJson], VALUE) = 1 AND [StatusCode] BETWEEN 200 AND 599 AND [SchemaVersion] >= 1");
                         });
