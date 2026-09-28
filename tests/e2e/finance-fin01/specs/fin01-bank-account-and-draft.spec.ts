@@ -17,6 +17,10 @@
  *            receipt source at the face value — and a replay or a stale retry adds nothing. The risk
  *            view (user decision 2026-09-27: the debt closes at collection, the risk is tracked apart)
  *            follows it before and after receipt, collection and a second cheque's dishonour.
+ *   FIN01-07 the first-release party ledger (cari hesap ekstresi): from the customer's F-02 context the proposer opens
+ *            "Cari ekstre", picks a range and sees every RECORDED fact of the account once — the payment, the receipt,
+ *            its reversal as its own row, the POS gross and the cheque collection — with the server's running balance
+ *            from zero ("devir yok", OPEN-018); opens a row's source and comes back to the same range; reopens it.
  *
  * NOTHING IS FULFILLED LOCALLY: the only interception is the Development identity rewrite, and
  * every answer a case relies on is asserted to belong to a rewritten request (the mfg pattern).
@@ -51,6 +55,7 @@ const INSTRUMENT_COLLECT_RE = /\/api\/v1\/finance\/customer-instruments\/[^/]+\/
 const CHEQUE_SERIAL = `SENTETIK-FIN01-CEK-${Date.now()}`
 const BOUNCED_SERIAL = `SENTETIK-FIN01-KRS-${Date.now()}`
 const RISK_AS_OF = '2026-10-01'
+const PARTY_LEDGER_RE = /\/api\/v1\/finance\/party-ledger\?/
 
 /** The risk block's count and amount cells of one bucket, as shown (tr-TR). */
 async function riskCells(page: Page, bucket: string): Promise<string[]> {
@@ -868,6 +873,96 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
       source: { id: sourceId, stage: 'Recorded', amount: { money: { amount: '1500.00' } }, treasuryAccountId: bankAccountId },
       unallocated: { knowledge: 'Known', amount: { money: { amount: '1500.00' } } },
     })
+    expectEveryAnswerRewritten(answered, rewritten)
+  })
+
+  test('FIN01-07 the proposer reads the customer ledger from zero, opens a row source, comes back and reopens it', async ({ page, context }) => {
+    // Every fact below was recorded by the cases above on this database, for the seed customer and in TRY: the
+    // payment (FIN01-02E, 875.25 on 09-18), the receipt (FIN01-03, 1250.50 on 09-18) and its reversal (FIN01-03C, its
+    // own row dated 09-13), the POS gross (FIN01-05, 1000.00) and the cheque collection (FIN01-06, 1500.00). Drafts,
+    // the portfolio receipt and the dishonoured cheque have no money event, so they are no rows.
+    const rewritten = await asActor(context, env.seed.proposerActor)
+    const answered = watchAnswers(page)
+    expect(manualPaymentId).toMatch(/^[0-9a-f-]{36}$/)
+    expect(reversalSourceId).toMatch(/^[0-9a-f-]{36}$/)
+
+    const entry = new URLSearchParams({ partyId: env.seed.partyId, companyAccountId: env.seed.companyAccountId })
+    await page.goto(`/finans/tahsilatlar/yeni?${entry.toString()}`)
+    await page.getByRole('link', { name: 'Cari ekstre', exact: true }).click()
+    await expect(page.getByRole('heading', { level: 1, name: 'Cari ekstre', exact: true })).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByText('Devir yok (OPEN-018)', { exact: false })).toBeVisible()
+
+    await page.getByLabel('Başlangıç tarihi', { exact: true }).fill('2026-09-01')
+    await page.getByLabel('Bitiş tarihi', { exact: true }).fill('2026-09-30')
+    const answer = page.waitForResponse((response) => PARTY_LEDGER_RE.test(response.url())
+      && new URL(response.url()).searchParams.get('from') === '2026-09-01')
+    await page.getByRole('button', { name: 'Ekstreyi göster', exact: true }).click()
+    const response = await answer
+    expect(response.status()).toBe(200)
+    const ledger = await response.json() as {
+      readonly carryForward?: unknown
+      readonly currencies?: readonly {
+        readonly entries: readonly {
+          readonly kind: string
+          readonly sourceId: string
+          readonly reversesSourceId: string | null
+          readonly runningBalance: { readonly side: string | null; readonly amount: { readonly money: { readonly amount: string } | null } }
+        }[]
+        readonly debitTotal: { readonly money: { readonly amount: string } | null }
+        readonly creditTotal: { readonly money: { readonly amount: string } | null }
+        readonly closingBalance: { readonly side: string | null; readonly amount: { readonly money: { readonly amount: string } | null } }
+      }[]
+    }
+    expect(ledger.carryForward).toBe('NoneOpen018')
+    const lira = ledger.currencies!
+    expect(lira).toHaveLength(1)
+    const rows = lira[0].entries
+    expect(rows.map((row) => row.kind)).toEqual([
+      'ManualReceiptReversal', 'ManualBankPayment', 'ManualReceipt', 'ManualReceipt', 'CustomerInstrumentCollection',
+    ])
+    expect(rows.map((row) => `${row.runningBalance.amount.money?.amount} ${row.runningBalance.side}`)).toEqual([
+      '1250.50 Debit', '2125.75 Debit', '875.25 Debit', '124.75 Credit', '1624.75 Credit',
+    ])
+    // The reversal is its own row and names the receipt it reverses; each fact appears once (no replay copy).
+    expect(rows[0]).toMatchObject({ sourceId: reversalSourceId, reversesSourceId: recordedSourceId })
+    expect(rows.filter((row) => row.sourceId === recordedSourceId)).toHaveLength(1)
+    expect(rows[1].sourceId).toBe(manualPaymentId)
+    expect([lira[0].debitTotal.money?.amount, lira[0].creditTotal.money?.amount]).toEqual(['2125.75', '3750.50'])
+    expect(lira[0].closingBalance).toMatchObject({ side: 'Credit', amount: { money: { amount: '1624.75' } } })
+
+    const closing = page.locator('[data-ledger-closing] td')
+    await expect(closing).toHaveText('1.624,75 (A)', { timeout: 30_000 })
+    await expect(page.locator('[data-ledger-entry]')).toHaveCount(5)
+    await expect(page).toHaveURL(/ekstreBaslangic=2026-09-01&ekstreBitis=2026-09-30/)
+
+    // Open a row's source on its own screen, then come back: the same range and the same ledger.
+    await page.getByRole('link', { name: `Ödemeyi aç · ref. …${manualPaymentId.slice(-8)}`, exact: true }).click()
+    await expect(page).toHaveURL(new RegExp(`/finans/odemeler/${manualPaymentId}$`))
+    await expect(page.getByRole('heading', { level: 1, name: 'Giden banka ödemesi', exact: true })).toBeVisible({ timeout: 30_000 })
+    await page.goBack()
+    await expect(page).toHaveURL(/ekstreBaslangic=2026-09-01&ekstreBitis=2026-09-30/)
+    await expect(page.getByLabel('Başlangıç tarihi', { exact: true })).toHaveValue('2026-09-01')
+    await expect(page.getByLabel('Bitiş tarihi', { exact: true })).toHaveValue('2026-09-30')
+    await expect(closing).toHaveText('1.624,75 (A)', { timeout: 30_000 })
+
+    // The reversal row opens the original receipt too.
+    await page.getByRole('link', { name: `Ters kaydedilen tahsilatı aç · ref. …${recordedSourceId.slice(-8)}`, exact: true }).click()
+    await expect(page).toHaveURL(new RegExp(`/finans/tahsilatlar/${recordedSourceId}$`))
+    await expect(page.getByText('Ters kayıtla düzeltildi', { exact: true })).toBeVisible({ timeout: 30_000 })
+    await page.goBack()
+    await expect(closing).toHaveText('1.624,75 (A)', { timeout: 30_000 })
+
+    // Reopen the same address: the same ledger.
+    await page.reload()
+    await expect(page.getByRole('heading', { level: 1, name: 'Cari ekstre', exact: true })).toBeVisible({ timeout: 30_000 })
+    await expect(closing).toHaveText('1.624,75 (A)', { timeout: 30_000 })
+
+    // A narrower range carries nothing in (OPEN-018): the 09-13 reversal is outside it and the balance starts at zero.
+    await page.getByLabel('Başlangıç tarihi', { exact: true }).fill('2026-09-14')
+    await page.getByRole('button', { name: 'Ekstreyi göster', exact: true }).click()
+    await expect(page).toHaveURL(/ekstreBaslangic=2026-09-14&ekstreBitis=2026-09-30/)
+    await expect(page.locator('[data-ledger-entry]')).toHaveCount(4, { timeout: 30_000 })
+    await expect(closing).toHaveText('2.875,25 (A)')
     expectEveryAnswerRewritten(answered, rewritten)
   })
 

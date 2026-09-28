@@ -254,6 +254,8 @@ class WorkflowTests(unittest.TestCase):
                 "finance.customer-instrument.receive",
                 "finance.customer-instrument.status.change",
                 "finance.customer-instrument.collect",
+                "finance.party-ledger.read",
+                "finance.party-ledger.amount.read",
             ),
             validator.SUITE_IDENTITY_PERMISSIONS["fin01"],
         )

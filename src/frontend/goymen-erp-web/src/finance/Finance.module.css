@@ -111,3 +111,43 @@
 .term {
   font-weight: 600;
 }
+
+/* The party ledger (cari ekstre): one table per currency, amounts right-aligned in tabular figures. */
+.ledger {
+  display: grid;
+  gap: 16px;
+  max-width: 1080px;
+  overflow-x: auto;
+}
+
+.ledger table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.ledger caption {
+  text-align: left;
+  font-weight: 600;
+  padding: 4px 0;
+}
+
+.ledger th,
+.ledger td {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid #e3e7ef;
+  vertical-align: top;
+}
+
+.ledger td[data-amount-kind],
+.ledger td[data-ledger-balance] {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ledger tfoot th,
+.ledger tfoot td {
+  font-weight: 600;
+  border-top: 2px solid #c7cfdd;
+}

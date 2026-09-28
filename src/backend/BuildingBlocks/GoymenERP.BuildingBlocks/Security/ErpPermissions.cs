@@ -244,6 +244,16 @@ public static class ErpPermissions
     public const string FinanceCustomerInstrumentCollect = "finance.customer-instrument.collect";
 
     /// <summary>
+    /// Finance party ledger (cari hesap ekstresi): the Finance owner's names (FinancePermissionNames, same strings).
+    /// Registration makes them measurable; it grants nothing — the user's decision of 2026-09-28 gives them only to
+    /// the disposable fin01 browser actor, and the real-user mapping stays a human gate. Company-wide only: the
+    /// ledger reads the server-resolved company's recorded facts. Not Critical: reads only; amounts are disclosed
+    /// only with the amount name.
+    /// </summary>
+    public const string FinancePartyLedgerRead = "finance.party-ledger.read";
+    public const string FinancePartyLedgerAmountRead = "finance.party-ledger.amount.read";
+
+    /// <summary>
     /// F-03 allocation commands. Registration makes the Finance owner's permission name available
     /// to endpoint authorization; it grants no role or user access.
     /// </summary>
@@ -526,6 +536,8 @@ public static class ErpPermissions
         FinanceCustomerInstrumentReceive,
         FinanceCustomerInstrumentStatusChange,
         FinanceCustomerInstrumentCollect,
+        FinancePartyLedgerRead,
+        FinancePartyLedgerAmountRead,
         FinanceAllocationWrite,
             IdentityProfileRead,
             IdentityAccessRequest,
@@ -615,6 +627,8 @@ public static class ErpPermissions
         FinanceCustomerInstrumentReceive,
         FinanceCustomerInstrumentStatusChange,
         FinanceCustomerInstrumentCollect,
+        FinancePartyLedgerRead,
+        FinancePartyLedgerAmountRead,
         FinanceAllocationWrite,
             IdentityAuditRead,
             IdentityAssignmentsRead,

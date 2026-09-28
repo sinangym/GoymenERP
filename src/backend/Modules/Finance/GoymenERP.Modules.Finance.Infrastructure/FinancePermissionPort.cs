@@ -66,6 +66,9 @@ public sealed class FinancePermissionPort(
         FinanceAction.ReceiveCustomerInstrument => FinancePermissionNames.CustomerInstrumentReceive,
         FinanceAction.ChangeCustomerInstrumentStatus => FinancePermissionNames.CustomerInstrumentStatusChange,
         FinanceAction.CollectCustomerInstrument => FinancePermissionNames.CustomerInstrumentCollect,
+        // The party ledger's own names; Unavailable (503) until the central registry knows them.
+        FinanceAction.ReadPartyLedger => FinancePermissionNames.PartyLedgerRead,
+        FinanceAction.ReadPartyLedgerAmount => FinancePermissionNames.PartyLedgerAmountRead,
         _ => null,
     };
 

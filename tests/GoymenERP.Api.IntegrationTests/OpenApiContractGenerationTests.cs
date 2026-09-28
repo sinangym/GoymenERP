@@ -405,6 +405,11 @@ public sealed partial class OpenApiContractGenerationTests
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["query:asOf:true:type:string;format:date", "query:partyId:false:type:string;format:uuid",
                 "query:companyAccountId:false:type:string;format:uuid"]),
+        // Party ledger (cari hesap ekstresi): recorded facts per currency from zero, no carry-forward (OPEN-018).
+        new("get", "/api/v1/finance/party-ledger", "GetFinancePartyLedgerV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["query:partyId:true:type:string;format:uuid", "query:companyAccountId:true:type:string;format:uuid",
+                "query:from:true:type:string;format:date", "query:to:true:type:string;format:date"]),
         new("get", "/api/v1/finance/bank-accounts", "GetFinanceBankAccountsV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json")),
         new("get", "/api/v1/sales/drafts", "GetSalesOrderDraftsV1",
@@ -691,6 +696,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetFinanceCustomerInstrumentsV1"] = "ref:CustomerInstrumentPage",
             ["GetFinanceCustomerInstrumentV1"] = "ref:CustomerInstrumentDetail",
             ["GetFinanceCustomerInstrumentRiskV1"] = "ref:CustomerInstrumentRiskView",
+            ["GetFinancePartyLedgerV1"] = "ref:PartyLedgerView",
             ["SaveFinanceManualBankPaymentDraftV1"] = "ref:ManualBankPaymentCommandResult",
             ["GetFinanceManualBankPaymentsV1"] = "ref:ManualBankPaymentPage",
             ["GetFinanceManualBankPaymentV1"] = "ref:ManualBankPaymentView",
@@ -848,6 +854,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetFinanceCustomerInstrumentsV1",
         "GetFinanceCustomerInstrumentV1",
         "GetFinanceCustomerInstrumentRiskV1",
+        "GetFinancePartyLedgerV1",
         "GetFinanceBankAccountsV1",
         "GetSalesOrderDraftsV1",
         "CreateSalesOrderDraftV1",
@@ -1191,6 +1198,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetFinanceCustomerInstrumentsV1",
         "GetFinanceCustomerInstrumentV1",
         "GetFinanceCustomerInstrumentRiskV1",
+        "GetFinancePartyLedgerV1",
         "GetFinanceBankAccountsV1",
         "GetSalesOrderDraftsV1",
         "CreateSalesOrderDraftV1",
@@ -1354,6 +1362,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetFinanceCustomerInstrumentsV1:400",
         "GetFinanceCustomerInstrumentV1:400",
         "GetFinanceCustomerInstrumentRiskV1:400",
+        "GetFinancePartyLedgerV1:400",
         "GetFinanceBankAccountsV1:400",
         "SaveFinanceManualBankPaymentDraftV1:400",
         "GetFinanceManualBankPaymentsV1:400",
@@ -1444,6 +1453,8 @@ public sealed partial class OpenApiContractGenerationTests
             ["CreateOrganizationLocationV1:422"] = [OrganizationProblemCodesV1.CodeInUse],
             ["UpdateOrganizationLocationV1:422"] = [OrganizationProblemCodesV1.CodeInUse],
             ["CreateOrganizationWorkCenterV1:422"] = [OrganizationProblemCodesV1.CodeInUse],
+            // Party ledger: the owner's response-size refusal, read here, never retyped.
+            ["GetFinancePartyLedgerV1:422"] = [GoymenERP.Modules.Finance.Contracts.PartyLedgerRules.TooManyEntriesCode],
             ["UpdateOrganizationWorkCenterV1:422"] = [OrganizationProblemCodesV1.CodeInUse],
             // R19: the owner's closed sets (InventoryLabelTransformationHttpCodesV1), read here, never retyped.
             ["RecordInventoryLabelTransformationV1:400"] = [.. InventoryLabelTransformationHttpCodesV1.Status400Codes.Order(StringComparer.Ordinal)],
@@ -2564,6 +2575,46 @@ public sealed partial class OpenApiContractGenerationTests
                     ("customers", "type:array;items:ref:CustomerInstrumentRiskLine"),
                     ("totals", "type:array;items:ref:CustomerInstrumentRiskTotal")),
                 ["CustomerInstrumentStatus"] = ScalarSchema("enum:InPortfolio|AtBankForCollection|Collected|Bounced|Protested|ReturnedToCustomer"),
+                // Party ledger: facts per currency from zero; no carry-forward (OPEN-018); every amount a disclosure view.
+                ["PartyLedgerView"] = ObjectSchema(
+                    ["companyId", "partyId", "companyAccountId", "from", "to", "carryForward", "currencies"],
+                    ("companyId", "type:string;format:uuid"),
+                    ("partyId", "type:string;format:uuid"),
+                    ("companyAccountId", "type:string;format:uuid"),
+                    ("from", "type:string;format:date"),
+                    ("to", "type:string;format:date"),
+                    ("carryForward", "ref:PartyLedgerCarryForward"),
+                    ("currencies", "type:array;items:ref:PartyLedgerCurrency")),
+                ["PartyLedgerCarryForward"] = ScalarSchema("enum:NoneOpen018"),
+                ["PartyLedgerCurrency"] = ObjectSchema(
+                    ["currencyId", "entries", "debitTotal", "creditTotal", "closingBalance"],
+                    ("currencyId", "type:string;format:uuid"),
+                    ("entries", "type:array;items:ref:PartyLedgerEntry"),
+                    ("debitTotal", "ref:AmountView"),
+                    ("creditTotal", "ref:AmountView"),
+                    ("closingBalance", "ref:PartyLedgerBalanceView")),
+                ["PartyLedgerEntry"] = ObjectSchema(
+                    ["kind", "entryId", "occurredOn", "recordedAtUtc", "side", "amount", "runningBalance", "sourceId", "reversesSourceId", "instrumentId", "documentId", "dueOn"],
+                    ("kind", "ref:PartyLedgerEntryKind"),
+                    ("entryId", "type:string;format:uuid"),
+                    ("occurredOn", "type:string;format:date"),
+                    ("recordedAtUtc", "type:string;format:date-time"),
+                    ("side", "ref:PartyLedgerSide"),
+                    ("amount", "ref:AmountView"),
+                    ("runningBalance", "ref:PartyLedgerBalanceView"),
+                    ("sourceId", "type:string;format:uuid"),
+                    ("reversesSourceId", "type:null|string;format:uuid"),
+                    ("instrumentId", "type:null|string;format:uuid"),
+                    ("documentId", "type:null|string;format:uuid"),
+                    ("dueOn", "type:null|string;format:date")),
+                ["PartyLedgerEntryKind"] = ScalarSchema("enum:OpenItem|ManualReceipt|ManualReceiptReversal|CustomerInstrumentCollection|ManualBankPayment"),
+                ["PartyLedgerSide"] = ScalarSchema("enum:Debit|Credit"),
+                ["PartyLedgerBalanceView"] = ObjectSchema(
+                    ["side", "amount"],
+                    ("side", "oneOf:ref:PartyLedgerBalanceSide|type:null"),
+                    ("amount", "ref:AmountView")),
+                // The side is null only when the balance amount is redacted; the generator lists that null in the enum.
+                ["PartyLedgerBalanceSide"] = ScalarSchema("enum:Zero|Debit|Credit|"),
                 ["CustomerInstrumentView"] = ObjectSchema(
                     ["id", "companyId", "version", "kind", "status", "partyId", "companyAccountId", "serialNumber", "drawer", "bankName", "branchName", "dueOn", "receivedOn", "currencyId", "amount", "description", "treasuryAccountId", "statusChangedOn", "collectionSourceId", "receivedBy", "receivedAtUtc"],
                     ("id", "type:string;format:uuid"),
@@ -4306,9 +4357,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(156, operations.Count);
+        Assert.Equal(157, operations.Count);
         Assert.Equal(
-            156,
+            157,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());
