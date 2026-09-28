@@ -162,6 +162,83 @@ partial class InventoryDbContextModelSnapshot : ModelSnapshot
             });
         });
 
+        modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.AllocationChangeRow", b =>
+            {
+                b.Property<Guid>("Id")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<DateTimeOffset>("ChangedAtUtc")
+                    .HasColumnType("datetimeoffset");
+
+                b.Property<string>("ChangedBy")
+                    .IsRequired()
+                    .HasMaxLength(128)
+                    .HasColumnType("nvarchar(128)");
+
+                b.Property<Guid>("CompanyId")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<string>("CorrelationId")
+                    .IsRequired()
+                    .HasMaxLength(128)
+                    .HasColumnType("nvarchar(128)");
+
+                b.Property<int>("Kind")
+                    .HasColumnType("int");
+
+                b.Property<string>("Reason")
+                    .IsRequired()
+                    .HasMaxLength(1000)
+                    .HasColumnType("nvarchar(1000)");
+
+                b.Property<Guid>("SourceAllocationId")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<Guid>("SourceLabelId")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<decimal>("SourceRemainingKg")
+                    .HasPrecision(18, 3)
+                    .HasColumnType("decimal(18,3)");
+
+                b.Property<long>("SourceVersion")
+                    .HasColumnType("bigint");
+
+                b.Property<Guid>("TargetAllocationId")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<Guid>("TargetLabelId")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<decimal>("TargetRemainingKg")
+                    .HasPrecision(18, 3)
+                    .HasColumnType("decimal(18,3)");
+
+                b.HasKey("Id");
+
+                b.HasIndex("CompanyId", "SourceLabelId");
+
+                b.HasIndex("CompanyId", "TargetAllocationId")
+                    .HasDatabaseName("IX_AllocationChanges_Target");
+
+                b.HasIndex("CompanyId", "TargetLabelId");
+
+                b.HasIndex("CompanyId", "SourceAllocationId", "SourceVersion")
+                    .IsUnique()
+                    .HasDatabaseName("UX_AllocationChanges_SourceVersion");
+
+                b.ToTable("AllocationChanges", "inventory", t =>
+                    {
+                        t.HasCheckConstraint("CK_AllocationChanges_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [SourceAllocationId] <> '00000000-0000-0000-0000-000000000000' AND [TargetAllocationId] <> '00000000-0000-0000-0000-000000000000' AND [SourceLabelId] <> '00000000-0000-0000-0000-000000000000' AND [TargetLabelId] <> '00000000-0000-0000-0000-000000000000'");
+
+                        t.HasCheckConstraint("CK_AllocationChanges_Kind", "([Kind] = 1 AND [SourceAllocationId] = [TargetAllocationId] AND [SourceLabelId] = [TargetLabelId] AND [TargetRemainingKg] <> [SourceRemainingKg]) OR ([Kind] = 2 AND [SourceAllocationId] <> [TargetAllocationId] AND [SourceLabelId] <> [TargetLabelId])");
+
+                        t.HasCheckConstraint("CK_AllocationChanges_State", "[SourceVersion] >= 1 AND [SourceRemainingKg] > 0 AND [TargetRemainingKg] > 0");
+
+                        t.HasCheckConstraint("CK_AllocationChanges_Text", "LEN(LTRIM(RTRIM([Reason]))) > 0 AND LEN([ChangedBy]) > 0 AND LEN([CorrelationId]) > 0");
+                    });
+            });
+
         modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.AllocationRow", b =>
             {
                 b.Property<Guid>("Id")
@@ -1319,6 +1396,43 @@ partial class InventoryDbContextModelSnapshot : ModelSnapshot
 
                         t.HasCheckConstraint("CK_StockCounts_Text", "LEN(LTRIM(RTRIM([Reason]))) > 0 AND LEN([PayloadHash]) = 64 AND LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
                     });
+            });
+
+        modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.AllocationChangeRow", b =>
+            {
+                b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                    .WithMany()
+                    .HasForeignKey("CompanyId")
+                    .OnDelete(DeleteBehavior.Restrict)
+                    .IsRequired();
+
+                b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.AllocationRow", null)
+                    .WithMany()
+                    .HasForeignKey("CompanyId", "SourceAllocationId")
+                    .HasPrincipalKey("CompanyId", "Id")
+                    .OnDelete(DeleteBehavior.Restrict)
+                    .IsRequired();
+
+                b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.LabelRow", null)
+                    .WithMany()
+                    .HasForeignKey("CompanyId", "SourceLabelId")
+                    .HasPrincipalKey("CompanyId", "Id")
+                    .OnDelete(DeleteBehavior.Restrict)
+                    .IsRequired();
+
+                b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.AllocationRow", null)
+                    .WithMany()
+                    .HasForeignKey("CompanyId", "TargetAllocationId")
+                    .HasPrincipalKey("CompanyId", "Id")
+                    .OnDelete(DeleteBehavior.Restrict)
+                    .IsRequired();
+
+                b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.LabelRow", null)
+                    .WithMany()
+                    .HasForeignKey("CompanyId", "TargetLabelId")
+                    .HasPrincipalKey("CompanyId", "Id")
+                    .OnDelete(DeleteBehavior.Restrict)
+                    .IsRequired();
             });
 
         modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.AllocationRow", b =>

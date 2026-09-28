@@ -43,10 +43,43 @@ expired allocations. It supports only the locked `sales.order-line` demand kind;
 sources and source conversion are separate accepted slices. Rows created before this lifecycle remain readable with
 null demand facts, so the LOG-5 runtime is not relabelled.
 
-Host publication is **NOT READY**: no approved allocation write permission exists. Issue #66 comment 5805818345 asks
-for the exact existing permission/action mapping. Until that is answered, there is no endpoint, grant, shell route or
-OpenAPI operation. The central host must also read `ISalesOrderLineReferencePortV1`, compare the approved line's
-company/product/version, then revalidate authority/company/actor immediately before this single owner save.
+Host publication: the allocation routes are published under `inventory.physical-allocation.write` (create,
+release, and the INV-AL-1 change below) with their OpenAPI operations. The host reads `ISalesOrderLineReferencePortV1`,
+compares the approved line's company/product/version, then revalidates authority/company/actor immediately before
+the single owner save.
+
+### INV-AL-1 change — revise an existing allocation (2026-09-28)
+
+Decision basis: Master v3 §25.4 ("Tahsisi görüntüle/revize et/serbest bırak" from the stock row / label), AT-063
+("Tahsis Revize … doğru satır bağlamıyla açılır"), DEC-STK-003/004 (allocation is not a movement; atomic, idempotent,
+never above free stock), DEC-STK-005 (no silent release), DEC-SAL-005 (a cancelled order is no approved demand) and
+AGENTS "silme yerine ters kayıt / kopya hareket yok". A change is composed ONLY of the two already-decided allocation
+operations (release + reservation) in one owner save; it chooses no new policy.
+
+| Rule | Where |
+|---|---|
+| `POST /api/v1/inventory/physical-allocations/{id}/change` under the existing `inventory.physical-allocation.write` (no new permission); fresh company-wide authority before and after the Sales owner read | `InventoryPhysicalAllocationHostService.ChangeAsync` |
+| The allocation's order line must STILL be approved (`ISalesOrderLineReferencePortV1`); a cancelled/unapproved line is 422 `inventory_allocation_invalid_reference` — the full release stays available. Product id/version come from the line, never the caller; the stored demand (order, line, product) must match | host + `InventoryStore.ChangeAsync` |
+| **Resize** (target = own label): in place, same id (a loading-instruction line bound to it stays valid), consumed part kept (`Allocated − Remaining` unchanged); an increase must fit the position's unreserved free kg and pass the Sales ownership gate; same kg = 422 `inventory_allocation_change_unchanged`; to 0 kg = use release | `StockAllocation.Resize`, `RequireReservableIncreaseAsync` |
+| **Move** (target = another label of the same product): the source is released with the change reason, a new allocation (client-supplied id) reserves the target's single company-owned-and-held Free position for the same order line — exactly the create rules | `ReservableTargetAsync` |
+| Fences: expected allocation version (409 `inventory_allocation_version_conflict`), expected target label version (409 `inventory_label_version_conflict`), every touched label version is bumped (a pending stock count on it becomes `inventory_stock_count_stale`; a split/merge sees the new version), label RowVersion race = 409 `inventory_concurrent_change`; no stock movement | store + SQL |
+| History: append-only `inventory.AllocationChanges` (kind 1 resize / 2 move, source version + kg → target kg, reason, actor, correlation); one change per source version (unique); `Down` refuses with 51053 while any exists; audit `inventory.physical-allocation.resized.v1` / `.moved.v1` (+ `.created.v1` for the move target), channel from the request (Web) | EF write guard + migration `AddInventoryAllocationChanges` |
+| ADR-011: command `inventory.physical-allocation.change.v1`; the same key and content replays the stored answer (200 + `Idempotency-Replayed`), other content 409 `idempotency_conflict` | `FindChangeReplayAsync` |
+| Read: `GET /api/v1/inventory/labels/{labelId}/physical-allocations` — the label's newest 50 sales allocations with release facts and change history, same authority; foreign/unknown label 404; a mixed-time read is 409 | `SqlInventoryPhysicalAllocationReader.ReadLabelAsync` |
+| UI: ST-02 label detail "Satış tahsisleri" panel (shown with the server-advertised `inventory.physical-allocation.write` control, reached from ST-01's label link) | `LabelAllocationPanel.tsx` |
+
+**Not decided (fail closed / parity with create, recorded — NEEDS-SINAN):**
+
+- `INV-AL-CHANGE-LINE-QTY-01`: whether the total active allocation of a line may exceed the Sales line quantity. The
+  create command does not cap it (the line quantity is in the order unit, not kg); a change keeps parity and does not
+  invent a cap or a unit conversion.
+- `INV-AL-CHANGE-INACTIVE-PRODUCT-01` (#98 item 11, in-flight documents): whether an allocation of an approved line
+  whose product card was deactivated may still be changed or moved. Create does not read the product lifecycle either;
+  no rule is invented here.
+- `INV-AL-CHANGE-AUTHORITY-01`: whether revising needs a separate name or maker≠checker. Until decided, the existing
+  write name (the one release and create use) applies; no new permission or grant.
+- Changing `ReservedUntilUtc`, partial moves (split one allocation over two labels) and non-sales demand kinds are out
+  of this slice.
 
 ## R13 — draft parent-roll reference predecessor (Business #66/5778472429 A)
 

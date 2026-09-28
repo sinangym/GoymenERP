@@ -586,6 +586,10 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
     {
         private int read;
 
+        public Task<InventoryLabelPhysicalAllocationsV1> ReadLabelAsync(
+            Guid labelId,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
         public async Task<InventoryPhysicalAllocationReadsV1> SearchAsync(
             InventoryPhysicalAllocationReadQueryV1 query,
             CancellationToken cancellationToken = default)

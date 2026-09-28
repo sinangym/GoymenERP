@@ -58,6 +58,8 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
 
     internal DbSet<AllocationRow> Allocations => Set<AllocationRow>();
 
+    internal DbSet<AllocationChangeRow> AllocationChanges => Set<AllocationChangeRow>();
+
     internal DbSet<InventoryOutboxRow> OutboxMessages => Set<InventoryOutboxRow>();
 
     internal DbSet<OpeningCountRow> OpeningCounts => Set<OpeningCountRow>();
@@ -85,6 +87,7 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         ConfigureMovementLines(modelBuilder);
         ConfigureBalances(modelBuilder);
         ConfigureAllocations(modelBuilder);
+        ConfigureAllocationChanges(modelBuilder);
         ConfigureOutboxMessages(modelBuilder);
         ConfigureOpeningCounts(modelBuilder);
         ConfigureCommands(modelBuilder);
@@ -453,6 +456,64 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    /// <summary>
+    /// INV-AL-1 change history: append-only (the write guard refuses any update or delete), both allocations and both
+    /// labels named by (company, id), one change per source allocation version. Kind 1 = resize (source = target),
+    /// 2 = move (source released, target new).
+    /// </summary>
+    private void ConfigureAllocationChanges(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<AllocationChangeRow>();
+        entity.ToTable("AllocationChanges", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_AllocationChanges_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [SourceAllocationId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [TargetAllocationId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [SourceLabelId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [TargetLabelId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_AllocationChanges_Kind",
+                "([Kind] = 1 AND [SourceAllocationId] = [TargetAllocationId] AND [SourceLabelId] = [TargetLabelId] "
+                + "AND [TargetRemainingKg] <> [SourceRemainingKg]) "
+                + "OR ([Kind] = 2 AND [SourceAllocationId] <> [TargetAllocationId] AND [SourceLabelId] <> [TargetLabelId])");
+            table.HasCheckConstraint("CK_AllocationChanges_State",
+                "[SourceVersion] >= 1 AND [SourceRemainingKg] > 0 AND [TargetRemainingKg] > 0");
+            table.HasCheckConstraint("CK_AllocationChanges_Text",
+                "LEN(LTRIM(RTRIM([Reason]))) > 0 AND LEN([ChangedBy]) > 0 AND LEN([CorrelationId]) > 0");
+        });
+        entity.HasKey(x => x.Id);
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.SourceRemainingKg).HasPrecision(18, 3);
+        entity.Property(x => x.TargetRemainingKg).HasPrecision(18, 3);
+        entity.Property(x => x.Reason).HasMaxLength(1000).IsRequired();
+        entity.Property(x => x.ChangedBy).HasMaxLength(128).IsRequired();
+        entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        entity.HasIndex(x => new { x.CompanyId, x.SourceAllocationId, x.SourceVersion })
+            .IsUnique()
+            .HasDatabaseName("UX_AllocationChanges_SourceVersion");
+        entity.HasIndex(x => new { x.CompanyId, x.TargetAllocationId })
+            .HasDatabaseName("IX_AllocationChanges_Target");
+        entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<AllocationRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.SourceAllocationId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<AllocationRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.TargetAllocationId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<LabelRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.SourceLabelId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<LabelRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.TargetLabelId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     private void ConfigureOutboxMessages(ModelBuilder modelBuilder)
     {
         var entity = modelBuilder.Entity<InventoryOutboxRow>();
@@ -678,6 +739,8 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
                     BalanceRow => [nameof(BalanceRow.QuantityKg)],
                     AllocationRow =>
                     [
+                        // INV-AL-1 change: an in-place resize re-states AllocatedKg (consumed part kept exactly).
+                        nameof(AllocationRow.AllocatedKg),
                         nameof(AllocationRow.RemainingKg), nameof(AllocationRow.Status),
                         nameof(AllocationRow.Version), nameof(AllocationRow.UpdatedAtUtc),
                         nameof(AllocationRow.ReleasedAtUtc), nameof(AllocationRow.ReleaseReason),

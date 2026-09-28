@@ -64,6 +64,105 @@ internal sealed class SqlInventoryPhysicalAllocationReader(InventoryDbContext db
             rows.Count > limit);
     }
 
+    /// <summary>
+    /// INV-AL-1 change: one label's newest sales allocations with their change history. The label version and every
+    /// captured allocation version are re-read after the capture; a change in between is a read conflict (409).
+    /// </summary>
+    public async Task<InventoryLabelPhysicalAllocationsV1?> ReadLabelAsync(
+        Guid companyId,
+        Guid labelId,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        var label = await LabelVersionAsync(companyId, labelId, cancellationToken);
+        if (label is null)
+        {
+            return null;
+        }
+
+        var rows = await LabelQuery(companyId, labelId)
+            .OrderByDescending(row => row.CreatedAtUtc)
+            .ThenByDescending(row => row.Id)
+            .Take(limit + 1)
+            .ToListAsync(cancellationToken);
+        var captured = rows.Take(limit).ToArray();
+        var ids = captured.Select(row => row.Id).ToArray();
+        List<AllocationChangeRow> changes = ids.Length == 0
+            ? []
+            : await db.AllocationChanges.AsNoTracking()
+                .Where(change => change.CompanyId == companyId
+                    && (ids.Contains(change.SourceAllocationId) || ids.Contains(change.TargetAllocationId)))
+                .OrderBy(change => change.ChangedAtUtc)
+                .ThenBy(change => change.SourceVersion)
+                .ThenBy(change => change.Id)
+                .ToListAsync(cancellationToken);
+
+        var verification = await LabelQuery(companyId, labelId)
+            .OrderByDescending(row => row.CreatedAtUtc)
+            .ThenByDescending(row => row.Id)
+            .Take(limit + 1)
+            .Select(row => new AllocationCapture(row.Id, row.Version))
+            .ToListAsync(cancellationToken);
+        var labelAfter = await LabelVersionAsync(companyId, labelId, cancellationToken);
+        if (!SameWindow(rows, verification) || labelAfter != label)
+        {
+            throw Error(409, InventoryPhysicalAllocationReadCodesV1.ReadConflict);
+        }
+
+        var labels = new Dictionary<Guid, LabelCapture> { [label.Id] = label };
+        return new InventoryLabelPhysicalAllocationsV1(
+            labelId,
+            label.Version.ToString(CultureInfo.InvariantCulture),
+            [.. captured.Select(row => new InventoryLabelPhysicalAllocationV1(
+                Capture(row, labels).Allocation,
+                row.ReleasedAtUtc,
+                row.ReleaseReason,
+                [.. changes
+                    .Where(change => change.SourceAllocationId == row.Id || change.TargetAllocationId == row.Id)
+                    .Select(ChangeEntry)]))],
+            rows.Count > limit);
+    }
+
+    private static InventoryPhysicalAllocationChangeEntryV1 ChangeEntry(AllocationChangeRow change)
+    {
+        var kind = change.Kind switch
+        {
+            1 => InventoryAllocationChangeKindsV1.Resize,
+            2 => InventoryAllocationChangeKindsV1.Move,
+            _ => throw Error(503, InventoryPhysicalAllocationReadCodesV1.Unavailable),
+        };
+        if (change.SourceVersion <= 0 || change.SourceRemainingKg <= 0m || change.TargetRemainingKg <= 0m
+            || string.IsNullOrWhiteSpace(change.Reason) || change.ChangedAtUtc.Offset != TimeSpan.Zero)
+        {
+            throw Error(503, InventoryPhysicalAllocationReadCodesV1.Unavailable);
+        }
+
+        return new InventoryPhysicalAllocationChangeEntryV1(
+            change.Id,
+            kind,
+            change.SourceAllocationId,
+            change.SourceVersion.ToString(CultureInfo.InvariantCulture),
+            change.SourceLabelId,
+            Kilograms.Of(change.SourceRemainingKg).ToString(),
+            change.TargetAllocationId,
+            change.TargetLabelId,
+            Kilograms.Of(change.TargetRemainingKg).ToString(),
+            change.Reason,
+            change.ChangedAtUtc);
+    }
+
+    private async Task<LabelCapture?> LabelVersionAsync(Guid companyId, Guid labelId, CancellationToken cancellationToken) =>
+        await db.Labels.AsNoTracking()
+            .Where(label => label.CompanyId == companyId && label.Id == labelId)
+            .Select(label => new LabelCapture(label.Id, label.ProductId, label.Version))
+            .SingleOrDefaultAsync(cancellationToken);
+
+    private IQueryable<AllocationRow> LabelQuery(Guid companyId, Guid labelId) =>
+        db.Allocations.AsNoTracking().Where(row =>
+            row.CompanyId == companyId
+            && row.LabelId == labelId
+            && row.DemandKind == InventoryAllocationDemandKindsV1.SalesOrderLine);
+
     private IQueryable<AllocationRow> Query(Guid companyId, Guid salesOrderId, Guid salesOrderLineId) =>
         db.Allocations.AsNoTracking().Where(row =>
             row.CompanyId == companyId

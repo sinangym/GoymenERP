@@ -891,6 +891,137 @@ public static class InventoryEndpoints
             .ProducesErpUnprocessableEntity([.. InventoryPhysicalAllocationHttpCodesV1.ReleaseStatus422Codes.Order(StringComparer.Ordinal)])
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
+
+        // INV-AL-1 change (Master v3 §25.4 "revize et", AT-063): resize in place or move to another label of the same
+        // product, one owner save. 200 for the first change and for the same key again (the replay carries
+        // Idempotency-Replayed and the original correlation), as release does.
+        group.MapPost(PhysicalAllocationsPath + "/{allocationId:guid}/change", async (
+                Guid allocationId,
+                HttpContext httpContext,
+                InventoryPhysicalAllocationHostService service,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key) || !correlation.IsResolved)
+                {
+                    return AllocationProblem(StatusCodes.Status400BadRequest,
+                        InventoryAllocationCodesV1.ValidationFailed, correlation);
+                }
+
+                if (!httpContext.Request.HasJsonContentType())
+                {
+                    return Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+                }
+
+                ChangeInventoryPhysicalAllocationRequestV1? request;
+                try
+                {
+                    request = await JsonSerializer.DeserializeAsync<ChangeInventoryPhysicalAllocationRequestV1>(
+                        httpContext.Request.Body, AllocationJson, cancellationToken);
+                }
+                catch (JsonException)
+                {
+                    return AllocationProblem(StatusCodes.Status400BadRequest,
+                        InventoryAllocationCodesV1.ValidationFailed, correlation);
+                }
+
+                if (request is null)
+                {
+                    return AllocationProblem(StatusCodes.Status400BadRequest,
+                        InventoryAllocationCodesV1.ValidationFailed, correlation);
+                }
+
+                try
+                {
+                    var result = await service.ChangeAsync(allocationId, request,
+                        TransportMetadata(currentUser, correlation, key), cancellationToken);
+                    if (result.IsReplay)
+                    {
+                        ApplyReplayHeaders(httpContext, result.OriginalCorrelationId);
+                    }
+
+                    return Results.Json(result.Change, AllocationJson);
+                }
+                catch (InventoryPhysicalAllocationHostException exception)
+                {
+                    return AllocationProblem(exception.Status, exception.Code, correlation);
+                }
+                catch (InventoryAllocationException exception)
+                {
+                    return ChangeAllocationProblem(exception, correlation);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception)
+                {
+                    return Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable);
+                }
+            })
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.InventoryPhysicalAllocationWrite)
+            .WithName("ChangeInventoryPhysicalAllocationV1")
+            .WithIdempotencyContract(StatusCodes.Status200OK)
+            .Accepts<ChangeInventoryPhysicalAllocationRequestV1>("application/json")
+            .Produces<InventoryPhysicalAllocationChangeViewV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest([.. InventoryPhysicalAllocationHttpCodesV1.Status400Codes.Order(StringComparer.Ordinal)])
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict([.. InventoryPhysicalAllocationHttpCodesV1.ChangeStatus409Codes.Order(StringComparer.Ordinal)])
+            .ProducesErpUnprocessableEntity([.. InventoryPhysicalAllocationHttpCodesV1.ChangeStatus422Codes.Order(StringComparer.Ordinal)])
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
+        // INV-AL-1 change: the label's allocations with their history (ST-02 label detail), same authority as the line read.
+        group.MapGet(LabelPhysicalAllocationsPath, async (
+                Guid labelId,
+                HttpContext httpContext,
+                IInventoryPhysicalAllocationReadsV1 reads,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response);
+                try
+                {
+                    return Results.Ok(await reads.ReadLabelAsync(labelId, cancellationToken));
+                }
+                catch (InventoryPhysicalAllocationReadException exception)
+                {
+                    return exception.StatusCode switch
+                    {
+                        StatusCodes.Status400BadRequest
+                            when exception.Code == InventoryPhysicalAllocationReadCodesV1.InvalidQuery =>
+                            PhysicalAllocationReadProblem(exception.StatusCode, exception.Code),
+                        StatusCodes.Status404NotFound => PhysicalAllocationReadProblem(exception.StatusCode),
+                        StatusCodes.Status409Conflict
+                            when exception.Code == InventoryPhysicalAllocationReadCodesV1.ReadConflict =>
+                            PhysicalAllocationReadProblem(exception.StatusCode, exception.Code),
+                        StatusCodes.Status401Unauthorized or StatusCodes.Status403Forbidden =>
+                            PhysicalAllocationReadProblem(exception.StatusCode),
+                        _ => PhysicalAllocationReadProblem(StatusCodes.Status503ServiceUnavailable),
+                    };
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception)
+                {
+                    return PhysicalAllocationReadProblem(StatusCodes.Status503ServiceUnavailable);
+                }
+            })
+            .WithName("GetInventoryLabelPhysicalAllocationsV1")
+            .WithMetadata(new PrivateNoStoreOnAuthorizationFailureMetadata())
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.InventoryPhysicalAllocationWrite)
+            .Produces<InventoryLabelPhysicalAllocationsV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest(InventoryPhysicalAllocationReadCodesV1.InvalidQuery)
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(InventoryPhysicalAllocationReadCodesV1.ReadConflict)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
     }
 
     private static bool TryReadPhysicalAllocationQuery(
@@ -957,6 +1088,24 @@ public static class InventoryEndpoints
             StatusCodes.Status422UnprocessableEntity => (create
                 ? InventoryPhysicalAllocationHttpCodesV1.CreateStatus422Codes
                 : InventoryPhysicalAllocationHttpCodesV1.ReleaseStatus422Codes).Contains(exception.Code),
+            StatusCodes.Status503ServiceUnavailable => exception.Code == InventoryAllocationCodesV1.InvalidReference,
+            _ => false,
+        };
+        return accepted
+            ? AllocationProblem(exception.Status, exception.Code, correlation)
+            : Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+
+    private static IResult ChangeAllocationProblem(InventoryAllocationException exception, ICorrelationContext correlation)
+    {
+        var accepted = exception.Status switch
+        {
+            StatusCodes.Status400BadRequest =>
+                InventoryPhysicalAllocationHttpCodesV1.Status400Codes.Contains(exception.Code),
+            StatusCodes.Status404NotFound => exception.Code == InventoryAllocationCodesV1.InvalidReference,
+            StatusCodes.Status409Conflict => InventoryPhysicalAllocationHttpCodesV1.ChangeStatus409Codes.Contains(exception.Code),
+            StatusCodes.Status422UnprocessableEntity =>
+                InventoryPhysicalAllocationHttpCodesV1.ChangeStatus422Codes.Contains(exception.Code),
             StatusCodes.Status503ServiceUnavailable => exception.Code == InventoryAllocationCodesV1.InvalidReference,
             _ => false,
         };
@@ -1163,6 +1312,7 @@ public static class InventoryEndpoints
 
     private const string OpeningCountsPath = "/opening-counts";
     private const string PhysicalAllocationsPath = "/physical-allocations";
+    private const string LabelPhysicalAllocationsPath = "/labels/{labelId:guid}/physical-allocations";
     private const string IdempotencyHeaderName = "Idempotency-Key";
     private const int MaximumIdempotencyKeyLength = 128;
 

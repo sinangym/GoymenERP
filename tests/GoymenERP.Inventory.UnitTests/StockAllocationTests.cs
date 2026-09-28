@@ -156,6 +156,67 @@ public sealed class StockAllocationTests
         Assert.Equal(100m, StockAllocation.Unreserved(free, allocation.Remaining).Value);
     }
 
+    [Fact]
+    public void Resize_down_keeps_the_identity_and_the_consumed_part_and_frees_the_difference()
+    {
+        // 100 kg allocated, 40 consumed, 60 still reserved; the demand now needs only 25 more.
+        var allocation = Restore(remaining: 60m, version: 3);
+
+        var difference = allocation.Resize(3, Kilograms.Positive(25m));
+
+        Assert.Equal((-35m, 65m, 25m, 4L, StockAllocationStatus.Active),
+            (difference, allocation.Allocated.Value, allocation.Remaining.Value, allocation.Version, allocation.Status));
+        Assert.Equal(AllocationId, allocation.Id);
+        Assert.Equal(40m, allocation.Allocated.Value - allocation.Remaining.Value);
+    }
+
+    [Fact]
+    public void Resize_up_restates_the_allocated_total_and_keeps_the_consumed_part()
+    {
+        var allocation = Restore(remaining: 60m, version: 3);
+
+        var difference = allocation.Resize(3, Kilograms.Positive(75.5m));
+
+        Assert.Equal((15.5m, 115.5m, 75.5m, 4L),
+            (difference, allocation.Allocated.Value, allocation.Remaining.Value, allocation.Version));
+        Assert.Equal(40m, allocation.Allocated.Value - allocation.Remaining.Value);
+    }
+
+    [Fact]
+    public void Resize_to_the_same_quantity_is_no_change_and_has_no_effect()
+    {
+        var allocation = Restore(remaining: 100m, version: 7);
+
+        AssertFailure(StockAllocationFailure.Unchanged, () => allocation.Resize(7, Kilograms.Positive(100m)));
+        AssertUnchanged(allocation);
+    }
+
+    [Fact]
+    public void Resize_to_zero_is_a_release_not_a_change()
+    {
+        var allocation = Restore(remaining: 100m, version: 7);
+
+        AssertFailure(StockAllocationFailure.Insufficient, () => allocation.Resize(7, Kilograms.Zero));
+        AssertUnchanged(allocation);
+    }
+
+    [Theory]
+    [InlineData(6, StockAllocationStatus.Active, StockAllocationFailure.VersionConflict)]
+    [InlineData(8, StockAllocationStatus.Consumed, StockAllocationFailure.StateConflict)]
+    [InlineData(8, StockAllocationStatus.Released, StockAllocationFailure.StateConflict)]
+    public void Resize_rejects_a_stale_or_closed_allocation_without_effect(
+        long expectedVersion,
+        StockAllocationStatus status,
+        StockAllocationFailure failure)
+    {
+        var remaining = status == StockAllocationStatus.Active ? 100m : 0m;
+        var version = status == StockAllocationStatus.Active ? 7 : 8;
+        var allocation = Restore(remaining, version, status);
+
+        AssertFailure(failure, () => allocation.Resize(expectedVersion, Kilograms.Positive(5m)));
+        Assert.Equal((remaining, (long)version, status), (allocation.Remaining.Value, allocation.Version, allocation.Status));
+    }
+
     private static StockAllocation Restore(decimal remaining, long version,
         StockAllocationStatus status = StockAllocationStatus.Active) =>
         StockAllocation.Restore(AllocationId, Position(), Kilograms.Positive(100m), Kilograms.Of(remaining), version, status);
