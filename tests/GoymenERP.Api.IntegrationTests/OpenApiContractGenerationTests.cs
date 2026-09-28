@@ -109,6 +109,14 @@ public sealed partial class OpenApiContractGenerationTests
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
             "#/components/schemas/ReleasePhysicalAllocationV1",
             ["path:allocationId:true:type:string;format:uuid"]),
+        // INV-AL-1: change an allocation (resize in place or move to another label), and a label's allocations with history.
+        new("post", "/api/v1/inventory/physical-allocations/{allocationId}/change", "ChangeInventoryPhysicalAllocationV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/ChangeInventoryPhysicalAllocationRequestV1",
+            ["path:allocationId:true:type:string;format:uuid"]),
+        new("get", "/api/v1/inventory/labels/{labelId}/physical-allocations", "GetInventoryLabelPhysicalAllocationsV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["path:labelId:true:type:string;format:uuid"]),
         // INV-OPEN-1 part 2 (T07 = A): record an opening count (ADR-011) and read one back.
         new("post", "/api/v1/inventory/opening-counts", "RecordInventoryOpeningCountV1",
             AuthenticatedResponses("201:application/json", "200:application/json", "400:application/problem+json", "415:", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
@@ -641,6 +649,8 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetInventoryLocationCandidatesV1"] = "ref:OrganizationLocationCandidatesV1",
             ["CreateInventoryPhysicalAllocationV1"] = "ref:InventoryPhysicalAllocationViewV1",
             ["ReleaseInventoryPhysicalAllocationV1"] = "ref:InventoryPhysicalAllocationViewV1",
+            ["ChangeInventoryPhysicalAllocationV1"] = "ref:InventoryPhysicalAllocationChangeViewV1",
+            ["GetInventoryLabelPhysicalAllocationsV1"] = "ref:InventoryLabelPhysicalAllocationsV1",
             ["RecordInventoryOpeningCountV1"] = "ref:OpeningCountViewV1",
             ["GetInventoryOpeningCountV1"] = "ref:OpeningCountViewV1",
             ["RecordInventoryLabelTransformationV1"] = "ref:InventoryLabelTransformationViewV1",
@@ -800,10 +810,12 @@ public sealed partial class OpenApiContractGenerationTests
         "GetInventoryParentRollCandidatesV1",
         "GetInventoryStockPositionsV1",
         "GetInventoryPhysicalAllocationsV1",
+        "GetInventoryLabelPhysicalAllocationsV1",
         "GetInventoryProductCandidatesV1",
         "GetInventoryLocationCandidatesV1",
         "CreateInventoryPhysicalAllocationV1",
         "ReleaseInventoryPhysicalAllocationV1",
+        "ChangeInventoryPhysicalAllocationV1",
         "RecordInventoryOpeningCountV1",
         "GetInventoryOpeningCountV1",
         "RecordInventoryLabelTransformationV1",
@@ -932,6 +944,7 @@ public sealed partial class OpenApiContractGenerationTests
         "RecordInventoryOpeningCountV1",
         "CreateInventoryPhysicalAllocationV1",
         "ReleaseInventoryPhysicalAllocationV1",
+        "ChangeInventoryPhysicalAllocationV1",
         "RecordInventoryLabelTransformationV1",
         "RecordInventoryStockCountV1",
         "DecideInventoryStockCountV1",
@@ -1120,6 +1133,7 @@ public sealed partial class OpenApiContractGenerationTests
                 ["RecordInventoryOpeningCountV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
                 ["CreateInventoryPhysicalAllocationV1"] = [StatusCodes.Status200OK],
                 ["ReleaseInventoryPhysicalAllocationV1"] = [StatusCodes.Status200OK],
+                ["ChangeInventoryPhysicalAllocationV1"] = [StatusCodes.Status200OK],
                 ["RecordInventoryLabelTransformationV1"] = [StatusCodes.Status200OK],
                 ["RecordInventoryStockCountV1"] = [StatusCodes.Status200OK],
                 ["DecideInventoryStockCountV1"] = [StatusCodes.Status200OK],
@@ -1148,6 +1162,7 @@ public sealed partial class OpenApiContractGenerationTests
     [
         "CreateInventoryPhysicalAllocationV1",
         "ReleaseInventoryPhysicalAllocationV1",
+        "ChangeInventoryPhysicalAllocationV1",
         "UpdateCounterpartyContactInformationV1",
         "GetAuditEventsV1",
         "RecordInventoryLabelTransformationV1",
@@ -1260,6 +1275,8 @@ public sealed partial class OpenApiContractGenerationTests
         "GetInventoryLabelStockCountsV1:404",
         "CreateInventoryPhysicalAllocationV1:404",
         "ReleaseInventoryPhysicalAllocationV1:404",
+        "ChangeInventoryPhysicalAllocationV1:404",
+        "GetInventoryLabelPhysicalAllocationsV1:404",
         "SetOrganizationLocationActiveStateV1:404",
         "SetOrganizationLocationActiveStateV1:409",
         "CreateOrganizationSiteV1:404",
@@ -1447,6 +1464,9 @@ public sealed partial class OpenApiContractGenerationTests
             ["ReleaseInventoryPhysicalAllocationV1:400"] = [.. InventoryPhysicalAllocationHttpCodesV1.Status400Codes.Order(StringComparer.Ordinal)],
             ["ReleaseInventoryPhysicalAllocationV1:409"] = [.. InventoryPhysicalAllocationHttpCodesV1.ReleaseStatus409Codes.Order(StringComparer.Ordinal)],
             ["ReleaseInventoryPhysicalAllocationV1:422"] = [.. InventoryPhysicalAllocationHttpCodesV1.ReleaseStatus422Codes.Order(StringComparer.Ordinal)],
+            ["ChangeInventoryPhysicalAllocationV1:400"] = [.. InventoryPhysicalAllocationHttpCodesV1.Status400Codes.Order(StringComparer.Ordinal)],
+            ["ChangeInventoryPhysicalAllocationV1:409"] = [.. InventoryPhysicalAllocationHttpCodesV1.ChangeStatus409Codes.Order(StringComparer.Ordinal)],
+            ["ChangeInventoryPhysicalAllocationV1:422"] = [.. InventoryPhysicalAllocationHttpCodesV1.ChangeStatus422Codes.Order(StringComparer.Ordinal)],
             // ORG master edit: the one stable 422 code, the owner's constant.
             ["CreateOrganizationSiteV1:422"] = [OrganizationProblemCodesV1.CodeInUse],
             ["UpdateOrganizationSiteV1:422"] = [OrganizationProblemCodesV1.CodeInUse],
@@ -1477,6 +1497,8 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetInventoryStockPositionsV1:409"] = [InventoryStockPositionCodesV1.ReadConflict],
             ["GetInventoryPhysicalAllocationsV1:400"] = [InventoryPhysicalAllocationReadCodesV1.InvalidQuery],
             ["GetInventoryPhysicalAllocationsV1:409"] = [InventoryPhysicalAllocationReadCodesV1.ReadConflict],
+            ["GetInventoryLabelPhysicalAllocationsV1:400"] = [InventoryPhysicalAllocationReadCodesV1.InvalidQuery],
+            ["GetInventoryLabelPhysicalAllocationsV1:409"] = [InventoryPhysicalAllocationReadCodesV1.ReadConflict],
             ["GetInventoryLabelDetailV1:409"] = [InventoryLabelDetailCodesV1.ReadConflict],
             ["GetInventoryLabelDetailV1:503"] = [InventoryLabelDetailCodesV1.Unavailable],
             ["GetInventoryProductCandidatesV1:400"] = [InventoryReferenceCodesV1.ProductInvalidQuery],
@@ -3164,6 +3186,31 @@ public sealed partial class OpenApiContractGenerationTests
                     ["allocation", "labelVersion"],
                     ("allocation", "ref:InventoryPhysicalAllocationViewV1"),
                     ("labelVersion", "type:string")),
+                // INV-AL-1: the change answer and a label's allocations with their append-only change history.
+                ["InventoryPhysicalAllocationChangeViewV1"] = ObjectSchema(
+                    ["kind", "allocation", "replaced"],
+                    ("kind", "type:string"),
+                    ("allocation", "ref:InventoryPhysicalAllocationViewV1"),
+                    ("replaced", "oneOf:ref:InventoryPhysicalAllocationViewV1|type:null")),
+                ["InventoryLabelPhysicalAllocationsV1"] = ObjectSchema(
+                    ["labelId", "labelVersion", "items", "windowFull"],
+                    ("labelId", "type:string;format:uuid"), ("labelVersion", "type:string"),
+                    ("items", "type:array;items:ref:InventoryLabelPhysicalAllocationV1"),
+                    ("windowFull", "type:boolean")),
+                ["InventoryLabelPhysicalAllocationV1"] = ObjectSchema(
+                    ["allocation", "releasedAtUtc", "releaseReason", "changes"],
+                    ("allocation", "ref:InventoryPhysicalAllocationViewV1"),
+                    ("releasedAtUtc", "type:null|string;format:date-time"),
+                    ("releaseReason", "type:null|string"),
+                    ("changes", "type:array;items:ref:InventoryPhysicalAllocationChangeEntryV1")),
+                ["InventoryPhysicalAllocationChangeEntryV1"] = ObjectSchema(
+                    ["changeId", "kind", "sourceAllocationId", "sourceVersion", "sourceLabelId", "sourceRemainingKg", "targetAllocationId", "targetLabelId", "targetRemainingKg", "reason", "changedAtUtc"],
+                    ("changeId", "type:string;format:uuid"), ("kind", "type:string"),
+                    ("sourceAllocationId", "type:string;format:uuid"), ("sourceVersion", "type:string"),
+                    ("sourceLabelId", "type:string;format:uuid"), ("sourceRemainingKg", "type:string"),
+                    ("targetAllocationId", "type:string;format:uuid"), ("targetLabelId", "type:string;format:uuid"),
+                    ("targetRemainingKg", "type:string"), ("reason", "type:string"),
+                    ("changedAtUtc", "type:string;format:date-time")),
                 ["InventoryStockCountViewV1"] = ObjectSchema(
                     ["countId", "companyId", "labelId", "labelVersion", "ownerKind", "ownerId", "custodianKind", "custodianId", "locationId", "productId", "block", "bookKg", "countedKg", "differenceKg", "countedAtUtc", "reason", "recordedAtUtc", "status", "decision"],
                     ("countId", "type:string;format:uuid"), ("companyId", "type:string;format:uuid"),
@@ -3422,6 +3469,12 @@ public sealed partial class OpenApiContractGenerationTests
                 ["ReleasePhysicalAllocationV1"] = ObjectSchema(
                     ["expectedAllocationVersion", "reason"],
                     ("expectedAllocationVersion", "type:string"), ("reason", "type:string")),
+                ["ChangeInventoryPhysicalAllocationRequestV1"] = ObjectSchema(
+                    ["expectedAllocationVersion", "salesOrderId", "salesOrderLineId", "targetLabelId", "expectedTargetLabelVersion", "quantityKg", "reason", "newAllocationId"],
+                    ("expectedAllocationVersion", "type:string"), ("salesOrderId", "type:string;format:uuid"),
+                    ("salesOrderLineId", "type:string;format:uuid"), ("targetLabelId", "type:string;format:uuid"),
+                    ("expectedTargetLabelVersion", "type:string"), ("quantityKg", "type:string"),
+                    ("reason", "type:string"), ("newAllocationId", "type:null|string;format:uuid")),
                 ["RecordInventoryStockCountV1"] = ObjectSchema(
                     ["countId", "labelId", "expectedLabelVersion", "countedKg", "countedAtUtc", "reason"],
                     ("countId", "type:string;format:uuid"), ("labelId", "type:string;format:uuid"),
@@ -4357,9 +4410,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(157, operations.Count);
+        Assert.Equal(159, operations.Count);
         Assert.Equal(
-            157,
+            159,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());

@@ -164,8 +164,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // inventory
             // AT-037: +3 stock-count SQL facts (d709faf1… -> 4e783c62…).
             // DEC-SAL-005: +1 allocation-blocks-cancellation SQL fact (4e783c62… -> 953d329a…).
+            // INV-AL-1: +8 allocation-change SQL facts (953d329a… -> 1ca5b9e1…).
             ["tools/relational_inventory/inventory.txt"] =
-                "953d329a4c4047fadb6ad3dc491ee9ec9d7df9cbca1db52044b3cff1f567c464",
+                "1ca5b9e195de6dbf2388b7fa092503910a4d46f4dc761d8af4053021cbd4526e",
 
             // logistics
             // AT-053: +4 weighbridge SQL facts (81c1ff0b… -> 264898d7…).
@@ -282,9 +283,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // row and AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for AT-037: StockCounts and StockCountDecisions, each with the CompanyId query filter and a
             // company-leading key, and the CountAdjustment movement kind.
+            // Re-measured for INV-AL-1: the append-only AllocationChanges history (CompanyId query filter,
+            // company-leading key) and the allocation write guard admitting an AllocatedKg resize.
             ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
              + "Persistence/InventoryDbContext.cs"] =
-                "187cca60266b71b62b65b861427ebd4533e21a2b5219293bfc71b703012c843e",
+                "3f2409aa5e988f324c07bb706587beb78833b4f38716b2c59c473f5279282e3b",
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "Persistence/ProductDbContext.cs"] =
                 "0ba53cfdf07084818f737c9f21b2ce4a04a44f5fe89603a89f31791c5b4871da",
@@ -546,6 +549,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryStore.Allocations.cs"] =
                     new(
                         "4eb75d0a7ba908d92a4582bc1676b7c0236bf14735a934aa733bfe519bdcd34a",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1
+                        }),
+                // INV-AL-1: the allocation change (resize in place or move to another label) references SqlException
+                // only to classify a 2601/2627 unique-key race after SaveChanges. No connection, command, raw SQL or
+                // DbContext construction.
+                ["src/backend/Modules/Inventory/"
+                 + "GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryStore.AllocationChanges.cs"] =
+                    new(
+                        "3c12e295b72be8cb095c086f96a560639996e83e27d54aaaafb6ae189b29f218",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -1105,6 +1119,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // the THROW precedes every drop. An empty schema rolls back freely; a populated one needs a forward fix.
                 ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20260927150554_AddInventoryStockCounts.cs"] =
                     new("f466f4c74b927c5885f8d2469aee1a9b53ebdf0a787091b6cb55c5ee3006131f",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // INV-AL-1: allocation changes are append-only history; the Down's only raw SQL is Inventory's module
+                // refusal (51053) while any change exists, and the THROW precedes the drop. Forward fix otherwise.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20260928120614_AddInventoryAllocationChanges.cs"] =
+                    new("64ff8f317b94bc2e8beed57e3346ddab9b2f8181dae7885013baa167f633ccdd",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // R17: Down refuses before dropping manufacturing-return state while durable facts exist.
