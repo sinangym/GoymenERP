@@ -130,8 +130,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // (tools/relational_inventory/logistics.txt, pinned below).
     // Re-fingerprinted for PUR-4a: the Purchasing module joins INVENTORY_MODULES and the class prefixes
     // (tools/relational_inventory/purchasing.txt, pinned below).
+    // Re-fingerprinted for the broad suite's wall-clock limit 1200 s -> 2400 s (user decision 2026-09-29): only
+    // the subprocess timeout changes; the exact inventory, every listed test and the 0-skip rule are unchanged.
     private const string ReviewedSqlServerRcsiVerifierFingerprint =
-        "184a6093519b2a79b1eb59cdead7d5b821e995c8216300de499457bad8bcbc66";
+        "e7ca6266eedb2981da43168138bb7ad21cbfc157696fd100bb6b1f545fa52bf5";
     private const string SqlServerRcsiVerifierTestsPath =
         "tests/rcsi_relational_acceptance_verifier/"
         + "test_verify_rcsi_relational_acceptance.py";
