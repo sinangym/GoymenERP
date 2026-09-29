@@ -322,7 +322,10 @@ def run_checked(arguments: list[str], repository_root: Path) -> subprocess.Compl
         text=True,
         encoding="utf-8",
         errors="replace",
-        timeout=1200,
+        # The broad suite grew past 20 minutes (17m22s at #512, 19m19s at #513, a timeout at #514). Only the
+        # wall-clock limit changes; every listed test and the 0-skip / exact-inventory rules stay (user decision
+        # 2026-09-29).
+        timeout=2400,
     )
     if result.returncode != 0:
         sys.stdout.write(result.stdout)
