@@ -15,6 +15,7 @@ import { useShellDispatch, useShellState } from './shellContext'
 import { useShellOrchestrator } from './useShellOrchestrator'
 import { StateBlock } from './StateBlock'
 import { SwitchConfirmDialog } from './SwitchConfirmDialog'
+import { GlobalSearchBox } from '../search/GlobalSearchBox'
 import {
   CAPABILITY,
   CAPABILITY_NAV_LABEL,
@@ -274,6 +275,9 @@ export function AppShell() {
               ))}
             </select>
           </label>
+
+          {/* AT-002: the global search box; it renders only with a searchable owner list grant. */}
+          <GlobalSearchBox />
 
           <div className={styles.user}>{identity ? identity.displayName : '…'}</div>
         </header>

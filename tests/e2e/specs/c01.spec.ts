@@ -252,7 +252,9 @@ test('B-C01-006 the accessible structure is the one screen readers need', async 
   await expect(page.locator('th[scope="col"]')).toHaveCount(6)
   await expect(page.getByRole('status')).toHaveAttribute('aria-live', 'polite')
   await expect(page.getByRole('region', { name: 'Cari listesi tablosu' })).toBeVisible()
-  await expect(page.getByRole('search')).toBeVisible()
+  // The list's own filter search lives in <main>; the shell toolbar carries the global search (AT-002) as a second,
+  // separately named search landmark.
+  await expect(page.getByRole('main').getByRole('search')).toBeVisible()
   // A settled table must say so; a stuck aria-busy makes a screen reader wait
   // forever for a load that already finished.
   await expect(page.getByRole('table')).toHaveAttribute('aria-busy', 'false')

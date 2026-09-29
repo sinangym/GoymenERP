@@ -71,8 +71,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // no other startup change.
     // Re-fingerprinted for the ST-02 scrap write-off: one added host line, builder.Services.AddInventoryStockScraps(),
     // and its comment (50c5acf2… -> da93806b…); no other startup change.
+    // Re-fingerprinted for AT-002 on top of it: one added using (GoymenERP.Api.Search), builder.Services.AddGlobalSearch()
+    // with its comment, and app.MapGlobalSearchEndpoints() (da93806b… -> 869f1682…); no other startup change.
     private const string ReviewedOpenApiStartupFingerprint =
-        "da93806b12d9a7a96827de2a03b86297b70e5b703e7da628fe41e550f6ffd3ea";
+        "869f168241e703d9eade329b12c2f1cf14c3be99fd1724ce5a2b81a5fd20bc1d";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -192,8 +194,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 "3bad6ad8a1f56508e4f05115b2aecbaf2a9a576d56282c4b51f9d321c3a0b0d5",
 
             // platform
+            // AT-002: +2 GlobalSearchSqlServerRelationalAcceptanceTests facts (5bc60202… -> a5df5046…).
             ["tools/relational_inventory/platform.txt"] =
-                "5bc60202f358f060e50b8453d1e6077d608c110f7b9e2cd061da061aec61f344",
+                "a5df5046518257210e0f9d77d2293fd47a7217435efcddb6213ee3518950cfc0",
 
             // product
             // DEC-CAR-003: +4 ProductDeactivationSqlServerRelationalAcceptanceTests facts (d7dbec7f… -> ddeead62…).
