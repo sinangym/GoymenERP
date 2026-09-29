@@ -1,16 +1,16 @@
 import { useRef, type KeyboardEvent } from 'react'
 import { Link } from 'react-router'
-import { stockRowActionPath, stockRowActionState, type StockRowAction } from './stockRowActions'
+import { stockRowActionHref, stockRowActionState, type StockRowAction, type StockRowContext } from './stockRowActions'
 import styles from './inventory.module.css'
 
 /**
  * AT-063 — one ST-01 row's action disclosure. A list of links, not an ARIA menu: every entry navigates to an existing
- * ST-02 view with the row's label chosen, carrying the ST-01 filter so the back link returns to the same list.
- * Only the actions the caller already filtered by the server's capabilities are drawn; with none there is no button.
+ * view with the row's label chosen (an ST-02 panel, or the Manufacturing plan-create screen), carrying the ST-01
+ * filter so ST-02's back link returns to the same list. Only the actions the caller already filtered by the server's
+ * capabilities and by this row are drawn; with none there is no button.
  */
-export function StockRowActionMenu({ labelId, labelCode, actions, search, open, onToggle }: {
-  readonly labelId: string
-  readonly labelCode: string
+export function StockRowActionMenu({ row, actions, search, open, onToggle }: {
+  readonly row: StockRowContext
   readonly actions: readonly StockRowAction[]
   readonly search: string
   readonly open: boolean
@@ -18,6 +18,7 @@ export function StockRowActionMenu({ labelId, labelCode, actions, search, open, 
 }) {
   const button = useRef<HTMLButtonElement>(null)
   if (actions.length === 0) return null
+  const { labelId, labelCode } = row
   const listId = `stock-row-actions-${labelId}`
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.key !== 'Escape' || !open) return
@@ -37,7 +38,7 @@ export function StockRowActionMenu({ labelId, labelCode, actions, search, open, 
     {open
       ? <ul id={listId} className={styles.rowActionList} aria-label={`${labelCode} için işlemler`}>
         {actions.map((action) => <li key={action.id}>
-          <Link to={stockRowActionPath(labelId, action.target)} state={stockRowActionState(search)}>{action.label}</Link>
+          <Link to={stockRowActionHref(action, row)} state={stockRowActionState(search)}>{action.label}</Link>
         </li>)}
       </ul>
       : null}

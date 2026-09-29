@@ -6,6 +6,10 @@
  * - `GET /api/v1/inventory/labels/{labelId}/physical-allocations` (`InventoryLabelPhysicalAllocationsV1`)
  * - `POST /api/v1/inventory/physical-allocations/{allocationId}/change`
  *   (`ChangeInventoryPhysicalAllocationRequestV1` → `InventoryPhysicalAllocationChangeViewV1`)
+ * - `POST /api/v1/inventory/physical-allocations/{allocationId}/release`
+ *   (`ReleasePhysicalAllocationV1` → `InventoryPhysicalAllocationViewV1`) — the EXISTING idempotent release command,
+ *   same `inventory.physical-allocation.write` permission; it frees the whole remaining reservation, keeps the row
+ *   (status Released, reason and time) and writes no stock movement.
  *
  * A change to the allocation's own label re-states its kilograms in place (same allocation, the consumed part kept);
  * a change to another label of the same product releases it and reserves the other label for the same order line.
@@ -75,6 +79,12 @@ export interface AllocationChangeRequest {
   readonly quantityKg: string
   readonly reason: string
   readonly newAllocationId: string | null
+}
+
+/** The release body: the allocation version the user saw and a mandatory reason (≤ 1000 characters). */
+export interface AllocationReleaseRequest {
+  readonly expectedAllocationVersion: string
+  readonly reason: string
 }
 
 export interface AllocationChangeView {
@@ -230,6 +240,12 @@ export function describesChange(
     view.replaced.allocationId.toLowerCase() === allocationId.toLowerCase()
 }
 
+/** A release answer is shown only when it is THIS allocation, in THIS company, now Released and holding no kg. */
+export function describesRelease(view: LabelAllocation, allocationId: string, companyId: string): boolean {
+  return view.allocationId.toLowerCase() === allocationId.toLowerCase() &&
+    view.companyId.toLowerCase() === companyId.toLowerCase() && view.status === 'Released' && view.remainingKg === '0'
+}
+
 const REFUSAL_TEXT: Readonly<Record<string, string>> = {
   validation_failed: 'İstek geçersiz: miktar (pozitif, en fazla 3 ondalık), hedef etiket veya gerekçe kurallara uymuyor.',
   idempotency_conflict: 'Bu gönderim anahtarı başka bir içerikle kullanılmış. Etiketi yeniden açıp tekrar deneyin.',
@@ -253,6 +269,22 @@ export function allocationChangeRefusalText(status: number, code: string | null)
   if (status === 401) return REFUSAL_TEXT.unauthenticated
   if (status === 404) return 'Tahsis, sipariş satırı veya hedef etiket bu şirkette bulunamadı.'
   return `Tahsis değiştirilmedi (${code ?? status}).`
+}
+
+const RELEASE_REFUSAL_TEXT: Readonly<Record<string, string>> = {
+  validation_failed: 'İstek geçersiz: serbest bırakma gerekçesi zorunludur (en fazla 1000 karakter).',
+  inventory_allocation_invalid_reference: 'Bu tahsis bir satış siparişi satırına ait değil; buradan serbest bırakılamaz.',
+  inventory_allocation_state_conflict: 'Tahsis artık aktif değil (serbest bırakılmış veya tüketilmiş); serbest bırakılamaz.',
+  forbidden: 'Bu şirkette tahsis serbest bırakma yetkiniz yok.',
+}
+
+export function allocationReleaseRefusalText(status: number, code: string | null): string {
+  if (code !== null && RELEASE_REFUSAL_TEXT[code] !== undefined) return RELEASE_REFUSAL_TEXT[code]
+  if (code !== null && REFUSAL_TEXT[code] !== undefined) return REFUSAL_TEXT[code]
+  if (status === 403) return RELEASE_REFUSAL_TEXT.forbidden
+  if (status === 401) return REFUSAL_TEXT.unauthenticated
+  if (status === 404) return 'Tahsis bu şirkette bulunamadı.'
+  return `Tahsis serbest bırakılmadı (${code ?? status}).`
 }
 
 export const ALLOCATION_STATUS_TEXT: Readonly<Record<AllocationStatus, string>> = {

@@ -13,6 +13,7 @@ import {
   INVENTORY_STOCK_SCRAP_RECORD_CAPABILITY,
 } from './capabilities'
 import { CAPABILITY } from '../shell/capabilities'
+import { MANUFACTURING_CAPABILITY } from '../manufacturing/capabilities'
 
 /**
  * AT-063 / AT-064 on the real ST-01 and ST-02 components: a row's action menu shows only what the server's capability
@@ -40,7 +41,10 @@ vi.mock('./api', async (importOriginal) => ({
 }))
 vi.mock('./labelDetailApi', () => ({ fetchInventoryLabelDetail: api.detail }))
 vi.mock('../logistics/api', () => ({ fetchPurchaseWork: api.purchase }))
-vi.mock('./LabelAllocationPanel', () => ({ LabelAllocationPanel: () => <section aria-label="Satış tahsisleri"><h2>Satış tahsisleri</h2></section> }))
+vi.mock('./LabelAllocationPanel', () => ({
+  LabelAllocationPanel: ({ startRelease }: { readonly startRelease?: boolean }) =>
+    <section aria-label="Satış tahsisleri" data-start-release={String(startRelease === true)}><h2>Satış tahsisleri</h2></section>,
+}))
 vi.mock('./StockCountPanel', () => ({ StockCountPanel: () => <section aria-label="Sayım ve fark (ST-05)"><h2>Sayım ve fark (ST-05)</h2></section> }))
 vi.mock('./StockScrapPanel', () => ({ StockScrapPanel: () => <section aria-label="Hurda / fire çıkışı"><h2>Hurda / fire çıkışı</h2></section> }))
 vi.mock('./LabelTransformationPanel', () => ({ LabelTransformationPanel: () => <section aria-label="Bölme / birleştirme"><h2>Bölme / birleştirme</h2></section> }))
@@ -98,6 +102,7 @@ function mount(initial = '/stok/pozisyonlar') {
     <Routes>
       <Route path="/stok/pozisyonlar" element={<InventoryStockPositionPage />} />
       <Route path="/stok/etiket/:labelId" element={<InventoryLabelDetailPage />} />
+      <Route path="/uretim/plan/yeni" element={<h1>Yeni taslak plan</h1>} />
     </Routes>
     <LocationProbe />
   </MemoryRouter></QueryClientProvider>)
@@ -134,7 +139,7 @@ describe('AT-063 ST-01 row actions', () => {
   it('offers every decided action to an actor holding every gate, each on the row label', async () => {
     shell.capabilities = [
       INVENTORY_STOCK_POSITIONS_CAPABILITY, INVENTORY_PHYSICAL_ALLOCATION_WRITE_CAPABILITY, INVENTORY_STOCK_COUNT_RECORD_CAPABILITY,
-      INVENTORY_STOCK_SCRAP_RECORD_CAPABILITY, INVENTORY_LABEL_TRANSFORMATION_CAPABILITY,
+      INVENTORY_STOCK_SCRAP_RECORD_CAPABILITY, INVENTORY_LABEL_TRANSFORMATION_CAPABILITY, MANUFACTURING_CAPABILITY.planCreate,
     ]
     const user = userEvent.setup()
     mount()
@@ -143,11 +148,63 @@ describe('AT-063 ST-01 row actions', () => {
     expect(links.map((link) => [link.textContent, link.getAttribute('href')])).toEqual([
       ['Etiket 360’ı aç', `/stok/etiket/${LABEL}`],
       ['Tahsisi görüntüle / revize et', `/stok/etiket/${LABEL}?islem=tahsis`],
+      ['Tahsisi serbest bırak', `/stok/etiket/${LABEL}?islem=serbest-birak`],
+      ['Üretim planla', `/uretim/plan/yeni?etiket=${LABEL}&kod=LBL-1`],
       ['Sayım / fark', `/stok/etiket/${LABEL}?islem=sayim`],
       ['Hurda / fire çıkışı', `/stok/etiket/${LABEL}?islem=hurda`],
       ['Böl / birleştir', `/stok/etiket/${LABEL}?islem=bol-birlestir`],
       ['Etiket / lot soy ağacı', `/stok/etiket/${LABEL}?islem=soy-agaci`],
     ])
+  })
+
+  it('offers release only on a row holding active allocation kg', async () => {
+    shell.capabilities = [INVENTORY_STOCK_POSITIONS_CAPABILITY, INVENTORY_PHYSICAL_ALLOCATION_WRITE_CAPABILITY]
+    api.positions.mockReset().mockResolvedValue({ type: 'ok-single', data: {
+      items: [{ ...position, activeAllocationKg: '0', availableKg: '90' }], searchWindowFull: false,
+    } })
+    const user = userEvent.setup()
+    mount()
+    await user.click(await screen.findByRole('button', { name: 'LBL-1 işlemleri' }))
+    expect(within(screen.getByRole('list', { name: 'LBL-1 için işlemler' })).getAllByRole('link').map((link) => link.textContent))
+      .toEqual(['Etiket 360’ı aç', 'Tahsisi görüntüle / revize et', 'Etiket / lot soy ağacı'])
+  })
+
+  it('opens the allocation panel in release mode from the release action, focused on the row label', async () => {
+    shell.capabilities = [INVENTORY_STOCK_POSITIONS_CAPABILITY, INVENTORY_PHYSICAL_ALLOCATION_WRITE_CAPABILITY]
+    const user = userEvent.setup()
+    mount()
+    await user.click(await screen.findByRole('button', { name: 'LBL-1 işlemleri' }))
+    await user.click(screen.getByRole('link', { name: 'Tahsisi serbest bırak' }))
+    await screen.findByRole('heading', { level: 1, name: 'LBL-1' })
+    expect(address()).toBe(`/stok/etiket/${LABEL}?islem=serbest-birak`)
+    const target = document.getElementById('islem-tahsis')
+    await waitFor(() => expect(document.activeElement).toBe(target))
+    expect(within(target!).getByRole('region', { name: 'Satış tahsisleri' }).getAttribute('data-start-release')).toBe('true')
+    expect(screen.queryByText('İstenen işlem bu etikette sizin için açık değil; etiket bilgileri gösteriliyor.')).toBeNull()
+  })
+
+  it('opens the allocation panel for revision without the release form from the view/revise action', async () => {
+    shell.capabilities = [INVENTORY_STOCK_POSITIONS_CAPABILITY, INVENTORY_PHYSICAL_ALLOCATION_WRITE_CAPABILITY]
+    mount(`/stok/etiket/${LABEL}?islem=tahsis`)
+    await screen.findByRole('heading', { level: 1, name: 'LBL-1' })
+    expect(screen.getByRole('region', { name: 'Satış tahsisleri' }).getAttribute('data-start-release')).toBe('false')
+  })
+
+  it('says the release is not open to an actor without the allocation capability', async () => {
+    mount(`/stok/etiket/${LABEL}?islem=serbest-birak`)
+    await screen.findByRole('heading', { level: 1, name: 'LBL-1' })
+    expect(screen.getByText('İstenen işlem bu etikette sizin için açık değil; etiket bilgileri gösteriliyor.')).toBeTruthy()
+    expect(screen.queryByRole('region', { name: 'Satış tahsisleri' })).toBeNull()
+  })
+
+  it('opens the Manufacturing plan form with the row roll named, only for the plan-create capability', async () => {
+    shell.capabilities = [INVENTORY_STOCK_POSITIONS_CAPABILITY, MANUFACTURING_CAPABILITY.planCreate]
+    const user = userEvent.setup()
+    mount()
+    await user.click(await screen.findByRole('button', { name: 'LBL-1 işlemleri' }))
+    await user.click(screen.getByRole('link', { name: 'Üretim planla' }))
+    await screen.findByRole('heading', { level: 1, name: 'Yeni taslak plan' })
+    expect(address()).toBe(`/uretim/plan/yeni?etiket=${LABEL}&kod=LBL-1`)
   })
 
   it('draws no menu at all when no action is permitted', async () => {

@@ -698,3 +698,69 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
     expectEveryAnswerRewritten(answered, rewritten)
   })
 })
+
+test.describe('AT-063 "Üretim planla" from an ST-01 stock row (real Inventory position and candidate reads)', () => {
+  test('the row action opens the plan form with the roll preselected; the save revalidates it and the detail shows it', async ({ page, context }) => {
+    const rewritten = await asActor(context, env.seed.recorderActor)
+    const answered = watchAnswers(page)
+    const roll = env.seed.rolls.planCreate
+
+    // ST-01 filtered by the roll's code: the recorder's row menu offers the plan action beside the label reads only.
+    const positions = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/v1/inventory/positions'
+      && new URL(response.url()).searchParams.get('q') === roll.labelCode && response.request().method() === 'GET')
+    await page.goto(`/stok/pozisyonlar?etiket=${encodeURIComponent(roll.labelCode)}`)
+    expect((await positions).status()).toBe(200)
+    const row = page.locator(`tr[data-label-id="${roll.labelId}"]`)
+    await expect(row).toBeVisible({ timeout: 30_000 })
+    await row.getByRole('button', { name: `${roll.labelCode} işlemleri`, exact: true }).click()
+    const menu = page.getByRole('list', { name: `${roll.labelCode} için işlemler`, exact: true })
+    await expect(menu.getByRole('link')).toHaveText(['Etiket 360’ı aç', 'Üretim planla', 'Etiket / lot soy ağacı'])
+
+    // The action names the label; the form finds it through the SAME Inventory candidate read a manual search uses.
+    const candidatesAnswer = page.waitForResponse(
+      (response) => CANDIDATES_RE.test(response.url()) && response.request().method() === 'GET',
+    )
+    await menu.getByRole('link', { name: 'Üretim planla', exact: true }).click()
+    await expect(page).toHaveURL(new RegExp(`/uretim/plan/yeni\?etiket=${roll.labelId}&kod=`))
+    const candidatesResponse = await candidatesAnswer
+    expect(candidatesResponse.status()).toBe(200)
+    expect(new URL(candidatesResponse.url()).searchParams.get('q')).toBe(roll.labelCode)
+    const candidate = ((await candidatesResponse.json()) as { items: CandidateAnswer[] }).items
+      .find((item) => item.labelId === roll.labelId)
+    expect(candidate).toMatchObject({ labelId: roll.labelId, draftSelectable: true })
+    await expect(page.getByRole('heading', { name: 'Yeni taslak plan' })).toBeVisible()
+    await expect(page.getByText(`Stok pozisyonundan seçilen ana rulo eklendi: ${roll.labelCode}.`, { exact: false })).toBeVisible()
+
+    await page.getByRole('combobox', { name: 'İş merkezi' }).selectOption(env.seed.workCenterId)
+    await page.getByRole('textbox', { name: `${roll.labelCode} planlanan kg` }).fill('500')
+    const sentPlan = page.waitForRequest((request) => PLAN_POST_RE.test(request.url()) && request.method() === 'POST')
+    await page.getByRole('button', { name: 'Taslak planı kaydet', exact: true }).click()
+    const body = (await sentPlan).postDataJSON() as {
+      planId: string
+      inputs: Array<{ parentRollId: string; plannedKg: string; expectedLabelVersion: string }>
+    }
+    expect(body.inputs).toEqual([
+      { parentRollId: roll.labelId, plannedKg: '500', expectedLabelVersion: candidate!.labelVersion },
+    ])
+    await expect(page.getByRole('heading', { name: 'Taslak plan kaydedildi' })).toBeVisible()
+
+    const freshRead = page.waitForResponse(
+      (response) => PLAN_GET_RE.test(response.url()) && response.url().endsWith(body.planId)
+        && response.request().method() === 'GET',
+    )
+    await page.getByRole('link', { name: 'Formu kapat ve planı yeniden aç' }).click()
+    expect((await freshRead).status()).toBe(200)
+    await expect(page.getByRole('heading', { name: 'Plan yeniden açıldı' })).toBeVisible()
+    await expect(page.getByRole('rowheader', { name: roll.labelId, exact: true })).toBeVisible()
+
+    const api = await apiAs(env, env.seed.recorderActor)
+    try {
+      const stored = await readPlan(api, body.planId)
+      expect(stored.response.status()).toBe(200)
+      expect(stored.body).toMatchObject({ planId: body.planId, status: 'Draft', inputs: [{ parentRollId: roll.labelId }] })
+    } finally {
+      await api.dispose()
+    }
+    expectEveryAnswerRewritten(answered, rewritten)
+  })
+})

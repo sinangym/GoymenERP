@@ -4,7 +4,12 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { InventoryLabelDetailPage } from './InventoryLabelDetailPage'
-import type { AllocationChangeRequest, LabelAllocation, LabelAllocations } from './allocationChangeContract'
+import type {
+  AllocationChangeRequest,
+  AllocationReleaseRequest,
+  LabelAllocation,
+  LabelAllocations,
+} from './allocationChangeContract'
 import type { InventoryLabelDetailWithMovementTimeline } from './labelDetailContract'
 
 const COMPANY = '11111111-1111-1111-1111-111111111111'
@@ -18,10 +23,12 @@ const ORDER = '88888888-8888-8888-8888-888888888888'
 const LINE = '99999999-9999-9999-9999-999999999999'
 const OTHER_LABEL = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
 const clients: QueryClient[] = []
-const api = vi.hoisted(() => ({ detail: vi.fn(), allocations: vi.fn(), change: vi.fn() }))
+const api = vi.hoisted(() => ({ detail: vi.fn(), allocations: vi.fn(), change: vi.fn(), release: vi.fn() }))
 const scenario = vi.hoisted(() => ({ canChange: true, report: vi.fn() }))
 vi.mock('./labelDetailApi', () => ({ fetchInventoryLabelDetail: api.detail }))
-vi.mock('./allocationChangeApi', () => ({ fetchLabelAllocations: api.allocations, changeAllocation: api.change }))
+vi.mock('./allocationChangeApi', () => ({
+  fetchLabelAllocations: api.allocations, changeAllocation: api.change, releaseAllocation: api.release,
+}))
 vi.mock('../shell/shellContext', () => ({
   useShellState: () => ({ sessionEpoch: 1, routeEntryGeneration: 1,
     activeContext: { userId: 'actor-a', companyId: COMPANY, scopeMode: 'single', capabilities: [] } }),
@@ -71,10 +78,10 @@ function labelRead(overrides: Partial<LabelAllocations> = {}): LabelAllocations 
   }
 }
 
-function mount() {
+function mount(path = `/stok/etiket/${LABEL}`) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   clients.push(client)
-  return render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[`/stok/etiket/${LABEL}`]}>
+  return render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[path]}>
     <Routes><Route path="/stok/etiket/:labelId" element={<InventoryLabelDetailPage />} /></Routes>
   </MemoryRouter></QueryClientProvider>)
 }
@@ -92,6 +99,11 @@ beforeEach(() => {
   }))
 })
 afterEach(() => { cleanup(); clients.splice(0).forEach((client) => client.clear()) })
+
+const RELEASED_ITEM = {
+  allocation: allocation({ status: 'Released', remainingKg: '0', version: '2' }),
+  releasedAtUtc: '2026-09-29T08:00:00Z', releaseReason: 'Sipariş iptal edildi', changes: [],
+}
 
 describe('LabelAllocationPanel on the label detail', () => {
   it('is absent without the server-advertised allocation capability', async () => {
@@ -203,5 +215,99 @@ describe('LabelAllocationPanel on the label detail', () => {
     expect(within(released).getByText('Serbest bırakıldı')).toBeTruthy()
     expect(within(released).getByText(/Başka etikete taşındı/)).toBeTruthy()
     expect(within(released).queryByRole('button', { name: 'Tahsisi revize et' })).toBeNull()
+    expect(within(released).queryByRole('button', { name: 'Tahsisi serbest bırak' })).toBeNull()
+  })
+})
+
+describe('AT-063 release of an allocation on the label detail (existing Inventory release command)', () => {
+  beforeEach(() => {
+    api.release.mockReset().mockResolvedValue({
+      type: 'applied', replayed: false, response: allocation({ status: 'Released', remainingKg: '0', version: '2' }),
+    })
+  })
+
+  it('releases with a reason at the version it showed, then rereads the allocations and the label', async () => {
+    api.allocations.mockResolvedValueOnce({ type: 'ok-single', data: labelRead() })
+      .mockResolvedValue({ type: 'ok-single', data: labelRead({ labelVersion: '5', items: [RELEASED_ITEM] }) })
+    const user = userEvent.setup(); mount()
+    const line = await row()
+    await user.click(within(line).getByRole('button', { name: 'Tahsisi serbest bırak' }))
+    expect(within(line).getByText(/Kalan 60 kg ayrılmış miktarın tamamı serbest bırakılır/)).toBeTruthy()
+    await user.type(within(line).getByLabelText('Serbest bırakma gerekçesi'), '  Sipariş iptal edildi ')
+    await user.click(within(line).getByRole('button', { name: 'Serbest bırakmayı onayla' }))
+
+    await screen.findByText(/Tahsis serbest bırakıldı: …77777777 artık aktif değil/)
+    const [id, request, context] = api.release.mock.calls[0] as [string, AllocationReleaseRequest, { companyId: string; idempotencyKey: string }]
+    expect(id).toBe(ALLOCATION)
+    expect(request).toEqual({ expectedAllocationVersion: '1', reason: 'Sipariş iptal edildi' })
+    expect(context.companyId).toBe(COMPANY)
+    expect(context.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/)
+    expect(api.change).not.toHaveBeenCalled()
+    await waitFor(() => expect(api.detail).toHaveBeenCalledTimes(2))
+    const reread = await row()
+    await waitFor(() => expect(within(reread).getByText('Serbest bırakıldı')).toBeTruthy())
+    expect(within(reread).getByText(/Serbest bırakma: Sipariş iptal edildi/)).toBeTruthy()
+    expect(within(reread).queryByRole('button', { name: 'Tahsisi serbest bırak' })).toBeNull()
+  })
+
+  it('refuses a missing reason before sending and can be cancelled', async () => {
+    const user = userEvent.setup(); mount()
+    const line = await row()
+    await user.click(within(line).getByRole('button', { name: 'Tahsisi serbest bırak' }))
+    await user.click(within(line).getByRole('button', { name: 'Serbest bırakmayı onayla' }))
+    expect(await screen.findByText(/Serbest bırakma gerekçesi zorunludur/)).toBeTruthy()
+    await user.click(within(line).getByRole('button', { name: 'Vazgeç' }))
+    expect(within(line).queryByLabelText('Serbest bırakma gerekçesi')).toBeNull()
+    expect(api.release).not.toHaveBeenCalled()
+  })
+
+  it('shows a state refusal by its code, reports 403, and resends an unknown outcome with the same key', async () => {
+    api.release.mockResolvedValueOnce({ type: 'failed', status: 409, code: 'inventory_allocation_state_conflict' })
+      .mockResolvedValueOnce({ type: 'failed', status: 403, code: null })
+      .mockResolvedValueOnce({ type: 'unknown', reason: 'network-error' })
+    const user = userEvent.setup(); mount()
+    const line = await row()
+    await user.click(within(line).getByRole('button', { name: 'Tahsisi serbest bırak' }))
+    await user.type(within(line).getByLabelText('Serbest bırakma gerekçesi'), 'Bırak')
+    await user.click(within(line).getByRole('button', { name: 'Serbest bırakmayı onayla' }))
+    expect(await screen.findByText(/Tahsis artık aktif değil .*serbest bırakılamaz/)).toBeTruthy()
+
+    await user.click(within(line).getByRole('button', { name: 'Serbest bırakmayı onayla' }))
+    expect(await screen.findByText('Bu şirkette tahsis serbest bırakma yetkiniz yok.')).toBeTruthy()
+    expect(scenario.report).toHaveBeenCalledWith(403, { generation: 1 })
+
+    await user.click(within(line).getByRole('button', { name: 'Serbest bırakmayı onayla' }))
+    expect(await screen.findByText(/Tahsis serbest bırakmanın sonucu bilinmiyor/)).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: 'Aynı anahtarla yeniden gönder' }))
+    await waitFor(() => expect(api.release).toHaveBeenCalledTimes(4))
+    expect(api.release.mock.calls[3]).toEqual(api.release.mock.calls[2])
+    expect(api.release.mock.calls[2][2].idempotencyKey).not.toBe(api.release.mock.calls[1][2].idempotencyKey)
+  })
+
+  it('arriving from the ST-01 release action opens the release form of the one active allocation, sending nothing', async () => {
+    const user = userEvent.setup(); mount(`/stok/etiket/${LABEL}?islem=serbest-birak`)
+    const line = await row()
+    expect(await within(line).findByRole('group', { name: 'Tahsisi serbest bırak' })).toBeTruthy()
+    expect(api.release).not.toHaveBeenCalled()
+    await user.click(within(line).getByRole('button', { name: 'Vazgeç' }))
+    expect(within(line).queryByRole('group', { name: 'Tahsisi serbest bırak' })).toBeNull()
+    expect(within(line).getByRole('button', { name: 'Tahsisi serbest bırak' })).toBeTruthy()
+  })
+
+  it('arriving from the release action with several active allocations asks which one, and with none says so', async () => {
+    const second = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'
+    api.allocations.mockResolvedValue({ type: 'ok-single', data: labelRead({ items: [
+      { allocation: allocation(), releasedAtUtc: null, releaseReason: null, changes: [] },
+      { allocation: allocation({ allocationId: second, allocatedKg: '10', remainingKg: '10' }), releasedAtUtc: null,
+        releaseReason: null, changes: [] },
+    ] }) })
+    mount(`/stok/etiket/${LABEL}?islem=serbest-birak`)
+    expect(await screen.findByText('Serbest bırakılacak tahsisi aşağıdan seçin.')).toBeTruthy()
+    expect(screen.queryByRole('group', { name: 'Tahsisi serbest bırak' })).toBeNull()
+    cleanup()
+
+    api.allocations.mockResolvedValue({ type: 'ok-single', data: labelRead({ items: [RELEASED_ITEM] }) })
+    mount(`/stok/etiket/${LABEL}?islem=serbest-birak`)
+    expect(await screen.findByText('Bu etikette serbest bırakılacak aktif tahsis yok.')).toBeTruthy()
   })
 })

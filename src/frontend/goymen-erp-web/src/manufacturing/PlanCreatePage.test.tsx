@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MANUFACTURING_CAPABILITY } from './capabilities'
+import { MANUFACTURING_CAPABILITY, planCreateFromLabelPath } from './capabilities'
 import {
   COMPANY_A,
   ROLL_1,
@@ -62,7 +62,11 @@ function canonicalDecimal(value: string): string {
   return value.includes('.') ? value.replace(/0+$/, '').replace(/\.$/, '') : value
 }
 
-function installPlanApi(options: { readonly failFirstSave?: boolean; readonly refuseFirstSave?: boolean } = {}) {
+function installPlanApi(options: {
+  readonly failFirstSave?: boolean
+  readonly refuseFirstSave?: boolean
+  readonly candidates?: () => unknown
+} = {}) {
   let saves = 0
   let stored: Record<string, unknown> | null = null
   const recorded = installFetch({
@@ -70,6 +74,7 @@ function installPlanApi(options: { readonly failFirstSave?: boolean; readonly re
     respond: (url, init) => {
       if (url.includes('/organization/work-centers')) return json([workCenter()])
       if (url.includes('/inventory/references/parent-rolls')) {
+        if (options.candidates !== undefined) return json(options.candidates())
         return json({
           items: [
             candidate(),
@@ -190,6 +195,57 @@ describe('plan create and reopen', () => {
     const [first, second] = requestsFor(recorded, '/manufacturing/plans', 'POST')
     expect(second.headers['Idempotency-Key']).not.toBe(first.headers['Idempotency-Key'])
     expect((second.body as { planId: string }).planId).not.toBe((first.body as { planId: string }).planId)
+  })
+
+  it('AT-063: preselects the ST-01 row roll through the candidate read and saves it at the candidate version', async () => {
+    const user = userEvent.setup()
+    const recorded = installPlanApi()
+    renderAt(planCreateFromLabelPath(ROLL_1.toUpperCase(), 'LBL-0007'))
+
+    expect(await screen.findByText(/Stok pozisyonundan seçilen ana rulo eklendi: LBL-0007/)).toBeTruthy()
+    const read = requestsFor(recorded, '/inventory/references/parent-rolls', 'GET')
+    expect(read).toHaveLength(1)
+    const query = new URL(read[0].url, 'http://x').searchParams
+    expect(query.get('q')).toBe('LBL-0007')
+    expect(query.get('limit')).toBe('100')
+    expect((screen.getByLabelText('Etiket, ürün veya lot ara') as HTMLInputElement).value).toBe('LBL-0007')
+    // The candidate row reads 'Eklendi' and the planned-inputs table holds the roll.
+    expect(within(screen.getAllByRole('row', { name: /LBL-0007/ })[0]).getByRole('button', { name: 'Eklendi' })).toBeTruthy()
+
+    await screen.findByRole('option', { name: 'SLT-01 — Dilme Hattı' })
+    await user.selectOptions(screen.getByLabelText('İş merkezi'), WORK_CENTER)
+    await user.type(screen.getByLabelText('LBL-0007 planlanan kg'), '400')
+    await user.click(screen.getByRole('button', { name: 'Taslak planı kaydet' }))
+    await screen.findByText('Taslak plan kaydedildi')
+    expect(requestsFor(recorded, '/manufacturing/plans', 'POST')[0].body).toMatchObject({
+      workCenterId: WORK_CENTER,
+      inputs: [{ parentRollId: ROLL_1, plannedKg: '400', expectedLabelVersion: '7' }],
+      target: null,
+    })
+  })
+
+  it('AT-063: never selects a named roll the candidate read refuses or does not answer', async () => {
+    installPlanApi()
+    renderAt(planCreateFromLabelPath(ROLL_2, 'LBL-0012'))
+    expect(await screen.findByText(/seçilen etiket \(LBL-0012\) taslak plana eklenemez \(inventory_parent_roll_context_required\)/))
+      .toBeTruthy()
+    expect(screen.getByText('Henüz ana rulo eklenmedi.')).toBeTruthy()
+  })
+
+  it('AT-063: says so when the named roll is outside the candidate window, and ignores a malformed label id', async () => {
+    installPlanApi({ candidates: () => ({ items: [candidate()], searchWindowFull: true }) })
+    const unknownRoll = '30000000-0000-4000-8000-00000000abcd'
+    const { view } = renderAt(planCreateFromLabelPath(unknownRoll, 'LBL'))
+    expect(await screen.findByText(/ana rulo adayları arasında bulunamadı \(arama penceresi doldu\); etiketi elle arayın/))
+      .toBeTruthy()
+    expect(screen.getByText('Henüz ana rulo eklenmedi.')).toBeTruthy()
+    view.unmount()
+
+    const recorded = installPlanApi()
+    renderAt('/uretim/plan/yeni?etiket=not-a-guid&kod=LBL-0007')
+    await screen.findByRole('option', { name: 'SLT-01 — Dilme Hattı' })
+    expect(requestsFor(recorded, '/inventory/references/parent-rolls')).toHaveLength(0)
+    expect(screen.queryByText(/Stok pozisyonundan/)).toBeNull()
   })
 
   it('keeps the create route closed when its server capability is absent', async () => {
