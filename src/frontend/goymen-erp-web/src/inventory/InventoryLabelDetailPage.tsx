@@ -1,5 +1,6 @@
+import { useEffect, useRef, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Link, useParams } from 'react-router'
+import { Link, useLocation, useParams } from 'react-router'
 import { productDetailPath } from '../product/capabilities'
 import { CAPABILITY } from '../shell/capabilities'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
@@ -22,6 +23,13 @@ import { StockCountPanel } from './StockCountPanel'
 import { StockScrapPanel } from './StockScrapPanel'
 import type { InventoryLabelDetailWithMovementTimeline } from './labelDetailContract'
 import { inventoryLabelDetailPath } from './labelDetailRoute'
+import {
+  carriedStockSearch,
+  parseRowActionTarget,
+  ROW_ACTION_TARGET,
+  stockPositionsPath,
+  type RowActionTarget,
+} from './stockRowActions'
 import styles from './inventory.module.css'
 
 const MOVEMENT_KIND_TEXT = {
@@ -41,16 +49,42 @@ export function InventoryLabelDetailPage() {
   const key = contextKey(shell)
   const namespace = key === null ? null : contextKeyString(key)
   const { labelId } = useParams()
+  const location = useLocation()
   return <InventoryLabelDetailView
     key={`${namespace ?? 'no-context'}::${labelId ?? ''}::${shell.routeEntryGeneration}`}
     namespace={namespace}
     labelId={labelId}
+    target={parseRowActionTarget(location.search)}
+    stockSearch={carriedStockSearch(location.state)}
   />
 }
 
-function InventoryLabelDetailView({ namespace, labelId }: {
+/**
+ * AT-063: the ST-02 panel an ST-01 row action opened. Once the detail is on screen the panel is scrolled into view and
+ * receives focus, once per arrival; it is a plain wrapper, the panel inside keeps its own rules and commands.
+ */
+function ActionTarget({ id, target, children }: {
+  readonly id: RowActionTarget
+  readonly target: RowActionTarget | null
+  readonly children: ReactNode
+}) {
+  const element = useRef<HTMLDivElement>(null)
+  const focused = useRef(false)
+  const active = id === target
+  useEffect(() => {
+    if (!active || focused.current || element.current === null) return
+    focused.current = true
+    element.current.scrollIntoView?.({ block: 'start' })
+    element.current.focus()
+  }, [active])
+  return <div ref={element} id={`islem-${id}`} tabIndex={active ? -1 : undefined} data-row-action-target={id}>{children}</div>
+}
+
+function InventoryLabelDetailView({ namespace, labelId, target, stockSearch }: {
   readonly namespace: string | null
   readonly labelId: string | undefined
+  readonly target: RowActionTarget | null
+  readonly stockSearch: string | null
 }) {
   const shell = useShellState()
   const boundary = useAuthBoundary()
@@ -87,15 +121,28 @@ function InventoryLabelDetailView({ namespace, labelId }: {
   }
 
   const { labelVersion, identity, balances, genealogy, movementTimeline } = state.data
+  const offered: Readonly<Record<RowActionTarget, boolean>> = {
+    [ROW_ACTION_TARGET.genealogy]: true,
+    [ROW_ACTION_TARGET.allocations]: canChangeAllocations,
+    [ROW_ACTION_TARGET.count]: canRecordCount || canApproveCount,
+    [ROW_ACTION_TARGET.scrap]: canRecordScrap || canApproveScrap,
+    [ROW_ACTION_TARGET.transformation]: canTransform && actorId !== null,
+  }
   if (identity.companyId !== companyId || identity.labelId !== labelId || balances.labelId !== labelId ||
     genealogy.labelId !== labelId || movementTimeline.labelId !== labelId) {
     return <main className={styles.page}><StateBlock state={{ kind: 'malformed-response' }} subject="etiket" onRetry={() => void query.refetch()} /></main>
   }
   return <main className={styles.page}>
+    {stockSearch !== null
+      ? <nav aria-label="Stok pozisyonu"><Link to={stockPositionsPath(stockSearch)}>← Stok pozisyonlarına dön</Link></nav>
+      : null}
     <header className={styles.header}>
       <div><p className={styles.eyebrow}>ST-02</p><h1>{identity.code}</h1></div>
       <span>{identity.documentStatus}</span>
     </header>
+    {target !== null && !offered[target]
+      ? <p role="status">İstenen işlem bu etikette sizin için açık değil; etiket bilgileri gösteriliyor.</p>
+      : null}
 
     <section aria-labelledby="label-identity-heading">
       <h2 id="label-identity-heading">Etiket ve lot kimliği</h2>
@@ -149,7 +196,7 @@ function InventoryLabelDetailView({ namespace, labelId }: {
       {movementTimeline.windowFull ? <p>Daha eski stok hareketleri bu görünümde yer almıyor.</p> : null}
     </section>
 
-    <section aria-labelledby="label-genealogy-heading">
+    <ActionTarget id={ROW_ACTION_TARGET.genealogy} target={target}><section aria-labelledby="label-genealogy-heading">
       <h2 id="label-genealogy-heading">Soy ağacı</h2>
       {genealogy.edges.length === 0
         ? <p>Bu etiket için bölme veya birleştirme kaydı yok.</p>
@@ -168,19 +215,19 @@ function InventoryLabelDetailView({ namespace, labelId }: {
           </tr>)}</tbody>
         </table></div>}
       {genealogy.windowFull ? <p>Daha eski soy ağacı kayıtları bu görünümde yer almıyor.</p> : null}
-    </section>
+    </section></ActionTarget>
 
     {canChangeAllocations
-      ? <LabelAllocationPanel
+      ? <ActionTarget id={ROW_ACTION_TARGET.allocations} target={target}><LabelAllocationPanel
         key={`${identity.labelId}:allocations`}
         labelId={identity.labelId}
         companyId={companyId}
         onChanged={() => void query.refetch()}
-      />
+      /></ActionTarget>
       : null}
 
     {canTransform && actorId !== null
-      ? <LabelTransformationPanel
+      ? <ActionTarget id={ROW_ACTION_TARGET.transformation} target={target}><LabelTransformationPanel
         key={identity.labelId}
         label={{
           labelId: identity.labelId, labelVersion, code: identity.code, productId: identity.productId,
@@ -192,29 +239,29 @@ function InventoryLabelDetailView({ namespace, labelId }: {
         sessionEpoch={shell.sessionEpoch}
         canOpenLabels={canReadLabel}
         onRecorded={() => void query.refetch()}
-      />
+      /></ActionTarget>
       : null}
 
     {canRecordCount || canApproveCount
-      ? <StockCountPanel
+      ? <ActionTarget id={ROW_ACTION_TARGET.count} target={target}><StockCountPanel
         key={`${identity.labelId}:stock-count`}
         label={{ labelId: identity.labelId, labelVersion, positions: balances.positions }}
         companyId={companyId}
         canRecord={canRecordCount}
         canApprove={canApproveCount}
         onChanged={() => void query.refetch()}
-      />
+      /></ActionTarget>
       : null}
 
     {canRecordScrap || canApproveScrap
-      ? <StockScrapPanel
+      ? <ActionTarget id={ROW_ACTION_TARGET.scrap} target={target}><StockScrapPanel
         key={`${identity.labelId}:stock-scrap`}
         label={{ labelId: identity.labelId, labelVersion, positions: balances.positions }}
         companyId={companyId}
         canRecord={canRecordScrap}
         canApprove={canApproveScrap}
         onChanged={() => void query.refetch()}
-      />
+      /></ActionTarget>
       : null}
 
     <section aria-labelledby="label-document-heading">
