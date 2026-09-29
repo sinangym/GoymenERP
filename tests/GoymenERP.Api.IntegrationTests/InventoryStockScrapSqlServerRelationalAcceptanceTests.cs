@@ -102,6 +102,15 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             await AssertScrapRefused(scope.Store.DecideStockScrapAsync(request.ScrapId,
                     new(InventoryStockScrapDecisionKindV1.Reject, "Vazgeçildi"), approver with { IdempotencyKey = $"reject-{Guid.NewGuid():N}" }),
                 409, InventoryStockScrapCodesV1.AlreadyDecided);
+
+            // The same approval content is replayed only to its decider (#512 review P3): the recorder meets the
+            // maker≠checker refusal, a third actor the already-decided one — never a 200 of someone else's decision.
+            await AssertScrapRefused(scope.Store.DecideStockScrapAsync(request.ScrapId, approval,
+                    recorder with { IdempotencyKey = $"recorder-replay-{Guid.NewGuid():N}" }),
+                409, InventoryStockScrapCodesV1.SelfApproval);
+            await AssertScrapRefused(scope.Store.DecideStockScrapAsync(request.ScrapId, approval,
+                    approver with { ActorId = Guid.NewGuid().ToString("D"), IdempotencyKey = $"third-replay-{Guid.NewGuid():N}" }),
+                409, InventoryStockScrapCodesV1.AlreadyDecided);
         }
 
         // No double effect, and the history is intact and audited from the web channel.

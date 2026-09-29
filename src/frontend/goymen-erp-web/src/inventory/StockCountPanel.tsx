@@ -15,6 +15,7 @@ import {
   type StockCountRequest,
   type StockCountView,
 } from './stockCountContract'
+import { recallRecordedByViewer, recordedByViewerKey, rememberRecordedByViewer } from './recordedByViewerStore'
 import styles from './inventory.module.css'
 
 /** The label as the detail read answered it; a count needs exactly one stored position with stock. */
@@ -61,9 +62,13 @@ function completionText(outcome: Extract<StockCountCommandOutcome, { type: 'appl
     : `Sayım farkı reddedildi; stok değişmedi${replay}.`
 }
 
-export function StockCountPanel({ label, companyId, canRecord, canApprove, onChanged }: {
+export function StockCountPanel({ label, companyId, namespace, routeEntry, actorId, canRecord, canApprove, onChanged }: {
   readonly label: CountableLabel
   readonly companyId: string
+  /** The shell context namespace and route entry the label detail read is keyed by: a reopen never shows another entry's list. */
+  readonly namespace: string
+  readonly routeEntry: number
+  readonly actorId: string | null
   readonly canRecord: boolean
   readonly canApprove: boolean
   readonly onChanged: () => void
@@ -76,11 +81,16 @@ export function StockCountPanel({ label, companyId, canRecord, canApprove, onCha
   const [formError, setFormError] = useState<string | null>(null)
   const generation = useRef(0)
   const inFlight = useRef(false)
+  const mineKey = recordedByViewerKey('stock-count', actorId, companyId, label.labelId)
+  const [mine, setMine] = useState(() => recallRecordedByViewer(mineKey))
+  const remember = useCallback((id: string) => {
+    setMine((current) => rememberRecordedByViewer(mineKey, id, current))
+  }, [mineKey])
 
   useEffect(() => () => { generation.current += 1 }, [])
 
   const counts = useQuery({
-    queryKey: ['inventory-label-stock-counts', companyId, label.labelId],
+    queryKey: ['inventory-label-stock-counts', namespace, label.labelId, routeEntry],
     retry: false,
     queryFn: async ({ signal }) => {
       const snapshot = boundary.capture()
@@ -95,6 +105,8 @@ export function StockCountPanel({ label, companyId, canRecord, canApprove, onCha
     inFlight.current = true
     const current = ++generation.current
     setAttempt({ phase: 'submitting', pending })
+    // The id is the viewer's own from the moment it is sent: even an unknown outcome may have recorded it.
+    if (pending.kind === 'record') remember(pending.payload.countId)
     const security = boundary.capture()
     const context = { companyId, idempotencyKey: pending.idempotencyKey }
     const outcome = pending.kind === 'record'
@@ -108,6 +120,8 @@ export function StockCountPanel({ label, companyId, canRecord, canApprove, onCha
     }
     if (outcome.type === 'failed') {
       if (outcome.status === 401 || outcome.status === 403) boundary.report(outcome.status, security)
+      // The server says the viewer recorded it: stop offering a decision the next click would meet again.
+      if (pending.kind === 'decide' && outcome.status === 409 && outcome.code === 'inventory_stock_count_self_approval') remember(pending.countId)
       setAttempt({ phase: 'failed', message: stockCountRefusalText(outcome.status, outcome.code) })
       void counts.refetch()
       return
@@ -119,7 +133,7 @@ export function StockCountPanel({ label, companyId, canRecord, canApprove, onCha
     }
     void counts.refetch()
     onChanged()
-  }, [boundary, companyId, counts, onChanged])
+  }, [boundary, companyId, counts, onChanged, remember])
 
   function abandon() {
     generation.current += 1
@@ -233,7 +247,10 @@ export function StockCountPanel({ label, companyId, canRecord, canApprove, onCha
           <td>
             <strong>{STOCK_COUNT_STATUS_TEXT[item.status]}</strong>
             {item.decision === null ? null : <><br />{item.decision.decidedAtUtc}: {item.decision.reason}</>}
-            {canApprove && item.status === 'PendingApproval'
+            {canApprove && item.status === 'PendingApproval' && mine.has(item.countId)
+              ? <p>Bu sayımı siz kaydettiniz; farkı başka bir yetkili onaylar veya reddeder.</p>
+              : null}
+            {canApprove && item.status === 'PendingApproval' && !mine.has(item.countId)
               ? <div className={styles.grid}>
                 <label htmlFor={`stock-count-note-${item.countId}`}>Karar notu</label>
                 <input id={`stock-count-note-${item.countId}`} value={notes[item.countId] ?? ''} maxLength={REASON_MAX_LENGTH} disabled={frozen}

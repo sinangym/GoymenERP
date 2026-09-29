@@ -14,8 +14,13 @@
  *               opens ST-01, finds the label, opens its detail from the row; changes 5 → 3 kg with a reason;
  *               close and reopen shows 3 kg and the history "5 kg → 3 kg"; ST-01 and the Sales line read 3 kg.
  *   INV-AL-1-02 the same key replays once (200 + Idempotency-Replayed), the consumed version is 409, the viewer
- *               without the grant is 403; nothing new is written; the change is audited from the Web channel;
- *               the allocation is released at the end so the label is free again for the later files.
+ *               without the grant is 403; nothing new is written; the change is audited from the Web channel.
+ *   afterAll    releases the reservation this file made if it is still active, at its current version — also when
+ *               01 or 02 failed half-way — so the label is free again for the later files (the cancellation file).
+ *
+ * The MOVE path (target = another label of the same product) is not driven here: the s04 seed has ONE allocation
+ * label, and a second one is a seed + central validator change (SUITE_SEED_FIELDS). It is proven on real SQL
+ * (InventoryAllocationChangeSqlServerRelationalAcceptanceTests) and by the panel's component tests.
  */
 import { randomUUID } from 'node:crypto'
 import { expect, test, type Page } from '@playwright/test'
@@ -183,7 +188,7 @@ test('INV-AL-1-01 an allocation opened from ST-01 changes 5 → 3 kg with a reas
   }
 })
 
-test('INV-AL-1-02 the same key replays once, the consumed version is 409, no grant is 403, and the label is freed', async ({ page }) => {
+test('INV-AL-1-02 the same key replays once, the consumed version is 409, and no grant is 403', async ({ page }) => {
   expect(allocationId, 'INV-AL-1-01 recorded the change').not.toBe('')
   const pool = await new sql.ConnectionPool(env.sqlConnection).connect()
   try {
@@ -208,14 +213,37 @@ test('INV-AL-1-02 the same key replays once, the consumed version is 409, no gra
     })
     expect(denied.status()).toBe(403)
     expect(await effects(pool)).toEqual(before)
-
-    const released = await page.request.post(`${env.apiBaseUrl}${ALLOCATIONS}/${allocationId}/release`, {
-      headers: headers(preparerActor, `SENTETIK-inv-al-1-release-${allocationId}`),
-      data: { expectedAllocationVersion: '2', reason: 'SENTETIK INV-AL-1 temizlik' },
-    })
-    expect(released.status()).toBe(200)
-    expect((await lineAllocations(page)).filter((allocation) => allocation.status === 'Active')).toEqual([])
   } finally {
     await pool.close()
+  }
+})
+
+test.afterAll(async ({ playwright }) => {
+  // Cleanup never depends on 01/02 having passed: the allocation this file reserved, if it is still Active, is
+  // released at the version the server answers now. A file that failed before its create has nothing to release.
+  if (allocationId === '') return
+  const api = await playwright.request.newContext()
+  try {
+    const read = async (): Promise<readonly AllocationView[]> => {
+      const listed = await api.get(
+        `${env.apiBaseUrl}${ALLOCATIONS}?salesOrderId=${draftId}&salesOrderLineId=${allocationLineId}&limit=100`,
+        { headers: headers(preparerActor) })
+      expect(listed.status(), 'the cleanup reads the line allocations').toBe(200)
+      return ((await listed.json()) as { readonly items: readonly { readonly allocation: AllocationView }[] }).items
+        .map((item) => item.allocation)
+    }
+    const ours = (await read()).filter((allocation) =>
+      allocation.allocationId.toLowerCase() === allocationId.toLowerCase() && allocation.status === 'Active')
+    for (const allocation of ours) {
+      const released = await api.post(`${env.apiBaseUrl}${ALLOCATIONS}/${allocation.allocationId}/release`, {
+        headers: headers(preparerActor, `SENTETIK-inv-al-1-release-${allocation.allocationId}-${allocation.version}`),
+        data: { expectedAllocationVersion: allocation.version, reason: 'SENTETIK INV-AL-1 temizlik' },
+      })
+      expect(released.status(), 'the cleanup releases the reservation').toBe(200)
+    }
+    expect((await read()).filter((allocation) => allocation.status === 'Active'),
+      'the label is free again for the later files').toEqual([])
+  } finally {
+    await api.dispose()
   }
 })

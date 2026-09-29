@@ -28,6 +28,19 @@ public sealed class InventoryStockScrapTests
     private static readonly Guid ScrapId = Guid.Parse("61000000-0000-0000-0000-000000000001");
 
     [Theory]
+    [InlineData("checker", null)]
+    [InlineData(" checker ", null)]
+    [InlineData("maker", InventoryStockScrapCodesV1.SelfApproval)]
+    [InlineData("third", InventoryStockScrapCodesV1.AlreadyDecided)]
+    public void A_decision_is_replayed_only_to_its_decider(string actor, string? refusal)
+    {
+        // The stored decision was made by "checker" on what "maker" recorded; the same content from anyone else
+        // is not their replay (#499/#512 review P3).
+        Assert.Equal(refusal, InventoryStore.DecisionReplayRefusal("checker", "maker", actor,
+            InventoryStockScrapCodesV1.SelfApproval, InventoryStockScrapCodesV1.AlreadyDecided));
+    }
+
+    [Theory]
     [InlineData(100, 2.5, 97.5)]
     [InlineData(100, 100, 0)]
     [InlineData(0.002, 0.001, 0.001)]

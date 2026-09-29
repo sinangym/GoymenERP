@@ -247,6 +247,9 @@ function InventoryLabelDetailView({ namespace, labelId, target, stockSearch }: {
         key={`${identity.labelId}:stock-count`}
         label={{ labelId: identity.labelId, labelVersion, positions: balances.positions }}
         companyId={companyId}
+        namespace={namespace}
+        routeEntry={shell.routeEntryGeneration}
+        actorId={actorId}
         canRecord={canRecordCount}
         canApprove={canApproveCount}
         onChanged={() => void query.refetch()}
@@ -258,6 +261,9 @@ function InventoryLabelDetailView({ namespace, labelId, target, stockSearch }: {
         key={`${identity.labelId}:stock-scrap`}
         label={{ labelId: identity.labelId, labelVersion, positions: balances.positions }}
         companyId={companyId}
+        namespace={namespace}
+        routeEntry={shell.routeEntryGeneration}
+        actorId={actorId}
         canRecord={canRecordScrap}
         canApprove={canApproveScrap}
         onChanged={() => void query.refetch()}

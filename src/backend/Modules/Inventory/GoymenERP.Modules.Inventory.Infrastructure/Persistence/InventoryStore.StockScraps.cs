@@ -208,7 +208,8 @@ public sealed partial class InventoryStore : IInventoryStockScrapWriterV1, IInve
             return replay;
         }
 
-        if (await FindScrapDecisionReplayAsync(scrapId, payloadHash, cancellationToken) is { } decisionReplay)
+        if (await FindScrapDecisionReplayAsync(scrapId, payloadHash, metadata.ActorId,
+                cancellationToken) is { } decisionReplay)
         {
             return decisionReplay;
         }
@@ -307,7 +308,8 @@ public sealed partial class InventoryStore : IInventoryStockScrapWriterV1, IInve
                 return winner;
             }
 
-            if (await FindScrapDecisionReplayAsync(scrapId, payloadHash, cancellationToken) is { } decisionWinner)
+            if (await FindScrapDecisionReplayAsync(scrapId, payloadHash, metadata.ActorId,
+                    cancellationToken) is { } decisionWinner)
             {
                 return decisionWinner;
             }
@@ -426,10 +428,11 @@ public sealed partial class InventoryStore : IInventoryStockScrapWriterV1, IInve
         return new(StockScrapView(stored, decision: null), true, stored.CorrelationId);
     }
 
-    /// <summary>A scrap already decided: the same decision and note is that decision again; anything else is refused.</summary>
+    /// <summary>A scrap already decided: the same decision and note from its decider is that decision again; anything else is refused.</summary>
     private async Task<InventoryStockScrapResultV1?> FindScrapDecisionReplayAsync(
         Guid scrapId,
         string payloadHash,
+        string actorId,
         CancellationToken cancellationToken)
     {
         var decision = await dbContext.StockScrapDecisions.AsNoTracking()
@@ -447,6 +450,12 @@ public sealed partial class InventoryStore : IInventoryStockScrapWriterV1, IInve
         var scrap = await dbContext.StockScraps.AsNoTracking()
             .SingleOrDefaultAsync(row => row.Id == scrapId, cancellationToken)
             ?? throw StockScrapError(503, InventoryStockScrapCodesV1.Unavailable);
+        if (DecisionReplayRefusal(decision.DecidedBy, scrap.RecordedBy, actorId, InventoryStockScrapCodesV1.SelfApproval,
+                InventoryStockScrapCodesV1.AlreadyDecided) is { } refusal)
+        {
+            throw StockScrapError(409, refusal);
+        }
+
         return new(StockScrapView(scrap, decision), true, decision.CorrelationId);
     }
 
