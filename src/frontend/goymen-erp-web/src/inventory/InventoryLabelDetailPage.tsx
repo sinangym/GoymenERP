@@ -223,6 +223,8 @@ function InventoryLabelDetailView({ namespace, labelId, target, stockSearch }: {
         key={`${identity.labelId}:allocations`}
         labelId={identity.labelId}
         companyId={companyId}
+        namespace={namespace}
+        routeEntry={shell.routeEntryGeneration}
         onChanged={() => void query.refetch()}
         startRelease={target === ROW_ACTION_TARGET.release}
       /></ActionTarget>

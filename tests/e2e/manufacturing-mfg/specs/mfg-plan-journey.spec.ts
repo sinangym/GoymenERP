@@ -721,7 +721,7 @@ test.describe('AT-063 "Üretim planla" from an ST-01 stock row (real Inventory p
       (response) => CANDIDATES_RE.test(response.url()) && response.request().method() === 'GET',
     )
     await menu.getByRole('link', { name: 'Üretim planla', exact: true }).click()
-    await expect(page).toHaveURL(new RegExp(`/uretim/plan/yeni\?etiket=${roll.labelId}&kod=`))
+    await expect(page).toHaveURL(new RegExp(`/uretim/plan/yeni\\?etiket=${roll.labelId}&kod=`))
     const candidatesResponse = await candidatesAnswer
     expect(candidatesResponse.status()).toBe(200)
     expect(new URL(candidatesResponse.url()).searchParams.get('q')).toBe(roll.labelCode)

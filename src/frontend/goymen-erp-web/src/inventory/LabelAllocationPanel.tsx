@@ -99,9 +99,13 @@ function releaseCompletionText(outcome: Extract<AllocationReleaseOutcome, { type
  * Every rule (free stock, ownership, versions, the approved Sales line) is the server's; nothing here is final until
  * the server answers.
  */
-export function LabelAllocationPanel({ labelId, companyId, onChanged, startRelease = false }: {
+export function LabelAllocationPanel({ labelId, companyId, namespace, routeEntry, onChanged, startRelease = false }: {
   readonly labelId: string
   readonly companyId: string
+  /** The shell context namespace and route entry the label detail read is keyed by: a reopen (e.g. an arrival from the
+   * ST-01 release action) never bases the release form on another entry's cached list. */
+  readonly namespace: string
+  readonly routeEntry: number
   readonly onChanged: () => void
   /** Opened from the ST-01 "Tahsisi serbest bırak" row action: the release form of the ONE active allocation opens. */
   readonly startRelease?: boolean
@@ -118,7 +122,7 @@ export function LabelAllocationPanel({ labelId, companyId, onChanged, startRelea
   useEffect(() => () => { generation.current += 1 }, [])
 
   const allocations = useQuery({
-    queryKey: ['inventory-label-allocations', companyId, labelId],
+    queryKey: ['inventory-label-allocations', namespace, companyId, labelId, routeEntry],
     retry: false,
     queryFn: async ({ signal }) => {
       const snapshot = boundary.capture()

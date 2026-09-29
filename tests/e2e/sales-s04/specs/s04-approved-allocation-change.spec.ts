@@ -285,13 +285,15 @@ test('AT-063-REL the ST-01 row action releases the allocation with a reason and 
     const backBody = (await (await back).json()) as { readonly items: readonly { readonly labelId: string; readonly availableKg: string; readonly activeAllocationKg: string }[] }
     const after = backBody.items.find((item) => item.labelId.toLowerCase() === allocationLabelId.toLowerCase())!
     expect(Number(after.availableKg)).toBe(Number(before.availableKg) + 3)
-    expect(Number(after.activeAllocationKg)).toBe(Number(before.activeAllocationKg) - 3)
+    // This file's 3 kg was the label's only active allocation (S04-06 left it fully free): none is left.
+    expect(Number(before.activeAllocationKg)).toBe(3)
+    expect(Number(after.activeAllocationKg)).toBe(0)
     const freeCell = page.locator(`tr[data-label-id="${allocationLabelId}"] td`).nth(7)
     await expect(freeCell).toHaveText(after.availableKg)
     await page.locator(`tr[data-label-id="${allocationLabelId}"]`)
       .getByRole('button', { name: `${LABEL_CODE} işlemleri`, exact: true }).click()
     await expect(page.getByRole('list', { name: `${LABEL_CODE} için işlemler`, exact: true })
-      .getByRole('link', { name: 'Tahsisi serbest bırak', exact: true })).toHaveCount(Number(after.activeAllocationKg) > 0 ? 1 : 0)
+      .getByRole('link', { name: 'Tahsisi serbest bırak', exact: true })).toHaveCount(0)
 
     expect(await releaseEffects()).toEqual({ commands: 1, webAudits: 1 })
     expect((await effects(pool)).movements).toBe(movementsBefore)
