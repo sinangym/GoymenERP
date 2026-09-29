@@ -201,7 +201,8 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
             return replay;
         }
 
-        if (await FindDecisionReplayAsync(countId, payloadHash, cancellationToken) is { } decisionReplay)
+        if (await FindDecisionReplayAsync(countId, payloadHash, metadata.ActorId,
+                cancellationToken) is { } decisionReplay)
         {
             return decisionReplay;
         }
@@ -313,7 +314,8 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
                 return winner;
             }
 
-            if (await FindDecisionReplayAsync(countId, payloadHash, cancellationToken) is { } decisionWinner)
+            if (await FindDecisionReplayAsync(countId, payloadHash, metadata.ActorId,
+                    cancellationToken) is { } decisionWinner)
             {
                 return decisionWinner;
             }
@@ -437,10 +439,11 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
         return new(StockCountView(stored, decision: null), true, stored.CorrelationId);
     }
 
-    /// <summary>A count already decided: the same decision and note is that decision again; anything else is refused.</summary>
+    /// <summary>A count already decided: the same decision and note from its decider is that decision again; anything else is refused.</summary>
     private async Task<InventoryStockCountResultV1?> FindDecisionReplayAsync(
         Guid countId,
         string payloadHash,
+        string actorId,
         CancellationToken cancellationToken)
     {
         var decision = await dbContext.StockCountDecisions.AsNoTracking()
@@ -458,7 +461,34 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
         var count = await dbContext.StockCounts.AsNoTracking()
             .SingleOrDefaultAsync(row => row.Id == countId, cancellationToken)
             ?? throw StockCountError(503, InventoryStockCountCodesV1.Unavailable);
+        if (DecisionReplayRefusal(decision.DecidedBy, count.RecordedBy, actorId, InventoryStockCountCodesV1.SelfApproval,
+                InventoryStockCountCodesV1.AlreadyDecided) is { } refusal)
+        {
+            throw StockCountError(409, refusal);
+        }
+
         return new(StockCountView(count, decision), true, decision.CorrelationId);
+    }
+
+    /// <summary>
+    /// A decided count or scrap is replayed only to its decider. The same decision content from anyone else is not
+    /// their replay: the recorder meets the maker≠checker refusal, any other actor the already-decided one. Null is
+    /// the decider's own replay.
+    /// </summary>
+    internal static string? DecisionReplayRefusal(
+        string decidedBy,
+        string recordedBy,
+        string actorId,
+        string selfApprovalCode,
+        string alreadyDecidedCode)
+    {
+        var actor = actorId.Trim();
+        if (string.Equals(decidedBy, actor, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        return string.Equals(recordedBy, actor, StringComparison.Ordinal) ? selfApprovalCode : alreadyDecidedCode;
     }
 
     private InventoryCommandRow StockCountCommandRow(

@@ -99,6 +99,16 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
                 request.CountId, new(InventoryStockCountDecisionKindV1.Reject, "Vazgeçildi"),
                 approver with { IdempotencyKey = $"reject-{Guid.NewGuid():N}" }));
             Assert.Equal((409, InventoryStockCountCodesV1.AlreadyDecided), (other.Status, other.Code));
+
+            // The same approval content is replayed only to its decider (#499 review P3): the counter meets the
+            // maker≠checker refusal, a third actor the already-decided one — never a 200 of someone else's decision.
+            var counterReplay = await Assert.ThrowsAsync<InventoryStockCountException>(() => scope.Store.DecideStockCountAsync(
+                request.CountId, approval, counter with { IdempotencyKey = $"counter-replay-{Guid.NewGuid():N}" }));
+            Assert.Equal((409, InventoryStockCountCodesV1.SelfApproval), (counterReplay.Status, counterReplay.Code));
+            var thirdReplay = await Assert.ThrowsAsync<InventoryStockCountException>(() => scope.Store.DecideStockCountAsync(
+                request.CountId, approval,
+                approver with { ActorId = Guid.NewGuid().ToString("D"), IdempotencyKey = $"third-replay-{Guid.NewGuid():N}" }));
+            Assert.Equal((409, InventoryStockCountCodesV1.AlreadyDecided), (thirdReplay.Status, thirdReplay.Code));
         }
 
         // No double effect, and the history is intact.

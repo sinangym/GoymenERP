@@ -80,6 +80,19 @@ operations (release + reservation) in one owner save; it chooses no new policy.
   write name (the one release and create use) applies; no new permission or grant.
 - Changing `ReservedUntilUtc`, partial moves (split one allocation over two labels) and non-sales demand kinds are out
   of this slice.
+- `INV-AL-CHANGE-CANCELLED-DECREASE-01` (#507 review P3, kept as is — a policy choice, not a hardening): a change
+  on a line that is no longer approved (cancelled, or back in approval) is 422 for EVERY part, including a pure
+  decrease that would only give stock back. Only the parts that ADD a reservation (an increase, a move's target) are
+  covered by DEC-STK-003/004 and the create rules; whether a reservation may stay — even a smaller one — on demand
+  that DEC-SAL-005 has cancelled is not decided (DEC-SAL-005 decides the cancellation's impact preview, not what an
+  allocation of a cancelled line may still do). Allowing it would also change the host → writer contract (the product
+  identity comes from the approved line today). The full release stays available and is the decided way to give the
+  stock back.
+- **Cross-module race (declared, not closed here):** the host reads the Sales line and then saves Inventory's rows; no
+  transaction spans the two owners, so a cancellation or revision committed between that read and the save is not
+  seen by this change. The same residual race is already declared on the Sales side — Sales README "Cancellation of an
+  approved order (DEC-SAL-005, AT-007)" (next-module row) and "Quantity revision of an order (DEC-SAL-002, AT-023)"
+  (downstream row) — and is not duplicated or changed by this slice.
 
 ## R13 — draft parent-roll reference predecessor (Business #66/5778472429 A)
 
@@ -383,7 +396,7 @@ approver may be different people), DEC-SET-001 (no threshold in code; a missing 
 | The difference is final only after a decision under `inventory.stock-count.approve`; recording needs `inventory.stock-count.record`; both company-wide, measured fresh twice before the single owner transaction | `InventoryStockCountCommandService` | command (403/503) |
 | **Fail-closed maker≠checker:** every non-zero difference is decided (approved or rejected) by another actor than its counter (`inventory_stock_count_self_approval`). The critical-difference threshold is undecided, so every difference is treated as critical | `DecideStockCountAsync` | store (409) |
 | An approval posts exactly one `CountAdjustment` (kind 6) movement through the ledger — source `inventory.stock-count`/count id, one line In (surplus) or Out (shortage), free or blocked — and bumps the label version; only while the label is still at the counted version (`inventory_stock_count_stale`: count again) and never below the label's active allocations (`inventory_stock_count_allocation_conflict`) | `StockCount.Adjustment`, `StageMovementAsync` | domain + ledger + store |
-| One decision per count: key (company, count); the same decision and note is a replay; anything else `inventory_stock_count_already_decided`. The same count id with other content is `inventory_stock_count_conflict`. ADR-011 key per command (`inventory.stock-count.record.v1` / `.decide.v1`) in `inventory.Commands` | `StockCountDecisions` PK, `FindDecisionReplayAsync` | SQL + store |
+| One decision per count: key (company, count); the same decision and note FROM ITS DECIDER is a replay; anything else `inventory_stock_count_already_decided` — the same content from another actor is not their replay: the counter gets `inventory_stock_count_self_approval`, anyone else `inventory_stock_count_already_decided` (#499 review P3; the UI also hides Approve/Reject on a count the viewer recorded in this browser session, the 409 stays authoritative). The same count id with other content is `inventory_stock_count_conflict`. ADR-011 key per command (`inventory.stock-count.record.v1` / `.decide.v1`) in `inventory.Commands` | `StockCountDecisions` PK, `FindDecisionReplayAsync` | SQL + store |
 | Counts, decisions and the adjustment are append-only; `AddInventoryStockCounts.Down` refuses (THROW 51053) while any exists | write guard, migration | EF + SQL |
 | Read: `GET …/labels/{labelId}/stock-counts` (newest 50, `windowFull`) behind the ST-02 fence (labels.read + balances.read, measured before and after); foreign = unknown = 404 | `InventoryStockCountQueryService` | service |
 | After approval, ST-01, the ST-02 balance and timeline (`CountAdjustment`) and a new allocation read the counted kg | existing readers over `Balances` / `Movements` | SQL test |
@@ -422,7 +435,7 @@ pattern with its fail-closed rule applied to EVERY write-off, and records the re
 | Stock leaves only after a decision under `inventory.stock-scrap.approve`; recording needs `inventory.stock-scrap.record`; both company-wide, measured fresh twice before the single owner transaction. The stock-count names grant nothing here | `InventoryStockScrapCommandService` | command (403/503) |
 | **Fail-closed maker≠checker:** every scrap is decided (approved or rejected) by another actor than its recorder (`inventory_stock_scrap_self_approval`) | `DecideStockScrapAsync` | store (409) |
 | An approval posts exactly one `Scrap` (kind 7) movement — source `inventory.stock-scrap`/scrap id, one Out line of the scrap kg, free OR blocked (scrapping blocked material needs no release, T13), cost `NotCalculated` — and bumps the label version; only while the label is still at the recorded version (`inventory_stock_scrap_stale`) and never below the active allocations | `StockScrap.WriteOff`, `StageMovementAsync` | domain + ledger + store |
-| One decision per scrap: key (company, scrap); same decision and note = replay, anything else `inventory_stock_scrap_already_decided`; the same scrap id with other content is `inventory_stock_scrap_conflict`; ADR-011 key per command (`inventory.stock-scrap.record.v1` / `.decide.v1`) | `StockScrapDecisions` PK, `FindScrapDecisionReplayAsync` | SQL + store |
+| One decision per scrap: key (company, scrap); same decision and note FROM ITS DECIDER = replay, anything else `inventory_stock_scrap_already_decided` — the recorder sending the decider's content gets `inventory_stock_scrap_self_approval`, anyone else `inventory_stock_scrap_already_decided` (#512 review P3; the UI hides Approve/Reject on a scrap the viewer recorded in this browser session, the 409 stays authoritative); the same scrap id with other content is `inventory_stock_scrap_conflict`; ADR-011 key per command (`inventory.stock-scrap.record.v1` / `.decide.v1`) | `StockScrapDecisions` PK, `FindScrapDecisionReplayAsync` | SQL + store |
 | Scraps, decisions and the movement are append-only; audit `Inventory.StockScrap` (record/approve/reject) + `Inventory.StockMovement`, channel from the caller (Web); `AddInventoryStockScraps.Down` refuses (THROW 51053) while any exists | write guard, migration | EF + SQL |
 | Read: `GET …/labels/{labelId}/stock-scraps` (newest 50, `windowFull`) behind the ST-02 fence; foreign = unknown = 404. After approval ST-01, the ST-02 balance and timeline (`Scrap`) and a new allocation read what remains | `InventoryStockScrapQueryService`, existing readers | service + SQL test |
 
@@ -451,6 +464,30 @@ INV-R20-R21-01 Q1. Inventory will add a return receipt only when the owning modu
 routes are mapped by `MapInventoryEndpoints`); Inventory shell 1.5 (two ST-01 controls) and the InventoryV14 → V15
 chain rows; OpenAPI regeneration (+3 operations); guard re-pins of `Program.cs`, `InventoryDbContext.cs`, the new
 migration and `inventory.txt` (+5 facts); r14 disposable actors `r14-scrapper` / `r14-scrap-approver`.
+
+## Movement kinds and rollback signal (reference)
+
+`StockMovementKind` (stored as `inventory.Movements.Kind`, `CK_Movements_Kind` = `[Kind] BETWEEN 1 AND 7`; the ST-04
+timeline and the web decoder name the same seven):
+
+| Kind | Value | Written by | Lines |
+|---|---|---|---|
+| `Receipt` | 1 | goods receipt (T09), opening stock (INV-OPEN-1), manufacturing output (T15) | In |
+| `Issue` | 2 | definite shipment (LOG-5), manufacturing input issue (T15); FREE stock only | Out |
+| `Block` | 3 | Free → Blocked on the same position, physical total unchanged; only the store's ledger write, no user command yet | one Out + one In |
+| `Release` | 4 | Blocked → Free on the same position, physical total unchanged; only the store's ledger write, no user command yet | one Out + one In |
+| `Return` | 5 | unused manufacturing input back to the same label and position (`AddInventoryManufacturingReturn`) | In |
+| `CountAdjustment` | 6 | an approved stock count difference (ST-05, `AddInventoryStockCounts`) | one In or Out |
+| `Scrap` | 7 | an approved scrap write-off (ST-02, `AddInventoryStockScraps`); free or blocked | one Out |
+
+A new kind widens `CK_Movements_Kind` in its own migration and its `Down` narrows it back only when no row of that kind
+exists. An allocation change, a split/merge and a label version bump write NO movement.
+
+**`THROW 51053` is a shared rollback signal, not an Inventory-owned number.** Every Inventory migration that must not
+be rolled back once its facts exist (`AddInventoryLabelGenealogy`, `AddInventoryManufacturingReturn`,
+`AddInventoryStockCounts`, `AddInventoryAllocationChanges`, `AddInventoryStockScraps`) raises 51053 in `Down`, and
+Finance's `AddManualBankPayments` uses the same number for the same meaning ("facts exist; forward fix"). It is kept
+as is — existing migrations are never renumbered — and the message text names the owner and the facts.
 
 ## dependency_wait
 

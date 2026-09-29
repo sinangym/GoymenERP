@@ -28,6 +28,19 @@ public sealed class InventoryStockCountTests
     private static readonly Guid CountId = Guid.Parse("60000000-0000-0000-0000-000000000001");
 
     [Theory]
+    [InlineData("checker", null)]
+    [InlineData(" checker ", null)]
+    [InlineData("maker", InventoryStockCountCodesV1.SelfApproval)]
+    [InlineData("third", InventoryStockCountCodesV1.AlreadyDecided)]
+    public void A_decision_is_replayed_only_to_its_decider(string actor, string? refusal)
+    {
+        // The stored decision was made by "checker" on what "maker" recorded; the same content from anyone else
+        // is not their replay (#499/#512 review P3).
+        Assert.Equal(refusal, InventoryStore.DecisionReplayRefusal("checker", "maker", actor,
+            InventoryStockCountCodesV1.SelfApproval, InventoryStockCountCodesV1.AlreadyDecided));
+    }
+
+    [Theory]
     [InlineData(100, 97.5, "-2.5", StockDirection.Out)]
     [InlineData(100, 100.25, "0.25", StockDirection.In)]
     [InlineData(0.001, 0, "-0.001", StockDirection.Out)]

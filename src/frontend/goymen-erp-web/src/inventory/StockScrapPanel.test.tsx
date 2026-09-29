@@ -17,17 +17,19 @@ const SCRAP = '77777777-7777-7777-7777-777777777777'
 const MOVEMENT = '88888888-8888-8888-8888-888888888888'
 const clients: QueryClient[] = []
 const api = vi.hoisted(() => ({ detail: vi.fn(), record: vi.fn(), decide: vi.fn(), scraps: vi.fn() }))
-const scenario = vi.hoisted(() => ({ canRecord: true, canApprove: false, report: vi.fn() }))
+const scenario = vi.hoisted(() => ({
+  canRecord: true, canApprove: false, report: vi.fn(), namespace: 'SENTETIK-a', userId: 'actor-a', routeEntry: 1,
+}))
 vi.mock('./labelDetailApi', () => ({ fetchInventoryLabelDetail: api.detail }))
 vi.mock('./stockScrapApi', () => ({
   recordStockScrap: api.record, decideStockScrap: api.decide, fetchLabelStockScraps: api.scraps,
 }))
 vi.mock('../shell/shellContext', () => ({
-  useShellState: () => ({ sessionEpoch: 1, routeEntryGeneration: 1,
-    activeContext: { userId: 'actor-a', companyId: COMPANY, scopeMode: 'single', capabilities: [] } }),
+  useShellState: () => ({ sessionEpoch: 1, routeEntryGeneration: scenario.routeEntry,
+    activeContext: { userId: scenario.userId, companyId: COMPANY, scopeMode: 'single', capabilities: [] } }),
 }))
 vi.mock('../shell/shellState', () => ({
-  contextKey: () => ['SENTETIK-a'],
+  contextKey: () => [scenario.namespace],
   contextKeyString: (key: readonly string[]) => key[0],
   hasCapability: (_shell: unknown, capability: string) =>
     capability === 'inventory.stock-positions.list' ||
@@ -74,24 +76,32 @@ function recorded(request: StockScrapRequest) {
   }
 }
 
-function mount() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  clients.push(client)
+function mount(client = newClient()) {
   return render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[`/stok/etiket/${LABEL}`]}>
     <Routes><Route path="/stok/etiket/:labelId" element={<InventoryLabelDetailPage />} /></Routes>
   </MemoryRouter></QueryClientProvider>)
+}
+
+function newClient() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  clients.push(client)
+  return client
 }
 
 const panel = () => screen.findByRole('heading', { name: 'Hurda / fire çıkışı' })
 
 beforeEach(() => {
   scenario.canRecord = true; scenario.canApprove = false; scenario.report.mockReset()
+  scenario.namespace = 'SENTETIK-a'; scenario.userId = 'actor-a'; scenario.routeEntry = 1
   api.detail.mockReset().mockResolvedValue({ type: 'ok-single', data: detail() })
   api.scraps.mockReset().mockResolvedValue({ type: 'ok-single', data: { labelId: LABEL, items: [], windowFull: false } })
   api.record.mockReset().mockImplementation(async (request: StockScrapRequest) => recorded(request))
   api.decide.mockReset()
 })
-afterEach(() => { cleanup(); clients.splice(0).forEach((client) => client.clear()) })
+afterEach(() => {
+  cleanup(); clients.splice(0).forEach((client) => client.clear())
+  try { sessionStorage.clear() } catch { /* no storage */ }
+})
 
 describe('StockScrapPanel on the label detail', () => {
   it('is absent without either server-advertised scrap capability', async () => {
@@ -146,10 +156,10 @@ describe('StockScrapPanel on the label detail', () => {
     expect(api.record.mock.calls[1]).toEqual(api.record.mock.calls[0])
   })
 
-  it('lets an approver approve a pending scrap with a note and shows the maker-checker refusal text', async () => {
+  it('lets an approver approve a pending scrap with a note and a refusal leaves the decision open for a new attempt', async () => {
     scenario.canRecord = false; scenario.canApprove = true
     api.scraps.mockResolvedValue({ type: 'ok-single', data: { labelId: LABEL, items: [view()], windowFull: false } })
-    api.decide.mockResolvedValueOnce({ type: 'failed', status: 409, code: 'inventory_stock_scrap_self_approval' })
+    api.decide.mockResolvedValueOnce({ type: 'failed', status: 409, code: 'inventory_stock_scrap_stale' })
       .mockImplementationOnce(async (scrapId: string, request: StockScrapDecisionRequest) => ({
         type: 'applied', replayed: false,
         response: view({ scrapId, status: 'Approved', decision: { decision: 'Approved',
@@ -159,7 +169,7 @@ describe('StockScrapPanel on the label detail', () => {
     expect(screen.queryByRole('button', { name: 'Hurdayı kaydet' })).toBeNull()
     await user.type(await screen.findByLabelText('Karar notu'), 'Kalite raporu uygun')
     await user.click(screen.getByRole('button', { name: 'Hurdayı onayla' }))
-    expect(await screen.findByText(/Kendi girdiğiniz hurdayı onaylayamaz/)).toBeTruthy()
+    expect(await screen.findByText(/Hurda girildikten sonra etiketin stoğu değişti/)).toBeTruthy()
 
     await user.click(screen.getByRole('button', { name: 'Hurdayı onayla' }))
     await screen.findByText(/Hurda onaylandı ve stoktan düşüldü: 50.5 kg; etikette 1200 kg kaldı/)
@@ -175,5 +185,59 @@ describe('StockScrapPanel on the label detail', () => {
     expect(await screen.findByText('Onaylandı (stoktan düşüldü)')).toBeTruthy()
     expect(screen.getByText('Paslanma')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Hurdayı onayla' })).toBeNull()
+  })
+
+  it('hides the decision on a pending scrap the viewer recorded, across a reopen, but not for another actor', async () => {
+    scenario.canApprove = true
+    let stored: StockScrapRequest | null = null
+    api.record.mockImplementation(async (request: StockScrapRequest) => { stored = request; return recorded(request) })
+    api.scraps.mockImplementation(async () => ({ type: 'ok-single', data: { labelId: LABEL, windowFull: false,
+      items: stored === null ? [] : [view({ scrapId: stored.scrapId })] } }))
+    const user = userEvent.setup(); const first = mount(); await panel()
+    await user.type(screen.getByLabelText('Hurda kg'), '10')
+    await user.type(screen.getByLabelText('Hurda gerekçesi'), 'Ezilme')
+    await user.click(screen.getByRole('button', { name: 'Hurdayı kaydet' }))
+    expect(await screen.findByText(/Bu hurdayı siz kaydettiniz/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Hurdayı onayla' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Reddet' })).toBeNull()
+    first.unmount()
+
+    scenario.routeEntry = 2; const second = mount(); await panel()
+    expect(await screen.findByText(/Bu hurdayı siz kaydettiniz/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Hurdayı onayla' })).toBeNull()
+    second.unmount()
+
+    scenario.namespace = 'SENTETIK-b'; scenario.userId = 'actor-b'; scenario.routeEntry = 3; mount(); await panel()
+    expect(await screen.findByRole('button', { name: 'Hurdayı onayla' })).toBeTruthy()
+    expect(screen.queryByText(/Bu hurdayı siz kaydettiniz/)).toBeNull()
+  })
+
+  it('stops offering a decision the server refused as self-approval; the 409 stays authoritative', async () => {
+    scenario.canRecord = false; scenario.canApprove = true
+    api.scraps.mockResolvedValue({ type: 'ok-single', data: { labelId: LABEL, items: [view()], windowFull: false } })
+    api.decide.mockResolvedValueOnce({ type: 'failed', status: 409, code: 'inventory_stock_scrap_self_approval' })
+    const user = userEvent.setup(); mount(); await panel()
+    await user.type(await screen.findByLabelText('Karar notu'), 'Kendim onaylıyorum')
+    await user.click(screen.getByRole('button', { name: 'Hurdayı onayla' }))
+    expect(await screen.findByText(/Kendi girdiğiniz hurdayı onaylayamaz/)).toBeTruthy()
+    expect(await screen.findByText(/Bu hurdayı siz kaydettiniz/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Hurdayı onayla' })).toBeNull()
+    expect(api.decide).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    ['a new route entry', () => { scenario.routeEntry = 2 }],
+    ['another actor', () => { scenario.namespace = 'SENTETIK-b'; scenario.userId = 'actor-b' }],
+  ])('never shows the cached list of another entry on reopen: %s', async (_name, change) => {
+    api.scraps.mockResolvedValueOnce({ type: 'ok-single', data: { labelId: LABEL, items: [view()], windowFull: false } })
+    const client = newClient(); const first = mount(client); await panel()
+    expect(await screen.findByText('Paslanma')).toBeTruthy()
+    first.unmount()
+
+    change()
+    api.scraps.mockImplementation(() => new Promise(() => { /* the new entry's read is still in flight */ }))
+    mount(client); await panel()
+    expect(screen.getByText('Hurda kayıtları yükleniyor…')).toBeTruthy()
+    expect(screen.queryByText('Paslanma')).toBeNull()
   })
 })
