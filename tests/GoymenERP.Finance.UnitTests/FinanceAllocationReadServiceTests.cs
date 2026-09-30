@@ -59,6 +59,32 @@ public sealed class FinanceAllocationReadServiceTests
     }
 
     [Fact]
+    public async Task Revocation_after_the_allocation_query_refuses_detail_without_returning_the_row()
+    {
+        await using var run = await Run.CreateAsync();
+        var result = await run.Service(Company, "reader", new SequencePermission(
+                PermissionDecision.Allowed, PermissionDecision.Denied))
+            .GetAuthorizedAsync(Context(Company, "reader"), Allocation, CancellationToken.None);
+
+        Assert.Equal(ReadOutcome.Denied, result.Outcome);
+        Assert.Null(result.Resource);
+        Assert.False(run.Db.ChangeTracker.HasChanges());
+    }
+
+    [Fact]
+    public async Task Revocation_after_the_open_item_query_refuses_detail_without_returning_the_row()
+    {
+        await using var run = await Run.CreateAsync();
+        var result = await run.Service(Company, "reader", new SequencePermission(
+                PermissionDecision.Allowed, PermissionDecision.Allowed, PermissionDecision.Denied))
+            .GetAuthorizedAsync(Context(Company, "reader"), Allocation, CancellationToken.None);
+
+        Assert.Equal(ReadOutcome.Denied, result.Outcome);
+        Assert.Null(result.Resource);
+        Assert.False(run.Db.ChangeTracker.HasChanges());
+    }
+
+    [Fact]
     public async Task Another_company_cannot_observe_the_allocation()
     {
         await using var run = await Run.CreateAsync();

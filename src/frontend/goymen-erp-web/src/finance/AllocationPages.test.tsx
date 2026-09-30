@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, screen } from '@testing-library/react'
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { AllocationPage } from './AllocationPages'
 import { FINANCE_CAPABILITY, FINANCE_ROUTE } from './capabilities'
@@ -41,7 +41,13 @@ describe('AllocationPage', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Aç' }))
     expect((await screen.findByRole('region', { name: 'Dağıtım detayı' })).textContent).toContain(ID)
     expect(screen.queryByRole('button', { name: 'Dağıtımı bırak' })).toBeNull()
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Kapat' }))
+    expect(screen.queryByRole('region', { name: 'Dağıtım detayı' })).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Aç' }))
+    expect((await screen.findByRole('region', { name: 'Dağıtım detayı' })).textContent).toContain(ID)
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3))
   })
 
   it('keeps a forbidden read fail-closed', async () => {

@@ -57,11 +57,22 @@ async function readAllocation<T>(
 export const readFinanceAllocations = (binding: AttemptBinding, signal?: AbortSignal) =>
   readAllocation<FinanceAllocationPage>('/finance/allocations', binding, decodeFinanceAllocationPage, signal)
 
-export const readFinanceAllocation = (binding: AttemptBinding, allocationId: string, signal?: AbortSignal) =>
-  isBoundUuid(allocationId)
-    ? readAllocation<FinanceAllocationDetail>(`/finance/allocations/${encodeURIComponent(allocationId)}`, binding,
-        decodeFinanceAllocationDetail, signal)
-    : Promise.resolve<FinanceAllocationReadHttpResult<FinanceAllocationDetail>>({ kind: 'malformed' })
+export const readFinanceAllocation = async (
+  binding: AttemptBinding,
+  allocationId: string,
+  signal?: AbortSignal,
+): Promise<FinanceAllocationReadHttpResult<FinanceAllocationDetail>> => {
+  if (!isBoundUuid(allocationId)) return { kind: 'malformed' }
+  const result = await readAllocation<FinanceAllocationDetail>(
+    `/finance/allocations/${encodeURIComponent(allocationId)}`,
+    binding,
+    decodeFinanceAllocationDetail,
+    signal,
+  )
+  return result.kind === 'found' && result.resource.allocation.id !== allocationId
+    ? { kind: 'malformed' }
+    : result
+}
 
 function malformed(snapshot: FinanceAllocationWireSnapshot): FinanceAllocationHttpResult {
   return {

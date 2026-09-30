@@ -163,11 +163,15 @@ export function decodeFinanceAllocationPage(value: unknown, companyId: string): 
   if (source === null || !exact(source, ['companyId', 'items', 'windowFull']) || source.companyId !== companyId
       || !Array.isArray(source.items) || typeof source.windowFull !== 'boolean') return FAIL
   const items: FinanceAllocation[] = []
+  const allocationIds = new Set<string>()
   for (const item of source.items) {
     const decoded = decodeFinanceAllocation(item, companyId)
     if (!decoded.ok) return FAIL
+    if (allocationIds.has(decoded.value.id)) return FAIL
+    allocationIds.add(decoded.value.id)
     items.push(decoded.value)
   }
+  if (items.length > 50 || (source.windowFull && items.length !== 50)) return FAIL
   return ok({ companyId, items, windowFull: source.windowFull })
 }
 
