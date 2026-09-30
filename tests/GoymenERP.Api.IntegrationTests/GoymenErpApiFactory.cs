@@ -2,6 +2,7 @@ using GoymenERP.Modules.Accounting.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
+using GoymenERP.Modules.Documents.Infrastructure.Persistence;
 using GoymenERP.Modules.Idempotency.Domain.Executions;
 using GoymenERP.Modules.Idempotency.Infrastructure.Persistence;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
@@ -158,6 +159,14 @@ public sealed class GoymenErpApiFactory : WebApplicationFactory<Program>
         services.RemoveAll<IDbContextOptionsConfiguration<InventoryDbContext>>();
         services.AddDbContext<InventoryDbContext>((serviceProvider, options) =>
             options.UseInMemoryDatabase($"{databaseName}-inventory")
+                .AddInterceptors(serviceProvider.GetRequiredService<AuditSaveChangesInterceptor>()));
+
+        // The document vault is host-wired since ERP-000G / AT-065; without this the in-memory host
+        // would try to migrate it against the placeholder SQL connection string at startup.
+        services.RemoveAll<DbContextOptions<DocumentsDbContext>>();
+        services.RemoveAll<IDbContextOptionsConfiguration<DocumentsDbContext>>();
+        services.AddDbContext<DocumentsDbContext>((serviceProvider, options) =>
+            options.UseInMemoryDatabase($"{databaseName}-documents")
                 .AddInterceptors(serviceProvider.GetRequiredService<AuditSaveChangesInterceptor>()));
     }
 
