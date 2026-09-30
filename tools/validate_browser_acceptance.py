@@ -285,8 +285,8 @@ SUITE_IDENTITY_PERMISSIONS = {
     # the owner answers nothing and the picker is silently empty (ASSUMPTION-LOG4B-3).
     "l04": ("logistics.loading-instructions.create", "logistics.loading-instructions.read", "logistics.loads.record",
             "logistics.shipments.record", "logistics.deliveries.record", "logistics.weighings.record",
-            # AT-055: the disposable loader prepares the dispatch-note draft.
-            "logistics.dispatch-notes.create",
+            # AT-055: the disposable loader prepares the dispatch-note draft, approves it and cancels it (user decision 2026-09-30).
+            "logistics.dispatch-notes.create", "logistics.dispatch-notes.approve", "logistics.dispatch-notes.cancel",
             "sales.drafts.create", "sales.drafts.read", "sales.orders.approve", "counterparty.parties.read",
             "inventory.opening-stock.record", "inventory.labels.read", "inventory.balances.read",
             "inventory.physical-allocation.write", "product.operational-selection.read",

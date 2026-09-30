@@ -183,8 +183,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // AT-053: +4 weighbridge SQL facts (81c1ff0b… -> 264898d7…).
             // AT-025: +3 operations work list SQL facts (264898d7… -> e410a445…).
             // AT-055: +4 dispatch-note draft SQL facts (e410a445… -> 010fcbd6…).
+            // AT-055 lifecycle (#518, user decision 2026-09-30): +6 approve/cancel/e-İrsaliye/numbering SQL facts (010fcbd6… -> c5969829…).
             ["tools/relational_inventory/logistics.txt"] =
-                "010fcbd61bf2544474435dc88ce2e88cce2a5e6b39733e39619af0a1a32c99ac",
+                "c596982944d43155ce986a641a1e4fb3093ad1c97b9f5bafba7d369286dd57bc",
 
             // manufacturing
             // MFG-PLAN-EDIT: +6 plan-revision SQL facts (a72e6367… -> 02711b6c…).
@@ -267,7 +268,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // company-leading key; one weighing per instruction.
             // Re-measured for AT-055: DispatchNotes and DispatchNoteLines, company-scoped with the same CompanyId query filter and
             // company-leading keys; UX_DispatchNoteLines_ShipmentId over non-nullable columns (a shipment on one dispatch note).
-                "f92c303325c0afb3405011d01aefbbaac0b253df7f646af45cfb761e9602a962",
+            // Re-measured for the AT-055 lifecycle (#518): DispatchNoteSeries, company-scoped with the same CompanyId query filter
+            // and a company-leading key; the single-link key filtered to unreleased lines; forward-only write guard.
+                "41b01561661834789fad289c89418e0b20b413a182544d8c8285aa1f4b12238c",
             // PUR-4a: company-scoped like Organization; every tenant row (requests and their lines, orders and their
             // lines, attempts) and AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
@@ -780,7 +783,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // replayed at its share position; SqlClient count unchanged.
                         // Re-fingerprinted for AT-055: the dispatch-note draft is saved in the instruction's one save and
                         // replayed at its share position, plus the Sales order read; SqlClient count unchanged.
-                        "cea729a6d8d3e3a20e733b43dcb5e90a28d4c852e4ba127fc3c0ed6a946d8390",
+                        // Re-fingerprinted for the AT-055 lifecycle (#518): approve/cancel/e-İrsaliye steps written in the same save,
+                        // the company series moved under its token, every step replayed in order; SqlClient count unchanged.
+                        "30dcae9c8dd828ee39aae3b69683e0d38fd910dad11823d351862b8ee112afcf",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -1074,6 +1079,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new("19fd92b05acf08afeed254230091de3aa4828ed66020a76ae02750c3abbee01a",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
+                // AT-055 lifecycle (#518): two raw SQL calls — Up's one-statement backfill of the new CreatedStep from NoteNo (a
+                // draft's only step before this migration was its creation), and Down's module refusal (51056) while any series row,
+                // non-draft note or released line exists; the THROW precedes every drop.
+                ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/Migrations/20260930150000_AddDispatchNoteLifecycle.cs"] =
+                    new("72191dd5733ec6f8a5497ce436c45df2a271610449e60c6f816837b627990450",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 2 }),
                 // ACC-V0a: the Down's only raw SQL is Accounting's module refusal (51048, coordinator-assigned) while any
                 // period or command row exists (the preparer/approver columns are NOT NULL facts of Ö4); forward fix.
                 ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/Migrations/20260919140000_AddPeriodApproval.cs"] =

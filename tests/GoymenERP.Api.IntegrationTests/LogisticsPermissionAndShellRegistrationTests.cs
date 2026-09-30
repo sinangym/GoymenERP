@@ -31,6 +31,8 @@ public sealed class LogisticsPermissionAndShellRegistrationTests
     [InlineData(LogisticsPermissionManifestV1.DeliveriesRecord, ErpPermissions.LogisticsDeliveriesRecord)]
     [InlineData(LogisticsPermissionManifestV1.WeighingsRecord, ErpPermissions.LogisticsWeighingsRecord)]
     [InlineData(LogisticsPermissionManifestV1.DispatchNotesCreate, ErpPermissions.LogisticsDispatchNotesCreate)]
+    [InlineData(LogisticsPermissionManifestV1.DispatchNotesApprove, ErpPermissions.LogisticsDispatchNotesApprove)]
+    [InlineData(LogisticsPermissionManifestV1.DispatchNotesCancel, ErpPermissions.LogisticsDispatchNotesCancel)]
     [InlineData(LogisticsPermissionManifestV1.OperationsSalesWorkRead, ErpPermissions.LogisticsOperationsSalesWorkRead)]
     [InlineData(LogisticsPermissionManifestV1.OperationsPurchaseWorkRead, ErpPermissions.LogisticsOperationsPurchaseWorkRead)]
     public void The_owner_name_is_the_registered_central_name(string ownerName, string centralName)
