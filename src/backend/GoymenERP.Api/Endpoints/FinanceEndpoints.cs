@@ -173,6 +173,50 @@ public static class FinanceEndpoints
             .ProducesErpUnsupportedMediaType()
             .ProducesErpServiceUnavailable();
 
+        endpoints.MapGet($"{OfficialInvoiceImportBatchesPath}/pending", async (
+                [FromQuery] string? cursor,
+                HttpContext httpContext,
+                IFinanceOfficialInvoiceImportPendingApprovalReadServiceV1 pending,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                return Read(await pending.ListAsync(Context(companyContext, currentUser, correlation), cursor,
+                    cancellationToken));
+            })
+            .WithName("GetPendingFinanceOfficialInvoiceImportBatchesV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .Produces<FinanceOfficialInvoiceImportPendingBatchPageV1>()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapGet($"{OfficialInvoiceImportBatchesPath}/{{batchId:guid}}", async (
+                Guid batchId,
+                HttpContext httpContext,
+                IFinanceOfficialInvoiceImportPendingApprovalReadServiceV1 pending,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                return Read(await pending.GetAsync(Context(companyContext, currentUser, correlation), batchId,
+                    cancellationToken));
+            })
+            .WithName("GetFinanceOfficialInvoiceImportPendingBatchV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .Produces<FinanceOfficialInvoiceImportPendingBatchDetailV1>()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable();
+
         endpoints.MapPost($"{OfficialInvoiceImportBatchesPath}/{{batchId:guid}}/approval", async (
                 Guid batchId,
                 HttpContext httpContext,

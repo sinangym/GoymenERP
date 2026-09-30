@@ -46,6 +46,46 @@ public sealed class FinanceOfficialInvoiceImportHostAuthorityTests
     }
 
     [Fact]
+    public async Task Pending_list_uses_the_same_fresh_company_wide_approve_permission_without_weakening_commands()
+    {
+        var revalidation = new Revalidation(Allowed("FINANCE-APPROVE"));
+        var commandAuthority = Create(revalidation);
+        var pendingAuthority = new FinanceOfficialInvoiceImportPendingApprovalAuthority(commandAuthority);
+
+        Assert.Equal(PermissionDecision.Denied, await commandAuthority.CheckAsync(Context(),
+            FinanceOfficialInvoiceImportAuthorityActionV1.Approve, Guid.Empty, CancellationToken.None));
+        Assert.Empty(revalidation.Permissions);
+
+        Assert.Equal(PermissionDecision.Allowed, await pendingAuthority.CheckAsync(Context(),
+            FinanceOfficialInvoiceImportAuthorityActionV1.Approve, Guid.Empty, CancellationToken.None));
+        Assert.Equal([FinanceOfficialInvoiceImportPermissionNamesV1.Approve], revalidation.Permissions);
+        Assert.Equal(["FINANCE-APPROVE"], commandAuthority.RoleCodesOf(
+            FinanceOfficialInvoiceImportAuthorityActionV1.Approve));
+    }
+
+    [Fact]
+    public async Task Pending_list_fails_closed_for_narrow_or_changed_company_context()
+    {
+        var revalidation = new Revalidation(
+            new PermissionScope(true, false, new HashSet<string> { "NARROW" },
+                new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>()),
+            Allowed("FINANCE-APPROVE"));
+        var company = new MutableCompanyContext(Company);
+        var user = new User(Actor, Company);
+        var permissions = new FinancePermissionPort(revalidation, company, user);
+        var pendingAuthority = new FinanceOfficialInvoiceImportPendingApprovalAuthority(
+            new FinanceOfficialInvoiceImportAuthority(revalidation, permissions, company, user));
+
+        Assert.Equal(PermissionDecision.Denied, await pendingAuthority.CheckAsync(Context(),
+            FinanceOfficialInvoiceImportAuthorityActionV1.Approve, Guid.Empty, CancellationToken.None));
+
+        company.Set(Guid.NewGuid());
+        Assert.Equal(PermissionDecision.Denied, await pendingAuthority.CheckAsync(Context(),
+            FinanceOfficialInvoiceImportAuthorityActionV1.Approve, Guid.Empty, CancellationToken.None));
+        Assert.Single(revalidation.Permissions);
+    }
+
+    [Fact]
     public async Task Approved_source_reads_reuse_the_existing_finance_source_read_authority()
     {
         var revalidation = new Revalidation(Allowed("FINANCE-READ"));

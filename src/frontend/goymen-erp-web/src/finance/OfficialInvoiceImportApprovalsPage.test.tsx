@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import { OfficialInvoiceImportApprovalsPage, type OfficialInvoiceApprovalClient } from './OfficialInvoiceImportApprovalsPage'
+import { OfficialInvoiceImportApprovalsPage, type OfficialInvoiceApprovalAttemptContext,
+  type OfficialInvoiceApprovalClient } from './OfficialInvoiceImportApprovalsPage'
 import type { OfficialInvoicePendingBatch, OfficialInvoicePendingDetail } from './officialInvoiceImportApprovalContract'
 
 const pending: OfficialInvoicePendingBatch = {
@@ -20,8 +21,15 @@ const detail: OfficialInvoicePendingDetail = { batch: pending, preview: { templa
     }] } } }
 const approved = { ...pending, status: 'Approved' as const, version: '2' as const,
   approvedBy: 'checker', approvedAtUtc: '2026-09-30T13:00:00Z' }
-const context = { sessionEpoch: 1, companyId: pending.companyId, actorId: 'checker', committedContextRevision: 3,
-  requestFenceGeneration: 5, capabilityGeneration: 11, securityNamespace: 'finance-checker' }
+const context: OfficialInvoiceApprovalAttemptContext = {
+  sessionEpoch: 1,
+  companyId: pending.companyId,
+  actorId: 'checker',
+  committedContextRevision: 3,
+  requestFenceGeneration: 5,
+  capabilityGeneration: '11',
+  securityNamespace: 'finance-checker',
+}
 
 describe('official invoice checker journey', () => {
   it('keeps the terminal approved source after the fresh pending list becomes empty', async () => {
@@ -88,7 +96,7 @@ describe('official invoice checker journey', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'İncele' }))
     view.rerender(<OfficialInvoiceImportApprovalsPage client={client}
       context={{ ...context, sessionEpoch: 2, companyId: '99999999-9999-4999-8999-999999999999', actorId: 'other',
-        committedContextRevision: 4, requestFenceGeneration: 6, capabilityGeneration: 12,
+        committedContextRevision: 4, requestFenceGeneration: 6, capabilityGeneration: '12',
         securityNamespace: 'finance-other' }}
       onApprovedSource={() => undefined} />)
     resolveDetail(detail)
@@ -170,7 +178,7 @@ describe('official invoice checker journey', () => {
     await waitFor(() => expect(approve).toHaveBeenCalledTimes(2))
 
     view.rerender(<OfficialInvoiceImportApprovalsPage client={client}
-      context={{ ...context, requestFenceGeneration: 6, capabilityGeneration: 12,
+      context={{ ...context, requestFenceGeneration: 6, capabilityGeneration: '12',
         securityNamespace: 'finance-checker-refenced' }}
       createIdempotencyKey={() => 'must-not-mint'} onApprovedSource={selected} />)
     expect(screen.queryByText('1250.50')).toBeNull()

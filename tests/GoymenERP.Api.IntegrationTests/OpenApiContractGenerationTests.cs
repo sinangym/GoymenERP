@@ -370,6 +370,12 @@ public sealed partial class OpenApiContractGenerationTests
         new("post", "/api/v1/finance/official-invoice-import-batches", "UploadFinanceOfficialInvoiceImportBatchV1",
             AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json", "400:application/problem+json", "415:", "503:application/problem+json"),
             "#/components/schemas/FinanceOfficialInvoiceImportPreviewRequestV1"),
+        new("get", "/api/v1/finance/official-invoice-import-batches/pending", "GetPendingFinanceOfficialInvoiceImportBatchesV1",
+            AuthenticatedResponses("200:application/json", "404:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["query:cursor:false:type:string"]),
+        new("get", "/api/v1/finance/official-invoice-import-batches/{batchId}", "GetFinanceOfficialInvoiceImportPendingBatchV1",
+            AuthenticatedResponses("200:application/json", "404:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["path:batchId:true:type:string;format:uuid"]),
         new("post", "/api/v1/finance/official-invoice-import-batches/{batchId}/approval", "ApproveFinanceOfficialInvoiceImportBatchV1",
             AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json", "400:application/problem+json", "415:", "503:application/problem+json"),
             "#/components/schemas/FinanceOfficialInvoiceImportApproveRequestV1",
@@ -802,6 +808,10 @@ public sealed partial class OpenApiContractGenerationTests
             ["RecordFinanceManualReceiptV1"] = "ref:CommandResult",
             ["PreviewFinanceOfficialInvoiceImportV1"] = "ref:FinanceOfficialInvoiceImportPreviewV1",
             ["UploadFinanceOfficialInvoiceImportBatchV1"] = "ref:FinanceOfficialInvoiceImportApprovalResultV1",
+            ["GetPendingFinanceOfficialInvoiceImportBatchesV1"] =
+                "ref:FinanceOfficialInvoiceImportPendingBatchPageV1",
+            ["GetFinanceOfficialInvoiceImportPendingBatchV1"] =
+                "ref:FinanceOfficialInvoiceImportPendingBatchDetailV1",
             ["ApproveFinanceOfficialInvoiceImportBatchV1"] = "ref:FinanceOfficialInvoiceImportApprovalResultV1",
             ["GetFinanceApprovedOfficialInvoiceImportSourcesV1"] = "ref:ApprovedFinanceOpenItemSourcePage",
             ["ApplyFinanceOfficialInvoiceImportV1"] = "ref:FinanceOfficialInvoiceImportApplyResultV1",
@@ -981,6 +991,8 @@ public sealed partial class OpenApiContractGenerationTests
         "SaveFinanceManualReceiptDraftV1",
         "PreviewFinanceOfficialInvoiceImportV1",
         "UploadFinanceOfficialInvoiceImportBatchV1",
+        "GetPendingFinanceOfficialInvoiceImportBatchesV1",
+        "GetFinanceOfficialInvoiceImportPendingBatchV1",
         "ApproveFinanceOfficialInvoiceImportBatchV1",
         "GetFinanceApprovedOfficialInvoiceImportSourcesV1",
         "ApplyFinanceOfficialInvoiceImportV1",
@@ -1506,6 +1518,8 @@ public sealed partial class OpenApiContractGenerationTests
         "GetFinanceManualReceiptV1:404",
         "ApplyFinanceOfficialInvoiceImportV1:404",
         "GetFinanceOfficialInvoiceImportV1:404",
+        "GetPendingFinanceOfficialInvoiceImportBatchesV1:404",
+        "GetFinanceOfficialInvoiceImportPendingBatchV1:404",
         "GetFinanceCustomerInstrumentV1:404",
         "GetFinanceManualBankPaymentV1:404",
         "GetFinanceManualReceiptReversalV1:404",
@@ -2862,6 +2876,15 @@ public sealed partial class OpenApiContractGenerationTests
                     ("isReplay", "type:boolean"),
                     ("originalCorrelationId", "type:string"),
                     ("issues", "type:array;items:ref:ValidationIssue")),
+                ["FinanceOfficialInvoiceImportPendingBatchPageV1"] = ObjectSchema(
+                    ["companyId", "items", "nextCursor"],
+                    ("companyId", "type:string;format:uuid"),
+                    ("items", "type:array;items:ref:FinanceOfficialInvoiceImportBatchViewV1"),
+                    ("nextCursor", "type:null|string")),
+                ["FinanceOfficialInvoiceImportPendingBatchDetailV1"] = ObjectSchema(
+                    ["batch", "preview"],
+                    ("batch", "ref:FinanceOfficialInvoiceImportBatchViewV1"),
+                    ("preview", "ref:FinanceOfficialInvoiceImportPreviewV1")),
                 ["FinanceOfficialInvoiceImportApprovalStatusV1"] = ScalarSchema("type:integer"),
                 ["FinanceOfficialInvoiceImportBatchViewV1"] = ObjectSchema(
                     ["batchId", "companyId", "batchVersion", "batchChecksum", "templateVersion", "status", "version", "rowCount", "uploadedBy", "uploadedAtUtc", "approvedBy", "approvedAtUtc"],
@@ -5127,9 +5150,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(186, operations.Count);
+        Assert.Equal(188, operations.Count);
         Assert.Equal(
-            186,
+            188,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());

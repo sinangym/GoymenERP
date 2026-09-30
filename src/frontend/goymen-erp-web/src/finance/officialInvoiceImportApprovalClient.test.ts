@@ -1,11 +1,22 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { AuthBoundary } from '../shell/useAuthBoundary'
-import { createOfficialInvoiceApprovalClient } from './officialInvoiceImportApprovalClient'
+import {
+  createOfficialInvoiceApprovalClient,
+  createOfficialInvoiceImportClient,
+} from './officialInvoiceImportApprovalClient'
+import type { OfficialInvoiceApprovalAttemptContext } from './OfficialInvoiceImportApprovalsPage'
 
 const companyId = '10000000-0000-0000-0000-000000000001'
 const batchId = '11111111-1111-4111-8111-111111111111'
-const context = { sessionEpoch: 7, companyId, actorId: 'checker', committedContextRevision: 3,
-  requestFenceGeneration: 5, capabilityGeneration: 11, securityNamespace: 'finance-checker' }
+const context: OfficialInvoiceApprovalAttemptContext = {
+  sessionEpoch: 7,
+  companyId,
+  actorId: 'checker',
+  committedContextRevision: 3,
+  requestFenceGeneration: 5,
+  capabilityGeneration: '11',
+  securityNamespace: 'finance-checker',
+}
 const batch = {
   batchId, companyId, batchVersion: 'invoice-v1', batchChecksum: 'a'.repeat(64),
   templateVersion: 'finance-official-invoice-installment-csv.v1', status: 'Pending', version: '1', rowCount: 1,
@@ -22,10 +33,17 @@ const detail = { batch, preview: { templateVersion: batch.templateVersion, sourc
   batch: { batchId, companyId, batchVersion: batch.batchVersion, batchChecksum: batch.batchChecksum, rows: [row] }, issues: [] } }
 const approved = { ...batch, status: 'Approved', version: '2', approvedBy: 'checker', approvedAtUtc: '2026-09-30T13:00:00Z' }
 
-function boundary(): AuthBoundary & { report: ReturnType<typeof vi.fn> } {
-  const snapshot = { actorId: 'checker', sessionEpoch: 7, companyId,
-    committedContextRevision: 3, requestFenceGeneration: 5, capabilityGeneration: 11, namespace: 'finance-checker' }
-  return { capture: () => snapshot, report: vi.fn() }
+function boundary() {
+  const snapshot: ReturnType<AuthBoundary['capture']> = {
+    actorId: 'checker',
+    sessionEpoch: 7,
+    companyId,
+    committedContextRevision: 3,
+    requestFenceGeneration: 5,
+    capabilityGeneration: '11',
+    namespace: 'finance-checker',
+  }
+  return { capture: () => snapshot, report: vi.fn<AuthBoundary['report']>() }
 }
 
 function json(body: unknown, status = 200, headers?: Record<string, string>): Response {
@@ -61,7 +79,7 @@ describe('official invoice approval HTTP client', () => {
 
     await expect(client.approve(batchId, '1', 'same-key', new AbortController().signal))
       .resolves.toEqual({ kind: 'unknown' })
-    expect(auth.report).toHaveBeenCalledWith(status, expect.objectContaining({ capabilityGeneration: 11 }))
+    expect(auth.report).toHaveBeenCalledWith(status, expect.objectContaining({ capabilityGeneration: '11' }))
   })
 
   it('sends the exact approval path, body and key and accepts only matching 200 replay metadata', async () => {
@@ -103,21 +121,91 @@ describe('official invoice approval HTTP client', () => {
   })
 
   it('refuses a success body that resolves after the captured security generation changes', async () => {
-    let generation = 11
+    let generation = '11'
     let resolveBody!: (value: unknown) => void
     const body = new Promise<unknown>((resolve) => { resolveBody = resolve })
-    const snapshot = () => ({ actorId: 'checker', sessionEpoch: 7, companyId,
+    const snapshot: AuthBoundary['capture'] = () => ({ actorId: 'checker', sessionEpoch: 7, companyId,
       committedContextRevision: 3, requestFenceGeneration: 5, capabilityGeneration: generation,
-      namespace: generation === 11 ? 'finance-checker' : 'finance-checker-refenced' })
+      namespace: generation === '11' ? 'finance-checker' : 'finance-checker-refenced' })
     const auth: AuthBoundary = { capture: snapshot, report: vi.fn() }
     const response = { status: 200, headers: new Headers(), json: () => body } as Response
     const client = createOfficialInvoiceApprovalClient(context, auth, vi.fn().mockResolvedValue(response))
 
     const pending = client.approve(batchId, '1', 'same-key', new AbortController().signal)
-    generation = 12
+    generation = '12'
     resolveBody({ outcome: 'Succeeded', resource: approved, isReplay: false,
       originalCorrelationId: 'corr-1', issues: [] })
 
     await expect(pending).resolves.toEqual({ kind: 'unknown' })
+  })
+})
+
+describe('official invoice application HTTP client', () => {
+  const source = { batchId, batchVersion: batch.batchVersion, displayName: 'Resmî fatura' }
+  const file = { arrayBuffer: async () => new TextEncoder().encode('invoice,csv').buffer } as File
+  const openItem = {
+    id: '88888888-8888-4888-8888-888888888888', companyId,
+    sourceKind: 'official-invoice-installment', sourceDocumentId: row.sourceDocumentId,
+    sourceInstallmentId: row.sourceInstallmentId, sourceVersion: row.sourceVersion,
+    sourceBatchId: batchId, sourceBatchVersion: batch.batchVersion, sourceBatchChecksum: batch.batchChecksum,
+    partyId: row.partyId, companyAccountId: row.companyAccountId, currencyId: row.currencyId,
+    originalAmount: row.amount, outstandingAmount: row.amount, dueOn: row.dueOn, status: 0, version: '1',
+  }
+  const applied = {
+    batchId, companyId, batchVersion: batch.batchVersion, batchChecksum: batch.batchChecksum,
+    openItems: [openItem],
+  }
+
+  it('uses the captured company for preview/apply/reopen and validates the complete success graph', async () => {
+    const preview = { templateVersion: batch.templateVersion, sourceSha256: batch.batchChecksum,
+      batch: detail.preview.batch, issues: [], isValid: true }
+    const apply = {
+      preview,
+      approvedSource: { outcome: 3, resource: detail.preview.batch },
+      admission: { outcome: 'Succeeded', openItemIds: [openItem.id], isReplay: true,
+        originalCorrelationId: 'corr-1', issues: [] },
+      freshRead: { outcome: 3, resource: applied },
+      isSucceeded: true,
+    }
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(json(preview))
+      .mockResolvedValueOnce(json(apply, 200, { 'Idempotency-Replayed': 'true' }))
+      .mockResolvedValueOnce(json(applied))
+    const client = createOfficialInvoiceImportClient(context, boundary(), fetcher)
+
+    await expect(client.preview(source, file, new AbortController().signal))
+      .resolves.toMatchObject({ batchId, batchVersion: batch.batchVersion, rowCount: 1 })
+    await expect(client.apply(source, file, 'same-key', new AbortController().signal))
+      .resolves.toMatchObject({ kind: 'succeeded', replayed: true, batch: { batchId, openItems: [{ id: openItem.id }] } })
+    await expect(client.reopen(batchId, new AbortController().signal))
+      .resolves.toMatchObject({ batchId, openItems: [{ id: openItem.id }] })
+
+    expect(fetcher.mock.calls.map((call) => call[0])).toEqual([
+      '/api/v1/finance/official-invoice-imports/preview',
+      '/api/v1/finance/official-invoice-imports/apply',
+      `/api/v1/finance/official-invoice-imports/${batchId}`,
+    ])
+    const request = JSON.parse(fetcher.mock.calls[1][1].body as string)
+    expect(request).toEqual({ batchId, batchVersion: batch.batchVersion, utf8Csv: 'aW52b2ljZSxjc3Y=' })
+    expect(fetcher.mock.calls[1][1].headers).toMatchObject({
+      'X-Company-Id': companyId,
+      'Idempotency-Key': 'same-key',
+    })
+  })
+
+  it('keeps a foreign fresh read unknown instead of accepting another company', async () => {
+    const body = {
+      preview: { templateVersion: batch.templateVersion, sourceSha256: batch.batchChecksum,
+        batch: detail.preview.batch, issues: [], isValid: true },
+      approvedSource: { outcome: 3, resource: detail.preview.batch },
+      admission: { outcome: 'Succeeded', openItemIds: [openItem.id], isReplay: false,
+        originalCorrelationId: 'corr-1', issues: [] },
+      freshRead: { outcome: 3, resource: { ...applied, companyId: '90000000-0000-0000-0000-000000000009' } },
+      isSucceeded: true,
+    }
+    const client = createOfficialInvoiceImportClient(context, boundary(), vi.fn().mockResolvedValue(json(body)))
+
+    await expect(client.apply(source, file, 'same-key', new AbortController().signal))
+      .resolves.toEqual({ kind: 'unknown' })
   })
 })

@@ -20,6 +20,8 @@ import {
   receiptDetailPath,
   receiptDraftPath,
 } from '../finance/capabilities'
+import { financeRoutes } from '../finance/financeRoutes'
+import { OFFICIAL_INVOICE_IMPORT_APPROVALS_ROUTE } from '../finance/officialInvoiceImportRoutes'
 
 const ROUTED = [
   [CAPABILITY.financeReceiptsList, FINANCE_CAPABILITY.receiptsList, FINANCE_ROUTE.receiptsList],
@@ -59,6 +61,11 @@ const CONTROLS: readonly string[] = [
 ]
 
 describe('shell ↔ Finance lane capability ids', () => {
+  it('mounts the official-invoice checker once under the existing Finance list screen boundary', () => {
+    expect(financeRoutes.filter((route) => route.path === OFFICIAL_INVOICE_IMPORT_APPROVALS_ROUTE.slice(1)))
+      .toHaveLength(1)
+  })
+
   it('classifies every lane id as either routed or a control', () => {
     // Without this, an unclassified id still fails — but as a phantom MISSING MOUNT in the next
     // case, which is how finance.receipts.record read at f3800f3c: "expected 5 to equal 6", sending

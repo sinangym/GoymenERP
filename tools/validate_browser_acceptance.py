@@ -234,7 +234,7 @@ SUITE_IDENTITY_PERMISSIONS = {
         "inventory.opening-stock.record",
         "product.operational-selection.read",
     ),
-    # The nineteen Finance names and the Cari owner's authorized party read. The list is the complete
+    # The Finance names and the Cari owner's authorized party read. The list is the complete
     # union of the disposable proposer and approver grants in fin01.override.yml.
     "fin01": (
         "finance.bank-account.read",
@@ -262,6 +262,10 @@ SUITE_IDENTITY_PERMISSIONS = {
         # Party ledger (user decision 2026-09-28): the disposable fin01-proposer alone holds the two ledger reads.
         "finance.party-ledger.read",
         "finance.party-ledger.amount.read",
+        # Official-invoice acceptance: proposer uploads; a different approver lists/details/approves and
+        # reaches the approved source through the existing manual-receipt draft read.
+        "finance.official-invoice-import.upload",
+        "finance.official-invoice-import.approve",
     ),
     # SALES-A1's approval axis: the preparer creates and reads, the approver approves and reads, the reader reads.
     # SALES-A2a: the preparer reaches the Cari owner's contact information through its OWN party read.

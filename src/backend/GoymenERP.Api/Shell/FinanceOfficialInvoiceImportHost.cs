@@ -14,6 +14,7 @@ public static class FinanceOfficialInvoiceImportHostExtensions
     {
         services.AddSingleton<IFinanceOfficialInvoiceImportParserV1, FinanceOfficialInvoiceImportParserV1>();
         services.AddScoped<FinanceOfficialInvoiceImportAuthority>();
+        services.AddScoped<FinanceOfficialInvoiceImportPendingApprovalAuthority>();
         services.AddScoped<IFinanceOfficialInvoiceImportApprovalAuthorityV1>(provider =>
             provider.GetRequiredService<FinanceOfficialInvoiceImportAuthority>());
         services.AddScoped<IFinanceOpenItemSourceAuthority>(provider =>
@@ -28,6 +29,13 @@ public static class FinanceOfficialInvoiceImportHostExtensions
             provider.GetRequiredService<FinanceOfficialInvoiceImportApprovalServiceV1>());
 
         services.AddScoped<IFinanceOfficialInvoiceImportReadPortV1, FinanceOfficialInvoiceImportReadPortV1>();
+        services.AddScoped<IFinanceOfficialInvoiceImportPendingApprovalReadServiceV1>(provider =>
+            new FinanceOfficialInvoiceImportPendingApprovalReadServiceV1(
+                provider.GetRequiredService<FinanceDbContext>(),
+                provider.GetRequiredService<ICompanyContext>(),
+                provider.GetRequiredService<ICurrentUser>(),
+                provider.GetRequiredService<IFinanceOfficialInvoiceImportParserV1>(),
+                provider.GetRequiredService<FinanceOfficialInvoiceImportPendingApprovalAuthority>()));
         services.AddScoped<IFinanceOpenItemSourceAdmissionService>(CreateAdmissionService);
         services.AddScoped<IFinanceOpenItemSourceSelectionService, FinanceOpenItemSourceSelectionService>();
         services.AddScoped<IFinanceOfficialInvoiceImportApplicationServiceV1,
@@ -98,7 +106,17 @@ public sealed class FinanceOfficialInvoiceImportAuthority(
     {
         ArgumentNullException.ThrowIfNull(context);
         cancellationToken.ThrowIfCancellationRequested();
-        if (batchId == Guid.Empty || !SameContext(context)) return PermissionDecision.Denied;
+        if (batchId == Guid.Empty) return PermissionDecision.Denied;
+
+        return await CheckCompanyWideAsync(context, action, cancellationToken);
+    }
+
+    internal async Task<PermissionDecision> CheckCompanyWideAsync(FinanceContext context,
+        FinanceOfficialInvoiceImportAuthorityActionV1 action, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!SameContext(context)) return PermissionDecision.Denied;
 
         var permission = action switch
         {
@@ -136,4 +154,18 @@ public sealed class FinanceOfficialInvoiceImportAuthority(
         public IEnumerator<string> GetEnumerator() => owner.Current(action).GetEnumerator();
         System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
     }
+}
+
+/// <summary>
+/// Read-only pending-list adapter. The list has no batch identity, but it still performs the same
+/// fresh company-wide approval-permission fence. Commands keep the stricter non-empty batch rule.
+/// </summary>
+public sealed class FinanceOfficialInvoiceImportPendingApprovalAuthority(
+    FinanceOfficialInvoiceImportAuthority authority) : IFinanceOfficialInvoiceImportApprovalAuthorityV1
+{
+    public Task<PermissionDecision> CheckAsync(FinanceContext context,
+        FinanceOfficialInvoiceImportAuthorityActionV1 action, Guid batchId, CancellationToken cancellationToken) =>
+        batchId == Guid.Empty
+            ? authority.CheckCompanyWideAsync(context, action, cancellationToken)
+            : authority.CheckAsync(context, action, batchId, cancellationToken);
 }
