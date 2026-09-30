@@ -295,6 +295,15 @@ public sealed class ProductionOrder
     }
 
     /// <summary>
+    /// Read-only OPEN-005 / Ö7 preparation. The supplied snapshot and BAL-004 inputs come from their future owners;
+    /// this method chooses no percentage, numerator, denominator, approval or output fact and changes no order state.
+    /// </summary>
+    public OrderClosureAssessmentV1 AssessClosure(
+        ClosureTolerancePolicySnapshotV1 policy,
+        IReadOnlyList<RollScrapPercentInputV1> scrapPercentInputs) =>
+        OrderClosureAssessmentCalculatorV1.Assess(this, policy, scrapPercentInputs);
+
+    /// <summary>
     /// Closes the order when EVERY parent roll reconciles on its own (Business #66 5728619644 on
     /// DEC-PRDCT-006/007 and Master v3 §28.9): issued − returned = good + second quality + usable
     /// remnant + scrap + process loss + remaining WIP + unexplained, per roll; rolls never offset
