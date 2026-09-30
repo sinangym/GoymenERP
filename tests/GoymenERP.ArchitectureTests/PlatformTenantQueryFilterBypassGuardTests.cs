@@ -182,8 +182,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // logistics
             // AT-053: +4 weighbridge SQL facts (81c1ff0b… -> 264898d7…).
             // AT-025: +3 operations work list SQL facts (264898d7… -> e410a445…).
+            // AT-055: +4 dispatch-note draft SQL facts (e410a445… -> 010fcbd6…).
             ["tools/relational_inventory/logistics.txt"] =
-                "e410a445d2759703b39ce7ea242d5cb0a11074b24c685291c46ca028f8ac50bc",
+                "010fcbd61bf2544474435dc88ce2e88cce2a5e6b39733e39619af0a1a32c99ac",
 
             // manufacturing
             // MFG-PLAN-EDIT: +6 plan-revision SQL facts (a72e6367… -> 02711b6c…).
@@ -264,7 +265,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
              + "Persistence/LogisticsDbContext.cs"] =
             // Re-measured for AT-053: VehicleWeighings, company-scoped with the same CompanyId query filter and a
             // company-leading key; one weighing per instruction.
-                "c157f2333337aaac614b9098754dfa4bcc99ac4ef062fd4c15d8c72dd5d0886d",
+            // Re-measured for AT-055: DispatchNotes and DispatchNoteLines, company-scoped with the same CompanyId query filter and
+            // company-leading keys; UX_DispatchNoteLines_ShipmentId over non-nullable columns (a shipment on one dispatch note).
+                "f92c303325c0afb3405011d01aefbbaac0b253df7f646af45cfb761e9602a962",
             // PUR-4a: company-scoped like Organization; every tenant row (requests and their lines, orders and their
             // lines, attempts) and AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
@@ -775,7 +778,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new(
                         // Re-fingerprinted for AT-053: the weighing is saved in the instruction's one save and
                         // replayed at its share position; SqlClient count unchanged.
-                        "4c64fde78e67008e4cc3e334437c795dd608f35cba011c52d36d328144fb1d7d",
+                        // Re-fingerprinted for AT-055: the dispatch-note draft is saved in the instruction's one save and
+                        // replayed at its share position, plus the Sales order read; SqlClient count unchanged.
+                        "cea729a6d8d3e3a20e733b43dcb5e90a28d4c852e4ba127fc3c0ed6a946d8390",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -1061,6 +1066,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // any weighbridge record is stored; the THROW precedes the DropTable, an empty table rolls back freely.
                 ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/Migrations/20260928120000_AddVehicleWeighings.cs"] =
                     new("beb572dd1dd3450169f3c2b927e143161f2a15daedbd6b391eccc2b598817f4b",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // AT-055: the Down's only raw SQL is Logistics' module refusal (51056, the AddVehicleWeighings code) while any
+                // dispatch-note draft or line is stored; the THROW precedes both DropTable operations, empty tables roll back freely.
+                ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/Migrations/20260930120000_AddDispatchNoteDrafts.cs"] =
+                    new("19fd92b05acf08afeed254230091de3aa4828ed66020a76ae02750c3abbee01a",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // ACC-V0a: the Down's only raw SQL is Accounting's module refusal (51048, coordinator-assigned) while any

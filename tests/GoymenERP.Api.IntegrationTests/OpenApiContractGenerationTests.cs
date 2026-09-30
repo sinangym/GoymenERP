@@ -544,6 +544,13 @@ public sealed partial class OpenApiContractGenerationTests
         new("post", "/api/v1/logistics/loading-instructions/{id}/weighings", "RecordLoadingInstructionWeighingV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
             "#/components/schemas/RecordWeighingRequest", ["path:id:true:type:string;format:uuid"]),
+        // AT-055: a dispatch-note draft from the instruction's definite shipments, and the Sales order view's read of its drafts.
+        new("post", "/api/v1/logistics/loading-instructions/{id}/dispatch-notes", "CreateLoadingInstructionDispatchNoteV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/CreateDispatchNoteRequest", ["path:id:true:type:string;format:uuid"]),
+        new("get", "/api/v1/logistics/dispatch-notes", "GetSalesOrderDispatchNotesV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["query:salesOrderId:false:type:string"]),
         new("get", "/api/v1/purchasing/requests", "GetPurchaseRequestsV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["query:pageSize:false:type:integer|string;format:int32;pattern:^-?(?:0|[1-9]\\d*)$", "query:cursor:false:type:string", "query:status:false:type:string"]),
@@ -803,6 +810,8 @@ public sealed partial class OpenApiContractGenerationTests
             ["RecordLoadingInstructionShipmentV1"] = "ref:LoadingInstructionResponse",
             ["RecordLoadingInstructionDeliveryV1"] = "ref:LoadingInstructionResponse",
             ["RecordLoadingInstructionWeighingV1"] = "ref:LoadingInstructionResponse",
+            ["CreateLoadingInstructionDispatchNoteV1"] = "ref:LoadingInstructionResponse",
+            ["GetSalesOrderDispatchNotesV1"] = "ref:SalesOrderDispatchNotesView",
             ["GetPurchaseRequestsV1"] = "ref:PurchaseRequestListResponse",
             ["CreatePurchaseRequestV1"] = "ref:PurchaseRequestResponse",
             ["GetPurchaseRequestV1"] = "ref:PurchaseRequestDetailView",
@@ -961,6 +970,8 @@ public sealed partial class OpenApiContractGenerationTests
         "RecordLoadingInstructionShipmentV1",
         "RecordLoadingInstructionDeliveryV1",
         "RecordLoadingInstructionWeighingV1",
+        "CreateLoadingInstructionDispatchNoteV1",
+        "GetSalesOrderDispatchNotesV1",
         "GetPurchaseRequestsV1",
         "CreatePurchaseRequestV1",
         "GetPurchaseRequestV1",
@@ -1068,6 +1079,7 @@ public sealed partial class OpenApiContractGenerationTests
         "RecordLoadingInstructionShipmentV1",
         "RecordLoadingInstructionDeliveryV1",
         "RecordLoadingInstructionWeighingV1",
+        "CreateLoadingInstructionDispatchNoteV1",
         "CreatePurchaseRequestV1",
         "SubmitPurchaseRequestV1",
         "CreatePurchaseOrderV1",
@@ -1216,6 +1228,7 @@ public sealed partial class OpenApiContractGenerationTests
                 ["RecordLoadingInstructionShipmentV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["RecordLoadingInstructionDeliveryV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["RecordLoadingInstructionWeighingV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
+                ["CreateLoadingInstructionDispatchNoteV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["CreatePurchaseRequestV1"] = [StatusCodes.Status201Created, StatusCodes.Status409Conflict],
                 ["SubmitPurchaseRequestV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["CreatePurchaseOrderV1"] = [StatusCodes.Status201Created, StatusCodes.Status409Conflict],
@@ -1320,6 +1333,8 @@ public sealed partial class OpenApiContractGenerationTests
         "RecordLoadingInstructionShipmentV1",
         "RecordLoadingInstructionDeliveryV1",
         "RecordLoadingInstructionWeighingV1",
+        "CreateLoadingInstructionDispatchNoteV1",
+        "GetSalesOrderDispatchNotesV1",
         "GetPurchaseRequestsV1",
         "CreatePurchaseRequestV1",
         "SubmitPurchaseRequestV1",
@@ -1411,6 +1426,7 @@ public sealed partial class OpenApiContractGenerationTests
         "RecordLoadingInstructionShipmentV1:404",
         "RecordLoadingInstructionDeliveryV1:404",
         "RecordLoadingInstructionWeighingV1:404",
+        "CreateLoadingInstructionDispatchNoteV1:404",
         "GetPurchaseRequestV1:404",
         "SubmitPurchaseRequestV1:404",
         "GetPurchaseOrderV1:404",
@@ -1748,6 +1764,14 @@ public sealed partial class OpenApiContractGenerationTests
                 "same_key_payload_mismatch", "version_conflict",
             ],
             ["RecordLoadingInstructionWeighingV1:422"] = ["logistics_weighing_direction_inconsistent", "unsupported_unit", "validation_failed"],
+            ["CreateLoadingInstructionDispatchNoteV1:400"] = ["command_metadata_invalid", "validation_failed"],
+            ["CreateLoadingInstructionDispatchNoteV1:409"] =
+            [
+                "concurrent_change", "logistics_duplicate_dispatch_note_id", "logistics_instruction_state",
+                "logistics_shipment_already_dispatched", "same_key_payload_mismatch", "version_conflict",
+            ],
+            ["CreateLoadingInstructionDispatchNoteV1:422"] = ["logistics_shipment_not_found", "validation_failed"],
+            ["GetSalesOrderDispatchNotesV1:400"] = ["validation_failed"],
             ["GetPurchaseRequestsV1:400"] = ["invalid_cursor", "validation_failed"],
             ["CreatePurchaseRequestV1:400"] = ["command_metadata_invalid", "validation_failed"],
             ["CreatePurchaseRequestV1:409"] = ["concurrent_change", "same_key_payload_mismatch", "version_conflict"],
@@ -2293,7 +2317,45 @@ public sealed partial class OpenApiContractGenerationTests
                     ("lines", "type:array;items:ref:LoadingInstructionLineView"),
                     ("shares", "type:array;items:ref:LoadingShareView"),
                     // AT-053: the instruction's one weighbridge record, or null before it is weighed.
-                    ("weighing", "oneOf:ref:LoadingInstructionWeighingView|type:null")),
+                    ("weighing", "oneOf:ref:LoadingInstructionWeighingView|type:null"),
+                    // AT-055: the instruction's dispatch-note drafts (always sent as an array).
+                    ("dispatchNotes", "type:array|null;items:ref:DispatchNoteView")),
+                ["DispatchNoteView"] = ObjectSchema(
+                    ["dispatchNoteId", "status", "createdBy", "createdAtUtc", "lines"],
+                    ("dispatchNoteId", "type:string;format:uuid"),
+                    ("status", "type:string"),
+                    ("createdBy", "type:string"),
+                    ("createdAtUtc", "type:string;format:date-time"),
+                    ("lines", "type:array;items:ref:DispatchNoteLineView")),
+                ["DispatchNoteLineView"] = ObjectSchema(
+                    ["lineNo", "shipmentId", "instructionLineId", "sourceOrderId", "sourceOrderLineId", "productId", "unitId", "quantity"],
+                    ("lineNo", "type:integer|string;format:int32"),
+                    ("shipmentId", "type:string;format:uuid"),
+                    ("instructionLineId", "type:string;format:uuid"),
+                    ("sourceOrderId", "type:string;format:uuid"),
+                    ("sourceOrderLineId", "type:string;format:uuid"),
+                    ("productId", "type:string;format:uuid"),
+                    ("unitId", "type:string;format:uuid"),
+                    ("quantity", "type:string")),
+                ["SalesOrderDispatchNotesView"] = ObjectSchema(
+                    ["salesOrderId", "items", "hasMore"],
+                    ("salesOrderId", "type:string;format:uuid"),
+                    ("items", "type:array;items:ref:SalesOrderDispatchNoteView"),
+                    ("hasMore", "type:boolean")),
+                ["SalesOrderDispatchNoteView"] = ObjectSchema(
+                    ["dispatchNoteId", "instructionId", "status", "createdAtUtc", "lines"],
+                    ("dispatchNoteId", "type:string;format:uuid"),
+                    ("instructionId", "type:string;format:uuid"),
+                    ("status", "type:string"),
+                    ("createdAtUtc", "type:string;format:date-time"),
+                    ("lines", "type:array;items:ref:SalesOrderDispatchNoteLineView")),
+                ["SalesOrderDispatchNoteLineView"] = ObjectSchema(
+                    ["lineNo", "sourceOrderLineId", "shipmentId", "unitId", "quantity"],
+                    ("lineNo", "type:integer|string;format:int32"),
+                    ("sourceOrderLineId", "type:string;format:uuid"),
+                    ("shipmentId", "type:string;format:uuid"),
+                    ("unitId", "type:string;format:uuid"),
+                    ("quantity", "type:string")),
                 ["LoadingInstructionWeighingView"] = ObjectSchema(
                     ["weighingId", "direction", "firstWeighingKg", "secondWeighingKg", "tareKg", "grossKg", "netKg", "loadedKgAtWeighing", "differenceKg", "recordedBy", "recordedAtUtc"],
                     ("weighingId", "type:string;format:uuid"),
@@ -3761,6 +3823,11 @@ public sealed partial class OpenApiContractGenerationTests
                     ("direction", "type:string"),
                     ("firstWeighingKg", "type:string"),
                     ("secondWeighingKg", "type:string")),
+                ["CreateDispatchNoteRequest"] = ObjectSchema(
+                    ["expectedVersion", "dispatchNoteId", "shipmentIds"],
+                    ("expectedVersion", "type:string"),
+                    ("dispatchNoteId", "type:string;format:uuid"),
+                    ("shipmentIds", "type:array;items:type:string;format:uuid")),
                 ["OpeningCountRequestV1"] = ObjectSchema(
                     ["countId", "locationId", "countedOn", "sheetReference", "lines"],
                     ("countId", "type:string;format:uuid"), ("locationId", "type:string;format:uuid"),
@@ -4731,9 +4798,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(172, operations.Count);
+        Assert.Equal(174, operations.Count);
         Assert.Equal(
-            172,
+            174,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());
