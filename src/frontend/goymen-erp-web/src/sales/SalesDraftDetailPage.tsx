@@ -78,7 +78,7 @@ import {
   type OrderAttemptSnapshot,
   type OrderAttemptState,
 } from './orderAttempt'
-import { SALES_CAPABILITY, SALES_ROUTE } from './capabilities'
+import { SALES_CAPABILITY, SALES_QUANTITY_WRITE_CAPABILITY, SALES_ROUTE } from './capabilities'
 import { APPROVAL_STATE_TEXT, ORDER_DETAIL_TEXT as T, ORDER_DRAFT_TEXT, problemCodeText } from './salesText'
 import { SALES_PROBLEM_CODE } from './contract'
 import { classifyOutcome } from '../shell/uiState'
@@ -93,6 +93,7 @@ import { SalesDraftAllocationPanel } from './SalesDraftAllocationPanel'
 import { SalesDraftDeliveryScheduleForm } from './SalesDraftDeliveryScheduleForm'
 import { SalesDraftDeliveryScheduleHistory } from './SalesDraftDeliveryScheduleHistory'
 import { SalesDraftDeliveryProgress } from './SalesDraftDeliveryProgress'
+import { SalesDraftRemainderChangePanel } from './SalesDraftRemainderChangePanel'
 import { SalesDraftCancellation } from './SalesDraftCancellation'
 import { SalesDraftLinkedEffects, SalesDraftLinkedEffectsUnbound } from './SalesDraftLinkedEffects'
 import { INVENTORY_PHYSICAL_ALLOCATION_WRITE_CAPABILITY } from '../inventory/capabilities'
@@ -195,6 +196,18 @@ export function SalesDraftDetailPage() {
           />
         ) : null
       }
+      remainderChanges={
+        companyId === null ? null : (
+          <SalesDraftRemainderChangePanel
+            key={`remainder:${namespace ?? ''}:${outcome.data.draft.id}:${outcome.data.draft.version}`}
+            detail={outcome.data}
+            companyId={companyId}
+            canRequest={hasCapability(shell, SALES_QUANTITY_WRITE_CAPABILITY)}
+            canDecide={hasCapability(shell, SALES_CAPABILITY.ordersApprove)}
+            onRecorded={() => void queryClient.invalidateQueries({ queryKey })}
+          />
+        )
+      }
       linkedEffects={
         namespace !== null && companyId !== null && outcome.data.draft.companyId === companyId ? (
           <SalesDraftLinkedEffects
@@ -271,6 +284,7 @@ export function DraftView({
   deliverySchedule = null,
   deliveryScheduleHistory = null,
   deliveryProgress = null,
+  remainderChanges = null,
   linkedEffects = null,
   cancellation = null,
 }: {
@@ -289,6 +303,8 @@ export function DraftView({
   readonly deliveryScheduleHistory?: React.ReactNode
   /** AT-024: delivered / remaining per line from Logistics' recorded deliveries (null: not mounted). */
   readonly deliveryProgress?: React.ReactNode
+  /** AT-024: approved cancel/revise requests for a partly delivered line and their immutable decisions. */
+  readonly remainderChanges?: React.ReactNode
   /** The owners' linked effects; without a bound company nothing is read and no number is shown. */
   readonly linkedEffects?: React.ReactNode
   /** DEC-SAL-005 / AT-007: the impact preview and cancel control, or the recorded cancellation of a cancelled order. */
@@ -426,6 +442,7 @@ export function DraftView({
       </section>
       {deliveryScheduleHistory}
       {deliveryProgress}
+      {remainderChanges}
       {allocations}
       {revisionHistory}
     </article>
