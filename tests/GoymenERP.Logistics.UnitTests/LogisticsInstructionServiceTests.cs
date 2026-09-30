@@ -51,6 +51,50 @@ public sealed partial class LogisticsInstructionServiceTests
     }
 
     [Fact]
+    public async Task A_resolved_sales_aggregate_limit_is_rechecked_and_forwarded_without_logistics_recalculation()
+    {
+        var world = new World { OrderLines = { Fault = "limit" } };
+
+        var response = await world.Service().CreateInstructionAsync(Request(quantity: "1.25"), Metadata("k-limit"));
+
+        var line = Assert.Single(response.Detail.Lines);
+        var limit = Assert.Single(world.Store.AggregateLimits);
+        Assert.Equal(2, world.OrderLines.Calls);
+        Assert.Equal((line.LineId, Company, Order, OrderLine, KgUnit, 7L, 5m, "5", "Sales", OrderLine.ToString("D"), "3", Day),
+            (limit.InstructionLineId, limit.CompanyId, limit.OrderId, limit.OrderLineId, limit.UnitId, limit.SalesOrderVersion,
+                limit.MaximumAggregateQuantity, limit.MaximumAggregateQuantityText, limit.SourceOwner, limit.SourceId,
+                limit.SourceVersion, limit.EffectiveOn));
+    }
+
+    [Fact]
+    public async Task A_sales_limit_revision_change_between_prepare_and_store_is_refused_before_any_write()
+    {
+        var world = new World { OrderLines = { Fault = "limit-version-race" } };
+
+        var refusal = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() =>
+            world.Service().CreateInstructionAsync(Request(), Metadata("k-limit-race")));
+
+        Assert.Equal((409, LogisticsProblemCodesV1.OrderLineState, "lines[0].sourceOrderLineId", "source_changed"),
+            (refusal.Status, refusal.Code, refusal.Errors[0].Field, refusal.Errors[0].Code));
+        Assert.Equal(2, world.OrderLines.Calls);
+        Assert.Empty(world.Store.Envelopes);
+        Assert.Empty(world.Store.AggregateLimits);
+    }
+
+    [Fact]
+    public async Task A_cross_company_sales_limit_snapshot_is_provider_invalid_and_never_stored()
+    {
+        var world = new World { OrderLines = { Fault = "limit-invalid" } };
+
+        var refusal = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() =>
+            world.Service().CreateInstructionAsync(Request(), Metadata("k-limit-invalid")));
+
+        Assert.Equal((503, LogisticsProblemCodesV1.ReferenceProviderInvalid), (refusal.Status, refusal.Code));
+        Assert.Empty(world.Store.Envelopes);
+        Assert.Empty(world.Store.AggregateLimits);
+    }
+
+    [Fact]
     public async Task The_same_key_content_and_actor_replays_before_any_owner_is_asked()
     {
         var world = new World();
@@ -496,6 +540,19 @@ public sealed partial class LogisticsInstructionServiceTests
         public Task<SalesOrderLineReferenceAnswerV1> GetApprovedLineAsync(Guid orderId, Guid lineId, CancellationToken cancellationToken = default)
         {
             Calls++;
+            var aggregateLimit = Fault is "limit" or "limit-version-race" or "limit-invalid"
+                ? new SalesOrderLineLoadingLimitV1(
+                    Fault == "limit-invalid" ? Guid.NewGuid() : Company,
+                    orderId,
+                    lineId,
+                    KgUnit,
+                    Fault == "limit-version-race" && Calls > 1 ? 8 : 7,
+                    "5",
+                    "Sales",
+                    lineId.ToString("D"),
+                    Fault == "limit-version-race" && Calls > 1 ? "4" : "3",
+                    Day)
+                : null;
             return Fault switch
             {
                 "throws" => Task.FromException<SalesOrderLineReferenceAnswerV1>(new InvalidOperationException("synthetic outage")),
@@ -506,9 +563,11 @@ public sealed partial class LogisticsInstructionServiceTests
                         Fault == "other-customer" ? Guid.NewGuid() : Party, Account, Product, "7", KgUnit,
                         // The generic approved line must cover the pre-existing weighbridge fixtures (up to 24,000 kg).
                         // The dedicated revised case remains deliberately capped at 2 kg.
-                        Fault == "remainder-revised" ? "2" : "100000", 0, 7,
+                        Fault == "remainder-revised" ? "2" : "100000", 0,
+                        Fault == "limit-version-race" && Calls > 1 ? 8 : 7,
                         Fault == "remainder-cancelled" ? SalesRemainderChangeNamesV1.Cancelled
-                            : Fault == "remainder-revised" ? SalesRemainderChangeNamesV1.Revised : SalesRemainderChangeNamesV1.Open), null)),
+                            : Fault == "remainder-revised" ? SalesRemainderChangeNamesV1.Revised : SalesRemainderChangeNamesV1.Open,
+                        aggregateLimit), null)),
             };
         }
     }
@@ -544,6 +603,7 @@ public sealed partial class LogisticsInstructionServiceTests
         private readonly Dictionary<(string Command, string Key), (string Actor, string Hash, StoredLoadingInstruction? Stored, LogisticsTerminalRefusal? Refusal, string Correlation)> _attempts = [];
         private readonly List<StoredLoadingInstruction> _instructions = [];
         public List<LogisticsWriteEnvelope> Envelopes { get; } = [];
+        public List<LogisticsOrderLineAggregateLimit> AggregateLimits { get; } = [];
         public List<LogisticsTerminalRefusal> Refusals { get; } = [];
         public List<(string Command, Guid Id, long Before, long After)> Transitions { get; } = [];
         public int Replays { get; private set; }
@@ -555,7 +615,8 @@ public sealed partial class LogisticsInstructionServiceTests
                 (envelope.ActorId, requestHash, _instructions.Single(candidate => candidate.Instruction.Id == instructionId), null, correlation);
 
         public Task<LogisticsStoreResult> StoreInstructionAsync(LogisticsWriteEnvelope envelope, string requestHash, DateOnly effectiveOn,
-            Func<LoadingInstruction> build, CancellationToken cancellationToken = default)
+            Func<LoadingInstruction> build, CancellationToken cancellationToken = default,
+            IReadOnlyList<LogisticsOrderLineAggregateLimit>? aggregateLimits = null)
         {
             if (_attempts.TryGetValue((LogisticsCommands.CreateV1, envelope.IdempotencyKey), out var attempt))
             {
@@ -567,6 +628,7 @@ public sealed partial class LogisticsInstructionServiceTests
             _instructions.Add(stored);
             _attempts[(LogisticsCommands.CreateV1, envelope.IdempotencyKey)] = (envelope.ActorId, requestHash, stored, null, envelope.CorrelationId);
             Envelopes.Add(envelope);
+            AggregateLimits.AddRange(aggregateLimits ?? []);
             return Task.FromResult(new LogisticsStoreResult(stored, LogisticsWriteOutcome.Recorded, envelope.CorrelationId));
         }
 

@@ -63,14 +63,38 @@ public sealed partial class LogisticsInstructionService(
         }
 
         await RequireAccountAsync(scope, bindings.CreatePermission, request.CustomerPartyId, request.CompanyAccountId, cancellationToken);
-        var lines = new List<(LoadingInstructionLineRequest Line, SourceOrderLineRef Source, Guid ProductId, Quantity Quantity)>(request.Lines.Count);
+        var lines = new List<PreparedInstructionLine>(request.Lines.Count);
         for (var index = 0; index < request.Lines.Count; index++)
         {
             var line = request.Lines[index];
-            var (source, productId) = await ReadOrderLineAsync(scope, request, index, cancellationToken);
+            var owner = await ReadOrderLineAsync(scope, request, index, cancellationToken);
             var quantity = await VerifyUnitAsync(scope, bindings.CreatePermission, line.UnitId, line.Quantity, request.EffectiveOn,
                 $"lines[{index}]", cancellationToken);
-            lines.Add((line, source, productId, quantity));
+            LogisticsOrderLineAggregateLimit? limit = null;
+            if (owner.LoadingLimit is { } resolved)
+            {
+                var maximum = await VerifyUnitAsync(scope, bindings.CreatePermission, line.UnitId,
+                    resolved.MaximumAggregateQuantityText, request.EffectiveOn, $"lines[{index}].loadingLimit", cancellationToken);
+                limit = new LogisticsOrderLineAggregateLimit(line.LineId, scope.CompanyId, owner.Source.OrderId, owner.Source.LineId,
+                    line.UnitId, owner.SalesOrderVersion, maximum.Value, resolved.MaximumAggregateQuantityText,
+                    resolved.SourceOwner, resolved.SourceId, resolved.SourceVersion, resolved.EffectiveOn);
+            }
+
+            lines.Add(new PreparedInstructionLine(line, owner, quantity, limit));
+        }
+
+        // Replay answered before every owner read. A new attempt re-reads each Sales line immediately before the
+        // one Logistics save, so a revision or policy-source switch cannot silently cross this command boundary.
+        for (var index = 0; index < lines.Count; index++)
+        {
+            var current = await ReadOrderLineAsync(scope, request, index, cancellationToken);
+            var prepared = lines[index].Owner;
+            if (current.Source != prepared.Source || current.ProductId != prepared.ProductId
+                || current.SalesOrderVersion != prepared.SalesOrderVersion || current.LoadingLimit != prepared.LoadingLimit)
+            {
+                throw new LogisticsInstructionServiceException(409, LogisticsProblemCodesV1.OrderLineState,
+                    [new($"lines[{index}].sourceOrderLineId", "source_changed")]);
+            }
         }
 
         // The last fence that can still prevent the write; none after the commit.
@@ -82,13 +106,15 @@ public sealed partial class LogisticsInstructionService(
             stored = await store.StoreInstructionAsync(envelope, requestHash, request.EffectiveOn, () =>
             {
                 var instruction = LoadingInstruction.Create(Guid.NewGuid(), scope.CompanyId, request.CustomerPartyId, request.CompanyAccountId, now);
-                foreach (var (line, source, productId, quantity) in lines)
+                foreach (var prepared in lines)
                 {
-                    instruction.AddLine(instruction.Version, line.LineId, source, productId, line.UnitId, null, quantity, now);
+                    var line = prepared.Request;
+                    instruction.AddLine(instruction.Version, line.LineId, prepared.Owner.Source, prepared.Owner.ProductId,
+                        line.UnitId, null, prepared.Quantity, now);
                 }
 
                 return instruction;
-            }, cancellationToken);
+            }, cancellationToken, [.. lines.Where(line => line.AggregateLimit is not null).Select(line => line.AggregateLimit!)]);
         }
         catch (LogisticsRuleException exception)
         {
@@ -513,7 +539,7 @@ public sealed partial class LogisticsInstructionService(
     }
 
     /// <summary>D4: only an APPROVED line of this company and this customer is a need; the product and the revision are the Sales owner's answer.</summary>
-    private async Task<(SourceOrderLineRef Source, Guid ProductId)> ReadOrderLineAsync(Scope scope,
+    private async Task<PreparedOwnerLine> ReadOrderLineAsync(Scope scope,
         CreateLoadingInstructionRequest request, int index,
         CancellationToken cancellationToken)
     {
@@ -538,7 +564,7 @@ public sealed partial class LogisticsInstructionService(
         {
             case SalesOrderLineReferenceOutcomeV1.Approved when answer.Line is { } approved:
                 if (approved.CompanyId != scope.CompanyId || approved.OrderId != line.SourceOrderId || approved.LineId != line.SourceOrderLineId
-                    || approved.ProductId == Guid.Empty || approved.Revision < 0)
+                    || approved.ProductId == Guid.Empty || approved.Revision < 0 || approved.Version < 1)
                 {
                     throw new LogisticsInstructionServiceException(503, LogisticsProblemCodesV1.ReferenceProviderInvalid);
                 }
@@ -561,7 +587,18 @@ public sealed partial class LogisticsInstructionService(
                         [new($"lines[{index}].unitId", "unit_mismatch")]);
                 }
 
-                return (new SourceOrderLineRef(approved.OrderId, approved.LineId, approved.Revision), approved.ProductId);
+                if (approved.LoadingLimit is { } limit
+                    && (limit.CompanyId != approved.CompanyId || limit.OrderId != approved.OrderId || limit.LineId != approved.LineId
+                        || limit.UnitId != approved.OrderUnitId || limit.SalesOrderVersion != approved.Version
+                        || limit.EffectiveOn != request.EffectiveOn || string.IsNullOrWhiteSpace(limit.MaximumAggregateQuantityText)
+                        || string.IsNullOrWhiteSpace(limit.SourceOwner) || string.IsNullOrWhiteSpace(limit.SourceId)
+                        || string.IsNullOrWhiteSpace(limit.SourceVersion)))
+                {
+                    throw new LogisticsInstructionServiceException(503, LogisticsProblemCodesV1.ReferenceProviderInvalid);
+                }
+
+                return new PreparedOwnerLine(new SourceOrderLineRef(approved.OrderId, approved.LineId, approved.Revision),
+                    approved.ProductId, approved.Version, approved.LoadingLimit);
             case SalesOrderLineReferenceOutcomeV1.NotApproved:
                 throw new LogisticsInstructionServiceException(409, LogisticsProblemCodesV1.OrderLineState,
                     [new(field, "not_approved"), new($"lines[{index}].approvalState", answer.ApprovalState ?? "unknown")]);
@@ -765,12 +802,20 @@ public sealed partial class LogisticsInstructionService(
         LogisticsStoreCodes.InvalidCursor => new LogisticsInstructionServiceException(400, LogisticsProblemCodesV1.InvalidCursor),
         LogisticsStoreCodes.CompanyContextMismatch => new LogisticsInstructionServiceException(403, "forbidden"),
         LogisticsStoreCodes.ValueDoesNotFit => new LogisticsInstructionServiceException(422, "validation_failed", [new("instruction", exception.Code)]),
+        LogisticsStoreCodes.AggregateLimitExceeded => new LogisticsInstructionServiceException(409,
+            LogisticsProblemCodesV1.OrderLineAggregateLimitExceeded, [new("lines", exception.Code)]),
         _ => new LogisticsInstructionServiceException(503, "service_unavailable"),
     };
 
     // ---- authority ------------------------------------------------------------------------------
 
     private sealed record Scope(Guid CompanyId, string ActorId, IReadOnlyCollection<string> RoleCodes);
+
+    private sealed record PreparedOwnerLine(SourceOrderLineRef Source, Guid ProductId, long SalesOrderVersion,
+        SalesOrderLineLoadingLimitV1? LoadingLimit);
+
+    private sealed record PreparedInstructionLine(LoadingInstructionLineRequest Request, PreparedOwnerLine Owner,
+        Quantity Quantity, LogisticsOrderLineAggregateLimit? AggregateLimit);
 
     private async Task<Scope> RequireAsync(string? permission, CancellationToken cancellationToken)
     {

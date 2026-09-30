@@ -75,6 +75,24 @@ public sealed record SalesOrderLineReferenceAnswerV1(
     string? ApprovalState);
 
 /// <summary>
+/// OPEN-004 consumer boundary: Sales has already resolved the line override or the versioned Settings
+/// product-group default into one maximum total loading-instruction quantity in the order unit. Logistics
+/// never calculates a percentage, chooses a default or converts a unit. Null on the line means that the
+/// source is unavailable; it is never repaired into zero.
+/// </summary>
+public sealed record SalesOrderLineLoadingLimitV1(
+    Guid CompanyId,
+    Guid OrderId,
+    Guid LineId,
+    Guid UnitId,
+    long SalesOrderVersion,
+    string MaximumAggregateQuantityText,
+    string SourceOwner,
+    string SourceId,
+    string SourceVersion,
+    DateOnly EffectiveOn);
+
+/// <summary>
 /// The approved line's identity facts as stored: the company, the order and the line, the
 /// customer (party + company account), the product and its version as the Product owner answered
 /// it, the order unit, the exact quantity text (Ö2: kept verbatim), the commercial revision and the
@@ -93,4 +111,5 @@ public sealed record SalesOrderLineReferenceV1(
     string QuantityText,
     int Revision,
     long Version,
-    string RemainderState = SalesRemainderChangeNamesV1.Open);
+    string RemainderState = SalesRemainderChangeNamesV1.Open,
+    SalesOrderLineLoadingLimitV1? LoadingLimit = null);

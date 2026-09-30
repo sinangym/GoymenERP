@@ -126,6 +126,9 @@ public static class LogisticsProblemCodesV1
     /// <summary>409, terminal (§7, D5): the loaded share would exceed the instructed remainder (§13 cap).</summary>
     public const string LoadExceedsInstructed = "logistics_load_exceeds_instructed";
 
+    /// <summary>409: all loading instructions of the Sales line would exceed its owner-resolved OPEN-004 maximum.</summary>
+    public const string OrderLineAggregateLimitExceeded = "logistics_order_line_aggregate_limit_exceeded";
+
     /// <summary>409, terminal (§7, D2): the line is blocked; no new load.</summary>
     public const string LineBlocked = "logistics_line_blocked";
 

@@ -51,6 +51,7 @@ public static class LogisticsStoreCodes
     public const string ConcurrentChange = "logistics_concurrent_change";
     public const string ValueDoesNotFit = "logistics_value_does_not_fit";
     public const string InvalidCursor = "logistics_invalid_cursor";
+    public const string AggregateLimitExceeded = "logistics_order_line_aggregate_limit_exceeded";
 }
 
 public sealed class LogisticsStoreException(string code, string message, Exception? innerException = null)
@@ -63,6 +64,25 @@ public sealed class LogisticsStoreException(string code, string message, Excepti
 public sealed record StoredLoadingInstruction(LoadingInstruction Instruction, DateOnly EffectiveOn);
 
 public sealed record LogisticsStoreResult(StoredLoadingInstruction Instruction, LogisticsWriteOutcome Outcome, string OriginalCorrelationId);
+
+/// <summary>
+/// A Sales-resolved OPEN-004 ceiling prepared for the Logistics store. The maximum is already in the
+/// order unit; the store only aggregates instruction quantities and compares. The immutable source tuple
+/// is written into the create audit snapshot.
+/// </summary>
+public sealed record LogisticsOrderLineAggregateLimit(
+    Guid InstructionLineId,
+    Guid CompanyId,
+    Guid OrderId,
+    Guid OrderLineId,
+    Guid UnitId,
+    long SalesOrderVersion,
+    decimal MaximumAggregateQuantity,
+    string MaximumAggregateQuantityText,
+    string SourceOwner,
+    string SourceId,
+    string SourceVersion,
+    DateOnly EffectiveOn);
 
 /// <summary>ADR-011 §7: a terminal refusal recorded under the attempt key (stale version, cap, block, state), answered again on the same key.</summary>
 public sealed record LogisticsTerminalRefusal(int Status, string Code, IReadOnlyList<LogisticsFieldError> Errors);
@@ -86,7 +106,8 @@ public interface ILogisticsInstructionStore
 {
     /// <summary>Stores a new instruction the caller built (Draft, ≥1 line), or answers the same attempt again.</summary>
     Task<LogisticsStoreResult> StoreInstructionAsync(LogisticsWriteEnvelope envelope, string requestHash, DateOnly effectiveOn,
-        Func<LoadingInstruction> build, CancellationToken cancellationToken = default);
+        Func<LoadingInstruction> build, CancellationToken cancellationToken = default,
+        IReadOnlyList<LogisticsOrderLineAggregateLimit>? aggregateLimits = null);
 
     Task<LogisticsReplay?> FindReplayAsync(LogisticsWriteEnvelope envelope, string requestHash, string commandName,
         CancellationToken cancellationToken = default);
