@@ -51,6 +51,19 @@ public sealed class ProductImportSqlCommandRunner(ProductRuntimeOptions options,
             {
                 // The whole borrowed transaction was confirmed rolled back. Resolve an exact-key winner before retrying.
             }
+            catch (ProductValidationException)
+            {
+                // A same-key winner can commit after this request resolved Missing but before its Product catalogue
+                // read. The participant then correctly sees the winner's legacy aliases as existing. Only after the
+                // losing transaction has confirmed rollback may we freshly reauthorize and resolve that exact terminal;
+                // a genuine validation error remains a 400 and is never blindly retried.
+                _ = await ReauthorizeAsync(current.Context, cancellationToken);
+                var winner = await gateway.RefreshAsync(current, cancellationToken);
+                if (winner.Replay is null) throw;
+                request.Response.Headers["Idempotency-Replayed"] = "true";
+                request.Response.Headers["Idempotency-Original-Correlation-Id"] = winner.OriginalCorrelationId;
+                return winner.Replay;
+            }
             catch (ProductOperationException exception) when (exception.StatusCode is 404 or 409)
             {
                 _ = await ReauthorizeAsync(current.Context, cancellationToken);
@@ -79,6 +92,9 @@ public sealed class ProductImportSqlCommandRunner(ProductRuntimeOptions options,
             await using var terminal = await GroupSharedCommandTerminalSession.EnlistAsync(connection, transaction,
                 current.Context, current.Intent.KeyHash, current.Intent.RequestHash, cancellationToken);
 
+            // The existing attempt observer supplies a deterministic SQL-race barrier in acceptance tests. Production
+            // uses the null observer; no authority, transaction or retry decision is delegated to it.
+            await observer.ObserveAsync(ProductCommandAttemptStage.ProductStaged, current.Context, cancellationToken);
             var write = await product.ExecuteAsync(workbook, current.Intent.Binding, cancellationToken);
             productFlushed = true;
             await observer.ObserveAsync(ProductCommandAttemptStage.ProductFlushed, current.Context, cancellationToken);

@@ -213,9 +213,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // product
             // DEC-CAR-003: +4 ProductDeactivationSqlServerRelationalAcceptanceTests facts (d7dbec7f… -> ddeead62…).
             // DEC-PRD-010: +5 ProductDuplicateCandidatesSqlServerRelationalAcceptanceTests facts (ddeead62… -> d434c2b8…).
-            // Q16 / AT-020: +2 Product import API SQL facts (d434c2b8… -> d55c1945…).
+            // Q16 / AT-020: +3 Product import API SQL facts (d434c2b8… -> 9958c91f…).
             ["tools/relational_inventory/product.txt"] =
-                "d55c1945682818478490eaac4d706a47d4d54456c5fb0234abdf64064732d5a0",
+                "9958c91fff4979e50c43ebc591fdde24afc395a88e61203371b43829b8b6c6a5",
 
             // purchasing
             ["tools/relational_inventory/purchasing.txt"] =
@@ -428,7 +428,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Q16 / AT-020: one reviewed host runner borrows one SQL connection/transaction for Product,
                 // canonical audit batch and the single idempotency terminal. It creates no context or provider.
                 [ReviewedProductImportSqlCommandRunnerPath] =
-                    new("06e51fdd53406a46d7fd1778a7c3493d49f88b887a5189382d1de044ae933ab7",
+                    new("bd3105e907778f1ca845fd4572a14f69fda5542da4f3c72869ec22dc40655b8d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Microsoft.Data.SqlClient"] = 1, ["SqlConnection"] = 1 }),
                 // Product owner participant borrows the host connection/transaction; it creates no provider and

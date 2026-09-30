@@ -133,6 +133,75 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
         });
 
     [SqlServerFact]
+    public Task ProductImport_SameKeyWinnerBeforeLoserCatalog_ReplaysOrHidesAfterRevocation() =>
+        WithDatabaseAsync(async (factory, observer) =>
+        {
+            using var client = factory.CreateClientFor("group-bootstrap-admin", CompanyA);
+            var workbook = ImportWorkbook(("LEGACY-RACE-1", "Race Alpha"), ("LEGACY-RACE-2", "Race Beta"));
+            using var previewResponse = await PreviewImportAsync(client, workbook);
+            Assert.Equal(HttpStatusCode.OK, previewResponse.StatusCode);
+            var preview = (await previewResponse.Content.ReadFromJsonAsync<ProductImportPreviewV1>())!;
+
+            var loserAtCatalog = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var releaseLoser = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            observer.Callback = async (stage, _, cancellationToken) =>
+            {
+                if (stage != ProductCommandAttemptStage.ProductStaged) return;
+                loserAtCatalog.TrySetResult();
+                await releaseLoser.Task.WaitAsync(TimeSpan.FromSeconds(20), cancellationToken);
+            };
+            var loserTask = ApplyImportAsync(client, workbook, preview, "product-import-race-replay");
+            await loserAtCatalog.Task.WaitAsync(TimeSpan.FromSeconds(20));
+            observer.Callback = null;
+            using var winner = await ApplyImportAsync(client, workbook, preview, "product-import-race-replay");
+            Assert.Equal(HttpStatusCode.Created, winner.StatusCode);
+            var winnerBody = (await winner.Content.ReadFromJsonAsync<ProductImportResultV1>())!;
+            releaseLoser.TrySetResult();
+            using var loser = await loserTask;
+            Assert.Equal(HttpStatusCode.Created, loser.StatusCode);
+            Assert.Equal("true", Assert.Single(loser.Headers.GetValues("Idempotency-Replayed")));
+            var loserBody = (await loser.Content.ReadFromJsonAsync<ProductImportResultV1>())!;
+            Assert.True(loserBody.IsReplay);
+            Assert.Equal(winnerBody.Products.Select(value => value.ProductId),
+                loserBody.Products.Select(value => value.ProductId));
+
+            var revokedWorkbook = ImportWorkbook(("LEGACY-RACE-3", "Revoked Race Alpha"),
+                ("LEGACY-RACE-4", "Revoked Race Beta"));
+            using var revokedPreviewResponse = await PreviewImportAsync(client, revokedWorkbook);
+            Assert.Equal(HttpStatusCode.OK, revokedPreviewResponse.StatusCode);
+            var revokedPreview = (await revokedPreviewResponse.Content.ReadFromJsonAsync<ProductImportPreviewV1>())!;
+            var revokedLoserAtCatalog = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var releaseRevokedLoser = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            observer.Callback = async (stage, _, cancellationToken) =>
+            {
+                if (stage != ProductCommandAttemptStage.ProductStaged) return;
+                revokedLoserAtCatalog.TrySetResult();
+                await releaseRevokedLoser.Task.WaitAsync(TimeSpan.FromSeconds(20), cancellationToken);
+            };
+            var revokedLoserTask = ApplyImportAsync(client, revokedWorkbook, revokedPreview,
+                "product-import-race-revoked");
+            await revokedLoserAtCatalog.Task.WaitAsync(TimeSpan.FromSeconds(20));
+            observer.Callback = null;
+            using var revokedWinner = await ApplyImportAsync(client, revokedWorkbook, revokedPreview,
+                "product-import-race-revoked");
+            Assert.Equal(HttpStatusCode.Created, revokedWinner.StatusCode);
+            var afterWinner = await SnapshotAsync(factory.DatabaseConnectionString);
+            await using (var scope = factory.Services.CreateAsyncScope())
+            {
+                var identity = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
+                var grant = await identity.Set<ProductMasterAssignment>().SingleAsync(row => row.UserId == ActorId
+                    && row.Operation == ProductMasterOperation.DraftCreate);
+                grant.Revoke(Guid.NewGuid(), "Synthetic import recovery revocation", DateTimeOffset.UtcNow);
+                await identity.SaveChangesAsync();
+            }
+            releaseRevokedLoser.TrySetResult();
+            using var revokedLoser = await revokedLoserTask;
+            Assert.Equal(HttpStatusCode.Forbidden, revokedLoser.StatusCode);
+            Assert.False(revokedLoser.Headers.Contains("Idempotency-Replayed"));
+            Assert.Equal(afterWinner, await SnapshotAsync(factory.DatabaseConnectionString));
+        });
+
+    [SqlServerFact]
     public Task ProductSalesCandidateWindow_FiltersAndBoundsRealSqlWithoutWrites() =>
         WithDatabaseAsync(async (factory, _) =>
         {
