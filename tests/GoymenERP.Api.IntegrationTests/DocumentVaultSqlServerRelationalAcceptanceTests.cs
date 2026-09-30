@@ -45,6 +45,35 @@ public sealed class DocumentVaultSqlServerRelationalAcceptanceTests
     private static readonly DateTimeOffset T0 = new(2026, 9, 30, 9, 0, 0, TimeSpan.Zero);
     private static readonly byte[] Pdf = "%PDF-1.7\n% SENTETIK sözleşme\n"u8.ToArray();
     private static readonly byte[] OtherPdf = "%PDF-1.7\n% SENTETIK başka belge\n"u8.ToArray();
+    private static Task PermitWriteAsync(CancellationToken _) => Task.CompletedTask;
+
+    [SqlServerFact]
+    public async Task A_refused_before_write_callback_leaves_no_document_metadata_audit_or_outbox()
+    {
+        await using var run = await Run.StartAsync();
+        var before = await run.CountsAsync();
+        var auditBefore = await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'documents.document.uploaded.v1'");
+        var outboxBefore = await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.OutboxMessages");
+        var invoked = false;
+
+        await using (var a = run.Store(CompanyA))
+        {
+            var refusal = await Assert.ThrowsAsync<DocumentServiceException>(() => a.Store.StoreUploadAsync(
+                run.Envelope("k-refused"), Hash("refused"), Upload(CompanyA, PartyA, Pdf, "Reddedilen.pdf"), _ =>
+                {
+                    invoked = true;
+                    throw new DocumentServiceException(403, "forbidden");
+                }));
+            Assert.Equal((403, "forbidden"), (refusal.Status, refusal.Code));
+        }
+
+        Assert.True(invoked);
+        Assert.Equal(before, await run.CountsAsync());
+        Assert.Equal(auditBefore, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'documents.document.uploaded.v1'"));
+        Assert.Equal(outboxBefore, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.OutboxMessages"));
+    }
 
     [SqlServerFact]
     public async Task An_upload_is_one_save_with_its_blob_attempt_and_web_audit_and_the_same_key_replays_without_a_second_row()
@@ -53,7 +82,7 @@ public sealed class DocumentVaultSqlServerRelationalAcceptanceTests
         DocumentStoreResult first;
         await using (var a = run.Store(CompanyA))
         {
-            first = await a.Store.StoreUploadAsync(run.Envelope("k-1"), Hash("upload-1"), Upload(CompanyA, PartyA, Pdf, "Sözleşme.pdf"));
+            first = await a.Store.StoreUploadAsync(run.Envelope("k-1"), Hash("upload-1"), Upload(CompanyA, PartyA, Pdf, "Sözleşme.pdf"), PermitWriteAsync);
             Assert.False(first.IsReplay);
             Assert.Equal((CompanyA, DocumentOwnerLinkKindsV1.CounterpartyParty, PartyA, 1, "Sözleşme.pdf", DocumentFileKind.Pdf),
                 (first.Document.CompanyId, first.Document.OwnerKind, first.Document.OwnerId, first.Document.VersionNo, first.Document.FileName,
@@ -71,13 +100,13 @@ public sealed class DocumentVaultSqlServerRelationalAcceptanceTests
         {
             // The same key and request: the stored document with the first correlation; never a second row.
             var replay = await a.Store.StoreUploadAsync(run.Envelope("k-1", correlation: "SENTETIK-retry"), Hash("upload-1"),
-                Upload(CompanyA, PartyA, Pdf, "Sözleşme.pdf"));
+                Upload(CompanyA, PartyA, Pdf, "Sözleşme.pdf"), PermitWriteAsync);
             Assert.Equal((true, first.Document.Id, run.Correlation), (replay.IsReplay, replay.Document.Id, replay.OriginalCorrelationId));
             Assert.Equal(first.Document.Id, (await a.Store.FindReplayAsync(run.Envelope("k-1"), Hash("upload-1"), DocumentCommands.UploadV1))!.Document.Id);
 
             // Another request or another actor under the key: one refusal, nothing written.
             var other = await Assert.ThrowsAsync<DocumentStoreException>(() => a.Store.StoreUploadAsync(run.Envelope("k-1"), Hash("upload-2"),
-                Upload(CompanyA, PartyA, OtherPdf, "Başka.pdf")));
+                Upload(CompanyA, PartyA, OtherPdf, "Başka.pdf"), PermitWriteAsync));
             Assert.Equal(DocumentStoreCodes.SameKeyPayloadMismatch, other.Code);
             await Assert.ThrowsAsync<DocumentStoreException>(() => a.Store.FindReplayAsync(run.Envelope("k-1", actor: "SENTETIK-other"), Hash("upload-1"),
                 DocumentCommands.UploadV1));
@@ -94,8 +123,8 @@ public sealed class DocumentVaultSqlServerRelationalAcceptanceTests
         Guid second;
         await using (var a = run.Store(CompanyA))
         {
-            first = (await a.Store.StoreUploadAsync(run.Envelope("k-a1"), Hash("a1"), Upload(CompanyA, PartyA, Pdf, "İlk.pdf"))).Document.Id;
-            second = (await a.Store.StoreUploadAsync(run.Envelope("k-a2"), Hash("a2"), Upload(CompanyA, PartyShared, Pdf, "İkinci.pdf"))).Document.Id;
+            first = (await a.Store.StoreUploadAsync(run.Envelope("k-a1"), Hash("a1"), Upload(CompanyA, PartyA, Pdf, "İlk.pdf"), PermitWriteAsync)).Document.Id;
+            second = (await a.Store.StoreUploadAsync(run.Envelope("k-a2"), Hash("a2"), Upload(CompanyA, PartyShared, Pdf, "İkinci.pdf"), PermitWriteAsync)).Document.Id;
 
             // AT-057: the second document of the same content is found by content, newest first, and the first is its duplicate.
             var sameContent = await a.Store.FindByContentAsync(DocumentContentHash.Compute(Pdf), second, 10);
@@ -104,7 +133,7 @@ public sealed class DocumentVaultSqlServerRelationalAcceptanceTests
 
         await using (var b = run.Store(CompanyB))
         {
-            await b.Store.StoreUploadAsync(run.Envelope("k-b1"), Hash("b1"), Upload(CompanyB, PartyShared, Pdf, "B.pdf"));
+            await b.Store.StoreUploadAsync(run.Envelope("k-b1"), Hash("b1"), Upload(CompanyB, PartyShared, Pdf, "B.pdf"), PermitWriteAsync);
             // B's same-content lookup never sees A's documents.
             Assert.Single(await b.Store.FindByContentAsync(DocumentContentHash.Compute(Pdf), Guid.NewGuid(), 10));
         }
@@ -128,7 +157,7 @@ public sealed class DocumentVaultSqlServerRelationalAcceptanceTests
         Guid id;
         await using (var a = run.Store(CompanyA))
         {
-            id = (await a.Store.StoreUploadAsync(run.Envelope("k-a"), Hash("a"), Upload(CompanyA, PartyShared, Pdf, "A.pdf"))).Document.Id;
+            id = (await a.Store.StoreUploadAsync(run.Envelope("k-a"), Hash("a"), Upload(CompanyA, PartyShared, Pdf, "A.pdf"), PermitWriteAsync)).Document.Id;
         }
 
         await using (var b = run.Store(CompanyB))
@@ -138,7 +167,7 @@ public sealed class DocumentVaultSqlServerRelationalAcceptanceTests
             Assert.Empty(await b.Store.FindByContentAsync(DocumentContentHash.Compute(Pdf), Guid.NewGuid(), 10));
             // A's object key under B's context is refused before anything is written.
             var refusal = await Assert.ThrowsAsync<DocumentStoreException>(() => b.Store.StoreUploadAsync(run.Envelope("k-b"), Hash("b"),
-                Upload(CompanyA, PartyShared, OtherPdf, "B.pdf")));
+                Upload(CompanyA, PartyShared, OtherPdf, "B.pdf"), PermitWriteAsync));
             Assert.Equal(DocumentStoreCodes.CompanyContextMismatch, refusal.Code);
             // The same key hash in B is B's own attempt space: no replay of A's document.
             Assert.Null(await b.Store.FindReplayAsync(run.Envelope("k-a"), Hash("a"), DocumentCommands.UploadV1));
@@ -154,7 +183,7 @@ public sealed class DocumentVaultSqlServerRelationalAcceptanceTests
         StoredDocument stored;
         await using (var a = run.Store(CompanyA))
         {
-            stored = (await a.Store.StoreUploadAsync(run.Envelope("k-a"), Hash("a"), Upload(CompanyA, PartyA, Pdf, "A.pdf"))).Document;
+            stored = (await a.Store.StoreUploadAsync(run.Envelope("k-a"), Hash("a"), Upload(CompanyA, PartyA, Pdf, "A.pdf"), PermitWriteAsync)).Document;
         }
 
         async Task<int> ExecuteAsync(string sql, params (string Name, object Value)[] parameters)
@@ -223,7 +252,7 @@ public sealed class DocumentVaultSqlServerRelationalAcceptanceTests
 
         await using (var a = run.Store(CompanyA))
         {
-            await a.Store.StoreUploadAsync(run.Envelope("k-a"), Hash("a"), Upload(CompanyA, PartyA, Pdf, "A.pdf"));
+            await a.Store.StoreUploadAsync(run.Envelope("k-a"), Hash("a"), Upload(CompanyA, PartyA, Pdf, "A.pdf"), PermitWriteAsync);
         }
 
         await using (var context = new DocumentsDbContext(options, companyContext))
