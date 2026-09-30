@@ -1,9 +1,10 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   OfficialInvoiceImportPanel,
   type OfficialInvoiceAppliedBatch,
+  type OfficialInvoiceApplyReply,
   type OfficialInvoiceImportClient,
   type OfficialInvoiceImportPreview,
 } from './OfficialInvoiceImportPanel'
@@ -14,6 +15,17 @@ const source = {
   displayName: 'Eylül onaylı fatura taksitleri',
 }
 const checksum = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+let nextSessionEpoch = 0
+let attemptContext = {
+  sessionEpoch: 1,
+  actorId: 'SENTETIK-finance-user',
+  companyId: '99999999-9999-4999-8999-999999999999',
+}
+const otherSource = {
+  batchId: '88888888-8888-4888-8888-888888888888',
+  batchVersion: 'official-file-v2',
+  displayName: 'Ekim onaylı fatura taksitleri',
+}
 
 function preview(issues: OfficialInvoiceImportPreview['issues'] = []): OfficialInvoiceImportPreview {
   return {
@@ -26,7 +38,11 @@ function preview(issues: OfficialInvoiceImportPreview['issues'] = []): OfficialI
   }
 }
 
-function batch(outstandingAmount = '1250.50', version = '1'): OfficialInvoiceAppliedBatch {
+function batch(
+  outstandingAmount = '1250.50',
+  version = '1',
+  overrides: Partial<OfficialInvoiceAppliedBatch> = {},
+): OfficialInvoiceAppliedBatch {
   return {
     batchId: source.batchId,
     batchVersion: source.batchVersion,
@@ -44,7 +60,16 @@ function batch(outstandingAmount = '1250.50', version = '1'): OfficialInvoiceApp
       status: 1,
       version,
     }],
+    ...overrides,
   }
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((done) => {
+    resolve = done
+  })
+  return { promise, resolve }
 }
 
 function client(overrides: Partial<OfficialInvoiceImportClient> = {}): OfficialInvoiceImportClient {
@@ -62,11 +87,16 @@ async function upload(user: ReturnType<typeof userEvent.setup>) {
   return file
 }
 
+beforeEach(() => {
+  nextSessionEpoch += 1
+  attemptContext = { ...attemptContext, sessionEpoch: nextSessionEpoch }
+})
+
 describe('official invoice import panel', () => {
   it('previews, applies, closes and reopens the same persisted Finance batch', async () => {
     const user = userEvent.setup()
     const api = client()
-    render(<OfficialInvoiceImportPanel source={source} client={api} />)
+    render(<OfficialInvoiceImportPanel source={source} client={api} attemptContext={attemptContext} />)
     const file = await upload(user)
 
     await user.click(screen.getByRole('button', { name: /^önizle$/i }))
@@ -91,7 +121,7 @@ describe('official invoice import panel', () => {
     const api = client({
       preview: vi.fn().mockResolvedValue(preview([{ rowNumber: 2, field: 'amount', code: 'decimal_invalid' }])),
     })
-    render(<OfficialInvoiceImportPanel source={source} client={api} />)
+    render(<OfficialInvoiceImportPanel source={source} client={api} attemptContext={attemptContext} />)
     await upload(user)
 
     await user.click(screen.getByRole('button', { name: /^önizle$/i }))
@@ -107,7 +137,7 @@ describe('official invoice import panel', () => {
       .mockResolvedValueOnce({ kind: 'unknown' })
       .mockResolvedValueOnce({ kind: 'succeeded', replayed: true, batch: batch() })
     const api = client({ apply })
-    render(<OfficialInvoiceImportPanel source={source} client={api} />)
+    render(<OfficialInvoiceImportPanel source={source} client={api} attemptContext={attemptContext} />)
     const file = await upload(user)
     await user.click(screen.getByRole('button', { name: /^önizle$/i }))
     await user.click(await screen.findByRole('button', { name: /yetkili uygula/i }))
@@ -124,7 +154,7 @@ describe('official invoice import panel', () => {
 
   it('resets prior preview when a different file is selected', async () => {
     const user = userEvent.setup()
-    render(<OfficialInvoiceImportPanel source={source} client={client()} />)
+    render(<OfficialInvoiceImportPanel source={source} client={client()} attemptContext={attemptContext} />)
     await upload(user)
     await user.click(screen.getByRole('button', { name: /^önizle$/i }))
     await screen.findByText(`SHA-256: ${checksum}`)
@@ -135,5 +165,128 @@ describe('official invoice import panel', () => {
 
     expect(screen.queryByText(`SHA-256: ${checksum}`)).toBeNull()
     expect((screen.getByRole('button', { name: /yetkili uygula/i }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('retires a ready preview when the selected approved source changes', async () => {
+    const user = userEvent.setup()
+    const api = client()
+    const view = render(<OfficialInvoiceImportPanel source={source} client={api} attemptContext={attemptContext} />)
+    await upload(user)
+    await user.click(screen.getByRole('button', { name: /^önizle$/i }))
+    await screen.findByText(`SHA-256: ${checksum}`)
+
+    view.rerender(<OfficialInvoiceImportPanel source={otherSource} client={api} attemptContext={attemptContext} />)
+
+    expect(screen.getByText(otherSource.displayName)).toBeTruthy()
+    expect(screen.queryByText(`SHA-256: ${checksum}`)).toBeNull()
+    expect((screen.getByRole('button', { name: /yetkili uygula/i }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('ignores a late preview from the previous source', async () => {
+    const user = userEvent.setup()
+    const held = deferred<OfficialInvoiceImportPreview>()
+    const api = client({ preview: vi.fn().mockReturnValue(held.promise) })
+    const view = render(<OfficialInvoiceImportPanel source={source} client={api} attemptContext={attemptContext} />)
+    await upload(user)
+    await user.click(screen.getByRole('button', { name: /^önizle$/i }))
+
+    view.rerender(<OfficialInvoiceImportPanel source={otherSource} client={api} attemptContext={attemptContext} />)
+    held.resolve(preview())
+
+    await waitFor(() => expect(screen.queryByText(`SHA-256: ${checksum}`)).toBeNull())
+    expect(screen.getByText(otherSource.displayName)).toBeTruthy()
+  })
+
+  it('ignores a late apply success from the previous source', async () => {
+    const user = userEvent.setup()
+    const held = deferred<OfficialInvoiceApplyReply>()
+    const api = client({ apply: vi.fn().mockReturnValue(held.promise) })
+    const view = render(<OfficialInvoiceImportPanel source={source} client={api} attemptContext={attemptContext} />)
+    await upload(user)
+    await user.click(screen.getByRole('button', { name: /^önizle$/i }))
+    await user.click(await screen.findByRole('button', { name: /yetkili uygula/i }))
+
+    view.rerender(<OfficialInvoiceImportPanel source={otherSource} client={api} attemptContext={attemptContext} />)
+    held.resolve({ kind: 'succeeded', replayed: false, batch: batch() })
+
+    await waitFor(() => expect(screen.queryByText(/açık kalem finans'tan yeniden okundu/i)).toBeNull())
+    expect(screen.getByText(otherSource.displayName)).toBeTruthy()
+  })
+
+  it('ignores a late reopen from the previous source', async () => {
+    const user = userEvent.setup()
+    const held = deferred<OfficialInvoiceAppliedBatch>()
+    const api = client({ reopen: vi.fn().mockReturnValue(held.promise) })
+    const view = render(<OfficialInvoiceImportPanel source={source} client={api} attemptContext={attemptContext} />)
+    await upload(user)
+    await user.click(screen.getByRole('button', { name: /^önizle$/i }))
+    await user.click(await screen.findByRole('button', { name: /yetkili uygula/i }))
+    await screen.findByText(/1 açık kalem finans'tan yeniden okundu/i)
+    await user.click(screen.getByRole('button', { name: /sonucu kapat/i }))
+    await user.click(screen.getByRole('button', { name: /yeniden aç/i }))
+
+    view.rerender(<OfficialInvoiceImportPanel source={otherSource} client={api} attemptContext={attemptContext} />)
+    held.resolve(batch('250.50', '2'))
+
+    await waitFor(() => expect(screen.queryByText(/kalan 250.50/i)).toBeNull())
+    expect(screen.getByText(otherSource.displayName)).toBeTruthy()
+  })
+
+  it('freezes a success whose batch version does not match the preview tuple', async () => {
+    const user = userEvent.setup()
+    const api = client({
+      apply: vi.fn().mockResolvedValue({
+        kind: 'succeeded', replayed: false, batch: batch('1250.50', '1', { batchVersion: 'wrong-version' }),
+      }),
+    })
+    render(<OfficialInvoiceImportPanel source={source} client={api} attemptContext={attemptContext} />)
+    await upload(user)
+    await user.click(screen.getByRole('button', { name: /^önizle$/i }))
+    await user.click(await screen.findByRole('button', { name: /yetkili uygula/i }))
+
+    expect(await screen.findByText(/kaydedilen açık kalem sonucu önizlemeyle eşleşmiyor/i)).toBeTruthy()
+    expect(screen.queryByText(/açık kalem finans'tan yeniden okundu/i)).toBeNull()
+    expect((screen.getByLabelText(/utf-8 csv dosyası/i) as HTMLInputElement).disabled).toBe(true)
+  })
+
+  it('keeps the closed tuple when reopen returns a different version or checksum', async () => {
+    const user = userEvent.setup()
+    const api = client({
+      reopen: vi.fn().mockResolvedValue(batch('250.50', '2', {
+        batchChecksum: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      })),
+    })
+    render(<OfficialInvoiceImportPanel source={source} client={api} attemptContext={attemptContext} />)
+    await upload(user)
+    await user.click(screen.getByRole('button', { name: /^önizle$/i }))
+    await user.click(await screen.findByRole('button', { name: /yetkili uygula/i }))
+    await user.click(await screen.findByRole('button', { name: /sonucu kapat/i }))
+    await user.click(screen.getByRole('button', { name: /yeniden aç/i }))
+
+    expect(await screen.findByText(/yeniden açılan kayıt beklenen kaynak kimliğiyle eşleşmiyor/i)).toBeTruthy()
+    expect(screen.queryByText(/kalan 250.50/i)).toBeNull()
+    expect(screen.getByRole('button', { name: /yeniden aç/i })).toBeTruthy()
+  })
+
+  it('remounts a pending apply as frozen and resends the same file and key', async () => {
+    const user = userEvent.setup()
+    const held = deferred<OfficialInvoiceApplyReply>()
+    const apply = vi.fn()
+      .mockReturnValueOnce(held.promise)
+      .mockResolvedValueOnce({ kind: 'succeeded', replayed: true, batch: batch() })
+    const api = client({ apply })
+    const first = render(<OfficialInvoiceImportPanel source={source} client={api} attemptContext={attemptContext} />)
+    const file = await upload(user)
+    await user.click(screen.getByRole('button', { name: /^önizle$/i }))
+    await user.click(await screen.findByRole('button', { name: /yetkili uygula/i }))
+    first.unmount()
+
+    render(<OfficialInvoiceImportPanel source={source} client={api} attemptContext={attemptContext} />)
+    await user.click(await screen.findByRole('button', { name: /aynı anahtarla yeniden gönder/i }))
+
+    await waitFor(() => expect(apply).toHaveBeenCalledTimes(2))
+    expect(apply.mock.calls[1][1]).toBe(file)
+    expect(apply.mock.calls[1][2]).toBe(apply.mock.calls[0][2])
+    expect(await screen.findByText(/1 açık kalem finans'tan yeniden okundu/i)).toBeTruthy()
   })
 })

@@ -1,10 +1,16 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import styles from './Finance.module.css'
 
 export interface OfficialInvoiceImportSourceSelection {
   readonly batchId: string
   readonly batchVersion: string
   readonly displayName: string
+}
+
+export interface OfficialInvoiceImportAttemptContext {
+  readonly sessionEpoch: number
+  readonly actorId: string
+  readonly companyId: string
 }
 
 export interface OfficialInvoiceImportIssue {
@@ -68,95 +74,249 @@ export interface OfficialInvoiceImportClient {
 
 type Phase = 'idle' | 'previewing' | 'ready' | 'applying' | 'unknown' | 'conflicted' | 'refused' | 'succeeded'
 
+interface BatchIdentity {
+  readonly batchId: string
+  readonly batchVersion: string
+  readonly batchChecksum: string
+}
+
+interface PanelState {
+  readonly sourceKey: string
+  readonly file: File | null
+  readonly preview: OfficialInvoiceImportPreview | null
+  readonly batch: OfficialInvoiceAppliedBatch | null
+  readonly issues: readonly OfficialInvoiceImportIssue[]
+  readonly phase: Phase
+  readonly closedBatch: BatchIdentity | null
+  readonly error: string | null
+}
+
+interface StoredAttempt {
+  readonly file: File
+  readonly preview: OfficialInvoiceImportPreview
+  readonly idempotencyKey: string
+}
+
+const attemptStore = new Map<string, StoredAttempt>()
+
+function sourceKeyFor(
+  context: OfficialInvoiceImportAttemptContext,
+  source: OfficialInvoiceImportSourceSelection,
+): string {
+  return JSON.stringify([
+    context.sessionEpoch,
+    context.actorId,
+    context.companyId,
+    source.batchId,
+    source.batchVersion,
+  ])
+}
+
+function emptyState(sourceKey: string): PanelState {
+  return {
+    sourceKey,
+    file: null,
+    preview: null,
+    batch: null,
+    issues: [],
+    phase: 'idle',
+    closedBatch: null,
+    error: null,
+  }
+}
+
+function recalledState(sourceKey: string): PanelState {
+  const attempt = attemptStore.get(sourceKey)
+  return attempt === undefined
+    ? emptyState(sourceKey)
+    : {
+        ...emptyState(sourceKey),
+        file: attempt.file,
+        preview: attempt.preview,
+        phase: 'unknown',
+      }
+}
+
+function identityOf(batch: OfficialInvoiceAppliedBatch): BatchIdentity {
+  return {
+    batchId: batch.batchId,
+    batchVersion: batch.batchVersion,
+    batchChecksum: batch.batchChecksum,
+  }
+}
+
+function sameIdentity(left: BatchIdentity, right: BatchIdentity): boolean {
+  return left.batchId === right.batchId
+    && left.batchVersion === right.batchVersion
+    && left.batchChecksum === right.batchChecksum
+}
+
 export function OfficialInvoiceImportPanel({
   source,
   client,
+  attemptContext,
 }: {
   readonly source: OfficialInvoiceImportSourceSelection
   readonly client: OfficialInvoiceImportClient
+  readonly attemptContext: OfficialInvoiceImportAttemptContext
 }) {
-  const [file, setFile] = useState<File | null>(null)
-  const [preview, setPreview] = useState<OfficialInvoiceImportPreview | null>(null)
-  const [batch, setBatch] = useState<OfficialInvoiceAppliedBatch | null>(null)
-  const [issues, setIssues] = useState<readonly OfficialInvoiceImportIssue[]>([])
-  const [phase, setPhase] = useState<Phase>('idle')
-  const [closedBatchId, setClosedBatchId] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const sourceKey = sourceKeyFor(attemptContext, source)
+  return <OfficialInvoiceImportPanelState key={sourceKey} source={source} client={client} sourceKey={sourceKey} />
+}
 
-  const idempotencyKey = useMemo(() => {
-    if (preview === null) return null
-    return `official-invoice:${source.batchId}:${preview.sourceSha256}`
-  }, [preview, source.batchId])
+function OfficialInvoiceImportPanelState({
+  source,
+  client,
+  sourceKey,
+}: {
+  readonly source: OfficialInvoiceImportSourceSelection
+  readonly client: OfficialInvoiceImportClient
+  readonly sourceKey: string
+}) {
+  const [state, setState] = useState<PanelState>(() => recalledState(sourceKey))
+  const controllers = useRef(new Set<AbortController>())
+  const current = state
+  const frozen = current.phase === 'applying' || current.phase === 'unknown' || current.phase === 'conflicted'
+
+  useEffect(() => {
+    const activeControllers = controllers.current
+    return () => {
+      for (const controller of activeControllers) controller.abort()
+      activeControllers.clear()
+    }
+  }, [])
+
+  const update = (key: string, apply: (value: PanelState) => PanelState) => {
+    setState((value) => value.sourceKey === key ? apply(value) : value)
+  }
+
+  const startRequest = () => {
+    const controller = new AbortController()
+    controllers.current.add(controller)
+    return controller
+  }
+
+  const finishRequest = (controller: AbortController) => {
+    controllers.current.delete(controller)
+  }
 
   async function runPreview() {
-    if (file === null) return
-    const controller = new AbortController()
-    setPhase('previewing')
-    setError(null)
-    setIssues([])
-    setBatch(null)
+    if (current.file === null || frozen) return
+    const operationKey = sourceKey
+    const selectedSource = source
+    const selectedFile = current.file
+    const controller = startRequest()
+    update(operationKey, (value) => ({
+      ...value,
+      preview: null,
+      batch: null,
+      closedBatch: null,
+      phase: 'previewing',
+      error: null,
+      issues: [],
+    }))
     try {
-      const result = await client.preview(source, file, controller.signal)
-      if (result.batchId !== source.batchId || result.batchVersion !== source.batchVersion) {
-        setPhase('refused')
-        setError('Önizleme, seçilen onaylı kaynak kimliğiyle eşleşmiyor.')
+      const result = await client.preview(selectedSource, selectedFile, controller.signal)
+      if (result.batchId !== selectedSource.batchId || result.batchVersion !== selectedSource.batchVersion) {
+        update(operationKey, (value) => ({
+          ...value,
+          phase: 'refused',
+          error: 'Önizleme, seçilen onaylı kaynak kimliğiyle eşleşmiyor.',
+        }))
         return
       }
-      setPreview(result)
-      setIssues(result.issues)
-      setPhase(result.issues.length === 0 ? 'ready' : 'refused')
+      update(operationKey, (value) => ({
+        ...value,
+        preview: result,
+        issues: result.issues,
+        phase: result.issues.length === 0 ? 'ready' : 'refused',
+      }))
     } catch {
-      setPhase('idle')
-      setError('Dosya önizlemesi alınamadı; kayıt yapılmadı.')
+      if (!controller.signal.aborted) {
+        update(operationKey, (value) => ({
+          ...value,
+          phase: 'idle',
+          error: 'Dosya önizlemesi alınamadı; kayıt yapılmadı.',
+        }))
+      }
+    } finally {
+      finishRequest(controller)
     }
   }
 
   async function apply() {
-    if (file === null || preview === null || idempotencyKey === null || preview.issues.length > 0) return
-    const controller = new AbortController()
-    setPhase('applying')
-    setError(null)
+    const selectedPreview = current.preview
+    if (current.file === null || selectedPreview === null || selectedPreview.issues.length > 0
+      || selectedPreview.batchId !== source.batchId || selectedPreview.batchVersion !== source.batchVersion) return
+    const operationKey = sourceKey
+    const selectedSource = source
+    const selectedFile = current.file
+    const idempotencyKey = attemptStore.get(operationKey)?.idempotencyKey
+      ?? `official-invoice:${selectedSource.batchId}:${selectedPreview.sourceSha256}`
+    attemptStore.set(operationKey, { file: selectedFile, preview: selectedPreview, idempotencyKey })
+    const controller = startRequest()
+    update(operationKey, (value) => ({ ...value, phase: 'applying', error: null }))
     try {
-      const result = await client.apply(source, file, idempotencyKey, controller.signal)
+      const result = await client.apply(selectedSource, selectedFile, idempotencyKey, controller.signal)
       if (result.kind === 'succeeded') {
-        if (result.batch.batchId !== source.batchId
-          || result.batch.batchChecksum !== preview.sourceSha256) {
-          setPhase('refused')
-          setError('Kaydedilen açık kalem sonucu önizlemeyle eşleşmiyor.')
+        const expected = {
+          batchId: selectedSource.batchId,
+          batchVersion: selectedSource.batchVersion,
+          batchChecksum: selectedPreview.sourceSha256,
+        }
+        if (!sameIdentity(identityOf(result.batch), expected)) {
+          update(operationKey, (value) => ({
+            ...value,
+            phase: 'unknown',
+            error: 'Kaydedilen açık kalem sonucu önizlemeyle eşleşmiyor.',
+          }))
           return
         }
-        setBatch(result.batch)
-        setClosedBatchId(null)
-        setIssues([])
-        setPhase('succeeded')
+        attemptStore.delete(operationKey)
+        update(operationKey, (value) => ({
+          ...value,
+          batch: result.batch,
+          closedBatch: null,
+          issues: [],
+          phase: 'succeeded',
+        }))
         return
       }
       if (result.kind === 'refused') {
-        setIssues(result.issues)
-        setPhase('refused')
+        attemptStore.delete(operationKey)
+        update(operationKey, (value) => ({ ...value, issues: result.issues, phase: 'refused' }))
         return
       }
-      setPhase(result.kind)
+      update(operationKey, (value) => ({ ...value, phase: result.kind }))
     } catch {
-      setPhase('unknown')
+      update(operationKey, (value) => ({ ...value, phase: 'unknown' }))
+    } finally {
+      finishRequest(controller)
     }
   }
 
   async function reopen() {
-    if (closedBatchId === null) return
-    const controller = new AbortController()
-    setError(null)
+    if (current.closedBatch === null) return
+    const operationKey = sourceKey
+    const expected = current.closedBatch
+    const controller = startRequest()
+    update(operationKey, (value) => ({ ...value, error: null }))
     try {
-      const result = await client.reopen(closedBatchId, controller.signal)
-      if (result.batchId !== closedBatchId) {
-        setError('Yeniden açılan kayıt beklenen kaynak kimliğiyle eşleşmiyor.')
+      const result = await client.reopen(expected.batchId, controller.signal)
+      if (!sameIdentity(identityOf(result), expected)) {
+        update(operationKey, (value) => ({
+          ...value,
+          error: 'Yeniden açılan kayıt beklenen kaynak kimliğiyle eşleşmiyor.',
+        }))
         return
       }
-      setBatch(result)
-      setClosedBatchId(null)
-      setPhase('succeeded')
+      update(operationKey, (value) => ({ ...value, batch: result, closedBatch: null, phase: 'succeeded' }))
     } catch {
-      setError('Kaydedilmiş açık kalemler yeniden açılamadı.')
+      if (!controller.signal.aborted) {
+        update(operationKey, (value) => ({ ...value, error: 'Kaydedilmiş açık kalemler yeniden açılamadı.' }))
+      }
+    } finally {
+      finishRequest(controller)
     }
   }
 
@@ -176,76 +336,75 @@ export function OfficialInvoiceImportPanel({
       <div className={styles.form}>
         <label htmlFor="official-invoice-import-file">UTF-8 CSV dosyası</label>
         <input
+          key={sourceKey}
           id="official-invoice-import-file"
           type="file"
           accept=".csv,text/csv"
-          disabled={phase === 'previewing' || phase === 'applying'}
+          disabled={current.phase === 'previewing' || frozen}
           onChange={(event) => {
-            setFile(event.target.files?.[0] ?? null)
-            setPreview(null)
-            setBatch(null)
-            setClosedBatchId(null)
-            setIssues([])
-            setError(null)
-            setPhase('idle')
+            if (frozen) return
+            setState({ ...emptyState(sourceKey), file: event.target.files?.[0] ?? null })
           }}
         />
         <div className={styles.actions}>
-          <button type="button" disabled={file === null || phase === 'previewing' || phase === 'applying'} onClick={runPreview}>
+          <button type="button" disabled={current.file === null || current.phase === 'previewing' || frozen} onClick={runPreview}>
             Önizle
           </button>
-          <button type="button" disabled={phase !== 'ready'} onClick={apply}>
+          <button type="button" disabled={current.phase !== 'ready'
+            || current.preview?.batchId !== source.batchId
+            || current.preview.batchVersion !== source.batchVersion} onClick={apply}>
             Yetkili uygula ve açık kalemleri oku
           </button>
         </div>
       </div>
-      {phase === 'previewing' ? <p role="status">Dosya doğrulanıyor…</p> : null}
-      {phase === 'applying' ? <p role="status">Açık kalemler atomik olarak kaydediliyor…</p> : null}
-      {preview === null ? null : (
+      {current.phase === 'previewing' ? <p role="status">Dosya doğrulanıyor…</p> : null}
+      {current.phase === 'applying' ? <p role="status">Açık kalemler atomik olarak kaydediliyor…</p> : null}
+      {current.preview === null ? null : (
         <article className={styles.command} aria-label="Fatura içe aktarma önizlemesi">
-          <p>Şablon: {preview.templateVersion}</p>
-          <p>Satır: {preview.rowCount}</p>
-          <p>SHA-256: {preview.sourceSha256}</p>
+          <p>Şablon: {current.preview.templateVersion}</p>
+          <p>Satır: {current.preview.rowCount}</p>
+          <p>SHA-256: {current.preview.sourceSha256}</p>
         </article>
       )}
-      {issues.length === 0 ? null : (
+      {current.issues.length === 0 ? null : (
         <div className={styles.attempt} role="alert">
           <p>Dosya uygulanmadı.</p>
-          {issues.map((issue, index) => (
+          {current.issues.map((issue, index) => (
             <p key={`${issue.rowNumber}-${issue.field}-${issue.code}-${index}`}>
               Satır {issue.rowNumber}, {issue.field}: {issue.code}
             </p>
           ))}
         </div>
       )}
-      {phase === 'unknown' ? (
+      {current.phase === 'unknown' ? (
         <div className={styles.attempt} role="status">
           <p>Sonuç bilinmiyor; yeni işlem üretmeden aynı dosya ve anahtarla yeniden gönderin.</p>
           <button type="button" onClick={apply}>Aynı anahtarla yeniden gönder</button>
         </div>
       ) : null}
-      {phase === 'conflicted' ? <p role="alert">Aynı işlem anahtarı farklı içerikle çakıştı; kayıt yapılmadı.</p> : null}
-      {error === null ? null : <p role="alert">{error}</p>}
-      {batch === null ? null : (
+      {current.phase === 'conflicted' ? <p role="alert">Aynı işlem anahtarı farklı içerikle çakıştı; kayıt yapılmadı.</p> : null}
+      {current.error === null ? null : <p role="alert">{current.error}</p>}
+      {current.batch === null ? null : (
         <article className={styles.command} aria-label="Kaydedilmiş Finans açık kalemleri">
           <h2>Kaydedilmiş açık kalemler</h2>
-          <p>{batch.openItems.length} açık kalem Finans'tan yeniden okundu.</p>
+          <p>{current.batch.openItems.length} açık kalem Finans'tan yeniden okundu.</p>
           <ul>
-            {batch.openItems.map((item) => (
+            {current.batch.openItems.map((item) => (
               <li key={item.id}>
                 <strong>{item.originalAmount}</strong> / kalan {item.outstandingAmount} / sürüm {item.version}
               </li>
             ))}
           </ul>
           <button type="button" onClick={() => {
-            setClosedBatchId(batch.batchId)
-            setBatch(null)
+            setState((value) => value.sourceKey === sourceKey
+              ? { ...value, closedBatch: identityOf(current.batch!), batch: null }
+              : value)
           }}>
             Sonucu kapat
           </button>
         </article>
       )}
-      {closedBatchId === null ? null : (
+      {current.closedBatch === null ? null : (
         <button type="button" onClick={reopen}>Kaydedilmiş açık kalemleri yeniden aç</button>
       )}
     </section>
