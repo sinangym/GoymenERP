@@ -14,7 +14,7 @@ const row = {
   companyAccountId: '77777777-7777-4777-8777-777777777777', currencyId: '88888888-8888-4888-8888-888888888888',
   amount: '1250.50', dueOn: '2026-10-31',
 } as const
-const detail = { batch, preview: { templateVersion: batch.templateVersion, sourceSha256: batch.batchChecksum,
+const detail = { batch, preview: { templateVersion: batch.templateVersion, sourceSha256: batch.batchChecksum, isValid: true,
   batch: { batchId: batch.batchId, companyId: batch.companyId, batchVersion: batch.batchVersion,
     batchChecksum: batch.batchChecksum, rows: [row] }, issues: [] } } as const
 
@@ -28,6 +28,7 @@ describe('official invoice pending approval contract', () => {
     expect(decodePendingPage({ companyId: batch.companyId, items: [{ ...batch, hidden: true }], nextCursor: null })).toEqual({ ok: false })
     expect(decodePendingPage({ companyId: '99999999-9999-4999-8999-999999999999', items: [batch], nextCursor: null })).toEqual({ ok: false })
     expect(decodePendingDetail({ ...detail, preview: { ...detail.preview, sourceSha256: 'b'.repeat(64) } })).toEqual({ ok: false })
+    expect(decodePendingDetail({ ...detail, preview: { ...detail.preview, isValid: false } })).toEqual({ ok: false })
   })
 
   it('accepts only a complete approved command resource', () => {

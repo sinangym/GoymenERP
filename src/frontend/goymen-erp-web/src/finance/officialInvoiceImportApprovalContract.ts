@@ -39,6 +39,7 @@ export interface OfficialInvoicePendingDetail {
   readonly preview: {
     readonly templateVersion: string
     readonly sourceSha256: string
+    readonly isValid: true
     readonly batch: {
       readonly batchId: string
       readonly companyId: string
@@ -122,9 +123,11 @@ export function decodePendingPage(value: unknown): DecodeResult<OfficialInvoiceP
 export function decodePendingDetail(value: unknown): DecodeResult<OfficialInvoicePendingDetail> {
   if (!object(value) || !exact(value, ['batch', 'preview'])) return { ok: false }
   const summary = decodePendingBatch(value.batch)
-  if (!summary.ok || !object(value.preview) || !exact(value.preview, ['templateVersion', 'sourceSha256', 'batch', 'issues'])
+  if (!summary.ok || !object(value.preview)
+    || !exact(value.preview, ['templateVersion', 'sourceSha256', 'batch', 'issues', 'isValid'])
     || value.preview.templateVersion !== summary.value.templateVersion
-    || value.preview.sourceSha256 !== summary.value.batchChecksum || !Array.isArray(value.preview.issues)
+    || value.preview.sourceSha256 !== summary.value.batchChecksum || value.preview.isValid !== true
+    || !Array.isArray(value.preview.issues)
     || value.preview.issues.length !== 0 || !object(value.preview.batch)
     || !exact(value.preview.batch, ['batchId', 'companyId', 'batchVersion', 'batchChecksum', 'rows'])
     || value.preview.batch.batchId !== summary.value.batchId || value.preview.batch.companyId !== summary.value.companyId

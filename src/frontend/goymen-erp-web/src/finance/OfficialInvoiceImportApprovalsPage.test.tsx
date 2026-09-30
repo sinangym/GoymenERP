@@ -10,7 +10,7 @@ const pending: OfficialInvoicePendingBatch = {
   approvedBy: null, approvedAtUtc: null,
 }
 const detail: OfficialInvoicePendingDetail = { batch: pending, preview: { templateVersion: pending.templateVersion,
-  sourceSha256: pending.batchChecksum, issues: [], batch: { batchId: pending.batchId, companyId: pending.companyId,
+  sourceSha256: pending.batchChecksum, isValid: true, issues: [], batch: { batchId: pending.batchId, companyId: pending.companyId,
     batchVersion: pending.batchVersion, batchChecksum: pending.batchChecksum, rows: [{
       openItemId: '33333333-3333-4333-8333-333333333333', sourceDocumentId: '44444444-4444-4444-8444-444444444444',
       sourceInstallmentId: '55555555-5555-4555-8555-555555555555', sourceVersion: 'invoice-v1',
@@ -71,5 +71,70 @@ describe('official invoice checker journey', () => {
       onApprovedSource={() => undefined} />)
     fireEvent.click(await screen.findByRole('button', { name: 'İncele' }))
     expect((await screen.findByRole('button', { name: 'Onayla' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('retires late detail and settled actions immediately when company or actor changes', async () => {
+    let resolveDetail!: (value: OfficialInvoicePendingDetail) => void
+    const lateDetail = new Promise<OfficialInvoicePendingDetail>((resolve) => { resolveDetail = resolve })
+    const client: OfficialInvoiceApprovalClient = {
+      listPending: vi.fn()
+        .mockResolvedValueOnce({ companyId: pending.companyId, items: [pending], nextCursor: null })
+        .mockResolvedValueOnce({ companyId: '99999999-9999-4999-8999-999999999999', items: [], nextCursor: null }),
+      getPending: vi.fn().mockReturnValue(lateDetail), approve: vi.fn(),
+    }
+    const view = render(<OfficialInvoiceImportApprovalsPage client={client} context={context}
+      onApprovedSource={() => undefined} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'İncele' }))
+    view.rerender(<OfficialInvoiceImportApprovalsPage client={client}
+      context={{ sessionEpoch: 2, companyId: '99999999-9999-4999-8999-999999999999', actorId: 'other' }}
+      onApprovedSource={() => undefined} />)
+    resolveDetail(detail)
+
+    expect(await screen.findByText('Onay bekleyen kaynak yok.')).toBeTruthy()
+    expect(screen.queryByText('1250.50')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Onaylanan kaynağı aktar' })).toBeNull()
+  })
+
+  it('refuses a successful response that does not match the frozen approval identity', async () => {
+    const client: OfficialInvoiceApprovalClient = {
+      listPending: vi.fn().mockResolvedValue({ companyId: pending.companyId, items: [pending], nextCursor: null }),
+      getPending: vi.fn().mockResolvedValue(detail),
+      approve: vi.fn().mockResolvedValue({ kind: 'succeeded', replayed: false,
+        batch: { ...approved, batchId: '99999999-9999-4999-8999-999999999999' } }),
+    }
+    render(<OfficialInvoiceImportApprovalsPage client={client} context={context}
+      onApprovedSource={() => undefined} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'İncele' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Onayla' }))
+
+    expect(await screen.findByRole('alert')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Onaylanan kaynağı aktar' })).toBeNull()
+  })
+
+  it('opens the bounded next page and recovers from list failure and command conflict', async () => {
+    const second = { ...pending, batchId: '99999999-9999-4999-8999-999999999999', batchVersion: 'invoice-v2' }
+    const secondDetail = { ...detail, batch: second, preview: { ...detail.preview,
+      batch: { ...detail.preview.batch, batchId: second.batchId, batchVersion: second.batchVersion } } }
+    const listPending = vi.fn()
+      .mockRejectedValueOnce(new Error('synthetic read failure'))
+      .mockResolvedValueOnce({ companyId: pending.companyId, items: [pending], nextCursor: 'page-2' })
+      .mockResolvedValueOnce({ companyId: pending.companyId, items: [second], nextCursor: null })
+    const getPending = vi.fn().mockResolvedValueOnce(secondDetail).mockResolvedValueOnce(secondDetail)
+    const client: OfficialInvoiceApprovalClient = {
+      listPending, getPending,
+      approve: vi.fn().mockResolvedValue({ kind: 'conflicted' }),
+    }
+    render(<OfficialInvoiceImportApprovalsPage client={client} context={context}
+      onApprovedSource={() => undefined} />)
+
+    fireEvent.click((await screen.findByRole('alert')).querySelector('button')!)
+    fireEvent.click(await screen.findByRole('button', { name: 'Sonraki sayfa' }))
+    expect(await screen.findByText('invoice-v2')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'İncele' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Onayla' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Kaydı yeniden oku' }))
+
+    await waitFor(() => expect(getPending).toHaveBeenCalledTimes(2))
+    expect(await screen.findByRole('button', { name: 'Onay kuyruğuna dön' })).toBeTruthy()
   })
 })
