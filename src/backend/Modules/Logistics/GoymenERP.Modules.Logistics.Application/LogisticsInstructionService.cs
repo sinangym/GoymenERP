@@ -67,15 +67,9 @@ public sealed partial class LogisticsInstructionService(
         for (var index = 0; index < request.Lines.Count; index++)
         {
             var line = request.Lines[index];
-            var (source, productId, orderedQuantity) = await ReadOrderLineAsync(scope, request, index, cancellationToken);
+            var (source, productId) = await ReadOrderLineAsync(scope, request, index, cancellationToken);
             var quantity = await VerifyUnitAsync(scope, bindings.CreatePermission, line.UnitId, line.Quantity, request.EffectiveOn,
                 $"lines[{index}]", cancellationToken);
-            if (quantity.Value > orderedQuantity)
-            {
-                throw new LogisticsInstructionServiceException(409, LogisticsProblemCodesV1.OrderLineState,
-                    [new($"lines[{index}].quantity", "exceeds_ordered_quantity")]);
-            }
-
             lines.Add((line, source, productId, quantity));
         }
 
@@ -149,7 +143,7 @@ public sealed partial class LogisticsInstructionService(
                     ?? throw new LogisticsInstructionServiceException(404, "not_found");
                 var quantity = await VerifyUnitAsync(scope, bindings.RecordPermission, line.UnitId, request.Quantity, stored.EffectiveOn, "load",
                     cancellationToken);
-                await RequireCurrentOrderLineAllowsLoadAsync(scope, stored, line, quantity, cancellationToken);
+                await RequireCurrentOrderLineAllowsLoadAsync(scope, stored, line, cancellationToken);
                 return quantity;
             }, cancellationToken);
     }
@@ -552,7 +546,7 @@ public sealed partial class LogisticsInstructionService(
     }
 
     /// <summary>D4: only an APPROVED line of this company and this customer is a need; the product and the revision are the Sales owner's answer.</summary>
-    private async Task<(SourceOrderLineRef Source, Guid ProductId, decimal OrderedQuantity)> ReadOrderLineAsync(Scope scope,
+    private async Task<(SourceOrderLineRef Source, Guid ProductId)> ReadOrderLineAsync(Scope scope,
         CreateLoadingInstructionRequest request, int index,
         CancellationToken cancellationToken)
     {
@@ -600,8 +594,7 @@ public sealed partial class LogisticsInstructionService(
                         [new($"lines[{index}].unitId", "unit_mismatch")]);
                 }
 
-                return (new SourceOrderLineRef(approved.OrderId, approved.LineId, approved.Revision), approved.ProductId,
-                    ReadOwnerQuantity(approved.QuantityText));
+                return (new SourceOrderLineRef(approved.OrderId, approved.LineId, approved.Revision), approved.ProductId);
             case SalesOrderLineReferenceOutcomeV1.NotApproved:
                 throw new LogisticsInstructionServiceException(409, LogisticsProblemCodesV1.OrderLineState,
                     [new(field, "not_approved"), new($"lines[{index}].approvalState", answer.ApprovalState ?? "unknown")]);
@@ -619,7 +612,7 @@ public sealed partial class LogisticsInstructionService(
     /// load; there is deliberately no cross-module transaction.
     /// </summary>
     private async Task RequireCurrentOrderLineAllowsLoadAsync(Scope scope, StoredLoadingInstruction stored, LoadingInstructionLine line,
-        Quantity quantity, CancellationToken cancellationToken)
+        CancellationToken cancellationToken)
     {
         SalesOrderLineReferenceAnswerV1 answer;
         try
@@ -657,12 +650,10 @@ public sealed partial class LogisticsInstructionService(
                 [new("sourceOrderLineId", "remainder_cancelled")]);
         }
 
-        var orderedQuantity = ReadOwnerQuantity(approved.QuantityText);
-        if (line.LoadedQuantity.Value + quantity.Value > orderedQuantity)
-        {
-            throw new LogisticsInstructionServiceException(409, LogisticsProblemCodesV1.OrderLineState,
-                [new("quantity", "exceeds_ordered_quantity")]);
-        }
+        // OPEN-004 (user decision 2026-09-30): over/under loading is allowed within a tolerance entered on the order line,
+        // defaulted by Settings per product group and piece/kg basis. Those source contracts and the atomic aggregate gate
+        // across every instruction of this Sales line do not exist yet. Do not turn their absence into a zero-tolerance cap.
+        // Cancelled remainder above is exact and remains blocked; a numeric revised/open cap is added only with that K3 source.
     }
 
     private static void RequireKnownRemainderState(string state)
@@ -674,17 +665,6 @@ public sealed partial class LogisticsInstructionService(
         }
     }
 
-    private static decimal ReadOwnerQuantity(string quantityText)
-    {
-        try
-        {
-            return ReadQuantityText(quantityText, "sourceOrderLine.quantity");
-        }
-        catch (LogisticsInstructionServiceException)
-        {
-            throw new LogisticsInstructionServiceException(503, LogisticsProblemCodesV1.ReferenceProviderInvalid);
-        }
-    }
 
     private async Task<Quantity> VerifyUnitAsync(Scope scope, string? permission, Guid unitId, string quantityText, DateOnly effectiveOn,
         string field, CancellationToken cancellationToken)

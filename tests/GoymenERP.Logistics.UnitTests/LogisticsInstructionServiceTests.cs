@@ -88,17 +88,15 @@ public sealed partial class LogisticsInstructionServiceTests
         Assert.Equal(0, world.Settings.Calls);
     }
 
-    [Theory]
-    [InlineData("remainder-cancelled", "1", "lines[0].sourceOrderLineId", "remainder_cancelled")]
-    [InlineData("remainder-revised", "2.001", "lines[0].quantity", "exceeds_ordered_quantity")]
-    public async Task A_new_instruction_respects_the_current_approved_remainder(string fault, string quantity, string field, string fieldCode)
+    [Fact]
+    public async Task A_new_instruction_never_reopens_a_cancelled_remainder()
     {
-        var world = new World { OrderLines = { Fault = fault } };
+        var world = new World { OrderLines = { Fault = "remainder-cancelled" } };
 
         var refusal = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() =>
-            world.Service().CreateInstructionAsync(Request(quantity), Metadata("k-remainder")));
+            world.Service().CreateInstructionAsync(Request("1"), Metadata("k-remainder")));
 
-        Assert.Equal((409, LogisticsProblemCodesV1.OrderLineState, field, fieldCode),
+        Assert.Equal((409, LogisticsProblemCodesV1.OrderLineState, "lines[0].sourceOrderLineId", "remainder_cancelled"),
             (refusal.Status, refusal.Code, refusal.Errors[0].Field, refusal.Errors[0].Code));
         Assert.Empty(world.Store.Envelopes);
     }
@@ -198,7 +196,7 @@ public sealed partial class LogisticsInstructionServiceTests
     }
 
     [Fact]
-    public async Task Every_load_re_reads_the_current_sales_remainder_and_never_exceeds_a_revised_quantity()
+    public async Task Every_load_re_reads_the_current_sales_remainder_and_never_reopens_a_cancelled_remainder()
     {
         var world = new World();
         var created = await world.Service().CreateInstructionAsync(Request(quantity: "4"), Metadata("k-create-remainder"));
@@ -206,19 +204,9 @@ public sealed partial class LogisticsInstructionServiceTests
         var lineId = created.Detail.Lines[0].LineId;
         await world.Service().IssueInstructionAsync(id, new IssueLoadingInstructionRequest("2"), Metadata("k-issue-remainder"));
 
-        world.OrderLines.Fault = "remainder-revised";
-        var loaded = await world.Service().RecordLoadAsync(id, lineId,
-            new RecordLoadRequest("3", Guid.NewGuid(), "2", "Measured"), Metadata("k-load-remainder-1"));
-        Assert.Equal("2", loaded.Detail.Lines[0].Loaded);
-
-        var over = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() => world.Service().RecordLoadAsync(id, lineId,
-            new RecordLoadRequest("4", Guid.NewGuid(), "0.001", "Measured"), Metadata("k-load-remainder-2")));
-        Assert.Equal((409, LogisticsProblemCodesV1.OrderLineState, "quantity", "exceeds_ordered_quantity"),
-            (over.Status, over.Code, over.Errors[0].Field, over.Errors[0].Code));
-
         world.OrderLines.Fault = "remainder-cancelled";
         var cancelled = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() => world.Service().RecordLoadAsync(id, lineId,
-            new RecordLoadRequest("4", Guid.NewGuid(), "0.001", "Measured"), Metadata("k-load-remainder-3")));
+            new RecordLoadRequest("3", Guid.NewGuid(), "0.001", "Measured"), Metadata("k-load-remainder")));
         Assert.Equal((409, LogisticsProblemCodesV1.OrderLineState, "sourceOrderLineId", "remainder_cancelled"),
             (cancelled.Status, cancelled.Code, cancelled.Errors[0].Field, cancelled.Errors[0].Code));
     }
