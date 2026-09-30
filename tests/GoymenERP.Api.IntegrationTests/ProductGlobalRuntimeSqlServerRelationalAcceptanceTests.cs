@@ -15,6 +15,7 @@ using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
+using GoymenERP.Modules.Idempotency.Domain.Executions;
 using GoymenERP.Modules.Idempotency.Infrastructure.Persistence;
 using GoymenERP.Modules.Identity.Domain.Assignments;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
@@ -86,12 +87,15 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
                   (SELECT COUNT(*) FROM [audit].[AuditEvents]
                    WHERE [SubjectKind] = N'GroupSharedProduct' AND [EntityId] IN (@firstText, @secondText)),
                   (SELECT COUNT(*) FROM [idempotency].[GroupSharedCommandTerminals]
-                   WHERE [CommandName] = N'product.import.v1');
+                   WHERE [Subject] = N'Product'
+                     AND [CommandName] = N'product.draft.create.v1'
+                     AND [IdempotencyKeyHash] = @keyHash);
                 """;
             counts.Parameters.AddWithValue("@first", first.Products[0].ProductId);
             counts.Parameters.AddWithValue("@second", first.Products[1].ProductId);
             counts.Parameters.AddWithValue("@firstText", first.Products[0].ProductId.ToString("D"));
             counts.Parameters.AddWithValue("@secondText", first.Products[1].ProductId.ToString("D"));
+            counts.Parameters.AddWithValue("@keyHash", IdempotencyHash.ComputeKey(key));
             await using var reader = await counts.ExecuteReaderAsync();
             Assert.True(await reader.ReadAsync());
             Assert.Equal(2, reader.GetInt32(0));
