@@ -1,13 +1,16 @@
 using GoymenERP.Modules.Manufacturing.Domain.Common;
+using GoymenERP.Modules.Manufacturing.Domain.Engines;
+using GoymenERP.Modules.Manufacturing.Domain.Engines.Balance;
 using GoymenERP.Modules.Manufacturing.Domain.Orders;
 using GoymenERP.Modules.Manufacturing.Domain.Plans;
 
 namespace GoymenERP.Manufacturing.UnitTests;
 
 /// <summary>
-/// The two MFG-1 decisions (coordinator, 2026-09-18): the remaining target is measured only in
-/// the unit the plan DECLARES, otherwise it is unavailable; and with no approved Ö7 tolerance,
-/// an order with any unexplained difference does not close.
+/// The MFG-1 decisions: the remaining target is measured only in the unit the plan DECLARES, otherwise it is
+/// unavailable; the runtime close remains fail-closed for any unexplained difference. OPEN-005 / Ö7 preparation is
+/// read-only and uses only an explicitly supplied policy snapshot and BAL-004 inputs; it records neither fire nor an
+/// approval and does not soften <see cref="ProductionOrder.Close"/>.
 /// </summary>
 public sealed class OrderTargetAndCloseTests
 {
@@ -17,8 +20,16 @@ public sealed class OrderTargetAndCloseTests
     private static readonly Guid OtherRoll = Guid.Parse("30000000-0000-0000-0000-00000000a002");
     private static readonly Guid Planner = Guid.Parse("40000000-0000-0000-0000-00000000b001");
     private static readonly Guid Closer = Guid.Parse("40000000-0000-0000-0000-00000000b002");
+    private static readonly Guid Policy = Guid.Parse("50000000-0000-0000-0000-00000000c001");
 
     private static Kilograms Kg(decimal value) => new(value);
+
+    private static ClosureTolerancePolicySnapshotV1 Tolerance(decimal percent,
+        Guid? companyId = null, ManufacturingProcess process = ManufacturingProcess.Slitting) =>
+        new(companyId ?? Company, Policy, 7, process, percent);
+
+    private static RollScrapPercentInputV1 Fire(Guid roll, decimal? fireKg, decimal? rawMaterialKg) =>
+        new(roll, new ScrapPercentInputV1(fireKg, rawMaterialKg));
 
     private static ProductionOrder Order(ProductionTarget? target, params PlannedInput[] inputs)
     {
@@ -141,6 +152,133 @@ public sealed class OrderTargetAndCloseTests
             () => order.MeasureWip(MasterRoll, Kg(1m))).Code);
         Assert.Equal(ManufacturingRuleCodes.OrderClosed, Assert.Throws<ManufacturingRuleException>(
             () => order.Close(order.Version, Closer, DateTimeOffset.UnixEpoch)).Code);
+    }
+
+    [Fact]
+    public void A_supplied_exact_BAL004_result_separates_the_inclusive_boundary_without_mutating_the_order()
+    {
+        var order = Order(target: null);
+        order.Issue(MasterRoll, Kg(1_000m));
+        order.Declare(MasterRoll, OutputClass.GoodProduct, Kg(990m));
+        var version = order.Version;
+        var facts = (order.Issues.Count, order.Outputs.Count, order.Returns.Count, order.WipMeasurements.Count);
+        Assert.Equal(ManufacturingRuleCodes.UnexplainedDifference, Assert.Throws<ManufacturingRuleException>(
+            () => order.Close(order.Version, Closer, DateTimeOffset.UnixEpoch)).Code);
+
+        var inside = order.AssessClosure(Tolerance(1m), [Fire(MasterRoll, 10m, 1_000m)]);
+        var outside = order.AssessClosure(Tolerance(0.999m), [Fire(MasterRoll, 10m, 1_000m)]);
+
+        Assert.Equal(ClosureDispositionV1.FireDeclarationRequired, inside.Disposition);
+        Assert.Equal((ClosureDispositionV1.FireDeclarationRequired, 10m, 1m),
+            (Assert.Single(inside.Rolls).Disposition, inside.Rolls[0].DifferenceKg, inside.Rolls[0].FirePercent));
+        Assert.Equal(ClosureDispositionV1.ApprovalRequired, outside.Disposition);
+        Assert.Equal((version, facts, OrderStatus.Open),
+            (order.Version, (order.Issues.Count, order.Outputs.Count, order.Returns.Count, order.WipMeasurements.Count),
+                order.Status));
+        Assert.Equal(ManufacturingRuleCodes.UnexplainedDifference, Assert.Throws<ManufacturingRuleException>(
+            () => order.Close(order.Version, Closer, DateTimeOffset.UnixEpoch)).Code);
+    }
+
+    [Fact]
+    public void Rolls_never_offset_and_a_negative_difference_requires_review_not_approval()
+    {
+        var order = Order(null,
+            new PlannedInput(MasterRoll, Kg(1_000m)), new PlannedInput(OtherRoll, Kg(1_000m)));
+        order.Issue(MasterRoll, Kg(1_000m));
+        order.Issue(OtherRoll, Kg(1_000m));
+        order.Declare(MasterRoll, OutputClass.GoodProduct, Kg(1_010m));
+        order.Declare(OtherRoll, OutputClass.GoodProduct, Kg(990m));
+
+        var assessment = order.AssessClosure(Tolerance(1m), [Fire(OtherRoll, 10m, 1_000m)]);
+
+        Assert.Equal(ClosureDispositionV1.ReviewRequired, assessment.Disposition);
+        Assert.Equal((ClosureDispositionV1.ReviewRequired, -10m,
+                ClosureAssessmentCodesV1.NegativeDifferenceReview),
+            (assessment.Rolls[0].Disposition, assessment.Rolls[0].DifferenceKg, assessment.Rolls[0].Code));
+        Assert.Equal((ClosureDispositionV1.FireDeclarationRequired, 10m, 1m),
+            (assessment.Rolls[1].Disposition, assessment.Rolls[1].DifferenceKg, assessment.Rolls[1].FirePercent));
+        Assert.Equal(ManufacturingRuleCodes.UnexplainedDifference, Assert.Throws<ManufacturingRuleException>(
+            () => order.Close(order.Version, Closer, DateTimeOffset.UnixEpoch)).Code);
+    }
+
+    [Theory]
+    [InlineData(null, 1_000, ClosureDispositionV1.Unavailable, null, "fireKg")]
+    [InlineData(10, null, ClosureDispositionV1.Unavailable, null, "rawMaterialKg")]
+    [InlineData(10, 0, ClosureDispositionV1.Refused, EngineCodes.ValueNotPositive, null)]
+    [InlineData(-10, 1_000, ClosureDispositionV1.Refused, EngineCodes.ValueNegative, null)]
+    public void Missing_or_invalid_BAL004_inputs_fail_closed(
+        int? fireKg, int? rawMaterialKg, ClosureDispositionV1 disposition, string? code, string? missing)
+    {
+        var order = Order(target: null);
+        order.Issue(MasterRoll, Kg(1_000m));
+        order.Declare(MasterRoll, OutputClass.GoodProduct, Kg(990m));
+
+        var assessment = order.AssessClosure(Tolerance(1m), [Fire(MasterRoll, fireKg, rawMaterialKg)]);
+
+        var roll = Assert.Single(assessment.Rolls);
+        Assert.Equal(disposition, assessment.Disposition);
+        Assert.Equal(code, roll.Code);
+        if (missing is not null)
+        {
+            Assert.Contains(missing, roll.MissingParameters);
+            Assert.Contains(missing, assessment.MissingParameters);
+        }
+        Assert.Equal(OrderStatus.Open, order.Status);
+    }
+
+    [Fact]
+    public void A_missing_or_different_fire_classification_never_becomes_an_automatic_close()
+    {
+        var order = Order(target: null);
+        order.Issue(MasterRoll, Kg(1_000m));
+        order.Declare(MasterRoll, OutputClass.GoodProduct, Kg(990m));
+
+        var missing = order.AssessClosure(Tolerance(1m), []);
+        var different = order.AssessClosure(Tolerance(1m), [Fire(MasterRoll, 5m, 1_000m)]);
+
+        Assert.Equal(ClosureDispositionV1.Unavailable, missing.Disposition);
+        Assert.Equal(["fireKg", "rawMaterialKg"], Assert.Single(missing.Rolls).MissingParameters);
+        Assert.Equal((ClosureDispositionV1.Refused, ClosureAssessmentCodesV1.FireMassMismatch, "fireKg"),
+            (different.Disposition, Assert.Single(different.Rolls).Code, different.Rolls[0].RefusedParameter));
+        Assert.Equal(0m, order.BalanceOf(MasterRoll).OutputOf(OutputClass.Scrap).Value);
+    }
+
+    [Fact]
+    public void Foreign_policy_process_and_roll_inputs_fail_closed_with_no_state_change()
+    {
+        var order = Order(target: null);
+        order.Issue(MasterRoll, Kg(1_000m));
+        order.Declare(MasterRoll, OutputClass.GoodProduct, Kg(990m));
+        var version = order.Version;
+
+        var foreignCompany = order.AssessClosure(Tolerance(1m, Guid.NewGuid()), [Fire(MasterRoll, 10m, 1_000m)]);
+        var otherProcess = order.AssessClosure(Tolerance(1m, process: ManufacturingProcess.ColdRolling),
+            [Fire(MasterRoll, 10m, 1_000m)]);
+        var otherRoll = order.AssessClosure(Tolerance(1m), [Fire(OtherRoll, 10m, 1_000m)]);
+
+        Assert.Equal((ClosureDispositionV1.Unavailable, ClosureAssessmentCodesV1.PolicyScopeMismatch, "companyId"),
+            (foreignCompany.Disposition, foreignCompany.Code, foreignCompany.RefusedParameter));
+        Assert.Equal((ClosureDispositionV1.Unavailable, ClosureAssessmentCodesV1.PolicyScopeMismatch, "process"),
+            (otherProcess.Disposition, otherProcess.Code, otherProcess.RefusedParameter));
+        Assert.Equal((ClosureDispositionV1.Refused, ClosureAssessmentCodesV1.RollInputInvalid, "parentRollId"),
+            (otherRoll.Disposition, otherRoll.Code, otherRoll.RefusedParameter));
+        Assert.Equal((version, OrderStatus.Open), (order.Version, order.Status));
+    }
+
+    [Fact]
+    public void A_balanced_order_is_only_BAL003_balanced_and_assessment_changes_nothing()
+    {
+        var order = Order(target: null);
+        order.Issue(MasterRoll, Kg(1_000m));
+        order.Declare(MasterRoll, OutputClass.GoodProduct, Kg(1_000m));
+        var version = order.Version;
+
+        var assessment = order.AssessClosure(Tolerance(0m), []);
+
+        Assert.Equal(ClosureDispositionV1.Balanced, assessment.Disposition);
+        Assert.Equal(ClosureDispositionV1.Balanced, Assert.Single(assessment.Rolls).Disposition);
+        Assert.Equal((version, 0m, OrderStatus.Open),
+            (order.Version, order.BalanceOf(MasterRoll).Unexplained, order.Status));
     }
 
     [Fact]
