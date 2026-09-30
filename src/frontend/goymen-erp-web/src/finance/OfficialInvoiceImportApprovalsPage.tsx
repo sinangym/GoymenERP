@@ -99,8 +99,7 @@ function OfficialInvoiceImportApprovalsPageState({ client, context,
       if (reply.kind === 'conflicted') { attempts.delete(keyScope); setPhase('conflicted'); return }
       if (reply.kind === 'refused') { attempts.delete(keyScope); setIssues(reply.issues); setPhase('refused'); return }
       if (!sameApprovedIdentity(frozen, reply.batch, context)) {
-        attempts.delete(keyScope)
-        setPhase('failed')
+        setPhase('unknown')
         return
       }
       attempts.delete(keyScope)

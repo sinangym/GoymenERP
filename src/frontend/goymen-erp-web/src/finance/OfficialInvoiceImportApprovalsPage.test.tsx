@@ -95,20 +95,31 @@ describe('official invoice checker journey', () => {
     expect(screen.queryByRole('button', { name: 'Onaylanan kaynağı aktar' })).toBeNull()
   })
 
-  it('refuses a successful response that does not match the frozen approval identity', async () => {
+  it('keeps the same key and body when a wrong-batch success is retried as unknown', async () => {
+    const selected = vi.fn()
+    const approve = vi.fn()
+      .mockResolvedValueOnce({ kind: 'succeeded', replayed: false,
+        batch: { ...approved, batchId: '99999999-9999-4999-8999-999999999999' } })
+      .mockResolvedValueOnce({ kind: 'succeeded', replayed: true, batch: approved })
     const client: OfficialInvoiceApprovalClient = {
       listPending: vi.fn().mockResolvedValue({ companyId: pending.companyId, items: [pending], nextCursor: null }),
       getPending: vi.fn().mockResolvedValue(detail),
-      approve: vi.fn().mockResolvedValue({ kind: 'succeeded', replayed: false,
-        batch: { ...approved, batchId: '99999999-9999-4999-8999-999999999999' } }),
+      approve,
     }
     render(<OfficialInvoiceImportApprovalsPage client={client} context={context}
-      onApprovedSource={() => undefined} />)
+      createIdempotencyKey={() => 'frozen-key'} onApprovedSource={selected} />)
     fireEvent.click(await screen.findByRole('button', { name: 'İncele' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Onayla' }))
 
-    expect(await screen.findByRole('alert')).toBeTruthy()
+    expect(await screen.findByRole('button', { name: 'Aynı anahtarla yeniden gönder' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Onaylanan kaynağı aktar' })).toBeNull()
+    expect(selected).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Aynı anahtarla yeniden gönder' }))
+
+    await waitFor(() => expect(approve).toHaveBeenCalledTimes(2))
+    expect(approve.mock.calls[0]).toEqual([pending.batchId, '1', 'frozen-key', expect.any(AbortSignal)])
+    expect(approve.mock.calls[1]).toEqual([pending.batchId, '1', 'frozen-key', expect.any(AbortSignal)])
+    expect(await screen.findByRole('button', { name: 'Onaylanan kaynağı aktar' })).toBeTruthy()
   })
 
   it('opens the bounded next page and recovers from list failure and command conflict', async () => {

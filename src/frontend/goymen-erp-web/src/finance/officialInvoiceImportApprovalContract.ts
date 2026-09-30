@@ -65,7 +65,8 @@ export type OfficialInvoiceApprovalReply =
   | { readonly kind: 'conflicted' }
   | { readonly kind: 'unknown' }
 
-const guid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const guid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const emptyGuid = '00000000-0000-0000-0000-000000000000'
 const sha256 = /^[0-9a-f]{64}$/
 const date = /^\d{4}-\d{2}-\d{2}$/
 const decimal = /^(0|[1-9]\d*)(\.\d+)?$/
@@ -83,11 +84,15 @@ function timestamp(value: unknown): value is string {
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value) && Number.isFinite(Date.parse(value))
 }
 
+function canonicalGuid(value: unknown): value is string {
+  return typeof value === 'string' && guid.test(value) && value.toLowerCase() !== emptyGuid
+}
+
 export function decodePendingBatch(value: unknown): DecodeResult<OfficialInvoicePendingBatch> {
   const keys = ['batchId', 'companyId', 'batchVersion', 'batchChecksum', 'templateVersion', 'status', 'version',
     'rowCount', 'uploadedBy', 'uploadedAtUtc', 'approvedBy', 'approvedAtUtc'] as const
-  if (!object(value) || !exact(value, keys) || typeof value.batchId !== 'string' || !guid.test(value.batchId)
-    || typeof value.companyId !== 'string' || !guid.test(value.companyId)
+  if (!object(value) || !exact(value, keys) || !canonicalGuid(value.batchId)
+    || !canonicalGuid(value.companyId)
     || typeof value.batchVersion !== 'string' || value.batchVersion.length === 0
     || typeof value.batchChecksum !== 'string' || !sha256.test(value.batchChecksum)
     || typeof value.templateVersion !== 'string' || value.templateVersion.length === 0
@@ -103,7 +108,7 @@ function decodeRow(value: unknown): DecodeResult<OfficialInvoicePendingRow> {
     'companyAccountId', 'currencyId', 'amount', 'dueOn'] as const
   if (!object(value) || !exact(value, keys)
     || !['openItemId', 'sourceDocumentId', 'sourceInstallmentId', 'partyId', 'companyAccountId', 'currencyId']
-      .every((key) => typeof value[key] === 'string' && guid.test(value[key] as string))
+      .every((key) => canonicalGuid(value[key]))
     || typeof value.sourceVersion !== 'string' || value.sourceVersion.length === 0
     || value.documentKind !== 'official-invoice-installment'
     || typeof value.amount !== 'string' || !decimal.test(value.amount)
@@ -113,7 +118,7 @@ function decodeRow(value: unknown): DecodeResult<OfficialInvoicePendingRow> {
 
 export function decodePendingPage(value: unknown): DecodeResult<OfficialInvoicePendingPage> {
   if (!object(value) || !exact(value, ['companyId', 'items', 'nextCursor'])
-    || typeof value.companyId !== 'string' || !guid.test(value.companyId) || !Array.isArray(value.items)
+    || !canonicalGuid(value.companyId) || !Array.isArray(value.items)
     || !(value.nextCursor === null || (typeof value.nextCursor === 'string' && value.nextCursor.length > 0))) return { ok: false }
   const items = value.items.map(decodePendingBatch)
   if (items.some((item) => !item.ok) || items.some((item) => item.ok && item.value.companyId !== value.companyId)) return { ok: false }
