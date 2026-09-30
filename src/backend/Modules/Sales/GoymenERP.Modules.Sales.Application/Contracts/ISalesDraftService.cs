@@ -62,6 +62,19 @@ public interface ISalesDraftService
         SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
     Task<SalesOrderDraftCancellationResponse> GetDraftCancellationAsync(Guid draftId,
         CancellationToken cancellationToken = default);
+
+    // Partial delivery (user decision 2026-09-30) — the undelivered remainder of a partly delivered line is cancelled or
+    // its quantity revised: requested under `sales.orders.quantity.write`, approved or rejected under `sales.orders.approve`;
+    // the floor (loaded ≥ shipped ≥ delivered) is read from the delivery owner. The read of the lines' remainder facts and the
+    // recorded changes is under `sales.drafts.read`.
+    Task<SalesOrderDraftResponse> RequestRemainderChangeAsync(Guid draftId, SalesDraftRemainderChangeRequest request,
+        SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
+    Task<SalesOrderDraftResponse> ApproveRemainderChangeAsync(Guid draftId, int changeNo, SalesDraftRemainderDecisionRequest request,
+        SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
+    Task<SalesOrderDraftResponse> RejectRemainderChangeAsync(Guid draftId, int changeNo, SalesDraftRemainderDecisionRequest request,
+        SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
+    Task<SalesOrderDraftRemainderChangesResponse> GetRemainderChangesAsync(Guid draftId,
+        CancellationToken cancellationToken = default);
 }
 
 // Constructed by the server, never bound from the request body.

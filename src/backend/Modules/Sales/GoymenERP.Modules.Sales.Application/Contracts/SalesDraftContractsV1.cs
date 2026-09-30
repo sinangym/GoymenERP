@@ -225,6 +225,14 @@ public static class SalesDraftApiV1
     public const string CancellationImpactPath = "/api/v1/sales/drafts/{id}/cancellation-impact";
     public const string CancellationPath = "/api/v1/sales/drafts/{id}/cancellation";
 
+    // Partial delivery (user decision 2026-09-30): the remainder change of a partly delivered line — requested (POST, the
+    // quantity-write name), approved or rejected by an approver (POST, the approve name; 200 with the detail after the step,
+    // same-key replay 200 + `Idempotency-Replayed`), and the lines' remainder facts with every recorded change (GET, the draft
+    // read). The detail wire is unchanged: the line's `quantity` carries the approved quantity.
+    public const string RemainderChangesPath = "/api/v1/sales/drafts/{id}/remainder-changes";
+    public const string RemainderApprovalPath = "/api/v1/sales/drafts/{id}/remainder-changes/{changeNo}/approval";
+    public const string RemainderRejectionPath = "/api/v1/sales/drafts/{id}/remainder-changes/{changeNo}/rejection";
+
     /// <summary>The wire text of a revision number (<c>Rev.0</c>, <c>Rev.1</c>, …).</summary>
     public static string RevisionText(int revision) => $"Rev.{revision.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
 }

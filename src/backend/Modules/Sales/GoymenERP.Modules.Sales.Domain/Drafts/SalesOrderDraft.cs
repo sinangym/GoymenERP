@@ -121,7 +121,7 @@ public sealed record DeliverySliceInput(Guid SliceId, Guid OrderUnitId, string Q
 /// Nothing here authorizes; company and actor are the server's, and the document number is a
 /// technical, company-scoped identifier, not an official document (Ö8).
 /// </summary>
-public sealed class SalesOrderDraft
+public sealed partial class SalesOrderDraft
 {
     /// <summary>
     /// The Sales operation identifier the Settings money port is asked with for a draft's currency.
@@ -1155,8 +1155,11 @@ public sealed class SalesOrderDraft
         }
 
         var cancellationTransitions = State == SalesDraftState.Cancelled ? 1L : 0L;
+        // Partial delivery (user decision 2026-09-30): every recorded remainder request was one step of its own, and so was
+        // every decision on one (restored just before this).
+        var remainderTransitions = RemainderTransitions;
         var consistentVersion = storedVersion >= checked(Version + minimumTransitions + archivedTransitions + scheduleTransitions
-            + cancellationTransitions);
+            + cancellationTransitions + remainderTransitions);
         if (!consistentVersion)
         {
             throw new InvalidOperationException("Kayıtlı sürüm, satırların ve onay geçişlerinin hesabıyla uyuşmuyor.");
