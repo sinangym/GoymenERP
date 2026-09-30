@@ -42,8 +42,11 @@ public sealed record RevisePlanRequestV1(
 
 public sealed record CreateOrderRequestV1(Guid OrderId, Guid PlanId);
 
-/// <summary>The close of the order at the version the caller read; the close chooses nothing else (MFG-4).</summary>
-public sealed record CloseOrderRequestV1(long ExpectedVersion);
+/// <summary>
+/// The close of the order at the version the caller read. <see cref="ExceptionReason"/> is absent on the normal
+/// attempt and may be supplied only after the server requires the separately authorized tolerance exception.
+/// </summary>
+public sealed record CloseOrderRequestV1(long ExpectedVersion, string? ExceptionReason = null);
 
 /// <summary>An input issue, an unused-input return or a WIP reading of one parent roll, at its own time (R6).</summary>
 public sealed record RecordFactRequestV1(
@@ -262,7 +265,8 @@ public sealed partial class ManufacturingCommandService(
     IManufacturingInventoryInputIssuePortV1? inventoryInputIssues = null,
     IManufacturingInventoryReturnOutputPortV1? inventoryReturnsAndOutputs = null,
     IManufacturingPlanListStore? planList = null,
-    IManufacturingPlanRevisionStore? planRevisions = null)
+    IManufacturingPlanRevisionStore? planRevisions = null,
+    ISettingsManufacturingToleranceProviderV1? manufacturingTolerances = null)
 {
     /// <summary>Any integer mantissa of this many digits fits a decimal's 96 bits, so such a text converts exactly.</summary>
     private const int ExactDecimalDigits = 28;
@@ -934,34 +938,140 @@ public sealed partial class ManufacturingCommandService(
                 fact.ParentRollId, OutputClass.ProcessLoss, mass, at, metadata, cancellationToken), cancellationToken);
 
     /// <summary>
-    /// Closes the order at the version the caller read (MFG-4, Business 5728619644). The decision is the
-    /// domain's and nothing here softens it: every planned roll must account for its own issued mass, a
-    /// surplus on one roll never covers a gap on another, remaining WIP stays on the order as its own
-    /// position, and an unexplained difference refuses the close with
-    /// <see cref="ManufacturingRuleCodes.UnexplainedDifference"/> (422) — there is no tolerance and no
-    /// write-off. A closed order refuses a second close with <see cref="ManufacturingRuleCodes.OrderClosed"/>;
-    /// the same <c>Idempotency-Key</c> replays the first close's answer (ADR-011 §4), and a stale
-    /// <see cref="CloseOrderRequestV1.ExpectedVersion"/> is a recorded terminal conflict (§7).
+    /// Closes the order at the version the caller read. Settings supplies the exact company/process/date tolerance;
+    /// Manufacturing persists it and derives fire (Scrap + ProcessLoss) and net issued mass from its own facts. A
+    /// positive unexplained difference still requires an explicit fact. An out-of-tolerance result requires the
+    /// separate permission passed by the host and a reason bound to company/order/actor/order version/policy version.
+    /// A closed order refuses a second close; the same key replays the first answer (ADR-011 §4), and a stale version
+    /// is a recorded terminal conflict (§7).
     /// </summary>
     public Task<ManufacturingApiResult<OrderViewV1>> CloseOrderAsync(Guid orderId, CloseOrderRequestV1? request,
-        string idempotencyKey, string permission, CancellationToken cancellationToken)
+        string idempotencyKey, string permission, CancellationToken cancellationToken) =>
+        CloseOrderAsync(orderId, request, idempotencyKey, permission, exceptionApprovalPermission: null,
+            cancellationToken);
+
+    /// <summary>The host-bound overload that names the dedicated exception permission without importing host policy.</summary>
+    public Task<ManufacturingApiResult<OrderViewV1>> CloseOrderAsync(Guid orderId, CloseOrderRequestV1? request,
+        string idempotencyKey, string permission, string? exceptionApprovalPermission,
+        CancellationToken cancellationToken)
     {
         if (orderId == Guid.Empty || request is null || request.ExpectedVersion <= 0)
         {
             return Task.FromResult(Invalid<OrderViewV1>("expectedVersion"));
         }
 
+        var exceptionReason = request.ExceptionReason?.Trim();
+        if (request.ExceptionReason is not null
+            && (string.IsNullOrEmpty(exceptionReason)
+                || exceptionReason.Length > ClosureExceptionApprovalV1.ReasonMaximumLength
+                || exceptionReason.Any(char.IsControl)))
+        {
+            return Task.FromResult(Invalid<OrderViewV1>("exceptionReason"));
+        }
+
         return RunAsync<OrderViewV1>(permission, idempotencyKey, ManufacturingCommandNames.CloseOrder,
-            new { orderId, expectedVersion = request.ExpectedVersion }, ManufacturingApiStatus.Ok,
+            new { orderId, expectedVersion = request.ExpectedVersion, exceptionReason }, ManufacturingApiStatus.Ok,
             async (metadata, actor) =>
             {
+                var current = await orders.FindOrderAsync(orderId, cancellationToken);
+                if (current is null)
+                {
+                    return NotFoundResult<OrderViewV1>();
+                }
+
+                // Stored state answers before another owner is asked: stale/closed never query Settings.
+                current.RequireClosable(request.ExpectedVersion);
+                if (manufacturingTolerances is null)
+                {
+                    return new ManufacturingApiResult<OrderViewV1>(ManufacturingApiStatus.Unavailable, null, false,
+                        "settings_provider_unavailable");
+                }
+
+                var closedAt = timeProvider.GetUtcNow().ToUniversalTime();
+                var selectedForDate = DateOnly.FromDateTime(closedAt.UtcDateTime);
+                var requestedProcess = current.Process.ToString();
+                ManufacturingToleranceProfileV1 profile;
+                try
+                {
+                    profile = await manufacturingTolerances.GetManufacturingToleranceAsync(
+                        requestedProcess, selectedForDate, cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (SettingsPrerequisiteException exception)
+                {
+                    var status = exception.Code switch
+                    {
+                        "settings_access_denied" => ManufacturingApiStatus.Denied,
+                        "settings_provider_unavailable" or "settings_profile_invalid" =>
+                            ManufacturingApiStatus.Unavailable,
+                        _ => ManufacturingApiStatus.Unprocessable,
+                    };
+                    return new ManufacturingApiResult<OrderViewV1>(status, null, false, exception.Code);
+                }
+
+                if (profile.CompanyId != current.CompanyId
+                    || !string.Equals(profile.Process, requestedProcess, StringComparison.Ordinal))
+                {
+                    return new ManufacturingApiResult<OrderViewV1>(ManufacturingApiStatus.Unavailable, null, false,
+                        ClosureAssessmentCodesV1.PolicyScopeMismatch);
+                }
+
+                var policy = new ClosureTolerancePolicySnapshotV1(
+                    profile.CompanyId, profile.Profile.ProfileId, profile.Profile.Version, current.Process,
+                    profile.MaximumFirePercent, profile.IsActive, profile.EffectiveFrom, profile.EffectiveThrough,
+                    selectedForDate);
+                var assessment = current.AssessClosure(policy);
+                if (assessment.Disposition is not (ClosureDispositionV1.Balanced
+                    or ClosureDispositionV1.ApprovalRequired))
+                {
+                    var status = assessment.Disposition == ClosureDispositionV1.Unavailable
+                        ? ManufacturingApiStatus.Unavailable
+                        : ManufacturingApiStatus.Unprocessable;
+                    return new ManufacturingApiResult<OrderViewV1>(status, null, false,
+                        assessment.Code ?? ClosureAssessmentCodesV1.PolicyInvalid, assessment.RefusedParameter);
+                }
+
+                ClosureExceptionApprovalV1? approval = null;
+                if (assessment.Disposition == ClosureDispositionV1.ApprovalRequired)
+                {
+                    if (exceptionReason is null)
+                    {
+                        return new ManufacturingApiResult<OrderViewV1>(ManufacturingApiStatus.Unprocessable, null,
+                            false, ClosureAssessmentCodesV1.ApprovalRequired);
+                    }
+
+                    if (string.IsNullOrWhiteSpace(exceptionApprovalPermission)
+                        || await FenceAsync<OrderViewV1>(exceptionApprovalPermission, cancellationToken) is not null)
+                    {
+                        return Denied<OrderViewV1>();
+                    }
+
+                    approval = ClosureExceptionApprovalV1.Create(
+                        current.CompanyId, current.Id, actor, exceptionReason, current.Version,
+                        policy.PolicyId, policy.PolicyVersion, closedAt);
+                }
+                else if (exceptionReason is not null)
+                {
+                    return new ManufacturingApiResult<OrderViewV1>(ManufacturingApiStatus.Unprocessable, null, false,
+                        ClosureAssessmentCodesV1.ApprovalUnexpected);
+                }
+
                 if (await FenceAsync<OrderViewV1>(permission, cancellationToken) is { } fenced)
                 {
                     return fenced;
                 }
 
-                await orders.CloseOrderAsync(orderId, request.ExpectedVersion, actor, timeProvider.GetUtcNow(), metadata,
-                    cancellationToken);
+                if (approval is not null
+                    && await FenceAsync<OrderViewV1>(exceptionApprovalPermission!, cancellationToken) is { } approvalFenced)
+                {
+                    return approvalFenced;
+                }
+
+                await orders.CloseOrderWithPolicyAsync(orderId, request.ExpectedVersion, actor, closedAt, policy,
+                    approval, metadata, cancellationToken);
                 return await OrderResultAsync(orderId, ManufacturingApiStatus.Ok, isReplay: false, cancellationToken);
             }, stored => OrderView((ProductionOrder)stored), cancellationToken);
     }

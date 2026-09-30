@@ -28,6 +28,7 @@ using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Product.Infrastructure.Fixtures;
 using GoymenERP.Modules.Product.Infrastructure.Persistence;
 using GoymenERP.Modules.Settings.Application;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -63,6 +64,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;
     private static readonly Guid Product = Guid.Parse("7e1d2c3b-4a59-4687-9a0b-1c2d3e4f5a91");
     private static readonly Guid Lot = Guid.Parse("7e1d2c3b-4a59-4687-9a0b-1c2d3e4f5a92");
+    private static readonly Guid ToleranceProfile = Guid.Parse("7f100000-0000-4000-8000-000000000001");
     private static readonly DateTimeOffset At = new(2026, 9, 18, 9, 0, 0, TimeSpan.Zero);
 
     private static readonly string[] AllWrites =
@@ -720,8 +722,8 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
     [SqlServerFact]
     public async Task The_close_writes_once_replays_its_key_and_refuses_an_unexplained_difference()
     {
-        // MFG-4 (Business 5728619644) against real SQL: every roll accounts for its own issued mass, no
-        // tolerance, and the close is one ADR-011 attempt per key.
+        // Policy-backed close against real SQL: every roll accounts for its own issued mass, the synthetic test-only
+        // Settings profile is snapshotted, and the close is one ADR-011 attempt per key.
         await using var run = await Run.StartAsync();
         var closer = await run.GrantAsync(TestUsers.CompanyA, CompanyA, [.. AllWrites, ErpPermissions.ManufacturingOrdersClose]);
         var (orderId, roll) = await run.OpenOrderAsync(closer);
@@ -737,7 +739,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             using var refused = await client.PostWithKeyAsync($"{Base}/orders/{orderId}/close",
                 new CloseOrderRequestV1(partial.Version), "close-refused");
             Assert.Equal(HttpStatusCode.UnprocessableEntity, refused.StatusCode);
-            Assert.Equal(ManufacturingRuleCodes.UnexplainedDifference, (await Problem(refused)).Code);
+            Assert.Equal(ClosureAssessmentCodesV1.FireDeclarationRequired, (await Problem(refused)).Code);
             Assert.Equal("Open", (await client.GetFromJsonAsync<OrderViewV1>($"{Base}/orders/{orderId}"))!.Status);
             // A rule refusal is not this key's answer: no command row, and the order was not touched.
             Assert.Equal(0, await run.ScalarAsync<int>(
@@ -778,7 +780,11 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             Assert.Equal(1, await run.ScalarAsync<int>(
                 "SELECT COUNT(*) FROM manufacturing.Orders WHERE Id = @o AND ClosedAtUtc IS NOT NULL", ("@o", orderId)));
             Assert.Equal(1, await run.ScalarAsync<int>(
-                "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'manufacturing.order.closed.v1'"));
+                "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'manufacturing.order.closed.v2'"));
+            Assert.Equal(1, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM manufacturing.OrderClosureDecisions WHERE CompanyId = @c AND OrderId = @o "
+                + "AND PolicyId = @p AND PolicyVersion = 1 AND MaximumFirePercent = '100'",
+                ("@c", CompanyA), ("@o", orderId), ("@p", ToleranceProfile)));
             // Two attempts recorded: the terminal stale conflict and the success. The refusals are not.
             Assert.Equal(2, await run.ScalarAsync<int>(
                 "SELECT COUNT(*) FROM manufacturing.Commands WHERE CommandName = N'manufacturing.order.close.v1'"));
@@ -803,7 +809,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
 
         // Nothing above closed a second order or wrote a second close.
         Assert.Equal(1, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'manufacturing.order.closed.v1'"));
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'manufacturing.order.closed.v2'"));
     }
 
     [SqlServerFact]
@@ -1102,6 +1108,11 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
                 services.RemoveAll<ProductRuntimeOptions>();
                 services.AddSingleton(new ProductRuntimeOptions(databaseConnectionString,
                     new ProductPilotIssuerBinding(Guid.NewGuid(), Guid.NewGuid()), new byte[32]));
+                // Explicit test-only source. Production's approved catalog remains empty; this fixture proves the
+                // consumer contract without installing a default or a real company policy.
+                services.RemoveAll<ISettingsManufacturingToleranceProviderV1>();
+                services.AddSingleton<ISettingsManufacturingToleranceProviderV1,
+                    SyntheticManufacturingToleranceProvider>();
             }, databaseName: databaseName);
             var run = new Run(baseConnectionString, factory);
             // The host migrates Organization first and Manufacturing after it.
@@ -1113,6 +1124,24 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             await inventory.Database.MigrateAsync();
             await run.EnsureProductFixtureAsync();
             return run;
+        }
+
+        private sealed class SyntheticManufacturingToleranceProvider : ISettingsManufacturingToleranceProviderV1
+        {
+            public Task<ManufacturingToleranceProfileV1> GetManufacturingToleranceAsync(
+                string process, DateOnly effectiveOn, CancellationToken cancellationToken = default)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!SettingsManufacturingProcessesV1.IsCanonical(process))
+                {
+                    throw new SettingsPrerequisiteException(
+                        SettingsPrerequisiteCodesV1.ManufacturingToleranceProfileNotFound);
+                }
+
+                return Task.FromResult(new ManufacturingToleranceProfileV1(
+                    CompanyA, process, new ProfileVersionV1(ToleranceProfile, 1), 100m, true,
+                    new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31)));
+            }
         }
 
         /// <summary>A client of the configured development user; every write names its own Idempotency-Key.</summary>

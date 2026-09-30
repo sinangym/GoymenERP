@@ -1057,7 +1057,7 @@ describe('the close (MFG-ORD)', () => {
 
     await screen.findByText('Emir kapatıldı')
     const post = posts(recorded).find((request) => request.url.endsWith('/close'))!
-    expect(post.body).toEqual({ expectedVersion: 4 })
+    expect(post.body).toEqual({ expectedVersion: 4, exceptionReason: null })
     expect(post.headers['Idempotency-Key']).toBeTruthy()
     // The screen re-reads instead of predicting the closed order.
     await waitFor(() => expect(reads(recorded).length).toBeGreaterThan(1))
@@ -1128,7 +1128,7 @@ describe('the close (MFG-ORD)', () => {
     await screen.findByText('Emir kapatıldı')
     const closes = posts(recorded).filter((request) => request.url.endsWith('/close'))
     expect(closes).toHaveLength(2)
-    expect(closes[0].body).toEqual({ expectedVersion: 4 })
+    expect(closes[0].body).toEqual({ expectedVersion: 4, exceptionReason: null })
     expect(closes[1].body).toEqual({
       expectedVersion: 4,
       exceptionReason: 'Teknik inceleme tamamlandı.',

@@ -793,7 +793,8 @@ export interface CloseSnapshot {
 
 /** The request body exactly as `CloseOrderRequestV1` names it. */
 export function closeBody(snapshot: CloseSnapshot): Record<string, unknown> {
-  return snapshot.exceptionReason == null
-    ? { expectedVersion: snapshot.expectedVersion }
-    : { expectedVersion: snapshot.expectedVersion, exceptionReason: snapshot.exceptionReason }
+  return {
+    expectedVersion: snapshot.expectedVersion,
+    exceptionReason: snapshot.exceptionReason ?? null,
+  }
 }

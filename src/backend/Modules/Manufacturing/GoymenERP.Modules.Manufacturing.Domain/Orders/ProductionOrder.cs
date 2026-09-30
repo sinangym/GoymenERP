@@ -354,8 +354,7 @@ public sealed class ProductionOrder
     public void CloseWithPolicy(long expectedVersion, Guid closedByUserId, DateTimeOffset closedAt,
         ClosureTolerancePolicySnapshotV1 policy, ClosureExceptionApprovalV1? exceptionApproval)
     {
-        RequireVersion(expectedVersion);
-        RequireOpen();
+        RequireClosable(expectedVersion);
         RequireId(closedByUserId, nameof(closedByUserId));
         ArgumentNullException.ThrowIfNull(policy);
 
@@ -426,8 +425,7 @@ public sealed class ProductionOrder
     /// </summary>
     public void Close(long expectedVersion, Guid closedByUserId, DateTimeOffset closedAt)
     {
-        RequireVersion(expectedVersion);
-        RequireOpen();
+        RequireClosable(expectedVersion);
         RequireId(closedByUserId, nameof(closedByUserId));
 
         var balances = _plannedInputs.Select(input => BalanceOf(input.ParentRollId)).ToList();
@@ -443,6 +441,13 @@ public sealed class ProductionOrder
         }
 
         CompleteClose(closedByUserId, closedAt);
+    }
+
+    /// <summary>Proves the stored order/version can enter a close decision without mutating it.</summary>
+    public void RequireClosable(long expectedVersion)
+    {
+        RequireVersion(expectedVersion);
+        RequireOpen();
     }
 
     private void CompleteClose(Guid closedByUserId, DateTimeOffset closedAt)

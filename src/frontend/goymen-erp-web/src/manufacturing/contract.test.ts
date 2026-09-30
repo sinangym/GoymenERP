@@ -323,8 +323,11 @@ describe('decodeOrderList', () => {
 })
 
 describe('closeBody', () => {
-  it('sends the version the screen read and nothing else', () => {
-    expect(closeBody({ idempotencyKey: 'k', expectedVersion: 4 })).toEqual({ expectedVersion: 4 })
+  it('sends the version the screen read with an explicit absent exception reason', () => {
+    expect(closeBody({ idempotencyKey: 'k', expectedVersion: 4 })).toEqual({
+      expectedVersion: 4,
+      exceptionReason: null,
+    })
   })
 
   it('freezes the reason only for the dedicated exception attempt', () => {
