@@ -45,6 +45,31 @@ public sealed class ProductImportWorkbookReaderTests
     }
 
     [Fact]
+    public void Preview_reads_compact_shared_strings_and_concatenates_rich_text_without_losing_whitespace()
+    {
+        var sheet = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>
+              <row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c><c r="C1" t="s"><v>2</v></c></row>
+              <row r="2"><c r="A2" t="s"><v>3</v></c><c r="B2" t="s"><v>4</v></c><c r="C2" t="s"><v>5</v></c></row>
+            </sheetData></worksheet>
+            """;
+        var sharedStrings = $$"""
+            <?xml version="1.0" encoding="UTF-8"?>
+            <sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="6" uniqueCount="6"><si><t>Eski Kod</t></si><si><r><t>Ürün</t></r><r><t xml:space="preserve"> Adı</t></r></si><si><t>Grup Kimliği</t></si><si><t>OLD-SHARED-1</t></si><si><r><t xml:space="preserve">  Galvaniz</t></r><r><t xml:space="preserve"> Rulo  </t></r></si><si><t>{{Group:D}}</t></si></sst>
+            """;
+
+        var result = Reader().Read(WorkbookPackage(sheet, sharedStrings: sharedStrings), Mapping, EmptyCodes(), Groups());
+
+        Assert.True(result.Ready);
+        var row = Assert.Single(result.Rows);
+        Assert.Equal("OLD-SHARED-1", row.LegacyCode);
+        Assert.Equal("Galvaniz Rulo", row.Name);
+        Assert.Equal(Group, row.GroupId);
+        Assert.Empty(result.Errors);
+    }
+
+    [Fact]
     public void Preview_rejects_formula_cells_even_when_the_workbook_caches_a_text_value()
     {
         var sheet = """
@@ -167,7 +192,10 @@ public sealed class ProductImportWorkbookReaderTests
         return xml.Append("</sheetData></worksheet>").ToString();
     }
 
-    private static byte[] WorkbookPackage(string firstLogicalSheet, string? physicalSheet1Decoy = null)
+    private static byte[] WorkbookPackage(
+        string firstLogicalSheet,
+        string? physicalSheet1Decoy = null,
+        string? sharedStrings = null)
     {
         using var output = new MemoryStream();
         using (var archive = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true))
@@ -209,6 +237,7 @@ public sealed class ProductImportWorkbookReaderTests
                 """);
             Write(archive, "xl/worksheets/import.xml", firstLogicalSheet);
             if (physicalSheet1Decoy is not null) Write(archive, "xl/worksheets/sheet1.xml", physicalSheet1Decoy);
+            if (sharedStrings is not null) Write(archive, "xl/sharedStrings.xml", sharedStrings);
         }
         return output.ToArray();
     }

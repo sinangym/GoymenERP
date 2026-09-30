@@ -124,12 +124,15 @@ public sealed class ProductImportWorkbookReader : IProductImportWorkbookReaderV1
         if (entry is null) return [];
         using var reader = XmlReader.Create(entry.Open(), SafeXml());
         var values = new List<string>();
-        var current = new StringBuilder();
         while (reader.Read())
         {
-            if (reader.NodeType == XmlNodeType.Element && reader.LocalName == "si") current.Clear();
-            else if (reader.NodeType == XmlNodeType.Element && reader.LocalName == "t") current.Append(reader.ReadElementContentAsString());
-            else if (reader.NodeType == XmlNodeType.EndElement && reader.LocalName == "si") values.Add(current.ToString());
+            if (reader.NodeType != XmlNodeType.Element || reader.LocalName != "si") continue;
+            using var item = reader.ReadSubtree();
+            var value = new StringBuilder();
+            while (item.Read())
+                if (item.NodeType == XmlNodeType.Element && item.LocalName == "t")
+                    value.Append(item.ReadElementContentAsString());
+            values.Add(value.ToString());
         }
         return values;
     }
