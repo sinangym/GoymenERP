@@ -179,10 +179,18 @@ public sealed class FinanceOfficialInvoiceImportApplicationServiceV1Tests
     {
         var preview = ValidPreview();
         var batch = Assert.IsType<ApprovedFinanceOpenItemSourceBatch>(preview.Batch);
-        var duplicated = batch with { Rows = [batch.Rows[0], batch.Rows[0]] };
+        var first = batch.Rows[0];
+        var second = first with
+        {
+            OpenItemId = Guid.NewGuid(),
+            SourceInstallmentId = Guid.NewGuid()
+        };
+        var expected = batch with { Rows = [first, second] };
+        var expectedPreview = preview with { Batch = expected };
+        var duplicated = expected with { Rows = [first, first] };
         var admission = new Admission();
         var service = new FinanceOfficialInvoiceImportApplicationServiceV1(
-            new Parser(preview), new ApprovedSource(duplicated), admission, new Reader(Found()));
+            new Parser(expectedPreview), new ApprovedSource(duplicated), admission, new Reader(Found()));
 
         var result = await service.ApplyAsync(Context(), new CommandMetadata("key"), Request(), default);
 
