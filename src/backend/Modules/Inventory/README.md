@@ -483,7 +483,9 @@ fresh authority fence after each awaited owner read. The transactional writer re
 fence after persistence reads, before any replay disclosure and immediately before the single save; a refused final
 fence clears every staged movement/transfer/audit row. Dispatch keeps the initially validated label/balance
 concurrency tokens tracked through the save, so an intervening allocation or stock write fails closed instead of
-moving stale stock. Central publication must register
+moving stale stock; acceptance likewise keeps its validated label token through the target movement save. Owner-read
+denials and provider errors are disclosed only after the captured company/actor/permission fence is measured again.
+Central publication must register
 `inventory.stock-transfer.write`, provide the destination-owner adapter, route/OpenAPI mapping and authority
 classification before runtime activation.
 

@@ -208,7 +208,7 @@ public sealed class InventoryTransferTests
         await world.Service().PlanAsync(PlanRequest(), Transport(""));
 
         Assert.Equal([InventoryPermissionManifestV1.StockTransferWrite, InventoryPermissionManifestV1.StockTransferWrite,
-                InventoryPermissionManifestV1.StockTransferWrite],
+                InventoryPermissionManifestV1.StockTransferWrite, InventoryPermissionManifestV1.StockTransferWrite],
             world.Authority.Measured);
         Assert.Equal(1, world.Destination.Calls);
         var call = Assert.Single(world.Writer.Calls);
@@ -265,6 +265,69 @@ public sealed class InventoryTransferTests
         Assert.Empty(world.Writer.Calls);
     }
 
+    [Theory]
+    [InlineData(InventoryTransferDestinationStatusV1.NotFound, "revoked")]
+    [InlineData(InventoryTransferDestinationStatusV1.Inactive, "company")]
+    [InlineData(InventoryTransferDestinationStatusV1.ContextMismatch, "actor")]
+    public async Task Authority_or_context_change_hides_destination_refusal(
+        InventoryTransferDestinationStatusV1 status,
+        string fault)
+    {
+        var world = new CommandWorld();
+        world.Destination.Status = status;
+        world.Destination.During = fault switch
+        {
+            "revoked" => () => world.Authority.Granted = false,
+            "company" => () => world.Context.CompanyId = Guid.NewGuid(),
+            _ => () => world.User.UserId = "other",
+        };
+
+        await Refused(world.Service().PlanAsync(PlanRequest(), Transport("actor")), 403,
+            InventoryTransferCodesV1.Forbidden);
+
+        Assert.Empty(world.Writer.Calls);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Revoked_destination_error_is_not_disclosed(bool ownerContractError)
+    {
+        var world = new CommandWorld();
+        world.Destination.During = () =>
+        {
+            world.Authority.Granted = false;
+            throw ownerContractError
+                ? new InventoryTransferException(503, InventoryTransferCodesV1.Unavailable)
+                : new InvalidOperationException("synthetic owner failure");
+        };
+
+        await Refused(world.Service().PlanAsync(PlanRequest(), Transport("actor")), 403,
+            InventoryTransferCodesV1.Forbidden);
+
+        Assert.Empty(world.Writer.Calls);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Revoked_transfer_reader_error_is_not_disclosed(bool ownerContractError)
+    {
+        var world = new CommandWorld();
+        world.Reader.During = () =>
+        {
+            world.Authority.Granted = false;
+            throw ownerContractError
+                ? new InventoryTransferException(503, InventoryTransferCodesV1.Unavailable)
+                : new InvalidOperationException("synthetic reader failure");
+        };
+
+        await Refused(world.Service().AcceptLineAsync(Guid.NewGuid(), Guid.NewGuid(),
+            AcceptRequest(), Transport("actor")), 403, InventoryTransferCodesV1.Forbidden);
+
+        Assert.Empty(world.Writer.Calls);
+    }
+
     [Fact]
     public async Task Acceptance_uses_the_stored_target_then_writes_after_the_final_authority_fence()
     {
@@ -276,7 +339,7 @@ public sealed class InventoryTransferTests
 
         Assert.Equal(1, world.Reader.Calls);
         Assert.Equal(1, world.Destination.Calls);
-        Assert.Equal(4, world.Authority.Measured.Count);
+        Assert.Equal(5, world.Authority.Measured.Count);
         Assert.Equal("accept", Assert.Single(world.Writer.Calls).Operation);
     }
 

@@ -170,10 +170,11 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.TransferDispatches"));
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Movements WHERE Kind IN (8, 9)"));
 
+        var staleSource = await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-TRANSFER-STALE", 10m);
         var staleId = Guid.NewGuid();
         var stale = new PlanInventoryTransferV1(staleId, sourceLocation, "Company", CompanyA,
             destinationLocation, "Company", CompanyA, At,
-            [new(Guid.NewGuid(), own.LabelId, (own.LabelVersion + 1).ToString(), "10")]);
+            [new(Guid.NewGuid(), staleSource.LabelId, (staleSource.LabelVersion + 1).ToString(), "10")]);
         await using (var scope = run.Store(CompanyA))
         {
             await scope.Store.PlanAsync(stale, Metadata(run), Authorized);
@@ -183,7 +184,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             Assert.Equal((409, InventoryTransferCodesV1.LabelVersionConflict), (refused.Status, refused.Code));
         }
 
-        Assert.Equal(10m, await TransferLabelKgAsync(run, own.LabelId));
+        Assert.Equal(10m, await TransferLabelKgAsync(run, staleSource.LabelId));
 
         var sameKeySource = await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-TRANSFER-SAME-KEY", 4m);
         var sameKeyPlan = TransferPlan(sameKeySource, sourceLocation, destinationLocation, "4");
@@ -216,6 +217,133 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             { Status: 409, Code: InventoryTransferCodesV1.ConcurrentChange });
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM inventory.Transfers WHERE Id = @id", ("@id", differentKeyPlan.TransferId)));
+
+        var stockRaceSource = await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-TRANSFER-STOCK-RACE", 8m);
+        var stockRacePlan = TransferPlan(stockRaceSource, sourceLocation, destinationLocation, "8");
+        await using (var scope = run.Store(CompanyA))
+        {
+            await scope.Store.PlanAsync(stockRacePlan, Metadata(run), Authorized);
+        }
+
+        var dispatchRequest = new DispatchInventoryTransferV1("1", At.AddHours(1),
+            new("inventory.transfer.outgoing-note", Guid.NewGuid(), null));
+        var dispatchMetadata = Metadata(run) with
+        {
+            IdempotencyKey = $"transfer-dispatch-race-{Guid.NewGuid():N}",
+            CorrelationId = $"transfer-dispatch-race-{Guid.NewGuid():N}",
+        };
+        var dispatchBarrier = new Barrier(2);
+        var dispatchResults = await Task.WhenAll(
+            Task.Run(() => RaceDispatchAsync(run, stockRacePlan.TransferId, dispatchRequest, dispatchMetadata,
+                dispatchBarrier)),
+            Task.Run(() => RaceDispatchAsync(run, stockRacePlan.TransferId, dispatchRequest, dispatchMetadata,
+                dispatchBarrier)));
+        Assert.Single(dispatchResults, result => result.Outcome is InventoryTransferResultV1 { IsReplay: false });
+        Assert.Single(dispatchResults, result => result.Outcome is InventoryTransferResultV1 { IsReplay: true });
+        Assert.Equal(new[] { 4, 5 }, dispatchResults.Select(result => result.FenceCalls).Order().ToArray());
+        Assert.Equal((1, 1, 0m, stockRaceSource.LabelVersion + 1), (
+            await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM inventory.TransferDispatches WHERE TransferId = @id",
+                ("@id", stockRacePlan.TransferId)),
+            await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM inventory.Movements WHERE Kind = 8 AND SourceKind = N'inventory.transfer' AND SourceId = @id",
+                ("@id", stockRacePlan.TransferId)),
+            await TransferLabelKgAsync(run, stockRaceSource.LabelId),
+            await TransferLabelVersionAsync(run, stockRaceSource.LabelId)));
+
+        var stockRaceLineId = Assert.Single(stockRacePlan.Lines).LineId;
+        var acceptRequest = new AcceptInventoryTransferLineV1("2", At.AddHours(2),
+            new("inventory.transfer.incoming-note", Guid.NewGuid(), stockRaceLineId));
+        var acceptBarrier = new Barrier(2);
+        var acceptResults = await Task.WhenAll(
+            Task.Run(() => RaceAcceptAsync(run, stockRacePlan.TransferId, stockRaceLineId, acceptRequest,
+                Metadata(run) with { IdempotencyKey = $"transfer-accept-a-{Guid.NewGuid():N}" }, acceptBarrier)),
+            Task.Run(() => RaceAcceptAsync(run, stockRacePlan.TransferId, stockRaceLineId, acceptRequest,
+                Metadata(run) with { IdempotencyKey = $"transfer-accept-b-{Guid.NewGuid():N}" }, acceptBarrier)));
+        Assert.Single(acceptResults, result => result.Outcome is InventoryTransferResultV1 { IsReplay: false });
+        Assert.Single(acceptResults, result => result.Outcome is InventoryTransferException
+            { Status: 409, Code: InventoryTransferCodesV1.ConcurrentChange });
+        Assert.Equal(new[] { 4, 5 }, acceptResults.Select(result => result.FenceCalls).Order().ToArray());
+        Assert.Equal((1, 1, 8m, destinationLocation, stockRaceSource.LabelVersion + 2), (
+            await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM inventory.TransferAcceptances WHERE TransferId = @id",
+                ("@id", stockRacePlan.TransferId)),
+            await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM inventory.Movements WHERE Kind = 9 AND SourceKind = N'inventory.transfer' AND SourceId = @id",
+                ("@id", stockRacePlan.TransferId)),
+            await TransferLabelKgAsync(run, stockRaceSource.LabelId),
+            await LabelLocationAsync(run, stockRaceSource.LabelId),
+            await TransferLabelVersionAsync(run, stockRaceSource.LabelId)));
+        Assert.Equal((3, 3, 3L, "Accepted"), (
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Commands WHERE TargetId = @id",
+                ("@id", stockRacePlan.TransferId)),
+            await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Inventory.Transfer' AND EntityId = @id",
+                ("@id", stockRacePlan.TransferId.ToString("D"))),
+            await run.ScalarAsync<long>("SELECT Version FROM inventory.Transfers WHERE Id = @id",
+                ("@id", stockRacePlan.TransferId)),
+            await run.ScalarAsync<string>(
+                "SELECT CASE Status WHEN 4 THEN N'Accepted' ELSE N'Unexpected' END FROM inventory.Transfers WHERE Id = @id",
+                ("@id", stockRacePlan.TransferId))));
+
+        var acceptInterleaveSource = await SeedFreePhysicalSourceAsync(run, CompanyA,
+            "SYN-TRANSFER-ACCEPT-INTERLEAVE", 9m);
+        var acceptInterleavePlan = TransferPlan(acceptInterleaveSource, sourceLocation, destinationLocation, "9");
+        await using (var scope = run.Store(CompanyA))
+        {
+            await scope.Store.PlanAsync(acceptInterleavePlan, Metadata(run), Authorized);
+            await scope.Store.DispatchAsync(acceptInterleavePlan.TransferId,
+                new("1", At.AddHours(1), new("inventory.transfer.outgoing-note", Guid.NewGuid(), null)),
+                Metadata(run), Authorized);
+        }
+
+        var acceptInterleaveLineId = Assert.Single(acceptInterleavePlan.Lines).LineId;
+        var losingAccept = new AcceptInventoryTransferLineV1("2", At.AddHours(2),
+            new("inventory.transfer.incoming-note", Guid.NewGuid(), acceptInterleaveLineId));
+        var acceptFenceCalls = 0;
+        async Task MutateLabelBetweenValidationAndStaging(CancellationToken cancellationToken)
+        {
+            acceptFenceCalls++;
+            if (acceptFenceCalls != 3) return;
+            var label = new GoymenERP.Modules.Inventory.Domain.Labels.MaterialLabel(
+                acceptInterleaveSource.LabelId, CompanyA, "SYN-TRANSFER-ACCEPT-INTERLEAVE", Product, LotA);
+            var mutation = Movement(CompanyA, StockMovementKind.Receipt,
+                new StockSourceReference("synthetic.transfer-accept-interleave", Guid.NewGuid()),
+                In(Position(CompanyA, sourceLocation, label,
+                    GoymenERP.Modules.Inventory.Domain.Stock.BlockState.Free), 1m));
+            await using var mutator = run.Store(CompanyA);
+            Assert.Equal(InventoryWriteOutcome.Recorded,
+                await mutator.Store.RecordMovementAsync(mutation, Metadata(run), cancellationToken));
+        }
+
+        await using (var scope = run.Store(CompanyA))
+        {
+            var raced = await Assert.ThrowsAsync<InventoryTransferException>(() => scope.Store.AcceptLineAsync(
+                acceptInterleavePlan.TransferId, acceptInterleaveLineId, losingAccept, Metadata(run),
+                MutateLabelBetweenValidationAndStaging));
+            Assert.Equal((409, InventoryTransferCodesV1.ConcurrentChange), (raced.Status, raced.Code));
+        }
+        Assert.Equal((0, 0, 1m, sourceLocation, acceptInterleaveSource.LabelVersion + 2), (
+            await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM inventory.TransferAcceptances WHERE TransferId = @id",
+                ("@id", acceptInterleavePlan.TransferId)),
+            await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM inventory.Movements WHERE Kind = 9 AND SourceKind = N'inventory.transfer' AND SourceId = @id",
+                ("@id", acceptInterleavePlan.TransferId)),
+            await TransferLabelKgAsync(run, acceptInterleaveSource.LabelId),
+            await LabelLocationAsync(run, acceptInterleaveSource.LabelId),
+            await TransferLabelVersionAsync(run, acceptInterleaveSource.LabelId)));
+        Assert.Equal((2, 2, 2L, "InTransit"), (
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Commands WHERE TargetId = @id",
+                ("@id", acceptInterleavePlan.TransferId)),
+            await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Inventory.Transfer' AND EntityId = @id",
+                ("@id", acceptInterleavePlan.TransferId.ToString("D"))),
+            await run.ScalarAsync<long>("SELECT Version FROM inventory.Transfers WHERE Id = @id",
+                ("@id", acceptInterleavePlan.TransferId)),
+            await run.ScalarAsync<string>(
+                "SELECT CASE Status WHEN 2 THEN N'InTransit' ELSE N'Unexpected' END FROM inventory.Transfers WHERE Id = @id",
+                ("@id", acceptInterleavePlan.TransferId))));
 
         var allocationRace = await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-TRANSFER-ALLOC-RACE", 6m);
         var allocationRacePlan = TransferPlan(allocationRace, sourceLocation, destinationLocation, "6");
@@ -346,6 +474,62 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             return exception;
         }
     }
+
+    private static async Task<TransferRaceResult> RaceDispatchAsync(
+        Run run,
+        Guid transferId,
+        DispatchInventoryTransferV1 request,
+        InventoryCommandMetadata metadata,
+        Barrier barrier)
+    {
+        var fenceCalls = 0;
+        Task Fence(CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref fenceCalls);
+            return Task.CompletedTask;
+        }
+
+        await using var scope = run.Store(CompanyA, new BarrierInterceptor(barrier));
+        try
+        {
+            return new(await scope.Store.DispatchAsync(transferId, request, metadata, Fence), fenceCalls);
+        }
+        catch (InventoryTransferException exception)
+        {
+            return new(exception, fenceCalls);
+        }
+    }
+
+    private static async Task<TransferRaceResult> RaceAcceptAsync(
+        Run run,
+        Guid transferId,
+        Guid lineId,
+        AcceptInventoryTransferLineV1 request,
+        InventoryCommandMetadata metadata,
+        Barrier barrier)
+    {
+        var fenceCalls = 0;
+        Task Fence(CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref fenceCalls);
+            return Task.CompletedTask;
+        }
+
+        await using var scope = run.Store(CompanyA, new BarrierInterceptor(barrier));
+        try
+        {
+            return new(await scope.Store.AcceptLineAsync(transferId, lineId, request, metadata, Fence), fenceCalls);
+        }
+        catch (InventoryTransferException exception)
+        {
+            return new(exception, fenceCalls);
+        }
+    }
+
+    private static async Task<long> TransferLabelVersionAsync(Run run, Guid labelId) =>
+        await run.ScalarAsync<long>("SELECT Version FROM inventory.Labels WHERE Id = @id", ("@id", labelId));
+
+    private sealed record TransferRaceResult(object Outcome, int FenceCalls);
 
     private static async Task<decimal> TransferLabelKgAsync(Run run, Guid labelId) => await run.ScalarAsync<decimal>(
         "SELECT COALESCE(SUM(QuantityKg), 0) FROM inventory.Balances WHERE LabelId = @id", ("@id", labelId));

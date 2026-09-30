@@ -380,7 +380,7 @@ public sealed partial class InventoryStore : IInventoryTransferWriterV1, IInvent
         var accepted = await dbContext.TransferAcceptances.AsNoTracking()
             .Where(candidate => candidate.TransferId == transferId).ToListAsync(cancellationToken);
         var labelIds = lines.Select(line => line.LabelId).ToArray();
-        var labels = await dbContext.Labels.AsNoTracking().Where(candidate => labelIds.Contains(candidate.Id))
+        var labels = await dbContext.Labels.Where(candidate => labelIds.Contains(candidate.Id))
             .ToDictionaryAsync(candidate => candidate.Id, cancellationToken);
         await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
         var dispatchLine = dispatchLines.Single(candidate => candidate.LineId == lineId);

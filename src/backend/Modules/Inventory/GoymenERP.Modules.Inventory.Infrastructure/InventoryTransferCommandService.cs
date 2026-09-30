@@ -87,10 +87,12 @@ public sealed class InventoryTransferCommandService : IInventoryTransferCommandV
         }
         catch (InventoryTransferException)
         {
+            await MeasureAsync(scope, cancellationToken);
             throw;
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
+            await MeasureAsync(scope, cancellationToken);
             throw new InventoryTransferException(503, InventoryTransferCodesV1.Unavailable, exception);
         }
 
@@ -126,13 +128,16 @@ public sealed class InventoryTransferCommandService : IInventoryTransferCommandV
         }
         catch (InventoryTransferException)
         {
+            await MeasureAsync(scope, cancellationToken);
             throw;
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
+            await MeasureAsync(scope, cancellationToken);
             throw new InventoryTransferException(503, InventoryTransferCodesV1.Unavailable, exception);
         }
 
+        await MeasureAsync(scope, cancellationToken);
         if (destinationStatus != InventoryTransferDestinationStatusV1.Active)
         {
             throw destinationStatus switch
