@@ -60,6 +60,27 @@ public enum CounterpartyCommandResult
     VersionConflict = 4,
     IdempotencyConflict = 5,
     AlreadyLinked = 6,
+
+    /// <summary>AT-009: the party already has a number; replacing it is a change request (409).</summary>
+    TaxIdentityChangeRequiresApproval = 7,
+
+    /// <summary>AT-009: a change was proposed for a party that has no number yet (409).</summary>
+    TaxIdentityNotSet = 8,
+
+    /// <summary>AT-009: the proposal equals the current number (409).</summary>
+    TaxIdentityUnchanged = 9,
+
+    /// <summary>AT-009: a change of this party is already pending in this company (409).</summary>
+    TaxIdentityChangePending = 10,
+
+    /// <summary>AT-009: the named request is no longer pending (409).</summary>
+    TaxIdentityChangeNotPending = 11,
+
+    /// <summary>AT-009: the party's number moved after the request was made; it cannot be approved (409).</summary>
+    TaxIdentityChangeStale = 12,
+
+    /// <summary>AT-009: the proposer tried to decide their own request (409, maker-checker).</summary>
+    TaxIdentitySelfDecision = 13,
 }
 
 public static class CounterpartyProblemCodesV1
@@ -78,6 +99,23 @@ public static class CounterpartyProblemCodesV1
 
     public const string IdempotencyConflict = "idempotency_conflict";
 
+    /// <summary>AT-009: the number fails the VKN/TCKN format or check digits (400, never stored).</summary>
+    public const string TaxIdentityInvalid = "tax_identity_invalid";
+
+    public const string TaxIdentityChangeRequiresApproval = "tax_identity_change_requires_approval";
+
+    public const string TaxIdentityNotSet = "tax_identity_not_set";
+
+    public const string TaxIdentityUnchanged = "tax_identity_unchanged";
+
+    public const string TaxIdentityChangePending = "tax_identity_change_pending";
+
+    public const string TaxIdentityChangeNotPending = "tax_identity_change_not_pending";
+
+    public const string TaxIdentityChangeStale = "tax_identity_change_stale";
+
+    public const string TaxIdentitySelfDecision = "tax_identity_self_decision";
+
     public static string RequiredForProblem(CounterpartyCommandResult result)
     {
         return result switch
@@ -86,6 +124,13 @@ public static class CounterpartyProblemCodesV1
             CounterpartyCommandResult.VersionConflict => VersionConflict,
             CounterpartyCommandResult.AlreadyLinked => AlreadyLinked,
             CounterpartyCommandResult.IdempotencyConflict => IdempotencyConflict,
+            CounterpartyCommandResult.TaxIdentityChangeRequiresApproval => TaxIdentityChangeRequiresApproval,
+            CounterpartyCommandResult.TaxIdentityNotSet => TaxIdentityNotSet,
+            CounterpartyCommandResult.TaxIdentityUnchanged => TaxIdentityUnchanged,
+            CounterpartyCommandResult.TaxIdentityChangePending => TaxIdentityChangePending,
+            CounterpartyCommandResult.TaxIdentityChangeNotPending => TaxIdentityChangeNotPending,
+            CounterpartyCommandResult.TaxIdentityChangeStale => TaxIdentityChangeStale,
+            CounterpartyCommandResult.TaxIdentitySelfDecision => TaxIdentitySelfDecision,
             _ => throw new InvalidOperationException(
                 $"Cari terminal sonucu stable ProblemDetails koduyla eşleşmiyor: {result}."),
         };

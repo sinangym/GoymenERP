@@ -257,6 +257,26 @@ public sealed partial class OpenApiContractGenerationTests
             AuthenticatedResponses("204:", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:"),
             "#/components/schemas/UpdateCounterpartyContactInformation",
             ["path:partyId:true:type:string;format:uuid;non-empty-uuid:true"]),
+        // AT-009 VKN/TCKN: read, body-only duplicate probe, first entry, change request and another person's decision.
+        new("get", "/api/v1/counterparties/{partyId}/tax-identity", "GetCounterpartyTaxIdentityV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json"),
+            ParameterValues: ["path:partyId:true:type:string;format:uuid;non-empty-uuid:true"]),
+        new("post", "/api/v1/counterparties/{partyId}/tax-identity/duplicates", "CheckCounterpartyTaxIdentityDuplicatesV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:"),
+            "#/components/schemas/CheckCounterpartyTaxIdentityDuplicates",
+            ["path:partyId:true:type:string;format:uuid;non-empty-uuid:true"]),
+        new("put", "/api/v1/counterparties/{partyId}/tax-identity", "EnterCounterpartyTaxIdentityV1",
+            AuthenticatedResponses("204:", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:"),
+            "#/components/schemas/EnterCounterpartyTaxIdentity",
+            ["path:partyId:true:type:string;format:uuid;non-empty-uuid:true"]),
+        new("put", "/api/v1/counterparties/{partyId}/tax-identity/change-request", "RequestCounterpartyTaxIdentityChangeV1",
+            AuthenticatedResponses("204:", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:"),
+            "#/components/schemas/RequestCounterpartyTaxIdentityChange",
+            ["path:partyId:true:type:string;format:uuid;non-empty-uuid:true"]),
+        new("put", "/api/v1/counterparties/{partyId}/tax-identity/change-request/decision", "DecideCounterpartyTaxIdentityChangeV1",
+            AuthenticatedResponses("204:", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:"),
+            "#/components/schemas/DecideCounterpartyTaxIdentityChange",
+            ["path:partyId:true:type:string;format:uuid;non-empty-uuid:true"]),
         new("get", "/api/v1/shell/capabilities", "GetShellCapabilitiesV1",
             AuthenticatedResponses(
                 "200:application/json",
@@ -760,6 +780,11 @@ public sealed partial class OpenApiContractGenerationTests
             ["SetCounterpartyCompanyAccountActiveStateV1"] = "none",
             ["GetCounterpartyContactInformationV1"] = "ref:CounterpartyContactInformationView",
             ["UpdateCounterpartyContactInformationV1"] = "none",
+            ["GetCounterpartyTaxIdentityV1"] = "ref:CounterpartyTaxIdentityView",
+            ["CheckCounterpartyTaxIdentityDuplicatesV1"] = "ref:CounterpartyTaxIdentityDuplicateCheck",
+            ["EnterCounterpartyTaxIdentityV1"] = "none",
+            ["RequestCounterpartyTaxIdentityChangeV1"] = "none",
+            ["DecideCounterpartyTaxIdentityChangeV1"] = "none",
             ["GetShellCapabilitiesV1"] = "ref:ShellCapabilitySnapshot",
             ["GetFinanceManualReceiptDraftContextV1"] = "ref:DraftReadContextView",
             ["GetSalesAccountReferencesV1"] = "ref:SalesAccountOptionsV1",
@@ -888,6 +913,11 @@ public sealed partial class OpenApiContractGenerationTests
     [
         "UpdateCounterpartyContactInformationV1",
         "GetCounterpartyContactInformationV1",
+        "GetCounterpartyTaxIdentityV1",
+        "CheckCounterpartyTaxIdentityDuplicatesV1",
+        "EnterCounterpartyTaxIdentityV1",
+        "RequestCounterpartyTaxIdentityChangeV1",
+        "DecideCounterpartyTaxIdentityChangeV1",
         "GetAuditEventsV1",
         "GetOrganizationContextV1",
         "GetOrganizationSitesV1",
@@ -1070,6 +1100,9 @@ public sealed partial class OpenApiContractGenerationTests
         "RecordInventoryStockScrapV1",
         "DecideInventoryStockScrapV1",
         "UpdateCounterpartyContactInformationV1",
+        "EnterCounterpartyTaxIdentityV1",
+        "RequestCounterpartyTaxIdentityChangeV1",
+        "DecideCounterpartyTaxIdentityChangeV1",
         "SetOrganizationLocationActiveStateV1",
         "CreateOrganizationSiteV1",
         "UpdateOrganizationSiteV1",
@@ -1165,6 +1198,12 @@ public sealed partial class OpenApiContractGenerationTests
                 ["UpdateOrganizationWorkCenterV1"] =
                 [StatusCodes.Status204NoContent, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
                 ["UpdateCounterpartyContactInformationV1"] =
+                [StatusCodes.Status204NoContent, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
+                ["EnterCounterpartyTaxIdentityV1"] =
+                [StatusCodes.Status204NoContent, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
+                ["RequestCounterpartyTaxIdentityChangeV1"] =
+                [StatusCodes.Status204NoContent, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
+                ["DecideCounterpartyTaxIdentityChangeV1"] =
                 [StatusCodes.Status204NoContent, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
                 ["CreateCounterpartyV1"] = [StatusCodes.Status201Created],
                 ["CreateCounterpartyCompanyAccountV1"] =
@@ -1302,6 +1341,10 @@ public sealed partial class OpenApiContractGenerationTests
         "ReleaseInventoryPhysicalAllocationV1",
         "ChangeInventoryPhysicalAllocationV1",
         "UpdateCounterpartyContactInformationV1",
+        "CheckCounterpartyTaxIdentityDuplicatesV1",
+        "EnterCounterpartyTaxIdentityV1",
+        "RequestCounterpartyTaxIdentityChangeV1",
+        "DecideCounterpartyTaxIdentityChangeV1",
         "GetAuditEventsV1",
         "RecordInventoryLabelTransformationV1",
         "RecordInventoryStockCountV1",
@@ -1731,6 +1774,30 @@ public sealed partial class OpenApiContractGenerationTests
             ["UpdateCounterpartyContactInformationV1:404"] = ["not_found"],
             ["UpdateCounterpartyContactInformationV1:409"] =
                 ["client_contract_required", "client_contract_unsupported", "idempotency_conflict", "version_conflict"],
+            ["GetCounterpartyTaxIdentityV1:400"] = ["validation_failed"],
+            ["GetCounterpartyTaxIdentityV1:404"] = ["not_found"],
+            ["GetCounterpartyTaxIdentityV1:409"] = ["client_contract_required", "client_contract_unsupported"],
+            ["CheckCounterpartyTaxIdentityDuplicatesV1:400"] = ["tax_identity_invalid", "validation_failed"],
+            ["CheckCounterpartyTaxIdentityDuplicatesV1:404"] = ["not_found"],
+            ["CheckCounterpartyTaxIdentityDuplicatesV1:409"] = ["client_contract_required", "client_contract_unsupported"],
+            ["EnterCounterpartyTaxIdentityV1:400"] =
+                ["command_metadata_invalid", "tax_identity_invalid", "validation_failed"],
+            ["EnterCounterpartyTaxIdentityV1:404"] = ["not_found"],
+            ["EnterCounterpartyTaxIdentityV1:409"] =
+                ["client_contract_required", "client_contract_unsupported", "idempotency_conflict",
+                 "tax_identity_change_requires_approval", "version_conflict"],
+            ["RequestCounterpartyTaxIdentityChangeV1:400"] =
+                ["command_metadata_invalid", "tax_identity_invalid", "validation_failed"],
+            ["RequestCounterpartyTaxIdentityChangeV1:404"] = ["not_found"],
+            ["RequestCounterpartyTaxIdentityChangeV1:409"] =
+                ["client_contract_required", "client_contract_unsupported", "idempotency_conflict",
+                 "tax_identity_change_pending", "tax_identity_not_set", "tax_identity_unchanged", "version_conflict"],
+            ["DecideCounterpartyTaxIdentityChangeV1:400"] = ["command_metadata_invalid", "validation_failed"],
+            ["DecideCounterpartyTaxIdentityChangeV1:404"] = ["not_found"],
+            ["DecideCounterpartyTaxIdentityChangeV1:409"] =
+                ["client_contract_required", "client_contract_unsupported", "idempotency_conflict",
+                 "tax_identity_change_not_pending", "tax_identity_change_stale", "tax_identity_self_decision",
+                 "version_conflict"],
             ["SaveManufacturingPlanV1:400"] = ["manufacturing_request_invalid"],
             ["SaveManufacturingPlanV1:409"] =
                 [.. ManufacturingConflictCodes, "inventory_label_version_conflict", "inventory_parent_roll_read_conflict"],
@@ -3239,6 +3306,49 @@ public sealed partial class OpenApiContractGenerationTests
                     ("version", "type:string"),
                     ("isActive", "type:boolean"),
                     ("information", "ref:CounterpartyContactInformation")),
+                ["CounterpartyTaxIdentityView"] = ObjectSchema(
+                    ["partyId", "companyId", "version", "taxIdentityNumber", "kind", "duplicates", "pendingChange",
+                     "lastDecidedChange", "viewer"],
+                    ("partyId", "type:string;format:uuid"),
+                    ("companyId", "type:string;format:uuid"),
+                    ("version", "type:string"),
+                    ("taxIdentityNumber", "type:null|string"),
+                    ("kind", "type:null|string"),
+                    ("duplicates", "type:array;items:ref:CounterpartyTaxIdentityDuplicate"),
+                    ("pendingChange", "oneOf:ref:CounterpartyTaxIdentityChangeView|type:null"),
+                    ("lastDecidedChange", "oneOf:ref:CounterpartyTaxIdentityChangeView|type:null"),
+                    ("viewer", "ref:CounterpartyTaxIdentityViewer")),
+                ["CounterpartyTaxIdentityDuplicate"] = ObjectSchema(
+                    ["partyId", "code", "legalName", "accountIsActive"],
+                    ("partyId", "type:string;format:uuid"),
+                    ("code", "type:string"),
+                    ("legalName", "type:string"),
+                    ("accountIsActive", "type:boolean")),
+                ["CounterpartyTaxIdentityChangeView"] = ObjectSchema(
+                    ["id", "status", "currentTaxIdentityNumber", "proposedTaxIdentityNumber", "proposedKind", "reason",
+                     "requestedBy", "requestedAtUtc", "decidedBy", "decidedAtUtc", "decisionNote", "proposedDuplicates"],
+                    ("id", "type:string;format:uuid"),
+                    ("status", "type:string"),
+                    ("currentTaxIdentityNumber", "type:string"),
+                    ("proposedTaxIdentityNumber", "type:string"),
+                    ("proposedKind", "type:string"),
+                    ("reason", "type:string"),
+                    ("requestedBy", "type:string"),
+                    ("requestedAtUtc", "type:string;format:date-time"),
+                    ("decidedBy", "type:null|string"),
+                    ("decidedAtUtc", "type:null|string;format:date-time"),
+                    ("decisionNote", "type:null|string"),
+                    ("proposedDuplicates", "type:array;items:ref:CounterpartyTaxIdentityDuplicate")),
+                ["CounterpartyTaxIdentityViewer"] = ObjectSchema(
+                    ["canUpdate", "canApprove", "isRequesterOfPending"],
+                    ("canUpdate", "type:boolean"),
+                    ("canApprove", "type:boolean"),
+                    ("isRequesterOfPending", "type:boolean")),
+                ["CounterpartyTaxIdentityDuplicateCheck"] = ObjectSchema(
+                    ["taxIdentityNumber", "kind", "duplicates"],
+                    ("taxIdentityNumber", "type:string"),
+                    ("kind", "type:string"),
+                    ("duplicates", "type:array;items:ref:CounterpartyTaxIdentityDuplicate")),
                 ["CounterpartyContactInformation"] = ObjectSchema(
                     ["phone", "phoneExtension", "email", "website", "addresses", "contacts"],
                     ("phone", "type:null|string"),
@@ -4347,6 +4457,24 @@ public sealed partial class OpenApiContractGenerationTests
                     ["expectedVersion", "changes"],
                     ("expectedVersion", "type:string"),
                     ("changes", "ref:CounterpartyContactInformationChanges")),
+                ["CheckCounterpartyTaxIdentityDuplicates"] = ObjectSchema(
+                    ["taxIdentityNumber"],
+                    ("taxIdentityNumber", "type:string")),
+                ["EnterCounterpartyTaxIdentity"] = ObjectSchema(
+                    ["expectedVersion", "taxIdentityNumber"],
+                    ("expectedVersion", "type:string"),
+                    ("taxIdentityNumber", "type:string")),
+                ["RequestCounterpartyTaxIdentityChange"] = ObjectSchema(
+                    ["expectedVersion", "proposedTaxIdentityNumber", "reason"],
+                    ("expectedVersion", "type:string"),
+                    ("proposedTaxIdentityNumber", "type:string"),
+                    ("reason", "type:string")),
+                ["DecideCounterpartyTaxIdentityChange"] = ObjectSchema(
+                    ["expectedVersion", "changeRequestId", "decision"],
+                    ("expectedVersion", "type:string"),
+                    ("changeRequestId", "type:string;format:uuid"),
+                    ("decision", "type:string"),
+                    ("note", "type:null|string")),
                 ["CounterpartyContactInformationChanges"] = ObjectSchema(
                     [],
                     ("phone", "type:null|string"),
@@ -4976,9 +5104,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(181, operations.Count);
+        Assert.Equal(186, operations.Count);
         Assert.Equal(
-            181,
+            186,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());
