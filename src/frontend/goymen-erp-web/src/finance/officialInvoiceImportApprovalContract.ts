@@ -65,6 +65,12 @@ export type OfficialInvoiceApprovalReply =
   | { readonly kind: 'conflicted' }
   | { readonly kind: 'unknown' }
 
+export type OfficialInvoiceUploadReply =
+  | { readonly kind: 'succeeded'; readonly replayed: boolean; readonly batch: OfficialInvoicePendingBatch }
+  | { readonly kind: 'refused'; readonly issues: readonly { readonly field: string; readonly code: string }[] }
+  | { readonly kind: 'conflicted' }
+  | { readonly kind: 'unknown' }
+
 const guid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const emptyGuid = '00000000-0000-0000-0000-000000000000'
 const sha256 = /^[0-9a-f]{64}$/
@@ -159,6 +165,25 @@ export function decodeApprovalReply(value: unknown): DecodeResult<OfficialInvoic
     object(issue) && exact(issue, ['field', 'code']) && typeof issue.field === 'string' && typeof issue.code === 'string')
   if (issues.length !== value.issues.length || value.resource !== null) return { ok: false }
   if (value.outcome === 'VersionConflict' || value.outcome === 'IdempotencyConflict') return { ok: true, value: { kind: 'conflicted' } }
+  if (value.outcome === 'ValidationFailed') return { ok: true, value: { kind: 'refused', issues } }
+  return { ok: false }
+}
+
+export function decodeUploadReply(value: unknown): DecodeResult<OfficialInvoiceUploadReply> {
+  if (!object(value) || !exact(value, ['outcome', 'resource', 'isReplay', 'originalCorrelationId', 'issues'])
+    || typeof value.isReplay !== 'boolean' || typeof value.originalCorrelationId !== 'string'
+    || value.originalCorrelationId.length === 0 || !Array.isArray(value.issues)) return { ok: false }
+  if (value.outcome === 'Succeeded') {
+    const pending = decodePendingBatch(value.resource)
+    if (!pending.ok || value.issues.length !== 0) return { ok: false }
+    return { ok: true, value: { kind: 'succeeded', replayed: value.isReplay, batch: pending.value } }
+  }
+  const issues = value.issues.filter((issue): issue is { field: string; code: string } =>
+    object(issue) && exact(issue, ['field', 'code']) && typeof issue.field === 'string' && typeof issue.code === 'string')
+  if (issues.length !== value.issues.length || value.resource !== null) return { ok: false }
+  if (value.outcome === 'VersionConflict' || value.outcome === 'IdempotencyConflict') {
+    return { ok: true, value: { kind: 'conflicted' } }
+  }
   if (value.outcome === 'ValidationFailed') return { ok: true, value: { kind: 'refused', issues } }
   return { ok: false }
 }

@@ -126,7 +126,7 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                    OR EXISTS (SELECT 1 FROM [finance].[OfficialInvoiceImportApprovals])
                    OR EXISTS (SELECT 1 FROM [finance].[OfficialInvoiceImportCommands])
                 BEGIN
-                    THROW 51000, N'Resmî fatura import geçmişi varken migration geri alınamaz; forward-fix uygulayın.', 1;
+                    THROW 51051, N'Resmî fatura import geçmişi varken migration geri alınamaz; forward-fix uygulayın.', 1;
                 END;
                 """);
 

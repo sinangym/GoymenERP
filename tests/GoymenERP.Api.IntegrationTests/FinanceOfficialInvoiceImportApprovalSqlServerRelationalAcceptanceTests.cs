@@ -21,7 +21,7 @@ public sealed class FinanceOfficialInvoiceImportApprovalSqlServerRelationalAccep
     private static readonly Guid Batch = Guid.Parse("81000000-0000-0000-0000-000000000001");
 
     [SqlServerFact]
-    public async Task A_different_authorized_checker_persists_batch_approval_commands_and_audits_atomically()
+    public async Task The_uploader_is_refused_then_a_different_authorized_checker_persists_approval_atomically()
     {
         await using var run = await Run.StartAsync();
         await using (var maker = run.Service(Company, "SENTETIK-maker", new AllowAuthority()))
@@ -29,7 +29,19 @@ public sealed class FinanceOfficialInvoiceImportApprovalSqlServerRelationalAccep
             var upload = await maker.Service.UploadAsync(maker.Context, new CommandMetadata("upload-key"), Request(), default);
             Assert.Equal(CommandOutcome.Succeeded, upload.Outcome);
             Assert.Equal(FinanceOfficialInvoiceImportApprovalStatusV1.Pending, upload.Resource!.Status);
+
+            var selfApproval = await maker.Service.ApproveAsync(maker.Context, new CommandMetadata("self-approve-key"),
+                new FinanceOfficialInvoiceImportApproveRequestV1(Batch, "1"), default);
+            Assert.Equal(CommandOutcome.ValidationFailed, selfApproval.Outcome);
+            Assert.Contains(selfApproval.Issues,
+                issue => issue.Field == "approver" && issue.Code == "approver_must_differ_from_uploader");
         }
+
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OfficialInvoiceImportApprovals"));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OfficialInvoiceImportCommands"));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Finance.OfficialInvoiceImportBatch'"));
+
         await using (var checker = run.Service(Company, "SENTETIK-checker", new AllowAuthority()))
         {
             var approval = await checker.Service.ApproveAsync(checker.Context, new CommandMetadata("approve-key"),

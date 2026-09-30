@@ -27,8 +27,7 @@ export interface OfficialInvoiceApprovalAttemptContext {
 
 interface StoredApprovalAttempt {
   readonly key: string
-  readonly batchId: string
-  readonly expectedVersion: string
+  readonly batch: OfficialInvoicePendingBatch
 }
 
 const attempts = new Map<string, StoredApprovalAttempt>()
@@ -72,6 +71,7 @@ function OfficialInvoiceImportApprovalsPageState({ client, context,
     context.securityNamespace,
   ])
   const actorScope = JSON.stringify([context.sessionEpoch, context.companyId, context.actorId])
+  const [recovery, setRecovery] = useState<StoredApprovalAttempt | null>(() => findAttempt(actorScope))
 
   const beginRequest = useCallback(() => {
     activeRequest.current?.abort()
@@ -104,7 +104,9 @@ function OfficialInvoiceImportApprovalsPageState({ client, context,
         || value.batch.batchId !== batch.batchId || value.batch.version !== batch.version) return
       setDetail(value)
       setIssues([])
-      setPhase(attempts.has(attemptSlot(actorScope, value.batch.batchId)) ? 'unknown' : 'detail')
+      const outstanding = attempts.get(attemptSlot(actorScope, value.batch.batchId))
+      setRecovery(outstanding ?? null)
+      setPhase(outstanding === undefined ? 'detail' : 'unknown')
     }).catch(() => { if (generation === request.current) setPhase('failed') })
   }
 
@@ -115,25 +117,50 @@ function OfficialInvoiceImportApprovalsPageState({ client, context,
     const existing = attempts.get(keyScope)
     const attempt = existing ?? {
       key: createIdempotencyKey(),
-      batchId: frozen.batchId,
-      expectedVersion: frozen.version,
+      batch: frozen,
     }
     if (retry && existing === undefined) return
     attempts.set(keyScope, attempt)
+    setRecovery(attempt)
     const { controller, generation } = beginRequest()
     setPhase('submitting')
-    void client.approve(attempt.batchId, attempt.expectedVersion, attempt.key, controller.signal).then((reply) => {
+    void client.approve(attempt.batch.batchId, attempt.batch.version, attempt.key, controller.signal).then((reply) => {
       if (generation !== request.current) return
       if (reply.kind === 'unknown') { setPhase('unknown'); return }
-      if (reply.kind === 'conflicted') { attempts.delete(keyScope); setPhase('conflicted'); return }
-      if (reply.kind === 'refused') { attempts.delete(keyScope); setIssues(reply.issues); setPhase('refused'); return }
-      if (!sameApprovedIdentity(frozen, reply.batch, context)) {
+      if (reply.kind === 'conflicted') { attempts.delete(keyScope); setRecovery(null); setPhase('conflicted'); return }
+      if (reply.kind === 'refused') {
+        attempts.delete(keyScope); setRecovery(null); setIssues(reply.issues); setPhase('refused'); return
+      }
+      if (!sameApprovedIdentity(attempt.batch, reply.batch, context)) {
         setPhase('unknown')
         return
       }
       attempts.delete(keyScope)
+      setRecovery(null)
       setSettled(reply.batch)
       setDetail(null)
+      setPhase('loading')
+      fetchPage()
+    }).catch(() => { if (generation === request.current) setPhase('unknown') })
+  }
+
+  function retryRecovery(attempt: StoredApprovalAttempt) {
+    const keyScope = attemptSlot(actorScope, attempt.batch.batchId)
+    const current = attempts.get(keyScope)
+    if (current === undefined || current.key !== attempt.key) return
+    const { controller, generation } = beginRequest()
+    setPhase('submitting')
+    void client.approve(current.batch.batchId, current.batch.version, current.key, controller.signal).then((reply) => {
+      if (generation !== request.current) return
+      if (reply.kind === 'unknown') { setPhase('unknown'); return }
+      if (reply.kind === 'conflicted') { attempts.delete(keyScope); setRecovery(null); setPhase('conflicted'); return }
+      if (reply.kind === 'refused') {
+        attempts.delete(keyScope); setRecovery(null); setIssues(reply.issues); setPhase('failed'); return
+      }
+      if (!sameApprovedIdentity(current.batch, reply.batch, context)) { setPhase('unknown'); return }
+      attempts.delete(keyScope)
+      setRecovery(null)
+      setSettled(reply.batch)
       setPhase('loading')
       fetchPage()
     }).catch(() => { if (generation === request.current) setPhase('unknown') })
@@ -157,6 +184,14 @@ function OfficialInvoiceImportApprovalsPageState({ client, context,
           <button type="button" onClick={() => onApprovedSource(settled)}>Onaylanan kaynağı aktar</button>
         </article>
       )}
+      {settled === null && detail === null && recovery !== null ? (
+        <article className={styles.command} aria-label={`Sonucu bilinmeyen fatura onayı ${recovery.batch.batchId}`}>
+          <p role="status">Önceki onayın sonucu bilinmiyor; pending listesine güvenmeden aynı anahtarla yeniden okuyun.</p>
+          <button type="button" disabled={phase === 'submitting'} onClick={() => retryRecovery(recovery)}>
+            Aynı onay anahtarıyla sonucu yeniden oku
+          </button>
+        </article>
+      ) : null}
       {phase === 'loading' ? <p role="status">Onay bekleyen kaynaklar yükleniyor…</p> : null}
       {phase === 'failed' ? <div role="alert"><p>Onay kuyruğu güvenli biçimde okunamadı.</p>
         <button type="button" onClick={() => { setDetail(null); setPhase('loading'); fetchPage() }}>Kuyruğu yeniden oku</button></div> : null}
@@ -213,4 +248,12 @@ function sameApprovedIdentity(pending: OfficialInvoicePendingBatch, approved: Of
 
 function attemptSlot(actorScope: string, batchId: string): string {
   return `${actorScope}:${batchId}`
+}
+
+function findAttempt(actorScope: string): StoredApprovalAttempt | null {
+  const prefix = `${actorScope}:`
+  for (const [slot, attempt] of attempts) {
+    if (slot.startsWith(prefix)) return attempt
+  }
+  return null
 }

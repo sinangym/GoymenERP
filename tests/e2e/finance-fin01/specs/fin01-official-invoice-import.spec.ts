@@ -5,6 +5,8 @@
  * currency identities come from the real FIN01 seed/Settings reads. This proves the mounted
  * upload -> another-checker -> approved source -> Finance open-item journey; it is not positive
  * UAT for a customer's real invoice file or mapping.
+ * The maker-checker refusal needs a disposable actor that owns both Upload and Approve; the
+ * proposer is intentionally Upload-only, so this journey does not mislabel its 403 as maker-checker proof.
  */
 
 import { Buffer } from 'node:buffer'
@@ -42,7 +44,6 @@ function expectEveryAnswerRewritten(answered: readonly Request[], rewritten: Rea
 
 test.describe.serial('FIN01 official invoice import (real API, real SQL, real Chromium)', () => {
   test('different checker approves, applies once and reopens the exact Finance open item', async ({ browser }) => {
-    const batchId = randomUUID()
     const openItemId = randomUUID()
     const sourceDocumentId = randomUUID()
     const sourceInstallmentId = randomUUID()
@@ -72,19 +73,30 @@ test.describe.serial('FIN01 official invoice import (real API, real SQL, real Ch
       amount,
       dueOn,
     ].join(',')].join('\n')
-    const uploadBody = { batchId, batchVersion, utf8Csv: Buffer.from(csv, 'utf8').toString('base64') }
-    const uploadKey = randomUUID()
-
-    const uploaded = await maker.evaluate(async ({ path, companyId, key, body }) => {
-      const response = await fetch(path, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key, 'X-Company-Id': companyId },
-        body: JSON.stringify(body),
-      })
-      return { status: response.status, body: await response.json() as unknown }
-    }, { path: BATCHES, companyId: env.seed.companyId, key: uploadKey, body: uploadBody })
-    expect(uploaded.status, JSON.stringify(uploaded.body)).toBe(200)
-    expect(uploaded.body).toMatchObject({
+    await maker.goto('/finans')
+    await maker.getByRole('link', { name: 'Onaylı fatura taksit kaynağı yükle', exact: true }).click()
+    await expect(maker.getByRole('heading', { level: 1, name: 'Onaylı fatura taksit kaynağı yükle', exact: true }))
+      .toBeVisible({ timeout: 30_000 })
+    await maker.getByLabel('Kaynak sürümü', { exact: true }).fill(batchVersion)
+    await maker.getByLabel('UTF-8 CSV dosyası', { exact: true }).setInputFiles({
+      name: 'SENTETIK-FIN01-official-invoice.csv',
+      mimeType: 'text/csv',
+      buffer: Buffer.from(csv, 'utf8'),
+    })
+    const uploadPost = maker.waitForRequest((request) => request.url().endsWith(BATCHES) && request.method() === 'POST')
+    const uploadAnswer = maker.waitForResponse((response) => response.url().endsWith(BATCHES)
+      && response.request().method() === 'POST')
+    await maker.getByRole('button', { name: 'Onaya gönder', exact: true }).click()
+    const uploadSent = await uploadPost
+    const uploadBody = uploadSent.postDataJSON() as { readonly batchId: string; readonly batchVersion: string; readonly utf8Csv: string }
+    const batchId = uploadBody.batchId
+    expect(batchId).toMatch(/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i)
+    expect(uploadBody).toEqual({ batchId, batchVersion, utf8Csv: Buffer.from(csv, 'utf8').toString('base64') })
+    expect(uploadSent.headers()['idempotency-key']).toMatch(/^[0-9a-f-]{36}$/i)
+    const uploaded = await uploadAnswer
+    const uploadedBody = await uploaded.json() as unknown
+    expect(uploaded.status(), JSON.stringify(uploadedBody)).toBe(200)
+    expect(uploadedBody).toMatchObject({
       outcome: 'Succeeded',
       isReplay: false,
       resource: {
@@ -97,16 +109,7 @@ test.describe.serial('FIN01 official invoice import (real API, real SQL, real Ch
         approvedBy: null,
       },
     })
-
-    const selfApproval = await maker.evaluate(async ({ batchId: id, companyId }) => {
-      const response = await fetch(`/api/v1/finance/official-invoice-import-batches/${id}/approval`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID(), 'X-Company-Id': companyId },
-        body: JSON.stringify({ batchId: id, expectedVersion: '1' }),
-      })
-      return { status: response.status, body: await response.text() }
-    }, { batchId, companyId: env.seed.companyId })
-    expect(selfApproval.status, selfApproval.body).toBe(403)
+    await expect(maker.getByRole('heading', { level: 2, name: 'Onay bekliyor', exact: true })).toBeVisible()
 
     const foreignBatchId = randomUUID()
     const foreignUpload = await maker.evaluate(async ({ path, companyId, body }) => {

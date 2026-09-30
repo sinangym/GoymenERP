@@ -30,8 +30,14 @@ export interface OfficialInvoiceImportPreview {
 
 export interface OfficialInvoiceOpenItem {
   readonly id: string
+  readonly companyId: string
+  readonly sourceKind: 'official.invoice-installment.v1'
   readonly sourceDocumentId: string
   readonly sourceInstallmentId: string
+  readonly sourceVersion: string
+  readonly sourceBatchId: string
+  readonly sourceBatchVersion: string
+  readonly sourceBatchChecksum: string
   readonly partyId: string
   readonly companyAccountId: string
   readonly currencyId: string

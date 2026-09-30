@@ -192,4 +192,37 @@ describe('official invoice checker journey', () => {
     }
     expect(await screen.findByRole('button', { name: 'Onaylanan kaynağı aktar' })).toBeTruthy()
   })
+
+  it('recovers a committed lost approval after re-fence even when pending list is empty and detail is gone', async () => {
+    const approve = vi.fn()
+      .mockResolvedValueOnce({ kind: 'unknown' })
+      .mockResolvedValueOnce({ kind: 'succeeded', replayed: true, batch: approved })
+    const listPending = vi.fn()
+      .mockResolvedValueOnce({ companyId: pending.companyId, items: [pending], nextCursor: null })
+      .mockResolvedValueOnce({ companyId: pending.companyId, items: [], nextCursor: null })
+    const getPending = vi.fn().mockResolvedValueOnce(detail)
+      .mockRejectedValueOnce(new Error('approved batches are not pending'))
+    const client: OfficialInvoiceApprovalClient = { listPending, getPending, approve }
+    const selected = vi.fn()
+    const view = render(<OfficialInvoiceImportApprovalsPage client={client} context={context}
+      createIdempotencyKey={() => 'committed-lost-key'} onApprovedSource={selected} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'İncele' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Onayla' }))
+    expect(await screen.findByRole('button', { name: 'Aynı anahtarla yeniden gönder' })).toBeTruthy()
+
+    view.rerender(<OfficialInvoiceImportApprovalsPage client={client}
+      context={{ ...context, requestFenceGeneration: 6, capabilityGeneration: '12',
+        securityNamespace: 'finance-checker-refenced' }}
+      createIdempotencyKey={() => 'must-not-mint'} onApprovedSource={selected} />)
+    expect(await screen.findByText('Onay bekleyen kaynak yok.')).toBeTruthy()
+    expect(getPending).toHaveBeenCalledTimes(1)
+    const recover = await screen.findByRole('button', { name: 'Aynı onay anahtarıyla sonucu yeniden oku' })
+    fireEvent.click(recover)
+
+    await waitFor(() => expect(approve).toHaveBeenCalledTimes(2))
+    expect(approve.mock.calls[0].slice(0, 3)).toEqual([pending.batchId, '1', 'committed-lost-key'])
+    expect(approve.mock.calls[1].slice(0, 3)).toEqual([pending.batchId, '1', 'committed-lost-key'])
+    expect(await screen.findByRole('button', { name: 'Onaylanan kaynağı aktar' })).toBeTruthy()
+    expect(selected).not.toHaveBeenCalled()
+  })
 })

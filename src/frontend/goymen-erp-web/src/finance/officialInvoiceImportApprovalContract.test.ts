@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { decodeApprovalReply, decodePendingDetail, decodePendingPage } from './officialInvoiceImportApprovalContract'
+import { decodeApprovalReply, decodePendingDetail, decodePendingPage, decodeUploadReply } from './officialInvoiceImportApprovalContract'
 
 const batch = {
   batchId: '11111111-1111-4111-8111-111111111111', companyId: '10000000-0000-0000-0000-000000000001',
@@ -42,5 +42,16 @@ describe('official invoice pending approval contract', () => {
     })
     expect(decodeApprovalReply({ outcome: 'Succeeded', resource: { ...approved, approvedBy: null }, isReplay: false,
       originalCorrelationId: 'corr-1', issues: [] })).toEqual({ ok: false })
+  })
+
+  it('decodes only a complete pending upload command resource', () => {
+    expect(decodeUploadReply({ outcome: 'Succeeded', resource: batch, isReplay: true,
+      originalCorrelationId: 'corr-upload', issues: [] })).toEqual({
+      ok: true, value: { kind: 'succeeded', replayed: true, batch },
+    })
+    expect(decodeUploadReply({ outcome: 'Succeeded', resource: { ...batch, status: 'Approved' }, isReplay: false,
+      originalCorrelationId: 'corr-upload', issues: [] })).toEqual({ ok: false })
+    expect(decodeUploadReply({ outcome: 'VersionConflict', resource: {}, isReplay: false,
+      originalCorrelationId: 'corr-upload', issues: [] })).toEqual({ ok: false })
   })
 })

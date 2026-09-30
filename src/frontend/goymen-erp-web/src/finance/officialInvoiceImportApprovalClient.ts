@@ -23,6 +23,7 @@ import {
   type OfficialInvoicePendingDetail,
   type OfficialInvoicePendingPage,
 } from './officialInvoiceImportApprovalContract'
+import { isNonNegativeDecimalText, isPositiveDecimalText } from './decimalText'
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '/api/v1'
 const DEV_USER = (import.meta.env.VITE_DEV_USER as string | undefined) ?? 'company-a-user'
@@ -164,20 +165,33 @@ async function applyImport(
     return { kind: 'unknown' }
   }
   if (!sameContext(context, boundary)) return { kind: 'unknown' }
-  if (response.status === 409) return isObject(body) ? { kind: 'conflicted' } : { kind: 'unknown' }
+  if (response.status === 409) return decodeApplyConflict(body, source, context.companyId)
+    ? { kind: 'conflicted' }
+    : { kind: 'unknown' }
   if (response.status === 422) {
     const preview = isObject(body) ? decodeImportPreview(body.preview, source, context.companyId) : null
     return preview === null ? { kind: 'unknown' } : { kind: 'refused', issues: preview.issues }
   }
   if (!isObject(body) || body.isSucceeded !== true || !isObject(body.approvedSource)
-    || body.approvedSource.outcome !== 3 || !isObject(body.approvedSource.resource)
-    || body.approvedSource.resource.batchId !== source.batchId
-    || body.approvedSource.resource.companyId !== context.companyId
-    || body.approvedSource.resource.batchVersion !== source.batchVersion
+    || body.approvedSource.outcome !== 3
     || !isObject(body.admission) || body.admission.outcome !== 'Succeeded'
     || !isObject(body.freshRead) || body.freshRead.outcome !== 3) return { kind: 'unknown' }
-  const batch = decodeAppliedBatch(body.freshRead.resource, source.batchId, context.companyId)
-  if (batch === null || batch.batchVersion !== source.batchVersion) return { kind: 'unknown' }
+  const preview = decodeImportPreview(body.preview, source, context.companyId)
+  if (preview === null || preview.issues.length !== 0) return { kind: 'unknown' }
+  const previewRows = isObject(body.preview) && body.preview.isValid === true
+    ? decodeApprovedSource(body.preview.batch, source, context.companyId, preview.sourceSha256)
+    : null
+  const approvedRows = decodeApprovedSource(body.approvedSource.resource, source, context.companyId, preview.sourceSha256)
+  if (previewRows === null || approvedRows === null || !sameSourceRows(previewRows, approvedRows)) return { kind: 'unknown' }
+  const batch = decodeAppliedBatch(body.freshRead.resource, source.batchId, context.companyId, {
+    batchVersion: source.batchVersion,
+    batchChecksum: preview.sourceSha256,
+    rows: approvedRows,
+    requireOpen: true,
+  })
+  if (batch === null || !sameAdmissionIds(body.admission, batch.openItems.map((item) => item.id))) {
+    return { kind: 'unknown' }
+  }
   const replayed = response.headers.get('Idempotency-Replayed') === 'true'
   if (body.admission.isReplay !== replayed) return { kind: 'unknown' }
   return { kind: 'succeeded', replayed, batch }
@@ -222,14 +236,16 @@ function decodeImportPreview(
   source: OfficialInvoiceImportSourceSelection,
   companyId: string,
 ): OfficialInvoiceImportPreview | null {
-  if (!isObject(value) || typeof value.templateVersion !== 'string' || typeof value.sourceSha256 !== 'string'
+  if (!isObject(value) || typeof value.templateVersion !== 'string' || value.templateVersion.length === 0
+    || typeof value.sourceSha256 !== 'string' || !SHA256.test(value.sourceSha256)
     || !Array.isArray(value.issues)) return null
   const issues = value.issues.map(decodeIssue)
   if (issues.some((issue) => issue === null)) return null
   let rowCount = 0
   if (value.batch !== null) {
     if (!isObject(value.batch) || value.batch.batchId !== source.batchId || value.batch.companyId !== companyId
-      || value.batch.batchVersion !== source.batchVersion || !Array.isArray(value.batch.rows)) return null
+      || value.batch.batchVersion !== source.batchVersion || value.batch.batchChecksum !== value.sourceSha256
+      || !Array.isArray(value.batch.rows)) return null
     rowCount = value.batch.rows.length
   }
   return {
@@ -250,43 +266,167 @@ function decodeIssue(value: unknown): OfficialInvoiceImportIssue | null {
     : null
 }
 
-function decodeAppliedBatch(value: unknown, batchId: string, companyId: string): OfficialInvoiceAppliedBatch | null {
+interface AppliedExpectation {
+  readonly batchVersion: string
+  readonly batchChecksum: string
+  readonly rows: readonly Record<string, unknown>[]
+  readonly requireOpen: boolean
+}
+
+function decodeAppliedBatch(
+  value: unknown,
+  batchId: string,
+  companyId: string,
+  expected?: AppliedExpectation,
+): OfficialInvoiceAppliedBatch | null {
   if (!isObject(value) || value.batchId !== batchId || value.companyId !== companyId
-    || typeof value.batchVersion !== 'string' || typeof value.batchChecksum !== 'string'
+    || typeof value.batchVersion !== 'string' || value.batchVersion.length === 0
+    || typeof value.batchChecksum !== 'string' || !SHA256.test(value.batchChecksum)
+    || (expected !== undefined && (value.batchVersion !== expected.batchVersion
+      || value.batchChecksum !== expected.batchChecksum))
     || !Array.isArray(value.openItems)) return null
-  const openItems = value.openItems.map(decodeOpenItem)
+  const openItems = value.openItems.map((item) => decodeOpenItem(
+    item,
+    companyId,
+    batchId,
+    value.batchVersion as string,
+    value.batchChecksum as string,
+    expected?.requireOpen ?? false,
+  ))
   if (openItems.some((item) => item === null)) return null
+  const decoded = openItems as OfficialInvoiceOpenItem[]
+  if (new Set(decoded.map((item) => item.id.toLowerCase())).size !== decoded.length) return null
+  if (expected !== undefined && !sameRows(expected.rows, decoded)) return null
   return {
     batchId,
     batchVersion: value.batchVersion,
     batchChecksum: value.batchChecksum,
-    openItems: openItems as OfficialInvoiceOpenItem[],
+    openItems: decoded,
   }
 }
 
-function decodeOpenItem(value: unknown): OfficialInvoiceOpenItem | null {
-  if (!isObject(value) || typeof value.id !== 'string' || typeof value.sourceDocumentId !== 'string'
-    || typeof value.sourceInstallmentId !== 'string' || typeof value.partyId !== 'string'
-    || typeof value.companyAccountId !== 'string' || typeof value.currencyId !== 'string'
-    || typeof value.originalAmount !== 'string' || typeof value.outstandingAmount !== 'string'
-    || (value.dueOn !== null && typeof value.dueOn !== 'string')
-    || (typeof value.status !== 'number' && typeof value.status !== 'string')
-    || typeof value.version !== 'string') return null
-  const status = typeof value.status === 'number' ? value.status : Number(value.status)
-  if (!Number.isInteger(status)) return null
+function decodeOpenItem(
+  value: unknown,
+  companyId: string,
+  batchId: string,
+  batchVersion: string,
+  batchChecksum: string,
+  requireOpen: boolean,
+): OfficialInvoiceOpenItem | null {
+  const guidFields = ['id', 'companyId', 'sourceDocumentId', 'sourceInstallmentId', 'partyId',
+    'companyAccountId', 'currencyId'] as const
+  if (!isObject(value) || !guidFields.every((field) => canonicalGuid(value[field]))
+    || value.companyId !== companyId || value.sourceKind !== 'official.invoice-installment.v1'
+    || typeof value.sourceVersion !== 'string' || value.sourceVersion.length === 0
+    || value.sourceBatchId !== batchId || value.sourceBatchVersion !== batchVersion
+    || value.sourceBatchChecksum !== batchChecksum
+    || !isPositiveDecimalText(value.originalAmount) || !isNonNegativeDecimalText(value.outstandingAmount)
+    || !(value.dueOn === null || (typeof value.dueOn === 'string' && ISO_DATE.test(value.dueOn)))
+    || (value.status !== 1 && value.status !== 2) || (requireOpen && value.status !== 1)
+    || typeof value.version !== 'string' || !POSITIVE_INTEGER.test(value.version)) return null
   return {
-    id: value.id,
-    sourceDocumentId: value.sourceDocumentId,
-    sourceInstallmentId: value.sourceInstallmentId,
-    partyId: value.partyId,
-    companyAccountId: value.companyAccountId,
-    currencyId: value.currencyId,
+    id: value.id as string,
+    companyId: value.companyId as string,
+    sourceKind: value.sourceKind,
+    sourceDocumentId: value.sourceDocumentId as string,
+    sourceInstallmentId: value.sourceInstallmentId as string,
+    sourceVersion: value.sourceVersion,
+    sourceBatchId: value.sourceBatchId,
+    sourceBatchVersion: value.sourceBatchVersion,
+    sourceBatchChecksum: value.sourceBatchChecksum,
+    partyId: value.partyId as string,
+    companyAccountId: value.companyAccountId as string,
+    currencyId: value.currencyId as string,
     originalAmount: value.originalAmount,
     outstandingAmount: value.outstandingAmount,
     dueOn: value.dueOn as string | null,
-    status,
+    status: value.status,
     version: value.version,
   }
+}
+
+const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const EMPTY_GUID = '00000000-0000-0000-0000-000000000000'
+const SHA256 = /^[0-9a-f]{64}$/
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
+const POSITIVE_INTEGER = /^[1-9]\d*$/
+
+function canonicalGuid(value: unknown): value is string {
+  return typeof value === 'string' && GUID.test(value) && value.toLowerCase() !== EMPTY_GUID
+}
+
+function decodeApprovedSource(
+  value: unknown,
+  source: OfficialInvoiceImportSourceSelection,
+  companyId: string,
+  checksum: string,
+): readonly Record<string, unknown>[] | null {
+  if (!isObject(value) || value.batchId !== source.batchId || value.companyId !== companyId
+    || value.batchVersion !== source.batchVersion || value.batchChecksum !== checksum
+    || !Array.isArray(value.rows) || value.rows.length === 0) return null
+  const rows = value.rows.filter((row): row is Record<string, unknown> => isObject(row))
+  if (rows.length !== value.rows.length || rows.some((row) => !canonicalGuid(row.openItemId)
+    || !canonicalGuid(row.sourceDocumentId) || !canonicalGuid(row.sourceInstallmentId)
+    || typeof row.sourceVersion !== 'string' || row.sourceVersion.length === 0
+    || row.documentKind !== 'official-invoice-installment'
+    || !canonicalGuid(row.partyId) || !canonicalGuid(row.companyAccountId) || !canonicalGuid(row.currencyId)
+    || !isPositiveDecimalText(row.amount)
+    || !(row.dueOn === null || (typeof row.dueOn === 'string' && ISO_DATE.test(row.dueOn))))) return null
+  return new Set(rows.map((row) => (row.openItemId as string).toLowerCase())).size === rows.length ? rows : null
+}
+
+function sameRows(rows: readonly Record<string, unknown>[], items: readonly OfficialInvoiceOpenItem[]): boolean {
+  if (rows.length !== items.length) return false
+  const byId = new Map(items.map((item) => [item.id.toLowerCase(), item]))
+  return rows.every((row) => {
+    const item = byId.get((row.openItemId as string).toLowerCase())
+    return item !== undefined && item.sourceDocumentId === row.sourceDocumentId
+      && item.sourceInstallmentId === row.sourceInstallmentId && item.sourceVersion === row.sourceVersion
+      && item.partyId === row.partyId && item.companyAccountId === row.companyAccountId
+      && item.currencyId === row.currencyId && item.originalAmount === row.amount
+      && item.outstandingAmount === row.amount && item.dueOn === row.dueOn
+  })
+}
+
+function sameSourceRows(left: readonly Record<string, unknown>[], right: readonly Record<string, unknown>[]): boolean {
+  if (left.length !== right.length) return false
+  const fields = ['sourceDocumentId', 'sourceInstallmentId', 'sourceVersion', 'documentKind', 'partyId',
+    'companyAccountId', 'currencyId', 'amount', 'dueOn'] as const
+  const byId = new Map(right.map((row) => [(row.openItemId as string).toLowerCase(), row]))
+  return left.every((row) => {
+    const other = byId.get((row.openItemId as string).toLowerCase())
+    return other !== undefined && fields.every((field) => row[field] === other[field])
+  })
+}
+
+function sameAdmissionIds(value: Record<string, unknown>, ids: readonly string[]): boolean {
+  if (!Array.isArray(value.openItemIds) || typeof value.isReplay !== 'boolean'
+    || typeof value.originalCorrelationId !== 'string' || value.originalCorrelationId.length === 0
+    || !Array.isArray(value.issues) || value.issues.length !== 0
+    || value.openItemIds.some((id) => !canonicalGuid(id))) return false
+  const admitted = (value.openItemIds as string[]).map((id) => id.toLowerCase())
+  return new Set(admitted).size === admitted.length
+    && admitted.length === ids.length
+    && admitted.every((id) => ids.some((fresh) => fresh.toLowerCase() === id))
+}
+
+function decodeApplyConflict(
+  value: unknown,
+  source: OfficialInvoiceImportSourceSelection,
+  companyId: string,
+): boolean {
+  if (!isObject(value) || value.isSucceeded !== false || value.freshRead !== null
+    || !isObject(value.admission)
+    || (value.admission.outcome !== 'VersionConflict' && value.admission.outcome !== 'IdempotencyConflict')
+    || !Array.isArray(value.admission.openItemIds) || value.admission.openItemIds.length !== 0
+    || value.admission.isReplay !== false || typeof value.admission.originalCorrelationId !== 'string'
+    || !Array.isArray(value.admission.issues) || !isObject(value.approvedSource)
+    || value.approvedSource.outcome !== 3 || !isObject(value.preview)) return false
+  const preview = decodeImportPreview(value.preview, source, companyId)
+  if (preview === null || preview.issues.length !== 0 || value.preview.isValid !== true) return false
+  const previewRows = decodeApprovedSource(value.preview.batch, source, companyId, preview.sourceSha256)
+  const approvedRows = decodeApprovedSource(value.approvedSource.resource, source, companyId, preview.sourceSha256)
+  return previewRows !== null && approvedRows !== null && sameSourceRows(previewRows, approvedRows)
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

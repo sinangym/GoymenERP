@@ -145,16 +145,25 @@ describe('official invoice application HTTP client', () => {
   const file = { arrayBuffer: async () => new TextEncoder().encode('invoice,csv').buffer } as File
   const openItem = {
     id: '88888888-8888-4888-8888-888888888888', companyId,
-    sourceKind: 'official-invoice-installment', sourceDocumentId: row.sourceDocumentId,
+    sourceKind: 'official.invoice-installment.v1', sourceDocumentId: row.sourceDocumentId,
     sourceInstallmentId: row.sourceInstallmentId, sourceVersion: row.sourceVersion,
     sourceBatchId: batchId, sourceBatchVersion: batch.batchVersion, sourceBatchChecksum: batch.batchChecksum,
     partyId: row.partyId, companyAccountId: row.companyAccountId, currencyId: row.currencyId,
-    originalAmount: row.amount, outstandingAmount: row.amount, dueOn: row.dueOn, status: 0, version: '1',
+    originalAmount: row.amount, outstandingAmount: row.amount, dueOn: row.dueOn, status: 1, version: '1',
   }
   const applied = {
     batchId, companyId, batchVersion: batch.batchVersion, batchChecksum: batch.batchChecksum,
     openItems: [openItem],
   }
+  const successBody = (fresh = applied, admittedIds: readonly string[] = [openItem.id]) => ({
+    preview: { templateVersion: batch.templateVersion, sourceSha256: batch.batchChecksum,
+      batch: detail.preview.batch, issues: [], isValid: true },
+    approvedSource: { outcome: 3, resource: detail.preview.batch },
+    admission: { outcome: 'Succeeded', openItemIds: admittedIds, isReplay: false,
+      originalCorrelationId: 'corr-1', issues: [] },
+    freshRead: { outcome: 3, resource: fresh },
+    isSucceeded: true,
+  })
 
   it('uses the captured company for preview/apply/reopen and validates the complete success graph', async () => {
     const preview = { templateVersion: batch.templateVersion, sourceSha256: batch.batchChecksum,
@@ -194,17 +203,40 @@ describe('official invoice application HTTP client', () => {
   })
 
   it('keeps a foreign fresh read unknown instead of accepting another company', async () => {
-    const body = {
-      preview: { templateVersion: batch.templateVersion, sourceSha256: batch.batchChecksum,
-        batch: detail.preview.batch, issues: [], isValid: true },
-      approvedSource: { outcome: 3, resource: detail.preview.batch },
-      admission: { outcome: 'Succeeded', openItemIds: [openItem.id], isReplay: false,
-        originalCorrelationId: 'corr-1', issues: [] },
-      freshRead: { outcome: 3, resource: { ...applied, companyId: '90000000-0000-0000-0000-000000000009' } },
-      isSucceeded: true,
-    }
+    const body = successBody({ ...applied, companyId: '90000000-0000-0000-0000-000000000009' })
     const client = createOfficialInvoiceImportClient(context, boundary(), vi.fn().mockResolvedValue(json(body)))
 
+    await expect(client.apply(source, file, 'same-key', new AbortController().signal))
+      .resolves.toEqual({ kind: 'unknown' })
+  })
+
+  it.each([
+    ['foreign row company', { ...openItem, companyId: '90000000-0000-0000-0000-000000000009' }],
+    ['wrong source batch', { ...openItem, sourceBatchId: '99999999-9999-4999-8999-999999999999' }],
+    ['negative money', { ...openItem, originalAmount: '-1' }],
+    ['nonnumeric money', { ...openItem, outstandingAmount: 'NaN' }],
+    ['unknown status', { ...openItem, status: 999 }],
+    ['string status', { ...openItem, status: '1' }],
+  ])('keeps %s unknown', async (_label, changed) => {
+    const malformed = { ...applied, openItems: [changed] }
+    const client = createOfficialInvoiceImportClient(context, boundary(), vi.fn().mockResolvedValue(json(successBody(malformed))))
+    await expect(client.apply(source, file, 'same-key', new AbortController().signal))
+      .resolves.toEqual({ kind: 'unknown' })
+  })
+
+  it('refuses duplicate or mismatched admission and fresh identifiers', async () => {
+    const duplicate = { ...openItem, sourceDocumentId: '99999999-9999-4999-8999-999999999999' }
+    const duplicateFresh = { ...applied, openItems: [openItem, duplicate] }
+    const mismatchId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+    for (const body of [successBody(duplicateFresh, [openItem.id, openItem.id]), successBody(applied, [mismatchId])]) {
+      const client = createOfficialInvoiceImportClient(context, boundary(), vi.fn().mockResolvedValue(json(body)))
+      await expect(client.apply(source, file, 'same-key', new AbortController().signal))
+        .resolves.toEqual({ kind: 'unknown' })
+    }
+  })
+
+  it('does not classify a generic 409 object as a terminal conflict', async () => {
+    const client = createOfficialInvoiceImportClient(context, boundary(), vi.fn().mockResolvedValue(json({}, 409)))
     await expect(client.apply(source, file, 'same-key', new AbortController().signal))
       .resolves.toEqual({ kind: 'unknown' })
   })
