@@ -116,7 +116,8 @@ function PlanCreate({ namespace, preselect }: {
   readonly preselect: PreselectedLabel | null
 }) {
   const shell = useShellState()
-  const { capture: captureSecurity, report: reportSecurity } = useAuthBoundary()
+  const authBoundary = useAuthBoundary()
+  const { capture: captureSecurity, report: reportSecurity } = authBoundary
   const companyId = shell.activeContext?.scopeMode === 'single' ? shell.activeContext.companyId : null
   const actorId = shell.activeContext?.userId ?? null
   const storeKey = pendingPlanCreateKey(shell.sessionEpoch, actorId, companyId)
@@ -288,7 +289,7 @@ function PlanCreate({ namespace, preselect }: {
     })),
     targetBasis,
     targetKg,
-  ))
+  ), authBoundary)
 
   function labelOf(parentRollId: string): string {
     return inputs.find((input) => input.candidate.labelId === parentRollId)?.candidate.labelCode ?? parentRollId

@@ -8,6 +8,8 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
+import type { SecuritySnapshot } from '../shell/authBoundary'
+import type { AuthBoundary } from '../shell/useAuthBoundary'
 import { decodePlanPreview, type PlanPreviewRequest } from './planPreview'
 import {
   PLAN_PREVIEW_DEBOUNCE_MS,
@@ -56,6 +58,12 @@ interface Pending {
 }
 
 let pending: Pending[] = []
+let securitySnapshot: SecuritySnapshot
+const reportSecurity = vi.fn()
+const authBoundary: AuthBoundary = {
+  capture: () => securitySnapshot,
+  report: reportSecurity,
+}
 
 function row(plannedKg: string): PlanPreviewFormRow {
   return { parentRollId: ROLL, label: 'LBL-0007', labelVersion: '7', plannedKg }
@@ -87,6 +95,16 @@ async function elapse(ms: number) {
 
 beforeEach(() => {
   pending = []
+  reportSecurity.mockReset()
+  securitySnapshot = {
+    actorId: 'bbbbbbbb-0000-0000-0000-000000000001',
+    sessionEpoch: 3,
+    companyId: COMPANY,
+    committedContextRevision: 5,
+    requestFenceGeneration: 8,
+    capabilityGeneration: 'cap-11',
+    namespace: `single:${COMPANY}`,
+  }
   vi.useFakeTimers()
   vi.stubGlobal('fetch', vi.fn((url: string, init: RequestInit) => {
     expect(url).toMatch(/\/manufacturing\/plans\/preview$/)
@@ -108,7 +126,7 @@ afterEach(() => {
 
 describe('usePlanPreview', () => {
   it('sends one request 400 ms after the last change, with the last content', async () => {
-    const { result, rerender } = renderHook(({ value }) => usePlanPreview(COMPANY, value), {
+    const { result, rerender } = renderHook(({ value }) => usePlanPreview(COMPANY, value, authBoundary), {
       initialProps: { value: input('1') },
     })
     expect(PLAN_PREVIEW_DEBOUNCE_MS).toBeGreaterThanOrEqual(300)
@@ -134,7 +152,7 @@ describe('usePlanPreview', () => {
   })
 
   it('re-rendering the same content does not send it again', async () => {
-    const { rerender } = renderHook(({ value }) => usePlanPreview(COMPANY, value), {
+    const { rerender } = renderHook(({ value }) => usePlanPreview(COMPANY, value, authBoundary), {
       initialProps: { value: input('5') },
     })
     await elapse(PLAN_PREVIEW_DEBOUNCE_MS)
@@ -146,7 +164,7 @@ describe('usePlanPreview', () => {
   })
 
   it('aborts the in-flight request for an older content and never lets its late answer land', async () => {
-    const { result, rerender } = renderHook(({ value }) => usePlanPreview(COMPANY, value), {
+    const { result, rerender } = renderHook(({ value }) => usePlanPreview(COMPANY, value, authBoundary), {
       initialProps: { value: input('10') },
     })
     await elapse(PLAN_PREVIEW_DEBOUNCE_MS)
@@ -167,7 +185,7 @@ describe('usePlanPreview', () => {
   })
 
   it('keeps the last answer with its snapshot and marks it not current as soon as the form changes', async () => {
-    const { result, rerender } = renderHook(({ value }) => usePlanPreview(COMPANY, value), {
+    const { result, rerender } = renderHook(({ value }) => usePlanPreview(COMPANY, value, authBoundary), {
       initialProps: { value: input('10') },
     })
     await elapse(PLAN_PREVIEW_DEBOUNCE_MS)
@@ -192,7 +210,7 @@ describe('usePlanPreview', () => {
   })
 
   it('a refusal says why and on which field, and the older answer is not current', async () => {
-    const { result, rerender } = renderHook(({ value }) => usePlanPreview(COMPANY, value), {
+    const { result, rerender } = renderHook(({ value }) => usePlanPreview(COMPANY, value, authBoundary), {
       initialProps: { value: input('10') },
     })
     await elapse(PLAN_PREVIEW_DEBOUNCE_MS)
@@ -213,8 +231,41 @@ describe('usePlanPreview', () => {
     expect(result.current.last?.request.inputs[0].plannedKg).toBe('10')
   })
 
+  it.each([401, 403])('reports a current %i refusal to the shell security boundary', async (status) => {
+    const startedUnder = securitySnapshot
+    const { result } = renderHook(() => usePlanPreview(COMPANY, input('10'), authBoundary))
+    await elapse(PLAN_PREVIEW_DEBOUNCE_MS)
+    respond(0, status, { code: status === 401 ? 'unauthenticated' : 'forbidden' })
+    await flush()
+
+    expect(reportSecurity).toHaveBeenCalledOnce()
+    expect(reportSecurity).toHaveBeenCalledWith(status, startedUnder)
+    expect(result.current.status).toMatchObject({ type: 'refused', status })
+  })
+
+  it('aborts an answer started under an older security context', async () => {
+    const { result, rerender } = renderHook(() => usePlanPreview(COMPANY, input('10'), authBoundary))
+    await elapse(PLAN_PREVIEW_DEBOUNCE_MS)
+    expect(pending).toHaveLength(1)
+
+    securitySnapshot = { ...securitySnapshot, committedContextRevision: 6, capabilityGeneration: 'cap-12' }
+    rerender()
+    expect(pending[0].signal.aborted).toBe(true)
+    await elapse(PLAN_PREVIEW_DEBOUNCE_MS)
+    expect(pending).toHaveLength(2)
+
+    respond(1)
+    await flush()
+    respond(0, 401, { code: 'unauthenticated' })
+    await flush()
+
+    expect(reportSecurity).not.toHaveBeenCalled()
+    expect(result.current.status.type).toBe('answered')
+    expect(result.current.current).toBe(true)
+  })
+
   it('an answer that is not the contract is a failure, never a half-shown preview', async () => {
-    const { result } = renderHook(() => usePlanPreview(COMPANY, input('10')))
+    const { result } = renderHook(() => usePlanPreview(COMPANY, input('10'), authBoundary))
     await elapse(PLAN_PREVIEW_DEBOUNCE_MS)
     respond(0, 200, { ...answer(pending[0].request), plannedRollCount: 3 })
     await flush()
