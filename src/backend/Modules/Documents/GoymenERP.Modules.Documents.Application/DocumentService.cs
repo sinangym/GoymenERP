@@ -80,7 +80,7 @@ public sealed class DocumentService(
 
         if (replay is not null)
         {
-            return await AnswerAsync(replay, cancellationToken);
+            return await AnswerAsync(replay, scope, Permission, requireReplayFence: true, cancellationToken);
         }
 
         if (await GuardedAsync(scope, Permission, () => CheckOwnerAsync(owner.Kind, owner.OwnerId, cancellationToken), cancellationToken)
@@ -116,14 +116,14 @@ public sealed class DocumentService(
         {
             stored = await store.StoreUploadAsync(envelope, requestHash, new NewDocumentUpload(Guid.NewGuid(), owner, fileName, kind,
                 content.LongLength, sha256, objectKey, scanState, scanState == DocumentScanState.Clean ? scanner!.ScannerId : null,
-                timeProvider.GetUtcNow()), cancellationToken);
+                timeProvider.GetUtcNow()), token => RequireWritableOwnerStillAsync(scope, Permission, owner, token), cancellationToken);
         }
         catch (DocumentStoreException exception)
         {
             throw Store(exception);
         }
 
-        return await AnswerAsync(stored, cancellationToken);
+        return await AnswerAsync(stored, scope, Permission, stored.IsReplay, cancellationToken);
     }
 
     public async Task<DocumentListResponse> ListAsync(string? ownerKind, Guid ownerId, CancellationToken cancellationToken = default)
@@ -214,13 +214,25 @@ public sealed class DocumentService(
 
     // ---- answers --------------------------------------------------------------------------------
 
-    private async Task<DocumentUploadResponse> AnswerAsync(DocumentStoreResult result, CancellationToken cancellationToken)
+    private async Task<DocumentUploadResponse> AnswerAsync(DocumentStoreResult result, Scope scope, string permission,
+        bool requireReplayFence, CancellationToken cancellationToken)
     {
         var document = result.Document;
+        if (requireReplayFence && (document.CompanyId != scope.CompanyId
+            || await GuardedAsync(scope, permission,
+                () => CheckOwnerAsync(document.OwnerKind, document.OwnerId, cancellationToken), cancellationToken)
+                != DocumentOwnerAccessV1.Readable))
+        {
+            throw new DocumentServiceException(404, "not_found");
+        }
+
         IReadOnlyList<StoredDocument> sameContent;
         try
         {
-            sameContent = await store.FindByContentAsync(document.Sha256, document.Id, DuplicateLimit, cancellationToken);
+            sameContent = requireReplayFence
+                ? await GuardedAsync(scope, permission,
+                    () => store.FindByContentAsync(document.Sha256, document.Id, DuplicateLimit, cancellationToken), cancellationToken)
+                : await store.FindByContentAsync(document.Sha256, document.Id, DuplicateLimit, cancellationToken);
         }
         catch (DocumentStoreException exception)
         {
@@ -235,7 +247,10 @@ public sealed class DocumentService(
             var key = (candidate.OwnerKind, candidate.OwnerId);
             if (!readable.TryGetValue(key, out var isReadable))
             {
-                isReadable = await CheckOwnerAsync(candidate.OwnerKind, candidate.OwnerId, cancellationToken) == DocumentOwnerAccessV1.Readable;
+                isReadable = (requireReplayFence
+                    ? await GuardedAsync(scope, permission,
+                        () => CheckOwnerAsync(candidate.OwnerKind, candidate.OwnerId, cancellationToken), cancellationToken)
+                    : await CheckOwnerAsync(candidate.OwnerKind, candidate.OwnerId, cancellationToken)) == DocumentOwnerAccessV1.Readable;
                 readable[key] = isReadable;
             }
 
@@ -246,7 +261,17 @@ public sealed class DocumentService(
             }
         }
 
-        return new DocumentUploadResponse(View(document, document.CompanyId), duplicates, result.IsReplay, result.OriginalCorrelationId);
+        if (requireReplayFence)
+        {
+            if (await GuardedAsync(scope, permission,
+                    () => CheckOwnerAsync(document.OwnerKind, document.OwnerId, cancellationToken), cancellationToken)
+                != DocumentOwnerAccessV1.Readable)
+            {
+                throw new DocumentServiceException(404, "not_found");
+            }
+        }
+
+        return new DocumentUploadResponse(View(document, scope.CompanyId), duplicates, result.IsReplay, result.OriginalCorrelationId);
     }
 
     private static DocumentView View(StoredDocument document, Guid companyId)
@@ -381,6 +406,17 @@ public sealed class DocumentService(
         if (current.CompanyId != scope.CompanyId || !string.Equals(current.ActorId, scope.ActorId, StringComparison.Ordinal))
         {
             throw new DocumentServiceException(403, "forbidden");
+        }
+    }
+
+    private async Task RequireWritableOwnerStillAsync(Scope scope, string permission, DocumentOwnerLink owner,
+        CancellationToken cancellationToken)
+    {
+        if (await GuardedAsync(scope, permission,
+                () => CheckOwnerAsync(owner.Kind, owner.OwnerId, cancellationToken), cancellationToken)
+            != DocumentOwnerAccessV1.Readable)
+        {
+            throw new DocumentServiceException(404, "not_found");
         }
     }
 

@@ -206,9 +206,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // platform
             // AT-002: +2 GlobalSearchSqlServerRelationalAcceptanceTests facts (5bc60202… -> a5df5046…).
-            // ERP-000G / AT-065: +6 DocumentVaultSqlServerRelationalAcceptanceTests facts (a5df5046… -> 4ed7462b…).
+            // ERP-000G / AT-065: +7 DocumentVaultSqlServerRelationalAcceptanceTests facts (4ed7462b… -> f26c3895…).
             ["tools/relational_inventory/platform.txt"] =
-                "4ed7462b1d944e9069af8f02dabc39b627d234fd2ed188b6156980bd9452c20d",
+                "f26c3895929ee61f425d9f08d1cc78ef18edd774f49971935e5ec3d4ffeb9304",
 
             // product
             // DEC-CAR-003: +4 ProductDeactivationSqlServerRelationalAcceptanceTests facts (d7dbec7f… -> ddeead62…).
@@ -888,11 +888,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                             ["MigrateAsync"] = 1
                         }),
                 // ERP-000G / AT-065: the SqlClient namespace only to recognise a unique-key violation (SqlException
-                // 2601/2627) after SaveChanges, as the Logistics store does. No connection, command or raw SQL.
+                // 2601/2627) after SaveChanges, as the Logistics store does. Re-fingerprinted for the mandatory
+                // after-read/before-save authority callback; no connection, command or raw SQL was added.
                 ["src/backend/Modules/Documents/"
                  + "GoymenERP.Modules.Documents.Infrastructure/Persistence/DocumentsStore.cs"] =
                     new(
-                        "2b5257b9ba3b6ea69c7a1e4851e7777d68a1790033c929317a4c25cc1d9a09f4",
+                        "def9f5f7896e28a482c5b8e9540e24cd009e802146755302a6fa3f83dbc5d3e0",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1

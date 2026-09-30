@@ -123,6 +123,10 @@ internal sealed class MemoryDocumentStore(ICompanyContext companyContext, Harnes
 
     public List<DocumentWriteEnvelope> Envelopes => world.Envelopes;
 
+    public Action? BeforeWrite { get; set; }
+
+    public Action? BeforeFindByContent { get; set; }
+
     public Task<DocumentStoreResult?> FindReplayAsync(DocumentWriteEnvelope envelope, string requestHash, string commandName,
         CancellationToken cancellationToken = default)
     {
@@ -142,9 +146,12 @@ internal sealed class MemoryDocumentStore(ICompanyContext companyContext, Harnes
             attempt.Correlation));
     }
 
-    public Task<DocumentStoreResult> StoreUploadAsync(DocumentWriteEnvelope envelope, string requestHash, NewDocumentUpload upload,
-        CancellationToken cancellationToken = default)
+    public async Task<DocumentStoreResult> StoreUploadAsync(DocumentWriteEnvelope envelope, string requestHash, NewDocumentUpload upload,
+        Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(beforeWrite);
+        BeforeWrite?.Invoke();
+        await beforeWrite(cancellationToken);
         var companyId = companyContext.CompanyId;
         Envelopes.Add(envelope);
         var stored = new StoredDocument(upload.DocumentId, companyId, upload.Owner.Kind, upload.Owner.OwnerId, 1, upload.FileName.Value,
@@ -153,7 +160,7 @@ internal sealed class MemoryDocumentStore(ICompanyContext companyContext, Harnes
         Documents.Add(stored);
         Attempts.Add((companyId, DocumentCommands.UploadV1, envelope.IdempotencyKey, requestHash, envelope.ActorId, upload.DocumentId,
             envelope.CorrelationId));
-        return Task.FromResult(new DocumentStoreResult(stored, false, envelope.CorrelationId));
+        return new DocumentStoreResult(stored, false, envelope.CorrelationId);
     }
 
     public Task<StoredDocument?> FindDocumentAsync(Guid documentId, CancellationToken cancellationToken = default) =>
@@ -164,9 +171,13 @@ internal sealed class MemoryDocumentStore(ICompanyContext companyContext, Harnes
             .OrderByDescending(document => document.UploadedAtUtc).Take(limit)]);
 
     public Task<IReadOnlyList<StoredDocument>> FindByContentAsync(string sha256, Guid excludingDocumentId, int limit,
-        CancellationToken cancellationToken = default) =>
-        Task.FromResult<IReadOnlyList<StoredDocument>>([.. Visible().Where(document => document.Sha256 == sha256 && document.Id != excludingDocumentId)
-            .OrderByDescending(document => document.UploadedAtUtc).Take(limit)]);
+        CancellationToken cancellationToken = default)
+    {
+        BeforeFindByContent?.Invoke();
+        return Task.FromResult<IReadOnlyList<StoredDocument>>(
+            [.. Visible().Where(document => document.Sha256 == sha256 && document.Id != excludingDocumentId)
+                .OrderByDescending(document => document.UploadedAtUtc).Take(limit)]);
+    }
 
     private IEnumerable<StoredDocument> Visible() => Documents.Where(document => document.CompanyId == companyContext.CompanyId);
 }

@@ -14,10 +14,11 @@ public interface IDocumentStore
 
     /// <summary>
     /// Stores a new logical document (version 1, the owner link and — when the company does not hold this content yet —
-    /// the blob row), the recorded attempt and the audit event in one save. A lost same-key race answers the winner.
+    /// the blob row), the recorded attempt and the audit event in one save. <paramref name="beforeWrite"/> runs after
+    /// every store read and immediately before the sole save; a lost same-key race runs it before returning the winner.
     /// </summary>
     Task<DocumentStoreResult> StoreUploadAsync(DocumentWriteEnvelope envelope, string requestHash, NewDocumentUpload upload,
-        CancellationToken cancellationToken = default);
+        Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default);
 
     Task<StoredDocument?> FindDocumentAsync(Guid documentId, CancellationToken cancellationToken = default);
 
