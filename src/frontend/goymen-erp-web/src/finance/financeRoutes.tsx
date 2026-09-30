@@ -29,9 +29,13 @@ import { createHttpFinancePort } from './httpPort'
 import { ReceiptDetailPage, ReceiptDraftPage, ReceiptListPage } from './ReceiptPages'
 import { ReversalApprovalsPage } from './ReversalApprovalsPage'
 import { OfficialInvoiceImportApprovalsPage } from './OfficialInvoiceImportApprovalsPage'
+import { OfficialInvoiceImportUploadPage } from './OfficialInvoiceImportUploadPage'
 import { OfficialInvoiceImportPanel, type OfficialInvoiceImportSourceSelection } from './OfficialInvoiceImportPanel'
 import { useOfficialInvoiceApprovalTransport } from './officialInvoiceImportApprovalClient'
-import { OFFICIAL_INVOICE_IMPORT_APPROVALS_ROUTE } from './officialInvoiceImportRoutes'
+import {
+  OFFICIAL_INVOICE_IMPORT_APPROVALS_ROUTE,
+  OFFICIAL_INVOICE_IMPORT_UPLOAD_ROUTE,
+} from './officialInvoiceImportRoutes'
 import { ManualBankPaymentStartPage, type ManualBankPaymentEntryContext } from './ManualBankPaymentStartPage'
 import { CustomerInstrumentPortfolioPage } from './CustomerInstrumentPortfolioPage'
 import {
@@ -153,8 +157,12 @@ export const financeRoutes: RouteObject[] = [
   },
   { path: FINANCE_ROUTE.receiptsList.slice(1), element: gate(FINANCE_CAPABILITY.receiptsList, <ReceiptListPage />) },
   {
+    path: OFFICIAL_INVOICE_IMPORT_UPLOAD_ROUTE.slice(1),
+    element: gate(FINANCE_CAPABILITY.officialInvoiceImportUpload, <OfficialInvoiceImportUploadPage />),
+  },
+  {
     path: OFFICIAL_INVOICE_IMPORT_APPROVALS_ROUTE.slice(1),
-    element: gate(FINANCE_CAPABILITY.receiptsList, <OfficialInvoiceImportApprovalsRoute />),
+    element: gate(FINANCE_CAPABILITY.officialInvoiceImportApprove, <OfficialInvoiceImportApprovalsRoute />),
   },
   // Static `yeni` before `:sourceId`, so it is never read as a source id.
   { path: FINANCE_ROUTE.receiptsDraft.slice(1), element: gate(FINANCE_CAPABILITY.receiptsDraft, <ReceiptDraftPage />) },

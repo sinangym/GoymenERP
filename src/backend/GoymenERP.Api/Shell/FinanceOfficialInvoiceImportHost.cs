@@ -29,13 +29,7 @@ public static class FinanceOfficialInvoiceImportHostExtensions
             provider.GetRequiredService<FinanceOfficialInvoiceImportApprovalServiceV1>());
 
         services.AddScoped<IFinanceOfficialInvoiceImportReadPortV1, FinanceOfficialInvoiceImportReadPortV1>();
-        services.AddScoped<IFinanceOfficialInvoiceImportPendingApprovalReadServiceV1>(provider =>
-            new FinanceOfficialInvoiceImportPendingApprovalReadServiceV1(
-                provider.GetRequiredService<FinanceDbContext>(),
-                provider.GetRequiredService<ICompanyContext>(),
-                provider.GetRequiredService<ICurrentUser>(),
-                provider.GetRequiredService<IFinanceOfficialInvoiceImportParserV1>(),
-                provider.GetRequiredService<FinanceOfficialInvoiceImportPendingApprovalAuthority>()));
+        services.AddScoped<IFinanceOfficialInvoiceImportPendingApprovalReadServiceV1>(CreatePendingApprovalReadService);
         services.AddScoped<IFinanceOpenItemSourceAdmissionService>(CreateAdmissionService);
         services.AddScoped<IFinanceOpenItemSourceSelectionService, FinanceOpenItemSourceSelectionService>();
         services.AddScoped<IFinanceOfficialInvoiceImportApplicationServiceV1,
@@ -62,6 +56,15 @@ public static class FinanceOfficialInvoiceImportHostExtensions
                     authority.RoleCodesOf(FinanceOfficialInvoiceImportAuthorityActionV1.Approve), correlation)),
             provider.GetRequiredService<TimeProvider>());
     }
+
+    private static FinanceOfficialInvoiceImportPendingApprovalReadServiceV1 CreatePendingApprovalReadService(
+        IServiceProvider provider) =>
+        new(
+            provider.GetRequiredService<FinanceDbContext>(),
+            provider.GetRequiredService<ICompanyContext>(),
+            provider.GetRequiredService<ICurrentUser>(),
+            provider.GetRequiredService<IFinanceOfficialInvoiceImportParserV1>(),
+            provider.GetRequiredService<FinanceOfficialInvoiceImportPendingApprovalAuthority>());
 
     private static FinanceOpenItemSourceAdmissionService CreateAdmissionService(IServiceProvider provider)
     {

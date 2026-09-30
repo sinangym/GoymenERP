@@ -42,6 +42,8 @@ export const FINANCE_CAPABILITY = {
   manualBankPaymentsDetail: 'finance.manual-bank-payments.detail',
   manualBankPaymentsApprove: 'finance.manual-bank-payments.approve',
   manualBankPaymentsRecord: 'finance.manual-bank-payments.record',
+  officialInvoiceImportUpload: 'finance.official-invoice-import.upload',
+  officialInvoiceImportApprove: 'finance.official-invoice-import.approve',
 } as const
 
 export type FinanceCapabilityId = (typeof FINANCE_CAPABILITY)[keyof typeof FINANCE_CAPABILITY]
@@ -58,6 +60,8 @@ export const FINANCE_ROUTE = {
   manualBankPaymentsList: '/finans/odemeler',
   manualBankPaymentsCreate: '/finans/odemeler/yeni',
   manualBankPaymentsDetail: '/finans/odemeler/:paymentId',
+  officialInvoiceImportUpload: '/finans/onayli-fatura-taksit-kaynagi-yukle',
+  officialInvoiceImportApprove: '/finans/resmi-fatura-aktarim-onaylari',
 } as const
 
 export const receiptDetailPath = (sourceId: string) => `/finans/tahsilatlar/${encodeURIComponent(sourceId)}`

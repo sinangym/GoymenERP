@@ -81,7 +81,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // production uses the own-server store and Defender when both are configured and answers 503 otherwise
     // (abe26a09… -> c027dce9…); no code line changed.
     private const string ReviewedOpenApiStartupFingerprint =
-        "c027dce99291e2837daa360c4d5d8f16e2eb2759cbd3171b512c81bdd801f453";
+        "36392cf8cf7d98e53b4878fc264e840c7cce0da4b7ef318c05121ab76923ea5c";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -309,7 +309,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // the instrument link and the collection kind.
             ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
              + "Persistence/FinanceDbContext.cs"] =
-            "d78ab888f34888ea3ba5c648a6c2b03f0acb064baba299d1883d8c4a279bf170",
+            "72587d3c0fd1b4abac0ffe3b274d5ee32f53cb831a3e9789651ce8f1bec32f53",
             // ACC-3 (#298): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for ACC-V0a: the ADR-011 command log (Commands) is mapped here, company-scoped with the
@@ -381,6 +381,14 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 [ReviewedPurchaseAcceptanceSourcePath] = ("PurchasingDbContext", 3),
                 [ReviewedPurchaseGoodsReceiptHostPath] = ("PurchasingDbContext", 3),
                 [ReviewedFinanceOpenItemSourceAdmissionServicePath] = ("FinanceDbContext", 1),
+                ["src/backend/GoymenERP.Api/Shell/FinanceOfficialInvoiceImportHost.cs"] =
+                    ("FinanceDbContext", 2),
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
+                 + "FinanceOfficialInvoiceImportApprovalServiceV1.cs"] = ("FinanceDbContext", 12),
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
+                 + "FinanceOfficialInvoiceImportPendingApprovalReadServiceV1.cs"] = ("FinanceDbContext", 12),
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
+                 + "FinanceOfficialInvoiceImportReadPortV1.cs"] = ("FinanceDbContext", 2),
                 [ReviewedAccountingStorePath] = ("AccountingDbContext", 2),
                 [ReviewedManufacturingInventoryInputIssueHostPath] = ("ManufacturingDbContext", 2),
                 [ReviewedManufacturingInventoryReturnOutputHostPath] = ("ManufacturingDbContext", 1)
@@ -729,6 +737,30 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         {
                             ["Microsoft.Data.SqlClient"] = 1
                         }),
+                // Approved official-invoice upload/approval persists through the tenant-filtered FinanceDbContext.
+                // SqlClient is referenced only to classify 2601/2627 races after SaveChanges; no direct connection,
+                // command, raw SQL or query-filter bypass is introduced.
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
+                 + "FinanceOfficialInvoiceImportApprovalServiceV1.cs"] =
+                    new(
+                        "04218da732efe63a03865c812d625ff1a8721fce7fcf1aada984d1f1b24ca1f7",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1
+                        }),
+                // The host and two read services resolve/use the tenant-filtered FinanceDbContext only through DI/EF.
+                // Empty API inventories plus exact fingerprints keep direct SQL, connection and filter-bypass surfaces closed.
+                ["src/backend/GoymenERP.Api/Shell/FinanceOfficialInvoiceImportHost.cs"] =
+                    new("2a724b249d17bdbf408d7b0e5cb0cb6ef8f9c0443a9997a8344211e0de321d65",
+                        new Dictionary<string, int>(StringComparer.Ordinal)),
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
+                 + "FinanceOfficialInvoiceImportPendingApprovalReadServiceV1.cs"] =
+                    new("1ffef3861109082971714f8f76bbb3e7abf871e7f4094ce370bc6597dd8da77a",
+                        new Dictionary<string, int>(StringComparer.Ordinal)),
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
+                 + "FinanceOfficialInvoiceImportReadPortV1.cs"] =
+                    new("3b1219281b32e5f8b8e6c02319922412f77d5b0d817ee8bdd4930d74e2b80e62",
+                        new Dictionary<string, int>(StringComparer.Ordinal)),
                 // MFG-5 (#303): the Manufacturing initializer's one provider branch, as Organization.
                 // Re-measured for MFG-API (#313): the command surface registrations (mass verifier and
                 // command service); the one provider branch is unchanged (EnsureCreated 1, Migrate 1).
@@ -1043,6 +1075,16 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "20260925061753_AddAccountingJournalReversalProposals.cs"] =
                     new(
                         "af5aad11127802f67c94eb261d644400844940b7be991d38b3a52df5a76d79bb",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // Official-invoice source history is immutable. Down refuses rollback while any imported batch,
+                // approval or command exists; the single reviewed Sql call precedes destructive schema operations.
+                ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
+                 + "Persistence/Migrations/20260930185113_AddOfficialInvoiceImportApprovalV1.cs"] =
+                    new(
+                        "30abbd33afddf9564faa7d4e65d2705e3e54603cd5f83299676ce0b328895ee2",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 1

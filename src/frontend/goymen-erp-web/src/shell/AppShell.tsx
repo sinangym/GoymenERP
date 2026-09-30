@@ -16,7 +16,6 @@ import { useShellOrchestrator } from './useShellOrchestrator'
 import { StateBlock } from './StateBlock'
 import { SwitchConfirmDialog } from './SwitchConfirmDialog'
 import { GlobalSearchBox } from '../search/GlobalSearchBox'
-import { OFFICIAL_INVOICE_IMPORT_APPROVALS_ROUTE } from '../finance/officialInvoiceImportRoutes'
 import {
   CAPABILITY,
   CAPABILITY_NAV_LABEL,
@@ -89,6 +88,8 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
    */
   CAPABILITY.financeReceiptsList,
   CAPABILITY.financeCustomerInstrumentsList,
+  CAPABILITY.financeOfficialInvoiceImportUpload,
+  CAPABILITY.financeOfficialInvoiceImportApprove,
   CAPABILITY.financeReceiptsReverseApprove,
   CAPABILITY.financeBankAccountsList,
   /**
@@ -207,7 +208,7 @@ export function AppShell() {
   // the dialog. Unmounting here would destroy the very state "Kal" preserves.
   const confirming = state.phase === 'confirming-switch'
   const featuresClosed = capabilityFailClosed(state)
-  const navItems: Array<{ key: string; capability: CapabilityId; path: string; label: string }> = NAV_CAPABILITIES.filter((capability) =>
+  const navItems = NAV_CAPABILITIES.filter((capability) =>
     hasCapability(state, capability),
   ).map((capability) => ({
     key: capability,
@@ -215,15 +216,6 @@ export function AppShell() {
     path: CAPABILITY_ROUTE[capability],
     label: CAPABILITY_NAV_LABEL[capability],
   }))
-  if (hasCapability(state, CAPABILITY.financeReceiptsList)) {
-    navItems.push({
-      key: 'finance-official-invoice-import-approvals',
-      capability: CAPABILITY.financeReceiptsList,
-      path: OFFICIAL_INVOICE_IMPORT_APPROVALS_ROUTE,
-      label: 'Resmî fatura aktarım onayları',
-    })
-  }
-
   return (
     <div className={styles.shell}>
       <a className={styles.skipLink} href="#main-content">

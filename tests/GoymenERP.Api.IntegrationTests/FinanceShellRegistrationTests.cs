@@ -31,7 +31,7 @@ public sealed class FinanceShellRegistrationTests
 
         var actual = ShellCapabilityRegistry.ComputeCandidateRevision(providers);
         Assert.True(
-            string.Equals(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV14AndPublishedFinanceV13, actual,
+            string.Equals(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV14AndPublishedFinanceV14, actual,
                 StringComparison.Ordinal),
             $"Finance normal-host authority drifted. Actual: {actual}");
     }
@@ -49,7 +49,7 @@ public sealed class FinanceShellRegistrationTests
         var authority = C01E2eShellCapabilityActivation.Configure(services, new TestingEnvironment(),
             new ConfigurationBuilder().Build());
 
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV14AndPublishedFinanceV13,
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV14AndPublishedFinanceV14,
             authority);
         using var container = services.BuildServiceProvider();
         var registry = new ShellCapabilityRegistry(container.GetServices<IShellCapabilityProvider>(),
@@ -57,9 +57,9 @@ public sealed class FinanceShellRegistrationTests
         var finance = registry.Registrations
             .Where(item => item.Owner == FinanceShellCapabilityProvider.OwnerId)
             .ToArray();
-        // Seven routes plus record and reversal-propose controls. A declaration still grants nothing:
+        // Twelve routes plus five controls. A declaration still grants nothing:
         // each route or control service measures its own Finance permission afresh.
-        Assert.Equal(15, finance.Length);
+        Assert.Equal(17, finance.Length);
         Assert.All(finance, item => Assert.True(item.Declaration.ImplementationAvailable));
         // Sales 1.4 (DEC-SAL-002): three screens plus the approve, commercial-revision, delivery-schedule, cancel and
         // quantity-revision controls.

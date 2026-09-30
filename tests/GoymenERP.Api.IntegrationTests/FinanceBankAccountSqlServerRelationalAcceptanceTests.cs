@@ -103,7 +103,7 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
         // "no money was moved" by itself — the table now exists whether or not anything is in it. The inventory
         // is kept (a new Finance table must be a deliberate edit here) and the claim it used to carry is stated
         // directly underneath: approving a bank account writes NO money event.
-        Assert.Equal("Allocations,BankAccounts,Commands,CustomerInstrumentMovements,CustomerInstruments,ManualBankPayments,MoneyEvents,OpenItemSourceBatches,OpenItems,OutgoingMoneyEvents,ReceiptDrafts,ReversalProposals,SourceAllocationStates,__EFMigrationsHistory", await run.ScalarAsync<string>(
+        Assert.Equal("Allocations,BankAccounts,Commands,CustomerInstrumentMovements,CustomerInstruments,ManualBankPayments,MoneyEvents,OfficialInvoiceImportApprovals,OfficialInvoiceImportBatches,OfficialInvoiceImportCommands,OpenItemSourceBatches,OpenItems,OutgoingMoneyEvents,ReceiptDrafts,ReversalProposals,SourceAllocationStates,__EFMigrationsHistory", await run.ScalarAsync<string>(
             "SELECT STRING_AGG(name, ',') WITHIN GROUP (ORDER BY name COLLATE Latin1_General_BIN2) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'finance')"));
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.MoneyEvents"));
     }

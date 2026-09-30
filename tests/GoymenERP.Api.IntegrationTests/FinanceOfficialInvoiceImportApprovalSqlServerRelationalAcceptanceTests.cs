@@ -171,9 +171,9 @@ public sealed class FinanceOfficialInvoiceImportApprovalSqlServerRelationalAccep
                 new FinanceOfficialInvoiceImportParserV1(), authority, new ReadAuthority(), collector,
                 new FinanceOfficialInvoiceImportAuditEnvelopesV1(
                     new FinanceAuditEnvelope(FinanceOfficialInvoiceImportPermissionNamesV1.Upload,
-                        ["SENTETIK-FINANCE"], "SqlServerAcceptance"),
+                        ["SENTETIK-FINANCE"], "SQL"),
                     new FinanceAuditEnvelope(FinanceOfficialInvoiceImportPermissionNamesV1.Approve,
-                        ["SENTETIK-FINANCE"], "SqlServerAcceptance")),
+                        ["SENTETIK-FINANCE"], "SQL")),
                 TimeProvider.System);
             return new Scope(db, service, new FinanceContext(company, actor, $"fin-import-{Guid.NewGuid():N}", null));
         }
