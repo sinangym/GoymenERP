@@ -79,7 +79,7 @@ const APPROVAL_STATES: readonly string[] = Object.values(APPROVAL_STATE)
  * D2: `withdrawal` is the creator's own command (POST …/{id}/withdrawal, optional `reason`).
  */
 export const STATE_COMMAND_STATUS = 200
-export type DraftStateCommand = 'submission' | 'approval' | 'rejection' | 'withdrawal'
+export type DraftStateCommand = 'submission' | 'approval' | 'rejection' | 'withdrawal' | 'customer-acceptance'
 export const salesDraftCommandPath = (id: string, command: DraftStateCommand) => `${salesDraftDetailPath(id)}/${command}`
 
 /** `SalesDraftStateCommandRequest`: the expected version as text; `reason` only on a rejection. */
@@ -194,6 +194,14 @@ export interface ApprovalFacts {
   readonly decidedBy: string | null
   readonly decidedAtUtc: string | null
   readonly rejectionReason: string | null
+}
+
+export interface CustomerAcceptanceFacts {
+  readonly required: boolean
+  readonly acceptedRevision: string | null
+  readonly acceptedBy: string | null
+  readonly acceptedAtUtc: string | null
+  readonly isCurrentRevisionAccepted: boolean
 }
 
 /** Technical bounds from `SalesDraftJson.ReadCreate`. Not owner scale or precision. */
@@ -368,6 +376,7 @@ export interface DraftDetail {
   readonly package: OwnerReference | null
   /** SALES-A1: the approval facts; consistent with `draft.approvalState` or the detail is malformed. */
   readonly approval: ApprovalFacts
+  readonly customerAcceptance: CustomerAcceptanceFacts
   /**
    * D2: the RELATIONSHIP "the signed-in caller is this draft's stored creator", computed on the server — never the
    * creator's identity. The screen mirrors it (the withdrawal control); the server refuses regardless.
@@ -668,6 +677,7 @@ const DETAIL_KEYS = [
   'lines',
   ...OWNER_REFERENCE_FIELDS,
   'approval',
+  'customerAcceptance',
   'isOwnDraft',
   'isOwnDecisionRestricted',
 ] as const
@@ -697,8 +707,10 @@ export function decodeDraftDetail(value: unknown, expectedId: string | null): Dr
     references[field] = reference
   }
   const approval = decodeApproval(o.approval, draft.approvalState)
+  const customerAcceptance = decodeCustomerAcceptance(o.customerAcceptance, draft.revision)
   if (
     approval === null ||
+    customerAcceptance === null ||
     typeof o.isOwnDraft !== 'boolean' ||
     typeof o.isOwnDecisionRestricted !== 'boolean'
   ) return null
@@ -714,9 +726,31 @@ export function decodeDraftDetail(value: unknown, expectedId: string | null): Dr
     sourceStrategy: references.sourceStrategy ?? null,
     package: references.package ?? null,
     approval,
+    customerAcceptance,
     isOwnDraft: o.isOwnDraft,
     isOwnDecisionRestricted: o.isOwnDecisionRestricted,
   }
+}
+
+function decodeCustomerAcceptance(value: unknown, currentRevision: string): CustomerAcceptanceFacts | null {
+  const o = exact(value, ['required', 'acceptedRevision', 'acceptedBy', 'acceptedAtUtc', 'isCurrentRevisionAccepted'])
+  if (o === null || typeof o.required !== 'boolean' || typeof o.isCurrentRevisionAccepted !== 'boolean') return null
+  if (!isNullable(o.acceptedRevision, (v): v is string => /^Rev\.(0|[1-9][0-9]*)$/.test(v))) return null
+  if (!isNullable(o.acceptedBy, (v): v is string => isText(v, 128)) || !isNullable(o.acceptedAtUtc, isInstant)) return null
+  const empty = o.acceptedRevision === null && o.acceptedBy === null && o.acceptedAtUtc === null
+  const complete = o.acceptedRevision !== null && o.acceptedBy !== null && o.acceptedAtUtc !== null
+  const consistent = !o.required
+    ? empty && o.isCurrentRevisionAccepted
+    : empty
+      ? !o.isCurrentRevisionAccepted
+      : complete && o.isCurrentRevisionAccepted === (o.acceptedRevision === currentRevision)
+  return consistent ? {
+    required: o.required,
+    acceptedRevision: o.acceptedRevision,
+    acceptedBy: o.acceptedBy,
+    acceptedAtUtc: o.acceptedAtUtc,
+    isCurrentRevisionAccepted: o.isCurrentRevisionAccepted,
+  } : null
 }
 
 export function decodeDraftMutation(value: unknown): DraftMutation | null {

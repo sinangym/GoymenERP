@@ -48,6 +48,10 @@ internal sealed class DraftRow : ISalesTenantRow
     public string? DecidedBy { get; set; }
     public DateTimeOffset? DecidedAtUtc { get; set; }
     public string? RejectionReason { get; set; }
+    public bool CustomerAcceptanceRequired { get; set; }
+    public int? CustomerAcceptedRevision { get; set; }
+    public string? CustomerAcceptedBy { get; set; }
+    public DateTimeOffset? CustomerAcceptedAtUtc { get; set; }
     public Guid PartyId { get; set; }
     public Guid CompanyAccountId { get; set; }
     public Guid CurrencyId { get; set; }

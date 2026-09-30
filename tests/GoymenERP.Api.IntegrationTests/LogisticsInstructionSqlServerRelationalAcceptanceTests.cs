@@ -235,6 +235,63 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
     }
 
     [SqlServerFact]
+    public async Task Loaded_total_across_two_instructions_is_capped_atomically_by_the_fresh_sales_line_limit()
+    {
+        await using var run = await Run.StartAsync();
+        var owners = Owners.For(CompanyA);
+        var orderLineId = Guid.NewGuid();
+        var first = InstructionForOrderLine(owners, orderLineId, 2.5m);
+        var second = InstructionForOrderLine(owners, orderLineId, 2.5m);
+        var firstLine = Assert.Single(first.Lines);
+        var secondLine = Assert.Single(second.Lines);
+
+        await using (var a = run.Store(CompanyA))
+        {
+            await a.Store.StoreInstructionAsync(run.Envelope("k-load-cap-create-1"), Hash("load-cap-create-1"), Day,
+                () => first, aggregateLimits: [AggregateLimit(firstLine.Id, owners, orderLineId, 5m, 7, 3)]);
+            await a.Store.MutateInstructionAsync(run.Envelope("k-load-cap-issue-1"), Hash("load-cap-issue-1"),
+                LogisticsCommands.IssueV1, first.Id, (instruction, now) => instruction.Issue(2, now), Issued);
+
+            await a.Store.StoreInstructionAsync(run.Envelope("k-load-cap-create-2"), Hash("load-cap-create-2"), Day,
+                () => second, aggregateLimits: [AggregateLimit(secondLine.Id, owners, orderLineId, 5m, 7, 3)]);
+            await a.Store.MutateInstructionAsync(run.Envelope("k-load-cap-issue-2"), Hash("load-cap-issue-2"),
+                LogisticsCommands.IssueV1, second.Id, (instruction, now) => instruction.Issue(2, now), Issued);
+        }
+
+        await using (var a = run.Store(CompanyA))
+        {
+            var aggregateStore = Assert.IsAssignableFrom<ILogisticsAggregateLoadStoreV1>(a.Store);
+            var firstLoaded = await aggregateStore.MutateInstructionWithAggregateLoadLimitAsync(
+                run.Envelope("k-load-cap-1"), Hash("load-cap-1"), LogisticsCommands.RecordLoadV1, first.Id,
+                (instruction, now) => instruction.RecordLoad(3, Guid.NewGuid(), firstLine.Id, Kg(1.5m), MeasurementKind.Measured, now),
+                Loaded, AggregateLoadLimit(firstLine.Id, owners, orderLineId, 2.5m, 1.5m));
+            Assert.Equal((4L, 1.5m), (firstLoaded!.Instruction.Instruction.Version,
+                firstLoaded.Instruction.Instruction.Lines[0].LoadedQuantity.Value));
+
+            var secondLoaded = await aggregateStore.MutateInstructionWithAggregateLoadLimitAsync(
+                run.Envelope("k-load-cap-2"), Hash("load-cap-2"), LogisticsCommands.RecordLoadV1, second.Id,
+                (instruction, now) => instruction.RecordLoad(3, Guid.NewGuid(), secondLine.Id, Kg(0.5m), MeasurementKind.Measured, now),
+                Loaded, AggregateLoadLimit(secondLine.Id, owners, orderLineId, 2.5m, 0.5m));
+            Assert.Equal((4L, 0.5m), (secondLoaded!.Instruction.Instruction.Version,
+                secondLoaded.Instruction.Instruction.Lines[0].LoadedQuantity.Value));
+
+            var refused = await Assert.ThrowsAsync<LogisticsStoreException>(() =>
+                aggregateStore.MutateInstructionWithAggregateLoadLimitAsync(
+                    run.Envelope("k-load-cap-over"), Hash("load-cap-over"), LogisticsCommands.RecordLoadV1, second.Id,
+                    (instruction, now) => instruction.RecordLoad(4, Guid.NewGuid(), secondLine.Id, Kg(0.501m), MeasurementKind.Measured, now),
+                    Loaded, AggregateLoadLimit(secondLine.Id, owners, orderLineId, 2.5m, 0.501m)));
+            Assert.Equal(LogisticsStoreCodes.AggregateLimitExceeded, refused.Code);
+
+            var unchanged = await a.Store.FindInstructionAsync(second.Id);
+            Assert.Equal((4L, 0.5m), (unchanged!.Instruction.Version, unchanged.Instruction.Lines[0].LoadedQuantity.Value));
+        }
+
+        Assert.Equal(2m, await run.ScalarAsync<decimal>(
+            "SELECT SUM(Loaded) FROM logistics.LoadingInstructionLines WHERE CompanyId = @company AND SourceOrderId = @order AND SourceOrderLineId = @line",
+            ("@company", CompanyA), ("@order", owners.Order), ("@line", orderLineId)));
+    }
+
+    [SqlServerFact]
     public async Task A_resolved_sales_line_limit_caps_all_instructions_atomically_and_replay_never_recomputes_the_snapshot()
     {
         await using var run = await Run.StartAsync();
@@ -763,6 +820,12 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
         new(instructionLineId, owners.Company, owners.Order, orderLineId, KgUnit, salesOrderVersion, maximum,
             maximum.ToString(System.Globalization.CultureInfo.InvariantCulture), "Sales", orderLineId.ToString("D"),
             sourceVersion.ToString(System.Globalization.CultureInfo.InvariantCulture), Day);
+
+    private static LogisticsOrderLineAggregateLoadLimit AggregateLoadLimit(Guid instructionLineId, Owners owners, Guid orderLineId,
+        decimal maximum, decimal requested) =>
+        new(instructionLineId, owners.Company, owners.Order, orderLineId, KgUnit, 7, maximum,
+            maximum.ToString(System.Globalization.CultureInfo.InvariantCulture), requested,
+            requested.ToString(System.Globalization.CultureInfo.InvariantCulture), "Sales", orderLineId.ToString("D"), "3", Day);
 
     private static string Create(Owners owners) =>
         $$"""{"customerPartyId":"{{owners.Party:D}}","companyAccountId":"{{owners.Account:D}}","effectiveOn":"2026-09-19","lines":[{"lineId":"{{Guid.NewGuid():D}}","sourceOrderId":"{{owners.Order:D}}","sourceOrderLineId":"{{Guid.NewGuid():D}}","unitId":"{{KgUnit:D}}","quantity":"6"}]}""";

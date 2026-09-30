@@ -198,7 +198,7 @@ export function installFetch(config: HarnessConfig = {}) {
         })
       }
       if (url.includes('/sales/drafts')) {
-        const command = /\/sales\/drafts\/[^/?]+\/(submission|approval|rejection|withdrawal)$/.exec(url)?.[1]
+        const command = /\/sales\/drafts\/[^/?]+\/(submission|approval|rejection|withdrawal|customer-acceptance)$/.exec(url)?.[1]
         if (call.method === 'POST' && /\/sales\/drafts\/[^/?]+\/delivery-schedule$/.test(url)) {
           if (config.onDeliverySchedule === undefined) throw new Error('unexpected delivery-schedule update')
           return config.onDeliverySchedule(call)
@@ -223,6 +223,9 @@ export function installFetch(config: HarnessConfig = {}) {
         }
         if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/delivery-schedules$/.test(url)) {
           return config.onDeliverySchedules?.(url, call.companyId) ?? json(ORIGINAL_SCHEDULE)
+        }
+        if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/remainder-changes$/.test(url)) {
+          return noRemainderChanges(details.get(url.replace(/\/remainder-changes$/, '')))
         }
         if (call.method === 'POST' && command !== undefined) {
           if (config.onCommand === undefined) throw new Error(`unexpected ${command}`)
@@ -261,6 +264,28 @@ function nothingDelivered(detail: unknown): Response {
       lineId: line.lineId, lineNo: line.lineNo, orderUnitId: line.orderUnitId, ordered: line.quantity,
       shipped: '0', delivered: '0', remaining: line.quantity, excess: '0',
     })),
+  })
+}
+
+/** A valid owner-backed empty remainder read for detail tests that are not exercising remainder mutations. */
+function noRemainderChanges(detail: unknown): Response {
+  const body = detail as { draft?: { version?: unknown }; lines?: { lineId: string; lineNo: number; orderUnitId: string; quantity: string }[] } | undefined
+  if (typeof body?.draft?.version !== 'string' || !Array.isArray(body.lines)) return json({ status: 404 }, 404)
+  return json({
+    draftVersion: body.draft.version,
+    floorStatus: 'Readable',
+    lines: body.lines.map((line) => ({
+      lineId: line.lineId,
+      lineNo: line.lineNo,
+      orderUnitId: line.orderUnitId,
+      quantity: line.quantity,
+      remainder: 'Open',
+      loaded: '0',
+      shipped: '0',
+      delivered: '0',
+      minimumQuantity: '0',
+    })),
+    items: [],
   })
 }
 

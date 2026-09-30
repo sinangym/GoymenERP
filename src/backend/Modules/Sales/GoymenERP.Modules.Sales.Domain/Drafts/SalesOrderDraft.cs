@@ -69,6 +69,13 @@ public sealed record ApprovalFacts(
     public static ApprovalFacts None { get; } = new(null, null, null, null, null);
 }
 
+/// <summary>
+/// The customer acceptance of one commercial revision. Existing orders do not require this gate;
+/// new orders do. A later revision leaves these immutable facts attached to their accepted revision
+/// and therefore makes <see cref="SalesOrderDraft.IsCustomerAccepted"/> false until that revision is accepted.
+/// </summary>
+public sealed record CustomerAcceptanceFacts(int Revision, string AcceptedBy, DateTimeOffset AcceptedAtUtc);
+
 /// <summary>The header facts of a draft as the client sent them; identities only, validated by their owners at command time.</summary>
 public sealed record SalesDraftHeader(
     Guid PartyId,
@@ -145,13 +152,14 @@ public sealed partial class SalesOrderDraft
     private bool approvalRestored;
 
     private SalesOrderDraft(Guid id, Guid companyId, string documentNo, SalesDraftHeader header,
-        MoneyProfileSnapshot money, DateTimeOffset now)
+        MoneyProfileSnapshot money, DateTimeOffset now, bool customerAcceptanceRequired)
     {
         Id = Identity.Require(id, nameof(id));
         CompanyId = Identity.Require(companyId, nameof(companyId));
         DocumentNo = RequireDocumentNo(documentNo);
         Header = header;
         Money = money;
+        CustomerAcceptanceRequired = customerAcceptanceRequired;
         CreatedAtUtc = now.ToUniversalTime();
         UpdatedAtUtc = CreatedAtUtc;
     }
@@ -180,6 +188,15 @@ public sealed partial class SalesOrderDraft
 
     /// <summary>The approval facts as they stand: nothing until a submission, then who/when, then the decision.</summary>
     public ApprovalFacts Approval { get; private set; } = ApprovalFacts.None;
+
+    /// <summary>Cutover flag: false for pre-Q9 rows; true for orders created after Q9 deployment.</summary>
+    public bool CustomerAcceptanceRequired { get; }
+
+    /// <summary>The latest recorded acceptance; its revision is retained when a later revision supersedes it.</summary>
+    public CustomerAcceptanceFacts? CustomerAcceptance { get; private set; }
+
+    /// <summary>Whether downstream consumers may treat the current revision as an approved customer order.</summary>
+    public bool IsCustomerAccepted => !CustomerAcceptanceRequired || CustomerAcceptance?.Revision == Revision;
 
     /// <summary>
     /// Commercial revision; <c>Rev.N</c> on the wire, independent of <see cref="Version"/>. Born 0; advanced
@@ -231,7 +248,7 @@ public sealed partial class SalesOrderDraft
     public IReadOnlyList<SalesOrderDraftLine> Lines => lines.AsReadOnly();
 
     public static SalesOrderDraft Create(Guid id, Guid companyId, string documentNo, SalesDraftHeader header,
-        MoneyProfileSnapshot money, DateTimeOffset now)
+        MoneyProfileSnapshot money, DateTimeOffset now, bool customerAcceptanceRequired = false)
     {
         ArgumentNullException.ThrowIfNull(header);
         ArgumentNullException.ThrowIfNull(money);
@@ -281,7 +298,7 @@ public sealed partial class SalesOrderDraft
                 "Para profili iş tarihinde etkin değil.");
         }
 
-        return new SalesOrderDraft(id, companyId, documentNo, header, money, now);
+        return new SalesOrderDraft(id, companyId, documentNo, header, money, now, customerAcceptanceRequired);
     }
 
     /// <summary>
@@ -452,6 +469,35 @@ public sealed partial class SalesOrderDraft
 
         ApprovalState = InternalApprovalState.Approved;
         Approval = Approval with { DecidedBy = actor, DecidedAtUtc = now.ToUniversalTime(), RejectionReason = null };
+        Touch(now);
+    }
+
+    /// <summary>
+    /// Records the customer's acceptance of the current internally approved commercial revision. This is a
+    /// separate authority action: internal approval does not confer it. It has no stock, allocation or money
+    /// effect; downstream consumers open only after this fact exists for the current revision.
+    /// </summary>
+    public void RecordCustomerAcceptance(long expectedVersion, string actorId, DateTimeOffset now)
+    {
+        RequireVersion(expectedVersion);
+        var actor = RequireActor(actorId);
+        RequireNotCancelled("İptal edilmiş sipariş için müşteri kabulü kaydedilmez.");
+        if (ApprovalState != InternalApprovalState.Approved)
+        {
+            throw StateConflict("Müşteri kabulü yalnız iç onaylı siparişe kaydedilir.");
+        }
+
+        if (!CustomerAcceptanceRequired)
+        {
+            throw StateConflict("Bu geçiş öncesi sipariş için ayrı müşteri kabulü aranmaz.");
+        }
+
+        if (CustomerAcceptance?.Revision == Revision)
+        {
+            throw StateConflict("Siparişin güncel revizyonu zaten müşteri tarafından kabul edilmiş.");
+        }
+
+        CustomerAcceptance = new CustomerAcceptanceFacts(Revision, actor, now.ToUniversalTime());
         Touch(now);
     }
 
@@ -1083,6 +1129,30 @@ public sealed partial class SalesOrderDraft
         archivedRevisions.Add(snapshot);
     }
 
+    /// <summary>Restores the cutover-bound customer acceptance without creating a new event.</summary>
+    public void RestoreCustomerAcceptance(CustomerAcceptanceFacts? facts)
+    {
+        if (!CustomerAcceptanceRequired)
+        {
+            if (facts is not null)
+            {
+                throw new InvalidOperationException("Müşteri kabulü aranmayan eski sipariş kabul olgusu taşıyamaz.");
+            }
+
+            return;
+        }
+
+        if (facts is not null && (facts.Revision < 0 || facts.Revision > Revision
+            || string.IsNullOrWhiteSpace(facts.AcceptedBy) || facts.AcceptedBy.Length > MaximumActorLength))
+        {
+            throw new InvalidOperationException("Kayıtlı müşteri kabulü sipariş revizyonuyla uyuşmuyor.");
+        }
+
+        CustomerAcceptance = facts is null
+            ? null
+            : facts with { AcceptedBy = facts.AcceptedBy.Trim(), AcceptedAtUtc = facts.AcceptedAtUtc.ToUniversalTime() };
+    }
+
     /// <summary>
     /// The store's rebuild of a stored draft: after the lines were added again through the domain,
     /// the stored approval axis is restored as it was, without a transition. The facts must fit the
@@ -1159,8 +1229,9 @@ public sealed partial class SalesOrderDraft
         // Partial delivery (user decision 2026-09-30): every recorded remainder request was one step of its own, and so was
         // every decision on one (restored just before this).
         var remainderTransitions = RemainderTransitions;
+        var customerAcceptanceTransitions = CustomerAcceptance is null ? 0L : 1L;
         var consistentVersion = storedVersion >= checked(Version + minimumTransitions + archivedTransitions + scheduleTransitions
-            + cancellationTransitions + remainderTransitions);
+            + cancellationTransitions + remainderTransitions + customerAcceptanceTransitions);
         if (!consistentVersion)
         {
             throw new InvalidOperationException("Kayıtlı sürüm, satırların ve onay geçişlerinin hesabıyla uyuşmuyor.");

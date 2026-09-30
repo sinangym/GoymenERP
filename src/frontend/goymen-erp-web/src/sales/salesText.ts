@@ -225,6 +225,13 @@ export const ORDER_DETAIL_TEXT = {
     decidedBy: 'Karar veren',
     decidedAt: 'Karar zamanı',
     rejectionReason: 'Ret nedeni',
+    customerAcceptance: 'Müşteri kabulü',
+    customerAcceptanceLegacy: 'Bu sipariş için ayrıca aranmıyor',
+    customerAcceptancePending: 'Güncel revizyon için bekleniyor',
+    customerAcceptanceRecorded: 'Güncel revizyon kabul edildi',
+    customerAcceptedBy: 'Müşteri kabulünü kaydeden',
+    customerAcceptedAt: 'Müşteri kabul zamanı',
+    recordCustomerAcceptance: 'Müşteri kabulünü kaydet',
     notYet: 'Henüz yok',
     noReason: 'Neden belirtilmedi',
     // DEC-SAL-001/005, Business 5737989917 item 4: the linked effects are read from their owners, never assumed.

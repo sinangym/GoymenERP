@@ -269,7 +269,7 @@ public sealed class SalesStore(
         }
 
         var draft = (await RestoreAsync([row], cancellationToken)).Single();
-        var before = new { state = draft.ApprovalState.ToString(), version = draft.Version, approval = draft.Approval };
+        var before = new { state = draft.ApprovalState.ToString(), version = draft.Version, approval = draft.Approval, customerAcceptance = draft.CustomerAcceptance };
         var versionBefore = draft.Version;
         var now = timeProvider.GetUtcNow();
         // The domain decides: the expected version, the allowed transition and the reason bound. A
@@ -286,6 +286,9 @@ public sealed class SalesStore(
         row.DecidedBy = draft.Approval.DecidedBy;
         row.DecidedAtUtc = draft.Approval.DecidedAtUtc;
         row.RejectionReason = draft.Approval.RejectionReason;
+        row.CustomerAcceptedRevision = draft.CustomerAcceptance?.Revision;
+        row.CustomerAcceptedBy = draft.CustomerAcceptance?.AcceptedBy;
+        row.CustomerAcceptedAtUtc = draft.CustomerAcceptance?.AcceptedAtUtc;
         row.Version = draft.Version;
         row.UpdatedAtUtc = draft.UpdatedAtUtc;
         dbContext.DraftAttempts.Add(new DraftAttemptRow
@@ -313,7 +316,7 @@ public sealed class SalesStore(
             envelope.PermissionCode,
             envelope.RoleCodes,
             JsonSerializer.Serialize(before, Json),
-            JsonSerializer.Serialize(new { state = draft.ApprovalState.ToString(), version = draft.Version, approval = draft.Approval }, Json),
+            JsonSerializer.Serialize(new { state = draft.ApprovalState.ToString(), version = draft.Version, approval = draft.Approval, customerAcceptance = draft.CustomerAcceptance }, Json),
             audit.Reason,
             ApprovalContextJson: null,
             AuditAiInvolvement.None,
@@ -1190,7 +1193,8 @@ public sealed class SalesStore(
             var money = new MoneyProfileSnapshot(row.CompanyId, row.CurrencyId, row.MoneyOperation, row.MoneyProfileId,
                 row.MoneyProfileVersion, row.MoneyEffectiveOn, row.MoneyIsActive, row.MoneyEffectiveFrom, row.MoneyEffectiveThrough,
                 row.MoneyScale);
-            var draft = SalesOrderDraft.Create(row.Id, row.CompanyId, row.DocumentNo, header, money, row.CreatedAtUtc);
+            var draft = SalesOrderDraft.Create(row.Id, row.CompanyId, row.DocumentNo, header, money, row.CreatedAtUtc,
+                row.CustomerAcceptanceRequired);
             foreach (var line in lines.Where(line => line.DraftId == row.Id).OrderBy(line => line.LineNo))
             {
                 var lineSlices = slices.Where(slice => slice.DraftId == row.Id && slice.LineNo == line.LineNo)
@@ -1287,6 +1291,12 @@ public sealed class SalesStore(
                 draft.RestoreCancellation(new CancellationFacts(cancellation.Revision, cancellation.CancelledBy, cancellation.CancelledAtUtc,
                     cancellation.Reason, CancellationImpact(cancellation)));
             }
+
+            draft.RestoreCustomerAcceptance(row.CustomerAcceptedRevision is null
+                ? null
+                : new CustomerAcceptanceFacts(row.CustomerAcceptedRevision.Value,
+                    row.CustomerAcceptedBy ?? throw new InvalidOperationException("Kayıtlı müşteri kabul eden kimliği yok."),
+                    row.CustomerAcceptedAtUtc ?? throw new InvalidOperationException("Kayıtlı müşteri kabul zamanı yok.")));
 
             // SALES-A1: the stored approval axis, restored without a transition; the facts must fit the state.
             draft.RestoreApproval((InternalApprovalState)row.ApprovalState,
