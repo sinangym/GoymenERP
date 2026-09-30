@@ -397,6 +397,48 @@ public sealed class InventoryTransferTests
         await Refused(world.Query().GetAsync(world.Reader.Result.TransferId), 503, InventoryTransferCodesV1.Unavailable);
     }
 
+    [Theory]
+    [InlineData("revoked", true, 2)]
+    [InlineData("company", false, 1)]
+    [InlineData("actor", true, 1)]
+    public async Task Transfer_read_error_remeasures_scope_before_disclosure(
+        string fault,
+        bool ownerContractError,
+        int authorityMeasurements)
+    {
+        var world = new CommandWorld();
+        world.Reader.During = () =>
+        {
+            switch (fault)
+            {
+                case "revoked": world.Authority.Granted = false; break;
+                case "company": world.Context.CompanyId = Guid.NewGuid(); break;
+                default: world.User.UserId = "other"; break;
+            }
+            throw ownerContractError
+                ? new InventoryTransferException(503, InventoryTransferCodesV1.Unavailable)
+                : new InvalidOperationException("synthetic reader failure");
+        };
+
+        await Refused(world.Query().GetAsync(Guid.NewGuid()), 403, InventoryTransferCodesV1.Forbidden);
+        Assert.Equal(authorityMeasurements, world.Authority.Measured.Count);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Transfer_read_preserves_authorized_owner_error_and_maps_unknown_failure(bool ownerContractError)
+    {
+        var world = new CommandWorld();
+        world.Reader.During = () => throw (ownerContractError
+            ? new InventoryTransferException(409, InventoryTransferCodesV1.ConcurrentChange)
+            : new InvalidOperationException("synthetic reader failure"));
+
+        await Refused(world.Query().GetAsync(Guid.NewGuid()), ownerContractError ? 409 : 503,
+            ownerContractError ? InventoryTransferCodesV1.ConcurrentChange : InventoryTransferCodesV1.Unavailable);
+        Assert.Equal(2, world.Authority.Measured.Count);
+    }
+
     [Fact]
     public void Owner_registration_adds_no_destination_adapter_or_grant()
     {

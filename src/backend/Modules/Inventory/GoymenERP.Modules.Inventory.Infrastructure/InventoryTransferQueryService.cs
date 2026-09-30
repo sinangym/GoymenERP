@@ -13,7 +13,21 @@ public sealed class InventoryTransferQueryService(
     public async Task<InventoryTransferViewV1> GetAsync(Guid transferId, CancellationToken cancellationToken = default)
     {
         var scope = await RequireAsync(cancellationToken);
-        var result = await reader.ReadAsync(transferId, cancellationToken);
+        InventoryTransferViewV1? result;
+        try
+        {
+            result = await reader.ReadAsync(transferId, cancellationToken);
+        }
+        catch (InventoryTransferException)
+        {
+            await RequireStillAsync(scope, cancellationToken);
+            throw;
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            await RequireStillAsync(scope, cancellationToken);
+            throw new InventoryTransferException(503, InventoryTransferCodesV1.Unavailable, exception);
+        }
         await RequireStillAsync(scope, cancellationToken);
         if (result is null) throw new InventoryTransferException(404, InventoryTransferCodesV1.TransferNotFound);
         if (result.CompanyId != scope.CompanyId) throw new InventoryTransferException(503, InventoryTransferCodesV1.Unavailable);
