@@ -55,12 +55,18 @@ services:
       IdentitySeed__Roles__5__IsSystem: "false"
       IdentitySeed__Roles__5__Permissions__0: counterparty.parties.create
       IdentitySeed__Roles__5__Permissions__1: counterparty.parties.read
+      # AT-065 document vault (user flow on the Cari card): both actors also hold the vault's two names, again the SAME
+      # names in different companies, so the other-company actor's 404 on company A's document is the company fence.
+      IdentitySeed__Roles__5__Permissions__2: documents.files.read
+      IdentitySeed__Roles__5__Permissions__3: documents.files.upload
       IdentitySeed__Roles__6__Id: b3000000-0000-4000-8000-000000000402
       IdentitySeed__Roles__6__Code: BROWSER_C02_OTHER_COMPANY
       IdentitySeed__Roles__6__Name: SENTETIK browser-suite:c02 diğer şirkette aynı yetkiler rolü
       IdentitySeed__Roles__6__IsSystem: "false"
       IdentitySeed__Roles__6__Permissions__0: counterparty.parties.create
       IdentitySeed__Roles__6__Permissions__1: counterparty.parties.read
+      IdentitySeed__Roles__6__Permissions__2: documents.files.read
+      IdentitySeed__Roles__6__Permissions__3: documents.files.upload
       IdentitySeed__Assignments__7__Id: b4000000-0000-4000-8000-000000000401
       IdentitySeed__Assignments__7__UserId: b2000000-0000-4000-8000-000000000401
       IdentitySeed__Assignments__7__RoleId: b3000000-0000-4000-8000-000000000401
