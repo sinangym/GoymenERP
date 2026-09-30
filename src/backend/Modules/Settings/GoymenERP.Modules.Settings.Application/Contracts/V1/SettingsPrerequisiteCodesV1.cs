@@ -22,4 +22,11 @@ public static class SettingsPrerequisiteCodesV1
     /// permanent answer about this currency, not a transient failure.
     /// </summary>
     public const string MoneyProfileNotFound = "settings_money_profile_not_found";
+
+    /// <summary>
+    /// A reachable Settings source has no Manufacturing tolerance profile for the exact company
+    /// and canonical process. It is distinct from an absent source and from malformed catalog data.
+    /// </summary>
+    public const string ManufacturingToleranceProfileNotFound =
+        "settings_manufacturing_tolerance_profile_not_found";
 }

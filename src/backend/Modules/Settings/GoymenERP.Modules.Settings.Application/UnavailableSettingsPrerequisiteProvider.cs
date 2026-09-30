@@ -11,7 +11,7 @@ namespace GoymenERP.Modules.Settings.Application;
 /// </summary>
 public sealed class UnavailableSettingsPrerequisiteProvider(
     ICompanyContext companyContext, ICurrentUser currentUser)
-    : ISettingsPrerequisiteProvider, ISettingsMoneyCandidateReader
+    : ISettingsPrerequisiteProvider, ISettingsMoneyCandidateReader, ISettingsManufacturingToleranceProviderV1
 {
     /// <summary>
     /// No currency source exists, so there are no candidates to offer — which is an
@@ -32,6 +32,10 @@ public sealed class UnavailableSettingsPrerequisiteProvider(
     public Task<PeriodEligibilityV1> GetPeriodEligibilityAsync(string operation,
         DateOnly occurredOn, DateOnly? valueOn, CancellationToken cancellationToken = default) =>
         Unavailable<PeriodEligibilityV1>(cancellationToken);
+
+    public Task<ManufacturingToleranceProfileV1> GetManufacturingToleranceAsync(
+        string process, DateOnly effectiveOn, CancellationToken cancellationToken = default) =>
+        Unavailable<ManufacturingToleranceProfileV1>(cancellationToken);
 
     private Task<T> Unavailable<T>(CancellationToken cancellationToken)
     {
