@@ -979,6 +979,12 @@ public sealed partial class OpenApiContractGenerationTests
         "DeclareManufacturingOutputV1",
         "GetManufacturingOrderV1",
         "SaveFinanceManualReceiptDraftV1",
+        "PreviewFinanceOfficialInvoiceImportV1",
+        "UploadFinanceOfficialInvoiceImportBatchV1",
+        "ApproveFinanceOfficialInvoiceImportBatchV1",
+        "GetFinanceApprovedOfficialInvoiceImportSourcesV1",
+        "ApplyFinanceOfficialInvoiceImportV1",
+        "GetFinanceOfficialInvoiceImportV1",
         "RecordFinanceManualReceiptV1",
         "ProposeFinanceManualReceiptReversalV1",
         "ApproveFinanceManualReceiptReversalV1",
@@ -1109,6 +1115,9 @@ public sealed partial class OpenApiContractGenerationTests
         "RecordManufacturingWorkInProgressV1",
         "DeclareManufacturingOutputV1",
         "SaveFinanceManualReceiptDraftV1",
+        "UploadFinanceOfficialInvoiceImportBatchV1",
+        "ApproveFinanceOfficialInvoiceImportBatchV1",
+        "ApplyFinanceOfficialInvoiceImportV1",
         "RecordFinanceManualReceiptV1",
         "ReceiveFinanceCustomerInstrumentV1",
         "ChangeFinanceCustomerInstrumentStatusV1",
@@ -1209,6 +1218,18 @@ public sealed partial class OpenApiContractGenerationTests
                 ["DeclareManufacturingOutputV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
                 // ADR-011 §7 (#325): a recorded 409/422 terminal refusal is replayed too.
                 ["SaveFinanceManualReceiptDraftV1"] =
+                [
+                    StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity,
+                ],
+                ["UploadFinanceOfficialInvoiceImportBatchV1"] =
+                [
+                    StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity,
+                ],
+                ["ApproveFinanceOfficialInvoiceImportBatchV1"] =
+                [
+                    StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity,
+                ],
+                ["ApplyFinanceOfficialInvoiceImportV1"] =
                 [
                     StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity,
                 ],
@@ -1352,6 +1373,10 @@ public sealed partial class OpenApiContractGenerationTests
         "RecordManufacturingWorkInProgressV1",
         "DeclareManufacturingOutputV1",
         "SaveFinanceManualReceiptDraftV1",
+        "PreviewFinanceOfficialInvoiceImportV1",
+        "UploadFinanceOfficialInvoiceImportBatchV1",
+        "ApproveFinanceOfficialInvoiceImportBatchV1",
+        "ApplyFinanceOfficialInvoiceImportV1",
         "RecordFinanceManualReceiptV1",
         "SaveFinanceManualBankPaymentDraftV1",
         "GetFinanceManualBankPaymentsV1",
@@ -5102,9 +5127,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(180, operations.Count);
+        Assert.Equal(186, operations.Count);
         Assert.Equal(
-            180,
+            186,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());
