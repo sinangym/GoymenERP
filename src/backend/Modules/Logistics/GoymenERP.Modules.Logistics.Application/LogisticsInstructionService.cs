@@ -440,6 +440,39 @@ public sealed partial class LogisticsInstructionService(
             return await TerminalAsync(envelope, requestHash, commandName,
                 new LogisticsTerminalRefusal(409, LogisticsProblemCodesV1.WeighingAlreadyRecorded, [new("weighingId", exception.Code)]), cancellationToken);
         }
+        catch (LogisticsRuleException exception) when (exception.Code == LogisticsRuleCodes.ShipmentAlreadyDispatched)
+        {
+            // AT-055: a shipment is on at most one non-cancelled dispatch note; a second link (another draft, another key) is a
+            // recorded terminal refusal and the first note stays as it is.
+            return await TerminalAsync(envelope, requestHash, commandName,
+                new LogisticsTerminalRefusal(409, LogisticsProblemCodesV1.ShipmentAlreadyDispatched, [new("shipmentIds", exception.Code)]), cancellationToken);
+        }
+        catch (LogisticsRuleException exception) when (exception.Code == LogisticsRuleCodes.DuplicateDispatchNoteId)
+        {
+            // The note id is taken in this company — on this instruction or (the store's check) on another one, even a cancelled note.
+            return await TerminalAsync(envelope, requestHash, commandName,
+                new LogisticsTerminalRefusal(409, LogisticsProblemCodesV1.DuplicateDispatchNote, [new("dispatchNoteId", exception.Code)]), cancellationToken);
+        }
+        catch (LogisticsRuleException exception) when (exception.Code == LogisticsRuleCodes.DispatchNoteState)
+        {
+            // AT-055 lifecycle: approve needs a Draft, cancel a non-cancelled note, the e-İrsaliye number an Approved note without one.
+            return await TerminalAsync(envelope, requestHash, commandName,
+                new LogisticsTerminalRefusal(409, LogisticsProblemCodesV1.DispatchNoteState, [new("status", exception.Code)]), cancellationToken);
+        }
+        catch (LogisticsRuleException exception) when (exception.Code == LogisticsRuleCodes.EDispatchNumberInUse)
+        {
+            return await TerminalAsync(envelope, requestHash, commandName,
+                new LogisticsTerminalRefusal(409, LogisticsProblemCodesV1.EDispatchNumberInUse, [new("eDispatchNumber", exception.Code)]), cancellationToken);
+        }
+        catch (LogisticsRuleException exception) when (exception.Code == LogisticsRuleCodes.DispatchNoteNotFound)
+        {
+            throw new LogisticsInstructionServiceException(404, "not_found");
+        }
+        catch (LogisticsRuleException exception) when (exception.Code == LogisticsRuleCodes.ShipmentNotFound
+            && string.Equals(commandName, LogisticsCommands.CreateDispatchNoteV1, StringComparison.Ordinal))
+        {
+            throw new LogisticsInstructionServiceException(422, LogisticsProblemCodesV1.ShipmentNotFound, [new("shipmentIds", exception.Code)]);
+        }
         catch (LogisticsRuleException exception) when (exception.Code == LogisticsRuleCodes.WeighingDirectionInconsistent)
         {
             throw new LogisticsInstructionServiceException(422, LogisticsProblemCodesV1.WeighingDirectionInconsistent,
@@ -787,7 +820,8 @@ public sealed partial class LogisticsInstructionService(
                 Text(line.ShippedNotDelivered), line.IsBlocked))],
             [.. instruction.Shares.Select(share => new LoadingShareView(share.ShareId, share.LineId, share.Kind.ToString(), Text(share.Quantity),
                 share.Measurement?.ToString(), share.SourceShipmentId, share.RecordedAtUtc))],
-            instruction.Weighing is { } weighing ? WeighingView(weighing) : null);
+            instruction.Weighing is { } weighing ? WeighingView(weighing) : null,
+            [.. instruction.DispatchNotes.Select(note => DispatchNoteView(instruction, note))]);
     }
 
     /// <summary>The weighbridge record exactly as the domain calculated it; the difference keeps its sign ("-" = lighter than loaded).</summary>

@@ -26,6 +26,8 @@ import {
   reservePendingPlanCreate,
   type PendingPlanCreate,
 } from './pendingPlanStore'
+import { PlanPreviewPanel } from './PlanPreviewPanel'
+import { planPreviewInput, usePlanPreview } from './usePlanPreview'
 import styles from './PlanPage.module.css'
 
 type ReadState<T> =
@@ -274,6 +276,29 @@ function PlanCreate({ namespace, preselect }: {
     [actorId, captureSecurity, companyId, reportSecurity, storeKey],
   )
 
+  // AT-061 / AT-062: the button-less backend preview of what is typed (DEC-PRDCT-005). It writes nothing and never
+  // gates the save below.
+  const preview = usePlanPreview(companyId, planPreviewInput(
+    workCenterId,
+    inputs.map(({ candidate, plannedKg }) => ({
+      parentRollId: candidate.labelId,
+      label: candidate.labelCode,
+      labelVersion: candidate.labelVersion,
+      plannedKg,
+    })),
+    targetBasis,
+    targetKg,
+  ))
+
+  function labelOf(parentRollId: string): string {
+    return inputs.find((input) => input.candidate.labelId === parentRollId)?.candidate.labelCode ?? parentRollId
+  }
+
+  function workCenterLabel(id: string): string {
+    const found = workCenters.type === 'ready' ? workCenters.data.find((workCenter) => workCenter.id === id) : undefined
+    return found === undefined ? id : `${found.code} — ${found.name}`
+  }
+
   function addCandidate(candidate: ParentRollCandidate) {
     if (!candidate.draftSelectable || inputs.some((input) => input.candidate.labelId === candidate.labelId)) return
     setInputs((current) => [...current, { candidate, plannedKg: '' }])
@@ -483,6 +508,7 @@ function PlanCreate({ namespace, preselect }: {
             <input id="plan-target-kg" inputMode="decimal" value={targetKg} onChange={(event) => setTargetKg(event.target.value)} />
           </div>
         </fieldset>
+        <PlanPreviewPanel state={preview} labelOf={labelOf} workCenterLabel={workCenterLabel} />
         <div className={styles.actions}>
           <button type="submit" disabled={frozen}>{attempt.phase === 'submitting' ? 'Kaydediliyor…' : 'Taslak planı kaydet'}</button>
         </div>

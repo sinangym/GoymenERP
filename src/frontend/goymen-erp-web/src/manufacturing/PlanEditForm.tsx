@@ -18,6 +18,8 @@ import { PLAN_EDIT_TEXT } from './planEditText'
 import type { PlanRevision } from './planRevisionContract'
 import type { PlanTargetBasis, RevisePlanRequest } from './planCommandApi'
 import { fetchParentRollCandidates, type ParentRollCandidate, type ParentRollCandidates } from './planReferences'
+import { PlanPreviewPanel } from './PlanPreviewPanel'
+import { planPreviewInput, usePlanPreview } from './usePlanPreview'
 import styles from './PlanPage.module.css'
 
 type ReadState<T> =
@@ -143,6 +145,29 @@ export function PlanEditForm({ companyId, plan, current, busy, onSubmit, onCance
         : { type: 'failed', message: readFailure('Ana rulo', outcome) },
     )
   }, [captureSecurity, companyId, reportSecurity, search])
+
+  // AT-061 / AT-062: the same button-less backend preview as the create form, for the content being edited. It writes
+  // nothing and never gates the revision below (the reason is not part of what is calculated).
+  const preview = usePlanPreview(companyId, planPreviewInput(
+    workCenterId,
+    rows.map((row) => ({
+      parentRollId: row.parentRollId,
+      label: row.labelCode ?? row.parentRollId,
+      labelVersion: row.labelVersion,
+      plannedKg: row.plannedKg,
+    })),
+    targetBasis,
+    targetKg,
+  ))
+
+  function labelOf(parentRollId: string): string {
+    return rows.find((row) => row.parentRollId === parentRollId)?.labelCode ?? parentRollId
+  }
+
+  function workCenterLabel(id: string): string {
+    const found = workCenters.type === 'ready' ? workCenters.data.find((workCenter) => workCenter.id === id) : undefined
+    return found === undefined ? id : `${found.code} — ${found.name}`
+  }
 
   function addCandidate(candidate: ParentRollCandidate) {
     if (!candidate.draftSelectable) return
@@ -346,6 +371,8 @@ export function PlanEditForm({ companyId, plan, current, busy, onSubmit, onCance
             <input id="plan-edit-target-kg" inputMode="decimal" value={targetKg} onChange={(event) => setTargetKg(event.target.value)} />
           </div>
         </fieldset>
+
+        <PlanPreviewPanel state={preview} labelOf={labelOf} workCenterLabel={workCenterLabel} />
 
         <fieldset disabled={busy}>
           <legend>{PLAN_EDIT_TEXT.reasonLabel}</legend>

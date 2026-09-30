@@ -513,6 +513,8 @@ public sealed partial class LogisticsInstructionServiceTests
         public List<LogisticsTerminalRefusal> Refusals { get; } = [];
         public List<(string Command, Guid Id, long Before, long After)> Transitions { get; } = [];
         public int Replays { get; private set; }
+        private long _lastSequenceNo;
+        public Func<string, Exception?>? MutateFault { get; set; }
         public Action<LogisticsWriteEnvelope, string, string>? BeforeRefusal { get; set; }
 
         /// <summary>Simulates the same key's winner storing its transition between this caller's replay read and its refusal record (§8).</summary>
@@ -574,12 +576,21 @@ public sealed partial class LogisticsInstructionServiceTests
 
             var stored = _instructions.SingleOrDefault(candidate => candidate.Instruction.Id == instructionId);
             if (stored is null) return Task.FromResult<LogisticsStoreResult?>(null);
+            // A store-level refusal (the real store's company-wide checks) raised before anything moves.
+            if (MutateFault?.Invoke(commandName) is { } fault) throw fault;
             var before = stored.Instruction.Version;
             mutate(stored.Instruction, TimeProvider.System.GetUtcNow());
+            // AT-055: the store gives the note approved by this step the company's next number (gap-free, as the real series).
+            foreach (var approved in stored.Instruction.DispatchNotes.Where(note => note is { Status: DispatchNoteStatus.Approved, Number: null }).ToArray())
+            {
+                stored.Instruction.AssignDispatchNoteNumber(approved.DispatchNoteId, DispatchNoteNumber.Of(DispatchNoteNumber.DefaultSeriesCode, ++_lastSequenceNo));
+            }
             _attempts[(commandName, envelope.IdempotencyKey)] = (envelope.ActorId, requestHash, stored, null, envelope.CorrelationId);
             Transitions.Add((commandName, instructionId, before, stored.Instruction.Version));
             return Task.FromResult<LogisticsStoreResult?>(new LogisticsStoreResult(stored, LogisticsWriteOutcome.Recorded, envelope.CorrelationId));
         }
+
+        public LoadingInstruction Instruction(Guid instructionId) => _instructions.Single(candidate => candidate.Instruction.Id == instructionId).Instruction;
 
         public Task<StoredLoadingInstruction?> FindInstructionAsync(Guid instructionId, CancellationToken cancellationToken = default) =>
             Task.FromResult(_instructions.SingleOrDefault(candidate => candidate.Instruction.Id == instructionId));
@@ -587,6 +598,22 @@ public sealed partial class LogisticsInstructionServiceTests
         public Task<LogisticsInstructionPage> ListInstructionsAsync(int pageSize, string? cursor, LoadingInstructionStatus? status = null,
             CancellationToken cancellationToken = default) =>
             Task.FromResult(new LogisticsInstructionPage([.. _instructions.Where(stored => status is null || stored.Instruction.Status == status)], null));
+
+        public Task<IReadOnlyList<StoredDispatchNoteReference>> ListSalesOrderDispatchNotesAsync(Guid salesOrderId, int limit,
+            CancellationToken cancellationToken = default)
+        {
+            SalesOrderReads++;
+            IReadOnlyList<StoredDispatchNoteReference> notes = [.. _instructions.SelectMany(stored => stored.Instruction.DispatchNotes.Select(note =>
+                    new StoredDispatchNoteReference(note.DispatchNoteId, stored.Instruction.Id, note.Status, note.CreatedAtUtc,
+                        [.. note.Lines.Select(line => (Line: line, Source: stored.Instruction.Lines.Single(candidate => candidate.Id == line.InstructionLineId)))
+                            .Where(pair => pair.Source.Source.OrderId == salesOrderId)
+                            .Select(pair => new StoredDispatchNoteOrderLine(pair.Line.LineNo, pair.Source.Source.LineId, pair.Line.ShipmentId,
+                                pair.Source.UnitId, pair.Line.Quantity.Value))], note.Number, note.EDispatchNumber)))
+                .Where(note => note.Lines.Count > 0).Take(limit)];
+            return Task.FromResult(notes);
+        }
+
+        public int SalesOrderReads { get; private set; }
 
         private static void Check((string Actor, string Hash, StoredLoadingInstruction? Stored, LogisticsTerminalRefusal? Refusal, string Correlation) attempt,
             LogisticsWriteEnvelope envelope, string requestHash)
