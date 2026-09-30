@@ -47,6 +47,7 @@ const DRAFT_RE = /\/api\/v1\/finance\/manual-receipts\/drafts$/
 const RECORD_RE = /\/api\/v1\/finance\/manual-receipts\/[^/]+\/record$/
 const REVERSAL_PROPOSAL_RE = /\/api\/v1\/finance\/manual-receipts\/[^/]+\/reversal-proposals$/
 const REVERSAL_APPROVAL_RE = /\/api\/v1\/finance\/manual-receipts\/reversal-proposals\/[^/]+\/approval$/
+const REVERSAL_REJECTION_RE = /\/api\/v1\/finance\/manual-receipts\/reversal-proposals\/[^/]+\/rejection$/
 const MANUAL_PAYMENT_RE = /\/api\/v1\/finance\/manual-bank-payments$/
 const MANUAL_PAYMENT_APPROVAL_RE = /\/api\/v1\/finance\/manual-bank-payments\/[^/]+\/approval$/
 const MANUAL_PAYMENT_RECORD_RE = /\/api\/v1\/finance\/manual-bank-payments\/[^/]+\/record$/
@@ -71,6 +72,8 @@ async function setRiskDate(page: Page) {
 
 let recordedSourceId = ''
 let reversalSourceId = ''
+let rejectedReceiptSourceId = ''
+let rejectedProposalId = ''
 let bankAccountId = ''
 let manualPaymentId = ''
 
@@ -963,6 +966,210 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
     await expect(page).toHaveURL(/ekstreBaslangic=2026-09-14&ekstreBitis=2026-09-30/)
     await expect(page.locator('[data-ledger-entry]')).toHaveCount(4, { timeout: 30_000 })
     await expect(closing).toHaveText('2.875,25 (A)')
+    expectEveryAnswerRewritten(answered, rewritten)
+  })
+
+  test('FIN01-08A the maker records a separate receipt and proposes its reversal for rejection', async ({ page, context }) => {
+    const rewritten = await asActor(context, env.seed.proposerActor)
+    const answered = watchAnswers(page)
+    const entry = new URLSearchParams({ partyId: env.seed.partyId, companyAccountId: env.seed.companyAccountId })
+
+    await page.goto(`/finans/tahsilatlar/yeni?${entry.toString()}`)
+    await expect(page.getByRole('heading', { level: 1, name: 'Yeni tahsilat taslağı', exact: true }))
+      .toBeVisible({ timeout: 30_000 })
+    await page.getByLabel('Banka hesabı', { exact: true }).selectOption({ label: ACCOUNT_NAME })
+    await page.getByLabel('Banka işlem tarihi', { exact: true }).fill('2026-09-19')
+    const rejectedAmount = page.getByLabel(/^Tutar/)
+    await expect(rejectedAmount).toBeEnabled({ timeout: 30_000 })
+    await rejectedAmount.fill('321,45')
+
+    const saveAnswer = page.waitForResponse((response) =>
+      DRAFT_RE.test(response.url()) && response.request().method() === 'POST')
+    await page.getByRole('button', { name: 'Taslağı kaydet', exact: true }).click()
+    const saved = await saveAnswer
+    const savedBody = await saved.json() as {
+      readonly resource?: { readonly source?: { readonly id?: unknown; readonly version?: unknown } }
+    }
+    expect(saved.status(), JSON.stringify(savedBody)).toBe(200)
+    expect(savedBody.resource?.source).toMatchObject({ version: '1' })
+    rejectedReceiptSourceId = savedBody.resource!.source!.id as string
+    expect(rejectedReceiptSourceId).toMatch(/^[0-9a-f-]{36}$/)
+
+    await page.goto(`/finans/tahsilatlar/${rejectedReceiptSourceId}`)
+    await expect(page.getByText('Taslak — para etkisi yok.', { exact: false })).toBeVisible({ timeout: 30_000 })
+    await page.getByRole('button', { name: 'Kesin kayda al', exact: true }).click()
+    const recordPost = page.waitForRequest((request) => RECORD_RE.test(request.url()) && request.method() === 'POST')
+    const recordAnswer = page.waitForResponse((response) => RECORD_RE.test(response.url()) && response.request().method() === 'POST')
+    await page.getByRole('button', { name: 'Kesin kaydı onayla', exact: true }).click()
+    expect((await recordPost).postDataJSON()).toEqual({ draftId: rejectedReceiptSourceId, expectedVersion: '1' })
+    const recorded = await recordAnswer
+    const recordedBody = await recorded.json() as {
+      readonly resource?: { readonly source?: { readonly id?: unknown; readonly stage?: unknown; readonly version?: unknown } }
+    }
+    expect(recorded.status(), JSON.stringify(recordedBody)).toBe(200)
+    expect(recordedBody.resource?.source).toMatchObject({
+      id: rejectedReceiptSourceId, stage: 'Recorded', version: '2',
+    })
+
+    await page.getByRole('button', { name: 'Ters kayıt öner', exact: true }).click()
+    await page.getByLabel('Ters kayıt işlem tarihi', { exact: true }).fill('2026-09-14')
+    await page.getByLabel('Gerekçe', { exact: true }).fill('SENTETIK FIN01 rejection candidate')
+    const proposalPost = page.waitForRequest((request) =>
+      REVERSAL_PROPOSAL_RE.test(request.url()) && request.method() === 'POST')
+    const proposalAnswer = page.waitForResponse((response) =>
+      REVERSAL_PROPOSAL_RE.test(response.url()) && response.request().method() === 'POST')
+    await page.getByRole('button', { name: 'Onaya gönder', exact: true }).click()
+    expect((await proposalPost).postDataJSON()).toEqual({
+      sourceId: rejectedReceiptSourceId,
+      expectedVersion: '2',
+      occurredOn: '2026-09-14',
+      reason: 'SENTETIK FIN01 rejection candidate',
+    })
+    const proposed = await proposalAnswer
+    const proposedBody = await proposed.json() as {
+      readonly resource?: { readonly id?: unknown; readonly status?: unknown; readonly version?: unknown }
+    }
+    expect(proposed.status(), JSON.stringify(proposedBody)).toBe(200)
+    expect(proposedBody.resource).toMatchObject({ status: 'Pending', version: '1' })
+    rejectedProposalId = proposedBody.resource!.id as string
+    expect(rejectedProposalId).toMatch(/^[0-9a-f-]{36}$/)
+    expectEveryAnswerRewritten(answered, rewritten)
+  })
+
+  test('FIN01-08B another actor rejects it, removes it from pending and replays the same terminal answer', async ({ page, context }) => {
+    const rewritten = await asActor(context, env.seed.approverActor)
+    const answered = watchAnswers(page)
+    expect(env.seed.approverActor).not.toBe(env.seed.proposerActor)
+    expect(rejectedProposalId).toMatch(/^[0-9a-f-]{36}$/)
+    expect(rejectedReceiptSourceId).toMatch(/^[0-9a-f-]{36}$/)
+    let rejectionCommands = 0
+    page.on('request', (request) => {
+      if (REVERSAL_REJECTION_RE.test(request.url()) && request.method() === 'POST') rejectionCommands += 1
+    })
+
+    await page.goto('/finans/ters-kayit-onaylari')
+    await expect(page.getByRole('heading', { level: 1, name: 'Ters kayıt onayları', exact: true }))
+      .toBeVisible({ timeout: 30_000 })
+    const proposal = page.getByLabel(`Ters kayıt önerisi ${rejectedProposalId}`, { exact: true })
+    await expect(proposal).toContainText('SENTETIK FIN01 rejection candidate')
+    const reason = proposal.getByLabel('Ret gerekçesi', { exact: true })
+    const reject = proposal.getByRole('button', { name: 'Reddet', exact: true })
+    await expect(reject).toBeDisabled()
+    await reason.focus()
+    await page.keyboard.press('Enter')
+    expect(rejectionCommands).toBe(0)
+
+    const decisionReason = 'SENTETIK FIN01 belge düzeltilecek'
+    await reason.fill(decisionReason)
+    await expect(reject).toBeEnabled()
+    const post = page.waitForRequest((request) =>
+      REVERSAL_REJECTION_RE.test(request.url()) && request.method() === 'POST')
+    const answer = page.waitForResponse((response) =>
+      REVERSAL_REJECTION_RE.test(response.url()) && response.request().method() === 'POST')
+    const pending = page.waitForResponse((response) =>
+      response.url().endsWith('/api/v1/finance/manual-receipts/reversal-proposals/pending')
+      && response.request().method() === 'GET')
+    await reject.click()
+    const sent = await post
+    const sentBody = sent.postDataJSON()
+    expect(sent.headers()['idempotency-key']).toMatch(/^[0-9a-f]{32}$/)
+    expect(sentBody).toEqual({ proposalId: rejectedProposalId, expectedVersion: '1', reason: decisionReason })
+    const rejected = await answer
+    const first = await rejected.json() as {
+      readonly isReplay?: unknown
+      readonly originalCorrelationId?: unknown
+      readonly resource?: {
+        readonly id?: unknown
+        readonly originalSourceId?: unknown
+        readonly status?: unknown
+        readonly decisionReason?: unknown
+        readonly reversalSourceId?: unknown
+        readonly version?: unknown
+      }
+    }
+    expect(rejected.status(), JSON.stringify(first)).toBe(200)
+    expect(first).toMatchObject({
+      isReplay: false,
+      resource: {
+        id: rejectedProposalId,
+        originalSourceId: rejectedReceiptSourceId,
+        status: 'Rejected',
+        decisionReason,
+        reversalSourceId: null,
+        version: '2',
+      },
+    })
+    const pendingBody = await (await pending).json() as { readonly items?: readonly { readonly id?: unknown }[] }
+    expect(pendingBody.items?.some((item) => item.id === rejectedProposalId)).toBe(false)
+    await expect(page.getByText('Öneri reddedildi; para olayı oluşturulmadı.', { exact: true }))
+      .toBeVisible({ timeout: 30_000 })
+    const original = page
+      .getByLabel(`Sonuçlanan ters kayıt önerisi ${rejectedProposalId}`, { exact: true })
+      .getByRole('link', { name: 'Orijinal kaydı yeniden aç', exact: true })
+    await expect(original).toHaveAttribute('href', `/finans/tahsilatlar/${rejectedReceiptSourceId}`)
+
+    const replay = await page.evaluate(async ({ proposalId, key, body, companyId }) => {
+      const response = await fetch(`/api/v1/finance/manual-receipts/reversal-proposals/${proposalId}/rejection`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key, 'X-Company-Id': companyId },
+        body: JSON.stringify(body),
+      })
+      return { status: response.status, body: await response.json() as unknown }
+    }, {
+      proposalId: rejectedProposalId,
+      key: sent.headers()['idempotency-key'],
+      body: sentBody,
+      companyId: env.seed.companyId,
+    })
+    expect(replay.status).toBe(200)
+    expect(replay.body).toMatchObject({
+      isReplay: true,
+      originalCorrelationId: first.originalCorrelationId,
+      resource: {
+        id: rejectedProposalId,
+        originalSourceId: rejectedReceiptSourceId,
+        status: 'Rejected',
+        decisionReason,
+        reversalSourceId: null,
+        version: '2',
+      },
+    })
+    expectEveryAnswerRewritten(answered, rewritten)
+  })
+
+  test('FIN01-08C the maker closes and reopens the unchanged recorded receipt', async ({ page, context }) => {
+    const rewritten = await asActor(context, env.seed.proposerActor)
+    const answered = watchAnswers(page)
+    expect(rejectedReceiptSourceId).toMatch(/^[0-9a-f-]{36}$/)
+
+    await page.goto('/finans/tahsilatlar')
+    const row = page.getByRole('row').filter({
+      has: page.getByRole('button', { name: new RegExp(`^Aç:.*${rejectedReceiptSourceId.slice(-8)}$`) }),
+    })
+    await expect(row).toHaveCount(1, { timeout: 30_000 })
+    await row.getByRole('button', { name: /^Aç/ }).click()
+    await expect(page).toHaveURL(new RegExp(`/finans/tahsilatlar/${rejectedReceiptSourceId}$`))
+    await expect(page.getByText('Kesin kaynak kaydı.', { exact: false })).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByText('Ters kayıtla düzeltildi', { exact: true })).toHaveCount(0)
+
+    const fresh = await page.evaluate(async ({ sourceId, companyId }) => {
+      const response = await fetch(`/api/v1/finance/manual-receipts/${sourceId}`, {
+        headers: { 'X-Company-Id': companyId },
+      })
+      return { status: response.status, body: await response.json() as unknown }
+    }, { sourceId: rejectedReceiptSourceId, companyId: env.seed.companyId })
+    expect(fresh.status).toBe(200)
+    expect(fresh.body).toMatchObject({
+      source: {
+        id: rejectedReceiptSourceId,
+        stage: 'Recorded',
+        version: '2',
+        amount: { money: { amount: '321.45' } },
+        reversalSourceId: null,
+        reversesSourceId: null,
+      },
+      unallocated: { knowledge: 'Known', amount: { money: { amount: '321.45' } } },
+    })
     expectEveryAnswerRewritten(answered, rewritten)
   })
 
