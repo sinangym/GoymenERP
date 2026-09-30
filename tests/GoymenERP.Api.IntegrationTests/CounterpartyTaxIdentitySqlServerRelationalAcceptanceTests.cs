@@ -1,3 +1,4 @@
+using System.Data.Common;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text;
@@ -6,11 +7,14 @@ using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Counterparty.Application.Contracts;
 using GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
 using GoymenERP.Modules.Identity.Infrastructure.Seeding;
+using GoymenERP.Modules.Idempotency.Domain.Executions;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -358,6 +362,74 @@ public sealed class CounterpartyTaxIdentitySqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
+    public async Task Authority_revoked_after_the_duplicate_read_refuses_without_disclosing_candidates_or_writing()
+    {
+        var authority = new RevocableAuthority();
+        var interleave = new DuplicateReadRevocationInterceptor(authority);
+        await using var test = new TaxTest(freshAuthority: authority, interceptors: [interleave]);
+        using var maker = test.Client();
+        var existing = await CreateAsync(maker, "Gizli çakışan cari");
+        var target = await CreateAsync(maker, "Yetkisi düşen cari");
+        await EnterAsync(maker, existing, Vkn);
+
+        interleave.Arm();
+        using var response = await maker.PostAsJsonAsync($"{PathFor(target)}/duplicates",
+            new { taxIdentityNumber = Vkn });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.True(interleave.Triggered);
+        Assert.True(authority.DeniedMeasurements > 0);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.DoesNotContain(existing.ToString("D"), body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Gizli çakışan cari", body, StringComparison.Ordinal);
+        Assert.Equal(0, await test.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [counterparty].[Parties] WHERE [Id]=@Party AND [TaxIdentityNumber] IS NOT NULL;", target));
+        Assert.Equal(0, await test.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EntityId]=CONVERT(nvarchar(36), @Party);", target));
+    }
+
+    [SqlServerFact]
+    public async Task Same_key_race_revalidates_authority_after_reading_the_winner_and_refuses_the_loser()
+    {
+        var authority = new RevocableAuthority();
+        using var barrier = new Barrier(2);
+        var interleave = new WinnerFailureRevocationInterceptor(barrier, authority);
+        await using var test = new TaxTest(freshAuthority: authority, interceptors: [interleave]);
+        using var first = test.Client();
+        using var second = test.Client();
+        var party = await CreateAsync(first, "Yarışan cari");
+        var key = Guid.NewGuid().ToString("N");
+        NewKey(first, key);
+        NewKey(second, key);
+        var body = Body(new { expectedVersion = "1", taxIdentityNumber = Vkn });
+
+        interleave.Arm();
+        var responses = await Task.WhenAll(
+            PutAsync(first, PathFor(party), body),
+            PutAsync(second, PathFor(party), body));
+        try
+        {
+            Assert.Contains(responses, response => response.StatusCode == HttpStatusCode.NoContent);
+            var refused = Assert.Single(responses, response => response.StatusCode == HttpStatusCode.Forbidden);
+            Assert.False(refused.Headers.Contains("Idempotency-Replayed"));
+            Assert.True(interleave.FailureObserved);
+            Assert.True(authority.DeniedMeasurements > 0);
+            Assert.Equal(1, await test.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM [counterparty].[Parties] WHERE [Id]=@Party AND [TaxIdentityNumber]=N'1234567890';", party));
+            Assert.Equal(1, await test.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EntityId]=CONVERT(nvarchar(36), @Party) AND [EventType]=@Event;",
+                party, EnteredEvent));
+            Assert.Equal(1, await test.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM [idempotency].[CommandExecutions] WHERE [CompanyId]=@Company AND [CommandName]=@Command;",
+                party, commandName: "counterparty.party.tax-identity.enter.v1"));
+        }
+        finally
+        {
+            foreach (var response in responses) response.Dispose();
+        }
+    }
+
+    [SqlServerFact]
     public async Task The_database_refuses_malformed_numbers_self_decisions_and_a_second_pending_change()
     {
         await using var test = new TaxTest();
@@ -466,10 +538,10 @@ public sealed class CounterpartyTaxIdentitySqlServerRelationalAcceptanceTests
     private static Task<HttpResponseMessage> PutAsync(HttpClient client, string path, string body) =>
         client.PutAsync(path, new StringContent(body, Encoding.UTF8, "application/json"));
 
-    private static void NewKey(HttpClient client)
+    private static void NewKey(HttpClient client, string? key = null)
     {
         client.DefaultRequestHeaders.Remove("Idempotency-Key");
-        client.DefaultRequestHeaders.Add("Idempotency-Key", Guid.NewGuid().ToString("N"));
+        client.DefaultRequestHeaders.Add("Idempotency-Key", key ?? Guid.NewGuid().ToString("N"));
         client.DefaultRequestHeaders.Remove("X-Correlation-Id");
         client.DefaultRequestHeaders.Add("X-Correlation-Id", Guid.NewGuid().ToString("N"));
     }
@@ -479,10 +551,22 @@ public sealed class CounterpartyTaxIdentitySqlServerRelationalAcceptanceTests
         private readonly string _baseConnection = Environment.GetEnvironmentVariable(
             SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
 
-        public TaxTest(bool grant = true)
+        public TaxTest(
+            bool grant = true,
+            IErpAuthorityRevalidationService? freshAuthority = null,
+            params IInterceptor[] interceptors)
         {
             Factory = new SqlServerRelationalApiFactory(_baseConnection, services =>
             {
+                if (interceptors.Length > 0)
+                {
+                    services.AddDbContext<CounterpartyDbContext>((_, options) => options.AddInterceptors(interceptors));
+                }
+                if (freshAuthority is not null)
+                {
+                    services.RemoveAll<IErpAuthorityRevalidationService>();
+                    services.AddSingleton(freshAuthority);
+                }
                 if (!grant)
                 {
                     return;
@@ -505,11 +589,15 @@ public sealed class CounterpartyTaxIdentitySqlServerRelationalAcceptanceTests
         public HttpClient Client(Guid? company = null, string user = TestUsers.GroupAdmin) =>
             Factory.CreateClientFor(user, company ?? TestCompanyIds.CompanyA);
 
-        public async Task<T> ScalarAsync<T>(string sql, Guid party, string? eventType = null)
+        public async Task<T> ScalarAsync<T>(
+            string sql,
+            Guid party,
+            string? eventType = null,
+            string? commandName = null)
         {
             await using var connection = new SqlConnection(Factory.DatabaseConnectionString);
             await connection.OpenAsync();
-            await using var command = CreateCommand(connection, sql, party, eventType);
+            await using var command = CreateCommand(connection, sql, party, eventType, commandName);
             return Assert.IsType<T>(await command.ExecuteScalarAsync());
         }
 
@@ -517,16 +605,23 @@ public sealed class CounterpartyTaxIdentitySqlServerRelationalAcceptanceTests
         {
             await using var connection = new SqlConnection(Factory.DatabaseConnectionString);
             await connection.OpenAsync();
-            await using var command = CreateCommand(connection, sql, party, null);
+            await using var command = CreateCommand(connection, sql, party, null, null);
             await command.ExecuteNonQueryAsync();
         }
 
-        private static SqlCommand CreateCommand(SqlConnection connection, string sql, Guid party, string? eventType)
+        private static SqlCommand CreateCommand(
+            SqlConnection connection,
+            string sql,
+            Guid party,
+            string? eventType,
+            string? commandName)
         {
             var command = connection.CreateCommand();
             command.CommandText = sql;
             if (sql.Contains("@Party", StringComparison.Ordinal)) command.Parameters.AddWithValue("@Party", party);
             if (sql.Contains("@Event", StringComparison.Ordinal)) command.Parameters.AddWithValue("@Event", eventType!);
+            if (sql.Contains("@Command", StringComparison.Ordinal)) command.Parameters.AddWithValue("@Command", commandName!);
+            if (sql.Contains("@Company", StringComparison.Ordinal)) command.Parameters.AddWithValue("@Company", TestCompanyIds.CompanyA);
             return command;
         }
 
@@ -546,6 +641,107 @@ public sealed class CounterpartyTaxIdentitySqlServerRelationalAcceptanceTests
                 END;
                 """;
             await command.ExecuteNonQueryAsync();
+        }
+    }
+
+    private sealed class RevocableAuthority : IErpAuthorityRevalidationService
+    {
+        private int _revoked;
+        private int _deniedMeasurements;
+
+        public int DeniedMeasurements => Volatile.Read(ref _deniedMeasurements);
+
+        public void Revoke() => Volatile.Write(ref _revoked, 1);
+
+        public Task<PermissionScope> RevalidatePermissionScopeAsync(
+            string permission,
+            Guid companyId,
+            CancellationToken cancellationToken = default)
+        {
+            if (Volatile.Read(ref _revoked) != 0)
+            {
+                Interlocked.Increment(ref _deniedMeasurements);
+                return Task.FromResult(PermissionScope.Denied);
+            }
+
+            return Task.FromResult(new PermissionScope(
+                true,
+                true,
+                new HashSet<string>(StringComparer.Ordinal) { "SENTETIK-TAX-IDENTITY" },
+                new HashSet<Guid>(),
+                new HashSet<Guid>(),
+                new HashSet<Guid>()));
+        }
+    }
+
+    private sealed class DuplicateReadRevocationInterceptor(RevocableAuthority authority) : DbCommandInterceptor
+    {
+        private int _armed;
+        private int _triggered;
+
+        public bool Triggered => Volatile.Read(ref _triggered) != 0;
+
+        public void Arm() => Volatile.Write(ref _armed, 1);
+
+        public override ValueTask<DbDataReader> ReaderExecutedAsync(
+            DbCommand command,
+            CommandExecutedEventData eventData,
+            DbDataReader result,
+            CancellationToken cancellationToken = default)
+        {
+            if (Volatile.Read(ref _armed) != 0
+                && command.CommandText.Contains("[counterparty].[CompanyPartyAccounts]", StringComparison.Ordinal)
+                && command.CommandText.Contains("INNER JOIN", StringComparison.OrdinalIgnoreCase)
+                && command.CommandText.Contains("[TaxIdentityNumber]", StringComparison.Ordinal)
+                && Interlocked.CompareExchange(ref _triggered, 1, 0) == 0)
+            {
+                authority.Revoke();
+            }
+
+            return ValueTask.FromResult(result);
+        }
+    }
+
+    private sealed class WinnerFailureRevocationInterceptor(
+        Barrier barrier,
+        RevocableAuthority authority) : SaveChangesInterceptor
+    {
+        private int _armed;
+        private int _arrivals;
+        private int _failureObserved;
+
+        public bool FailureObserved => Volatile.Read(ref _failureObserved) != 0;
+
+        public void Arm() => Volatile.Write(ref _armed, 1);
+
+        public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (Volatile.Read(ref _armed) != 0
+                && eventData.Context is CounterpartyDbContext context
+                && context.ChangeTracker.Entries<CommandExecution>().Any(entry =>
+                    entry.Entity.CommandName == "counterparty.party.tax-identity.enter.v1")
+                && Interlocked.Increment(ref _arrivals) <= 2)
+            {
+                barrier.SignalAndWait(TimeSpan.FromSeconds(30), cancellationToken);
+            }
+
+            return ValueTask.FromResult(result);
+        }
+
+        public override Task SaveChangesFailedAsync(
+            DbContextErrorEventData eventData,
+            CancellationToken cancellationToken = default)
+        {
+            if (Volatile.Read(ref _armed) != 0)
+            {
+                Interlocked.Exchange(ref _failureObserved, 1);
+                authority.Revoke();
+            }
+
+            return Task.CompletedTask;
         }
     }
 }
