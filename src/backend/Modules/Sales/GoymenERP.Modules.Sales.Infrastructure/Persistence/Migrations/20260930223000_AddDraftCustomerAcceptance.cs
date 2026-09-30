@@ -39,7 +39,7 @@ public sealed class AddDraftCustomerAcceptance : Migration
         migrationBuilder.Sql("""
             IF EXISTS (SELECT 1 FROM [sales].[Drafts]
                        WHERE [CustomerAcceptanceRequired] = 1 OR [CustomerAcceptedRevision] IS NOT NULL)
-                THROW 51059, 'Sales customer acceptance cutover requires a forward fix.', 1;
+                THROW 51060, 'Sales customer acceptance cutover requires a forward fix.', 1;
             """);
         migrationBuilder.DropCheckConstraint(name: "CK_Drafts_CustomerAcceptance", schema: "sales", table: "Drafts");
         migrationBuilder.DropColumn(name: "CustomerAcceptedAtUtc", schema: "sales", table: "Drafts");
