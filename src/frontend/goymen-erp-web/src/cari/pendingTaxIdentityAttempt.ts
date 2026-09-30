@@ -7,6 +7,7 @@ import type { ContractContext } from './clientContract'
 export type TaxIdentitySender = (context: CommandContext) => Promise<CommandOutcome<null>>
 
 export interface FrozenTaxIdentityAttempt {
+  readonly operation: 'enter' | 'request' | `decide:${string}`
   readonly fingerprint: string
   readonly key: string
   readonly binding: string

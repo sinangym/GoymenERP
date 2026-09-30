@@ -83,6 +83,20 @@ function refusalText(status: number, body: unknown): string {
   return T.genericRefusal
 }
 
+function canRetryWithFreshView(attempt: FrozenTaxIdentityAttempt, view: TaxIdentityView): boolean {
+  if (attempt.operation === 'enter') {
+    return view.viewer.canUpdate && view.taxIdentityNumber === null && view.pendingChange === null
+  }
+  if (attempt.operation === 'request') {
+    return view.viewer.canUpdate && view.taxIdentityNumber !== null && view.pendingChange === null
+  }
+  return (
+    view.viewer.canApprove &&
+    !view.viewer.isRequesterOfPending &&
+    view.pendingChange?.id === attempt.operation.slice('decide:'.length)
+  )
+}
+
 export function CariTaxIdentityPanel({ partyId, companyId, namespace, contractContext }: Props) {
   const queryClient = useQueryClient()
   const boundary = useAuthBoundary()
@@ -173,7 +187,7 @@ export function CariTaxIdentityPanel({ partyId, companyId, namespace, contractCo
       return true
     }
     if (next.phase === 'unknown') {
-      setNotice({ tone: 'error', text: T.unknownOutcome, retry: () => void retryCurrentAttempt() })
+      setNotice(null)
       return false
     }
     if (next.phase === 'failed') {
@@ -191,13 +205,19 @@ export function CariTaxIdentityPanel({ partyId, companyId, namespace, contractCo
     return false
   }
 
-  const retryCurrentAttempt = async (): Promise<boolean> => {
+  const retryCurrentAttempt = async (allowed: boolean): Promise<boolean> => {
+    if (!allowed) return false
     const retry = retryAttempt(attemptRef.current)
     return retry.phase === 'submitting' ? dispatchAttempt(retry) : false
   }
 
   /** One command attempt: an unresolved key/body/context cannot be replaced by a changed form. */
-  const run = async (fingerprint: string, send: Sender, okText: string): Promise<boolean> => {
+  const run = async (
+    operation: FrozenTaxIdentityAttempt['operation'],
+    fingerprint: string,
+    send: Sender,
+    okText: string,
+  ): Promise<boolean> => {
     if (contractContext === null) {
       setNotice({ tone: 'error', text: T.contractNotReady })
       return false
@@ -205,11 +225,12 @@ export function CariTaxIdentityPanel({ partyId, companyId, namespace, contractCo
     const current = attemptRef.current
     const currentFrozen = current.phase === 'idle' ? null : current.snapshot.payload
     if (currentFrozen !== null && currentFrozen.fingerprint !== fingerprint) {
-      setNotice({ tone: 'error', text: T.unknownOutcome, retry: () => void retryCurrentAttempt() })
+      setNotice({ tone: 'error', text: T.unknownOutcome })
       return false
     }
-    if (current.phase === 'unknown' || current.phase === 'abandoned') return retryCurrentAttempt()
+    if (current.phase === 'unknown' || current.phase === 'abandoned') return false
     const frozen: FrozenTaxIdentityAttempt = {
+      operation,
       fingerprint,
       key: generateAttemptKey(),
       binding,
@@ -221,7 +242,7 @@ export function CariTaxIdentityPanel({ partyId, companyId, namespace, contractCo
     return dispatchAttempt(
       beginAttempt({
         key: frozen.key,
-        operation: `counterparty.tax-identity:${fingerprint.split(':', 1)[0]}`,
+        operation: `counterparty.tax-identity:${operation}`,
         binding: frozen.binding,
         payload: frozen,
       }),
@@ -256,13 +277,14 @@ export function CariTaxIdentityPanel({ partyId, companyId, namespace, contractCo
   const view = outcome.data
   const pending = view.pendingChange
   const retainedAttempt = attempt.phase === 'idle' ? null : attempt.snapshot.payload
-  const visibleNotice = notice ?? (unresolved && retainedAttempt !== null
+  const retryAllowed = retainedAttempt !== null && canRetryWithFreshView(retainedAttempt, view)
+  const visibleNotice = unresolved && retainedAttempt !== null
     ? {
         tone: 'error' as const,
         text: T.unknownOutcome,
-        retry: () => void retryCurrentAttempt(),
+        retry: retryAllowed ? () => void retryCurrentAttempt(true) : undefined,
       }
-    : null)
+    : notice
   return (
     <div className={styles.panel} data-testid="cari-tax-identity" data-state="ready">
       <h3 className={styles.title}>{T.heading}</h3>
@@ -295,6 +317,7 @@ export function CariTaxIdentityPanel({ partyId, companyId, namespace, contractCo
           locked={unresolved}
           onDecide={(decision, note) =>
             run(
+                `decide:${pending.id}`,
               `decide:${pending.id}:${decision}:${note ?? ''}:${view.version}`,
               (context) => decideTaxIdentityChange(context, partyId, view.version, pending.id, decision, note),
               decision === 'approve' ? T.approved : T.rejected,
@@ -314,6 +337,7 @@ export function CariTaxIdentityPanel({ partyId, companyId, namespace, contractCo
             probeDuplicates={probeDuplicates}
             onSend={(number) =>
               run(
+                'enter',
                 `enter:${number}:${view.version}`,
                 (context) => enterTaxIdentity(context, partyId, view.version, number),
                 T.saved,
@@ -329,6 +353,7 @@ export function CariTaxIdentityPanel({ partyId, companyId, namespace, contractCo
             probeDuplicates={probeDuplicates}
             onSend={(number, reason) =>
               run(
+                'request',
                 `request:${number}:${reason}:${view.version}`,
                 (context) => requestTaxIdentityChange(context, partyId, view.version, number, reason),
                 T.requested,

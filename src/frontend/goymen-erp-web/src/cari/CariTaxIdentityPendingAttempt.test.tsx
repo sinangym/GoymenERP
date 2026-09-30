@@ -49,7 +49,7 @@ function rememberContract(namespace: string) {
   recordContractRead(contract, { status: 200, bodyValidated: true, ack: COUNTERPARTY_CONTRACT_VERSION })
 }
 
-function Harness() {
+function Harness({ onReauthorize }: { readonly onReauthorize: () => void }) {
   const [shell, dispatch] = useReducer(shellReducer, ready)
   useEffect(() => {
     if (shell.activeContext?.capabilityGeneration !== null) return
@@ -67,6 +67,22 @@ function Harness() {
   return (
     <ShellStateContext.Provider value={shell}>
       <ShellDispatchContext.Provider value={dispatch}>
+        {shell.activeContext?.capabilityGeneration === 'generation-2' ? (
+          <button
+            type="button"
+            onClick={() => {
+              onReauthorize()
+              dispatch({
+                type: 'ROUTE_ENTRY_VERIFIED',
+                forEntry: shell.routeEntryGeneration,
+                generation: 'generation-3',
+                capabilities: [],
+              })
+            }}
+          >
+            Test yetkisini yenile
+          </button>
+        ) : null}
         <CariTaxIdentityPanel
           key={`${namespace}:${PARTY}`}
           partyId={PARTY}
@@ -95,9 +111,11 @@ describe('Cari tax identity pending attempt across the real shell boundary', () 
       activeContext: companyContext('generation-2'),
     }
     rememberContract(namespaceOf(reverified))
+    rememberContract(namespaceOf({ ...ready, activeContext: companyContext('generation-3') }))
 
     const calls: Array<{ method: string; headers: Record<string, string>; body: unknown }> = []
     let putCount = 0
+    let viewerAuthorized = true
     vi.stubGlobal(
       'fetch',
       vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
@@ -123,7 +141,7 @@ describe('Cari tax identity pending attempt across the real shell boundary', () 
             duplicates: [],
             pendingChange: null,
             lastDecidedChange: null,
-            viewer: { canUpdate: true, canApprove: false, isRequesterOfPending: false },
+            viewer: { canUpdate: viewerAuthorized, canApprove: false, isRequesterOfPending: false },
           }), {
             status: 200,
             headers: { 'Content-Type': 'application/json', [COUNTERPARTY_CONTRACT_HEADER]: COUNTERPARTY_CONTRACT_VERSION },
@@ -132,6 +150,7 @@ describe('Cari tax identity pending attempt across the real shell boundary', () 
         putCount += 1
         if (putCount === 1) throw new TypeError('response lost')
         if (putCount === 2) {
+          viewerAuthorized = false
           return new Response(JSON.stringify({ code: 'forbidden', status: 403 }), {
             status: 403,
             headers: { 'Content-Type': 'application/problem+json' },
@@ -149,7 +168,7 @@ describe('Cari tax identity pending attempt across the real shell boundary', () 
     render(
       <QueryClientProvider client={queryClient}>
         <MemoryRouter>
-          <Harness />
+          <Harness onReauthorize={() => { viewerAuthorized = true }} />
         </MemoryRouter>
       </QueryClientProvider>,
     )
@@ -159,6 +178,9 @@ describe('Cari tax identity pending attempt across the real shell boundary', () 
     await user.click(screen.getByRole('button', { name: 'Kaydet' }))
     await user.click(await screen.findByRole('button', { name: 'Aynı işlemi yeniden gönder' }))
     await waitFor(() => expect(calls.filter((call) => call.method === 'PUT')).toHaveLength(2))
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Aynı işlemi yeniden gönder' })).toBeNull())
+    expect(calls.filter((call) => call.method === 'PUT')).toHaveLength(2)
+    await user.click(await screen.findByRole('button', { name: 'Test yetkisini yenile' }))
     await user.click(await screen.findByRole('button', { name: 'Aynı işlemi yeniden gönder' }))
     await waitFor(() => expect(calls.filter((call) => call.method === 'PUT')).toHaveLength(3))
 
