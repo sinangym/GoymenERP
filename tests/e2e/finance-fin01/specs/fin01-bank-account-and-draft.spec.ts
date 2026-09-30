@@ -1168,9 +1168,9 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
         stage: 'Recorded',
         version: '2',
         amount: { money: { amount: '321.45' } },
-        reversalSourceId: null,
-        reversesSourceId: null,
       },
+      reversalSourceId: null,
+      reversesSourceId: null,
       unallocated: { knowledge: 'Known', amount: { money: { amount: '321.45' } } },
     })
     expectEveryAnswerRewritten(answered, rewritten)
