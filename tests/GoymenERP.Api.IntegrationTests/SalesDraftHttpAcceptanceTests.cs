@@ -296,6 +296,22 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
         public Task<SalesOrderDraftCancellationResponse> GetDraftCancellationAsync(Guid draftId, CancellationToken cancellationToken = default) =>
             Cancellation(draftId);
 
+        public Task<SalesOrderDraftResponse> RequestRemainderChangeAsync(Guid draftId, SalesDraftRemainderChangeRequest request,
+            SalesCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+            throw new SalesDraftServiceException(404, "not_found");
+
+        public Task<SalesOrderDraftResponse> ApproveRemainderChangeAsync(Guid draftId, int changeNo,
+            SalesDraftRemainderDecisionRequest request, SalesCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+            throw new SalesDraftServiceException(404, "not_found");
+
+        public Task<SalesOrderDraftResponse> RejectRemainderChangeAsync(Guid draftId, int changeNo,
+            SalesDraftRemainderDecisionRequest request, SalesCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+            throw new SalesDraftServiceException(404, "not_found");
+
+        public Task<SalesOrderDraftRemainderChangesResponse> GetRemainderChangesAsync(Guid draftId,
+            CancellationToken cancellationToken = default) =>
+            throw new SalesDraftServiceException(404, "not_found");
+
         private Task<SalesOrderDraftResponse> StateAsync(string command, Guid draftId, SalesDraftStateCommandRequest request, SalesCommandMetadata metadata)
         {
             StateCalls.Add((command, draftId, request.ExpectedVersion, request.Reason, metadata.IdempotencyKey));
