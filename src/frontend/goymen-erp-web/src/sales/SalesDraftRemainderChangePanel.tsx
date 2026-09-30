@@ -140,13 +140,13 @@ export function SalesDraftRemainderChangePanel({
         <>
           {changes?.floorStatus === REMAINDER_FLOOR.unreadable ? <p role="alert" className={styles.notice}>{TEXT.unreadable}</p> : null}
           {notice === null ? null : <p role="status" className={styles.notice}>{notice}</p>}
+          {selected === null ? null : <p className={styles.muted}>Yüklenen: {selected.loaded ?? 'okunamadı'} · Sevk: {selected.shipped ?? 'okunamadı'} · Teslim: {selected.delivered ?? 'okunamadı'} · Alt sınır: {selected.minimumQuantity ?? 'okunamadı'}</p>}
           {canRequest ? (
             <div className={styles.actions} data-testid="sales-remainder-request">
               <label htmlFor="sales-remainder-line">{TEXT.line}</label>
               <select id="sales-remainder-line" value={lineId} disabled={busy} onChange={(event) => setLineId(event.target.value)}>
                 {changes?.lines.map((line) => <option key={line.lineId} value={line.lineId}>{line.lineNo}. satır · {line.quantity}</option>)}
               </select>
-              {selected === null ? null : <p className={styles.muted}>Yüklenen: {selected.loaded ?? 'okunamadı'} · Sevk: {selected.shipped ?? 'okunamadı'} · Teslim: {selected.delivered ?? 'okunamadı'} · Alt sınır: {selected.minimumQuantity ?? 'okunamadı'}</p>}
               <label htmlFor="sales-remainder-kind">{TEXT.kind}</label>
               <select id="sales-remainder-kind" value={kind} disabled={busy} onChange={(event) => setKind(event.target.value as typeof kind)}>
                 <option value={REMAINDER_KIND.cancel}>{TEXT.cancel}</option><option value={REMAINDER_KIND.revise}>{TEXT.revise}</option>
