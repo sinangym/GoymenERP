@@ -212,6 +212,14 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
 
         public List<Guid> RevisionReads { get; } = [];
 
+        /// <summary>AT-018: the HTTP surface of the line-pricing reads is proven with the real service; the stub answers 404.</summary>
+        public Task<SalesOrderDraftLinePricingResponse> GetDraftLinePricingAsync(Guid draftId, CancellationToken cancellationToken = default) =>
+            Task.FromException<SalesOrderDraftLinePricingResponse>(new SalesDraftServiceException(404, "not_found"));
+
+        public Task<SalesOrderDraftPriceReferencesResponse> GetLinePriceReferencesAsync(Guid draftId, Guid lineId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromException<SalesOrderDraftPriceReferencesResponse>(new SalesDraftServiceException(404, "not_found"));
+
         public Task<SalesOrderDraftRevisionsResponse> GetDraftRevisionsAsync(Guid draftId, CancellationToken cancellationToken = default)
         {
             RevisionReads.Add(draftId);

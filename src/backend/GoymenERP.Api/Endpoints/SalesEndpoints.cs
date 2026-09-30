@@ -348,6 +348,7 @@ public static class SalesEndpoints
         // the service; another company's draft is 404.
         MapDraftDetail(drafts);
         MapDraftRevisions(drafts);
+        MapDraftLinePricing(drafts);
         MapCommercialRevisionCommand(drafts);
         MapQuantityRevisionCommand(drafts);
         MapDeliveryScheduleCommand(drafts);
@@ -810,6 +811,60 @@ public static class SalesEndpoints
         })
             .WithName("GetSalesOrderDraftRevisionsV1")
             .Produces<SalesOrderDraftRevisionsResponse>()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+    }
+
+    /// <summary>
+    /// AT-018 / AT-021: every line's list-price reference, adjustments and net (the service measures the draft read AND the
+    /// price read), and one line's Product list-price candidates (the price-write name; 503 until the Product owner is composed).
+    /// </summary>
+    private static void MapDraftLinePricing(RouteGroupBuilder drafts)
+    {
+        drafts.MapGet("/{id:guid}/line-pricing", async (
+            Guid id,
+            HttpContext httpContext,
+            [FromServices] ISalesDraftService service,
+            ICorrelationContext correlation,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            try
+            {
+                return Results.Json(await service.GetDraftLinePricingAsync(id, cancellationToken), SalesDraftJson.Options);
+            }
+            catch (SalesDraftServiceException exception)
+            {
+                return DraftProblem(exception, correlation);
+            }
+        })
+            .WithName("GetSalesOrderDraftLinePricingV1")
+            .Produces<SalesOrderDraftLinePricingResponse>()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
+        drafts.MapGet("/{id:guid}/lines/{lineId:guid}/price-references", async (
+            Guid id,
+            Guid lineId,
+            HttpContext httpContext,
+            [FromServices] ISalesDraftService service,
+            ICorrelationContext correlation,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            try
+            {
+                return Results.Json(await service.GetLinePriceReferencesAsync(id, lineId, cancellationToken), SalesDraftJson.Options);
+            }
+            catch (SalesDraftServiceException exception)
+            {
+                return DraftProblem(exception, correlation);
+            }
+        })
+            .WithName("GetSalesOrderDraftLinePriceReferencesV1")
+            .Produces<SalesOrderDraftPriceReferencesResponse>()
             .ProducesErpCodeLessNotFound()
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();

@@ -168,6 +168,12 @@ export interface HarnessConfig {
   readonly onCancellation?: (url: string, companyId: string | null) => Response | Promise<Response>
   /** DEC-SAL-002: a POST on `/sales/drafts/{id}/quantity-revision`. */
   readonly onQuantityRevision?: (call: RecordedCall) => Response | Promise<Response>
+  /** K3 / AT-018: a POST on `/sales/drafts/{id}/commercial-revision`. */
+  readonly onCommercialRevision?: (call: RecordedCall) => Response | Promise<Response>
+  /** AT-018: GET `/sales/drafts/{id}/line-pricing`; default: 404 (the pricing is shown as unreadable). */
+  readonly onLinePricing?: (url: string, companyId: string | null) => Response | Promise<Response>
+  /** AT-018: GET `/sales/drafts/{id}/lines/{lineId}/price-references`. */
+  readonly onPriceReferences?: (url: string, companyId: string | null) => Response | Promise<Response>
 }
 
 export function installFetch(config: HarnessConfig = {}) {
@@ -202,6 +208,17 @@ export function installFetch(config: HarnessConfig = {}) {
         if (call.method === 'POST' && /\/sales\/drafts\/[^/?]+\/delivery-schedule$/.test(url)) {
           if (config.onDeliverySchedule === undefined) throw new Error('unexpected delivery-schedule update')
           return config.onDeliverySchedule(call)
+        }
+        if (call.method === 'POST' && /\/sales\/drafts\/[^/?]+\/commercial-revision$/.test(url)) {
+          if (config.onCommercialRevision === undefined) throw new Error('unexpected commercial revision')
+          return config.onCommercialRevision(call)
+        }
+        if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/line-pricing$/.test(url)) {
+          return config.onLinePricing?.(url, call.companyId) ?? json({ status: 404 }, 404)
+        }
+        if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/lines\/[^/?]+\/price-references$/.test(url)) {
+          if (config.onPriceReferences === undefined) throw new Error('unexpected price-references read')
+          return config.onPriceReferences(url, call.companyId)
         }
         if (call.method === 'POST' && /\/sales\/drafts\/[^/?]+\/quantity-revision$/.test(url)) {
           if (config.onQuantityRevision === undefined) throw new Error('unexpected quantity revision')

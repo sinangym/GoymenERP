@@ -53,7 +53,8 @@ public sealed partial class SalesDraftService(
     ISalesPartyContactInformationPortV1? contactInformation = null,
     ISalesOrderDeliveryReadPortV1? deliveries = null,
     ISalesOrderAllocationReadPortV1? allocations = null,
-    ISalesOrderLoadingReadPortV1? loadings = null) : ISalesDraftService
+    ISalesOrderLoadingReadPortV1? loadings = null,
+    IProductPriceReferenceReaderV1? priceReferences = null) : ISalesDraftService
 {
     private const int DefaultPageSize = 50;
     private const int MaximumPageSize = 100;
@@ -394,8 +395,14 @@ public sealed partial class SalesDraftService(
             throw new SalesDraftServiceException(404, "not_found");
         }
 
+        // AT-018: a line naming a price list version gets the owner's price copied as its reference (read under the fence,
+        // before the store's single save); a line without one keeps K3's three fields only.
+        var resolved = await ResolvePriceReferencesAsync(scope, permission!, draftId, request, cancellationToken);
+        scope = resolved.Scope;
         var inputs = request.Lines
-            .Select(line => new LineCommercialInput(line.LineId, new CommercialDraftFields(line.UnitPrice, line.PriceUnitId, line.DiscountPercent)))
+            .Select(line => new LineCommercialInput(line.LineId, new CommercialDraftFields(line.UnitPrice, line.PriceUnitId, line.DiscountPercent,
+                resolved.References.TryGetValue(line.LineId, out var reference) ? reference : null, line.DiscountAmount, line.SurchargePercent,
+                line.SurchargeAmount)))
             .ToArray();
         var audit = new SalesDraftStateAudit("sales.order-draft.commercial-revised.v1", "ReviseCommercial",
             "Satış sipariş taslağının fiyat ve iskontosu revize edildi");
@@ -459,6 +466,12 @@ public sealed partial class SalesDraftService(
             SalesRuleCodes.PriceScaleExceeded or SalesRuleCodes.PriceUnitPairing => "unitPrice",
             SalesRuleCodes.PriceUnitUnsupported => "priceUnitId",
             SalesRuleCodes.DiscountOutOfRange or SalesRuleCodes.DiscountWithoutPrice => "discountPercent",
+            // AT-018 / AT-021: the reference and the visible adjustments.
+            SalesRuleCodes.PriceBelowFloor or SalesRuleCodes.AdjustmentWithoutPrice => "unitPrice",
+            SalesRuleCodes.PriceReferenceMismatch => "priceReference",
+            SalesRuleCodes.DiscountExceedsPrice => "discountAmount",
+            SalesRuleCodes.SurchargeOutOfRange => "surchargePercent",
+            SalesRuleCodes.AdjustmentKindConflict or SalesRuleCodes.AdjustmentScaleExceeded => null,
             _ => null,
         };
         if (member is null || exception.LineId is not { } lineId)

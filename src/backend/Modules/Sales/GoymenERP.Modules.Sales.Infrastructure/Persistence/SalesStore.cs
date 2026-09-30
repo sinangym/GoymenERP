@@ -485,6 +485,7 @@ public sealed class SalesStore(
                     UnitPrice = line.Commercial.UnitPrice,
                     PriceUnitId = line.Commercial.PriceUnitId,
                     DiscountPercent = line.Commercial.DiscountPercent,
+                    PricingJson = SalesLinePricingJson.Serialize(line.Commercial),
                 });
             }
         }
@@ -515,6 +516,7 @@ public sealed class SalesStore(
                 lineRow.UnitPrice = line.Commercial.UnitPrice;
                 lineRow.PriceUnitId = line.Commercial.PriceUnitId;
                 lineRow.DiscountPercent = line.Commercial.DiscountPercent;
+                lineRow.PricingJson = SalesLinePricingJson.Serialize(line.Commercial);
             }
         }
 
@@ -891,7 +893,13 @@ public sealed class SalesStore(
         revision = draft.Revision,
         state = draft.ApprovalState.ToString(),
         approval = draft.Approval,
-        lines = draft.Lines.Select(line => new { line.LineNo, line.Commercial.UnitPrice, line.Commercial.PriceUnitId, line.Commercial.DiscountPercent }).ToArray(),
+        lines = draft.Lines.Select(line => new
+        {
+            line.LineNo, line.Commercial.UnitPrice, line.Commercial.PriceUnitId, line.Commercial.DiscountPercent,
+            // AT-018 / AT-021: the reference, the visible adjustments and the net in the audit trail.
+            line.Commercial.Reference, line.Commercial.DiscountAmount, line.Commercial.SurchargePercent, line.Commercial.SurchargeAmount,
+            netUnitPrice = SalesLinePriceCalculator.NetUnitPriceText(line.Commercial),
+        }).ToArray(),
     };
 
     public async Task<SalesOrderDraft?> FindDraftAsync(Guid draftId, CancellationToken cancellationToken = default)
@@ -995,7 +1003,7 @@ public sealed class SalesStore(
                     line.Quantity,
                     line.RequestedDeliveryDate,
                     line.Note,
-                    new CommercialDraftFields(line.UnitPrice, line.PriceUnitId, line.DiscountPercent),
+                    SalesLinePricingJson.Restore(line.UnitPrice, line.PriceUnitId, line.DiscountPercent, line.PricingJson),
                     lineSlices), row.UpdatedAtUtc);
                 if (restored.LineNo != line.LineNo)
                 {
@@ -1014,7 +1022,7 @@ public sealed class SalesStore(
                     archived.MoneyProfileId, archived.MoneyProfileVersion, archived.MoneyScale, archived.ArchivedAtUtc, archived.ArchivedBy,
                     [.. revisionLines.Where(line => line.DraftId == row.Id && line.Revision == archived.Revision).OrderBy(line => line.LineNo)
                         .Select(line => new RevisionLineSnapshot(line.LineId, line.LineNo, line.ProductId, line.ProductVersion, line.OrderUnitId,
-                            line.QuantityText, new CommercialDraftFields(line.UnitPrice, line.PriceUnitId, line.DiscountPercent)))],
+                            line.QuantityText, SalesLinePricingJson.Restore(line.UnitPrice, line.PriceUnitId, line.DiscountPercent, line.PricingJson)))],
                     archived.Reason));
             }
 

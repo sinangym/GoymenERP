@@ -88,12 +88,20 @@ export interface DraftStateCommandRequest {
   readonly reason?: string
 }
 
-/** K3: every line exactly once, with nullable commercial values retained as text. */
+/**
+ * K3: every line exactly once, with nullable commercial values retained as text. AT-018 / AT-021 (contract delta): the
+ * Product price-list version the line is priced from (ids only — the server re-reads the price), the discount as an
+ * amount, and the maturity surcharge (vade farkı) as a percent or an amount.
+ */
 export interface DraftLineCommercialRequest {
   readonly lineId: string
   readonly unitPrice: string | null
   readonly priceUnitId: string | null
   readonly discountPercent: string | null
+  readonly priceReference: { readonly priceListId: string; readonly versionNo: number } | null
+  readonly discountAmount: string | null
+  readonly surchargePercent: string | null
+  readonly surchargeAmount: string | null
 }
 
 export interface DraftCommercialRevisionRequest {

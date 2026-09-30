@@ -572,3 +572,52 @@ export const REVISION_HISTORY_TEXT = {
   notPriced: 'Fiyat girilmemiş',
   notSpecified: 'Belirtilmemiş',
 } as const
+
+/**
+ * AT-018 / AT-021 on the order line: the list-price reference and the visible adjustments. Texts only — the net and every
+ * rule are the server's (the screen never computes a price).
+ */
+export const LINE_PRICING_TEXT = {
+  heading: 'Satır fiyatları',
+  note: 'Liste fiyatı referanstır ve değiştirilene kadar varsayılan fiyattır; iskonto ve vade farkı ayrı gösterilir. Net fiyatı sunucu hesaplar.',
+  withheld: 'Fiyat ayrıntılarını görme yetkiniz yok.',
+  unreadable: 'Satır fiyat ayrıntıları okunamadı.',
+  reference: 'Referans liste fiyatı',
+  noReference: 'Referans yok (elle fiyat)',
+  referenceText: (name: string, versionNo: number, price: string, currency: string) => `${name} · Sürüm ${versionNo}: ${price} ${currency}`,
+  floorText: (floor: string) => `alt fiyat ${floor}`,
+  source: 'Fiyat kaynağı',
+  sourceReference: 'Liste fiyatı',
+  sourceManual: 'Elle girildi',
+  unitPrice: 'Birim fiyat',
+  discount: 'İskonto',
+  surcharge: 'Vade farkı',
+  net: 'Net birim fiyat',
+  none: '—',
+  percent: (value: string) => `%${value}`,
+  amount: (value: string) => `${value} tutar`,
+  fetchReferences: 'Liste fiyatını getir',
+  fetchingReferences: 'Liste fiyatları okunuyor…',
+  noReferences: 'Bu ürün için siparişin tarihinde ve para biriminde geçerli liste fiyatı yok.',
+  referencesUnavailable: 'Liste fiyatları okunamadı.',
+  useReference: 'Bu fiyatı kullan',
+  removeReference: 'Referansı kaldır',
+  overwriteHint: 'Liste fiyatını değiştirmek için birim fiyatı elle yazın; referans görünür kalır.',
+  discountKind: 'İskonto türü',
+  surchargeKind: 'Vade farkı türü',
+  kindPercent: 'Yüzde (%)',
+  kindAmount: 'Tutar',
+  surchargeValue: 'Vade farkı',
+  fieldError: {
+    sales_price_below_floor: 'Net fiyat liste alt fiyatının altında; istisna onayı tanımlı olmadığından kaydedilmedi.',
+    sales_adjustment_kind_conflict: 'İskonto ve vade farkı ya yüzde ya tutar olarak verilir.',
+    sales_adjustment_scale_exceeded: 'Tutar para biriminin ondalık basamağını aşıyor.',
+    sales_surcharge_out_of_range: 'Vade farkı yüzdesi 0 ile 100 arasında olmalıdır.',
+    sales_adjustment_without_price: 'Referans, iskonto ve vade farkı için birim fiyat gerekir.',
+    sales_discount_exceeds_price: 'İskonto tutarı birim fiyatı aşamaz.',
+    sales_price_reference_mismatch: 'Referans liste fiyatı satırın fiyat biriminde olmalıdır.',
+    price_reference_unavailable: 'Seçilen liste fiyatı artık bu satırı fiyatlamıyor; yeniden getirin.',
+    price_reference_currency_mismatch: 'Liste fiyatı siparişin para biriminde değil.',
+  } as Record<string, string>,
+  lineError: (lineNo: number, text: string) => `${lineNo}. satır: ${text}`,
+} as const

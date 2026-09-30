@@ -86,10 +86,33 @@ public sealed record OwnerReference(Guid Id, string ExpectedVersion);
 /// policy. The only rule held here is #257's pairing: a price needs its price unit and a price
 /// unit needs a price.
 /// </summary>
-public sealed record CommercialDraftFields(string? UnitPrice, Guid? PriceUnitId, string? DiscountPercent)
+/// <para>
+/// AT-018 / AT-021 (user decision 2026-09-30): the list price of a Product price list is carried as a REFERENCE beside
+/// the line's own unit price - the default until the person changes it - and the adjustments stay visible: a discount as
+/// a percent OR an amount, and a maturity surcharge (vade farkı) as a percent OR an amount. The net is never stored; it is
+/// <see cref="SalesLinePriceCalculator"/>'s answer from these values.
+/// </para>
+public sealed record CommercialDraftFields(string? UnitPrice, Guid? PriceUnitId, string? DiscountPercent,
+    PriceReferenceSnapshot? Reference = null, string? DiscountAmount = null, string? SurchargePercent = null,
+    string? SurchargeAmount = null)
 {
     public static CommercialDraftFields None { get; } = new(null, null, null);
+
+    /// <summary>Whether anything beyond K3's three fields is present (the reference or an AT-018 adjustment).</summary>
+    public bool HasPricingDetail => Reference is not null || DiscountAmount is not null || SurchargePercent is not null || SurchargeAmount is not null;
+
+    /// <summary>"Reference" when the unit price is the reference's list price, "Manual" when it was overwritten; null without a price.</summary>
+    public string? PriceSource => UnitPrice is null ? null
+        : Reference is not null && SalesLinePriceCalculator.SameValue(Reference.UnitPrice, UnitPrice) ? "Reference" : "Manual";
 }
+
+/// <summary>
+/// AT-018 / AT-021: the Product price list price a line was priced from, copied at the revision (a later version of the list
+/// never changes it): the list, its version and validity, the currency and VAT basis, the price unit, the list price and the
+/// optional floor, all as exact text.
+/// </summary>
+public sealed record PriceReferenceSnapshot(Guid PriceListId, string PriceListName, int VersionNo, DateOnly ValidFrom, DateOnly? ValidThrough,
+    string CurrencyCode, Guid PriceUnitId, string UnitPrice, string? FloorUnitPrice, string VatBasis);
 
 /// <summary>K3 Head B: one line's new commercial fields in a commercial revision, addressed by the client line id.</summary>
 public sealed record LineCommercialInput(Guid LineId, CommercialDraftFields Commercial);

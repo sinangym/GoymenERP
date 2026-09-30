@@ -1322,6 +1322,8 @@ public sealed partial class SalesDraftServiceTests
         public ISalesOrderAllocationReadPortV1? Allocations { get; set; }
         /// <summary>DEC-SAL-005: the loading owner's read port (Logistics); null = not composed.</summary>
         public ISalesOrderLoadingReadPortV1? Loadings { get; set; }
+        /// <summary>AT-018: the Product price-list reference read; null = not composed.</summary>
+        public IProductPriceReferenceReaderV1? PriceReferences { get; set; }
         public FixedActiveRoleCodeReader ActiveRoleCodes { get; } = new();
         public SalesDraftServiceBindings Bindings { get; set; } = new(CreatePermission, ReadPermission, ApprovePermission, PricePermission, PriceReadPermission, SchedulePermission,
             CancelPermission, QuantityPermission);
@@ -1332,7 +1334,7 @@ public sealed partial class SalesDraftServiceTests
             company.Set(Company);
             return new SalesDraftService(company, User, Authority, ActiveRoleCodes, new FixedCorrelation(), Accounts, Settings,
                 NoProducts ? null : Products, Store, Bindings, TimeProvider.System, NoContactInformation ? null : ContactInformation, Deliveries,
-                Allocations, Loadings);
+                Allocations, Loadings, PriceReferences);
         }
 
         public void ResetOwnerCalls()

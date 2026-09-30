@@ -372,6 +372,72 @@ public sealed class SalesOrderDraft
                     "İskonto yüzdesi 0 ile 100 arasında olmalıdır.");
             }
         }
+
+        RequirePricingDetail(commercial);
+    }
+
+    /// <summary>
+    /// AT-018 / AT-021: the reference and the visible adjustments - each kind is a percent OR an amount; an amount is exact
+    /// text within the money profile's scale (never rounded); a surcharge percent is 0..100; a discount amount never takes
+    /// the net below zero; the reference is in the line's price unit; and, when the reference carries a floor, the net
+    /// (<see cref="SalesLinePriceCalculator"/>) is not below it (AT-021, fail-closed: no exception approver is decided).
+    /// Whether the reference is the Product owner's current answer is the caller's check (it reads the owner).
+    /// </summary>
+    private void RequirePricingDetail(CommercialDraftFields commercial)
+    {
+        if (!commercial.HasPricingDetail)
+        {
+            return;
+        }
+
+        if (commercial.UnitPrice is not { } price)
+        {
+            throw new SalesRuleException(SalesRuleCodes.AdjustmentWithoutPrice,
+                "Referans fiyat, iskonto tutarı ve vade farkı bir birim fiyat olmadan verilemez.");
+        }
+
+        if ((commercial.DiscountPercent is not null && commercial.DiscountAmount is not null)
+            || (commercial.SurchargePercent is not null && commercial.SurchargeAmount is not null))
+        {
+            throw new SalesRuleException(SalesRuleCodes.AdjustmentKindConflict,
+                "İskonto ve vade farkı ya yüzde ya tutar olarak verilir; ikisi birden verilmez.");
+        }
+
+        foreach (var amount in new[] { commercial.DiscountAmount, commercial.SurchargeAmount })
+        {
+            if (amount is not null && DecimalPlaces(amount) > Money.Scale)
+            {
+                throw new SalesRuleException(SalesRuleCodes.AdjustmentScaleExceeded,
+                    $"Tutar en fazla {Money.Scale} ondalık taşıyabilir; fazlası yuvarlanmaz, reddedilir.");
+            }
+        }
+
+        if (commercial.SurchargePercent is { } surcharge && !IsPercent(surcharge))
+        {
+            throw new SalesRuleException(SalesRuleCodes.SurchargeOutOfRange, "Vade farkı yüzdesi 0 ile 100 arasında olmalıdır.");
+        }
+
+        if (commercial.DiscountAmount is { } discountAmount
+            && SalesLinePriceCalculator.Parse(discountAmount) > SalesLinePriceCalculator.Parse(price))
+        {
+            throw new SalesRuleException(SalesRuleCodes.DiscountExceedsPrice, "İskonto tutarı birim fiyatı aşamaz.");
+        }
+
+        if (commercial.Reference is { } reference)
+        {
+            if (reference.PriceUnitId != commercial.PriceUnitId)
+            {
+                throw new SalesRuleException(SalesRuleCodes.PriceReferenceMismatch,
+                    "Referans liste fiyatı satırın fiyat biriminde olmalıdır.");
+            }
+
+            if (reference.FloorUnitPrice is { } floor
+                && SalesLinePriceCalculator.NetUnitPrice(commercial) is { } net && net < SalesLinePriceCalculator.Parse(floor))
+            {
+                throw new SalesRuleException(SalesRuleCodes.PriceBelowFloor,
+                    "Net fiyat liste alt fiyatının altında; istisna onayı tanımlı olmadığından kaydedilmez.");
+            }
+        }
     }
 
     /// <summary>The decimals of a plain decimal text ("12.50" → 2, "12" → 0); the wire has already required the shape.</summary>
