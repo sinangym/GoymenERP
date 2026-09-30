@@ -128,6 +128,19 @@ public static class SalesRuleCodes
     /// <summary>A cancellation reason over the technical bound (the note's) is refused, never cut.</summary>
     public const string CancellationReasonTooLong = "sales_cancellation_reason_too_long";
 
+    // Partial delivery (user decision 2026-09-30): the undelivered remainder of a partly delivered line is cancelled or its
+    // quantity revised, with approval; the delivered and loaded part is kept.
+    /// <summary>The line has no recorded shipment yet: it is not partly delivered, so its remainder is not this command's (a revision is).</summary>
+    public const string RemainderNotStarted = "sales_remainder_not_started";
+    /// <summary>Nothing of the line is left beyond what the delivery owner has loaded: there is no remainder to cancel.</summary>
+    public const string RemainderNone = "sales_remainder_none";
+    /// <summary>The new quantity is below what the delivery owner has loaded (loaded ≥ shipped ≥ delivered): never reduced below it.</summary>
+    public const string RemainderBelowFloor = "sales_remainder_below_floor";
+    /// <summary>The revised quantity equals the current one: an approval is not asked for nothing.</summary>
+    public const string RemainderNoChange = "sales_remainder_no_change";
+    /// <summary>The command names a line the order does not have.</summary>
+    public const string RemainderLineUnknown = "sales_remainder_line_unknown";
+
     public const string TooManySlices = "sales_too_many_slices";
     public const string DuplicateSliceId = "sales_duplicate_slice_id";
     public const string SliceUnitMismatch = "sales_slice_unit_mismatch";

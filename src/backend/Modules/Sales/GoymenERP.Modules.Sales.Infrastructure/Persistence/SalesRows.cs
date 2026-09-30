@@ -244,6 +244,58 @@ internal sealed class DraftDeliveryScheduleDateRow : ISalesTenantRow
 }
 
 /// <summary>
+/// Partial delivery (user decision 2026-09-30): one requested remainder change of a partly delivered line (append-only): its
+/// number on the order, the revision it was asked against, the line (number + client id), the kind (1 Cancel / 2 Revise), the
+/// line's quantity text when asked, the requested quantity (Revise only, the text verbatim), the reason, who asked and when,
+/// the delivery owner's loaded / shipped / delivered totals at the request, and the draft version the request produced. The
+/// decision is its own row (<see cref="DraftRemainderDecisionRow"/>): nothing here is ever rewritten.
+/// </summary>
+internal sealed class DraftRemainderChangeRow : ISalesTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid DraftId { get; set; }
+    public int ChangeNo { get; set; }
+    public int Revision { get; set; }
+    public int LineNo { get; set; }
+    public Guid LineId { get; set; }
+    public int Kind { get; set; }
+    public string OrderedQuantityText { get; set; } = string.Empty;
+    public decimal? RequestedQuantity { get; set; }
+    public string? RequestedQuantityText { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public string RequestedBy { get; set; } = string.Empty;
+    public DateTimeOffset RequestedAtUtc { get; set; }
+    public decimal LoadedQuantity { get; set; }
+    public decimal ShippedQuantity { get; set; }
+    public decimal DeliveredQuantity { get; set; }
+    public long DraftVersion { get; set; }
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Partial delivery: the decision on one remainder change (append-only, at most one per change): the outcome (2 Approved /
+/// 3 Rejected), who decided and when, the rejection reason, and for an approval the line's resulting quantity (value + text)
+/// and the delivery owner's totals read afresh at the approval; the draft version the decision produced.
+/// </summary>
+internal sealed class DraftRemainderDecisionRow : ISalesTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid DraftId { get; set; }
+    public int ChangeNo { get; set; }
+    public int Outcome { get; set; }
+    public string DecidedBy { get; set; } = string.Empty;
+    public DateTimeOffset DecidedAtUtc { get; set; }
+    public string? Reason { get; set; }
+    public decimal? ResultQuantity { get; set; }
+    public string? ResultQuantityText { get; set; }
+    public decimal? LoadedQuantity { get; set; }
+    public decimal? ShippedQuantity { get; set; }
+    public decimal? DeliveredQuantity { get; set; }
+    public long DraftVersion { get; set; }
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
 /// DEC-SAL-005 / AT-007: the recorded cancellation of an approved order (append-only, at most one per draft): the revision
 /// cancelled, who, when, why, the draft version it produced, and the impact preview the user confirmed (its token and each
 /// category's status, as JSON). Never modified, never deleted; the draft's other rows stay as they were.
