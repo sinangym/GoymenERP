@@ -77,8 +77,10 @@ public sealed class ProductImportParticipant : IAsyncDisposable
         var groups = await context.CodeGroups.AsNoTracking().ToDictionaryAsync(row => row.Id, cancellationToken);
         var codes = await context.CodeRegistrations.AsNoTracking().Select(row => row.Code).ToHashSetAsync(cancellationToken);
         var preview = new ProductImportWorkbookReader().Read(workbook, binding.Mapping, codes, groups.Keys.ToHashSet());
+        var boundToken = ProductImportPreviewTokenV1.Bind(preview, authority.LocalActorId,
+            authority.OriginCompanyId, authority.AuthorityRevision);
         if (!string.Equals(preview.FileSha256, binding.FileSha256, StringComparison.Ordinal)
-            || !string.Equals(preview.PreviewToken, binding.PreviewToken, StringComparison.Ordinal))
+            || !string.Equals(boundToken, binding.PreviewToken, StringComparison.Ordinal))
             throw new ProductValidationException([new("previewToken", ProductImportCodesV1.PreviewMismatch)]);
         if (!preview.Ready)
             throw new ProductValidationException(preview.Errors.Select(error => new ProductFieldError(

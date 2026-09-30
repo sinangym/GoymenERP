@@ -119,6 +119,30 @@ public sealed class ProductSqlEvidenceBoundaryTests
             result with { Counters = [new("TEST", 3), new("TEST", 3)] }, [Response(first), Response(second)], [GroupId, GroupId]));
     }
 
+    [Fact]
+    public void Import_receipt_requires_one_current_and_one_legacy_registration_per_new_draft()
+    {
+        var first = Row();
+        var second = Row(Guid.Parse("dddddddd-0000-0000-0000-000000000004"), 2);
+        var before = new ProductSqlSnapshot([], [Group], [], []);
+        var after = new ProductSqlSnapshot([first, second], [Group], [new("TEST", 2)],
+        [
+            new(first.Code, first.Id, true),
+            new("OLD-1", first.Id, false),
+            new(second.Code, second.Id, true),
+            new("OLD-2", second.Id, false),
+        ]);
+        var imported = new[]
+        {
+            new ProductImportCreatedV1(first.Id, first.Code, "OLD-1", first.Name, first.GroupId),
+            new ProductImportCreatedV1(second.Id, second.Code, "OLD-2", second.Name, second.GroupId),
+        };
+
+        ProductSqlAssertions.ImportedBatch(before, after, imported);
+        Assert.ThrowsAny<XunitException>(() => ProductSqlAssertions.ImportedBatch(before,
+            after with { Registrations = after.Registrations.Where(row => row.Code != "OLD-2").ToArray() }, imported));
+    }
+
     private static ProductStoredRecord Row(Guid? id = null, long sequence = 1) => ProductStoredRecord.Capture(
         ProductEntity.CreateDraft(id ?? ProductId, ProductCode.FromSequence("TEST", sequence), "Sentetik sac", GroupId,
             null, null, ProductRoles.NotEvaluated with { Purchasable = ProductRoleState.Manual(false) }, Now), new());

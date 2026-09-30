@@ -56,9 +56,34 @@ public sealed class ProductParticipantBoundaryTests
             ProductDraftParticipant.EnlistAsync(connection, transaction, Authority(), new CancellationToken(true)));
     }
 
-    private static GroupSharedMasterCommandContext Authority() => GroupSharedMasterCommandContext.FromServerDecision(
-        new(true, GroupSharedMasterKind.Product, GroupSharedMasterOperation.DraftCreate, Guid.NewGuid(), Guid.NewGuid(), "test-revision"),
-        GroupSharedMasterOperation.DraftCreate);
+    [Fact]
+    public async Task Import_requires_draft_create_authority_before_transaction_enrollment()
+    {
+        await using var connection = new Connection(ConnectionState.Open);
+        await using var transaction = new Transaction(connection);
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => ProductImportParticipant.EnlistAsync(
+            connection, transaction, Authority(GroupSharedMasterOperation.DraftBasicEdit), default));
+
+        Assert.Equal(0, connection.OpenCalls);
+    }
+
+    [Fact]
+    public async Task Import_rejects_a_closed_owner_connection_without_opening_it()
+    {
+        await using var connection = new Connection(ConnectionState.Closed);
+        await using var transaction = new Transaction(connection);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => ProductImportParticipant.EnlistAsync(
+            connection, transaction, Authority(), default));
+
+        Assert.Equal(0, connection.OpenCalls);
+    }
+
+    private static GroupSharedMasterCommandContext Authority(
+        GroupSharedMasterOperation operation = GroupSharedMasterOperation.DraftCreate) =>
+        GroupSharedMasterCommandContext.FromServerDecision(
+            new(true, GroupSharedMasterKind.Product, operation, Guid.NewGuid(), Guid.NewGuid(), "test-revision"), operation);
 
     private sealed class Connection(ConnectionState state) : DbConnection
     {

@@ -22,13 +22,15 @@ public sealed class ProductImportWorkbookReader : IProductImportWorkbookReaderV1
         ArgumentNullException.ThrowIfNull(mapping);
         ArgumentNullException.ThrowIfNull(existingCodes);
         ArgumentNullException.ThrowIfNull(existingGroupIds);
-        var fileHash = Convert.ToHexString(SHA256.HashData(workbook.Span));
+        // Freeze caller-owned memory once. Hashing and parsing must observe the same immutable byte sequence.
+        var frozenWorkbook = workbook.ToArray();
+        var fileHash = Convert.ToHexString(SHA256.HashData(frozenWorkbook));
         var errors = new List<ProductImportErrorV1>();
         var accepted = new List<ProductImportSourceRowV1>();
 
         try
         {
-            using var stream = new MemoryStream(workbook.ToArray(), writable: false);
+            using var stream = new MemoryStream(frozenWorkbook, writable: false);
             using var archive = new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: false);
             var shared = ReadSharedStrings(archive);
             var rows = ReadFirstSheet(archive, shared).ToArray();

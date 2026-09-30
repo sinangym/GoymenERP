@@ -1,4 +1,5 @@
 using System.Text;
+using System.Security.Cryptography;
 
 namespace GoymenERP.Modules.Product.Application.Contracts;
 
@@ -66,6 +67,38 @@ public interface IProductImportWorkbookReaderV1
 {
     ProductImportPreviewV1 Read(ReadOnlyMemory<byte> workbook, ProductImportColumnMappingV1 mapping,
         IReadOnlySet<string> existingCodes, IReadOnlySet<Guid> existingGroupIds);
+}
+
+/// <summary>
+/// Product-owned preview boundary. The implementation requires the existing global DraftCreate authority before
+/// reading Product's catalogue and revalidates that authority before releasing either a preview or a read error.
+/// </summary>
+public interface IProductImportPreviewServiceV1
+{
+    Task<ProductImportPreviewV1> PreviewAsync(ReadOnlyMemory<byte> workbook,
+        ProductImportColumnMappingV1 mapping, CancellationToken cancellationToken);
+}
+
+/// <summary>
+/// Binds a deterministic workbook preview to the trusted actor, request-origin company and exact authority revision.
+/// The opaque token carries no grant; apply must still reauthorize and recompute it from the same workbook bytes.
+/// </summary>
+public static class ProductImportPreviewTokenV1
+{
+    public static string Bind(ProductImportPreviewV1 preview, Guid localActorId, Guid originCompanyId,
+        string authorityRevision)
+    {
+        ArgumentNullException.ThrowIfNull(preview);
+        if (localActorId == Guid.Empty || originCompanyId == Guid.Empty
+            || string.IsNullOrWhiteSpace(authorityRevision)
+            || authorityRevision != authorityRevision.Trim()
+            || authorityRevision.Any(char.IsControl))
+            throw new ArgumentException("A verified Product import authority binding is required.");
+
+        var canonical = string.Join('\n', preview.PreviewToken, preview.FileSha256,
+            localActorId.ToString("D"), originCompanyId.ToString("D"), authorityRevision);
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
+    }
 }
 
 /// <summary>Stable downloadable UTF-8 CSV representation of preview errors.</summary>
