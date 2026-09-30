@@ -73,8 +73,15 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // and its comment (50c5acf2… -> da93806b…); no other startup change.
     // Re-fingerprinted for AT-002 on top of it: one added using (GoymenERP.Api.Search), builder.Services.AddGlobalSearch()
     // with its comment, and app.MapGlobalSearchEndpoints() (da93806b… -> 869f1682…); no other startup change.
+    // Re-fingerprinted for ERP-000G / AT-065: two added usings (GoymenERP.Api.DocumentsRuntime,
+    // GoymenERP.Modules.Documents.Infrastructure), builder.Services.AddDocumentsRuntime(...) with its comment,
+    // app.MapDocumentEndpoints() and the Development/Testing initializer after Accounting's
+    // (869f1682… -> abe26a09…); no OpenAPI-generation, network or hosted-service surface changed.
+    // Re-fingerprinted once more for AT-065: only the comment above AddDocumentsRuntime changed, to say that
+    // production uses the own-server store and Defender when both are configured and answers 503 otherwise
+    // (abe26a09… -> c027dce9…); no code line changed.
     private const string ReviewedOpenApiStartupFingerprint =
-        "869f168241e703d9eade329b12c2f1cf14c3be99fd1724ce5a2b81a5fd20bc1d";
+        "c027dce99291e2837daa360c4d5d8f16e2eb2759cbd3171b512c81bdd801f453";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -182,8 +189,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // logistics
             // AT-053: +4 weighbridge SQL facts (81c1ff0b… -> 264898d7…).
             // AT-025: +3 operations work list SQL facts (264898d7… -> e410a445…).
+            // AT-055: +4 dispatch-note draft SQL facts (e410a445… -> 010fcbd6…).
+            // AT-055 lifecycle (#518, user decision 2026-09-30): +6 approve/cancel/e-İrsaliye/numbering SQL facts (010fcbd6… -> c5969829…).
             ["tools/relational_inventory/logistics.txt"] =
-                "e410a445d2759703b39ce7ea242d5cb0a11074b24c685291c46ca028f8ac50bc",
+                "c596982944d43155ce986a641a1e4fb3093ad1c97b9f5bafba7d369286dd57bc",
 
             // manufacturing
             // MFG-PLAN-EDIT: +6 plan-revision SQL facts (a72e6367… -> 02711b6c…).
@@ -197,8 +206,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // platform
             // AT-002: +2 GlobalSearchSqlServerRelationalAcceptanceTests facts (5bc60202… -> a5df5046…).
+            // ERP-000G / AT-065: +6 DocumentVaultSqlServerRelationalAcceptanceTests facts (a5df5046… -> 4ed7462b…).
             ["tools/relational_inventory/platform.txt"] =
-                "a5df5046518257210e0f9d77d2293fd47a7217435efcddb6213ee3518950cfc0",
+                "4ed7462b1d944e9069af8f02dabc39b627d234fd2ed188b6156980bd9452c20d",
 
             // product
             // DEC-CAR-003: +4 ProductDeactivationSqlServerRelationalAcceptanceTests facts (d7dbec7f… -> ddeead62…).
@@ -264,12 +274,22 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
              + "Persistence/LogisticsDbContext.cs"] =
             // Re-measured for AT-053: VehicleWeighings, company-scoped with the same CompanyId query filter and a
             // company-leading key; one weighing per instruction.
-                "c157f2333337aaac614b9098754dfa4bcc99ac4ef062fd4c15d8c72dd5d0886d",
+            // Re-measured for AT-055: DispatchNotes and DispatchNoteLines, company-scoped with the same CompanyId query filter and
+            // company-leading keys; UX_DispatchNoteLines_ShipmentId over non-nullable columns (a shipment on one dispatch note).
+            // Re-measured for the AT-055 lifecycle (#518): DispatchNoteSeries, company-scoped with the same CompanyId query filter
+            // and a company-leading key; the single-link key filtered to unreleased lines; forward-only write guard.
+                "41b01561661834789fad289c89418e0b20b413a182544d8c8285aa1f4b12238c",
             // PUR-4a: company-scoped like Organization; every tenant row (requests and their lines, orders and their
             // lines, attempts) and AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
              + "Persistence/PurchasingDbContext.cs"] =
                 "95abb41f658aca490334bfedd7b8829bf9b22007b99d6c59a4feb357ddff1d30",
+            // ERP-000G / AT-065: company-scoped like Organization; every tenant row (blobs, documents, versions, links,
+            // attempts) and AuditEvent carries the CompanyId filter, and the write guard refuses any update or delete.
+            // A standard entry, not an exception.
+            ["src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/"
+             + "Persistence/DocumentsDbContext.cs"] =
+                "c607c37a6843bbd5f6eab9a7c831b1c42142c11c478f82bb02c72c6d24daee02",
             // Re-measured for MFG-API (#313): the ADR-011 command log (CommandRecords) is mapped here, company-
             // scoped with the CompanyId filter like every other tenant row.
             // MFG-5 (#303): company-scoped like Organization; every tenant row and AuditEvent carries the
@@ -775,7 +795,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new(
                         // Re-fingerprinted for AT-053: the weighing is saved in the instruction's one save and
                         // replayed at its share position; SqlClient count unchanged.
-                        "4c64fde78e67008e4cc3e334437c795dd608f35cba011c52d36d328144fb1d7d",
+                        // Re-fingerprinted for AT-055: the dispatch-note draft is saved in the instruction's one save and
+                        // replayed at its share position, plus the Sales order read; SqlClient count unchanged.
+                        // Re-fingerprinted for the AT-055 lifecycle (#518): approve/cancel/e-İrsaliye steps written in the same save,
+                        // the company series moved under its token, every step replayed in order; SqlClient count unchanged.
+                        "30dcae9c8dd828ee39aae3b69683e0d38fd910dad11823d351862b8ee112afcf",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -846,6 +870,29 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.cs"] =
                     new(
                         "36aea9f4b51ff348de16e93b30d424172e8fa829c7ca09ee06f7d6c721a8ee2d",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1
+                        }),
+                // ERP-000G / AT-065: the vault initializer's one provider branch, as Logistics. Re-fingerprinted for
+                // the production adapters (own-server store + Windows Defender registration); the branch and its
+                // token counts are unchanged.
+                ["src/backend/Modules/Documents/"
+                 + "GoymenERP.Modules.Documents.Infrastructure/"
+                 + "DocumentsModuleExtensions.cs"] =
+                    new(
+                        "8e6108de29ca7aae5133131abf8deb981d097bc33ea7964403652f04f0ebc610",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["EnsureCreatedAsync"] = 1,
+                            ["MigrateAsync"] = 1
+                        }),
+                // ERP-000G / AT-065: the SqlClient namespace only to recognise a unique-key violation (SqlException
+                // 2601/2627) after SaveChanges, as the Logistics store does. No connection, command or raw SQL.
+                ["src/backend/Modules/Documents/"
+                 + "GoymenERP.Modules.Documents.Infrastructure/Persistence/DocumentsStore.cs"] =
+                    new(
+                        "2b5257b9ba3b6ea69c7a1e4851e7777d68a1790033c929317a4c25cc1d9a09f4",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -959,7 +1006,14 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "PurchasingDesignTimeDbContextFactory.cs"] =
                     new(
                         "PurchasingDbContext",
-                        "1f18bc244888b237e6de9884f761bb54139c4da11e2446b4cdfac0e9d5d844d6")
+                        "1f18bc244888b237e6de9884f761bb54139c4da11e2446b4cdfac0e9d5d844d6"),
+                // ERP-000G / AT-065: the vault design-time factory (migrations only), as Logistics.
+                ["src/backend/Modules/Documents/"
+                 + "GoymenERP.Modules.Documents.Infrastructure/Persistence/"
+                 + "DocumentsDesignTimeDbContextFactory.cs"] =
+                    new(
+                        "DocumentsDbContext",
+                        "4e4f135fb522abd72921ee45d36657f1c21a8ba411507612291382ca640a38d4")
             };
 
     // Migration data/raw SQL operations are deployment-time DDL/DML, not runtime global-query-
@@ -1061,6 +1115,26 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // any weighbridge record is stored; the THROW precedes the DropTable, an empty table rolls back freely.
                 ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/Migrations/20260928120000_AddVehicleWeighings.cs"] =
                     new("beb572dd1dd3450169f3c2b927e143161f2a15daedbd6b391eccc2b598817f4b",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // AT-055: the Down's only raw SQL is Logistics' module refusal (51056, the AddVehicleWeighings code) while any
+                // dispatch-note draft or line is stored; the THROW precedes both DropTable operations, empty tables roll back freely.
+                ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/Migrations/20260930120000_AddDispatchNoteDrafts.cs"] =
+                    new("19fd92b05acf08afeed254230091de3aa4828ed66020a76ae02750c3abbee01a",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // AT-055 lifecycle (#518): two raw SQL calls — Up's one-statement backfill of the new CreatedStep from NoteNo (a
+                // draft's only step before this migration was its creation), and Down's module refusal (51056) while any series row,
+                // non-draft note or released line exists; the THROW precedes every drop.
+                ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/Migrations/20260930150000_AddDispatchNoteLifecycle.cs"] =
+                    new("72191dd5733ec6f8a5497ce436c45df2a271610449e60c6f816837b627990450",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 2 }),
+                // ERP-000G / AT-065: the Down's only raw SQL is the vault's module refusal (51058, used by no other migration
+                // on main or any branch) while any document exists; the THROW precedes every DropTable, an empty schema
+                // rolls back freely.
+                ["src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Persistence/Migrations/20260930120000_InitialDocuments.cs"] =
+                    new("9c2911253ccefc7409055fefdce4c2dc77a58108648e2eb7d3a1635526409de2",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // ACC-V0a: the Down's only raw SQL is Accounting's module refusal (51048, coordinator-assigned) while any
@@ -7150,13 +7224,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         @"(?<![\p{L}\p{Nd}_])new\s+"
         + @"(?:global\s*::\s*)?(?:@?[\p{L}_][\p{L}\p{Nd}_]*\s*\.\s*)*@?"
         + @"(?<type>AuditDbContext|CommandExecutionDbContext|IdentityDbContext|"
-        + @"OrganizationDbContext|InventoryDbContext|AccountingDbContext|FinanceDbContext|ManufacturingDbContext|SalesDbContext|LogisticsDbContext|PurchasingDbContext)(?![\p{L}\p{Nd}_])\s*\(",
+        + @"OrganizationDbContext|InventoryDbContext|AccountingDbContext|FinanceDbContext|ManufacturingDbContext|SalesDbContext|LogisticsDbContext|PurchasingDbContext|DocumentsDbContext)(?![\p{L}\p{Nd}_])\s*\(",
         RegexOptions.CultureInvariant)]
     private static partial Regex ReviewedContextConstructionRegex();
 
     [GeneratedRegex(
         @"(?<![\p{L}\p{Nd}_])@?(?<type>AuditDbContext|CommandExecutionDbContext|"
-        + @"IdentityDbContext|OrganizationDbContext|InventoryDbContext|AccountingDbContext|FinanceDbContext|ManufacturingDbContext|SalesDbContext|LogisticsDbContext|PurchasingDbContext)"
+        + @"IdentityDbContext|OrganizationDbContext|InventoryDbContext|AccountingDbContext|FinanceDbContext|ManufacturingDbContext|SalesDbContext|LogisticsDbContext|PurchasingDbContext|DocumentsDbContext)"
         + @"(?![\p{L}\p{Nd}_])",
         RegexOptions.CultureInvariant)]
     private static partial Regex ReviewedContextTypeIdentifierRegex();
@@ -7171,7 +7245,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + @"(?<alias>@?[\p{L}_][\p{L}\p{Nd}_]*)\s*=\s*"
         + @"(?:global\s*::\s*)?(?:@?[\p{L}_][\p{L}\p{Nd}_]*\s*\.\s*)*@?"
         + @"(?<type>AuditDbContext|CommandExecutionDbContext|IdentityDbContext|"
-        + @"OrganizationDbContext|InventoryDbContext|AccountingDbContext|FinanceDbContext|ManufacturingDbContext|SalesDbContext|LogisticsDbContext|PurchasingDbContext)(?![\p{L}\p{Nd}_])\s*;",
+        + @"OrganizationDbContext|InventoryDbContext|AccountingDbContext|FinanceDbContext|ManufacturingDbContext|SalesDbContext|LogisticsDbContext|PurchasingDbContext|DocumentsDbContext)(?![\p{L}\p{Nd}_])\s*;",
         RegexOptions.CultureInvariant)]
     private static partial Regex ReviewedContextTypeAliasRegex();
 
@@ -7187,7 +7261,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + @"ManufacturingDesignTimeDbContextFactory|"
         + @"SalesDesignTimeDbContextFactory|"
         + @"LogisticsDesignTimeDbContextFactory|"
-        + @"PurchasingDesignTimeDbContextFactory)(?![\p{L}\p{Nd}_])",
+        + @"PurchasingDesignTimeDbContextFactory|"
+        + @"DocumentsDesignTimeDbContextFactory)(?![\p{L}\p{Nd}_])",
         RegexOptions.CultureInvariant)]
     private static partial Regex ReviewedDesignTimeFactoryIdentifierRegex();
 

@@ -3,6 +3,7 @@ using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Logistics.Application.Contracts;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 
 namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence;
 
@@ -11,7 +12,8 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence;
 /// SALES-P2 shape). Every row is a tenant row of the instruction's company: a global query filter on the
 /// server-resolved company and a write guard that refuses any row of another company, any company change,
 /// any delete and any column move outside the axis a command may move (the header's status / version /
-/// time; a line's four share totals and block flag; shares, weighbridge records and attempts append only). The attempt key
+/// time; a line's four share totals and block flag; a dispatch note's forward-only lifecycle columns and its lines' release flag;
+/// the dispatch-note series' last number; shares, weighbridge records and attempts append only). The attempt key
 /// (company, command, key hash) is a primary key under a binary collation; the raw key is never stored.
 /// The audit sidecar is Audit's table, written in the same save and filtered the same way.
 /// </summary>
@@ -32,6 +34,12 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
 
     internal DbSet<VehicleWeighingRow> Weighings => Set<VehicleWeighingRow>();
 
+    internal DbSet<DispatchNoteRow> DispatchNotes => Set<DispatchNoteRow>();
+
+    internal DbSet<DispatchNoteLineRow> DispatchNoteLines => Set<DispatchNoteLineRow>();
+
+    internal DbSet<DispatchNoteSeriesRow> DispatchNoteSeries => Set<DispatchNoteSeriesRow>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -45,6 +53,7 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
         ConfigureShares(modelBuilder);
         ConfigureAttempts(modelBuilder);
         ConfigureWeighings(modelBuilder);
+        ConfigureDispatchNotes(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -209,6 +218,81 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    /// <summary>
+    /// AT-055: dispatch notes and their lines, company-scoped and bound to their instruction by the company-leading key, and the
+    /// company's number series. Never deleted. A note row moves only along its lifecycle (user decision 2026-09-30): approval,
+    /// cancellation and the e-İrsaliye number each fill their own columns once (check constraints hold each group's shape and the
+    /// status that goes with it); a line row moves only its <c>Released</c> flag, once, when its note is cancelled. The single-link
+    /// guard lives in SQL Server: <c>UX_DispatchNoteLines_ShipmentId</c> (company, instruction, shipment) is UNIQUE over the lines
+    /// that are not released, so a definite shipment is on at most one non-cancelled note even against a writer that skipped the
+    /// aggregate, and a cancelled note's shipments can be put on a new one. The system number (series + sequence) and the
+    /// e-İrsaliye number are each unique per company (filtered unique keys over the rows that carry one).
+    /// </summary>
+    private void ConfigureDispatchNotes(ModelBuilder modelBuilder)
+    {
+        var note = modelBuilder.Entity<DispatchNoteRow>();
+        note.ToTable("DispatchNotes", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_DispatchNotes_Identity", $"[DispatchNoteId] <> {EmptyGuid} AND LEN([CreatedBy]) > 0");
+            table.HasCheckConstraint("CK_DispatchNotes_Status", DispatchNoteSchema.StatusCheck);
+            // A draft is made from at least one recorded shipment, so at least one share precedes it.
+            table.HasCheckConstraint("CK_DispatchNotes_Order", DispatchNoteSchema.OrderCheck);
+            table.HasCheckConstraint("CK_DispatchNotes_Approval", DispatchNoteSchema.ApprovalCheck);
+            table.HasCheckConstraint("CK_DispatchNotes_Cancellation", DispatchNoteSchema.CancellationCheck);
+            table.HasCheckConstraint("CK_DispatchNotes_EDispatchNumber", DispatchNoteSchema.EDispatchNumberCheck);
+        });
+        note.HasKey(x => new { x.CompanyId, x.InstructionId, x.DispatchNoteId });
+        note.HasIndex(x => new { x.CompanyId, x.DispatchNoteId }).IsUnique().HasDatabaseName("UX_DispatchNotes_DispatchNoteId");
+        note.HasIndex(x => new { x.CompanyId, x.InstructionId, x.NoteNo }).IsUnique().HasDatabaseName("UX_DispatchNotes_NoteNo");
+        note.HasIndex(x => new { x.CompanyId, x.SeriesCode, x.SequenceNo }).IsUnique().HasDatabaseName("UX_DispatchNotes_Number")
+            .HasFilter(DispatchNoteSchema.NumberFilter);
+        note.HasIndex(x => new { x.CompanyId, x.EDispatchNumber }).IsUnique().HasDatabaseName("UX_DispatchNotes_EDispatchNumber")
+            .HasFilter(DispatchNoteSchema.EDispatchNumberFilter);
+        note.Property(x => x.CreatedBy).HasMaxLength(128).IsRequired();
+        note.Property(x => x.SeriesCode).HasMaxLength(8);
+        note.Property(x => x.ApprovedBy).HasMaxLength(128);
+        note.Property(x => x.CancelledBy).HasMaxLength(128);
+        note.Property(x => x.CancelReason).HasMaxLength(500);
+        note.Property(x => x.EDispatchNumber).HasMaxLength(16).IsUnicode(false);
+        note.Property(x => x.EDispatchNumberSetBy).HasMaxLength(128);
+        note.HasOne<LoadingInstructionRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.InstructionId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        note.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var line = modelBuilder.Entity<DispatchNoteLineRow>();
+        line.ToTable("DispatchNoteLines", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_DispatchNoteLines_LineNo", "[LineNo] >= 1");
+            table.HasCheckConstraint("CK_DispatchNoteLines_Identity",
+                $"[ShipmentId] <> {EmptyGuid} AND [InstructionLineId] <> {EmptyGuid} AND [SourceOrderId] <> {EmptyGuid} "
+                + $"AND [SourceOrderLineId] <> {EmptyGuid} AND [ProductId] <> {EmptyGuid} AND [UnitId] <> {EmptyGuid}");
+            table.HasCheckConstraint("CK_DispatchNoteLines_Quantity", "[Quantity] > 0");
+        });
+        line.HasKey(x => new { x.CompanyId, x.InstructionId, x.DispatchNoteId, x.LineNo });
+        // AT-055: "Aynı sevkiyat gerçekleşmesi iki kez irsaliyeye bağlanamaz" — one ACTIVE dispatch-note line per shipment; a
+        // cancelled note's lines are released and leave the key.
+        line.HasIndex(x => new { x.CompanyId, x.InstructionId, x.ShipmentId }).IsUnique().HasDatabaseName("UX_DispatchNoteLines_ShipmentId")
+            .HasFilter(DispatchNoteSchema.ActiveLineFilter);
+        line.HasIndex(x => new { x.CompanyId, x.SourceOrderId }).HasDatabaseName("IX_DispatchNoteLines_SourceOrder");
+        line.Property(x => x.Quantity).HasPrecision(18, 3);
+        line.HasOne<DispatchNoteRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.InstructionId, x.DispatchNoteId })
+            .OnDelete(DeleteBehavior.Restrict);
+        line.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var series = modelBuilder.Entity<DispatchNoteSeriesRow>();
+        series.ToTable("DispatchNoteSeries", Schema, table =>
+            table.HasCheckConstraint("CK_DispatchNoteSeries_Sequence", DispatchNoteSchema.SeriesCheck));
+        series.HasKey(x => new { x.CompanyId, x.SeriesCode });
+        series.Property(x => x.SeriesCode).HasMaxLength(8);
+        // The optimistic token: an approval's UPDATE matches only the number it read, so two approvals never share a number.
+        series.Property(x => x.LastSequenceNo).IsConcurrencyToken();
+        series.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
+        series.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     private void ApplyWriteGuards()
     {
         LogisticsAuditEventTenantGuard.Validate(this, companyContext);
@@ -244,6 +328,10 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
                         nameof(LoadingInstructionLineRow.Loaded), nameof(LoadingInstructionLineRow.Shipped),
                         nameof(LoadingInstructionLineRow.Delivered), nameof(LoadingInstructionLineRow.IsBlocked),
                     ],
+                    // AT-055 lifecycle: the status and each set-once group (approval + number, cancellation, e-İrsaliye number).
+                    DispatchNoteRow => [nameof(DispatchNoteRow.Status), .. DispatchNoteSchema.SetOnceColumns],
+                    DispatchNoteLineRow => [nameof(DispatchNoteLineRow.Released)],
+                    DispatchNoteSeriesRow => [nameof(DispatchNoteSeriesRow.LastSequenceNo), nameof(DispatchNoteSeriesRow.UpdatedAtUtc)],
                     _ => [],
                 };
                 var changed = entry.Properties
@@ -255,7 +343,54 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
                 {
                     throw new InvalidOperationException("Sevkiyat kaydının yalnız izinli alanı değişir; paylar ve deneme kayıtları eklenir, değişmez.");
                 }
+
+                RequireForwardOnly(entry);
             }
+        }
+    }
+
+    /// <summary>
+    /// AT-055: a dispatch note only moves forward — a set-once column is written from empty exactly once (never cleared or
+    /// rewritten), the status only climbs (Draft → Approved → Cancelled, or Draft → Cancelled), a line is released once (never
+    /// re-linked in place), and the series only climbs by one.
+    /// </summary>
+    private static void RequireForwardOnly(EntityEntry<ILogisticsTenantRow> entry)
+    {
+        switch (entry.Entity)
+        {
+            case DispatchNoteRow:
+                foreach (var column in DispatchNoteSchema.SetOnceColumns)
+                {
+                    var property = entry.Property(column);
+                    if (property.IsModified && (property.OriginalValue is not null || property.CurrentValue is null))
+                    {
+                        throw new InvalidOperationException("İrsaliyenin onay, iptal ve e-İrsaliye alanları bir kez yazılır; değiştirilmez.");
+                    }
+                }
+
+                var status = entry.Property(nameof(DispatchNoteRow.Status));
+                if (status.IsModified && (int)status.CurrentValue! <= (int)status.OriginalValue!)
+                {
+                    throw new InvalidOperationException("İrsaliye durumu yalnız ileri gider (taslak → onaylı → iptal).");
+                }
+
+                break;
+            case DispatchNoteLineRow:
+                var released = entry.Property(nameof(DispatchNoteLineRow.Released));
+                if (released.IsModified && ((bool)released.OriginalValue! || !(bool)released.CurrentValue!))
+                {
+                    throw new InvalidOperationException("İrsaliye satırı yalnız bir kez serbest bırakılır.");
+                }
+
+                break;
+            case DispatchNoteSeriesRow:
+                var sequence = entry.Property(nameof(DispatchNoteSeriesRow.LastSequenceNo));
+                if (sequence.IsModified && (long)sequence.CurrentValue! != (long)sequence.OriginalValue! + 1)
+                {
+                    throw new InvalidOperationException("İrsaliye serisi yalnız birer birer ilerler.");
+                }
+
+                break;
         }
     }
 }

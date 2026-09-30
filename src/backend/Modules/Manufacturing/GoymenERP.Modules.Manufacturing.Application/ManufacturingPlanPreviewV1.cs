@@ -117,9 +117,11 @@ public sealed partial class ManufacturingCommandService
             return new ManufacturingApiResult<PlanPreviewViewV1>(ManufacturingApiStatus.Unprocessable, null, false,
                 exception.Code);
         }
-        catch (ArgumentException exception)
+        catch (ArgumentException)
         {
-            return Invalid<PlanPreviewViewV1>(exception.ParamName ?? "request");
+            // The transient domain constructor is an implementation detail. Keep the public preview field stable
+            // instead of leaking whichever parameter name a constructor happens to use.
+            return Invalid<PlanPreviewViewV1>("plan");
         }
 
         return new ManufacturingApiResult<PlanPreviewViewV1>(ManufacturingApiStatus.Ok,

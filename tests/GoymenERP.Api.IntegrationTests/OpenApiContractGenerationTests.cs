@@ -11,6 +11,7 @@ using GoymenERP.Api.OpenApi;
 using GoymenERP.Api.Contracts;
 using GoymenERP.BuildingBlocks.OpenApi;
 using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.Modules.Logistics.Application.Contracts;
 using GoymenERP.Modules.Organization.Application.Contracts;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Metadata;
@@ -544,6 +545,24 @@ public sealed partial class OpenApiContractGenerationTests
         new("post", "/api/v1/logistics/loading-instructions/{id}/weighings", "RecordLoadingInstructionWeighingV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
             "#/components/schemas/RecordWeighingRequest", ["path:id:true:type:string;format:uuid"]),
+        // AT-055: a dispatch-note draft from the instruction's definite shipments, and the Sales order view's read of its drafts.
+        new("post", "/api/v1/logistics/loading-instructions/{id}/dispatch-notes", "CreateLoadingInstructionDispatchNoteV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/CreateDispatchNoteRequest", ["path:id:true:type:string;format:uuid"]),
+        // AT-055 lifecycle (user decision 2026-09-30): approve (the system number), cancel (releases the shipments), e-İrsaliye number.
+        new("post", "/api/v1/logistics/loading-instructions/{id}/dispatch-notes/{dispatchNoteId}/approve", "ApproveLoadingInstructionDispatchNoteV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/ApproveDispatchNoteRequest", ["path:id:true:type:string;format:uuid", "path:dispatchNoteId:true:type:string;format:uuid"]),
+        new("post", "/api/v1/logistics/loading-instructions/{id}/dispatch-notes/{dispatchNoteId}/cancel", "CancelLoadingInstructionDispatchNoteV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/CancelDispatchNoteRequest", ["path:id:true:type:string;format:uuid", "path:dispatchNoteId:true:type:string;format:uuid"]),
+        new("post", "/api/v1/logistics/loading-instructions/{id}/dispatch-notes/{dispatchNoteId}/e-dispatch-number", "SetLoadingInstructionDispatchNoteEDispatchNumberV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/SetEDispatchNumberRequest", ["path:id:true:type:string;format:uuid", "path:dispatchNoteId:true:type:string;format:uuid"]),
+        // #518 P2: exactly one REQUIRED uuid query member.
+        new("get", "/api/v1/logistics/dispatch-notes", "GetSalesOrderDispatchNotesV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["query:salesOrderId:true:type:string;format:uuid"]),
         new("get", "/api/v1/purchasing/requests", "GetPurchaseRequestsV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["query:pageSize:false:type:integer|string;format:int32;pattern:^-?(?:0|[1-9]\\d*)$", "query:cursor:false:type:string", "query:status:false:type:string"]),
@@ -654,6 +673,18 @@ public sealed partial class OpenApiContractGenerationTests
         new("get", "/api/v1/search", "SearchGlobalV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["query:q:false:type:string"]),
+        // ERP-000G / AT-065: the document vault — a multipart upload, an owner record's list and a clean version's bytes.
+        new("post", "/api/v1/documents", "UploadDocumentV1",
+            AuthenticatedResponses("201:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "413:",
+                "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/DocumentUploadFormV1", RequestMediaType: "multipart/form-data"),
+        new("get", "/api/v1/documents", "GetDocumentsV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["query:ownerKind:false:type:string", "query:ownerId:false:type:string;format:uuid"]),
+        new("get", "/api/v1/documents/{id}/content", "GetDocumentContentV1",
+            AuthenticatedResponses("200:application/pdf,image/jpeg,image/png", "400:application/problem+json", "404:application/problem+json",
+                "409:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["path:id:true:type:string;format:uuid"]),
         new("get", "/api/v1/sales/references/contact-information", "GetSalesContactInformationReferencesV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["query:partyId:true:type:string;format:uuid", "query:companyAccountId:true:type:string;format:uuid"]),
@@ -803,6 +834,11 @@ public sealed partial class OpenApiContractGenerationTests
             ["RecordLoadingInstructionShipmentV1"] = "ref:LoadingInstructionResponse",
             ["RecordLoadingInstructionDeliveryV1"] = "ref:LoadingInstructionResponse",
             ["RecordLoadingInstructionWeighingV1"] = "ref:LoadingInstructionResponse",
+            ["CreateLoadingInstructionDispatchNoteV1"] = "ref:LoadingInstructionResponse",
+            ["ApproveLoadingInstructionDispatchNoteV1"] = "ref:LoadingInstructionResponse",
+            ["CancelLoadingInstructionDispatchNoteV1"] = "ref:LoadingInstructionResponse",
+            ["SetLoadingInstructionDispatchNoteEDispatchNumberV1"] = "ref:LoadingInstructionResponse",
+            ["GetSalesOrderDispatchNotesV1"] = "ref:SalesOrderDispatchNotesView",
             ["GetPurchaseRequestsV1"] = "ref:PurchaseRequestListResponse",
             ["CreatePurchaseRequestV1"] = "ref:PurchaseRequestResponse",
             ["GetPurchaseRequestV1"] = "ref:PurchaseRequestDetailView",
@@ -837,6 +873,9 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetLogisticsSalesWorkV1"] = "ref:LogisticsSalesWorkPage",
             ["GetLogisticsPurchaseWorkV1"] = "ref:LogisticsPurchaseWorkPage",
             ["SearchGlobalV1"] = "ref:GlobalSearchResponseV1",
+            ["UploadDocumentV1"] = "ref:DocumentUploadResponse",
+            ["GetDocumentsV1"] = "ref:DocumentListResponse",
+            ["GetDocumentContentV1"] = "ref:Stream",
             ["GetSalesContactInformationReferencesV1"] = "ref:SalesContactInformationOptionsV1",
             ["GetSalesCurrencyReferencesV1"] = "ref:SalesCurrencyOptionsV1",
         };
@@ -961,6 +1000,11 @@ public sealed partial class OpenApiContractGenerationTests
         "RecordLoadingInstructionShipmentV1",
         "RecordLoadingInstructionDeliveryV1",
         "RecordLoadingInstructionWeighingV1",
+        "CreateLoadingInstructionDispatchNoteV1",
+        "ApproveLoadingInstructionDispatchNoteV1",
+        "CancelLoadingInstructionDispatchNoteV1",
+        "SetLoadingInstructionDispatchNoteEDispatchNumberV1",
+        "GetSalesOrderDispatchNotesV1",
         "GetPurchaseRequestsV1",
         "CreatePurchaseRequestV1",
         "GetPurchaseRequestV1",
@@ -995,6 +1039,9 @@ public sealed partial class OpenApiContractGenerationTests
         "GetLogisticsSalesWorkV1",
         "GetLogisticsPurchaseWorkV1",
         "SearchGlobalV1",
+        "UploadDocumentV1",
+        "GetDocumentsV1",
+        "GetDocumentContentV1",
         "GetSalesContactInformationReferencesV1",
         "GetSalesCurrencyReferencesV1",
     ];
@@ -1068,6 +1115,10 @@ public sealed partial class OpenApiContractGenerationTests
         "RecordLoadingInstructionShipmentV1",
         "RecordLoadingInstructionDeliveryV1",
         "RecordLoadingInstructionWeighingV1",
+        "CreateLoadingInstructionDispatchNoteV1",
+        "ApproveLoadingInstructionDispatchNoteV1",
+        "CancelLoadingInstructionDispatchNoteV1",
+        "SetLoadingInstructionDispatchNoteEDispatchNumberV1",
         "CreatePurchaseRequestV1",
         "SubmitPurchaseRequestV1",
         "CreatePurchaseOrderV1",
@@ -1081,6 +1132,7 @@ public sealed partial class OpenApiContractGenerationTests
         "ProposeAccountingJournalReversalV1",
         "ApproveAccountingJournalReversalV1",
         "CloseManufacturingOrderV1",
+        "UploadDocumentV1",
     ];
 
     private static readonly IReadOnlyDictionary<string, HashSet<int>>
@@ -1216,6 +1268,10 @@ public sealed partial class OpenApiContractGenerationTests
                 ["RecordLoadingInstructionShipmentV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["RecordLoadingInstructionDeliveryV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["RecordLoadingInstructionWeighingV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
+                ["CreateLoadingInstructionDispatchNoteV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
+                ["ApproveLoadingInstructionDispatchNoteV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
+                ["CancelLoadingInstructionDispatchNoteV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
+                ["SetLoadingInstructionDispatchNoteEDispatchNumberV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["CreatePurchaseRequestV1"] = [StatusCodes.Status201Created, StatusCodes.Status409Conflict],
                 ["SubmitPurchaseRequestV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["CreatePurchaseOrderV1"] = [StatusCodes.Status201Created, StatusCodes.Status409Conflict],
@@ -1229,6 +1285,8 @@ public sealed partial class OpenApiContractGenerationTests
                 ["ProposeAccountingJournalReversalV1"] = [StatusCodes.Status201Created],
                 ["ApproveAccountingJournalReversalV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
                 ["CloseManufacturingOrderV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
+                // AT-065: only the stored upload (201) is replayed; a refusal stores nothing under the key.
+                ["UploadDocumentV1"] = [StatusCodes.Status201Created],
             };
 
     private static readonly HashSet<string> EmptyBodyPossible400Operations =
@@ -1320,6 +1378,11 @@ public sealed partial class OpenApiContractGenerationTests
         "RecordLoadingInstructionShipmentV1",
         "RecordLoadingInstructionDeliveryV1",
         "RecordLoadingInstructionWeighingV1",
+        "CreateLoadingInstructionDispatchNoteV1",
+        "ApproveLoadingInstructionDispatchNoteV1",
+        "CancelLoadingInstructionDispatchNoteV1",
+        "SetLoadingInstructionDispatchNoteEDispatchNumberV1",
+        "GetSalesOrderDispatchNotesV1",
         "GetPurchaseRequestsV1",
         "CreatePurchaseRequestV1",
         "SubmitPurchaseRequestV1",
@@ -1341,6 +1404,9 @@ public sealed partial class OpenApiContractGenerationTests
         "GetLogisticsPurchaseWorkV1",
         "GetSalesContactInformationReferencesV1",
         "GetSalesCurrencyReferencesV1",
+        "UploadDocumentV1",
+        "GetDocumentsV1",
+        "GetDocumentContentV1",
     ];
 
     private static readonly HashSet<string> CodeLessProblemResponses =
@@ -1411,6 +1477,10 @@ public sealed partial class OpenApiContractGenerationTests
         "RecordLoadingInstructionShipmentV1:404",
         "RecordLoadingInstructionDeliveryV1:404",
         "RecordLoadingInstructionWeighingV1:404",
+        "CreateLoadingInstructionDispatchNoteV1:404",
+        "ApproveLoadingInstructionDispatchNoteV1:404",
+        "CancelLoadingInstructionDispatchNoteV1:404",
+        "SetLoadingInstructionDispatchNoteEDispatchNumberV1:404",
         "GetPurchaseRequestV1:404",
         "SubmitPurchaseRequestV1:404",
         "GetPurchaseOrderV1:404",
@@ -1428,6 +1498,9 @@ public sealed partial class OpenApiContractGenerationTests
         "GetManufacturingOrderMassBalanceV1:404",
         "CloseManufacturingOrderV1:404",
         "GetSalesContactInformationReferencesV1:404",
+        "UploadDocumentV1:404",
+        "GetDocumentsV1:404",
+        "GetDocumentContentV1:404",
     ];
 
     private static readonly HashSet<string> MixedProblemResponses =
@@ -1748,6 +1821,32 @@ public sealed partial class OpenApiContractGenerationTests
                 "same_key_payload_mismatch", "version_conflict",
             ],
             ["RecordLoadingInstructionWeighingV1:422"] = ["logistics_weighing_direction_inconsistent", "unsupported_unit", "validation_failed"],
+            ["CreateLoadingInstructionDispatchNoteV1:400"] = ["command_metadata_invalid", "validation_failed"],
+            ["CreateLoadingInstructionDispatchNoteV1:409"] =
+            [
+                "concurrent_change", "logistics_duplicate_dispatch_note_id", "logistics_instruction_state",
+                "logistics_shipment_already_dispatched", "same_key_payload_mismatch", "version_conflict",
+            ],
+            ["CreateLoadingInstructionDispatchNoteV1:422"] = ["logistics_shipment_not_found", "validation_failed"],
+            ["ApproveLoadingInstructionDispatchNoteV1:400"] = ["command_metadata_invalid", "validation_failed"],
+            ["ApproveLoadingInstructionDispatchNoteV1:409"] =
+            [
+                "concurrent_change", "logistics_dispatch_note_state", "logistics_instruction_state", "same_key_payload_mismatch", "version_conflict",
+            ],
+            ["ApproveLoadingInstructionDispatchNoteV1:422"] = ["validation_failed"],
+            ["CancelLoadingInstructionDispatchNoteV1:400"] = ["command_metadata_invalid", "validation_failed"],
+            ["CancelLoadingInstructionDispatchNoteV1:409"] =
+            [
+                "concurrent_change", "logistics_dispatch_note_state", "logistics_instruction_state", "same_key_payload_mismatch", "version_conflict",
+            ],
+            ["CancelLoadingInstructionDispatchNoteV1:422"] = ["validation_failed"],
+            ["SetLoadingInstructionDispatchNoteEDispatchNumberV1:400"] = ["command_metadata_invalid", "validation_failed"],
+            ["SetLoadingInstructionDispatchNoteEDispatchNumberV1:409"] =
+            [
+                "concurrent_change", "logistics_dispatch_note_state", "logistics_e_dispatch_number_in_use", "logistics_instruction_state", "same_key_payload_mismatch", "version_conflict",
+            ],
+            ["SetLoadingInstructionDispatchNoteEDispatchNumberV1:422"] = ["validation_failed"],
+            ["GetSalesOrderDispatchNotesV1:400"] = ["validation_failed"],
             ["GetPurchaseRequestsV1:400"] = ["invalid_cursor", "validation_failed"],
             ["CreatePurchaseRequestV1:400"] = ["command_metadata_invalid", "validation_failed"],
             ["CreatePurchaseRequestV1:409"] = ["concurrent_change", "same_key_payload_mismatch", "version_conflict"],
@@ -1806,6 +1905,16 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetLogisticsSalesWorkV1:400"] = ["invalid_cursor", "validation_failed"],
             ["GetLogisticsPurchaseWorkV1:400"] = ["invalid_cursor", "validation_failed"],
             ["SearchGlobalV1:400"] = ["validation_failed"],
+            ["UploadDocumentV1:400"] = ["command_metadata_invalid", "validation_failed"],
+            ["UploadDocumentV1:409"] = ["concurrent_change", "same_key_payload_mismatch"],
+            ["UploadDocumentV1:422"] =
+            [
+                "document_content_mismatch", "document_content_rejected", "document_empty", "document_too_large",
+                "document_type_not_allowed",
+            ],
+            ["GetDocumentsV1:400"] = ["validation_failed"],
+            ["GetDocumentContentV1:400"] = ["validation_failed"],
+            ["GetDocumentContentV1:409"] = ["document_not_scanned"],
             ["GetSalesContactInformationReferencesV1:400"] = ["validation_failed"],
             ["GetSalesCurrencyReferencesV1:400"] = ["validation_failed"],
         };
@@ -2288,12 +2397,62 @@ public sealed partial class OpenApiContractGenerationTests
                     ("updatedAtUtc", "type:string;format:date-time"),
                     ("lineCount", "type:integer|string;format:int32")),
                 ["LoadingInstructionDetailView"] = ObjectSchema(
-                    ["instruction", "lines", "shares"],
+                    // #518 P2: the weighing (null before it is weighed) and the dispatch notes (an array) are always on the wire, so required.
+                    ["instruction", "lines", "shares", "weighing", "dispatchNotes"],
                     ("instruction", "ref:LoadingInstructionSummaryView"),
                     ("lines", "type:array;items:ref:LoadingInstructionLineView"),
                     ("shares", "type:array;items:ref:LoadingShareView"),
                     // AT-053: the instruction's one weighbridge record, or null before it is weighed.
-                    ("weighing", "oneOf:ref:LoadingInstructionWeighingView|type:null")),
+                    ("weighing", "oneOf:ref:LoadingInstructionWeighingView|type:null"),
+                    // AT-055: the instruction's dispatch notes — always an array, never null (#518 P2).
+                    ("dispatchNotes", "type:array;items:ref:DispatchNoteView")),
+                ["DispatchNoteView"] = ObjectSchema(
+                    ["dispatchNoteId", "status", "number", "createdBy", "createdAtUtc", "approvedBy", "approvedAtUtc", "cancelledBy", "cancelledAtUtc",
+                        "cancelReason", "eDispatchNumber", "lines"],
+                    ("dispatchNoteId", "type:string;format:uuid"),
+                    ("status", "type:string"),
+                    // The system number (on approval) and the e-İrsaliye number: two members, each null until it exists.
+                    ("number", "type:null|string"),
+                    ("createdBy", "type:string"),
+                    ("createdAtUtc", "type:string;format:date-time"),
+                    ("approvedBy", "type:null|string"),
+                    ("approvedAtUtc", "type:null|string;format:date-time"),
+                    ("cancelledBy", "type:null|string"),
+                    ("cancelledAtUtc", "type:null|string;format:date-time"),
+                    ("cancelReason", "type:null|string"),
+                    ("eDispatchNumber", "type:null|string"),
+                    ("lines", "type:array;items:ref:DispatchNoteLineView")),
+                ["DispatchNoteLineView"] = ObjectSchema(
+                    ["lineNo", "shipmentId", "instructionLineId", "sourceOrderId", "sourceOrderLineId", "productId", "unitId", "quantity"],
+                    ("lineNo", "type:integer|string;format:int32"),
+                    ("shipmentId", "type:string;format:uuid"),
+                    ("instructionLineId", "type:string;format:uuid"),
+                    ("sourceOrderId", "type:string;format:uuid"),
+                    ("sourceOrderLineId", "type:string;format:uuid"),
+                    ("productId", "type:string;format:uuid"),
+                    ("unitId", "type:string;format:uuid"),
+                    ("quantity", "type:string")),
+                ["SalesOrderDispatchNotesView"] = ObjectSchema(
+                    ["salesOrderId", "items", "hasMore"],
+                    ("salesOrderId", "type:string;format:uuid"),
+                    ("items", "type:array;items:ref:SalesOrderDispatchNoteView"),
+                    ("hasMore", "type:boolean")),
+                ["SalesOrderDispatchNoteView"] = ObjectSchema(
+                    ["dispatchNoteId", "instructionId", "status", "number", "eDispatchNumber", "createdAtUtc", "lines"],
+                    ("dispatchNoteId", "type:string;format:uuid"),
+                    ("instructionId", "type:string;format:uuid"),
+                    ("status", "type:string"),
+                    ("number", "type:null|string"),
+                    ("eDispatchNumber", "type:null|string"),
+                    ("createdAtUtc", "type:string;format:date-time"),
+                    ("lines", "type:array;items:ref:SalesOrderDispatchNoteLineView")),
+                ["SalesOrderDispatchNoteLineView"] = ObjectSchema(
+                    ["lineNo", "sourceOrderLineId", "shipmentId", "unitId", "quantity"],
+                    ("lineNo", "type:integer|string;format:int32"),
+                    ("sourceOrderLineId", "type:string;format:uuid"),
+                    ("shipmentId", "type:string;format:uuid"),
+                    ("unitId", "type:string;format:uuid"),
+                    ("quantity", "type:string")),
                 ["LoadingInstructionWeighingView"] = ObjectSchema(
                     ["weighingId", "direction", "firstWeighingKg", "secondWeighingKg", "tareKg", "grossKg", "netKg", "loadedKgAtWeighing", "differenceKg", "recordedBy", "recordedAtUtc"],
                     ("weighingId", "type:string;format:uuid"),
@@ -3525,6 +3684,49 @@ public sealed partial class OpenApiContractGenerationTests
                     ("isActive", "type:boolean"),
                     ("version", "type:integer;format:int64"),
                     ("canOpenLocationDetail", "type:boolean")),
+                // ERP-000G / AT-065: the vault's answers. Identities, names and facts; no object key or storage location.
+                ["DocumentUploadResponse"] = ObjectSchema(
+                    ["document", "duplicates", "isReplay", "originalCorrelationId"],
+                    ("document", "ref:DocumentView"),
+                    ("duplicates", "type:array;items:ref:DocumentDuplicateView"),
+                    ("isReplay", "type:boolean"),
+                    ("originalCorrelationId", "type:string")),
+                ["DocumentListResponse"] = ObjectSchema(
+                    ["items", "canUpload", "limits"],
+                    ("items", "type:array;items:ref:DocumentView"),
+                    ("canUpload", "type:boolean"),
+                    ("limits", "ref:DocumentUploadLimitsView")),
+                ["DocumentView"] = ObjectSchema(
+                    ["id", "companyId", "ownerKind", "ownerId", "versionNo", "fileName", "contentType", "sizeBytes", "sha256", "scanState",
+                        "downloadable", "uploadedBy", "uploadedAtUtc"],
+                    ("id", "type:string;format:uuid"),
+                    ("companyId", "type:string;format:uuid"),
+                    ("ownerKind", "type:string"),
+                    ("ownerId", "type:string;format:uuid"),
+                    ("versionNo", "type:integer|string;format:int32"),
+                    ("fileName", "type:string"),
+                    ("contentType", "type:string"),
+                    ("sizeBytes", "type:integer|string;format:int64"),
+                    ("sha256", "type:string"),
+                    ("scanState", "type:string"),
+                    ("downloadable", "type:boolean"),
+                    ("uploadedBy", "type:string"),
+                    ("uploadedAtUtc", "type:string;format:date-time")),
+                // AT-057: an earlier document of the same company with the same content, whose owner record the actor may read.
+                ["DocumentDuplicateView"] = ObjectSchema(
+                    ["documentId", "fileName", "ownerKind", "ownerId", "uploadedAtUtc"],
+                    ("documentId", "type:string;format:uuid"),
+                    ("fileName", "type:string"),
+                    ("ownerKind", "type:string"),
+                    ("ownerId", "type:string;format:uuid"),
+                    ("uploadedAtUtc", "type:string;format:date-time")),
+                ["DocumentUploadLimitsView"] = ObjectSchema(
+                    ["maximumBytes", "extensions", "contentTypes"],
+                    ("maximumBytes", "type:integer|string;format:int64"),
+                    ("extensions", "type:array;items:type:string"),
+                    ("contentTypes", "type:array;items:type:string")),
+                // A clean version's bytes, served in the version's own type (application/pdf, image/png or image/jpeg).
+                ["Stream"] = ScalarSchema("type:string;format:binary"),
                 // AT-002 global search: price-free and count-free; each group is one module-owned kind.
                 ["GlobalSearchResponseV1"] = ObjectSchema(
                     ["query", "groups"],
@@ -3629,6 +3831,12 @@ public sealed partial class OpenApiContractGenerationTests
                 ["ApproveAccountingJournalReversalRequestV1"] = ObjectSchema(
                     ["expectedVersion"],
                     ("expectedVersion", "type:integer|string;format:int32")),
+                // AT-065: the multipart upload form (ownerKind, ownerId, one file); the route reads it strictly itself.
+                ["DocumentUploadFormV1"] = ObjectSchema(
+                    ["ownerKind", "ownerId", "file"],
+                    ("ownerKind", "type:string"),
+                    ("ownerId", "type:string;format:uuid"),
+                    ("file", "ref:IFormFile")),
                 ["ApproveNormalJournalDraftRequestV1"] = ObjectSchema(
                     ["expectedVersion", "periodId"],
                     ("expectedVersion", "type:integer|string;format:int64"),
@@ -3761,6 +3969,22 @@ public sealed partial class OpenApiContractGenerationTests
                     ("direction", "type:string"),
                     ("firstWeighingKg", "type:string"),
                     ("secondWeighingKg", "type:string")),
+                ["CreateDispatchNoteRequest"] = ObjectSchema(
+                    ["expectedVersion", "dispatchNoteId", "shipmentIds"],
+                    ("expectedVersion", "type:string"),
+                    ("dispatchNoteId", "type:string;format:uuid"),
+                    ("shipmentIds", "type:array;items:type:string;format:uuid")),
+                ["ApproveDispatchNoteRequest"] = ObjectSchema(
+                    ["expectedVersion"],
+                    ("expectedVersion", "type:string")),
+                ["CancelDispatchNoteRequest"] = ObjectSchema(
+                    ["expectedVersion", "reason"],
+                    ("expectedVersion", "type:string"),
+                    ("reason", "type:string")),
+                ["SetEDispatchNumberRequest"] = ObjectSchema(
+                    ["expectedVersion", "eDispatchNumber"],
+                    ("expectedVersion", "type:string"),
+                    ("eDispatchNumber", "type:string")),
                 ["OpeningCountRequestV1"] = ObjectSchema(
                     ["countId", "locationId", "countedOn", "sheetReference", "lines"],
                     ("countId", "type:string;format:uuid"), ("locationId", "type:string;format:uuid"),
@@ -4731,9 +4955,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(172, operations.Count);
+        Assert.Equal(180, operations.Count);
         Assert.Equal(
-            172,
+            180,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());
@@ -4798,11 +5022,11 @@ public sealed partial class OpenApiContractGenerationTests
                 var requestBody = actual.Value.GetProperty("requestBody");
                 Assert.True(requestBody.GetProperty("required").GetBoolean());
                 var requestContent = requestBody.GetProperty("content");
-                Assert.Equal(["application/json"], requestContent.EnumerateObject()
+                Assert.Equal([expected.RequestMediaType], requestContent.EnumerateObject()
                     .Select(content => content.Name));
                 Assert.Equal(
                     expected.RequestSchemaReference,
-                    requestContent.GetProperty("application/json")
+                    requestContent.GetProperty(expected.RequestMediaType)
                         .GetProperty("schema")
                         .GetProperty("$ref")
                         .GetString());
@@ -4843,6 +5067,11 @@ public sealed partial class OpenApiContractGenerationTests
             if (expected.OperationId == "GetInventoryPhysicalAllocationsV1")
             {
                 AssertInventoryPhysicalAllocationReadQueryContract(actual.Value);
+            }
+
+            if (expected.OperationId == "GetSalesOrderDispatchNotesV1")
+            {
+                AssertSalesOrderDispatchNotesQueryContract(actual.Value);
             }
         }
 
@@ -5077,6 +5306,7 @@ public sealed partial class OpenApiContractGenerationTests
         AssertSchemaSemantics(schemas);
         AssertSuccessComponentSchemas(schemas);
         AssertProductSchemas(schemas);
+        AssertDispatchNoteRequestBounds(schemas);
         var mutationAccounts = schemas
             .GetProperty("CounterpartyMutationView")
             .GetProperty("properties")
@@ -5184,8 +5414,11 @@ public sealed partial class OpenApiContractGenerationTests
             return "none";
         }
 
-        var mediaType = Assert.Single(content.EnumerateObject());
-        var schema = mediaType.Value.GetProperty("schema");
+        // One body per success response: several media types (a file served in its own type, AT-065) must share one schema.
+        var schemas = content.EnumerateObject().Select(mediaType => mediaType.Value.GetProperty("schema")).ToArray();
+        Assert.NotEmpty(schemas);
+        Assert.Single(schemas.Select(candidate => candidate.GetRawText()).Distinct(StringComparer.Ordinal));
+        var schema = schemas[0];
         if (schema.TryGetProperty("$ref", out var reference))
         {
             return $"ref:{reference.GetString()?.Split('/').Last()}";
@@ -5342,6 +5575,35 @@ public sealed partial class OpenApiContractGenerationTests
         var limit = parameters["limit"];
         Assert.Equal(1, limit.GetProperty("minimum").GetInt32());
         Assert.Equal(100, limit.GetProperty("maximum").GetInt32());
+    }
+
+    /// <summary>#518 P2: the Sales order's dispatch notes are read for exactly one required uuid.</summary>
+    private static void AssertSalesOrderDispatchNotesQueryContract(JsonElement operation)
+    {
+        var parameter = Assert.Single(operation.GetProperty("parameters").EnumerateArray(),
+            candidate => candidate.GetProperty("in").GetString() == "query");
+        Assert.Equal(("salesOrderId", true), (parameter.GetProperty("name").GetString(), parameter.GetProperty("required").GetBoolean()));
+        Assert.Equal(("string", "uuid"), (parameter.GetProperty("schema").GetProperty("type").GetString(),
+            parameter.GetProperty("schema").GetProperty("format").GetString()));
+    }
+
+    /// <summary>
+    /// #518 P2: a dispatch note names 1..500 DISTINCT shipments; the cancellation reason is 1..500 characters; the e-İrsaliye number
+    /// is the 16-character GİB shape. The schema says what the wire reader enforces.
+    /// </summary>
+    private static void AssertDispatchNoteRequestBounds(JsonElement schemas)
+    {
+        var shipmentIds = schemas.GetProperty("CreateDispatchNoteRequest").GetProperty("properties").GetProperty("shipmentIds");
+        Assert.Equal((1, LogisticsJson.MaximumDispatchNoteShipments, true), (shipmentIds.GetProperty("minItems").GetInt32(),
+            shipmentIds.GetProperty("maxItems").GetInt32(), shipmentIds.GetProperty("uniqueItems").GetBoolean()));
+        var reason = schemas.GetProperty("CancelDispatchNoteRequest").GetProperty("properties").GetProperty("reason");
+        Assert.Equal((1, LogisticsJson.CancelReasonMaximumLength), (reason.GetProperty("minLength").GetInt32(), reason.GetProperty("maxLength").GetInt32()));
+        var eDispatch = schemas.GetProperty("SetEDispatchNumberRequest").GetProperty("properties").GetProperty("eDispatchNumber");
+        Assert.Equal((16, 16, LogisticsJson.EDispatchNumberPattern), (eDispatch.GetProperty("minLength").GetInt32(), eDispatch.GetProperty("maxLength").GetInt32(),
+            eDispatch.GetProperty("pattern").GetString()));
+        // Never nullable: the detail's dispatchNotes is always an array.
+        Assert.Equal("array", schemas.GetProperty("LoadingInstructionDetailView").GetProperty("properties").GetProperty("dispatchNotes")
+            .GetProperty("type").GetString());
     }
 
     private static void AssertInventoryPhysicalAllocationReadQueryContract(JsonElement operation)
@@ -6030,7 +6292,8 @@ public sealed partial class OpenApiContractGenerationTests
         string OperationId,
         IReadOnlyList<string> Responses,
         string? RequestSchemaReference = null,
-        IReadOnlyList<string>? ParameterValues = null)
+        IReadOnlyList<string>? ParameterValues = null,
+        string RequestMediaType = "application/json")
     {
         public IReadOnlyList<string> Parameters { get; } = ParameterValues ?? [];
     }

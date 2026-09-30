@@ -3,8 +3,12 @@
  *
  * Scope is the accepted spec §5.1 and nothing beyond it. Deliberately absent, and
  * forbidden by `mockTruthForbidden`: balance, risk, credit limit, open items,
- * orders, stock, documents, bank/tax/registry, timeline, CRM, AI. A tab or a card
- * whose owner API does not exist is not rendered empty — it is not rendered.
+ * orders, stock, bank/tax/registry, timeline, CRM, AI. A tab or a card whose owner
+ * API does not exist is not rendered empty — it is not rendered.
+ *
+ * Documents are no longer on that list: AT-065 gave them an owner API (the document
+ * vault). The panel below is the vault's, answered by the server under the vault's
+ * own names AND this card's read; without them it is not rendered at all.
  *
  * There is no zero, no dash and no placeholder standing in for a number nobody
  * has computed yet. An empty card reads as "this counterparty has none", which is
@@ -27,6 +31,8 @@ import { CARI_CONTROL_CAPABILITY, targetIsActive } from './accountStatusContract
 import { AccountStatusControl, AccountStatusRecoveryNotice } from './AccountStatusControl'
 import { CariCompanyRelationships } from './CariCompanyRelationships'
 import { CariTaxIdentityPanel } from './CariTaxIdentityPanel'
+import { DocumentsPanel } from '../documents/DocumentsPanel'
+import { OWNER_KIND } from '../documents/contract'
 import { useAccountStatusFlow, type AccountStatusApplied } from './useAccountStatusFlow'
 import type { CounterpartyDetail } from './detailContract'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
@@ -464,6 +470,21 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
           />
         ) : null}
       </section>
+
+      {/**
+        * AT-065: this card's documents in the active company. The vault answers the list only
+        * under its own read name and this card's read; a 403/404 renders nothing. Keyed to the
+        * same context and entry as the card, so another company's list is never shown here.
+        */}
+      {namespace !== null && activeCompanyId !== null ? (
+        <DocumentsPanel
+          ownerKind={OWNER_KIND.counterpartyParty}
+          ownerId={detail.id}
+          companyId={activeCompanyId}
+          namespace={namespace}
+          entryGeneration={entryGeneration}
+        />
+      ) : null}
 
       {/**
         * Offered only where the actor can see more than one company: with one, the panel

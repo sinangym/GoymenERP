@@ -1,0 +1,161 @@
+.block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #1a2233;
+  margin: 0;
+}
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.note {
+  font-size: 0.8rem;
+  color: #55607a;
+  margin: 0;
+}
+
+.upload {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid #d5dbe6;
+  border-radius: 6px;
+  background: #f6f8fb;
+  min-width: 0;
+}
+.label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #1a2233;
+}
+.file {
+  font: inherit;
+  font-size: 0.9rem;
+  max-width: 100%;
+}
+
+.primary,
+.action {
+  align-self: flex-start;
+  font: inherit;
+  font-size: 0.9rem;
+  border-radius: 4px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+.primary {
+  color: #fff;
+  background: #1f5fd0;
+  border: 1px solid #1f5fd0;
+}
+.action {
+  color: #1f5fd0;
+  background: #fff;
+  border: 1px solid #b9c1d1;
+}
+.action:hover {
+  text-decoration: underline;
+}
+.primary:focus-visible,
+.action:focus-visible,
+.file:focus-visible {
+  outline: 2px solid #1f5fd0;
+  outline-offset: 2px;
+}
+.primary:disabled,
+.action:disabled {
+  color: #55607a;
+  background: #eef1f6;
+  border-color: #d5dbe6;
+  cursor: not-allowed;
+  text-decoration: none;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+}
+
+.problem {
+  font-size: 0.85rem;
+  color: #8a1c1c;
+  margin: 0;
+}
+.problem p {
+  margin: 0 0 4px;
+}
+.saved {
+  font-size: 0.85rem;
+  color: #1d5b2f;
+}
+.saved p {
+  margin: 0 0 4px;
+}
+.warning {
+  margin-top: 6px;
+  padding: 8px 10px;
+  border: 1px solid #e0b25a;
+  border-radius: 4px;
+  background: #fff8e8;
+  color: #5c3d00;
+}
+.warning ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+/* A narrow screen scrolls the table, never the page (WCAG 1.4.10). */
+.tableWrap {
+  overflow-x: auto;
+  border: 1px solid #d5dbe6;
+  border-radius: 6px;
+}
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  background: #fff;
+}
+.table th,
+.table td {
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid #e3e7ee;
+  overflow-wrap: anywhere;
+  vertical-align: top;
+}
+.table thead th {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #55607a;
+  background: #f6f8fb;
+}
+.table tbody tr:last-child th,
+.table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.table tbody th {
+  font-weight: 500;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

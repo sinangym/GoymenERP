@@ -152,14 +152,17 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
             .Options;
         const string TableExists = "SELECT COUNT(*) FROM sys.tables WHERE [name] = N'VehicleWeighings' AND SCHEMA_NAME([schema_id]) = N'logistics'";
 
-        // Empty: the rollback runs, the table is dropped, and the forward migration re-creates it.
+        // Empty: the rollback runs, the table is dropped, and the forward migration re-creates it. AT-055's later migration
+        // (AddDispatchNoteDrafts, empty here) is rolled back on the way and re-applied with it.
+        int weighings;
         await using (var context = new LogisticsDbContext(options, companyContext))
         {
             var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
-            Assert.EndsWith("_AddVehicleWeighings", applied[^1], StringComparison.Ordinal);
-            await context.GetService<IMigrator>().MigrateAsync(applied[^2]);
+            weighings = Array.FindIndex(applied, migration => migration.EndsWith("_AddVehicleWeighings", StringComparison.Ordinal));
+            Assert.True(weighings > 0);
+            await context.GetService<IMigrator>().MigrateAsync(applied[weighings - 1]);
             Assert.Equal(0, await run.ScalarAsync<int>(TableExists));
-            Assert.Equal(applied[..^1], await context.Database.GetAppliedMigrationsAsync());
+            Assert.Equal(applied[..weighings], await context.Database.GetAppliedMigrationsAsync());
             await context.Database.MigrateAsync();
             Assert.Equal(1, await run.ScalarAsync<int>(TableExists));
         }
@@ -178,9 +181,13 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
 
         await using (var context = new LogisticsDbContext(options, companyContext))
         {
+            // The later, empty AddDispatchNoteDrafts rolls back first; the weighing migration then refuses.
             var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
-            var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[^2]));
+            await context.GetService<IMigrator>().MigrateAsync(applied[weighings]);
+            var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[weighings - 1]));
             Assert.Equal(51056, error.Number);
+            Assert.Equal(applied[..(weighings + 1)], await context.Database.GetAppliedMigrationsAsync());
+            await context.Database.MigrateAsync();
             Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
         }
 

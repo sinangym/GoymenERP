@@ -95,8 +95,9 @@ export function instructionDetail(
   lines: readonly Record<string, unknown>[] = [instructionLine()],
   shares: readonly Record<string, unknown>[] = [],
   weighing: Record<string, unknown> | null = null,
+  dispatchNotes: readonly Record<string, unknown>[] = [],
 ): Record<string, unknown> {
-  return { instruction: instructionSummary({ lineCount: lines.length, ...summary }), lines, shares, weighing }
+  return { instruction: instructionSummary({ lineCount: lines.length, ...summary }), lines, shares, weighing, dispatchNotes }
 }
 
 /** AT-053: a weighbridge record as the backend answers it (its calculation, never the client's). */
@@ -162,6 +163,10 @@ export interface HarnessConfig {
   readonly onShipment?: (lineId: string, call: RecordedCall) => Response | Promise<Response>
   readonly onDelivery?: (lineId: string, call: RecordedCall) => Response | Promise<Response>
   readonly onWeighing?: (call: RecordedCall) => Response | Promise<Response>
+  /** AT-055: the dispatch-note draft command. */
+  readonly onDispatchNote?: (call: RecordedCall) => Response | Promise<Response>
+  /** AT-055: approve / cancel / e-dispatch-number on one note. */
+  readonly onDispatchNoteLifecycle?: (kind: string, dispatchNoteId: string, call: RecordedCall) => Response | Promise<Response>
   readonly onAllocations?: (call: RecordedCall) => Response | Promise<Response>
   /** The price-free approved-order-lines read the picker uses. */
   readonly onApprovedLines?: (url: string, companyId: string | null) => Response | Promise<Response>
@@ -223,6 +228,15 @@ export function installFetch(config: HarnessConfig = {}) {
         if (call.method === 'POST' && load !== undefined) {
           if (config.onLoad === undefined) throw new Error('unexpected load')
           return config.onLoad(decodeURIComponent(load), call)
+        }
+        const lifecycle = /\/dispatch-notes\/([^/]+)\/(approve|cancel|e-dispatch-number)$/.exec(url)
+        if (call.method === 'POST' && lifecycle !== null) {
+          if (config.onDispatchNoteLifecycle === undefined) throw new Error('unexpected dispatch-note lifecycle command')
+          return config.onDispatchNoteLifecycle(lifecycle[2], decodeURIComponent(lifecycle[1]), call)
+        }
+        if (call.method === 'POST' && /\/dispatch-notes$/.test(url)) {
+          if (config.onDispatchNote === undefined) throw new Error('unexpected dispatch note')
+          return config.onDispatchNote(call)
         }
         if (call.method === 'POST' && /\/weighings$/.test(url)) {
           if (config.onWeighing === undefined) throw new Error('unexpected weighing')

@@ -87,7 +87,8 @@ function sameContent(current: PlanRevision, request: RevisePlanRequest): boolean
 }
 
 export function PlanEditForm({ companyId, plan, current, busy, onSubmit, onCancel }: PlanEditFormProps) {
-  const { capture: captureSecurity, report: reportSecurity } = useAuthBoundary()
+  const authBoundary = useAuthBoundary()
+  const { capture: captureSecurity, report: reportSecurity } = authBoundary
   const [workCenters, setWorkCenters] = useState<ReadState<readonly WorkCenterSummary[]>>({ type: 'loading' })
   const [workCenterId, setWorkCenterId] = useState(current.workCenterId)
   const [rows, setRows] = useState<readonly EditRow[]>(() =>
@@ -158,7 +159,7 @@ export function PlanEditForm({ companyId, plan, current, busy, onSubmit, onCance
     })),
     targetBasis,
     targetKg,
-  ))
+  ), authBoundary)
 
   function labelOf(parentRollId: string): string {
     return rows.find((row) => row.parentRollId === parentRollId)?.labelCode ?? parentRollId

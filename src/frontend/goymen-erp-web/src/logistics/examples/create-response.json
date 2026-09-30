@@ -32,7 +32,8 @@
       }
     ],
     "shares": [],
-    "weighing": null
+    "weighing": null,
+    "dispatchNotes": []
   },
   "isReplay": false,
   "originalCorrelationId": "corr-1"

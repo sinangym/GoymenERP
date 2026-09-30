@@ -200,7 +200,10 @@ SUITE_IDENTITY_PERMISSIONS = {
     # the explanation. A closed list of two, therefore, with no per-actor subset to record.
     # SY-01/SY-02 (user decision 2026-09-28): two further actors, c02-access-admin (A) and c02-access-admin-b (B),
     # hold ONLY identity.assignments.read — the same company-fence design, now for the read-only access view.
-    "c02": ("counterparty.parties.create", "counterparty.parties.read", "identity.assignments.read"),
+    # ERP-000G / AT-065: c02-creator and c02-other-company also hold the document vault's two names (the same names in
+    # different companies, the suite's design), for the Cari-card document journey (c02-documents.spec.ts).
+    "c02": ("counterparty.parties.create", "counterparty.parties.read", "identity.assignments.read",
+            "documents.files.read", "documents.files.upload"),
     # ORG master edit (user decision 2026-09-27): a THIRD actor, org03-editor, holds the three reads its
     # screens need (work-centers, locations, sites) plus the three master-edit writes. The two readers above
     # keep their exact subsets, so the suite also shows a reader is offered no create/edit control.
@@ -285,6 +288,8 @@ SUITE_IDENTITY_PERMISSIONS = {
     # the owner answers nothing and the picker is silently empty (ASSUMPTION-LOG4B-3).
     "l04": ("logistics.loading-instructions.create", "logistics.loading-instructions.read", "logistics.loads.record",
             "logistics.shipments.record", "logistics.deliveries.record", "logistics.weighings.record",
+            # AT-055: the disposable loader prepares the dispatch-note draft, approves it and cancels it (user decision 2026-09-30).
+            "logistics.dispatch-notes.create", "logistics.dispatch-notes.approve", "logistics.dispatch-notes.cancel",
             "sales.drafts.create", "sales.drafts.read", "sales.orders.approve", "counterparty.parties.read",
             "inventory.opening-stock.record", "inventory.labels.read", "inventory.balances.read",
             "inventory.physical-allocation.write", "product.operational-selection.read",

@@ -296,6 +296,29 @@ public sealed class ManufacturingPlanPreviewTests
         Assert.Equal(ManufacturingApiStatus.Unavailable, unavailable.Status);
     }
 
+    [Theory]
+    [InlineData(409, InventoryParentRollCodesV1.ReadConflict, ManufacturingApiStatus.Conflict,
+        InventoryParentRollCodesV1.ReadConflict)]
+    [InlineData(404, InventoryParentRollCodesV1.InvalidReference, ManufacturingApiStatus.NotFound, null)]
+    [InlineData(422, InventoryParentRollCodesV1.ContextRequired, ManufacturingApiStatus.Unprocessable,
+        InventoryParentRollCodesV1.ContextRequired)]
+    [InlineData(422, InventoryParentRollCodesV1.NoPhysicalPosition, ManufacturingApiStatus.Unprocessable,
+        InventoryParentRollCodesV1.NoPhysicalPosition)]
+    public async Task Parent_roll_read_refusals_keep_the_save_boundary_without_writing(
+        int ownerStatus, string ownerCode, ManufacturingApiStatus expectedStatus, string? expectedCode)
+    {
+        var fixture = new Fixture();
+        fixture.ParentRolls.Exception = new InventoryParentRollException(ownerStatus, ownerCode);
+
+        var preview = await fixture.Service.PreviewPlanAsync(Request("10"), Permission, CancellationToken.None);
+
+        Assert.Equal((expectedStatus, expectedCode, (string?)null), (preview.Status, preview.Code, preview.Field));
+        Assert.Equal(["authority", "work-center", "settings", "parent-roll"], fixture.Calls);
+        Assert.Empty(fixture.Store.Writes);
+        Assert.Empty(fixture.Store.Commands);
+        Assert.DoesNotContain("find-command", fixture.Calls);
+    }
+
     [Fact]
     public async Task Without_a_fresh_company_wide_grant_nothing_is_asked()
     {

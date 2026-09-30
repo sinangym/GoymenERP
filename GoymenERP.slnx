@@ -26,6 +26,11 @@
     <Project Path="src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Domain/GoymenERP.Modules.Counterparty.Domain.csproj" />
     <Project Path="src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/GoymenERP.Modules.Counterparty.Infrastructure.csproj" />
   </Folder>
+  <Folder Name="/src/backend/Modules/Documents/">
+    <Project Path="src/backend/Modules/Documents/GoymenERP.Modules.Documents.Application/GoymenERP.Modules.Documents.Application.csproj" />
+    <Project Path="src/backend/Modules/Documents/GoymenERP.Modules.Documents.Domain/GoymenERP.Modules.Documents.Domain.csproj" />
+    <Project Path="src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/GoymenERP.Modules.Documents.Infrastructure.csproj" />
+  </Folder>
   <Folder Name="/src/backend/Modules/Finance/">
     <Project Path="src/backend/Modules/Finance/GoymenERP.Modules.Finance.Contracts/GoymenERP.Modules.Finance.Contracts.csproj" />
     <Project Path="src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/GoymenERP.Modules.Finance.Infrastructure.csproj" />
@@ -97,6 +102,7 @@
     <Project Path="tests/GoymenERP.Inventory.UnitTests/GoymenERP.Inventory.UnitTests.csproj" />
     <Project Path="tests/GoymenERP.Logistics.UnitTests/GoymenERP.Logistics.UnitTests.csproj" />
     <Project Path="tests/GoymenERP.DocumentGeneration.Pdf.Tests/GoymenERP.DocumentGeneration.Pdf.Tests.csproj" />
+    <Project Path="tests/GoymenERP.Documents.UnitTests/GoymenERP.Documents.UnitTests.csproj" />
   </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/GoymenERP.PdfPoc/GoymenERP.PdfPoc.csproj" />

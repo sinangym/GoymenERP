@@ -13,6 +13,8 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
+import type { SecuritySnapshot } from '../shell/authBoundary'
+import type { AuthBoundary } from '../shell/useAuthBoundary'
 import { isKilogramText } from './contract'
 import { previewPlan, type PlanPreview, type PlanPreviewRequest } from './planPreview'
 import type { PlanTargetBasis } from './planCommandApi'
@@ -90,20 +92,31 @@ export function planPreviewInput(
   }
 }
 
-export function usePlanPreview(companyId: string | null, input: PlanPreviewInput): PlanPreviewState {
+export function usePlanPreview(
+  companyId: string | null,
+  input: PlanPreviewInput,
+  authBoundary: AuthBoundary,
+): PlanPreviewState {
   // What the server said, and for which content (its key). Everything else is derived from the form's present input,
   // so a changed content is "waiting" and the older answer is "not current" in the very render that changed it.
   const [settled, setSettled] = useState<{ readonly key: string; readonly status: PlanPreviewStatus } | null>(null)
   const [last, setLast] = useState<AnsweredPreview | null>(null)
   const sequence = useRef(0)
-  const key = companyId !== null && input.type === 'ready' ? JSON.stringify([companyId, input.request]) : null
+  const security = authBoundary.capture()
+  const reportSecurity = authBoundary.report
+  // The immutable request-start snapshot is part of the preview key, so an old actor/company/capability answer cannot
+  // become the current answer after the shell context changes. It is parsed back with the request inside the effect;
+  // no response-time shell value can replace it.
+  const key = companyId !== null && input.type === 'ready'
+    ? JSON.stringify([companyId, input.request, security])
+    : null
 
   // The effect restarts on a CHANGED content (its key text), never on a new object of the same content; the content
   // is read back from that key, so the request sent is exactly the one the key names.
   useEffect(() => {
     const generation = ++sequence.current
     if (key === null) return
-    const [company, request] = JSON.parse(key) as [string, PlanPreviewRequest]
+    const [company, request, requestSecurity] = JSON.parse(key) as [string, PlanPreviewRequest, SecuritySnapshot]
     const controller = new AbortController()
     const timer = setTimeout(() => {
       if (generation !== sequence.current) return
@@ -115,6 +128,9 @@ export function usePlanPreview(companyId: string | null, input: PlanPreviewInput
           setLast({ key, request, preview: outcome.preview })
           setSettled({ key, status: { type: 'answered' } })
         } else if (outcome.type === 'refused') {
+          if (outcome.status === 401 || outcome.status === 403) {
+            reportSecurity(outcome.status, requestSecurity)
+          }
           setSettled({
             key,
             status: { type: 'refused', status: outcome.status, code: outcome.code, field: outcome.field },
@@ -128,7 +144,7 @@ export function usePlanPreview(companyId: string | null, input: PlanPreviewInput
       clearTimeout(timer)
       controller.abort()
     }
-  }, [key])
+  }, [key, reportSecurity])
 
   const status: PlanPreviewStatus = companyId === null
     ? { type: 'idle' }
