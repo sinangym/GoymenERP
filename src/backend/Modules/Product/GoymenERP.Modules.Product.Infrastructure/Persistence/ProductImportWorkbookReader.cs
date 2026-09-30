@@ -55,6 +55,8 @@ public sealed class ProductImportWorkbookReader : IProductImportWorkbookReaderV1
                 var observedRows = 0;
                 while (observedRows <= ProductImportApiV1.MaximumRows && rows.MoveNext())
                     if (rows.Current.HasAnyValue) observedRows++;
+                if (observedRows > ProductImportApiV1.MaximumRows)
+                    return TooManyRowsPreview(fileHash, mapping, observedRows, accepted, errors);
                 return Preview(fileHash, mapping, observedRows, accepted, errors);
             }
 
@@ -69,13 +71,7 @@ public sealed class ProductImportWorkbookReader : IProductImportWorkbookReaderV1
                 if (!row.HasAnyValue) continue;
                 sourceRowCount++;
                 if (sourceRowCount > ProductImportApiV1.MaximumRows)
-                {
-                    accepted.Clear();
-                    errors.Clear();
-                    errors.Add(Error(null, "workbook", ProductImportCodesV1.TooManyRows,
-                        $"En fazla {ProductImportApiV1.MaximumRows} veri satırı kabul edilir."));
-                    return Preview(fileHash, mapping, sourceRowCount, accepted, errors);
-                }
+                    return TooManyRowsPreview(fileHash, mapping, sourceRowCount, accepted, errors);
                 var legacyCell = Cell(row, headers[mapping.LegacyCode.Trim()]);
                 var nameCell = Cell(row, headers[mapping.Name.Trim()]);
                 var groupCell = Cell(row, headers[mapping.GroupId.Trim()]);
@@ -123,6 +119,20 @@ public sealed class ProductImportWorkbookReader : IProductImportWorkbookReaderV1
             errors.Add(Error(null, "workbook", ProductImportCodesV1.InvalidWorkbook, "Dosya geçerli bir .xlsx çalışma kitabı değil."));
             return Preview(fileHash, mapping, 0, accepted, errors);
         }
+    }
+
+    private static ProductImportPreviewV1 TooManyRowsPreview(
+        string fileHash,
+        ProductImportColumnMappingV1 mapping,
+        int sourceRowCount,
+        List<ProductImportSourceRowV1> accepted,
+        List<ProductImportErrorV1> errors)
+    {
+        accepted.Clear();
+        errors.Clear();
+        errors.Add(Error(null, "workbook", ProductImportCodesV1.TooManyRows,
+            $"En fazla {ProductImportApiV1.MaximumRows} veri satırı kabul edilir."));
+        return Preview(fileHash, mapping, sourceRowCount, accepted, errors);
     }
 
     private static ProductImportPreviewV1 Preview(string fileHash, ProductImportColumnMappingV1 mapping, int count,

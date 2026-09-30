@@ -164,6 +164,23 @@ public sealed class ProductImportWorkbookReaderTests
     }
 
     [Fact]
+    public void Row_limit_rejection_precedes_missing_required_columns_and_keeps_the_canonical_shape()
+    {
+        var rows = Enumerable.Range(1, ProductImportApiV1.MaximumRows + 1)
+            .Select(index => (IReadOnlyList<string>)[$"OLD-{index:D5}", $"Ürün {index}"])
+            .ToArray();
+
+        var result = Reader().Read(Workbook(["Kod", "Ad"], rows), Mapping, EmptyCodes(), Groups());
+
+        Assert.False(result.Ready);
+        Assert.Equal(ProductImportApiV1.MaximumRows + 1, result.SourceRowCount);
+        Assert.Empty(result.Rows);
+        var error = Assert.Single(result.Errors);
+        Assert.Equal((null, "workbook", ProductImportCodesV1.TooManyRows),
+            (error.RowNumber, error.Field, error.Code));
+    }
+
+    [Fact]
     public void Preview_refuses_a_shared_string_reference_beyond_the_bounded_import_table()
     {
         const int firstOutOfRangeIndex = (ProductImportApiV1.MaximumRows + 1) * 3;
