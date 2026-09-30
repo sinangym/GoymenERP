@@ -20,7 +20,8 @@ const detail: OfficialInvoicePendingDetail = { batch: pending, preview: { templa
     }] } } }
 const approved = { ...pending, status: 'Approved' as const, version: '2' as const,
   approvedBy: 'checker', approvedAtUtc: '2026-09-30T13:00:00Z' }
-const context = { sessionEpoch: 1, companyId: pending.companyId, actorId: 'checker' }
+const context = { sessionEpoch: 1, companyId: pending.companyId, actorId: 'checker', committedContextRevision: 3,
+  requestFenceGeneration: 5, capabilityGeneration: 11, securityNamespace: 'finance-checker' }
 
 describe('official invoice checker journey', () => {
   it('keeps the terminal approved source after the fresh pending list becomes empty', async () => {
@@ -86,7 +87,9 @@ describe('official invoice checker journey', () => {
       onApprovedSource={() => undefined} />)
     fireEvent.click(await screen.findByRole('button', { name: 'İncele' }))
     view.rerender(<OfficialInvoiceImportApprovalsPage client={client}
-      context={{ sessionEpoch: 2, companyId: '99999999-9999-4999-8999-999999999999', actorId: 'other' }}
+      context={{ ...context, sessionEpoch: 2, companyId: '99999999-9999-4999-8999-999999999999', actorId: 'other',
+        committedContextRevision: 4, requestFenceGeneration: 6, capabilityGeneration: 12,
+        securityNamespace: 'finance-other' }}
       onApprovedSource={() => undefined} />)
     resolveDetail(detail)
 
@@ -147,5 +150,38 @@ describe('official invoice checker journey', () => {
 
     await waitFor(() => expect(getPending).toHaveBeenCalledTimes(2))
     expect(await screen.findByRole('button', { name: 'Onay kuyruğuna dön' })).toBeTruthy()
+  })
+
+  it('retires state on same-actor re-fence and replays unknown then 403 with the same frozen attempt', async () => {
+    const approve = vi.fn()
+      .mockResolvedValueOnce({ kind: 'unknown' })
+      .mockResolvedValueOnce({ kind: 'unknown' })
+      .mockResolvedValueOnce({ kind: 'succeeded', replayed: true, batch: approved })
+    const client: OfficialInvoiceApprovalClient = {
+      listPending: vi.fn().mockResolvedValue({ companyId: pending.companyId, items: [pending], nextCursor: null }),
+      getPending: vi.fn().mockResolvedValue(detail), approve,
+    }
+    const selected = vi.fn()
+    const view = render(<OfficialInvoiceImportApprovalsPage client={client} context={context}
+      createIdempotencyKey={() => 'reauth-key'} onApprovedSource={selected} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'İncele' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Onayla' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Aynı anahtarla yeniden gönder' }))
+    await waitFor(() => expect(approve).toHaveBeenCalledTimes(2))
+
+    view.rerender(<OfficialInvoiceImportApprovalsPage client={client}
+      context={{ ...context, requestFenceGeneration: 6, capabilityGeneration: 12,
+        securityNamespace: 'finance-checker-refenced' }}
+      createIdempotencyKey={() => 'must-not-mint'} onApprovedSource={selected} />)
+    expect(screen.queryByText('1250.50')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Onaylanan kaynağı aktar' })).toBeNull()
+    fireEvent.click(await screen.findByRole('button', { name: 'İncele' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Aynı anahtarla yeniden gönder' }))
+
+    await waitFor(() => expect(approve).toHaveBeenCalledTimes(3))
+    for (const call of approve.mock.calls) {
+      expect(call.slice(0, 3)).toEqual([pending.batchId, '1', 'reauth-key'])
+    }
+    expect(await screen.findByRole('button', { name: 'Onaylanan kaynağı aktar' })).toBeTruthy()
   })
 })

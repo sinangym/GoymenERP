@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { SecuritySnapshot } from '../shell/authBoundary'
 import type {
   OfficialInvoiceApprovalReply,
   OfficialInvoiceApprovedBatch,
@@ -18,9 +19,19 @@ export interface OfficialInvoiceApprovalAttemptContext {
   readonly sessionEpoch: number
   readonly companyId: string
   readonly actorId: string
+  readonly committedContextRevision: SecuritySnapshot['committedContextRevision']
+  readonly requestFenceGeneration: SecuritySnapshot['requestFenceGeneration']
+  readonly capabilityGeneration: SecuritySnapshot['capabilityGeneration']
+  readonly securityNamespace: SecuritySnapshot['namespace']
 }
 
-const attempts = new Map<string, string>()
+interface StoredApprovalAttempt {
+  readonly key: string
+  readonly batchId: string
+  readonly expectedVersion: string
+}
+
+const attempts = new Map<string, StoredApprovalAttempt>()
 
 interface ApprovalPageProps {
   readonly client: OfficialInvoiceApprovalClient
@@ -34,6 +45,10 @@ export function OfficialInvoiceImportApprovalsPage(props: ApprovalPageProps) {
     props.context.sessionEpoch,
     props.context.companyId,
     props.context.actorId,
+    props.context.committedContextRevision,
+    props.context.requestFenceGeneration,
+    props.context.capabilityGeneration,
+    props.context.securityNamespace,
   ])
   return <OfficialInvoiceImportApprovalsPageState key={namespace} {...props} />
 }
@@ -47,7 +62,16 @@ function OfficialInvoiceImportApprovalsPageState({ client, context,
   const [issues, setIssues] = useState<readonly { readonly field: string; readonly code: string }[]>([])
   const request = useRef(0)
   const activeRequest = useRef<AbortController | null>(null)
-  const namespace = JSON.stringify([context.sessionEpoch, context.companyId, context.actorId])
+  const namespace = JSON.stringify([
+    context.sessionEpoch,
+    context.companyId,
+    context.actorId,
+    context.committedContextRevision,
+    context.requestFenceGeneration,
+    context.capabilityGeneration,
+    context.securityNamespace,
+  ])
+  const actorScope = JSON.stringify([context.sessionEpoch, context.companyId, context.actorId])
 
   const beginRequest = useCallback(() => {
     activeRequest.current?.abort()
@@ -80,20 +104,25 @@ function OfficialInvoiceImportApprovalsPageState({ client, context,
         || value.batch.batchId !== batch.batchId || value.batch.version !== batch.version) return
       setDetail(value)
       setIssues([])
-      setPhase('detail')
+      setPhase(attempts.has(attemptSlot(actorScope, value.batch.batchId)) ? 'unknown' : 'detail')
     }).catch(() => { if (generation === request.current) setPhase('failed') })
   }
 
   function approve(retry: boolean) {
     if (detail === null || detail.batch.uploadedBy === context.actorId) return
     const frozen = detail.batch
-    const keyScope = `${namespace}:${frozen.batchId}`
-    const key = retry ? attempts.get(keyScope) : (attempts.get(keyScope) ?? createIdempotencyKey())
-    if (key === undefined) return
-    attempts.set(keyScope, key)
+    const keyScope = attemptSlot(actorScope, frozen.batchId)
+    const existing = attempts.get(keyScope)
+    const attempt = existing ?? {
+      key: createIdempotencyKey(),
+      batchId: frozen.batchId,
+      expectedVersion: frozen.version,
+    }
+    if (retry && existing === undefined) return
+    attempts.set(keyScope, attempt)
     const { controller, generation } = beginRequest()
     setPhase('submitting')
-    void client.approve(frozen.batchId, frozen.version, key, controller.signal).then((reply) => {
+    void client.approve(attempt.batchId, attempt.expectedVersion, attempt.key, controller.signal).then((reply) => {
       if (generation !== request.current) return
       if (reply.kind === 'unknown') { setPhase('unknown'); return }
       if (reply.kind === 'conflicted') { attempts.delete(keyScope); setPhase('conflicted'); return }
@@ -180,4 +209,8 @@ function sameApprovedIdentity(pending: OfficialInvoicePendingBatch, approved: Of
     && approved.uploadedBy === pending.uploadedBy
     && approved.version === '2'
     && approved.approvedBy === context.actorId
+}
+
+function attemptSlot(actorScope: string, batchId: string): string {
+  return `${actorScope}:${batchId}`
 }
