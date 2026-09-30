@@ -673,6 +673,18 @@ public sealed partial class OpenApiContractGenerationTests
         new("get", "/api/v1/search", "SearchGlobalV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["query:q:false:type:string"]),
+        // ERP-000G / AT-065: the document vault — a multipart upload, an owner record's list and a clean version's bytes.
+        new("post", "/api/v1/documents", "UploadDocumentV1",
+            AuthenticatedResponses("201:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "413:",
+                "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/DocumentUploadFormV1", RequestMediaType: "multipart/form-data"),
+        new("get", "/api/v1/documents", "GetDocumentsV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["query:ownerKind:false:type:string", "query:ownerId:false:type:string;format:uuid"]),
+        new("get", "/api/v1/documents/{id}/content", "GetDocumentContentV1",
+            AuthenticatedResponses("200:application/pdf,image/jpeg,image/png", "400:application/problem+json", "404:application/problem+json",
+                "409:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["path:id:true:type:string;format:uuid"]),
         new("get", "/api/v1/sales/references/contact-information", "GetSalesContactInformationReferencesV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["query:partyId:true:type:string;format:uuid", "query:companyAccountId:true:type:string;format:uuid"]),
@@ -861,6 +873,9 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetLogisticsSalesWorkV1"] = "ref:LogisticsSalesWorkPage",
             ["GetLogisticsPurchaseWorkV1"] = "ref:LogisticsPurchaseWorkPage",
             ["SearchGlobalV1"] = "ref:GlobalSearchResponseV1",
+            ["UploadDocumentV1"] = "ref:DocumentUploadResponse",
+            ["GetDocumentsV1"] = "ref:DocumentListResponse",
+            ["GetDocumentContentV1"] = "ref:Stream",
             ["GetSalesContactInformationReferencesV1"] = "ref:SalesContactInformationOptionsV1",
             ["GetSalesCurrencyReferencesV1"] = "ref:SalesCurrencyOptionsV1",
         };
@@ -1024,6 +1039,9 @@ public sealed partial class OpenApiContractGenerationTests
         "GetLogisticsSalesWorkV1",
         "GetLogisticsPurchaseWorkV1",
         "SearchGlobalV1",
+        "UploadDocumentV1",
+        "GetDocumentsV1",
+        "GetDocumentContentV1",
         "GetSalesContactInformationReferencesV1",
         "GetSalesCurrencyReferencesV1",
     ];
@@ -1114,6 +1132,7 @@ public sealed partial class OpenApiContractGenerationTests
         "ProposeAccountingJournalReversalV1",
         "ApproveAccountingJournalReversalV1",
         "CloseManufacturingOrderV1",
+        "UploadDocumentV1",
     ];
 
     private static readonly IReadOnlyDictionary<string, HashSet<int>>
@@ -1266,6 +1285,8 @@ public sealed partial class OpenApiContractGenerationTests
                 ["ProposeAccountingJournalReversalV1"] = [StatusCodes.Status201Created],
                 ["ApproveAccountingJournalReversalV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
                 ["CloseManufacturingOrderV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
+                // AT-065: only the stored upload (201) is replayed; a refusal stores nothing under the key.
+                ["UploadDocumentV1"] = [StatusCodes.Status201Created],
             };
 
     private static readonly HashSet<string> EmptyBodyPossible400Operations =
@@ -1383,6 +1404,9 @@ public sealed partial class OpenApiContractGenerationTests
         "GetLogisticsPurchaseWorkV1",
         "GetSalesContactInformationReferencesV1",
         "GetSalesCurrencyReferencesV1",
+        "UploadDocumentV1",
+        "GetDocumentsV1",
+        "GetDocumentContentV1",
     ];
 
     private static readonly HashSet<string> CodeLessProblemResponses =
@@ -1474,6 +1498,9 @@ public sealed partial class OpenApiContractGenerationTests
         "GetManufacturingOrderMassBalanceV1:404",
         "CloseManufacturingOrderV1:404",
         "GetSalesContactInformationReferencesV1:404",
+        "UploadDocumentV1:404",
+        "GetDocumentsV1:404",
+        "GetDocumentContentV1:404",
     ];
 
     private static readonly HashSet<string> MixedProblemResponses =
@@ -1878,6 +1905,16 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetLogisticsSalesWorkV1:400"] = ["invalid_cursor", "validation_failed"],
             ["GetLogisticsPurchaseWorkV1:400"] = ["invalid_cursor", "validation_failed"],
             ["SearchGlobalV1:400"] = ["validation_failed"],
+            ["UploadDocumentV1:400"] = ["command_metadata_invalid", "validation_failed"],
+            ["UploadDocumentV1:409"] = ["concurrent_change", "same_key_payload_mismatch"],
+            ["UploadDocumentV1:422"] =
+            [
+                "document_content_mismatch", "document_content_rejected", "document_empty", "document_too_large",
+                "document_type_not_allowed",
+            ],
+            ["GetDocumentsV1:400"] = ["validation_failed"],
+            ["GetDocumentContentV1:400"] = ["validation_failed"],
+            ["GetDocumentContentV1:409"] = ["document_not_scanned"],
             ["GetSalesContactInformationReferencesV1:400"] = ["validation_failed"],
             ["GetSalesCurrencyReferencesV1:400"] = ["validation_failed"],
         };
@@ -3647,6 +3684,49 @@ public sealed partial class OpenApiContractGenerationTests
                     ("isActive", "type:boolean"),
                     ("version", "type:integer;format:int64"),
                     ("canOpenLocationDetail", "type:boolean")),
+                // ERP-000G / AT-065: the vault's answers. Identities, names and facts; no object key or storage location.
+                ["DocumentUploadResponse"] = ObjectSchema(
+                    ["document", "duplicates", "isReplay", "originalCorrelationId"],
+                    ("document", "ref:DocumentView"),
+                    ("duplicates", "type:array;items:ref:DocumentDuplicateView"),
+                    ("isReplay", "type:boolean"),
+                    ("originalCorrelationId", "type:string")),
+                ["DocumentListResponse"] = ObjectSchema(
+                    ["items", "canUpload", "limits"],
+                    ("items", "type:array;items:ref:DocumentView"),
+                    ("canUpload", "type:boolean"),
+                    ("limits", "ref:DocumentUploadLimitsView")),
+                ["DocumentView"] = ObjectSchema(
+                    ["id", "companyId", "ownerKind", "ownerId", "versionNo", "fileName", "contentType", "sizeBytes", "sha256", "scanState",
+                        "downloadable", "uploadedBy", "uploadedAtUtc"],
+                    ("id", "type:string;format:uuid"),
+                    ("companyId", "type:string;format:uuid"),
+                    ("ownerKind", "type:string"),
+                    ("ownerId", "type:string;format:uuid"),
+                    ("versionNo", "type:integer|string;format:int32"),
+                    ("fileName", "type:string"),
+                    ("contentType", "type:string"),
+                    ("sizeBytes", "type:integer|string;format:int64"),
+                    ("sha256", "type:string"),
+                    ("scanState", "type:string"),
+                    ("downloadable", "type:boolean"),
+                    ("uploadedBy", "type:string"),
+                    ("uploadedAtUtc", "type:string;format:date-time")),
+                // AT-057: an earlier document of the same company with the same content, whose owner record the actor may read.
+                ["DocumentDuplicateView"] = ObjectSchema(
+                    ["documentId", "fileName", "ownerKind", "ownerId", "uploadedAtUtc"],
+                    ("documentId", "type:string;format:uuid"),
+                    ("fileName", "type:string"),
+                    ("ownerKind", "type:string"),
+                    ("ownerId", "type:string;format:uuid"),
+                    ("uploadedAtUtc", "type:string;format:date-time")),
+                ["DocumentUploadLimitsView"] = ObjectSchema(
+                    ["maximumBytes", "extensions", "contentTypes"],
+                    ("maximumBytes", "type:integer|string;format:int64"),
+                    ("extensions", "type:array;items:type:string"),
+                    ("contentTypes", "type:array;items:type:string")),
+                // A clean version's bytes, served in the version's own type (application/pdf, image/png or image/jpeg).
+                ["Stream"] = ScalarSchema("type:string;format:binary"),
                 // AT-002 global search: price-free and count-free; each group is one module-owned kind.
                 ["GlobalSearchResponseV1"] = ObjectSchema(
                     ["query", "groups"],
@@ -3751,6 +3831,12 @@ public sealed partial class OpenApiContractGenerationTests
                 ["ApproveAccountingJournalReversalRequestV1"] = ObjectSchema(
                     ["expectedVersion"],
                     ("expectedVersion", "type:integer|string;format:int32")),
+                // AT-065: the multipart upload form (ownerKind, ownerId, one file); the route reads it strictly itself.
+                ["DocumentUploadFormV1"] = ObjectSchema(
+                    ["ownerKind", "ownerId", "file"],
+                    ("ownerKind", "type:string"),
+                    ("ownerId", "type:string;format:uuid"),
+                    ("file", "ref:IFormFile")),
                 ["ApproveNormalJournalDraftRequestV1"] = ObjectSchema(
                     ["expectedVersion", "periodId"],
                     ("expectedVersion", "type:integer|string;format:int64"),
@@ -4869,9 +4955,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(177, operations.Count);
+        Assert.Equal(180, operations.Count);
         Assert.Equal(
-            177,
+            180,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());
@@ -4936,11 +5022,11 @@ public sealed partial class OpenApiContractGenerationTests
                 var requestBody = actual.Value.GetProperty("requestBody");
                 Assert.True(requestBody.GetProperty("required").GetBoolean());
                 var requestContent = requestBody.GetProperty("content");
-                Assert.Equal(["application/json"], requestContent.EnumerateObject()
+                Assert.Equal([expected.RequestMediaType], requestContent.EnumerateObject()
                     .Select(content => content.Name));
                 Assert.Equal(
                     expected.RequestSchemaReference,
-                    requestContent.GetProperty("application/json")
+                    requestContent.GetProperty(expected.RequestMediaType)
                         .GetProperty("schema")
                         .GetProperty("$ref")
                         .GetString());
@@ -5328,8 +5414,11 @@ public sealed partial class OpenApiContractGenerationTests
             return "none";
         }
 
-        var mediaType = Assert.Single(content.EnumerateObject());
-        var schema = mediaType.Value.GetProperty("schema");
+        // One body per success response: several media types (a file served in its own type, AT-065) must share one schema.
+        var schemas = content.EnumerateObject().Select(mediaType => mediaType.Value.GetProperty("schema")).ToArray();
+        Assert.NotEmpty(schemas);
+        Assert.Single(schemas.Select(candidate => candidate.GetRawText()).Distinct(StringComparer.Ordinal));
+        var schema = schemas[0];
         if (schema.TryGetProperty("$ref", out var reference))
         {
             return $"ref:{reference.GetString()?.Split('/').Last()}";
@@ -6203,7 +6292,8 @@ public sealed partial class OpenApiContractGenerationTests
         string OperationId,
         IReadOnlyList<string> Responses,
         string? RequestSchemaReference = null,
-        IReadOnlyList<string>? ParameterValues = null)
+        IReadOnlyList<string>? ParameterValues = null,
+        string RequestMediaType = "application/json")
     {
         public IReadOnlyList<string> Parameters { get; } = ParameterValues ?? [];
     }

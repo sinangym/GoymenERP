@@ -504,6 +504,18 @@ public static class ErpPermissions
     /// <inheritdoc cref="AccountingJournalReversePropose"/>
     public const string AccountingJournalReverseApprove = "accounting.journal.reverse.approve";
 
+    /// <summary>
+    /// ERP-000G / AT-065 (document vault core): the vault owner's names (DocumentsPermissionManifestV1). Read lists an
+    /// owner record's documents and downloads a clean version; upload stores a new document on an owner record. Both
+    /// are measured ON TOP of the owner record's own read (the Cari party: counterparty.parties.read), so a document is
+    /// never more visible than its record. Registered, not granted: no role, seed or user receives them here; the only
+    /// grants are the disposable c02 browser actors. Company-wide only: a document is a company record. Not Critical.
+    /// </summary>
+    public const string DocumentsFilesRead = "documents.files.read";
+
+    /// <inheritdoc cref="DocumentsFilesRead"/>
+    public const string DocumentsFilesUpload = "documents.files.upload";
+
     public const string IdentityProfileRead = "identity.profile.read";
     public const string IdentityAccessRequest = "identity.access.request";
     public const string IdentityAccessApprove = "identity.access.approve";
@@ -601,6 +613,8 @@ public static class ErpPermissions
         FinancePartyLedgerRead,
         FinancePartyLedgerAmountRead,
         FinanceAllocationWrite,
+            DocumentsFilesRead,
+            DocumentsFilesUpload,
             IdentityProfileRead,
             IdentityAccessRequest,
             IdentityAccessApprove,
@@ -700,6 +714,8 @@ public static class ErpPermissions
         FinancePartyLedgerRead,
         FinancePartyLedgerAmountRead,
         FinanceAllocationWrite,
+            DocumentsFilesRead,
+            DocumentsFilesUpload,
             IdentityAuditRead,
             IdentityAssignmentsRead,
         ],

@@ -1,4 +1,5 @@
 using GoymenERP.Api.Contracts;
+using GoymenERP.Api.DocumentsRuntime;
 using GoymenERP.Api.Endpoints;
 using GoymenERP.Api.Errors;
 using GoymenERP.Api.LogisticsRuntime;
@@ -23,6 +24,7 @@ using GoymenERP.Modules.Accounting.Application.Contracts;
 using GoymenERP.Modules.Audit.Infrastructure;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Counterparty.Infrastructure;
+using GoymenERP.Modules.Documents.Infrastructure;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure;
 using GoymenERP.Modules.Finance.Infrastructure.Shell;
@@ -262,6 +264,10 @@ builder.Services.AddAccountingModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(
         services.GetRequiredService<AuditSaveChangesInterceptor>()));
+// ERP-000G / AT-065: the document vault (audit interceptor, the Cari party owner link; the development object store and
+// EICAR-only scanner only in Development/Testing; elsewhere the own-server store and Windows Defender scanner when both
+// are configured, otherwise uploads and downloads answer 503, fail-closed).
+builder.Services.AddDocumentsRuntime(builder.Configuration, builder.Environment);
 // AT-002 / ERP-000I: the global search composer and its module-owned sources (Cari, Product, Sales), after the modules.
 builder.Services.AddGlobalSearch();
 // Registered before the shell authority is chosen: the module table maps the provider set.
@@ -335,6 +341,7 @@ app.MapPurchasingEndpoints();
 app.MapPurchasingProductCandidateEndpoints();
 app.MapAccountingEndpoints();
 app.MapGlobalSearchEndpoints();
+app.MapDocumentEndpoints();
 app.MapShellEndpoints();
 
 if (!isOpenApiDocumentGeneration
@@ -361,6 +368,8 @@ if (!isOpenApiDocumentGeneration
     await app.Services.InitializePurchasingModuleAsync();
     // After Organization: Accounting's foreign keys reference its tables.
     await app.Services.InitializeAccountingModuleAsync();
+    // After Organization: the document vault's foreign keys reference its tables.
+    await app.Services.InitializeDocumentsModuleAsync();
 }
 
 await app.RunAsync();
