@@ -93,6 +93,26 @@ public sealed record LogisticsOrderLineAggregateLimit(
     string SourceVersion,
     DateOnly EffectiveOn);
 
+/// <summary>
+/// The fresh Sales cap and this load's quantity, checked by the Logistics store in the same serializable transaction as
+/// the load mutation. The total is every instruction line linked to the same Sales line.
+/// </summary>
+public sealed record LogisticsOrderLineAggregateLoadLimit(
+    Guid InstructionLineId,
+    Guid CompanyId,
+    Guid OrderId,
+    Guid OrderLineId,
+    Guid UnitId,
+    long SalesOrderVersion,
+    decimal MaximumAggregateQuantity,
+    string MaximumAggregateQuantityText,
+    decimal RequestedLoadQuantity,
+    string RequestedLoadQuantityText,
+    string SourceOwner,
+    string SourceId,
+    string SourceVersion,
+    DateOnly EffectiveOn);
+
 /// <summary>ADR-011 §7: a terminal refusal recorded under the attempt key (stale version, cap, block, state), answered again on the same key.</summary>
 public sealed record LogisticsTerminalRefusal(int Status, string Code, IReadOnlyList<LogisticsFieldError> Errors);
 
@@ -162,6 +182,14 @@ public sealed record StoredDispatchNoteReference(
 
 /// <summary>One line of a stored draft on the asked order: the order line, the shipment, the shipped quantity and its unit.</summary>
 public sealed record StoredDispatchNoteOrderLine(int LineNo, Guid SourceOrderLineId, Guid ShipmentId, Guid UnitId, decimal Quantity);
+
+/// <summary>Optional atomic extension used only when Sales supplies a resolved loading cap.</summary>
+public interface ILogisticsAggregateLoadStoreV1
+{
+    Task<LogisticsStoreResult?> MutateInstructionWithAggregateLoadLimitAsync(LogisticsWriteEnvelope envelope, string requestHash,
+        string commandName, Guid instructionId, Action<LoadingInstruction, DateTimeOffset> mutate, LogisticsMutationAudit audit,
+        LogisticsOrderLineAggregateLoadLimit aggregateLoadLimit, CancellationToken cancellationToken = default);
+}
 
 /// <summary>The canonical content of a command for the replay identity (R3): the strict wire shape, serialised and hashed.</summary>
 public static class LogisticsRequestHash

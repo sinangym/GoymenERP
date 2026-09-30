@@ -16,6 +16,13 @@ public interface ISalesOrderLineReferencePortV1
     Task<SalesOrderLineReferenceAnswerV1> GetApprovedLineAsync(Guid orderId, Guid lineId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Logistics-specific read for an effective-dated loading cap. Existing consumers keep the identity-only read above;
+    /// implementations that have not yet published a loading source remain compatible and answer their normal line.
+    /// </summary>
+    Task<SalesOrderLineReferenceAnswerV1> GetApprovedLineForLoadingAsync(Guid orderId, Guid lineId, DateOnly effectiveOn,
+        CancellationToken cancellationToken = default) => GetApprovedLineAsync(orderId, lineId, cancellationToken);
+
+    /// <summary>
     /// LOG-4b: the company's APPROVED order lines for loading as a LINE page — <paramref name="pageSize"/>
     /// (1–100) caps the lines actually returned, whatever the drafts' line counts (FİNANS #358 P2) — newest
     /// draft first, by the Sales owner's opaque, company-bound COMPOSITE cursor (draft + line position, so a
@@ -91,6 +98,12 @@ public sealed record SalesOrderLineLoadingLimitV1(
     string SourceId,
     string SourceVersion,
     DateOnly EffectiveOn);
+
+public static class SalesOrderLineLoadingLimitSourcesV1
+{
+    /// <summary>User decision 5917438293 option 7B: without a defined profile, the approved order quantity is the cap.</summary>
+    public const string ApprovedOrderQuantity = "SalesOrderQuantity";
+}
 
 /// <summary>
 /// The approved line's identity facts as stored: the company, the order and the line, the

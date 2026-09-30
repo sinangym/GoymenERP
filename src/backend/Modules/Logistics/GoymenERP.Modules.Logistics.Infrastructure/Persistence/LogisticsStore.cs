@@ -24,7 +24,7 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence;
 /// blocked and unblocked cannot be represented — LOG-5 stores the block source's events.
 /// </summary>
 public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext companyContext, IAuditEventCollector auditEvents, TimeProvider timeProvider)
-    : ILogisticsInstructionStore
+    : ILogisticsInstructionStore, ILogisticsAggregateLoadStoreV1
 {
     private const string EntityType = "Logistics.LoadingInstruction";
     private const int ActorMaximumLength = 128;
@@ -245,7 +245,18 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
     }
 
     public async Task<LogisticsStoreResult?> MutateInstructionAsync(LogisticsWriteEnvelope envelope, string requestHash, string commandName,
-        Guid instructionId, Action<LoadingInstruction, DateTimeOffset> mutate, LogisticsMutationAudit audit, CancellationToken cancellationToken = default)
+        Guid instructionId, Action<LoadingInstruction, DateTimeOffset> mutate, LogisticsMutationAudit audit,
+        CancellationToken cancellationToken = default) =>
+        await MutateInstructionCoreAsync(envelope, requestHash, commandName, instructionId, mutate, audit, null, cancellationToken);
+
+    public async Task<LogisticsStoreResult?> MutateInstructionWithAggregateLoadLimitAsync(LogisticsWriteEnvelope envelope, string requestHash,
+        string commandName, Guid instructionId, Action<LoadingInstruction, DateTimeOffset> mutate, LogisticsMutationAudit audit,
+        LogisticsOrderLineAggregateLoadLimit aggregateLoadLimit, CancellationToken cancellationToken = default) =>
+        await MutateInstructionCoreAsync(envelope, requestHash, commandName, instructionId, mutate, audit, aggregateLoadLimit, cancellationToken);
+
+    private async Task<LogisticsStoreResult?> MutateInstructionCoreAsync(LogisticsWriteEnvelope envelope, string requestHash, string commandName,
+        Guid instructionId, Action<LoadingInstruction, DateTimeOffset> mutate, LogisticsMutationAudit audit,
+        LogisticsOrderLineAggregateLoadLimit? aggregateLoadLimit, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(mutate);
         ArgumentNullException.ThrowIfNull(audit);
@@ -283,6 +294,10 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
             return null;
         }
 
+        await using IDbContextTransaction? aggregateTransaction = aggregateLoadLimit is not null && dbContext.Database.CurrentTransaction is null
+            ? await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken)
+            : null;
+
         // The header and the lines are tracked (the header's version is this write's concurrency token); the shares are read as before.
         var row = await dbContext.Instructions.SingleOrDefaultAsync(candidate => candidate.Id == instructionId, cancellationToken);
         if (row is null)
@@ -300,8 +315,12 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         var noteLineRows = await dbContext.DispatchNoteLines.Where(line => line.InstructionId == instructionId)
             .ToListAsync(cancellationToken);
         var instruction = Restore(row, lineRows, shareRows, weighingRow, noteRows, noteLineRows);
+        if (aggregateLoadLimit is not null)
+        {
+            await RequireAggregateLoadLimitAsync(companyId, row.EffectiveOn, instruction, aggregateLoadLimit, cancellationToken);
+        }
         var versionBefore = instruction.Version;
-        var before = Snapshot(instruction);
+        var before = MutationSnapshot(instruction, aggregateLoadLimit);
         var sharesBefore = instruction.Shares.Count;
         var weighingBefore = instruction.Weighing;
         var notesBefore = instruction.DispatchNotes.ToArray();
@@ -415,8 +434,13 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         }
 
         dbContext.Attempts.Add(Attempt(companyId, commandName, keyHash, requestHash, actorId, envelope, instruction.Id, now));
-        Audit(envelope, companyId, instruction.Id, audit.EventType, audit.Operation, versionBefore, instruction.Version, before, Snapshot(instruction), audit.Reason);
+        Audit(envelope, companyId, instruction.Id, audit.EventType, audit.Operation, versionBefore, instruction.Version, before,
+            MutationSnapshot(instruction, aggregateLoadLimit), audit.Reason);
         await SaveAsync(cancellationToken);
+        if (aggregateTransaction is not null)
+        {
+            await aggregateTransaction.CommitAsync(cancellationToken);
+        }
         return new LogisticsStoreResult(new StoredLoadingInstruction(instruction, row.EffectiveOn), LogisticsWriteOutcome.Recorded, envelope.CorrelationId.Trim());
     }
 
@@ -538,6 +562,51 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
     private Task<bool> DispatchNoteIdTakenAsync(Guid dispatchNoteId, Guid instructionId, CancellationToken cancellationToken) =>
         dbContext.DispatchNotes.AsNoTracking().AnyAsync(note => note.DispatchNoteId == dispatchNoteId && note.InstructionId != instructionId,
             cancellationToken);
+
+    private async Task RequireAggregateLoadLimitAsync(Guid companyId, DateOnly effectiveOn, LoadingInstruction instruction,
+        LogisticsOrderLineAggregateLoadLimit limit, CancellationToken cancellationToken)
+    {
+        var line = instruction.Lines.SingleOrDefault(candidate => candidate.Id == limit.InstructionLineId);
+        if (limit.CompanyId != companyId || limit.SalesOrderVersion < 1 || limit.MaximumAggregateQuantity <= 0m
+            || limit.RequestedLoadQuantity <= 0m || limit.EffectiveOn != effectiveOn
+            || string.IsNullOrWhiteSpace(limit.MaximumAggregateQuantityText) || string.IsNullOrWhiteSpace(limit.RequestedLoadQuantityText)
+            || string.IsNullOrWhiteSpace(limit.SourceOwner) || string.IsNullOrWhiteSpace(limit.SourceId)
+            || string.IsNullOrWhiteSpace(limit.SourceVersion) || line is null || line.Source.OrderId != limit.OrderId
+            || line.Source.LineId != limit.OrderLineId || line.UnitId != limit.UnitId)
+        {
+            throw new ArgumentException("Aggregate load limit snapshot'ı talimat satırıyla uyuşmuyor.", nameof(limit));
+        }
+
+        // Serializable + IX_LoadingInstructionLines_SourceOrderLine holds the range through this load's save.
+        var loaded = await dbContext.Lines.AsNoTracking()
+            .Where(row => row.SourceOrderId == limit.OrderId && row.SourceOrderLineId == limit.OrderLineId && row.UnitId == limit.UnitId)
+            .SumAsync(row => (decimal?)row.Loaded, cancellationToken) ?? 0m;
+        if (loaded + limit.RequestedLoadQuantity > limit.MaximumAggregateQuantity)
+        {
+            throw Refused(LogisticsStoreCodes.AggregateLimitExceeded,
+                "Sales satırının tüm yükleme talimatlarındaki yüklenen toplamı güncel owner-resolved maksimumu aşıyor.");
+        }
+    }
+
+    private static string MutationSnapshot(LoadingInstruction instruction, LogisticsOrderLineAggregateLoadLimit? limit)
+    {
+        if (limit is null)
+        {
+            return Snapshot(instruction);
+        }
+
+        using var document = JsonDocument.Parse(Snapshot(instruction));
+        return JsonSerializer.Serialize(new
+        {
+            instruction = document.RootElement.Clone(),
+            aggregateLoadLimit = new
+            {
+                limit.CompanyId, limit.OrderId, limit.OrderLineId, limit.UnitId, limit.SalesOrderVersion,
+                limit.MaximumAggregateQuantityText, limit.RequestedLoadQuantityText, limit.SourceOwner, limit.SourceId,
+                limit.SourceVersion, limit.EffectiveOn,
+            },
+        }, Json);
+    }
 
     public async Task<StoredLoadingInstruction?> FindInstructionAsync(Guid instructionId, CancellationToken cancellationToken = default)
     {

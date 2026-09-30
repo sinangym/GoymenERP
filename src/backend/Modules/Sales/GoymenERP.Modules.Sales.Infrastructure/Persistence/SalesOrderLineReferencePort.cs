@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Globalization;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Sales.Domain.Drafts;
@@ -18,7 +19,15 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence;
 public sealed class SalesOrderLineReferencePort(ISalesOrderDraftStore store, ICompanyContext companyContext) : ISalesOrderLineReferencePortV1
 {
     public async Task<SalesOrderLineReferenceAnswerV1> GetApprovedLineAsync(Guid orderId, Guid lineId,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        await GetApprovedLineCoreAsync(orderId, lineId, null, cancellationToken);
+
+    public async Task<SalesOrderLineReferenceAnswerV1> GetApprovedLineForLoadingAsync(Guid orderId, Guid lineId, DateOnly effectiveOn,
+        CancellationToken cancellationToken = default) =>
+        await GetApprovedLineCoreAsync(orderId, lineId, effectiveOn, cancellationToken);
+
+    private async Task<SalesOrderLineReferenceAnswerV1> GetApprovedLineCoreAsync(Guid orderId, Guid lineId, DateOnly? effectiveOn,
+        CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (orderId == Guid.Empty || lineId == Guid.Empty)
@@ -48,7 +57,10 @@ public sealed class SalesOrderLineReferencePort(ISalesOrderDraftStore store, ICo
         return new SalesOrderLineReferenceAnswerV1(SalesOrderLineReferenceOutcomeV1.Approved, new SalesOrderLineReferenceV1(
             draft.CompanyId, draft.Id, line.Id, line.LineNo, draft.Header.PartyId, draft.Header.CompanyAccountId,
             line.Product.ProductId, line.Product.ProductVersion, line.OrderUnit.UnitId, line.QuantityText, draft.Revision, draft.Version,
-            RemainderState(line.Remainder)), null);
+            RemainderState(line.Remainder), effectiveOn is not { } on ? null : new SalesOrderLineLoadingLimitV1(
+                draft.CompanyId, draft.Id, line.Id, line.OrderUnit.UnitId, draft.Version, line.QuantityText,
+                SalesOrderLineLoadingLimitSourcesV1.ApprovedOrderQuantity, line.Id.ToString("D"),
+                draft.Version.ToString(CultureInfo.InvariantCulture), on)), null);
     }
 
     /// <summary>

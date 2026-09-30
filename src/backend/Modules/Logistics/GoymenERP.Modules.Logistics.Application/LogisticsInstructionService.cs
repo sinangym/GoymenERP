@@ -157,6 +157,7 @@ public sealed partial class LogisticsInstructionService(
             "AllocatedFromVehicleWeight" => MeasurementKind.AllocatedFromVehicleWeight,
             _ => throw new LogisticsInstructionServiceException(400, "validation_failed", [new("measurement", "validation_failed")]),
         };
+        LogisticsOrderLineAggregateLoadLimit? aggregateLoadLimit = null;
         return MutateAsync(instructionId, new { lineId, request }, request.ExpectedVersion, metadata, LogisticsCommands.RecordLoadV1,
             bindings.RecordPermission,
             (instruction, expected, now, quantity, _) => instruction.RecordLoad(expected, request.LoadId, lineId, quantity!.Value, measurement, now),
@@ -169,9 +170,16 @@ public sealed partial class LogisticsInstructionService(
                     ?? throw new LogisticsInstructionServiceException(404, "not_found");
                 var quantity = await VerifyUnitAsync(scope, bindings.RecordPermission, line.UnitId, request.Quantity, stored.EffectiveOn, "load",
                     cancellationToken);
-                await RequireCurrentOrderLineAllowsLoadAsync(scope, stored, line, cancellationToken);
+                var resolved = await RequireCurrentOrderLineAllowsLoadAsync(scope, stored, line, cancellationToken);
+                if (resolved is not null)
+                {
+                    aggregateLoadLimit = new LogisticsOrderLineAggregateLoadLimit(line.Id, scope.CompanyId, line.Source.OrderId,
+                        line.Source.LineId, line.UnitId, resolved.SalesOrderVersion,
+                        SalesLineQuantity(resolved.MaximumAggregateQuantityText), resolved.MaximumAggregateQuantityText,
+                        quantity.Value, request.Quantity, resolved.SourceOwner, resolved.SourceId, resolved.SourceVersion, resolved.EffectiveOn);
+                }
                 return quantity;
-            }, cancellationToken);
+            }, cancellationToken, () => aggregateLoadLimit);
     }
 
     /// <summary>
@@ -385,7 +393,8 @@ public sealed partial class LogisticsInstructionService(
     private async Task<LoadingInstructionResponse> MutateAsync(Guid instructionId, object content, string expectedVersionText,
         LogisticsCommandMetadata metadata, string commandName, string? permission,
         Action<LoadingInstruction, long, DateTimeOffset, Quantity?, string> transition, LogisticsMutationAudit audit,
-        Func<Scope, StoredLoadingInstruction, Task<Quantity>>? prepare, CancellationToken cancellationToken)
+        Func<Scope, StoredLoadingInstruction, Task<Quantity>>? prepare, CancellationToken cancellationToken,
+        Func<LogisticsOrderLineAggregateLoadLimit?>? aggregateLoadLimit = null)
     {
         ArgumentNullException.ThrowIfNull(metadata);
         cancellationToken.ThrowIfCancellationRequested();
@@ -433,8 +442,14 @@ public sealed partial class LogisticsInstructionService(
         LogisticsStoreResult? result;
         try
         {
-            result = await store.MutateInstructionAsync(envelope, requestHash, commandName, instructionId,
-                (instruction, now) => transition(instruction, expectedVersion, now, prepared, scope.ActorId), audit, cancellationToken);
+            var limit = aggregateLoadLimit?.Invoke();
+            result = limit is null
+                ? await store.MutateInstructionAsync(envelope, requestHash, commandName, instructionId,
+                    (instruction, now) => transition(instruction, expectedVersion, now, prepared, scope.ActorId), audit, cancellationToken)
+                : store is ILogisticsAggregateLoadStoreV1 atomicStore
+                    ? await atomicStore.MutateInstructionWithAggregateLoadLimitAsync(envelope, requestHash, commandName, instructionId,
+                        (instruction, now) => transition(instruction, expectedVersion, now, prepared, scope.ActorId), audit, limit, cancellationToken)
+                    : throw new LogisticsInstructionServiceException(503, LogisticsProblemCodesV1.SalesProviderUnavailable);
         }
         catch (LogisticsVersionConflictException)
         {
@@ -527,6 +542,12 @@ public sealed partial class LogisticsInstructionService(
             var won = await FindReplayAsync(scope, permission, envelope, requestHash, commandName, cancellationToken);
             return won is null ? throw Store(exception) : Replayed(won);
         }
+        catch (LogisticsStoreException exception) when (exception.Code == LogisticsStoreCodes.AggregateLimitExceeded)
+        {
+            return await TerminalAsync(envelope, requestHash, commandName,
+                new LogisticsTerminalRefusal(409, LogisticsProblemCodesV1.OrderLineAggregateLimitExceeded,
+                    [new("quantity", exception.Code)]), cancellationToken);
+        }
         catch (LogisticsStoreException exception)
         {
             throw Store(exception);
@@ -582,7 +603,7 @@ public sealed partial class LogisticsInstructionService(
         try
         {
             answer = await GuardedAsync(scope, bindings.CreatePermission,
-                () => orderLines.GetApprovedLineAsync(line.SourceOrderId, line.SourceOrderLineId, cancellationToken), cancellationToken);
+                () => orderLines.GetApprovedLineForLoadingAsync(line.SourceOrderId, line.SourceOrderLineId, request.EffectiveOn, cancellationToken), cancellationToken);
         }
         catch (LogisticsInstructionServiceException)
         {
@@ -648,14 +669,16 @@ public sealed partial class LogisticsInstructionService(
     /// creates no Sales record and Sales creates no Logistics share. A residual change after this read is handled by the next
     /// load; there is deliberately no cross-module transaction.
     /// </summary>
-    private async Task RequireCurrentOrderLineAllowsLoadAsync(Scope scope, StoredLoadingInstruction stored, LoadingInstructionLine line,
+    private async Task<SalesOrderLineLoadingLimitV1?> RequireCurrentOrderLineAllowsLoadAsync(Scope scope, StoredLoadingInstruction stored,
+        LoadingInstructionLine line,
         CancellationToken cancellationToken)
     {
         SalesOrderLineReferenceAnswerV1 answer;
         try
         {
             answer = await GuardedAsync(scope, bindings.RecordPermission,
-                () => orderLines.GetApprovedLineAsync(line.Source.OrderId, line.Source.LineId, cancellationToken), cancellationToken);
+                () => orderLines.GetApprovedLineForLoadingAsync(line.Source.OrderId, line.Source.LineId, stored.EffectiveOn, cancellationToken),
+                cancellationToken);
         }
         catch (LogisticsInstructionServiceException)
         {
@@ -687,11 +710,23 @@ public sealed partial class LogisticsInstructionService(
                 [new("sourceOrderLineId", "remainder_cancelled")]);
         }
 
-        // OPEN-004 (user decision 2026-09-30): over/under loading is allowed within a tolerance entered on the order line,
-        // defaulted by Settings per product group and piece/kg basis. Those source contracts and the atomic aggregate gate
-        // across every instruction of this Sales line do not exist yet. Do not turn their absence into a zero-tolerance cap.
-        // Cancelled remainder above is exact and remains blocked; a numeric revised/open cap is added only with that K3 source.
+        if (approved.LoadingLimit is { } limit
+            && (limit.CompanyId != approved.CompanyId || limit.OrderId != approved.OrderId || limit.LineId != approved.LineId
+                || limit.UnitId != approved.OrderUnitId || limit.SalesOrderVersion != approved.Version
+                || limit.EffectiveOn != stored.EffectiveOn || string.IsNullOrWhiteSpace(limit.MaximumAggregateQuantityText)
+                || string.IsNullOrWhiteSpace(limit.SourceOwner) || string.IsNullOrWhiteSpace(limit.SourceId)
+                || string.IsNullOrWhiteSpace(limit.SourceVersion)))
+        {
+            throw new LogisticsInstructionServiceException(503, LogisticsProblemCodesV1.ReferenceProviderInvalid);
+        }
+
+        return approved.LoadingLimit;
     }
+
+    private static decimal SalesLineQuantity(string quantityText) =>
+        decimal.TryParse(quantityText, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var quantity) && quantity > 0m
+            ? quantity
+            : throw new LogisticsInstructionServiceException(503, LogisticsProblemCodesV1.ReferenceProviderInvalid);
 
     private static void RequireKnownRemainderState(string state)
     {
