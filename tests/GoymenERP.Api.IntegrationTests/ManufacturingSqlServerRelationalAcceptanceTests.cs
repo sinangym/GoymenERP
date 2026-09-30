@@ -221,6 +221,8 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         var policy = new ClosureTolerancePolicySnapshotV1(
             CompanyA, Guid.NewGuid(), 7, ManufacturingProcess.Slitting, 5m, true,
             new DateOnly(2026, 9, 1), new DateOnly(2026, 9, 30), DateOnly.FromDateTime(At.UtcDateTime));
+        const string maximumFirePercent = "5";
+        const string approvalReason = "Gerçekleşen proses kaybı teknik inceleme ile kabul edildi.";
 
         await using (var store = run.Store(CompanyA))
         {
@@ -234,7 +236,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
                 At.AddMinutes(3), Metadata(run));
 
             var approval = ClosureExceptionApprovalV1.Create(
-                CompanyA, orderId, run.Actor, "Gerçekleşen proses kaybı teknik inceleme ile kabul edildi.",
+                CompanyA, orderId, run.Actor, approvalReason,
                 6, policy.PolicyId, policy.PolicyVersion, At.AddMinutes(4));
             await store.Orders.CloseOrderWithPolicyAsync(
                 orderId, 6, run.Actor, At.AddMinutes(5), policy, approval, Metadata(run));
@@ -254,11 +256,70 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM manufacturing.OrderClosureDecisions WHERE CompanyId = @c AND OrderId = @o "
             + "AND OrderVersion = 6 AND PolicyId = @p AND PolicyVersion = 7 AND MaximumFirePercent = '5' "
-            + "AND Process = 1 AND IsActive = 1 AND ApprovedByUserId = @a AND ApprovalOrderVersion = 6",
-            ("@c", CompanyA), ("@o", orderId), ("@p", policy.PolicyId), ("@a", run.Actor)));
+            + "AND Process = 1 AND IsActive = 1 AND ApprovedByUserId = @a AND ApprovalReason = @r "
+            + "AND ApprovalOrderVersion = 6 AND ApprovalPolicyId = @p AND ApprovalPolicyVersion = 7 "
+            + "AND ApprovedAtUtc IS NOT NULL",
+            ("@c", CompanyA), ("@o", orderId), ("@p", policy.PolicyId), ("@a", run.Actor),
+            ("@r", approvalReason)));
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'manufacturing.order.closed.v2' "
             + "AND EntityId = @o AND CorrelationId = @c", ("@o", orderId.ToString("D")), ("@c", run.Correlation)));
+
+        // The other valid shape is all-null: a balanced close persists no partial approval evidence.
+        var (_, noApprovalOrderId) = await run.ApprovedOrderAsync(CompanyA);
+        var noApprovalPolicy = policy with { PolicyId = Guid.NewGuid() };
+        await using (var store = run.Store(CompanyA))
+        {
+            await store.Orders.IssueInputAsync(
+                noApprovalOrderId, 1, Guid.NewGuid(), RollA, Kg(1_000m), At, Metadata(run));
+            await store.Orders.IssueInputAsync(
+                noApprovalOrderId, 2, Guid.NewGuid(), RollB, Kg(500m), At, Metadata(run));
+            await store.Orders.DeclareOutputAsync(noApprovalOrderId, 3, Guid.NewGuid(), RollA,
+                OutputClass.GoodProduct, Kg(1_000m), At.AddMinutes(1), Metadata(run));
+            await store.Orders.DeclareOutputAsync(noApprovalOrderId, 4, Guid.NewGuid(), RollB,
+                OutputClass.GoodProduct, Kg(500m), At.AddMinutes(2), Metadata(run));
+            await store.Orders.CloseOrderWithPolicyAsync(
+                noApprovalOrderId, 5, run.Actor, At.AddMinutes(3), noApprovalPolicy, null, Metadata(run));
+        }
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM manufacturing.OrderClosureDecisions WHERE CompanyId = @c AND OrderId = @o "
+            + "AND ApprovedByUserId IS NULL AND ApprovalReason IS NULL AND ApprovalOrderVersion IS NULL "
+            + "AND ApprovalPolicyId IS NULL AND ApprovalPolicyVersion IS NULL AND ApprovedAtUtc IS NULL",
+            ("@c", CompanyA), ("@o", noApprovalOrderId)));
+
+        // Each field is independently required in the populated shape. These are insert attempts only: the
+        // append-only update/delete guard remains in force and no invalid row may survive the database constraint.
+        string[] approvalFields =
+        [
+            "ApprovedByUserId", "ApprovalReason", "ApprovalOrderVersion",
+            "ApprovalPolicyId", "ApprovalPolicyVersion", "ApprovedAtUtc",
+        ];
+        foreach (var missing in approvalFields)
+        {
+            var (_, invalidOrderId) = await run.ApprovedOrderAsync(CompanyA);
+            await using var context = run.Context(CompanyA);
+            var error = await Assert.ThrowsAsync<SqlException>(() => context.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO [manufacturing].[OrderClosureDecisions]
+                    ([CompanyId], [OrderId], [OrderVersion], [PolicyId], [PolicyVersion], [Process],
+                     [MaximumFirePercent], [IsActive], [EffectiveFrom], [EffectiveThrough], [SelectedForDate],
+                     [ApprovedByUserId], [ApprovalReason], [ApprovalOrderVersion], [ApprovalPolicyId],
+                     [ApprovalPolicyVersion], [ApprovedAtUtc])
+                VALUES
+                    ({CompanyA}, {invalidOrderId}, {1L}, {policy.PolicyId}, {policy.PolicyVersion},
+                     {(int)ManufacturingProcess.Slitting}, {maximumFirePercent}, {true}, {new DateOnly(2026, 9, 1)},
+                     {new DateOnly(2026, 9, 30)}, {DateOnly.FromDateTime(At.UtcDateTime)},
+                     CASE WHEN {missing} = N'ApprovedByUserId' THEN NULL ELSE {run.Actor} END,
+                     CASE WHEN {missing} = N'ApprovalReason' THEN NULL ELSE {approvalReason} END,
+                     CASE WHEN {missing} = N'ApprovalOrderVersion' THEN NULL ELSE {1L} END,
+                     CASE WHEN {missing} = N'ApprovalPolicyId' THEN NULL ELSE {policy.PolicyId} END,
+                     CASE WHEN {missing} = N'ApprovalPolicyVersion' THEN NULL ELSE {policy.PolicyVersion} END,
+                     CASE WHEN {missing} = N'ApprovedAtUtc' THEN NULL ELSE {At.AddMinutes(4)} END);
+                """));
+            Assert.Equal(547, error.Number);
+            Assert.Equal(0, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM manufacturing.OrderClosureDecisions WHERE OrderId = @o",
+                ("@o", invalidOrderId)));
+        }
 
         await using (var otherCompany = run.Context(CompanyB))
         {

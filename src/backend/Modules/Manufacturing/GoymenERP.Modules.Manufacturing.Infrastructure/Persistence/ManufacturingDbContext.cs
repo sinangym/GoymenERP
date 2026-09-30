@@ -289,8 +289,10 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
                 "([ApprovedByUserId] IS NULL AND [ApprovalReason] IS NULL AND [ApprovalOrderVersion] IS NULL "
                 + "AND [ApprovalPolicyId] IS NULL AND [ApprovalPolicyVersion] IS NULL AND [ApprovedAtUtc] IS NULL) "
                 + "OR ([ApprovedByUserId] IS NOT NULL AND [ApprovedByUserId] <> '00000000-0000-0000-0000-000000000000' "
-                + "AND LEN([ApprovalReason]) > 0 AND [ApprovalOrderVersion] = [OrderVersion] "
-                + "AND [ApprovalPolicyId] = [PolicyId] AND [ApprovalPolicyVersion] = [PolicyVersion] "
+                + "AND [ApprovalReason] IS NOT NULL AND LEN([ApprovalReason]) > 0 "
+                + "AND [ApprovalOrderVersion] IS NOT NULL AND [ApprovalOrderVersion] = [OrderVersion] "
+                + "AND [ApprovalPolicyId] IS NOT NULL AND [ApprovalPolicyId] = [PolicyId] "
+                + "AND [ApprovalPolicyVersion] IS NOT NULL AND [ApprovalPolicyVersion] = [PolicyVersion] "
                 + "AND [ApprovedAtUtc] IS NOT NULL)");
         });
         entity.HasKey(x => new { x.CompanyId, x.OrderId });
