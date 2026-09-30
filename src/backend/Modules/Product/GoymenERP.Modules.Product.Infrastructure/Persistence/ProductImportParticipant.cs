@@ -102,7 +102,9 @@ public sealed class ProductImportParticipant : IAsyncDisposable
             throw new InvalidOperationException("A Product import requires a fresh context.");
 
         var groups = await context.CodeGroups.AsNoTracking().ToDictionaryAsync(row => row.Id, cancellationToken);
-        var codes = await context.CodeRegistrations.AsNoTracking().Select(row => row.Code).ToHashSetAsync(cancellationToken);
+        var codes = new HashSet<string>(
+            await context.CodeRegistrations.AsNoTracking().Select(row => row.Code).ToListAsync(cancellationToken),
+            StringComparer.Ordinal);
         var preview = new ProductImportWorkbookReader().Read(workbook, binding.Mapping, codes, groups.Keys.ToHashSet());
         var boundToken = ProductImportPreviewTokenV1.Bind(preview, authority.LocalActorId,
             authority.OriginCompanyId, authority.AuthorityRevision);
@@ -113,8 +115,16 @@ public sealed class ProductImportParticipant : IAsyncDisposable
             throw new ProductValidationException(preview.Errors.Select(error => new ProductFieldError(
                 error.RowNumber is null ? error.Field : $"rows[{error.RowNumber}].{error.Field}", error.Code)).ToArray());
 
+        // Every accepted legacy alias reserves the global Product code namespace BEFORE any canonical code is
+        // allocated. Otherwise SAC-1 could be minted for this row while SAC-1 is also its legacy alias (or a later
+        // row's alias), leaving the batch to fail at the database unique key after it was already declared Ready.
+        foreach (var source in preview.Rows.OrderBy(row => row.RowNumber))
+            if (!codes.Add(source.LegacyCode))
+                throw new ProductValidationException([new($"rows[{source.RowNumber}].legacyCode",
+                    ProductImportCodesV1.ExistingLegacyCode)]);
+
         var counters = new Dictionary<string, ProductCodeCounter>(StringComparer.Ordinal);
-        foreach (var group in groups.Values.Where(group => preview.Rows.Any(row => row.GroupId == group.Id)))
+        foreach (var group in RequiredCounterGroups(groups, preview.Rows))
         {
             var counter = await context.CodeCounters.SingleOrDefaultAsync(row => row.Prefix == group.Prefix, cancellationToken);
             if (counter is null)
@@ -131,9 +141,7 @@ public sealed class ProductImportParticipant : IAsyncDisposable
         foreach (var source in preview.Rows.OrderBy(row => row.RowNumber))
         {
             var group = groups[source.GroupId];
-            ProductCode code;
-            do { code = counters[group.Prefix].Advance(); } while (codes.Contains(code.Value));
-            codes.Add(code.Value);
+            var code = AllocateNext(counters[group.Prefix], codes);
             var product = Domain.Products.Product.CreateDraft(Guid.NewGuid(), code, source.Name, source.GroupId,
                 classId: null, familyId: null, ProductRoles.NotEvaluated, now);
             var row = ProductRow.FromRecord(ProductStoredRecord.Capture(product, new ProductReferences()));
@@ -147,6 +155,24 @@ public sealed class ProductImportParticipant : IAsyncDisposable
         staged = new(created, cards);
         await context.FlushImportEnlistedAsync(this, cancellationToken);
         return staged;
+    }
+
+    internal static IReadOnlyList<ProductCodeGroupRow> RequiredCounterGroups(
+        IReadOnlyDictionary<Guid, ProductCodeGroupRow> groups,
+        IReadOnlyList<ProductImportSourceRowV1> rows) =>
+        rows.Select(row => groups[row.GroupId])
+            .GroupBy(group => group.Prefix, StringComparer.Ordinal)
+            .Select(group => group.First())
+            .OrderBy(group => group.Prefix, StringComparer.Ordinal)
+            .ToArray();
+
+    internal static ProductCode AllocateNext(ProductCodeCounter counter, ISet<string> reservedCodes)
+    {
+        while (true)
+        {
+            var candidate = counter.Advance();
+            if (reservedCodes.Add(candidate.Value)) return candidate;
+        }
     }
 
     internal void ValidateFlush(ProductDbContext candidate)

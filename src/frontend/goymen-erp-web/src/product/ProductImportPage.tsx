@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { applyProductImport, previewProductImport } from './importApi'
 import {
@@ -8,50 +8,108 @@ import {
   type ProductImportResult,
 } from './importContract'
 import { PRODUCT_CAPABILITY_ROUTE, PRODUCT_CAPABILITY, productDetailPath } from './capabilities'
-import { useShellState } from '../shell/shellContext'
+import { useShellDispatch, useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString } from '../shell/shellState'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
+import {
+  generateAttemptKey,
+  hasUnresolvedWork,
+  isFormFrozen,
+  liveSnapshot,
+  nextState,
+  type AttemptSnapshot,
+  type AttemptState,
+} from './commandAttempt'
+import {
+  attemptBindingFor,
+  importScope,
+  recallAttempt,
+  rememberAttempt,
+  type AttemptBinding,
+} from './pendingAttempt'
 import styles from './ProductImportPage.module.css'
 
 const EMPTY_MAPPING: ProductImportColumnMapping = { legacyCode: '', name: '', groupId: '' }
 
 type RemoteState = 'idle' | 'loading' | 'ready' | 'error'
+type ImportPayload = {
+  readonly file: File
+  readonly mapping: ProductImportColumnMapping
+  readonly preview: ProductImportPreview
+}
+type ImportAttempt = AttemptState<ImportPayload, ProductImportResult>
+const PRODUCT_IMPORT_DIRTY_SCOPE = 'product-import-form'
+
+function restoredImport(binding: AttemptBinding | null): {
+  readonly attempt: ImportAttempt
+  readonly payload: ImportPayload | null
+} {
+  const attempt = recallAttempt<ImportPayload, ProductImportResult>(binding) ?? { phase: 'idle' as const }
+  return { attempt, payload: attempt.phase === 'idle' ? null : attempt.snapshot.payload }
+}
+
+function messageFor(attempt: ImportAttempt): string | null {
+  if (attempt.phase === 'completed') return `${attempt.result.products.length} ürün taslağı kaydedildi.`
+  if (attempt.phase === 'submitting') return 'İçe aktarma uygulanıyor…'
+  if (attempt.phase === 'unknown') return 'Sonuç doğrulanamadı. Aynı istek anahtarı ve dosyayla yeniden deneyin.'
+  if (attempt.phase === 'failed' && attempt.unresolvedSince !== undefined)
+    return 'Önceki sonucun durumu bilinmiyor. Yetki yeniden doğrulandıktan sonra aynı isteği deneyin.'
+  if (attempt.phase === 'failed') return 'İçe aktarma reddedildi. Hiçbir satır kaydedilmedi.'
+  return null
+}
 
 export function ProductImportPage() {
   const shell = useShellState()
   const key = contextKey(shell)
   const namespace = key === null ? null : contextKeyString(key)
-  return <ProductImportForm key={namespace ?? 'no-context'} />
+  const binding = attemptBindingFor(shell, importScope())
+  return <ProductImportForm key={namespace ?? 'no-context'} binding={binding}
+    origin={shell.activeContext?.companyId ?? null} />
 }
 
-function ProductImportForm() {
-  const shell = useShellState()
-  const origin = shell.activeContext?.companyId ?? null
+function ProductImportForm({ binding, origin }: {
+  readonly binding: AttemptBinding | null
+  readonly origin: string | null
+}) {
+  const dispatch = useShellDispatch()
   const boundary = useAuthBoundary()
-  const [file, setFile] = useState<File | null>(null)
-  const [mapping, setMapping] = useState<ProductImportColumnMapping>(EMPTY_MAPPING)
-  const [preview, setPreview] = useState<ProductImportPreview | null>(null)
-  const [result, setResult] = useState<ProductImportResult | null>(null)
-  const [previewState, setPreviewState] = useState<RemoteState>('idle')
-  const [applyState, setApplyState] = useState<RemoteState>('idle')
-  const [message, setMessage] = useState<string | null>(null)
-  const [attemptKey, setAttemptKey] = useState<string | null>(null)
+  const [restored] = useState(() => restoredImport(binding))
+  const [file, setFile] = useState<File | null>(restored.payload?.file ?? null)
+  const [mapping, setMapping] = useState<ProductImportColumnMapping>(restored.payload?.mapping ?? EMPTY_MAPPING)
+  const [preview, setPreview] = useState<ProductImportPreview | null>(restored.payload?.preview ?? null)
+  const [previewState, setPreviewState] = useState<RemoteState>(restored.payload === null ? 'idle' : 'ready')
+  const [attempt, setAttempt] = useState<ImportAttempt>(restored.attempt)
+  const [message, setMessage] = useState<string | null>(() => messageFor(restored.attempt))
   const active = useRef<AbortController | null>(null)
+  const attemptRef = useRef<ImportAttempt>(attempt)
 
   useEffect(() => () => active.current?.abort(), [])
+  useEffect(() => { attemptRef.current = attempt }, [attempt])
+  useEffect(() => {
+    if (attempt.phase === 'completed') rememberAttempt(binding, attempt)
+  }, [attempt, binding])
 
   const mappingReady = [mapping.legacyCode, mapping.name, mapping.groupId].every((value) => value.trim().length > 0)
     && new Set([mapping.legacyCode.trim(), mapping.name.trim(), mapping.groupId.trim()]).size === 3
+  const live = liveSnapshot(attempt)
+  const frozen = isFormFrozen(attempt) || live !== null
+  const dirty = file !== null || Object.values(mapping).some(value => value.length > 0) || preview !== null
+  const unresolved = hasUnresolvedWork(attempt, dirty)
+  const result = attempt.phase === 'completed' ? attempt.result : null
+
+  useEffect(() => {
+    dispatch({ type: unresolved ? 'DIRTY_SET' : 'DIRTY_CLEAR', scope: PRODUCT_IMPORT_DIRTY_SCOPE })
+  }, [dispatch, unresolved])
+  useEffect(() => () => dispatch({ type: 'DIRTY_CLEAR', scope: PRODUCT_IMPORT_DIRTY_SCOPE }), [dispatch])
 
   function resetServerState() {
+    if (frozen) return
     active.current?.abort()
     active.current = null
     setPreview(null)
-    setResult(null)
     setPreviewState('idle')
-    setApplyState('idle')
+    setAttempt({ phase: 'idle' })
     setMessage(null)
-    setAttemptKey(null)
   }
 
   function updateMapping(field: keyof ProductImportColumnMapping, value: string) {
@@ -67,8 +125,7 @@ function ProductImportForm() {
     const auth = boundary.capture()
     setPreviewState('loading')
     setMessage(null)
-    setResult(null)
-    setAttemptKey(null)
+    setAttempt({ phase: 'idle' })
     const outcome = await previewProductImport(file, mapping, { companyId: origin }, controller.signal)
     if (controller.signal.aborted) return
     if (outcome.type === 'http') boundary.report(outcome.status, auth)
@@ -87,31 +144,46 @@ function ProductImportForm() {
         : 'Önizleme alınamadı. Sunucu yanıtını doğrulayıp yeniden deneyin.')
   }
 
-  async function apply() {
-    if (file === null || preview?.ready !== true || origin === null) return
-    const key = attemptKey ?? `product-import-${crypto.randomUUID()}`
-    setAttemptKey(key)
+  const send = useCallback(async (snapshot: AttemptSnapshot<ImportPayload>) => {
+    const previous = attemptRef.current
+    const inFlight: ImportAttempt = { phase: 'submitting', snapshot }
+    rememberAttempt(binding, inFlight)
+    setAttempt(inFlight)
     active.current?.abort()
     const controller = new AbortController()
     active.current = controller
     const auth = boundary.capture()
-    setApplyState('loading')
     setMessage('İçe aktarma uygulanıyor…')
-    const outcome = await applyProductImport(file, mapping, preview, key, { companyId: origin }, controller.signal)
+    const outcome = await applyProductImport(snapshot.payload.file, snapshot.payload.mapping,
+      snapshot.payload.preview, snapshot.key, { companyId: snapshot.origin }, controller.signal)
     if (controller.signal.aborted) return
+    const next = nextState(snapshot, outcome, previous)
+    rememberAttempt(binding, next, false)
     if (outcome.type === 'http') boundary.report(outcome.status, auth)
-    if (outcome.type === 'succeeded') {
-      setResult(outcome.data)
-      setApplyState('ready')
-      setMessage(`${outcome.data.products.length} ürün taslağı kaydedildi.`)
-      setAttemptKey(null)
+    setAttempt(next)
+    setMessage(messageFor(next))
+  }, [binding, boundary])
+
+  function apply() {
+    if (live !== null) {
+      void send(live)
       return
     }
-    setApplyState('error')
-    setMessage(outcome.type === 'offline' ? 'Sonuç bilinmiyor. Aynı istek anahtarıyla yeniden deneyin.'
-      : outcome.type === 'network-error' || outcome.type === 'aborted' || outcome.type === 'malformed'
-        ? 'Sonuç doğrulanamadı. Yeni istek oluşturmadan aynı işlemi yeniden deneyin.'
-        : 'İçe aktarma reddedildi. Hiçbir satır kaydedilmedi.')
+    if (file === null || preview?.ready !== true || origin === null || binding === null) return
+    void send({
+      key: generateAttemptKey(),
+      payload: {
+        file,
+        mapping: {
+          legacyCode: mapping.legacyCode.trim(),
+          name: mapping.name.trim(),
+          groupId: mapping.groupId.trim(),
+        },
+        preview,
+      },
+      origin,
+      namespace: binding.key,
+    })
   }
 
   function downloadErrors() {
@@ -138,23 +210,29 @@ function ProductImportForm() {
         <label>
           Excel dosyası (.xlsx)
           <input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            disabled={frozen}
             onChange={(event) => { resetServerState(); setFile(event.target.files?.[0] ?? null) }} />
+          {file !== null ? <span>{file.name}</span> : null}
         </label>
         <div className={styles.mapping}>
-          <label>Eski kod sütunu<input value={mapping.legacyCode}
+          <label>Eski kod sütunu<input value={mapping.legacyCode} disabled={frozen}
             onChange={(event) => updateMapping('legacyCode', event.target.value)} /></label>
-          <label>Ürün adı sütunu<input value={mapping.name}
+          <label>Ürün adı sütunu<input value={mapping.name} disabled={frozen}
             onChange={(event) => updateMapping('name', event.target.value)} /></label>
-          <label>Grup kimliği sütunu<input value={mapping.groupId}
+          <label>Grup kimliği sütunu<input value={mapping.groupId} disabled={frozen}
             onChange={(event) => updateMapping('groupId', event.target.value)} /></label>
         </div>
         <button type="button" onClick={() => void runPreview()}
-          disabled={file === null || !mappingReady || previewState === 'loading' || origin === null}>
+          disabled={frozen || file === null || !mappingReady || previewState === 'loading' || origin === null}>
           {previewState === 'loading' ? 'Önizleniyor…' : 'Önizle'}
         </button>
       </div>
 
-      {message !== null ? <p role={previewState === 'error' || applyState === 'error' ? 'alert' : 'status'}>{message}</p> : null}
+      {message !== null ? <p
+        role={previewState === 'error' || attempt.phase === 'failed' || attempt.phase === 'unknown' ? 'alert' : 'status'}
+        data-testid={attempt.phase === 'unknown' || (attempt.phase === 'failed' && attempt.unresolvedSince !== undefined)
+          ? 'product-import-unknown' : undefined}
+      >{message}</p> : null}
 
       {preview !== null && preview.errors.length > 0 ? (
         <section className={styles.panel} aria-labelledby="product-import-errors">
@@ -173,8 +251,8 @@ function ProductImportForm() {
         <section className={styles.panel} aria-labelledby="product-import-ready">
           <div className={styles.panelHeading}>
             <h2 id="product-import-ready">Kaydedilecek ürünler</h2>
-            <button type="button" onClick={() => void apply()} disabled={applyState === 'loading'}>
-              {applyState === 'loading' ? 'Kaydediliyor…' : attemptKey === null ? 'Tümünü içe aktar' : 'Aynı isteği yeniden dene'}
+            <button type="button" onClick={apply} disabled={attempt.phase === 'submitting' || attempt.phase === 'completed'}>
+              {attempt.phase === 'submitting' ? 'Kaydediliyor…' : live === null ? 'Tümünü içe aktar' : 'Aynı isteği yeniden dene'}
             </button>
           </div>
           <table><thead><tr><th scope="col">Satır</th><th scope="col">Eski kod</th><th scope="col">Ürün adı</th><th scope="col">Grup kimliği</th></tr></thead>

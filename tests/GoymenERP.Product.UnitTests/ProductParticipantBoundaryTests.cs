@@ -2,6 +2,7 @@ using System.Data;
 using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Product.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -79,6 +80,53 @@ public sealed class ProductParticipantBoundaryTests
 
         Assert.Equal(0, connection.OpenCalls);
     }
+
+    [Fact]
+    public void Import_reserves_a_same_row_legacy_alias_before_allocating_its_canonical_code()
+    {
+        var counter = ProductCodeCounter.ForGroup(Group(Guid.NewGuid(), "SAC"));
+        var reserved = new HashSet<string>(["SAC-1"], StringComparer.Ordinal);
+
+        var code = ProductImportParticipant.AllocateNext(counter, reserved);
+
+        Assert.Equal("SAC-2", code.Value);
+        Assert.Equal(2, reserved.Count);
+    }
+
+    [Fact]
+    public void Import_reserves_every_later_row_alias_before_allocating_any_canonical_code()
+    {
+        var counter = ProductCodeCounter.ForGroup(Group(Guid.NewGuid(), "SAC"));
+        var reserved = new HashSet<string>(["SAC-1", "SAC-2"], StringComparer.Ordinal);
+
+        var first = ProductImportParticipant.AllocateNext(counter, reserved);
+        var second = ProductImportParticipant.AllocateNext(counter, reserved);
+
+        Assert.Equal("SAC-3", first.Value);
+        Assert.Equal("SAC-4", second.Value);
+        Assert.Equal(4, reserved.Count);
+    }
+
+    [Fact]
+    public void Import_uses_one_counter_when_distinct_catalog_groups_share_the_same_prefix()
+    {
+        var first = Group(Guid.NewGuid(), "SAC");
+        var second = Group(Guid.NewGuid(), "SAC");
+        var groups = new Dictionary<Guid, ProductCodeGroupRow> { [first.Id] = first, [second.Id] = second };
+        ProductImportSourceRowV1[] rows =
+        [
+            new(2, "OLD-1", "Bir", first.Id),
+            new(3, "OLD-2", "İki", second.Id),
+        ];
+
+        var required = ProductImportParticipant.RequiredCounterGroups(groups, rows);
+
+        Assert.Single(required);
+        Assert.Equal("SAC", required[0].Prefix);
+    }
+
+    private static ProductCodeGroupRow Group(Guid id, string prefix) =>
+        ProductCodeGroupRow.Define(id, $"{prefix} grubu", prefix);
 
     private static GroupSharedMasterCommandContext Authority(
         GroupSharedMasterOperation operation = GroupSharedMasterOperation.DraftCreate) =>

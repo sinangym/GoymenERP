@@ -40,7 +40,8 @@ public sealed class ProductImportWorkbookReader : IProductImportWorkbookReaderV1
                 return Preview(fileHash, mapping, rows.Length, accepted, errors);
             }
 
-            var headers = rows[0].Cells.ToDictionary(cell => cell.Value.Trim(), cell => cell.Column, StringComparer.Ordinal);
+            var headers = rows[0].Cells.Where(cell => cell.IsLosslessText)
+                .ToDictionary(cell => cell.Value.Trim(), cell => cell.Column, StringComparer.Ordinal);
             var columns = RequiredColumns(mapping);
             foreach (var (field, header) in columns)
                 if (string.IsNullOrWhiteSpace(header) || !headers.ContainsKey(header.Trim()))
@@ -58,12 +59,18 @@ public sealed class ProductImportWorkbookReader : IProductImportWorkbookReaderV1
             var seen = new HashSet<string>(StringComparer.Ordinal);
             foreach (var row in sourceRows)
             {
-                var legacy = Value(row, headers[mapping.LegacyCode.Trim()]).Trim();
-                var name = Value(row, headers[mapping.Name.Trim()]);
-                var groupText = Value(row, headers[mapping.GroupId.Trim()]).Trim();
+                var legacyCell = Cell(row, headers[mapping.LegacyCode.Trim()]);
+                var nameCell = Cell(row, headers[mapping.Name.Trim()]);
+                var groupCell = Cell(row, headers[mapping.GroupId.Trim()]);
+                var legacy = (legacyCell?.Value ?? string.Empty).Trim();
+                var name = nameCell?.Value ?? string.Empty;
+                var groupText = (groupCell?.Value ?? string.Empty).Trim();
                 var before = errors.Count;
                 if (legacy.Length == 0)
                     errors.Add(Error(row.Number, "legacyCode", ProductImportCodesV1.Required, "Eski kod zorunludur."));
+                else if (legacyCell is not { IsLosslessText: true })
+                    errors.Add(Error(row.Number, "legacyCode", ProductImportCodesV1.InvalidLegacyCode,
+                        "Eski kod metin hücresi olmalıdır."));
                 else if (legacy.Length > MaximumLegacyCodeLength || legacy.Any(char.IsControl))
                     errors.Add(Error(row.Number, "legacyCode", ProductImportCodesV1.InvalidLegacyCode, "Eski kod biçimi geçersiz."));
                 else if (!seen.Add(legacy))
@@ -72,13 +79,19 @@ public sealed class ProductImportWorkbookReader : IProductImportWorkbookReaderV1
                     errors.Add(Error(row.Number, "legacyCode", ProductImportCodesV1.ExistingLegacyCode, "Eski kod daha önce kaydedilmiş; mevcut kart güncellenmez."));
 
                 string normalizedName = string.Empty;
-                try { normalizedName = Domain.Products.Product.NormalizeName(name); }
+                try
+                {
+                    if (nameCell is not { IsLosslessText: true }) throw new ArgumentException();
+                    normalizedName = Domain.Products.Product.NormalizeName(name);
+                }
                 catch (ArgumentException)
                 {
                     errors.Add(Error(row.Number, "name", ProductImportCodesV1.InvalidName, "Ürün adı geçersiz."));
                 }
 
-                if (!Guid.TryParseExact(groupText, "D", out var groupId) || groupId == Guid.Empty || !existingGroupIds.Contains(groupId))
+                var groupId = Guid.Empty;
+                if (groupCell is not { IsLosslessText: true }
+                    || !Guid.TryParseExact(groupText, "D", out groupId) || groupId == Guid.Empty || !existingGroupIds.Contains(groupId))
                     errors.Add(Error(row.Number, "groupId", ProductImportCodesV1.InvalidGroup, "Ürün grubu bulunamadı."));
 
                 if (errors.Count == before)
@@ -123,8 +136,7 @@ public sealed class ProductImportWorkbookReader : IProductImportWorkbookReaderV1
 
     private static IEnumerable<SheetRow> ReadFirstSheet(ZipArchive archive, IReadOnlyList<string> shared)
     {
-        var entry = archive.GetEntry("xl/worksheets/sheet1.xml")
-            ?? throw new InvalidDataException("İlk çalışma sayfası bulunamadı.");
+        var entry = FirstWorksheet(archive);
         using var reader = XmlReader.Create(entry.Open(), SafeXml());
         var cells = new List<SheetCell>();
         var rowNumber = 0;
@@ -142,7 +154,7 @@ public sealed class ProductImportWorkbookReader : IProductImportWorkbookReaderV1
                 var type = reader.GetAttribute("t");
                 var column = Column(reference);
                 var value = ReadCell(reader.ReadSubtree(), type, shared);
-                cells.Add(new(column, value));
+                cells.Add(new(column, value.Value, value.IsLosslessText));
             }
             else if (reader.NodeType == XmlNodeType.EndElement && reader.LocalName == "row")
             {
@@ -151,19 +163,81 @@ public sealed class ProductImportWorkbookReader : IProductImportWorkbookReaderV1
         }
     }
 
-    private static string ReadCell(XmlReader reader, string? type, IReadOnlyList<string> shared)
+    private static ZipArchiveEntry FirstWorksheet(ZipArchive archive)
+    {
+        const string relationshipsNamespace = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+        var workbook = archive.GetEntry("xl/workbook.xml")
+            ?? throw new InvalidDataException("Çalışma kitabı tanımı bulunamadı.");
+        string? relationshipId = null;
+        using (var reader = XmlReader.Create(workbook.Open(), SafeXml()))
+            while (reader.Read())
+                if (reader.NodeType == XmlNodeType.Element && reader.LocalName == "sheet")
+                {
+                    relationshipId = reader.GetAttribute("id", relationshipsNamespace);
+                    break;
+                }
+        if (string.IsNullOrWhiteSpace(relationshipId))
+            throw new InvalidDataException("İlk çalışma sayfası ilişkisi bulunamadı.");
+
+        var relationships = archive.GetEntry("xl/_rels/workbook.xml.rels")
+            ?? throw new InvalidDataException("Çalışma kitabı ilişkileri bulunamadı.");
+        string? target = null;
+        using (var reader = XmlReader.Create(relationships.Open(), SafeXml()))
+            while (reader.Read())
+                if (reader.NodeType == XmlNodeType.Element && reader.LocalName == "Relationship"
+                    && string.Equals(reader.GetAttribute("Id"), relationshipId, StringComparison.Ordinal))
+                {
+                    if (string.Equals(reader.GetAttribute("TargetMode"), "External", StringComparison.OrdinalIgnoreCase)
+                        || !(reader.GetAttribute("Type") ?? string.Empty).EndsWith("/worksheet", StringComparison.Ordinal))
+                        throw new InvalidDataException("İlk çalışma sayfası ilişkisi geçersiz.");
+                    target = reader.GetAttribute("Target");
+                    break;
+                }
+        var path = ResolveWorkbookTarget(target);
+        return archive.GetEntry(path) ?? throw new InvalidDataException("İlk çalışma sayfası bulunamadı.");
+    }
+
+    private static string ResolveWorkbookTarget(string? target)
+    {
+        if (string.IsNullOrWhiteSpace(target) || target.Contains('\\')
+            || target.Contains(':') || target.Contains('?') || target.Contains('#'))
+            throw new InvalidDataException("Çalışma sayfası hedefi geçersiz.");
+        var parts = new List<string>();
+        if (!target.StartsWith("/", StringComparison.Ordinal)) parts.Add("xl");
+        foreach (var part in target.Split('/', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (part == ".") continue;
+            if (part == "..")
+            {
+                if (parts.Count == 0) throw new InvalidDataException("Çalışma sayfası hedefi paket dışına çıkıyor.");
+                parts.RemoveAt(parts.Count - 1);
+                continue;
+            }
+            parts.Add(part);
+        }
+        var path = string.Join('/', parts);
+        if (!path.StartsWith("xl/", StringComparison.Ordinal) || path.EndsWith("/", StringComparison.Ordinal))
+            throw new InvalidDataException("Çalışma sayfası hedefi geçersiz.");
+        return path;
+    }
+
+    private static SheetValue ReadCell(XmlReader reader, string? type, IReadOnlyList<string> shared)
     {
         string? value = null;
         var inline = new StringBuilder();
+        var formula = false;
         while (reader.Read())
         {
-            if (reader.NodeType == XmlNodeType.Element && reader.LocalName == "v") value = reader.ReadElementContentAsString();
+            if (reader.NodeType == XmlNodeType.Element && reader.LocalName == "f") formula = true;
+            else if (reader.NodeType == XmlNodeType.Element && reader.LocalName == "v") value = reader.ReadElementContentAsString();
             else if (reader.NodeType == XmlNodeType.Element && reader.LocalName == "t") inline.Append(reader.ReadElementContentAsString());
         }
-        if (type == "inlineStr") return inline.ToString();
+        if (formula) throw new InvalidDataException("Formül hücreleri içe aktarılamaz.");
+        if (type == "inlineStr") return new(inline.ToString(), true);
         if (type == "s" && int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var index)
-                        && index >= 0 && index < shared.Count) return shared[index];
-        return value ?? inline.ToString();
+                        && index >= 0 && index < shared.Count) return new(shared[index], true);
+        if (type == "str") return new(value ?? inline.ToString(), true);
+        return new(value ?? inline.ToString(), false);
     }
 
     private static int Column(string reference)
@@ -175,7 +249,7 @@ public sealed class ProductImportWorkbookReader : IProductImportWorkbookReaderV1
         return value;
     }
 
-    private static string Value(SheetRow row, int column) => row.Cells.FirstOrDefault(cell => cell.Column == column)?.Value ?? string.Empty;
+    private static SheetCell? Cell(SheetRow row, int column) => row.Cells.FirstOrDefault(cell => cell.Column == column);
 
     private static IReadOnlyDictionary<string, string> RequiredColumns(ProductImportColumnMappingV1 mapping) =>
         new Dictionary<string, string>(StringComparer.Ordinal)
@@ -195,5 +269,6 @@ public sealed class ProductImportWorkbookReader : IProductImportWorkbookReaderV1
     };
 
     private sealed record SheetRow(int Number, IReadOnlyList<SheetCell> Cells);
-    private sealed record SheetCell(int Column, string Value);
+    private sealed record SheetCell(int Column, string Value, bool IsLosslessText);
+    private sealed record SheetValue(string Value, bool IsLosslessText);
 }

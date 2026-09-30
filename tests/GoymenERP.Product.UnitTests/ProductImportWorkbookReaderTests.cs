@@ -31,6 +31,59 @@ public sealed class ProductImportWorkbookReaderTests
     }
 
     [Fact]
+    public void Preview_follows_workbook_order_instead_of_a_physical_sheet1_name()
+    {
+        var workbook = WorkbookPackage(
+            Sheet(["Eski Kod", "Ürün Adı", "Grup Kimliği"],
+                ["OLD-FIRST", "Gerçek ilk sayfa", Group.ToString("D")]),
+            Sheet(["Yanlış", "Fiziksel", "Sayfa"]));
+
+        var result = Reader().Read(workbook, Mapping, EmptyCodes(), Groups());
+
+        Assert.True(result.Ready);
+        Assert.Equal("OLD-FIRST", Assert.Single(result.Rows).LegacyCode);
+    }
+
+    [Fact]
+    public void Preview_rejects_formula_cells_even_when_the_workbook_caches_a_text_value()
+    {
+        var sheet = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>
+              <row r="1"><c r="A1" t="inlineStr"><is><t>Eski Kod</t></is></c><c r="B1" t="inlineStr"><is><t>Ürün Adı</t></is></c><c r="C1" t="inlineStr"><is><t>Grup Kimliği</t></is></c></row>
+              <row r="2"><c r="A2" t="str"><f>&quot;OLD-FORMULA&quot;</f><v>OLD-FORMULA</v></c><c r="B2" t="inlineStr"><is><t>Formüllü</t></is></c><c r="C2" t="inlineStr"><is><t>82000000-0000-0000-0000-000000000001</t></is></c></row>
+            </sheetData></worksheet>
+            """;
+
+        var result = Reader().Read(WorkbookPackage(sheet), Mapping, EmptyCodes(), Groups());
+
+        Assert.False(result.Ready);
+        Assert.Single(result.Errors, error => error.Code == ProductImportCodesV1.InvalidWorkbook);
+    }
+
+    [Fact]
+    public void Preview_never_treats_style_dependent_numeric_cells_as_lossless_legacy_codes()
+    {
+        var sheet = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>
+              <row r="1"><c r="A1" t="inlineStr"><is><t>Eski Kod</t></is></c><c r="B1" t="inlineStr"><is><t>Ürün Adı</t></is></c><c r="C1" t="inlineStr"><is><t>Grup Kimliği</t></is></c></row>
+              <row r="2"><c r="A2"><v>00123</v></c><c r="B2" t="inlineStr"><is><t>Sıfırlı kod</t></is></c><c r="C2" t="inlineStr"><is><t>82000000-0000-0000-0000-000000000001</t></is></c></row>
+              <row r="3"><c r="A3"><v>1E+05</v></c><c r="B3" t="inlineStr"><is><t>Bilimsel kod</t></is></c><c r="C3" t="inlineStr"><is><t>82000000-0000-0000-0000-000000000001</t></is></c></row>
+            </sheetData></worksheet>
+            """;
+
+        var result = Reader().Read(WorkbookPackage(sheet), Mapping, EmptyCodes(), Groups());
+
+        Assert.False(result.Ready);
+        Assert.Empty(result.Rows);
+        Assert.Equal(new int?[] { 2, 3 }, result.Errors
+            .Where(error => error.Code == ProductImportCodesV1.InvalidLegacyCode)
+            .Select(error => error.RowNumber)
+            .ToArray());
+    }
+
+    [Fact]
     public void Preview_rejects_repeated_and_already_registered_legacy_codes_without_updating_them()
     {
         var workbook = Workbook(
@@ -97,6 +150,24 @@ public sealed class ProductImportWorkbookReaderTests
     private static HashSet<Guid> Groups() => [Group];
 
     private static byte[] Workbook(IReadOnlyList<string> header, params IReadOnlyList<string>[] rows)
+        => WorkbookPackage(Sheet(header, rows));
+
+    private static string Sheet(IReadOnlyList<string> header, params IReadOnlyList<string>[] rows)
+    {
+        var all = new[] { header }.Concat(rows).ToArray();
+        var xml = new StringBuilder("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><sheetData>");
+        for (var row = 0; row < all.Length; row++)
+        {
+            xml.Append("<row r=\"").Append(row + 1).Append("\">");
+            for (var column = 0; column < all[row].Count; column++)
+                xml.Append("<c r=\"").Append(Column(column + 1)).Append(row + 1).Append("\" t=\"inlineStr\"><is><t>")
+                    .Append(System.Security.SecurityElement.Escape(all[row][column])).Append("</t></is></c>");
+            xml.Append("</row>");
+        }
+        return xml.Append("</sheetData></worksheet>").ToString();
+    }
+
+    private static byte[] WorkbookPackage(string firstLogicalSheet, string? physicalSheet1Decoy = null)
     {
         using var output = new MemoryStream();
         using (var archive = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true))
@@ -107,6 +178,7 @@ public sealed class ProductImportWorkbookReaderTests
                   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
                   <Default Extension="xml" ContentType="application/xml"/>
                   <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+                  <Override PartName="/xl/worksheets/import.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
                   <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
                 </Types>
                 """);
@@ -116,22 +188,27 @@ public sealed class ProductImportWorkbookReaderTests
                   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
                 </Relationships>
                 """);
-            Write(archive, "xl/workbook.xml", """
+            Write(archive, "xl/workbook.xml", physicalSheet1Decoy is null ? """
                 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-                <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheets><sheet name="Ürünler" sheetId="1"/></sheets></workbook>
+                <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Ürünler" sheetId="1" r:id="rIdImport"/></sheets></workbook>
+                """ : """
+                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+                <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="İlk" sheetId="2" r:id="rIdImport"/><sheet name="Fiziksel sheet1" sheetId="1" r:id="rIdDecoy"/></sheets></workbook>
                 """);
-            var all = new[] { header }.Concat(rows).ToArray();
-            var xml = new StringBuilder("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><sheetData>");
-            for (var row = 0; row < all.Length; row++)
-            {
-                xml.Append("<row r=\"").Append(row + 1).Append("\">");
-                for (var column = 0; column < all[row].Count; column++)
-                    xml.Append("<c r=\"").Append(Column(column + 1)).Append(row + 1).Append("\" t=\"inlineStr\"><is><t>")
-                        .Append(System.Security.SecurityElement.Escape(all[row][column])).Append("</t></is></c>");
-                xml.Append("</row>");
-            }
-            xml.Append("</sheetData></worksheet>");
-            Write(archive, "xl/worksheets/sheet1.xml", xml.ToString());
+            Write(archive, "xl/_rels/workbook.xml.rels", physicalSheet1Decoy is null ? """
+                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+                <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+                  <Relationship Id="rIdImport" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/import.xml"/>
+                </Relationships>
+                """ : """
+                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+                <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+                  <Relationship Id="rIdDecoy" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+                  <Relationship Id="rIdImport" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/import.xml"/>
+                </Relationships>
+                """);
+            Write(archive, "xl/worksheets/import.xml", firstLogicalSheet);
+            if (physicalSheet1Decoy is not null) Write(archive, "xl/worksheets/sheet1.xml", physicalSheet1Decoy);
         }
         return output.ToArray();
     }

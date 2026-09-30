@@ -23,7 +23,7 @@ import {
   EditPendingAttemptScope,
   PendingAttemptDiscardObserver,
 } from './PendingAttemptDiscardObserver'
-import { createScope } from './pendingAttempt'
+import { createScope, importScope } from './pendingAttempt'
 import { PRODUCT_CAPABILITY, PRODUCT_CAPABILITY_ROUTE, PRODUCT_IMPORT_ROUTE, type ProductCapabilityId } from './capabilities'
 import { ProductListPage } from './ProductListPage'
 import { ProductDetailPage } from './ProductDetailPage'
@@ -64,7 +64,11 @@ export const productRoutes: RouteObject[] = [
   },
   {
     path: PRODUCT_IMPORT_ROUTE.slice(1),
-    element: gate(PRODUCT_CAPABILITY.productsCreate, <ProductImportPage />),
+    element: (
+      <PendingAttemptDiscardObserver scope={importScope()}>
+        {gate(PRODUCT_CAPABILITY.productsCreate, <ProductImportPage />)}
+      </PendingAttemptDiscardObserver>
+    ),
   },
   {
     path: PRODUCT_CAPABILITY_ROUTE[PRODUCT_CAPABILITY.productsCreate].slice(1),
