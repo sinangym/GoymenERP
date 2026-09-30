@@ -77,6 +77,8 @@ export function createOfficialInvoiceUploadClient(
       }
       let response: Response
       try {
+        const body = JSON.stringify({ batchId, batchVersion, utf8Csv: await fileBase64(file) })
+        if (signal.aborted || !sameContext(context, boundary)) return { kind: 'unknown' }
         response = await fetcher(`${API_BASE}/finance/official-invoice-import-batches`, {
           method: 'POST',
           headers: {
@@ -84,7 +86,7 @@ export function createOfficialInvoiceUploadClient(
             'Content-Type': 'application/json',
             'Idempotency-Key': idempotencyKey,
           },
-          body: JSON.stringify({ batchId, batchVersion, utf8Csv: await fileBase64(file) }),
+          body,
           signal,
         })
       } catch {

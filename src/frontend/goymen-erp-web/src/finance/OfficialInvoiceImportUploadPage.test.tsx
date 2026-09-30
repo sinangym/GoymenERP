@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { OfficialInvoiceImportUploadForm } from './OfficialInvoiceImportUploadPage'
+import { OfficialInvoiceImportUploadBoundForm, OfficialInvoiceImportUploadForm } from './OfficialInvoiceImportUploadPage'
 import type { OfficialInvoiceUploadAttemptContext, OfficialInvoiceUploadClient } from './officialInvoiceImportUploadClient'
 
 const companyId = '10000000-0000-0000-0000-000000000001'
@@ -53,6 +53,44 @@ describe('OfficialInvoiceImportUploadForm', () => {
     await waitFor(() => expect(upload).toHaveBeenCalledTimes(2))
     expect(upload.mock.calls[0].slice(0, 4)).toEqual([batchId, 'invoice-v1', file, idempotencyKey])
     expect(upload.mock.calls[1].slice(0, 4)).toEqual([batchId, 'invoice-v1', file, idempotencyKey])
+  })
+
+  it('recovers the frozen upload after a security re-fence without showing the old generation result', async () => {
+    vi.spyOn(globalThis.crypto, 'randomUUID')
+      .mockReturnValueOnce(batchId).mockReturnValueOnce(idempotencyKey)
+    const firstUpload = vi.fn().mockResolvedValue({ kind: 'unknown' })
+    const firstClient: OfficialInvoiceUploadClient = { upload: firstUpload }
+    const firstContext = { ...context, sessionEpoch: 31, securityNamespace: 'finance-maker-before-refence' }
+    const view = render(<OfficialInvoiceImportUploadBoundForm context={firstContext} client={firstClient} />)
+    const file = chooseFileAndVersion()
+    fireEvent.click(screen.getByRole('button', { name: 'Onaya gönder' }))
+    await screen.findByRole('button', { name: 'Aynı anahtar ve dosyayla yeniden gönder' })
+
+    const replay = vi.fn().mockResolvedValue({ kind: 'succeeded', replayed: true, batch: pending })
+    const refenced = { ...firstContext, requestFenceGeneration: 6, capabilityGeneration: '12',
+      securityNamespace: 'finance-maker-after-refence' }
+    view.rerender(<OfficialInvoiceImportUploadBoundForm context={refenced} client={{ upload: replay }} />)
+    expect(screen.queryByRole('heading', { name: 'Onay bekliyor' })).not.toBeInTheDocument()
+    fireEvent.click(await screen.findByRole('button', { name: 'Aynı anahtar ve dosyayla yeniden gönder' }))
+    await screen.findByRole('heading', { name: 'Onay bekliyor' })
+    expect(replay).toHaveBeenCalledWith(batchId, 'invoice-v1', file, idempotencyKey, expect.any(AbortSignal))
+  })
+
+  it('does not carry a frozen file or body to another actor or company', async () => {
+    vi.spyOn(globalThis.crypto, 'randomUUID')
+      .mockReturnValueOnce(batchId).mockReturnValueOnce(idempotencyKey)
+    const firstContext = { ...context, sessionEpoch: 32 }
+    const view = render(<OfficialInvoiceImportUploadBoundForm context={firstContext}
+      client={{ upload: vi.fn().mockResolvedValue({ kind: 'unknown' }) }} />)
+    chooseFileAndVersion()
+    fireEvent.click(screen.getByRole('button', { name: 'Onaya gönder' }))
+    await screen.findByRole('button', { name: 'Aynı anahtar ve dosyayla yeniden gönder' })
+
+    view.rerender(<OfficialInvoiceImportUploadBoundForm context={{ ...firstContext, actorId: 'other-actor',
+      companyId: '90000000-0000-4000-8000-000000000009', securityNamespace: 'other-company' }}
+      client={{ upload: vi.fn() }} />)
+    expect(screen.queryByRole('button', { name: 'Aynı anahtar ve dosyayla yeniden gönder' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Onaya gönder' })).toBeDisabled()
   })
 })
 

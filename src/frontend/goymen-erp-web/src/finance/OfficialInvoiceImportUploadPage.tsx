@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { OfficialInvoicePendingBatch } from './officialInvoiceImportApprovalContract'
 import {
   useOfficialInvoiceUploadTransport,
@@ -17,13 +17,25 @@ interface FrozenUpload {
 const unresolved = new Map<string, FrozenUpload>()
 
 function contextKey(context: OfficialInvoiceUploadAttemptContext) {
-  return JSON.stringify([context.sessionEpoch, context.actorId, context.companyId, context.securityNamespace])
+  return JSON.stringify([context.sessionEpoch, context.actorId, context.companyId])
+}
+
+function requestContextKey(context: OfficialInvoiceUploadAttemptContext) {
+  return JSON.stringify([context.sessionEpoch, context.actorId, context.companyId, context.committedContextRevision,
+    context.requestFenceGeneration, context.capabilityGeneration, context.securityNamespace])
 }
 
 export function OfficialInvoiceImportUploadPage() {
   const transport = useOfficialInvoiceUploadTransport()
   if (transport === null) return <p role="alert">Finans güvenlik bağlamı hazır değil.</p>
-  return <OfficialInvoiceImportUploadForm context={transport.context} client={transport.client} />
+  return <OfficialInvoiceImportUploadBoundForm context={transport.context} client={transport.client} />
+}
+
+export function OfficialInvoiceImportUploadBoundForm({ context, client }: {
+  readonly context: OfficialInvoiceUploadAttemptContext
+  readonly client: OfficialInvoiceUploadClient
+}) {
+  return <OfficialInvoiceImportUploadForm key={requestContextKey(context)} context={context} client={client} />
 }
 
 export function OfficialInvoiceImportUploadForm({ context, client }: {
@@ -41,6 +53,11 @@ export function OfficialInvoiceImportUploadForm({ context, client }: {
   const [issues, setIssues] = useState<readonly { readonly field: string; readonly code: string }[]>([])
   const active = useRef<AbortController | null>(null)
 
+  useEffect(() => () => {
+    active.current?.abort()
+    active.current = null
+  }, [])
+
   async function upload() {
     const frozen = attempt ?? (file === null || batchVersion.trim().length === 0 ? null : {
       file,
@@ -57,7 +74,8 @@ export function OfficialInvoiceImportUploadForm({ context, client }: {
     active.current?.abort()
     active.current = controller
     const reply = await client.upload(frozen.batchId, frozen.batchVersion, frozen.file, frozen.idempotencyKey, controller.signal)
-    if (controller.signal.aborted) return
+    if (controller.signal.aborted || active.current !== controller) return
+    active.current = null
     if (reply.kind === 'succeeded') {
       unresolved.delete(key)
       setAttempt(null)

@@ -69,4 +69,21 @@ describe('official invoice import upload client', () => {
       .resolves.toEqual({ kind: 'unknown' })
     expect(auth.report).toHaveBeenCalledWith(403, snapshot)
   })
+
+  it('does not fetch when the security context changes while file bytes are being prepared', async () => {
+    let release!: (value: ArrayBuffer) => void
+    const body = new Promise<ArrayBuffer>((resolve) => { release = resolve })
+    const deferredFile = { arrayBuffer: () => body } as File
+    let current = snapshot
+    const auth = { capture: () => current, report: vi.fn() } as unknown as AuthBoundary
+    const fetcher = vi.fn()
+    const pendingUpload = createOfficialInvoiceUploadClient(context, auth, fetcher)
+      .upload(batchId, 'invoice-v1', deferredFile, 'same-key', new AbortController().signal)
+
+    current = { ...snapshot, requestFenceGeneration: 6, namespace: 'finance-maker-refenced' }
+    release(new TextEncoder().encode('invoice,csv').buffer)
+
+    await expect(pendingUpload).resolves.toEqual({ kind: 'unknown' })
+    expect(fetcher).not.toHaveBeenCalled()
+  })
 })

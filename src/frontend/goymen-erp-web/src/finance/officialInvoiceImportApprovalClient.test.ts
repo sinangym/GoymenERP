@@ -165,6 +165,28 @@ describe('official invoice application HTTP client', () => {
     isSucceeded: true,
   })
 
+  it('does not preview or apply when context changes during asynchronous file serialization', async () => {
+    const changed = { ...boundary().capture(), requestFenceGeneration: 6, namespace: 'finance-checker-refenced' }
+    for (const operation of ['preview', 'apply'] as const) {
+      let release!: (value: ArrayBuffer) => void
+      const bytes = new Promise<ArrayBuffer>((resolve) => { release = resolve })
+      const deferredFile = { arrayBuffer: () => bytes } as File
+      let current = boundary().capture()
+      const auth = { capture: () => current, report: vi.fn<AuthBoundary['report']>() }
+      const fetcher = vi.fn()
+      const client = createOfficialInvoiceImportClient(context, auth, fetcher)
+      const pending = operation === 'preview'
+        ? client.preview(source, deferredFile, new AbortController().signal)
+        : client.apply(source, deferredFile, 'same-key', new AbortController().signal)
+      current = changed
+      release(new TextEncoder().encode('invoice,csv').buffer)
+
+      if (operation === 'preview') await expect(pending).rejects.toThrow('stale-finance-context')
+      else await expect(pending).resolves.toEqual({ kind: 'unknown' })
+      expect(fetcher).not.toHaveBeenCalled()
+    }
+  })
+
   it('uses the captured company for preview/apply/reopen and validates the complete success graph', async () => {
     const preview = { templateVersion: batch.templateVersion, sourceSha256: batch.batchChecksum,
       batch: detail.preview.batch, issues: [], isValid: true }

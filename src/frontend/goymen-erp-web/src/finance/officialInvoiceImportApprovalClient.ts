@@ -109,10 +109,12 @@ async function previewImport(
   signal: AbortSignal,
 ): Promise<OfficialInvoiceImportPreview> {
   const snapshot = capture(context, boundary)
+  const body = JSON.stringify(await importBody(source, file))
+  if (signal.aborted || !sameContext(context, boundary)) throw new Error('stale-finance-context')
   const response = await fetcher(`${API_BASE}/finance/official-invoice-imports/preview`, {
     method: 'POST',
     headers: { ...headers(context.companyId), 'Content-Type': 'application/json' },
-    body: JSON.stringify(await importBody(source, file)),
+    body,
     signal,
   })
   reportBoundary(response.status, snapshot, boundary)
@@ -140,6 +142,8 @@ async function applyImport(
 
   let response: Response
   try {
+    const body = JSON.stringify(await importBody(source, file))
+    if (signal.aborted || !sameContext(context, boundary)) return { kind: 'unknown' }
     response = await fetcher(`${API_BASE}/finance/official-invoice-imports/apply`, {
       method: 'POST',
       headers: {
@@ -147,7 +151,7 @@ async function applyImport(
         'Content-Type': 'application/json',
         'Idempotency-Key': idempotencyKey,
       },
-      body: JSON.stringify(await importBody(source, file)),
+      body,
       signal,
     })
   } catch {
