@@ -34,10 +34,10 @@ public sealed partial class OpenApiContractGenerationTests
             AuthenticatedResponses("201:application/json", "400:application/problem+json", "409:application/problem+json", "415:", "503:application/problem+json"),
             "#/components/schemas/CreateProductDraftRequest"),
         new("post", "/api/v1/products/imports/preview", "PreviewProductImportV1",
-            AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:"),
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "413:", "415:"),
             "#/components/schemas/ProductImportPreviewFormV1", RequestMediaType: "multipart/form-data"),
         new("post", "/api/v1/products/imports", "ApplyProductImportV1",
-            AuthenticatedResponses("201:application/json", "400:application/problem+json", "409:application/problem+json", "415:", "503:application/problem+json"),
+            AuthenticatedResponses("201:application/json", "400:application/problem+json", "409:application/problem+json", "413:", "415:", "503:application/problem+json"),
             "#/components/schemas/ProductImportApplyFormV1", RequestMediaType: "multipart/form-data"),
         new("patch", "/api/v1/products/{id}/draft", "EditProductDraftV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:", "503:application/problem+json"),
@@ -109,7 +109,7 @@ public sealed partial class OpenApiContractGenerationTests
         foreach (var response in actual.Value.GetProperty("responses").EnumerateObject())
         {
             var status = int.Parse(response.Name, CultureInfo.InvariantCulture);
-            if (status >= 400 && status != 415)
+            if (status >= 400 && status is not (413 or 415))
                 Assert.Equal(status == 500 ? "#/components/schemas/ErpProblemDetailsContract" : "#/components/schemas/ProductRuntimeProblemContract",
                     response.Value.GetProperty("content").GetProperty("application/problem+json").GetProperty("schema").GetProperty("$ref").GetString());
             var headers = response.Value.GetProperty("headers");
