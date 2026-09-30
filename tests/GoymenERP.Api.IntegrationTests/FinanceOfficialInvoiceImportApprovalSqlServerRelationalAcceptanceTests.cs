@@ -21,7 +21,7 @@ public sealed class FinanceOfficialInvoiceImportApprovalSqlServerRelationalAccep
     private static readonly Guid Batch = Guid.Parse("81000000-0000-0000-0000-000000000001");
 
     [SqlServerFact]
-    public async Task The_uploader_is_refused_then_a_different_authorized_checker_persists_approval_atomically()
+    public async Task A_different_authorized_checker_persists_batch_approval_commands_and_audits_atomically()
     {
         await using var run = await Run.StartAsync();
         await using (var maker = run.Service(Company, "SENTETIK-maker", new AllowAuthority()))
