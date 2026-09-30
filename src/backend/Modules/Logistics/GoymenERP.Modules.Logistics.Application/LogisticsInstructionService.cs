@@ -440,6 +440,23 @@ public sealed partial class LogisticsInstructionService(
             return await TerminalAsync(envelope, requestHash, commandName,
                 new LogisticsTerminalRefusal(409, LogisticsProblemCodesV1.WeighingAlreadyRecorded, [new("weighingId", exception.Code)]), cancellationToken);
         }
+        catch (LogisticsRuleException exception) when (exception.Code == LogisticsRuleCodes.ShipmentAlreadyDispatched)
+        {
+            // AT-055: a shipment is on at most one dispatch note; a second link (another draft, another key) is a recorded
+            // terminal refusal and the first draft stays as it is.
+            return await TerminalAsync(envelope, requestHash, commandName,
+                new LogisticsTerminalRefusal(409, LogisticsProblemCodesV1.ShipmentAlreadyDispatched, [new("shipmentIds", exception.Code)]), cancellationToken);
+        }
+        catch (LogisticsRuleException exception) when (exception.Code == LogisticsRuleCodes.DuplicateDispatchNoteId)
+        {
+            return await TerminalAsync(envelope, requestHash, commandName,
+                new LogisticsTerminalRefusal(409, LogisticsProblemCodesV1.DuplicateDispatchNote, [new("dispatchNoteId", exception.Code)]), cancellationToken);
+        }
+        catch (LogisticsRuleException exception) when (exception.Code == LogisticsRuleCodes.ShipmentNotFound
+            && string.Equals(commandName, LogisticsCommands.CreateDispatchNoteV1, StringComparison.Ordinal))
+        {
+            throw new LogisticsInstructionServiceException(422, LogisticsProblemCodesV1.ShipmentNotFound, [new("shipmentIds", exception.Code)]);
+        }
         catch (LogisticsRuleException exception) when (exception.Code == LogisticsRuleCodes.WeighingDirectionInconsistent)
         {
             throw new LogisticsInstructionServiceException(422, LogisticsProblemCodesV1.WeighingDirectionInconsistent,
@@ -787,7 +804,8 @@ public sealed partial class LogisticsInstructionService(
                 Text(line.ShippedNotDelivered), line.IsBlocked))],
             [.. instruction.Shares.Select(share => new LoadingShareView(share.ShareId, share.LineId, share.Kind.ToString(), Text(share.Quantity),
                 share.Measurement?.ToString(), share.SourceShipmentId, share.RecordedAtUtc))],
-            instruction.Weighing is { } weighing ? WeighingView(weighing) : null);
+            instruction.Weighing is { } weighing ? WeighingView(weighing) : null,
+            [.. instruction.DispatchNotes.Select(note => DispatchNoteView(instruction, note))]);
     }
 
     /// <summary>The weighbridge record exactly as the domain calculated it; the difference keeps its sign ("-" = lighter than loaded).</summary>

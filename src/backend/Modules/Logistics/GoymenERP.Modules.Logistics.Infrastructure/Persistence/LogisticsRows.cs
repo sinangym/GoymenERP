@@ -79,6 +79,43 @@ internal sealed class LoadingAttemptRow : ILogisticsTenantRow
 }
 
 /// <summary>
+/// AT-055: a dispatch-note (irsaliye) DRAFT of an instruction, append-only. <see cref="NoteNo"/> is its order among the
+/// instruction's drafts (not a document number — numbering is not decided); <see cref="SharesBefore"/> is the share count it
+/// was made after, so the rebuild replays it at that point. Status 1 = Draft is the only state.
+/// </summary>
+internal sealed class DispatchNoteRow : ILogisticsTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid InstructionId { get; set; }
+    public Guid DispatchNoteId { get; set; }
+    public int NoteNo { get; set; }
+    public int Status { get; set; }
+    public int SharesBefore { get; set; }
+    public string CreatedBy { get; set; } = string.Empty;
+    public DateTimeOffset CreatedAtUtc { get; set; }
+}
+
+/// <summary>
+/// AT-055: one line of a dispatch-note draft — one definite shipment of the instruction and its shipped quantity, with the
+/// instruction line's Sales binding, product and unit copied for the Sales order read. The key (company, instruction,
+/// shipment) is UNIQUE: a shipment is on at most one dispatch note, in SQL Server too.
+/// </summary>
+internal sealed class DispatchNoteLineRow : ILogisticsTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid InstructionId { get; set; }
+    public Guid DispatchNoteId { get; set; }
+    public int LineNo { get; set; }
+    public Guid ShipmentId { get; set; }
+    public Guid InstructionLineId { get; set; }
+    public Guid SourceOrderId { get; set; }
+    public Guid SourceOrderLineId { get; set; }
+    public Guid ProductId { get; set; }
+    public Guid UnitId { get; set; }
+    public decimal Quantity { get; set; }
+}
+
+/// <summary>
 /// AT-053: the instruction's manual weighbridge record, one per instruction (the key), append-only. The two weighings as
 /// entered, the direction and the backend's calculation (net, the loaded kilograms when weighed, the signed difference),
 /// the share count it was recorded after (so the rebuild replays it at that point) and the operator.

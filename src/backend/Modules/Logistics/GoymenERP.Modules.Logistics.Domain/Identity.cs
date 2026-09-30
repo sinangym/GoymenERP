@@ -49,6 +49,10 @@ public static class LogisticsRuleCodes
     public const string WeighingDirectionInconsistent = "logistics_weighing_direction_inconsistent";
     public const string WeighingUnitUnsupported = "logistics_weighing_unit_unsupported";
 
+    // AT-055 dispatch-note draft: a definite shipment is linked to at most one dispatch note.
+    public const string ShipmentAlreadyDispatched = "logistics_shipment_already_dispatched";
+    public const string DuplicateDispatchNoteId = "logistics_duplicate_dispatch_note_id";
+
     /// <summary>
     /// A line-level guard fired although the aggregate had already checked the same bound. The
     /// aggregate is the single authority for every share bound; this code marks the second,

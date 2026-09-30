@@ -8,6 +8,8 @@
  *   POST …/loading-instructions/{id}/issue                 → 200 (Draft → Issued); replay 200 + header
  *   POST …/loading-instructions/{id}/lines/{lineId}/loads → 200 (a loaded share); replay 200 + header
  *   POST …/loading-instructions/{id}/weighings             → 200 (AT-053 weighbridge record); replay 200 + header
+ *   POST …/loading-instructions/{id}/dispatch-notes        → 200 (AT-055 dispatch-note draft); replay 200 + header
+ *   GET  /logistics/dispatch-notes?salesOrderId            → the drafts of one Sales order (the S-04 link)
  *
  * The transport invents no field and carries no business rule. It adds the consumer checks the
  * contract asks for: a command answer is success only when status and `isReplay` agree with the
@@ -27,7 +29,10 @@ import {
   LOGISTICS_PATH,
   MUTATION_STATUS,
   REPLAY_HEADER,
+  SALES_ORDER_DISPATCH_NOTES_PATH,
   decodeApprovedOrderLinePage,
+  decodeSalesOrderDispatchNotes,
+  dispatchNotesPath,
   decodeInstructionDetail,
   decodeInstructionMutation,
   decodeInstructionPage,
@@ -37,6 +42,8 @@ import {
   loadsPath,
   weighingsPath,
   type ApprovedOrderLinePage,
+  type CreateDispatchNoteRequest,
+  type SalesOrderDispatchNotes,
   type CreateInstructionRequest,
   type InstructionDetail,
   type InstructionMutation,
@@ -222,7 +229,8 @@ export function describesAttempt(mutation: InstructionMutation, sent: CreateInst
     instruction.effectiveOn !== sent.effectiveOn ||
     detail.lines.length !== sent.lines.length ||
     detail.shares.length !== 0 ||
-    detail.weighing !== null
+    detail.weighing !== null ||
+    detail.dispatchNotes.length !== 0
   ) {
     return false
   }
@@ -292,7 +300,7 @@ export interface CommandContext {
 
 async function sendTransition(
   path: string,
-  payload: IssueRequest | RecordLoadRequest | RecordShipmentRequest | RecordDeliveryRequest | RecordWeighingRequest,
+  payload: IssueRequest | RecordLoadRequest | RecordShipmentRequest | RecordDeliveryRequest | RecordWeighingRequest | CreateDispatchNoteRequest,
   context: CommandContext,
   signal: AbortSignal | undefined,
 ): Promise<CommandOutcome<InstructionMutation>> {
@@ -392,4 +400,30 @@ export async function recordWeighing(payload: RecordWeighingRequest, context: Co
   return weighing === null || weighing.weighingId !== payload.weighingId || weighing.direction !== payload.direction
     || weighing.firstWeighingKg !== payload.firstWeighingKg || weighing.secondWeighingKg !== payload.secondWeighingKg
     ? { type: 'malformed' } : outcome
+}
+
+/**
+ * AT-055: a dispatch-note DRAFT from definite shipments. The answer must be THIS instruction carrying THE draft sent — its id,
+ * exactly the shipments sent (each once), each line's quantity being that shipment's recorded quantity (the decoder checks it).
+ */
+export async function createDispatchNote(payload: CreateDispatchNoteRequest, context: CommandContext,
+  signal?: AbortSignal): Promise<CommandOutcome<InstructionMutation>> {
+  const outcome = await sendTransition(dispatchNotesPath(context.instructionId), payload, context, signal)
+  if (outcome.type !== 'succeeded') return outcome
+  const note = outcome.data.detail.dispatchNotes.find((candidate) => candidate.dispatchNoteId === payload.dispatchNoteId)
+  const sent = [...payload.shipmentIds].sort()
+  const answered = note === undefined ? [] : note.lines.map((line) => line.shipmentId).sort()
+  return note === undefined || answered.length !== sent.length || answered.some((id, index) => id !== sent[index])
+    ? { type: 'malformed' } : outcome
+}
+
+/** AT-055: the dispatch-note drafts of one Sales order (the S-04 link), read under the Logistics instruction read. */
+export async function fetchSalesOrderDispatchNotes(salesOrderId: string, companyId: string,
+  signal?: AbortSignal): Promise<ViewOutcome<SalesOrderDispatchNotes>> {
+  const params = new URLSearchParams({ salesOrderId })
+  const raw = await request(`${SALES_ORDER_DISPATCH_NOTES_PATH}?${params.toString()}`, { headers: headers(companyId) }, signal)
+  if ('failure' in raw) return readFailure(raw.failure)
+  if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
+  const data = decodeSalesOrderDispatchNotes(raw.body, salesOrderId)
+  return data === null ? { type: 'malformed' } : { type: 'ok-single', data }
 }

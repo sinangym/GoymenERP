@@ -44,6 +44,14 @@ public sealed record RecordLoadRequest(string ExpectedVersion, Guid LoadId, stri
 public sealed record RecordWeighingRequest(string ExpectedVersion, Guid WeighingId, string Direction, string FirstWeighingKg,
     string SecondWeighingKg);
 
+/// <summary>
+/// POST …/{id}/dispatch-notes (AT-055): a dispatch-note (irsaliye) DRAFT from definite shipments of an issued instruction — the
+/// shipment ids to put on it (each a recorded shipment of this instruction, named once, not yet on a dispatch note). The draft
+/// id is the client's (one draft per id). No quantity, price, number, date or customer is sent: each line is the recorded
+/// shipped quantity, the customer is the instruction's, and the backend stamps the preparer and the time.
+/// </summary>
+public sealed record CreateDispatchNoteRequest(string ExpectedVersion, Guid DispatchNoteId, IReadOnlyList<Guid> ShipmentIds);
+
 // ---- views --------------------------------------------------------------------------------------
 
 public sealed record LoadingInstructionSummaryView(
@@ -70,12 +78,42 @@ public sealed record LoadingInstructionWeighingView(
     Guid WeighingId, string Direction, string FirstWeighingKg, string SecondWeighingKg, string TareKg, string GrossKg, string NetKg,
     string LoadedKgAtWeighing, string DifferenceKg, string RecordedBy, DateTimeOffset RecordedAtUtc);
 
+/// <summary>
+/// One line of a dispatch-note draft (AT-055): the definite shipment it documents, that shipment's instruction line and its
+/// Sales order binding (D4), the product and unit identities, and the SHIPPED quantity as exact text (Ö2). Price-free.
+/// </summary>
+public sealed record DispatchNoteLineView(
+    int LineNo, Guid ShipmentId, Guid InstructionLineId, Guid SourceOrderId, Guid SourceOrderLineId, Guid ProductId, Guid UnitId, string Quantity);
+
+/// <summary>
+/// A dispatch-note draft of the instruction (AT-055). <paramref name="Status"/> is always "Draft": finalising, numbering,
+/// cancelling and official submission are not decided (DEC-INT-001), so there is no number member. <paramref name="CreatedBy"/>
+/// is the preparer's user id.
+/// </summary>
+public sealed record DispatchNoteView(Guid DispatchNoteId, string Status, string CreatedBy, DateTimeOffset CreatedAtUtc,
+    IReadOnlyList<DispatchNoteLineView> Lines);
+
 /// <param name="Weighing">The manual weighbridge record, or null while none is recorded (always present on the wire).</param>
+/// <param name="DispatchNotes">The dispatch-note drafts prepared from this instruction's shipments, oldest first (always present; empty when none).</param>
 public sealed record LoadingInstructionDetailView(
     LoadingInstructionSummaryView Instruction,
     IReadOnlyList<LoadingInstructionLineView> Lines,
     IReadOnlyList<LoadingShareView> Shares,
-    LoadingInstructionWeighingView? Weighing = null);
+    LoadingInstructionWeighingView? Weighing = null,
+    IReadOnlyList<DispatchNoteView>? DispatchNotes = null);
+
+/// <summary>
+/// AT-055, the Sales order view's link (S-04): the dispatch-note drafts that document shipments of one Sales order, with only
+/// that order's lines. Read under the instruction read; creates nothing. <paramref name="HasMore"/> says the list stopped at its
+/// cap (never a silent cut).
+/// </summary>
+public sealed record SalesOrderDispatchNotesView(Guid SalesOrderId, IReadOnlyList<SalesOrderDispatchNoteView> Items, bool HasMore);
+
+public sealed record SalesOrderDispatchNoteView(Guid DispatchNoteId, Guid InstructionId, string Status, DateTimeOffset CreatedAtUtc,
+    IReadOnlyList<SalesOrderDispatchNoteLineView> Lines);
+
+/// <summary>One line of the draft on the asked order: the order line, the shipment and the shipped quantity (exact text) in its unit.</summary>
+public sealed record SalesOrderDispatchNoteLineView(int LineNo, Guid SourceOrderLineId, Guid ShipmentId, Guid UnitId, string Quantity);
 
 public sealed record LoadingInstructionResponse(LoadingInstructionDetailView Detail, bool IsReplay, string OriginalCorrelationId);
 
@@ -138,6 +176,15 @@ public static class LogisticsProblemCodesV1
     /// <summary>422 (AT-053): the two weighings contradict the declared direction (the gross must be heavier than the tare).</summary>
     public const string WeighingDirectionInconsistent = "logistics_weighing_direction_inconsistent";
 
+    /// <summary>409, terminal (§7; AT-055): a named shipment is already on a dispatch note; a shipment is linked to at most one.</summary>
+    public const string ShipmentAlreadyDispatched = "logistics_shipment_already_dispatched";
+
+    /// <summary>409, terminal (§7): the draft id is already a dispatch note of this instruction (under another key).</summary>
+    public const string DuplicateDispatchNote = "logistics_duplicate_dispatch_note_id";
+
+    /// <summary>422 (AT-055): a named id is not a recorded definite shipment of this instruction.</summary>
+    public const string ShipmentNotFound = "logistics_shipment_not_found";
+
     public const string SameKeyPayloadMismatch = "same_key_payload_mismatch";
     public const string ConcurrentChange = "concurrent_change";
 
@@ -178,7 +225,8 @@ public sealed record LogisticsInstructionServiceBindings(
     string? RecordPermission = LogisticsPermissionManifestV1.LoadsRecord,
     string? ShipmentPermission = LogisticsPermissionManifestV1.ShipmentsRecord,
     string? DeliveryPermission = LogisticsPermissionManifestV1.DeliveriesRecord,
-    string? WeighingPermission = LogisticsPermissionManifestV1.WeighingsRecord);
+    string? WeighingPermission = LogisticsPermissionManifestV1.WeighingsRecord,
+    string? DispatchNotePermission = LogisticsPermissionManifestV1.DispatchNotesCreate);
 
 /// <summary>Constructed by the server, never bound from the request body.</summary>
 public sealed record LogisticsCommandMetadata(string IdempotencyKey, string CorrelationId, string? CausationId, DateTimeOffset RequestedAtUtc);
@@ -192,6 +240,12 @@ public static class LogisticsApiV1
 
     /// <summary>AT-053: the instruction's manual weighbridge record (one per instruction).</summary>
     public const string WeighingsPath = "/api/v1/logistics/loading-instructions/{id}/weighings";
+
+    /// <summary>AT-055: a dispatch-note draft from the instruction's definite shipments.</summary>
+    public const string DispatchNotesPath = "/api/v1/logistics/loading-instructions/{id}/dispatch-notes";
+
+    /// <summary>AT-055: the dispatch-note drafts of one Sales order (query <c>salesOrderId</c>), for the Sales order view's link.</summary>
+    public const string SalesOrderDispatchNotesPath = "/api/v1/logistics/dispatch-notes";
 
     /// <summary>LOG-4b: the price-free approved-order-lines read for the picker (the create name).</summary>
     public const string ApprovedOrderLinesPath = "/api/v1/logistics/loading-instructions/approved-order-lines";
@@ -286,6 +340,20 @@ public static class LogisticsJson
 
         RequireDecimalShape(request.FirstWeighingKg);
         RequireDecimalShape(request.SecondWeighingKg);
+        return request;
+    }
+
+    public static CreateDispatchNoteRequest ReadCreateDispatchNote(string json)
+    {
+        var request = JsonSerializer.Deserialize<CreateDispatchNoteRequest>(json, Options)
+            ?? throw new JsonException("Request body is required.");
+        RequireVersionShape(request.ExpectedVersion);
+        if (request.DispatchNoteId == Guid.Empty || request.ShipmentIds is null || request.ShipmentIds.Count is < 1 or > MaximumLines
+            || request.ShipmentIds.Any(id => id == Guid.Empty) || request.ShipmentIds.Distinct().Count() != request.ShipmentIds.Count)
+        {
+            throw new JsonException("Invalid dispatch-note fields.");
+        }
+
         return request;
     }
 

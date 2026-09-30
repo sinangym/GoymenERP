@@ -45,6 +45,11 @@
  *          order; each row opens its OWNER screen (P-03-DETAIL, S-04); back keeps the section and the search; reopen shows
  *          the same row; no price text or key; the reader holds neither section (routes closed, reads 403); nothing under
  *          the other company
+ *   L04-09 AT-055 loader: a dispatch-note DRAFT prepared in the detail from L04-05's definite shipment; reopening shows it with
+ *          the shipped quantity (2) as its one line and the shipment no longer pickable; the same key replays with one draft;
+ *          a second draft for the same shipment is 409 logistics_shipment_already_dispatched; the reader is 403; one audit on
+ *          the Web channel; no Inventory movement; the Sales reader's S-04 lists the draft and its link opens the instruction
+ *          at the draft
  */
 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
@@ -861,5 +866,114 @@ test('L04-08 AT-025: the operations work list keeps sales and purchase work in s
   for (const path of [SALES_WORK_PATH, PURCHASE_WORK_PATH]) {
     const answer = await page.request.get(`${env.apiBaseUrl}${path}`, { headers: elsewhere })
     expect([403, 404]).toContain(answer.status())
+  }
+})
+
+test('L04-09 AT-055: the loader drafts a dispatch note from the definite shipment; reopening shows it with the shipped quantity; the same key replays with no second draft; a second draft for the same shipment and the reader are refused; the Sales order links to it; Inventory is not written', async ({ page }) => {
+  await signInAs(page, loaderActor)
+  if (createdId === '') createdId = recallCreatedId()
+  await openDetail(page, createdId)
+  const before = await readInstruction(page, loaderActor, createdId)
+  // L04-05 recorded exactly one definite shipment of 2 kg on line 1: the dispatch note documents that shipment only.
+  const shipments = before.shares.filter((share) => share.kind === 'Shipped')
+  expect(shipments).toHaveLength(1)
+  const shipment = shipments[0]
+  expect(shipment.quantity).toBe('2')
+  await expect(page.getByTestId('logistics-dispatch-notes-none')).toBeVisible()
+
+  const pool = await new sql.ConnectionPool(env.sqlConnection).connect()
+  try {
+    const counts = async () => {
+      const result = await pool.request()
+        .input('companyId', sql.UniqueIdentifier, companyId)
+        .input('instructionId', sql.UniqueIdentifier, createdId)
+        .input('entityId', sql.NVarChar, createdId)
+        .query(`
+          SELECT
+            (SELECT COUNT(*) FROM [logistics].[DispatchNotes] WHERE [CompanyId]=@companyId AND [InstructionId]=@instructionId) AS notes,
+            (SELECT COUNT(*) FROM [logistics].[DispatchNoteLines] WHERE [CompanyId]=@companyId AND [InstructionId]=@instructionId) AS lines,
+            (SELECT COUNT(*) FROM [inventory].[Movements] WHERE [CompanyId]=@companyId) AS movements,
+            (SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [CompanyId]=@companyId AND [EntityId]=@entityId
+               AND [EventType]=N'logistics.loading-instruction.dispatch-note-drafted.v1' AND [SourceChannel]=N'Web') AS audits`)
+      return result.recordset[0] as { notes: number; lines: number; movements: number; audits: number }
+    }
+    const start = await counts()
+    expect([start.notes, start.lines, start.audits]).toEqual([0, 0, 0])
+
+    // The person picks the shipment in the detail and prepares the draft; nothing else is typed.
+    const draftPath = `${INSTRUCTIONS_PATH}/${createdId}/dispatch-notes`
+    await page.getByTestId(`logistics-dispatch-note-shipment-${shipment.shareId}`).getByRole('checkbox').check()
+    const answer = page.waitForResponse((response) => response.request().method() === 'POST' && new URL(response.url()).pathname === draftPath)
+    await page.getByTestId('logistics-dispatch-note-button').click()
+    const drafted = await answer
+    expect(drafted.status()).toBe(200)
+    const sent = drafted.request().postDataJSON() as { dispatchNoteId: string; shipmentIds: string[]; expectedVersion: string }
+    expect(Object.keys(sent).sort()).toEqual(['dispatchNoteId', 'expectedVersion', 'shipmentIds'])
+    expect(sent).toMatchObject({ expectedVersion: before.instruction.version, shipmentIds: [shipment.shareId] })
+    await expect(page.getByTestId('logistics-dispatch-note-notice')).toHaveText('İşlem kaydedildi.')
+
+    // Close and reopen: the draft is on the instruction with ONE line — the shipment's shipped quantity — and the shipment
+    // can no longer be picked (AT-055). No number, final state or print control exists on the screen.
+    await page.goto(LIST_ROUTE)
+    await openDetail(page, createdId)
+    const block = page.getByTestId(`logistics-dispatch-note-${sent.dispatchNoteId}`)
+    await expect(block).toBeVisible()
+    await expect(block.getByTestId('logistics-dispatch-note-status')).toHaveText('Taslak')
+    await expect(block.getByTestId('logistics-dispatch-note-line-1-quantity')).toHaveText('2')
+    await expect(block.getByTestId('logistics-dispatch-note-line-2')).toHaveCount(0)
+    await expect(page.getByTestId(`logistics-dispatch-note-shipment-${shipment.shareId}`).getByRole('checkbox')).toBeDisabled()
+    await expect(page.getByTestId('logistics-dispatch-notes-undecided')).toBeVisible()
+    for (const word of PRICE_WORDS) await expect(page.getByTestId('logistics-dispatch-notes')).not.toContainText(word)
+
+    // The same key and body again through the real route: the stored answer, never a second draft.
+    const key = drafted.request().headers()['idempotency-key']
+    expect(key, 'the browser sent the draft under an Idempotency-Key').toBeTruthy()
+    const replay = await page.request.post(`${env.apiBaseUrl}${draftPath}`, {
+      headers: { [DEVELOPMENT_USER_HEADER]: loaderActor, 'X-Company-Id': companyId, 'Idempotency-Key': key, 'Content-Type': 'application/json' },
+      data: drafted.request().postData() ?? '',
+    })
+    expect(replay.status()).toBe(200)
+    expect(replay.headers()['idempotency-replayed']).toBe('true')
+    const reading = await readInstruction(page, loaderActor, createdId)
+
+    // AT-055: a second draft for the SAME shipment under a new key is refused; the first draft stays as it is.
+    const second = await page.request.post(`${env.apiBaseUrl}${draftPath}`, {
+      headers: {
+        [DEVELOPMENT_USER_HEADER]: loaderActor, 'X-Company-Id': companyId, 'Content-Type': 'application/json',
+        'X-Correlation-Id': `browser-suite-l04-dispatch-2-${Date.now()}`, 'Idempotency-Key': `browser-suite:l04:dispatch-2:${Date.now()}`,
+      },
+      data: { expectedVersion: reading.instruction.version, dispatchNoteId: crypto.randomUUID(), shipmentIds: [shipment.shareId] },
+    })
+    expect(second.status()).toBe(409)
+    expect(((await second.json()) as { code?: unknown }).code).toBe('logistics_shipment_already_dispatched')
+
+    // The reader holds no dispatch-note grant: refused 403 at the fence.
+    const byReader = await page.request.post(`${env.apiBaseUrl}${draftPath}`, {
+      headers: {
+        [DEVELOPMENT_USER_HEADER]: readerActor, 'X-Company-Id': companyId, 'Content-Type': 'application/json',
+        'X-Correlation-Id': `browser-suite-l04-dispatch-reader-${Date.now()}`, 'Idempotency-Key': `browser-suite:l04:dispatch-reader:${Date.now()}`,
+      },
+      data: { expectedVersion: reading.instruction.version, dispatchNoteId: crypto.randomUUID(), shipmentIds: [shipment.shareId] },
+    })
+    expect(byReader.status()).toBe(403)
+
+    const end = await counts()
+    expect(end).toEqual({ notes: 1, lines: 1, movements: start.movements, audits: 1 })
+    expect((await readInstruction(page, loaderActor, createdId)).instruction.version).toBe(reading.instruction.version)
+
+    // The Sales order view (S-04, under "Teslimat durumu") lists the draft and links to it; the link opens the
+    // instruction's detail at the draft.
+    const sales = await page.context().newPage()
+    await signInAs(sales, SALES_READER_ACTOR)
+    await openSalesProgress(sales)
+    const link = sales.getByTestId(`sales-dispatch-note-link-${sent.dispatchNoteId}`)
+    await expect(link).toBeVisible({ timeout: 30_000 })
+    await expect(sales.getByTestId(`sales-dispatch-note-${sent.dispatchNoteId}`)).toContainText('Satır 1: 2')
+    await link.click()
+    await expect(sales).toHaveURL(new RegExp(`/lojistik/yukleme-talimatlari/${createdId}#irsaliye-${sent.dispatchNoteId}$`))
+    await expect(sales.getByTestId(`logistics-dispatch-note-${sent.dispatchNoteId}`)).toBeVisible({ timeout: 30_000 })
+    await sales.close()
+  } finally {
+    await pool.close()
   }
 })

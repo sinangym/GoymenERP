@@ -11,7 +11,7 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence;
 /// SALES-P2 shape). Every row is a tenant row of the instruction's company: a global query filter on the
 /// server-resolved company and a write guard that refuses any row of another company, any company change,
 /// any delete and any column move outside the axis a command may move (the header's status / version /
-/// time; a line's four share totals and block flag; shares, weighbridge records and attempts append only). The attempt key
+/// time; a line's four share totals and block flag; shares, weighbridge records, dispatch-note drafts and attempts append only). The attempt key
 /// (company, command, key hash) is a primary key under a binary collation; the raw key is never stored.
 /// The audit sidecar is Audit's table, written in the same save and filtered the same way.
 /// </summary>
@@ -32,6 +32,10 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
 
     internal DbSet<VehicleWeighingRow> Weighings => Set<VehicleWeighingRow>();
 
+    internal DbSet<DispatchNoteRow> DispatchNotes => Set<DispatchNoteRow>();
+
+    internal DbSet<DispatchNoteLineRow> DispatchNoteLines => Set<DispatchNoteLineRow>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -45,6 +49,7 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
         ConfigureShares(modelBuilder);
         ConfigureAttempts(modelBuilder);
         ConfigureWeighings(modelBuilder);
+        ConfigureDispatchNotes(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -207,6 +212,52 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
             .HasPrincipalKey(x => new { x.CompanyId, x.Id })
             .OnDelete(DeleteBehavior.Restrict);
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    /// <summary>
+    /// AT-055: dispatch-note drafts and their lines, append-only, company-scoped and bound to their instruction by the
+    /// company-leading key. The line key (company, instruction, shipment) is UNIQUE over non-nullable columns (no filter
+    /// needed): a definite shipment is on at most one dispatch note — the database holds the single-link guard even against a
+    /// writer that skipped the aggregate. Status 1 (Draft) is the only state: no number, finalisation or cancellation column.
+    /// </summary>
+    private void ConfigureDispatchNotes(ModelBuilder modelBuilder)
+    {
+        var note = modelBuilder.Entity<DispatchNoteRow>();
+        note.ToTable("DispatchNotes", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_DispatchNotes_Identity", $"[DispatchNoteId] <> {EmptyGuid} AND LEN([CreatedBy]) > 0");
+            table.HasCheckConstraint("CK_DispatchNotes_Status", "[Status] IN (1)");
+            // A draft is made from at least one recorded shipment, so at least one share precedes it.
+            table.HasCheckConstraint("CK_DispatchNotes_Order", "[NoteNo] >= 1 AND [SharesBefore] >= 1");
+        });
+        note.HasKey(x => new { x.CompanyId, x.InstructionId, x.DispatchNoteId });
+        note.HasIndex(x => new { x.CompanyId, x.DispatchNoteId }).IsUnique().HasDatabaseName("UX_DispatchNotes_DispatchNoteId");
+        note.HasIndex(x => new { x.CompanyId, x.InstructionId, x.NoteNo }).IsUnique().HasDatabaseName("UX_DispatchNotes_NoteNo");
+        note.Property(x => x.CreatedBy).HasMaxLength(128).IsRequired();
+        note.HasOne<LoadingInstructionRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.InstructionId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        note.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var line = modelBuilder.Entity<DispatchNoteLineRow>();
+        line.ToTable("DispatchNoteLines", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_DispatchNoteLines_LineNo", "[LineNo] >= 1");
+            table.HasCheckConstraint("CK_DispatchNoteLines_Identity",
+                $"[ShipmentId] <> {EmptyGuid} AND [InstructionLineId] <> {EmptyGuid} AND [SourceOrderId] <> {EmptyGuid} "
+                + $"AND [SourceOrderLineId] <> {EmptyGuid} AND [ProductId] <> {EmptyGuid} AND [UnitId] <> {EmptyGuid}");
+            table.HasCheckConstraint("CK_DispatchNoteLines_Quantity", "[Quantity] > 0");
+        });
+        line.HasKey(x => new { x.CompanyId, x.InstructionId, x.DispatchNoteId, x.LineNo });
+        // AT-055: "Aynı sevkiyat gerçekleşmesi iki kez irsaliyeye bağlanamaz" — one dispatch-note line per shipment.
+        line.HasIndex(x => new { x.CompanyId, x.InstructionId, x.ShipmentId }).IsUnique().HasDatabaseName("UX_DispatchNoteLines_ShipmentId");
+        line.HasIndex(x => new { x.CompanyId, x.SourceOrderId }).HasDatabaseName("IX_DispatchNoteLines_SourceOrder");
+        line.Property(x => x.Quantity).HasPrecision(18, 3);
+        line.HasOne<DispatchNoteRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.InstructionId, x.DispatchNoteId })
+            .OnDelete(DeleteBehavior.Restrict);
+        line.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
     private void ApplyWriteGuards()

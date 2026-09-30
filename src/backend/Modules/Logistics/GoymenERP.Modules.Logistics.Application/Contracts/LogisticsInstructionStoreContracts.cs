@@ -37,8 +37,11 @@ public static class LogisticsCommands
     public const string RecordDeliveryV1 = "logistics.loading-instruction.record-delivery.v1";
     public const string RecordWeighingV1 = "logistics.loading-instruction.record-weighing.v1";
 
+    /// <summary>AT-055: a dispatch-note draft from the instruction's definite shipments (one version step, no share).</summary>
+    public const string CreateDispatchNoteV1 = "logistics.loading-instruction.create-dispatch-note.v1";
+
     public static bool IsMutation(string commandName) =>
-        commandName is IssueV1 or RecordLoadV1 or RecordShipmentV1 or RecordDeliveryV1 or RecordWeighingV1;
+        commandName is IssueV1 or RecordLoadV1 or RecordShipmentV1 or RecordDeliveryV1 or RecordWeighingV1 or CreateDispatchNoteV1;
 
     public static bool IsKnown(string commandName) => commandName == CreateV1 || IsMutation(commandName);
 }
@@ -110,7 +113,26 @@ public interface ILogisticsInstructionStore
     /// <summary>The company's instructions, newest first, by opaque company-bound cursor; <paramref name="status"/> narrows to one status.</summary>
     Task<LogisticsInstructionPage> ListInstructionsAsync(int pageSize, string? cursor, LoadingInstructionStatus? status = null,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// AT-055: the context company's dispatch-note drafts with at least one line on a shipment of <paramref name="salesOrderId"/>'s
+    /// lines, oldest first, at most <paramref name="limit"/> (the caller asks one more to know whether more exist). Untracked; creates
+    /// nothing. Another company's drafts are invisible.
+    /// </summary>
+    Task<IReadOnlyList<StoredDispatchNoteReference>> ListSalesOrderDispatchNotesAsync(Guid salesOrderId, int limit,
+        CancellationToken cancellationToken = default);
 }
+
+/// <summary>One stored dispatch-note draft as the Sales order view needs it: the draft, its instruction and only this order's lines.</summary>
+public sealed record StoredDispatchNoteReference(
+    Guid DispatchNoteId,
+    Guid InstructionId,
+    DispatchNoteStatus Status,
+    DateTimeOffset CreatedAtUtc,
+    IReadOnlyList<StoredDispatchNoteOrderLine> Lines);
+
+/// <summary>One line of a stored draft on the asked order: the order line, the shipment, the shipped quantity and its unit.</summary>
+public sealed record StoredDispatchNoteOrderLine(int LineNo, Guid SourceOrderLineId, Guid ShipmentId, Guid UnitId, decimal Quantity);
 
 /// <summary>The canonical content of a command for the replay identity (R3): the strict wire shape, serialised and hashed.</summary>
 public static class LogisticsRequestHash

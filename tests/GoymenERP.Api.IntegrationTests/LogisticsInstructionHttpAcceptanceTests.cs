@@ -195,6 +195,97 @@ public sealed class LogisticsInstructionHttpAcceptanceTests(GoymenErpApiFactory 
         }
     }
 
+    [Fact]
+    public async Task The_dispatch_note_route_answers_the_instruction_with_its_draft_replays_with_headers_and_refuses_a_loose_body_before_the_service()
+    {
+        // AT-055 wire: 200 with the instruction after the draft (the dispatchNotes member always present), the replay headers on the
+        // same key, the recorded terminal 409 for a shipment already on a draft, and a body carrying a quantity refused before the service.
+        var id = Guid.NewGuid();
+        var shipment = Guid.NewGuid();
+        var note = new DispatchNoteView(Guid.NewGuid(), "Draft", "SENTETIK-sevkiyat", DateTimeOffset.UtcNow,
+            [new DispatchNoteLineView(1, shipment, Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "3")]);
+        var service = new StubService { Draft = () => Task.FromResult(new LoadingInstructionResponse(Detail(id) with { DispatchNotes = [note] }, false, "SENTETIK-corr")) };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+        var body = $$"""{"expectedVersion":"6","dispatchNoteId":"{{note.DispatchNoteId:D}}","shipmentIds":["{{shipment:D}}"]}""";
+
+        using (var response = await client.SendAsync(Post($"{id:D}/dispatch-notes", "SENTETIK-note", body)))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var answered = Assert.Single((await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("detail").GetProperty("dispatchNotes").EnumerateArray());
+            Assert.Equal(["dispatchNoteId", "status", "createdBy", "createdAtUtc", "lines"], answered.EnumerateObject().Select(property => property.Name).ToArray());
+            var line = Assert.Single(answered.GetProperty("lines").EnumerateArray());
+            Assert.Equal(["lineNo", "shipmentId", "instructionLineId", "sourceOrderId", "sourceOrderLineId", "productId", "unitId", "quantity"],
+                line.EnumerateObject().Select(property => property.Name).ToArray());
+            Assert.Equal(("Draft", "3"), (answered.GetProperty("status").GetString(), line.GetProperty("quantity").GetString()));
+        }
+
+        service.Draft = () => Task.FromResult(new LoadingInstructionResponse(Detail(id) with { DispatchNotes = [note] }, true, "SENTETIK-first"));
+        using (var response = await client.SendAsync(Post($"{id:D}/dispatch-notes", "SENTETIK-note", body)))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.Equal("true", Assert.Single(response.Headers.GetValues("Idempotency-Replayed")));
+            Assert.Equal("SENTETIK-first", Assert.Single(response.Headers.GetValues("Idempotency-Original-Correlation-Id")));
+        }
+
+        service.Draft = () => throw new LogisticsInstructionServiceException(409, LogisticsProblemCodesV1.ShipmentAlreadyDispatched,
+            [new("shipmentIds", "logistics_shipment_already_dispatched")]);
+        using (var response = await client.SendAsync(Post($"{id:D}/dispatch-notes", "SENTETIK-note-2", body)))
+        {
+            Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+            var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal(LogisticsProblemCodesV1.ShipmentAlreadyDispatched, problem.GetProperty("code").GetString());
+            Assert.Equal("shipmentIds", problem.GetProperty("errors")[0].GetProperty("field").GetString());
+        }
+
+        var calls = service.Calls;
+        foreach (var loose in new[]
+                 {
+                     body.Replace("}", ",\"quantity\":\"3\"}", StringComparison.Ordinal),
+                     $$"""{"expectedVersion":"6","dispatchNoteId":"{{note.DispatchNoteId:D}}","shipmentIds":[]}""",
+                     $$"""{"expectedVersion":"6","dispatchNoteId":"{{note.DispatchNoteId:D}}","shipmentIds":["{{shipment:D}}","{{shipment:D}}"]}""",
+                 })
+        {
+            using var response = await client.SendAsync(Post($"{id:D}/dispatch-notes", "SENTETIK-note-loose", loose));
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+
+        Assert.Equal(calls, service.Calls);
+    }
+
+    [Fact]
+    public async Task The_sales_order_dispatch_notes_read_answers_the_drafts_of_one_order_and_refuses_a_loose_query_before_the_service()
+    {
+        var order = Guid.NewGuid();
+        var service = new StubService
+        {
+            OrderNotes = salesOrderId => Task.FromResult(new SalesOrderDispatchNotesView(salesOrderId,
+                [new SalesOrderDispatchNoteView(Guid.NewGuid(), Guid.NewGuid(), "Draft", DateTimeOffset.UtcNow,
+                    [new SalesOrderDispatchNoteLineView(1, Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "2.5")])], false)),
+        };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+
+        using (var response = await client.GetAsync($"{LogisticsApiV1.SalesOrderDispatchNotesPath}?salesOrderId={order:D}"))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal(["salesOrderId", "items", "hasMore"], body.EnumerateObject().Select(property => property.Name).ToArray());
+            Assert.Equal(order, body.GetProperty("salesOrderId").GetGuid());
+            var item = Assert.Single(body.GetProperty("items").EnumerateArray());
+            Assert.Equal(["dispatchNoteId", "instructionId", "status", "createdAtUtc", "lines"], item.EnumerateObject().Select(property => property.Name).ToArray());
+        }
+
+        foreach (var query in new[] { "", "?salesOrderId=nope", $"?salesOrderId={order:D}&pageSize=1", $"?salesOrderId={order:D}&salesOrderId={order:D}",
+                     "?salesOrderId=00000000-0000-0000-0000-000000000000" })
+        {
+            using var response = await client.GetAsync($"{LogisticsApiV1.SalesOrderDispatchNotesPath}{query}");
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+
+        Assert.Equal(1, service.Calls);
+    }
+
     private static string CreateBody() =>
         $$"""{"customerPartyId":"{{Guid.NewGuid():D}}","companyAccountId":"{{Guid.NewGuid():D}}","effectiveOn":"2026-09-19","lines":[{"lineId":"{{Guid.NewGuid():D}}","sourceOrderId":"{{Guid.NewGuid():D}}","sourceOrderLineId":"{{Guid.NewGuid():D}}","unitId":"{{Guid.NewGuid():D}}","quantity":"6"}]}""";
 
@@ -211,7 +302,7 @@ public sealed class LogisticsInstructionHttpAcceptanceTests(GoymenErpApiFactory 
     private static LoadingInstructionDetailView Detail(Guid id) => new(
         new LoadingInstructionSummaryView(id, CompanyA, "Draft", "2", Guid.NewGuid(), Guid.NewGuid(), new DateOnly(2026, 9, 19), DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, 1),
         [new LoadingInstructionLineView(Guid.NewGuid(), 1, Guid.NewGuid(), Guid.NewGuid(), 0, Guid.NewGuid(), Guid.NewGuid(), "6", "0", "0", "0", "6", "0", "0", false)],
-        []);
+        [], null, []);
 
     private WebApplicationFactory<Program> CreateHost(StubService service) => factory.WithWebHostBuilder(builder =>
         builder.ConfigureTestServices(services => services.Replace(ServiceDescriptor.Scoped<ILogisticsInstructionService>(_ => service))));
@@ -256,6 +347,23 @@ public sealed class LogisticsInstructionHttpAcceptanceTests(GoymenErpApiFactory 
         {
             Calls++;
             return Weigh();
+        }
+
+        public Func<Task<LoadingInstructionResponse>> Draft { get; set; } = () => throw new InvalidOperationException("not expected");
+
+        public Task<LoadingInstructionResponse> CreateDispatchNoteAsync(Guid instructionId, CreateDispatchNoteRequest request, LogisticsCommandMetadata metadata,
+            CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return Draft();
+        }
+
+        public Func<Guid, Task<SalesOrderDispatchNotesView>> OrderNotes { get; set; } = _ => throw new InvalidOperationException("not expected");
+
+        public Task<SalesOrderDispatchNotesView> GetSalesOrderDispatchNotesAsync(Guid salesOrderId, CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return OrderNotes(salesOrderId);
         }
 
         public Task<LoadingInstructionDetailView> GetInstructionDetailAsync(Guid instructionId, CancellationToken cancellationToken = default) =>

@@ -22,6 +22,13 @@ public interface ILogisticsInstructionService
     Task<LoadingInstructionResponse> RecordWeighingAsync(Guid instructionId, RecordWeighingRequest request, LogisticsCommandMetadata metadata,
         CancellationToken cancellationToken = default);
 
+    /// <summary>AT-055: a dispatch-note draft from an issued instruction's definite shipments (a shipment is linked to at most one).</summary>
+    Task<LoadingInstructionResponse> CreateDispatchNoteAsync(Guid instructionId, CreateDispatchNoteRequest request, LogisticsCommandMetadata metadata,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>AT-055: the dispatch-note drafts documenting shipments of one Sales order (the S-04 link), under the instruction read.</summary>
+    Task<SalesOrderDispatchNotesView> GetSalesOrderDispatchNotesAsync(Guid salesOrderId, CancellationToken cancellationToken = default);
+
     Task<LoadingInstructionDetailView> GetInstructionDetailAsync(Guid instructionId, CancellationToken cancellationToken = default);
 
     Task<LoadingInstructionListResponse> GetInstructionListAsync(LoadingInstructionListQuery query, CancellationToken cancellationToken = default);

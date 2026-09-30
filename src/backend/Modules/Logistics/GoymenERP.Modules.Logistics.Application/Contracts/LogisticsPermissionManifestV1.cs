@@ -41,6 +41,15 @@ public static class LogisticsPermissionManifestV1
     /// </summary>
     public const string OperationsPurchaseWorkRead = "logistics.operations-work.purchase.read";
 
+    /// <summary>
+    /// AT-055: prepare a dispatch-note (irsaliye) DRAFT from an issued instruction's definite shipments (L-08 Satış İrsaliyesi
+    /// Hazırlığı; master v3 §12: the Sevkiyat yetkilisi prepares and checks the draft). Its own name, aliasing no other: holding
+    /// shipment or load names does not prepare documents. Reading a draft is the instruction read. Registered centrally; no
+    /// grant, role or maker-checker rule is chosen here.
+    /// </summary>
+    public const string DispatchNotesCreate = "logistics.dispatch-notes.create";
+
     public static readonly IReadOnlyList<string> Names =
-        [InstructionsCreate, InstructionsRead, LoadsRecord, ShipmentsRecord, DeliveriesRecord, WeighingsRecord, OperationsSalesWorkRead, OperationsPurchaseWorkRead];
+        [InstructionsCreate, InstructionsRead, LoadsRecord, ShipmentsRecord, DeliveriesRecord, WeighingsRecord, OperationsSalesWorkRead, OperationsPurchaseWorkRead,
+            DispatchNotesCreate];
 }

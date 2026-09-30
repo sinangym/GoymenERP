@@ -162,6 +162,121 @@ partial class LogisticsDbContextModelSnapshot : ModelSnapshot
             });
         });
 
+        modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.DispatchNoteLineRow", b =>
+        {
+            b.Property<Guid>("CompanyId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<Guid>("InstructionId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<Guid>("DispatchNoteId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<int>("LineNo")
+                .HasColumnType("int");
+
+            b.Property<Guid>("InstructionLineId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<Guid>("ProductId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<decimal>("Quantity")
+                .HasPrecision(18, 3)
+                .HasColumnType("decimal(18,3)");
+
+            b.Property<Guid>("ShipmentId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<Guid>("SourceOrderId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<Guid>("SourceOrderLineId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<Guid>("UnitId")
+                .HasColumnType("uniqueidentifier");
+
+            b.HasKey("CompanyId", "InstructionId", "DispatchNoteId", "LineNo");
+
+            b.HasIndex("CompanyId", "SourceOrderId")
+                .HasDatabaseName("IX_DispatchNoteLines_SourceOrder");
+
+            b.HasIndex("CompanyId", "InstructionId", "ShipmentId")
+                .IsUnique()
+                .HasDatabaseName("UX_DispatchNoteLines_ShipmentId");
+
+            b.ToTable("DispatchNoteLines", "logistics", t =>
+            {
+                t.HasCheckConstraint(
+                    "CK_DispatchNoteLines_Identity",
+                    "[ShipmentId] <> '00000000-0000-0000-0000-000000000000' AND [InstructionLineId] <> '00000000-0000-0000-0000-000000000000' AND [SourceOrderId] <> '00000000-0000-0000-0000-000000000000' AND [SourceOrderLineId] <> '00000000-0000-0000-0000-000000000000' AND [ProductId] <> '00000000-0000-0000-0000-000000000000' AND [UnitId] <> '00000000-0000-0000-0000-000000000000'");
+
+                t.HasCheckConstraint(
+                    "CK_DispatchNoteLines_LineNo",
+                    "[LineNo] >= 1");
+
+                t.HasCheckConstraint(
+                    "CK_DispatchNoteLines_Quantity",
+                    "[Quantity] > 0");
+            });
+        });
+
+        modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.DispatchNoteRow", b =>
+        {
+            b.Property<Guid>("CompanyId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<Guid>("InstructionId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<Guid>("DispatchNoteId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<DateTimeOffset>("CreatedAtUtc")
+                .HasColumnType("datetimeoffset");
+
+            b.Property<string>("CreatedBy")
+                .IsRequired()
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)");
+
+            b.Property<int>("NoteNo")
+                .HasColumnType("int");
+
+            b.Property<int>("SharesBefore")
+                .HasColumnType("int");
+
+            b.Property<int>("Status")
+                .HasColumnType("int");
+
+            b.HasKey("CompanyId", "InstructionId", "DispatchNoteId");
+
+            b.HasIndex("CompanyId", "DispatchNoteId")
+                .IsUnique()
+                .HasDatabaseName("UX_DispatchNotes_DispatchNoteId");
+
+            b.HasIndex("CompanyId", "InstructionId", "NoteNo")
+                .IsUnique()
+                .HasDatabaseName("UX_DispatchNotes_NoteNo");
+
+            b.ToTable("DispatchNotes", "logistics", t =>
+            {
+                t.HasCheckConstraint(
+                    "CK_DispatchNotes_Identity",
+                    "[DispatchNoteId] <> '00000000-0000-0000-0000-000000000000' AND LEN([CreatedBy]) > 0");
+
+                t.HasCheckConstraint(
+                    "CK_DispatchNotes_Order",
+                    "[NoteNo] >= 1 AND [SharesBefore] >= 1");
+
+                t.HasCheckConstraint(
+                    "CK_DispatchNotes_Status",
+                    "[Status] IN (1)");
+            });
+        });
+
         modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.LoadingAttemptRow", b =>
         {
             b.Property<Guid>("CompanyId")
@@ -534,6 +649,25 @@ partial class LogisticsDbContextModelSnapshot : ModelSnapshot
                     "CK_VehicleWeighings_Weights",
                     "[FirstWeighingKg] > 0 AND [SecondWeighingKg] > 0 AND [NetKg] > 0 AND [LoadedKgAtWeighing] >= 0 AND [SharesBefore] >= 0");
             });
+        });
+
+        modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.DispatchNoteLineRow", b =>
+        {
+            b.HasOne("GoymenERP.Modules.Logistics.Infrastructure.Persistence.DispatchNoteRow", null)
+                .WithMany()
+                .HasForeignKey("CompanyId", "InstructionId", "DispatchNoteId")
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired();
+        });
+
+        modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.DispatchNoteRow", b =>
+        {
+            b.HasOne("GoymenERP.Modules.Logistics.Infrastructure.Persistence.LoadingInstructionRow", null)
+                .WithMany()
+                .HasForeignKey("CompanyId", "InstructionId")
+                .HasPrincipalKey("CompanyId", "Id")
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired();
         });
 
         modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.LoadingAttemptRow", b =>

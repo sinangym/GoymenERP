@@ -14,7 +14,7 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence;
 /// <summary>
 /// The Logistics store of the server-resolved company (LOG-4a; the Sales SALES-P2 shape). One call is
 /// one save; a stored instruction is rebuilt through the domain in recording order (lines, issue, then
-/// every share as the command that recorded it), so a corrupt row is refused, not repaired, and the
+/// every share as the command that recorded it, the weighing and the dispatch-note drafts at their share position), so a corrupt row is refused, not repaired, and the
 /// stored version must be the one the rebuild reaches. Block toggles are not an event in this slice
 /// (no owner source yet): a blocked line is restored with one block at the end, and a line that was
 /// blocked and unblocked cannot be represented — LOG-5 stores the block source's events.
@@ -222,21 +222,29 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         var shareRows = await dbContext.Shares.AsNoTracking().Where(share => share.InstructionId == instructionId).OrderBy(share => share.ShareNo)
             .ToListAsync(cancellationToken);
         var weighingRow = await dbContext.Weighings.AsNoTracking().SingleOrDefaultAsync(weighing => weighing.InstructionId == instructionId, cancellationToken);
-        var instruction = Restore(row, lineRows, shareRows, weighingRow);
+        var noteRows = await dbContext.DispatchNotes.AsNoTracking().Where(note => note.InstructionId == instructionId).OrderBy(note => note.NoteNo)
+            .ToListAsync(cancellationToken);
+        var noteLineRows = await dbContext.DispatchNoteLines.AsNoTracking().Where(line => line.InstructionId == instructionId)
+            .ToListAsync(cancellationToken);
+        var instruction = Restore(row, lineRows, shareRows, weighingRow, noteRows, noteLineRows);
         var versionBefore = instruction.Version;
         var before = Snapshot(instruction);
         var sharesBefore = instruction.Shares.Count;
         var weighingBefore = instruction.Weighing;
+        var notesBefore = instruction.DispatchNotes.Count;
         var now = timeProvider.GetUtcNow();
         // The domain decides; a refusal leaves the tracked rows untouched (nothing below has run).
         mutate(instruction, now);
         var weighingAdded = weighingBefore is null && instruction.Weighing is not null;
+        var noteAdded = instruction.DispatchNotes.Count == notesBefore + 1;
         if (instruction.Version != versionBefore + 1 || instruction.Id != row.Id || instruction.CompanyId != companyId
             || instruction.Shares.Count > sharesBefore + 1 || instruction.Lines.Count != lineRows.Count
             || (weighingBefore is not null && !ReferenceEquals(weighingBefore, instruction.Weighing))
-            || (weighingAdded && instruction.Shares.Count != sharesBefore))
+            || (weighingAdded && instruction.Shares.Count != sharesBefore)
+            || (instruction.DispatchNotes.Count != notesBefore && !noteAdded)
+            || (noteAdded && (instruction.Shares.Count != sharesBefore || weighingAdded)))
         {
-            throw new InvalidOperationException("Bir komut tam olarak bir sürüm ilerletir ve en fazla bir pay ya da bir kantar tartımı ekler.");
+            throw new InvalidOperationException("Bir komut tam olarak bir sürüm ilerletir ve en fazla bir pay, bir kantar tartımı ya da bir irsaliye taslağı ekler.");
         }
 
         row.Status = (int)instruction.Status;
@@ -292,10 +300,55 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
             });
         }
 
+        if (noteAdded)
+        {
+            AddDispatchNote(companyId, instruction, instruction.DispatchNotes[^1], notesBefore + 1, actorId);
+        }
+
         dbContext.Attempts.Add(Attempt(companyId, commandName, keyHash, requestHash, actorId, envelope, instruction.Id, now));
         Audit(envelope, companyId, instruction.Id, audit.EventType, audit.Operation, versionBefore, instruction.Version, before, Snapshot(instruction), audit.Reason);
         await SaveAsync(cancellationToken);
         return new LogisticsStoreResult(new StoredLoadingInstruction(instruction, row.EffectiveOn), LogisticsWriteOutcome.Recorded, envelope.CorrelationId.Trim());
+    }
+
+    /// <summary>
+    /// AT-055: appends the draft and its lines once. Each line copies its instruction line's Sales binding, product and unit (so
+    /// the Sales order read needs no rebuild); the key (company, instruction, shipment) refuses a second link in SQL Server too.
+    /// </summary>
+    private void AddDispatchNote(Guid companyId, LoadingInstruction instruction, DispatchNoteDraft note, int noteNo, string actorId)
+    {
+        dbContext.DispatchNotes.Add(new DispatchNoteRow
+        {
+            CompanyId = companyId,
+            InstructionId = instruction.Id,
+            DispatchNoteId = note.DispatchNoteId,
+            NoteNo = noteNo,
+            Status = (int)note.Status,
+            SharesBefore = note.SharesBefore,
+            // The preparer is this write's actor (its column width is the envelope's, measured above).
+            CreatedBy = string.Equals(note.CreatedBy, actorId, StringComparison.Ordinal)
+                ? actorId
+                : throw new InvalidOperationException("İrsaliye taslağını hazırlayan, bu yazmanın aktörüdür."),
+            CreatedAtUtc = note.CreatedAtUtc,
+        });
+        foreach (var line in note.Lines)
+        {
+            var source = instruction.Lines.Single(candidate => candidate.Id == line.InstructionLineId);
+            dbContext.DispatchNoteLines.Add(new DispatchNoteLineRow
+            {
+                CompanyId = companyId,
+                InstructionId = instruction.Id,
+                DispatchNoteId = note.DispatchNoteId,
+                LineNo = line.LineNo,
+                ShipmentId = line.ShipmentId,
+                InstructionLineId = line.InstructionLineId,
+                SourceOrderId = source.Source.OrderId,
+                SourceOrderLineId = source.Source.LineId,
+                ProductId = source.ProductId,
+                UnitId = source.UnitId,
+                Quantity = RequireFits(line.Quantity.Value),
+            });
+        }
     }
 
     public async Task<StoredLoadingInstruction?> FindInstructionAsync(Guid instructionId, CancellationToken cancellationToken = default)
@@ -303,6 +356,38 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         RequireResolvedCompany();
         var row = await dbContext.Instructions.AsNoTracking().SingleOrDefaultAsync(candidate => candidate.Id == instructionId, cancellationToken);
         return row is null ? null : (await RestoreAsync([row], cancellationToken)).Single();
+    }
+
+    public async Task<IReadOnlyList<StoredDispatchNoteReference>> ListSalesOrderDispatchNotesAsync(Guid salesOrderId, int limit,
+        CancellationToken cancellationToken = default)
+    {
+        RequireResolvedCompany();
+        if (limit is < 1 or > MaximumPageSize + 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(limit));
+        }
+
+        if (salesOrderId == Guid.Empty)
+        {
+            return [];
+        }
+
+        // Company-filtered and untracked: the drafts with a line on this order, oldest first, then only this order's lines.
+        var noteIds = dbContext.DispatchNoteLines.AsNoTracking().Where(line => line.SourceOrderId == salesOrderId).Select(line => line.DispatchNoteId);
+        var notes = await dbContext.DispatchNotes.AsNoTracking().Where(note => noteIds.Contains(note.DispatchNoteId))
+            .OrderBy(note => note.CreatedAtUtc).ThenBy(note => note.DispatchNoteId).Take(limit).ToListAsync(cancellationToken);
+        if (notes.Count == 0)
+        {
+            return [];
+        }
+
+        var ids = notes.Select(note => note.DispatchNoteId).ToArray();
+        var lines = await dbContext.DispatchNoteLines.AsNoTracking()
+            .Where(line => line.SourceOrderId == salesOrderId && ids.Contains(line.DispatchNoteId)).ToListAsync(cancellationToken);
+        return [.. notes.Select(note => new StoredDispatchNoteReference(note.DispatchNoteId, note.InstructionId, (DispatchNoteStatus)note.Status,
+            note.CreatedAtUtc,
+            [.. lines.Where(line => line.DispatchNoteId == note.DispatchNoteId).OrderBy(line => line.LineNo)
+                .Select(line => new StoredDispatchNoteOrderLine(line.LineNo, line.SourceOrderLineId, line.ShipmentId, line.UnitId, line.Quantity))]))];
     }
 
     public async Task<LogisticsInstructionPage> ListInstructionsAsync(int pageSize, string? cursor, LoadingInstructionStatus? status = null,
@@ -353,20 +438,26 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         var lines = await dbContext.Lines.AsNoTracking().Where(line => ids.Contains(line.InstructionId)).ToListAsync(cancellationToken);
         var shares = await dbContext.Shares.AsNoTracking().Where(share => ids.Contains(share.InstructionId)).ToListAsync(cancellationToken);
         var weighings = await dbContext.Weighings.AsNoTracking().Where(weighing => ids.Contains(weighing.InstructionId)).ToListAsync(cancellationToken);
+        var notes = await dbContext.DispatchNotes.AsNoTracking().Where(note => ids.Contains(note.InstructionId)).ToListAsync(cancellationToken);
+        var noteLines = await dbContext.DispatchNoteLines.AsNoTracking().Where(line => ids.Contains(line.InstructionId)).ToListAsync(cancellationToken);
         return [.. rows.Select(row => new StoredLoadingInstruction(
             Restore(row, [.. lines.Where(line => line.InstructionId == row.Id).OrderBy(line => line.LineNo)],
                 [.. shares.Where(share => share.InstructionId == row.Id).OrderBy(share => share.ShareNo)],
-                weighings.SingleOrDefault(weighing => weighing.InstructionId == row.Id)),
+                weighings.SingleOrDefault(weighing => weighing.InstructionId == row.Id),
+                [.. notes.Where(note => note.InstructionId == row.Id).OrderBy(note => note.NoteNo)],
+                [.. noteLines.Where(line => line.InstructionId == row.Id)]),
             row.EffectiveOn))];
     }
 
     /// <summary>
     /// Rebuilds the instruction through the domain in recording order; the stored version and totals must be the ones the rebuild
     /// reaches. The weighbridge record (AT-053) is replayed after the shares it was recorded after, so the domain recalculates its
-    /// net, loaded snapshot and difference; the stored ones must be the same.
+    /// net, loaded snapshot and difference; the stored ones must be the same. The dispatch-note drafts (AT-055) are replayed the
+    /// same way, in their order, after the weighing of the same position; the domain rebuilds each line from its shipment, and the
+    /// stored lines must be the ones it reaches.
     /// </summary>
     private static LoadingInstruction Restore(LoadingInstructionRow row, IReadOnlyList<LoadingInstructionLineRow> lines, IReadOnlyList<LoadingShareRow> shares,
-        VehicleWeighingRow? weighing)
+        VehicleWeighingRow? weighing, IReadOnlyList<DispatchNoteRow> notes, IReadOnlyList<DispatchNoteLineRow> noteLines)
     {
         var instruction = LoadingInstruction.Create(row.Id, row.CompanyId, row.CustomerPartyId, row.CompanyAccountId, row.CreatedAtUtc);
         foreach (var line in lines)
@@ -386,11 +477,23 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
             throw new InvalidOperationException("Kayıtlı kantar tartımının pay sırası paylarla uyuşmuyor.");
         }
 
+        if (notes.Where((note, index) => note.NoteNo != index + 1 || note.SharesBefore < 1 || note.SharesBefore > shares.Count
+                || (index > 0 && note.SharesBefore < notes[index - 1].SharesBefore)).Any()
+            || noteLines.Any(line => !notes.Any(note => note.DispatchNoteId == line.DispatchNoteId)))
+        {
+            throw new InvalidOperationException("Kayıtlı irsaliye taslaklarının sırası paylarla uyuşmuyor.");
+        }
+
         for (var index = 0; index <= shares.Count; index++)
         {
             if (weighing is not null && weighing.SharesBefore == index)
             {
                 RestoreWeighing(instruction, weighing);
+            }
+
+            foreach (var note in notes.Where(note => note.SharesBefore == index))
+            {
+                RestoreDispatchNote(instruction, note, [.. noteLines.Where(line => line.DispatchNoteId == note.DispatchNoteId).OrderBy(line => line.LineNo)]);
             }
 
             if (index == shares.Count)
@@ -437,6 +540,33 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         }
 
         return instruction;
+    }
+
+    private static void RestoreDispatchNote(LoadingInstruction instruction, DispatchNoteRow row, IReadOnlyList<DispatchNoteLineRow> lines)
+    {
+        if (row.Status != (int)DispatchNoteStatus.Draft || lines.Count == 0)
+        {
+            throw new InvalidOperationException("Kayıtlı irsaliye taslağı durumu ya da satırları okunamadı.");
+        }
+
+        var restored = instruction.CreateDispatchNoteDraft(instruction.Version, row.DispatchNoteId, [.. lines.Select(line => line.ShipmentId)],
+            row.CreatedBy, row.CreatedAtUtc);
+        if (restored.Lines.Count != lines.Count || restored.SharesBefore != row.SharesBefore)
+        {
+            throw new InvalidOperationException("Kayıtlı irsaliye taslağı yeniden kurulan taslakla uyuşmuyor.");
+        }
+
+        foreach (var line in lines)
+        {
+            var rebuilt = restored.Lines.SingleOrDefault(candidate => candidate.LineNo == line.LineNo);
+            var source = rebuilt is null ? null : instruction.Lines.Single(candidate => candidate.Id == rebuilt.InstructionLineId);
+            if (rebuilt is null || source is null || rebuilt.ShipmentId != line.ShipmentId || rebuilt.InstructionLineId != line.InstructionLineId
+                || rebuilt.Quantity.Value != line.Quantity || source.Source.OrderId != line.SourceOrderId || source.Source.LineId != line.SourceOrderLineId
+                || source.ProductId != line.ProductId || source.UnitId != line.UnitId)
+            {
+                throw new InvalidOperationException("Kayıtlı irsaliye taslağı satırı sevkinden yeniden kurulan satırla uyuşmuyor.");
+            }
+        }
     }
 
     private static void RestoreWeighing(LoadingInstruction instruction, VehicleWeighingRow row)
@@ -504,6 +634,12 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
                 difference = weighing.DifferenceKg, recordedBy = weighing.RecordedBy,
             }
             : null,
+        // AT-055: the dispatch-note drafts in the audit trail — which shipment is on which draft, with its shipped quantity.
+        dispatchNotes = instruction.DispatchNotes.Select(note => new
+        {
+            dispatchNoteId = note.DispatchNoteId, status = note.Status.ToString(), createdBy = note.CreatedBy,
+            lines = note.Lines.Select(line => new { line.LineNo, line.ShipmentId, line.InstructionLineId, quantity = line.Quantity.Value }),
+        }),
     }, Json);
 
     private async Task SaveAsync(CancellationToken cancellationToken)

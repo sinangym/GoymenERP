@@ -9,6 +9,8 @@
  *   GET  /api/v1/logistics/loading-instructions/{id}            → LoadingInstructionDetailView
  *   POST /api/v1/logistics/loading-instructions/{id}/issue      → 200 LoadingInstructionResponse (Draft → Issued)
  *   POST /api/v1/logistics/loading-instructions/{id}/lines/{lineId}/loads → 200 LoadingInstructionResponse
+ *   POST /api/v1/logistics/loading-instructions/{id}/dispatch-notes → 200 LoadingInstructionResponse (AT-055 draft)
+ *   GET  /api/v1/logistics/dispatch-notes?salesOrderId            → SalesOrderDispatchNotesView (AT-055, the S-04 link)
  *
  * Rules taken from the source rather than assumed:
  *  - every response member is PRESENT, nullable ones as explicit null; unknown members, wrong case
@@ -29,6 +31,10 @@ export const issuePath = (id: string) => `${instructionDetailPath(id)}/issue`
 export const loadsPath = (id: string, lineId: string) => `${instructionDetailPath(id)}/lines/${encodeURIComponent(lineId)}/loads`
 /** AT-053: the instruction's manual weighbridge record (one per instruction). */
 export const weighingsPath = (id: string) => `${instructionDetailPath(id)}/weighings`
+/** AT-055: a dispatch-note (irsaliye) draft from the instruction's definite shipments. */
+export const dispatchNotesPath = (id: string) => `${instructionDetailPath(id)}/dispatch-notes`
+/** AT-055: the dispatch-note drafts of one Sales order (the S-04 link), under the instruction read. */
+export const SALES_ORDER_DISPATCH_NOTES_PATH = '/logistics/dispatch-notes'
 
 /** `LogisticsApiV1`: a first commit answers 201; its replay 201 + `Idempotency-Replayed: true` (ADR-011 §4). */
 export const CREATED_STATUS = 201
@@ -112,6 +118,16 @@ export interface RecordWeighingRequest {
   readonly secondWeighingKg: string
 }
 
+/**
+ * `CreateDispatchNoteRequest` (AT-055): the definite shipments to put on a dispatch-note DRAFT. No quantity, price, number,
+ * date or customer: each line is the recorded shipped quantity, the customer is the instruction's.
+ */
+export interface CreateDispatchNoteRequest {
+  readonly expectedVersion: string
+  readonly dispatchNoteId: string
+  readonly shipmentIds: readonly string[]
+}
+
 /* ── Responses ────────────────────────────────────────────────────────────── */
 
 export interface InstructionSummary {
@@ -176,12 +192,39 @@ export interface InstructionWeighing {
   readonly recordedAtUtc: string
 }
 
+/** The only dispatch-note state that exists: finalising, numbering, cancelling and submission are not decided. */
+export const DISPATCH_NOTE_STATUS = { draft: 'Draft' } as const
+export type DispatchNoteStatus = (typeof DISPATCH_NOTE_STATUS)[keyof typeof DISPATCH_NOTE_STATUS]
+
+/** One line of a dispatch-note draft: one definite shipment and its SHIPPED quantity (exact text), with its line's binding. */
+export interface DispatchNoteLine {
+  readonly lineNo: number
+  readonly shipmentId: string
+  readonly instructionLineId: string
+  readonly sourceOrderId: string
+  readonly sourceOrderLineId: string
+  readonly productId: string
+  readonly unitId: string
+  readonly quantity: string
+}
+
+/** `DispatchNoteView` (AT-055): a draft of the instruction. No number member exists (not decided). */
+export interface DispatchNote {
+  readonly dispatchNoteId: string
+  readonly status: DispatchNoteStatus
+  readonly createdBy: string
+  readonly createdAtUtc: string
+  readonly lines: readonly DispatchNoteLine[]
+}
+
 export interface InstructionDetail {
   readonly instruction: InstructionSummary
   readonly lines: readonly InstructionLine[]
   readonly shares: readonly LoadingShare[]
   /** null while none is recorded; the member is always present on the wire. */
   readonly weighing: InstructionWeighing | null
+  /** AT-055: the dispatch-note drafts made from this instruction's shipments, oldest first (always present, empty when none). */
+  readonly dispatchNotes: readonly DispatchNote[]
 }
 
 export interface InstructionMutation {
@@ -223,6 +266,9 @@ export const LOGISTICS_PROBLEM_CODE = {
   duplicateShare: 'logistics_duplicate_share_id',
   weighingAlreadyRecorded: 'logistics_weighing_already_recorded',
   weighingDirectionInconsistent: 'logistics_weighing_direction_inconsistent',
+  shipmentAlreadyDispatched: 'logistics_shipment_already_dispatched',
+  duplicateDispatchNote: 'logistics_duplicate_dispatch_note_id',
+  shipmentNotFound: 'logistics_shipment_not_found',
   sameKeyPayloadMismatch: 'same_key_payload_mismatch',
   concurrentChange: 'concurrent_change',
   unsupportedUnit: 'unsupported_unit',
@@ -529,9 +575,107 @@ export function decodeWeighing(value: unknown): InstructionWeighing | null {
   }
 }
 
+const DISPATCH_NOTE_LINE_KEYS = [
+  'lineNo', 'shipmentId', 'instructionLineId', 'sourceOrderId', 'sourceOrderLineId', 'productId', 'unitId', 'quantity',
+] as const
+
+function decodeDispatchNoteLine(value: unknown): DispatchNoteLine | null {
+  const o = exact(value, DISPATCH_NOTE_LINE_KEYS)
+  if (
+    o === null ||
+    !isPositiveInt(o.lineNo, LIMITS.lines) ||
+    !isReferenceId(o.shipmentId) ||
+    !isReferenceId(o.instructionLineId) ||
+    !isReferenceId(o.sourceOrderId) ||
+    !isReferenceId(o.sourceOrderLineId) ||
+    !isReferenceId(o.productId) ||
+    !isReferenceId(o.unitId) ||
+    !isPositiveQuantityText(o.quantity)
+  ) {
+    return null
+  }
+  return {
+    lineNo: o.lineNo,
+    shipmentId: o.shipmentId,
+    instructionLineId: o.instructionLineId,
+    sourceOrderId: o.sourceOrderId,
+    sourceOrderLineId: o.sourceOrderLineId,
+    productId: o.productId,
+    unitId: o.unitId,
+    quantity: o.quantity,
+  }
+}
+
+export function decodeDispatchNote(value: unknown): DispatchNote | null {
+  const o = exact(value, ['dispatchNoteId', 'status', 'createdBy', 'createdAtUtc', 'lines'])
+  if (
+    o === null ||
+    !isReferenceId(o.dispatchNoteId) ||
+    o.status !== DISPATCH_NOTE_STATUS.draft ||
+    !isText(o.createdBy, 128) ||
+    !isInstant(o.createdAtUtc) ||
+    !Array.isArray(o.lines) ||
+    o.lines.length === 0 ||
+    o.lines.length > LIMITS.lines
+  ) {
+    return null
+  }
+  const lines: DispatchNoteLine[] = []
+  for (const [index, entry] of o.lines.entries()) {
+    const line = decodeDispatchNoteLine(entry)
+    if (line === null || line.lineNo !== index + 1) return null
+    lines.push(line)
+  }
+  return { dispatchNoteId: o.dispatchNoteId, status: DISPATCH_NOTE_STATUS.draft, createdBy: o.createdBy, createdAtUtc: o.createdAtUtc, lines }
+}
+
+/**
+ * The dispatch-note drafts, checked against the instruction they came with (identity checks, never a recalculation): every
+ * line names a definite shipment of THIS instruction, on the line and with the quantity text that shipment has, under that
+ * line's order binding, product and unit — and no shipment appears twice across the drafts (AT-055: a shipment is linked to
+ * at most one dispatch note). An answer breaking any of it is not shown.
+ */
+function decodeDispatchNotes(value: unknown, lines: readonly InstructionLine[], shares: readonly LoadingShare[]): DispatchNote[] | null {
+  if (!Array.isArray(value)) return null
+  const notes: DispatchNote[] = []
+  const noteIds = new Set<string>()
+  const linked = new Set<string>()
+  for (const entry of value) {
+    const note = decodeDispatchNote(entry)
+    if (note === null || noteIds.has(note.dispatchNoteId)) return null
+    noteIds.add(note.dispatchNoteId)
+    for (const line of note.lines) {
+      const shipment = shares.find((share) => share.shareId === line.shipmentId)
+      const source = lines.find((candidate) => candidate.lineId === line.instructionLineId)
+      if (
+        linked.has(line.shipmentId) ||
+        shipment === undefined ||
+        shipment.kind !== SHARE_KIND.shipped ||
+        shipment.lineId !== line.instructionLineId ||
+        shipment.quantity !== line.quantity ||
+        source === undefined ||
+        source.sourceOrderId !== line.sourceOrderId ||
+        source.sourceOrderLineId !== line.sourceOrderLineId ||
+        source.productId !== line.productId ||
+        source.unitId !== line.unitId
+      ) {
+        return null
+      }
+      linked.add(line.shipmentId)
+    }
+    notes.push(note)
+  }
+  return notes
+}
+
+/** The dispatch note a shipment is on (AT-055), or null while it is on none. */
+export function dispatchNoteOf(detail: InstructionDetail, shipmentId: string): DispatchNote | null {
+  return detail.dispatchNotes.find((note) => note.lines.some((line) => line.shipmentId === shipmentId)) ?? null
+}
+
 /** `expectedId`: the record the caller asked for. A detail of another record is not an answer. */
 export function decodeInstructionDetail(value: unknown, expectedId: string | null): InstructionDetail | null {
-  const o = exact(value, ['instruction', 'lines', 'shares', 'weighing'])
+  const o = exact(value, ['instruction', 'lines', 'shares', 'weighing', 'dispatchNotes'])
   if (o === null) return null
   const instruction = decodeInstructionSummary(o.instruction)
   if (instruction === null || (expectedId !== null && instruction.id !== expectedId)) return null
@@ -561,7 +705,9 @@ export function decodeInstructionDetail(value: unknown, expectedId: string | nul
     // A weighbridge record exists only on an issued instruction.
     if (weighing === null || instruction.status !== INSTRUCTION_STATUS.issued) return null
   }
-  return { instruction, lines, shares, weighing }
+  const dispatchNotes = decodeDispatchNotes(o.dispatchNotes, lines, shares)
+  if (dispatchNotes === null) return null
+  return { instruction, lines, shares, weighing, dispatchNotes }
 }
 
 export function decodeInstructionMutation(value: unknown): InstructionMutation | null {
@@ -681,4 +827,70 @@ export function decodeApprovedOrderLinePage(value: unknown): ApprovedOrderLinePa
     items.push(item)
   }
   return { items, nextCursor: o.nextCursor }
+}
+
+/* ── AT-055: the dispatch-note drafts of one Sales order (the S-04 link) ─── */
+
+export interface SalesOrderDispatchNoteLine {
+  readonly lineNo: number
+  readonly sourceOrderLineId: string
+  readonly shipmentId: string
+  readonly unitId: string
+  readonly quantity: string
+}
+
+export interface SalesOrderDispatchNote {
+  readonly dispatchNoteId: string
+  readonly instructionId: string
+  readonly status: DispatchNoteStatus
+  readonly createdAtUtc: string
+  readonly lines: readonly SalesOrderDispatchNoteLine[]
+}
+
+export interface SalesOrderDispatchNotes {
+  readonly salesOrderId: string
+  readonly items: readonly SalesOrderDispatchNote[]
+  /** true: the list stopped at the server's cap (never a silent cut). */
+  readonly hasMore: boolean
+}
+
+/** `expectedOrderId`: the order asked for; an answer about another order is not this one's. */
+export function decodeSalesOrderDispatchNotes(value: unknown, expectedOrderId: string): SalesOrderDispatchNotes | null {
+  const o = exact(value, ['salesOrderId', 'items', 'hasMore'])
+  if (o === null || o.salesOrderId !== expectedOrderId || !Array.isArray(o.items) || typeof o.hasMore !== 'boolean') return null
+  const items: SalesOrderDispatchNote[] = []
+  const ids = new Set<string>()
+  for (const entry of o.items) {
+    const item = exact(entry, ['dispatchNoteId', 'instructionId', 'status', 'createdAtUtc', 'lines'])
+    if (
+      item === null ||
+      !isReferenceId(item.dispatchNoteId) ||
+      ids.has(item.dispatchNoteId) ||
+      !isReferenceId(item.instructionId) ||
+      item.status !== DISPATCH_NOTE_STATUS.draft ||
+      !isInstant(item.createdAtUtc) ||
+      !Array.isArray(item.lines) ||
+      item.lines.length === 0
+    ) {
+      return null
+    }
+    const lines: SalesOrderDispatchNoteLine[] = []
+    for (const raw of item.lines) {
+      const line = exact(raw, ['lineNo', 'sourceOrderLineId', 'shipmentId', 'unitId', 'quantity'])
+      if (
+        line === null ||
+        !isPositiveInt(line.lineNo, LIMITS.lines) ||
+        !isReferenceId(line.sourceOrderLineId) ||
+        !isReferenceId(line.shipmentId) ||
+        !isReferenceId(line.unitId) ||
+        !isPositiveQuantityText(line.quantity)
+      ) {
+        return null
+      }
+      lines.push({ lineNo: line.lineNo, sourceOrderLineId: line.sourceOrderLineId, shipmentId: line.shipmentId, unitId: line.unitId, quantity: line.quantity })
+    }
+    ids.add(item.dispatchNoteId)
+    items.push({ dispatchNoteId: item.dispatchNoteId, instructionId: item.instructionId, status: DISPATCH_NOTE_STATUS.draft, createdAtUtc: item.createdAtUtc, lines })
+  }
+  return { salesOrderId: o.salesOrderId, items, hasMore: o.hasMore }
 }

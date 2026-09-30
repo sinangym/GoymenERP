@@ -588,6 +588,22 @@ public sealed partial class LogisticsInstructionServiceTests
             CancellationToken cancellationToken = default) =>
             Task.FromResult(new LogisticsInstructionPage([.. _instructions.Where(stored => status is null || stored.Instruction.Status == status)], null));
 
+        public Task<IReadOnlyList<StoredDispatchNoteReference>> ListSalesOrderDispatchNotesAsync(Guid salesOrderId, int limit,
+            CancellationToken cancellationToken = default)
+        {
+            SalesOrderReads++;
+            IReadOnlyList<StoredDispatchNoteReference> notes = [.. _instructions.SelectMany(stored => stored.Instruction.DispatchNotes.Select(note =>
+                    new StoredDispatchNoteReference(note.DispatchNoteId, stored.Instruction.Id, note.Status, note.CreatedAtUtc,
+                        [.. note.Lines.Select(line => (Line: line, Source: stored.Instruction.Lines.Single(candidate => candidate.Id == line.InstructionLineId)))
+                            .Where(pair => pair.Source.Source.OrderId == salesOrderId)
+                            .Select(pair => new StoredDispatchNoteOrderLine(pair.Line.LineNo, pair.Source.Source.LineId, pair.Line.ShipmentId,
+                                pair.Source.UnitId, pair.Line.Quantity.Value))])))
+                .Where(note => note.Lines.Count > 0).Take(limit)];
+            return Task.FromResult(notes);
+        }
+
+        public int SalesOrderReads { get; private set; }
+
         private static void Check((string Actor, string Hash, StoredLoadingInstruction? Stored, LogisticsTerminalRefusal? Refusal, string Correlation) attempt,
             LogisticsWriteEnvelope envelope, string requestHash)
         {

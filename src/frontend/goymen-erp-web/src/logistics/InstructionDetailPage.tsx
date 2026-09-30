@@ -18,6 +18,8 @@
  * LOG-5 adds independently capability-gated definite shipment and delivery; load remains non-physical.
  * AT-053 adds the vehicle's manual weighbridge record (WeighingCommand.tsx): its facts are shown to every reader,
  * above the shipment / delivery commands that follow it; the form is offered on an Issued instruction without one.
+ * AT-055 adds the dispatch-note (irsaliye) DRAFT (DispatchNoteCommand.tsx): the drafts and their lines are shown to every
+ * reader; the form offers the definite shipments not yet on a draft (a shipment is linked to at most one).
  */
 
 import { useRef, useState } from 'react'
@@ -62,6 +64,7 @@ import { useAuthBoundary } from '../shell/useAuthBoundary'
 import styles from './LogisticsPages.module.css'
 import { RealizationCommands } from './RealizationCommands'
 import { WeighingFacts, WeighingForm } from './WeighingCommand'
+import { DispatchNoteFacts, DispatchNoteForm } from './DispatchNoteCommand'
 
 export function InstructionDetailPage() {
   const shell = useShellState()
@@ -119,6 +122,8 @@ export function InstructionDetailPage() {
             <WeighingForm key={`weighing:${namespace ?? ''}:${detail.instruction.id}`} shell={shell} detail={detail} companyId={companyId} onRecorded={reread} />
             <RealizationCommands key={`realization:${namespace ?? ''}:${shell.routeEntryGeneration}:${detail.instruction.id}`}
               shell={shell} detail={detail} companyId={companyId} onRecorded={reread} />
+            <DispatchNoteForm key={`dispatch-note:${namespace ?? ''}:${detail.instruction.id}`} shell={shell} detail={detail} companyId={companyId}
+              onRecorded={reread} />
           </>
         )
       }
@@ -273,6 +278,8 @@ export function InstructionView({
       </section>
 
       <WeighingFacts weighing={detail.weighing} />
+
+      <DispatchNoteFacts detail={detail} />
 
       {commands}
     </article>

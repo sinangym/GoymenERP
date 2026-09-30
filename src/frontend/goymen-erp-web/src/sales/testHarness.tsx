@@ -168,6 +168,8 @@ export interface HarnessConfig {
   readonly onCancellation?: (url: string, companyId: string | null) => Response | Promise<Response>
   /** DEC-SAL-002: a POST on `/sales/drafts/{id}/quantity-revision`. */
   readonly onQuantityRevision?: (call: RecordedCall) => Response | Promise<Response>
+  /** AT-055: GET `/logistics/dispatch-notes?salesOrderId=…` (read only when the shell holds the Logistics instruction detail). */
+  readonly onDispatchNotes?: (url: string, companyId: string | null) => Response | Promise<Response>
 }
 
 export function installFetch(config: HarnessConfig = {}) {
@@ -244,6 +246,10 @@ export function installFetch(config: HarnessConfig = {}) {
         }
         if (config.onList === undefined) throw new Error('unexpected list read')
         return config.onList(url, call.companyId)
+      }
+      if (call.method === 'GET' && url.includes('/logistics/dispatch-notes?')) {
+        if (config.onDispatchNotes === undefined) throw new Error('unexpected dispatch-notes read')
+        return config.onDispatchNotes(url, call.companyId)
       }
       throw new Error(`unexpected fetch: ${url}`)
     }),

@@ -481,6 +481,18 @@ export const ORDER_DETAIL_TEXT = {
     remaining: 'Kalan',
     excess: 'Fazla teslim',
   },
+  /** AT-055: the dispatch-note drafts of this order's shipments (Logistics owns them; linked, never copied). */
+  dispatchNotes: {
+    heading: 'İrsaliye taslakları',
+    note:
+      'Bu siparişin kesin sevklerinden Lojistik modülünde hazırlanan irsaliye taslakları. Her sevk yalnız bir irsaliyeye bağlanır. ' +
+      'Resmî irsaliye numarası ve kesinleştirme henüz karara bağlanmadı.',
+    none: 'Bu siparişin sevklerinden henüz irsaliye taslağı hazırlanmadı.',
+    draft: 'İrsaliye taslağı',
+    line: 'Satır',
+    more: 'Daha fazla taslak var; tamamı yükleme talimatlarında görünür.',
+    subject: 'irsaliye taslakları',
+  },
   revision: 'Ticari revizyon',
   version: 'Kayıt sürümü',
   businessDate: 'Sipariş tarihi',

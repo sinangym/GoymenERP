@@ -43,6 +43,7 @@ public sealed class LoadingInstruction
 {
     private readonly List<LoadingInstructionLine> lines = [];
     private readonly List<LoadingShare> shares = [];
+    private readonly List<DispatchNoteDraft> dispatchNotes = [];
 
     private LoadingInstruction(Guid id, Guid companyId, Guid customerPartyId, Guid companyAccountId, DateTimeOffset now)
     {
@@ -74,6 +75,9 @@ public sealed class LoadingInstruction
 
     /// <summary>The instruction's manual weighbridge record (AT-053), or null while none is recorded.</summary>
     public VehicleWeighing? Weighing { get; private set; }
+
+    /// <summary>The dispatch-note drafts prepared from this instruction's shipments (AT-055), in order; a read-only view.</summary>
+    public IReadOnlyList<DispatchNoteDraft> DispatchNotes => dispatchNotes.AsReadOnly();
 
     public static LoadingInstruction Create(Guid id, Guid companyId, Guid customerPartyId, Guid companyAccountId, DateTimeOffset now) =>
         new(id, companyId, customerPartyId, companyAccountId, now);
@@ -263,6 +267,77 @@ public sealed class LoadingInstruction
             WeighbridgeCalculator.Difference(net, loaded), shares.Count, recordedBy.Trim(), now.ToUniversalTime());
         Touch(now);
         return Weighing;
+    }
+
+    /// <summary>
+    /// Prepares a dispatch-note (irsaliye) DRAFT from definite shipments of this instruction (AT-055; master v3 §7.8, L-08).
+    /// Every named shipment must be a recorded shipment of this instruction, named once, and not yet linked to a dispatch
+    /// note — a shipment is linked to at most one (AT-055: "aynı sevkiyat gerçekleşmesi iki kez irsaliyeye bağlanamaz").
+    /// Each line carries the shipment's shipped quantity only, in recording order. A block on the line does not stop the
+    /// draft: the shipment already happened (LOG-3, a block acts forward), and a draft books nothing physical. How a draft
+    /// is finalised, numbered, cancelled or corrected is not decided, so none of it exists.
+    /// </summary>
+    public DispatchNoteDraft CreateDispatchNoteDraft(long expectedVersion, Guid dispatchNoteId, IReadOnlyCollection<Guid> shipmentIds,
+        string createdBy, DateTimeOffset now)
+    {
+        RequireVersion(expectedVersion);
+        RequireStatus(LoadingInstructionStatus.Issued, LogisticsRuleCodes.InstructionNotIssued, "İrsaliye taslağı yalnız yayımlanmış talimatın sevklerinden hazırlanır.");
+        Identity.Require(dispatchNoteId, nameof(dispatchNoteId));
+        ArgumentNullException.ThrowIfNull(shipmentIds);
+        if (string.IsNullOrWhiteSpace(createdBy))
+        {
+            throw new ArgumentException("İrsaliye taslağını hazırlayan kullanıcı belirtilmelidir.", nameof(createdBy));
+        }
+
+        if (shipmentIds.Count == 0 || shipmentIds.Any(id => id == Guid.Empty) || shipmentIds.Distinct().Count() != shipmentIds.Count)
+        {
+            throw new ArgumentException("İrsaliye taslağı en az bir sevki, her birini bir kez adlandırır.", nameof(shipmentIds));
+        }
+
+        if (dispatchNotes.Any(note => note.DispatchNoteId == dispatchNoteId))
+        {
+            throw new LogisticsRuleException(LogisticsRuleCodes.DuplicateDispatchNoteId, "Aynı irsaliye taslağı kimliği ikinci kez kullanılamaz.");
+        }
+
+        var linked = dispatchNotes.SelectMany(note => note.Lines).Select(line => line.ShipmentId).ToHashSet();
+        var chosen = new List<LoadingShare>(shipmentIds.Count);
+        foreach (var shipmentId in shipmentIds)
+        {
+            var shipment = FindShipment(shipmentId);
+            if (linked.Contains(shipmentId))
+            {
+                throw new LogisticsRuleException(LogisticsRuleCodes.ShipmentAlreadyDispatched,
+                    "Bu sevk gerçekleşmesi zaten bir irsaliyeye bağlı; ikinci kez bağlanamaz.");
+            }
+
+            chosen.Add(shipment);
+        }
+
+        var lines = chosen.OrderBy(shipment => IndexOfShare(shipment.ShareId))
+            .Select((shipment, index) => new DispatchNoteLine(index + 1, shipment.ShareId, shipment.LineId, shipment.Quantity))
+            .ToArray();
+        var draft = new DispatchNoteDraft(dispatchNoteId, DispatchNoteStatus.Draft, Array.AsReadOnly(lines), shares.Count, createdBy.Trim(),
+            now.ToUniversalTime());
+        dispatchNotes.Add(draft);
+        Touch(now);
+        return draft;
+    }
+
+    /// <summary>The dispatch note a shipment is linked to (AT-055), or null while it is linked to none.</summary>
+    public Guid? DispatchNoteOf(Guid shipmentId) =>
+        dispatchNotes.FirstOrDefault(note => note.Lines.Any(line => line.ShipmentId == shipmentId))?.DispatchNoteId;
+
+    private int IndexOfShare(Guid shareId)
+    {
+        for (var index = 0; index < shares.Count; index++)
+        {
+            if (shares[index].ShareId == shareId)
+            {
+                return index;
+            }
+        }
+
+        throw new LogisticsRuleException(LogisticsRuleCodes.InternalInvariant, "İç tutarsızlık: sevk pay listesinde yok.");
     }
 
     /// <summary>What a definite shipment still has undelivered: its quantity minus the deliveries that name it.</summary>

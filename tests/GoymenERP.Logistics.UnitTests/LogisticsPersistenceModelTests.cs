@@ -120,6 +120,91 @@ public sealed class LogisticsPersistenceModelTests
         }
     }
 
+    [Fact]
+    public void A_shipment_is_on_at_most_one_dispatch_note_line_by_a_unique_key_and_the_drafts_are_tenant_rows_of_their_instruction()
+    {
+        using var context = Context();
+        var model = context.GetService<IDesignTimeModel>().Model;
+        var notes = model.FindEntityType(typeof(DispatchNoteRow))!;
+        var lines = model.FindEntityType(typeof(DispatchNoteLineRow))!;
+        foreach (var entity in new[] { notes, lines })
+        {
+            Assert.Equal(LogisticsDbContext.Schema, entity.GetSchema());
+            Assert.Single(entity.GetDeclaredQueryFilters());
+            Assert.All(entity.GetForeignKeys(), key => Assert.Equal("CompanyId", key.Properties[0].Name));
+        }
+
+        Assert.Equal(("DispatchNotes", "DispatchNoteLines"), (notes.GetTableName(), lines.GetTableName()));
+        Assert.Equal(["CompanyId", "InstructionId", "DispatchNoteId"], notes.FindPrimaryKey()!.Properties.Select(property => property.Name).ToArray());
+        Assert.Equal(["CompanyId", "InstructionId", "DispatchNoteId", "LineNo"], lines.FindPrimaryKey()!.Properties.Select(property => property.Name).ToArray());
+        // AT-055: the single-link guard, over non-nullable columns (so no filter is needed or allowed to narrow it).
+        var single = lines.GetIndexes().Single(index => index.GetDatabaseName() == "UX_DispatchNoteLines_ShipmentId");
+        Assert.True(single.IsUnique);
+        Assert.Null(single.GetFilter());
+        Assert.Equal(["CompanyId", "InstructionId", "ShipmentId"], single.Properties.Select(property => property.Name).ToArray());
+        Assert.All(single.Properties, property => Assert.False(property.IsNullable));
+        Assert.True(notes.GetIndexes().Single(index => index.GetDatabaseName() == "UX_DispatchNotes_DispatchNoteId").IsUnique);
+        Assert.Equal((18, 3), (lines.FindProperty(nameof(DispatchNoteLineRow.Quantity))!.GetPrecision(), lines.FindProperty(nameof(DispatchNoteLineRow.Quantity))!.GetScale()));
+        Assert.Contains(notes.GetCheckConstraints(), check => check.Name == "CK_DispatchNotes_Status" && check.Sql == "[Status] IN (1)");
+        // Not decided, so absent: a number, a finalisation, a cancellation or an e-document column.
+        Assert.DoesNotContain(notes.GetProperties().Concat(lines.GetProperties()), property =>
+            property.Name.Contains("Number", StringComparison.OrdinalIgnoreCase) || property.Name.Contains("Final", StringComparison.OrdinalIgnoreCase)
+            || property.Name.Contains("Cancel", StringComparison.OrdinalIgnoreCase) || property.Name.Contains("Price", StringComparison.OrdinalIgnoreCase)
+            || property.Name.Contains("Ettn", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddDispatchNoteDrafts", StringComparison.Ordinal));
+        Assert.False(context.Database.HasPendingModelChanges());
+    }
+
+    [Fact]
+    public void The_dispatch_note_migration_down_refuses_with_51056_before_it_drops_either_table()
+    {
+        var down = new GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations.AddDispatchNoteDrafts().DownOperations;
+        Assert.Equal(3, down.Count);
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(down[0]);
+        Assert.Contains("IF EXISTS (SELECT 1 FROM [logistics].[DispatchNotes]) OR EXISTS (SELECT 1 FROM [logistics].[DispatchNoteLines])", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("THROW 51056,", guard.Sql, StringComparison.Ordinal);
+        Assert.Equal(["DispatchNoteLines", "DispatchNotes"],
+            down.Skip(1).Select(operation => Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropTableOperation>(operation).Name).ToArray());
+    }
+
+    [Fact]
+    public async Task A_stored_dispatch_note_line_is_never_rewritten_or_deleted()
+    {
+        await using (var context = Context())
+        {
+            var row = NoteLine();
+            context.DispatchNoteLines.Attach(row);
+            row.ShipmentId = Guid.NewGuid();
+            var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
+            Assert.Contains("izinli alan", refusal.Message, StringComparison.Ordinal);
+        }
+
+        await using (var context = Context())
+        {
+            var row = NoteLine();
+            context.DispatchNoteLines.Attach(row);
+            context.Entry(row).State = EntityState.Deleted;
+            var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
+            Assert.Contains("silinmez", refusal.Message, StringComparison.Ordinal);
+        }
+
+        await using (var context = Context())
+        {
+            var row = NoteLine();
+            row.CompanyId = Guid.NewGuid();
+            context.DispatchNoteLines.Add(row);
+            var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
+            Assert.Contains("aktif şirket", refusal.Message, StringComparison.Ordinal);
+        }
+    }
+
+    private static DispatchNoteLineRow NoteLine() => new()
+    {
+        CompanyId = CompanyA, InstructionId = Guid.NewGuid(), DispatchNoteId = Guid.NewGuid(), LineNo = 1, ShipmentId = Guid.NewGuid(),
+        InstructionLineId = Guid.NewGuid(), SourceOrderId = Guid.NewGuid(), SourceOrderLineId = Guid.NewGuid(), ProductId = Guid.NewGuid(),
+        UnitId = Guid.NewGuid(), Quantity = 1m,
+    };
+
     private static VehicleWeighingRow Weighing() => new()
     {
         CompanyId = CompanyA, InstructionId = Guid.NewGuid(), WeighingId = Guid.NewGuid(), Direction = 1, FirstWeighingKg = 1m, SecondWeighingKg = 2m,
@@ -183,10 +268,13 @@ public sealed class LogisticsPersistenceModelTests
             declarations.Where(declaration => declaration.ParentCapabilityId is null)
                 .Select(declaration => (declaration.CapabilityId, declaration.RoutePath, declaration.RequiredPermissions.Single()))
                 .OrderBy(item => item.CapabilityId, StringComparer.Ordinal).ToArray());
-        Assert.Equal(8, LogisticsPermissionManifestV1.Names.Count);
+        Assert.Equal(9, LogisticsPermissionManifestV1.Names.Count);
         Assert.Equal("logistics.shipments.record", LogisticsPermissionManifestV1.ShipmentsRecord);
         Assert.Equal("logistics.deliveries.record", LogisticsPermissionManifestV1.DeliveriesRecord);
-        Assert.Equal(8, LogisticsPermissionManifestV1.Names.Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(9, LogisticsPermissionManifestV1.Names.Distinct(StringComparer.Ordinal).Count());
+        // AT-055: the dispatch-note draft has its own name and, like the weighbridge record, no shell declaration.
+        Assert.Equal("logistics.dispatch-notes.create", LogisticsPermissionManifestV1.DispatchNotesCreate);
+        Assert.DoesNotContain(declarations, declaration => declaration.RequiredPermissions.Contains(LogisticsPermissionManifestV1.DispatchNotesCreate));
         // AT-053: the weighbridge record has its own name and, like recording a load, no shell declaration (a server-measured command on the detail).
         Assert.Equal("logistics.weighings.record", LogisticsPermissionManifestV1.WeighingsRecord);
         Assert.DoesNotContain(declarations, declaration => declaration.RequiredPermissions.Contains(LogisticsPermissionManifestV1.WeighingsRecord));
