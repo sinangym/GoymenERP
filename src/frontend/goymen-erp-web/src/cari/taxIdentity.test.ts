@@ -99,6 +99,7 @@ describe('AT-009 decoders are strict and bound to the request', () => {
     expect(decodeTaxIdentityView(view({ taxIdentityNumber: null }), bound)).toBeNull()
     expect(decodeTaxIdentityView(view({ version: 2 }), bound)).toBeNull()
     expect(decodeTaxIdentityView(view({ viewer: { canUpdate: true } }), bound)).toBeNull()
+    expect(decodeTaxIdentityView(view({ kind: 'tckn' }), bound)).toBeNull()
     expect(decodeTaxIdentityView(view({ taxIdentityNumber: null, kind: null, duplicates: [] }), bound)).not.toBeNull()
   })
 
@@ -108,7 +109,10 @@ describe('AT-009 decoders are strict and bound to the request', () => {
       '33333333-3333-3333-3333-333333333333',
     )
     expect(decodeTaxIdentityView(view({ pendingChange: change({ status: 'approved' }) }), bound)).toBeNull()
+    expect(decodeTaxIdentityView(view({ pendingChange: change({ decidedBy: 'checker' }) }), bound)).toBeNull()
+    expect(decodeTaxIdentityView(view({ pendingChange: change({ proposedKind: 'vkn' }) }), bound)).toBeNull()
     expect(decodeTaxIdentityView(view({ lastDecidedChange: change() }), bound)).toBeNull()
+    expect(decodeTaxIdentityView(view({ lastDecidedChange: change({ status: 'approved' }) }), bound)).toBeNull()
     expect(
       decodeTaxIdentityView(
         view({ lastDecidedChange: change({ status: 'rejected', decidedBy: 'checker', decidedAtUtc: 'x' }) }),
@@ -121,6 +125,7 @@ describe('AT-009 decoders are strict and bound to the request', () => {
     const check = { taxIdentityNumber: '1234567890', kind: 'vkn', duplicates: [] }
     expect(decodeTaxDuplicateCheck(check, '1234567890')).not.toBeNull()
     expect(decodeTaxDuplicateCheck(check, '9876543217')).toBeNull()
+    expect(decodeTaxDuplicateCheck({ ...check, kind: 'tckn' }, '1234567890')).toBeNull()
     expect(taxProblemCodeOf({ code: 'tax_identity_self_decision' })).toBe('tax_identity_self_decision')
     expect(taxProblemCodeOf(null)).toBeNull()
   })

@@ -59,6 +59,11 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyTaxIdent
             : await FindDuplicatesAsync(companyId, partyId, party.TaxIdentityNumber, cancellationToken);
         var canUpdate = await HasCompanyWideAsync(CounterpartyTaxIdentityPermissionsV1.Update, cancellationToken);
         var canApprove = await HasCompanyWideAsync(CounterpartyTaxIdentityPermissionsV1.Approve, cancellationToken);
+        var pendingDuplicates = pending is null
+            ? []
+            : await FindDuplicatesAsync(
+                companyId, partyId, pending.ProposedTaxIdentityNumber, cancellationToken);
+        var pendingView = pending is null ? null : ToView(pending, pendingDuplicates);
         await RequireTaxIdentityReadStillAsync(companyId, actorId, additionalPermission: null, cancellationToken);
         return new CounterpartyTaxIdentityView(
             party.Id,
@@ -67,15 +72,12 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyTaxIdent
             party.TaxIdentityNumber,
             party.TaxIdentityNumber is null ? null : KindOf(party.TaxIdentityNumber),
             duplicates,
-            pending is null
-                ? null
-                : ToView(pending, await FindDuplicatesAsync(
-                    companyId, partyId, pending.ProposedTaxIdentityNumber, cancellationToken)),
+            pendingView,
             lastDecided is null ? null : ToView(lastDecided, []),
             new CounterpartyTaxIdentityViewer(
                 canUpdate,
                 canApprove,
-                pending is not null && pending.IsRequestedBy(currentUser.UserId ?? string.Empty)));
+                pending is not null && pending.IsRequestedBy(actorId)));
     }
 
     public async Task<CounterpartyTaxIdentityDuplicateCheck?> CheckDuplicatesAsync(
@@ -463,6 +465,30 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyTaxIdent
     private async Task RequireTaxIdentityReadStillAsync(
         Guid companyId, string actorId, string? additionalPermission, CancellationToken cancellationToken)
     {
+        RequireTaxIdentityContextStill(companyId, actorId);
+        await RequireFreshCompanyWidePermissionAsync(
+            ErpPermissions.CounterpartyPartiesRead, companyId, cancellationToken);
+        RequireTaxIdentityContextStill(companyId, actorId);
+        if (additionalPermission is not null)
+        {
+            await RequireFreshCompanyWidePermissionAsync(additionalPermission, companyId, cancellationToken);
+            RequireTaxIdentityContextStill(companyId, actorId);
+        }
+    }
+
+    private async Task RequireTaxIdentityCommandStillAsync(
+        CounterpartyCommandMetadata metadata, string permission, CancellationToken cancellationToken)
+    {
+        ValidateCommandMetadata(metadata);
+        await RequireFreshCompanyWidePermissionAsync(permission, metadata.CompanyId, cancellationToken);
+        ValidateCommandMetadata(metadata);
+        await RequireFreshCompanyWidePermissionAsync(
+            ErpPermissions.CounterpartyPartiesRead, metadata.CompanyId, cancellationToken);
+        ValidateCommandMetadata(metadata);
+    }
+
+    private void RequireTaxIdentityContextStill(Guid companyId, string actorId)
+    {
         if (!currentUser.IsAuthenticated
             || !string.Equals(currentUser.UserId, actorId, StringComparison.Ordinal)
             || !companyContext.IsResolved
@@ -471,20 +497,17 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyTaxIdent
         {
             throw new UnauthorizedAccessException("Cari vergi/kimlik okuma bağlamı değişti.");
         }
-
-        await RequireCompanyWidePermissionAsync(ErpPermissions.CounterpartyPartiesRead, cancellationToken);
-        if (additionalPermission is not null)
-        {
-            await RequireCompanyWidePermissionAsync(additionalPermission, cancellationToken);
-        }
     }
 
-    private async Task RequireTaxIdentityCommandStillAsync(
-        CounterpartyCommandMetadata metadata, string permission, CancellationToken cancellationToken)
+    private async Task RequireFreshCompanyWidePermissionAsync(
+        string permission, Guid companyId, CancellationToken cancellationToken)
     {
-        ValidateCommandMetadata(metadata);
-        await RequireCompanyWidePermissionAsync(permission, cancellationToken);
-        await RequireCompanyWidePermissionAsync(ErpPermissions.CounterpartyPartiesRead, cancellationToken);
+        var scope = await authorityRevalidationService.RevalidatePermissionScopeAsync(
+            permission, companyId, cancellationToken);
+        if (!scope.IsGranted || !scope.IsCompanyWide)
+        {
+            throw new UnauthorizedAccessException($"'{permission}' izni artık şirket genelinde geçerli değil.");
+        }
     }
 
     private static TaxIdentityNumber ParseTaxIdentity(string? value) =>

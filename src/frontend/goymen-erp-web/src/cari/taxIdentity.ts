@@ -130,6 +130,8 @@ const isKind = (raw: unknown): raw is TaxIdentityKind => raw === TAX_IDENTITY_KI
 const isStatus = (raw: unknown): raw is TaxChangeStatus =>
   raw === TAX_CHANGE_STATUS.pending || raw === TAX_CHANGE_STATUS.approved || raw === TAX_CHANGE_STATUS.rejected
 const isStoredNumber = (raw: unknown): raw is string => isString(raw) && checkTaxIdentity(raw).ok
+const kindOfStoredNumber = (value: string): TaxIdentityKind =>
+  value.length === 10 ? TAX_IDENTITY_KIND.vkn : TAX_IDENTITY_KIND.tckn
 
 function decodeDuplicates(raw: unknown): TaxDuplicate[] | null {
   if (!Array.isArray(raw)) return null
@@ -163,6 +165,7 @@ function decodeChange(raw: unknown): TaxChange | null {
     !isStoredNumber(raw.currentTaxIdentityNumber) ||
     !isStoredNumber(raw.proposedTaxIdentityNumber) ||
     !isKind(raw.proposedKind) ||
+    raw.proposedKind !== kindOfStoredNumber(raw.proposedTaxIdentityNumber) ||
     !isString(raw.reason) ||
     !isString(raw.requestedBy) ||
     !isString(raw.requestedAtUtc) ||
@@ -170,6 +173,13 @@ function decodeChange(raw: unknown): TaxChange | null {
     !isNullableString(raw.decidedAtUtc) ||
     !isNullableString(raw.decisionNote) ||
     proposedDuplicates === null
+  ) {
+    return null
+  }
+  const pending = raw.status === TAX_CHANGE_STATUS.pending
+  if (
+    (pending && (raw.decidedBy !== null || raw.decidedAtUtc !== null || raw.decisionNote !== null)) ||
+    (!pending && (raw.decidedBy === null || raw.decidedAtUtc === null))
   ) {
     return null
   }
@@ -206,6 +216,7 @@ export function decodeTaxIdentityView(
     !(raw.taxIdentityNumber === null || isStoredNumber(raw.taxIdentityNumber)) ||
     !(raw.kind === null || isKind(raw.kind)) ||
     (raw.taxIdentityNumber === null) !== (raw.kind === null) ||
+    (isString(raw.taxIdentityNumber) && isKind(raw.kind) && raw.kind !== kindOfStoredNumber(raw.taxIdentityNumber)) ||
     duplicates === null ||
     (raw.pendingChange !== null && (pendingChange === null || pendingChange.status !== TAX_CHANGE_STATUS.pending)) ||
     (raw.lastDecidedChange !== null &&
@@ -236,7 +247,15 @@ export function decodeTaxIdentityView(
 export function decodeTaxDuplicateCheck(raw: unknown, expectedNumber: string): TaxDuplicateCheck | null {
   if (!isObject(raw)) return null
   const duplicates = decodeDuplicates(raw.duplicates)
-  if (raw.taxIdentityNumber !== expectedNumber || !isKind(raw.kind) || duplicates === null) return null
+  if (
+    raw.taxIdentityNumber !== expectedNumber ||
+    !isStoredNumber(raw.taxIdentityNumber) ||
+    !isKind(raw.kind) ||
+    raw.kind !== kindOfStoredNumber(raw.taxIdentityNumber) ||
+    duplicates === null
+  ) {
+    return null
+  }
   return { taxIdentityNumber: raw.taxIdentityNumber, kind: raw.kind, duplicates }
 }
 

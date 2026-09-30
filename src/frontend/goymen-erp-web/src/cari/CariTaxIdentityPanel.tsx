@@ -16,7 +16,7 @@
  * applied command the card is re-read — a 204 carries no body, so nothing is painted from what was sent.
  */
 
-import { useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router'
 import { generateAttemptKey } from './commandAttempt'
@@ -39,6 +39,7 @@ import {
   fetchTaxIdentity,
   requestTaxIdentityChange,
 } from './taxIdentityApi'
+import { useAuthBoundary } from '../shell/useAuthBoundary'
 import styles from './CariTaxIdentityPanel.module.css'
 
 interface Props {
@@ -55,6 +56,17 @@ interface Notice {
 }
 
 type Sender = (context: CommandContext) => Promise<CommandOutcome<null>>
+type DuplicateProbe = (number: string) => ReturnType<typeof checkTaxIdentityDuplicates>
+
+interface FrozenAttempt {
+  readonly fingerprint: string
+  readonly key: string
+  readonly binding: string
+  readonly companyId: string
+  readonly contract: ContractContext
+  readonly send: Sender
+  readonly okText: string
+}
 
 const REFETCH_CODES = new Set<string>([
   TAX_PROBLEM_CODE.versionConflict,
@@ -74,45 +86,72 @@ function refusalText(status: number, body: unknown): string {
 
 export function CariTaxIdentityPanel({ partyId, companyId, namespace, contractContext }: Props) {
   const queryClient = useQueryClient()
+  const boundary = useAuthBoundary()
+  const binding = JSON.stringify([namespace, partyId, companyId, contractContext?.origin ?? null])
+  const bindingRef = useRef(binding)
+  useEffect(() => {
+    bindingRef.current = binding
+  }, [binding])
   const queryKey = [namespace, 'counterparty-tax-identity', partyId, companyId]
   const query = useQuery({
     queryKey,
-    queryFn: ({ signal }) => fetchTaxIdentity(partyId, companyId, signal),
+    queryFn: async ({ signal }) => {
+      const security = boundary.capture()
+      const outcome = await fetchTaxIdentity(partyId, companyId, signal)
+      if (outcome.type === 'http' && (outcome.status === 401 || outcome.status === 403)) {
+        boundary.report(outcome.status, security)
+      }
+      return outcome
+    },
   })
-  // A ref, not state: a retry closure must see the key of the attempt it retries, not a stale render's.
-  const attempt = useRef<{ readonly fingerprint: string; readonly key: string } | null>(null)
+  // The complete attempt is frozen. A changed form cannot replace an unresolved key/body/context.
+  const attempt = useRef<FrozenAttempt | null>(null)
   const [busy, setBusy] = useState(false)
+  const [unresolved, setUnresolved] = useState(false)
   const [notice, setNotice] = useState<Notice | null>(null)
   const [formKey, setFormKey] = useState(0)
 
   const refresh = () => void queryClient.invalidateQueries({ queryKey })
 
-  /** One command attempt: the same fingerprint reuses its key until a definite answer ends it. */
-  const run = async (fingerprint: string, send: Sender, okText: string): Promise<boolean> => {
-    if (contractContext === null) {
-      setNotice({ tone: 'error', text: T.contractNotReady })
-      return false
+  const probeDuplicates: DuplicateProbe = async (number) => {
+    const requestBinding = binding
+    const security = boundary.capture()
+    const outcome = await checkTaxIdentityDuplicates(partyId, companyId, number)
+    if (outcome.type === 'http' && (outcome.status === 401 || outcome.status === 403)) {
+      boundary.report(outcome.status, security)
     }
-    const current = attempt.current
-    const key = current !== null && current.fingerprint === fingerprint ? current.key : generateAttemptKey()
-    attempt.current = { fingerprint, key }
+    return bindingRef.current === requestBinding ? outcome : { type: 'aborted' }
+  }
+
+  const dispatchAttempt = async (frozen: FrozenAttempt): Promise<boolean> => {
     setBusy(true)
     setNotice(null)
+    const security = boundary.capture()
     let outcome: CommandOutcome<null>
     try {
-      outcome = await send({ companyId, idempotencyKey: key, contract: contractContext })
+      outcome = await frozen.send({
+        companyId: frozen.companyId,
+        idempotencyKey: frozen.key,
+        contract: frozen.contract,
+      })
     } finally {
-      setBusy(false)
+      if (bindingRef.current === frozen.binding) setBusy(false)
     }
+    if (outcome.type === 'http' && (outcome.status === 401 || outcome.status === 403)) {
+      boundary.report(outcome.status, security)
+    }
+    if (bindingRef.current !== frozen.binding) return false
     switch (outcome.type) {
       case 'applied':
         attempt.current = null
-        setNotice({ tone: 'ok', text: okText })
+        setUnresolved(false)
+        setNotice({ tone: 'ok', text: frozen.okText })
         setFormKey((value) => value + 1)
         refresh()
         return true
       case 'http': {
         attempt.current = null
+        setUnresolved(false)
         setNotice({ tone: 'error', text: refusalText(outcome.status, outcome.body) })
         const code = taxProblemCodeOf(outcome.body)
         if (code !== null && REFETCH_CODES.has(code)) refresh()
@@ -120,21 +159,48 @@ export function CariTaxIdentityPanel({ partyId, companyId, namespace, contractCo
       }
       case 'contract-not-ready':
         attempt.current = null
+        setUnresolved(false)
         setNotice({ tone: 'error', text: T.contractNotReady })
         return false
       case 'unfenced':
         attempt.current = null
+        setUnresolved(false)
         setNotice({ tone: 'error', text: T.genericRefusal })
         return false
       default:
-        // Unknown: the command may have been applied. Same key, same body, only on an explicit retry.
+        setUnresolved(true)
         setNotice({
           tone: 'error',
           text: T.unknownOutcome,
-          retry: () => void run(fingerprint, send, okText),
+          retry: () => void dispatchAttempt(frozen),
         })
         return false
     }
+  }
+
+  /** One command attempt: an unresolved key/body/context cannot be replaced by a changed form. */
+  const run = async (fingerprint: string, send: Sender, okText: string): Promise<boolean> => {
+    if (contractContext === null) {
+      setNotice({ tone: 'error', text: T.contractNotReady })
+      return false
+    }
+    const current = attempt.current
+    if (current !== null && current.fingerprint !== fingerprint) {
+      setUnresolved(true)
+      setNotice({ tone: 'error', text: T.unknownOutcome, retry: () => void dispatchAttempt(current) })
+      return false
+    }
+    const frozen = current ?? {
+      fingerprint,
+      key: generateAttemptKey(),
+      binding,
+      companyId,
+      contract: contractContext,
+      send,
+      okText,
+    }
+    attempt.current = frozen
+    return dispatchAttempt(frozen)
   }
 
   const outcome = query.data
@@ -193,6 +259,7 @@ export function CariTaxIdentityPanel({ partyId, companyId, namespace, contractCo
           view={view}
           change={pending}
           busy={busy}
+          locked={unresolved}
           onDecide={(decision, note) =>
             run(
               `decide:${pending.id}:${decision}:${note ?? ''}:${view.version}`,
@@ -209,8 +276,10 @@ export function CariTaxIdentityPanel({ partyId, companyId, namespace, contractCo
             key={`enter:${formKey}`}
             mode="enter"
             busy={busy}
+            locked={unresolved}
             partyId={partyId}
             companyId={companyId}
+            probeDuplicates={probeDuplicates}
             onSend={(number) =>
               run(
                 `enter:${number}:${view.version}`,
@@ -223,8 +292,10 @@ export function CariTaxIdentityPanel({ partyId, companyId, namespace, contractCo
           <ChangeRequest
             key={`request:${formKey}`}
             busy={busy}
+            locked={unresolved}
             partyId={partyId}
             companyId={companyId}
+            probeDuplicates={probeDuplicates}
             onSend={(number, reason) =>
               run(
                 `request:${number}:${reason}:${view.version}`,
@@ -295,11 +366,13 @@ function PendingChange({
   view,
   change,
   busy,
+  locked,
   onDecide,
 }: {
   readonly view: TaxIdentityView
   readonly change: TaxChange
   readonly busy: boolean
+  readonly locked: boolean
   readonly onDecide: (decision: 'approve' | 'reject', note: string | null) => Promise<boolean>
 }) {
   const [note, setNote] = useState('')
@@ -343,7 +416,7 @@ function PendingChange({
             <button
               type="button"
               className={styles.button}
-              disabled={busy}
+              disabled={busy || locked}
               onClick={() => void onDecide('approve', trimmed.length > 0 ? trimmed : null)}
             >
               {T.approve}
@@ -351,7 +424,7 @@ function PendingChange({
             <button
               type="button"
               className={styles.button}
-              disabled={busy}
+              disabled={busy || locked}
               onClick={() => void onDecide('reject', trimmed.length > 0 ? trimmed : null)}
             >
               {T.reject}
@@ -369,7 +442,7 @@ function PendingChange({
  * The number field with the client check and the duplicate warning in front of the send. A warning never blocks: it
  * asks for one more, explicit click. A failed look-up is said out loud and asks for the same click.
  */
-function useCheckedNumber(partyId: string, companyId: string) {
+function useCheckedNumber(partyId: string, companyId: string, probeDuplicates: DuplicateProbe) {
   const [text, setText] = useState('')
   const [fieldError, setFieldError] = useState<string | null>(null)
   const [warning, setWarning] = useState<{
@@ -389,7 +462,7 @@ function useCheckedNumber(partyId: string, companyId: string) {
     setFieldError(null)
     if (warning !== null && warning.number === check.value) return check.value
     setChecking(true)
-    const outcome = await checkTaxIdentityDuplicates(partyId, companyId, check.value).finally(() => setChecking(false))
+    const outcome = await probeDuplicates(check.value).finally(() => setChecking(false))
     if (outcome.type === 'ok') {
       if (outcome.data.duplicates.length === 0) return check.value
       setWarning({ number: check.value, duplicates: outcome.data.duplicates })
@@ -415,17 +488,21 @@ function useCheckedNumber(partyId: string, companyId: string) {
 function NumberForm({
   mode,
   busy,
+  locked,
   partyId,
   companyId,
+  probeDuplicates,
   onSend,
 }: {
   readonly mode: 'enter'
   readonly busy: boolean
+  readonly locked: boolean
   readonly partyId: string
   readonly companyId: string
+  readonly probeDuplicates: DuplicateProbe
   readonly onSend: (number: string) => Promise<boolean>
 }) {
-  const field = useCheckedNumber(partyId, companyId)
+  const field = useCheckedNumber(partyId, companyId, probeDuplicates)
   const inputId = `tax-identity-${mode}-${partyId}`
   const submit = async (event: FormEvent) => {
     event.preventDefault()
@@ -452,7 +529,7 @@ function NumberForm({
       ) : null}
       <CheckWarning warning={field.warning} />
       <div className={styles.actions}>
-        <button type="submit" className={styles.button} disabled={busy || field.checking}>
+        <button type="submit" className={styles.button} disabled={busy || locked || field.checking}>
           {field.checking ? T.checking : busy ? T.sending : field.warning !== null ? T.saveAnyway : T.save}
         </button>
       </div>
@@ -462,19 +539,23 @@ function NumberForm({
 
 function ChangeRequest({
   busy,
+  locked,
   partyId,
   companyId,
+  probeDuplicates,
   onSend,
 }: {
   readonly busy: boolean
+  readonly locked: boolean
   readonly partyId: string
   readonly companyId: string
+  readonly probeDuplicates: DuplicateProbe
   readonly onSend: (number: string, reason: string) => Promise<boolean>
 }) {
   const [open, setOpen] = useState(false)
   const [reason, setReason] = useState('')
   const [reasonError, setReasonError] = useState<string | null>(null)
-  const field = useCheckedNumber(partyId, companyId)
+  const field = useCheckedNumber(partyId, companyId, probeDuplicates)
   const inputId = `tax-identity-request-${partyId}`
   const reasonId = `${inputId}-reason`
   if (!open) {
@@ -535,10 +616,10 @@ function ChangeRequest({
       ) : null}
       <CheckWarning warning={field.warning} />
       <div className={styles.actions}>
-        <button type="submit" className={styles.button} disabled={busy || field.checking}>
+        <button type="submit" className={styles.button} disabled={busy || locked || field.checking}>
           {field.checking ? T.checking : busy ? T.sending : field.warning !== null ? T.sendAnyway : T.sendRequest}
         </button>
-        <button type="button" className={styles.button} disabled={busy} onClick={() => setOpen(false)}>
+        <button type="button" className={styles.button} disabled={busy || locked} onClick={() => setOpen(false)}>
           {T.cancel}
         </button>
       </div>

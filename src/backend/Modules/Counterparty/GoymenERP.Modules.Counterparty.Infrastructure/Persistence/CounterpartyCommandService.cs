@@ -19,6 +19,7 @@ internal sealed partial class CounterpartyCommandService(
     ICurrentUser currentUser,
     ICompanyContext companyContext,
     IErpAuthorizationService authorizationService,
+    IErpAuthorityRevalidationService authorityRevalidationService,
     IAuditEventCollector auditEventCollector,
     ICounterpartyActiveStateCommandProbe activeStateCommandProbe,
     ILogger<CounterpartyCommandService> logger)
@@ -306,6 +307,11 @@ internal sealed partial class CounterpartyCommandService(
                 cancellationToken);
             if (winner is not null)
             {
+                if (beforeSave is not null)
+                {
+                    await beforeSave(cancellationToken);
+                }
+
                 return ResolveExistingExecution(winner, requestHash, metadata);
             }
 

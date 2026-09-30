@@ -12,6 +12,23 @@ import {
   resetContractReadiness,
 } from './clientContract'
 
+const authBoundary = vi.hoisted(() => {
+  const snapshot = {
+    actorId: 'actor-a',
+    sessionEpoch: 1,
+    companyId: 'aaaaaaaa-0000-0000-0000-000000000001',
+    committedContextRevision: 1,
+    requestFenceGeneration: 1,
+    capabilityGeneration: 1,
+    namespace: 'ns-test',
+  }
+  return { snapshot, capture: vi.fn(() => snapshot), report: vi.fn() }
+})
+
+vi.mock('../shell/useAuthBoundary', () => ({
+  useAuthBoundary: () => ({ capture: authBoundary.capture, report: authBoundary.report }),
+}))
+
 const PARTY = '11111111-1111-1111-1111-111111111111'
 const OTHER = '22222222-2222-2222-2222-222222222222'
 const COMPANY = 'aaaaaaaa-0000-0000-0000-000000000001'
@@ -112,6 +129,8 @@ function renderPanel() {
 const puts = (calls: readonly Call[]) => calls.filter((call) => call.method === 'PUT')
 
 beforeEach(() => {
+  authBoundary.capture.mockClear()
+  authBoundary.report.mockClear()
   vi.stubGlobal('navigator', { onLine: true })
   resetContractReadiness()
   // The card's own detail read opened the write gate for this context.
@@ -277,27 +296,55 @@ describe('AT-009 VKN/TCKN on the Cari card', () => {
   })
 
   it('keeps the same key for an explicit retry after an answer it could not read', async () => {
-    let first = true
+    let firstPut = true
+    let stored = false
+    let reads = 0
     const calls = install((call) => {
-      if (call.method === 'GET' && call.url.includes('/duplicates')) {
+      if (call.method === 'POST' && call.url.endsWith('/duplicates')) {
         return json({ taxIdentityNumber: '10000000146', kind: 'tckn', duplicates: [] })
       }
-      if (call.method === 'GET') return json(taxView())
-      if (first) {
-        first = false
+      if (call.method === 'GET') {
+        reads += 1
+        return json(
+          stored
+            ? taxView({ version: '2', taxIdentityNumber: '10000000146', kind: 'tckn' })
+            : taxView(),
+        )
+      }
+      if (firstPut) {
+        firstPut = false
         throw new TypeError('network down')
       }
+      stored = true
       return noContent()
     })
     renderPanel()
     const user = userEvent.setup()
-    await user.type(await screen.findByLabelText('VKN (10 hane) veya TCKN (11 hane)'), '10000000146')
+    const input = await screen.findByLabelText('VKN (10 hane) veya TCKN (11 hane)')
+    await user.type(input, '10000000146')
     await user.click(screen.getByRole('button', { name: 'Kaydet' }))
+    await screen.findByText('Sunucunun işlemi alıp almadığı bilinmiyor.')
+    await user.clear(input)
+    await user.type(input, '1234567890')
+    const frozenSubmit = screen.getByRole('button', { name: 'Kaydet' })
+    expect(frozenSubmit.hasAttribute('disabled')).toBe(true)
+    await user.click(frozenSubmit)
+    expect(puts(calls)).toHaveLength(1)
     await user.click(await screen.findByRole('button', { name: 'Aynı işlemi yeniden gönder' }))
     await waitFor(() => expect(puts(calls)).toHaveLength(2))
     expect(puts(calls)[0].headers['Idempotency-Key']).toBe(puts(calls)[1].headers['Idempotency-Key'])
     expect(puts(calls)[1].body).toEqual(puts(calls)[0].body)
     expect(await screen.findByText('Numara kaydedildi.')).toBeTruthy()
+    await waitFor(() => expect(reads).toBeGreaterThan(1))
+  })
+
+  it('reports a denied tax read through the shell boundary with the snapshot captured before the request', async () => {
+    install(() => json({ code: 'forbidden', status: 403 }, 403, false))
+    renderPanel()
+    const panel = await screen.findByTestId('cari-tax-identity')
+    await waitFor(() => expect(panel.getAttribute('data-state')).toBe('error'))
+    expect(authBoundary.capture).toHaveBeenCalledTimes(1)
+    expect(authBoundary.report).toHaveBeenCalledWith(403, authBoundary.snapshot)
   })
 
   it('offers no form to a reader without the grant', async () => {
