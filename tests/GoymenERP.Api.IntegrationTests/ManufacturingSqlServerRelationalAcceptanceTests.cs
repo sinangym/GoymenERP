@@ -221,6 +221,8 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         var policy = new ClosureTolerancePolicySnapshotV1(
             CompanyA, Guid.NewGuid(), 7, ManufacturingProcess.Slitting, 5m, true,
             new DateOnly(2026, 9, 1), new DateOnly(2026, 9, 30), DateOnly.FromDateTime(At.UtcDateTime));
+        var persistenceAuthority = new ManufacturingPersistenceAuthorityFenceV1(
+            CompanyA, run.Actor, _ => Task.FromResult(true));
         const string maximumFirePercent = "5";
         const string approvalReason = "Gerçekleşen proses kaybı teknik inceleme ile kabul edildi.";
 
@@ -239,7 +241,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
                 CompanyA, orderId, run.Actor, approvalReason,
                 6, policy.PolicyId, policy.PolicyVersion, At.AddMinutes(4));
             await store.Orders.CloseOrderWithPolicyAsync(
-                orderId, 6, run.Actor, At.AddMinutes(5), policy, approval, Metadata(run));
+                orderId, 6, run.Actor, At.AddMinutes(5), policy, approval, persistenceAuthority, Metadata(run));
         }
 
         await using (var store = run.Store(CompanyA))
@@ -279,7 +281,8 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
             await store.Orders.DeclareOutputAsync(noApprovalOrderId, 4, Guid.NewGuid(), RollB,
                 OutputClass.GoodProduct, Kg(500m), At.AddMinutes(2), Metadata(run));
             await store.Orders.CloseOrderWithPolicyAsync(
-                noApprovalOrderId, 5, run.Actor, At.AddMinutes(3), noApprovalPolicy, null, Metadata(run));
+                noApprovalOrderId, 5, run.Actor, At.AddMinutes(3), noApprovalPolicy, null,
+                persistenceAuthority, Metadata(run));
         }
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM manufacturing.OrderClosureDecisions WHERE CompanyId = @c AND OrderId = @o "

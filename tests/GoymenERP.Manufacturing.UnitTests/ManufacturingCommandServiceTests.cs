@@ -24,7 +24,9 @@ public sealed class ManufacturingCommandServiceTests
     private const string CloseExceptionPermission = "manufacturing.orders.close-exception.approve";
     private const string LabelVersion = "7";
     private static readonly Guid Company = Guid.Parse("10000000-0000-0000-0000-000000000001");
+    private static readonly Guid OtherCompany = Guid.Parse("20000000-0000-0000-0000-000000000002");
     private static readonly Guid Actor = Guid.Parse("a1000000-0000-0000-0000-00000000000a");
+    private static readonly Guid OtherActor = Guid.Parse("a2000000-0000-0000-0000-00000000000a");
     private static readonly Guid WorkCenter = Guid.Parse("c1000000-0000-0000-0000-00000000000c");
     private static readonly Guid Roll = Guid.Parse("b1000000-0000-0000-0000-00000000000b");
     private static readonly Guid Product = Guid.Parse("d1000000-0000-0000-0000-00000000000d");
@@ -980,7 +982,7 @@ public sealed class ManufacturingCommandServiceTests
         Assert.Equal("Closed", closed.Resource!.Status);
         Assert.Equal(1, fixture.Settings.ToleranceAsked);
         Assert.NotNull(order.ClosurePolicy);
-        Assert.Equal([ClosePermission, ClosePermission], fixture.Authority.Permissions);
+        Assert.Equal([ClosePermission, ClosePermission, ClosePermission], fixture.Authority.Permissions);
         Assert.Equal(ClosePermission, Assert.Single(fixture.Store.Writes).PermissionCode);
         // §6: the record joined the business save, not a second one.
         Assert.Single(fixture.Store.Commands);
@@ -1021,8 +1023,73 @@ public sealed class ManufacturingCommandServiceTests
             (order.ClosureExceptionApproval.CompanyId, order.ClosureExceptionApproval.OrderId,
                 order.ClosureExceptionApproval.ApprovedByUserId, order.ClosureExceptionApproval.OrderVersion));
         Assert.Equal(
-            [ClosePermission, ClosePermission, CloseExceptionPermission, ClosePermission, CloseExceptionPermission],
+            [ClosePermission, ClosePermission, CloseExceptionPermission, ClosePermission, CloseExceptionPermission,
+                ClosePermission, CloseExceptionPermission],
             fixture.Authority.Permissions);
+    }
+
+    [Fact]
+    public async Task Exception_authority_revoked_after_the_store_read_leaves_no_close_effect()
+    {
+        var fixture = new Fixture();
+        fixture.Settings.Tolerance = fixture.Settings.Tolerance with { MaximumFirePercent = 5m };
+        var order = await fixture.FireOrderAsync();
+        for (var granted = 0; granted < 5; granted++)
+        {
+            fixture.Authority.Scopes.Enqueue(Scope(companyWide: true, "PRODUCTION_OPERATOR"));
+        }
+        fixture.Authority.Scopes.Enqueue(PermissionScope.Denied);
+
+        var result = await fixture.Service.CloseOrderAsync(
+            order.Id, new CloseOrderRequestV1(order.Version, "Kalıcılık öncesi teknik teyit"),
+            "close-revoked-at-persistence", ClosePermission, CloseExceptionPermission, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied),
+            (result.Status, result.Code));
+        Assert.Equal(
+            [ClosePermission, CloseExceptionPermission, ClosePermission, CloseExceptionPermission,
+                ClosePermission, CloseExceptionPermission],
+            fixture.Authority.Permissions);
+        Assert.Equal(OrderStatus.Open, order.Status);
+        Assert.Null(order.ClosurePolicy);
+        Assert.Empty(fixture.Store.PolicyDecisions);
+        Assert.Empty(fixture.Store.AuditEvents);
+        Assert.Empty(fixture.Store.Commands);
+        Assert.Empty(fixture.Store.Writes);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Company_or_actor_switch_after_the_store_read_leaves_no_close_effect(bool switchCompany)
+    {
+        var fixture = new Fixture();
+        var order = await fixture.BalancedOrderAsync();
+        fixture.Store.OnPolicyCloseRead = _ =>
+        {
+            if (switchCompany)
+            {
+                fixture.CompanyContext.SwitchForTest(OtherCompany);
+            }
+            else
+            {
+                fixture.User.ActorId = OtherActor;
+            }
+        };
+
+        var result = await fixture.Service.CloseOrderAsync(
+            order.Id, new CloseOrderRequestV1(order.Version), $"close-context-switch-{switchCompany}",
+            ClosePermission, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied),
+            (result.Status, result.Code));
+        Assert.Equal([ClosePermission, ClosePermission], fixture.Authority.Permissions);
+        Assert.Equal(OrderStatus.Open, order.Status);
+        Assert.Null(order.ClosurePolicy);
+        Assert.Empty(fixture.Store.PolicyDecisions);
+        Assert.Empty(fixture.Store.AuditEvents);
+        Assert.Empty(fixture.Store.Commands);
+        Assert.Empty(fixture.Store.Writes);
     }
 
     [Fact]
@@ -1301,8 +1368,7 @@ public sealed class ManufacturingCommandServiceTests
     {
         public Fixture(bool withWorkCenters = true)
         {
-            var company = new CompanyContext();
-            company.Set(Company);
+            CompanyContext = new MutableCompanyContext(Company);
             var correlation = new CorrelationContext();
             correlation.Set("corr-1", null, "Web", null, null);
             Settings = new SettingsPort(Calls);
@@ -1313,13 +1379,15 @@ public sealed class ManufacturingCommandServiceTests
             ReturnOutputs = new ReturnOutputPort(Store);
             Correlation = correlation;
             Service = new ManufacturingCommandService(Store, Store, Store, new ManufacturingMassVerifier(Settings), Authority,
-                company, User, correlation, new FixedTime(), ParentRolls, withWorkCenters ? WorkCenters : null,
+                CompanyContext, User, correlation, new FixedTime(), ParentRolls, withWorkCenters ? WorkCenters : null,
                 InputIssues, ReturnOutputs, manufacturingTolerances: Settings);
         }
 
         public List<string> Calls { get; } = [];
 
         public CorrelationContext Correlation { get; }
+
+        public MutableCompanyContext CompanyContext { get; }
 
         public FakeStore Store { get; } = new();
 
@@ -1457,13 +1525,41 @@ public sealed class ManufacturingCommandServiceTests
         public override DateTimeOffset GetUtcNow() => At;
     }
 
+    private sealed class MutableCompanyContext(Guid companyId) : ICompanyContext
+    {
+        private Guid _companyId = companyId;
+
+        public bool IsResolved => _companyId != Guid.Empty;
+
+        public Guid CompanyId => IsResolved
+            ? _companyId
+            : throw new InvalidOperationException("Şirket bağlamı henüz belirlenmedi.");
+
+        public void Set(Guid newCompanyId)
+        {
+            if (newCompanyId == Guid.Empty)
+            {
+                throw new ArgumentException("Şirket kimliği boş olamaz.", nameof(newCompanyId));
+            }
+
+            if (_companyId != newCompanyId)
+            {
+                throw new InvalidOperationException("Bir istek içinde şirket bağlamı değiştirilemez.");
+            }
+        }
+
+        public void SwitchForTest(Guid newCompanyId) => _companyId = newCompanyId;
+    }
+
     private sealed class User : ICurrentUser
     {
         public HashSet<Guid> Companies { get; } = [Company];
 
+        public Guid ActorId { get; set; } = Actor;
+
         public bool IsAuthenticated => true;
 
-        public string? UserId => Actor.ToString("D");
+        public string? UserId => ActorId.ToString("D");
 
         public IReadOnlySet<Guid> AllowedCompanyIds => Companies;
 
@@ -1611,6 +1707,9 @@ public sealed class ManufacturingCommandServiceTests
         /// <summary>Runs when a write starts: another attempt of the same key committing meanwhile.</summary>
         public Action<ManufacturingCommandMetadata>? OnWrite { get; set; }
 
+        /// <summary>Runs after the policy-close read and before its persistence authority fence.</summary>
+        public Action<ManufacturingCommandMetadata>? OnPolicyCloseRead { get; set; }
+
         /// <summary>Another attempt of the same key that commits first (ADR-011 §8).</summary>
         public Func<ManufacturingCommandMetadata, object, ManufacturingCommandRecord>? RaceWinner { get; set; }
 
@@ -1650,6 +1749,10 @@ public sealed class ManufacturingCommandServiceTests
         public Dictionary<Guid, ProductionOrder> Orders { get; } = [];
 
         public List<ManufacturingCommandMetadata> Writes { get; } = [];
+
+        public List<Guid> PolicyDecisions { get; } = [];
+
+        public List<Guid> AuditEvents { get; } = [];
 
         public string? Fail { get; set; }
 
@@ -1723,19 +1826,27 @@ public sealed class ManufacturingCommandServiceTests
             return Task.CompletedTask;
         }
 
-        public Task CloseOrderWithPolicyAsync(Guid orderId, long expectedVersion, Guid closedByUserId,
+        public async Task CloseOrderWithPolicyAsync(Guid orderId, long expectedVersion, Guid closedByUserId,
             DateTimeOffset closedAt, ClosureTolerancePolicySnapshotV1 policy,
-            ClosureExceptionApprovalV1? exceptionApproval, ManufacturingCommandMetadata metadata,
+            ClosureExceptionApprovalV1? exceptionApproval,
+            ManufacturingPersistenceAuthorityFenceV1 persistenceAuthority, ManufacturingCommandMetadata metadata,
             CancellationToken cancellationToken = default)
         {
             Guard();
             OnWrite?.Invoke(metadata);
             var order = Orders.GetValueOrDefault(orderId)
                 ?? throw new ManufacturingStoreException(ManufacturingStoreCodes.OrderNotFound, "yok");
+            OnPolicyCloseRead?.Invoke(metadata);
+            if (!await persistenceAuthority.RevalidateAsync(order.CompanyId, closedByUserId, cancellationToken))
+            {
+                throw new ManufacturingStoreException(ManufacturingStoreCodes.AuthorityDenied, "yetki yok");
+            }
+
             order.CloseWithPolicy(expectedVersion, closedByUserId, closedAt, policy, exceptionApproval);
+            PolicyDecisions.Add(orderId);
+            AuditEvents.Add(orderId);
             Complete(metadata, order);
             Writes.Add(metadata);
-            return Task.CompletedTask;
         }
 
         /// <summary>What the list answers, and what it was asked.</summary>

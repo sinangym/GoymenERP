@@ -313,7 +313,7 @@ public sealed partial class ManufacturingCommandService(
         };
 
         return RunAsync<PlanViewV1>(permission, idempotencyKey, ManufacturingCommandNames.SavePlan, canonical,
-            ManufacturingApiStatus.Created, async (metadata, _) =>
+            ManufacturingApiStatus.Created, async (metadata, _, _) =>
             {
                 var process = await ResolveProcessAsync(request.WorkCenterId, cancellationToken);
                 if (process.Refusal is not null)
@@ -406,7 +406,7 @@ public sealed partial class ManufacturingCommandService(
         };
 
         return RunAsync<PlanViewV1>(permission, idempotencyKey, ManufacturingCommandNames.RevisePlan, canonical,
-            ManufacturingApiStatus.Ok, async (metadata, _) =>
+            ManufacturingApiStatus.Ok, async (metadata, _, _) =>
             {
                 if (planRevisions is null)
                 {
@@ -590,7 +590,8 @@ public sealed partial class ManufacturingCommandService(
         }
 
         return RunAsync<PlanViewV1>(permission, idempotencyKey, ManufacturingCommandNames.ApprovePlan,
-            new { planId, expectedVersion = request.ExpectedVersion }, ManufacturingApiStatus.Ok, async (metadata, actor) =>
+            new { planId, expectedVersion = request.ExpectedVersion }, ManufacturingApiStatus.Ok,
+            async (metadata, actor, _) =>
             {
                 var approved = await plans.ApprovePlanAsync(planId, request.ExpectedVersion, actor,
                     timeProvider.GetUtcNow(), metadata, cancellationToken);
@@ -607,7 +608,8 @@ public sealed partial class ManufacturingCommandService(
         }
 
         return RunAsync<OrderViewV1>(permission, idempotencyKey, ManufacturingCommandNames.CreateOrder,
-            new { orderId = request.OrderId, planId = request.PlanId }, ManufacturingApiStatus.Created, async (metadata, _) =>
+            new { orderId = request.OrderId, planId = request.PlanId }, ManufacturingApiStatus.Created,
+            async (metadata, _, _) =>
             {
                 var outcome = await orders.CreateOrderAsync(request.OrderId, request.PlanId, metadata, cancellationToken);
                 return await OrderResultAsync(request.OrderId, ManufacturingApiStatus.Created,
@@ -651,7 +653,7 @@ public sealed partial class ManufacturingCommandService(
         };
 
         return RunAsync<OrderViewV1>(permission, idempotencyKey, ManufacturingCommandNames.IssueInput,
-            canonical, ManufacturingApiStatus.Ok, async (metadata, _) =>
+            canonical, ManufacturingApiStatus.Ok, async (metadata, _, _) =>
             {
                 if (inventoryInputIssues is null)
                 {
@@ -723,7 +725,7 @@ public sealed partial class ManufacturingCommandService(
         };
 
         return RunAsync<OrderViewV1>(permission, idempotencyKey, ManufacturingCommandNames.ReturnInput,
-            canonical, ManufacturingApiStatus.Ok, async (metadata, _) =>
+            canonical, ManufacturingApiStatus.Ok, async (metadata, _, _) =>
             {
                 if (inventoryReturnsAndOutputs is null)
                 {
@@ -876,7 +878,7 @@ public sealed partial class ManufacturingCommandService(
         };
 
         return RunAsync<OrderViewV1>(permission, idempotencyKey, ManufacturingCommandNames.DeclareOutput,
-            canonical, ManufacturingApiStatus.Ok, async (metadata, _) =>
+            canonical, ManufacturingApiStatus.Ok, async (metadata, _, _) =>
             {
                 if (inventoryReturnsAndOutputs is null)
                 {
@@ -971,7 +973,7 @@ public sealed partial class ManufacturingCommandService(
 
         return RunAsync<OrderViewV1>(permission, idempotencyKey, ManufacturingCommandNames.CloseOrder,
             new { orderId, expectedVersion = request.ExpectedVersion, exceptionReason }, ManufacturingApiStatus.Ok,
-            async (metadata, actor) =>
+            async (metadata, actor, companyId) =>
             {
                 var current = await orders.FindOrderAsync(orderId, cancellationToken);
                 if (current is null)
@@ -1070,8 +1072,11 @@ public sealed partial class ManufacturingCommandService(
                     return approvalFenced;
                 }
 
+                var persistenceAuthority = new ManufacturingPersistenceAuthorityFenceV1(companyId, actor,
+                    token => RevalidateClosePersistenceAuthorityAsync(companyId, actor, permission,
+                        approval is null ? null : exceptionApprovalPermission, token));
                 await orders.CloseOrderWithPolicyAsync(orderId, request.ExpectedVersion, actor, closedAt, policy,
-                    approval, metadata, cancellationToken);
+                    approval, persistenceAuthority, metadata, cancellationToken);
                 return await OrderResultAsync(orderId, ManufacturingApiStatus.Ok, isReplay: false, cancellationToken);
             }, stored => OrderView((ProductionOrder)stored), cancellationToken);
     }
@@ -1321,7 +1326,7 @@ public sealed partial class ManufacturingCommandService(
         };
 
         return RunAsync<OrderViewV1>(permission, idempotencyKey, commandName, canonical, ManufacturingApiStatus.Ok,
-            async (metadata, _) =>
+            async (metadata, _, _) =>
             {
                 var mass = await VerifyAsync(kg, DateOnly.FromDateTime(occurredAt.UtcDateTime), "kg", cancellationToken);
                 if (mass.Refusal is not null)
@@ -1348,7 +1353,7 @@ public sealed partial class ManufacturingCommandService(
     /// </summary>
     private async Task<ManufacturingApiResult<T>> RunAsync<T>(string permission, string idempotencyKey, string commandName,
         object canonicalRequest, ManufacturingApiStatus successStatus,
-        Func<ManufacturingCommandMetadata, Guid, Task<ManufacturingApiResult<T>>> write, Func<object, T> view,
+        Func<ManufacturingCommandMetadata, Guid, Guid, Task<ManufacturingApiResult<T>>> write, Func<object, T> view,
         CancellationToken cancellationToken)
         where T : class
     {
@@ -1357,8 +1362,9 @@ public sealed partial class ManufacturingCommandService(
             return Denied<T>();
         }
 
-        var scope = await authority.RevalidatePermissionScopeAsync(permission, companyContext.CompanyId, cancellationToken);
-        if (!scope.IsGranted || !scope.IsCompanyWide || !HasContext())
+        var companyId = companyContext.CompanyId;
+        var scope = await authority.RevalidatePermissionScopeAsync(permission, companyId, cancellationToken);
+        if (!scope.IsGranted || !scope.IsCompanyWide || !HasCapturedContext(companyId, actor))
         {
             return Denied<T>();
         }
@@ -1386,7 +1392,7 @@ public sealed partial class ManufacturingCommandService(
         ManufacturingApiResult<T> result;
         try
         {
-            result = await write(metadata, actor);
+            result = await write(metadata, actor, companyId);
         }
         catch (ManufacturingInventoryRealizationPortException exception)
         {
@@ -1410,6 +1416,10 @@ public sealed partial class ManufacturingCommandService(
             return await commands.FindCommandAsync(commandName, keyHash, cancellationToken) is { } winner
                 ? Answer<T>(winner, actorId, requestHash)
                 : new ManufacturingApiResult<T>(ManufacturingApiStatus.Conflict, null, false, exception.Code);
+        }
+        catch (ManufacturingStoreException exception) when (exception.Code == ManufacturingStoreCodes.AuthorityDenied)
+        {
+            result = Denied<T>();
         }
         catch (ManufacturingStoreException exception)
         {
@@ -1505,6 +1515,39 @@ public sealed partial class ManufacturingCommandService(
     {
         var scope = await authority.RevalidatePermissionScopeAsync(permission, companyContext.CompanyId, cancellationToken);
         return scope.IsGranted && scope.IsCompanyWide && HasContext() ? null : Denied<T>();
+    }
+
+    /// <summary>
+    /// Final policy-close authority measured for the company and actor captured by <see cref="RunAsync{T}"/>.
+    /// Each await is followed by the same-context check; an exception close must retain both grants.
+    /// </summary>
+    private async Task<bool> RevalidateClosePersistenceAuthorityAsync(Guid companyId, Guid actorId,
+        string closePermission, string? exceptionApprovalPermission, CancellationToken cancellationToken)
+    {
+        if (!HasCapturedContext(companyId, actorId))
+        {
+            return false;
+        }
+
+        var closeScope = await authority.RevalidatePermissionScopeAsync(
+            closePermission, companyId, cancellationToken);
+        if (!closeScope.IsGranted || !closeScope.IsCompanyWide || !HasCapturedContext(companyId, actorId))
+        {
+            return false;
+        }
+
+        if (exceptionApprovalPermission is not null)
+        {
+            var exceptionScope = await authority.RevalidatePermissionScopeAsync(
+                exceptionApprovalPermission, companyId, cancellationToken);
+            if (!exceptionScope.IsGranted || !exceptionScope.IsCompanyWide
+                || !HasCapturedContext(companyId, actorId))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private async Task<(Kilograms Value, ManufacturingApiResult<object>? Refusal)> VerifyAsync(decimal value, DateOnly effectiveOn,
@@ -1660,6 +1703,9 @@ public sealed partial class ManufacturingCommandService(
         companyContext.IsResolved && companyContext.CompanyId != Guid.Empty && currentUser.IsAuthenticated
         && !string.IsNullOrWhiteSpace(currentUser.UserId) && currentUser.CanAccessCompany(companyContext.CompanyId)
         && correlation.IsResolved;
+
+    private bool HasCapturedContext(Guid companyId, Guid actorId) =>
+        HasContext() && companyContext.CompanyId == companyId && ActorGuid() == actorId;
 
     private Guid? ActorGuid() => Guid.TryParse(currentUser.UserId, out var actor) && actor != Guid.Empty ? actor : null;
 

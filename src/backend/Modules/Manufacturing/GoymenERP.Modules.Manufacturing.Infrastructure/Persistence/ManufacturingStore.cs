@@ -564,16 +564,27 @@ public sealed class ManufacturingStore(
 
     public async Task CloseOrderWithPolicyAsync(Guid orderId, long expectedVersion, Guid closedByUserId,
         DateTimeOffset closedAt, ClosureTolerancePolicySnapshotV1 policy,
-        ClosureExceptionApprovalV1? exceptionApproval, ManufacturingCommandMetadata metadata,
-        CancellationToken cancellationToken = default)
+        ClosureExceptionApprovalV1? exceptionApproval,
+        ManufacturingPersistenceAuthorityFenceV1 persistenceAuthority,
+        ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(policy);
+        ArgumentNullException.ThrowIfNull(persistenceAuthority);
         RequireMetadata(metadata);
         var companyId = RequireResolvedCompany();
         var row = await dbContext.Orders.SingleOrDefaultAsync(candidate => candidate.Id == orderId, cancellationToken)
             ?? throw Refused(ManufacturingStoreCodes.OrderNotFound, "Bu şirketin böyle bir emri yok.");
         var order = await RestoreOrderAsync(row, cancellationToken);
         var versionBefore = order.Version;
+
+        // The application-level checks protect the reads. This final fresh fence runs after all stored facts have
+        // been rebuilt and before the domain object or EF change tracker is changed, leaving no order, decision,
+        // audit or command effect when either the captured context or a required permission has gone away.
+        if (!await persistenceAuthority.RevalidateAsync(companyId, closedByUserId, cancellationToken))
+        {
+            throw Refused(ManufacturingStoreCodes.AuthorityDenied,
+                "Üretim emri kapanış yetkisi kalıcılık sınırında doğrulanamadı; hiçbir şey kaydedilmedi.");
+        }
 
         order.CloseWithPolicy(expectedVersion, closedByUserId, closedAt, policy, exceptionApproval);
 
