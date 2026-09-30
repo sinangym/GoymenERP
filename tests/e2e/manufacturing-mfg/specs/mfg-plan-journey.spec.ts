@@ -19,6 +19,7 @@ const PLAN_LIST_RE = /\/api\/v1\/manufacturing\/plans(?:\?|$)/
 const PLAN_APPROVAL_RE = /\/api\/v1\/manufacturing\/plans\/[^/]+\/approval$/
 const PLAN_REVISION_RE = /\/api\/v1\/manufacturing\/plans\/[^/]+\/revision$/
 const PLAN_REVISIONS_RE = /\/api\/v1\/manufacturing\/plans\/[^/]+\/revisions$/
+const PLAN_PREVIEW_RE = /\/api\/v1\/manufacturing\/plans\/preview$/
 const ORDER_POST_RE = /\/api\/v1\/manufacturing\/orders$/
 const ORDER_GET_RE = /\/api\/v1\/manufacturing\/orders\/[^/]+$/
 const CANDIDATES_RE = /\/api\/v1\/inventory\/references\/parent-rolls(?:\?|$)/
@@ -445,6 +446,109 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
       expect(stored.body).toMatchObject({ planId: firstBody.planId, status: 'Draft', version: 1 })
     } finally {
       await api.dispose()
+    }
+    expectEveryAnswerRewritten(answered, rewritten)
+  })
+
+  test('AT-061 / AT-062: the form previews the typed content live through the server calculator and writes nothing', async ({ page, context }) => {
+    const rewritten = await asActor(context, env.seed.recorderActor)
+    const answered = watchAnswers(page)
+    const api = await apiAs(env, env.seed.recorderActor)
+    const roll = env.seed.rolls.planCreate
+    try {
+      const newestPlan = async () => {
+        const response = await api.get('/api/v1/manufacturing/plans?pageSize=1')
+        expect(response.status()).toBe(200)
+        return ((await response.json()) as { plans: Array<{ planId: string }> }).plans[0]?.planId ?? null
+      }
+      const newestBefore = await newestPlan()
+
+      // No "Hesapla" button: typing the planned kg is enough. The answer for the final content is awaited.
+      const previewOf = (kg: string) => page.waitForResponse((response) =>
+        PLAN_PREVIEW_RE.test(response.url()) && response.request().method() === 'POST'
+          && (response.request().postDataJSON() as { inputs: Array<{ plannedKg: string }> }).inputs[0]?.plannedKg === kg)
+      const firstPreview = previewOf('1000')
+      const candidate = await openPlanForm(page, roll)
+      const response = await firstPreview
+      expect(response.status()).toBe(200)
+      expect(response.request().headers()['idempotency-key']).toBeUndefined()
+      const preview = (await response.json()) as Record<string, unknown>
+      expect(preview).toMatchObject({
+        calculatorVersion: 'GDC-PLAN-CALC/1',
+        workCenterId: env.seed.workCenterId,
+        plannedRollCount: 1,
+        plannedInputKg: '1000',
+        target: null,
+        hasRefusal: false,
+      })
+      // OPEN-007: no density, speed or width is decided or wired, so the engine names them; nothing is defaulted.
+      const missing = preview.missingParameters as string[]
+      expect(missing).toContain('densityKgPerCubicMetre')
+
+      const panel = page.getByTestId('plan-preview')
+      await expect(panel.getByText(/Önizleme güncel/)).toBeVisible()
+      await expect(panel.getByText('1000 kg', { exact: true })).toBeVisible()
+      await expect(panel.getByRole('list', { name: 'Eksik parametreler' })).toContainText('densityKgPerCubicMetre')
+      await expect(panel).toContainText('varsayılan değer kullanmaz')
+
+      // AT-062: an invalid content is refused with its reason and field; the earlier answer is not shown as current.
+      const kg = page.getByRole('textbox', { name: `${roll.labelCode} planlanan kg` })
+      const refusedPreview = previewOf('1000.0001')
+      await kg.fill('1000.0001')
+      const refused = await refusedPreview
+      expect(refused.status()).toBe(422)
+      expect((await refused.json()) as Record<string, unknown>).toMatchObject({
+        code: 'manufacturing_mass_scale_exceeded',
+        field: 'inputs.plannedKg',
+      })
+      await expect(panel.getByRole('alert')).toContainText('manufacturing_mass_scale_exceeded')
+      await expect(panel.getByText(/Güncel değil/)).toBeVisible()
+      await expect(panel.getByText(/Önizleme güncel/)).toHaveCount(0)
+
+      // A preview is not a record: no plan appeared.
+      expect(await newestPlan()).toBe(newestBefore)
+
+      // Back to the valid content, then save: the server's calculation of the saved content is the preview.
+      const againPreview = previewOf('1000')
+      await kg.fill('1000')
+      expect((await againPreview).status()).toBe(200)
+      await expect(panel.getByText(/Önizleme güncel/)).toBeVisible()
+      const sentPlan = page.waitForRequest((request) => PLAN_POST_RE.test(request.url()) && request.method() === 'POST')
+      await page.getByRole('button', { name: 'Taslak planı kaydet', exact: true }).click()
+      const body = (await sentPlan).postDataJSON() as {
+        planId: string
+        workCenterId: string
+        inputs: Array<{ parentRollId: string; plannedKg: string; expectedLabelVersion: string }>
+        target: null
+      }
+      await expect(page.getByRole('heading', { name: 'Taslak plan kaydedildi' })).toBeVisible()
+      expect(body.inputs).toEqual([{ parentRollId: candidate.labelId, plannedKg: '1000', expectedLabelVersion: candidate.labelVersion }])
+      const stored = await readPlan(api, body.planId)
+      expect(stored.response.status()).toBe(200)
+      const storedBody = stored.body as { workCenterId: string; inputs: Array<{ parentRollId: string; plannedKg: string }>; target: null }
+      expect(storedBody.inputs).toEqual([{ parentRollId: candidate.labelId, plannedKg: '1000' }])
+      const ofSaved = await api.post('/api/v1/manufacturing/plans/preview', {
+        data: {
+          workCenterId: storedBody.workCenterId,
+          inputs: storedBody.inputs.map((input) => ({ ...input, expectedLabelVersion: candidate.labelVersion })),
+          target: storedBody.target,
+        },
+      })
+      expect(ofSaved.status()).toBe(200)
+      expect(await ofSaved.json()).toEqual(preview)
+    } finally {
+      await api.dispose()
+    }
+
+    // The preview is the plan save's grant: a reader is refused and learns nothing.
+    const reader = await apiAs(env, env.seed.readerActor)
+    try {
+      const denied = await reader.post('/api/v1/manufacturing/plans/preview', {
+        data: { workCenterId: env.seed.workCenterId, inputs: [], target: null },
+      })
+      expect(denied.status()).toBe(403)
+    } finally {
+      await reader.dispose()
     }
     expectEveryAnswerRewritten(answered, rewritten)
   })

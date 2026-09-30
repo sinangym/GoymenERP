@@ -58,6 +58,11 @@ function candidate(labelId = ROLL_1, overrides: Record<string, unknown> = {}) {
   }
 }
 
+/** The plan SAVES only: the live preview (AT-061) posts to `/plans/preview`, which is not a save. */
+function saveRequests(recorded: ReturnType<typeof installFetch>) {
+  return requestsFor(recorded, '/manufacturing/plans', 'POST').filter((request) => request.url.endsWith('/manufacturing/plans'))
+}
+
 function canonicalDecimal(value: string): string {
   return value.includes('.') ? value.replace(/0+$/, '').replace(/\.$/, '') : value
 }
@@ -66,6 +71,7 @@ function installPlanApi(options: {
   readonly failFirstSave?: boolean
   readonly refuseFirstSave?: boolean
   readonly candidates?: () => unknown
+  readonly preview?: (body: Record<string, unknown>) => Response | Promise<Response>
 } = {}) {
   let saves = 0
   let stored: Record<string, unknown> | null = null
@@ -86,6 +92,9 @@ function installPlanApi(options: {
           ],
           searchWindowFull: false,
         })
+      }
+      if (url.endsWith('/manufacturing/plans/preview') && init?.method === 'POST') {
+        return options.preview?.(JSON.parse(init.body as string) as Record<string, unknown>)
       }
       if (url.endsWith('/manufacturing/plans') && init?.method === 'POST') {
         saves += 1
@@ -148,7 +157,7 @@ describe('plan create and reopen', () => {
     await user.click(screen.getByRole('button', { name: 'Taslak planı kaydet' }))
     const reopen = await screen.findByRole('link', { name: 'Formu kapat ve planı yeniden aç' })
 
-    const save = requestsFor(recorded, '/manufacturing/plans', 'POST')[0]
+    const save = saveRequests(recorded)[0]
     expect(save.headers).toMatchObject({ 'X-Company-Id': COMPANY_A })
     expect(save.headers['Idempotency-Key']).toMatch(/^[0-9a-f-]{36}$/i)
     expect(save.body).toMatchObject({
@@ -176,7 +185,7 @@ describe('plan create and reopen', () => {
     await user.click(retry)
     await screen.findByText('Taslak plan kaydedildi')
 
-    const [first, second] = requestsFor(recorded, '/manufacturing/plans', 'POST')
+    const [first, second] = saveRequests(recorded)
     expect(second.body).toEqual(first.body)
     expect(second.headers['Idempotency-Key']).toBe(first.headers['Idempotency-Key'])
   })
@@ -192,7 +201,7 @@ describe('plan create and reopen', () => {
     await user.click(screen.getByRole('button', { name: 'Taslak planı kaydet' }))
     await screen.findByText('Taslak plan kaydedildi')
 
-    const [first, second] = requestsFor(recorded, '/manufacturing/plans', 'POST')
+    const [first, second] = saveRequests(recorded)
     expect(second.headers['Idempotency-Key']).not.toBe(first.headers['Idempotency-Key'])
     expect((second.body as { planId: string }).planId).not.toBe((first.body as { planId: string }).planId)
   })
@@ -217,7 +226,7 @@ describe('plan create and reopen', () => {
     await user.type(screen.getByLabelText('LBL-0007 planlanan kg'), '400')
     await user.click(screen.getByRole('button', { name: 'Taslak planı kaydet' }))
     await screen.findByText('Taslak plan kaydedildi')
-    expect(requestsFor(recorded, '/manufacturing/plans', 'POST')[0].body).toMatchObject({
+    expect(saveRequests(recorded)[0].body).toMatchObject({
       workCenterId: WORK_CENTER,
       inputs: [{ parentRollId: ROLL_1, plannedKg: '400', expectedLabelVersion: '7' }],
       target: null,
@@ -253,5 +262,125 @@ describe('plan create and reopen', () => {
     renderAt('/uretim/plan/yeni')
     await waitFor(() => expect(document.querySelector('[data-state="not-found"]')).not.toBeNull())
     expect(screen.queryByRole('heading', { name: 'Yeni taslak plan' })).toBeNull()
+  })
+})
+
+/** The server's preview for the sent content: nothing known from outside, so the engine names what is missing. */
+function previewAnswer(body: Record<string, unknown>) {
+  const inputs = body.inputs as Array<{ parentRollId: string; plannedKg: string }>
+  const kg = canonicalDecimal(inputs[0].plannedKg)
+  return {
+    calculatorVersion: 'GDC-PLAN-CALC/1',
+    workCenterId: body.workCenterId,
+    process: 'Slitting',
+    plannedRollCount: inputs.length,
+    plannedInputKg: kg,
+    target: null,
+    answers: [],
+    rolls: inputs.map((input) => ({
+      parentRollId: input.parentRollId,
+      plannedKg: canonicalDecimal(input.plannedKg),
+      answers: [{
+        formula: 'SLT-010',
+        formulaVersion: 'GDC-SLT/1 (master v3 §28.4)',
+        outcome: 'Unavailable',
+        values: [],
+        missingParameters: ['densityKgPerCubicMetre', 'lineSpeedMetresPerMinute', 'parentWidthMm', 'thicknessMm'],
+        refusalCode: null,
+        refusedParameter: null,
+      }],
+    })),
+    missingParameters: ['densityKgPerCubicMetre', 'lineSpeedMetresPerMinute', 'parentWidthMm', 'thicknessMm'],
+    hasRefusal: false,
+  }
+}
+
+describe('AT-061 / AT-062: the live plan preview', () => {
+  it('shows the server preview of the typed content without a button, with every missing parameter named', async () => {
+    const user = userEvent.setup()
+    // The server's answer can be held, so "not current" is observed while the new content is still unanswered.
+    let held: Promise<void> | null = null
+    let release = () => {}
+    const recorded = installPlanApi({
+      preview: async (body) => {
+        if (held !== null) await held
+        return json(previewAnswer(body))
+      },
+    })
+    renderAt('/uretim/plan/yeni')
+    const panel = await screen.findByTestId('plan-preview')
+    expect(within(panel).getByText('İş merkezi seçilmedi.')).toBeTruthy()
+
+    await screen.findByRole('option', { name: 'SLT-01 — Dilme Hattı' })
+    await user.selectOptions(screen.getByLabelText('İş merkezi'), WORK_CENTER)
+    await user.click(screen.getByRole('button', { name: 'Ara' }))
+    await user.click(within(await screen.findByRole('row', { name: /LBL-0007/ })).getByRole('button', { name: 'Ekle' }))
+    await user.type(screen.getByLabelText('LBL-0007 planlanan kg'), '900.50')
+
+    expect(await within(panel).findByText(/Önizleme güncel/)).toBeTruthy()
+    const previews = requestsFor(recorded, '/manufacturing/plans/preview', 'POST')
+    // The last request carries the final content (the debounce itself is timed in usePlanPreview.test.ts).
+    expect(previews.at(-1)?.body).toEqual({
+      workCenterId: WORK_CENTER,
+      inputs: [{ parentRollId: ROLL_1, plannedKg: '900.50', expectedLabelVersion: '7' }],
+      target: null,
+    })
+    expect(previews.at(-1)?.headers['Idempotency-Key']).toBeUndefined()
+    expect(within(panel).getByText('Toplam planlanan girdi').nextSibling?.textContent).toBe('900.5 kg')
+    const missing = within(panel).getByRole('list', { name: 'Eksik parametreler' })
+    expect(within(missing).getByText(/Yoğunluk \(kg\/m³\)/)).toBeTruthy()
+    expect(within(missing).getByText(/Hat hızı \(m\/dk\)/)).toBeTruthy()
+    expect(within(panel).getByText(/varsayılan değer kullanmaz/)).toBeTruthy()
+    // The preview wrote nothing: no plan save happened.
+    expect(saveRequests(recorded)).toHaveLength(0)
+
+    // A change makes the shown answer "not current" at once, until the new content is answered.
+    held = new Promise<void>((resolve) => { release = resolve })
+    await user.type(screen.getByLabelText('LBL-0007 planlanan kg'), '1')
+    expect(within(panel).getByText(/Güncel değil/)).toBeTruthy()
+    expect(within(panel).queryByText(/Önizleme güncel/)).toBeNull()
+    held = null
+    release()
+    expect(await within(panel).findByText(/Önizleme güncel/)).toBeTruthy()
+    expect(within(panel).getByText('Toplam planlanan girdi').nextSibling?.textContent).toBe('900.501 kg')
+
+    // The save stores the same content the preview answered.
+    await user.click(screen.getByRole('button', { name: 'Taslak planı kaydet' }))
+    await screen.findByText('Taslak plan kaydedildi')
+    const answered = requestsFor(recorded, '/manufacturing/plans/preview', 'POST').at(-1)?.body as { inputs: unknown }
+    expect((saveRequests(recorded)[0].body as { inputs: unknown }).inputs).toEqual(answered.inputs)
+  })
+
+  it('a refused or failed preview says why, never shows the old answer as current, and never blocks the save', async () => {
+    const user = userEvent.setup()
+    let calls = 0
+    const recorded = installPlanApi({
+      preview: (body) => {
+        calls += 1
+        if (calls === 1) return json(previewAnswer(body))
+        return problem(422, { code: 'manufacturing_mass_scale_exceeded', field: 'inputs.plannedKg' })
+      },
+    })
+    renderAt('/uretim/plan/yeni')
+    const panel = await screen.findByTestId('plan-preview')
+    await screen.findByRole('option', { name: 'SLT-01 — Dilme Hattı' })
+    await user.selectOptions(screen.getByLabelText('İş merkezi'), WORK_CENTER)
+    await user.click(screen.getByRole('button', { name: 'Ara' }))
+    await user.click(within(await screen.findByRole('row', { name: /LBL-0007/ })).getByRole('button', { name: 'Ekle' }))
+    await user.type(screen.getByLabelText('LBL-0007 planlanan kg'), '10')
+    expect(await within(panel).findByText(/Önizleme güncel/)).toBeTruthy()
+
+    await user.type(screen.getByLabelText('LBL-0007 planlanan kg'), '.0001')
+    expect(await within(panel).findByText(/manufacturing_mass_scale_exceeded/)).toBeTruthy()
+    expect(within(panel).getByText(/Alan: inputs.plannedKg/)).toBeTruthy()
+    expect(within(panel).queryByText(/Önizleme güncel/)).toBeNull()
+    expect(within(panel).getByText(/Güncel değil/)).toBeTruthy()
+
+    // The save is not gated by the preview: it is sent and the server decides.
+    await user.clear(screen.getByLabelText('LBL-0007 planlanan kg'))
+    await user.type(screen.getByLabelText('LBL-0007 planlanan kg'), '12')
+    await user.click(screen.getByRole('button', { name: 'Taslak planı kaydet' }))
+    await screen.findByText('Taslak plan kaydedildi')
+    expect(saveRequests(recorded)).toHaveLength(1)
   })
 })
