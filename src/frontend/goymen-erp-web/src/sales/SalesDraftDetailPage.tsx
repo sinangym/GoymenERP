@@ -197,11 +197,14 @@ export function SalesDraftDetailPage() {
         ) : null
       }
       remainderChanges={
-        companyId === null ? null : (
+        namespace === null || companyId === null || shell.activeContext === null ? null : (
           <SalesDraftRemainderChangePanel
             key={`remainder:${namespace ?? ''}:${outcome.data.draft.id}:${outcome.data.draft.version}`}
             detail={outcome.data}
             companyId={companyId}
+            namespace={namespace}
+            actorId={shell.activeContext.userId}
+            routeEntryGeneration={shell.routeEntryGeneration}
             canRequest={hasCapability(shell, SALES_QUANTITY_WRITE_CAPABILITY)}
             canDecide={hasCapability(shell, SALES_CAPABILITY.ordersApprove)}
             onRecorded={() => void queryClient.invalidateQueries({ queryKey })}

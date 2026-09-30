@@ -5,13 +5,28 @@ import detailRaw from './examples/detail-response.json?raw'
 import { decodeDraftDetail, type DraftDetail } from './contract'
 import { SalesDraftRemainderChangePanel } from './SalesDraftRemainderChangePanel'
 
-const DRAFT = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+const authBoundary = vi.hoisted(() => ({ capture: vi.fn(() => ({})), report: vi.fn() }))
+vi.mock('../shell/useAuthBoundary', () => ({ useAuthBoundary: () => authBoundary }))
 
-function detail(): DraftDetail {
+function approvedBody(version = '4'): Record<string, any> {
   const body = JSON.parse(detailRaw) as Record<string, any>
   body.draft.approvalState = 'Approved'
-  body.draft.version = '4'
-  const decoded = decodeDraftDetail(body, DRAFT)
+  body.draft.version = version
+  body.approval = {
+    submittedBy: 'sales-preparer',
+    submittedAtUtc: '2026-09-19T09:00:00Z',
+    decidedBy: 'sales-approver',
+    decidedAtUtc: '2026-09-19T09:05:00Z',
+    rejectionReason: null,
+  }
+  body.lines[0].quantity = '5'
+  body.lines[0].requestedDeliverySlices = null
+  return body
+}
+
+function detail(): DraftDetail {
+  const body = approvedBody()
+  const decoded = decodeDraftDetail(body, body.draft.id as string)
   if (decoded === null) throw new Error('fixture must decode')
   return decoded
 }
@@ -33,17 +48,18 @@ describe('S-04 partial-delivery remainder panel', () => {
       if (method === 'GET') return new Response(JSON.stringify(remainderRead(current.lines[0].lineId, current.lines[0].orderUnitId)), { status: 200 })
       const headers = init?.headers as Record<string, string>
       calls.push({ method, key: headers['Idempotency-Key'] ?? null, body: JSON.parse(String(init?.body)) })
-      return new Response(JSON.stringify({ detail: JSON.parse(detailRaw), isReplay: false, originalCorrelationId: 'c-1' }), {
+      return new Response(JSON.stringify({ detail: approvedBody('5'), isReplay: false, originalCorrelationId: 'c-1' }), {
         status: 200, headers: { 'Content-Type': 'application/json' },
       })
     }))
     const recorded = vi.fn()
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(<QueryClientProvider client={client}><SalesDraftRemainderChangePanel detail={current} companyId={current.draft.companyId}
+      namespace="test-company" actorId="actor-a" routeEntryGeneration={1}
       canRequest canDecide={false} onRecorded={recorded} /></QueryClientProvider>)
 
     const panel = await screen.findByTestId('sales-remainder-changes')
-    expect(within(panel).getByText(/Yüklenen: 2/)).toBeTruthy()
+    expect(await within(panel).findByText(/Yüklenen: 2/)).toBeTruthy()
     fireEvent.change(within(panel).getByLabelText('İşlem'), { target: { value: 'Revise' } })
     fireEvent.change(within(panel).getByLabelText('Yeni sipariş miktarı'), { target: { value: '3' } })
     fireEvent.change(within(panel).getByLabelText('Gerekçe'), { target: { value: 'SENTETIK müşteri kalan miktarı düşürdü' } })
