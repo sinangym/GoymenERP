@@ -56,6 +56,10 @@ function rememberContract(namespace: string) {
 
 function Harness({ onReauthorize }: { readonly onReauthorize: () => void }) {
   const [shell, dispatch] = useReducer(shellReducer, ready)
+  const activeKey = contextKey(shell)
+  const activeNamespace = activeKey === null || shell.activeContext?.capabilityGeneration === null
+    ? null
+    : contextKeyString(activeKey)
   useEffect(() => {
     if (shell.activeContext?.capabilityGeneration !== null) return
     dispatch({
@@ -66,9 +70,13 @@ function Harness({ onReauthorize }: { readonly onReauthorize: () => void }) {
     })
   }, [shell.activeContext?.capabilityGeneration, shell.routeEntryGeneration])
 
-  const key = contextKey(shell)
-  if (key === null || shell.activeContext?.capabilityGeneration === null) return <p>Yetki yeniden doğrulanıyor</p>
-  const namespace = contextKeyString(key)
+  useEffect(() => {
+    if (activeNamespace === null) return
+    rememberContract(activeNamespace)
+  }, [activeNamespace])
+
+  if (activeNamespace === null) return <p>Yetki yeniden doğrulanıyor</p>
+  const namespace = activeNamespace
   return (
     <ShellStateContext.Provider value={shell}>
       <ShellDispatchContext.Provider value={dispatch}>
@@ -240,12 +248,6 @@ describe('Cari tax identity pending attempt across the real shell boundary', () 
   it('keeps the original key and body after a retry 403 re-fences and remounts the detail', async () => {
     vi.stubGlobal('navigator', { onLine: true })
     rememberContract(namespaceOf(ready))
-    const reverified: ShellState = {
-      ...ready,
-      activeContext: companyContext('generation-2'),
-    }
-    rememberContract(namespaceOf(reverified))
-    rememberContract(namespaceOf({ ...ready, activeContext: companyContext('generation-3') }))
 
     const calls: Array<{ method: string; headers: Record<string, string>; body: unknown }> = []
     let putCount = 0

@@ -143,7 +143,8 @@ function TaxIdentityPanelHarness() {
 const puts = (calls: readonly Call[]) => calls.filter((call) => call.method === 'PUT')
 
 beforeEach(() => {
-  authBoundary.capture.mockClear()
+  authBoundary.capture.mockReset()
+  authBoundary.capture.mockImplementation(() => authBoundary.snapshot)
   authBoundary.report.mockClear()
   vi.stubGlobal('navigator', { onLine: true })
   resetContractReadiness()
@@ -354,12 +355,22 @@ describe('AT-009 VKN/TCKN on the Cari card', () => {
   })
 
   it('reports a denied tax read through the shell boundary with the snapshot captured before the request', async () => {
-    install(() => json({ code: 'forbidden', status: 403 }, 403, false))
+    const captured: Array<typeof authBoundary.snapshot> = []
+    authBoundary.capture.mockImplementation(() => {
+      const snapshot = { ...authBoundary.snapshot, requestFenceGeneration: captured.length + 1 }
+      captured.push(snapshot)
+      return snapshot
+    })
+    let snapshotAtRequest: typeof authBoundary.snapshot | undefined
+    install(() => {
+      snapshotAtRequest = captured.at(-1)
+      return json({ code: 'forbidden', status: 403 }, 403, false)
+    })
     renderPanel()
     const panel = await screen.findByTestId('cari-tax-identity')
     await waitFor(() => expect(panel.getAttribute('data-state')).toBe('error'))
-    expect(authBoundary.capture).toHaveBeenCalledTimes(1)
-    expect(authBoundary.report).toHaveBeenCalledWith(403, authBoundary.snapshot)
+    expect(snapshotAtRequest).toBeDefined()
+    expect(authBoundary.report).toHaveBeenCalledWith(403, snapshotAtRequest)
   })
 
   it('offers no form to a reader without the grant', async () => {
