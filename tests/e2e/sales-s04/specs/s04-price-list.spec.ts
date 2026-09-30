@@ -56,8 +56,8 @@ async function capabilitiesOf(request: APIRequestContext, actor: string): Promis
 
 test('S04-PL-01 a price list is created, saved, closed, reopened and published on U-05', async ({ page, request }) => {
   expect(await capabilitiesOf(request, preparerActor)).toEqual(expect.arrayContaining([
-    'product.price-lists.list', 'product.price-lists.create', 'product.price-lists.detail', 'product.price-lists.edit',
-    'product.price-lists.publish',
+    'price-lists.list', 'price-lists.create', 'price-lists.detail', 'price-lists.edit',
+    'price-lists.publish',
   ]))
 
   await page.setExtraHTTPHeaders({ 'X-Development-User': preparerActor })
