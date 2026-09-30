@@ -84,6 +84,36 @@ public sealed class DocumentServiceTests
     }
 
     [Fact]
+    public async Task A_grant_revoked_at_the_store_fence_writes_no_metadata()
+    {
+        var world = World();
+        var a = new Harness(CompanyA, new FixedScanner(DocumentScanVerdictV1.Clean), world: world).Grant(Upload);
+        a.Store.BeforeWrite = a.Authority.Grants.Clear;
+
+        await Refused(403, a.Service.UploadAsync(Harness.Upload(Party, Pdf), Meta()));
+
+        Assert.Empty(world.Documents);
+        Assert.Empty(world.Attempts);
+        Assert.Empty(world.Envelopes);
+        Assert.Single(world.Objects.Objects);
+    }
+
+    [Fact]
+    public async Task Owner_visibility_lost_at_the_store_fence_writes_no_metadata()
+    {
+        var world = World();
+        var a = new Harness(CompanyA, new FixedScanner(DocumentScanVerdictV1.Clean), world: world).Grant(Upload);
+        a.Store.BeforeWrite = world.Readable.Clear;
+
+        await Refused(404, a.Service.UploadAsync(Harness.Upload(Party, Pdf), Meta()));
+
+        Assert.Empty(world.Documents);
+        Assert.Empty(world.Attempts);
+        Assert.Empty(world.Envelopes);
+        Assert.Single(world.Objects.Objects);
+    }
+
+    [Fact]
     public async Task Another_companys_document_is_not_found_by_id_and_absent_from_its_list()
     {
         var world = World();
@@ -218,6 +248,38 @@ public sealed class DocumentServiceTests
         var otherActor = new Harness(CompanyA, new FixedScanner(DocumentScanVerdictV1.Clean), actor: "SENTETIK-other", world: world).Grant(Upload);
         await Refused(409, otherActor.Service.UploadAsync(Harness.Upload(Party, Pdf), otherActor.Metadata("k-same")));
         Assert.Single(world.Documents);
+    }
+
+    [Fact]
+    public async Task A_stored_replay_rechecks_upload_authority_and_owner_before_disclosure()
+    {
+        var world = World();
+        var writer = new Harness(CompanyA, new FixedScanner(DocumentScanVerdictV1.Clean), world: world).Grant(Upload);
+        await writer.Service.UploadAsync(Harness.Upload(Party, Pdf), writer.Metadata("k-replay-fence"));
+
+        var revoked = new Harness(CompanyA, new FixedScanner(DocumentScanVerdictV1.Clean), world: world).Grant(Upload);
+        revoked.Authority.OnMeasure = () =>
+        {
+            if (revoked.Authority.Measurements == 2)
+            {
+                revoked.Authority.Grants.Clear();
+            }
+        };
+        await Refused(403, revoked.Service.UploadAsync(Harness.Upload(Party, Pdf), revoked.Metadata("k-replay-fence")));
+
+        world.Readable.Clear();
+        var hidden = new Harness(CompanyA, new FixedScanner(DocumentScanVerdictV1.Clean), world: world).Grant(Upload);
+        await Refused(404, hidden.Service.UploadAsync(Harness.Upload(Party, Pdf), hidden.Metadata("k-replay-fence")));
+
+        world.Readable.Add((CompanyA, Party));
+        var hiddenDuringDuplicateRead = new Harness(CompanyA, new FixedScanner(DocumentScanVerdictV1.Clean), world: world).Grant(Upload);
+        hiddenDuringDuplicateRead.Store.BeforeFindByContent = world.Readable.Clear;
+        await Refused(404, hiddenDuringDuplicateRead.Service.UploadAsync(
+            Harness.Upload(Party, Pdf), hiddenDuringDuplicateRead.Metadata("k-replay-fence")));
+
+        Assert.Single(world.Documents);
+        Assert.Single(world.Attempts);
+        Assert.Single(world.Objects.Objects);
     }
 
     [Fact]
