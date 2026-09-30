@@ -40,9 +40,10 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
     }
 
     public async Task<DocumentStoreResult> StoreUploadAsync(DocumentWriteEnvelope envelope, string requestHash, NewDocumentUpload upload,
-        CancellationToken cancellationToken = default)
+        Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(upload);
+        ArgumentNullException.ThrowIfNull(beforeWrite);
         RequireEnvelope(envelope);
         RequireHash(requestHash);
         var companyId = RequireResolvedCompany();
@@ -56,7 +57,9 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
             var attempt = await FindAttemptAsync(DocumentCommands.UploadV1, keyHash, cancellationToken);
             if (attempt is not null)
             {
-                return await ReplayAsync(attempt, envelope, requestHash, cancellationToken);
+                var replay = await ReplayAsync(attempt, envelope, requestHash, cancellationToken);
+                await beforeWrite(cancellationToken);
+                return replay;
             }
 
             if (await dbContext.Documents.AsNoTracking().AnyAsync(row => row.Id == upload.DocumentId, cancellationToken))
@@ -65,6 +68,16 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
             }
 
             var blob = await dbContext.Blobs.AsNoTracking().SingleOrDefaultAsync(row => row.Sha256 == upload.Sha256, cancellationToken);
+            if (blob is not null && (blob.SizeBytes != upload.SizeBytes || blob.ContentKind != (int)upload.Kind.Kind
+                     || !string.Equals(blob.ObjectKey, upload.ObjectKey, StringComparison.Ordinal))
+            )
+            {
+                // The same SHA-256 with other facts is not the same content: nothing is linked to it.
+                throw new InvalidOperationException("Aynı içerik özetine kayıtlı içerik bu yüklemeyle uyuşmuyor.");
+            }
+
+            var earlierVersions = await dbContext.Versions.AsNoTracking().CountAsync(row => row.Sha256 == upload.Sha256, cancellationToken);
+            await beforeWrite(cancellationToken);
             if (blob is null)
             {
                 dbContext.Blobs.Add(new ContentBlobRow
@@ -78,14 +91,7 @@ public sealed class DocumentsStore(DocumentsDbContext dbContext, ICompanyContext
                     FirstStoredAtUtc = upload.UploadedAtUtc,
                 });
             }
-            else if (blob.SizeBytes != upload.SizeBytes || blob.ContentKind != (int)upload.Kind.Kind
-                     || !string.Equals(blob.ObjectKey, upload.ObjectKey, StringComparison.Ordinal))
-            {
-                // The same SHA-256 with other facts is not the same content: nothing is linked to it.
-                throw new InvalidOperationException("Aynı içerik özetine kayıtlı içerik bu yüklemeyle uyuşmuyor.");
-            }
 
-            var earlierVersions = await dbContext.Versions.AsNoTracking().CountAsync(row => row.Sha256 == upload.Sha256, cancellationToken);
             dbContext.Documents.Add(new DocumentRow
             {
                 Id = upload.DocumentId,
