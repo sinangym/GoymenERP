@@ -13,6 +13,7 @@ import {
 } from './remainderChange'
 import { StateBlock } from '../shell/StateBlock'
 import { classifyOutcome } from '../shell/uiState'
+import { useAuthBoundary } from '../shell/useAuthBoundary'
 import styles from './SalesPages.module.css'
 
 const TEXT = {
@@ -26,6 +27,7 @@ const TEXT = {
   retry: 'Aynı işlemi tekrar dene', submitting: 'İşlem kaydediliyor…', completed: 'İşlem kaydedildi; güncel sipariş yeniden okunuyor.',
   unknown: 'Sonuç alınamadı; kayıt yapılmış olabilir. Aynı anahtarla tekrar deneyin.',
   failed: 'İşlem uygulanmadı.', invalid: 'Satır, miktar ve gerekçeyi kontrol edin.',
+  authorityLost: 'Bu işlem için güncel yetki bulunmuyor; kayıt gönderilmedi.',
   stateUnavailable: 'Yalnız onaylı ve iptal edilmemiş siparişin kısmi teslimat kalanı değiştirilebilir.',
 } as const
 
@@ -34,14 +36,18 @@ type PendingAction =
   | { readonly kind: 'approval' | 'rejection'; readonly key: string; readonly changeNo: number; readonly payload: RemainderDecisionRequest }
 
 export function SalesDraftRemainderChangePanel({
-  detail, companyId, canRequest, canDecide, onRecorded,
+  detail, companyId, namespace, actorId, routeEntryGeneration, canRequest, canDecide, onRecorded,
 }: {
   readonly detail: DraftDetail
   readonly companyId: string
+  readonly namespace: string
+  readonly actorId: string
+  readonly routeEntryGeneration: number
   readonly canRequest: boolean
   readonly canDecide: boolean
   readonly onRecorded: () => void
 }) {
+  const boundary = useAuthBoundary()
   const headingId = useId()
   const [lineId, setLineId] = useState(detail.lines[0]?.lineId ?? '')
   const [kind, setKind] = useState<(typeof REMAINDER_KIND)[keyof typeof REMAINDER_KIND]>(REMAINDER_KIND.cancel)
@@ -52,8 +58,13 @@ export function SalesDraftRemainderChangePanel({
   const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const query = useQuery({
-    queryKey: ['sales-remainder-changes', companyId, detail.draft.id, detail.draft.version],
-    queryFn: ({ signal }) => fetchDraftRemainderChanges(detail, companyId, signal),
+    queryKey: [namespace, actorId, routeEntryGeneration, 'sales-remainder-changes', companyId, detail.draft.id, detail.draft.version],
+    queryFn: async ({ signal }) => {
+      const snapshot = boundary.capture()
+      const outcome = await fetchDraftRemainderChanges(detail, companyId, signal)
+      if (outcome.type === 'http') boundary.report(outcome.status, snapshot)
+      return outcome
+    },
     staleTime: 0, gcTime: 0, retry: false, refetchOnWindowFocus: false,
   })
   const changes = query.data?.type === 'ok-single' ? query.data.data : null
@@ -62,12 +73,19 @@ export function SalesDraftRemainderChangePanel({
     && changes?.floorStatus === REMAINDER_FLOOR.readable && selected?.remainder !== LINE_REMAINDER.cancelled
 
   async function execute(action: PendingAction) {
+    const permitted = action.kind === 'request' ? canRequest : canDecide
+    if (!permitted) {
+      setNotice(TEXT.authorityLost)
+      return
+    }
     setBusy(true)
     setNotice(TEXT.submitting)
+    const snapshot = boundary.capture()
     const context = { idempotencyKey: action.key, companyId, draftId: detail.draft.id }
     const outcome = action.kind === 'request'
       ? await sendRemainderChangeRequest(action.payload, context)
       : await sendRemainderChangeDecision(action.changeNo, action.kind, action.payload, context)
+    if (outcome.type === 'http') boundary.report(outcome.status, snapshot)
     finish(action, outcome)
   }
 
@@ -140,7 +158,9 @@ export function SalesDraftRemainderChangePanel({
               {!stateAllowsRequest ? <p className={styles.muted}>{TEXT.stateUnavailable}</p> : null}
             </div>
           ) : null}
-          {pending !== null && !busy ? <button type="button" className={styles.secondaryButton} onClick={() => void execute(pending)}>{TEXT.retry}</button> : null}
+          {pending !== null && !busy ? <button type="button" className={styles.secondaryButton}
+            disabled={pending.kind === 'request' ? !canRequest : !canDecide}
+            onClick={() => void execute(pending)}>{TEXT.retry}</button> : null}
           {(changes?.items.length ?? 0) === 0 ? <p>{TEXT.empty}</p> : changes?.items.map((item) => (
             <article key={item.changeNo} className={styles.line} data-testid={`sales-remainder-change-${item.changeNo}`}>
               <h3>{item.changeNo}. değişiklik · {item.kind === REMAINDER_KIND.cancel ? TEXT.cancel : TEXT.revise}</h3>
