@@ -19,15 +19,19 @@ namespace GoymenERP.Modules.Documents.Infrastructure;
 /// interceptor through <paramref name="configureDbContext"/>, as for every module, and registers the owner-declared
 /// link ports (<see cref="IDocumentOwnerLinkPortV1"/>; the Cari party first). Storage and scanning are fail-closed:
 /// <list type="bullet">
-/// <item><b>Object store</b>: the local file-system store only where the host allows development storage
-/// (<paramref name="allowDevelopmentStorageAndScanner"/>, Development/Testing), under
-/// <c>Documents:ObjectStore:RootPath</c> or a temp-directory default. Elsewhere no store is registered and uploads and
-/// downloads answer 503 until the S3-compatible adapter (provider/bucket/credentials undecided) is registered.</item>
-/// <item><b>Scanner</b>: only the development EICAR-signature stand-in, and only where development storage is allowed
-/// (<c>Documents:Scanner:Mode</c> = <c>DevelopmentSignature</c>, the default there; <c>None</c> turns it off). Without a
-/// scanner every version is stored NotScanned and is never downloadable (DEC-DOC-009 fail-closed).</item>
-/// <item><b>Size bound</b>: <c>Documents:MaximumUploadBytes</c>, else ASSUMPTION-DOC-1 (20 MiB; OPEN-015).</item>
+/// <item><b>Production</b> (the host does not allow development storage): the server-directory store
+/// (<see cref="ServerDirectoryDocumentObjectStore"/>, <c>Documents:ObjectStore:RootPath</c> — the company's own disk/NAS,
+/// no cloud) and the Windows Defender scanner (<see cref="WindowsDefenderDocumentScanner"/>,
+/// <c>Documents:Scanner:Defender:ExecutablePath</c>) are registered only TOGETHER and only when both are configured;
+/// neither configured → nothing is registered and uploads and downloads answer 503; one without the other, the
+/// development scanner, an invalid root or MpCmdRun path, or a non-Windows host → startup fails.</item>
+/// <item><b>Development/Testing</b> (<paramref name="allowDevelopmentStorageAndScanner"/>): the local file-system
+/// stand-in store under <c>Documents:ObjectStore:RootPath</c> or a temp-directory default, and the EICAR-only scanner
+/// (<c>Documents:Scanner:Mode</c> = <c>DevelopmentSignature</c>, the default there; <c>None</c> turns it off;
+/// <c>WindowsDefender</c> uses the real adapter).</item>
+/// <item><b>Size bound</b>: <c>Documents:MaximumUploadBytes</c>, else 20 MiB (user decision 2026-09-30).</item>
 /// </list>
+/// Nothing registered here deletes a document object (legal retention 10 years; archive/legal hold later).
 /// </summary>
 public static class DocumentsModuleExtensions
 {
@@ -36,6 +40,11 @@ public static class DocumentsModuleExtensions
     public const string MaximumUploadBytesKey = "Documents:MaximumUploadBytes";
     public const string DevelopmentScannerMode = "DevelopmentSignature";
     public const string NoScannerMode = "None";
+    public const string WindowsDefenderScannerMode = "WindowsDefender";
+    public const string DefenderExecutablePathKey = "Documents:Scanner:Defender:ExecutablePath";
+    public const string DefenderTimeoutSecondsKey = "Documents:Scanner:Defender:TimeoutSeconds";
+    public const string DefenderQuarantinePathKey = "Documents:Scanner:Defender:QuarantinePath";
+    public const string DefenderMaximumConcurrentScansKey = "Documents:Scanner:Defender:MaximumConcurrentScans";
 
     public static IServiceCollection AddDocumentsModule(this IServiceCollection services, IConfiguration configuration,
         Action<IServiceProvider, DbContextOptionsBuilder>? configureDbContext = null, bool allowDevelopmentStorageAndScanner = false)
@@ -66,12 +75,7 @@ public static class DocumentsModuleExtensions
         var scannerMode = configuration[ScannerModeKey];
         if (!allowDevelopmentStorageAndScanner)
         {
-            if (!string.IsNullOrWhiteSpace(configuration[ObjectStoreRootPathKey])
-                || (!string.IsNullOrWhiteSpace(scannerMode) && !string.Equals(scannerMode, NoScannerMode, StringComparison.Ordinal)))
-            {
-                throw new InvalidOperationException(
-                    "Geliştirme belge deposu ve tarayıcısı yalnız Development/Testing ortamında etkinleştirilebilir.");
-            }
+            RegisterProductionStorageAndScanner(services, configuration, scannerMode);
         }
         else
         {
@@ -83,6 +87,10 @@ public static class DocumentsModuleExtensions
             if (string.IsNullOrWhiteSpace(scannerMode) || string.Equals(scannerMode, DevelopmentScannerMode, StringComparison.Ordinal))
             {
                 services.TryAddSingleton<IDocumentContentScannerV1, DevelopmentSignatureScanner>();
+            }
+            else if (string.Equals(scannerMode, WindowsDefenderScannerMode, StringComparison.Ordinal))
+            {
+                services.TryAddSingleton<IDocumentContentScannerV1>(CreateDefenderScanner(configuration));
             }
             else if (!string.Equals(scannerMode, NoScannerMode, StringComparison.Ordinal))
             {
@@ -106,6 +114,75 @@ public static class DocumentsModuleExtensions
         serviceProvider.GetService<IDocumentContentScannerV1>(),
         serviceProvider.GetRequiredService<DocumentsServiceBindings>(),
         serviceProvider.GetRequiredService<TimeProvider>());
+
+    // Production: the company's own server directory and Windows Defender, both or neither (fail-closed either way).
+    private static void RegisterProductionStorageAndScanner(IServiceCollection services, IConfiguration configuration, string? scannerMode)
+    {
+        var defenderMode = string.Equals(scannerMode, WindowsDefenderScannerMode, StringComparison.Ordinal);
+        var noScannerMode = string.Equals(scannerMode, NoScannerMode, StringComparison.Ordinal);
+        if (!string.IsNullOrWhiteSpace(scannerMode) && !defenderMode && !noScannerMode)
+        {
+            throw new InvalidOperationException(
+                $"Üretimde belge tarayıcısı yalnız {WindowsDefenderScannerMode} olabilir; geliştirme tarayıcısı yalnız Development/Testing ortamındadır.");
+        }
+
+        var root = configuration[ObjectStoreRootPathKey];
+        var rootConfigured = !string.IsNullOrWhiteSpace(root);
+        var defenderConfigured = !string.IsNullOrWhiteSpace(configuration[DefenderExecutablePathKey]);
+        if (!rootConfigured && !defenderConfigured && !defenderMode)
+        {
+            // Not configured: no store, no scanner — uploads and downloads answer 503.
+            return;
+        }
+
+        if (!rootConfigured || !defenderConfigured || noScannerMode)
+        {
+            throw new InvalidOperationException(
+                $"Üretimde belge deposu ({ObjectStoreRootPathKey}) ve Windows Defender taraması ({DefenderExecutablePathKey}) birlikte yapılandırılmalıdır.");
+        }
+
+        var scanner = CreateDefenderScanner(configuration);
+        var store = ServerDirectoryDocumentObjectStore.Open(root!);
+        services.TryAddSingleton<IDocumentObjectStoreV1>(store);
+        services.TryAddSingleton<IDocumentContentScannerV1>(scanner);
+    }
+
+    private static WindowsDefenderDocumentScanner CreateDefenderScanner(IConfiguration configuration)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            throw new InvalidOperationException("Windows Defender taraması yalnız Windows sunucuda çalışır.");
+        }
+
+        var executablePath = configuration[DefenderExecutablePathKey];
+        if (string.IsNullOrWhiteSpace(executablePath))
+        {
+            throw new InvalidOperationException($"{DefenderExecutablePathKey} (MpCmdRun.exe tam yolu) tanımlanmalıdır.");
+        }
+
+        var quarantine = configuration[DefenderQuarantinePathKey];
+        var timeoutSeconds = ReadPositive(configuration, DefenderTimeoutSecondsKey, (long)WindowsDefenderScannerOptions.DefaultTimeout.TotalSeconds);
+        var concurrency = ReadPositive(configuration, DefenderMaximumConcurrentScansKey, WindowsDefenderScannerOptions.DefaultMaximumConcurrentScans);
+        var options = new WindowsDefenderScannerOptions(
+            executablePath,
+            TimeSpan.FromSeconds(Math.Min(timeoutSeconds, (long)TimeSpan.FromDays(1).TotalSeconds)),
+            string.IsNullOrWhiteSpace(quarantine) ? Path.Combine(Path.GetTempPath(), "goymen-erp-document-scan") : quarantine,
+            (int)Math.Min(concurrency, int.MaxValue));
+        return WindowsDefenderDocumentScanner.Create(options, new SystemDocumentScanProcessRunner());
+    }
+
+    private static long ReadPositive(IConfiguration configuration, string key, long fallback)
+    {
+        var text = configuration[key];
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return fallback;
+        }
+
+        return long.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out var value) && value > 0
+            ? value
+            : throw new InvalidOperationException($"{key} pozitif bir tam sayı olmalıdır.");
+    }
 
     private static DocumentsServiceBindings ReadBindings(IConfiguration configuration)
     {

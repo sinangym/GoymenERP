@@ -10,7 +10,8 @@ namespace GoymenERP.Modules.Documents.Infrastructure.Storage;
 /// <c>companies/{32 hex}/sha256/{64 hex}</c> shape and resolves strictly inside the root. A put writes a temporary file
 /// in the target directory and moves it into place WITHOUT overwrite; an existing object is kept when it holds the same
 /// bytes (its hash re-computed) and reported as unavailable when it does not. Nothing is ever deleted. Registered only
-/// where the host allows the development storage (Development/Testing); production needs the S3-compatible adapter.
+/// where the host allows the development storage (Development/Testing); production uses
+/// <see cref="ServerDirectoryDocumentObjectStore"/> (validated root, write-through, read-only objects, hash-checked reads).
 /// </summary>
 public sealed partial class FileSystemDocumentObjectStore : IDocumentObjectStoreV1
 {

@@ -8,8 +8,8 @@ namespace GoymenERP.Modules.Documents.Infrastructure.Scanning;
 /// signature, the industry-standard EICAR test string, so that the refusal path is exercisable end to end without a
 /// scanner product. Everything else it calls clean, and it says so in its identity — every version it clears carries
 /// <see cref="Id"/>, so no such version can pass for a production scan. The module registers it only where the host
-/// allows development storage (Development/Testing); the scanner product is undecided (NEEDS-SINAN), and without one
-/// production stores every upload as NotScanned (not downloadable).
+/// allows development storage (Development/Testing); production uses <see cref="WindowsDefenderDocumentScanner"/>
+/// when configured, and without it stores every upload as NotScanned (not downloadable).
 /// </summary>
 public sealed class DevelopmentSignatureScanner : IDocumentContentScannerV1
 {

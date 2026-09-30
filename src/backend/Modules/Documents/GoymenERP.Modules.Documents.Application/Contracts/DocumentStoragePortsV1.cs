@@ -6,9 +6,10 @@ namespace GoymenERP.Modules.Documents.Application.Contracts;
 /// The object-storage abstraction (AGENTS.md "Files: S3-compatible object storage abstraction"; ADR-005 object store +
 /// DB metadata/hash). Objects are immutable and content-addressed by <see cref="DocumentObjectKeys"/>: writing a key
 /// that already holds the same bytes is a no-op, writing different bytes under an existing key is refused, and nothing
-/// is ever deleted or overwritten (retention/deletion is undecided, OPEN-018/021). The development/test implementation
-/// is a local file system; an S3-compatible adapter implements the same port when its provider, bucket and credentials
-/// are decided. A store that cannot answer throws <see cref="DocumentObjectStoreUnavailableException"/>.
+/// is ever deleted or overwritten (legal retention 10 years, no deletion; archive/legal hold later, OPEN-018/021).
+/// Production (user decision 2026-09-30): the company's own server directory (local disk or NAS, inside the existing
+/// backups; no cloud); development/test: a local file-system stand-in. An S3-compatible adapter could implement the same
+/// port later. A store that cannot answer throws <see cref="DocumentObjectStoreUnavailableException"/>.
 /// </summary>
 public interface IDocumentObjectStoreV1
 {
@@ -44,8 +45,9 @@ public static class DocumentObjectKeys
 
 /// <summary>
 /// DEC-DOC-009's malware scan. The verdict is the scanner's; the vault never turns "no answer" into "clean". The
-/// scanner product is undecided: production has none registered, so every upload is stored as
-/// <see cref="DocumentScanState.NotScanned"/> and is not downloadable until a real scanner adapter is registered.
+/// production scanner is Windows Defender on the server (user decision 2026-09-30), registered only when configured;
+/// without a scanner, or when it cannot answer, every upload is stored as <see cref="DocumentScanState.NotScanned"/>
+/// and is not downloadable.
 /// </summary>
 public interface IDocumentContentScannerV1
 {
