@@ -1104,6 +1104,7 @@ public sealed partial class SalesOrderDraft
         {
             throw new InvalidOperationException("Onay ekseni yalnız hazırlanan bir kurulum üzerine ve yalnız bir kez geri yüklenir.");
         }
+        ValidateRemainderRestore();
 
         var submitted = facts.SubmittedBy is not null && facts.SubmittedAtUtc is not null;
         var decided = facts.DecidedBy is not null && facts.DecidedAtUtc is not null;

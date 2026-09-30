@@ -138,10 +138,13 @@ describe('S-04 partial-delivery remainder panel', () => {
   it('keeps the same key and frozen body after reply loss, remount and a fresh detail version', async () => {
     const calls: { key: string | null; body: unknown }[] = []
     let loseReply = true
+    let readVersion = '4'
     vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       if ((init?.method ?? 'GET').toUpperCase() === 'GET') {
         const current = detail()
-        return new Response(JSON.stringify(remainderRead(current.lines[0].lineId, current.lines[0].orderUnitId)), { status: 200 })
+        return new Response(JSON.stringify({
+          ...remainderRead(current.lines[0].lineId, current.lines[0].orderUnitId), draftVersion: readVersion,
+        }), { status: 200 })
       }
       const headers = init?.headers as Record<string, string>
       calls.push({ key: headers['Idempotency-Key'] ?? null, body: JSON.parse(String(init?.body)) })
@@ -150,7 +153,7 @@ describe('S-04 partial-delivery remainder panel', () => {
         throw new TypeError('synthetic reply loss')
       }
       return new Response(JSON.stringify({ detail: approvedBody('5'), isReplay: true, originalCorrelationId: 'c-original' }), {
-        status: 200, headers: { 'Content-Type': 'application/json' },
+        status: 200, headers: { 'Content-Type': 'application/json', 'Idempotency-Replayed': 'true' },
       })
     }))
 
@@ -161,7 +164,7 @@ describe('S-04 partial-delivery remainder panel', () => {
       namespace="test-company" actorId="actor-a" routeEntryGeneration={1} attemptBinding={binding}
       canRequest canDecide={false} onRecorded={vi.fn()} /></QueryClientProvider>)
     const firstPanel = await screen.findByTestId('sales-remainder-changes')
-    fireEvent.change(within(firstPanel).getByLabelText('İşlem'), { target: { value: 'Revise' } })
+    fireEvent.change(await within(firstPanel).findByLabelText('İşlem'), { target: { value: 'Revise' } })
     fireEvent.change(within(firstPanel).getByLabelText('Yeni sipariş miktarı'), { target: { value: '3' } })
     fireEvent.change(within(firstPanel).getByLabelText('Gerekçe'), { target: { value: 'SENTETIK yanıt kaybı' } })
     fireEvent.click(within(firstPanel).getByRole('button', { name: 'Onaya gönder' }))
@@ -170,6 +173,7 @@ describe('S-04 partial-delivery remainder panel', () => {
     cleanup()
     const recorded = vi.fn()
     const reopened = detail('5')
+    readVersion = '5'
     const secondClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(<QueryClientProvider client={secondClient}><SalesDraftRemainderChangePanel detail={reopened} companyId={reopened.draft.companyId}
       namespace="test-company" actorId="actor-a" routeEntryGeneration={2} attemptBinding={binding}
@@ -201,7 +205,7 @@ describe('S-04 partial-delivery remainder panel', () => {
     }
     renderPanel(original, true)
     const panel = await screen.findByTestId('sales-remainder-changes')
-    fireEvent.change(within(panel).getByLabelText('Gerekçe'), { target: { value: 'SENTETIK bağ kontrolü' } })
+    fireEvent.change(await within(panel).findByLabelText('Gerekçe'), { target: { value: 'SENTETIK bağ kontrolü' } })
     fireEvent.click(within(panel).getByRole('button', { name: 'Onaya gönder' }))
     expect(await within(panel).findByRole('button', { name: 'Aynı işlemi tekrar dene' })).toBeTruthy()
     cleanup()
@@ -213,7 +217,7 @@ describe('S-04 partial-delivery remainder panel', () => {
 
     renderPanel(original, false)
     const revoked = await screen.findByTestId('sales-remainder-changes')
-    expect(await within(revoked).findByRole('button', { name: 'Aynı işlemi tekrar dene' })).toBeDisabled()
+    expect((await within(revoked).findByRole('button', { name: 'Aynı işlemi tekrar dene' }) as HTMLButtonElement).disabled).toBe(true)
     expect(posts).toBe(1)
   })
 })
