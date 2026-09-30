@@ -18,6 +18,9 @@ public sealed class CounterpartyDbContext(
 
     public DbSet<CompanyPartyAccount> CompanyPartyAccounts => Set<CompanyPartyAccount>();
 
+    public DbSet<PartyTaxIdentityChangeRequest> PartyTaxIdentityChangeRequests =>
+        Set<PartyTaxIdentityChangeRequest>();
+
     public DbSet<CommandExecution> CommandExecutions => Set<CommandExecution>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -29,6 +32,7 @@ public sealed class CounterpartyDbContext(
             .IncrementsBy(1);
         ConfigureParty(modelBuilder);
         ConfigureCompanyPartyAccount(modelBuilder);
+        ConfigurePartyTaxIdentityChangeRequest(modelBuilder);
         ConfigureOrganizationCompanyReference(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
@@ -76,6 +80,9 @@ public sealed class CounterpartyDbContext(
             table.HasCheckConstraint(
                 "CK_Parties_Version",
                 "[Version] >= 1");
+            table.HasCheckConstraint(
+                "CK_Parties_TaxIdentityNumber",
+                TaxIdentityNumberFormatSql("TaxIdentityNumber", nullable: true));
         });
         entity.HasKey(x => x.Id);
         entity.Property(x => x.Code)
@@ -90,10 +97,79 @@ public sealed class CounterpartyDbContext(
             .IsRequired();
         entity.Property(x => x.LegalName).HasMaxLength(250).IsRequired();
         entity.Property(x => x.TradeName).HasMaxLength(200);
+        entity.Property(x => x.TaxIdentityNumber).HasMaxLength(11).IsUnicode(false);
         entity.Property(x => x.Version).IsConcurrencyToken();
         entity.Property(x => x.RowVersion).IsRowVersion();
         entity.HasIndex(x => x.Code).IsUnique();
         entity.HasIndex(x => x.IsActive);
+        // AT-009: the duplicate warning's lookup. NOT unique: the same number on two cards is a warning (branch, same
+        // firm), never a refusal (user decision 2026-09-30).
+        entity.HasIndex(x => x.TaxIdentityNumber)
+            .HasFilter("[TaxIdentityNumber] IS NOT NULL");
+    }
+
+    private void ConfigurePartyTaxIdentityChangeRequest(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<PartyTaxIdentityChangeRequest>();
+        entity.ToTable("PartyTaxIdentityChangeRequests", "counterparty", table =>
+        {
+            table.HasCheckConstraint(
+                "CK_PartyTaxIdentityChangeRequests_Status",
+                "[Status] IN (N'Pending', N'Approved', N'Rejected')");
+            table.HasCheckConstraint(
+                "CK_PartyTaxIdentityChangeRequests_Current",
+                TaxIdentityNumberFormatSql("CurrentTaxIdentityNumber", nullable: false));
+            table.HasCheckConstraint(
+                "CK_PartyTaxIdentityChangeRequests_Proposed",
+                TaxIdentityNumberFormatSql("ProposedTaxIdentityNumber", nullable: false)
+                + " AND [ProposedTaxIdentityNumber] <> [CurrentTaxIdentityNumber]");
+            // Maker-checker in the database too: a decision names its decider, who is never the requester.
+            table.HasCheckConstraint(
+                "CK_PartyTaxIdentityChangeRequests_Decision",
+                "([Status] = N'Pending' AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [DecisionNote] IS NULL)"
+                + " OR ([Status] <> N'Pending' AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL"
+                + " AND [DecidedBy] <> [RequestedBy])");
+            table.HasCheckConstraint(
+                "CK_PartyTaxIdentityChangeRequests_Version",
+                "[Version] >= 1 AND [PartyVersionAtRequest] >= 1");
+        });
+        entity.HasKey(x => x.Id);
+        entity.Property(x => x.CurrentTaxIdentityNumber).HasMaxLength(11).IsUnicode(false).IsRequired();
+        entity.Property(x => x.ProposedTaxIdentityNumber).HasMaxLength(11).IsUnicode(false).IsRequired();
+        entity.Property(x => x.Reason).HasMaxLength(PartyTaxIdentityChangeRequest.ReasonMaximumLength).IsRequired();
+        entity.Property(x => x.Status).HasConversion<string>().HasMaxLength(16).IsRequired();
+        entity.Property(x => x.RequestedBy)
+            .HasMaxLength(PartyTaxIdentityChangeRequest.ActorMaximumLength).IsRequired();
+        entity.Property(x => x.DecidedBy).HasMaxLength(PartyTaxIdentityChangeRequest.ActorMaximumLength);
+        entity.Property(x => x.DecisionNote).HasMaxLength(PartyTaxIdentityChangeRequest.NoteMaximumLength);
+        entity.Property(x => x.Version).IsConcurrencyToken();
+        entity.Property(x => x.RowVersion).IsRowVersion();
+        // One pending change per party per company; a concurrent second request loses on this index.
+        entity.HasIndex(x => new { x.CompanyId, x.PartyId })
+            .IsUnique()
+            .HasFilter("[Status] = N'Pending'")
+            .HasDatabaseName("UX_PartyTaxIdentityChangeRequests_Pending");
+        entity.HasIndex(x => new { x.CompanyId, x.PartyId, x.RequestedAtUtc });
+
+        entity.HasOne<Party>()
+            .WithMany()
+            .HasForeignKey(x => x.PartyId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        entity.HasOne<OrganizationCompanyReference>()
+            .WithMany()
+            .HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    /// <summary>10 (VKN) or 11 (TCKN) ASCII digits; the check digits are the domain's (TaxIdentityNumber).</summary>
+    private static string TaxIdentityNumberFormatSql(string column, bool nullable)
+    {
+        var format = $"LEN([{column}]) IN (10, 11) AND DATALENGTH([{column}]) = LEN([{column}])"
+            + $" AND [{column}] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9]%'";
+        return nullable ? $"[{column}] IS NULL OR ({format})" : format;
     }
 
     private static void ConfigureCompanyPartyAccount(ModelBuilder modelBuilder)
@@ -159,7 +235,7 @@ public sealed class CounterpartyDbContext(
                     "Grup seviyesindeki Party kaydı fiziksel olarak silinemez.");
             }
 
-            if (entry.State == EntityState.Modified)
+            if (entry.State == EntityState.Modified && !IsTaxIdentityOnlyPartyChange(entry))
             {
                 throw new InvalidOperationException(
                     "Grup seviyesindeki Party kaydı bu dilimde doğrudan değiştirilemez.");
@@ -204,6 +280,34 @@ public sealed class CounterpartyDbContext(
             }
         }
 
+        foreach (var entry in ChangeTracker.Entries<PartyTaxIdentityChangeRequest>())
+        {
+            if (entry.State == EntityState.Unchanged)
+            {
+                continue;
+            }
+
+            if (entry.State == EntityState.Deleted)
+            {
+                throw new InvalidOperationException(
+                    "Vergi/kimlik değişiklik talebi silinemez; karar geçmişi korunur.");
+            }
+
+            if (entry.State == EntityState.Modified
+                && ImmutableChangeRequestProperties.Any(name => entry.Property(name).IsModified))
+            {
+                throw new InvalidOperationException(
+                    "Vergi/kimlik değişiklik talebinin kimlik, şirket, cari, numara ve talep eden bilgisi değiştirilemez.");
+            }
+
+            if (!companyContext.IsResolved
+                || entry.Entity.CompanyId != companyContext.CompanyId)
+            {
+                throw new InvalidOperationException(
+                    "Vergi/kimlik değişiklik talebi aktif şirket bağlamıyla eşleşmelidir.");
+            }
+        }
+
         foreach (var entry in ChangeTracker.Entries<CommandExecution>())
         {
             if (entry.State == EntityState.Unchanged)
@@ -224,6 +328,41 @@ public sealed class CounterpartyDbContext(
                     "Idempotency kaydı aktif şirket bağlamıyla eşleşmelidir.");
             }
         }
+    }
+
+    private static readonly string[] MutableTaxIdentityPartyProperties =
+    [
+        nameof(Party.TaxIdentityNumber),
+        nameof(Party.Version),
+        nameof(Party.UpdatedAtUtc),
+        nameof(Party.RowVersion),
+    ];
+
+    private static readonly string[] ImmutableChangeRequestProperties =
+    [
+        nameof(PartyTaxIdentityChangeRequest.Id),
+        nameof(PartyTaxIdentityChangeRequest.CompanyId),
+        nameof(PartyTaxIdentityChangeRequest.PartyId),
+        nameof(PartyTaxIdentityChangeRequest.CurrentTaxIdentityNumber),
+        nameof(PartyTaxIdentityChangeRequest.ProposedTaxIdentityNumber),
+        nameof(PartyTaxIdentityChangeRequest.PartyVersionAtRequest),
+        nameof(PartyTaxIdentityChangeRequest.Reason),
+        nameof(PartyTaxIdentityChangeRequest.RequestedBy),
+        nameof(PartyTaxIdentityChangeRequest.RequestedAtUtc),
+    ];
+
+    /// <summary>
+    /// AT-009: the one Party update this module writes — its VKN/TCKN with the version and timestamp it moves. Every
+    /// other Party column stays read-only here, exactly as before.
+    /// </summary>
+    private static bool IsTaxIdentityOnlyPartyChange(
+        Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<Party> entry)
+    {
+        var modified = entry.Properties.Where(property => property.IsModified)
+            .Select(property => property.Metadata.Name)
+            .ToArray();
+        return modified.Contains(nameof(Party.TaxIdentityNumber), StringComparer.Ordinal)
+            && modified.All(name => MutableTaxIdentityPartyProperties.Contains(name, StringComparer.Ordinal));
     }
 
     private sealed class OrganizationCompanyReference

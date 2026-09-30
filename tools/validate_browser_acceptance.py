@@ -202,8 +202,11 @@ SUITE_IDENTITY_PERMISSIONS = {
     # hold ONLY identity.assignments.read — the same company-fence design, now for the read-only access view.
     # ERP-000G / AT-065: c02-creator and c02-other-company also hold the document vault's two names (the same names in
     # different companies, the suite's design), for the Cari-card document journey (c02-documents.spec.ts).
+    # AT-009 (user decision 2026-09-30): c02-tax-maker (A) holds create + read + the two VKN/TCKN names, c02-tax-checker
+    # (A) holds read + approve only — the maker-checker pair of the Cari card's VKN/TCKN journey.
     "c02": ("counterparty.parties.create", "counterparty.parties.read", "identity.assignments.read",
-            "documents.files.read", "documents.files.upload"),
+            "documents.files.read", "documents.files.upload",
+            "counterparty.parties.tax-identity.update", "counterparty.parties.tax-identity.approve"),
     # ORG master edit (user decision 2026-09-27): a THIRD actor, org03-editor, holds the three reads its
     # screens need (work-centers, locations, sites) plus the three master-edit writes. The two readers above
     # keep their exact subsets, so the suite also shows a reader is offered no create/edit control.
