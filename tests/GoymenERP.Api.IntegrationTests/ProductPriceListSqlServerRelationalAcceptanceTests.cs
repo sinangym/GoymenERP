@@ -60,7 +60,8 @@ public sealed class ProductPriceListSqlServerRelationalAcceptanceTests
         {
             var reopened = await scope.Service.GetAsync(listId);
             var line = Assert.Single(reopened.Versions[0].Lines);
-            Assert.Equal((ProductSalesCandidateFixture.Name, "42000.50", "40000"), (line.ProductName, line.UnitPrice, line.FloorUnitPrice));
+            // decimal(19,4) restored in its canonical value: trailing zeros dropped, the value unchanged.
+            Assert.Equal((ProductSalesCandidateFixture.Name, "42000.5", "40000"), (line.ProductName, line.UnitPrice, line.FloorUnitPrice));
             Assert.Equal(listId, Assert.Single((await scope.Service.ListAsync(null, null)).Items).Id);
 
             var stale = await Assert.ThrowsAsync<ProductPriceListException>(() => scope.Service.ReviseDraftAsync(listId,

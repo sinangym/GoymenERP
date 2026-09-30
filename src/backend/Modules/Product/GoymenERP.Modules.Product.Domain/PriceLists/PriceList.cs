@@ -282,6 +282,12 @@ public sealed class PriceList
         return currencyCode;
     }
 
+    /// <summary>
+    /// The canonical value of a price: trailing zeros dropped (42000.50 → 42000.5, 40000.0000 → 40000), so a price reads the
+    /// same whether it was just written or restored from <c>decimal(19,4)</c>. The value never changes; nothing is rounded.
+    /// </summary>
+    public static decimal Normalize(decimal value) => value / 1.0000000000000000000000000000m;
+
     /// <summary>The number of decimals a price carries (trailing zeros of the scale count: 1.50 has 2).</summary>
     public static int Scale(decimal value) => (decimal.GetBits(value)[3] >> 16) & 0xFF;
 
@@ -462,7 +468,8 @@ public sealed class PriceListVersion
                 }
             }
 
-            built.Add(new PriceListLine(input.LineId, index + 1, input.ProductId, input.PriceUnitId, input.UnitPrice, input.FloorUnitPrice));
+            built.Add(new PriceListLine(input.LineId, index + 1, input.ProductId, input.PriceUnitId, PriceList.Normalize(input.UnitPrice),
+                input.FloorUnitPrice is { } normalizedFloor ? PriceList.Normalize(normalizedFloor) : null));
         }
 
         return built;

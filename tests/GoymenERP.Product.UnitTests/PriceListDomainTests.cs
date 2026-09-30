@@ -26,7 +26,8 @@ public sealed class PriceListDomainTests
         var version = Assert.Single(list.Versions);
         Assert.Equal((1, PriceListVersionState.Draft), (version.VersionNo, version.State));
         Assert.Equal(42000.50m, version.Lines[0].UnitPrice);
-        Assert.Equal(2, PriceList.Scale(version.Lines[0].UnitPrice));
+        // The written 42000.50 is kept as its canonical value (the scale check ran on the written text first).
+        Assert.Equal((1, "42000.5"), (PriceList.Scale(version.Lines[0].UnitPrice), PriceList.Format(version.Lines[0].UnitPrice)));
         Assert.Null(list.ResolveOn(Today));
         Assert.Equal(PriceListVersionStatus.Draft, list.StatusOf(version, Today));
     }
@@ -206,6 +207,7 @@ public sealed class PriceListDomainTests
         Assert.Null(ProductPriceListWire.ParseVersion("012"));
         Assert.Null(ProductPriceListWire.ParseVersion("0"));
         Assert.Equal("42000.50", ProductPriceListWire.FormatPrice(ProductPriceListWire.ParsePrice("42000.50")!.Value));
+        Assert.Equal("40000", PriceList.Format(PriceList.Normalize(40000.0000m)));
     }
 
     private static PriceList NewList() => PriceList.Create(Guid.NewGuid(), Company, " Yurt içi satış ", "TRY", PriceListChannel.Sales,
