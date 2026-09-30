@@ -15,6 +15,11 @@
  *               close and reopen shows 3 kg and the history "5 kg → 3 kg"; ST-01 and the Sales line read 3 kg.
  *   INV-AL-1-02 the same key replays once (200 + Idempotency-Replayed), the consumed version is 409, the viewer
  *               without the grant is 403; nothing new is written; the change is audited from the Web channel.
+ *   AT-063-REL  ST-01 → the row menu's "Tahsisi serbest bırak" (offered because the row holds active allocation kg)
+ *               → ST-02 opens with the release form of the one active allocation → reason → the EXISTING release
+ *               command (200, version 3, Released) → the panel shows "Serbest bırakıldı" with the reason; back on
+ *               ST-01 the row's free kg is up by the 3 kg released and the menu no longer offers release; one
+ *               release command and one Web audit, no stock movement.
  *   afterAll    releases the reservation this file made if it is still active, at its current version — also when
  *               01 or 02 failed half-way — so the label is free again for the later files (the cancellation file).
  *
@@ -213,6 +218,85 @@ test('INV-AL-1-02 the same key replays once, the consumed version is 409, and no
     })
     expect(denied.status()).toBe(403)
     expect(await effects(pool)).toEqual(before)
+  } finally {
+    await pool.close()
+  }
+})
+
+test('AT-063-REL the ST-01 row action releases the allocation with a reason and ST-01 shows the kg free again', async ({ page }) => {
+  expect(allocationId, 'INV-AL-1-01 recorded the allocation').not.toBe('')
+  const RELEASE_REASON = 'SENTETIK AT-063 sipariş satırı iptal edildi'
+  const pool = await new sql.ConnectionPool(env.sqlConnection).connect()
+  const releaseEffects = async () => (await pool.request()
+    .input('companyId', sql.UniqueIdentifier, companyId)
+    .input('allocationId', sql.UniqueIdentifier, allocationId)
+    .input('entityId', sql.NVarChar, allocationId)
+    .query<{ commands: number; webAudits: number }>(`SELECT
+      (SELECT COUNT(*) FROM [inventory].[Commands]
+        WHERE [CompanyId] = @companyId AND [TargetId] = @allocationId
+          AND [CommandName] = N'inventory.physical-allocation.release.v1') AS [commands],
+      (SELECT COUNT(*) FROM [audit].[AuditEvents]
+        WHERE [CompanyId] = @companyId AND [EntityType] = N'Inventory.StockAllocation' AND [EntityId] = @entityId
+          AND [EventType] = N'inventory.physical-allocation.released.v1' AND [SourceChannel] = N'Web') AS [webAudits]`))
+    .recordset[0]
+  try {
+    const movementsBefore = (await effects(pool)).movements
+    expect(await releaseEffects()).toEqual({ commands: 0, webAudits: 0 })
+    const before = await positionOf(page)
+
+    await signInAs(page, preparerActor)
+    const firstRead = page.waitForResponse((response) => response.request().method() === 'GET'
+      && new URL(response.url()).pathname === POSITIONS && new URL(response.url()).searchParams.get('q') === LABEL_CODE)
+    await page.goto(`/stok/pozisyonlar?etiket=${encodeURIComponent(LABEL_CODE)}`)
+    expect((await firstRead).status()).toBe(200)
+    const stockRow = page.locator(`tr[data-label-id="${allocationLabelId}"]`)
+    await expect(stockRow).toBeVisible({ timeout: 30_000 })
+    await stockRow.getByRole('button', { name: `${LABEL_CODE} işlemleri`, exact: true }).click()
+    const menu = page.getByRole('list', { name: `${LABEL_CODE} için işlemler`, exact: true })
+    await expect(menu.getByRole('link', { name: 'Tahsisi serbest bırak', exact: true })).toBeVisible()
+
+    const allocationsRead = page.waitForResponse((response) => response.request().method() === 'GET'
+      && new URL(response.url()).pathname === LABEL_ALLOCATIONS)
+    await menu.getByRole('link', { name: 'Tahsisi serbest bırak', exact: true }).click()
+    await expect(page).toHaveURL(new RegExp(`/stok/etiket/${allocationLabelId}\\?islem=serbest-birak$`))
+    expect((await allocationsRead).status()).toBe(200)
+    await expect(page.locator('#islem-tahsis')).toBeFocused()
+    const row = page.getByTestId(`inventory-allocation-${allocationId}`)
+    await expect(row.getByRole('group', { name: 'Tahsisi serbest bırak' })).toBeVisible({ timeout: 30_000 })
+    await expect(row).toContainText('Kalan 3 kg ayrılmış miktarın tamamı serbest bırakılır')
+    await row.getByLabel('Serbest bırakma gerekçesi').fill(RELEASE_REASON)
+    const releaseAnswer = page.waitForResponse((response) => response.request().method() === 'POST'
+      && new URL(response.url()).pathname === `${ALLOCATIONS}/${allocationId}/release`)
+    await row.getByRole('button', { name: 'Serbest bırakmayı onayla' }).click()
+    const released = await releaseAnswer
+    expect(released.status()).toBe(200)
+    expect(released.headers()['idempotency-replayed']).toBeUndefined()
+    expect(JSON.parse(released.request().postData() ?? '{}')).toEqual({ expectedAllocationVersion: '2', reason: RELEASE_REASON })
+    expect(await released.json()).toMatchObject({ allocationId, version: '3', status: 'Released', remainingKg: '0' })
+    await expect(page.getByText(/Tahsis serbest bırakıldı: .* artık aktif değil/)).toBeVisible()
+    await expect(row).toContainText('Serbest bırakıldı')
+    await expect(row).toContainText(`Serbest bırakma: ${RELEASE_REASON}`)
+    await expect(row.getByRole('button', { name: 'Tahsisi serbest bırak' })).toHaveCount(0)
+
+    // Back on ST-01 (the same filter, read afresh): the 3 kg are free again and release is no longer offered.
+    const back = page.waitForResponse((response) => response.request().method() === 'GET'
+      && new URL(response.url()).pathname === POSITIONS && new URL(response.url()).searchParams.get('q') === LABEL_CODE)
+    await page.getByRole('link', { name: '← Stok pozisyonlarına dön', exact: true }).click()
+    const backBody = (await (await back).json()) as { readonly items: readonly { readonly labelId: string; readonly availableKg: string; readonly activeAllocationKg: string }[] }
+    const after = backBody.items.find((item) => item.labelId.toLowerCase() === allocationLabelId.toLowerCase())!
+    expect(Number(after.availableKg)).toBe(Number(before.availableKg) + 3)
+    // This file's 3 kg was the label's only active allocation (S04-06 left it fully free): none is left.
+    expect(Number(before.activeAllocationKg)).toBe(3)
+    expect(Number(after.activeAllocationKg)).toBe(0)
+    const freeCell = page.locator(`tr[data-label-id="${allocationLabelId}"] td`).nth(7)
+    await expect(freeCell).toHaveText(after.availableKg)
+    await page.locator(`tr[data-label-id="${allocationLabelId}"]`)
+      .getByRole('button', { name: `${LABEL_CODE} işlemleri`, exact: true }).click()
+    await expect(page.getByRole('list', { name: `${LABEL_CODE} için işlemler`, exact: true })
+      .getByRole('link', { name: 'Tahsisi serbest bırak', exact: true })).toHaveCount(0)
+
+    expect(await releaseEffects()).toEqual({ commands: 1, webAudits: 1 })
+    expect((await effects(pool)).movements).toBe(movementsBefore)
   } finally {
     await pool.close()
   }

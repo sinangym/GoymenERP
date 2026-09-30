@@ -87,6 +87,35 @@ export function planCreatePath(): string {
   return MANUFACTURING_ROUTE[MANUFACTURING_CAPABILITY.planCreate]
 }
 
+/**
+ * AT-063 "Üretim planla" from an ST-01 stock row: the plan-create URL names the row's label (`etiket`, its id) and
+ * its code (`kod`, only the search hint for Inventory's candidate read). Neither is trusted: the page selects the
+ * roll only when the candidate read answers that exact label id as draft-selectable, and the save sends the
+ * candidate's label version for the server to revalidate exactly as a manual pick.
+ */
+export const PLAN_CREATE_LABEL_PARAM = 'etiket' as const
+export const PLAN_CREATE_LABEL_CODE_PARAM = 'kod' as const
+/** Inventory's label code bound (MaterialLabel.MaximumCodeLength); a longer hint is not carried. */
+export const PLAN_CREATE_LABEL_CODE_MAX_LENGTH = 64
+
+export function planCreateFromLabelPath(labelId: string, labelCode: string): string {
+  const query = new URLSearchParams({ [PLAN_CREATE_LABEL_PARAM]: labelId })
+  const code = labelCode.trim()
+  if (code !== '' && code.length <= PLAN_CREATE_LABEL_CODE_MAX_LENGTH) query.set(PLAN_CREATE_LABEL_CODE_PARAM, code)
+  return `${planCreatePath()}?${query.toString()}`
+}
+
+const GUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
+
+/** The label a plan-create URL preselects, or null when the URL names none or a malformed one. */
+export function parsePlanCreateLabel(search: string): { readonly labelId: string; readonly labelCode: string } | null {
+  const params = new URLSearchParams(search)
+  const labelId = params.get(PLAN_CREATE_LABEL_PARAM)?.trim() ?? ''
+  if (!GUID.test(labelId)) return null
+  const code = params.get(PLAN_CREATE_LABEL_CODE_PARAM)?.trim() ?? ''
+  return { labelId, labelCode: code.length <= PLAN_CREATE_LABEL_CODE_MAX_LENGTH ? code : '' }
+}
+
 export function planDetailPath(planId: string): string {
   return `/uretim/plan/${encodeURIComponent(planId)}`
 }

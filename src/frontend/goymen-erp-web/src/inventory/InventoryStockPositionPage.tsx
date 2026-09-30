@@ -16,6 +16,7 @@ import {
   normalizeStockSearch,
   permittedStockRowActions,
   STOCK_SEARCH_PARAM,
+  stockRowActionsFor,
   stockRowActionState,
   type StockRowAction,
 } from './stockRowActions'
@@ -152,9 +153,8 @@ function InventoryStockPositionView({
         <td>{ownership(item.ownerKind, item.ownerId, companyId)}<br />{custody(item.custodianKind, item.custodianId, companyId)}</td>
         <td>{item.physicalKg}</td><td>{item.blockedPhysicalKg}</td><td>{item.activeAllocationKg}</td><td>{item.availableKg}</td>
         <td><StockRowActionMenu
-          labelId={item.labelId}
-          labelCode={item.labelCode}
-          actions={rowActions}
+          row={item}
+          actions={stockRowActionsFor(rowActions, item)}
           search={appliedQ}
           open={openMenu === item.labelId}
           onToggle={(open) => setOpenMenu(open ? item.labelId : null)}

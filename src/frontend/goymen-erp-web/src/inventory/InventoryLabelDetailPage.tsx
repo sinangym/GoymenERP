@@ -124,6 +124,7 @@ function InventoryLabelDetailView({ namespace, labelId, target, stockSearch }: {
   const offered: Readonly<Record<RowActionTarget, boolean>> = {
     [ROW_ACTION_TARGET.genealogy]: true,
     [ROW_ACTION_TARGET.allocations]: canChangeAllocations,
+    [ROW_ACTION_TARGET.release]: canChangeAllocations,
     [ROW_ACTION_TARGET.count]: canRecordCount || canApproveCount,
     [ROW_ACTION_TARGET.scrap]: canRecordScrap || canApproveScrap,
     [ROW_ACTION_TARGET.transformation]: canTransform && actorId !== null,
@@ -218,11 +219,14 @@ function InventoryLabelDetailView({ namespace, labelId, target, stockSearch }: {
     </section></ActionTarget>
 
     {canChangeAllocations
-      ? <ActionTarget id={ROW_ACTION_TARGET.allocations} target={target}><LabelAllocationPanel
+      ? <ActionTarget id={ROW_ACTION_TARGET.allocations} target={target === ROW_ACTION_TARGET.release ? ROW_ACTION_TARGET.allocations : target}><LabelAllocationPanel
         key={`${identity.labelId}:allocations`}
         labelId={identity.labelId}
         companyId={companyId}
+        namespace={namespace}
+        routeEntry={shell.routeEntryGeneration}
         onChanged={() => void query.refetch()}
+        startRelease={target === ROW_ACTION_TARGET.release}
       /></ActionTarget>
       : null}
 

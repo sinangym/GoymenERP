@@ -2,10 +2,14 @@ import type { ViewOutcome } from '../shell/uiState'
 import { API_BASE, inventoryHeaders } from './api'
 import {
   decodeAllocationChangeView,
+  decodeLabelAllocation,
   decodeLabelAllocations,
   describesChange,
+  describesRelease,
   type AllocationChangeRequest,
   type AllocationChangeView,
+  type AllocationReleaseRequest,
+  type LabelAllocation,
   type LabelAllocations,
 } from './allocationChangeContract'
 
@@ -15,6 +19,10 @@ export function inventoryLabelAllocationsPath(labelId: string): string {
 
 export function inventoryAllocationChangePath(allocationId: string): string {
   return `${API_BASE}/inventory/physical-allocations/${encodeURIComponent(allocationId)}/change`
+}
+
+export function inventoryAllocationReleasePath(allocationId: string): string {
+  return `${API_BASE}/inventory/physical-allocations/${encodeURIComponent(allocationId)}/release`
 }
 
 export type AllocationChangeOutcome =
@@ -67,6 +75,56 @@ export async function changeAllocation(
       ? typeof originalHeader === 'string' && originalHeader.length > 0
       : replayHeader === null && originalHeader === null
     return decoded === null || !headersMatch || !describesChange(decoded, allocationId, request, context.companyId)
+      ? { type: 'unknown', reason: 'undecodable' }
+      : { type: 'applied', response: decoded, replayed }
+  }
+  if ([400, 401, 403, 404, 409, 415, 422].includes(response.status)) {
+    return { type: 'failed', status: response.status, code: problemCode(body) }
+  }
+  return response.status >= 500
+    ? { type: 'unknown', reason: 'service-unavailable' }
+    : { type: 'unknown', reason: 'unexpected-status' }
+}
+
+export type AllocationReleaseOutcome =
+  | { readonly type: 'applied'; readonly response: LabelAllocation; readonly replayed: boolean }
+  | { readonly type: 'failed'; readonly status: number; readonly code: string | null }
+  | { readonly type: 'unknown'; readonly reason: 'offline' | 'network-error' | 'service-unavailable' | 'undecodable' | 'unexpected-status' }
+
+/**
+ * One release attempt on the EXISTING Inventory command. 200 is the released allocation (the same key and content
+ * again answers the recorded release with `Idempotency-Replayed: true` + the original correlation). An answer that
+ * is not this allocation Released, any 5xx and any transport failure is UNKNOWN: resend with the same key and body.
+ */
+export async function releaseAllocation(
+  allocationId: string,
+  request: AllocationReleaseRequest,
+  context: { readonly companyId: string; readonly idempotencyKey: string },
+): Promise<AllocationReleaseOutcome> {
+  let response: Response
+  try {
+    response = await fetch(inventoryAllocationReleasePath(allocationId), {
+      method: 'POST',
+      headers: {
+        ...inventoryHeaders(context.companyId),
+        'Content-Type': 'application/json',
+        'Idempotency-Key': context.idempotencyKey,
+      },
+      body: JSON.stringify(request),
+    })
+  } catch {
+    return { type: 'unknown', reason: navigator.onLine ? 'network-error' : 'offline' }
+  }
+  const body = await bodyOf(response)
+  if (response.status === 200) {
+    const decoded = decodeLabelAllocation(body)
+    const replayHeader = response.headers.get('Idempotency-Replayed')
+    const originalHeader = response.headers.get('Idempotency-Original-Correlation-Id')
+    const replayed = replayHeader?.trim().toLowerCase() === 'true'
+    const headersMatch = replayed
+      ? typeof originalHeader === 'string' && originalHeader.length > 0
+      : replayHeader === null && originalHeader === null
+    return decoded === null || !headersMatch || !describesRelease(decoded, allocationId, context.companyId)
       ? { type: 'unknown', reason: 'undecodable' }
       : { type: 'applied', response: decoded, replayed }
   }
