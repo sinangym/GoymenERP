@@ -127,4 +127,14 @@ public sealed class ProductCodeRegistration
     {
         Code = product.Code, ProductId = product.Id, IsCurrent = true,
     };
+
+    public static ProductCodeRegistration Legacy(ProductRow product, string code)
+    {
+        ArgumentNullException.ThrowIfNull(product);
+        ArgumentException.ThrowIfNullOrWhiteSpace(code);
+        var normalized = code.Trim();
+        if (normalized.Length > Domain.Products.ProductCode.MaximumPrefixLength + 1 + 19 || code.Any(char.IsControl))
+            throw new ArgumentException("Eski ürün kodu geçersiz.", nameof(code));
+        return new() { Code = normalized, ProductId = product.Id, IsCurrent = false };
+    }
 }
