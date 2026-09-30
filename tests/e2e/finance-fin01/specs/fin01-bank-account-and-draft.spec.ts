@@ -895,10 +895,13 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
     await expect(page.getByRole('heading', { level: 1, name: 'Cari ekstre', exact: true })).toBeVisible({ timeout: 30_000 })
     await expect(page.getByText('Devir yok (OPEN-018)', { exact: false })).toBeVisible()
 
-    await page.getByLabel('Başlangıç tarihi', { exact: true }).fill('2026-09-01')
+    // Start on the second day so this explicit range can never equal the screen's clock-derived
+    // "this month through today" default (which was exactly 09-01..09-30 on the 30 September run).
+    // Every recorded FIN01 fact starts on 09-13, so the same five rows and totals remain in scope.
+    await page.getByLabel('Başlangıç tarihi', { exact: true }).fill('2026-09-02')
     await page.getByLabel('Bitiş tarihi', { exact: true }).fill('2026-09-30')
     const answer = page.waitForResponse((response) => PARTY_LEDGER_RE.test(response.url())
-      && new URL(response.url()).searchParams.get('from') === '2026-09-01')
+      && new URL(response.url()).searchParams.get('from') === '2026-09-02')
     await page.getByRole('button', { name: 'Ekstreyi göster', exact: true }).click()
     const response = await answer
     expect(response.status()).toBe(200)
@@ -936,15 +939,15 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
     const closing = page.locator('[data-ledger-closing] td')
     await expect(closing).toHaveText('1.624,75 (A)', { timeout: 30_000 })
     await expect(page.locator('[data-ledger-entry]')).toHaveCount(5)
-    await expect(page).toHaveURL(/ekstreBaslangic=2026-09-01&ekstreBitis=2026-09-30/)
+    await expect(page).toHaveURL(/ekstreBaslangic=2026-09-02&ekstreBitis=2026-09-30/)
 
     // Open a row's source on its own screen, then come back: the same range and the same ledger.
     await page.getByRole('link', { name: `Ödemeyi aç · ref. …${manualPaymentId.slice(-8)}`, exact: true }).click()
     await expect(page).toHaveURL(new RegExp(`/finans/odemeler/${manualPaymentId}$`))
     await expect(page.getByRole('heading', { level: 1, name: 'Giden banka ödemesi', exact: true })).toBeVisible({ timeout: 30_000 })
     await page.goBack()
-    await expect(page).toHaveURL(/ekstreBaslangic=2026-09-01&ekstreBitis=2026-09-30/)
-    await expect(page.getByLabel('Başlangıç tarihi', { exact: true })).toHaveValue('2026-09-01')
+    await expect(page).toHaveURL(/ekstreBaslangic=2026-09-02&ekstreBitis=2026-09-30/)
+    await expect(page.getByLabel('Başlangıç tarihi', { exact: true })).toHaveValue('2026-09-02')
     await expect(page.getByLabel('Bitiş tarihi', { exact: true })).toHaveValue('2026-09-30')
     await expect(closing).toHaveText('1.624,75 (A)', { timeout: 30_000 })
 
