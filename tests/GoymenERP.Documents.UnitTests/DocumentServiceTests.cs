@@ -271,6 +271,12 @@ public sealed class DocumentServiceTests
         var hidden = new Harness(CompanyA, new FixedScanner(DocumentScanVerdictV1.Clean), world: world).Grant(Upload);
         await Refused(404, hidden.Service.UploadAsync(Harness.Upload(Party, Pdf), hidden.Metadata("k-replay-fence")));
 
+        world.Readable.Add((CompanyA, Party));
+        var hiddenDuringDuplicateRead = new Harness(CompanyA, new FixedScanner(DocumentScanVerdictV1.Clean), world: world).Grant(Upload);
+        hiddenDuringDuplicateRead.Store.BeforeFindByContent = world.Readable.Clear;
+        await Refused(404, hiddenDuringDuplicateRead.Service.UploadAsync(
+            Harness.Upload(Party, Pdf), hiddenDuringDuplicateRead.Metadata("k-replay-fence")));
+
         Assert.Single(world.Documents);
         Assert.Single(world.Attempts);
         Assert.Single(world.Objects.Objects);

@@ -263,7 +263,12 @@ public sealed class DocumentService(
 
         if (requireReplayFence)
         {
-            await RequireStillAsync(scope, permission, cancellationToken);
+            if (await GuardedAsync(scope, permission,
+                    () => CheckOwnerAsync(document.OwnerKind, document.OwnerId, cancellationToken), cancellationToken)
+                != DocumentOwnerAccessV1.Readable)
+            {
+                throw new DocumentServiceException(404, "not_found");
+            }
         }
 
         return new DocumentUploadResponse(View(document, scope.CompanyId), duplicates, result.IsReplay, result.OriginalCorrelationId);

@@ -125,6 +125,8 @@ internal sealed class MemoryDocumentStore(ICompanyContext companyContext, Harnes
 
     public Action? BeforeWrite { get; set; }
 
+    public Action? BeforeFindByContent { get; set; }
+
     public Task<DocumentStoreResult?> FindReplayAsync(DocumentWriteEnvelope envelope, string requestHash, string commandName,
         CancellationToken cancellationToken = default)
     {
@@ -169,9 +171,13 @@ internal sealed class MemoryDocumentStore(ICompanyContext companyContext, Harnes
             .OrderByDescending(document => document.UploadedAtUtc).Take(limit)]);
 
     public Task<IReadOnlyList<StoredDocument>> FindByContentAsync(string sha256, Guid excludingDocumentId, int limit,
-        CancellationToken cancellationToken = default) =>
-        Task.FromResult<IReadOnlyList<StoredDocument>>([.. Visible().Where(document => document.Sha256 == sha256 && document.Id != excludingDocumentId)
-            .OrderByDescending(document => document.UploadedAtUtc).Take(limit)]);
+        CancellationToken cancellationToken = default)
+    {
+        BeforeFindByContent?.Invoke();
+        return Task.FromResult<IReadOnlyList<StoredDocument>>(
+            [.. Visible().Where(document => document.Sha256 == sha256 && document.Id != excludingDocumentId)
+                .OrderByDescending(document => document.UploadedAtUtc).Take(limit)]);
+    }
 
     private IEnumerable<StoredDocument> Visible() => Documents.Where(document => document.CompanyId == companyContext.CompanyId);
 }
