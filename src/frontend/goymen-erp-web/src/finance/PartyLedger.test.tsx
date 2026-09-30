@@ -129,7 +129,7 @@ describe('PartyLedger', () => {
     expect(hrefs('ManualReceipt')).toEqual([`/finans/tahsilatlar/${IDS.receipt}`])
     expect(hrefs('ManualReceiptReversal')).toEqual([`/finans/tahsilatlar/${IDS.reversal}`, `/finans/tahsilatlar/${IDS.receipt}`])
     expect(hrefs('CustomerInstrumentCollection'))
-      .toEqual([`/finans/tahsilatlar?cekSenet=${IDS.instrument}`, `/finans/tahsilatlar/${IDS.collection}`])
+      .toEqual([`/finans/musteri-cek-senetleri?cekSenet=${IDS.instrument}`, `/finans/tahsilatlar/${IDS.collection}`])
     expect(hrefs('ManualBankPayment')).toEqual([`/finans/odemeler/${IDS.payment}`])
     expect(hrefs('OpenItem')).toEqual([])
   })

@@ -189,7 +189,7 @@ describe('CustomerInstrumentReceiveForm', () => {
       amount: { disclosure: 'Visible', money: { amount: '1000.50', currencyId: INSTRUMENT_CURRENCY } } })))
     await screen.findByText('Portföye alındı — para etkisi yok.')
     expect(screen.getByRole('link', { name: 'Portföyde aç' }).getAttribute('href'))
-      .toBe(`/finans/tahsilatlar?cekSenet=${INSTRUMENT_ID}`)
+      .toBe(`/finans/musteri-cek-senetleri?cekSenet=${INSTRUMENT_ID}`)
   })
 
   it('a note needs no bank', async () => {
